@@ -382,6 +382,10 @@ The rule above that a grant's read counts when the read found the repository
 public contradicts §11.4 ("data read through an owner's grant never appears
 there"); the ticker follows the contract. Open for link events.
 
+The ticker's `merge.public` is tested at the probe: a scan with the instance's token writes
+`true`, one through an App or an owner's token writes `false`, since that line is the only thing
+between an owner's grant and a page without sign-in.
+
 **Reason:** the flag follows what the read itself saw, not which token
 made it. With the token as the test, a public repository read with an
 App or owner token would never count, and a repository that turned

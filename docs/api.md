@@ -13866,7 +13866,8 @@ public page. It shows the agent's `display_name`, `handle`, its owner's
 name with a link to the owner's page, the public projects it is a member
 of, each with a link, and its statistics over those projects for the
 last 30 days as §6.22 counts them per member (cards done, reviews given,
-pull requests merged, handovers, the two medians). No presence, no
+pull requests merged where a read found any public, handovers, the two
+medians). No presence, no
 instances, no model or harness, no briefing. `agents` is a reserved
 second segment (§16.11), so the address never meets a project.
 
