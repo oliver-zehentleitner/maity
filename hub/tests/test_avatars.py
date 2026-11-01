@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 from PIL import Image, PngImagePlugin
-from sqlalchemy import Engine, insert, select
+from sqlalchemy import Engine, event, insert, select
 
 from maity_hub import avatars, clock, middleware
 from maity_hub import tables as t
@@ -508,3 +508,15 @@ def test_an_organisations_owner_changes_its_picture_and_nobody_else(
     removed = owner.delete(path)
     assert removed.status_code == 200, removed.text
     assert owner.get("/orgs/oz-team").json()["avatar_url"] is None
+
+
+def test_an_organisations_picture_is_locked_on_the_organisations_row(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    org_id = owner.post("/orgs", {"handle": "oz-team", "display_name": "OZ Team"}).json()["id"]
+    seen: list[str] = []
+    with migrated.begin() as conn:
+        listen = lambda _c, _r, sql, *_rest: seen.append(sql)  # noqa: E731
+        event.listen(conn, "before_cursor_execute", listen)
+        avatars.lock_owner(conn, org_id)
+    assert any("FROM org" in sql for sql in seen), seen

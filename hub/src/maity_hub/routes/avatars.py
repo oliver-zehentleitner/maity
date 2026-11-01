@@ -1,4 +1,5 @@
-"""`/avatars/{id}`, `/me/avatar` and `/agents/{id}/avatar` (docs/api.md §6.10).
+"""`/avatars/{id}`, `/me/avatar`, `/agents/{id}/avatar` and `/orgs/{org}/avatar` (docs/api.md §6.10,
+§6.26).
 
 `GET` serves the stored picture to the callers §6.10 lists and is `not_found` for
 everyone else, before `If-None-Match` is compared. `PUT` takes the raw image, has it
@@ -137,6 +138,8 @@ def _org_avatar(request: Request, caller: HumanCaller, org: str) -> JSONResponse
         org_id = orgs.find(conn, human_id, org)[0].id
 
     def check(conn: Connection) -> None:
+        if orgs.lock(conn, org_id) is None:  # deleted meanwhile
+            raise not_found()
         if orgs.find(conn, human_id, org)[1] != "owner":
             raise orgs.org_role()
 
