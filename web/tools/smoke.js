@@ -1896,10 +1896,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const orgCtx = { members: [
       { id: "o1", kind: "human", display_name: "Owner One", trust: "owner", role: "manager", areas: [] },
       { id: "a1", kind: "human", display_name: "Admin One", trust: "admin", role: "coder", areas: [] },
-      { id: "g1", kind: "human", display_name: "Guest One", trust: "guest", role: "tester", areas: [] }],
-      memberById: {}, link: (view, id) => "/owner/project/" + view + "/" + id, nameOf: (id) => id };
+      { id: "g1", kind: "human", display_name: "Guest One", trust: "guest", role: "tester", areas: [] },
+      { id: "ag1", kind: "agent", handle: "ag", display_name: "Agent One", trust: "member", role: "coder", areas: [], presence: "online", reports_to: "o1",
+        instances: [{ id: "live" }, { id: "rest", dormant: { since: "2026-11-01T10:00:00Z" } }, { id: "gone", revoked_at: "2026-11-01T09:00:00Z" }] }],
+      memberById: {}, link: (...parts) => "/owner/project/" + parts.join("/"), nameOf: (id) => id };
     orgCtx.members.forEach((m) => { orgCtx.memberById[m.id] = m; });
     const t = win.Maity.org && win.Maity.org.drawTree ? win.Maity.org.drawTree(orgCtx) : null;
+    const orgLinks = t ? t.querySelectorAll(".org-instances a.member-instance") : [];
+    expect(JSON.stringify(orgLinks.map((a) => a.textContent)) === JSON.stringify(["#live", "#rest"])
+      && orgLinks[0].getAttribute("href").includes("members/ag1/sessions/live") && orgLinks[0].getAttribute("aria-label") === "Sessions of @ag#live",
+      "org: an agent's live instances are links to their Sessions, a revoked one is not listed " + orgLinks.map((a) => a.getAttribute("href")));
+    const orgAsleep = t ? t.querySelectorAll(".org-instance") : [];
+    expect(orgAsleep.length === 2 && !orgAsleep[0].querySelector(".member-dormant") && orgAsleep[1].querySelector(".member-dormant"),
+      "org: only the dormant instance says it is dormant");
+    expect(t && t.querySelectorAll(".org-node").filter((n) => n.querySelector(".org-instances")).length === 1, "org: a human lists no instances");
     const depthOf = (name) => { let d = 0; let n = t && t.querySelectorAll(".org-node").find((x) => text(x).includes(name)); while (n && n !== t) { if (n.tagName === "UL") d += 1; n = n.parentNode; } return d; };
     expect(t && depthOf("Owner One") === 0 && depthOf("Admin One") === 1 && depthOf("Guest One") === 2,
       "org: owner, then admin, then guest, each a level deeper, the empty member level leaving no step " + [depthOf("Owner One"), depthOf("Admin One"), depthOf("Guest One")]);
@@ -9879,6 +9889,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     byId("admin-sign-in-code").value = "000000";
     confirmForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
     expect(text(byId("admin-sign-in-code-error")) === "That code is wrong or was used." && byId("admin-sign-in-code").getAttribute("aria-invalid") === "true", "sign-in: a wrong code is said at the field");
+    // Too many wrong codes: the wait is said at the field, in minutes.
+    const siPost = win.Maity.api.post;
+    win.Maity.api.post = async () => { throw Object.assign(new Error("rate limited"), { code: "rate_limited", details: { retry_after: 120 } }); };
+    confirmForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    expect(text(byId("admin-sign-in-code-error")) === "Too many tries; wait about 2 min.", "sign-in: too many wrong codes say the wait at the field");
+    win.Maity.api.post = siPost;
     byId("admin-sign-in-code").value = "123 456";
     confirmForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
     const siOn = await win.Maity.api.get("/admin/settings/sign-in");

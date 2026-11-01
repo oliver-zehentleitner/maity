@@ -3890,6 +3890,14 @@ def members_step(run: Run, page: Page) -> None:
     page.locator("main nav.team-tabs").get_by_role("link", name="Organisation", exact=True).click()
     owner_node = page.locator(".org-tree > li", has=page.locator(".org-node strong", has_text="Owner"))
     expect(owner_node.locator("ul .org-node")).to_contain_text("E2E Agent")
+    # Each of the agent's instances is a link to its Sessions on the member's page.
+    instance_link = owner_node.locator("ul .org-node .org-instances a.member-instance").first
+    expect(instance_link).to_have_text(re.compile(r"^#\S+$"))
+    instance_link.click()
+    expect(page).to_have_url(re.compile(r"/members/agt-[0-9a-z]+/sessions/[0-9a-z]+$"))
+    expect(page.locator(".member-instances li.chosen")).to_have_count(1)
+    page.go_back()
+    expect(page.locator("main .org-tree")).to_be_visible()
     view_tab(page, "Members").click()
     # The owner reporting to the agent would close a circle: refused before it is sent.
     table.get_by_role("button", name="Manage Owner").click()

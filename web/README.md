@@ -585,8 +585,9 @@ too.
    `reports_to` and area ownership on every render; a member placed by
    neither stands at its trust's level (owners at the top, then admins,
    members and guests, each a level deeper, a level nobody holds left out), the policy's preset
-   beside its heading; a member event reads the members again and redraws
-   it in place.
+   beside its heading; each agent lists its instances as links to their
+   Sessions on its page, and a dormant one says so; a member event reads the
+   members again and redraws it in place.
 6. **Chat** (`/<owner>/<slug>/chat`, `/<owner>/<slug>/chat/<agent-id>` or `/<group chat id>`, `/new`): two panes,
    like a messenger. On the left, under the heading and **New group
    chat**, the human's chats, one per agent they own in the project,
