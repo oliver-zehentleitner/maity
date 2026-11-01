@@ -40,7 +40,7 @@ delay a long-poll's wake-up, and it fits the single replica V1 runs.
 - A separate probe process or cron job: one more thing to deploy and
   supervise for work that takes milliseconds every few minutes.
 
-## A report's observation wakes an admin only on a mismatch, and a closed card's holder neither
+## A report's observation wakes an admin only on a mismatch, and a closed card wakes nobody once merged
 
 **Id:** 75682de7-9b2e-415b-acf9-8339bc157231
 **Type:** decision
@@ -49,7 +49,7 @@ delay a long-poll's wake-up, and it fits the single replica V1 runs.
 **Source:** card tsk-cq0mzfrbswb7, observed on production on 2026-11-01 after #1083 reached old cards; `events.wakes`, `readable_by`, docs/api.md §8.2
 **Revisit when:** an admin has to act on an observation without a mismatch
 
-The sweep of old cards after #1083 woke every admin about every 2 seconds, one event per card. Each event was a real change (`open` to `merged`), so comparing with the last reading did not help, and the same audience also woke the admins on every report and every change of `checks`. `probe_observed` now names `trust:admin` only with `mismatch: true`, and the holder unless the card is closed without a mismatch; an event can then have no audience at all. The observation of the open release keeps its audience: it is few events, and a release waits on them.
+The sweep of old cards after #1083 woke every admin about every 2 seconds, one event per card. Each event was a real change (`open` to `merged`), so comparing with the last reading did not help, and the same audience also woke the admins on every report and every change of `checks`. `probe_observed` now names `trust:admin` only with `mismatch: true`. A closed card names nobody without a mismatch or with its pull request merged: the same sweep showed `mismatch: true` on a done card whose head moved after its last report and was merged, which nobody has to act on. It stays readable on the card's report. A closed card whose pull request is missing or closed unmerged still wakes. An event can have no audience at all. The observation of the open release keeps its audience: it is few events, and a release waits on them.
 
 **Reason:** owners and admins read every event without being named, and being named is what wakes them, so the dashboard and the event list lose nothing. A merge already reaches who must act as `task_merged`.
 

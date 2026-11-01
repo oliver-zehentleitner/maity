@@ -443,10 +443,25 @@ def test_an_observation_of_a_closed_card_wakes_nobody_without_a_mismatch(
     assert event.payload["mismatch"] is False
 
 
+def test_a_merged_head_other_than_the_reported_on_a_closed_card_wakes_nobody_and_stays_readable(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    github.pull(7, head=OTHER, state="closed", merged=True)
+    _, card_id = _reported_card(owner, make_client)
+    with migrated.begin() as conn:
+        conn.execute(update(t.card).where(t.card.c.id == card_id).values(status="done"))
+    probe.observe_report(migrated, READER, card_id)
+    [event] = _events(migrated, "probe_observed")
+    assert event.audience == []
+    report = owner.get(f"/projects/maintainer/maity/tasks/{card_id}").json()["report"]
+    assert (report["mismatch"], report["observed"]["pr_state"]) == (True, "merged")
+    assert report["observed"]["pr_head_sha"] == OTHER
+
+
 def test_an_observation_of_a_closed_card_with_a_mismatch_still_reaches_who_must_act(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
 ) -> None:
-    github.pull(7, head=OTHER)
+    github.answers["/repos/acme/maity/pulls/7"] = None
     github.branch("agent-b/probe")
     agent, card_id = _reported_card(owner, make_client)
     with migrated.begin() as conn:
