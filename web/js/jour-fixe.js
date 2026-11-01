@@ -1,11 +1,13 @@
 // The jour fixe (docs/api.md §20): the team's regular look at how it works.
-// In Project settings a human with project:admin sets the series (§20.1) and
-// the moderator order (§20.2). The view /<owner>/<slug>/jour-fixe lists the
-// rounds, the next slot and the open round, and starts one by hand; a
-// round's view (/<owner>/<slug>/jour-fixe/<id>, §16.11) shows its phase, its
-// deadlines, who was asked and who was absent, the statement, the exchange
-// and the report with its triage, read as every member may (§20.7). Answers
-// are never shown here: they stay with their readers (§20.3).
+// The series (§20.1) and their moderators are kept in Project settings
+// (js/jour-fixe-series.js). The view /<owner>/<slug>/jour-fixe lists the
+// rounds per series with its topic, the next slot, the open round, and starts
+// a round of a series by hand for its keepers and moderators; a round's view
+// (/<owner>/<slug>/jour-fixe/<id>, §16.11) shows its phase, its deadlines, who
+// was asked and who was absent, the statement, the exchange and the report
+// with its triage, read as every member may (§20.7). A series of one owner is
+// that owner's own: whatever the hub sends of it is shown, nothing is guessed.
+// Answers are never shown here: they stay with their readers (§20.3).
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -13,9 +15,6 @@ window.Maity = window.Maity || {};
 (function (M) {
   const { h, append, clear, formatTime } = M.dom;
 
-  const WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
-  const DAY_WORDS = { mon: () => M.t("jf.day.mon"), tue: () => M.t("jf.day.tue"), wed: () => M.t("jf.day.wed"), thu: () => M.t("jf.day.thu"),
-    fri: () => M.t("jf.day.fri"), sat: () => M.t("jf.day.sat"), sun: () => M.t("jf.day.sun") };
   const STATUS = {
     answering: () => M.t("jf.status.answering"), statement: () => M.t("jf.status.statement"), exchange: () => M.t("jf.status.exchange"),
     reporting: () => M.t("jf.status.reporting"), reported: () => M.t("jf.status.reported"), skipped: () => M.t("jf.status.skipped"), missed: () => M.t("jf.status.missed"),
@@ -30,195 +29,9 @@ window.Maity = window.Maity || {};
     rejoinder: () => M.t("jf.step.rejoinder"), further: () => M.t("jf.step.further") };
   const TRIAGE = { decided: () => M.t("jf.triage.decided"), to_owner: () => M.t("jf.triage.to_owner") };
   const START = { jour_fixe_open: () => M.t("jf.start.open"), project_closed: () => M.t("jf.skip.project_closed"),
-    no_moderator: () => M.t("jf.skip.no_moderator"), too_few: () => M.t("jf.skip.too_few"), rate_limited: () => M.t("jf.start.rate_limited") };
+    no_moderator: () => M.t("jf.skip.no_moderator"), too_few: () => M.t("jf.skip.too_few"), rate_limited: () => M.t("jf.start.rate_limited"),
+    circle_owner_gone: () => M.t("jfs.refused.circle_owner_gone"), not_series_keeper: () => M.t("jfs.refused.not_series_keeper") };
   const words = (table, key) => (Object.hasOwn(table, key) ? table[key]() : String(key || ""));
-  const MANAGERS = ["owner", "admin"];
-
-  // ---- Project settings: the series (§20.1) ------------------------------
-
-  // policy.jour_fixe as one object, replaced whole by the PATCH (§20.1).
-  function settingsForm(ctx, save) {
-    const jf = ctx.project.policy.jour_fixe || null;
-    const r = (jf && jf.recurrence) || { freq: "weekly", interval: 1, weekdays: ["mon"] };
-    const id = (k) => "jf-" + k;
-    const enabled = h("input", { type: "checkbox", id: id("enabled") });
-    enabled.checked = !!(jf && jf.enabled);
-    const freq = h("select", { id: id("freq") }, [["daily", M.t("jf.freq.daily")], ["weekly", M.t("jf.freq.weekly")], ["monthly", M.t("jf.freq.monthly")]]
-      .map(([f, label]) => h("option", { value: f }, label)));
-    freq.value = r.freq;
-    const interval = h("input", { id: id("interval"), type: "number", min: "1", max: "8", step: "1" });
-    interval.value = String(r.interval || 1);
-    const days = WEEKDAYS.map((d) => {
-      const box = h("input", { type: "checkbox", id: id("day-" + d), value: d });
-      box.checked = (r.weekdays || []).includes(d);
-      return [box, h("label", { class: "check", for: id("day-" + d) }, box, " " + DAY_WORDS[d]()), d];
-    });
-    const monthBy = h("select", { id: id("month-by") }, h("option", { value: "day" }, M.t("jf.month.by_day")), h("option", { value: "weekday" }, M.t("jf.month.by_weekday")));
-    monthBy.value = r.month_weekday ? "weekday" : "day";
-    const monthDay = h("input", { id: id("month-day"), type: "number", min: "1", max: "31", step: "1" });
-    monthDay.value = String(r.month_day || 1);
-    const ordinal = h("select", { id: id("ordinal") }, [["1", M.t("jf.ordinal.1")], ["2", M.t("jf.ordinal.2")], ["3", M.t("jf.ordinal.3")], ["4", M.t("jf.ordinal.4")], ["-1", M.t("jf.ordinal.last")]]
-      .map(([v, l]) => h("option", { value: v }, l)));
-    ordinal.value = String((r.month_weekday || {}).ordinal || 1);
-    const monthWeekday = h("select", { id: id("month-weekday") }, WEEKDAYS.map((d) => h("option", { value: d }, DAY_WORDS[d]())));
-    monthWeekday.value = (r.month_weekday || {}).weekday || "mon";
-    const time = h("input", { id: id("time"), type: "time" });
-    time.value = (jf && jf.time) || "";
-    const zones = typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [];
-    const zoneList = h("datalist", { id: id("zones") }, zones.map((z) => h("option", { value: z })));
-    const zone = h("input", { id: id("timezone"), list: id("zones"), autocomplete: "off", spellcheck: "false" });
-    zone.value = (jf && jf.timezone) || (Intl.DateTimeFormat().resolvedOptions().timeZone || "");
-    const live = (ctx.members || []).filter((x) => !x.removed_at);
-    const moderator = h("select", { id: id("moderator") }, h("option", { value: "admin_agent" }, M.t("jf.moderator.admin_agent")),
-      live.map((x) => h("option", { value: x.id }, "@" + (x.handle || x.id))));
-    moderator.value = (jf && jf.moderator) || "admin_agent";
-    const num = (k, lo, hi, def) => {
-      const input = h("input", { id: id(k), type: "number", min: String(lo), max: String(hi), step: "1" });
-      input.value = String(jf && jf[k] !== undefined ? jf[k] : def);
-      return input;
-    };
-    const answerWin = num("answer_window_minutes", 30, 1440, 120);
-    const stepWin = num("step_window_minutes", 30, 1440, 120);
-    const reportWin = num("report_window_hours", 1, 72, 12);
-    const reason = h("input", { id: id("reason"), placeholder: M.t("jf.reason.placeholder") });
-    const error = h("p", { class: "field-error", id: id("error"), role: "alert" });
-    // The hub's refusals at the field each names (policy.jour_fixe.<path>, §20.1).
-    const fieldErrors = {};
-    const at = (path, input) => {
-      const e = h("p", { class: "field-error", id: id(path.replace(/\W/g, "-")) + "-error", role: "alert" });
-      fieldErrors["policy.jour_fixe." + path] = [e, input];
-      input.setAttribute("aria-describedby", e.id);
-      return e;
-    };
-    const FIELD_WORDS = { required: () => M.t("jf.field.required"), format: () => M.t("jf.field.format"), unknown_timezone: () => M.t("jf.field.unknown_timezone"),
-      not_a_member: () => M.t("jf.field.not_a_member"), out_of_range: () => M.t("jf.field.out_of_range"), one_of: () => M.t("jf.field.one_of"),
-      not_for_freq: () => M.t("jf.field.not_for_freq"), unknown: () => M.t("jf.field.unknown"), invalid: () => M.t("jf.field.invalid") };
-    function atFields(err) {
-      Object.values(fieldErrors).forEach(([e]) => { e.textContent = ""; });
-      const fields = err.code === "invalid" && err.details && err.details.fields;
-      if (!fields) return false;
-      let first = null;
-      // A refusal of a path with no field here (policy.jour_fixe.recurrence, …) is named in the status line.
-      const rest = [];
-      Object.entries(fields).forEach(([path, why]) => {
-        const said = Object.hasOwn(FIELD_WORDS, why) ? FIELD_WORDS[why]() : why;
-        const hit = fieldErrors[path];
-        if (!hit) { rest.push(path.replace(/^policy\.jour_fixe\./, "") + ": " + said); return; }
-        hit[0].textContent = said;
-        if (!first) first = hit[1];
-      });
-      if (first) first.focus();
-      if (!first && !rest.length) return false;
-      return [first ? M.t("settings.see_fields") : null].concat(rest).filter(Boolean).join("; ");
-    }
-    const weekly = h("div", { class: "jf-weekly" }, h("label", { for: id("interval") }, M.t("jf.interval")), interval, at("recurrence.interval", interval),
-      h("fieldset", { class: "jf-days" }, h("legend", null, M.t("jf.weekdays")), days.map((d) => d[1])), at("recurrence.weekdays", days[0][0]));
-    const monthly = h("div", { class: "jf-monthly" }, h("label", { for: id("month-by") }, M.t("jf.month.by")), monthBy,
-      h("label", { for: id("month-day") }, M.t("jf.month.day")), monthDay, at("recurrence.month_day", monthDay),
-      h("label", { for: id("ordinal") }, M.t("jf.month.ordinal")), ordinal, h("label", { for: id("month-weekday") }, M.t("jf.month.weekday")), monthWeekday,
-      at("recurrence.month_weekday", ordinal));
-    const shape = () => {
-      weekly.hidden = freq.value !== "weekly";
-      monthly.hidden = freq.value !== "monthly";
-      monthDay.hidden = monthBy.value !== "day";
-      ordinal.hidden = monthWeekday.hidden = monthBy.value !== "weekday";
-    };
-    freq.addEventListener("change", shape);
-    monthBy.addEventListener("change", shape);
-    shape();
-    function body() {
-      const rec = { freq: freq.value };
-      if (freq.value === "weekly") { rec.interval = Number(interval.value); rec.weekdays = days.filter((d) => d[0].checked).map((d) => d[2]); }
-      if (freq.value === "monthly") {
-        if (monthBy.value === "day") rec.month_day = Number(monthDay.value);
-        else rec.month_weekday = { ordinal: Number(ordinal.value), weekday: monthWeekday.value };
-      }
-      return { enabled: enabled.checked, recurrence: rec, time: time.value || null, timezone: zone.value.trim() || null, moderator: moderator.value,
-        answer_window_minutes: Number(answerWin.value), step_window_minutes: Number(stepWin.value), report_window_hours: Number(reportWin.value) };
-    }
-    return h("form", {
-      class: "jf-settings project-form",
-      onsubmit: (e) => {
-        e.preventDefault();
-        error.textContent = "";
-        const b = body();
-        if (b.enabled && (!b.time || !b.timezone)) { error.textContent = M.t("jf.error.time"); (b.time ? zone : time).focus(); return; }
-        if (b.recurrence.freq === "weekly" && !b.recurrence.weekdays.length) { error.textContent = M.t("jf.error.weekdays"); days[0][0].focus(); return; }
-        if (!reason.value.trim()) { reason.focus(); return; }
-        save({ policy: { jour_fixe: b }, reason: reason.value.trim() }, M.t("jf.title"), atFields);
-      },
-    },
-    h("h2", { class: "panel-title" }, M.t("jf.title")),
-    h("p", { class: "hint" }, M.t("jf.settings.hint")),
-    h("p", { class: "check" }, enabled, h("label", { for: id("enabled") }, " " + M.t("jf.enabled"))),
-    h("label", { for: id("freq") }, M.t("jf.freq")), freq, at("recurrence.freq", freq), weekly, monthly,
-    h("label", { for: id("time") }, M.t("jf.time")), time, at("time", time),
-    h("label", { for: id("timezone") }, M.t("jf.timezone")), zone, zoneList, at("timezone", zone),
-    h("label", { for: id("moderator") }, M.t("jf.moderator")), moderator, at("moderator", moderator),
-    h("label", { for: id("answer_window_minutes") }, M.t("jf.answer_window")), answerWin, at("answer_window_minutes", answerWin),
-    h("label", { for: id("step_window_minutes") }, M.t("jf.step_window")), stepWin, at("step_window_minutes", stepWin),
-    h("label", { for: id("report_window_hours") }, M.t("jf.report_window")), reportWin, at("report_window_hours", reportWin),
-    h("label", { for: id("reason") }, M.t("jf.reason")), reason, error,
-    h("div", { class: "actions" }, h("button", { type: "submit" }, M.t("jf.save")),
-      jf ? h("button", { type: "button", onclick: () => {
-        if (!reason.value.trim()) { reason.focus(); return; }
-        save({ policy: { jour_fixe: null }, reason: reason.value.trim() }, M.t("jf.title"));
-      } }, M.t("jf.remove")) : null));
-  }
-
-  // The moderator order (§20.2): the admin agents, the first present one
-  // moderates; an explicit order put first, the rest by time online.
-  async function moderatorsPart(ctx) {
-    const box = h("section", { class: "jf-moderators", "aria-labelledby": "jf-moderators-title" });
-    const status = M.statusLine();
-    append(box, h("h3", { id: "jf-moderators-title" }, M.t("jf.moderators.title")), h("p", { class: "hint" }, M.t("jf.moderators.hint")), status.el);
-    let state;
-    try {
-      state = await M.api.get(ctx.base + "/jour-fixe");
-    } catch (err) {
-      status.fail(M.t("jf.unread"), err);
-      return box;
-    }
-    let order = (state.moderators || []).map((x) => x.member_id);
-    let loaded = order.slice();
-    // Whether an explicit order is stored, or the default by time online (§20.2).
-    let explicit = Array.isArray((ctx.project.policy || {}).jour_fixe_moderators);
-    const kind = h("p", { class: "muted jf-order-kind" });
-    const sayKind = () => { kind.textContent = explicit ? M.t("jf.moderators.explicit") : M.t("jf.moderators.default"); };
-    sayKind();
-    const list = h("ol", { class: "jf-order" });
-    const reason = h("input", { id: "jf-order-reason", placeholder: M.t("jf.reason.placeholder") });
-    const draw = () => append(clear(list), order.length ? order.map((mid, i) => h("li", null, M.dom.memberRef(ctx, mid), " ",
-      h("button", { type: "button", class: "small", disabled: i === 0 ? true : null, "aria-label": M.t("jf.moderators.up", { who: M.dom.handleOf(ctx, { id: mid }) || mid }),
-        onclick: () => { [order[i - 1], order[i]] = [order[i], order[i - 1]]; draw(); } }, M.t("jf.up")),
-      h("button", { type: "button", class: "small", disabled: i === order.length - 1 ? true : null, "aria-label": M.t("jf.moderators.down", { who: M.dom.handleOf(ctx, { id: mid }) || mid }),
-        onclick: () => { [order[i + 1], order[i]] = [order[i], order[i + 1]]; draw(); } }, M.t("jf.down"))))
-      : h("li", { class: "muted" }, M.t("jf.moderators.none")));
-    draw();
-    const put = async (value) => {
-      // Saving the order shown unchanged would freeze the default as an explicit list.
-      if (value !== null && JSON.stringify(value) === JSON.stringify(loaded)) { status.done(); append(status.el, h("span", null, M.t("jf.moderators.unchanged"))); return; }
-      if (value === null && !explicit) { status.done(); append(status.el, h("span", null, M.t("jf.moderators.unchanged"))); return; }
-      if (!reason.value.trim()) { reason.focus(); return; }
-      status.busy(M.t("jf.moderators.saving"));
-      try {
-        const answer = await M.api.put(ctx.base + "/jour-fixe/moderators", { order: value, reason: reason.value.trim() });
-        order = (answer.moderators || []).map((x) => x.member_id);
-        loaded = order.slice();
-        explicit = value !== null;
-        sayKind();
-        draw();
-        status.done();
-        append(status.el, h("span", { class: "ok" }, M.t("jf.moderators.saved")));
-      } catch (err) {
-        status.fail(M.t("jf.moderators.not_saved"), err);
-      }
-    };
-    append(box, kind, list, h("label", { for: "jf-order-reason" }, M.t("jf.reason")), reason,
-      h("div", { class: "actions" }, h("button", { type: "button", onclick: () => put(order.slice()) }, M.t("jf.moderators.save")),
-        h("button", { type: "button", onclick: () => put(null) }, M.t("jf.moderators.reset"))));
-    return box;
-  }
 
   // ---- The view: rounds, the next slot, a start by hand -------------------
 
@@ -229,6 +42,47 @@ window.Maity = window.Maity || {};
       h("a", { href: roundLink(ctx, r) }, formatTime(when)), " · ", words(STATUS, r.status),
       r.skip_reason ? " · " + words(SKIP, r.skip_reason) : "",
       r.missed_slots ? " · " + M.t("jf.missed_slots", { count: r.missed_slots }) : "");
+  }
+
+  // A refusal to start: the hub's 409 code, or its reason (a series whose owner left, §20.1).
+  const startWords = (err) => {
+    const key = [err.code, (err.details || {}).reason].find((k) => k && Object.hasOwn(START, k));
+    return key ? { message: START[key]() } : err;
+  };
+
+  // One series: its topic, circle and schedule, the next slot, the open round, a start by hand, then its rounds.
+  function seriesBlock(ctx, s, redraw) {
+    const series = M.jourFixeSeries;
+    const list = h("ul", { class: "jf-rounds" });
+    const none = h("p", { class: "muted" }, M.t("jf.rounds.none"));
+    const box = h("section", { class: "jf-series-block", "data-series": s.id, "aria-labelledby": "jf-series-" + s.id }, h("h3", { class: "jf-series-title", id: "jf-series-" + s.id }, s.topic || s.id));
+    if (s.circle) append(box, h("p", { class: "muted" }, series.circleText(ctx, s), s.enabled ? " · " + series.scheduleText(s) : ""));
+    append(box, h("p", { class: "jf-next" }, s.enabled
+      ? M.t("jf.next", { at: s.next_at ? formatTime(s.next_at) : M.t("jf.next.none") }) : M.t("jf.not_scheduled")));
+    append(box, series.participation(ctx, s, redraw));
+    const open = s.current_round;
+    if (open) append(box, h("p", { class: "jf-current" }, M.t("jf.current"), " ", h("a", { href: roundLink(ctx, open) }, words(STATUS, open.status))));
+    if (series.mayStart(ctx, s) && ctx.project.state !== "archived") {
+      const startStatus = M.statusLine();
+      const reason = h("input", { id: "jf-start-reason-" + s.id, placeholder: M.t("jf.reason.placeholder") });
+      append(box, h("form", {
+        class: "inline-form jf-start",
+        "data-series": s.id,
+        onsubmit: async (e) => {
+          e.preventDefault();
+          if (!reason.value.trim()) { reason.focus(); return; }
+          startStatus.busy(M.t("jf.start.busy"));
+          try {
+            const round = await M.api.post(ctx.base + "/jour-fixe/series/" + encodeURIComponent(s.id) + "/rounds", { reason: reason.value.trim() });
+            M.route.go(roundLink(ctx, round));
+          } catch (err) {
+            startStatus.fail(M.t("jf.start.failed"), startWords(err));
+          }
+        },
+      }, h("label", { for: reason.id }, M.t("jf.start.reason")), reason, h("button", { type: "submit" }, M.t("jf.start")), startStatus.el));
+    }
+    append(box, list, none);
+    return { box, add: (r) => { append(list, roundLine(ctx, r)); none.hidden = true; } };
   }
 
   async function view(ctx, root, args) {
@@ -243,9 +97,26 @@ window.Maity = window.Maity || {};
       return;
     }
     status.done();
-    const policy = state.policy;
+    const all = state.series || [];
+    const redraw = () => { clear(root); view(ctx, root, args); };
+    // Rounds go to their series' block (§20.7: the round names it); one of a series gone gets a block of its topic.
+    const blocks = new Map();
+    let privates = 0;
+    const holder = h("div", { class: "jf-series-blocks" });
+    const blockFor = (id, s) => {
+      if (!blocks.has(id)) { const b = seriesBlock(ctx, s, redraw); blocks.set(id, b); append(holder, b.box); }
+      return blocks.get(id);
+    };
+    all.forEach((s) => {
+      // An owner's series an admin may not read: that it exists, its schedule, nothing of it.
+      if (!M.jourFixeSeries.isPrivate(s)) { blockFor(s.id, s); return; }
+      privates += 1;
+      append(holder, h("p", { class: "muted jf-private", "data-series": s.id }, M.t("jfs.private", { who: M.jourFixeSeries.handle(ctx, s.circle_owner) }), " ",
+        M.jourFixeSeries.scheduleText(s)));
+    });
+    const place = (r) => blockFor(r.series_id || "", { id: r.series_id || "", topic: r.topic || null }).add(r);
+    (rounds.items || []).forEach(place);
     // The rounds are paged (§1.4, §20.9): older ones by the hub's cursor.
-    const list = h("ul", { class: "jf-rounds" }, (rounds.items || []).map((r) => roundLine(ctx, r)));
     const more = h("div", { class: "actions" });
     const moreStatus = M.statusLine();
     function showMore(cursor) {
@@ -255,38 +126,16 @@ window.Maity = window.Maity || {};
         moreStatus.busy(M.t("jf.rounds.reading"));
         try {
           const page = await M.api.get(ctx.base + "/jour-fixe/rounds?cursor=" + encodeURIComponent(cursor));
-          append(list, (page.items || []).map((r) => roundLine(ctx, r)));
+          (page.items || []).forEach(place);
           moreStatus.done();
           showMore(page.next_cursor);
         } catch (err) { moreStatus.fail(M.t("jf.unread"), err); append(more, moreStatus.el); }
       } }, M.t("jf.rounds.more")), moreStatus.el);
     }
-    const startable = MANAGERS.includes(ctx.trust) && ctx.project.state !== "archived";
-    const startStatus = M.statusLine();
-    const reason = h("input", { id: "jf-start-reason", placeholder: M.t("jf.reason.placeholder") });
-    const start = startable ? h("form", {
-      class: "inline-form jf-start",
-      onsubmit: async (e) => {
-        e.preventDefault();
-        if (!reason.value.trim()) { reason.focus(); return; }
-        startStatus.busy(M.t("jf.start.busy"));
-        try {
-          const round = await M.api.post(ctx.base + "/jour-fixe/rounds", { reason: reason.value.trim() });
-          M.route.go(roundLink(ctx, round));
-        } catch (err) {
-          startStatus.fail(M.t("jf.start.failed"), Object.hasOwn(START, err.code) ? { message: START[err.code]() } : err);
-        }
-      },
-    }, h("label", { for: "jf-start-reason" }, M.t("jf.start.reason")), reason, h("button", { type: "submit" }, M.t("jf.start")), startStatus.el) : null;
     append(root,
-      h("p", null, policy && policy.enabled
-        ? M.t("jf.next", { at: state.next_at ? formatTime(state.next_at) : M.t("jf.next.none") })
-        : M.t("jf.not_scheduled")),
       ctx.canAdmin && ctx.me.kind === "human" ? h("p", { class: "hint" }, M.tn("jf.settings_link", { link: h("a", { href: ctx.link("settings") }, M.t("nav.settings")) })) : null,
-      state.current_round ? h("p", { class: "jf-current" }, M.t("jf.current"), " ", h("a", { href: roundLink(ctx, state.current_round) }, words(STATUS, state.current_round.status))) : null,
-      start,
-      h("h3", null, M.t("jf.rounds")),
-      (rounds.items || []).length ? list : h("p", { class: "muted" }, M.t("jf.rounds.none")), more);
+      holder,
+      blocks.size || privates ? null : h("p", { class: "muted" }, M.t("jfs.none")), more);
     showMore(rounds.next_cursor);
   }
 
@@ -343,6 +192,7 @@ window.Maity = window.Maity || {};
     const due = r.status === "answering" ? r.answers_close_at : r.status === "reporting" ? r.report_due_at : open ? open.closes_at : null;
     append(root,
       h("h2", null, M.t("jf.round.title", { at: formatTime(r.opened_at || r.scheduled_for) })),
+      r.topic ? h("p", { class: "jf-topic-line" }, M.t("jf.round.topic", { topic: r.topic })) : null,
       h("p", { class: "jf-phase" }, words(STATUS, r.status), r.skip_reason ? " · " + words(SKIP, r.skip_reason) : "",
         due ? " · " + M.t("jf.due", { at: formatTime(due) }) : ""),
       r.moderator && r.moderator.member_id ? h("p", null, M.t("jf.moderated_by"), " ", M.dom.memberRef(ctx, r.moderator.member_id)) : null,
@@ -360,6 +210,5 @@ window.Maity = window.Maity || {};
     if (M.jourFixeAct) append(root, await M.jourFixeAct.parts(ctx, r, () => { clear(root); roundView(ctx, root, id); }));
   }
 
-  M.jourFixe = { settingsForm, moderatorsPart };
   M.views.jourFixe = view;
 })(window.Maity);
