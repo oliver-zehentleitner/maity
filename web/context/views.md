@@ -300,7 +300,10 @@ optional grouping by project (sections in the switcher's order, each a
 heading with its own list) sit in the toolbar; both are kept only for
 this tab's session and apply to `/all` only, never to a project's own
 inbox. The entry opened first and the one opened after an answer follow
-the order on screen, filter and grouping included.
+the order on screen, filter and grouping included. The filter stays over
+a reload of the list and says what it hides, with one click to lift it;
+resetting it at each reload was rejected, as it would undo a choice the
+person just made.
 
 **Reason:** a link may not sit inside a button, and the head is a button
 (it opens the entry); so the badge stands beside it. A screen reader
@@ -2861,7 +2864,7 @@ slot in place keeps the focus and the context where the human was.
 **Evidence:** confirmed
 **Source:** docs/api.md §2.8.2 (the second-factor session reaches only `GET /auth/session`, the verify, the mail's resend and the logout), §2.8.7 and §2.8.8 after the contract #925 and the hub's first part #943 (`via: email`, `mail`, the link `/sign-in/second-factor/email#<token>` bound to the signing-in browser, the step-up by a mailed code); the coordinator's card tsk-ekpb0pvgw4bh and the lead's answers of 2026-11-01 (the step for both ways in this change, TOTP enrolment and the security page on tsk-94jtz06aps4b; `address_hint` to come with the hub's second part, "your address" until then; Admin → Sign-in in a second web change); the page's shape is the implementer's, 2026-11-01
 **See:** views.md#a-sensitive-call-asks-for-the-password-or-a-code-where-it-stands-then-is-made-again — bddf61cb-f6a0-4290-891f-2f3b3006946d — as of 2026-11-01
-**Revisit when:** the hub sends `address_hint` (drop "your address"), Admin → Sign-in can switch the mail factor on, TOTP enrolment gets its page (tsk-94jtz06aps4b), or the e2e gets a hub with a secret key and a mail catcher
+**Revisit when:** the hub sends `address_hint` (drop "your address"), TOTP enrolment gets its page (tsk-94jtz06aps4b), or the e2e gets a hub with a secret key and a mail catcher
 
 A session that owes the second factor (`GET /auth/session` answers
 `second_factor: "required"`) gets one page and nothing else
@@ -2880,6 +2883,13 @@ link instead. The step-up asks `GET /auth/second-factor` when the hub
 wants the factor: a human whose `via` there is `email` is mailed
 a code as the question opens, with Send again, and types it
 (`email_code`); everyone else keeps the app's code.
+The fixture's verify takes `email_token` at a step-up too, as it cannot
+tell the step from the step-up; harmless while the step-up sends only
+`email_code` (the hub never takes the token there, §2.8.8). A session
+state in the fixture was rejected for that one case.
+The e2e's second hub covers the TOTP step and the step-up (#1003), and a
+hub of its own the mail: the admin's switch, the link, the code and the
+step-up by mail.
 
 **Reason:** the dashboard had no second step at all, for TOTP neither;
 both ways run in the same second-factor session, so one page serves
@@ -4203,6 +4213,8 @@ a round (§20.7) sees that round nowhere here, since no listing is open to them.
 
 `/<owner>/<slug>/memory` is one tab for team, role and community memory, and the role memory moved there from Settings → Mine within the day it landed, so that there is one place. A slug `memory` is now reserved as every view's name is. Souls stand on the same page, for their owner only, read when opened; delete offers a reason in the row, not a browser dialog, because the reason is shown afterwards.
 
+The tab row's room on a phone, the argument of f9ef2098, was outweighed by one place for one store; a tab was accepted at that price.
+
 **Rejected alternatives:** keeping the role section on Mine beside the view: two places for one store. Three separate views: the reader asks what was written, not in which store.
 
 ## The landing editor keeps its own copy of the hub's list of agents, and smoke compares the two
@@ -4257,7 +4269,7 @@ A place another member filled is not offered, though the hub would answer `200` 
 
 The project's Settings offer every `done_authority` of §6.1 to a human admin, with a reason as for every policy field, so the rule can be set where it is read.
 
-**Rejected alternatives:** a dialog on drop that asks which signature: a second way to do what the menu does. A separate Sign button on every card: the card already has one menu for what can be done with it.
+**Rejected alternatives:** a dialog on drop that asks which signature: a second way to do what the menu does. A separate Sign button on every card: the card already has one menu for what can be done with it. Settings only through a preset: the rule would not be settable where it is read.
 
 ## The public page's form appears for the namespace owner, and its link cannot know the instance's switch
 
@@ -4274,6 +4286,8 @@ The project's Settings show **Public page** only to the human who owns the names
 
 **Rejected alternatives:** a hub field `page_served` on the project in this PR: a launch blocker should not wait for a contract change, and the card asks for the web. Fetching `?as=public` and telling the stored page from the app shell: guessing from HTML.
 
+The profile links' form is `novalidate`: a browser's bubble on one bad address would stop the whole save, and the hub's refusals are said in words at their fields.
+
 ## A proxy's action request shows the body twice: pretty-printed, and exactly as sent
 
 **Id:** 77f97db2-6696-4d9f-8c74-8e65065f7fdb
@@ -4286,7 +4300,33 @@ The inbox entry lists the method, path and query and the pretty-printed body, an
 
 **Reason:** the owner is approving the exact bytes the hub later compares. `JSON.parse` keeps only the last of a repeated key and rounds large numbers, so a pretty-printed body alone could show something other than what the go allows; a proxy is the one writing that text.
 
-A body whose parsed form differs from its text (compared without the white space between tokens) opens **Exactly as sent** and says so; an escape or a moved key counts too, so a harmless difference can warn. Control, format and separator characters, the default-ignorable ones and the blank braille cell (bidi overrides, zero-width characters, no-break spaces, fillers among them) appear as a marked `[U+XXXX]` in the method, path, query and both bodies, with a sentence above them, also when the body carries them as a JSON escape. Not `\uXXXX`: a body can hold those six plain characters, with another SHA-256. Someone who is not the owner keeps **Later**, which touches nothing at the hub, and loses **Talk**, which the hub refuses them too. Look-alike letters are not marked: they are visible characters.
+A body whose parsed form differs from its text (compared without the white space between tokens) opens **Exactly as sent** and says so; an escape or a moved key counts too, so a harmless difference can warn. A C0 character written as a JSON escape raises only that difference, not the warning about hidden characters, as the pretty-printed text writes it back as an escape; a literal `[U+202E]` in the text differs from the mark only by the mark's formatting. Control, format and separator characters, the default-ignorable ones and the blank braille cell (bidi overrides, zero-width characters, no-break spaces, fillers among them) appear as a marked `[U+XXXX]` in the method, path, query and both bodies, with a sentence above them, also when the body carries them as a JSON escape. Not `\uXXXX`: a body can hold those six plain characters, with another SHA-256. Someone who is not the owner keeps **Later**, which touches nothing at the hub, and loses **Talk**, which the hub refuses them too. Look-alike letters are not marked: they are visible characters.
 
 **Rejected alternatives:** the raw text only: hard to read, and the contract asks for pretty-printing. A sentence only under Exactly as sent, closed by default: the owner reads the open form first. An allow-list of printable ASCII for what counts as visible: a path or a body may carry real non-ASCII text the owner must read as it is. Refusing to show a body whose parsed form differs: the hub stores it as valid JSON, and the owner can say No.
 
+## Role memory is a part of Mine, not a view
+
+**Id:** f9ef2098-cadd-452c-ac4e-5945baa145d4
+**Type:** decision
+**Status:** superseded
+**Superseded by:** 476c7232-ef6b-431b-8d28-7726d5860a64
+**Evidence:** inferred
+**Source:** docs/api.md §16.11, §19.2; tsk-hx8cbm2eqg45
+
+The role memory is a section on Settings → Mine, the one page every human member reaches in a project, with a role picker for trust owner and admin. No new address: §16.11 names Settings as one view with two tabs, and a view of its own would be a contract change for a list of a few entries.
+
+**Rejected alternative:** a third Settings tab or a project tab: both need §16.11 changed, and a tab row is already short of room on a phone.
+
+## Admin → Sign-in keeps the question for the mailed code open, and names no value it cannot take
+
+**Id:** 7c2e5a14-9b3d-4f60-8a71-2d6e0b94c3f8
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.6.6, §2.8.7, §2.8.8; `hub/src/maity_hub/auth/sign_in_settings.py`; PR #996's second part
+
+The section (`js/admin-sign-in.js`) lists the sign-in methods with each value's source. **Mail for everyone** is in the list only while `missing` names neither `mail` nor `signing_key`, or while it is the current value, as the list would otherwise lie. Choosing it says that a code is mailed first and advises the admins to set up an authenticator app. The `PATCH` answers 202 and has changed that value only after the code: the form gives way to one question for the code with **Send again** (a new `PATCH`, which replaces the open confirmation) and **Leave it as it is**, which sends nothing, as nothing has changed and the code runs out. Other values changed in the same form are saved with the 202.
+
+**Reason:** the contract makes the code the proof that a mail of this hub arrived, so the page must not read as saved before it. The refusals `mail_not_ready` and `no_verified_address` can still come, as the state may change after the page was read; they are said at the field.
+
+**Rejected alternatives:** offering the value always and relying on the refusal: the contract says it is offered only while mail is ready. A cancelling `PATCH` on leaving: it would need a value to write back and a step-up for a change that never happened. Reading the settings again before showing the question: if that read failed, the mailed code would have no field.

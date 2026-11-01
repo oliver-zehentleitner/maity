@@ -769,6 +769,7 @@ def main() -> int:
                     fixture_views(run, browser)
                     second_hub_round(run, browser, work, artifacts)
                     security_round(run, browser, work, artifacts)
+                    mail_factor_round(run, browser, work, artifacts)
                 except Exception:
                     report_failure(list(run.recent), base, artifacts)
                     # What the page itself said before the step failed: its errors explain more than a missing element.
@@ -1904,7 +1905,8 @@ def sign_in_with_totp(run: Run, browser, secret: str, used: int) -> None:
     # The hub takes only a step newer than the last one used, within one step of skew.
     while int(time.time() // 30) < used:
         time.sleep(1)
-    page.locator("#sf-code").fill(totp_code(secret, used + 1))
+    # Taken right before the fill: a slow screenshot or axe run can outlast the hub's skew.
+    page.locator("#sf-code").fill(totp_code(secret, max(used + 1, int(time.time() // 30))))
     step.get_by_role("button", name="Verify", exact=True).click()
     expect(page.locator("header .me")).to_contain_text("Owner")
     expect(step).to_have_count(0)
@@ -1976,6 +1978,174 @@ def reset_by_mail(run: Run, browser, catcher: MailCatcher, owner: Page) -> None:
     run.problems = [p for p in run.problems if "answered 401" not in p]
     no_problems(run, "the reset by mail")
     context.close()
+
+
+MAIL_ADDRESS = "owner@e2e.example"
+
+
+def newest_mail(catcher: MailCatcher, to: str, seen: int, timeout: float = 20) -> str:
+    """The text of the first mail to `to` after the first `seen` the catcher holds."""
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        for rcpt, message in catcher.mails[seen:]:
+            if to in rcpt:
+                return message.get_body(preferencelist=("plain",)).get_content()
+        time.sleep(0.1)
+    raise AssertionError(f"no new mail to {to} within {timeout} s; got {len(catcher.mails) - seen}")
+
+
+def password_sign_in(run: Run, browser, offers_link: bool):
+    """A fresh context at the login page after the password, and its page: what follows is the
+    hub's (a second step, or the dashboard). The page offers the mail's sign-in link, or not."""
+    context = browser.new_context(viewport={"width": 1280, "height": 900})
+    context.set_default_timeout(TIMEOUT_MS)
+    page = context.new_page()
+    watch_page(run, page)
+    page.goto(run.base + "/")
+    expect(page.get_by_role("button", name="Email me a sign-in link", exact=True)).to_have_count(1 if offers_link else 0)
+    page.locator("#login-handle").fill(OWNER)
+    page.locator("#login-password").fill(OWNER_PASSWORD)
+    page.get_by_role("button", name="Sign in", exact=True).click()
+    return context, page
+
+
+def verify_address(run: Run, page, catcher: MailCatcher) -> None:
+    """The owner's own address, verified by the mail's link: the code of the switch goes there."""
+    seen = len(catcher.mails)
+    page.evaluate("""(password) => window.Maity.api.post("/auth/reauthenticate", { password })""", OWNER_PASSWORD)
+    page.evaluate("""(address) => window.Maity.api.patch("/me/notification-settings", { email: { address } })""", MAIL_ADDRESS)
+    # The hub's signed token is `<body>.<mac>`, both base64url (notifications/tokens.py).
+    token = re.search(r"/mail/verify/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)", newest_mail(catcher, MAIL_ADDRESS, seen))
+    assert token, "no verification link in the mail"
+    page.evaluate("""(token) => window.Maity.api.post("/me/notification-settings/email/verify", { token })""", token.group(1))
+    settings = page.evaluate("""() => window.Maity.api.get("/me/notification-settings")""")
+    assert settings["email"]["address_status"] == "verified", settings["email"]
+
+
+def turn_on_mail_factor(run: Run, page, catcher: MailCatcher) -> None:
+    """Admin → Sign-in: the admin's own switch, on only with the mailed code (§2.8.8)."""
+    page.goto(run.base + "/admin")
+    page.get_by_role("button", name="Sign-in", exact=True).click()
+    section = page.locator("#admin-sign-in")
+    choice = section.locator("#admin-sign-in-second_factor")
+    expect(choice.locator("option[value=email]")).to_have_count(1)
+    choice.select_option("email")
+    expect(section).to_contain_text("Saving this mails you a code first")
+    run.shot(page, "admin-sign-in")
+    run.a11y(page, "Admin, Sign-in: Mail for everyone chosen")
+    seen = len(catcher.mails)
+    section.get_by_role("button", name="Save", exact=True).click()
+    code = section.locator("#admin-sign-in-code")
+    expect(code).to_be_visible()
+    run.shot(page, "admin-sign-in-code")
+    mailed = re.search(r"(\d{3} \d{3})", newest_mail(catcher, MAIL_ADDRESS, seen))
+    assert mailed, "no code in the mail"
+    # Nothing has changed until the code is typed, and a wrong one is said.
+    assert page.evaluate("""() => window.Maity.api.get("/admin/settings/sign-in")""")["second_factor"]["value"] == "optional"
+    wrong = "000 001" if mailed.group(1) != "000 001" else "000 002"
+    code.fill(wrong)
+    section.get_by_role("button", name="Turn on", exact=True).click()
+    expect(section.locator("#admin-sign-in-code-error")).to_have_text("That code is wrong or was used.")
+    run.problems = [p for p in run.problems if "second-factor-email/confirm answered 403" not in p]
+    code.fill(mailed.group(1))
+    section.get_by_role("button", name="Turn on", exact=True).click()
+    expect(section).to_contain_text("Mail for everyone is on.")
+    expect(section).to_contain_text("one mailbox is not two factors")
+    expect(section.locator("#admin-sign-in-second_factor")).to_have_value("email")
+    no_problems(run, "mail factor: the admin's switch")
+
+
+def mail_factor_round(run: Run, browser, work: Path, artifacts: Path) -> None:
+    """Mail for everyone (§2.8.7, §2.8.8) on a hub of its own: the owner verifies an address and
+    turns it on in Admin → Sign-in, and the page signs in by the mail's link and by its code,
+    says where to open the link in another browser, no longer offers the sign-in link by mail,
+    and a session from before the switch is asked for a mailed code at its next sensitive call."""
+    third = work / "mail-factor-hub"
+    third.mkdir()
+    port = free_port()
+    catcher = MailCatcher()
+    extra = {
+        "MAITY_SECRET_KEY": base64.b64encode(os.urandom(32)).decode(),
+        "MAITY_MAIL_SIGNING_KEY": base64.b64encode(os.urandom(32)).decode(),
+        "MAITY_SMTP_HOST": "127.0.0.1",
+        "MAITY_SMTP_PORT": str(catcher.port),
+        "MAITY_SMTP_TLS": "none",
+        "MAITY_SMTP_ALLOW_PLAINTEXT": "1",
+        "MAITY_SMTP_FROM": "hub@e2e.example",
+    }
+    first_base = run.base
+    run.base = f"http://127.0.0.1:{port}"
+    run.step(f"mail factor hub on {run.base}: the admin verifies an address and turns it on")
+    hub = start_hub(third, artifacts, port, extra, "hub-mail-factor.log")
+    older_context = None
+    try:
+        older_context, older = sign_in(run, browser)
+        verify_address(run, older, catcher)
+        # Before the switch the login page offers the link by mail.
+        first, _ = password_sign_in(run, browser, offers_link=True)
+        first.close()
+        admin_context, admin = sign_in(run, browser)
+        turn_on_mail_factor(run, admin, catcher)
+        admin_context.close()
+
+        run.step("mail factor: the page says the mail went out; the link elsewhere, then here")
+        seen = len(catcher.mails)
+        context, page = password_sign_in(run, browser, offers_link=False)
+        step = page.locator("form.second-factor")
+        expect(step).to_contain_text("We sent a link and a code to")
+        expect(step.get_by_role("button", name="Send again", exact=True)).to_be_visible()
+        run.shot(page, "mail-factor-step")
+        run.a11y(page, "mail factor: the sign-in step")
+        link = re.search(r"(http\S+/sign-in/second-factor/email#[A-Za-z0-9_-]+)", newest_mail(catcher, MAIL_ADDRESS, seen))
+        assert link, "no sign-in link in the mail"
+        # Another browser holds no session for it: it completes nothing and says where to open it.
+        other = browser.new_context(viewport={"width": 1280, "height": 900})
+        other_page = other.new_page()
+        other_page.goto(link.group(1))
+        expect(other_page.locator(".second-factor-elsewhere")).to_contain_text(
+            "Open this link in the browser where you signed in, or type the code from this mail there."
+        )
+        other.close()
+        page.goto(link.group(1))
+        expect(page.locator("header .me")).to_contain_text("Owner")
+        expect(page.locator(".second-factor-elsewhere")).to_have_count(0)
+        assert "#" not in page.url, page.url
+        no_problems(run, "mail factor: the link")
+        context.close()
+
+        run.step("mail factor: the code from the mail signs in as well")
+        seen = len(catcher.mails)
+        context, page = password_sign_in(run, browser, offers_link=False)
+        code = re.search(r"code there: (\d{3} ?\d{3})", newest_mail(catcher, MAIL_ADDRESS, seen))
+        assert code, "no code in the mail"
+        page.locator("#sf-code").fill(code.group(1))
+        page.locator("form.second-factor").get_by_role("button", name="Verify", exact=True).click()
+        expect(page.locator("header .me")).to_contain_text("Owner")
+        no_problems(run, "mail factor: the code")
+        context.close()
+
+        run.step("mail factor: a session from before the switch is asked for a mailed code")
+        seen = len(catcher.mails)
+        older.goto(run.base + "/account/data")
+        older.get_by_role("button", name="Export my data", exact=True).click()
+        question = older.locator("form.step-up")
+        expect(question).to_contain_text("Confirm with a code by mail")
+        run.a11y(older, "mail factor: the step-up question")
+        step_code = re.search(r"(\d{3} ?\d{3})", newest_mail(catcher, MAIL_ADDRESS, seen))
+        assert step_code, "no step-up code in the mail"
+        older.locator("#step-up-step_up_mail").fill(step_code.group(1))
+        with older.expect_download() as saved:
+            question.get_by_role("button", name="Confirm", exact=True).click()
+        assert json.loads(Path(saved.value.path()).read_text()).get("exported_at"), "an empty export"
+        # The export's first refusal is what opens the question.
+        run.problems = [p for p in run.problems if "/me/export answered 403" not in p]
+        no_problems(run, "mail factor: the step-up")
+    finally:
+        if older_context is not None:
+            older_context.close()
+        stop_hub(hub)
+        catcher.close()
+        run.base = first_base
 
 
 def fixture_views(run: Run, browser) -> None:
