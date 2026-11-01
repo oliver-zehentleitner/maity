@@ -1199,6 +1199,8 @@ def _open_decision(conn: Connection, mine: Membership, request_id: str) -> Any:
         raise not_found()
     if klass(row) != "decision":
         raise invalid({"class": "not_forwardable"}, "only a decision request is forwarded")
+    if inbox.owners_alone(conn, [row]):  # a holder would read it (§20.7)
+        raise invalid({"class": "not_forwardable"}, "a request of an owner's round stays with them")
     _refuse_unless_open(row)
     return row
 

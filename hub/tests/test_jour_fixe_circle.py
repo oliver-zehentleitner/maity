@@ -270,6 +270,25 @@ def test_a_to_owner_request_is_the_circle_owners_and_no_other_admins(
         assert request_id not in [(e.get("subject") or {}).get("id") for e in events]
 
 
+def test_the_owners_answer_writes_no_ticker_item_and_the_request_is_not_forwarded(
+    circle: Circle,
+) -> None:
+    """§20.7: a ticker item would name the request to every admin, a holder would read it."""
+    circle.owner.patch(BASE, {"settings": {"ticker": {"enabled": True}}})
+    circle.worker.post(_rounds(circle.id, "/answers"), {"went_badly": "slow CI"})
+    circle.tick()
+    [request_id] = _report(circle).json()["requests"]
+    path = f"{BASE}/requests/{request_id}"
+    for to in ("trust:admin", circle.owner.id):
+        refused = circle.friend.post(f"{path}/forward", {"to": to, "reason": "t"})
+        assert refused.status_code == 400, refused.text
+        assert refused.json()["error"]["details"]["fields"] == {"class": "not_forwardable"}
+    answered = circle.friend.post(f"{path}/answer", {"reply_id": "reject"})
+    assert answered.status_code == 200, answered.text
+    decisions = [e for e in _kinds(circle.engine, "ticker") if e.payload.get("type") == "decision"]
+    assert decisions == []
+
+
 def test_a_substitute_gets_no_request_of_an_owners_round(circle: Circle, migrated: Engine) -> None:
     """§20.7: a cover would let the substitute read it."""
     circle.worker.post(_rounds(circle.id, "/answers"), {"went_badly": "slow CI"})
