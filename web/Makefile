@@ -1,13 +1,18 @@
 PYTHON ?= python3
 NODE ?= node
 
-.PHONY: check fixtures smoke starter-configs e2e
+.PHONY: check release-check fixtures smoke starter-configs e2e
 
 # HTML, JavaScript, CSS and fixture checks, and the e2e harness's own
 # judgement of answers; Python standard library only.
 check:
 	$(PYTHON) tools/check.py
 	$(PYTHON) tools/test_e2e_harness.py
+	$(PYTHON) tools/test_i18n_check.py
+
+# Before a release: no translation lacks a key or follows an older English text.
+release-check:
+	$(PYTHON) tools/check.py --release
 
 # Regenerate fixtures/fixtures.js from fixtures/**/*.json.
 fixtures:

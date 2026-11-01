@@ -138,10 +138,10 @@ def test_a_registration_setting_holding_a_placeholder_is_refused(owner: flow.Hum
     assert "unresolved_placeholder" in fields(answer).values()
 
 
-TEMPLATE = Path(__file__).resolve().parents[2] / "web" / "tools" / "maity-site.json"
+TEMPLATE = Path(__file__).resolve().parents[2] / "web" / "tools" / "site-fixture.json"
 
 
-def test_the_real_site_file_imports_in_every_language(
+def test_a_site_file_imports_in_every_language(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
     """What the dashboard does: fill the placeholders, then each save, then read each page."""

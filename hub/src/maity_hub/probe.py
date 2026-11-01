@@ -570,6 +570,7 @@ def announce_merges(
             paths=list(dict.fromkeys(p for f in files for p in (f["path"], f["previous"]) if p)),
             paths_truncated=truncated,
             contract=contract,
+            public=fg.via == "instance",
         )
         with transaction(engine) as conn:
             lock_project(conn, project_id)

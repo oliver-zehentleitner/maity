@@ -902,7 +902,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(bBox(), "Edit briefing").click(); await tick();
   expect(byId("briefing-agt-b") && byId("briefing-agt-b").value.startsWith("You build the hub"), "the editor starts with the briefing");
   byId("briefing-agt-b").value = "x".repeat(16 * 1024 + 1);
+  // The limit is a formatted number: English here, whatever the machine's locale.
+  const briefingLocale = win.Maity.i18n.locale;
+  win.Maity.i18n.locale = "en";
   byId("briefing-agt-b").parentNode.dispatch("submit"); await tick();
+  win.Maity.i18n.locale = briefingLocale;
   expect(!patches.length && text(main).includes("the briefing is longer than 16,384 characters"), "a briefing over 16 KiB is refused before sending");
   // 16,384 characters pass however many bytes they take, as the hub counts.
   byId("briefing-agt-b").value = "é".repeat(16 * 1024);
@@ -3123,6 +3127,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(win.Maity.fmt.number(1234.5) === "1.234,5" && win.Maity.fmt.date("2026-10-30T08:00:00Z").includes("2026") && win.Maity.fmt.date("not a date") === "not a date",
     "i18n: numbers and dates through Intl in the reader's locale; an unreadable date as given");
   win.Maity.i18n.locale = i18nLocale;
+  // The hub's refusals (js/errors.js): the hub's English as it is, a translation by code and reason.
+  {
+    const said = win.Maity.errorWords;
+    expect(said("not_holder", {}, "only the holder of tsk-x may report") === "only the holder of tsk-x may report",
+      "errors: in English the hub's own message stands, it names the case");
+    const i18n = win.Maity.i18n;
+    win.MAITY_I18N.de = { "error.not_holder": "Nur wer die Karte hält.", "error.reason.humans_only": "Nur ein Mensch." };
+    const was = i18n.language;
+    i18n.language = "de";
+    expect(said("not_holder", {}, "hub") === "Nur wer die Karte hält.", "errors: a translated code");
+    expect(said("forbidden", { reason: "humans_only" }, "hub") === "Nur ein Mensch.", "errors: a translated reason comes before its code");
+    expect(said("paused", {}, "hub") === "hub" && said("no_such_code", {}, "hub") === "hub" && said(null, {}, "hub") === "hub" && said("constructor", {}, "hub") === "hub",
+      "errors: without a translation, or for a code unknown here, the hub's English");
+    i18n.language = was;
+    delete win.MAITY_I18N.de;
+  }
   // Markdown in a chat (js/markdown.js): text nodes only, https links only.
   const MD = (src) => { const box = document.createElement("div"); win.Maity.dom.append(box, win.Maity.markdown(src)); return box; };
   const tagsOf = (box) => box.childNodes.filter((n) => n.tagName).map((n) => n.tagName.toLowerCase());
@@ -9577,10 +9597,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "landing editor: an emptied operator line is left out, and Save goes through the step-up");
     byId("lp-footer-operator").value = "Maintainer, Austria"; byId("lp-footer-operator").dispatch("input");
     await leSave();
-    // The prepared landing V3 itself (tsk-k7pwrzs8vb8k; the landing part of tools/maity-site.json): loaded, checked without a refusal,
+    // A prepared landing file (the landing part of tools/site-fixture.json): loaded, checked without a refusal,
     // every section of both languages in the editor, its own footer taken; saved as it is.
     // Its footer's one placeholder takes a value here, as the site import would.
-    const v3 = JSON.parse(fs.readFileSync(path.join(WEB, "tools/maity-site.json"), "utf8")).landing;
+    const v3 = JSON.parse(fs.readFileSync(path.join(WEB, "tools/site-fixture.json"), "utf8")).landing;
     v3.footer.operator = "Example operator";
     byId("lp-json").value = JSON.stringify(v3);
     await jsLoad();
@@ -9686,7 +9706,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // changes nothing; a file with only the legal pages leaves the rest; an unknown key is named; a save that stops says the state.
   {
     const SI = win.Maity.siteIo;
-    const template = JSON.parse(fs.readFileSync(path.join(WEB, "tools/maity-site.json"), "utf8"));
+    const template = JSON.parse(fs.readFileSync(path.join(WEB, "tools/site-fixture.json"), "utf8"));
     // Placeholders (§16.7.3): each one in the template named, none filled yet, so nothing can be saved and the hub is not asked.
     const siNames = ["address", "date", "email", "hosting_provider", "mail_provider", "name", "operator"];
     const siEmpty = await SI.check(template, await SI.readNow());

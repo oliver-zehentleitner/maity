@@ -63,7 +63,13 @@ def done(engine: Engine, project_id: str, creator: int, holder: int | None, at: 
 
 
 def event(
-    engine: Engine, project_id: str, kind: str, at: datetime, task: str, payload: Any
+    engine: Engine,
+    project_id: str,
+    kind: str,
+    at: datetime,
+    task: str | None,
+    payload: Any,
+    subject_type: str = "task",
 ) -> None:
     with engine.begin() as conn:
         conn.execute(
@@ -71,7 +77,7 @@ def event(
                 project_id=project_id,
                 kind=kind,
                 at=at,
-                subject_type="task",
+                subject_type=subject_type,
                 subject_id=task,
                 audience=["all"],
                 payload=payload,
@@ -206,7 +212,7 @@ def test_a_merge_not_read_as_public_is_not_counted(
     public: bool | None,
 ) -> None:
     """§11.4: data read while the repository was private, or before the hub said, never
-    reaches the page without sign-in, not even as a count."""
+    reaches the page without sign-in, not even as a count; a member reads it."""
     a = flow.agent(make_client, owner)
     creator = membership_of(migrated, owner.id)
     task = card(migrated, project_id, creator, claim_holder=membership_of(migrated, a.id))
@@ -218,7 +224,70 @@ def test_a_merge_not_read_as_public_is_not_counted(
     if public is not None:
         payload["public"] = public
     event(migrated, project_id, "link_observed", NOW - timedelta(days=1), task, payload)
-    assert page(owner)["totals"]["prs_merged"] == 0
+    assert page(owner)["totals"]["prs_merged"] == 1
+    with migrated.connect() as conn:
+        window = swarm.CACHE.get(conn, project_id)
+    assert (
+        swarm.fold(window, {}, days=30, include=lambda _: True, public_only=True)["totals"][
+            "prs_merged"
+        ]
+        is None
+    )
+
+
+def ticker_merge(
+    engine: Engine, project_id: str, number: int, tasks: list[str], *, public: bool | None
+) -> None:
+    merge: dict[str, Any] = {"pr": number, "merged_at": "2026-10-20T00:00:00Z"}
+    if public is not None:
+        merge["public"] = public
+    url = f"https://github.com/oliver-zehentleitner/maity/pull/{number}"
+    event(
+        engine, project_id, "ticker", NOW - timedelta(days=1), None,
+        {"type": "merge", "merge": merge, "url": url, "tasks": tasks},
+        subject_type="pull_request",
+    )  # fmt: skip
+
+
+def public_prs(engine: Engine, project_id: str) -> Any:
+    swarm.CACHE.clear()
+    with engine.connect() as conn:
+        window = swarm.CACHE.get(conn, project_id)
+    return swarm.fold(window, {}, days=30, include=lambda _: True, public_only=True)["totals"][
+        "prs_merged"
+    ]
+
+
+def test_a_merge_on_a_report_counts_through_the_ticker_for_its_cards_holder(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, project_id: str
+) -> None:
+    """Most pull requests are on reports, not on links: the 0 of the public page."""
+    a = flow.agent(make_client, owner)
+    creator = membership_of(migrated, owner.id)
+    task = card(migrated, project_id, creator, claim_holder=membership_of(migrated, a.id))
+    ticker_merge(migrated, project_id, 12, [task], public=True)
+    ticker_merge(migrated, project_id, 13, [], public=None)  # from before the flag
+    found = page(owner)
+    assert found["totals"]["prs_merged"] == 2 and row(found, a.id)["prs_merged"] == 1
+
+
+def test_a_public_page_counts_a_ticker_merge_only_if_flagged_and_the_repository_is_public(
+    owner: flow.Human, migrated: Engine, project_id: str
+) -> None:
+    ticker_merge(migrated, project_id, 13, [], public=None)
+    ticker_merge(migrated, project_id, 14, [], public=False)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.project).where(t.project.c.id == project_id).values(repository_public=True)
+        )
+    assert public_prs(migrated, project_id) is None  # a line with 0 would say nothing was merged
+    ticker_merge(migrated, project_id, 12, [], public=True)
+    assert public_prs(migrated, project_id) == 1
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.project).where(t.project.c.id == project_id).values(repository_public=False)
+        )
+    assert public_prs(migrated, project_id) is None
 
 
 def test_the_medians_pool_durations_and_need_three_samples(

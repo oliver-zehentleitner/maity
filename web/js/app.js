@@ -367,7 +367,18 @@ window.Maity = window.Maity || {};
     status.el);
     // A code from another device or a link by mail, as the hub offers them
     // (js/device-sign-in.js), on this page's own timers.
-    append(clear(main), note ? h("p", { class: "flag session-ended", role: "status" }, note) : null, form,
+    // A dashboard address of a project with a public page (§16.11): that page is one link away.
+    const publicLink = h("p", { class: "public-page-link", hidden: true });
+    const parts = M.route.current().path.split("/").filter(Boolean);
+    if (M.api.source !== "fixtures" && window.fetch && parts.length >= 2 && !OWN_WORDS.includes(parts[0])) {
+      const address = "/" + parts.slice(0, 2).join("/");
+      window.fetch(address + "?as=public", { method: "HEAD", credentials: "omit", headers: { Accept: "text/html" } })
+        .then((r) => {
+          // A public page is the hub's own, with its own security policy; the shell has none like it.
+          if (r.ok && r.headers.get("etag")) { append(publicLink, h("a", { href: address }, M.t("login.public_page"))); publicLink.hidden = false; }
+        }).catch(() => {});
+    }
+    append(clear(main), note ? h("p", { class: "flag session-ended", role: "status" }, note) : null, form, publicLink,
       M.deviceSignIn ? M.deviceSignIn.loginOptions((ms, fn) => { timers.push(window.setInterval(fn, ms)); }, () => render()) : null,
       M.legal ? M.legal.links() : null);
   }
@@ -1581,6 +1592,10 @@ window.Maity = window.Maity || {};
     if (where.scope !== "project") return ctx;
     const mine = me.projects.find((p) => p.full_name === where.slug);
     if (!mine) {
+      // Someone else's project may have a public page (§16.9): the reader sees that. Without
+      // one the hub answers this same shell, and `as` keeps it from coming here again.
+      const here = new URLSearchParams(window.location.search);
+      if (M.api.source !== "fixtures" && !here.has("as")) { window.location.replace(M.route.current().path + "?as=public"); return new Promise(() => {}); }
       throw new M.api.ApiError("You are not a member of the project " + where.slug, 404, "/me", "not_found");
     }
     ctx.slug = where.slug;

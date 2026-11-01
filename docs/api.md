@@ -62,7 +62,10 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   the join host — `/`, `/i` without a token, `/join/…`, `/api/v1/…` including `/help` and
   `/health`, the runner pairing (which stays on the public URL only,
   §15.2), the dashboard, anything — is a `302` to the public URL's start
-  page (`/`, without path or query). Any other method is `not_found`.
+  page (`/`, without path or query), except an address of two or more
+  segments whose first is neither a reserved word (§16.11) nor `i` or `r`, `/<owner>/<slug>…`,
+  which is a `302` to the same path on the public URL, without the query.
+  Any other method is `not_found`.
   The join itself is never redirected: the CLI follows no redirects and
   the curl recipe (§3.3) has no `-L`. An invitation is redirected because
   a person opens it in a browser and accepts it signed in, and the join
@@ -303,7 +306,7 @@ the hub records it on the session.
 
 | What | Cap |
 |---|---|
-| Request body | 64 KiB; the landing page's settings 256 KiB (§16.7); an uploaded logo or banner 1 MiB (§11.2), an uploaded avatar 1 MiB and 4096 pixels on a side (§6.10), an uploaded attachment 10 MiB (§8.7) |
+| Request body | 64 KiB; the landing page's settings 256 KiB (§16.7); the sign-in and sign-up pages' settings 512 KiB (§16.7.4); an uploaded logo or banner 1 MiB (§11.2), an uploaded avatar 1 MiB and 4096 pixels on a side (§6.10), an uploaded attachment 10 MiB (§8.7) |
 | Avatar changes | 10 `PUT` or `DELETE` per hour per account or profile, all its credentials together (§6.10) |
 | Handle changes | 3 per 24 hours per account or profile; at most 8 aliases per id (§6.24) |
 | Device codes and sign-in links | per human, per address and per source address as §2.6.4 |
@@ -1956,7 +1959,7 @@ change: until it exists, a registered account has exactly the limits
 every account has today, and an account gets the operator's default
 limits once part two defines them.
 
-The pitch of the page `/register` are instance content (§16.7.4); its form
+The pitch of the page `/register` is instance content (§16.7.4); its form
 and everything below are not.
 
 **Modes.** The instance setting `registration` (§16.4):
@@ -7615,13 +7618,15 @@ Scope `project:read`; `days` 1–90, default 30.
     a self-done close is never a review; a redacted entry is not
     counted.
   - `prs_merged` counts pull requests, deduplicated by repository and
-    number across links and cards, whose first retained `link_observed`
-    event with state `merged` (§6.13) falls in the window — never a
-    link's current `observed_at`, which moves with every probe; a merge
-    observed before the hub kept those events is not counted, and only
-    an event whose read reported the repository public (`public: true`,
-    §11.4) counts: one without the field, from before it was written,
-    does not. A pull
+    number across links and cards, whose first retained merge falls in
+    the window: a `merge` ticker item (§17.2) or a `link_observed` event
+    with state `merged` (§6.13) — never a link's current `observed_at`,
+    which moves with every probe; a merge from before the hub kept those
+    events is not counted. A public page (§16.9) counts only what a read
+    found public (§11.4): a `link_observed` with `public: true`, and a
+    ticker item with `merge.public: true`, read with the instance's token,
+    while the repository's last check found it public. Without any such
+    merge in the window the page has no line for it, not a 0. A pull
     request on cards of several members counts once in `totals` and
     once for each of those members, so member rows may sum to more
     than the total.
@@ -11087,6 +11092,7 @@ contract; until then nothing else in this section changes.
 | POST | `/auth/login`, `/auth/logout`, `/auth/password` | human | 2.1 |
 | GET | `/auth/session` | human | 2.1 |
 | GET | `/auth/methods` | — | 2.6.1, 2.7 |
+| GET | `/auth/pages/{page}` | — | 16.7.4 |
 | POST | `/auth/register` | — (refused in mode `closed`) | 2.7.1 |
 | GET, POST | `/mail/register/{token}` (outside the API) | — (the token, then the chosen password) | 2.7.1 |
 | POST | `/auth/device-codes` | human | 2.6.2 |
@@ -11237,6 +11243,8 @@ contract; until then nothing else in this section changes.
 | POST, DELETE | `/projects/{owner}/{slug}/forge/webhook/secret` | `project:admin`, human only | 17.4 |
 | GET, PATCH | `/admin/settings/mail` | `instance:admin`, human only | 16.2 |
 | GET, PATCH | `/admin/settings/registration` | `instance:admin`, human only | 16.4 |
+| GET, PATCH | `/admin/settings/auth-pages` | `instance:admin`, human only | 16.7.4 |
+| POST | `/admin/settings/auth-pages/check` | `instance:admin`, human only | 16.7.4 |
 | GET, PATCH | `/admin/settings/landing` | `instance:admin`, human only | 16.7 |
 | POST | `/admin/settings/landing/preview` | `instance:admin`, human only | 16.7 |
 | GET | `/admin/settings/landing/preview/{id}` (HTML) | `instance:admin`, human only, the creating session | 16.7 |
@@ -13097,7 +13105,7 @@ out.
                      "sections": [ { "type": "hero", "enabled": true, "title": "Bring your agents. Share one project.",
                                      "subline": "…", "cta_primary": { "label": "Create your account", "href": "/register" } },
                                    { "type": "stats", "enabled": true, "items": ["people", "agents", "public_projects", "people_online"] } ] } },
-  "footer": { "operator": "…, Austria", "social": [ { "label": "Mastodon", "href": "https://mastodon.social/@maityteam" } ] },
+  "footer": { "operator": "…, Austria", "social": [ { "label": "Mastodon", "href": "https://social.example/@example" } ] },
   "updated_at": "2026-10-28T19:30:00Z", "updated_by": "hum-maintainer" }
 ```
 
@@ -13576,15 +13584,16 @@ No session; on the public host only, as `GET /landing`. `page` is `sign_in`
 or `sign_up`; any other is `not_found`. The language is chosen as the
 landing page's is: `lang` if this page has it, else the best match of
 `Accept-Language` among the languages this page has, else `default_language`;
-an unknown `lang` is no error. A page with no text in the chosen language is
-still `200`: `language` is `default_language` and `texts` is `{}`.
+an unknown `lang` is no error. A language counts as this page's when it holds
+at least one key. A page without text in `default_language`, when that is the
+one chosen, is still `200`: `language` is `default_language` and `texts` is `{}`.
 
 ```json
 { "language": "de", "texts": { "title": "Willkommen zurück", "subline": "Melde dich an." } }
 ```
 
-`texts` holds each key from the chosen language, else from
-`default_language`; a key in neither is left out. `note` is the Markdown as
+`texts` holds the keys of the chosen language and no other: a key it lacks is
+left out, never taken from `default_language`. `note` is the Markdown as
 stored. `Cache-Control: public, max-age=60`, `ETag`, `Vary: Accept-Language`.
 
 **The dashboard** asks this once when it draws one of the two pages, passing
@@ -13878,7 +13887,8 @@ public page. It shows the agent's `display_name`, `handle`, its owner's
 name with a link to the owner's page, the public projects it is a member
 of, each with a link, and its statistics over those projects for the
 last 30 days as §6.22 counts them per member (cards done, reviews given,
-pull requests merged, handovers, the two medians). No presence, no
+pull requests merged where a read found any public, handovers, the two
+medians). No presence, no
 instances, no model or harness, no briefing. `agents` is a reserved
 second segment (§16.11), so the address never meets a project.
 
@@ -14205,7 +14215,12 @@ session while the landing page is enabled (§16.7), `/for/<slug>`, which
 is a landing variant for every visitor while the landing page is
 enabled and the variant exists and the shell otherwise (§16.7.2; `for`
 is therefore no hub path: an unknown variant gets the shell, never
-`not_found`), and the public pages (below).
+`not_found`), and the public pages (below) with `/explore`. For a visitor a
+public page's address with a slash at the end is a `308` to the address
+without it. A dashboard address under a project with a public page stays the
+login page for a visitor, so that a link from a mail goes on after the
+sign-in, and the login page links the public page. A signed-in reader who is
+no member of a project with a public page is sent to its `?as=public`.
 
 **The dashboard's paths.** The dashboard routes with the History API
 (`pushState`, `popstate`); a link inside it is an ordinary `href` to a
@@ -14227,7 +14242,8 @@ names:
 | `/settings/forge` | the account's forge settings (§11.4) |
 | `/agents`, `/agents/<id>` | the human's agent profiles across projects (§6.3), and one of them marked |
 | `/account/pending` | the one page of an account waiting for approval (§2.7.5) |
-| `/account/…`, `/admin…`, `/all`, `/chats…`, `/new`, `/runners`, `/observe/<owner>/<slug>`, `/explore`, `/inbox`, `/notifications` | the dashboard's own pages |
+| `/account/…`, `/admin…`, `/all`, `/chats…`, `/new`, `/runners`, `/observe/<owner>/<slug>`, `/inbox`, `/notifications` | the dashboard's own pages |
+| `/explore` | the public projects, by name, for every visitor with or without a session, under the public pages' headers (§16.9); the shell while the instance serves no public pages |
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
 | `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `members/<id>[/<tab>[/<instance>]]` (the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `memory` (§19), `message`; a view added later joins this list |
@@ -14316,7 +14332,8 @@ A ticker item is an event of kind `ticker` (§8.1, §8.2). Its `payload`:
   "dedupe_key": "merge:212",
   "origin": { "via": "probe", "delivery": null },
   "merge": { "pr": 212, "title": "hub: the claim lease survives a restart", "merge_sha": "9c1e…40 hex",
-             "base": "main", "merged_at": "2026-10-22T15:02:11Z", "author": "agent-b" },
+             "base": "main", "merged_at": "2026-10-22T15:02:11Z", "author": "agent-b",
+             "public": true },
   "paths": ["docs/api.md", "hub/maity_hub/claims.py", "hub/tests/test_claims.py"],
   "paths_total": 3,
   "paths_truncated": false,

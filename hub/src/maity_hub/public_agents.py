@@ -74,6 +74,7 @@ def statistics(conn: Connection, found: list[tuple[Any, int]]) -> dict[str, Any]
             {membership_id: {}},
             days=public_projects.STAT_DAYS,
             include=lambda member, mine=membership_id: member == mine,
+            public_only=True,
         )
         row = folded["members"][0] if folded["members"] else {}
         for key in ("cards_done", "reviews_given", "prs_merged", "handovers"):
@@ -83,7 +84,7 @@ def statistics(conn: Connection, found: list[tuple[Any, int]]) -> dict[str, Any]
         claim += [s for m, s, d in window.claim_to_done if m == membership_id and d >= cut]
         if window.reviews_since is not None:
             review += [s for m, s, d in window.review_to_done if m == membership_id and d >= cut]
-    for key in ("cards_done", "prs_merged", "handovers"):
+    for key in ("cards_done", "handovers"):
         totals[key] = totals[key] or 0
     totals["claim_to_done_median_seconds"] = swarm.median_of(claim)
     totals["review_to_done_median_seconds"] = swarm.median_of(review)
@@ -110,7 +111,7 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
         f"<h2>Statistics, last {public_projects.STAT_DAYS} days</h2><ul>"
         + "".join(
             f"<li>{escape(label)}: {escape(public_projects.stat_value(key, totals[key]))}</li>"
-            for key, label in public_projects.STAT_LABELS
+            for key, label in public_projects.stat_labels(totals)
         )
         + "</ul>"
     )

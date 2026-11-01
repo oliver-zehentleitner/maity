@@ -2,8 +2,12 @@
 """Checks for the Maity dashboard, on the Python standard library alone.
 
     python3 tools/check.py           check everything, exit 1 on any finding
-    python3 tools/check.py --write   regenerate fixtures/fixtures.js and
-                                     js/i18n/*.js first, lower the strings baseline
+    python3 tools/check.py --write   regenerate fixtures/fixtures.js,
+                                     js/i18n/*.js and i18n/*.meta.json first,
+                                     lower the strings baseline
+    python3 tools/check.py --release also fail on a translation that lacks a
+                                     key or follows an older English text
+    python3 tools/check.py --missing de  the keys `de` lacks or has out of date
 
 What is checked:
 
@@ -26,6 +30,11 @@ What is checked:
 - i18n: every i18n/<lang>.json parses, its keys are dotted lowercase
   names, each text a string or plural forms with `other`, with no
   placeholder English lacks; js/i18n/<lang>.js is the current bundle of it;
+  a translation (one of the ten of docs/api.md §16.7) has only English's keys,
+  the same placeholders, and the plural forms its language has; its
+  i18n/<lang>.meta.json is current. A key it lacks or that follows an older
+  English text is a note, and a finding only with --release;
+  every error code of docs/api.md §1.3 has words (js/errors.js);
   M.t takes its key as a string literal the English catalog holds, and
   every English key is used. Text in the views is ratcheted: each js file
   may hold no more prose string literals than tools/strings-baseline.json
@@ -39,6 +48,7 @@ What is checked:
 - all text files: no tabs, no trailing whitespace, final newline.
 """
 
+import hashlib
 import html.parser
 import json
 import os
@@ -416,10 +426,133 @@ I18N_HEADER = (
 )
 I18N_KEY = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$")
 PLURAL_FORMS = {"zero", "one", "two", "few", "many", "other"}
+I18N_META = ".meta.json"
 PLACEHOLDER = re.compile(r"\{([a-z][a-z0-9_]*)\}")
 STRINGS_BASELINE = os.path.join(ROOT, "tools", "strings-baseline.json")
 # The fixture hub speaks for the hub, the catalog code is the catalog.
 STRINGS_EXEMPT = {"api.js", "i18n.js"}
+
+
+# The languages of the dashboard, and the plural forms each has, from CLDR's
+# cardinal rules. `many` of the Romance languages is for millions and M.t falls
+# back to `other`, so a translation may leave it out; the others it needs.
+PLURALS = {
+    "en": ({"one", "other"}, set()), "de": ({"one", "other"}, set()), "nl": ({"one", "other"}, set()),
+    "fr": ({"one", "other"}, {"many"}), "es": ({"one", "other"}, {"many"}),
+    "pt": ({"one", "other"}, {"many"}), "it": ({"one", "other"}, {"many"}),
+    "ja": ({"other"}, set()), "ko": ({"other"}, set()), "zh-Hans": ({"other"}, set()),
+}
+
+
+def fingerprint(entry):
+    text = json.dumps(entry, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def translation_problems(lang, data, english):
+    """What makes a translated catalog wrong, whatever else it lacks."""
+    if lang not in PLURALS:
+        return ["%r is not one of the dashboard's languages" % lang]
+    problems = []
+    needed, optional = PLURALS[lang]
+    for key, entry in data.items():
+        if key not in english:
+            problems.append("key %r: English has no such key" % key)
+            continue
+        if isinstance(entry, str) != isinstance(english[key], str):
+            problems.append("key %r: a text stays a text, plural forms stay plural forms" % key)
+            continue
+        if placeholders(entry) != placeholders(english[key]):
+            problems.append("key %r: placeholders %s, English has %s" % (
+                key, sorted(placeholders(entry)), sorted(placeholders(english[key]))))
+        texts = [entry] if isinstance(entry, str) else list(entry.values())
+        if not all(text.strip() for text in texts):
+            problems.append("key %r: empty; leave a key out until it is translated" % key)
+        if not isinstance(entry, str) and "other" in entry and "other" in english[key] \
+                and placeholders(entry["other"]) != placeholders(english[key]["other"]):
+            # `one` may say the number in words ("eine Datei"), `other` cannot.
+            problems.append("key %r: placeholders of `other` %s, English has %s" % (
+                key, sorted(placeholders(entry["other"])), sorted(placeholders(english[key]["other"]))))
+        if not isinstance(entry, str) and not needed <= set(entry) <= needed | optional:
+            problems.append("key %r: %s has the forms %s, here %s" % (
+                key, lang, sorted(needed | optional), sorted(entry)))
+    return problems
+
+
+def translation_meta(data, english, meta):
+    """Which English text each translation follows: one whose own text changed
+    follows today's English, one that did not keeps what it had."""
+    fresh = {}
+    for key, entry in data.items():
+        if key not in english:
+            continue
+        own = fingerprint(entry)
+        known = meta.get(key)
+        if isinstance(known, dict) and known.get("text") == own and "en" in known:
+            fresh[key] = known
+        else:
+            fresh[key] = {"en": fingerprint(english[key]), "text": own}
+    return fresh
+
+
+def translation_gaps(data, english, meta):
+    """The keys a translation lacks, and those that follow an older English text."""
+    missing = sorted(key for key in english if key not in data)
+    stale = sorted(key for key, m in meta.items() if key in english and m["en"] != fingerprint(english[key]))
+    return missing, stale
+
+
+def read_meta(path):
+    try:
+        meta = json.loads(read(path))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return meta if isinstance(meta, dict) else {}
+
+
+def check_translations(catalogs, write, release, notes):
+    english = catalogs["en"]
+    for lang, data in sorted(catalogs.items()):
+        if lang == "en":
+            continue
+        path = os.path.join(I18N, lang + ".json")
+        for problem in translation_problems(lang, data, english):
+            finding(path, 1, problem)
+        meta_path = os.path.join(I18N, lang + I18N_META)
+        meta = read_meta(meta_path)
+        fresh = translation_meta(data, english, meta)
+        body = json.dumps(fresh, indent=2, sort_keys=True) + "\n"
+        if write:
+            with open(meta_path, "w", encoding="utf-8") as f:
+                f.write(body)
+        elif not os.path.exists(meta_path) or read(meta_path) != body:
+            finding(meta_path, 1, "stale: run `make fixtures`")
+        missing, stale = translation_gaps(data, english, fresh)
+        if missing or stale:
+            line = "i18n %s: %d key(s) missing, %d out of date (--missing %s lists them)" % (
+                lang, len(missing), len(stale), lang)
+            if release:
+                finding(path, 1, line)
+            else:
+                notes.append(line)
+
+
+def list_gaps(lang):
+    english = load_catalog(os.path.join(I18N, "en.json"))
+    path = os.path.join(I18N, lang + ".json")
+    if lang == "en" or not os.path.exists(path) or english is None:
+        print("no translation %r" % lang)
+        return 1
+    data = load_catalog(path)
+    if data is None:
+        return 1
+    meta = read_meta(os.path.join(I18N, lang + I18N_META))
+    missing, stale = translation_gaps(data, english, translation_meta(data, english, meta))
+    for key in missing:
+        print("missing " + key)
+    for key in stale:
+        print("stale   " + key)
+    return 0
 
 
 def placeholders(entry):
@@ -466,9 +599,27 @@ def prose(text):
     return bool(re.fullmatch(r"\s*[A-Z][a-z]+[.!?:…]?\s*", text))
 
 
-def check_i18n(write):
+def contract_error_codes():
+    """The codes of the contract's table (§1.3), or None where the repository's docs are absent."""
+    path = os.path.join(os.path.dirname(ROOT), "docs", "api.md")
+    if not os.path.exists(path):
+        return None
+    part = re.search(r"(?ms)^### 1\.3.*?^### 1\.4", read(path))
+    return set(re.findall(r"(?m)^\| \d{3} \| `([a-z_]+)`", part.group(0))) if part else None
+
+
+def check_error_words(english):
+    codes = contract_error_codes()
+    if codes is None:
+        return
+    for code in sorted(codes):
+        if "error." + code not in english:
+            finding(os.path.join(ROOT, "js", "errors.js"), 1, "error code %r of docs/api.md §1.3 has no words" % code)
+
+
+def check_i18n(write, release=False, notes=None):
     catalogs = {}
-    names = sorted(f for f in os.listdir(I18N) if f.endswith(".json")) if os.path.isdir(I18N) else []
+    names = sorted(f for f in os.listdir(I18N) if f.endswith(".json") and not f.endswith(I18N_META)) if os.path.isdir(I18N) else []
     for name in names:
         lang = name[:-5]
         path = os.path.join(I18N, name)
@@ -490,10 +641,7 @@ def check_i18n(write):
     if english is None:
         finding(os.path.join(I18N, "en.json"), 1, "missing: English is the catalog every language follows")
         return
-    for lang, data in catalogs.items():
-        for key, entry in data.items():
-            if lang != "en" and key in english and not placeholders(entry) <= placeholders(english[key]):
-                finding(os.path.join(I18N, lang + ".json"), 1, "key %r: a placeholder English does not have" % key)
+    check_translations(catalogs, write, release, notes if notes is not None else [])
     used = set()
     counts = {}
     for f in sorted(os.listdir(os.path.join(ROOT, "js"))):
@@ -507,7 +655,7 @@ def check_i18n(write):
             continue
         # M.t, M.tn or Maity.t(n), found in the code without comments (strip_js keeps
         # every position), its key read from the source at that place.
-        for m in re.finditer(r"\b(?:M|Maity)\.tn?\(\s*", code):
+        for m in re.finditer(r"\b(?:M|Maity)\.t(?:n|Own)?\(\s*", code):
             lineno = code.count("\n", 0, m.start()) + 1
             quote = src[m.end()] if m.end() < len(src) else ""
             close = src.find(quote, m.end() + 1) if quote in ("\"", "'") else -1
@@ -520,6 +668,7 @@ def check_i18n(write):
                 finding(path, lineno, "M.t key %r is not in i18n/en.json" % key)
         if f not in STRINGS_EXEMPT:
             counts[f] = sum(1 for _, text in literals if prose(text))
+    check_error_words(english)
     for key in sorted(set(english) - used):
         finding(os.path.join(I18N, "en.json"), 1, "key %r is used nowhere" % key)
     # Without a baseline file, --write takes today's counts once; after that a
@@ -619,11 +768,18 @@ def check_whitespace():
 
 
 def main(argv):
+    if "--missing" in argv:
+        at = argv.index("--missing") + 1
+        if at >= len(argv):
+            print("--missing takes a language")
+            return 2
+        return list_gaps(argv[at])
     write = "--write" in argv
+    notes = []
     check_fixtures(write)
     # The catalog's bundle before the page that loads it, so --write on a
     # fresh checkout makes js/i18n/*.js before index.html is checked.
-    check_i18n(write)
+    check_i18n(write, "--release" in argv, notes)
     check_html()
     node = shutil.which("node")
     check_js(node)
@@ -632,7 +788,6 @@ def main(argv):
     check_whitespace()
     for f in findings:
         print(f)
-    notes = []
     if not node:
         notes.append("node not on PATH: JavaScript syntax checked by bracket balance only")
     for note in notes:

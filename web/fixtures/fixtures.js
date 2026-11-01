@@ -1300,7 +1300,7 @@ window.MAITY_FIXTURES = {
       "operator": "Maintainer, Austria",
       "social": [
         {
-          "href": "https://mastodon.social/@maityteam",
+          "href": "https://social.example/@example",
           "label": "Mastodon"
         }
       ]

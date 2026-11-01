@@ -18,6 +18,11 @@ NOT_ROUTED = {
     ("POST", "/projects/{}/{}/forge/webhook"),
     # Contract without a route yet: tsk-4xqfxezvz0dh.
     ("DELETE", "/projects/{}/{}/tasks/{}/objection-hold"),
+    # Contract without a route yet: tsk-fct4awzw3k30.
+    ("GET", "/auth/pages/{}"),
+    ("GET", "/admin/settings/auth-pages"),
+    ("PATCH", "/admin/settings/auth-pages"),
+    ("POST", "/admin/settings/auth-pages/check"),
     # Contract without a route yet: tsk-r97n4e6v4kaz.
     ("PATCH", "/projects/{}/{}/conversations/{}/participants/{}"),
     # Contract without a route yet: tsk-962vfr5m8z7t.

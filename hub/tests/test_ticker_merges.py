@@ -223,6 +223,28 @@ def test_a_merge_reaches_area_owners_card_holders_and_the_contracts_implementers
     ), "one item per pull request"
 
 
+@pytest.mark.parametrize(
+    ("granted", "public"), [(None, True), ("app", False), ("owner_token", False)]
+)
+def test_only_a_merge_read_with_the_instances_token_counts_as_public(
+    owner: flow.Human,
+    team: dict[str, flow.Agent],
+    github: FakeGitHub,
+    migrated: Engine,
+    granted: str | None,
+    public: bool,
+) -> None:
+    """Data read through an owner's grant never reaches a page without sign-in (§11.4), and this
+    flag is all that stands between the two."""
+    enable(owner)
+    merged(github, 212, [{"filename": "hub/maity_hub/claims.py", "patch": "@@ -1 +1 @@\n-a\n+b\n"}])
+    reader = replace(READER, granted=granted)
+    assert reader.via == (granted or "instance")
+    assert probe.announce_merges(migrated, reader, project_id(migrated)) == 1
+    [item] = items(owner)
+    assert item["payload"]["merge"]["public"] is public
+
+
 def test_nothing_merged_before_the_ticker_was_switched_on(
     owner: flow.Human, team: dict[str, flow.Agent], github: FakeGitHub, migrated: Engine
 ) -> None:

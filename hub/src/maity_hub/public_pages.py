@@ -19,7 +19,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import Request, Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import Connection, Engine, delete, insert, select
 
 from maity_hub import clock
@@ -93,14 +93,23 @@ def answer(request: Request) -> Response | None:
     is a request without a live session, or one made with `?as=public` (§16.9)."""
     if not settings_of(request).public_pages:
         return None
+    path = request.url.path
     with engine_of(request).begin() as conn:
-        page = get(conn, request.url.path)
-        if page is None:
+        page = get(conn, path)
+        # The same address with a slash at the end, as a hand or a mail client may write it.
+        bare = path.rstrip("/") if page is None and path.endswith("/") else ""
+        if bare and get(conn, bare) is None:
+            return None
+        if page is None and not bare:
             return None
         if request.query_params.get("as") != "public" and auth_caller.has_live_session(
             conn, request.cookies
         ):
             return None
+    if bare:
+        query = f"?{request.url.query}" if request.url.query else ""
+        return RedirectResponse(f"{bare}{query}", status_code=308)
+    assert page is not None
     wait = BY_ADDRESS.hit(origin_of(request).address)
     if wait:
         raise rate_limited(wait)

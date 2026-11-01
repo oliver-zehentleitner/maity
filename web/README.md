@@ -1348,6 +1348,22 @@ grow past `tools/strings-baseline.json`: new text goes into the catalog,
 old text moves over view by view (`make fixtures` then lowers the
 baseline; nothing raises it but an edit to the file).
 
+A translation is `i18n/<lang>.json`, one of the ten languages of
+`docs/api.md` §16.7. `make check` fails on a key English does not have,
+placeholders that differ from English's in either direction, an empty text,
+and plural forms its language does not have (`PLURALS` in `tools/check.py`).
+A key left out reads in English and is only a note. `make fixtures` keeps
+`i18n/<lang>.meta.json`, which says which English text each translation
+follows, so a change of the English marks it out of date until its translation
+changes too; `tools/check.py --missing <lang>` lists what is missing or out of
+date, and `make release-check` fails on either.
+
+The hub's refusals stay in English in the API. `js/errors.js` gives them the
+reader's words by `code` and `details.reason`, in one place (`ApiError`), so
+every view that shows `err.message` gets them. In English the hub's own message
+stands, since it names the case and the catalog only the kind; so does it for a
+key not yet translated. `make check` fails on a code of `docs/api.md` §1.3 without words.
+
 ## Refresh
 
 - `GET /me` every 60 seconds and after every answer, none while the tab
@@ -1820,10 +1836,11 @@ and lists it as changes, the same as saved, not in the file, or refused.
 page, registration, the landing page), the second factor asked for once
 (§2.8.4: it holds for 10 minutes). A save that stops says what is saved
 and what is not, and goes no further; nothing is rolled back. The
-sections' own imports stay. `web/tools/maity-site.json` is the template:
-the landing page as it runs, the privacy notice, the terms and the
-imprint in all ten languages of `docs/api.md` §16.7, and no registration, which is
-the instance's own (a part the file leaves out stays as it is).
+sections' own imports stay. An operator writes their own file: the format
+is in `docs/api.md` §16.7, and **Export** gives a start. A file may leave out
+registration, which is the instance's own (a part the file leaves out stays
+as it is). `web/tools/site-fixture.json` is a neutral file for the tests, with
+every section and all ten languages, not a text to publish.
 Placeholders are written `{{name}}` (`{{operator}}`, `{{address}}`), and
 **Site values** in the same section keeps their values (`docs/api.md`
 §16.7.3). **Check the file** replaces them in every text and says for
