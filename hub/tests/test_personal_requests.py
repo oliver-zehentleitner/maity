@@ -345,3 +345,10 @@ def test_a_bad_status_is_refused_with_or_without_memberships(
     refused = human.get("/requests", params={"status": "bogus"})
     assert refused.status_code == 400
     assert refused.json()["error"]["details"]["fields"] == {"status": "unknown"}
+
+
+def test_nobody_names_on_behalf_of_on_a_personal_answer(owner: flow.Human) -> None:
+    """Checked before any lookup: only a proxy names one (§2.3), and none answers here."""
+    refused = owner.post("/requests/req-any/answer", {"reply_id": "go", "on_behalf_of": owner.id})
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"on_behalf_of": "proxy_only"}

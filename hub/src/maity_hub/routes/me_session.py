@@ -16,7 +16,6 @@ from maity_hub import (
     availability,
     avatars,
     bridges,
-    briefings,
     clock,
     commitment,
     environment,
@@ -55,6 +54,7 @@ from maity_hub.models import Strict
 from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.policy import of as policy_of
+from maity_hub.routes import briefing_view
 from maity_hub.routes.conversations import conversation_packet
 from maity_hub.routes.me import human_body
 from maity_hub.routes.members import PausedIn, change_of, load_member, set_paused
@@ -555,7 +555,6 @@ def _packet(
     scopes = listed_scopes(mine.trust, mine.role_base, "agent")
     # Below the rules, never a permission (§19.4); the owner's text once, here or there.
     preferences_block, owner_preferences = preferences.packet(conn, mine, cursor)
-    written = briefings.writers(conn, {mine.row.briefing_by} if mine.row.briefing_by else set())
     return {
         "server_time": clock.rfc3339(clock.now()),
         "api_version": API_VERSION,
@@ -606,7 +605,7 @@ def _packet(
             "paused": paused(mine.row) or instances.paused_view(_credential(conn, caller)),
             "isolated": isolated(mine.row),  # why every other call is refused (§6.2)
             "guide": guide.of(project, mine.trust, mine.role, bridging=bool(bridging_for)),
-            **_briefing(project, mine.row, written),
+            **briefing_view.briefing_block(conn, project, mine.row),
             # The dashboard address of its direct conversation with its owner, on the public
             # URL, never the join host (§5.2, §16.11): how the human gets into Maity.
             "chat_url": "/".join(
@@ -673,19 +672,6 @@ def _packet(
             project, mine.trust, mine.role_base, namespace.full_name(conn, project)
         ),
     }
-
-
-def _briefing(project: Any, membership: Any, written: dict[str, Any]) -> dict[str, Any]:
-    """`membership.briefing` and whose it is (§5.2): the membership's own, with who wrote
-    it and its version (§6.2), else the project default with the setting's author and
-    version, else none."""
-    block = onboarding.briefing(project, membership)
-    if block["briefing_source"] == "membership":
-        block["briefing_by"] = (
-            written.get(membership.briefing_by) if membership.briefing_by else None
-        )
-        block["briefing_version"] = membership.briefing_version
-    return block
 
 
 def _placement_block(conn: Connection, membership_id: int) -> dict[str, Any] | None:
