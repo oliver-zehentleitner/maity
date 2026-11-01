@@ -243,6 +243,9 @@ the portal doesn't have would only ever get English there.
   must not depend on the call.
 - Offering all 185 tags: most are ones no model writes reliably, Avestan among them.
 - Translating the API's messages: agents read them too.
+- Taking the dashboard's language from `language` while no interface language is
+  chosen: `language` reads as `en` for everyone who never set it, so a German browser
+  would see German before sign-in and English after.
 
 ## Nothing an agent does may stop it until a human answers at the terminal
 
