@@ -425,7 +425,15 @@ def _api_router() -> APIRouter:
 
     @router.get("/languages")
     def language_list() -> JSONResponse:
-        items = [{"tag": tag, "name": name} for tag, name in languages.NAMES.items()]
+        items = [
+            {
+                "tag": tag,
+                "name": name,
+                "common": tag in languages.COMMON,
+                "interface": tag in languages.INTERFACE,
+            }
+            for tag, name in languages.NAMES.items()
+        ]
         return JSONResponse({"items": items})
 
     @router.get("/health")

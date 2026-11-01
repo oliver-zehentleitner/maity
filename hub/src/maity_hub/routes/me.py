@@ -81,6 +81,7 @@ def human_body(conn: Connection, human_id: str) -> dict[str, Any]:
             "social": human.social or {},
             "links_visible": human.links_visible,
             "account_status": human.account_status,
+            "interface_language": human.interface_language,
             "terms": (
                 {
                     "version": human.terms_version,
