@@ -1,4 +1,5 @@
-"""`/avatars/{id}`, `/me/avatar` and `/agents/{id}/avatar` (docs/api.md §6.10).
+"""`/avatars/{id}`, `/me/avatar`, `/agents/{id}/avatar` and `/orgs/{org}/avatar` (docs/api.md §6.10,
+§6.26).
 
 `GET` serves the stored picture to the callers §6.10 lists and is `not_found` for
 everyone else, before `If-None-Match` is compared. `PUT` takes the raw image, has it
@@ -15,10 +16,10 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection
 
-from maity_hub import avatars, idempotency, images, moderation
+from maity_hub import avatars, idempotency, images, moderation, orgs
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, settings_of
-from maity_hub.errors import ApiError, forbidden, invalid, not_found
+from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.routes.agents import owned
 from maity_hub.routes.project_images import _matches
 
@@ -125,3 +126,33 @@ def put_agent_avatar(agent_id: str, request: Request, caller: HumanCaller) -> JS
 @router.delete("/agents/{agent_id}/avatar")
 def delete_agent_avatar(agent_id: str, request: Request, caller: HumanCaller) -> JSONResponse:
     return _change(request, caller, agent_id, _owners_agent(agent_id, caller))
+
+
+def _org_avatar(request: Request, caller: AnyCaller, org: str) -> JSONResponse:
+    """§6.26: an owner of the organisation. Someone outside it gets `not_found`, as for a handle
+    that names nothing; the role is read again in `_change`, before the replay too."""
+    if caller.kind == "agent":
+        raise humans_only("an organisation is for humans")
+    if caller.kind != "human" or caller.human_id is None:
+        raise forbidden()
+    human_id = caller.human_id
+    with engine_of(request).begin() as conn:
+        org_id = orgs.find(conn, human_id, org)[0].id
+
+    def check(conn: Connection) -> None:
+        if orgs.lock(conn, org_id) is None:  # deleted meanwhile
+            raise not_found()
+        if orgs.find(conn, human_id, org)[1] != "owner":
+            raise orgs.org_role()
+
+    return _change(request, caller, org_id, check)
+
+
+@router.put("/orgs/{org}/avatar")
+def put_org_avatar(org: str, request: Request, caller: AnyCaller) -> JSONResponse:
+    return _org_avatar(request, caller, org)
+
+
+@router.delete("/orgs/{org}/avatar")
+def delete_org_avatar(org: str, request: Request, caller: AnyCaller) -> JSONResponse:
+    return _org_avatar(request, caller, org)

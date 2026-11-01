@@ -8133,7 +8133,7 @@ stands on the organisation (§16.8, `suspend`), the view also carries
 | `GET /orgs/{org}` | a member of the organisation | the view; for anyone else `not_found`, as for a handle that names nothing |
 | `PATCH /orgs/{org}` | an organisation `owner` | any of `handle` (a rename, below), `display_name` (1–64 characters, no control character, as §2.7.4), `members_create_projects` (boolean), `public_page` (`off`, `on`; §16.9); `200` with the view. While the organisation is suspended (below) `public_page: on` and `handle` are `forbidden` (`details.reason: moderation_hold`) |
 | `DELETE /orgs/{org}` | an organisation `owner`; a sensitive call (§2.8.4) | `{"confirm": "<the organisation's handle>"}`; `204`; `invalid` (`details.fields.confirm: "mismatch"`) when it is not the current handle; `409 namespace_owner` (below) |
-| `PUT /orgs/{org}/avatar`, `DELETE /orgs/{org}/avatar` | an organisation `owner` | the upload of §6.10 and its removal; an organisation has no forge source |
+| `PUT /orgs/{org}/avatar`, `DELETE /orgs/{org}/avatar` | an organisation `owner` | the upload of §6.10 and its removal; an organisation has no forge source, and no `avatar_changed`, as it is no member of a project (§8.2) |
 | `GET /orgs/{org}/members` | a member of the organisation | `{items: [{id, handle, display_name, avatar_url, role, joined_at}]}`, humans only, ordered by `joined_at` |
 | `PATCH /orgs/{org}/members/{id}` | an `owner`: any role of anyone; an `admin`: `member` ↔ `admin` of someone who is not an `owner` | `{"role": "owner" \| "admin" \| "member"}`; `200` with the item; `409 org_last_owner` |
 | `DELETE /orgs/{org}/members/{id}` | an `owner`: anyone; an `admin`: a `member` or `admin`; every member: themselves (leaving) | `204`; `409 org_last_owner` |
@@ -12270,7 +12270,7 @@ The kinds are in §8.2. Rules that apply to all of them:
 
 - **Every event belongs to one project.** An event caused by a runner
   that concerns several projects (`runner_credential_revoked`,
-  `runner_detached` on `DELETE /runners`) is written once per project
+  `runner_detached` on `DELETE /runners/{id}`) is written once per project
   the runner is attached to, one row each. A runner action with no
   attached project — enrollment, pairing, re-pairing, renaming,
   removing, revoking an unattached runner's credential — writes no

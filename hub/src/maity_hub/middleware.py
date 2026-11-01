@@ -38,7 +38,7 @@ BODY_CAP = 64 * 1024
 # §6.10); past it the answer is `invalid` with `fields.body: too_large`, not 413.
 IMAGE_CAP = 1024 * 1024
 _IMAGE_UPLOAD = re.compile(
-    r"^/api/v1/(projects/[^/]+/[^/]+/(logo|banner)|me/avatar|agents/[^/]+/avatar)$"
+    r"^/api/v1/(projects/[^/]+/[^/]+/(logo|banner)|me/avatar|agents/[^/]+/avatar|orgs/[^/]+/avatar)$"
 )
 # The landing page and the legal pages may hold 256 KiB and 64 KiB-per-text of Markdown
 # (§16.7, §16.7.1); JSON escaping can grow it on the wire, so their PATCH alone takes a

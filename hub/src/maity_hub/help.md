@@ -633,7 +633,9 @@ the inbox.
   it, `null` when the client should draw the generated one. `PUT
   /api/v1/me/avatar` (the raw PNG, JPEG or WebP, at most 1 MiB and 4096
   pixels on a side) sets your own, `DELETE` removes it; it is the same in
-  every project, re-encoded by the hub, at most 10 changes an hour.
+  every project, re-encoded by the hub, at most 10 changes an hour. `PUT`
+  and `DELETE /api/v1/orgs/{org}/avatar` do the same for an organisation,
+  for its owners.
 - `GET /api/v1/projects/{slug}/keep-the-why` (`max_age`, `member`) — the
   project's published Keep the Why export, read from the repository's
   `.keep-the-why` family: per member a summary, and the entries that need

@@ -10,7 +10,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Engine, insert, select, update
 
 from maity_hub import clock, forge, probe
 from maity_hub import tables as t
@@ -722,3 +722,85 @@ def test_the_sweep_and_the_merge_round_turn_on_their_own() -> None:
         merges.append(probe._rotated(["a", "b"], "merges")[0])
         sweeps.append(probe._rotated(["a", "b"], "sweep")[0])
     assert set(merges) == {"a", "b"} and set(sweeps) == {"a", "b"}
+
+
+def _other_project_report(owner: flow.Human, make_client: ClientFactory, github: FakeGitHub) -> str:
+    """A report in a second project, acme/other, seen open once."""
+    flow.project(owner, "other", repository={**REPO, "url": "https://github.com/acme/other"})
+    agent = flow.agent(make_client, owner, "other")
+    base = "/projects/maintainer/other/tasks"
+    card = owner.post(base, {"title": "Another card"}).json()
+    assert agent.post(f"{base}/{card['id']}/claim", {}).status_code == 200
+    url = "https://github.com/acme/other/pull/7"
+    body = _report(pr={"number": 7, "url": url, "head": SHA, "state": "open"})
+    assert agent.post(f"{base}/{card['id']}/report", body).status_code == 200
+    github.answers["/repos/acme/other"] = {"full_name": "acme/other"}
+    for path in ("pulls/7", "branches/agent-b%2Fprobe"):
+        github.answers[f"/repos/acme/other/{path}"] = github.answers[f"/repos/acme/maity/{path}"]
+    return str(card["id"])
+
+
+def _observed(engine: Engine, card_id: str) -> Any:
+    with engine.connect() as conn:
+        report = conn.execute(select(t.card.c.report).where(t.card.c.id == card_id)).scalar_one()
+    return report["observed"]
+
+
+@pytest.mark.parametrize("reason", ["no_grant", "private_without_grant"])
+def test_a_project_no_source_covers_costs_the_others_nothing(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    github: FakeGitHub,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    reason: str,
+) -> None:
+    github.pull(7)
+    github.branch("agent-b/probe")
+    _, covered = _reported_card(owner, make_client)
+    other = _other_project_report(owner, make_client, github)
+    assert probe.observe_report(migrated, READER, other) is True
+    assert probe.observe_report(migrated, READER, covered) is True
+    with migrated.begin() as conn:  # the refused report comes first in the re-reads
+        row = conn.execute(select(t.card).where(t.card.c.id == other)).one()
+        other_project = row.project_id
+        older = {**row.report["observed"], "observed_at": "2020-01-01T00:00:00Z"}
+        conn.execute(
+            update(t.card)
+            .where(t.card.c.id == other)
+            .values(report={**row.report, "observed": older})
+        )
+    for path in list(github.answers):
+        if path.startswith("/repos/acme/other"):
+            github.answers[path] = forge.NotCoveredError(reason)
+    github.pull(7, head="b" * 40)  # what a new read of the covered project sees
+    monkeypatch.setattr(probe, "MAX_AGE", 0)
+    monkeypatch.setattr(probe, "REREAD_PER_ROUND", 1)  # the refused report must not use it up
+    with caplog.at_level("WARNING", logger="maity_hub.probe"):
+        probe.sweep(migrated, READER)
+    assert _observed(migrated, covered)["pr_head_sha"] == "b" * 40
+    assert _observed(migrated, other)["pr_head_sha"] == SHA
+    lines = [r.getMessage() for r in caplog.records if reason in r.getMessage()]
+    assert lines == [f"probe: project {other_project}: no source covers the repository ({reason})"]
+
+
+def test_a_merge_round_goes_on_past_a_project_no_source_covers(
+    monkeypatch: pytest.MonkeyPatch, owner: flow.Human, migrated: Engine, github: FakeGitHub
+) -> None:
+    flow.project(owner, "other", repository={**REPO, "url": "https://github.com/acme/other"})
+    with migrated.begin() as conn:
+        projects = conn.execute(select(t.project.c.id)).scalars().all()
+        for project_id in projects:
+            conn.execute(
+                insert(t.ticker_source).values(project_id=project_id, merges_since=clock.now())
+            )
+    seen: list[str] = []
+
+    def announce(_engine: Engine, _fg: Any, project_id: str) -> None:
+        seen.append(project_id)
+        raise forge.NotCoveredError("no_grant")
+
+    monkeypatch.setattr(probe, "announce_merges", announce)
+    probe.merge_sweep(migrated, READER)
+    assert sorted(seen) == sorted(projects)
