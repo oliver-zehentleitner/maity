@@ -162,7 +162,17 @@ code{font-family:var(--font-mono);font-size:.92em}
 .steps3{list-style:none;margin:0;padding:0;display:grid;gap:12px}
 .steps3 h3{margin:0 0 .2rem;font-size:1.1rem}.steps3 p{margin:0;color:var(--muted)}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px}
-.links{display:flex;flex-wrap:wrap;gap:12px;margin-top:24px}
+.links{display:flex;flex-wrap:wrap;gap:12px 20px;margin-top:24px}
+.section .eyebrow{margin:0 0 12px}
+.section-text p:not(.eyebrow){color:var(--muted);max-width:44em}
+.opensource-body{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);gap:48px;align-items:start}
+.opensource h2{font-size:clamp(1.8rem,3vw,2.3rem)}
+.opensource .lead{margin:0;font-size:1rem}
+.opensource .tiles{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
+.opensource .tile{background:var(--bg)}
+.tile-label{display:block;font:12px/1.4 var(--font-mono);color:var(--accent)}
+.text-link::after{content:" \2192"}
+@media (max-width:900px){.opensource-body{grid-template-columns:minmax(0,1fr);gap:28px}}
 .faq{max-width:52rem}
 .faq details p{margin:.6rem 0 0;color:var(--muted)}
 .cta-band{display:grid;grid-template-columns:auto minmax(0,1fr);gap:32px;align-items:center;padding:56px 0}

@@ -607,11 +607,11 @@ window.Maity = window.Maity || {};
   }
   const LANDING_AGENTS = ["claude-code", "codex", "opencode", "gemini", "antigravity", "copilot", "cursor", "pi", "goose", "cline", "roo", "kilo", "amp", "droid", "windsurf", "zed", "kiro-cli", "trae", "openclaw"];
   const LANDING_TYPES = {
-    hero: ["eyebrow", "title", "subline", "cta_primary", "cta_secondary", "note"], stats: ["items"], steps: ["title", "items"],
-    scales: ["title", "items"], faq: ["title", "items"], cta_band: ["title", "text", "cta"], text: ["title", "markdown"],
-    activity: ["title", "count"], profiles: ["title", "markdown", "handles"], explore: ["title", "projects"],
+    hero: ["eyebrow", "title", "subline", "cta_primary", "cta_secondary", "note"], stats: ["items"], steps: ["eyebrow", "title", "items"],
+    scales: ["eyebrow", "title", "items"], faq: ["eyebrow", "title", "items"], cta_band: ["title", "text", "cta"], text: ["eyebrow", "title", "markdown"],
+    activity: ["title", "count"], profiles: ["eyebrow", "title", "markdown", "handles"], explore: ["title", "projects"],
     collab: ["title", "text", "items", "footnote"], works_with: ["label", "items", "more"],
-    demo: ["title", "subline", "terminal_lines", "inbox", "steps"], opensource: ["title", "markdown", "tiles", "links"],
+    demo: ["eyebrow", "title", "subline", "terminal_lines", "inbox", "steps"], opensource: ["eyebrow", "title", "markdown", "tiles", "links"],
   };
   // A list of a section with its bounds, as the hub's landing._list: a
   // missing one is required unless optional (`required` false), one outside
@@ -664,6 +664,7 @@ window.Maity = window.Maity || {};
       Object.keys(s).forEach((k) => { if (k !== "type" && k !== "enabled" && k !== "nav_label" && !known.includes(k)) errors[sp + "." + k] = "extra_forbidden"; });
       // A header link's label (§16.7, #909): trimmed, 1–24 characters, optional on every type.
       if (s.nav_label !== undefined && s.nav_label !== null) landingText(typeof s.nav_label === "string" ? s.nav_label.trim() : s.nav_label, sp + ".nav_label", 24, false, errors);
+      if (s.type !== "hero" && known.includes("eyebrow")) landingText(s.eyebrow, sp + ".eyebrow", 40, false, errors);
       const items = s.items || [];
       if (s.type === "hero") {
         landingText(s.eyebrow, sp + ".eyebrow", 40, false, errors); landingText(s.title, sp + ".title", 120, true, errors);
@@ -718,7 +719,7 @@ window.Maity = window.Maity || {};
         landingList(s.steps, sp + ".steps", 3, 3, errors, (x, ip) => { landingText(x.title, ip + ".title", 80, true, errors); landingText(x.text, ip + ".text", 300, true, errors); });
       } else if (s.type === "opensource") {
         landingText(s.title, sp + ".title", 120, true, errors); landingMarkdown(s.markdown, sp + ".markdown", 600, false, errors);
-        landingList(s.tiles, sp + ".tiles", 1, 3, errors, (x, ip) => { landingText(x.title, ip + ".title", 80, true, errors); landingText(x.text, ip + ".text", 300, true, errors); });
+        landingList(s.tiles, sp + ".tiles", 1, 3, errors, (x, ip) => { landingText(x.label, ip + ".label", 40, false, errors); landingText(x.title, ip + ".title", 80, true, errors); landingText(x.text, ip + ".text", 300, true, errors); });
         landingList(s.links, sp + ".links", 0, 4, errors, (x, ip) => landingCta(x, ip, true, errors), false);
       }
     });

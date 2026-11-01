@@ -1071,7 +1071,7 @@ the fixture hub with it: it refuses the field as the hub does.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the card tsk-73gz17sbq1k4 and docs/api.md §16.6 (per-day series, counts only, no chart library beyond the dashboard's); the dashboard's implementation, 2026-10-25; the designer was not asked yet
+**Source:** the cards tsk-73gz17sbq1k4 and tsk-h8805v7phn9b and docs/api.md §16.6 (per-day series, counts only, no chart library beyond the dashboard's); the dashboard's implementation, 2026-10-25; the designer was not asked yet
 **Revisit when:** the hub answers distinct active people per window, or the designer reworks the tiles
 
 Each day series is one row: the window's figure, today's value and a
@@ -1088,9 +1088,13 @@ drawing an unknown day as a solid zero.
 days would count the same person thirty times and look like growth that
 is not there; a distinct count per window is not in the answer, and the
 page invents no number. One line per series keeps every chart to one
-scale and one colour, so none needs a legend.
+scale and one colour, so none needs a legend. Every row spans the same
+width so the rows can be read against each other by day, and an unknown
+number is never shown as a 0.
 
 **Rejected alternative:** a sum for every series: wrong for people.
+A gap for the unknown days: the line starts in the middle of its row. A
+solid line at zero: it invents a number.
 One chart with all series: eight scales in one axis, and colours that
 would need a legend. A chart library: the contract and the CSP keep the
 page to its own code.
@@ -4136,8 +4140,9 @@ a round (§20.7) sees that round nowhere here, since no listing is open to them.
 
 The editor offers the agents of a **Works with** section from a list in
 `js/landing.js`, the slugs and names of `AGENTS` in
-`hub/src/maity_hub/landing.py`, in the same order. `tools/smoke.js` reads the
-hub's file and fails when the two differ.
+`hub/src/maity_hub/landing.py`, in the same order. The check before a save
+has the slugs as `LANDING_AGENTS` in `js/api.js`. `tools/smoke.js` reads the
+hub's file and fails when either copy differs from it.
 
 **Reason:** the contract serves no such list, and adding an agent is a change
 in the code anyway, so a comparison catches a drift when it is made.
