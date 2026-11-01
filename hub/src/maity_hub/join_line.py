@@ -52,7 +52,4 @@ def windows(install: str, url: str, code: str) -> str | None:
         return None
     path = f"{PIPX_PATH_POWERSHELL}; " if install.startswith("pipx ") else ""
     found = "Get-Command maity -ErrorAction SilentlyContinue"
-    return (
-        f"{path}if (-not ({found})) {{ {install} }}; "
-        f"if ({found}) {{ {plain(url, code)} }}"
-    )
+    return f"{path}if (-not ({found})) {{ {install} }}; " f"if ({found}) {{ {plain(url, code)} }}"
