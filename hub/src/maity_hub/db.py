@@ -288,19 +288,24 @@ def create_revision(
 # Deadlock and serialisation failures: the database rolled the transaction back
 # and expects it to be run again. InnoDB reports them under ordinary
 # concurrency (two calls of one agent touching its credential and cards).
-TRANSIENT = {"40001", "40P01", "1213", "1205"}
+TRANSIENT = {"40001", "40P01", "1213"}
 # A deadlock inside a savepoint on InnoDB takes the savepoint with it, and rolling back to it fails
-# with this in place of the deadlock: it has the SQLSTATE of a syntax error, so the number decides.
+# with this in place of the deadlock, which stays behind it in the exception's context. Only then is
+# it run again: without a deadlock behind it, a lost savepoint is a bug.
 SAVEPOINT_GONE = 1305
 RETRIES = 4
 
 
 def is_transient(error: BaseException) -> bool:
-    from maity_hub.errors import driver_code, driver_number
+    from maity_hub.errors import driver_code, driver_number, errors_behind
 
     if not isinstance(error, OperationalError | DBAPIError):
         return False
-    return driver_code(error) in TRANSIENT or driver_number(error) == SAVEPOINT_GONE
+    if driver_code(error) in TRANSIENT:
+        return True
+    return driver_number(error) == SAVEPOINT_GONE and any(
+        driver_code(behind) in TRANSIENT for behind in errors_behind(error)
+    )
 
 
 def retrying[T](work: Callable[[], T]) -> T:

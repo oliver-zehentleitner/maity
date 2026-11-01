@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 
 import pytest
 from sqlalchemy import Engine, insert, select, update
@@ -18,6 +19,11 @@ class _Deadlock(Exception):
 
 class _Gone(Exception):
     args = (2003,)
+
+
+class _LockWait(Exception):
+    sqlstate = "HY000"
+    args = (1205,)
 
 
 class _SavepointGone(Exception):
@@ -50,8 +56,42 @@ def test_any_other_failure_surfaces_at_once() -> None:
     assert len(errors) == 1  # not retried
 
 
+def _gone_after(earlier: Exception) -> OperationalError:
+    """What a failed `ROLLBACK TO SAVEPOINT` raises while `earlier` is being handled."""
+    gone = OperationalError("ROLLBACK TO SAVEPOINT", {}, _SavepointGone())
+    gone.__context__ = OperationalError("stmt", {}, earlier)
+    return gone
+
+
+def _raising(errors: list[OperationalError]) -> Callable[[], str]:
+    def work() -> str:
+        if errors:
+            raise errors.pop(0)
+        return "done"
+
+    return work
+
+
 def test_a_savepoint_a_deadlock_took_with_it_is_run_again() -> None:
-    assert retrying(_failing([_SavepointGone()])) == "done"  # type: ignore[arg-type]
+    assert retrying(_raising([_gone_after(_Deadlock())])) == "done"
+
+
+def test_a_lost_savepoint_without_a_deadlock_behind_it_surfaces_at_once() -> None:
+    errors = [OperationalError("stmt", {}, _SavepointGone()), _gone_after(_Gone())]
+    with pytest.raises(OperationalError):
+        retrying(_raising(errors))
+    assert len(errors) == 1
+    with pytest.raises(OperationalError):
+        retrying(_raising(errors))
+    assert errors == []
+
+
+def test_a_lock_wait_timeout_surfaces_at_once() -> None:
+    """The whole lock timeout again on each attempt is no help to anyone waiting."""
+    errors = [OperationalError("stmt", {}, _LockWait()), _gone_after(_Deadlock())]
+    with pytest.raises(OperationalError):
+        retrying(_raising(errors))
+    assert len(errors) == 1
 
 
 def test_a_real_deadlock_inside_a_savepoint_is_run_again(migrated: Engine) -> None:

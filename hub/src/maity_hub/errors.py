@@ -8,12 +8,13 @@ body.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from sqlalchemy.exc import InterfaceError, OperationalError
+from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 ERROR_HEADER = "Maity-Error"
@@ -111,6 +112,15 @@ def driver_number(error: Exception) -> int | None:
     return args[0] if args and isinstance(args[0], int) else None
 
 
+def errors_behind(error: BaseException) -> Iterator[Exception]:
+    """The database errors this one replaced: a failed rollback hides the failure that caused it."""
+    earlier = error.__context__
+    while earlier is not None:
+        if isinstance(earlier, DBAPIError):
+            yield earlier
+        earlier = earlier.__context__
+
+
 # What a connection failure can be, found by phrases the drivers use. Nothing of the driver's text
 # is kept: the category is chosen from this list and only its name is logged, so a password, a
 # user, a host or a connection string in the text cannot reach the log, whatever escaping it uses.
@@ -180,10 +190,11 @@ def install(app: FastAPI) -> None:
         # Connection-level failures. The client never gets the driver's text (§1.3); the log gets it
         # masked, because without the cause a burst of these cannot be told apart.
         log.error(
-            "database unavailable: %s %s number=%s %s",
+            "database unavailable: %s %s number=%s behind=%s %s",
             type(error).__name__,
             driver_code(error),
             driver_number(error),
+            ",".join(str(driver_number(behind)) for behind in errors_behind(error)) or "-",
             driver_reason(error),
         )
         return error_response(503, "database_unavailable", "the database is unreachable")

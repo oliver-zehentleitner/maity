@@ -325,7 +325,7 @@ one pragma.
 **Id:** 308ec265-2ca6-463a-9006-6d149c5b0b79
 **Type:** decision
 **Status:** active
-**Evidence:** inferred
+**Evidence:** confirmed
 **Source:** implementation session, 2026-10-21 (the join slice; a CI failure on MariaDB, reproduced locally under load)
 **Revisit when:** a transient conflict still reaches a client as 503, or a second replica changes how often they happen
 
@@ -334,7 +334,7 @@ the order the authentication side effects use: credential, membership,
 session, cards — the resume packet was reordered to match. Each whole
 transaction of authentication, resume, the join exchange and the
 idempotent writes runs through `maity_hub.db.retrying`: on a deadlock or
-serialisation failure (SQLSTATE `40001`, `40P01`, MySQL `1213`, `1205`) it
+serialisation failure (SQLSTATE `40001`, `40P01`, MySQL `1213`) it
 is run again, at most four times, with a short randomised backoff.
 
 **Reason:** InnoDB answers a lock cycle between two transactions with a
@@ -346,28 +346,40 @@ yet, since InnoDB's next-key locks make them hard to rule out by reading.
 The error handler logs the driver's code (never its text) so that the
 next one is identifiable.
 
-A deadlock inside a savepoint reaches `retrying` in disguise: InnoDB rolls
-the whole transaction back, the savepoint goes with it, and rolling back to
-it fails with `1305` (SQLSTATE `42000`, that of a syntax error), which
-replaces the deadlock. `retrying` therefore also takes number `1305`, by the
-number since the SQLSTATE says nothing, and the log line gives the number
-too. Seen on 2026-11-01 as a loser of the agent cap's race answering 503
-instead of 409 on `hub-mariadb`. That the 503 there was this error is inferred
-from the logged `42000`; what the other side of the cycle was is unknown, and
-300 local races on MariaDB 10.11 showed no deadlock. A `1305` from a bug would
-run four times and then surface as before.
-
-Open: `1205`, a lock wait timeout, is listed above but not run again on
-MariaDB. The driver gives it SQLSTATE `HY000`, and `driver_code` prefers the
-SQLSTATE, so the number in `TRANSIENT` never matches (checked on 2026-11-01).
-It stays so for now: each attempt can wait the server's whole lock timeout.
-
 **Rejected alternatives:**
 - Retries alone — reduced the failures to about 3 % under the same load,
   but left the cause in place.
 - Locking the project row at the start of every authenticated call —
   removes every cycle, but serialises all calls of a project, reads
   included.
+
+## A lost savepoint is run again only with a deadlock behind it, and a lock wait timeout not at all
+
+**Id:** a26bee17-aeb3-4992-862d-a2ca3191bb91
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-2fsdy2ggde42, `hub-mariadb` on 2026-11-01 (run 41312749448), #1057 and its review; lead's decision on `1205`, 2026-11-01
+**Revisit when:** the log shows `number=1205` on routes people wait for, or a lock wait timeout is set far below the server's default, or `number=1305 behind=-` appears
+
+A deadlock inside a savepoint reaches `retrying` in disguise: InnoDB rolls the whole transaction
+back, the savepoint goes with it, and rolling back to it fails with `1305` (SQLSTATE `42000`), which
+replaces the deadlock. `retrying` takes a `1305` only when a transient error stands behind it in the
+exception's context, and the log line of a database failure gives both numbers (`number=1305
+behind=1213`). A lock wait timeout (`1205`) is not run again.
+
+**Reason:** the mechanism and the chain were checked on MariaDB 10.11. That the loser of the agent
+cap's race answered 503 for this reason is inferred from the `42000` that run logged, the only
+number it gave; the other side of that cycle is unknown, and about 600 local races showed no
+deadlock. `1205` stood in `TRANSIENT` without effect, because the driver reports SQLSTATE `HY000`
+and `driver_code` prefers that; it left the list rather than start working, since each attempt can
+wait the server's whole lock timeout (50 s by default, up to 200 s over four attempts) while the
+caller holds a thread and a connection.
+
+**Rejected alternatives:**
+- Running every `1305` again, which #1057 did: a bug that loses a savepoint would run four times, and
+  the number of the real cause stayed unlogged.
+- Retrying `1205` by adding `HY000`: that SQLSTATE covers unrelated errors too.
 
 ## READ COMMITTED on every server engine
 
