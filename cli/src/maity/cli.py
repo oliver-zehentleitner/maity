@@ -1076,7 +1076,7 @@ def _ask_body(args: argparse.Namespace) -> dict[str, Any]:
 
 
 ACTION_METHODS = ("POST", "PUT", "PATCH", "DELETE")
-ACTION_BODY_MAX = 64 * 1024  # §7
+ACTION_BODY_MAX = 48 * 1024  # §7
 
 
 def _read_bytes(source: str, flag: str) -> bytes:
@@ -1108,12 +1108,18 @@ def _action(spec: str, body_source: str | None) -> dict[str, Any]:
     if body_source is not None:
         data = _read_bytes(body_source, "--action-body")
         if len(data) > ACTION_BODY_MAX:
-            raise UsageError("--action-body is at most 64 KiB")
+            raise UsageError("--action-body is at most 48 KiB")
         try:
             body = data.decode("utf-8")
             json.loads(body)
         except (UnicodeDecodeError, json.JSONDecodeError):
             raise UsageError("--action-body is not JSON text in UTF-8") from None
+        # The hub counts the text, the request's own cap counts it escaped (§1.7).
+        if len(json.dumps(body, separators=(",", ":"))) > ACTION_BODY_MAX:
+            raise UsageError(
+                "--action-body is at most 48 KiB also once escaped as a JSON string: "
+                "quotes and non-ASCII characters take more bytes on the wire"
+            )
     return {
         "method": method,
         "path": path.removeprefix(hub.API),

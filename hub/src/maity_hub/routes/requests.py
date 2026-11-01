@@ -72,7 +72,9 @@ class NeedsInSessionIn(Strict):
 
 ACTION_METHODS = ("POST", "PUT", "PATCH", "DELETE")
 ACTION_CLASSES = ("decision", "consent")
-ACTION_BODY_MAX = 64 * 1024
+# Below the 64 KiB of the whole request (§1.7): the title and the JSON around the body need room,
+# and a body over this gets a name instead of the bare `payload_too_large`.
+ACTION_BODY_MAX = 48 * 1024
 
 
 class ActionIn(Strict):

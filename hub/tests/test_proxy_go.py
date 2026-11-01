@@ -162,11 +162,14 @@ def test_the_call_is_checked(proxy: Proxy, change: dict[str, Any], field: str, v
     assert refused.json()["error"]["details"]["fields"][field] == value
 
 
-def test_a_body_at_the_cap_does_not_fit_its_request_yet(proxy: Proxy) -> None:
-    """The whole request is capped at 64 KiB (§1.7), so `too_large` stays out of reach for now:
-    the hub refuses first, with the wrapper counted."""
-    action = {"method": "POST", "path": TICKER, "body": json.dumps("x" * 65536)}
-    assert proxy.ask(action).status_code == 413
+def test_a_body_over_the_cap_is_refused_by_name_and_one_at_it_fits(proxy: Proxy) -> None:
+    def body(size: int) -> dict[str, Any]:
+        return {"method": "POST", "path": TICKER, "body": json.dumps("x" * (size - 2))}
+
+    assert proxy.ask(body(requests.ACTION_BODY_MAX)).status_code == 201
+    refused = proxy.ask(body(requests.ACTION_BODY_MAX + 1))
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"]["action.body"] == "too_large"
 
 
 def test_only_a_proxy_sets_action(owner: flow.Human, make_client: ClientFactory) -> None:
