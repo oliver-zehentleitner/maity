@@ -4339,10 +4339,10 @@ The section (`js/admin-sign-in.js`) lists the sign-in methods with each value's 
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's wish on tsk-fct4awzw3k30, 2026-11-01; the plan the coordinator approved; docs/api.md §16.7.4
+**Source:** the maintainer's wish on tsk-fct4awzw3k30 and decision req-885kx86hhab4 on tsk-ya56x9gx986r, 2026-11-01; the plan the coordinator approved; docs/api.md §16.7.4
 
-The site file gives `/login` and `/register` their words per language from a fixed list of keys; the dashboard renders both, with its built-in English for a key left out or a failed read. The hub chooses the language as for the landing page. The rest of the dashboard, the second step of a sign-in included, stays English until the maintainer says otherwise.
+The site file gives `/login` and `/register` their pitch per language: title, subline, three points and a note. Every word of the forms comes from the dashboard's catalogue, which is translated with the rest of the portal, and the catalogue also supplies a key left out or a failed read. The hub chooses the file's language as for the landing page.
 
 **Reason:** `next`, the device code's polling, the second factor and a session that ends under a page all live in the dashboard, so a second renderer would be a second sign-in path. No sign-in may depend on reading words.
 
-**Rejected alternatives:** the hub rendering the two pages as it does the landing page: a second path, above. Free HTML or sections from the file: the forms are a security surface. A format `maity-site/2`: it would invalidate files in use, and a part left out already stays as it is. Words in the `registration` part: those are settings, with their own environment rules. A table of its own with versions: unlike legal texts nothing needs to be proven later, so one setting row is enough.
+**Rejected alternatives:** form labels and buttons in the file too, with the file winning over the catalogue: two sources for one text, and an imported file would pin a form's words against later catalogue changes. The hub rendering the two pages as it does the landing page: a second path, above. Free HTML or sections from the file: the forms are a security surface. A format `maity-site/2`: it would invalidate files in use, and a part left out already stays as it is. Words in the `registration` part: those are settings, with their own environment rules. A table of its own with versions: unlike legal texts nothing needs to be proven later, so one setting row is enough.

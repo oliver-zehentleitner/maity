@@ -1958,7 +1958,7 @@ change: until it exists, a registered account has exactly the limits
 every account has today, and an account gets the operator's default
 limits once part two defines them.
 
-The words of the page `/register` are instance content (§16.7.4); its form
+The pitch of the page `/register` are instance content (§16.7.4); its form
 and everything below are not.
 
 **Modes.** The instance setting `registration` (§16.4):
@@ -13455,15 +13455,15 @@ allowed.
 
 ### 16.7.4 Sign-in and sign-up pages
 
-The words of `/login` and `/register`, per language, as instance content:
-in the database, written by the instance admin. Only words: the forms,
-their fields and order, their checks, the look and the pictures are the
-dashboard's code, the same for every instance. The dashboard renders both
+The pitch of `/login` and `/register`, per language, as instance content:
+in the database, written by the instance admin. Only that: the forms, their
+fields and order, their checks, the look and the pictures are the dashboard's
+code, the same for every instance, and every word of the forms comes from
+the dashboard's catalogue, translated as the rest of it is. The dashboard renders both
 pages, in the app shell (§16.11), so the sign-in has one path: `next`, the
 device code, the mail's link and the second factor work as §2.6 and §2.8
-say, whatever these settings hold. Everything else in the dashboard,
-including the second step of a sign-in and refusals the hub words, stays
-English.
+say, whatever these settings hold. One text has one source: no key below
+overrides the catalogue.
 
 ```
 GET, PATCH /admin/settings/auth-pages
@@ -13495,8 +13495,8 @@ one that is only white space or holds a line break or a control character.
 
 | Page | Keys |
 |---|---|
-| `sign_in` | `title`, `subline`, `point_1`, `point_2`, `point_3`, `note`, `handle_label`, `password_label`, `submit`, `code_open`, `code_title`, `code_label`, `code_hint`, `code_continue`, `mail_title`, `mail_address`, `mail_send`, `mail_sent`, `register_prompt`, `register_link` |
-| `sign_up` | `title`, `subline`, `point_1`, `point_2`, `point_3`, `note`, `address_label`, `password_label`, `repeat_label`, `submit`, `explain`, `sent_title`, `sent_text`, `sent_spam`, `terms_prompt`, `terms_link`, `sign_in_prompt`, `sign_in_link` |
+| `sign_in` | `title`, `subline`, `point_1`, `point_2`, `point_3`, `note` |
+| `sign_up` | `title`, `subline`, `point_1`, `point_2`, `point_3`, `note` |
 
 A refused value is `invalid` with `details.fields.<path>`, the path such as
 `pages.sign_in.de.title`: `extra_forbidden` for a page or key not listed,
@@ -13515,7 +13515,7 @@ an unknown `lang` is no error. A page with no text in the chosen language is
 still `200`: `language` is `default_language` and `texts` is `{}`.
 
 ```json
-{ "language": "de", "texts": { "title": "Willkommen zurück", "submit": "Anmelden" } }
+{ "language": "de", "texts": { "title": "Willkommen zurück", "subline": "Melde dich an." } }
 ```
 
 `texts` holds each key from the chosen language, else from
@@ -13523,9 +13523,10 @@ still `200`: `language` is `default_language` and `texts` is `{}`.
 stored. `Cache-Control: public, max-age=60`, `ETag`, `Vary: Accept-Language`.
 
 **The dashboard** asks this once when it draws one of the two pages, passing
-`lang` from its own address, and sets the page's `lang` to `language`. A key
-left out takes its built-in English; a failed read draws the page in built-in
-English with no message, as sign-in never depends on this call. The links of
+as `lang` the language it draws in. These words carry their own `lang` when
+`language` differs from it. A key left out takes the catalogue's text; a failed
+read draws the page from the catalogue with no message, as sign-in never depends
+on this call. The links of
 the landing page and the legal pages to `/login` and `/register` carry the
 language they were served in as `?lang=<tag>`.
 
