@@ -202,12 +202,27 @@ window.Maity = window.Maity || {};
   // The new card (POST /tasks). assigned_to needs tasks:admin; a project in
   // plan or review needs a reason (docs/api.md §6.1).
   // parent: the card a new subtask goes under, or none.
+  // Which role a card is for (§6.4), the built-in ones and then the project's
+  // own, added when they arrive so that a choice made meanwhile stays. A role
+  // the list does not offer stays chosen: a save never drops what it cannot show.
+  function needsSelect(ctx, id, current) {
+    const option = (r) => h("option", { value: r }, M.trust.roleLabel(r));
+    const offered = M.trust.NEEDS_ROLES.slice();
+    const select = h("select", { id }, h("option", { value: "" }, M.t("cards.needs.none")), offered.map(option));
+    const add = (r) => { if (!offered.includes(r)) { offered.push(r); select.appendChild(option(r)); } };
+    if (current) add(current);
+    select.value = current || "";
+    M.api.get(ctx.base + "/roles").then((r) => { ((r && r.custom) || []).forEach((x) => add(x.name)); }).catch(() => {});
+    return select;
+  }
+
   function newCardForm(ctx, cards, create, onCancel, parent) {
     const id = (f) => (parent ? "new-subtask-" : "new-card-") + f;
     const title = h("input", { id: id("title"), required: true, maxlength: "200", autocomplete: "off" });
     const body = M.dom.sendOnCtrlEnter(h("textarea", { id: id("body"), rows: "4", placeholder: M.t("cards.new.body.placeholder") }));
     const label = h("select", { id: id("label") }, LABELS.map(([v, l]) => h("option", { value: v }, l())));
     label.value = "";
+    const needs = needsSelect(ctx, id("needs"), null);
     const kind = h("select", { id: id("kind") }, KINDS.map(([v, l]) => h("option", { value: v }, l())));
     kind.value = "task";
     const areas = [...new Set(ctx.members.flatMap((m) => m.areas || []))].sort();
@@ -248,6 +263,7 @@ window.Maity = window.Maity || {};
         const card = { title: title.value.trim(), kind: kind.value, status: locked ? "proposed" : status.value };
         if (body.value.trim()) card.body = body.value;
         if (label.value) card.label = label.value;
+        if (needs.value) card.needs = needs.value;
         if (area.value.trim()) card.area = area.value.trim();
         if (assignee && assignee.value) card.assigned_to = assignee.value;
         const d = chosen(deps);
@@ -273,6 +289,7 @@ window.Maity = window.Maity || {};
     h("label", { for: id("body") }, M.t("cards.new.field.body", { keys: M.dom.SEND_KEYS })), body,
     h("label", { for: id("kind") }, M.t("cards.new.field.kind")), kind,
     h("label", { for: id("label") }, M.t("cards.new.field.label")), label,
+    h("label", { for: id("needs") }, M.t("cards.new.field.needs")), needs,
     h("label", { for: id("area") }, M.t("cards.new.field.area")), area, areaList,
     h("label", { for: id("status") }, M.t("cards.new.field.status")), status,
     locked ? h("p", { class: "hint" }, M.t("cards.new.proposed_hint")) : null,
@@ -285,5 +302,5 @@ window.Maity = window.Maity || {};
     return { form, focus: () => title.focus(), body };
   }
 
-  M.boardEdit = { editable, childProposed, targets, moveControl, assignControl, orderControl, orderable, byOrder, newCardForm, said, COLUMNS, columnName };
+  M.boardEdit = { editable, childProposed, targets, moveControl, assignControl, orderControl, orderable, byOrder, newCardForm, needsSelect, said, COLUMNS, columnName };
 })(window.Maity);
