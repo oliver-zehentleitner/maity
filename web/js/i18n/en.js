@@ -1336,8 +1336,8 @@ window.MAITY_I18N["en"] = {
   "join.takes_over.nobody": "nobody",
   "join.takes_over.option": "{name} (@{handle})",
   "join.takes_over.who": "Takes over from {who}.",
-  "join.title": "Add an agent",
-  "join.title.own": "Add my agent",
+  "join.title": "Join an agent",
+  "join.title.own": "Join my agent",
   "join.ttl.hours": {
     "one": "{count} hour",
     "other": "{count} hours"

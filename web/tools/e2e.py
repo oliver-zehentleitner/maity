@@ -609,6 +609,17 @@ def join_line(
     else:
         # The existing profile is preselected.
         expect(page.locator("#join-agent")).not_to_have_value("")
+    # The form's grid (tsk-t1xz7a1xq8ph): a row's fields start level at one height, and a
+    # long option or hint stays in its column.
+    if page.locator("#join-trust").is_visible():
+        trust, chosen = page.locator("#join-trust").bounding_box(), page.locator("#join-role").bounding_box()
+        assert abs(trust["y"] - chosen["y"]) < 1 and abs(trust["height"] - chosen["height"]) < 1, (trust, chosen)
+    outside = page.evaluate(
+        """() => Array.from(document.querySelectorAll('.join-fields .field')).filter((f) => f.offsetParent)
+        .flatMap((f) => Array.from(f.children).filter((c) => c.offsetParent
+          && c.getBoundingClientRect().right > f.getBoundingClientRect().right + 1).map((c) => c.id || c.tagName))"""
+    )
+    assert not outside, outside
     page.locator("#join-role").select_option(role)
     page.locator("#join-areas").fill("web/")
     if takes_over:
