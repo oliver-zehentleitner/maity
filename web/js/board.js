@@ -179,6 +179,7 @@ window.Maity = window.Maity || {};
       const relatedSel = h("select", { id: "card-related-" + c.id, multiple: true, size: "4" },
         others.map((t) => { const o = h("option", { value: t.id }, t.id + " · " + t.title); o.selected = (c.related || []).includes(t.id); return o; }),
         (c.related || []).filter((id) => !others.some((t) => t.id === id)).map((id) => { const o = notLoaded(id); o.selected = true; return o; }));
+      const needsSel = M.boardEdit.needsSelect(ctx, "card-needs-" + c.id, c.needs);
       const save = h("button", { type: "submit", "data-focus": "family:" + c.id }, M.t("board.save"));
       parts.push(h("form", {
         class: "card-family-form",
@@ -186,6 +187,7 @@ window.Maity = window.Maity || {};
           e.preventDefault();
           const body = {};
           if (parentSel && parentSel.value !== (c.parent || "")) body.parent = parentSel.value || null;
+          if (needsSel.value !== (c.needs || "")) body.needs = needsSel.value || null;
           const chosen = Array.from(relatedSel.querySelectorAll("option")).filter((o) => o.selected).map((o) => o.getAttribute("value"));
           if (chosen.slice().sort().join() !== (c.related || []).slice().sort().join()) body.related = chosen;
           if (!Object.keys(body).length) return;
@@ -205,6 +207,7 @@ window.Maity = window.Maity || {};
       parentSel ? [h("label", { for: parentSel.id }, M.t("board.family.parent")), parentSel]
         : h("p", { class: "hint" }, hasKids ? M.t("board.family.has_kids") : M.t("board.family.release")),
       h("label", { for: relatedSel.id }, M.t("board.family.related")), relatedSel,
+      h("label", { for: needsSel.id }, M.t("cards.new.field.needs")), needsSel,
       save, said.el));
     }
     // A subtask under it: not under a subtask, a release or a closed card (§6.4).
@@ -571,6 +574,7 @@ window.Maity = window.Maity || {};
         Array.isArray(c.match) && c.match.length
           ? h("span", { class: "label-tag" }, "Matched: " + c.match.join(", ")) : null,
         c.label ? h("span", { class: "label-tag" }, c.label) : null,
+        c.needs ? h("span", { class: "label-tag card-needs" }, M.t("cards.needs.tag", { role: M.trust.roleLabel(c.needs) })) : null,
         c.area ? h("span", { class: "area" }, c.area) : null,
         assignee(ctx, c)),
       // The title opens the card; ids in it are links in the panel's text.
@@ -651,8 +655,8 @@ window.Maity = window.Maity || {};
     let rememberedColumn = "";
     try { rememberedColumn = window.localStorage.getItem(columnKey) || ""; } catch (err) { rememberedColumn = ""; }
     if (!COLUMN_GROUPS.some(([v]) => v === rememberedColumn)) rememberedColumn = "";
-    const filter = kept ? { member: kept.member, area: kept.area, silent: kept.silent, column: kept.column }
-      : { member: "", area: "", silent: false, column: marked ? "" : rememberedColumn };
+    const filter = kept ? { member: kept.member, area: kept.area, needs: kept.needs, silent: kept.silent, column: kept.column }
+      : { member: "", area: "", needs: "", silent: false, column: marked ? "" : rememberedColumn };
 
     // Focus survives a redraw by key (data-focus), as on the Members view.
     // A card that left the view (closed and moved out, or filtered away)
@@ -788,7 +792,7 @@ window.Maity = window.Maity || {};
     let columns = {};
     const columnOf = (c) => columns[c.status] || [];
     // What the board is showing, read when the next board view asks.
-    const snapshot = () => ({ column: filter.column, member: filter.member, area: filter.area, silent: filter.silent,
+    const snapshot = () => ({ column: filter.column, member: filter.member, area: filter.area, needs: filter.needs, silent: filter.silent,
       search: searchInput.value, hub: hubResults, scroll: window.scrollY || 0 });
     const remember = (id) => { lastBoard = { slug: ctx.slug, id, fromTitle: true, snapshot }; };
     const manage = { move, assign, place, columnOf, drag, remember, reload: (key) => reload(key, true) };
@@ -853,6 +857,7 @@ window.Maity = window.Maity || {};
       if (!inGroup(filter.column, c.status)) return false;
       if (filter.member && !(c.assigned_to === filter.member || (c.claim && c.claim.holder === filter.member))) return false;
       if (filter.area && c.area !== filter.area) return false;
+      if (filter.needs && c.needs !== filter.needs) return false;
       if (filter.silent && !(c.claim && M.dom.isSilentAgent(ctx.memberById[c.claim.holder]))) return false;
       if (searchInput.value && !hubResults) {
         const query = normalize(searchInput.value);
@@ -863,6 +868,7 @@ window.Maity = window.Maity || {};
 
     function draw() {
       areaOptions();
+      needsOptions();
       byId = {};
       items.forEach((t) => { byId[t.id] = t; });
       const known = new Set(COLUMNS.map(([s]) => s));
@@ -961,6 +967,14 @@ window.Maity = window.Maity || {};
       append(clear(areaSel), h("option", { value: "" }, "every area"), [...areas].sort().map((a) => h("option", { value: a }, a)));
       areaSel.value = filter.area;
     }
+    const needsFilter = h("select", { id: "board-needs" });
+    // As with the areas: the roles the board's cards name now.
+    function needsOptions() {
+      const roles = new Set(items.map((t) => t.needs).filter(Boolean));
+      if (filter.needs) roles.add(filter.needs);
+      append(clear(needsFilter), h("option", { value: "" }, M.t("board.filter.every_role")), [...roles].sort().map((r) => h("option", { value: r }, M.trust.roleLabel(r))));
+      needsFilter.value = filter.needs;
+    }
     const columnSel = h("select", { id: "board-column" }, COLUMN_GROUPS.map(([v, l]) => h("option", { value: v, selected: v === filter.column }, l)));
     columnSel.value = filter.column;
     columnSel.addEventListener("change", () => {
@@ -970,6 +984,7 @@ window.Maity = window.Maity || {};
     });
     memberSel.addEventListener("change", () => { filter.member = memberSel.value; draw(); });
     areaSel.addEventListener("change", () => { filter.area = areaSel.value; draw(); });
+    needsFilter.addEventListener("change", () => { filter.needs = needsFilter.value; draw(); });
 
     const silentOnly = ctx.canAdmin ? h("input", { id: "board-silent", type: "checkbox" }) : null;
     if (silentOnly) {
@@ -1010,6 +1025,7 @@ window.Maity = window.Maity || {};
         h("label", { for: "board-column" }, "Column"), columnSel,
         h("label", { for: "board-member" }, "Member (assigned or holding)"), memberSel,
         h("label", { for: "board-area" }, "Area"), areaSel,
+        h("label", { for: "board-needs" }, M.t("cards.new.field.needs")), needsFilter,
         silentOnly ? h("label", { class: "check", for: "board-silent" }, silentOnly, " Held by a silent agent") : null),
       searchStatus, formBox, status.el, intro, wantedNote, boardBody);
     let markedCard = draw();

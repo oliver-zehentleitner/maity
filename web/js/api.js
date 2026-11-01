@@ -415,7 +415,7 @@ window.Maity = window.Maity || {};
     }
     // A child's closing changes its parent's counts.
     if (card.parent) { const p = list.find((t) => t.id === card.parent); if (p) p.children = childrenOf(list, p.id); }
-    ["title", "body", "label", "area"].forEach((f) => { if (f in body) card[f] = body[f]; });
+    ["title", "body", "label", "needs", "area"].forEach((f) => { if (f in body) card[f] = body[f]; });
     // §6.8: a contract card's file and section, checked as the hub checks them.
     if (body.contract) {
       if (card.kind !== "contract") fail(400, "invalid", "contracts only", path, { fields: { contract: "contracts_only" } });
@@ -3408,7 +3408,7 @@ window.Maity = window.Maity || {};
       taskSerial += 1;
       const at = nowIso();
       const card = { id: "tsk-f" + String(taskSerial).padStart(3, "0"), kind: body.kind || "task", title: body.title.trim(), body: body.body || "",
-        label: body.label || null, status: body.status || "open", area: body.area || null, created_by: me().member.id,
+        label: body.label || null, needs: body.needs || null, status: body.status || "open", area: body.area || null, created_by: me().member.id,
         assigned_to: body.assigned_to || null, claim: null, checkpoint: null, depends_on: body.depends_on || [], ships_with: body.ships_with || [],
         blocked_by_request: null, ktw_ref: null, report: null, release: null, contract: null, mentions: [], created_at: at, updated_at: at, closed_at: null,
         parent: body.parent || null, related: [], children: { open: 0, total: 0 } };

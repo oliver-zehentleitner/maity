@@ -2125,14 +2125,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("new-card-area").value = "web/board/";
   byId("new-card-status").value = "open";
   byId("new-card-label").value = "feature";
+  byId("new-card-needs").value = "tester";
   byId("new-card-assigned").value = "agt-d";
   byId("new-card-depends").querySelectorAll("option").find((o) => o.attrs.value === "tsk-0007").selected = true;
   nf.dispatch("submit"); for (let k = 0; k < 5; k++) await tick();
   const createdW = bWrites.find((w) => w[1] === "/projects/maintainer/maity/tasks");
   expect(JSON.stringify(createdW) === JSON.stringify(["POST", "/projects/maintainer/maity/tasks", { title: "Web: a card from the board", kind: "task", status: "open",
-    label: "feature", area: "web/board/", assigned_to: "agt-d", depends_on: ["tsk-0007"] }]) && colOf("tsk-f001") && colOf("tsk-f001").attrs["data-status"] === "open"
+    label: "feature", needs: "tester", area: "web/board/", assigned_to: "agt-d", depends_on: ["tsk-0007"] }]) && colOf("tsk-f001") && colOf("tsk-f001").attrs["data-status"] === "open"
     && !main.querySelector("form.new-card"), "board: a new card, created in Open");
   expect(byId("board-area").querySelectorAll("option").some((o) => o.attrs.value === "web/board/"), "board: the area filter offers a new card's area");
+  // needs (§6.4): shown on the card, offered and applied by the board's filter, routing nothing.
+  expect(/Needs: Tester/.test(colOf("tsk-f001").textContent), "board: a card shows which role it is for");
+  const needsF = byId("board-needs");
+  expect(needsF.querySelectorAll("option").some((o) => o.attrs.value === "tester"), "board: the needs filter offers the role a card names");
+  needsF.value = "tester"; needsF.dispatch("change");
+  expect(colOf("tsk-f001") && !colOf("tsk-0007"), "board: the needs filter keeps only that role's cards");
+  byId("board-needs").value = ""; byId("board-needs").dispatch("change");
   // Cancel the new card again with the menu; its menu goes, so the focus goes to what was said.
   const bProto2 = Object.getPrototypeOf(main);
   const bFocus2 = bProto2.focus;
@@ -7364,6 +7372,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!stOptions.includes("tsk-0013") && !stOptions.includes("tsk-0011") && !stOptions.some((v) => v.startsWith("rel-")) && stOptions.includes("tsk-0001"),
     "subtasks: a parent is chosen among open cards that are no subtask and no release");
   // tsk-0006 depends on tsk-0001: as its parent that would wait forever, and the hub says so.
+  // needs (§6.4) in the opened card: set, then taken away; null clears it.
+  const needsPatch = win.Maity.api.patch, needsSent = [];
+  win.Maity.api.patch = (p, b) => { needsSent.push(b); return needsPatch(p, b); };
+  byId("card-needs-tsk-0006").value = "reviewer";
+  stPanel().querySelector("form.card-family-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(needsSent[0]) === JSON.stringify({ needs: "reviewer" }) && /Needs: Reviewer/.test(text(stPanel())), "board: the opened card sets which role it needs " + JSON.stringify(needsSent));
+  byId("card-needs-tsk-0006").value = "";
+  stPanel().querySelector("form.card-family-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(needsSent[1]) === JSON.stringify({ needs: null }) && !/Needs: /.test(text(stPanel().querySelector("header"))), "board: and clears it " + JSON.stringify(needsSent));
+  win.Maity.api.patch = needsPatch;
   byId("card-parent-tsk-0006").value = "tsk-0001";
   stPanel().querySelector("form.card-family-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(JSON.stringify(stPatches[0]) === JSON.stringify(["/projects/maintainer/maity/tasks/tsk-0006", { parent: "tsk-0001" }]) && stCard("tsk-0006")

@@ -29,6 +29,8 @@ window.Maity = window.Maity || {};
   // What an agent's own human may give it when bringing it (§3.1): not ops, not proxy.
   const MEMBER_TRUSTS = ["member", "guest"];
   const MEMBER_ROLES = ROLES.filter((r) => r !== "ops" && r !== "proxy");
+  // What a card's needs may name, beside a project role (§6.4).
+  const NEEDS_ROLES = ROLES.filter((r) => r !== "proxy" && r !== "manager");
   const roleLabel = (r) => (Object.hasOwn(ROLE_WORDS, r) ? ROLE_WORDS[r]()[0] : r);
   const roleHelp = (r) => (Object.hasOwn(ROLE_WORDS, r) ? ROLE_WORDS[r]()[1] : "");
 
@@ -81,5 +83,5 @@ window.Maity = window.Maity || {};
     return token;
   }
 
-  M.trust = { TRUSTS, ROLES, MEMBER_TRUSTS, MEMBER_ROLES, roleLabel, roleHelp, fillRoles, roleHint, governs, owner, guest, roleIs, reviews, tests, releases, words, tokenWords };
+  M.trust = { TRUSTS, ROLES, NEEDS_ROLES, MEMBER_TRUSTS, MEMBER_ROLES, roleLabel, roleHelp, fillRoles, roleHint, governs, owner, guest, roleIs, reviews, tests, releases, words, tokenWords };
 })(window.Maity);

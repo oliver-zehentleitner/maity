@@ -4147,3 +4147,18 @@ in the code anyway, so a comparison catches a drift when it is made.
 **Rejected alternatives:**
 - An endpoint for the list: a contract change for one picker.
 - A free text field for the slugs: every typing mistake would come back as the hub's refusal.
+
+## A card's needs is a tag, a field in the two card forms and a filter over what the board has loaded
+
+**Id:** 053b2259-181f-4545-a58c-fe2cb27ed5a9
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.4 ("shown on the card and filtered on"); the hub's #1025; tsk-10ptyz8kf63p
+
+The card shows `Needs: <role>` beside its label. It is set in the new-card form and, for whoever may edit the card, in the opened card's form with parent and related cards. The board's filter offers the roles its cards name now and works on the loaded cards, as Area does; it does not call `needs=`.
+
+**Reason:** the filter sits with Member and Area, which read the same loaded list, so one rule says what the filters see. A list of every role would offer choices that match nothing.
+
+**Rejected alternatives:** a server filter with `needs=`: a board redraw would have to merge a second list for one of its filters. A form of its own for needs in the opened card: the card has one edit form, and two would each need a Save.
+
