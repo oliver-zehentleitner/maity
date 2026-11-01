@@ -124,6 +124,7 @@ def show_landing_preview(
             stats=landing_stats.current(conn) if landing_stats.named(setting) else None,
             preview=True,
             variant=variant,
+            social_image=settings_of(request).web_dir is not None,
         )
     return HTMLResponse(
         body,

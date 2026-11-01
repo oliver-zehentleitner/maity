@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine
 
+from maity_hub import render
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_landing import GOOD, HERO, text
@@ -183,6 +184,16 @@ def test_variants_and_campaigns_are_the_admin_s_alone(
     assert other.get(ADMIN).status_code == 403
     assert other.patch(ADMIN, {"variants": {}}).status_code == 403
     assert make_client().get(f"/api/v1{ADMIN}").status_code in (401, 403)
+
+
+def test_a_hub_without_a_dashboard_names_no_social_image(owner: flow.Human) -> None:
+    setting = owner.get("/admin/settings/landing").json()
+    setting["pages"] = {"en": {"title": "T", "sections": []}}
+    legal: dict[str, Any] = {"pages": {}}
+    kept = render.landing_document(
+        setting, "en", public_url="https://hub.example", legal=legal, stats=None, social_image=False
+    )
+    assert "og:image" not in kept and 'name="twitter:card" content="summary"' in kept
 
 
 def test_a_variant_is_served_at_its_address_to_every_visitor(

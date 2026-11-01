@@ -500,7 +500,7 @@ nav a{margin-right:1rem;text-decoration:none;color:var(--muted)}
 border:1px solid var(--accent);color:var(--accent);font-weight:600}
 .btn.primary{background:var(--accent);color:var(--accent-fg)}
 section{padding:2.5rem 0}section+section{border-top:1px solid var(--line)}
-h1{font-size:2.4rem;line-height:1.15;margin:.3rem 0 1rem;overflow-wrap:break-word;hyphens:auto}h2{font-size:1.5rem;margin:0 0 1rem}
+h1{font-size:2.4rem;line-height:1.15;margin:.3rem 0 1rem;overflow-wrap:break-word}@media (max-width:480px){h1{hyphens:auto}}h2{font-size:1.5rem;margin:0 0 1rem}
 .eyebrow{color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-size:.8rem;margin:0}
 .sub{font-size:1.2rem;color:var(--muted);max-width:42rem}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:1rem;padding:0;
@@ -823,6 +823,7 @@ def landing_document(
     stats: dict[str, Any] | None,
     preview: bool = False,
     variant: str | None = None,
+    social_image: bool = True,
 ) -> str:
     """The landing page in `lang` (a missing field falls back to the default language's page).
 
@@ -878,7 +879,7 @@ def landing_document(
     sheet, script = landing_files.url("landing.css"), landing_files.url("landing.js")
     origin = escape(public_url.rstrip("/"), quote=True)
     head = f'<link rel="canonical" href="{origin}/">' + _social_tags(
-        page["title"], page.get("description") or "", origin
+        page["title"], page.get("description") or "", origin, social_image
     )
     if variant:  # a variant is for a link; search engines index the main page only (§16.7.2)
         head += '<meta name="robots" content="noindex">'
@@ -897,8 +898,9 @@ def landing_document(
     )
 
 
-def _social_tags(title: str, description: str, origin: str) -> str:
-    """What a link preview shows of the landing page; the image's address must be whole."""
+def _social_tags(title: str, description: str, origin: str, image: bool) -> str:
+    """What a link preview shows of the landing page; the image's address must be whole, and
+    a hub without a dashboard has no `/assets/` to serve it from."""
     said = (
         f'<meta property="og:description" content="{escape(description, quote=True)}">'
         if description
@@ -907,8 +909,12 @@ def _social_tags(title: str, description: str, origin: str) -> str:
     return (
         '<meta property="og:type" content="website">'
         f'<meta property="og:title" content="{escape(title, quote=True)}">{said}'
-        f'<meta property="og:image" content="{origin}{SOCIAL_IMAGE}">'
-        '<meta name="twitter:card" content="summary_large_image">'
+        + (
+            f'<meta property="og:image" content="{origin}{SOCIAL_IMAGE}">'
+            '<meta name="twitter:card" content="summary_large_image">'
+            if image
+            else '<meta name="twitter:card" content="summary">'
+        )
     )
 
 
