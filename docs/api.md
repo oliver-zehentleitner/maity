@@ -1958,6 +1958,9 @@ change: until it exists, a registered account has exactly the limits
 every account has today, and an account gets the operator's default
 limits once part two defines them.
 
+The words of the page `/register` are instance content (§16.7.4); its form
+and everything below are not.
+
 **Modes.** The instance setting `registration` (§16.4):
 
 | Mode | Who may register |
@@ -13441,13 +13444,87 @@ never replaces anything itself. A placeholder without a value blocks
 the dashboard's save.
 
 **On every write.** `PATCH` and preview of `/admin/settings/landing`
-and `/admin/settings/legal`, and `PATCH /admin/settings/registration`,
-refuse a text still holding a placeholder: `invalid` with
+and `/admin/settings/legal`, `PATCH` and `check` of
+`/admin/settings/auth-pages` (§16.7.4), and `PATCH
+/admin/settings/registration`, refuse a text still holding a placeholder: `invalid` with
 `details.fields.<path>: "unresolved_placeholder"`. A placeholder here
 is `{{`, optional spaces, a letter followed by letters, digits, `_` or
 `-`, optional spaces, and `}}`, so `{{ Name }}` is refused too.
 `{{ .Values.x }}` and `{{#if x}}` are not placeholders and stay
 allowed.
+
+### 16.7.4 Sign-in and sign-up pages
+
+The words of `/login` and `/register`, per language, as instance content:
+in the database, written by the instance admin. Only words: the forms,
+their fields and order, their checks, the look and the pictures are the
+dashboard's code, the same for every instance. The dashboard renders both
+pages, in the app shell (§16.11), so the sign-in has one path: `next`, the
+device code, the mail's link and the second factor work as §2.6 and §2.8
+say, whatever these settings hold. Everything else in the dashboard,
+including the second step of a sign-in and refusals the hub words, stays
+English.
+
+```
+GET, PATCH /admin/settings/auth-pages
+POST       /admin/settings/auth-pages/check
+```
+
+Scope `instance:admin`, human only (§16.1). A `PATCH` asks for the second
+factor (§2.8.4) and replaces the setting as a whole; the hub keeps no
+earlier versions. `check` takes the same body, stores nothing and asks for
+no second factor, as a landing page's preview does; it answers `204`, or
+refuses as the `PATCH` would. Both take a request body of up to 512 KiB
+(§1.7's 64 KiB elsewhere).
+
+```json
+{ "default_language": "en",
+  "pages": { "sign_in": { "en": { "title": "Welcome back" } },
+             "sign_up": { "en": { "title": "Join this hub" } } } }
+```
+
+`default_language` defaults to `"en"`; `pages` to `{sign_in: {}, sign_up:
+{}}`. A language is one of §16.7's. Every key is optional; a text is 1 to
+500 characters of plain text, trimmed, except `note`, which is Markdown
+under the rules of §16.7 and at most 4 KiB.
+
+| Page | Keys |
+|---|---|
+| `sign_in` | `title`, `subline`, `point_1`, `point_2`, `point_3`, `note`, `handle_label`, `password_label`, `submit`, `code_open`, `code_title`, `code_label`, `code_hint`, `code_continue`, `mail_title`, `mail_address`, `mail_send`, `mail_sent`, `register_prompt`, `register_link` |
+| `sign_up` | `title`, `subline`, `point_1`, `point_2`, `point_3`, `note`, `address_label`, `password_label`, `repeat_label`, `submit`, `explain`, `sent_title`, `sent_text`, `sent_spam`, `terms_prompt`, `terms_link`, `sign_in_prompt`, `sign_in_link` |
+
+A refused value is `invalid` with `details.fields.<path>`, the path such as
+`pages.sign_in.de.title`: `extra_forbidden` for a page or key not listed,
+`invalid` for a language not offered or a text out of bounds,
+`unresolved_placeholder` as in §16.7.3.
+
+```
+GET /auth/pages/{page}?lang=<tag>
+```
+
+No session; on the public host only, as `GET /landing`. `page` is `sign_in`
+or `sign_up`; any other is `not_found`. The language is chosen as the
+landing page's is: `lang` if offered, else the best match of
+`Accept-Language`, else `default_language`; an unknown `lang` is no error.
+
+```json
+{ "language": "de", "texts": { "title": "Willkommen zurück", "submit": "Anmelden" } }
+```
+
+`texts` holds each key from the chosen language, else from
+`default_language`; a key in neither is left out. `note` is the Markdown as
+stored. `Cache-Control: public, max-age=60`, `ETag`, `Vary: Accept-Language`.
+
+**The dashboard** asks this once when it draws one of the two pages, passing
+`lang` from its own address, and sets the page's `lang` to `language`. A key
+left out takes its built-in English; a failed read draws the page in built-in
+English with no message, as sign-in never depends on this call. The landing
+page's links to `/login` and `/register` carry the language it was served in
+as `?lang=<tag>`.
+
+**In the site file** (`maity-site/1`, `web/README.md`) the parts `sign_in` and
+`sign_up` hold `{<language>: {<key>: text}}`, and a part left out stays as it
+is. `registration`, the settings of §16.4, stays a part of its own.
 
 ### 16.8 Abuse reports
 
