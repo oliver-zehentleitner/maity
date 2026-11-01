@@ -404,3 +404,37 @@ address in the page; a fixed list also keeps the marks' terms in one reviewable 
 `docs/api.md` §16.7 lists the types with an optional `eyebrow`; `cta_band`, `explore`, `activity` and
 `collab` have none. The `opensource` section's links are text links, not buttons. Why these four types go
 without is unknown. Alternatives: unknown.
+
+## A page's languages and a person's languages are two lists
+
+**Id:** d324cd3d-2cfb-4ded-9c32-12d6d6d494a0
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** #1048 and #1056; the review of #1056
+**Revisit when:** a page's frame words come from something other than `render.WORDS`
+
+`landing.LANGUAGES` holds the languages a page may be written in; `maity_hub.languages` (§6.2) those a
+human or a project may name. A page needs frame words translated by us and a name in the language bar;
+a setting needs only a valid tag. A test that needs an invalid page language takes a §6.2 tag outside the
+page list, so it checks the split too.
+
+**Rejected alternative:** one list: every ISO language would be a valid page with no words to show it in.
+
+## The link preview takes a whole address from `MAITY_PUBLIC_URL`
+
+**Id:** 5442e131-a473-48cd-9755-f7c2869fcec1
+**Type:** decision
+**Status:** open
+**Evidence:** inferred
+**Source:** the card tsk-wzbzs0hgrfvc; #1064 and its review
+**Revisit when:** another instance than ours goes public
+
+The landing page names `og-image-team.png`, and `shell_document` writes the hub's address into the shell's
+`content="brand/…"`, since a crawler reads no `<base>`. maity.dev has its own image in `docs/index.html`.
+A hub without a dashboard names no image, having no `/assets/`.
+
+**Rejected alternative:** the `Host` header: a client can forge it, and the landing page is cached publicly.
+
+**Open:** the team image carries the address `maity.team`, so a self-hosted hub's previews show it too.
+Whether it gets a neutral image is undecided.

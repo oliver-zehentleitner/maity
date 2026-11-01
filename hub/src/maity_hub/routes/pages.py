@@ -61,6 +61,7 @@ def landing_html(
         legal=legal.public(legal.stored(conn)),
         stats=stats,
         variant=variant,
+        social_image=settings_of(request).web_dir is not None,
     )
     if landing.configured(setting):
         html = render.carry_origin(
