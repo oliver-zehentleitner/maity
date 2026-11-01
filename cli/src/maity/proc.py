@@ -24,8 +24,9 @@ NO_PROMPT = {
 # Every git maity runs itself. A clone holds what an agent wrote: a nested repository it
 # registered as a submodule carries its own configuration, which git reads for a plain
 # `status` even when the clone's own is pinned. maity runs nothing from either.
+# `os.devnull`: `/dev/null` on Windows is a path any user can create under the drive root.
 GIT = (
-    "git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null",
+    "git", "-c", "core.fsmonitor=false", "-c", f"core.hooksPath={os.devnull}",
     "-c", "diff.ignoreSubmodules=all",
 )  # fmt: skip
 

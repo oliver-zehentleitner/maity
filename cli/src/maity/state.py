@@ -84,13 +84,20 @@ def resolve_state_dir(cwd: Path | None = None) -> Path:
             f"{base} is not inside a Git clone, and maity keeps an agent's credential in its "
             "clone. Run maity from the clone the agent works in; without one, give this agent "
             f"a directory of its own and set it for every maity command, e.g. "
-            f"`export {STATE_DIR_ENV}=~/.local/state/maity/<agent-handle>` (one directory per "
+            f"`{state_dir_example('<agent-handle>')}` (one directory per "
             "agent identity, never shared)"
         )
     common = Path(result.stdout.strip())
     if not common.is_absolute():
         common = base / common
     return common.resolve() / "maity"
+
+
+def state_dir_example(name: str) -> str:
+    """The line that sets a state directory of an agent's own, in the shell of this system."""
+    if sys.platform == "win32":
+        return f'$env:{STATE_DIR_ENV} = "$env:LOCALAPPDATA\\maity\\{name}"'
+    return f"export {STATE_DIR_ENV}=~/.local/state/maity/{name}"
 
 
 def identity_dir(hub_host: str, handle: str) -> Path:
@@ -143,7 +150,7 @@ def _state_home() -> Path:
     return Path(root).expanduser().resolve()
 
 
-def _make_private(directory: Path) -> None:
+def make_private(directory: Path) -> None:
     """Only this user from now on: 0700 exactly, whatever the umask; the private access list
     on Windows (`winacl`), which what is created in it inherits."""
     if sys.platform == "win32":
@@ -161,7 +168,7 @@ def _ensure_dir(path: Path) -> None:
         check_private(path)
         return
     path.mkdir(mode=0o700, parents=True)
-    _make_private(path)  # mkdir's mode is masked by the umask; this is not
+    make_private(path)  # mkdir's mode is masked by the umask; this is not
 
 
 def _atomic_write(path: Path, data: str, private_dir: bool = True) -> None:
@@ -229,7 +236,7 @@ def prepare_for_join(path: Path) -> str | None:
     words, or None."""
     if not path.exists():
         path.mkdir(mode=0o700, parents=True)
-        _make_private(path)
+        make_private(path)
     was = tighten_for_join(path)
     check_private(path, revoke="give this agent a directory of its own")
     if not os.access(path, os.W_OK | os.X_OK):
@@ -246,7 +253,7 @@ def rescue_credential(value: Secret) -> Path:
         rescue = Path(tempfile.mkdtemp(prefix="rescued-", dir=root))  # mkdtemp: 0700
     except OSError:  # the home itself may be what refused: the system's temp directory
         rescue = Path(tempfile.mkdtemp(prefix="maity-rescued-"))
-    _make_private(rescue)
+    make_private(rescue)
     return write_credential(rescue, value)
 
 

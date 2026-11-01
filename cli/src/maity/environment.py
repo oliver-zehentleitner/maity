@@ -1,7 +1,8 @@
 """Where this session runs, declared to the hub as two ids (docs/api.md §5.2, §5.3).
 
 `home` stands for this OS user's home directory, `workspace` for this clone's state
-directory. Each place keeps a random secret of its own (`~/.local/state/maity/env-secret`,
+directory. Each place keeps a random secret of its own (`~/.local/state/maity/env-secret`, on
+Windows under `%LOCALAPPDATA%`,
 `<state dir>/env-secret`), and the id is `h-`/`w-` plus the first 12 hex characters of
 HMAC-SHA256(secret, the hub's base URL as the CLI stores it). The same place gives unrelated
 ids on two hubs, and no path ever leaves the machine. The hub only compares the ids, to warn
@@ -12,13 +13,19 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import os
 import sys
 from pathlib import Path
 
 from . import state
 
 SECRET_FILE = "env-secret"  # noqa: S105 - a file name, not a secret
-HOME_SECRET = Path("~/.local/state/maity") / SECRET_FILE
+# `~/.local/state/maity` also where XDG_STATE_HOME is set, so the id of a home stays what it was.
+HOME_SECRET = (
+    Path(os.environ.get("LOCALAPPDATA") or "~/.local/state") / "maity" / SECRET_FILE
+    if sys.platform == "win32"
+    else Path("~/.local/state/maity") / SECRET_FILE
+)
 
 
 def derive(prefix: str, secret: str, hub_base: str) -> str:

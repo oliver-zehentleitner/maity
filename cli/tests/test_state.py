@@ -172,3 +172,15 @@ def test_a_replace_still_held_after_the_last_try_fails_and_leaves_nothing(
     with pytest.raises(PermissionError):
         state.save_state(directory, {"a": 1})
     assert list(directory.iterdir()) == []
+
+
+@posix
+def test_a_new_state_dir_is_exactly_0700_whatever_the_umask(tmp_path: Path) -> None:
+    """A umask can only take from `mkdir`'s mode; a directory the owner could not enter or
+    write is what the chmod afterwards prevents."""
+    before = os.umask(0o277)
+    try:
+        state._ensure_dir(tmp_path / "s")
+    finally:
+        os.umask(before)
+    assert mode(tmp_path / "s") == 0o700

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import os
 import subprocess
 import sys
@@ -9,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from conftest import assert_private
 
 from maity import state, winacl
 from maity.winacl import ACCESS_ALLOWED, ACCESS_DENIED, ADMINISTRATORS, INHERIT_ONLY, SYSTEM, Entry
@@ -173,7 +175,7 @@ def test_someone_else_on_the_credential_is_refused(tmp_path: Path) -> None:
 def test_someone_else_on_a_named_dir_is_refused_not_changed(tmp_path: Path) -> None:
     named = tmp_path / "named"
     named.mkdir()
-    state._make_private(named)
+    state.make_private(named)
     _grant_users(named)
     with pytest.raises(state.StateError, match="icacls"):
         state.write_credential(named, state.Secret("tok"))
@@ -195,7 +197,7 @@ def test_the_way_out_a_refusal_names_works(tmp_path: Path) -> None:
 def test_a_join_tightens_an_empty_dir_and_says_so(tmp_path: Path) -> None:
     empty = tmp_path / "e"
     empty.mkdir()
-    state._make_private(empty)
+    state.make_private(empty)
     _grant_users(empty)
     assert "limited" in (state.prepare_for_join(empty) or "")
     assert real.reach(empty).others == ()
@@ -206,7 +208,7 @@ def test_a_join_leaves_a_dir_with_something_in_it(tmp_path: Path) -> None:
     full = tmp_path / "f"
     full.mkdir()
     (full / "x").write_text("x")
-    state._make_private(full)
+    state.make_private(full)
     _grant_users(full)
     with pytest.raises(state.StateError, match="accessible"):
         state.prepare_for_join(full)
@@ -220,3 +222,33 @@ def test_a_secret_someone_else_can_reach_is_not_used(tmp_path: Path) -> None:
     _grant_users(path)
     with pytest.raises(state.StateError, match="icacls"):
         state.secret_once(path)
+
+
+def test_the_example_line_fits_the_shell(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert state.state_dir_example("a") == "export MAITY_STATE_DIR=~/.local/state/maity/a"
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert state.state_dir_example("a") == '$env:MAITY_STATE_DIR = "$env:LOCALAPPDATA\\maity\\a"'
+
+
+def test_a_pipe_on_windows_speaks_utf8(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Under cp1252 the first `…` of a text raises, and a body on stdin arrives wrong."""
+    from maity import cli
+
+    out = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+    given = io.TextIOWrapper(io.BytesIO("ä…".encode()), encoding="cp1252")
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(sys, "stdin", given)
+    monkeypatch.setattr(sys, "platform", "win32")
+    cli._utf8_streams()
+    assert given.read() == "ä…"
+    out.write("…")
+    out.flush()
+    assert out.buffer.getvalue() == "…".encode()
+
+
+def test_maity_files_is_private(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from maity import cli
+
+    monkeypatch.chdir(tmp_path)
+    assert_private(cli._files_dir())
