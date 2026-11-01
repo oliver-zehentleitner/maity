@@ -6642,11 +6642,30 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(ktPatches[0]) === JSON.stringify({ policy: { keep_the_why: "optional" }, reason: "A trial project" }) && byId("ktw-policy-select").value === "optional",
     "keep the why: switched to optional as a policy change with its reason");
   await ktPatch("/projects/maintainer/maity", { policy: { keep_the_why: "required" }, reason: "back" });
+  // Where a joining agent's personal settings come from (§6.23), between the commitment and the badge.
+  const kdForm = () => main.querySelector("form.ktw-defaults-form");
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/settings"); for (let k = 0; k < 6; k++) await tick();
+  const kdForms = main.querySelectorAll("form").map((f) => f.className.split(" "));
+  const kdAt = kdForms.findIndex((c) => c.includes("ktw-defaults-form"));
+  expect(kdAt > kdForms.findIndex((c) => c.includes("ktw-policy-form")) && kdAt < kdForms.findIndex((c) => c.includes("badge-form")),
+    "keep the why: the personal settings stand between the commitment and the badge");
+  expect(byId("ktw-defaults-select").value === "adopt" && text(kdForm()).includes(".keep-the-why"),
+    "keep the why: the personal settings read adopt and name the repository's file");
+  const kdPatches = [];
+  win.Maity.api.patch = (p, b) => { if (b && b.policy && "keep_the_why_defaults" in b.policy) kdPatches.push(b); return ktPatch(p, b); };
+  byId("ktw-defaults-select").value = "ask"; kdForm().dispatch("submit"); await tick();
+  expect(!kdPatches.length, "keep the why: changing the personal settings needs a reason");
+  byId("ktw-defaults-select").value = "ask"; byId("ktw-defaults-reason").value = "Each owner decides";
+  kdForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(kdPatches[0]) === JSON.stringify({ policy: { keep_the_why_defaults: "ask" }, reason: "Each owner decides" }) && byId("ktw-defaults-select").value === "ask",
+    "keep the why: the personal settings change as a policy change with its reason");
+  await ktPatch("/projects/maintainer/maity", { policy: { keep_the_why_defaults: "adopt" }, reason: "back" });
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? ktGet(p).then((x) => ({ ...x, memory: { provider: "none" }, policy: { ...x.policy, keep_the_why: "optional" } })) : ktGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/settings"); for (let k = 0; k < 6; k++) await tick();
   expect(ktForm() && byId("ktw-policy-select").getAttribute("disabled") !== null && byId("ktw-policy-reason").getAttribute("disabled") !== null
     && btn(ktForm(), "Change").getAttribute("disabled") !== null && text(ktForm()).includes("no memory provider"),
     "keep the why: under no memory provider the choice is disabled and says why");
+  expect(!kdForm(), "keep the why: under no memory provider the personal settings are not offered");
   win.Maity.api.get = ktGet; win.Maity.api.patch = ktPatch;
   // The why on a code report: a link to the entry's file at the report's head; a reason when there is none; a bad path stays text.
   const ktHead = "d91e294c" + "0".repeat(32);

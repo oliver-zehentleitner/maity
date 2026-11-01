@@ -650,7 +650,7 @@ window.Maity = window.Maity || {};
     if (names) append(panel, names);
     if (M.projectSetup) append(panel, memoryPanel(ctx, save, humanAdmin));
     // Humans only, as every policy field (§2.3 ʰ); the commitment above the badge (the maintainer, 2026-11-01).
-    if (humanAdmin) append(panel, keepTheWhyForm(ctx, save), badgeForm(ctx, save));
+    if (humanAdmin) append(panel, keepTheWhyForm(ctx, save), keepTheWhyDefaultsForm(ctx, save), badgeForm(ctx, save));
     // The jour fixe's series and moderator order (§20.1, §20.2), humans only as every policy field.
     if (humanAdmin && M.jourFixe) {
       const order = h("div", { class: "jf-moderators-slot" });
@@ -1031,6 +1031,32 @@ window.Maity = window.Maity || {};
     h("label", { for: "member-agents-max" }, "Agents per member (active and open joins)"), max, error,
     h("label", { for: "member-agents-reason" }, "Reason"), reason,
     h("button", { type: "submit" }, "Save"));
+  }
+
+  // Where a joining agent's personal Keep the Why settings come from (§6.23). The values stay
+  // in the repository's .keep-the-why: the hub does not read that file, so this names it.
+  function keepTheWhyDefaultsForm(ctx, save) {
+    if ((ctx.project.memory || {}).provider === "none") return null;
+    const current = ctx.project.policy.keep_the_why_defaults || "adopt";
+    const select = h("select", { id: "ktw-defaults-select" },
+      [["adopt", M.t("settings.ktw_defaults.adopt")], ["ask", M.t("settings.ktw_defaults.ask")]]
+        .map(([v, l]) => h("option", { value: v, selected: v === current }, l)));
+    select.value = current;
+    const reason = h("input", { id: "ktw-defaults-reason", required: true, placeholder: M.t("settings.ktw_defaults.reason_placeholder") });
+    return h("form", {
+      class: "inline-form ktw-defaults-form",
+      onsubmit: (e) => {
+        e.preventDefault();
+        if (select.value === current) return;
+        if (!reason.value.trim()) { reason.focus(); return; }
+        save({ policy: { keep_the_why_defaults: select.value }, reason: reason.value.trim() }, M.t("settings.ktw_defaults.title"));
+      },
+    },
+    h("h2", { class: "panel-title" }, M.t("settings.ktw_defaults.title")),
+    h("p", { class: "hint" }, M.t("settings.ktw_defaults.hint")),
+    h("label", { for: "ktw-defaults-select" }, M.t("settings.ktw_defaults.label")), select,
+    h("label", { for: "ktw-defaults-reason" }, M.t("settings.ktw_defaults.reason")), reason,
+    h("button", { type: "submit" }, M.t("settings.ktw_defaults.save")));
   }
 
   function badgeForm(ctx, save) {

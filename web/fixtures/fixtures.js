@@ -3016,6 +3016,7 @@ window.MAITY_FIXTURES = {
       "contract_arbiter": "agt-a",
       "done_authority": "reviewer",
       "keep_the_why": "required",
+      "keep_the_why_defaults": "adopt",
       "lease_seconds": 7200,
       "member_agents": "on",
       "member_agents_max": 3,

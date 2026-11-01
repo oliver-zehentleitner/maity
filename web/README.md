@@ -1170,6 +1170,13 @@ required (every agent instance confirms at its resume, is reminded, its
 owner told; a code report names its why) or optional, changed with a
 reason. Under memory provider `none` it is shown disabled with why.
 
+**Keep the Why personal settings** (`policy.keep_the_why_defaults`,
+`docs/api.md` §6.23), for the same people and left out under memory provider
+`none`: a joining agent takes the defaults the repository offers, or runs the
+skill's setup with its human, changed with a reason. It names where the
+defaults come from, the repository's `.keep-the-why`, edited there: the hub
+does not read that file, so it shows no values.
+
 **README badge** (`policy.badge`, `docs/api.md` §6.20), in the same panel
 under the commitment (the maintainer, 2026-11-01),
 for a human owner or admin where the hub's policy has the field: off,
