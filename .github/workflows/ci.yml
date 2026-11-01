@@ -343,11 +343,33 @@ jobs:
       - run: pip install -e '.[dev]'
       - run: python -m pytest -q --tb=short
 
+  # The PowerShell join lines in the shells they are for. Its own job, not a step of cli-windows:
+  # the lines are built in hub/, and cli-windows does not run for a change there.
+  join-windows:
+    needs: changes
+    if: needs.changes.outputs.join == 'true'
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      # A virtual environment outside the PATH: the script expects `maity` missing.
+      - run: python -m venv "$env:RUNNER_TEMP\hub-venv"
+      - run: >-
+          & "$env:RUNNER_TEMP\hub-venv\Scripts\python" -m pip install --require-hashes
+          -r hub/requirements/runtime.txt -r hub/requirements/build.txt
+      - run: '& "$env:RUNNER_TEMP\hub-venv\Scripts\python" -m pip install --no-deps --no-build-isolation -e hub'
+      - run: '& "$env:RUNNER_TEMP\hub-venv\Scripts\python" hub/scripts/smoke_join_windows.py'
+
   # The one check to require: green when every suite either passed or was not
   # needed (skipped by `changes`), red when one failed or was cancelled.
   ci-ok:
     if: always()
-    needs: [changes, changelog, web, web-e2e, hub-sqlite, hub-wheel, hub-lock, hub-image, helm, join-smoke, hub-postgresql, cli, cli-windows]
+    needs: [changes, changelog, web, web-e2e, hub-sqlite, hub-wheel, hub-lock, hub-image, helm, join-smoke, hub-postgresql, cli, cli-windows, join-windows]
     runs-on: ubuntu-latest
     defaults:
       run:
