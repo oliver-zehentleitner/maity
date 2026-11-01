@@ -72,6 +72,7 @@ window.Maity = window.Maity || {};
       items: () => actions,
     }) : null;
     if (menu) menu.el.className = "menu-box member-actions-menu";
+    const availability = M.availabilityNodes ? M.availabilityNodes(ctx, m) : null;
     const heading = h("h2", { id: "member-heading", tabindex: "-1" }, m.display_name, " ", h("span", { class: "mono muted" }, "@" + M.dom.handleOf(ctx, m)));
     const el = h("div", { class: "member-head" },
       h("div", { class: "member-head-face" }, M.avatar(m, 64),
@@ -79,7 +80,7 @@ window.Maity = window.Maity || {};
       h("div", { class: "member-head-text" },
         heading,
         h("p", { class: "member-pills" }, pills),
-        line ? h("p", { class: "muted member-line" }, line) : null),
+        line ? h("p", { class: "muted member-line" }, line) : null, availability),
       h("div", { class: "member-head-actions" },
         chat ? h("a", { class: "button primary member-chat", href: chat }, M.t("members.chat")) : null,
         menu ? menu.el : null));
