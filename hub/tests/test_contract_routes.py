@@ -16,8 +16,6 @@ NOT_ROUTED = {
     ("GET", "/openapi.json"),
     # Answered ahead of the router, as it carries no credential and no CSRF token (§17.4).
     ("POST", "/projects/{}/{}/forge/webhook"),
-    # A page of its own, outside the API (§16.7.2).
-    ("GET", "/for/<slug>"),
     # Contract without a route yet: tsk-fcp02zgh3cbw.
     ("GET", "/projects/{}/{}/members/{}/briefing"),
     # Contract without a route yet: tsk-4xqfxezvz0dh.
@@ -28,7 +26,8 @@ NOT_ROUTED = {
 
 
 def _index() -> set[tuple[str, str]]:
-    """Method and path of the rows of §12. A row outside the API says so, and has no route here."""
+    """Method and path of the rows of §12. A row outside the API says so, and has no route here.
+    Every span counts: a shorthand like `…/steps` would name no route, and so fails the test."""
     text = CONTRACT.read_text(encoding="utf-8").split("## 12. Endpoint index", 1)[1]
     rows = set()
     for line in text.split("\n## 13", 1)[0].splitlines():
@@ -38,7 +37,7 @@ def _index() -> set[tuple[str, str]]:
             continue
         if cells[1].endswith("(outside the API)"):
             continue
-        for path in re.findall(r"`(/[^`]*)`", re.sub(r"\([^)]*\)", "", cells[1])):
+        for path in re.findall(r"`([^`]*)`", re.sub(r"\([^)]*\)", "", cells[1])):
             rows |= {(method, _plain(path)) for method in methods}
     return rows
 
