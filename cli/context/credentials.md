@@ -95,7 +95,7 @@ it inherits, which is why the list lives on the directory.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-dv24gngs9qaa, PRs #1089 and this one, their reviews and the lead's ruling on stdin; `cli/src/maity/cli.py` `_utf8_streams`, `_stdin_text`
+**Source:** card tsk-dv24gngs9qaa, PRs #1089 and #1097, their reviews and the lead's ruling on stdin; `cli/src/maity/cli.py` `_utf8_streams`, `_stdin_text`
 **Revisit when:** the oldest supported Python has UTF-8 mode on by default (PEP 686, 3.15)
 
 On Windows `main` sets stdin, stdout and stderr to UTF-8 before anything is read
