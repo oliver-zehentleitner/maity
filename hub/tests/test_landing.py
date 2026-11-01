@@ -400,8 +400,8 @@ def test_the_page_and_the_footer_have_their_limits(owner: flow.Human) -> None:
     }
     long_description = {"pages": {"en": {"title": "T", "description": "d" * 301, "sections": []}}}
     assert field(owner.patch(ADMIN_PATH, long_description)) == {"pages.en.description": "invalid"}
-    assert field(owner.patch(ADMIN_PATH, {"pages": {"fr": page()}})) == {"pages.fr": "invalid"}
-    assert field(owner.patch(ADMIN_PATH, {"default_language": "fr"})) == {
+    assert field(owner.patch(ADMIN_PATH, {"pages": {"sv": page()}})) == {"pages.sv": "invalid"}
+    assert field(owner.patch(ADMIN_PATH, {"default_language": "sv"})) == {
         "default_language": "invalid"
     }
     social = [{"label": "l", "href": "https://example.com"}] * 9
