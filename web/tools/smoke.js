@@ -2489,6 +2489,44 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.patch = maPatch;
   await go("#/maintainer/maity/inbox");
 
+  // Agents of owners who are not members (§6.1, §6.2): settings, the mark, the hub's isolation, the refused lift.
+  await projectSettings();
+  const aoForm = () => main.querySelector("form.agent-owners-form");
+  expect(aoForm() && byId("agent-owners-select").value === "" && text(byId("agent-owners-select")).includes("Not set, follows the public page (now: "),
+    "agent owners: unset, the form says what it reads now");
+  const aoRoles = aoForm().querySelectorAll("input").filter((b) => b.attrs.type === "checkbox").map((b) => b.attrs.value);
+  expect(aoRoles.join() === "coder,designer,writer,blue-team" && byId("outside-role-coder").checked && !byId("outside-role-writer").checked,
+    "agent owners: only the working roles are offered, coder by default " + aoRoles.join());
+  const aoPatches = [];
+  const aoPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { aoPatches.push(b); return Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { outside_roles: "outside_owner" } })); };
+  aoForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(!aoPatches.length, "agent owners: nothing changed, nothing sent");
+  byId("agent-owners-select").value = "anyone"; byId("outside-role-writer").checked = true; byId("agent-owners-reason").value = "open source";
+  aoForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(aoPatches.length === 1 && JSON.stringify(aoPatches[0]) === JSON.stringify({ policy: { agent_owners: "anyone", outside_roles: ["coder", "writer"] }, reason: "open source" }),
+    "agent owners: what changed is sent with its reason " + JSON.stringify(aoPatches[0]));
+  expect(text(byId("agent-owners-error")).includes("holds a role you left out"), "agent owners: a role still in use is said at the field");
+  win.Maity.api.patch = aoPatch;
+  const ownersGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => ownersGet(p).then((x) => (p.startsWith("/projects/maintainer/maity/members") && x && x.items
+    ? Object.assign({}, x, { items: x.items.map((m) => (m.id === "agt-b" ? Object.assign({}, m, { owner_id: "hum-gone", isolated: { by: "hub", since: "2026-10-31T00:00:00Z", reason: "The agent's owner is no longer a member of this project." } }) : m)) })
+    : x));
+  await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
+  const aoRow = main.querySelectorAll("tr.member").find((r) => r.querySelector(".member-owner-outside"));
+  expect(aoRow && text(aoRow.querySelector(".member-owner-outside")) === "Owner outside", "agent owners: the list marks an agent whose owner is outside");
+  expect(main.querySelectorAll(".member-owner-outside").length === 1, "agent owners: an agent whose owner is a member has no mark");
+  aoRow.querySelectorAll("button").find((x) => /^Manage /.test(x.getAttribute("aria-label") || "")).click(); for (let k = 0; k < 6; k++) await tick();
+  const aoManage = () => main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-b");
+  expect(aoManage() && text(aoManage().querySelector(".member-isolate")).includes("by Maity") && text(aoManage().querySelector(".member-isolate")).includes("the owner is no longer a member"),
+    "agent owners: the hub's isolation is said as Maity's, not as a member's");
+  const ownersDel = win.Maity.api.del;
+  win.Maity.api.del = (p) => Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { member: "owner_not_member" } }));
+  aoManage().querySelector("form.member-lift").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(text(main).includes("This isolation cannot be lifted: the agent's owner is no member"), "agent owners: a refused lift explains owner_not_member");
+  win.Maity.api.del = ownersDel; win.Maity.api.get = ownersGet;
+  await go("#/maintainer/maity/inbox");
+
   // Message the project (docs/api.md §8.4): from the Chat tab (tsk-r1adgwp0a5dr), no longer the inbox, no tab of its own.
   await go("#/maintainer/maity/inbox");
   expect(!main.querySelectorAll("a").some((a) => a.textContent === "Message the project"), "message: no longer in the inbox");
@@ -3251,6 +3289,34 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(histItems) === JSON.stringify(["day", "msg out", "new-line", "msg in"]) && /^(Yesterday|.*2026.*)$/.test(text(main.querySelector("li.day"))),
     "chat: a day separator, then 'New messages' before the agent's unread reply " + JSON.stringify(histItems));
   expect(main.querySelector("li.msg.in .msg-avatar svg") && !main.querySelector("li.msg.out .msg-avatar"), "chat: the agent's messages carry its picture, one's own none");
+  // The meat-proxy switch of this chat (§9.3): between Attach and Send, from one's own entry; on and off here, then back to the profile.
+  {
+    const mpBtn = () => main.querySelector("form.compose .compose-actions button.meat-chat-toggle");
+    const mpFollow = () => main.querySelector("form.compose .compose-actions button.meat-chat-follow");
+    const mpProfile = String(!!JSON.parse(fs.readFileSync(path.join(WEB, "fixtures/me.json"), "utf8")).member.meat_proxy);
+    const mpPuts = [], mpPut = win.Maity.api.put;
+    win.Maity.api.put = (p, b) => { if (/\/meat-proxy$/.test(p)) mpPuts.push([p, JSON.stringify(b)]); return mpPut(p, b); };
+    const mpRow = main.querySelector("form.compose .compose-actions");
+    const mpOrder = mpRow ? mpRow.childNodes.map((n) => n.className || n.tagName) : [];
+    expect(mpBtn() && mpFollow().hidden && /as in your profile/.test(mpBtn().getAttribute("title")) && mpBtn().getAttribute("aria-label") === "Meat proxy in this chat"
+      && mpOrder.indexOf("meat-chat") >= 0 && mpOrder.indexOf("meat-chat") < mpOrder.length - 1,
+      "meat proxy: the chat's switch beside Send, following the profile at first " + JSON.stringify(mpOrder));
+    const mpWas = mpBtn().getAttribute("aria-pressed");
+    mpBtn().click(); for (let k = 0; k < 4; k++) await tick();
+    expect(mpPuts.length === 1 && mpPuts[0][0] === "/projects/maintainer/maity/conversations/agt-a/meat-proxy" && mpPuts[0][1] === JSON.stringify({ meat_proxy: mpWas !== "true" })
+      && mpBtn().getAttribute("aria-pressed") === String(mpWas !== "true") && /in this chat$/.test(mpBtn().getAttribute("title")) && !mpFollow().hidden,
+      "meat proxy: a click switches it for this chat only, and offers the way back " + JSON.stringify(mpPuts));
+    mpFollow().click(); for (let k = 0; k < 4; k++) await tick();
+    expect(mpPuts.length === 2 && mpPuts[1][1] === JSON.stringify({ meat_proxy: null }) && mpFollow().hidden && /as in your profile/.test(mpBtn().getAttribute("title")),
+      "meat proxy: Follow my profile sends null and hides itself " + JSON.stringify(mpPuts));
+    // The hub's answer is kept: the chat's own value comes back from the list.
+    mpBtn().click(); for (let k = 0; k < 4; k++) await tick();
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/agt-a"); for (let k = 0; k < 4; k++) await tick();
+    expect(mpBtn() && mpBtn().getAttribute("aria-pressed") === String(mpWas !== "true") && !mpFollow().hidden, "meat proxy: the chat's value read again after leaving it");
+    mpFollow().click(); for (let k = 0; k < 4; k++) await tick();
+    win.Maity.api.put = mpPut;
+    expect(mpProfile === mpWas, "meat proxy: the switch starts from the profile's value (" + mpProfile + ", " + mpWas + ")");
+  }
   expect(main.querySelector(".chat-list-pane") && conv("Agent A").getAttribute("aria-current") === "page" && conv("Agent A").classList.contains("current")
     && !conv("Agent A").querySelector(".count"), "chat: the list stays beside the open chat; the open one is marked, its unread gone");
   // Messages of one sender close together are grouped; a day apart, separated; the empty chat says what happens.
@@ -3588,6 +3654,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(hcState()) === "@old-one is free.", "handle check: a deleted profile does not block its handle");
   hcType("A");
   expect(text(hcState()).startsWith("Not a handle yet: Lowercase letters") && hcState().className.includes("field-error"), "handle check: the pattern is said too");
+  // Allowed projects (§6.3): a profile the project is not allowed for is not offered, its handle stays taken.
+  const alOffer = win.Maity.api.getAll;
+  win.Maity.api.getAll = (p) => (p.startsWith("/agents?allowed_in=")
+    ? alOffer("/agents").then((r) => ({ items: r.items.filter((x) => x.handle !== "agent-b"), next_cursor: null })) : alOffer(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents/join"); for (let k = 0; k < 4; k++) await tick();
+  expect(!byId("join-agent").querySelectorAll("option").some((o) => text(o).includes("@agent-b")), "allowed projects: the join panel does not offer a profile not allowed here");
+  byId("join-agent").value = ""; byId("join-agent").dispatch("change");
+  hcType("agent-b");
+  expect(text(hcState()).includes("Taken: your agent Agent B has @agent-b"), "allowed projects: the handle of a profile not offered is still taken");
+  win.Maity.api.getAll = alOffer;
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents/join"); for (let k = 0; k < 4; k++) await tick();
+  byId("join-agent").value = ""; byId("join-agent").dispatch("change");
   // The hub's answer is the final word: its taken is said in words and the list read again.
   const hcPost = win.Maity.api.post;
   let hcReads = 0;
@@ -4697,6 +4775,32 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const agHelper = agCards().find((li) => text(li).includes("Helper @maintainer/helper"));
   expect(agHelper && text(main).includes("The profile @helper was created") && text(agHelper).includes("In no project yet."), "agents page: a new profile, in no project yet");
   const agHelperId = agHelper.getAttribute("data-agent");
+  // Allowed projects (§6.3): any project by default; a list ticks the current ones, a name may be typed in, null again.
+  const alAny = byId("agent-allowed-any-" + agHelperId);
+  const alForm = () => agHelper.querySelector("form.agent-allowed");
+  const alParts = () => agHelper.querySelector(".agent-allowed-parts");
+  expect(alAny && alAny.checked && alParts().hidden, "allowed projects: Any project by default, the list hidden");
+  const alPatches = [];
+  const alPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { alPatches.push(b); return Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { allowed_projects: "too_many" } })); };
+  alForm().dispatch("submit"); for (let k = 0; k < 3; k++) await tick();
+  expect(!alPatches.length, "allowed projects: nothing changed, nothing sent");
+  alAny.checked = false; alAny.dispatch("change");
+  expect(!alParts().hidden, "allowed projects: without Any project the list shows");
+  byId("agent-allowed-add-" + agHelperId).value = "not a name";
+  alParts().querySelectorAll("button")[0].click();
+  expect(text(alParts()).includes("A project's full name: owner/project."), "allowed projects: a bad name is refused at the field");
+  byId("agent-allowed-add-" + agHelperId).value = "someone/later";
+  alParts().querySelectorAll("button")[0].click();
+  alForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(alPatches.length === 1 && JSON.stringify(alPatches[0]) === JSON.stringify({ allowed_projects: ["someone/later"] }),
+    "allowed projects: the list is sent, a project that does not exist yet included " + JSON.stringify(alPatches[0]));
+  win.Maity.api.patch = alPatch;
+  const alAll = await win.Maity.api.get("/agents?allowed_in=maintainer/maity");
+  await win.Maity.api.patch("/agents/" + agHelperId, { allowed_projects: ["someone/later"] });
+  const alOnly = await win.Maity.api.get("/agents?allowed_in=maintainer/maity");
+  expect(alAll.items.some((x) => x.id === agHelperId) && !alOnly.items.some((x) => x.id === agHelperId), "allowed projects: the offer leaves out a profile the project is not allowed for");
+  await win.Maity.api.patch("/agents/" + agHelperId, { allowed_projects: null });
   byId("agent-handle-" + agHelperId).value = "agent-b"; agHelper.querySelector("form.agent-edit").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(text(agHelper.querySelector("form.agent-edit")).includes("Not saved: handle: you have a profile with this handle already"), "agents page: a handle one's other profile has is refused");
   byId("agent-handle-" + agHelperId).value = "helper-2"; byId("agent-git-name-" + agHelperId).value = "Helper";
@@ -5208,6 +5312,26 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.patch = memPatch;
   await projectSettings();
   // Keep the Why without a repository: the options are kept, the cards wait for the repository.
+  // Private on /new (§16.9, §6.1): sent only when ticked, fixed for a non-owner of an organisation, the 201's value said.
+  const createPrivateGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/orgs" ? Promise.resolve({ items: [{ handle: "ours", display_name: "Ours", my_role: "owner" }, { handle: "theirs", display_name: "Theirs", my_role: "admin" }] }) : createPrivateGet(p));
+  await go("#/all"); await go("#/new"); await tick(); await tick();
+  expect(byId("project-private") && !byId("project-private").checked && !byId("project-private").disabled && text(main).includes("A private repository keeps the project private"),
+    "create: Private starts unticked for the namespace owner, with the repository's note");
+  byId("project-owner").value = "theirs"; byId("project-owner").dispatch("change");
+  expect(byId("project-private").checked && byId("project-private").disabled && text(main).includes("an owner of the organisation can make it public"),
+    "create: Private is ticked and fixed for anyone else creating in an organisation");
+  byId("project-owner").value = "ours"; byId("project-owner").dispatch("change");
+  expect(!byId("project-private").checked && !byId("project-private").disabled, "create: back with an owner's organisation, Private is free again");
+  win.Maity.api.get = createPrivateGet;
+  await go("#/all"); await go("#/new"); await tick(); await tick();
+  byId("project-name").value = "Closed"; byId("project-name").dispatch("input");
+  byId("project-private").checked = true;
+  main.querySelector("form").dispatch("submit"); await tick(); await tick();
+  expect(posts[posts.length - 1][1].public_page === "off", "create: Private ticked sends public_page off");
+  win.onhashchange(); for (let k = 0; k < 6; k++) await tick();
+  expect(main.querySelector(".project-created-page") && text(main.querySelector(".project-created-page")).includes("This project is private"),
+    "create: the page that follows says what the hub answered");
   await go("#/new");
   byId("project-name").value = "Later"; byId("project-name").dispatch("input");
   byId("setup-keep_the_why_badge").checked = false; byId("project-preset").value = "hierarchical";
@@ -5279,6 +5403,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/chat/cnv-0007");
   win.Maity.chatParts.follower = gfReal;
   expect(gfOpened.length === 1 && gfOpened[0] && gfOpened[0].className === "new-line", "group chat: it opens at the first unread message");
+  expect(main.querySelector(".group-chat form.compose .compose-actions button.meat-chat-toggle"), "meat proxy: a group chat's participant has the switch too");
   // Newest puts the focus in the composer, not on the page.
   const gfProto = Object.getPrototypeOf(main);
   const gfFocus = gfProto.focus;

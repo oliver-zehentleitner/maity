@@ -279,6 +279,25 @@ def test_talk_opens_the_agents_conversation(
     assert talked.json()["answer"]["conversation_id"] == agent.id
 
 
+def test_talk_with_a_text_reaches_the_agent_in_the_answer(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """`{talk: true, text}` on the personal path, as on the project's (§7): the text stays in the
+    answer, the event names no content, and the hub writes nothing into the direct chat for it."""
+    agent = flow.agent(make_client, owner)
+    request_id = _file(migrated, agent.id)
+    before = len(_events(migrated, "message"))
+    text = "Let us talk about the options first."
+    talked = owner.post(f"/requests/{request_id}/answer", {"talk": True, "text": text})
+    assert talked.status_code == 200
+    answer = talked.json()["answer"]
+    assert answer["talk"] is True and answer["reply_id"] is None and answer["text"] == text
+    assert answer["conversation_id"] == agent.id
+    event = _events(migrated, "request_answered")[-1]
+    assert event.payload == {"id": request_id, "personal": True, "status": "answered"}
+    assert len(_events(migrated, "message")) == before
+
+
 def test_the_inbox_filters_apply_to_it(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:

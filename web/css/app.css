@@ -424,6 +424,7 @@ a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 .badge.release { color: var(--accent); }
 .badge.contract { color: var(--warn); }
 .badge.member-isolated { color: var(--bad); }
+.badge.member-owner-outside { color: var(--muted); }
 .badge.setup { color: var(--muted); }
 .badge.maintenance_round { color: var(--muted); }
 .expired { color: var(--bad); }
@@ -579,6 +580,10 @@ a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 /* WCAG 2.2 target size: each row at least 24 px apart, the box itself 18 px. */
 .pair-projects .check { display: flex; align-items: center; gap: 8px; min-height: 28px; color: var(--text); }
 .pair-projects input[type=checkbox] { width: 18px; height: 18px; margin: 0; }
+.project-private { display: grid; gap: 4px; }
+.outside-roles { border: 0; margin: 0; padding: 0; }
+.outside-roles .check { min-height: 28px; gap: 8px; }
+.outside-roles input[type=checkbox] { width: 18px; height: 18px; margin: 0; }
 .pair-steps { margin: 12px 0; }
 .pair-steps ol { padding-left: 20px; display: grid; gap: 8px; }
 .runner-config { max-height: 16rem; overflow: auto; background: var(--surface); padding: 8px; border-radius: 4px; font-size: 0.8rem; white-space: pre; }
@@ -1439,6 +1444,11 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .agent-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .agent-card-head h3 { margin: 0; }
 .agent-settings { margin-top: 8px; }
+.agent-allowed { margin-top: 12px; }
+.agent-allowed h4 { margin: 0; }
+.agent-allowed-parts { display: grid; gap: 6px; }
+.agent-allowed .check { min-height: 28px; }
+.agent-allowed input[type=checkbox] { width: 18px; height: 18px; margin: 0; }
 .agent-new { margin-top: 20px; }
 /* A project's Agents: what belongs to the membership, under the card. */
 .agent-here { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); }
@@ -1523,3 +1533,11 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .handle-at { color: var(--muted, inherit); }
 /* The header's "+" menu (an agent, a person): a bold plus as its face. */
 .add-face { font-weight: 800; font-size: 1.25rem; line-height: 1; }
+/* The meat-proxy switch of a chat (js/meat-proxy.js): the designer's icons as a mask, so they take the colour. */
+.meat-chat { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.meat-chat .send-status:empty { display: none; }
+.meat-chat-toggle { color: var(--muted); border: 1px solid transparent; }
+.meat-chat-toggle[aria-pressed="true"] { color: var(--accent); background: var(--out-bg); border-color: var(--accent); }
+.meat-chat-icon { display: inline-block; width: 20px; height: 20px; background-color: currentColor;
+  -webkit-mask: url("../brand/meat-proxy-off.svg") center / contain no-repeat; mask: url("../brand/meat-proxy-off.svg") center / contain no-repeat; }
+.meat-chat-toggle[aria-pressed="true"] .meat-chat-icon { -webkit-mask-image: url("../brand/meat-proxy.svg"); mask-image: url("../brand/meat-proxy.svg"); }
