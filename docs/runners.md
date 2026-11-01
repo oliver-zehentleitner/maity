@@ -39,6 +39,14 @@ The hub never starts anything itself. You install the runner, and its configurat
 
    `check` exits with 1 on any error, and `--explain` shows the default of every key.
 
+6. Start it:
+
+   ```sh
+   maity runner serve
+   ```
+
+   This runs in the foreground. To run it as a service, see `maity runner unit`. Until it runs, the runner stays offline and starts nothing.
+
 > [!WARNING]
 > Allow rules and hooks in the runner user's own harness settings are inherited by every agent it starts. `maity runner check` warns about them. Use a user of its own for the runner.
 
