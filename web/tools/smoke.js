@@ -4733,6 +4733,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       const last = await win.Maity.api.del("/projects/maintainer/sample/jour-fixe/series/" + made.id, { reason: "smoke done" });
       expect(last.id === made.id && !("opted_out_members" in last) && !("report_list" in last), "fixture hub: the delete answers the series as a reader sees it");
     }
+    // A round needs two who take part: the circle without those who opted out, and the moderator (§20.1, §20.2); here the
+    // owner is the only one, and the moderator too.
+    {
+      const base = "/projects/maintainer/sample/jour-fixe/series/";
+      const mine = await win.Maity.api.post(base.slice(0, -1), { topic: "Smoke: two are needed", circle: "owner", circle_owner: "hum-maintainer", reason: "smoke" });
+      await win.Maity.api.post(base + mine.id + "/moderators", { member_id: "hum-maintainer", reason: "smoke" });
+      let view = (await win.Maity.api.get("/projects/maintainer/sample/jour-fixe")).series.find((x) => x.id === mine.id);
+      const parts = [{ member_id: "hum-maintainer" }].concat(view.own_agents || []);
+      for (const one of parts) await win.Maity.api.put(base + mine.id + "/opt-out" + (one.member_id === "hum-maintainer" ? "" : "?member=" + one.member_id));
+      let started = "started";
+      try { await win.Maity.api.post(base + mine.id + "/rounds", { reason: "smoke" }); } catch (e) { started = e.code || (e.details && e.details.code) || String(e.status); }
+      expect(started === "too_few", "fixture hub: nobody left but the moderator is too few, " + started);
+      await win.Maity.api.del(base + mine.id, { reason: "smoke done" });
+    }
     // The view says nothing of it: no block, no topic, none of its rounds; a round of it is not found.
     await go("#/maintainer/sample/jour-fixe"); await settle(6);
     const jfSampleRounds = main.querySelectorAll("li.jf-round").map((li) => li.getAttribute("data-round"));

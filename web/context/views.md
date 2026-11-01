@@ -3708,6 +3708,8 @@ The **jour fixe tab** shows one block per series the reader may see: the topic a
 
 **Not covered, known:** a project owner who is the `circle_owner` of a series but no project admin cannot open Project settings, so the series section is not reachable for them from the dashboard. The contract has no call for a keeper to add other members to the report list, so the list is changed per member for itself or its own agent only. Likewise, §20.2 lets an agent's owner who is no keeper, and a human with `members:admin`, grant the moderator right, but the grant form is in Project settings (`project:admin`), so an agent's owner who is no admin cannot start a grant for their agent from the dashboard, and the fixture hub refuses it from anyone who is neither a keeper nor the agent's owner.
 
+The fixture hub's start of a round by hand refuses in the hub's order (routes/jour_fixe.py `start`, then `rounds.prepare`): `circle_owner_gone`, `rate_limited`, `project_closed`, `jour_fixe_open`, `no_moderator`, `too_few`, so that a test sees the same first error as against the hub where two overlap. `too_few` counts the circle without those who opted out, plus the moderator, also outside the circle; presence is not modelled, every member counts as present. Rejected: checking in the order the view needs them, which would let a test pass against the fixture and fail against the hub where two refusals overlap.
+
 ## All projects has two pages, Inbox and Chats, as a project has its views
 
 **Id:** c72e8c45-838f-4304-bf9f-9e1d3a7693a7
