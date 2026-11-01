@@ -5,12 +5,19 @@ name: hub-mariadb
 # production runs) and SQLite stay per pull request in ci.yml; MariaDB is the self-hoster's
 # database and the slowest suite, so it checks main on a clock instead of holding every merge.
 # A red run opens (or comments on) one issue labelled ci-red that names the commit range, so the
-# change that broke it is found within the hour; a green scheduled run closes it.
+# change that broke it is found within the hour; a green automatic run (the clock or a finished ci run) closes it.
 # Before a deploy or release, run it by hand for that commit: Actions, hub-mariadb, Run workflow, sha.
 # Runner: the same variables as ci.yml (HUB_RUNNER_LABEL, HUB_RUNNER_TYPES) put it on the maria machines.
 on:
   schedule:
     - cron: "23 * * * *"
+  # GitHub starts scheduled runs on a best-effort basis and has skipped hours here (one run in nine hours), so the
+  # clock alone is not a promise. Every finished ci run on main also starts this one; its own checks (one running,
+  # one waiting, skip when nothing relevant changed) keep that from piling up.
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       sha:
@@ -34,9 +41,9 @@ defaults:
 
 jobs:
   # Decides whether there is anything to test: by hand always (a commit of main); on the clock when
-  # the last finished scheduled run was not green, when a ci-red issue is open, when no earlier green
+  # the last finished automatic run (clock or ci) was not green, when a ci-red issue is open, when no earlier green
   # run exists, or when files the suite reads (hub/, docs/join-page.md, docs/api.md, the Dockerfile,
-  # this workflow) changed since the head of the last green scheduled run. So a red state is never
+  # this workflow) changed since the head of the last green automatic run. So a red state is never
   # skipped over: a revert runs and closes the issue, and a failure for a reason outside the watched
   # files runs again the next hour. A skipped hour counts as green for the comparison, which is right
   # because it only skips after a green run with nothing relevant changed since.
@@ -66,7 +73,7 @@ jobs:
           EVENT: ${{ github.event_name }}
         run: |
           sha="$(git rev-parse HEAD)"
-          base="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow hub-mariadb.yml --branch main --event schedule --status success --json headSha --jq '.[0].headSha // ""')"
+          base="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow hub-mariadb.yml --branch main --status success --json headSha,event --jq '[.[]|select(.event!="workflow_dispatch")][0].headSha // ""')"
           if [ "$EVENT" = workflow_dispatch ]; then
             # sha is free text, and a commit of a fork's pull request can be checked out by its sha: the
             # self-hosted runner only runs what is on main, which is what the approval of outside
@@ -79,10 +86,10 @@ jobs:
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "base=${base:-none}" >> "$GITHUB_OUTPUT"
           if [ "$EVENT" = workflow_dispatch ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
-          last="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow hub-mariadb.yml --branch main --event schedule --status completed --limit 1 --json conclusion --jq '.[0].conclusion // "none"')"
+          last="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow hub-mariadb.yml --branch main --status completed --limit 20 --json conclusion,event --jq '[.[]|select(.event!="workflow_dispatch")][0].conclusion // "none"')"
           open_issues="$(gh issue list --repo "$GITHUB_REPOSITORY" --label ci-red --state open --json number --jq 'length')"
           if [ "$last" != success ] && [ "$last" != none ]; then
-            echo "the last scheduled run ended $last: running again"; echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
+            echo "the last automatic run ended $last: running again"; echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           if [ "$open_issues" != 0 ]; then
             echo "a ci-red issue is open: running to see whether main is green again"; echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
@@ -153,7 +160,7 @@ jobs:
         run: |
           num="$(gh issue list --repo "$GITHUB_REPOSITORY" --label ci-red --state open --json number --jq '.[0].number // ""')"
           if [ "$RESULT" = success ]; then
-            if [ "$EVENT" = schedule ] && [ -n "$num" ]; then
+            if [ "$EVENT" != workflow_dispatch ] && [ -n "$num" ]; then
               gh issue close "$num" --repo "$GITHUB_REPOSITORY" --comment "Green again at $SHA ($RUN_URL)."
             fi
           elif [ "$RESULT" = failure ]; then
