@@ -4734,17 +4734,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       expect(last.id === made.id && !("opted_out_members" in last) && !("report_list" in last), "fixture hub: the delete answers the series as a reader sees it");
     }
     // A round needs two who take part: the circle without those who opted out, and the moderator (§20.1, §20.2); here the
-    // owner is the only one, and the moderator too.
+    // owner is the only one left, and the moderator too. A moderator who opts out moderates nothing.
     {
       const base = "/projects/maintainer/sample/jour-fixe/series/";
       const mine = await win.Maity.api.post(base.slice(0, -1), { topic: "Smoke: two are needed", circle: "owner", circle_owner: "hum-maintainer", reason: "smoke" });
       await win.Maity.api.post(base + mine.id + "/moderators", { member_id: "hum-maintainer", reason: "smoke" });
       let view = (await win.Maity.api.get("/projects/maintainer/sample/jour-fixe")).series.find((x) => x.id === mine.id);
-      const parts = [{ member_id: "hum-maintainer" }].concat(view.own_agents || []);
-      for (const one of parts) await win.Maity.api.put(base + mine.id + "/opt-out" + (one.member_id === "hum-maintainer" ? "" : "?member=" + one.member_id));
-      let started = "started";
-      try { await win.Maity.api.post(base + mine.id + "/rounds", { reason: "smoke" }); } catch (e) { started = e.code || (e.details && e.details.code) || String(e.status); }
+      for (const one of view.own_agents || []) await win.Maity.api.put(base + mine.id + "/opt-out?member=" + one.member_id);
+      const start = async () => { try { await win.Maity.api.post(base + mine.id + "/rounds", { reason: "smoke" }); return "started"; } catch (e) { return e.code || (e.details && e.details.code) || String(e.status); } };
+      let started = await start();
       expect(started === "too_few", "fixture hub: nobody left but the moderator is too few, " + started);
+      await win.Maity.api.put(base + mine.id + "/opt-out");
+      started = await start();
+      expect(started === "no_moderator", "fixture hub: the only moderator opted out, so nobody moderates, " + started);
       await win.Maity.api.del(base + mine.id, { reason: "smoke done" });
     }
     // The view says nothing of it: no block, no topic, none of its rounds; a round of it is not found.
