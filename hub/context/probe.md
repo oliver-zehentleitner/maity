@@ -40,6 +40,24 @@ delay a long-poll's wake-up, and it fits the single replica V1 runs.
 - A separate probe process or cron job: one more thing to deploy and
   supervise for work that takes milliseconds every few minutes.
 
+## A report's observation wakes an admin only on a mismatch, and a closed card's holder neither
+
+**Id:** 75682de7-9b2e-415b-acf9-8339bc157231
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-cq0mzfrbswb7, observed on production on 2026-11-01 after #1083 reached old cards; `events.wakes`, `readable_by`, docs/api.md §8.2
+**Revisit when:** an admin has to act on an observation without a mismatch
+
+The sweep of old cards after #1083 woke every admin about every 2 seconds, one event per card. Each event was a real change (`open` to `merged`), so comparing with the last reading did not help, and the same audience also woke the admins on every report and every change of `checks`. `probe_observed` now names `trust:admin` only with `mismatch: true`, and the holder unless the card is closed without a mismatch; an event can then have no audience at all. The observation of the open release keeps its audience: it is few events, and a release waits on them.
+
+**Reason:** owners and admins read every event without being named, and being named is what wakes them, so the dashboard and the event list lose nothing. A merge already reaches who must act as `task_merged`.
+
+**Rejected alternatives:**
+- Not emitting the event for a merged or done card: the dashboard re-reads on it, and the record of the observation would be gone.
+- A new entry in `NON_WAKING`: it is per kind, and a mismatch has to wake.
+- Rate limiting the sweep's events: fewer wake-ups, but each still costs every admin a run for nothing to do.
+
 ## A sweep reads a report again while its pull request was last seen open
 
 **Id:** 9092661c-3553-4e0f-81d1-fa521fa05581

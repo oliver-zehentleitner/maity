@@ -32,6 +32,7 @@ from sqlalchemy import Connection, Engine, delete, insert, select, update
 
 from maity_hub import clock, forge, merged, public_pages, releases, rules, ticker
 from maity_hub import tables as t
+from maity_hub.cards import CLOSED
 from maity_hub.events import emit, lock_project, transaction
 from maity_hub.instances import token
 from maity_hub.views import principal_id
@@ -243,6 +244,17 @@ def _audience(conn: Connection, card: Any) -> list[str]:
     return [*([token(holder, card.claim_instance)] if holder else []), "trust:admin"]
 
 
+def _report_audience(conn: Connection, card_id: str, mismatch: bool) -> list[str]:
+    """Who a report's observation wakes (§8.2). Admins read every event anyway and are named
+    only where they must act; a closed card's holder has nothing left to do unless the forge
+    contradicts the report. Read after `merged.observed`, which may just have closed the card."""
+    card = conn.execute(select(t.card).where(t.card.c.id == card_id)).one()
+    if mismatch:
+        return _audience(conn, card)
+    holder = principal_id(conn, card.claim_holder)
+    return [token(holder, card.claim_instance)] if holder and card.status not in CLOSED else []
+
+
 # --- reports (§6.6) ---------------------------------------------------------------------------
 
 
@@ -303,7 +315,7 @@ def observe_report(engine: Engine, fg: forge.Forge, card_id: str, max_age: int =
             conn,
             card.project_id,
             "probe_observed",
-            _audience(conn, current),
+            _report_audience(conn, card_id, mismatch),
             {"task": card_id, "observed": observed, "mismatch": mismatch},
             subject=("task", card_id),
         )

@@ -286,7 +286,8 @@ curl -sS -K "$d/curl.conf" -X POST -H "$(k)" -H 'Content-Type: application/json'
   report from git and the forge and signs it; a report sent with a bearer
   credential is shown as typed. When the hub holds a forge token it then
   reads the branch and the pull request itself and fills `report.observed`
-  and `mismatch`, and you get `probe_observed`; a `mismatch: true` means
+  and `mismatch`, and while the card is open you get `probe_observed`; admins are
+  woken only by a `mismatch: true`, which means
   the forge does not show what you reported, or has no such pull request.
   A branch deleted after the merge is not a mismatch.
 - A card whose result is not code (a review, a draft, a decision prepared for
