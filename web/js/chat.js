@@ -20,7 +20,11 @@ window.Maity = window.Maity || {};
   // The global chat's "read what is shown again" (js/chats.js), in place of
   // the project feed's events it does not hold.
   const RESYNC = "chat_resync";
-  const PRESENCE_LABELS = { online: "online", away: "away", offline: "offline", paused: "paused" };
+  const PRESENCE_LABELS = {
+    online: () => M.t("chat.presence.online"), away: () => M.t("chat.presence.away"),
+    offline: () => M.t("chat.presence.offline"), paused: () => M.t("chat.presence.paused"),
+  };
+  const presenceWord = (presence) => (Object.hasOwn(PRESENCE_LABELS, presence) ? PRESENCE_LABELS[presence]() : presence);
 
   // Unsent text per conversation ("<full name>/<agent id>"), kept while the
   // human switches between them in this tab; never stored or sent.
@@ -44,7 +48,7 @@ window.Maity = window.Maity || {};
     const member = (p) => byId[p.member_id] || { id: p.member_id, display_name: "@" + p.handle, kind: p.kind };
     return direct.concat(groups.map((g) => {
       const people = g.participants.map(member).filter((x) => x.id !== ctx.me.id);
-      return { id: g.id, kind: "group", title: g.title || people.map((x) => x.display_name).join(", ") || "Group chat",
+      return { id: g.id, kind: "group", title: g.title || people.map((x) => x.display_name).join(", ") || M.t("chat.group.untitled"),
         participants: people, unread: g.unread || 0, mentions: g.mentions_unread || 0, access: g.access, closed: !!g.closed_at,
         last_message_at: g.last_message_at || g.created_at || null, last_message: g.last_message || null, pinned: !!g.pinned, rank: g.rank };
     }));
@@ -95,17 +99,17 @@ window.Maity = window.Maity || {};
   function sublines(ctx, chat, current) {
     const one = chat.participants.length === 1 ? chat.participants[0] : null;
     const who = chat.kind === "group"
-      ? (chat.access === "observer" ? "you read along · " : "") + (chat.closed ? "closed · " : "") + "group · " + chat.participants.map((m) => m.display_name).join(", ")
+      ? [chat.access === "observer" ? M.t("chat.who.observer") : null, chat.closed ? M.t("chat.who.closed") : null, M.t("chat.who.group", { names: M.fmt.list(chat.participants.map((m) => m.display_name)) })].filter(Boolean).join(" · ")
       : one
-      ? [one.kind === "human" ? "human" : "agent", one.handle ? "@" + M.dom.handleOf(ctx, one) : null, one.harness || null].filter(Boolean).join(" · ")
+      ? [one.kind === "human" ? M.t("chat.who.human") : M.t("chat.who.agent"), one.handle ? "@" + M.dom.handleOf(ctx, one) : null, one.harness || null].filter(Boolean).join(" · ")
       : chat.participants.map((m) => m.display_name).join(", ");
-    const presence = chat.kind !== "group" && one ? PRESENCE_LABELS[one.presence] || one.presence || null : null;
+    const presence = chat.kind !== "group" && one ? presenceWord(one.presence) || null : null;
     const draft = current ? null : drafts.get(ctx.slug + "/" + chat.id);
     const last = chat.last_message;
     let line = null;
-    if (draft) line = "Draft: " + draft;
-    else if (last && last.redacted) line = "A message was removed.";
-    else if (last) line = (last.from === ctx.me.id ? "You: " : "") + last.body;
+    if (draft) line = M.t("chat.line.draft", { text: draft });
+    else if (last && last.redacted) line = M.t("chat.line.removed");
+    else if (last) line = last.from === ctx.me.id ? M.t("chat.line.own", { text: last.body }) : last.body;
     return { who, presence, line, draft: !!draft };
   }
 
@@ -135,8 +139,8 @@ window.Maity = window.Maity || {};
       when)] : null,
     // Both counters in one cell, side by side: the unread count, then the @.
     unread || (!current && chat.mentions) ? h("span", { class: "conv-counts" },
-      unread ? [apart(", "), h("span", { class: "count" }, String(unread)), apart(" unread")] : null,
-      !current && chat.mentions ? [apart(", "), h("span", { class: "count mention-count", title: "mentions you" }, "@"), apart(" mentions you")] : null) : null,
+      unread ? [apart(", "), h("span", { class: "count" }, String(unread)), apart(" " + M.t("chat.unread", { count: unread }))] : null,
+      !current && chat.mentions ? [apart(", "), h("span", { class: "count mention-count", title: M.t("chat.mentions_you") }, "@"), apart(" " + M.t("chat.mentions_you"))] : null) : null,
     apart(", "), h("span", { class: "conv-sub" }, sub.who),
     sub.line ? [apart(": "), h("span", { class: "preview" + (sub.draft ? " draft" : "") }, sub.line)] : null),
     // Beside the link, not in it: a button inside a link is no button.
@@ -152,7 +156,7 @@ window.Maity = window.Maity || {};
     let mine = ctx.members.filter((m) => m.kind === "agent" && m.owner_id === ctx.me.id);
     let byAgent = {};
     let groups = [];
-    const none = h("p", { class: "muted" }, "You own no agents in this project, and are in no group chat.");
+    const none = h("p", { class: "muted" }, M.t("chat.none"));
     const draw = () => {
       // A redraw keeps the keyboard where it was: on the same chat's link.
       const focused = document.activeElement && ul.contains && ul.contains(document.activeElement)
@@ -183,7 +187,7 @@ window.Maity = window.Maity || {};
       if (members) mine = members.items.filter((m) => m.kind === "agent" && m.owner_id === ctx.me.id);
       draw();
       status.done();
-    }).catch((err) => status.fail("The conversations could not be read: ", err));
+    }).catch((err) => status.fail(M.t("chat.read_failed.list"), err));
     const refresh = (withMembers) => {
       if (reading) {
         again = { withMembers: (again && again.withMembers) || withMembers };
@@ -201,13 +205,13 @@ window.Maity = window.Maity || {};
     // A closed project takes no new group chat (§9.2).
     // nor one read along from outside the project.
     const closedProject = ctx.outsider || ctx.project.state === "archived";
-    const el = h("nav", { class: "chat-list-pane", "aria-label": "Conversations" },
-      h("div", { class: "toolbar" }, h("h2", null, ctx.outsider ? "Group chats" : "Chat"),
+    const el = h("nav", { class: "chat-list-pane", "aria-label": M.t("chat.conversations") },
+      h("div", { class: "toolbar" }, h("h2", null, ctx.outsider ? M.t("chat.title.group_chats") : M.t("chat.title")),
         // A human guest creates no group chat (§2.3, §9.2).
-        closedProject || M.trust.guest(ctx) ? null : h("a", { class: "button small new-group", href: ctx.link("chat", "new") }, "New group chat"),
+        closedProject || M.trust.guest(ctx) ? null : h("a", { class: "button small new-group", href: ctx.link("chat", "new") }, M.t("chat.new_group")),
         // A message to the project is talk too (the maintainer's wish,
         // tsk-r1adgwp0a5dr): it starts here, no longer in the inbox.
-        ctx.outsider ? null : h("a", { class: "button small message-project", href: ctx.link("message") }, "Message the project")),
+        ctx.outsider ? null : h("a", { class: "button small message-project", href: ctx.link("message") }, M.t("chat.message_project"))),
       none, ul, status.el);
     none.hidden = mine.length > 0;
     return { el, refresh, groups: () => groups };
@@ -222,12 +226,13 @@ window.Maity = window.Maity || {};
   // given; null when cancelled.
   function askReason(question) {
     let reason = window.prompt(question, "");
-    while (reason !== null && !reason.trim()) reason = window.prompt("A reason is needed to remove a message. Say why, or cancel:", "");
+    while (reason !== null && !reason.trim()) reason = window.prompt(M.t("chat.remove.reason_needed"), "");
     return reason === null ? null : reason.trim();
   }
   function tombstone(ctx, r) {
-    return h("p", { class: "muted msg-redacted" }, "This message was removed",
-      r && r.by ? [" by ", M.dom.memberRef(ctx, r.by)] : null, (r && r.reason ? ": " + r.reason : "") + ".");
+    return h("p", { class: "muted msg-redacted" }, r && r.by
+      ? (r.reason ? M.tn("chat.removed.by_reason", { who: M.dom.memberRef(ctx, r.by), reason: r.reason }) : M.tn("chat.removed.by", { who: M.dom.memberRef(ctx, r.by) }))
+      : (r && r.reason ? M.t("chat.removed.reason", { reason: r.reason }) : M.t("chat.removed")));
   }
 
   // A composer's one row of actions (the designer's pass on #431): Attach
@@ -292,7 +297,7 @@ window.Maity = window.Maity || {};
     if (!ctx.projectsOf || !sender || sender.kind !== "agent") return null;
     const projects = ctx.projectsOf(sender.id);
     if (!projects.length) return null;
-    return h("span", { class: "msg-projects" }, h("span", { class: "visually-hidden" }, ", in "),
+    return h("span", { class: "msg-projects" }, h("span", { class: "visually-hidden" }, M.t("chat.in_projects")),
       projects.map((p, i) => h("span", { class: "msg-project", title: p.name },
         M.projectMark(p.slug, p.name, p.view, "small"), h("span", { class: "visually-hidden" }, (i ? ", " : "") + p.name))));
   }
@@ -303,7 +308,7 @@ window.Maity = window.Maity || {};
     const o = opts || {};
     const own = msg.from === ctx.me.id;
     // A grouped message says when, not again who.
-    const delivery = (m) => (own && !o.group ? (m.delivered_at ? " · reached a session" : " · not picked up yet") : "");
+    const delivery = (m) => (own && !o.group ? " · " + (m.delivered_at ? M.t("chat.delivery.reached") : M.t("chat.delivery.waiting")) : "");
     // Who (a link to them), then when; a delivery update rewrites the when alone.
     const said = (m) => formatTime(m.sent_at) + delivery(m);
     const when = h("span", { class: "when" }, said(msg));
@@ -312,7 +317,7 @@ window.Maity = window.Maity || {};
     // One's own message sent to one instance says which (§9.1 to_instance).
     const meta = h("span", { class: "meta" }, grouped || own ? null
       : [M.dom.memberRef(ctx, msg.from, { instance: msg.from_instance }), projectsOf(ctx, sender), " · "],
-    own && msg.to_instance ? [h("span", { class: "msg-to" }, "to ", M.dom.memberRef(ctx, msg.to, { instance: msg.to_instance })), " · "] : null, when);
+    own && msg.to_instance ? [h("span", { class: "msg-to" }, M.tn("chat.to_instance", { who: M.dom.memberRef(ctx, msg.to, { instance: msg.to_instance }) })), " · "] : null, when);
     if (own && !o.group && !msg.delivered_at) pending.set(msg.seq, (fresh) => { when.textContent = said(fresh); });
     // A removed message reads body null (§9); who and why only where known
     // (this page's own removal, or the event_redacted that said so).
@@ -323,8 +328,8 @@ window.Maity = window.Maity || {};
       !own && !grouped ? h("span", { class: "msg-avatar" }, M.avatar(sender || { id: msg.from }, 28)) : null,
       h("div", { class: "msg-body" }, body,
         M.attachments ? M.attachments.render(ctx, msg, o.canDeleteFile) : null, meta,
-        onQuote && !removed ? h("button", { type: "button", class: "small msg-quote", "aria-label": "Quote this message", onclick: () => onQuote(msg) }, "Quote") : null,
-        o.onRedact && !removed ? h("button", { type: "button", class: "small msg-quote", "aria-label": "Remove this message for everyone", onclick: () => o.onRedact(msg) }, "Remove") : null));
+        onQuote && !removed ? h("button", { type: "button", class: "small msg-quote", "aria-label": M.t("chat.quote.label"), onclick: () => onQuote(msg) }, M.t("chat.quote")) : null,
+        o.onRedact && !removed ? h("button", { type: "button", class: "small msg-quote", "aria-label": M.t("chat.remove.label"), onclick: () => o.onRedact(msg) }, M.t("chat.remove")) : null));
   }
 
   // The newest page of a conversation, and nothing before it (the
@@ -366,8 +371,8 @@ window.Maity = window.Maity || {};
     const d = new Date(iso);
     const today = new Date(now);
     const yesterday = new Date(now - 86400000);
-    if (dayOf(iso) === dayOf(today.toISOString())) return "Today";
-    if (dayOf(iso) === dayOf(yesterday.toISOString())) return "Yesterday";
+    if (dayOf(iso) === dayOf(today.toISOString())) return M.t("chat.day.today");
+    if (dayOf(iso) === dayOf(yesterday.toISOString())) return M.t("chat.day.yesterday");
     return d.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   }
 
@@ -381,7 +386,7 @@ window.Maity = window.Maity || {};
         out.push(h("li", { class: "day" }, h("span", null, dayLabel(msg.sent_at, Date.now()))));
         last = null;
       }
-      if (firstUnread && msg.seq === firstUnread) out.push(h("li", { class: "new-line" }, h("span", null, "New messages")));
+      if (firstUnread && msg.seq === firstUnread) out.push(h("li", { class: "new-line" }, h("span", null, M.t("chat.new_line"))));
       // Two instances of one agent are two senders.
       const grouped = !!last && last.from === msg.from && (last.from_instance || null) === (msg.from_instance || null)
         && Date.parse(msg.sent_at) - Date.parse(last.sent_at) < GROUP_MS
@@ -449,10 +454,10 @@ window.Maity = window.Maity || {};
     let stuck = true;
     let unseen = 0;
     const end = () => { messages.scrollTop = messages.scrollHeight; };
-    const pill = h("button", { type: "button", class: "small jump-latest", hidden: true }, "Newest");
+    const pill = h("button", { type: "button", class: "small jump-latest", hidden: true }, M.t("chat.newest"));
     const draw = () => {
       pill.hidden = stuck;
-      pill.textContent = unseen ? unseen + " new · Newest" : "Newest";
+      pill.textContent = unseen ? M.t("chat.newest.count", { count: unseen }) : M.t("chat.newest");
     };
     messages.addEventListener("scroll", () => { stuck = atBottom(messages); if (stuck) unseen = 0; draw(); });
     messages.addEventListener("load", () => { if (stuck) end(); }, true);
@@ -510,12 +515,12 @@ window.Maity = window.Maity || {};
       if (group) { await M.groupChat.open(ctx, root, layout, list, group, M.chatParts); return; }
     }
     if (!agent) {
-      if (args[0]) append(layout, h("p", { class: "error", role: "alert" }, "No conversation of yours with the id " + args[0] + "."));
-      else if (mine.length || ctx.outsider) append(layout, h("p", { class: "chat-none muted" }, "Pick a conversation."));
+      if (args[0]) append(layout, h("p", { class: "error", role: "alert" }, M.t("chat.no_such", { id: args[0] })));
+      else if (mine.length || ctx.outsider) append(layout, h("p", { class: "chat-none muted" }, M.t("chat.pick")));
       await list.refresh(false);
       return;
     }
-    const pane = h("section", { class: "chat-pane", "aria-label": "Chat with " + agent.display_name });
+    const pane = h("section", { class: "chat-pane", "aria-label": M.t("chat.with_label", { name: agent.display_name }) });
     append(layout, pane);
 
     const path = ctx.base + "/conversations/" + encodeURIComponent(agent.id) + "/messages";
@@ -557,8 +562,8 @@ window.Maity = window.Maity || {};
       loaded.forEach((m) => shown.add(m.seq));
       if (loaded.length) append(messages, loaded.map(draw));
       else {
-        append(messages, h("li", { class: "empty" }, h("p", null, "No messages yet."),
-          h("p", { class: "muted" }, M.dom.memberRef(ctx, agent.id), " reads what you write here at its next wait or resume.")));
+        append(messages, h("li", { class: "empty" }, h("p", null, M.t("chat.empty")),
+          h("p", { class: "muted" }, M.tn("chat.reads_at_wait", { who: M.dom.memberRef(ctx, agent.id) }))));
       }
       drawEarlier();
     }
@@ -579,7 +584,7 @@ window.Maity = window.Maity || {};
         redrawAll();
         messages.scrollTop = top + (messages.scrollHeight - height);
       } catch (err) {
-        pollStatus.fail("The earlier messages could not be read: ", err);
+        pollStatus.fail(M.t("chat.read_failed.earlier"), err);
       } finally {
         readingOlder = false;
       }
@@ -587,7 +592,7 @@ window.Maity = window.Maity || {};
     function drawEarlier() {
       clear(earlierBox);
       if (earlier === null) return;
-      append(earlierBox, h("button", { type: "button", class: "small", onclick: () => older() }, "Show earlier messages"));
+      append(earlierBox, h("button", { type: "button", class: "small", onclick: () => older() }, M.t("chat.earlier")));
     }
     messages.addEventListener("scroll", () => { if (messages.scrollTop < NEAR_TOP) older(); });
     redrawAll();
@@ -596,7 +601,7 @@ window.Maity = window.Maity || {};
     const follow = follower(messages, () => text.focus());
     const jump = follow.pill;
     const pollStatus = M.statusLine();
-    if (unreadFailed) pollStatus.fail("Which messages are new could not be read: ", unreadFailed);
+    if (unreadFailed) pollStatus.fail(M.t("chat.read_failed.unread"), unreadFailed);
 
     let checking = false;
     // Where the last check stopped: one page per check, the next one goes on
@@ -616,7 +621,7 @@ window.Maity = window.Maity || {};
         });
         deliveryFrom = page.items.length === 200 && pending.size ? page.items[page.items.length - 1].seq : null;
       } catch (err) {
-        pollStatus.fail("Whether your messages were picked up could not be read: ", err);
+        pollStatus.fail(M.t("chat.read_failed.delivery"), err);
       } finally {
         checking = false;
       }
@@ -667,7 +672,7 @@ window.Maity = window.Maity || {};
         // The list read on the same event may predate this read.
         list.refresh(false);
       } catch (err) {
-        pollStatus.fail("New messages could not be fetched: ", err);
+        pollStatus.fail(M.t("chat.read_failed.new"), err);
       }
     });
     // One page per nudge, newest first, walking back over what is shown and
@@ -685,7 +690,7 @@ window.Maity = window.Maity || {};
           (m.attachments || []).filter((a) => a.deleted_at).forEach((a) => M.attachments && M.attachments.markDeleted(messages, a.id));
         });
       } catch (err) {
-        pollStatus.fail("The conversation could not be read again: ", err);
+        pollStatus.fail(M.t("chat.read_failed.again"), err);
       }
     }
     // A message's text replaced by its tombstone, in place; its buttons go.
@@ -700,20 +705,20 @@ window.Maity = window.Maity || {};
       Array.from(li.querySelectorAll("button.msg-quote")).forEach((b) => b.remove());
     }
     async function redactDirect(msg) {
-      const reason = askReason("Remove this message from the chat with " + agent.display_name + "? Its text is replaced by a note. Say why:");
+      const reason = askReason(M.t("chat.remove.ask", { name: agent.display_name }));
       if (reason === null) return;
-      status.busy("Removing…");
+      status.busy(M.t("chat.remove.busy"));
       try {
         await M.api.post(ctx.base + "/events/" + encodeURIComponent(msg.seq) + "/redact", { reason });
         markRemoved(msg.seq, ctx.me.id, reason);
         status.done();
-        append(status.el, h("span", { class: "ok" }, "Removed."));
+        append(status.el, h("span", { class: "ok" }, M.t("chat.remove.done")));
         // The button that had the focus is gone with the text.
         status.el.setAttribute("tabindex", "-1");
         status.el.focus();
         list.refresh(false);
       } catch (err) {
-        status.fail("Not removed: ", err);
+        status.fail(M.t("chat.remove.failed"), err);
       }
     }
     // Quote: the message goes into the composer as a quote, before what is there.
@@ -726,7 +731,7 @@ window.Maity = window.Maity || {};
       if (text.setSelectionRange) text.setSelectionRange(text.value.length, text.value.length);
     }
     const key = ctx.slug + "/" + agent.id;
-    const text = h("textarea", { id: "chat-text", rows: "3", placeholder: "Message to " + agent.display_name });
+    const text = h("textarea", { id: "chat-text", rows: "3", placeholder: M.t("chat.placeholder", { name: agent.display_name }) });
     text.value = drafts.get(key) || "";
     // In a chat a mention is plain text and tells nobody (docs/api.md §8.6).
     // When one is being written, the page says so and offers a project
@@ -740,8 +745,8 @@ window.Maity = window.Maity || {};
       clear(mentionHint);
       mentionHint.hidden = !found;
       if (!found) return;
-      append(mentionHint, "In this chat @" + found[2] + " notifies nobody. ",
-        h("a", { href: ctx.link("message", "@" + found[2]) }, "Write a project message to draw them in"), ".");
+      append(mentionHint, M.tn("chat.mention_hint", { handle: found[2],
+        link: h("a", { href: ctx.link("message", "@" + found[2]) }, M.t("chat.mention_hint.link")) }));
     }
     const typedInChat = () => {
       if (text.value.trim()) drafts.set(key, text.value); else drafts.delete(key);
@@ -750,7 +755,7 @@ window.Maity = window.Maity || {};
     text.addEventListener("input", typedInChat);
     hintMention();
     const status = M.statusLine();
-    const button = h("button", { type: "submit", class: "primary" }, "Send");
+    const button = h("button", { type: "submit", class: "primary" }, M.t("chat.send"));
 
     // Whom a message wakes (§9.1): the whole team by its wake rule, or one
     // of the agent's instances that is not revoked; offered only where it
@@ -760,7 +765,7 @@ window.Maity = window.Maity || {};
     const target = live.length > 1 ? h("select", { id: "chat-instance", "aria-describedby": "chat-instance-hint" },
       h("option", { value: "" }, M.t("chat.instance.team")),
       live.map((i) => h("option", { value: i.id }, (agent.handle || agent.display_name) + "#" + i.id + " · "
-        + (i.dormant ? M.t("chat.instance.dormant") : PRESENCE_LABELS[i.presence] || i.presence || "unknown")))) : null;
+        + (i.dormant ? M.t("chat.instance.dormant") : presenceWord(i.presence) || M.t("chat.presence.unknown"))))) : null;
     if (target) {
       target.value = targets.get(key) || "";
       target.addEventListener("change", () => { if (target.value) targets.set(key, target.value); else targets.delete(key); });
@@ -776,9 +781,9 @@ window.Maity = window.Maity || {};
       const body = text.value.trim();
       const files = files0 ? files0.ids() : [];
       if (!body && !files.length) { text.focus(); return; }
-      if (files0 && files0.busy()) { status.fail("Not sent: ", { message: "a file is still uploading" }); return; }
+      if (files0 && files0.busy()) { status.fail(M.t("chat.not_sent"), { message: M.t("chat.uploading") }); return; }
       button.disabled = true;
-      status.busy("Sending…");
+      status.busy(M.t("chat.sending"));
       try {
         const sent = files.length ? { body, attachments: files } : { body };
         if (target && target.value) sent.to_instance = target.value;
@@ -791,7 +796,7 @@ window.Maity = window.Maity || {};
         status.done();
         list.refresh(false);
       } catch (err) {
-        status.fail("Not sent: ", err);
+        status.fail(M.t("chat.not_sent"), err);
       } finally {
         button.disabled = false;
       }
@@ -799,15 +804,15 @@ window.Maity = window.Maity || {};
 
     M.dom.sendOnCtrlEnter(text, send, button);
 
-    const heading = h("h2", { tabindex: "-1" }, "Chat with ", M.dom.memberRef(ctx, agent.id));
+    const heading = h("h2", { tabindex: "-1" }, M.tn("chat.with", { who: M.dom.memberRef(ctx, agent.id) }));
     const composeForm = h("form", { class: "compose", onsubmit: send });
     append(pane,
-      h("a", { class: "chat-back", href: ctx.link("chat") }, "← Conversations"),
+      h("a", { class: "chat-back", href: ctx.link("chat") }, M.t("chat.back")),
       h("div", { class: "toolbar" },
         heading,
         h("span", { class: "muted" }, agent.session
-          ? "session " + agent.session.id + (agent.session.listening ? ", listening" : "")
-          : "no session — picked up when it resumes"),
+          ? (agent.session.listening ? M.t("chat.session.listening", { id: agent.session.id }) : M.t("chat.session", { id: agent.session.id }))
+          : M.t("chat.session.none")),
         target ? h("span", { class: "chat-instance" }, h("label", { for: "chat-instance" }, M.t("chat.instance.label")), target,
           h("span", { class: "visually-hidden", id: "chat-instance-hint" }, M.t("chat.instance.hint"))) : null),
       earlierBox,
@@ -815,7 +820,7 @@ window.Maity = window.Maity || {};
       jump,
       pollStatus.el,
       append(composeForm,
-        composeHead(composeForm, text, h("label", { for: "chat-text" }, "Message", h("span", { class: "visually-hidden" }, " (" + M.dom.SEND_KEYS + " sends)"))),
+        composeHead(composeForm, text, h("label", { for: "chat-text" }, M.t("chat.message"), h("span", { class: "visually-hidden" }, " " + M.t("chat.send_keys", { keys: M.dom.SEND_KEYS })))),
         text, M.projectMentionPicker(ctx, text, { onPick: typedInChat }), mentionHint, files0 ? files0.el : null, actionRow(files0, button, meat), status.el));
     // Sizing, scrolling and focus need the view in the page, which the
     // router does once this function has returned.
