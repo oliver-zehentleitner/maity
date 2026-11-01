@@ -6013,6 +6013,7 @@ already read; the page adds no new right and no new stored field.
 | name, state, `state_note`, absence, logo | `GET /projects/{owner}/{slug}` (§6.1) | as in the header |
 | repository link | `repository.url` (§6.1) | `null`: no link. Already validated as a URL on a forge host the operator configured (§11) |
 | Keep the Why dashboard link | `keep_the_why_export.members[]` (§6.1, §11.3), the root's (`path: ""`) `dashboard_url`, and each child's under its `name` | `null` export: no link. The attention counts are next to it (`summary.attention`, `summary.status`) |
+| pull requests link | `repository.url` and `repository.forge` (§6.1) | derived in the browser: GitHub and Gitea `/pulls`, GitLab `/-/merge_requests`, Bitbucket `/pull-requests`; another forge or no repository: no link |
 | issues, wiki, discussions and chat links | the project's `links` (below) | each one set is a button next to the repository link; one not set shows nothing |
 | policy preset | `policy.preset` and the fields it fills (§6.1) | |
 | members with trust and role | `GET /projects/{owner}/{slug}/members` (§6.2) | grouped by `role` and `kind` in the browser, the trust shown where it is not `member`; presence as the hub computes it. `owner` and `credentials` only where the member view already carries them |

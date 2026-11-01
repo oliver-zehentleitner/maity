@@ -3794,9 +3794,16 @@ so it was dropped.
 **See:** https://github.com/oliver-zehentleitner/maity — 11b7e786-ecf7-4971-ae04-48760fd1fd41 — as of 2026-10-31
 **Revisit when:** a fifth kind of link is added, or the header row has no room for the buttons on a phone
 
-The header's row beside the state shows the repository, then the
+The header's row shows the repository, then Pull Requests, then the
 project's own links that are set (issues, wiki, discussions, chat, each
-with its mark), then the Keep the Why dashboard. Each is plain https
+with its mark), then the
+Keep the Why dashboard, and after them, at the right end, the state: the
+maintainer asked for the state on that side and for the Pull Requests
+button (tsk-hf70q6maf8cv, 2026-11-01; no reason was recorded). Unlike the
+own links, Pull Requests is derived in the browser from the repository's
+URL and forge, and a forge outside the table gets no button; the hub knows
+only GitHub today, so the other three targets wait for it (tsk-sqpcbndm0tvd).
+Each link is plain https
 only and opens in a tab of its own with `rel="noopener noreferrer"`. The
 repository's button reads "Repository" for every forge. Its mark and
 its name for a screen reader ("Repository on GitHub") still say which
