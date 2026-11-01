@@ -11,8 +11,10 @@ from typing import Any
 CONSENT_REPLIES = [{"id": "go", "label": "go"}, {"id": "no", "label": "no"}]
 
 
-def replies(class_: str, options: list[dict[str, Any]]) -> list[dict[str, str]]:
+def replies(
+    class_: str, options: list[dict[str, Any]], *, action: bool = False
+) -> list[dict[str, str]]:
     """The answers the inbox renders as buttons: the options, or go/no for a bare consent."""
-    if class_ == "consent" and not options:
+    if action or (class_ == "consent" and not options):
         return list(CONSENT_REPLIES)
     return [{"id": o["id"], "label": o["label"]} for o in options]

@@ -4,10 +4,10 @@
 
 **Id:** 75d1458d-83a0-46b4-b478-f95be80d0453
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 0f3b8a52-6c1e-4d7a-9b24-7e1c5d90a3f6
 **Evidence:** confirmed
 **Source:** implementation session, 2026-10-28 (trust × role, first of the stacked pull requests for #419; the split agreed with the coordinator)
-**Revisit when:** `Maity-On-Request` and `on_behalf_of` are enforced for a proxy (the third pull request of #419)
 
 `scopes.py` gives a member with the role `proxy` the coder's scopes and
 `requests:answer`, whatever its trust, and nothing else of the governance
@@ -153,3 +153,32 @@ project at hand; the base on the row lets each of them stay a one-line read.
 - A nullable `role_base` read as `role_base or role`: the same silent fallback in another place.
 - Keeping the coder fallback in `_granted` for names it does not know: it is what made a missing base
   invisible.
+
+## The owner's go opens a scope per call, and the proxy's listed scopes stay without it
+
+**Id:** 0f3b8a52-6c1e-4d7a-9b24-7e1c5d90a3f6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation of `action` on a request (docs/api.md §2.3, §7)
+**Revisit when:** `on_behalf_of` is enforced on a proxy's answer, or a route splits its membership check and its effect over two transactions
+
+`scopes.py` still gives a proxy the coder's scopes and `requests:answer`.
+`Membership.may` and `require` open any other governance scope when the
+call's signed `Maity-On-Request` holds (`proxy_go`), and the first such
+check spends the go on the route's connection.
+
+**Reason:** `has_scope` also answers who holds a scope for others (done
+authority, cover, inbox), where a proxy must not start counting as an
+admin; only the calling membership knows the call. Spending at the check
+puts it in the transaction of the effect, so a failed call rolls it back
+and a racing call finds it used.
+
+`action.path` is stored as the proxy sent it, in the `<owner>/<slug>` form of
+the call, and is compared bytewise: no later rename rewrites it. After a
+rename the go still matches a call on the old name, which resolves as an
+alias, and any other spelling is a `mismatch`, so the proxy asks again.
+
+**Rejected alternatives:**
+- Grant the governance scopes in `scopes.py` and filter per route: the literal
+  reading of "holds trust `admin`", but it widens every `has_scope` reader.

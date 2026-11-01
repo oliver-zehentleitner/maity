@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import logging
 from collections.abc import Callable
@@ -69,6 +70,21 @@ class NeedsInSessionIn(Strict):
     session_id: str | None = None
 
 
+ACTION_METHODS = ("POST", "PUT", "PATCH", "DELETE")
+ACTION_CLASSES = ("decision", "consent")
+ACTION_BODY_MAX = 64 * 1024
+
+
+class ActionIn(Strict):
+    """The full call a proxy asks the owner's go for (§2.3, §7); `body` is checked by hand
+    for its own error names."""
+
+    method: str
+    path: str = Field(max_length=2048)
+    query: str | None = Field(default=None, max_length=8192)
+    body: str | None = None
+
+
 class RequestCreate(Written):
     class_: str = Field(alias="class")
     title: str = title()
@@ -83,6 +99,7 @@ class RequestCreate(Written):
     on_behalf_of: str | None = None
     ktw_ref: str | None = Field(default=None, max_length=255)
     humans_only: bool = False
+    action: ActionIn | None = None
 
 
 class ForwardIn(Strict):
@@ -200,6 +217,16 @@ def _task(conn: Connection, task_id: str | None) -> dict[str, Any] | None:
     return {"id": card.id, "title": card.title, "status": card.status}
 
 
+def _action_view(row: Any) -> dict[str, Any] | None:
+    if row.action is None:
+        return None
+    return {
+        **row.action,
+        "used_at": ts(row.action_used_at) if row.action_used_at is not None else None,
+        "used_seq": row.action_used_seq,
+    }
+
+
 def request_view(conn: Connection, row: Any, *, with_proposal: bool = False) -> dict[str, Any]:
     """A request as §7 shows it; also the payload of its events (a personal request's
     events excepted: `_payload`). `with_proposal` adds the fields a proposal's kind shows
@@ -216,7 +243,7 @@ def request_view(conn: Connection, row: Any, *, with_proposal: bool = False) -> 
         "tried": row.tried,
         "mentions": row.mentions or [],
         "options": row.options,
-        "replies": replies(klass(row), row.options),
+        "replies": replies(klass(row), row.options, action=row.action is not None),
         "priority": row.priority,
         "to": inbox.addressee_of(row).text(conn),
         "asked_by": _asker(conn, row),
@@ -239,6 +266,7 @@ def request_view(conn: Connection, row: Any, *, with_proposal: bool = False) -> 
         "humans_only": inbox.humans_only(row),
         "takeover_id": row.takeover_id,  # set by the hub only (§6.19)
         "cover": cover.view(row.cover),  # a substitute answers it as the addressee (§6.12)
+        "action": _action_view(row),
     }
     shown = proposals.view(conn, row) if with_proposal else {}
     if shown.keys() & view.keys():  # a kind adds its own fields, it never replaces one
@@ -395,8 +423,54 @@ def _validate(body: RequestCreate, mine: Membership) -> None:
     ids = [o.id for o in body.options]
     if len(set(ids)) != len(ids):
         errors["options"] = "duplicate_id"
+    if body.action is not None:
+        errors |= _action_errors(body, mine)
     if errors:
         raise invalid(errors)
+
+
+def _action_errors(body: RequestCreate, mine: Membership) -> dict[str, str]:
+    """Who may ask for a go, on what, and whether the call is one (§7)."""
+    action = body.action
+    assert action is not None
+    errors: dict[str, str] = {}
+    if mine.role_base != "proxy":
+        errors["action"] = "proxy_only"
+    elif body.class_ not in ACTION_CLASSES:
+        errors["action"] = "class"
+    elif body.to != "owner":
+        errors["action"] = "to"
+    elif body.options:
+        errors["action"] = "options"
+    if action.method not in ACTION_METHODS:
+        errors["action.method"] = "unknown"
+    if not action.path.startswith("/") or "?" in action.path or "#" in action.path:
+        errors["action.path"] = "not_a_path"
+    if action.body is not None:
+        if len(action.body.encode("utf-8")) > ACTION_BODY_MAX:
+            errors["action.body"] = "too_large"
+        else:
+            try:
+                json.loads(action.body)
+            except ValueError:
+                errors["action.body"] = "not_json"
+    return errors
+
+
+def _action_stored(action: ActionIn | None) -> dict[str, Any] | None:
+    if action is None:
+        return None
+    return {
+        "method": action.method,
+        "path": action.path,
+        "query": action.query,
+        "body": action.body,
+        "body_sha256": (
+            hashlib.sha256(action.body.encode("utf-8")).hexdigest()
+            if action.body is not None
+            else None
+        ),
+    }
 
 
 @router.post("/projects/{owner}/{slug}/requests")
@@ -461,6 +535,7 @@ def create_request(
                     "needs_in_session": _needs_in_session(conn, mine, body.needs_in_session),
                     "ktw_ref": body.ktw_ref,
                     "humans_only": body.humans_only,
+                    "action": _action_stored(body.action),
                     "status": "open",
                     "changed_by_credential": caller.credential_id,
                     "changed_via": caller.via,
@@ -965,7 +1040,7 @@ def _check_answer(row: Any, body: AnswerIn) -> None:
     given = {k for k in ("reply_id", "text", "talk") if getattr(body, k) is not None}
     if not given or {"talk", "reply_id"} <= given:
         raise invalid({"answer": "reply_id_or_text_or_talk"})
-    reply_ids = {r["id"] for r in replies(klass(row), row.options)}
+    reply_ids = {r["id"] for r in replies(klass(row), row.options, action=row.action is not None)}
     if body.reply_id is not None and body.reply_id not in reply_ids:
         raise invalid({"reply_id": "not_a_reply"})
     rule = proposals.answerer(row)
@@ -1029,6 +1104,13 @@ def answer(
         refusal = inbox.needs_a_human(row, mine)
         if refusal is not None:
             raise humans_only(refusal)
+        if row.action is not None and (mine.kind != "human" or mine.trust != "owner"):
+            raise ApiError(
+                403,
+                "forbidden",
+                "only a human with trust owner answers a proxy's call, directly",
+                {"reason": "action_needs_owner"},
+            )
         if inbox.forwarded(row) and row.holder_member != mine.id:
             raise _not_holder()  # once forwarded, only its holder answers (§7)
         _refuse_by_kind(conn, row, mine)
