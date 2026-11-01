@@ -1877,9 +1877,11 @@ def cmd_messages(args: argparse.Namespace) -> int:
                   f"removed by {by}")  # fmt: skip
             continue
         card = f"  {show(m.get('task_id'))}" if m.get("task_id") else ""
+        # an `update` may have no recipient: it goes to the card's watchers (§6.4)
+        to = "" if m.get("to") is None else f" -> {who(m.get('to'))}"
         print(
             f"{show(m.get('seq'))}  {show(m.get('sent_at'))}  {show(m.get('type'))}  "
-            f"{sender(m)} -> {who(m.get('to'))}{card}"
+            f"{sender(m)}{to}{card}"
         )
         for line in onboarding.quote(m.get("body") or ""):
             print(line)

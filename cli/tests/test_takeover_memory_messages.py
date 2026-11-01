@@ -325,6 +325,16 @@ def test_messages_prints_one_block_per_message_and_the_next_page(
     )
 
 
+def test_messages_leaves_out_the_recipient_of_an_update_without_one(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    update = {**MESSAGE, "type": "update", "to": None, "attachments": []}
+    fake.routes[("GET", f"{P}/messages")] = lambda s: (200, {"items": [update]})
+    fake.routes[("GET", f"{P}/members")] = lambda s: (200, MEMBERS)
+    assert cli.main(["messages"]) == cli.EXIT_OK
+    assert "update  agent-b  tsk-0004" in capsys.readouterr().out
+
+
 def test_messages_names_an_instance_address_by_its_handle(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
