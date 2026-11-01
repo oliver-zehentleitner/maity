@@ -4,7 +4,7 @@ up in `handle_alias`, under a column of its own beside the human's and the profi
 The chain follows whatever head `main` has when it lands.
 
 Revision ID: 20261101050000_org_alias
-Revises: 20261031191500_mail_factor
+Revises: 20261101010000_event_watcher
 Create Date: 2026-11-01
 """
 

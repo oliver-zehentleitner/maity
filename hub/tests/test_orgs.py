@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, delete, insert, select, update
 
-from maity_hub import clock, handle_register, orgs, paths, registration_accounts
+from maity_hub import allowed_projects, clock, handle_register, orgs, paths, registration_accounts
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -503,3 +503,18 @@ def test_each_project_says_so_in_its_log_and_on_its_ticker(
     assert updated.payload["fields"] == {"owner": "oz", "full_name": "oz/shop"}
     ticker = owner.get("/projects/oz/shop/ticker").json()["items"]
     assert any(item["text"] == "oz-team/shop is now oz/shop" for item in ticker)
+
+
+def test_a_credential_limited_to_the_old_name_keeps_its_project(
+    migrated: Engine, owner: flow.Human
+) -> None:
+    make_org(owner)
+    assert (
+        owner.post("/projects", {"slug": "shop", "name": "Shop", "owner": "oz-team"}).status_code
+        == 201
+    )
+    assert _rename(owner, "oz-team", "oz").status_code == 200
+    with migrated.connect() as conn:
+        project = conn.execute(select(t.project).where(t.project.c.slug == "shop")).one()
+        assert allowed_projects.names_of(conn, project) == {"oz/shop", "oz-team/shop"}
+        assert allowed_projects.admits(conn, ["oz-team/shop"], project)
