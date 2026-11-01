@@ -5,7 +5,7 @@ import stat
 from pathlib import Path
 
 import pytest
-from conftest import posix
+from conftest import assert_private, posix
 
 from maity import state
 
@@ -86,9 +86,9 @@ def test_secret_does_not_print() -> None:
 
 
 def test_state_round_trip(tmp_path: Path) -> None:
-    path = state.save_state(tmp_path, {"hub": "https://hub.example", "cursor": 7})
-    assert mode(path) == 0o600
-    assert state.load_state(tmp_path) == {"hub": "https://hub.example", "cursor": 7}
+    path = state.save_state(tmp_path / "s", {"hub": "https://hub.example", "cursor": 7})
+    assert_private(path)
+    assert state.load_state(tmp_path / "s") == {"hub": "https://hub.example", "cursor": 7}
 
 
 def test_missing_state_is_empty(tmp_path: Path) -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -153,6 +154,8 @@ def test_a_report_after_a_merged_closed_or_the_same_pull_request_goes_through(
 
 def _gh_view(bin_dir: Path, head: str, state: str | None) -> None:
     """A gh that lists this checkout's PR #799; `pr view` answers `state`, or fails on None."""
+    if sys.platform == "win32":
+        pytest.skip("Windows starts only an .exe by a bare name, and this gh is a shell script")
     row = {"number": 799, "headRefOid": head, "state": "OPEN", "url": f"{REPO}/pull/799"}
     view = f"printf '%s\\n' '{json.dumps({'state': state})}'" if state else "exit 1"
     script = bin_dir / "gh"

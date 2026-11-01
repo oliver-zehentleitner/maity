@@ -56,6 +56,7 @@ def test_the_way_out_removes_what_cutting_inheritance_leaves(tmp_path: Path) -> 
 
 
 def test_a_port_is_no_part_of_a_windows_directory_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(sys, "platform", "linux")
     assert state.host_dir("hub.example:8443") == "hub.example:8443"
     monkeypatch.setattr(sys, "platform", "win32")
     assert state.host_dir("hub.example:8443") == "hub.example_8443"

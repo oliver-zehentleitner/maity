@@ -20,7 +20,7 @@ import urllib.parse
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 from maity import (
     __version__,
@@ -1472,7 +1472,7 @@ def cmd_files_get(args: argparse.Namespace) -> int:
                 fh.write(chunk)
 
             got = session.client.download(content, save, size)
-            os.fchmod(fh.fileno(), 0o644)
+            _readable_by_all(fh)
         if got != size or check.hexdigest() != digest.lower():
             raise CommandError("SHA-256 mismatch: the hub sent other bytes; nothing was saved")
         if args.force:
@@ -1518,7 +1518,8 @@ def _place(part: str, target: Path) -> None:
     except OSError as exc:
         if exc.errno not in NO_HARD_LINKS:
             raise
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+    # Windows has no such flag; O_EXCL there refuses a link at the name as well.
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     try:
         fd = os.open(target, flags, 0o644)
     except FileExistsError:
@@ -1526,10 +1527,17 @@ def _place(part: str, target: Path) -> None:
     try:
         with os.fdopen(fd, "wb") as out, open(part, "rb") as src:
             shutil.copyfileobj(src, out)
-            os.fchmod(out.fileno(), 0o644)
+            _readable_by_all(out)
     except BaseException:
         os.unlink(target)
         raise
+
+
+def _readable_by_all(fh: IO[bytes]) -> None:
+    """A saved file is an ordinary file (0644), not `mkstemp`'s 0600. Windows has no such bits:
+    it takes the access list of the folder it lands in."""
+    if sys.platform != "win32":
+        os.fchmod(fh.fileno(), 0o644)
 
 
 NO_HARD_LINKS = (errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.ENOSYS)

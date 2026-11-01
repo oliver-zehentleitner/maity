@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -10,13 +11,17 @@ from pathlib import Path
 import fakehub
 import pytest
 
+from maity import winacl
+
 GIT = shutil.which("git")
 GITHUB_URL = "https://github.com/acme/widget"
 
 # The runner does not run on Windows (context/credentials.md).
 collect_ignore = (
     [
+        "test_adapters.py",
         "test_agent_user.py",
+        "test_availability.py",
         "test_confinement.py",
         "test_operate.py",
         "test_runner.py",
@@ -49,6 +54,21 @@ def _git_env() -> dict[str, str]:
         GIT_CONFIG_NOSYSTEM="1",
     )
     return env
+
+
+def assert_private(path: Path) -> None:
+    """Only this user can reach it: its mode on POSIX, its access list on Windows."""
+    if sys.platform == "win32":
+        assert winacl.reach(path) == winacl.Reach(None, ())
+    else:
+        assert stat.S_IMODE(path.stat().st_mode) == (0o700 if path.is_dir() else 0o600)
+
+
+def fake_maity(bin_dir: Path) -> None:
+    """A `maity` that `shutil.which` finds; nothing runs it."""
+    path = bin_dir / ("maity.exe" if sys.platform == "win32" else "maity")
+    path.write_text("#!/bin/sh\n")
+    path.chmod(0o755)
 
 
 @pytest.fixture(autouse=True)
