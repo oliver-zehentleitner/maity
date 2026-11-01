@@ -133,6 +133,23 @@ def test_task_show_prints_the_callers_watch(
     assert f"  watching: {shown}\n" in capsys.readouterr().out
 
 
+def test_task_show_prints_the_assigned_instance_and_the_holders_branch(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    card = {
+        "id": "tsk-0004",
+        "title": "A card",
+        "status": "in_progress",
+        "assigned_instance": "wqe2",
+        "checkpoint": {"branch": "agent-b/x"},
+    }
+    answer(fake, "GET", TASK, card)
+    answer(fake, "GET", TASK.rsplit("/", 1)[0], {"items": []})
+    assert cli.main(["task", "show", "tsk-0004"]) == cli.EXIT_OK
+    out = capsys.readouterr().out
+    assert "  assigned instance: wqe2\n" in out and "  branch: agent-b/x\n" in out
+
+
 def test_card_ids_are_one_path_segment(joined: Path, fake: fakehub.FakeHub) -> None:
     cli.main(["claim", "../members/agt-a"])
     # The 404 asks `GET /me` whether the project moved (§6.25); the claim went out first.

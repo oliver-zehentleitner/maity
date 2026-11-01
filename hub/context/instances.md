@@ -210,10 +210,12 @@ the card is assigned to its own team. It is refused when
 `assigned_instance` names another instance, and under
 `distribution: lead` while it is unset unless the caller is the lead. An
 admin's claim on a team's behalf names its instance and is not checked.
-Under `free` no card gets an `assigned_instance`: an explicit `instance`
-on `assign` is refused (`invalid`, `details.fields.instance:
-"distribution_free"`) unless the assign moves an expired claim of another
-holder, where it only names the instance the claim lands on. Every path
+Under `free` a card gets an `assigned_instance` only when `assign` names one,
+which the jour fixe of 2026-11-01 asked for after cards crossed between the
+instances of a team; it was refused with `distribution_free` before. Naming one
+holds the card for it, as under the other rules; there is no way yet to clear
+it again but to name another. An assign that moves an expired claim follows the
+same rule, so an expired claim and a free card are not told apart. Every path
 that assigns a card — create, `PATCH assigned_to`, the area-owner default
 and `assign` — sets `assigned_instance` by the team's distribution.
 

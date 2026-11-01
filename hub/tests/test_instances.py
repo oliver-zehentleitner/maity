@@ -279,9 +279,46 @@ def test_an_expired_claim_assigned_to_a_team_names_the_instance(
     named = owner.post(path, {"assignee": team.id, "instance": second.instance})
     assert named.status_code == 200, named.text
     assert named.json()["claim"]["instance"] == second.instance
-    assert named.json()["assigned_instance"] is None  # under free no instance is assigned
+    assert named.json()["assigned_instance"] == second.instance  # the one rule of §6.18
     assigned = _events(migrated, "task_assigned")[-1].payload
-    assert (assigned["instance"], assigned["assigned_instance"]) == (second.instance, None)
+    assert (assigned["instance"], assigned["assigned_instance"]) == (
+        second.instance,
+        second.instance,
+    )
+
+
+def test_moving_an_expired_claim_keeps_the_rule_of_a_named_instance(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A card named for one instance, under another holder's expired claim: naming an instance
+    sets it, and naming none keeps it. A special case here once cleared the binding."""
+    holder = flow.agent(make_client, owner)
+    team = flow.agent(make_client, owner)
+    second = _second(make_client, owner, team)
+    card_id = _card(owner)
+    assert holder.post(f"/projects/maintainer/maity/tasks/{card_id}/claim", {}).status_code == 200
+    with migrated.begin() as conn:
+        membership = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.agent_id == team.id)
+        ).scalar_one()
+        conn.execute(
+            t.card.update()
+            .where(t.card.c.id == card_id)
+            .values(
+                lease_until=clock.now(),
+                assigned_to=membership,
+                assigned_instance=team.instance,
+            )
+        )
+    path = f"/projects/maintainer/maity/tasks/{card_id}/assign"
+    named = owner.post(path, {"assignee": team.id, "instance": second.instance})
+    assert named.status_code == 200, named.text
+    assert named.json()["assigned_instance"] == second.instance
+    with migrated.begin() as conn:  # the move took the claim: expire it again
+        conn.execute(t.card.update().where(t.card.c.id == card_id).values(lease_until=clock.now()))
+    silent = owner.post(path, {"assignee": team.id})
+    assert silent.status_code == 200, silent.text
+    assert silent.json()["assigned_instance"] == second.instance
 
 
 def test_each_instance_resumes_its_own_session(
