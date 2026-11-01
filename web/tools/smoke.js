@@ -5226,6 +5226,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !main.querySelector("fieldset.join-instance").hidden, "agents page: there the panel is open with the profile chosen, as an instance where it is a member");
   btn(main.querySelector(".join-panel"), "Cancel").click(); await tick();
   // Join an agent from /agents with the project chosen (Members' Join agent links it so): its join panel open at once.
+  // The profile's way back to the join form (tsk-svqsdp6qf0f3): only where the panel opens.
+  {
+    const jlLinks = () => main.querySelectorAll("a").filter((x) => text(x) === "Join link").length;
+    await go("#/agents"); for (let k = 0; k < 6; k++) await tick();
+    for (const row of main.querySelectorAll("button.agent-manage")) if (row.getAttribute("aria-expanded") !== "true") { row.click(); await tick(); }
+    expect(jlLinks() > 0, "join link: on a project where the panel opens");
+    const jlGet = win.Maity.api.get;
+    win.Maity.api.get = (p, o) => (p === "/me" ? jlGet(p, o).then((x) => { x.projects.forEach((q) => { q.trust = "guest"; }); return x; }) : jlGet(p, o));
+    await go("#/all"); await go("#/agents"); for (let k = 0; k < 6; k++) await tick();
+    for (const row of main.querySelectorAll("button.agent-manage")) if (row.getAttribute("aria-expanded") !== "true") { row.click(); await tick(); }
+    expect(jlLinks() === 0, "join link: none for a guest");
+    expect(!main.querySelectorAll("a").some((x) => /guest\/guestlab/.test(x.getAttribute("href") || "")), "profile: no link into a project the human is not in");
+    win.Maity.api.get = jlGet;
+  }
   await go("#/agents?project=" + encodeURIComponent("maintainer/maity")); for (let k = 0; k < 10; k++) await tick();
   expect(byId("agents-join-project").value === "maintainer/maity" && main.querySelector("section.agents-join .join-panel")
     && !main.querySelector("section.agents-join .join-panel").hidden, "agents page: ?project= chooses the project and opens its join panel");

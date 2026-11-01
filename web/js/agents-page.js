@@ -87,15 +87,27 @@ window.Maity = window.Maity || {};
 
   // A membership's line: the project, trust and role, the instances against
   // the team's limit as that project's member view has them.
+  // A link in a membership's line only where its target opens for this human: their own agent can
+  // be in a project they are not in (reviews of #1020). The policy is known only on the project's
+  // own page; elsewhere the page behind the link says it.
+  const ownProject = (ctx, m) => (ctx.projects || []).find((p) => p.full_name === m.project) || null;
+  const bringsHere = (ctx, a, m) => {
+    const p = ownProject(ctx, m);
+    if (!p || !mayBring(p) || p.state === "archived") return false;
+    if (a.allowed_projects && !a.allowed_projects.includes(p.full_name) && !(p.aliases || []).some((x) => a.allowed_projects.includes(x))) return false;
+    const here = ctx.project && ctx.project.full_name === p.full_name ? ctx.project : null;
+    return !(here && !M.trust.governs(p) && (here.policy || {}).member_agents === "off");
+  };
   function membershipLine(ctx, a, m, view) {
     const active = view ? (view.instances || []).filter((i) => !i.revoked_at).length : null;
     const max = view && view.team ? view.team.max_instances : null;
     return h("li", { class: "agent-membership" },
-      h("a", { href: "/" + M.api.projectPath(m.project) + "/agents/" + encodeURIComponent(a.id) }, m.project),
+      ownProject(ctx, m) ? h("a", { href: "/" + M.api.projectPath(m.project) + "/agents/" + encodeURIComponent(a.id) }, m.project) : m.project,
       h("span", { class: "muted" }, " · " + M.trust.words(m)),
       active === null ? null : h("span", { class: "muted" }, " · " + (max ? M.t("agents.instances_max", { active, count: max }) : M.t("agents.instances", { count: active }))),
-      " ", h("a", { class: "small", href: "/" + M.api.projectPath(m.project) + "/agents/join?agent=" + encodeURIComponent(a.id) }, M.t("agents.join_link")),
-      " ", h("a", { class: "small", href: "/" + M.api.projectPath(m.project) + "/agents/" + encodeURIComponent(a.id) + "/rulebook" }, M.t("agents.rulebook")));
+      // Only where the panel opens: a guest and an archived project have none (review of #1020).
+      bringsHere(ctx, a, m) ? [" ", h("a", { class: "small", href: "/" + M.api.projectPath(m.project) + "/agents/join?agent=" + encodeURIComponent(a.id) }, M.t("agents.join_link"))] : null,
+      ownProject(ctx, m) ? [" ", h("a", { class: "small", href: "/" + M.api.projectPath(m.project) + "/agents/" + encodeURIComponent(a.id) + "/rulebook" }, M.t("agents.rulebook"))] : null);
   }
 
   function addToProject(ctx, a) {
@@ -279,7 +291,8 @@ window.Maity = window.Maity || {};
   // (?project=<owner>/<slug>, a link's way to open it at once), then that
   // project's join panel. Owners and admins join for the project; a member
   // brings their own agent within its limits, which the hub checks.
-  function joinPart(ctx, onJoined, opening) {
+  function joinPart(ctx, onJoined, opening, agentId) {
+    let chosen = agentId || null; // the agent the panel opens on, kept across another project
     const able = ctx.projects.filter((p) => p.state !== "archived" && p.trust !== "guest");
     const button = h("button", { type: "button", class: "primary join-open" }, M.t("agents.join.open"));
     const box = h("section", { class: "agents-join", "aria-label": M.t("agents.join.open") });
@@ -301,7 +314,7 @@ window.Maity = window.Maity || {};
       const full = pick.value;
       opening();
       box.hidden = false;
-      if (mounted && mountedFor === full) { mounted.open(button); return; }
+      if (mounted && mountedFor === full) { mounted.open(button, chosen); return; }
       const mine = ++seq;
       button.disabled = true;
       status.busy(M.t("agents.join.reading"));
@@ -321,7 +334,7 @@ window.Maity = window.Maity || {};
         mounted = J; mountedFor = full;
         append(clear(slot), J.panel, J.listStatus.el);
         status.done();
-        J.open(button);
+        J.open(button, chosen);
       } catch (err) {
         if (mine === seq) status.fail(M.t("agents.join.failed"), err);
       } finally {
@@ -329,7 +342,7 @@ window.Maity = window.Maity || {};
       }
     }
     // Another project chosen: a mount still reading for the old one is dropped, the new one's panel opens.
-    pick.addEventListener("change", () => { seq += 1; mounted = null; mountedFor = null; clear(slot); status.done(); mount(); });
+    pick.addEventListener("change", () => { const was = slot.querySelector("select#join-agent"); if (was && was.value) chosen = was.value; seq += 1; mounted = null; mountedFor = null; clear(slot); status.done(); mount(); });
     button.addEventListener("click", mount);
     append(box, h("div", { class: "inline-form" }, h("label", { for: "agents-join-project" }, M.t("agents.join.project")), pick), status.el, slot);
     // Asked for from Members' Join agent: the panel open at once.
@@ -432,7 +445,7 @@ window.Maity = window.Maity || {};
       made: (made, said) => { if (made && made.id) opened.add(made.id); return redraw(made, said); },
       opening: () => { if (join) join.close(); },
     });
-    const join = M.join ? joinPart(ctx, () => { if (redrawing) redrawing(); }, () => add.close(false)) : null;
+    const join = M.join ? joinPart(ctx, () => { if (redrawing) redrawing(); }, () => add.close(false), wanted) : null;
     append(root, h("div", { class: "toolbar agents-head" }, heading, h("div", { class: "agents-head-actions" }, add.button, join ? join.button : null)),
       h("p", { class: "hint" }, M.t("agents.intro")), add.slot, join ? join.box : null, note, body);
     await draw();
@@ -647,7 +660,7 @@ window.Maity = window.Maity || {};
       }).then((mounted) => {
         J = mounted;
         addButton.hidden = false;
-        addButton.addEventListener("click", () => { if (!addButton.disabled) J.open(addButton); });
+        addButton.addEventListener("click", () => { if (!addButton.disabled) J.open(addButton, wanted); });
         append(panelSlot, J.panel, J.listStatus.el);
         drawJoins();
         // Asked for, or no agent of one's own here yet: the panel is the way
