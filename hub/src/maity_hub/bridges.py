@@ -241,6 +241,19 @@ def _owner_is_member(conn: Connection, project_id: str, human_id: str | None) ->
     return human_id is not None and _member(conn, project_id, human_id) is not None
 
 
+def _still_active(served: Any, bridge: Any) -> None:
+    """At the last `go`: both sides still members and neither isolated (§2.3); a side that
+    left is named as such, not as isolated."""
+    if served.active is None:
+        raise invalid({"member": "not_an_agent"}, "the served agent left the project")
+    if bridge.active is None:
+        raise invalid({"bridge": "not_a_member"}, "the bridge left the project")
+    if served.isolated_since is not None:
+        raise invalid({"member": "isolated"}, "the served agent is isolated")
+    if bridge.isolated_since is not None:
+        raise invalid({"bridge": "isolated"}, "the bridge is isolated")
+
+
 def check(
     conn: Connection,
     project: Any,
@@ -265,14 +278,7 @@ def check(
     if bridge.role_base == "proxy":
         raise invalid({"bridge": "role"}, "a proxy carries nobody's hands")
     if at_go:
-        if served.active is None:
-            raise invalid({"member": "not_an_agent"}, "the served agent left the project")
-        if bridge.active is None:
-            raise invalid({"bridge": "not_a_member"}, "the bridge left the project")
-        if served.isolated_since is not None:
-            raise invalid({"member": "isolated"}, "the served agent is isolated")
-        if bridge.isolated_since is not None:
-            raise invalid({"bridge": "isolated"}, "the bridge is isolated")
+        _still_active(served, bridge)
     b = t.bridge.c
     exists = conn.execute(
         select(b.id).where(b.served == served.id, b.bridge == bridge.id, b.live.is_(True))
@@ -590,10 +596,7 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
         ).first()
         if row is None:
             return  # ended meanwhile: the end withdrew the change
-        for member in (served, bridge):
-            if member.active is None or member.isolated_since is not None:
-                side = "member" if member is served else "bridge"
-                raise invalid({side: "isolated"}, "a side is no longer an active agent")
+        _still_active(served, bridge)
         limits(conn, project, served, owner_of(conn, bridge))
         set_purpose(conn, row, proposal["purpose"], actor)
         return

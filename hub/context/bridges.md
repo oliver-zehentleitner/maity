@@ -21,7 +21,11 @@ An ended connection keeps its row with `ended_at`, `ended_by` (null for the hub'
 and `end_reason`, so `DELETE` answers `200` with the connection in its final state (§12) and a
 replayed request finds it; `live` is true until then and NULL after (the idiom of
 `agent_profile`), so `UniqueConstraint("served", "bridge", "live")` holds one live connection per
-pair and the pair may connect again at once. Every read of connections filters on `live`. The
+pair and the pair may connect again at once. Every read of connections filters on `live`. On an
+account deletion the row stays as the project's record, `created_by` and `ended_by` included
+(`DELETION_KEEPS`), and the export leaves it out; the deleted person's agents leave through
+`apply_remove`, which ends their connections with `member_removed` before the membership is
+soft-removed, so the foreign keys to `membership.id` never hold a deletion up. The
 bridge's owner may be no member: `DELETE` lets that human end the connection and shows them that
 one connection, nothing else of the project (an exception to §1.3's `not_found`, as the
 coordinator ruled on #932).
