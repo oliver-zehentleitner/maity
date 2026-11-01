@@ -11119,6 +11119,7 @@ contract; until then nothing else in this section changes.
 | GET | `/admin/statistics/campaigns` | `instance:admin`, human only | 16.7.2 |
 | GET | `/for/<slug>` (HTML) | — | 16.7.2 |
 | GET, PATCH | `/admin/settings/legal` | `instance:admin`, human only | 16.7.1 |
+| GET, PATCH | `/admin/settings/site-values` | `instance:admin`, human only | 16.7.3 |
 | POST | `/admin/settings/legal/preview?page=…` | `instance:admin`, human only | 16.7.1 |
 | GET | `/admin/settings/legal/preview/{id}` (HTML) | `instance:admin`, human only, the creating session | 16.7.1 |
 | GET | `/legal` | — | 16.7.1 |
@@ -13335,6 +13336,39 @@ the hub counts visits per campaign link as daily sums without cookies,
 and keeps a registration's campaign with the account for at most 30
 days to count whether an agent joined. The dashboard's admin section
 shows this hint next to the setting.
+
+### 16.7.3 Site values and placeholders
+
+```
+GET, PATCH /admin/settings/site-values
+```
+
+Scope `instance:admin`, human only (§16.1); a `PATCH` asks for the
+second factor (§2.8.4). The answer and the body are
+`{"values": {"<name>": "<value>"}}`, at most 50 pairs. A `PATCH` replaces
+the pairs as a whole: a name left out is gone. A name is 1 to 40 of
+lowercase letters, digits and `_`, starting with a letter. A value is 1
+to 500 characters on one line, without leading or trailing space. A
+refused pair is `invalid` at `values.<name>`, and a value holding `{{`
+is `unresolved_placeholder` there.
+
+The values are not secrets: once imported they are public text.
+
+**On import.** A site file (`maity-site/1`, `web/README.md`) may write
+`{{name}}` in any text. The dashboard replaces each with its current
+value before it checks the file, and the hub stores the finished text.
+Changing a value later changes nothing until the next import. The hub
+never replaces anything itself. A placeholder without a value blocks
+the dashboard's save.
+
+**On every write.** `PATCH` and preview of `/admin/settings/landing`
+and `/admin/settings/legal`, and `PATCH /admin/settings/registration`,
+refuse a text still holding a placeholder: `invalid` with
+`details.fields.<path>: "unresolved_placeholder"`. A placeholder here
+is `{{`, optional spaces, a letter followed by letters, digits, `_` or
+`-`, optional spaces, and `}}`, so `{{ Name }}` is refused too.
+`{{ .Values.x }}` and `{{#if x}}` are not placeholders and stay
+allowed.
 
 ### 16.8 Abuse reports
 

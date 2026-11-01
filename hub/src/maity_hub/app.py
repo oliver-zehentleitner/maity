@@ -130,6 +130,7 @@ from maity_hub.routes import probe as probe_routes
 from maity_hub.routes import registration as registration_routes
 from maity_hub.routes import reports as report_routes
 from maity_hub.routes import second_factor as second_factor_routes
+from maity_hub.routes import site_values as site_values_routes
 from maity_hub.routes import takeovers as takeover_routes
 from maity_hub.shell import AssetFiles, ShellRoute
 
@@ -328,6 +329,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(me_session.router, prefix=prefix)
     app.include_router(limit.router, prefix=prefix)
     app.include_router(limits_routes.router, prefix=prefix)
+    app.include_router(site_values_routes.router, prefix=prefix)
     app.include_router(projects.router, prefix=prefix)
     app.include_router(project_images.router, prefix=prefix)
     app.include_router(keep_the_why.router, prefix=prefix)

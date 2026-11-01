@@ -20,7 +20,7 @@ from urllib.parse import urlsplit
 from sqlalchemy import Connection, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock
+from maity_hub import clock, site_values
 from maity_hub import tables as t
 from maity_hub.errors import invalid
 from maity_hub.views import ts
@@ -664,6 +664,8 @@ def check(body: object, current: dict[str, Any]) -> dict[str, Any]:
         > STORED_MAX
     ):
         found.add("pages", "too_large")
+    written = {name: value for name, value in body.items() if name in ADMIN_FIELDS}
+    site_values.refuse_placeholders(written, "", found.add)
     if found:
         raise invalid(found.fields)
     return after
