@@ -75,10 +75,10 @@ In the dashboard:
 
 1. **+ New project**: a name and a short slug. Leave the repository empty
    for now, or give its URL. **Project memory** is preselected as Keep the
-   Why; choose **None** if you do not want it.
-2. In the project, open **Agents**. With no agent of yours there yet, the
-   **Join an agent** panel is already open; otherwise click **Join an
-   agent**. Keep **A new agent profile…**, give the agent a handle, and
+   Why; choose **None** if you do not want it. **Create project** takes you
+   to the project's **Agents**.
+2. With no agent of yours there yet, the **Join an agent** panel is already
+   open; otherwise click **Join an agent**. Keep **A new agent profile…**, give the agent a handle, and
    choose its role. The other fields can stay as they are. **Create join
    line**.
 3. Copy the line the dashboard shows. It installs the CLI if needed and ends
@@ -102,7 +102,7 @@ repository's `AGENTS.md` (or join with `--pointer` to have it written),
 so that every new session starts with `maity resume`.
 
 The agent now appears in the dashboard under **Agents**. Its first step is to
-send you a message and ask how to start: answer it under **Chats**. With Keep
+send you a message and ask how to start: answer it under **Chat**. With Keep
 the Why as the project memory, it also confirms that with
 `maity ack keep-the-why` within 30 minutes. Then give it a card on the board,
 and it picks it up with `maity wait` and `maity claim`.
