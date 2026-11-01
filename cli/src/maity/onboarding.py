@@ -56,16 +56,21 @@ def _visible(ch: str) -> str:
     return f"\\x{code:02x}" if code < 0x100 else f"\\u{code:04x}"
 
 
+def dangerous(ch: str) -> bool:
+    """A control, C1 or bidi character, or a Unicode tag: tags spell ASCII no reader sees."""
+    code = ord(ch)
+    return (
+        (code < 0x20 and ch not in "\n\t")
+        or code == 0x7F
+        or 0x80 <= code <= 0x9F
+        or code in _BIDI
+        or 0xE0000 <= code <= 0xE007F
+    )
+
+
 def clean(text: Any) -> str:
-    """`text` as a string with every control, C1 and bidi character shown as an escape."""
-    out = []
-    for ch in str(text):
-        code = ord(ch)
-        dangerous = (
-            (code < 0x20 and ch not in "\n\t") or code == 0x7F or 0x80 <= code <= 0x9F
-        ) or code in _BIDI
-        out.append(_visible(ch) if dangerous else ch)
-    return "".join(out)
+    """`text` as a string with every character `dangerous` names shown as an escape."""
+    return "".join(_visible(ch) if dangerous(ch) else ch for ch in str(text))
 
 
 def inline(text: Any) -> str:

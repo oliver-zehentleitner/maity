@@ -291,7 +291,10 @@ def test_a_shallow_clone_does_not_refuse_a_removed_quote_it_cannot_see(
     review = {"head": head, "cites": [{"path": "b.txt", "quote": "old text"}]}
     result = citecheck.check(clone, review)
     assert result.bad == []
-    assert result.unchecked == "a shallow clone can't show what was removed from b.txt"
+    assert result.unchecked == (
+        "review.cites.0 b.txt: a shallow clone can't show what was removed; "
+        "`git fetch --unshallow` can"
+    )
     invented = {"head": head, "cites": [{"path": "b.txt", "line": 1, "quote": "invented"}]}
     assert citecheck.check(clone, invented).bad  # a named line is still read from the file
 
