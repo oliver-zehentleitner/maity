@@ -152,20 +152,6 @@ def test_setup_is_not_patchable_and_no_client_creates_a_setup_card(owner: flow.H
     assert created.json()["error"]["details"]["fields"] == {"kind": "hub_only"}
 
 
-def test_a_project_that_predates_the_field_reads_null_and_gets_no_card(
-    owner: flow.Human, migrated: Engine
-) -> None:
-    from sqlalchemy import update
-
-    from maity_hub import tables as t
-
-    flow.project(owner)
-    with migrated.begin() as conn:
-        conn.execute(update(t.project).values(setup=None))
-    response = owner.patch(BASE, {"repository": REPOSITORY})
-    assert response.json()["setup"] is None
-
-
 def test_the_packet_names_the_waiting_setup_cards(
     make_client: ClientFactory, owner: flow.Human
 ) -> None:

@@ -57,6 +57,11 @@ def _namespaced(engine: Engine) -> bool:
     return any(c["name"] == "owner_id" for c in inspect(engine).get_columns("project"))
 
 
+def _has_setup(engine: Engine) -> bool:
+    """Whether the database is at a revision with `project.setup` (§6.21)."""
+    return any(c["name"] == "setup" for c in inspect(engine).get_columns("project"))
+
+
 def _maintainer(engine: Engine) -> str:
     with engine.begin() as conn:
         found = conn.execute(select(t.human.c.id).where(t.human.c.handle == "maintainer")).scalar()
@@ -90,6 +95,16 @@ def project(engine: Engine, slug: str | None = None, **values: Any) -> str:
         "rules_version": 1,
         "created_at": clock.now(),
     }
+    if _has_setup(engine):
+        row["setup"] = {
+            "keep_the_why_init": False,
+            "keep_the_why_badge": False,
+            "keep_the_why_ci": False,
+            "keep_the_why_dashboard": False,
+            "dashboard_path": None,
+            "maity_badge": False,
+            "cards": [],
+        }
     with engine.begin() as conn:
         conn.execute(insert(t.project).values({**row, **values}))
     return project_id

@@ -801,7 +801,7 @@ def test_an_older_setup_gets_the_ci_and_dashboard_options_as_not_chosen(engine: 
             update(t.project).where(t.project.c.id == without).values(setup={**old, "cards": None})
         )
         conn.execute(update(t.project).where(t.project.c.id == none).values(setup=None))
-    migrate(engine)
+    migrate(engine, "0107")
     added = {"keep_the_why_ci": False, "keep_the_why_dashboard": False, "dashboard_path": None}
     with engine.connect() as conn:
         found = dict(conn.execute(select(t.project.c.id, t.project.c.setup)).all())
@@ -813,6 +813,46 @@ def test_an_older_setup_gets_the_ci_and_dashboard_options_as_not_chosen(engine: 
         found = dict(conn.execute(select(t.project.c.id, t.project.c.setup)).all())
     assert found[with_cards] == {**old, "cards": ["tsk-1"]}
     assert found[none] is None
+
+
+def test_a_project_without_setup_gets_nothing_chosen_and_rounds_lose_their_mode(
+    engine: Engine,
+) -> None:
+    """20261101060000: a null `setup` becomes every option off and no cards, a chosen one
+    stays, the column refuses null; `mode` goes and the downgrade brings it back as `chat`."""
+    from sqlalchemy import inspect, select, update
+    from sqlalchemy.exc import IntegrityError
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    migrate(engine)
+    empty = factory.project(engine, "empty")
+    chosen = factory.project(engine, "chosen")
+    setup = {"keep_the_why_init": True, "cards": ["tsk-1"]}
+    migrate_to = _before(engine, "20261101060000_setup_round_mode")
+    downgrade(engine, migrate_to)
+    columns = {c["name"]: c for c in inspect(engine).get_columns("jour_fixe_round")}
+    assert columns["mode"]["nullable"] is False
+    with engine.begin() as conn:
+        conn.execute(update(t.project).where(t.project.c.id == empty).values(setup=None))
+        conn.execute(update(t.project).where(t.project.c.id == chosen).values(setup=setup))
+    migrate(engine)
+    with engine.connect() as conn:
+        found = dict(conn.execute(select(t.project.c.id, t.project.c.setup)).all())
+    assert found[empty] == {
+        "keep_the_why_init": False,
+        "keep_the_why_badge": False,
+        "keep_the_why_ci": False,
+        "keep_the_why_dashboard": False,
+        "dashboard_path": None,
+        "maity_badge": False,
+        "cards": [],
+    }
+    assert found[chosen] == setup
+    assert "mode" not in {c["name"] for c in inspect(engine).get_columns("jour_fixe_round")}
+    with pytest.raises(IntegrityError), engine.begin() as conn:
+        conn.execute(update(t.project).where(t.project.c.id == empty).values(setup=None))
 
 
 def test_project_roles_give_every_membership_its_base_and_go_back_to_it(engine: Engine) -> None:
@@ -949,9 +989,11 @@ def test_the_single_schedule_becomes_one_series_with_its_rounds_and_grants(
                 redacted=False,
             )
         )
+        # This revision still has `mode`, which the code's table no longer names.
+        rounds = sa.Table("jour_fixe_round", sa.MetaData(), autoload_with=conn)
         for n, project_id in enumerate((scheduled, by_hand)):
             conn.execute(
-                t.jour_fixe_round.insert().values(
+                rounds.insert().values(
                     id=f"jfx-old{n}",
                     project_id=project_id,
                     status="reported",

@@ -2495,7 +2495,7 @@ window.Maity = window.Maity || {};
             : { url, default_branch: "main", forge: "github", probe_configured: false, probe_via: null, owner_confirmed: false, confirmed_by: null }) : null;
         if (!same && "keep_the_why_export" in p) p.keep_the_why_export = back ? back.export : null;
         // The repository first set: the setup cards chosen at creation (§6.21).
-        if (url && p.setup && p.setup.cards === null && p.state !== "archived") makeSetupCards(m[1], p.setup, me().member.id, url);
+        if (url && p.setup.cards === null && p.state !== "archived") makeSetupCards(m[1], p.setup, me().member.id, url);
       }
       // memory.provider by PATCH (§6.1, §6.21): rules_version moves, no setup card is
       // made or cancelled. The commitment reads optional under none, and required
@@ -2803,7 +2803,7 @@ window.Maity = window.Maity || {};
       const self = { member_id: me().member.id, kind: me().member.kind, handle: me().member.handle };
       const config = Object.assign({}, s, { moderators: undefined, pending_moderators: undefined, next_at: undefined });
       const round = { id: "jfx-f" + String(jf.rounds.length + 1).padStart(3, "0"), project: fullOf(m[1]), status: "answering", series_id: s.id, topic: s.topic, circle: s.circle,
-        trigger: "manual", mode: "message", scheduled_for: now,
+        trigger: "manual", scheduled_for: now,
         opened_at: now, answers_close_at: new Date(Date.now() + s.answer_window_minutes * 60000).toISOString().replace(/\.\d{3}Z$/, "Z"),
         steps: [], exchange_closed_at: null, report_due_at: null, reported_at: null, config,
         moderator: { member_id: moderator.member_id, instance: null },
