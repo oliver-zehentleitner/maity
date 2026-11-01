@@ -3004,6 +3004,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   catch (err) { mdReservedErr = err; }
   expect(!mdReservedErr && mdReserved && !mdReserved.querySelector("a") && mdReserved.querySelectorAll("code.md-inline-copy").length === 3,
     "ids: in Markdown text and in backticks the same: no link, the code spans stay code " + (mdReservedErr && mdReservedErr.message));
+  // A reference right after a slash links only as the next of a list of references (tsk-8nbw39n0snsd).
+  const idList = idBox(IDS.link("#909/#911/#912, tsk-0123456789ab/req-abcdefghjkmn and #7/tsk-0123456789ab", idAt));
+  expect(idList.querySelectorAll("a.id-ref").map((a) => text(a)).join() === "#909,#911,#912,tsk-0123456789ab,req-abcdefghjkmn,#7,tsk-0123456789ab"
+    && text(idList) === "#909/#911/#912, tsk-0123456789ab/req-abcdefghjkmn and #7/tsk-0123456789ab",
+    "ids: references joined by a slash each link, and the text stays as written " + idHrefs(idList));
+  const idPaths = idBox(IDS.link("/#5 a/#5 x/issues/#5/#6 a/b#3/#4 https://x.example/#5/#6 maity/tsk-0123456789ab/#7 # 9/#10 ", idAt));
+  expect(!idPaths.querySelector("a"), "ids: inside a path or a URL a slash starts no list of references " + idHrefs(idPaths));
   const mdHash = idBox(win.Maity.markdown("PR `#12` and #12", idAt));
   expect(idHrefs(mdHash) === "#12=https://github.com/oliver-zehentleitner/maity/issues/12" && text(mdHash.querySelector("code.md-inline-copy")) === "#12",
     "ids: a lone #12 in backticks stays code; card, request and member ids alone link");

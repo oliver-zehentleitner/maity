@@ -21,7 +21,9 @@ window.Maity = window.Maity || {};
   // a word, a path or a URL's fragment.
   // A card or request may carry its project's full name before it
   // (§6.25, models.py's handle and slug shapes): it links into that project.
-  const ID = /(?<![\w\-/#&?=.])(?:(?:([a-z0-9][a-z0-9-]{1,30})\/([a-z0-9][a-z0-9-]{1,62})\/)?(tsk|req)-([0-9a-hjkmnp-tv-z]{12})|(agt|hum)-([0-9a-hjkmnp-tv-z]{12})|#([1-9][0-9]{0,6}))(?![\w\-])/g;
+  // A match right after a slash is kept or dropped in link(): a regular
+  // expression cannot tell `#909/#911` from `issues/#5/#6`.
+  const ID = /(?<![\w\-#&?=.])(?:(?:([a-z0-9][a-z0-9-]{1,30})\/([a-z0-9][a-z0-9-]{1,62})\/)?(tsk|req)-([0-9a-hjkmnp-tv-z]{12})|(agt|hum)-([0-9a-hjkmnp-tv-z]{12})|#([1-9][0-9]{0,6}))(?![\w\-])/g;
   const PAGE = { tsk: "tasks", req: "inbox", agt: "members", hum: "members" };
 
   // The forge numbers resolve on: GitHub only (§6.13, the one forge of V1),
@@ -59,7 +61,12 @@ window.Maity = window.Maity || {};
     if (!slug && !forge) return [s];
     const out = [];
     let from = 0;
+    let lastEnd = -1;
     for (const m of s.matchAll(ID)) {
+      // After a slash only as the next of a list of references (#909/#911);
+      // otherwise the slash belongs to a path or a URL.
+      if (s[m.index - 1] === "/" && lastEnd !== m.index - 1) continue;
+      lastEnd = m.index + m[0].length;
       const kind = m[3] || m[5];
       const id = kind && kind + "-" + (m[4] || m[6]);
       // The project the id names, else the text's own. A first word the
