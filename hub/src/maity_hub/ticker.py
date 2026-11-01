@@ -129,6 +129,15 @@ class Entry:
     why: list[str] = field(default_factory=list)
     wake: bool = True
     muted: bool = False
+    holding: set[str] = field(default_factory=set)  # the instances holding its cards
+
+
+def _holding_instances(entry: Entry) -> dict[str, list[str]]:
+    """`instances` when the member is here only for cards it holds: the card's instance is
+    the one to wake (§17.3); any other reason is the member's, and wakes it by its rule."""
+    if entry.holding and all(why.startswith("card_holder:") for why in entry.why):
+        return {"instances": sorted(entry.holding)}
+    return {}
 
 
 class Audience:
@@ -301,6 +310,7 @@ def write(
                 "why": entry.why,
                 "wake": entry.wake and principal != actor_principal,
                 "muted": entry.muted,
+                **_holding_instances(entry),
             }
             for principal, entry in audience.entries.items()
         ],
@@ -829,6 +839,8 @@ def write_merge(
         assignee = _principal_of(conn, card.assigned_to)
         if holder:
             audience.add(holder, f"card_holder:{card.id}")
+            if card.claim_instance:
+                audience.entries[holder].holding.add(card.claim_instance)
         elif assignee:
             audience.add(assignee, f"card_assignee:{card.id}")
     contract = None

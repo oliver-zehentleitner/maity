@@ -124,13 +124,17 @@ def reason_of(payload: dict[str, Any], principal: str) -> dict[str, Any] | None:
     return found
 
 
-def wakes(row: Any, principal: str) -> bool:
+def wakes(row: Any, principal: str, instance: str | None = None) -> bool:
     """§17.5: `all` never wakes; a member is woken only by a reason with `wake: true`. A
-    redacted item wakes no one."""
+    redacted item wakes no one. A member named only as a card's holder is woken at the holding
+    instance (`instances`); a reader without an instance is the whole member."""
     if row.redacted:
         return False
     entry = reason_of(row.payload or {}, principal)
-    return bool(entry and entry.get("wake"))
+    if not entry or not entry.get("wake"):
+        return False
+    instances = entry.get("instances")
+    return not instances or instance is None or instance in instances
 
 
 def ticker_subjects(conn: Connection, rows: Sequence[Any]) -> set[str]:

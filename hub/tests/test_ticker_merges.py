@@ -566,3 +566,24 @@ def test_the_switch_on_second_counts(
         )
     merged(github, 15, [], at=clock.rfc3339(epoch + offset))
     assert probe.announce_merges(migrated, READER, pid) == announced
+
+
+def test_a_merge_names_the_holding_instance_of_a_member_held_only_as_holder(
+    owner: flow.Human, make_client: ClientFactory, github: FakeGitHub, migrated: Engine
+) -> None:
+    enable(owner)
+    holder = flow.agent(make_client, owner)
+    card = holder.post("/projects/maintainer/maity/tasks", {"title": "Claims"}).json()
+    holder.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.card).where(t.card.c.id == card["id"]).values(report={"pr": {"number": 213}})
+        )
+        instance = conn.execute(
+            select(t.card.c.claim_instance).where(t.card.c.id == card["id"])
+        ).scalar_one()
+    merged(github, 213, [{"filename": "hub/maity_hub/x.py", "patch": "@@ -1 +1 @@\n-a\n+b\n"}])
+    assert probe.announce_merges(migrated, READER, project_id(migrated)) == 1
+    [item] = items(owner)
+    entry = next(r for r in item["payload"]["reasons"] if r["member_id"] == holder.id)
+    assert entry["why"] == [f"card_holder:{card['id']}"] and entry["instances"] == [instance]

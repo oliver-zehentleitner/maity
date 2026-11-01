@@ -127,6 +127,18 @@ def test_presence_is_computed_from_the_last_call(
         assert view["presence"] == expected, offset
 
 
+def test_a_change_of_the_line_names_it_and_keeps_waking_everyone(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    owner.patch(f"/projects/maintainer/maity/members/{agent.id}", {"reports_to": owner.id})
+    moved = _last(migrated, "member_updated")
+    assert "reports_to" in moved.payload["changed"]
+    assert moved.audience == ["all", f"member:{agent.id}", "trust:admin"]
+    owner.patch(f"/projects/maintainer/maity/members/{agent.id}", {"areas": ["web/"]})
+    assert "reports_to" not in _last(migrated, "member_updated").payload.get("changed", [])
+
+
 def test_a_role_change_is_a_rules_bump(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
@@ -136,7 +148,7 @@ def test_a_role_change_is_a_rules_bump(
     )
     assert (response.json()["role"], response.json()["areas"]) == ("reviewer", ["web/"])
     event = _last(migrated, "member_updated")
-    assert event.audience == ["all"] and event.payload["rules_version"] == 2
+    assert event.audience[0] == "all" and event.payload["rules_version"] == 2
     with migrated.connect() as conn:
         assert conn.execute(select(t.project.c.rules_changed_seq)).scalar() == event.seq
 
@@ -500,6 +512,15 @@ def test_removing_a_member_clears_reports_to_on_its_reports(
     updated = sorted(e.payload["id"] for e in events)
     assert updated == sorted([boss.id, first.id, second.id])
     assert all(e.payload["reports_to"] is None for e in events if e.payload["id"] != boss.id)
+    # Addressing depends on both, so both wake everyone (§8.2).
+    assert all(
+        (
+            e.payload.get("removed_at")
+            if e.payload["id"] == boss.id
+            else e.payload["changed"] == ["reports_to"]
+        )
+        for e in events
+    )
     assert link.reports_to is None
 
 

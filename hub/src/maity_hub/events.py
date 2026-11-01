@@ -214,6 +214,13 @@ def emit(
 ) -> int:
     """Append one event inside the caller's transaction; returns its `seq`."""
     project = lock_project(conn, project_id)
+    if kind == "member_updated":
+        # Everyone reads it; these tokens are who it wakes (§8.2).
+        from maity_hub.availability import coordinator_token  # availability writes events itself
+
+        audience = list(
+            dict.fromkeys([*audience, f"member:{payload['id']}", coordinator_token(conn, project)])
+        )
     watched_card = _watched_card(kind, payload, subject)
     watchers: list[int] = []
     if watched_card is not None:
@@ -701,6 +708,20 @@ def read_for_runner(
 # What still wakes a supervised session though addressed only to `all` (§15.11).
 SUPERVISED_ALL_WAKES = frozenset({"state_changed", "policy_changed", "rules_changed"})
 
+# A change everyone's addressing depends on: `member_updated` naming one of these still wakes
+# the whole project; any other wakes only the member and the coordinators (§8.2).
+ADDRESSING_CHANGES = frozenset({"reports_to", "owner_id"})
+
+
+def _wakes_everyone(row: Any) -> bool:
+    """`all` in the audience wakes, except on a `member_updated` that moves no address."""
+    if row.kind != "member_updated":
+        return True
+    payload = row.payload or {}
+    return bool(ADDRESSING_CHANGES & set(payload.get("changed") or ())) or bool(
+        payload.get("removed_at")
+    )
+
 
 def wakes(
     row: Any,
@@ -764,7 +785,7 @@ def wakes(
         chosen = (row.wakes or {}).get(principal)
         return chosen is None or instance is None or instance in chosen
     if row.kind == "ticker":
-        return ticker_read.wakes(row, principal)
+        return ticker_read.wakes(row, principal, instance)
     if row.kind in ROUND_THREAD_KINDS and (row.payload or {}).get("jour_fixe"):
         # A round's thread, its statement and its posts wake nobody: each step wakes its
         # eligible members once (§20.5).
@@ -812,7 +833,11 @@ def wakes(
         # A direct chat message that names an instance wakes that one only (§9.1); without one
         # it goes on to the team's wake rule below (§6.18).
         return instance is None and not carried
-    if "all" in audience and (not supervised or row.kind in SUPERVISED_ALL_WAKES):
+    if (
+        "all" in audience
+        and _wakes_everyone(row)
+        and (not supervised or row.kind in SUPERVISED_ALL_WAKES)
+    ):
         return True
     if (
         f"member:{principal}" not in audience
