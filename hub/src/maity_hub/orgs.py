@@ -150,6 +150,13 @@ def admin_list(
             or_(
                 func.lower(o.handle).contains(q.lower(), autoescape=True),
                 func.lower(o.display_name).contains(q.lower(), autoescape=True),
+                select(t.handle_alias.c.org_id)
+                .where(
+                    t.handle_alias.c.org_id == o.id,
+                    t.handle_alias.c.live.is_(True),
+                    func.lower(t.handle_alias.c.handle).contains(q.lower(), autoescape=True),
+                )
+                .exists(),
             )
         )
     if suspended is not None:
@@ -344,7 +351,8 @@ def create(
 def rename(conn: Connection, org: Any, handle: str, caller: Any) -> None:
     """A new handle under every rule of §6.24; each project of the organisation says so in its
     log and on its ticker (§6.26). The caller holds the organisation's lock."""
-    from maity_hub import moderation, project_names
+    from maity_hub import moderation, project_names, public_projects
+    from maity_hub.events import lock_project
 
     if handle == org.handle:  # a no-op, so no rename for a hold to refuse
         return
@@ -364,7 +372,12 @@ def rename(conn: Connection, org: Any, handle: str, caller: Any) -> None:
         ).scalar()
         actor = caller.actor(own) if own is not None else None
         by = caller.principal_id if own is not None else None
-        project_names.announce(conn, project, old, {"owner": handle}, actor, by)
+        lock_project(conn, project)  # after the organisation's row, as everywhere
+        project_names.withdraw_open(conn, project, actor, "the organisation was renamed")
+        row = conn.execute(select(t.project).where(t.project.c.id == project)).one()
+        fields = {"owner": namespace.owner_of(conn, row)}
+        project_names.announce(conn, project, old, fields, actor, by)
+    public_projects.touch_of_org(conn, org.id)  # each page moves to its new address (§16.9)
 
 
 def change_settings(conn: Connection, org: Any, fields: dict[str, Any], caller: Any) -> Any:

@@ -500,7 +500,8 @@ def test_each_project_says_so_in_its_log_and_on_its_ticker(
             .order_by(t.event.c.seq.desc())
         ).first()
     assert updated is not None
-    assert updated.payload["fields"] == {"owner": "oz", "full_name": "oz/shop"}
+    assert updated.payload["fields"]["full_name"] == "oz/shop"
+    assert updated.payload["fields"]["owner"]["handle"] == "oz"
     ticker = owner.get("/projects/oz/shop/ticker").json()["items"]
     assert any(item["text"] == "oz-team/shop is now oz/shop" for item in ticker)
 
@@ -518,3 +519,41 @@ def test_a_credential_limited_to_the_old_name_keeps_its_project(
         project = conn.execute(select(t.project).where(t.project.c.slug == "shop")).one()
         assert allowed_projects.names_of(conn, project) == {"oz/shop", "oz-team/shop"}
         assert allowed_projects.admits(conn, ["oz-team/shop"], project)
+
+
+def test_a_rename_withdraws_an_open_transfer_of_each_project(
+    make_client: ClientFactory, migrated: Engine, owner: flow.Human
+) -> None:
+    """§6.25: every change of the project's full name; else its `go` would only be stale."""
+    make_org(owner)
+    assert (
+        owner.post("/projects", {"slug": "shop", "name": "Shop", "owner": "oz-team"}).status_code
+        == 201
+    )
+    stranger = flow.human(make_client, migrated, "stranger")
+    other = make_org(stranger, "other-team", "Other")
+    add_member(migrated, other["id"], owner.id, "admin")
+    filed = owner.post("/projects/oz-team/shop/transfer", {"to": other["id"]})
+    assert filed.status_code == 202, filed.text
+    assert _rename(owner, "oz-team", "oz").status_code == 200
+    with migrated.connect() as conn:
+        row = conn.execute(select(t.request).where(t.request.c.id == filed.json()["id"])).one()
+    assert (row.status, row.withdraw_reason) == ("withdrawn", "the organisation was renamed")
+
+
+def test_a_rename_moves_each_public_page(make_client: ClientFactory, migrated: Engine) -> None:
+    boss = flow.human(lambda **kw: make_client(public_pages=True, **kw), migrated)
+    make_org(boss)
+    assert (
+        boss.post("/projects", {"slug": "shop", "name": "Shop", "owner": "oz-team"}).status_code
+        == 201
+    )
+    assert boss.patch("/projects/oz-team/shop", {"public_page": "on"}).status_code == 200
+    assert _rename(boss, "oz-team", "oz").status_code == 200
+    with migrated.connect() as conn:
+        paths_now = set(
+            conn.execute(
+                select(t.public_page.c.path).where(t.public_page.c.kind == "project")
+            ).scalars()
+        )
+    assert "/oz/shop" in paths_now and "/oz-team/shop" not in paths_now

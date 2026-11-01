@@ -130,10 +130,12 @@ column allows one row per principal, and an alias is a second handle of one owne
 **Revisit when:** a fourth kind of id gets aliases, or a rename of an organisation must differ from a human's in more than its table
 
 `handle_alias` gains `org_id`, and `one_id` holds exactly one of the three columns. `handles.rename` takes the
-organisation's id with `owner_id` None, as it takes a human's: same format, lock order, limits, register move
-and alias rows, so the two cannot drift apart. `handles.org_id_of` is what `{org}`, `owner` in `POST /projects`
-and `namespace.resolve_owner` ask; `allowed_projects` reads the organisation's aliases as it reads a human's. A suspended organisation is refused only for a real rename; its own current
-handle is a no-op, and a no-op renames nothing for the hold to refuse.
+organisation's id with `owner_id` None, as it takes a human's: same format, lock order, limits, register move and
+alias rows, so the two cannot drift apart. `handles.org_id_of` is what `{org}`, `owner` in `POST /projects` and
+`namespace.resolve_owner` ask; `allowed_projects` reads the organisation's aliases as it reads a human's. As any
+change of a project's full name it withdraws an open transfer (§6.25), and each public page moves to its new
+address (§16.9). A suspended organisation is refused only for a real rename; its own current handle is a no-op, and
+a no-op renames nothing for the hold to refuse.
 
 **Reason:** `human_id` has a foreign key to `human`, so an organisation's id cannot sit there, and §6.26 asks
 for every rule of §6.24 unchanged.
