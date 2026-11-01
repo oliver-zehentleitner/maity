@@ -23,7 +23,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import Connection, select
 
-from maity_hub import clock, legal, registration, registration_accounts, registration_mail
+from maity_hub import clock, legal, registration, registration_accounts, registration_mail, render
 from maity_hub import tables as t
 from maity_hub.auth import sessions
 from maity_hub.auth.caller import SESSION_COOKIE, require_secure_transport
@@ -39,6 +39,12 @@ FORM_COOKIE = "maity_form"
 FORM_PATH = "/mail/register"
 FORM_FOR = 600  # seconds the form cookie lives
 BODY_MAX = 8192
+# The legal pages' policy (no script, nothing from elsewhere: the token is in the address), and
+# the form posts only to this page.
+CSP = (
+    "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; "
+    "frame-ancestors 'none'"
+)
 
 _WORDS = {
     "en": {
@@ -97,23 +103,25 @@ _WORDS = {
 }
 
 
-def _html(body: str, title: str, status: int = 200) -> HTMLResponse:
-    html = (
-        '<!doctype html><html><head><meta charset="utf-8">'
-        '<meta name="viewport" content="width=device-width">'
-        f"<title>{escape(title)}</title></head><body>{body}</body></html>"
-    )
+def _html(
+    body: str, title: str, status: int = 200, *, lang: str = "en", footer: str = ""
+) -> HTMLResponse:
+    html = render.form_document(lang=lang, title=title, content=body, footer=footer)
     # The token is in the address and the form holds a password: nothing that carries
     # either may leak in a `Referer` or sit in a cache.
     return HTMLResponse(
         html,
         status_code=status,
-        headers={"Referrer-Policy": "no-referrer", "Cache-Control": "no-store"},
+        headers={
+            "Referrer-Policy": "no-referrer",
+            "Cache-Control": "no-store",
+            "Content-Security-Policy": CSP,
+        },
     )
 
 
-def _message(title: str, text: str, status: int) -> HTMLResponse:
-    return _html(f"<h1>{escape(title)}</h1><p>{escape(text)}</p>", title, status)
+def _message(title: str, text: str, status: int, lang: str = "en") -> HTMLResponse:
+    return _html(f"<h1>{escape(title)}</h1><p>{escape(text)}</p>", title, status, lang=lang)
 
 
 def _dead() -> HTMLResponse:
@@ -187,6 +195,7 @@ def _seen_terms(hub: Any, nonce: str, signed: str) -> str | None:
 def _form(
     words: dict[str, str],
     *,
+    lang: str,
     address: str,
     form_value: str,
     terms: dict[str, str] | None,
@@ -197,27 +206,38 @@ def _form(
     notice: str | None = None,
     status: int = 200,
 ) -> HTMLResponse:
-    def row(name: str, label: str, kind: str, extra: str = "") -> str:
+    def error(name: str) -> tuple[str, str]:
+        """The field's error under it, and the attributes that tie the field to it."""
         problem = errors.get(name)
-        shown = "" if kind == "password" else escape(given.get(name, ""))
-        message = f'<p role="alert">{escape(problem)}</p>' if problem else ""
+        if not problem:
+            return "", ""
         return (
-            f'<p><label>{escape(label)}<br><input name="{name}" type="{kind}" '
-            f'value="{shown}" required {extra}></label></p>{message}'
+            f'<p class="error" id="{name}-error" role="alert">{escape(problem)}</p>',
+            f' aria-invalid="true" aria-describedby="{name}-error"',
+        )
+
+    def row(name: str, label: str, kind: str, extra: str = "") -> str:
+        shown = "" if kind == "password" else escape(given.get(name, ""))
+        message, tied = error(name)
+        return (
+            f'<p class="field"><label for="{name}">{escape(label)}</label>'
+            f'<input id="{name}" name="{name}" type="{kind}" value="{shown}" required '
+            f"{extra}{tied}></p>{message}"
         )
 
     box = ""
     if terms is not None:
-        problem = errors.get("terms")
+        message, tied = error("terms")
         box = (
-            '<p><label><input name="terms_accepted" type="checkbox" value="1"> '
-            f"{escape(words['terms'].format(url=terms['url'], version=terms['version']))}"
-            "</label></p>" + (f'<p role="alert">{escape(problem)}</p>' if problem else "")
+            '<p class="check"><label>'
+            f'<input name="terms_accepted" type="checkbox" value="1"{tied}> '
+            f"<span>{escape(words['terms'].format(url=terms['url'], version=terms['version']))}"
+            "</span></label></p>" + message
         )
     body = (
         f"<h1>{escape(words['title'])}</h1>"
         f"<p>{escape(words['intro'].format(address=address))}</p>"
-        + (f'<p role="alert">{escape(notice)}</p>' if notice else "")
+        + (f'<p class="note" role="alert">{escape(notice)}</p>' if notice else "")
         + '<form method="post">'
         + row("password", words["password"], "password", 'autocomplete="current-password"')
         + row("handle", words["handle"], "text", 'autocomplete="username" autocapitalize="none"')
@@ -226,9 +246,8 @@ def _form(
         + f'<input type="hidden" name="form" value="{escape(form_value)}">'
         + f'<input type="hidden" name="terms_seen" value="{escape(terms_field)}">'
         + f'<button type="submit">{escape(words["button"])}</button></form>'
-        + _legal_links(words, pages)
     )
-    return _html(body, words["title"], status)
+    return _html(body, words["title"], status, lang=lang, footer=_legal_links(words, pages))
 
 
 def _legal_links(words: dict[str, str], pages: list[str]) -> str:
@@ -266,8 +285,10 @@ def register_page(token: str, request: Request) -> Response:
         terms = _terms(conn, request)
         pages = _legal(conn)
     form_value = secrets.token_urlsafe(24)
+    lang = registration_mail.language_of(row.language)
     page = _form(
-        _WORDS[registration_mail.language_of(row.language)],
+        _WORDS[lang],
+        lang=lang,
         address=row.address,
         form_value=form_value,
         terms=terms,
@@ -368,7 +389,8 @@ async def register_complete(token: str, request: Request) -> Response:
     if result is None:
         return _dead()
     done, row, payload, terms, device, pages = result
-    words = _WORDS[registration_mail.language_of(row.language)]
+    lang = registration_mail.language_of(row.language)
+    words = _WORDS[lang]
     if done.kind == "created":
         assert done.session_id is not None and done.csrf is not None and done.next is not None
         response = RedirectResponse(done.next, status_code=303)
@@ -378,9 +400,9 @@ async def register_complete(token: str, request: Request) -> Response:
     if done.kind == "gone":
         return _dead()
     if done.kind == "closed":
-        return _message(words["title"], words["closed"], 403)
+        return _message(words["title"], words["closed"], 403, lang)
     if done.kind == "later":
-        return _message(words["title"], words["later"], 503)
+        return _message(words["title"], words["later"], 503, lang)
     given = {"handle": fields.get("handle", ""), "display_name": fields.get("display_name", "")}
     errors: dict[str, str] = {}
     notice = None
@@ -393,6 +415,7 @@ async def register_complete(token: str, request: Request) -> Response:
         notice, status = words["terms_changed"], 409  # the page asks again, unchecked
     return _form(
         words,
+        lang=lang,
         address=row.address,
         form_value=fields.get("form", ""),
         terms=terms,

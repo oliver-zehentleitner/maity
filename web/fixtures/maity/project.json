@@ -33,6 +33,8 @@
   "setup": null,
   "policy": {
     "preset": "hierarchical",
+    "agent_owners": null,
+    "outside_roles": ["coder"],
     "claim_policy": "self-claim",
     "done_authority": "reviewer",
     "contract_arbiter": "agt-a",
@@ -42,6 +44,7 @@
     "signing": "optional",
     "badge": "off",
     "keep_the_why": "required",
+    "keep_the_why_defaults": "adopt",
     "member_agents": "on",
     "member_agents_max": 3
   },

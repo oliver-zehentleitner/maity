@@ -31,6 +31,7 @@ KINDS = {
     ".js": "text/javascript; charset=utf-8",
     ".woff2": "font/woff2",
     ".txt": "text/plain; charset=utf-8",
+    ".svg": "image/svg+xml",
 }
 FONT = re.compile(r"\{font:([a-z0-9-]+\.woff2)\}")
 IMMUTABLE = "public, max-age=31536000, immutable"
@@ -64,6 +65,17 @@ def _assets() -> dict[str, Asset]:
         for path in sorted(fonts.iterdir()):
             if path.suffix in (".woff2", ".txt"):
                 add(f"fonts/{path.name}", path.read_bytes())
+    agents = ROOT / "agents"
+    if agents.is_dir():
+        for path in sorted(agents.glob("*.svg")):
+            add(f"agents/{path.name}", path.read_bytes())
+        if (agents / "NOTICE").is_file():
+            found["agents/NOTICE"] = Asset(
+                "agents/NOTICE",
+                KINDS[".txt"],
+                (agents / "NOTICE").read_bytes(),
+                _digest((agents / "NOTICE").read_bytes()),
+            )
     script = ROOT / "landing.js"
     if script.is_file():
         add("landing.js", script.read_bytes())

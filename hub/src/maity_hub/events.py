@@ -41,6 +41,8 @@ class Actor:
     runner_id: str | None = None
     human_id: str | None = None  # a human who is no member of the project (§8.1)
     report_id: str | None = None  # the abuse report a moderation change is made for (§16.8)
+    # The bridge that made the call for the member (§2.3): `{member_id, instance, bridge_id}`.
+    bridge: dict[str, str | None] | None = None
 
 
 CHANNEL = "maity_events"  # PostgreSQL's wake-ups across replicas (`wakeups`, replicas.md 387c2409)
@@ -205,6 +207,7 @@ def emit(
             actor_runner_id=actor.runner_id if actor else None,
             actor_human_id=actor.human_id if actor else None,
             actor_report_id=actor.report_id if actor else None,
+            actor_bridge=actor.bridge if actor else None,
             subject_type=subject[0] if subject else None,
             subject_id=subject[1] if subject else None,
             audience=audience,
@@ -643,6 +646,7 @@ def wakes(
     credential_id: str | None = None,
     supervised: bool = False,
     dormant: bool = False,
+    carried: bool = False,
 ) -> bool:
     """§8.2 wake-relevant: addressed to the reader by audience (or a conversation naming
     it), and not caused by the reader's own membership. Seeing everything as an owner or
@@ -655,7 +659,11 @@ def wakes(
 
     A session a runner supervises is not woken by `all`, but for SUPERVISED_ALL_WAKES:
     each wake is a model run there (§15.11). `all` beside another member's term (a
-    sender's own) is still `all`."""
+    sender's own) is still `all`.
+
+    `carried` is a bridge's read for the agent (§2.3): without an instance of its own it reads
+    as the `member:` token, so an instance mention or a direct message to one instance does
+    not wake it."""
     if row.kind in NON_WAKING or _isolated(membership):
         return False
     if dormant:
@@ -677,6 +685,13 @@ def wakes(
             or membership.agent_id is None
             or f"member:{principal}" not in (row.audience or [])
         ):
+            return False
+        chosen = (row.wakes or {}).get(principal)
+        return chosen is None or instance is None or instance in chosen
+    if row.kind == "session_model_changed":
+        # Like the start above: the member the agent reports to re-routes, the admins and the
+        # owner only read (§5.3, §8.2).
+        if membership.agent_id is None or f"member:{principal}" not in (row.audience or []):
             return False
         chosen = (row.wakes or {}).get(principal)
         return chosen is None or instance is None or instance in chosen
@@ -713,7 +728,7 @@ def wakes(
             m.get("member_id") == principal
             and (
                 m.get("instance") is None
-                or instance is None
+                or (instance is None and not carried)
                 or m["instance"] == instance
                 or resolved
             )
@@ -728,7 +743,7 @@ def wakes(
     if row.conversation_id == principal and (row.payload or {}).get("to_instance") is not None:
         # A direct chat message that names an instance wakes that one only (§9.1); without one
         # it goes on to the team's wake rule below (§6.18).
-        return instance is None
+        return instance is None and not carried
     if "all" in audience and (not supervised or row.kind in SUPERVISED_ALL_WAKES):
         return True
     if f"member:{principal}" not in audience and not (
@@ -787,6 +802,7 @@ def read_waking(
     instance: str | None = None,
     credential_id: str | None = None,
     supervised: bool = False,
+    carried: bool = False,
 ) -> tuple[list[Any], int]:
     """Wake-relevant events after `after`: (rows, highest seq examined)."""
     dormant = credential_id is not None and (
@@ -801,7 +817,7 @@ def read_waking(
     found = [
         r
         for r in rows
-        if wakes(r, membership, principal, instance, credential_id, supervised, dormant)
+        if wakes(r, membership, principal, instance, credential_id, supervised, dormant, carried)
         and not (r.kind == "event_redacted" and f"notice:{r.subject_id}" in notices)
     ][:limit]
     if found and (len(found) == limit or truncated):

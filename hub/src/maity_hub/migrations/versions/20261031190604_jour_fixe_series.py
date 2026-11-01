@@ -21,7 +21,7 @@ project columns then go. The `jour_fixe_series_changed` event and one rules bump
 written here, as `rules.bump` writes them: the rules text names the series.
 
 Revision ID: 20261031190604_jour_fixe_series
-Revises: 20261031125530_long_polls
+Revises: 20261031190000_bridge_via
 Create Date: 2026-10-31
 """
 
@@ -36,7 +36,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql, postgresql
 
 revision: str = "20261031190604_jour_fixe_series"
-down_revision: str | None = "20261031125530_long_polls"
+down_revision: str | None = "20261031190000_bridge_via"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

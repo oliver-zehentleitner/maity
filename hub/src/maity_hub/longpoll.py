@@ -28,6 +28,10 @@ class Waiter:
     # Set when the agent's membership was isolated: the wait ends at once (§6.2).
     ended: bool = False
     membership_id: int | None = None
+    # A bridge's wait for a served agent (§2.3): ended with the connection or with the
+    # bridge's own isolation, as well as with the served agent's.
+    bridge_id: str | None = None
+    bridge_membership_id: int | None = None
     # A runner's waiter reads several projects (docs/api.md §15.8); the reader
     # replaces the set on every pass, an assignment the notifier reads atomically.
     project_ids: frozenset[str] = frozenset()
@@ -82,9 +86,24 @@ class Registry:
             waiter.wake()
 
     def end(self, membership_id: int) -> None:
-        """End every open wait of an isolated agent's credentials (§6.2, "Isolation")."""
+        """End every open wait of an isolated agent's credentials (§6.2, "Isolation"), and
+        every wait a bridge holds for it or as it."""
         with self._lock:
-            waiting = [w for w in self._by_key.values() if w.membership_id == membership_id]
+            waiting = [
+                w
+                for w in self._by_key.values()
+                if membership_id in (w.membership_id, w.bridge_membership_id)
+            ]
+        self._end(waiting)
+
+    def end_bridge(self, bridge_id: str) -> None:
+        """End every wait a bridge holds through a connection that ended (§2.3)."""
+        with self._lock:
+            waiting = [w for w in self._by_key.values() if w.bridge_id == bridge_id]
+        self._end(waiting)
+
+    @staticmethod
+    def _end(waiting: list[Waiter]) -> None:
         for waiter in waiting:
             waiter.ended = True
             waiter.wake()

@@ -56,6 +56,7 @@ ID = 40  # length of a hub-generated id
 INSTANCE = 5  # an agent instance id, `[2-9a-hjkmnp-z]{4,5}` (§6.17)
 HANDLE = 64
 TITLE = 200  # characters, docs/api.md §1.7
+BRIDGE_PURPOSE = 200  # characters, docs/api.md §2.3 ("The bridge")
 MARKDOWN = 16384  # characters, docs/api.md §1.7; enforced by the API, see MARKDOWN_TEXT
 HEX_SHA256 = 64
 # A namespace owner is a human or an organisation: one of the two foreign keys, and
@@ -796,6 +797,33 @@ membership = Table(
     **MYSQL_TABLE,
 )
 
+# A bridge: an agent that lends its hands to another agent of the project, for a purpose
+# (§2.3, "The bridge"). One row per connection that exists; an ended one is deleted, and
+# its events keep it. A connection still waiting for consent is its requests, not a row.
+bridge = Table(
+    "bridge",
+    metadata,
+    _id(primary_key=True),
+    _ref("project_id", "project.id", nullable=False, index=True),
+    _membership_ref("served", nullable=False),
+    _membership_ref("bridge", nullable=False, index=True),
+    Column("purpose", String(BRIDGE_PURPOSE), nullable=False),
+    Column("cross_owner", Boolean, nullable=False),
+    Column("created_by", String(ID), nullable=False),  # the human who asked
+    Column("created_at", UtcDateTime, nullable=False),
+    # An ended connection stays, in its final state (§12): who ended it (a member id, or
+    # null for the hub) and why (`bridge_ended`, `member_removed`, `owner_not_member`).
+    # `live` is true until then and NULL after, so the pair may connect again at once.
+    Column("ended_at", UtcDateTime),
+    Column("ended_by", String(ID)),
+    Column("end_reason", String(32)),
+    Column("live", Boolean, server_default=true()),  # true until ended; an insert names none
+    UniqueConstraint("served", "bridge", "live"),
+    CheckConstraint("served <> bridge", name="not_self"),
+    CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
+    **MYSQL_TABLE,
+)
+
 # --- preferences (§19.4) -----------------------------------------------------------
 
 
@@ -1395,6 +1423,7 @@ card_history = Table(
     Column("at", UtcDateTime, nullable=False),
     _membership_ref("actor_membership"),
     Column("actor_session_id", String(ID)),
+    Column("actor_bridge", JSON_VALUE),  # as on `event` (§2.3)
     Column("field", String(32), nullable=False),
     # The link a `links` entry adds or removes: what a replayed add or a repeated
     # removal finds it by, even once the entry is redacted.
@@ -1729,6 +1758,9 @@ event = Table(
     # The abuse report a moderation change was made for (§16.8), with every other actor
     # column null; no foreign key either.
     Column("actor_report_id", String(ID)),
+    # The bridge that made the call for `actor_membership` (§2.3): `{member_id, instance,
+    # bridge_id}`, kept as it was since a connection can end; no foreign key.
+    Column("actor_bridge", JSON_VALUE),
     Column("subject_type", String(32)),
     # An id, or a deploy's `<environment>@<sha>` (§17.1).
     Column("subject_id", String(255)),
@@ -1801,6 +1833,36 @@ conversation_participant = Table(
         "conversation_id", "membership_id", "here", name="uq_conversation_participant_one_stay"
     ),
     CheckConstraint("here IS NOT FALSE", name="here_true_or_null"),
+    **MYSQL_TABLE,
+)
+
+# A human's pinned conversations (docs/api.md §9.3 "Pinned"): its own, across projects,
+# at most 20 (`pins.LIMIT`). A direct conversation's id is its agent's member id, so the
+# project is part of the key. A row lives while its human reads the chat (`pins.prune`).
+conversation_pin = Table(
+    "conversation_pin",
+    metadata,
+    _ref("human_id", "human.id", nullable=False),
+    _ref("project_id", "project.id", nullable=False),
+    Column("conversation_id", String(ID), nullable=False),
+    Column("pinned_at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("human_id", "project_id", "conversation_id"),
+    Index("ix_conversation_pin_project", "project_id"),
+    **MYSQL_TABLE,
+)
+
+# A human's own choice of the meat-proxy mode for one conversation, direct or group (docs/api.md
+# §9.3, "Meat proxy per chat"); no row follows the profile. The id of a direct conversation is
+# the agent's, the same in every project the agent is in, so the project is part of the key and
+# this is no participant row. Deleted with the account, in its export.
+conversation_meat_proxy = Table(
+    "conversation_meat_proxy",
+    metadata,
+    _ref("human_id", "human.id", nullable=False),
+    _ref("project_id", "project.id", nullable=False),
+    Column("conversation_id", String(ID), nullable=False),
+    Column("meat_proxy", Boolean, nullable=False),
+    PrimaryKeyConstraint("human_id", "project_id", "conversation_id"),
     **MYSQL_TABLE,
 )
 

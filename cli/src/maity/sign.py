@@ -78,12 +78,16 @@ def canonical_string(
     nonce: str,
     body: bytes,
     on_request: str | None = None,
+    for_member: str | None = None,
 ) -> str:
-    """The `Maity-On-Request` line is there only when the header is sent: without it the
-    string is the seven lines every hub and CLI already sign (§2.2)."""
+    """The `Maity-On-Request` line, then the `Maity-For` line (`for:` and the member id), each
+    only when its header is sent: without both the string is the seven lines every hub and
+    CLI already sign (§2.2)."""
     lines = [SCHEME, method.upper(), path, query, timestamp, nonce]
     if on_request is not None:
         lines.append(on_request)
+    if for_member is not None:
+        lines.append(f"for:{for_member}")
     return "\n".join([*lines, hashlib.sha256(body).hexdigest()])
 
 
@@ -99,10 +103,11 @@ def sign_headers(
     body: bytes,
     timestamp: int,
     on_request: str | None = None,
+    for_member: str | None = None,
 ) -> dict[str, str]:
     nonce = new_nonce()
     stamp = str(timestamp)
-    canonical = canonical_string(method, path, query, stamp, nonce, body, on_request)
+    canonical = canonical_string(method, path, query, stamp, nonce, body, on_request, for_member)
     signature = hmac.new(key._key, canonical.encode("utf-8"), hashlib.sha256).hexdigest()
     headers = {
         "Authorization": f"Maity-HMAC {key.credential_id}",
@@ -112,4 +117,6 @@ def sign_headers(
     }
     if on_request is not None:
         headers["Maity-On-Request"] = on_request
+    if for_member is not None:
+        headers["Maity-For"] = for_member
     return headers

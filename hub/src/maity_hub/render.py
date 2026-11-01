@@ -14,13 +14,23 @@ fenced code and links whose target passes `landing.safe_target`.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from html import escape, unescape
 from typing import Any
+from urllib.parse import urlsplit
 
 from maity_hub import landing_files
-from maity_hub.landing import FENCE, safe_target
+from maity_hub.landing import AGENTS, ALPHA_MARKS, FENCE, safe_target
 
 # --- the visitor's language (§16.7) ----------------------------------------------------------
+
+
+def ordered_languages(pages: Iterable[str], default: str) -> list[str]:
+    """The languages of a setting in one fixed order, the default first and the rest
+    alphabetically: never the order a database keeps the keys in (PostgreSQL's jsonb sorts them,
+    MySQL's JSON does too), so the language bar, `hreflang`, the fallback page and the choice of
+    a language when nothing matches are the same on every database (§16.7)."""
+    return sorted(pages, key=lambda tag: (tag != default, tag))
 
 
 def choose_language(
@@ -289,8 +299,13 @@ def _counter(stats: dict[str, Any] | None, key: str, words: dict[str, str]) -> s
     value = stats[key]
     label = f'<span class="label">{escape(words[key])}</span>'
     if value is None:
-        return None  # below the floor, or public pages off: the counter is left out (§16.7)
-    return f'<div class="stat"><b><span data-lp-count>{int(value)}</span></b>{label}</div>'
+        return None  # not computed: the counter is left out
+    dot = (
+        '<span class="dot pulse" aria-hidden="true"></span>'
+        if key in ("people_online", "agents_online")
+        else ""
+    )  # the board has a live dot before an online number
+    return f'<div class="stat"><b>{dot}<span data-lp-count>{int(value)}</span></b>{label}</div>'
 
 
 def _button(cta: dict[str, Any], kind: str) -> str:
@@ -382,7 +397,7 @@ def _section(index: int, section: dict[str, Any], words: dict[str, str], stats: 
         return _wrap(
             index,
             "section section-alt scales",
-            f'{heading}<div class="scales-layout"><div class="scales-grid">{cards}</div>'
+            f'{heading}<div class="scales-body"><div class="scales-grid">{cards}</div>'
             f'<div class="scales-art hide-m">{rings}</div></div>',
         )
     if kind == "demo":
@@ -420,14 +435,49 @@ def _section(index: int, section: dict[str, Any], words: dict[str, str], stats: 
             f'{landing_files.svg("band-loader.svg")}<div><h2>{escape(section["title"])}</h2>'
             f'{text}{_button(section["cta"], "btn-primary")}</div></div></section>'
         )
+    if kind == "works_with":
+        return _works_with(index, section)
     if kind == "text":
         return _wrap(index, "section", f'{heading}{markdown(section["markdown"])}')
     return ""  # activity, profiles, explore, collab: nothing to show in this version
 
 
+def _works_with(index: int, section: dict[str, Any]) -> str:
+    """The label and a band of the agents' logos. Each agent is named once for screen readers;
+    the second copy of the list, which makes the loop seamless, is `aria-hidden` and inert. The
+    logos are the hub's own files, drawn by a CSS mask so one color serves both themes; the
+    names and files come from `landing.AGENTS`, never from the page (§16.7)."""
+
+    def logos(copy: str) -> str:
+        cells = []
+        for slug in section["items"]:
+            address = landing_files.url(f"agents/{slug}.svg")
+            if address is None:
+                continue
+            mask = f"-webkit-mask-image:url({address});mask-image:url({address})"
+            shape = "agent-logo agent-alpha" if slug in ALPHA_MARKS else "agent-logo"
+            cells.append(
+                f'<li class="agent" tabindex="0">'
+                f'<span class="{shape}" style="{escape(mask, quote=True)}"></span>'
+                f'<span class="agent-name">{escape(AGENTS[slug])}</span></li>'
+                if copy == "first"
+                else f'<li class="agent"><span class="{shape}" style="{escape(mask, quote=True)}"></span></li>'
+            )
+        return "".join(cells)
+
+    more = f'<p class="agents-more">{escape(section["more"])}</p>' if section.get("more") else ""
+    return _wrap(
+        index,
+        "section works-with",
+        f'<p class="agents-label">{escape(section["label"])}</p>'
+        f'<div class="agents-band"><ul class="agents-list agents-first">{logos("first")}</ul>'
+        f'<ul class="agents-list agents-copy" aria-hidden="true" inert>{logos("copy")}</ul></div>{more}',
+    )
+
+
 def _online(stats: dict[str, Any] | None, words: dict[str, str]) -> str:
-    """The hero's line of who is online, from the shared stats; a counter below the floor, or one
-    no enabled `stats` section names, is left out, and the line with it when none is left."""
+    """The hero's line of who is online, from the shared stats; a counter that
+    no enabled `stats` section names is left out, and the line with it when none is left."""
     cells = []
     for key in ("people_online", "agents_online"):
         value = (stats or {}).get(key)
@@ -454,8 +504,8 @@ def _hero(index: int, section: dict[str, Any], words: dict[str, str], stats: Any
     parts.append(f'<div class="cta">{"".join(buttons)}</div>')
     note = f'<div class="note">{markdown(section["note"])}</div>' if section.get("note") else ""
     online = _online(stats, words)
-    if note or online:  # the note is one plain line, the online numbers beside it (§16.7)
-        parts.append(f'<div class="hero-meta">{note}{online}</div>')
+    if note or online:  # the online numbers first, then the note: one plain line (§16.7)
+        parts.append(f'<div class="hero-meta">{online}{note}</div>')
     rings = (
         landing_files.svg("hero-rings.svg")
         .replace("{label}", escape(words["rings"], quote=True))
@@ -511,10 +561,8 @@ def landing_document(
     # A variant has pages of its own, and a language it lacks falls back to its own page in the
     # default language, never to the main page's (§16.7.2).
     pages: dict[str, Any] = setting["variants"][variant]["pages"] if variant else setting["pages"]
-    # The languages in one fixed order, whatever order the database keeps the keys in (PostgreSQL's
-    # jsonb sorts them): the default first, then the rest alphabetically.
-    tags = sorted(pages, key=lambda tag: (tag != setting["default_language"], tag))
-    default = pages.get(setting["default_language"]) or next(iter(pages.values()))
+    tags = ordered_languages(pages, setting["default_language"])
+    default = pages.get(setting["default_language"]) or pages[tags[0]]
     page = pages.get(lang) or default
     words = WORDS.get(lang, WORDS["en"])
     sections = [(i, s) for i, s in enumerate(page["sections"]) if s["enabled"]]
@@ -574,6 +622,12 @@ def landing_document(
     )
 
 
+def _on_github(href: str) -> bool:
+    """Whether a link points at github.com, the host compared without case."""
+    host = urlsplit(href).hostname or ""
+    return host.lower() in ("github.com", "www.github.com")
+
+
 def _column(title: str, items: list[str]) -> str:
     if not items:
         return ""
@@ -603,6 +657,8 @@ def _landing_footer(
         if legal["pages"].get(key)
     ]
     footer = setting["footer"]
+    # A GitHub link belongs once, in Open source: it is left out of Follow when that column has one.
+    github_in_source = any(_on_github(item["href"]) for item in open_source or [])
     social = [
         _link(
             item["label"],
@@ -610,6 +666,7 @@ def _landing_footer(
             me="mastodon" in item["label"].lower() or "/@" in item["href"],
         )
         for item in footer.get("social", [])
+        if not (github_in_source and _on_github(item["href"]))
     ]
     columns = (
         _column(words["platform"], platform)
@@ -720,6 +777,50 @@ def legal_document(
         head=f'<link rel="canonical" href="{escape(public_url.rstrip("/"), quote=True)}{address}">',
         body=body,
         languages=languages,
+    )
+
+
+# --- a form page outside the app (§2.7.1) ---------------------------------------------------
+
+FORM_STYLE = """
+:root{--danger:#c92a2a}@media (prefers-color-scheme:dark){:root{--danger:#ff8787}}
+.panel{max-width:28rem;margin:2rem auto;background:var(--card);border:1px solid var(--line);
+border-radius:.8rem;padding:1.5rem}.panel h1{font-size:1.6rem;margin:0 0 .6rem}
+.field{margin:1rem 0 0}.field label{display:block;font-weight:600;margin:0 0 .3rem}
+.field input{width:100%;font:inherit;padding:.6rem .7rem;border:1px solid var(--line);
+border-radius:.5rem;background:var(--bg);color:var(--fg)}
+.field input:focus,.check input:focus,button:focus{outline:2px solid var(--accent);outline-offset:1px}
+.field input[aria-invalid=true]{border-color:var(--danger)}
+.check{margin:1rem 0 0}.check label{display:flex;gap:.5rem;align-items:flex-start}
+.check input{margin:.3rem 0 0;flex:none}
+.error{color:var(--danger);margin:.3rem 0 0;font-size:.92rem}
+.panel .note{margin:1rem 0 0}
+button{margin:1.4rem 0 0;width:100%;font:inherit;font-weight:600;padding:.65rem 1rem;
+border:1px solid var(--accent);border-radius:.5rem;background:var(--accent);color:var(--accent-fg);
+cursor:pointer}
+footer p{margin:0}footer a{margin-right:0}
+@media (max-width:30rem){.panel{margin:1rem 0;padding:1.1rem}}
+"""
+
+
+def form_document(*, lang: str, title: str, content: str, footer: str) -> str:
+    """A page outside the app that a link in a mail opens, such as the registration's (§2.7.1):
+    the legal pages' head and colours, one centred panel and the given footer, no script and
+    nothing loaded from elsewhere. `content` and `footer` are HTML of escaped text and elements."""
+    header = (
+        '<header class="top"><div class="wrap"><a class="mark" href="/">Maity</a></div></header>'
+    )
+    return _document(
+        lang=lang,
+        title=title,
+        description="",
+        head="",
+        body=(
+            f'{header}<main class="wrap"><div class="panel">{content}</div></main>'
+            + (f'<footer><div class="wrap">{footer}</div></footer>' if footer else "")
+        ),
+        languages=[],
+        style=STYLE + FORM_STYLE,
     )
 
 

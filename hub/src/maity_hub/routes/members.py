@@ -18,6 +18,7 @@ from maity_hub import (
     agent_owners,
     attachments,
     availability,
+    bridges,
     briefings,
     clock,
     cross_owner,
@@ -29,6 +30,7 @@ from maity_hub import (
     line,
     namespace,
     person_links,
+    pins,
     placements,
     project_roles,
     rules,
@@ -442,6 +444,10 @@ def apply_patch(
         held = target.role == "manager" and target.trust != "guest"
         if held and not (row.role == "manager" and row.trust != "guest"):
             line.manager_lost(conn, change, target)
+        if "role" in changed and row.agent_id is not None:
+            # A proxy carries and is carried by no bridge; a role the limits across owners
+            # exclude ends those connections (§2.3, "Ending on its own").
+            bridges.after_role_change(conn, change.project, row, change.actor)
     given, reason = pause
     if given:
         if target.agent_id is None:
@@ -881,6 +887,7 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     )
     foreign_agent.withdraw_open(conn, target.id, change.actor, "member_removed")
     cross_owner.withdraw_for_member(conn, target.id, change.actor)  # §6.2 "Pending"
+    bridges.end_for_member(conn, target.id, change.actor, "member_removed")  # §2.3
     now = clock.now()
     credentials = (
         conn.execute(
@@ -950,6 +957,7 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     placements.forget_boss(conn, change.project.id, target.id)
     # Out of every group chat too, which may close one (§6.2, §9.2).
     group_chats.membership_removed(conn, target, change.actor, change.by)
+    pins.prune(conn, change.project.id)  # its direct chats go with it (§9.1, §9.3)
     attachments.drop_pending(conn, target.id)  # its pending uploads go (§6.2)
     seats.reset(conn, change.project.id, removed, change.actor)
     instances.refresh_team_wake(conn, change.project.id)  # it may have been the last team
