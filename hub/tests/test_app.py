@@ -24,6 +24,17 @@ def test_health_reports_a_migrated_database(client: TestClient) -> None:
     assert body["database"] == {"reachable": True, "revision": head, "head": head}
 
 
+def test_health_does_not_read_the_migration_files_per_request(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def boom(_engine: Engine) -> None:
+        raise AssertionError("the head is read once, when the app is made")
+
+    monkeypatch.setattr("maity_hub.app.head_revision", boom)
+    monkeypatch.setattr("maity_hub.db.head_revision", boom)
+    assert client.get("/api/v1/health").status_code == 200
+
+
 def test_health_turns_503_when_the_schema_falls_behind(client: TestClient, engine: Engine) -> None:
     downgrade(engine)
     response = client.get("/api/v1/health")
