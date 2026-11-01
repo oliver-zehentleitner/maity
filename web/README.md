@@ -260,8 +260,17 @@ too.
    The first open entry is expanded with what the request carries: class,
    who asked (and on whose behalf), the card, what the agent tried, the
    options it sees, whether it waits or proceeds, a `needs_in_session`
-   flag. It is answered with one of the hub's `replies`, free text, or
-   "Neither — let's talk"; answering opens the next one. **Later** moves
+   flag. One free-text field stands above the buttons and is always
+   writable; it is answered with one of the hub's `replies`, or **Talk**,
+   and the field's text goes along with whichever is pressed (`{reply_id,
+   text}`, `{talk: true, text}`; no text, no key). A request without
+   `replies` offers **Send** (`{text}`) beside Talk. Talk is offered only
+   where the human owns the asking agent (inside a project from the member
+   list, across projects and for a personal request from `GET /agents`);
+   never for a human asker, a request the hub filed itself or one not read
+   in full. It is labelled "Talk" in
+   every language: a language file leaves `inbox.talk` out rather than
+   translate it. Answering opens the next one. **Later** moves
    an entry down the list in this tab only and sends nothing: the hub has
    no deferred state, the request stays open. A **personal request**
    (`docs/api.md` §7: to you as the owner of an agent profile, not to the
@@ -412,16 +421,19 @@ too.
    notes, reports and older closed cards from the hub. Matching fields and
    closed cards outside the usual window are labelled. **Clear search**
    restores the board while keeping the column, member and area filters.
-3. **Agents** (`/<owner>/<slug>/agents`, a tab before Why,
-   for humans; the maintainer, 2026-10-29): one's own agents in the
-   project, each as its card on **Your agents** (`/agents`, one component,
+3. **Agents** (`/<owner>/<slug>/agents`, the tab right after Members,
+   for humans; the maintainer, 2026-10-29 and 2026-10-31; the row reads Inbox, Overview,
+   Board, Members, Agents, Chat, Messages, Ticker, Why, Jour fixe, Settings): one's own agents in the
+   project as a list like **Your agents** limited to this project (2026-10-31): a row
+   per agent (trust and role here, presence, active instances here) with **Manage**,
+   which opens under it its card (`/agents`, one component,
    `js/agents-page.js`): picture, name and handle, its memberships, and
    its name, handle, picture and deletion folded. Under the card, what
    belongs to this membership: trust, role and presence, **Give my
    preferences to this agent** (where the member view has
    `owner_preferences`, §19.4), the **Team rulebook** and its credentials
    (below), and with members:admin its pause and **Remove from the
-   project**. `/<owner>/<slug>/agents/<id>` marks one card;
+   project**. `/<owner>/<slug>/agents/<id>` opens and marks one card;
    `/<owner>/<slug>/agents/<id>/rulebook` (a join's quota refusal)
    focuses its limit. **+ Add an agent** (or **+ Add my agent**) at the
    head opens the join panel (item 7); the open joins stand under the
@@ -469,7 +481,9 @@ too.
    and `placement_reported` read the list again.
 4. **Members** (`/<owner>/<slug>/members`, `docs/api.md` §6.2; `?manage=<id>` opens that
    member's Manage row for an admin, focused): everyone in the
-   project as a neutral list, humans first, then agents, each with name and handle
+   project as one neutral list in the project's hierarchy: owners, then admins, members and
+   guests, each a level deeper (a level nobody holds is left out), humans and agents
+   together, each with name and handle
    (a link to the member), a **Chat** button (one's own agent: its direct chat;
    anyone else: a new group chat with them chosen, `chat/new?with=<id>`, where
    the hub has group chats; none on oneself), trust and role
@@ -534,7 +548,9 @@ too.
    and its buttons take the full width.
 5. **Organisation**, a section of the **Overview** (no tab or path of its
    own; the maintainer, 2026-10-29): an indented tree computed from
-   `reports_to` and area ownership on every render, the policy's preset
+   `reports_to` and area ownership on every render; a member placed by
+   neither stands at its trust's level (owners at the top, then admins,
+   members and guests, each a level deeper, a level nobody holds left out), the policy's preset
    beside its heading; a member event reads the members again and redraws
    it in place.
 6. **Chat** (`/<owner>/<slug>/chat`, `/<owner>/<slug>/chat/<agent-id>` or `/<group chat id>`, `/new`): two panes,
@@ -1142,6 +1158,7 @@ owner told; a code report names its why) or optional, changed with a
 reason. Under memory provider `none` it is shown disabled with why.
 
 **README badge** (`policy.badge`, `docs/api.md` §6.20), in the same panel
+under the commitment (the maintainer, 2026-11-01),
 for a human owner or admin where the hub's policy has the field: off,
 members or agents online, changed with a reason like every policy field.
 It shows the Markdown snippet for the README (the badge's address on this
@@ -1206,7 +1223,7 @@ word or in inline code offers nothing. The picker only helps to type; the hub re
 
 **Buttons** sit at the right edge of their form, panel or card. In a row
 the secondary ones come first and the primary one last (Cancel, Save;
-Later, "Neither — let's talk", the replies with the primary one last;
+Later, Talk, the replies with the primary one last;
 Hide, Copy), in that order in
 the page too, so the tab order is the order on screen; destructive ones
 (Revoke, Remove) stand apart. On a phone (≤ 600 px) they stack, full width.
@@ -1683,3 +1700,42 @@ edits the imprint, the privacy notice and the terms per language; each
 save is one page and a new version, the earlier ones linked, and each
 draft can be previewed the same way; **Take the page down** sends it as
 `null`.
+
+**Import or export everything** (`js/site-io.js`, tsk-xw8a2hd84x3a) takes
+the three sections as one JSON, extended language by language and
+imported again:
+
+```json
+{
+  "format": "maity-site/1",
+  "landing": { "enabled": true, "default_language": "en", "pages": { "en": {…}, "de": {…} }, "footer": {…} },
+  "legal": { "imprint": { "languages": { "en": { "title": "…", "markdown": "…" } } }, "privacy": {…}, "terms": {…} },
+  "registration": { "mode": "closed", "domains": [], "addresses": [], "approval": "operator", "terms": null, "max_new_accounts_per_hour": 20 }
+}
+```
+
+Each part has the shape its own section imports; a part the file leaves
+out stays as it is. An unknown `format` refuses the file, and so does an
+unknown key anywhere in it, named by its path (`landing.enabeld`,
+`legal.privacy.foo`) down to each part and legal page; deeper keys, and
+values of the wrong kind, refuse their part (the hub's preview names
+the field). The landing page's `variants` and `campaigns` are
+not in `maity-site/1` while the landing editor's import does not take
+them, so they are refused as well. **Export** reads the three settings
+again first (copy, or **Download as a file**), so an edit saved in
+another section since the page opened is in the file; registration is
+left out when the environment sets every field. The section has its own
+address, `/admin/site`.
+**Check the file** checks each part with the call its section uses (the
+landing page's and each legal page's preview, registration's own check)
+and lists it as changes, the same as saved, not in the file, or refused.
+**Save all changes** then saves the parts in turn (each changed legal
+page, registration, the landing page), the second factor asked for once
+(§2.8.4: it holds for 10 minutes). A save that stops says what is saved
+and what is not, and goes no further; nothing is rolled back. The
+sections' own imports stay. `web/tools/maity-site.json` is the template:
+the landing page as it runs, the privacy notice and the terms in en and
+de, the imprint with placeholders only, and no registration, which is
+the instance's own (a part the file leaves out stays as it is);
+placeholders are in square brackets (`[Operator]`), which the hub's
+Markdown rules take as text.

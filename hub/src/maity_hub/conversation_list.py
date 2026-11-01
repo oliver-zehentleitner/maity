@@ -20,7 +20,7 @@ from typing import Any
 
 from sqlalchemy import Connection, String, and_, cast, func, or_, select
 
-from maity_hub import events, group_chats
+from maity_hub import chat_meat_proxy, events, group_chats
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.views import principal_ids, ts
@@ -31,9 +31,21 @@ CHUNK = 100  # chats per statement that names each one's window
 Key = tuple[str, str]  # (project id, chat id)
 
 
+# What a participant shows in a list: who it is, and for a human the meat-proxy fields (§9.3).
+SHORT = (
+    "member_id",
+    "kind",
+    "handle",
+    "name",
+    "meat_proxy",
+    "meat_proxy_chat",
+    "meat_proxy_note",
+)
+
+
 def short(person: dict[str, Any]) -> dict[str, Any]:
     """A participant as the list shows it; an agent with its global name (§6.3)."""
-    return {k: person[k] for k in ("member_id", "kind", "handle", "name") if k in person}
+    return {k: person[k] for k in SHORT if k in person}
 
 
 def preview(row: Any, sender: str | None) -> dict[str, Any] | None:
@@ -247,6 +259,11 @@ def direct_entries(
                 "_project": project_id,
             }
         )
+    chat_meat_proxy.shown(
+        conn,
+        [(e["_project"], e["id"], e["participants"]) for e in entries],
+        caller.human_id if caller.kind == "human" else None,
+    )
     return entries
 
 
@@ -359,6 +376,9 @@ def group_entries(conn: Connection, mines: Sequence[Any], observed: bool) -> lis
     if not found:
         return []
     people = group_chats.people(conn, {s.membership_id for _, chat in found for s in stays[chat]})
+    carried = group_chats.carriers(
+        conn, {s.membership_id for _, chat in found for s in stays[chat]}
+    )
     windows = _windows(conn, by_project, found, stays)
     lasts = _latest(conn, windows, by_project)
     senders = principal_ids(conn, (row.actor_membership for row in lasts.values()))
@@ -376,7 +396,9 @@ def group_entries(conn: Connection, mines: Sequence[Any], observed: bool) -> lis
                 "kind": "group",
                 "title": group.title,
                 "participants": [short(people[s.membership_id]) for s in current],
-                "observers": group_chats.observers_of(current, owners_of),
+                "observers": group_chats.shown_observers(
+                    current, group_chats.observers_of(current, owners_of), carried
+                ),
                 "access": access,
                 "closed_at": ts(group.closed_at),
                 "last_message_at": ts(last.at) if last is not None else None,
@@ -387,6 +409,10 @@ def group_entries(conn: Connection, mines: Sequence[Any], observed: bool) -> lis
                 "_project": project_id,
             }
         )
+    viewer = next((m.principal_id for m in mines if m.kind == "human"), None)
+    chat_meat_proxy.shown(
+        conn, [(e["_project"], e["id"], e["participants"]) for e in entries], viewer
+    )
     return entries
 
 

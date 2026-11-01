@@ -209,6 +209,27 @@ window.Maity = window.Maity || {};
     return data;
   }
 
+  // §7 answering: exactly one of reply_id, text, talk, with text allowed beside
+  // reply_id or talk; reply_id one of the request's replies; talk only from
+  // the human who owns the asking agent (here: the asker's owner_id in the
+  // project's members or the human's own agent profiles).
+  function checkAnswer(req, body, path, slug) {
+    const given = ["reply_id", "text", "talk"].filter((k) => body[k] !== undefined && body[k] !== null);
+    if (!given.length || (given.includes("talk") && given.includes("reply_id"))) fail(400, "invalid", "reply_id, text or talk", path, { fields: { answer: "reply_id_or_text_or_talk" } });
+    if (body.reply_id != null && !(req.replies || []).some((r) => r.id === body.reply_id)) {
+      fail(400, "invalid", "Unknown reply", path, { fields: { reply_id: "not_a_reply" } });
+    }
+    if (body.talk) {
+      // The asker's profile: the project's member, else one of the human's own.
+      const asking = req.asked_by && req.asked_by.member_id;
+      const asker = asking && ((slug && (fixtures()[slug + "/members.json"] || { items: [] }).items.find((x) => x.id === asking))
+        || fixtures()["agents.json"].items.find((x) => x.id === asking));
+      if (req.filed_by === "hub" || !(asker && asker.kind !== "human" && asker.owner_id === me().member.id)) {
+        fail(400, "invalid", "only the agent's own human can talk", path, { fields: { talk: "only_the_owner_of_the_agent" } });
+      }
+    }
+  }
+
   function keyed(slug, name, key, path) {
     const entry = file(slug, name, path)[key];
     if (!entry) fail(404, "not_found", "Not found", path);
@@ -995,6 +1016,18 @@ window.Maity = window.Maity || {};
   }
   // §9.3 for one project (m[1]: its fixture key), shared by the project's
   // route and the list across projects.
+  // §9.3 pins: the caller's own, "<slug>/<id>", at most 20 across projects.
+  function pinsOf() {
+    const all = fixtures();
+    if (!all["pins.json"]) all["pins.json"] = { items: [] };
+    return all["pins.json"].items;
+  }
+  // Four bands, each by activity: pinned with unread, unpinned with unread,
+  // quiet pinned, the rest (an observer's null unread is none).
+  function banded(items, at) {
+    const band = (c) => (c.unread ? (c.pinned ? 0 : 1) : (c.pinned ? 2 : 3));
+    return items.sort((a, b) => band(a) - band(b) || (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : 0));
+  }
   function conversationList(m, path, query) {
     const all = file(m[1], "conversations.json", path);
     const members = file(m[1], "members.json", path).items;
@@ -1037,7 +1070,9 @@ window.Maity = window.Maity || {};
         });
       });
     const at = (c) => c.last_message_at || c.created_at || "";
-    return { items: direct.concat(groups).sort((a, b) => (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : 0)), next_cursor: null };
+    const human = me().member.kind === "human";
+    const items = direct.concat(groups).map((c) => Object.assign(c, { pinned: human && pinsOf().includes(m[1] + "/" + c.id) }));
+    return { items: banded(items, at), next_cursor: null };
   }
 
   // The view as the caller may see it, or null when it may not.
@@ -2117,6 +2152,7 @@ window.Maity = window.Maity || {};
       const req = personalRequests().find((r) => r.id === m[1] && (!/^human:/.test(r.to || "") || r.to === "human:" + me().member.id));
       if (!req) fail(404, "not_found", "Not found", path);
       if (req.status !== "open") fail(409, "request_not_open", "Request is not open", path);
+      if (m[2] === "answer") checkAnswer(req, body, path, null);
       const proposal = req.memory_proposal && req.memory_proposal.store === "preferences" ? req.memory_proposal : null;
       const edited = "markdown" in body || "base_version" in body;
       if (edited && !proposal) fail(400, "invalid", "not a preference proposal", path, { fields: { markdown: "not_a_preference_proposal" } });
@@ -2959,9 +2995,7 @@ window.Maity = window.Maity || {};
       const req = file(m[1], "requests.json", path).items.find((r) => r.id === m[2]);
       if (!req) fail(404, "not_found", "Not found", path);
       if (req.status !== "open") fail(409, "request_not_open", "Request is not open", path);
-      if (body.reply_id && !req.replies.some((r) => r.id === body.reply_id)) {
-        fail(400, "invalid", "Unknown reply", path, { fields: { reply_id: "unknown" } });
-      }
+      checkAnswer(req, body, path, m[1]);
       const at = nowIso();
       req.status = "answered";
       req.answered_at = at;
@@ -3737,10 +3771,26 @@ window.Maity = window.Maity || {};
       const at = (c) => c.last_message_at || c.created_at || c.joined_at || "";
       const items = me().projects.flatMap((p) => conversationList([null, p.slug], path, query).items.map((c) => Object.assign({}, c, {
         project: { owner: p.full_name.split("/")[0], slug: p.slug, full_name: p.full_name, name: p.name } })));
-      items.sort((a, b) => (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : 0)
-        || a.project.full_name.localeCompare(b.project.full_name) || a.id.localeCompare(b.id));
+      banded(items, at);
       return { items, next_cursor: null,
         totals: { unread: items.reduce((n, c) => n + (c.unread || 0), 0), mentions_unread: items.reduce((n, c) => n + (c.mentions_unread || 0), 0) } };
+    }],
+    // §9.3 pins: human only, idempotent, at most 20 across projects.
+    ["PUT", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/pin$/, (m, body, path) => {
+      if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+      const key = m[1] + "/" + decodeURIComponent(m[2]);
+      if (!pinsOf().includes(key)) {
+        if (pinsOf().length >= 20) fail(400, "invalid", "at most 20 pins", path, { fields: { pin: "too_many" } });
+        pinsOf().push(key);
+      }
+      return null;
+    }],
+    ["DELETE", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/pin$/, (m, body, path) => {
+      if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+      const key = m[1] + "/" + decodeURIComponent(m[2]);
+      const at = pinsOf().indexOf(key);
+      if (at >= 0) pinsOf().splice(at, 1);
+      return null;
     }],
     // §9.2 group chats.
     ["POST", /^\/projects\/([^/]+)\/conversations$/, (m, body, path) => {

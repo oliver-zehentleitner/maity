@@ -291,6 +291,8 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 }
 
 .error p { margin: 4px 0 0; }
+/* An error box with nothing in it is no box (tsk-rsbefb9b67gh: an empty one showed on the account page). */
+.error:empty { display: none; }
 
 .flag {
   background: var(--flag-bg);
@@ -643,10 +645,15 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
   .members thead { display: none; }
   .members tr.member { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; padding: 4px 0; }
   .members tr.member > * { border-bottom: none; padding: 3px 10px; }
+  /* The hierarchy's levels on a phone (review of #949): the padding above wins over the name cell's indent, so the card itself moves in. */
+  .members tr.member-level-1 { margin-inline-start: 16px; }
+  .members tr.member-level-2 { margin-inline-start: 32px; }
+  .members tr.member-level-3 { margin-inline-start: 48px; }
   .members tr.member > td::before { content: attr(data-label) ": "; color: var(--muted); }
   .members .member-actions { text-align: left; }
   .members .member-actions::before { content: none; }
-  .members tr.member-manage { margin: -8px 0 8px; }
+  /* Block margins only: the level class beside it gives the open card its member's indent. */
+  .members tr.member-manage { margin-block: -8px 8px; }
   .member-manage .member-remove { justify-content: stretch; }
   .member-manage button { flex: 1 1 100%; }
 }
@@ -669,6 +676,11 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 /* ---- organisation --------------------------------------------------- */
 
 .org-tree, .org-tree ul { list-style: none; margin: 0; padding-left: 0; }
+/* Members as the project's hierarchy by trust: owner, admin, member, guest, each a level deeper;
+   with all four held, a guest is level 3. */
+tr.member-level-1 > th { padding-inline-start: 28px; }
+tr.member-level-2 > th { padding-inline-start: 56px; }
+tr.member-level-3 > th { padding-inline-start: 84px; }
 .org-tree ul { padding-left: 20px; border-left: 1px solid var(--border); margin-left: 4px; }
 .org-node { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; }
 .role { color: var(--muted); }
@@ -692,6 +704,12 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
   text-decoration: none;
 }
 .conv { position: relative; }
+/* A row with its pin button beside the link (§9.3): the link takes the room. */
+.chat-list > li { display: flex; align-items: flex-start; gap: 2px; }
+.chat-list > li > .conv { flex: 1; min-width: 0; }
+.pin-toggle { align-self: center; opacity: 0.45; filter: grayscale(1); }
+.pin-toggle:hover, .pin-toggle:focus-visible, .pin-toggle[aria-pressed="true"] { opacity: 1; filter: none; }
+.pin-mark { margin-inline-end: 4px; }
 .conv:hover { background: var(--surface); }
 /* Read by a screen reader, not shown. */
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -1317,6 +1335,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .sign-in-options { display: grid; gap: 12px; margin: 16px auto 0; max-width: 32rem; }
 /* Sign-in and registration lay out alike: a label on its own line, the field full width under it, the button below. */
 .sign-in-form, .register-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+/* A field's wrapper inside a form (a label and its control, a hint, an error): one column, the label above the
+   control. One class for every such wrapper (tsk-jpaqk8m7j52v), so none runs label and field inline. */
+.field-stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; min-width: 0; }
 .sign-in-form button, .register-form button { justify-self: end; }
 .link-button { background: none; border: none; padding: 4px 0; color: var(--accent); text-decoration: underline; cursor: pointer; justify-self: start; min-height: 24px; }
 .match-number { font-size: 3rem; font-weight: 700; letter-spacing: 0.05em; margin: 4px 0; }
@@ -1513,7 +1534,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 
 /* Renaming a handle (js/handles.js, docs/api.md §6.24). */
 .handle-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0.4rem 0; }
-.handle-form .error { flex-basis: 100%; margin: 0; }
+.handle-form .field-error { flex-basis: 100%; margin: 0; }
 .handle-at { color: var(--muted, inherit); }
 /* The header's "+" menu (an agent, a person): a bold plus as its face. */
 .add-face { font-weight: 800; font-size: 1.25rem; line-height: 1; }

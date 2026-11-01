@@ -686,6 +686,24 @@ address alert unless this session may confirm it (`M.sessions.mayConfirm`,
 does nothing would look broken. The sessions are read for that only
 when the page shows an unread security item.
 
+Since 2026-10-31 (the maintainer's wish, `context/chat.md` entry
+6e357e0c "An inbox answer carries a note with any button", §7) each open
+request has one free-text field **above** its buttons, always writable:
+every reply button sends `{reply_id, text}` when the field has text, and
+**Talk** sends `{talk: true, text}`; a request without replies keeps
+**Send** for the plain text next to Talk. "Talk" is one word in every
+language (a language file leaves `inbox.talk` out rather than translating
+it). Talk is offered only where the asker is an agent the reader owns
+(§7: accepted only from the human who owns the asking agent): inside a
+project from the member list (`owner_id`), across projects and for a
+personal request from the reader's own profiles (`GET /agents`, read once
+per view; their ids are the agents' member ids). Never for a human, for a
+request the hub filed itself (no asking agent reads the answer), or for an
+unreadable personal one, and not when the profiles cannot be read: a
+button that surely ends in `invalid` looks broken. `canTalk()` in
+`js/inbox.js` is the one place to change when the hub computes a field
+for it.
+
 ## A personal request in the cross-project inbox is labelled Personal and links into no project
 
 **Id:** 2fd5910d-3233-4aca-a16e-8c1cc73d071a
@@ -1266,8 +1284,10 @@ Where the theme menu was, the signed-in header has Chat; since
 2026-10-31 the order is Chat, Lead, "+", the gear, the bell and the
 profile (views.md#the-header-gets-a-menu-to-bring-someone-in-invitations-get-their-own-page-runners-lose-their-tab — 3f6eadd3-d1d5-4389-bb65-626e9cdbc1dc). Chat leads to `/chats` and carries
 `counts.chat` from `/me/notifications`, which the header already reads,
-worded "N unread chat messages". `/chats` reads each project's
-conversation list (§9.3) once when it opens, unread first. On a hub
+worded "N unread chat messages". `/chats` reads the conversations
+across projects (§9.3, `GET /me/conversations`) and shows them in the
+hub's order: pinned with unread, unpinned with unread, quiet pinned, the
+rest. On a hub
 without notifications both buttons stand without a count, the bell as a
 link to everything waiting.
 
@@ -2255,6 +2275,10 @@ under a row what the card held, and per membership the instances with
 their credentials and revocation, the part Members' Manage uses, read in
 that project's context when the row opens. A row stays open across a
 redraw; a profile just made, or the one in `/agents/<id>`, opens its row.
+A project's Agents is the same list limited to that project: one's own
+agents there as rows (trust and role here, presence, active instances
+here), Manage opening the card with what belongs to the membership here,
+the agent in `agents/<id>` (or its rulebook) open from the start.
 
 **Reason:** an agent is the owner's across projects, so its settings
 need one place that is not a project; and the join panel already knows
@@ -2266,13 +2290,46 @@ repeat the project's join rules (§3.1's member limits, the team's
 instance limit) apart from the panel and drift from it. Keeping the
 agents in no project on the account: two places for the same profile.
 
+## Members and the organisation tree follow trust: owners at the top, then admins, members and guests
+
+**Id:** 9333bd7a-dbda-4c4f-88d8-fa08124ef06d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's wishes on the card tsk-05meme59sq1x, 2026-10-31, given in three steps: only owners at the top and everyone else indented; the order owners, members, guests; then the levels follow trust, owner, admin, member, guest, each a level deeper, and a level nobody holds leaves no empty step; for both the Organisation tree and the Members list, which becomes one list
+**Revisit when:** a project needs a level the trust does not express, or the Team page shows reports_to in Members too
+**See:** views.md#the-organisation-tree-is-computed-from-reports_to-and-scope-ownership-never-stored — 5fd2c906-3178-4b74-a1da-82a613302536 — as of 2026-10-31
+**See:** views.md#a-projects-tabs-members-a-neutral-list-with-chat-agents-ones-own-agents-the-organisation-on-the-team-page — 54a49af9-4763-4b4c-8624-bf2c51a2bc34 — as of 2026-10-31
+
+Members is one list instead of a table of humans and one of agents. Its
+rows go by trust: owners, then admins, then members, then guests, each a
+level deeper (the name cell indented), within a level in the hub's
+order. A level nobody holds is left out, so the next moves up. The
+columns are both tables' columns; a human's agent-only columns (owner,
+paused, Keep the Why) read "—". Only my agents still shows one's own
+agents. In the Organisation tree, a member with no parent by
+`reports_to` or area stands at its trust's level the same way. Such a
+member is not put under one owner's node: with several owners that would
+draw a line to one of them that the project does not have. A trust the
+dashboard does not know counts as member.
+
+**Reason:** the levels are the maintainer's (confirmed: "the real
+hierarchy" has the owners as its root, then by trust). Read from that,
+not stated by him: a human member and the owner on one level, as the
+tree drew a member without `reports_to`, look like peers.
+
+**Rejected alternative:** keeping two tables in Members and indenting
+only within each, which would still put a member human beside the owner.
+Hanging members without a parent under the first owner, which claims a
+reporting line that is not there.
+
 ## A project's tabs: Members a neutral list with Chat, Agents one's own agents, the organisation on the Team page
 
 **Id:** 54a49af9-4763-4b4c-8624-bf2c51a2bc34
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer on the card tsk-3ap6mj5y1k2a, 2026-10-29 (Members neutral with a Chat per entry, the admin's Manage kept as it is; an Agents tab before Runners and Why, the component of /agents filtered to the project; the organigram into the Overview, the Organisation tab gone without a redirect); docs/api.md §16.11 (the project views, `agents` among them, `org` no longer)
+**Source:** the maintainer on the card tsk-3ap6mj5y1k2a, 2026-10-29 (Members neutral with a Chat per entry, the admin's Manage kept as it is; an Agents tab before Runners and Why, the component of /agents filtered to the project; the organigram into the Overview, the Organisation tab gone without a redirect); the maintainer's request relayed by the coordinator on the card tsk-ttywzxsaj1ht, 2026-10-31 (Agents right after Members, Jour fixe between Why and Settings); docs/api.md §16.11 (the project views, `agents` among them, `org` no longer)
 **Revisit when:** the Team page's Members tab lands, or the hub lets an agent's owner pause or remove it without `members:admin`
 
 **Members** lists everyone in the project the same way for every
@@ -2296,7 +2353,10 @@ redrawn there when a member event arrived; since 2026-10-30 it is the
 Team page's Organisation tab (58c58a28-d6b1-453f-99dc-7f21179b3ee2). The join panel and the
 placements belong to Agents because both are about one's own agents:
 a join makes one, and where they run is managed by their owner or the
-runner's; a list everybody reads is no place for either.
+runner's; a list everybody reads is no place for either. In the row
+Agents stands right after Members, and Jour fixe between Why and
+Settings: Inbox, Overview, Board, Members, Agents, Chat, Messages,
+Ticker, Why, Jour fixe, Settings (an agent sees no Agents tab).
 
 **Reason:** Members is where one sees who is in the project and talks
 to them; managing one's own agents is a different job, the same one as
@@ -3348,6 +3408,59 @@ of the JSON in the page: a copy of the hub's rules that ages with each
 new section type. Drawing inside try/catch and restoring the draft
 afterwards: it would hide real drawing bugs and leave a half-built
 editor behind.
+
+## The whole site is one JSON, maity-site/1, checked part by part and saved in turn by the dashboard
+
+**Id:** 3b7c4d67-90b2-497a-9dd7-1f7a7ddfb7bd
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions req-0cv1n7eaegay (o1: one JSON for landing, legal and registration, dashboard only, no hub endpoint) and req-39vmjgrq5s32 (o1: a template in the repository, the imprint with placeholders only, landing-v3-complete.json dropped for one source), relayed by the coordinator on the card tsk-xw8a2hd84x3a, 2026-10-31; the coordinator's word that placeholders go in square brackets; the coordinator's decision on the review of #961, 2026-10-31 (an unknown key anywhere refuses the whole file; variants and campaigns stay out); the coordinator's decision on #961, 2026-10-31 (the template carries no registration; registration is the instance's own); docs/api.md §2.8.4 (a step-up holds 10 minutes); the dashboard's implementation, 2026-10-31
+**Revisit when:** the hub offers one call that saves several settings in a transaction, or a fourth setting joins the site file
+**See:** views.md#the-legal-pages-and-registration-import-and-export-json-too-text-not-loaded-stops-a-preview — 951ed7bf-6f23-4279-a4c6-f2c03c7c31ea — as of 2026-10-31
+
+The instance admin has **Import or export everything** for the landing
+page, the legal pages and registration as one file, `maity-site/1`,
+extended language by language and imported again. Each part has the shape
+its own section imports; a part the file leaves out stays as it is, and an
+unknown format or key is refused by name. A check runs each part through
+the call its section uses (the previews, registration's own check) and
+lists it as changes, the same, not in the file, or refused. One Save then
+runs the existing PATCHes in turn (each changed legal page, registration,
+the landing page). The second factor is asked for once, since a step-up
+holds for 10 minutes; each call still goes through the step-up helper, so
+an expired window asks again rather than fails. A save that stops says
+what is saved and what is not and goes no further, with no rollback. The
+template `web/tools/maity-site.json` replaces `landing-v3-complete.json`.
+It carries no registration: registration is the instance's own, and a
+template imported whole would otherwise close an open registration
+without a word.
+Its placeholders are in square brackets: the hub's Markdown rules read
+`<Operator>` as an HTML tag and refuse the text.
+
+An unknown key anywhere in the file refuses the whole file, named by its
+path, down to each part and legal page (deeper, in a page's languages or
+the landing page's pages, the hub's preview refuses the part with its own
+field names); a landing value of the wrong kind refuses its part; `variants` and `campaigns` are not in `maity-site/1` while the
+landing editor's import does not know them, and are refused the same
+way. Export and Download read the three settings again first: the admin
+page builds every section when it opens, so a file exported from that
+first read would carry the state from before an edit in another section,
+and importing it again would revert that edit.
+
+**Reason:** one file for the whole site is what the maintainer works with,
+and the dashboard can do it with the calls the sections already have, so
+it needs no contract change and comes a day sooner. The site file is
+refused as a whole when any key is unknown, at the top or inside a part:
+a key the dashboard drops without a word looks saved to the person who
+wrote it, and a typo in `enabled` would leave the public page in the
+wrong state.
+
+**Rejected alternative:** a hub endpoint that saves all parts in one
+transaction, a day later and a contract change. Keeping the three imports
+apart, which gives no "one file for everything". Placeholders escaped as
+`\<Operator\>`, which the hub's check still reads as a tag where a space
+follows the first word.
 
 ## The legal pages and registration import and export JSON too; text not loaded stops a preview
 

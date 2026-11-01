@@ -91,6 +91,7 @@ def test_the_packet_counts_chats_and_carries_only_mentions(
         "mentions_unread": 1,
         "last_message_at": group["last_message_at"],
         "closed_at": None,
+        "meat_proxy": [],  # no human in it has the mode on (§9.3)
     }
     assert any(c["kind"] == "direct" and c["id"] == agent.id for c in packet["conversations"])
 

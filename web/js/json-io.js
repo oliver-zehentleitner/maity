@@ -13,8 +13,9 @@ window.Maity = window.Maity || {};
 
   const isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 
-  // opts: id (the element ids' prefix), hint (what the body is), body() (the
-  // editor's state as the hub takes it), load(data, io) (checks the parsed
+  // opts: id (the element ids' prefix), hint (what the body is), loadLabel (the load button's
+  // words where loading does more than fill an editor), body() (the
+  // editor's state as the hub takes it, or a promise of it), load(data, io) (checks the parsed
   // value and loads it into the editor: true when it did, else it has said
   // why in io).
   function part(opts) {
@@ -28,8 +29,10 @@ window.Maity = window.Maity || {};
       if (!chosen) return;
       try { area.value = await chosen.text(); io.done(); } catch (err) { io.fail(M.t("jsonio.file_failed"), err); }
     });
-    const exportIt = () => {
-      area.value = settled = JSON.stringify(opts.body(), null, 2);
+    const exportIt = async () => {
+      let body;
+      try { body = await opts.body(); } catch (err) { io.fail(M.t("jsonio.export_failed"), err); return; }
+      area.value = settled = JSON.stringify(body, null, 2);
       io.done();
       append(io.el, h("span", { class: "ok" }, M.t("jsonio.exported")));
       area.focus();
@@ -47,12 +50,12 @@ window.Maity = window.Maity || {};
       }
       if (await opts.load(data, io)) settled = area.value;
     }
-    const el = h("details", { class: "json-io" }, h("summary", null, M.t("jsonio.title")),
+    const el = h("details", { class: "json-io field-stack" }, h("summary", null, M.t("jsonio.title")),
       h("p", { class: "hint", id: opts.id + "-hint" }, opts.hint),
       h("label", { for: opts.id }, M.t("jsonio.label")), area,
       h("div", { class: "inline-form" }, h("label", { for: opts.id + "-file" }, M.t("jsonio.file")), file),
       h("div", { class: "actions" },
-        h("button", { type: "button", onclick: loadIt }, M.t("jsonio.load")),
+        h("button", { type: "button", onclick: loadIt }, opts.loadLabel || M.t("jsonio.load")),
         h("button", { type: "button", onclick: exportIt }, M.t("jsonio.export")),
         h("button", { type: "button", onclick: copy }, M.t("jsonio.copy"))),
       io.el);

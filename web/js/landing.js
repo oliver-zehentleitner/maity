@@ -141,7 +141,7 @@ window.Maity = window.Maity || {};
       if (!obj[x.key] && x.optional) {
         const add = h("button", { type: "button", class: "small" }, "Add " + x.label.replace(/ \(optional\)$/, "").toLowerCase());
         add.addEventListener("click", () => { obj[x.key] = { label: "", href: "" }; redraw(); });
-        return h("div", { class: "lp-field" }, h("span", { class: "lp-label" }, x.label), add, error);
+        return h("div", { class: "lp-field field-stack" }, h("span", { class: "lp-label" }, x.label), add, error);
       }
       const cta = obj[x.key];
       const label = h("input", Object.assign({ id: id + "-label", maxlength: "40" }, described));
@@ -155,13 +155,13 @@ window.Maity = window.Maity || {};
       errors[path + ".label"] = error;
       const remove = x.optional ? h("button", { type: "button", class: "small" }, "Remove") : null;
       if (remove) remove.addEventListener("click", () => { delete obj[x.key]; redraw(); });
-      return h("fieldset", { class: "lp-field lp-cta" }, h("legend", null, x.label),
+      return h("fieldset", { class: "lp-field field-stack lp-cta" }, h("legend", null, x.label),
         h("label", { for: id + "-label" }, "Label"), label, error,
         h("label", { for: id + "-href" }, "Link"), href, hrefError, remove);
     }
     if (x.kind === "stats") {
       const chosen = obj[x.key] = obj[x.key] || [];
-      return h("fieldset", { class: "lp-field lp-stats" }, h("legend", null, x.label),
+      return h("fieldset", { class: "lp-field field-stack lp-stats" }, h("legend", null, x.label),
         STATS.map(([k, l]) => {
           const box = h("input", { type: "checkbox", id: id + "-" + k });
           box.checked = chosen.includes(k);
@@ -178,30 +178,30 @@ window.Maity = window.Maity || {};
       input = h("select", Object.assign({ id }, described), x.choices.map(([v, l]) => h("option", { value: v }, l)));
       input.value = obj[x.key] || x.choices[0][0];
       input.addEventListener("change", () => { obj[x.key] = input.value; });
-      return h("div", { class: "lp-field" }, h("label", { for: id }, x.label), input, error);
+      return h("div", { class: "lp-field field-stack" }, h("label", { for: id }, x.label), input, error);
     }
     if (x.kind === "group") {
       if (!obj[x.key]) {
         const add = h("button", { type: "button", class: "small" }, "Add " + x.label.replace(/ \(optional\)$/, "").toLowerCase());
         add.addEventListener("click", () => { obj[x.key] = freshOf(x.fields); redraw(); });
-        return h("div", { class: "lp-field" }, h("span", { class: "lp-label" }, x.label), add, error);
+        return h("div", { class: "lp-field field-stack" }, h("span", { class: "lp-label" }, x.label), add, error);
       }
       const remove = x.optional ? h("button", { type: "button", class: "small" }, "Remove") : null;
       if (remove) remove.addEventListener("click", () => { delete obj[x.key]; redraw(); });
-      return h("fieldset", { class: "lp-field lp-group" }, h("legend", null, x.label),
+      return h("fieldset", { class: "lp-field field-stack lp-group" }, h("legend", null, x.label),
         x.fields.map((y) => control(y, obj[x.key], path + "." + y.key, errors, redraw)), remove, error);
     }
     if (x.kind === "href") {
       input = h("input", Object.assign({ id, placeholder: "/register or https://…" }, described));
       input.value = obj[x.key] || "";
       input.addEventListener("input", () => { obj[x.key] = input.value.trim(); });
-      return h("div", { class: "lp-field" }, h("label", { for: id }, x.label), input, error);
+      return h("div", { class: "lp-field field-stack" }, h("label", { for: id }, x.label), input, error);
     }
     if (x.kind === "lines") {
       input = h("textarea", Object.assign({ id, rows: String(Math.max(2, x.max)) }, described));
       input.value = (obj[x.key] || []).join("\n");
       input.addEventListener("input", () => { obj[x.key] = input.value.split("\n").map((s) => s.trim()).filter(Boolean); });
-      return h("div", { class: "lp-field" }, h("label", { for: id }, x.label + " (at most " + x.max + ")"), input, error);
+      return h("div", { class: "lp-field field-stack" }, h("label", { for: id }, x.label + " (at most " + x.max + ")"), input, error);
     }
     input = x.kind === "text"
       ? h("input", Object.assign({ id, maxlength: String(x.max) }, described))
@@ -211,7 +211,7 @@ window.Maity = window.Maity || {};
       if (x.optional && !input.value) delete obj[x.key];
       else obj[x.key] = input.value;
     });
-    return h("div", { class: "lp-field" }, h("label", { for: id }, x.label), input,
+    return h("div", { class: "lp-field field-stack" }, h("label", { for: id }, x.label), input,
       x.kind === "md" ? h("p", { class: "hint" }, "Headings, paragraphs, emphasis, lists, quotes, fenced code and links (https, or a path like /register); no images, no HTML. "
         + limitWords(x.max).replace(/^at/, "At") + ".")
         : x.kind === "long" ? h("p", { class: "hint" }, limitWords(x.max).replace(/^at/, "At") + ".") : null,
@@ -505,7 +505,7 @@ window.Maity = window.Maity || {};
         status.done();
         append(status.el, h("span", { class: "ok" }, M.t("landing.json.loaded")));
       }
-      return h("details", { class: "lp-json" }, h("summary", null, M.t("landing.json.title")),
+      return h("details", { class: "lp-json field-stack" }, h("summary", null, M.t("landing.json.title")),
         h("p", { class: "hint", id: "lp-json-hint" }, M.t("landing.json.hint")),
         h("label", { for: "lp-json" }, M.t("landing.json.label")), area,
         h("div", { class: "inline-form" }, h("label", { for: "lp-json-file" }, M.t("landing.json.file")), file),

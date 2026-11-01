@@ -31,23 +31,24 @@ window.Maity = window.Maity || {};
     { route: "members", get label() { return M.t("nav.members"); }, watch: /^(member_|session_|credential_)/, get changed() { return M.t("nav.members.changed"); } },
     // The Team page's Organisation tab (js/org.js); its tab in the row is Members'.
     { route: "organisation", get label() { return M.t("nav.organisation"); }, tab: false, current: "members" },
+    // One's own agents in the project (js/agents-page.js), the component of
+    // /agents; right after Members (the maintainer, 2026-10-31; before Why since 2026-10-29).
+    { route: "agents", view: "projectAgents", get label() { return M.t("nav.agents"); }, when: (ctx) => ctx.me.kind === "human", watch: /^(member_|credential_)/, get changed() { return M.t("nav.agents.changed"); } },
     { route: "chat", get label() { return M.t("nav.chat"); } },
     // Redrawn in place from the feed (js/messages.js).
     { route: "messages", get label() { return M.t("nav.messages"); } },
     // The change feed (js/ticker.js); new items from the feed, in place.
     { route: "ticker", get label() { return M.t("nav.ticker"); } },
-    // The jour fixe (js/jour-fixe.js, §20): its rounds, one round at jour-fixe/<id>.
-    { route: "jour-fixe", view: "jourFixe", get label() { return M.t("nav.jour_fixe"); } },
     // No tab: opened from the Chat tab, the Messages view and a chat (js/project-message.js).
     { route: "message", get label() { return M.t("nav.message"); }, tab: false },
-    // One's own agents in the project (js/agents-page.js), the component of
-    // /agents; before Runners and Why (the maintainer, 2026-10-29).
-    { route: "agents", view: "projectAgents", get label() { return M.t("nav.agents"); }, when: (ctx) => ctx.me.kind === "human", watch: /^(member_|credential_)/, get changed() { return M.t("nav.agents.changed"); } },
     // The account-level view is views.runners; this one is the project's,
     // linked from the project's Settings, no tab of its own (the maintainer, 2026-10-31).
     { route: "runners", view: "projectRunners", get label() { return M.t("nav.runners"); }, tab: false, current: "settings", section: "runners", admin: true, watch: /^runner_/, get changed() { return M.t("nav.runners.changed"); } },
     // Where the hub knows the Keep the Why export (docs/api.md §6.1, §11.3).
     { route: "why", get label() { return M.t("nav.why"); } },
+    // The jour fixe (js/jour-fixe.js, §20): its rounds, one round at jour-fixe/<id>;
+    // between Why and Settings (the maintainer, 2026-10-31).
+    { route: "jour-fixe", view: "jourFixe", get label() { return M.t("nav.jour_fixe"); } },
     // The project's own settings, its last tab (the maintainer's request,
     // 2026-10-25); a save stays here.
     // One view with two tabs (§16.11): the project's for its admins, one's
@@ -126,8 +127,9 @@ window.Maity = window.Maity || {};
     if (parts[0] === "agents") return { scope: "agents", args: parts.slice(1) };
     if (parts[0] === "observe" && parts[2]) return { scope: "observe", slug: parts[1] + "/" + parts[2], args: parts.slice(3) };
     if (parts[0] === "admin" && !parts[1]) return { scope: "instance-admin" };
-    // The two sections a notification links into (§18.2): Registration, and Reports with one report opened.
-    if (parts[0] === "admin" && (parts[1] === "registration" && !parts[2] || parts[1] === "reports" && !parts[3])) {
+    // The two sections a notification links into (§18.2): Registration, and Reports with one report opened;
+    // and Import or export everything, at /admin/site (tsk-xw8a2hd84x3a).
+    if (parts[0] === "admin" && ((parts[1] === "registration" || parts[1] === "site") && !parts[2] || parts[1] === "reports" && !parts[3])) {
       return { scope: "instance-admin", section: parts[1], args: parts.slice(2) };
     }
     if (parts[1] && !OWN_WORDS.includes(parts[0])) {
@@ -647,8 +649,8 @@ window.Maity = window.Maity || {};
     const names = M.projectNames && M.projectNames.section(ctx);
     if (names) append(panel, names);
     if (M.projectSetup) append(panel, memoryPanel(ctx, save, humanAdmin));
-    // Humans only, as every policy field (§2.3 ʰ).
-    if (humanAdmin) append(panel, badgeForm(ctx, save), keepTheWhyForm(ctx, save));
+    // Humans only, as every policy field (§2.3 ʰ); the commitment above the badge (the maintainer, 2026-11-01).
+    if (humanAdmin) append(panel, keepTheWhyForm(ctx, save), badgeForm(ctx, save));
     // The jour fixe's series and their moderators (§20.1, §20.2), kept by humans.
     if (humanAdmin && M.jourFixeSeries) append(panel, M.jourFixeSeries.settingsPart(ctx));
     // The change ticker (§17.3), read by every member, changed by a human

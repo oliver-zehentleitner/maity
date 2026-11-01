@@ -3372,6 +3372,173 @@ window.MAITY_FIXTURES = {
         "to": "hum-maintainer",
         "tried": "",
         "while_open": "proceed_provisionally"
+      },
+      {
+        "answer": null,
+        "answered_at": null,
+        "asked_by": {
+          "display_name": "Agent C",
+          "member_id": "agt-c",
+          "role": "coder",
+          "session_id": null,
+          "trust": "member"
+        },
+        "class": "info",
+        "created_at": "2026-10-21T11:45:00Z",
+        "id": "req-0013",
+        "ktw_ref": null,
+        "needs_in_session": null,
+        "on_behalf_of": null,
+        "options": [],
+        "priority": "low",
+        "replies": [],
+        "status": "open",
+        "summary": "Nobody here knows; the answer is a fact only the maintainer has.",
+        "task": null,
+        "task_id": null,
+        "title": "Which Python version does the runner image pin?",
+        "to": "hum-maintainer",
+        "tried": "",
+        "while_open": "proceed_provisionally"
+      },
+      {
+        "answer": null,
+        "answered_at": null,
+        "asked_by": {
+          "display_name": "Agent Z",
+          "member_id": "agt-z",
+          "role": "coder",
+          "session_id": null,
+          "trust": "member"
+        },
+        "class": "decision",
+        "created_at": "2026-10-21T11:50:00Z",
+        "id": "req-0014",
+        "ktw_ref": null,
+        "needs_in_session": null,
+        "on_behalf_of": null,
+        "options": [
+          {
+            "id": "yes",
+            "label": "Yes"
+          },
+          {
+            "id": "no",
+            "label": "No"
+          }
+        ],
+        "priority": "low",
+        "replies": [
+          {
+            "id": "yes",
+            "label": "Yes"
+          },
+          {
+            "id": "no",
+            "label": "No"
+          }
+        ],
+        "status": "open",
+        "summary": "",
+        "task": null,
+        "task_id": null,
+        "title": "Foreign agent: may it reuse the logo?",
+        "to": "hum-maintainer",
+        "tried": "",
+        "while_open": "proceed_provisionally"
+      },
+      {
+        "answer": null,
+        "answered_at": null,
+        "asked_by": {
+          "display_name": "Anna",
+          "member_id": "hum-anna",
+          "role": null,
+          "session_id": null,
+          "trust": "member"
+        },
+        "class": "decision",
+        "created_at": "2026-10-21T11:51:00Z",
+        "id": "req-0015",
+        "ktw_ref": null,
+        "needs_in_session": null,
+        "on_behalf_of": null,
+        "options": [
+          {
+            "id": "yes",
+            "label": "Yes"
+          },
+          {
+            "id": "no",
+            "label": "No"
+          }
+        ],
+        "priority": "low",
+        "replies": [
+          {
+            "id": "yes",
+            "label": "Yes"
+          },
+          {
+            "id": "no",
+            "label": "No"
+          }
+        ],
+        "status": "open",
+        "summary": "",
+        "task": null,
+        "task_id": null,
+        "title": "Human asker: lunch at noon?",
+        "to": "hum-maintainer",
+        "tried": "",
+        "while_open": "proceed_provisionally"
+      },
+      {
+        "answer": null,
+        "answered_at": null,
+        "asked_by": {
+          "display_name": "Agent C",
+          "member_id": "agt-c",
+          "role": "coder",
+          "session_id": null,
+          "trust": "member"
+        },
+        "class": "decision",
+        "created_at": "2026-10-21T11:52:00Z",
+        "filed_by": "hub",
+        "id": "req-0016",
+        "ktw_ref": null,
+        "needs_in_session": null,
+        "on_behalf_of": null,
+        "options": [
+          {
+            "id": "yes",
+            "label": "Yes"
+          },
+          {
+            "id": "no",
+            "label": "No"
+          }
+        ],
+        "priority": "low",
+        "replies": [
+          {
+            "id": "yes",
+            "label": "Yes"
+          },
+          {
+            "id": "no",
+            "label": "No"
+          }
+        ],
+        "status": "open",
+        "summary": "",
+        "task": null,
+        "task_id": null,
+        "title": "Hub-filed: confirm the commitment?",
+        "to": "hum-maintainer",
+        "tried": "",
+        "while_open": "proceed_provisionally"
       }
     ],
     "next_cursor": null
@@ -4814,7 +4981,7 @@ window.MAITY_FIXTURES = {
       {
         "full_name": "maintainer/maity",
         "name": "Maity",
-        "open_requests": 3,
+        "open_requests": 7,
         "role": "coder",
         "slug": "maity",
         "state": "build",

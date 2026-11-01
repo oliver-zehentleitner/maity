@@ -359,6 +359,8 @@ window.Maity = window.Maity || {};
     const focusables = new Map();
     const keyed = (key, el) => { focusables.set(key, el); el.setAttribute("data-focus", key); return el; };
     const edits = new Map(), open = new Set();
+    // The rows whose card is open; the one asked for (agents/<id>, its rulebook) opens.
+    const cardsOpen = new Set(wanted ? [wanted] : []);
     let items = ctx.members, profiles = [], views = {}, words = null, unread = null;
     async function readProfiles() {
       profiles = (await M.api.getAll("/agents")).items.filter((a) => a.owner_id === ctx.me.id && !a.deleted_at);
@@ -378,7 +380,9 @@ window.Maity = window.Maity || {};
       const again = key && focusables.get(key);
       if (again) again.focus();
     }
-    const P = M.memberParts(ctx, { status, keyed, edits, open, reload, redraw });
+    // A revocation in an open card reads the members again, so the row's instance count follows (review of #952).
+    const P = M.memberParts(ctx, { status, keyed, edits, open, reload, redraw,
+      revoked: () => reload().then(() => redraw(), (err) => status.fail(M.t("agents.project.reread_failed"), err)) });
     const memberOf = (a) => items.find((m) => m.id === a.id && !m.removed_at);
     // A profile's own save (name, picture, deletion): read again, said once.
     const changed = (answer, said) => reload().then(() => { words = said; redraw(); }, (err) => status.fail(M.t("agents.project.reread_failed"), err));
@@ -405,11 +409,35 @@ window.Maity = window.Maity || {};
       if (words) append(note, h("p", { class: "ok", role: "status" }, words));
       words = null;
       const list = profiles.filter(memberOf);
+      // As Your agents, limited to this project (the maintainer's card tsk-05meme59sq1x): one row
+      // per agent of one's own here, Manage opening its card and what belongs to its membership here.
+      const rows = list.map((a) => {
+        const m = memberOf(a);
+        const rowId = "agent-here-" + a.id;
+        const isOpen = cardsOpen.has(a.id);
+        const manage = keyed("card:" + a.id, h("button", { type: "button", class: "small agent-manage", "aria-expanded": String(isOpen),
+          "aria-controls": isOpen ? rowId : null, "aria-label": M.t("agents.list.manage_label", { name: a.display_name }),
+          onclick: () => { if (cardsOpen.has(a.id)) cardsOpen.delete(a.id); else cardsOpen.add(a.id); redraw("card:" + a.id); } }, M.t("agents.list.manage")));
+        const active = (m.instances || []).filter((i) => !i.revoked_at).length;
+        const head = h("tr", { class: "agent-row" + (wanted === a.id ? " wanted" : ""), "data-agent": a.id },
+          h("th", { scope: "row" }, M.avatar(a, 24), " ", h("span", { class: "agent-row-name" }, a.display_name), h("span", { class: "muted" }, " @" + (a.name || a.handle))),
+          h("td", { "data-label": M.t("members.col.role") }, M.trust.words(m)),
+          h("td", { "data-label": M.t("agents.list.presence") }, M.presenceNodes(m, ctx.canAdmin)),
+          h("td", { "data-label": M.t("agents.list.instances") }, M.t("agents.list.instances_count", { count: active })),
+          h("td", { class: "agent-actions" }, manage));
+        return isOpen ? [head, h("tr", { class: "agent-manage", id: rowId }, h("td", { colspan: "5" },
+          h("ul", { class: "agent-cards" }, profileCard(ctx, a, { wanted, views, changed, here: here(m) }))))] : [head];
+      });
       // Profiles not read are no "none": the failure is said where the cards go.
       append(clear(cards), unread
         ? h("p", { class: "send-status failed" }, M.t("agents.project.read_failed", { reason: unread.message }))
         : list.length
-          ? h("ul", { class: "agent-cards" }, list.map((a) => profileCard(ctx, a, { wanted, views, changed, here: here(memberOf(a)) })))
+          ? h("div", { class: "table-wrap", tabindex: "0", role: "region", "aria-labelledby": "project-agents-heading" },
+            h("table", { class: "members agents-list" },
+              h("thead", null, h("tr", null, h("th", { scope: "col" }, M.t("agents.list.name")), h("th", { scope: "col" }, M.t("members.col.role")),
+                h("th", { scope: "col" }, M.t("agents.list.presence")), h("th", { scope: "col" }, M.t("agents.list.instances")),
+                h("th", { scope: "col" }, M.t("agents.list.actions")))),
+              h("tbody", null, rows.flat())))
           : h("p", { class: "muted" }, J || mayAdd ? M.t("agents.project.none_add") : M.t("agents.project.none")));
       drawJoins();
     }

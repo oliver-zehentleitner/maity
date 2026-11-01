@@ -306,9 +306,10 @@ agent picks its answer up with its next resume; then each agent waits
 wakes. It exits 0 only when all of that worked.
 
 CI (`.github/workflows/ci.yml`) runs `make check` on SQLite, the test
-suite on PostgreSQL 17 and MariaDB 11.4 and against the built wheel on
-Python 3.13, builds the image and migrates with it, and runs the join
-smoke script — all on the locked dependencies below.
+suite on PostgreSQL 17 and against the built wheel on Python 3.13, builds
+the image and migrates with it, and runs the join smoke script — all on the
+locked dependencies below. The suite on MariaDB 11.4 runs hourly on main
+(`.github/workflows/hub-mariadb.yml`), not per pull request.
 
 ### Dependencies
 

@@ -41,6 +41,8 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("account_registration", "human_id"): True,  # no foreign key on purpose (tables.py)
     ("attachment", "deleted_by"): True,
     ("avatar_image", "owner_id"): True,
+    ("bridge", "created_by"): True,  # the human who asked for the connection
+    ("bridge", "ended_by"): True,  # who ended it, a human's or an agent's principal id
     ("conversation_participant", "added_by"): True,
     ("conversation_participant", "removed_by"): True,
     ("credential", "ktw_acknowledge_by"): False,  # a deadline
@@ -101,6 +103,7 @@ DELETION_KEEPS = {
     "abuse_report": "the instance's moderation record; its copy is emptied 90 days after the "
     "report closes, a deleted author's included (§16.8)",
     "attachment": f"who deleted an attachment: {_RECORD}",
+    "bridge": f"who asked for or ended a connection: {_RECORD}; a removed agent's end with it",
     "conversation_participant": f"who added or removed a participant: {_RECORD}",
     "credential": f"who paused or revoked an agent's credential: {_RECORD}",
     "event": "the log stays as written; a deleted person is shaped at read time (§2.9)",
@@ -146,6 +149,7 @@ EXPORT_LEAVES_OUT = {
     "account_record": _UNLISTED,
     "account_registration": _UNLISTED,
     "attachment": f"names a person only as who deleted it; {_UNLISTED}",
+    "bridge": f"names a person only as who asked for or ended a connection; {_UNLISTED}",
     "conversation_participant": f"names a person only as who added or removed; {_UNLISTED}",
     "credential": _SECRET,
     "device_code": _SECRET,
