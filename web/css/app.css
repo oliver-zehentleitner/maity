@@ -1294,6 +1294,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .sparkline { display: block; color: var(--accent); }
 .sparkline .spark-line { stroke: currentColor; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .sparkline .spark-dot { fill: currentColor; }
+.sparkline .spark-unknown { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 3; }
 .stat-days .table-scroll { overflow-x: auto; }
 .stat-days table { border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
 .stat-days th, .stat-days td { padding: 2px 8px 2px 0; text-align: right; white-space: nowrap; }

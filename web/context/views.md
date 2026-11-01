@@ -1080,6 +1080,9 @@ reviews the figure is the sum of the days; for humans and agent
 instances active it is the highest day ("up to N a day"). The days are
 also a folded table, which is what a screen reader reads; the lines are
 inline SVG drawn by the page.
+Days the hub cannot know (reviews before it kept card history) are a dashed
+line at the foot of the row, so every row spans the same width without
+drawing an unknown day as a solid zero.
 
 **Reason:** the hub counts a person active once per day, so adding the
 days would count the same person thirty times and look like growth that
