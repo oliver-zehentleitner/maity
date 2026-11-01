@@ -460,7 +460,9 @@ def _event(
     if event.get("redacted"):
         return [head + " (redacted by an admin; its text is gone)"]
     payload = _dict(event.get("payload"))
-    head += f" ({inline(payload.get('type'))}, to {_name(payload.get('to'), names)})"
+    # an `update` may have no recipient: it goes to the card's watchers (§6.4)
+    to = "" if payload.get("to") is None else f", to {_name(payload.get('to'), names)}"
+    head += f" ({inline(payload.get('type'))}{to})"
     after = seq - 1 if isinstance(seq, int) else "<seq - 1>"
     pointer = f"`maity api GET /projects/{slug}/events --query after={after} --query limit=1`"
     body = _capped(payload.get("body") or "", pointer, compact)
