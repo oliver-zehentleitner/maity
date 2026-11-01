@@ -7355,11 +7355,32 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     current = act({ status: "answered", answered_at: "2026-11-01T10:00:00Z", answer: { reply_id: "go", by: "hum-maintainer", at: "2026-11-01T10:00:00Z" }, action: Object.assign(act().action, { used_at: "2026-11-01T11:00:00Z", used_seq: 9 }) });
     await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox/req-act"); for (let k = 0; k < 8; k++) await tick();
     expect(/Used /.test(text(call())), "action: a used go says when");
-    current = act();
+    // What the proxy wrote cannot hide from the owner: a body that parsing changes, invisible characters.
+    const again = async () => { await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox/req-act"); for (let k = 0; k < 8; k++) await tick(); };
+    const warns = () => main.querySelectorAll(".request-action-warning").map((p) => text(p)).join(" | ");
+    current = act({ action: Object.assign(act().action, { body: '{"n":9007199254740993}' }) });
+    await again();
+    expect(/differs/.test(warns()) && call().querySelector("details").getAttribute("open") !== null && text(pres()[1]).includes("9007199254740993"), "action: a rounded number is said, and the text as sent is open " + warns());
+    current = act({ action: Object.assign(act().action, { body: '{ "a": 1,\n  "b": "x y" }' }) });
+    await again();
+    expect(warns() === "", "action: white space alone is no difference " + warns());
+    current = act({ action: Object.assign(act().action, { path: "/projects/a\u202eb", query: "", body: '{"a":"x\u200by"}' }) });
+    await again();
+    expect(/cannot normally see/.test(warns()) && text(call()).includes("[U+202E]") && text(pres()[0]).includes("[U+200B]") && !text(call()).includes("\u202e") && /\(empty\)/.test(text(call())), "action: invisible characters are named, in the path too; an empty query shows " + text(call()));
+    current = act({ action: Object.assign(act().action, { body: '{"a":"x\\u202ey"}' }) });
+    await again();
+    expect(/cannot normally see/.test(warns()) && /differs/.test(warns()) && text(pres()[0]).includes("[U+202E]") && text(pres()[1]).includes("\\u202e"), "action: one sent as an escape warns too, and the text as sent keeps the escape " + warns());
+    current = act({ action: Object.assign(act().action, { path: "/a\u00a0b\u3164c\u2800d e" }) });
+    await again();
+    expect(["[U+00A0]", "[U+3164]", "[U+2800]"].every((m) => text(call()).includes(m)) && text(call()).includes("d e"), "action: a space that is none, a filler and a blank cell are named, a plain space is not " + text(call()));
+    // Asked by the reader's own agent: Talk for the owner; the hub refuses it to anyone else (action_needs_owner).
+    current = act({ asked_by: { kind: "agent", member_id: "agt-a", display_name: "Own" } });
+    await again();
+    expect(buttons().includes("Talk"), "action: the owner may talk to their own proxy " + JSON.stringify(buttons()));
     const owner = win.Maity.trust.owner;
     win.Maity.trust.owner = () => false;
     await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox/req-act"); for (let k = 0; k < 8; k++) await tick();
-    expect(call() && buttons().length === 0 && /Only the project's owner/.test(text(main)), "action: one who is no owner sees the call and no buttons");
+    expect(call() && !buttons().includes("Go") && !buttons().includes("No") && !buttons().includes("Talk") && buttons().includes("Later") && /Only the project's owner/.test(text(main)), "action: one who is no owner sees the call and only Later " + JSON.stringify(buttons()));
     win.Maity.trust.owner = owner;
     win.Maity.api.getAll = getAll; win.Maity.api.post = post;
   }
