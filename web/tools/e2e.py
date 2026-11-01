@@ -2245,7 +2245,13 @@ def public_page_step(run: Run, page: Page) -> None:
     form = page.locator("form.public-page-form")
     form.locator("#public-about").fill("")
     form.locator("#public-page").set_checked(was_on)
-    form.get_by_role("button", name="Save", exact=True).click()
+    # "Saved" still stands from the first save, and the emptied field reads empty before anything
+    # is sent: only the hub's answer says this one arrived.
+    with page.expect_response(lambda r: r.request.method == "PATCH" and r.url.endswith("/projects/owner/e2e-alpha")) as saved:
+        form.get_by_role("button", name="Save", exact=True).click()
+    assert saved.value.ok, saved.value.status
+    read = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha").json()
+    assert read["public_about"] is None and read["public_page"] == ("on" if was_on else "off"), read
     expect(page.locator("form.public-page-form #public-about")).to_have_value("")
     expect(page.locator("#public-page")).to_be_checked(checked=was_on)
     page.goto(f"{run.base}/account")
@@ -2259,7 +2265,9 @@ def public_page_step(run: Run, page: Page) -> None:
     assert member["public_profile"] is True and member["public_bio"] == "Builds things in e2e.", member
     profile.locator("#public-profile").uncheck()
     profile.locator("#public-bio").fill("")
-    profile.get_by_role("button", name="Save", exact=True).click()
+    with page.expect_response(lambda r: r.request.method == "PATCH" and r.url.endswith("/api/v1/me")) as saved:
+        profile.get_by_role("button", name="Save", exact=True).click()
+    assert saved.value.ok, saved.value.status
     expect(profile.locator("#public-bio")).to_have_value("")
     member = page.request.get(f"{run.base}/api/v1/me").json()["member"]
     assert member["public_profile"] is False and member["public_bio"] is None, member
