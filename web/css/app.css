@@ -1353,6 +1353,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .device-stage { max-width: 36rem; }
 .device-code-text { font-family: var(--mono); font-size: 2rem; font-weight: 700; letter-spacing: 0.08em; margin: 8px 0; }
 /* Dark on light in either theme: that is what scanners read. */
+.security-setup { display: grid; gap: 8px; justify-items: start; max-width: 28rem; }
+.security-key { overflow-wrap: anywhere; }
+.security-code-list { list-style: none; margin: 8px 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: 4px 16px; }
 .qr-box { display: inline-block; background: #ffffff; padding: 8px; border-radius: 8px; line-height: 0; }
 .qr .qr-light { fill: #ffffff; }
 .qr .qr-dark { fill: #000000; }

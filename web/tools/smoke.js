@@ -4205,13 +4205,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   pb.click(); await tick();
   const pMenu = header.querySelector(".profile-menu").parentNode.querySelector("ul.menu");
   const pItems = pMenu.querySelectorAll(".menu-item").map((el) => text(el));
-  expect(!pMenu.hidden && pb.attrs["aria-expanded"] === "true" && JSON.stringify(pItems) === JSON.stringify(["Profile", "Picture", "Preferences", "Theme", "Organisations", "Sign in another device", "Change password", "Linked accounts · later", "Sign out"])
+  expect(!pMenu.hidden && pb.attrs["aria-expanded"] === "true" && JSON.stringify(pItems) === JSON.stringify(["Profile", "Picture", "Preferences", "Theme", "Security", "Organisations", "Sign in another device", "Change password", "Linked accounts · later", "Sign out"])
     && document.activeElement === pMenu.querySelectorAll(".menu-item")[0], "header: the profile menu opens with its items, the first focused");
   pMenu.dispatch("keydown", { key: "ArrowDown" });
   expect(document.activeElement === pMenu.querySelectorAll(".menu-item")[1] && pMenu.querySelectorAll(".menu-item")[1].getAttribute("href") === "#/account/picture",
     "header: arrows move through the items; Picture goes to the account's picture");
-  for (let k = 0; k < 6; k++) pMenu.dispatch("keydown", { key: "ArrowDown" });
-  expect(pMenu.querySelectorAll(".menu-item")[7].attrs["aria-disabled"] === "true" && document.activeElement === pMenu.querySelectorAll(".menu-item")[7],
+  for (let k = 0; k < 7; k++) pMenu.dispatch("keydown", { key: "ArrowDown" });
+  expect(pMenu.querySelectorAll(".menu-item")[8].attrs["aria-disabled"] === "true" && document.activeElement === pMenu.querySelectorAll(".menu-item")[8],
     "header: one still to come is disabled and still reached");
   pMenu.dispatch("keydown", { key: "End" });
   expect(text(document.activeElement) === "Sign out", "header: End goes to the last item");
@@ -4417,6 +4417,56 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(ydProofs[0]) === JSON.stringify(["/auth/second-factor/verify", { code: "482913" }]), "your data: a code typed with a space goes as a code");
   if (ydForm()) { btn(ydForm(), "Cancel").click(); for (let k = 0; k < 4; k++) await tick(); }
   win.Maity.api.get = ydGet; win.Maity.api.post = ydPost; win.Maity.yourData.save = ydSave;
+  // Two-factor sign-in on the account (§2.8.1, §2.8.7): off, set up with QR and key, the codes once, new codes, off again.
+  const secBox = () => main.querySelector("section.security");
+  const secBtn = (name) => secBox().querySelectorAll("button").find((x) => x.textContent === name);
+  const secPass = async () => { for (let k = 0; k < 8; k++) await tick(); };
+  await win.Maity.api.del("/auth/second-factor");
+  await go("#/account/security"); await secPass();
+  expect(secBox() && text(secBox()).includes("Off.") && secBtn("Set up two-factor sign-in"), "security: off, and the setup is offered");
+  const secSaved = [];
+  const secSave = win.Maity.yourData.save;
+  win.Maity.yourData.save = (name, words, type) => { secSaved.push([name, words, type]); };
+  secBtn("Set up two-factor sign-in").click(); await secPass();
+  expect(secBox().querySelector(".qr-box svg") && text(secBox()).includes("JBSWY3DPEHPK3PXP"), "security: the QR and the key to type");
+  byId("security-code").value = "000000";
+  secBox().querySelector("form.security-setup").dispatch("submit"); await secPass();
+  expect(text(secBox()).includes("That code is not valid.") && byId("security-code"), "security: a wrong code is said, the setup stays");
+  byId("security-code").value = "123 456";
+  secBox().querySelector("form.security-setup").dispatch("submit"); await secPass();
+  expect(secBox().querySelectorAll(".security-code-list li").length === 10 && !byId("security-code"), "security: ten recovery codes, shown once");
+  secBtn("Download").click();
+  expect(secSaved.length === 1 && secSaved[0][0] === "maity-recovery-codes.txt" && secSaved[0][1].includes("abcde-fghi0") && secSaved[0][2] === "text/plain", "security: the codes download as text");
+  secBtn("I have saved them").click(); await secPass();
+  expect(text(secBox()).includes("Two-factor sign-in is on.") && text(secBox()).includes("8 recovery codes left") && !secBox().querySelector(".security-code-list"), "security: on, and the codes are gone from the page");
+  secBtn("New recovery codes").click(); await secPass();
+  expect(secBox().querySelectorAll(".security-code-list li").length === 10 && text(secBox()).includes("klmno-pqrs0"), "security: new codes, shown once");
+  secBtn("I have saved them").click(); await secPass();
+  secBtn("Turn off").click(); await secPass();
+  expect(text(secBox()).includes("Two-factor sign-in is off.") && secBtn("Set up two-factor sign-in"), "security: turned off, and said");
+  // Where the hub has no instance key, the section says so and offers nothing.
+  const secGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/auth/second-factor" ? Promise.reject(new win.Maity.api.ApiError("x", 409, p, "secret_key_missing")) : secGet(p));
+  await go("#/account"); await secPass();
+  expect(text(secBox()).includes("no instance key") && !secBtn("Set up two-factor sign-in"), "security: no instance key, nothing offered");
+  win.Maity.api.get = secGet; win.Maity.yourData.save = secSave;
+  // A required factor has no Turn off, and the hub's refusal is said in words.
+  win.Maity.api.get = (p) => (p === "/auth/second-factor" ? Promise.resolve({ enrolled: true, enrolled_at: "2026-10-20T09:00:00Z", recovery_codes_left: 3, last_used_at: null, required: true, via: "totp" }) : secGet(p));
+  await go("#/account/security"); await secPass();
+  expect(secBtn("New recovery codes") && !secBtn("Turn off"), "security: a required factor cannot be turned off here");
+  win.Maity.api.get = secGet;
+  await win.Maity.api.post("/auth/second-factor/totp/confirm", { code: "123456" });
+  // A session in enrolment_required (§2.8.5): the setup is its one page, then the dashboard.
+  const enrolDone = [];
+  const enrolMain = main;
+  win.Maity.security.enrolPage(enrolMain, (next) => enrolDone.push(next), () => enrolDone.push("signed out"));
+  expect(enrolMain.querySelector(".security-enrol") && enrolMain.querySelectorAll("button").some((x) => x.textContent === "Set up two-factor sign-in"), "enrolment: the setup is the page");
+  enrolMain.querySelectorAll("button").find((x) => x.textContent === "Set up two-factor sign-in").click(); await secPass();
+  byId("security-code").value = "123456";
+  enrolMain.querySelector("form.security-setup").dispatch("submit"); await secPass();
+  enrolMain.querySelectorAll("button").find((x) => x.textContent === "I have saved them").click();
+  expect(enrolDone.join() === "/", "enrolment: the codes saved, the dashboard next");
+  await go("#/account");
   // The second step of a sign-in (§2.8.2, §2.8.8, tsk-ekpb0pvgw4bh): a session that owes the factor gets the step and nothing else.
   {
     const sfGet = win.Maity.api.get, sfPost = win.Maity.api.post;

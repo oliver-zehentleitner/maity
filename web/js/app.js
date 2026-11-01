@@ -369,6 +369,10 @@ window.Maity = window.Maity || {};
     };
     M.secondFactor.page(main, session, done, logout);
   }
+  function renderEnrolment(main) {
+    append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(false), themeMenu()));
+    M.security.enrolPage(main, () => M.route.go("/", { replace: true }), logout);
+  }
   function renderStepElsewhere(main, signedIn) {
     append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(false), themeMenu()));
     M.secondFactor.elsewhere(main, signedIn);
@@ -1367,6 +1371,7 @@ window.Maity = window.Maity || {};
         { label: M.t("menu.picture"), href: "/account/picture" },
         { label: M.t("menu.preferences"), href: "/account/preferences" },
         { label: M.t("menu.theme"), href: "/account/theme" },
+        ctx.me.kind === "human" ? { label: M.t("menu.security"), href: "/account/security" } : null,
         ctx.me.kind === "human" ? { label: M.t("menu.orgs"), href: "/account/orgs", current: ctx.scope === "orgs" } : null,
         { label: M.t("menu.sign_in_device"), href: "/account/sign-in-device" },
         { label: M.t("menu.change_password"), href: "/account" },
@@ -1748,6 +1753,8 @@ window.Maity = window.Maity || {};
       if (sessionEnded) { sessionEnded = false; M.sessionEpoch = (M.sessionEpoch || 0) + 1; }
       // A session that owes the second factor reaches nothing else (§2.8.2): its step.
       if (session && session.second_factor === "required" && M.secondFactor) { renderStep(main, session); return; }
+      // So does one that must set the factor up first (§2.8.5): the setup is its page.
+      if (session && session.second_factor === "enrolment_required" && M.security) { renderEnrolment(main); return; }
       // The link opened where the sign-in is already complete: nothing to post here.
       if (M.secondFactor && M.secondFactor.isMailLink()) { renderStepElsewhere(main, true); return; }
       // The step's own address (where a sign-in link's 303 lands) with the sign-in complete: the start.
