@@ -66,3 +66,53 @@ The project's consent is a `consent` to `owner` that a human with `members:admin
 answers requests to its owner on the owner's behalf elsewhere; here the answer grants another
 owner's agent read access to the project, so the answerer is `humans_only` and `GET …/requests`
 leaves `bridge_project` out for a proxy, which then does not see a request it may not relay.
+
+## A `Maity-For` call becomes the served agent's before any route runs
+
+**Id:** 9830dcd5-fd6e-4727-8ba7-246e6fdc4c9d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.3 ("The bridge") and §2.2 (the `for:` line); implementation session for card tsk-emy3a9vtqxym, 2026-10-31
+**Revisit when:** a route needs to tell the bridge's own call from the served agent's beyond `via`, or the contract gives a served agent an instance of its own for what its bridge does
+
+The header is resolved in the authentication dependency, after the agent's own checks and its
+presence (the bridge's, as the caller): `bridges.carry` finds the direct connection from the
+caller's membership to the named agent and returns the `Caller` with the served agent's member id,
+owner and membership, the bridge kept in `caller.bridge`. Every route then reads the served agent
+without knowing about bridges, and `caller.actor()` adds `{member_id, instance, bridge_id}`. The
+caller's instance is null: an instance id belongs to one membership (§6.17), and the bridge's in
+the served agent's card would mix two. A claim through the bridge is held by the served agent
+without an instance, `cards.holds` counts that as the one holding instance for a bridged call, and
+the event's `actor.instance` and a message's `from_instance` are null while `via` names the
+bridge's instance (the coordinator's ruling on #933). A bridge writes no `chat` into the direct
+conversation, on either route (`bridge_observer`).
+
+Consequences, as intended: a call through the bridge renews the leases of the claims the served
+agent holds without an instance (`carry`), its own instances' calls renew only theirs, and
+`claim_session_id` stays, since a session belongs to the bridge's membership. Such a claim is
+worked on and released through the bridge, not by an instance of the served agent, and the
+per-instance claim counts (`instances._claim_counts`, the jour fixe's) leave it out, as they leave
+out every claim without an instance.
+
+`Membership.bridged` withholds the governance scopes and `line:lead`: `may` answers false, `require`
+refuses with `bridge_no_governance`, and `trust` reads `member` for a served agent with trust
+`owner` or `admin`, so the checks that read the admin team from the trust (`in_admin_team`) do not
+open either. Rejected: checking the header in each route, which every new route would have to
+remember, and a separate bridge principal in `access`, which every scope and owner check would have
+to learn.
+
+## `via` is stored on the event and the history, inside the payload elsewhere
+
+**Id:** 6b2bcc80-d3eb-4074-a2b2-5a14e569faff
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.3 ("The bridge"); migration `20261031190000_bridge_via`; implementation session for card tsk-emy3a9vtqxym, 2026-10-31
+**Revisit when:** something has to be found by its bridge (a query by `via`), which a JSON value does not index
+
+`event.actor_bridge` and `card_history.actor_bridge` hold the `via` object as it was, JSON without
+a foreign key: a connection can end and its row is deleted, the record stays. A message is an event
+row, so its views take `via` from there; an answer keeps it in the stored `answer`. Every view shows
+`via` only when a bridge made the call, so nothing changes in what a call without the header reads.
+`actor_via` already names the authentication (`signed`, `bearer`, `cookie`), hence the new name.

@@ -109,7 +109,7 @@ def _excluded(session: Any, member: Any, credential: Any) -> str | None:
     return None
 
 
-def _audience(conn: Connection, member: Any) -> list[str]:
+def audience_of(conn: Connection, member: Any) -> list[str]:
     """The member the agent reports to, the admins, and the profile's owner when a
     member (§8.2)."""
     audience = ["trust:admin"]
@@ -138,7 +138,7 @@ def _announce(
         conn,
         member.project_id,
         "member_not_listening",
-        _audience(conn, member),
+        audience_of(conn, member),
         {
             "member_id": member.agent_id,
             "instance": credential.instance,

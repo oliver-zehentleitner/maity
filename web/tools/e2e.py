@@ -493,6 +493,7 @@ def create_project(run: Run, page: Page, name: str, slug: str) -> None:
     page.get_by_role("button", name="Create project", exact=True).click()
     expect(page).to_have_url(re.compile(rf"/{OWNER}/{slug}/agents$"))
     expect(page.locator("header .project")).to_have_text(name)
+    expect(page.locator(".project-created-page")).to_contain_text("This project is public")
 
 
 def join_line(
@@ -913,6 +914,7 @@ def scenario(run: Run, page: Page) -> None:
 
     why_step(run, page, alpha)
     runners_step(run, page)
+    agent_owners_step(run, page)
     isolate_step(run, page)
     memory_provider_step(run, page, alpha)
 
@@ -1231,6 +1233,23 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     run.shot(page, "chat-composer-3x")
     compose.locator(".compose-size").get_by_role("button", name="1×", exact=True).click()
     assert abs(field.bounding_box()["height"] - one) < 2
+    # The meat-proxy switch of this chat (§9.3, tsk-n872zkxmwbec): switched here, kept by the hub, given back to the profile.
+    meat = compose.locator("button.meat-chat-toggle")
+    follow = compose.get_by_role("button", name="Follow my profile", exact=True)
+    expect(meat).to_have_attribute("aria-pressed", "false")
+    expect(follow).to_be_hidden()
+    meat.click()
+    expect(meat).to_have_attribute("aria-pressed", "true")
+    expect(follow).to_be_visible()
+    convs = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/conversations").json()["items"]
+    entry = next(p for c in convs if (c.get("agent_id") or c["id"]) == agent_id for p in c["participants"] if p["kind"] == "human")
+    assert entry["meat_proxy"] is True and entry["meat_proxy_chat"] is True and entry.get("meat_proxy_note"), entry
+    follow.click()
+    expect(meat).to_have_attribute("aria-pressed", "false")
+    expect(follow).to_be_hidden()
+    convs = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/conversations").json()["items"]
+    entry = next(p for c in convs if (c.get("agent_id") or c["id"]) == agent_id for p in c["participants"] if p["kind"] == "human")
+    assert entry["meat_proxy_chat"] is None, entry
     no_problems(run, "chat")
 
     run.step("global chat: /chats has every project's chats and opens one in place")
@@ -2599,6 +2618,23 @@ def memory_provider_step(run: Run, page: Page, alpha: Path) -> None:
     no_problems(run, "memory provider")
 
 
+def agent_owners_step(run: Run, page: Page) -> None:
+    """Agents of owners who are not members (docs/api.md §6.1) on the real hub: the hub takes
+    the setting and the roles, and the form then reads them back, no longer offering unset."""
+    run.step("settings: a human admin sets who may keep an agent here, and the roles for outside agents")
+    page.goto(f"{run.base}/owner/e2e-alpha/settings")
+    form = page.locator("form.agent-owners-form")
+    form.locator("#agent-owners-select").select_option("anyone")
+    form.locator("#outside-role-writer").check()
+    form.locator("#agent-owners-reason").fill("e2e: outsiders may write")
+    form.get_by_role("button", name="Save").click()
+    form = page.locator("form.agent-owners-form")
+    expect(form.locator("#outside-role-writer")).to_be_checked()
+    expect(form.locator("#agent-owners-select")).to_have_value("anyone")
+    expect(form.locator("#agent-owners-select option[value='']")).to_have_count(0)
+    run.a11y(page, "settings, agents of owners who are not members")
+
+
 def isolate_step(run: Run, page: Page) -> None:
     """Isolation (docs/api.md §6.2) on the real hub. Last of the agent's steps: isolating
     releases its claims, which the steps before rely on, and lifting does not bring them back."""
@@ -2656,6 +2692,26 @@ def agents_page_step(run: Run, page: Page) -> None:
     expect(row).to_be_visible()
     row.get_by_role("button", name=re.compile(r"^Manage ")).click()
     expect(row.get_by_role("button", name=re.compile(r"^Manage "))).to_have_attribute("aria-expanded", "true")
+    inside = page.locator("tr.agent-manage").first
+    # Allowed projects (§6.3) on the real hub: a list saved, then any project again.
+    inside.locator("details.agent-settings summary").click()
+    allowed = inside.locator("form.agent-allowed")
+    allowed.get_by_label("Any project").uncheck()
+    allowed.get_by_role("button", name="Save the allowed projects").click()
+    expect(page.get_by_text("Allowed projects saved.")).to_be_visible()
+    run.a11y(page, "agents page, allowed projects")
+    row = page.locator("tr.agent-row", has_text="E2E Agent").first
+    if row.get_by_role("button", name=re.compile(r"^Manage ")).get_attribute("aria-expanded") != "true":
+        row.get_by_role("button", name=re.compile(r"^Manage ")).click()
+    inside = page.locator("tr.agent-manage").first
+    if not inside.locator("form.agent-allowed").is_visible():
+        inside.locator("details.agent-settings summary").click()
+    inside.locator("form.agent-allowed").get_by_label("Any project").check()
+    inside.locator("form.agent-allowed").get_by_role("button", name="Save the allowed projects").click()
+    expect(page.get_by_text("Allowed projects saved.")).to_be_visible()
+    row = page.locator("tr.agent-row", has_text="E2E Agent").first
+    if row.get_by_role("button", name=re.compile(r"^Manage ")).get_attribute("aria-expanded") != "true":
+        row.get_by_role("button", name=re.compile(r"^Manage ")).click()
     inside = page.locator("tr.agent-manage").first
     expect(inside.locator(".agent-instances", has_text="Instances in E2E Alpha").first).to_be_visible()
     expect(inside.locator(".agent-instances .member-credentials").first).to_be_visible()

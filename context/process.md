@@ -297,7 +297,8 @@ split.
 
 **Id:** 31b7d6b3-054c-411d-8f2c-372831b0c773
 **Type:** decision
-**Status:** needs-review
+**Status:** superseded
+**Superseded by:** none — the shared-budget working mode ended when the team moved to its own subscriptions (2026-10-27)
 **Evidence:** confirmed
 **Source:** the coordinator's notices of 2026-10-23 and 2026-10-24, passing on the maintainer's heads-up that the Claude agents would hit their usage limit
 **Revisit when:** the usage limit has reset, or the budget stops being shared by the Claude agents
@@ -305,8 +306,9 @@ split.
 
 **Revisit:** the condition triggered on 2026-10-27: a new team runs on new
 subscriptions, several Claude agents in parallel, on the maintainer's
-instruction (coordinator, 2026-10-27). This is not today's rule; the entry
-stays as the record of the earlier stretch until a person re-checks it.
+instruction (coordinator, 2026-10-27). The coordinator re-checked this on
+2026-11-01. This is not today's rule; the entry stays as the record of the
+earlier stretch.
 
 When the maintainer announced that the Claude-based agents would soon
 hit their usage limit, the coordinator set a working mode for the
@@ -400,7 +402,16 @@ resume opens a new session with the new `model` and keeps the claims.
 When the model or harness differs from the instance's previous
 session, the hub tells the agent's lead (woken) and the admins and the
 agent's owner (not woken), so the lead can re-route a card the new
-model should not hold. Rule 14 of the agent skill says so.
+model should not hold. Rule 14 of the agent skill says so. A resume
+that omits `model` or `harness` keeps the previous session's value, so a
+switch across such a resume is still seen.
+
+The agent's own `maity resume` also prints one line when it changed the
+model it had stored, `Model changed: <old> -> <new>, your lead is told.`,
+and `maity wait` reads the event as `harness/model -> harness/model`.
+The line was first left out, since the contract asked for none; the
+coordinator's card for the CLI (tsk-5zev9p7dh680, 2026-11-01) asks for it,
+and the contract's §13 now says so. Why the card wants it is not stated.
 
 **Reason:** security, contract and migration cards go to the strongest
 model and well-cut cards to a faster one; a session that silently runs
@@ -413,6 +424,9 @@ nobody can see it.
   so a second way would only add a code path.
 - Leaving it to the agent to tell its lead in a message: the hub would
   still show the old model, and every lead would have to read it.
+- Taking over only the previous `model` and not the `harness` of a resume
+  that omits it: the session in between would hold no harness, and a
+  switch from one harness to another over it would never be announced.
 
 ## The site's sitemap and robots.txt are made at deploy from the pages, not kept in the repository
 

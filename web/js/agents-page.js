@@ -77,7 +77,10 @@ window.Maity = window.Maity || {};
   }
 
   function addToProject(ctx, a) {
-    const projects = (ctx.projects || []).filter(mayBring);
+    // A project the list rules out is not offered (§6.3); the hub's match also knows the owner's old handles.
+    const allowed = a.allowed_projects;
+    const projects = (ctx.projects || []).filter(mayBring)
+      .filter((p) => !allowed || allowed.includes(p.full_name) || (p.aliases || []).some((x) => allowed.includes(x)));
     if (!projects.length) return h("p", { class: "muted" }, M.t("agents.add.none"));
     const id = "agent-add-" + a.id;
     const pick = h("select", { id }, projects.map((p) => h("option", { value: p.full_name }, M.t("agents.add.option", { name: p.name, full: p.full_name }))));
@@ -137,6 +140,69 @@ window.Maity = window.Maity || {};
     go, status.el);
   }
 
+  // §6.3 "Allowed projects": a switch for any project (null), else a checkbox per
+  // project: those on the list, the agent's own and the ones the human is in, plus a
+  // name typed in, as an agent may be allowed into a project before it exists.
+  const FULL_NAME = /^[a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9-]*$/;
+  function allowedForm(ctx, a, done) {
+    const key = (k) => "agent-allowed-" + k + "-" + a.id;
+    const stored = a.allowed_projects === undefined ? null : a.allowed_projects;
+    const mine = (a.memberships || []).map((m) => m.project);
+    const names = [...new Set([...(stored || []), ...mine, ...(ctx.projects || []).map((p) => p.full_name)])];
+    const status = M.statusLine();
+    const any = h("input", { id: key("any"), type: "checkbox" });
+    any.checked = stored === null;
+    const list = h("div", { class: "agent-allowed-list" });
+    const boxes = new Map();
+    const row = (full, ticked) => {
+      const id = key("project-" + boxes.size);
+      const box = h("input", { id, type: "checkbox", value: full });
+      box.checked = ticked;
+      boxes.set(full, box);
+      append(list, h("label", { class: "check", for: id }, box, " " + full));
+    };
+    // Before a list exists, the agent's current projects stand ticked (§6.3).
+    names.forEach((full) => row(full, stored === null ? mine.includes(full) : stored.includes(full)));
+    const added = h("input", { id: key("add"), autocomplete: "off", spellcheck: "false", placeholder: "owner/project" });
+    const addError = h("p", { class: "field-error", role: "alert" });
+    const add = h("button", {
+      type: "button",
+      onclick: () => {
+        const full = added.value.trim();
+        addError.textContent = "";
+        if (!FULL_NAME.test(full)) { addError.textContent = M.t("agents.allowed.format"); added.focus(); return; }
+        if (boxes.has(full)) boxes.get(full).checked = true; else row(full, true);
+        added.value = "";
+      },
+    }, M.t("agents.allowed.add"));
+    const part = h("div", { class: "agent-allowed-parts" }, list,
+      h("label", { for: key("add") }, M.t("agents.allowed.add_label")), added, add, addError,
+      h("p", { class: "hint" }, M.t("agents.allowed.keeps")));
+    const show = () => { part.hidden = any.checked; };
+    any.addEventListener("change", show);
+    show();
+    const go = h("button", { type: "submit" }, M.t("agents.allowed.save"));
+    return h("form", {
+      class: "agent-allowed inline-form",
+      onsubmit: async (e) => {
+        e.preventDefault();
+        const value = any.checked ? null : [...boxes.keys()].filter((full) => boxes.get(full).checked);
+        if (JSON.stringify(value) === JSON.stringify(stored)) { status.busy(M.t("agents.edit.unchanged")); return; }
+        go.disabled = true;
+        status.busy(M.t("agents.edit.saving"));
+        try {
+          done(await M.api.patch("/agents/" + encodeURIComponent(a.id), { allowed_projects: value }), M.t("agents.allowed.saved"));
+        } catch (err) {
+          go.disabled = false;
+          status.fail(M.t("agents.edit.failed"), err);
+        }
+      },
+    },
+    h("h4", null, M.t("agents.allowed.title")),
+    h("label", { class: "check", for: key("any") }, any, " " + M.t("agents.allowed.any")),
+    part, go, status.el);
+  }
+
   // The members of each project a profile is in, read once per project.
   async function memberViews(profiles) {
     const projects = [...new Set(profiles.flatMap((a) => (a.memberships || []).map((m) => m.project)))];
@@ -163,6 +229,7 @@ window.Maity = window.Maity || {};
       h("details", { class: "agent-settings", open: marked && !o.here ? true : null },
         h("summary", null, M.t("agents.card.settings")),
         editForm(a, o.changed),
+        allowedForm(ctx, a, o.changed),
         M.pictureEditor ? M.pictureEditor(a, "/agents/" + encodeURIComponent(a.id) + "/avatar", false, o.changed) : null,
         M.profileDelete ? M.profileDelete(a, o.changed) : null));
   }
@@ -345,6 +412,13 @@ window.Maity = window.Maity || {};
   // args: ["join"] (the panel open, ?agent=<id> choosing the profile), [<id>]
   // (that card marked), [<id>, "rulebook"] (at its rulebook, a join's quota refusal).
   M.views.projectAgents = async function (ctx, root, args) {
+    // The value the creation's answer returned (§6.1): a private repository keeps a project private.
+    const created = M.projectCreated;
+    M.projectCreated = null;
+    if (created && created.full_name === ctx.project.full_name && created.public_page) {
+      append(root, h("p", { class: "ok project-created-page", role: "status" },
+        created.public_page === "on" ? M.t("new_project.created.public") : M.t("new_project.created.private")));
+    }
     if (ctx.me.kind !== "human") {
       append(root, h("h2", null, M.t("agents.project.title")), h("p", null, M.t("agents.project.humans_only")));
       return;

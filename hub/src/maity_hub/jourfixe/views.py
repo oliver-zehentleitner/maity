@@ -110,6 +110,7 @@ def full(
         "id": round_row.id,
         "project": slug,
         "status": round_row.status,
+        **series_fields(round_row),
         "trigger": round_row.trigger,
         "mode": round_row.mode,
         "reason": round_row.reason,
@@ -132,6 +133,18 @@ def full(
         "statement": _statement(round_row.statement, reader, readers),
         "posts": _posts(round_row, reader, readers),
         "report": _report(round_row.report, reader),
+    }
+
+
+def series_fields(round_row: Any) -> dict[str, Any]:
+    """`series_id`, `topic` and `circle` of a round (§20.7), from the series' state the round
+    opened with (`config`), so a round keeps them after its series is deleted; a round from
+    before series existed reads as the series the upgrade made for it."""
+    config = round_row.config or {}
+    return {
+        "series_id": round_row.series_id or config.get("id"),
+        "topic": config.get("topic") or "How we work",
+        "circle": config.get("circle") or "all",
     }
 
 

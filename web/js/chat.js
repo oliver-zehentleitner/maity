@@ -232,7 +232,8 @@ window.Maity = window.Maity || {};
 
   // A composer's one row of actions (the designer's pass on #431): Attach
   // at the start, the keys and Send at the end.
-  const actionRow = (files, button) => h("div", { class: "compose-actions" }, files ? files.chooser : null, button);
+  // extra: the chat's meat-proxy switch (js/meat-proxy.js), between Attach and Send.
+  const actionRow = (files, button, extra) => h("div", { class: "compose-actions" }, files ? files.chooser : null, extra || null, button);
 
   // The composer's head (tsk-k6nakahy6fnj): its label, and on a phone a
   // button that folds the composer away for reading and brings it back;
@@ -765,6 +766,9 @@ window.Maity = window.Maity || {};
 
     // Files go with the message (§8.7): uploaded when chosen, named when sent.
     const files0 = M.attachments ? M.attachments.picker(ctx, "chat") : null;
+    // The meat-proxy mode for this chat (§9.3), from one's own entry in the list's participants.
+    const ownEntry = listed && (listed.participants || []).find((p) => p.member_id === ctx.me.id);
+    const meat = M.meatProxy ? M.meatProxy.toggle(ctx, ctx.base + "/conversations/" + encodeURIComponent(agent.id), ownEntry || null) : null;
     async function send(e) {
       e.preventDefault();
       const body = text.value.trim();
@@ -810,7 +814,7 @@ window.Maity = window.Maity || {};
       pollStatus.el,
       append(composeForm,
         composeHead(composeForm, text, h("label", { for: "chat-text" }, "Message", h("span", { class: "visually-hidden" }, " (" + M.dom.SEND_KEYS + " sends)"))),
-        text, mentionHint, files0 ? files0.el : null, actionRow(files0, button), status.el));
+        text, mentionHint, files0 ? files0.el : null, actionRow(files0, button, meat), status.el));
     // Sizing, scrolling and focus need the view in the page, which the
     // router does once this function has returned.
     window.setTimeout(() => {

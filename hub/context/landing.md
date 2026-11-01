@@ -166,7 +166,9 @@ words in the HTML so that nothing is needed to read it. The rings, the loader an
 CSS alone, also without the script, and stop under `prefers-reduced-motion`; the script adds only the
 demo's start (`.demo-on`), the counters and the theme (the coordinator takes this into §16.7, 2026-10-30, after the review of #739). Files in the package are the same for every
 instance, need no dashboard directory and can be hashed when they are read; a digest in the URL
-makes them cacheable for a year without a stale file ever being served for good.
+makes them cacheable for a year without a stale file ever being served for good. The typing of `.d1`
+runs only from 760 px up: it needs one line, and on a phone that line would push the grid open, so
+below 760 px the line is static and wraps.
 
 **Rejected alternatives:**
 - Serving the files from the dashboard's `web/` directory (`MAITY_WEB_DIR`): a hub without it would

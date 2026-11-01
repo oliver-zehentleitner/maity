@@ -3085,6 +3085,7 @@ window.MAITY_FIXTURES = {
       "id": "hum-maintainer"
     },
     "policy": {
+      "agent_owners": null,
       "badge": "off",
       "claim_policy": "self-claim",
       "contract_arbiter": "agt-a",
@@ -3093,6 +3094,9 @@ window.MAITY_FIXTURES = {
       "lease_seconds": 7200,
       "member_agents": "on",
       "member_agents_max": 3,
+      "outside_roles": [
+        "coder"
+      ],
       "preset": "hierarchical",
       "signing": "optional",
       "steward_writes": "cards_only",

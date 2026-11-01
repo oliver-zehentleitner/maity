@@ -399,6 +399,8 @@ window.Maity = window.Maity || {};
       hintMention();
       const button = h("button", { type: "submit", class: "primary" }, M.t("group.compose.send"));
       const files = M.attachments ? M.attachments.picker(ctx, "group") : null;
+      // The meat-proxy mode for this chat (§9.3): only a participant has an entry of its own.
+      const meat = M.meatProxy ? M.meatProxy.toggle(ctx, base, view.participants.find((p) => p.member_id === ctx.me.id) || null) : null;
       const sendIt = async (e) => {
         e.preventDefault();
         const body = text.value.trim();
@@ -425,7 +427,7 @@ window.Maity = window.Maity || {};
       compose = h("form", { class: "compose", onsubmit: sendIt });
       append(compose,
         parts.composeHead(compose, text, h("label", { for: "chat-text" }, M.tn("group.compose.label", { keys: h("span", { class: "visually-hidden" }, M.t("group.compose.keys", { keys: M.dom.SEND_KEYS })) }))),
-        text, hint, files ? files.el : null, parts.actionRow(files, button));
+        text, hint, files ? files.el : null, parts.actionRow(files, button, meat));
     }
 
     const heading = h("h2", { class: "group-title", tabindex: "-1" }, titleOf());

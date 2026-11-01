@@ -1,5 +1,6 @@
-"""`policy.jour_fixe` (docs/api.md §20.1): its validation and the series of slots it
-describes, on the wall clock of its time zone.
+"""A jour fixe series' schedule (docs/api.md §20.1): its validation and the slots it
+describes, on the wall clock of its time zone. A schedule is the series' `config` with its
+`enabled` flag: `recurrence`, `time`, `timezone` and the three windows.
 
 A `time` that falls into a DST gap opens at the first minute after the gap; one that
 occurs twice opens at its first occurrence. A month without the `month_day` uses its
@@ -18,7 +19,9 @@ WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 FREQS = ("daily", "weekly", "monthly")
 DEFAULTS: dict[str, Any] = {
     "enabled": False,
-    "moderator": "admin_agent",
+    "recurrence": None,
+    "time": None,
+    "timezone": None,
     "answer_window_minutes": 120,
     "step_window_minutes": 120,
     "report_window_hours": 12,
@@ -32,16 +35,13 @@ TIME = re.compile(r"([01][0-9]|2[0-3]):[0-5][0-9]")
 
 
 def filled(given: dict[str, Any]) -> dict[str, Any]:
-    """The policy as stored: what was given over the defaults (the object is replaced as
-    a whole, §20.1)."""
+    """A schedule as stored: what was given over the defaults."""
     return {**DEFAULTS, **given}
 
 
-def errors(policy: dict[str, Any], is_member: Any) -> dict[str, str]:
-    """`details.fields` for an invalid `policy.jour_fixe`, keyed below it. `is_member`
-    answers whether a member id names an active member of the project."""
+def errors(policy: dict[str, Any], key: str = "") -> dict[str, str]:
+    """`details.fields` for an invalid schedule, each field under `key`."""
     found: dict[str, str] = {}
-    key = "policy.jour_fixe."
     if not isinstance(policy.get("enabled"), bool):
         found[key + "enabled"] = "not_a_boolean"
     zone = policy.get("timezone")
@@ -63,9 +63,6 @@ def errors(policy: dict[str, Any], is_member: Any) -> dict[str, str]:
         value = policy.get(name)
         if not isinstance(value, int) or isinstance(value, bool) or not low <= value <= high:
             found[key + name] = "out_of_range"
-    moderator = policy.get("moderator")
-    if moderator != "admin_agent" and not (isinstance(moderator, str) and is_member(moderator)):
-        found[key + "moderator"] = "not_a_member"
     recurrence = policy.get("recurrence")
     if recurrence is not None:
         found.update(_recurrence_errors(recurrence, key + "recurrence."))
