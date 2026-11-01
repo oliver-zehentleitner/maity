@@ -567,12 +567,13 @@ window.Maity = window.Maity || {};
         status.busy(M.t("landing.json.checking"));
         let refused = null;
         try {
-          await M.api.post(LANDING + "/preview", { default_language: next.default_language, pages: next.pages, footer: next.footer, variants: next.variants });
+          await M.api.post(LANDING + "/preview", { default_language: next.default_language, pages: next.pages, footer: next.footer, variants: next.variants, campaigns: next.campaigns });
         } catch (err) {
           refused = err;
         }
         // Not drawable as an editor: the draft stays as it was, the hub's refusals listed.
-        if (!drawable(next.pages, next.footer) || !Object.values(next.variants || {}).every((v) => isObject(v) && isObject(v.pages) && drawable(v.pages, next.footer))) {
+        if (!drawable(next.pages, next.footer) || !Object.values(next.variants || {}).every((v) => isObject(v) && isObject(v.pages) && drawable(v.pages, next.footer))
+          || !(next.campaigns || []).every(isObject)) {
           draft = before.draft;
           lang = before.lang;
           showErrors({}, refused || { message: M.t("landing.json.shape") }, status, M.t("landing.json.not_loaded"));

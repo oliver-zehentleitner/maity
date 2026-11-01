@@ -8973,6 +8973,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const { variants: siNoV, campaigns: siNoC, ...siWithout } = siSaved.landing;
     const siKept = await SI.check({ format: "maity-site/1", landing: siWithout }, siSaved);
     expect(siKept.parts.landing.state === "same", "site: a file without variants and campaigns keeps the saved ones");
+    // The campaign counts' download link: fixtures give no address, so its shape is drawn here; only that shape passes.
+    const csvLink = win.Maity.dom.h("a", { href: "/api/v1/admin/statistics/campaigns?days=30&format=csv" });
+    let csvOther = null;
+    try { win.Maity.dom.h("a", { href: "/api/v1/admin/statistics/campaigns?days=30&format=csv&x=1" }); } catch (err) { csvOther = err; }
+    expect(csvLink.getAttribute("href").endsWith("format=csv") && csvOther, "statistics: the campaign CSV link draws, and no other address beside it");
     // A landing value of the wrong kind refuses the part, never the saved value in its place.
     const siKinds = await Promise.all([{ footer: "x" }, { enabled: "yes" }, { default_language: 7 }, { default_language: "" }, { variants: [] }, { campaigns: {} }].map((bad) =>
       SI.check({ format: "maity-site/1", landing: Object.assign({}, siNow.landing, bad) }, siNow)));

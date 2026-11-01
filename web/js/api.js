@@ -689,9 +689,8 @@ window.Maity = window.Maity || {};
   // §16.7.2: at most 5 variants by slug, each {pages} as the main page's;
   // at most 200 campaigns {code, label}, codes unique.
   function landingVariants(vs, errors) {
-    if (!vs || typeof vs !== "object" || Array.isArray(vs)) { errors.variants = "invalid"; return; }
+    if (!vs || typeof vs !== "object" || Array.isArray(vs) || Object.keys(vs).length > 5) { errors.variants = "invalid"; return; }
     const slugs = Object.keys(vs);
-    if (slugs.length > 5) errors.variants = "too_many";
     slugs.forEach((slug) => {
       if (!/^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/.test(slug) || slug === "default") { errors["variants." + slug] = "invalid"; return; }
       const x = vs[slug];
@@ -700,8 +699,7 @@ window.Maity = window.Maity || {};
     });
   }
   function landingCampaigns(cs, errors) {
-    if (!Array.isArray(cs)) { errors.campaigns = "invalid"; return; }
-    if (cs.length > 200) errors.campaigns = "too_many";
+    if (!Array.isArray(cs) || cs.length > 200) { errors.campaigns = "invalid"; return; }
     const seen = new Set();
     cs.forEach((c, k) => {
       const code = c && c.code;
@@ -2874,7 +2872,7 @@ window.Maity = window.Maity || {};
       if (!Object.keys(errors).length && v.enabled && !(v.pages || {})[v.default_language]) errors.default_language = "default_language_missing";
       // A variant's page in the default language is required while the page is on (§16.7.2).
       if (!Object.keys(errors).length && v.enabled) {
-        Object.entries(v.variants || {}).forEach(([slug, x]) => { if (!(x.pages || {})[v.default_language]) errors["variants." + slug + ".pages"] = "default_language_missing"; });
+        Object.entries(v.variants || {}).forEach(([slug, x]) => { if (!(x.pages || {})[v.default_language]) errors["variants." + slug + ".pages." + v.default_language] = "required"; });
       }
       if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
       v.updated_at = nowIso(); v.updated_by = me().member.id;
@@ -2922,6 +2920,7 @@ window.Maity = window.Maity || {};
       if ("pages" in body) Object.entries(body.pages || {}).forEach(([lang, pg]) => landingPage(pg, "pages." + lang, errors));
       if ("footer" in body) landingFooter(body.footer || {}, errors);
       if ("variants" in body) landingVariants(body.variants, errors);
+      if ("campaigns" in body) landingCampaigns(body.campaigns, errors);
       if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
       const id = localId("lpv");
       return { id, url: "/api/v1/admin/settings/landing/preview/" + id, expires_at: new Date(Date.now() + 600000).toISOString().replace(/\.\d{3}Z$/, "Z") };
