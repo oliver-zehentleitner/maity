@@ -56,7 +56,7 @@ window.Maity = window.Maity || {};
       kept.push(...page.items.filter(keep || isMessage));
       if (page.items.length < PAGE) return { kept, cut: start > 0 };
       const next = page.items[page.items.length - 1].seq;
-      if (!(next > after)) throw new Error(M.t("messages.cursor_stuck", { after }));
+      if (!(next > after)) throw new Error(M.t("messages.cursor_stuck", { after: String(after) }));
       after = next;
     }
     return { kept, cut: true };
