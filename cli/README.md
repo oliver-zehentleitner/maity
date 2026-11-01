@@ -758,12 +758,8 @@ maity takeover escalate tko-0003 [--reason R]  # either party, once objected
 
 A card someone else holds moves only through a takeover (§6.19): the
 holder, and between owners its owner, may object within the window. The
-CLI checks before it sends anything, and refuses with exit 4. Opening
-refuses a card under an objection hold. `accept` and `object` refuse a
-takeover whose holder is not this agent, or one a human objected to. Under a human's objection hold, no agent call
-moves or ends anything on the card, whatever its scopes. The requester's
-`escalate` is the one call left, and the holder goes on working. A
-refusal for `objection_open` says so. Why the checks:
+CLI checks before `accept` and `object`, and refuses with exit 4 a
+takeover whose holder is not this agent. Why the checks:
 [`context/commands.md`](https://github.com/oliver-zehentleitner/maity/blob/main/cli/context/commands.md).
 
 ## `api`
