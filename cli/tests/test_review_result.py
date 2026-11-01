@@ -242,3 +242,30 @@ def test_a_malformed_review_is_left_to_the_hub(
     (tmp_path / "review.json").write_text(json.dumps({"head": "short", "cites": "x"}))
     assert cli.main(_say("Approve.", "--review-file", str(tmp_path / "review.json"))) == cli.EXIT_OK
     assert fake.signed()[-1].json()["review"] == {"head": "short", "cites": "x"}
+
+
+def test_a_removed_quote_is_found_from_a_subdirectory(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    events: None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _commit("b.txt", "old text\nkept\n")
+    _commit("b.txt", "kept\n")
+    path = _review_at(tmp_path, {"path": "b.txt", "quote": "old text"})
+    state_dir = state.resolve_state_dir()
+    monkeypatch.setenv("MAITY_STATE_DIR", str(state_dir))
+    Path("sub").mkdir()
+    monkeypatch.chdir("sub")
+    assert cli.main(_say("Approve.", "--review-file", path)) == cli.EXIT_OK
+
+
+@pytest.mark.parametrize("line", [1, None])
+def test_a_quote_with_a_line_break_is_left_to_the_hub(
+    joined: Path, fake: fakehub.FakeHub, events: None, tmp_path: Path, line: int | None
+) -> None:
+    _commit("b.txt", "first\nsecond\n")
+    path = _review_at(tmp_path, {"path": "b.txt", "line": line, "quote": "first\nsecond"})
+    assert cli.main(_say("Approve.", "--review-file", path)) == cli.EXIT_OK
+    assert fake.signed()[-1].json()["review"]["cites"][0]["quote"] == "first\nsecond"

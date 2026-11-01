@@ -18,6 +18,7 @@ from typing import Any
 from maity import proc
 
 _FULL_SHA = re.compile(r"[0-9a-f]{40}")
+_LINE_BREAK = re.compile("[\r\n\u0085\u2028\u2029]")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -35,6 +36,8 @@ def _well_formed(cite: Any) -> bool:
         return False
     path, quote, line = cite.get("path"), cite.get("quote"), cite.get("line")
     if not (isinstance(path, str) and path and isinstance(quote, str) and quote):
+        return False
+    if _LINE_BREAK.search(quote):
         return False
     return line is None or (type(line) is int and line > 0)
 
@@ -72,8 +75,12 @@ def check(cwd: Path, review: Any) -> Result:
     if not (isinstance(head, str) and _FULL_SHA.fullmatch(head) and isinstance(cites, list)):
         return Result([])
     try:
-        if _git(cwd, "rev-parse", "--git-dir").returncode != 0:
+        up = _git(cwd, "rev-parse", "--show-cdup")
+        if up.returncode != 0:
             return Result([], "this directory is not a clone")
+        # A cite's path starts at the top of the clone: `<head>:<path>` reads it from there
+        # anyway, but a pathspec would start at the working directory.
+        cwd = cwd / up.stdout.strip()
         if _git(cwd, "cat-file", "-e", f"{head}^{{commit}}").returncode != 0:
             return Result([], f"commit {head} is not in this clone; `git fetch` brings it")
         bad = []
