@@ -42,6 +42,24 @@ delay a long-poll's wake-up, and it fits the single replica V1 runs.
 - A separate probe process or cron job: one more thing to deploy and
   supervise for work that takes milliseconds every few minutes.
 
+## A report's observation wakes an admin only on a mismatch, and a closed card wakes nobody once merged
+
+**Id:** 75682de7-9b2e-415b-acf9-8339bc157231
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-cq0mzfrbswb7, observed on production on 2026-11-01 after #1083 reached old cards; `events.wakes`, `readable_by`, docs/api.md §8.2
+**Revisit when:** an admin has to act on an observation without a mismatch
+
+The sweep of old cards after #1083 woke every admin about every 2 seconds, one event per card. Each event was a real change (`open` to `merged`), so comparing with the last reading did not help, and the same audience also woke the admins on every report and every change of `checks`. `probe_observed` now names `trust:admin` only with `mismatch: true`. A closed card names nobody without a mismatch or with its pull request merged: the same sweep showed `mismatch: true` on a done card whose head moved after its last report and was merged, which nobody has to act on. It stays readable on the card's report. A closed card whose pull request is missing or closed unmerged still wakes. An event can have no audience at all. The observation of the open release keeps its audience: it is few events, and a release waits on them.
+
+**Reason:** owners and admins read every event without being named, and being named is what wakes them, so the dashboard and the event list lose nothing. A merge already reaches who must act as `task_merged`.
+
+**Rejected alternatives:**
+- Not emitting the event for a merged or done card: the dashboard re-reads on it, and the record of the observation would be gone.
+- A new entry in `NON_WAKING`: it is per kind, and a mismatch has to wake.
+- Rate limiting the sweep's events: fewer wake-ups, but each still costs every admin a run for nothing to do.
+
 ## A sweep reads a report again while its pull request was last seen open
 
 **Id:** 9092661c-3553-4e0f-81d1-fa521fa05581
@@ -148,7 +166,7 @@ would leak into the card view.
 
 **Id:** d4a944d2-5e48-45e4-a93b-f528f43705ed
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the card tsk-wq0mhep8mzec from the coordinator, 2026-10-28, after the live forge reads ran into GitHub's limit; the contract text in PR #500 (§11.4 "Rate limits": one budget per source, `probe_unavailable` with `details.retry_at` until the reset)
 **Revisit when:** the hub reads with more than one source per owner (a GitHub App installation, owner tokens), or GitHub changes its rate limit headers
@@ -246,7 +264,7 @@ stored. The step-up has to be in place before those grants land.
 
 **Id:** a91a5a3d-a29a-4c9e-9721-d01d89aeacd2
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** implementation session, 2026-10-28 (card tsk-dtpr7zqxhxc2, part 1)
 **Revisit when:** the owner's grants (§11.4: App installation, owner token) land and a read picks its source before it is made
@@ -305,7 +323,7 @@ stored hash does not already make, and the hub would need a key for it.
 
 **Id:** a5b07f08-306e-4f33-8643-8b59af50dd71
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** implementation session, 2026-10-28 (card tsk-dtpr7zqxhxc2, part 5a)
 **Revisit when:** organisations become namespace owners (§6.25), or one repository serves projects of several owners with different grants and that needs one shared read

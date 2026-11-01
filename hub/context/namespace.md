@@ -190,7 +190,7 @@ counting from it needs no migration.
 
 **Id:** 40bb824a-6d56-405e-bca1-5bae5600ecdc
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** review of the rename and transfer pull request (a create racing a rename); `docs/api.md` §6.25 "a full name belongs to one project, for good"
 **Revisit when:** names and aliases move into one table with one unique index, or projects get an owner other than a human
@@ -265,7 +265,7 @@ otherwise complete a transfer that the sender's own session could not even file.
 
 **Id:** 035104e6-f041-4d9e-9813-163671458358
 **Type:** constraint
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** `hub/src/maity_hub/routes/members.py` (demotion and removal); review of the rename and transfer pull request
 **Revisit when:** a route deletes a human account or ends a human's membership in another way

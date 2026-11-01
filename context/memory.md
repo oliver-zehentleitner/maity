@@ -46,7 +46,7 @@ naming options he had rejected.
 
 **Id:** 1c326180-c27b-4f12-bb75-aa3335f9282c
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** security reviews of the memory contract and the contract owner's rulings on them (two rounds), 2026-10-22; contract in `docs/api.md` §7, §19
 **Revisit when:** a store gains readers beyond its table, or personal requests are needed for more than soul proposals and takeover notices

@@ -1325,7 +1325,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Each section's id is a fixed word, the same in every language (#891's review).
   const adminIds = main.querySelectorAll("section.admin-section").map((x) => x.getAttribute("id"));
   expect(JSON.stringify(adminIds) === JSON.stringify(["admin-statistics", "admin-users", "admin-limits", "admin-reports", "admin-mail-settings",
-    "admin-registration", "admin-sign-in", "admin-landing-page", "admin-legal-pages", "admin-whole-site", "admin-instance-information"]),
+    "admin-registration", "admin-sign-in", "admin-pages", "admin-instance-information"]),
     "admin: every section keyed by its fixed word " + JSON.stringify(adminIds));
   const meRow = userRows().find((tr) => text(tr).includes("Maintainer"));
   expect(text(meRow).includes("(you)") && text(meRow).includes("instance admin") && /Projects2|>2</.test(meRow.querySelectorAll("td").map((td) => td.attrs["data-label"] + td.textContent).join("")),
@@ -4102,17 +4102,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(joinPosts[0][1].takes_over === "agt-a" && joinPosts[0][1].handover === 6001, "join: takes_over and a message's seq as a number go with a first join");
   win.Maity.api.post = realPost2;
   expect(text(main).includes("maity join https://maity.example/j/FIXTURE") && text(main).includes("shown once"), "paste line shown once");
-  expect(text(main).includes("as a message in its clone of the repository") && text(main).includes("installs the maity CLI first") && text(main).includes("follows the join page"), "the paste line says where it goes");
+  expect(text(main).includes("as a message in its clone of the repository") && text(main).includes("install the maity CLI first") && text(main).includes("follows the join page"), "the paste line says where it goes");
   btn(main, "Copy").click(); await tick();
   expect(ctx.copied && ctx.copied.startsWith("export PATH=") && ctx.copied.includes("|| { pipx install maity; }; }") && / && maity join https:\/\/maity\.example\/j\/FIXTURE-\S+ --code FIXT-URE0-0000$/.test(ctx.copied),
     "copy puts the line as the hub gave it on the clipboard: installs if missing, and joins");
-  const platformSelect = byId("join-platform");
-  expect(platformSelect && platformSelect.value === "posix", "the platform choice starts at the browser's platform");
-  platformSelect.value = "windows"; platformSelect.dispatch("change");
+  expect(byId("join-line-posix").checked === true && !byId("join-line-join").checked, "the line starts at the browser's system");
+  byId("join-line-windows").checked = true; byId("join-line-windows").dispatch("change");
   btn(main, "Copy").click(); await tick();
   expect(ctx.copied.includes("Get-Command maity") && ctx.copied.endsWith(" }") && !ctx.copied.includes("&&") && text(main.querySelector(".join-result .paste-line")) === ctx.copied,
     "choosing Windows shows and copies the PowerShell line");
-  platformSelect.value = "posix"; platformSelect.dispatch("change");
+  byId("join-line-join").checked = true; byId("join-line-join").dispatch("change");
+  btn(main, "Copy").click(); await tick();
+  expect(/^maity join https:\/\/maity\.example\/j\/FIXTURE-\S+ --code FIXT-URE0-0000$/.test(ctx.copied) && text(main.querySelector(".join-result .paste-line")) === ctx.copied,
+    "choosing only join shows and copies the plain command, nothing installed");
+  byId("join-line-posix").checked = true; byId("join-line-posix").dispatch("change");
   expect(main.querySelector(".join-result") && !main.querySelector("form.join-form"), "the line takes the form's place in the panel");
   expect(!main.querySelector(".instance-note"), "a new agent's line has no note on another instance's state directory");
   btn(main.querySelector("article.seat"), "Revoke").click(); for (let k = 0; k < 4; k++) await tick();
@@ -4128,7 +4131,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(main.querySelectorAll("article.seat").length + main.querySelectorAll(".closed-joins li").length === joinsBefore && text(main).includes("No join created: the handle: Lowercase letters, digits and -, 2–31 characters, starting with a letter or digit."),
     "a handle against the rule is refused before sending, with the rule");
   byId("join-handle").value = "agent-new"; byId("join-display").value = "Agent New";
+  // An install line PowerShell cannot run (§3.2), in a browser on Windows that remembers nothing.
+  const postBefore = win.Maity.api.post, lsBefore = win.localStorage;
+  win.Maity.api.post = async (p, b) => { const r = await postBefore(p, b); return { ...r, paste_lines: { ...r.paste_lines, windows: null } }; };
+  win.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
+  ctx.navigator.platform = "Win32";
   main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 5; k++) await tick();
+  expect(byId("join-line-join").checked === true && !byId("join-line-windows") && text(main.querySelector(".join-result .paste-line")).startsWith("maity join "),
+    "no Windows line: a browser on Windows starts at only join, and no Windows offer is shown");
+  win.Maity.api.post = postBefore; win.localStorage = lsBefore; delete ctx.navigator.platform;
   btn(main.querySelector(".join-result"), "Join another").click(); await tick();
   const newOpt = byId("join-agent").querySelectorAll("option").find((o) => o.textContent.startsWith("Agent New (@agent-new)"));
   expect(newOpt && byId("join-agent").value === newOpt.attrs.value && /^agt-/.test(newOpt.attrs.value),
@@ -9749,8 +9760,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "site: with every registration field from the environment the export leaves registration out and imports again");
     // In the admin: Check, then one Save; the second PATCH fails, so the message says what is saved and what is not.
     await go("#/admin"); for (let k = 0; k < 6; k++) await tick();
-    btn(main.querySelector("nav.admin-nav"), "Import or export everything").click(); for (let k = 0; k < 4; k++) await tick();
-    const siBox = () => main.querySelectorAll("section.admin-section").find((x) => x.getAttribute("aria-label") === "Import or export everything");
+    btn(main.querySelector("nav.admin-nav"), "Pages").click(); for (let k = 0; k < 4; k++) await tick();
+    const siBox = () => byId("admin-whole-site");
     byId("site-json").value = JSON.stringify(template);
     const siConfirm = win.confirm; win.confirm = () => true;
     // A placeholder without a value: named, Save off; the value added in the same section, then the file checks.
@@ -9798,9 +9809,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "site: Export reads the settings again, so an edit saved since the page opened is in the file");
     win.Maity.api.get = siGetReal;
     win.Maity.api.patch = siPatchReal; win.confirm = siConfirm;
-    // Its own address: /admin/site opens this section, not the landing page's.
-    await go("#/admin/site"); for (let k = 0; k < 6; k++) await tick();
-    expect(siBox() && !siBox().hidden, "site: /admin/site opens Import or export everything");
+    // Pages at its address: the file folded, a part open; the file by its own word; the old address and an unknown part name no view.
+    const pagesOpen = () => main.querySelectorAll(".admin-section").find((x) => !x.hidden);
+    const subShown = () => main.querySelectorAll(".admin-subsection").filter((x) => !x.hidden).map((x) => x.getAttribute("id"));
+    await go("#/admin/pages"); for (let k = 0; k < 6; k++) await tick();
+    expect(pagesOpen().getAttribute("id") === "admin-pages" && !siBox().parentNode.open && JSON.stringify(subShown()) === JSON.stringify(["admin-landing-page"]),
+      "pages: /admin/pages opens the tab on Landing pages, the file folded " + subShown());
+    await go("#/admin/pages/legal"); for (let k = 0; k < 6; k++) await tick();
+    expect(JSON.stringify(subShown()) === JSON.stringify(["admin-legal-pages"]), "pages: /admin/pages/legal opens Legal pages " + subShown());
+    btn(main.querySelector("nav.admin-subnav"), "Landing pages").click(); await tick();
+    expect(JSON.stringify(subShown()) === JSON.stringify(["admin-landing-page"]), "pages: a sub-tab switches the part " + subShown());
+    await go("#/admin/pages/site"); for (let k = 0; k < 6; k++) await tick();
+    expect(siBox().parentNode.open, "pages: /admin/pages/site opens the whole site's file");
+    await go("#/admin/site"); for (let k = 0; k < 4; k++) await tick();
+    expect(text(main).includes("No such view"), "pages: /admin/site is gone");
+    await go("#/admin/pages/nothing"); for (let k = 0; k < 4; k++) await tick();
+    expect(text(main).includes("No such view"), "pages: an unknown part names no view");
   }
   await go("#/all");
 
@@ -9861,7 +9885,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const siPatches = [];
     const siPatch = win.Maity.api.patch;
     win.Maity.api.patch = (p, b) => { if (p === "/admin/settings/sign-in") siPatches.push(b); return siPatch(p, b); };
-    const siSection = () => main.querySelectorAll(".admin-section").find((x) => x.getAttribute("aria-label") === "Sign-in");
+    const siSection = () => main.querySelectorAll(".admin-section").find((x) => x.getAttribute("aria-label") === "Sign-in methods");
     const siSubmit = async () => { siSection().querySelector("form.admin-sign-in").dispatch("submit"); for (let k = 0; k < 8; k++) await tick(); };
     const redraw = async () => { await go("#/account/preferences"); await tick(); await go("#/admin"); for (let k = 0; k < 10; k++) await tick(); };
     const policyOptions = () => byId("admin-sign-in-second_factor").querySelectorAll("option").map((o) => o.getAttribute("value"));

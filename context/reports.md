@@ -70,7 +70,9 @@ the merge is what was reported), the hub emits `task_merged`, which
 wakes whoever may move the card to `done`. Under the policy
 `merged_closes: auto` it also moves the card to `done` itself, but only
 where the project's done authority is the holder or an admin, and only
-when no dependency or objection hold keeps it. Where the project asks
+when no dependency or objection keeps it (a takeover in `objected` or
+`escalated`; the hold on the card itself is not built, see the takeover
+entry in `context/claims.md`). Where the project asks
 for a review or a test, a merge is not one, so `auto` only notifies. A
 move by the hub is no history entry, so the instance statistic
 `reviews` does not count it; it counts in `cards_done`.

@@ -45,6 +45,9 @@ spec:
           env:
             - name: MAITY_BIND
               value: "0.0.0.0:8080"
+            {{- with include "maity-hub.attachmentEnv" . | trim }}
+            {{- . | nindent 12 }}
+            {{- end }}
             {{- include "maity-hub.env" . | nindent 12 }}
           ports:
             - name: http

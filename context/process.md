@@ -137,7 +137,7 @@ night's merges deployed before the maintainer is back was stated.
 **Id:** 8ba32bfa-41ff-4351-8884-4ac5ee08bae5
 **Type:** decision
 **Type:** incident
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the coordinator's rule, 2026-10-22, set when the reviewer came back from a usage limit
 **Revisit when:** a second reviewer joins, or reviews are reassigned in a way the board can show without a list from the coordinator
@@ -201,7 +201,7 @@ run names.
 
 **Id:** e534e9f3-a419-4a09-8054-117150592490
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's rule and reason, 2026-10-25, relayed by the coordinator
 **Revisit when:** the hub enforces the why reference on code reports — then this team rule gives way to the hub's policy
@@ -1051,3 +1051,30 @@ a participant's `wake` (§9.2). Exceptions the hub already has, such as the
 **Rejected:** building the missing routes now, which adds risk right before the
 launch for features nobody has asked for yet; deleting the passages, which would
 lose agreed designs.
+
+## The docs pages on maity.dev are rendered at deploy from `docs/`, and `docs/nav.yml` is the only list of pages and the navigation
+
+**Id:** 3b470500-85e0-4261-996e-425290e5d97b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's request for a docs page on maity.dev; the joint proposal of the designer and the docs author on the card tsk-92pgshcs2a8c, 2026-11-01. The reasons are theirs, not stated by the maintainer.
+**Revisit when:** the docs become multilingual, or need pages without a Markdown source
+**See:** process.md — 7e78b0e4-e8b4-4ce2-9a83-f9457153cd5b — as of 2026-11-01
+
+`tools/site_docs.py` renders every page `docs/nav.yml` lists when the site
+deploys, with GitHub's anchors, so links from the repository and from the
+site are the same. A section `hide` names on a split page gets no page, and
+`docs/architecture.md` stays out of the list until it is rewritten, as it
+still describes the first design of 2026-10-21 (the lead's call on #1095).
+
+**Reason:** the repository and the site would otherwise drift apart, and
+each command is checked only once.
+
+**Rejected:**
+
+- Pages written by hand in HTML: a second source.
+- A static site generator with Node or a framework: more tooling than about
+  ten pages need.
+- Linking only to the Markdown on GitHub: no navigation of its own, and
+  `docs/api.md` as one page of 17,000 lines.

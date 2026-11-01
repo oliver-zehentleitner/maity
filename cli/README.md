@@ -326,7 +326,8 @@ It refuses with exit 4, before anything is sent, on any of these:
 - a pull request whose head differs from the local one
 - a pull request that is not the card's: the card links other pull
   requests (`kind: pr`, `maity link`), or its last report names another
-  pull request that is still open. A report for another PR is sent from
+  pull request that is still open, which `gh` checks first; only when
+  `gh` can't be asked does the hub's last observation stand. A report for another PR is sent from
   that PR's branch (`git switch`), or after a merge with the branch
   deleted, from that branch recreated at its merged head
   (`git switch -c <branch> <merged head>`)

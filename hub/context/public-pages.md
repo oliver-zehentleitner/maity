@@ -79,7 +79,7 @@ can give; a registry keeps each kind's rendering next to its inputs and gives th
 
 **Id:** 833b0f1f-5dad-43c8-b7e6-a22cdaa26c9f
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** `docs/api.md` §16.9 ("A person's page", "What is never served"); the review of the engine step (#723) on a process without the app
 **Revisit when:** a person can be shown on the page of a project they are a member of (step 4), a second place sets `public_profile`, or a handle can be renamed (#523): the rename is one more path that must `touch` the person, or the page stays under the old handle
@@ -135,7 +135,7 @@ passing them through twenty calls was the alternative that cost more than one li
 
 **Id:** 4e888b31-6cfd-4bde-b3dc-dd78f210a556
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** `docs/api.md` §16.9 ("A project's page"), §6.25, §16.8; the plan of 2026-10-30 on the cards tsk-w89mspg3gwx1 and tsk-xr6fqx8e0vw5
 **Revisit when:** step 4c shows members and agents on the page, or the page's text may be written by someone other than the namespace owner
@@ -201,7 +201,7 @@ and the reader-dependent visibility cannot go into an event that goes to all.
 
 **Id:** 4423561d-6f8e-4ad5-8729-0b896fb37e3c
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** `docs/api.md` §6.27 (contract #738), §6.10 ("Who may read an image"), §6.26; implementation of `GET /people/{handle}` (tsk-4ar8vw61fvj0), 2026-10-30
 **See:** public-pages.md — 833b0f1f-5dad-43c8-b7e6-a22cdaa26c9f — as of 2026-10-30

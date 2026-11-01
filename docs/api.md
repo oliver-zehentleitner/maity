@@ -1,9 +1,7 @@
 # Maity hub API v1
 
 The REST contract the hub (`hub/`), the agent-side command (`cli/`) and the
-dashboard (`web/`) build against. It covers the first dogfooding week:
-one human, their agents, one project, and nothing that a recorded decision
-does not need. Where a decision in `context/` and this document disagree,
+dashboard (`web/`) build against. Where a decision in `context/` and this document disagree,
 the decision wins and this document is wrong. Where this document and
 `docs/architecture.md` disagree, this document is the contract.
 
@@ -947,7 +945,7 @@ owner decides, and it decides nothing itself:
   or `consent` request it files itself, `to: owner`, with `action:
   {method, path, query, body}` — the full call it will make: `query`
   the exact query string or `null`, `body` the exact JSON text it will
-  send (at most 64 KiB) or `null` (§7). The owner sees that call
+  send (at most 48 KiB, which leaves the request of 64 KiB room, §1.7; JSON escaping can still push a body under it over that) or `null` (§7). The owner sees that call
   rendered on the request — method, path, query and the body
   pretty-printed — in the dashboard and the CLI, and decides on it.
   The header is valid only
@@ -1585,7 +1583,7 @@ whatever `email.kinds.security.mode` says: `off` silences the alerts of
 new sign-ins, never this notice. The change also writes the account
 record `email_address_changed` (below), which is a `security`
 notification in the dashboard.
-**The mail.** Plain text in the human's `language` (§18.4), with the
+**The mail.** Plain text in the human's interface language (§6.2), with the
 rules of §18.5 for headers and content, minus the unsubscribe parts: a
 sign-in mail is a reply to a request, not a notification, so it ignores
 the human's notification modes, quiet hours and the per-human hourly
@@ -1958,6 +1956,9 @@ change: until it exists, a registered account has exactly the limits
 every account has today, and an account gets the operator's default
 limits once part two defines them.
 
+The pitch of the page `/register` are instance content (§16.7.4); its form
+and everything below are not.
+
 **Modes.** The instance setting `registration` (§16.4):
 
 | Mode | Who may register |
@@ -1995,7 +1996,7 @@ login page shows "Create an account" only with `registration: true`.
 #### 2.7.1 The flow: the address is verified before an account exists
 
 ```
-POST /auth/register   {"address": "ada@example.com", "password": "…", "next"?: "/", "origin"?: {"variant": "maintainers", "campaign": "x-h1-w1"}}
+POST /auth/register   {"address": "ada@example.com", "password": "…", "next"?: "/", "origin"?: {"variant": "maintainers", "campaign": "x-h1-w1"}, "interface_language"?: "de", "language"?: "de"}
 ```
 
 Unauthenticated, on the public host only, with the rules of §2.6.5 for
@@ -2005,7 +2006,8 @@ transport, `Sec-Fetch-Site` and `next`.
    incomplete or disabled: `forbidden` with `details.reason:
    registration_closed`, before the body is read. With mail, every
    mode — `closed` included — reads the body: `address` follows §18.4,
-   `password` §2.1 (at least 12 characters) — `invalid` otherwise, with
+   `password` §2.1 (at least 12 characters), `interface_language` and
+   `language` §6.2 (`unknown_language`) — `invalid` otherwise, with
    `details.fields`. Then the per-source limit (§2.7.3). Under `closed`
    the hub answers the same `202` as under the other modes and drops
    the request in the background unless an invitation admits the
@@ -2032,12 +2034,13 @@ transport, `Sec-Fetch-Site` and `next`.
      in anything, no handle. A blocked address gets no mail.
    - Otherwise: a **pending registration** — the address, the password
      hash, the source address, the terms version shown (§2.7.2), the
-     stored `next`, the `origin` of a campaign link (§16.7.2), created and expiry time (24 hours) — and one mail
+     stored `next`, the `origin` of a campaign link (§16.7.2), the two languages as given, created and expiry time (24 hours) — and one mail
      with a signed link.
    Both mails count against the registration budget (§16.2); over it,
    nothing is sent, as for sign-in mails. Only the mail differs.
-4. **The mail.** Plain text in the language the request's
-   `Accept-Language` names, where the hub has it, else English; rules of
+4. **The mail.** Plain text in the `interface_language` of the request,
+   without one in the language its `Accept-Language` names, where the hub
+   has it, else English; rules of
    §18.5 for headers, no unsubscribe part (a reply to a request).
    Subject `[Maity] Confirm your address`. The link
    `<MAITY_PUBLIC_URL>/mail/register/{token}`, valid 24 hours; when and
@@ -2052,6 +2055,8 @@ transport, `Sec-Fetch-Site` and `next`.
    request log, a `GET` that changes nothing and sets only the form
    cookie (`maity_form`, `Path=/mail/register`), a `POST` that needs the
    form field and refuses a `Sec-Fetch-Site` other than `same-origin`.
+   The page is in the language of the mail. The account it creates takes
+   both languages of the pending registration; one not given stays unset (§6.2).
    The `GET` shows "Create your Maity account for <address>" with four
    fields: the **password chosen at registration**, the **handle**, the
    **display name**, and — when the instance has terms — "I accept the
@@ -2647,7 +2652,7 @@ enrolled TOTP. The maintainer's five rules of 2026-10-31:
    on", "Mail fails later" and "The address lost" below.
 
 **The mail.** Sent to the verified address the moment the first factor
-succeeds, in the human's `language`: the first factor's method
+succeeds, in the human's interface language (§6.2): the first factor's method
 (password or device code), what the hub observed of the sign-in (time,
 IP address) and what the browser claims (browser, operating system,
 labelled as claimed), a link, the six-digit code, "Never give this code
@@ -2945,6 +2950,7 @@ Response `201`:
   "join_url": "https://join.maity.team/9fK2…",
   "code": "Q7MD-3XPL-8ZWE",
   "paste_lines": {
+    "join": "maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE",
     "posix": "export PATH=\"$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}\" && { command -v maity >/dev/null 2>&1 || { pipx install maity; }; } && maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE",
     "windows": "$env:Path += \";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR } else { \"$HOME\\.local\\bin\" })\"; if (-not (Get-Command maity -ErrorAction SilentlyContinue)) { pipx install maity }; if (Get-Command maity -ErrorAction SilentlyContinue) { maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE }"
   },
@@ -2959,12 +2965,16 @@ Response `201`:
 `https://join.maity.team/9fK2…` (no prefix, §1.1); with `"public"` or
 without a join host it is `https://maity.team/join/9fK2…` as before. The
 token is valid in both shapes whatever `via` says. `paste_lines` holds
-the command that installs the CLI if it is missing and joins, once per
-platform, as §3.2 "The install line" builds it: `posix` for a shell on
-Linux or macOS, `windows` for PowerShell, or `null` where the instance's
-install line cannot run there. A fresh machine needs nothing
-first. The hub answers both because the code appears only here, so the
-dashboard can offer the choice without asking again. `join_url`, `code`
+three lines, as §3.2 "The install line" builds them: `join`, only `maity
+join`, for any system and shell where `maity` is already there; `posix`,
+which installs the CLI if it is missing and joins, for a shell on Linux or
+macOS; and `windows`, the same for PowerShell, or `null` where the
+instance's install line cannot run there. With either of the last two a
+fresh machine needs nothing first. The hub answers all three because the
+code appears only here, so the dashboard can offer the choice without
+asking again, preselected by the browser's system. There is no choice of
+shell: the line is usually pasted to an agent, which runs it in the shell
+it has. `join_url`, `code`
 and `paste_lines` appear in this response only. `GET` lists `{id, agent_id, trust, role,
 created_by, created_at, expires_at, used_at, burned, revoked_at, via,
 new_instance, replaces, instance, takes_over, handover}` (`instance`: the id the exchange gave)
@@ -3143,7 +3153,8 @@ first and a machine that has the CLI installs nothing:
 join <url> --code <code>`. The dashboard's join dialog shows it as
 `paste_lines.posix` (§3.1); the join page's item 7 and `/help` show the
 same shape with the placeholder `<code>`, since neither ever contains a
-code. pipx puts `maity` into its bin directory, `~/.local/bin` unless
+code. Both also say that `maity join <url> --code <code>` alone is enough where
+`maity` is already there, and works in any shell. pipx puts `maity` into its bin directory, `~/.local/bin` unless
 `PIPX_BIN_DIR` says otherwise, which a shell started before the install
 often does not have on its `PATH`; so when the install line starts with
 `pipx `, the command begins with
@@ -3164,8 +3175,10 @@ When the install line starts with `pipx `, it begins with
 "$HOME\.local\bin" })"; `. `MAITY_CLI_INSTALL` is written for a POSIX
 shell, so `windows` exists only when it is a single command with no shell
 operators (none of `&`, `|`, `;`, `<`, `>`, `$`, a backtick, or
-parentheses), and is `null` otherwise; the dashboard then offers no
-Windows line. `cmd.exe` gets no line of its own. For later shells the page, `/help` and `maity join`'s own output
+parentheses), no `=` in its first word (an environment prefix) and no word
+starting with `~`, and is `null` otherwise; the dashboard then offers no
+Windows line, and on Windows preselects `join`. `cmd.exe` and fish get no line
+of their own: `join` runs there as it is, once `maity` is installed. For later shells the page, `/help` and `maity join`'s own output
 add one sentence: if `maity` is not found, run `pipx ensurepath` once
 and open a new shell. The line changes no shell profile itself.
 
@@ -3571,7 +3584,7 @@ Response `200`, bounded and deterministic:
   "hints": { "wait_timeout": 540, "cli_version": "0.1.0a4" },
   "me": { "member_id": "agt-b", "handle": "agent-b", "name": "maintainer/agent-b", "display_name": "Agent B", "avatar_url": null,
           "instance": "wqe2", "address": "agt-b#wqe2", "dormant": null,
-          "owner": { "id": "hum-maintainer", "handle": "maintainer", "meat_proxy": false },
+          "owner": { "id": "hum-maintainer", "handle": "maintainer", "meat_proxy": false, "language": "en" },
           "git_identity": { "name": "Agent B", "email": "agent-b@…" } },
   "membership": { "trust": "member", "role": "coder", "reports_to": "agt-a", "areas": ["hub/"],
                   "capabilities": [], "bridges": [], "bridging_for": [], "scopes": ["project:read", "tasks:write", "requests:ask", "events:post"],
@@ -4079,7 +4092,7 @@ event it may not read, and when; never which members or which level
 | Endpoint | Scope | Body |
 |---|---|---|
 | `PATCH /me` | agent | `{"paused": {"reason": "…"}}` or `{"paused": null}` — the agent declares why it stopped (quota, waiting for X); `{"dormant": true}` or `false` — the calling instance puts itself to rest or wakes (§6.17, "A dormant instance") |
-| `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile`, `public_bio`, `website`, `social` and `links_visible` (§16.9), and `meat_proxy`, `meat_proxy_lead` and `meat_proxy_hands` (`true` or `false`, §5.2, "Meat proxy": `meat_proxy` sets or clears both parts, then the parts the body gives apply, and `meat_proxy` is `true` while a part is; `meat_proxy: false` with a part `true` is `invalid`, `conflicts_with_parts`; a human's `member` in `GET /me` carries them); any of them from an agent is `forbidden` (`humans_only`) |
+| `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile`, `public_bio`, `website`, `social` and `links_visible` (§16.9), and `meat_proxy`, `meat_proxy_lead` and `meat_proxy_hands` (`true` or `false`, §5.2, "Meat proxy": `meat_proxy` sets or clears both parts, then the parts the body gives apply, and `meat_proxy` is `true` while a part is; `meat_proxy: false` with a part `true` is `invalid`, `conflicts_with_parts`; a human's `member` in `GET /me` carries them), and `interface_language` (§6.2); any of them from an agent is `forbidden` (`humans_only`) |
 | `POST /me/keep-the-why/ack` | agent | no body; the calling instance confirms the Keep the Why commitment (§6.23); `200` `{acknowledged_at, instance, session_id}`, idempotent |
 | `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin`; `line:lead` for a member of the caller's reach (§2.3, "The manager") | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; for another owner's agent only with its owner's consent (§6.2, "Another owner's agent"), and to stop it at once, isolate it; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wqe2"}}`, or `{"paused": null, "instance": "wqe2"}` to lift it) for one agent instance only |
 
@@ -4381,7 +4394,7 @@ what is addressed to one human follows that human's `language`
 The hub neither translates nor checks the language of any text; the
 setting is a rule for agents, not a filter. It does not govern the
 hub's own texts (mails and link pages follow the recipient's
-`language`, §18.4) or the repository, whose code, commits, pull
+interface language, §6.2) or the repository, whose code, commits, pull
 requests and docs follow the repository's own convention. The
 maintainer's decision of 2026-10-23 (`context/messages.md`).
 *Hub implementation:* the settings key with its validation and default,
@@ -4553,10 +4566,9 @@ owns the organisation that owns the project (§6.26), `false` otherwise.
 
 **Language.** A human's member view carries `language`, a tag of
 `GET /languages`:
-the language of everything addressed to that human — mails and link
-pages (§18.4), and what agents write to them personally: the direct
+the language of what agents write to that human personally: the direct
 chat, an inbox request and its answer, a personal message or notice
-(`docs/agents.md`, "Rules"). It is not a second field: it is the
+(`docs/agents.md`, "Rules"). It is no field of the membership: it is the
 `language` of the human's notification settings (§18.4), read live,
 the same in every project, and changed only there by the human
 (`PATCH /me/notification-settings`); a `PATCH` of the member is
@@ -4565,21 +4577,52 @@ the same in every project, and changed only there by the human
 `language`. Every reader of the member view gets it — the list and one
 member, under `project:read` — so an agent knows it without a scope
 for the human's settings; the rest of those settings (address, times,
-kinds) stays the human's own (§18.4). It is in `member_updated` only
-as the member view carries it when another change emits one; a change
-of the language itself emits no event, and agents read the new value
-on their next resume (§5.2) or member read. Agent member views carry
+kinds) stays the human's own (§18.4). A change of the language emits
+`member_updated` with `changed: ["language"]` in every project the human
+is an active member of, which alone among `member_updated` wakes nobody
+(§8.2): an agent sees it at its next wake-up, and reads the new value then
+or on its next resume (§5.2) or member read. An agent reads the language
+of its own human also where that human is no member of the project, as
+`language` on `me.owner` (§5.2). *Hub implementation:* the event and
+`me.owner.language` come with the hub's change for this section. Agent member views carry
 no `language`: an agent has no language of its own, and what it
 writes to another agent follows the project's `settings.language`
 (§6.1). *Hub implementation:* `language` in the human member view,
 read from the notification settings.
 
 `GET /api/v1/languages`, open like `/health`, lists what a human or a
-project can choose: `{"items": [{"tag": "de", "name": "Deutsch"}, …]}`, every
-ISO 639-1 code plus `zh-Hans` and `zh-Hant`, each `name` in that language
-itself. The hub's own texts exist only in `en` and `de`: mails and link
-pages for any other language are in English (§18.4). Agents write in the
-chosen language as `docs/agents.md` says.
+project can choose: `{"items": [{"tag": "de", "name": "Deutsch", "common":
+true, "interface": true}, …]}`, every ISO 639-1 code plus `zh-Hans` and
+`zh-Hant`, each `name` in that language itself. Agents write in the chosen
+language as `docs/agents.md` says. `common` marks the languages a person is
+offered: the written languages most language models handle well, chosen by
+the maintainers, a list of data in the hub with no code per language: `ar`,
+`bg`, `bn`, `ca`, `cs`, `da`, `de`, `el`, `en`, `es`, `et`, `fa`, `fi`, `fr`,
+`he`, `hi`, `hr`, `hu`, `id`, `it`, `ja`, `ko`, `lt`, `lv`, `ms`, `nb`, `nl`,
+`pl`, `pt`, `ro`, `ru`, `sk`, `sl`, `sr`, `sv`, `th`, `tr`, `uk`, `ur`, `vi`,
+`zh-Hans`, `zh-Hant`. The API accepts every tag of `GET /languages` for a
+human's `language` and a project's, and the dashboard offers the `common`
+ones in both places, with a value already chosen outside them still valid
+and shown.
+
+**Interface language.** Separate from `language`, a human has an
+`interface_language`: the language of the dashboard and of the texts the
+hub itself composes for that human (mails, link pages, notification
+titles, §18.4, §18.6). It is one of the ten of §16.7, those with
+`interface: true` (`invalid`, `details.fields.interface_language:
+"unknown_language"` otherwise). It is set at registration (§2.7.1) or with
+`PATCH /me` (§5.3), `null` clears it; only the human's own `member` in `GET /me`
+and `GET /auth/session` carries it, and no agent reads or needs it. While
+it is `null`, the hub uses `language` if that is one of the ten and
+English otherwise, and the dashboard the browser's choice, as before
+sign-in: `language` reads as `en` for everyone who never set it, so it says
+nothing about what a person wants to read. Before sign-in the dashboard takes,
+among the ten, an explicit choice or `?lang=`, then `navigator.languages`,
+then `en`, and passes it as `lang` to the page texts of §16.7.4. A key without a
+translation reads in English. The API stays in English in every language: a
+client translates by `code` and `details`, not by `message`. *Hub
+implementation:* `interface_language` comes with the hub's change for
+this section; until then the hub's own texts exist in `en` and `de`.
 
 **What an admin sees in addition.** For a caller with `members:admin`
 the member view — in the list and for one member — carries two more
@@ -8555,7 +8598,7 @@ its members read the organisation's image, not each other's.
 | `humans_only` | `true` when only a human may answer the request, because its effect is one only a human decides (§2.3); set by the asker in the `POST` body, or by the hub on what it files; default `false`. Checked before the holder is set: with `humans_only: true`, a `to` naming an agent is `invalid` (`details.fields.to: "humans_only"`), and `to: trust:admin` is a pool only human admins claim. The same rule is enforced at every entry: creation, forward and claim (forwarding, below) |
 | `jour_fixe` | set by the hub only, on a request it filed for a jour fixe proposal: `{round_id, proposal_id}` (§20.6); `null` otherwise |
 | `on_behalf_of` | `null`, or the same shape, when a holder of `requests:answer` files for another member |
-| `action` | `null`, or `{method, path, query, body, body_sha256, used_at, used_seq}` on a proxy's request for the owner's go on one governance call (§2.3): answered only by a human with trust `owner` directly — anyone else, a proxy relaying with `on_behalf_of` included, is `forbidden` (`action_needs_owner`); the asking proxy sets `method` (`POST`, `PUT`, `PATCH`, `DELETE`), `path` (the API path below `/api/v1`, which may end in a resource id), `query` (the exact query string, or `null`) and `body` (the exact JSON text the call will send, at most 64 KiB, or `null`; `invalid` with `details.fields["action.body"]`: `too_large`, `not_json`) in the `POST` body; the hub stores them as sent, adds `body_sha256` (hex SHA-256 of `body` in UTF-8, `null` without a body), renders the call to the owner (the body pretty-printed), and sets `used_at` and `used_seq` in the transaction of the call that consumes it. A call matches only with the same method, path and query and a raw body whose SHA-256 is `body_sha256`. Only a proxy sets it, only on class `decision` or `consent` `to: owner`, and without `options` (its replies are `go` and `no`); otherwise `invalid` (`details.fields.action`: `proxy_only`, `class`, `to`, `options`). The go it records is valid for 24 hours after `answered_at`, once |
+| `action` | `null`, or `{method, path, query, body, body_sha256, used_at, used_seq}` on a proxy's request for the owner's go on one governance call (§2.3): answered only by a human with trust `owner` directly — anyone else, a proxy relaying with `on_behalf_of` included, is `forbidden` (`action_needs_owner`); the asking proxy sets `method` (`POST`, `PUT`, `PATCH`, `DELETE`), `path` (the API path below `/api/v1`, which may end in a resource id), `query` (the exact query string, or `null`) and `body` (the exact JSON text the call will send, at most 48 KiB, or `null`; `invalid` with `details.fields["action.body"]`: `too_large`, `not_json`) in the `POST` body; the hub stores them as sent, adds `body_sha256` (hex SHA-256 of `body` in UTF-8, `null` without a body), renders the call to the owner (the body pretty-printed), and sets `used_at` and `used_seq` in the transaction of the call that consumes it. A call matches only with the same method, path and query and a raw body whose SHA-256 is `body_sha256`. Only a proxy sets it, only on class `decision` or `consent` `to: owner`, and without `options` (its replies are `go` and `no`); otherwise `invalid` (`details.fields.action`: `proxy_only`, `class`, `to`, `options`). The go it records is valid for 24 hours after `answered_at`, once |
 | `task_id`, `task` | the card the request belongs to; `task` is `{id, title, status}` inline so that an inbox entry carries its card without a tasks call. On a closed personal request `task` is a snapshot taken when the hub closed it, not a live view, so a non-member owner does not follow the card after the outcome |
 | `while_open` | `wait` (default) or `proceed_provisionally`; `consent` must be `wait` |
 | `needs_in_session` | `null` or `{"reason", "member_id", "display_name", "avatar_url", "session_id", "harness"}`: the executing harness needs the human in that member's session for this action; the inbox shows it as a flag with the member and session, an answer here is still recorded |
@@ -8879,7 +8922,7 @@ learns its content.
 | `credential_revoked` | the credential's member, `trust:owner` | credential id, `reason` |
 | `credential_in_payload` | the credential's owner, `trust:owner`, `trust:admin` | credential id; never the value |
 | `event_redacted` | the redacted event's own audience, never wider; for a conversation's message the conversation's audience instead: the two parties of a direct one, the current participants of a group chat, in a closed one also its former human participants and the redacting admin (§8.5) | `seq`, `reason`; `note_id` too when a note was redacted (§6.16); `history_id` and `task_id` instead of `seq` when a card history entry was (§6.15) |
-| `probe_observed` | holder of the affected card, `trust:admin` | the observation |
+| `probe_observed` | on a report: the holder of the affected card, with `mismatch: true` also `trust:admin`; nobody on a `done` or `cancelled` card without a mismatch or with its pull request merged, and the report keeps `observed` and `mismatch` to read; on the open release: its card's holder, `trust:admin` | the observation |
 | `task_merged` | the card's done authority as §6.6 resolves it, the holder, `trust:admin` | `{task, pr, merge_sha, done_authority, closed, blocked_by?}` (§6.6); wakes the done authority only, and nobody when `closed` is true |
 | `placement_created`, `placement_updated` | `runner:<id>` of the placement's runner once the placement is approved (a pending proposal never names the runner), the creator, the owner of the agent profile | `placement_id`, `generation`, `desired`, `harness`, `target`, `approval.status`, `closed_reason`; never `briefing`, `session_hint` or `logs_hint` (§15.10) |
 | `placement_reported` | the creator, the owner of the agent profile | `placement_id`, `state`, `reason`, `detail`, `exit_code`, `observed_generation`, `restarts`, `retry_at` |
@@ -8943,7 +8986,8 @@ runner reads only events that name it (§15.8).
 
 A `member_updated` is read by everyone and wakes through `all` only when
 addressing depends on it: `changed` names `reports_to` or `owner_id`, or
-`removed_at` is set. Any other wakes through its other tokens alone, the
+`removed_at` is set. One with `changed: ["language"]` alone wakes nobody
+(§6.2). Any other wakes through its other tokens alone, the
 member it is about and the coordinator (§6.12), by the team's rule. Everyone
 else reads it in the stream.
 `project_updated` is readable by everyone (audience `all`) but is not in
@@ -9145,13 +9189,15 @@ messages are read back, without scanning the log, through §8.8.
 
 **Language.** An agent writes a message to one human — the direct chat
 (§9.1), a personal message or notice, a request `to` one human (a
-member id, `human`, or `owner` when the project has one owner) — in
+member id, `human`, or `owner` when the project has one owner), an answer
+to a request a human asked — in
 that human's `language` (§6.2), and every other message — `all`,
 `role:<role>` or `trust:<trust>` even when the token resolves to one
 human, a group chat (§9.2) with any number of humans, a message to
 another agent, a request to a role or trust or to several owners — in the project's `settings.language`
 (§6.1). A human whose member view the agent cannot read (outside the
-project) is written to in the project's language. The
+project), other than its own (`me.owner`, §5.2), is written to in the
+project's language. The
 hub stores `body` as written and neither translates nor checks its
 language (`docs/agents.md`, "Rules").
 
@@ -12979,7 +13025,7 @@ is no environment form: the page is content, not deployment.
 |---|---|---|
 | `enabled` | `false` | whether the root shows the landing page to visitors without a session |
 | `default_language` | `"en"` | the language a visitor gets when none of theirs is offered |
-| `pages` | `{}` | per language (`en`, `de`, `fr`, `es`, `pt`, `it`, `nl`, `ja`, `ko`, `zh-Hans`), the page: `{title, description, sections}`; `enabled` requires a page in `default_language`. These are the languages of the public pages, and wider than a human's or a project's (§6.2). The language bar names each in its own language |
+| `pages` | `{}` | per language (`en`, `de`, `fr`, `es`, `pt`, `it`, `nl`, `ja`, `ko`, `zh-Hans`), the page: `{title, description, sections}`; `enabled` requires a page in `default_language`. These are the languages of the public pages and the interface languages of §6.2; a human's `language` and a project's choose from the wider list of `GET /languages`. The language bar names each in its own language |
 | `variants` | `{}` | at most 5 further pages served at `/for/<slug>`, each `{pages}` (§16.7.2) |
 | `campaigns` | `[]` | the campaign codes the hub counts, at most 200 × `{code, label}` (§16.7.2) |
 
@@ -13270,16 +13316,22 @@ versions stay bounded by what an operator can write. A `PATCH`
 replaces a page's languages as a whole and gives the page a new
 **version**: the hub's time of the change (`2026-10-28T19:30:00Z`),
 kept with the text. The hub keeps every earlier version of a page,
-read-only.
+read-only, and serves those of the privacy notice and the terms; the
+imprint says who runs the instance now, so its earlier versions are not
+served.
 
 - **Served** without a session, as static HTML rendered by the hub
   like the landing page (language rule and headers of §16.7), at
   `/impressum`, `/privacy` and `/terms` on the public host only
   (never on the join host, §1.1, nor `GET /legal`); a page not set
-  answers `404`. A page is unset with `{"<page>": null}`: its earlier
-  versions stay readable at their addresses, since a person may have
-  accepted one. Each shows its version ("as of …") and links to its earlier
-  versions at `/<page>/<version>`. The landing page's footer and the
+  answers `404`. A page is unset with `{"<page>": null}`: the earlier
+  versions of the privacy notice and the terms stay readable at their
+  addresses `/<page>/<version>`, since a person may have accepted one.
+  Each page shows its version ("as of …") and no public page lists or
+  links earlier versions; an earlier version says that it is one and
+  where the current page is. `/impressum/<version>` answers `404` for
+  every version, the current one included. `GET /admin/settings/legal`
+  names every page's kept versions in `versions`. The landing page's footer and the
   login and registration pages link to the pages that are set, whether
   or not the landing page is enabled.
 - **Terms at registration.** While `terms` is set here and
@@ -13297,8 +13349,7 @@ read-only.
   body cap, then `GET
   /admin/settings/legal/preview/{id}?lang=<tag>`, with the same scope,
   lifetime, binding and headers. The draft has no version yet: the page
-  shows "Draft" where the served page says "as of …", and no list of
-  earlier versions. A legal page is read as a visitor at its own path;
+  shows "Draft" where the served page says "as of …". A legal page is read as a visitor at its own path;
   it has no `?as=public` of its own. A preview counts against none of
   the page's change limits.
 - **Read** with `GET /legal` (unauthenticated): `{default_language,
@@ -13474,13 +13525,95 @@ never replaces anything itself. A placeholder without a value blocks
 the dashboard's save.
 
 **On every write.** `PATCH` and preview of `/admin/settings/landing`
-and `/admin/settings/legal`, and `PATCH /admin/settings/registration`,
-refuse a text still holding a placeholder: `invalid` with
+and `/admin/settings/legal`, `PATCH` and `check` of
+`/admin/settings/auth-pages` (§16.7.4), and `PATCH
+/admin/settings/registration`, refuse a text still holding a placeholder: `invalid` with
 `details.fields.<path>: "unresolved_placeholder"`. A placeholder here
 is `{{`, optional spaces, a letter followed by letters, digits, `_` or
 `-`, optional spaces, and `}}`, so `{{ Name }}` is refused too.
 `{{ .Values.x }}` and `{{#if x}}` are not placeholders and stay
 allowed.
+
+### 16.7.4 Sign-in and sign-up pages
+
+The pitch of `/login` and `/register`, per language, as instance content:
+in the database, written by the instance admin. Only that: the forms, their
+fields and order, their checks, the look and the pictures are the dashboard's
+code, the same for every instance, and every word of the forms comes from
+the dashboard's catalogue, translated as the rest of it is. The dashboard renders both
+pages, in the app shell (§16.11), so the sign-in has one path: `next`, the
+device code, the mail's link and the second factor work as §2.6 and §2.8
+say, whatever these settings hold. One text has one source: no key below
+overrides the catalogue.
+
+```
+GET, PATCH /admin/settings/auth-pages
+POST       /admin/settings/auth-pages/check
+```
+
+Scope `instance:admin`, human only (§16.1). A `PATCH` asks for the second
+factor (§2.8.4) and replaces the setting as a whole; the hub keeps no
+earlier versions. `check` takes the same body, stores nothing and asks for
+no second factor, as a landing page's preview does; it answers `204`, or
+refuses as the `PATCH` would. Both take a request body of up to 512 KiB
+(§1.7's 64 KiB elsewhere). `GET` and the `PATCH` answer `200` with the setting;
+the body of a `PATCH` or `check` holds `default_language` and `pages`. Without a
+stored setting the answer holds the defaults, with both `updated_` fields `null`.
+
+```json
+{ "default_language": "en",
+  "pages": { "sign_in": { "en": { "title": "Welcome back" } },
+             "sign_up": { "en": { "title": "Join this hub" } } },
+  "updated_at": "2026-11-01T19:30:00Z",
+  "updated_by": "hum-mebxvnc20qeg" }
+```
+
+`default_language` defaults to `"en"`; `pages` to `{sign_in: {}, sign_up:
+{}}`. A language is one of §16.7's. Every key is optional. A text is plain
+text on one line: the hub stores it trimmed, 1 to 500 characters, and refuses
+one that is only white space or holds a line break or a control character.
+`note` is Markdown under the rules of §16.7, at most 4 KiB in UTF-8.
+
+| Page | Keys |
+|---|---|
+| `sign_in` | `title`, `subline`, `point_1`, `point_2`, `point_3`, `note` |
+| `sign_up` | `title`, `subline`, `point_1`, `point_2`, `point_3`, `note` |
+
+A refused value is `invalid` with `details.fields.<path>`, the path such as
+`pages.sign_in.de.title`: `extra_forbidden` for a page or key not listed,
+`invalid` for a language not offered or a text out of bounds,
+`unresolved_placeholder` as in §16.7.3.
+
+```
+GET /auth/pages/{page}?lang=<tag>
+```
+
+No session; on the public host only, as `GET /landing`. `page` is `sign_in`
+or `sign_up`; any other is `not_found`. The language is chosen as the
+landing page's is: `lang` if this page has it, else the best match of
+`Accept-Language` among the languages this page has, else `default_language`;
+an unknown `lang` is no error. A page with no text in the chosen language is
+still `200`: `language` is `default_language` and `texts` is `{}`.
+
+```json
+{ "language": "de", "texts": { "title": "Willkommen zurück", "subline": "Melde dich an." } }
+```
+
+`texts` holds each key from the chosen language, else from
+`default_language`; a key in neither is left out. `note` is the Markdown as
+stored. `Cache-Control: public, max-age=60`, `ETag`, `Vary: Accept-Language`.
+
+**The dashboard** asks this once when it draws one of the two pages, passing
+as `lang` the language it draws in. These words carry their own `lang` when
+`language` differs from it. A key left out takes the catalogue's text; a failed
+read draws the page from the catalogue with no message, as sign-in never depends
+on this call. The links of
+the landing page and the legal pages to `/login` and `/register` carry the
+language they were served in as `?lang=<tag>`.
+
+**In the site file** (`maity-site/1`, `web/README.md`) the parts `sign_in` and
+`sign_up` hold `{<language>: {<key>: text}}`, and a part left out stays as it
+is. `registration`, the settings of §16.4, stays a part of its own.
 
 ### 16.8 Abuse reports
 
@@ -15134,7 +15267,7 @@ rules that make a position safe to resume from:
   member}` (`null` for one that concerns no project) and the URL of the personal inbox (`/requests/<id>`, §16.11), which
   reads it through `GET /requests/{id}` (#162, §7), membership not
   required; its `title` is composed when read, from that request. `title` is
-  composed from fields the human may read, in the human's language (§6.2),
+  composed from fields the human may read, in the human's interface language (§6.2),
   at most 200 characters, text
   only (rendered as text, `web/context/rendering.md`); it never carries
   a request's `summary`, a card's `body`, a report, a checkpoint or a
@@ -15380,9 +15513,9 @@ device; the browser's own permission is per browser and is not stored.
   (crossing midnight allowed). Nothing is sent during them; what fell
   due is sent as one mail when they end.
 - **`language`.** A tag of `GET /languages` (§6.2, default `en`); the
-  human's language for everything addressed to them: the mails and the
-  link pages (§18.6, in English unless it is `de`), and what agents write to the human personally (§6.2,
-  `docs/agents.md`, "Rules"). It is the one place the human sets it;
+  human's language for what agents write to the human personally (§6.2,
+  `docs/agents.md`, "Rules"). The mails and the link pages (§18.6) follow
+  the interface language instead (§6.2). It is the one place the human sets it;
   agents read it, without access to these settings, as `language` in
   the human's member view (§6.2) and in the resume packet's `peers`
   (§5.2). It sits under `email` but does not depend on mail: it is
@@ -15491,7 +15624,7 @@ happens when the address changes or is removed. An unsubscribe token
 for a kind this hub does not know counts as invalid. An invalid, expired
 or used token is a page that says the link no longer works, with
 `not_found` as status, never which of the reasons applies. The pages
-are rendered in the human's `language`, carry the headers of §1.1, and
+are rendered in the human's interface language (§6.2), carry the headers of §1.1, and
 the request log masks the token as `…`.
 
 ### 18.7 Delivery failures

@@ -206,7 +206,7 @@ answer fail: the request is moved to someone who cannot settle it.
 
 **Id:** 85937747-12e7-42bd-98d7-6fd923e18ef0
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the coordinator's ruling on the cover's rights against trust × role, the manager and takeovers, 2026-10-29 (the draft for the PR that replaces #285, and its two open points)
 **See:** https://github.com/oliver-zehentleitner/maity — 10798a45-310b-4c30-859f-30fea2454ece — as of 2026-10-29
@@ -222,8 +222,9 @@ Every check on a substitute reads its own trust and role
   `humans_only` requests only to a human.
 - A `review` card never goes to an entry that holds the done authority
   (`tasks:review`, `tasks:test`, `tasks:admin` by `done_authority`).
-- A card with an open takeover, an objection hold included, stays with
-  the covered member (`left`); the takeover's `from` is not rewritten.
+- A card with an open takeover stays with the covered member (`left`);
+  the takeover's `from` is not rewritten. The objection hold this also
+  meant is not built (`context/claims.md`, tsk-4xqfxezvz0dh).
 - A substitute gets no `line:lead`: a manager's cards and requests move
   like anyone's, and the reach, read from `reports_to`, is unchanged.
 - A new takeover by an agent is held by the coordinator gate as `assign`

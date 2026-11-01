@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${title} · Maity docs</title>
+<meta name="description" content="${description}">
+<link rel="canonical" href="${canonical}">
+<meta property="og:title" content="${title} · Maity docs">
+<meta property="og:description" content="${description}">
+<meta property="og:image" content="https://maity.dev/brand/og-image-dev.png">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="/brand/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/brand/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="/brand/apple-touch-icon.png">
+<link rel="stylesheet" href="/docs/_assets/docs.css">
+<script src="/docs/_assets/docs.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<header class="top">
+  <a class="brand" href="/" aria-label="Maity home"><picture><source media="(prefers-color-scheme: dark)" srcset="/brand/maity-lockup-dark.svg"><img src="/brand/maity-lockup.svg" alt="Maity" height="28"></picture><span class="brand-docs">docs</span></a>
+  <nav class="top-links" aria-label="Site">
+    <a href="/docs/">Docs</a>
+    <a href="/keep-the-why-dashboard/">Why</a>
+    <a href="https://github.com/oliver-zehentleitner/maity">GitHub</a>
+    <a class="top-cta" href="https://maity.team">maity.team</a>
+  </nav>
+</header>
+<div class="layout">
+  <details class="nav-mobile">
+    <summary>Menu</summary>
+    <nav aria-label="Docs">${nav}</nav>
+  </details>
+  <aside class="side">
+    <div class="search" hidden>
+      <input type="search" placeholder="Search the docs" aria-label="Search the docs" autocomplete="off">
+      <ul class="search-results" role="listbox"></ul>
+    </div>
+    <nav aria-label="Docs">${nav}</nav>
+  </aside>
+  <main id="content" class="content">
+${content}
+    <footer class="page-foot">
+      <a href="${source}">Edit this page on GitHub</a>
+      <span>Maity is open source under the MIT licence.</span>
+    </footer>
+  </main>
+  <aside class="rail">${toc}</aside>
+</div>
+</body>
+</html>

@@ -255,7 +255,7 @@ messages — a long pause would hide that the agent came back later.
 **Id:** 1cf107b2-991d-42e4-aa35-9dd8f84216eb
 **Type:** decision
 **Type:** constraint
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** docs/api.md §15.3 and §15.4; the review of web PR #96, 2026-10-22; the dashboard's implementation, 2026-10-22
 **Revisit when:** humans other than the owner can join a project (then a runner's owner may not be its admin), or the hub sends events for runners' presence or placements
@@ -431,7 +431,7 @@ open that chat.
 
 **Id:** 8e483bb1-53be-4ce2-a139-561989db21af
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** docs/api.md §8.3 (events), §8.4 (message types), §8.5, §8.7 and §8.8 (the listing, in the contract since #215, not in the hub yet); the coordinator's card for the project messages view (tsk-3s4an5p22v4j), 2026-10-23; the dashboard's implementation, 2026-10-23
 **Revisit when:** the hub implements `GET /projects/{slug}/messages` (§8.8), or projects outgrow a window of 5000 events
@@ -469,7 +469,7 @@ redaction: a contract change that §8.8 already makes unnecessary.
 
 **Id:** 561b77f6-2a12-4352-aa50-36a8aa773fbe
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** docs/api.md §2.6.5 (good standing, who may end which, the banner), §2.6.3 (a held address change), §2.6.7 (the dashboard's part) and §18.3; the coordinator's card for the sessions view (tsk-s5yq94v758g4), 2026-10-23; the dashboard's implementation, 2026-10-23
 **Revisit when:** the hub serves the session list (the view is built against the mock), or the session view gains a field that says what a session may do
@@ -512,7 +512,7 @@ shows.
 
 **Id:** 6c688878-105b-4162-b0ad-5e1302df921c
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** docs/api.md §17.5 (shaped per reader), §17.6 (manual post), §17.8 (subscriptions) and §17.9 (listing and the dashboard's part); the coordinator's card for the Ticker view (tsk-sbx670wtr5qb), 2026-10-23; the dashboard's implementation against the mock, 2026-10-23
 **Revisit when:** the hub serves `/ticker`, or the listing gains a field the view now derives
@@ -1980,7 +1980,7 @@ panel above the columns, as before: the length of the page.
 **Id:** fcc59a72-46a0-4741-9d6f-abada05edab6
 **Type:** decision
 **Type:** constraint
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's report that chats grow slower and slower (tsk-r1adgwp0a5dr), 2026-10-27, and the rule from the incident of 2026-10-26: no request whose cost grows with history; docs/api.md §9.1 and §9.2 (`before` marks nothing read, `after` marks and delivers, a group chat's window); measured in web/tools/smoke.js on a 2000-message chat: 10 requests and 2000 messages drawn before, 2 and 50 after
 **Revisit when:** the hub can read the newest page and mark it read in one request, or serves the project messages listing (§8.8) the Messages view should page through
@@ -2149,7 +2149,7 @@ project's.
 
 **Id:** 242091d4-23c3-446e-ae63-6bb67057640e
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** docs/api.md §6.25 (projects in their owner's namespace; a client keeps `full_name` or the pair, never the slug alone), the card tsk-dbbcw9ccabfk and the hub's PR #483, 2026-10-27
 **Revisit when:** organisations become namespace owners, or the hub serves the one-segment routes again
@@ -2269,7 +2269,7 @@ would have two places. Alternatives to the row's placement: unknown.
 
 **Id:** 9cf859f1-d5e0-420c-9ea3-d633cea94e33
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** docs/api.md §6.25 (rename by a human owner, transfer by the namespace owner as a consent request, aliases, card references outside a project); the card tsk-cns4d1d7ht4j from the maintainer's chat; the hub's PR #487, 2026-10-28
 **Revisit when:** the dashboard gets a second-factor prompt (the transfer's step-up), or organisations become namespace owners
@@ -2591,7 +2591,7 @@ the picture's place: the layout would jump from one person to the next.
 **Type:** workaround
 **Status:** active
 **Evidence:** confirmed
-**Source:** the delta review of #748 (the fixture's `/people` route), 2026-10-30; `hub/routes/people.py` (`page_served` read from the store)
+**Source:** the delta review of #748 (the fixture's `/people` route), 2026-10-30; `hub/src/maity_hub/routes/people.py` (`page_served` read from the store)
 **See:** https://github.com/oliver-zehentleitner/maity — 4423561d-6f8e-4ad5-8729-0b896fb37e3c — as of 2026-10-31
 **Revisit when:** the hub renders an organisation's page kind
 
@@ -2862,7 +2862,7 @@ slot in place keeps the focus and the context where the human was.
 
 **Id:** 4fdf4cc1-e916-44d7-9064-5b07989b0d06
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** docs/api.md §2.8.2 (the second-factor session reaches only `GET /auth/session`, the verify, the mail's resend and the logout), §2.8.7 and §2.8.8 after the contract #925 and the hub's first part #943 (`via: email`, `mail`, the link `/sign-in/second-factor/email#<token>` bound to the signing-in browser, the step-up by a mailed code); the coordinator's card tsk-ekpb0pvgw4bh and the lead's answers of 2026-11-01 (the step for both ways in this change, TOTP enrolment and the security page on tsk-94jtz06aps4b; `address_hint` to come with the hub's second part, "your address" until then; Admin → Sign-in in a second web change); the page's shape is the implementer's, 2026-11-01
 **See:** views.md#a-sensitive-call-asks-for-the-password-or-a-code-where-it-stands-then-is-made-again — bddf61cb-f6a0-4290-891f-2f3b3006946d — as of 2026-11-01
@@ -2965,7 +2965,7 @@ the view already says the organisation is suspended.
 
 **Id:** c3e2532b-f64a-4ade-b834-853ad4b1160f
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** docs/api.md §6.24 (handles are lowercase; `{org}` resolves a handle or an alias); the review of the organisations page (#584), 2026-10-29
 **Revisit when:** the dashboard moves to real paths (the routing card after #601), where the route parser may normalise once for every handle
@@ -3121,7 +3121,7 @@ up the state, so the mark belongs there as well as in the header.
 
 **Id:** 4c3f8949-c8df-4c99-bb0c-08dc47205eed
 **Type:** workaround
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** docs/api.md §8.3 (an event's `seq` counts across the whole hub; a feed is read forward with `after=` only, without a filter by actor); the coordinator's review of #687, 2026-10-30 (the window `after = head − 200` counted the hub's events, not the project's); the rule from the incident of 2026-10-26: no request whose cost grows with history
 **Revisit when:** §8.3 takes `actor=`, or the hub serves the project messages listing (§8.8)
@@ -3725,6 +3725,10 @@ legal training. The English and German are not changed by them.
 **Source:** the maintainer's decisions req-0cv1n7eaegay (o1: one JSON for landing, legal and registration, dashboard only, no hub endpoint) and req-39vmjgrq5s32 (o1: a template in the repository, the imprint with placeholders only, landing-v3-complete.json dropped for one source), relayed by the coordinator on the card tsk-xw8a2hd84x3a, 2026-10-31; the coordinator's word that placeholders go in square brackets; the coordinator's decision on the review of #961, 2026-10-31 (an unknown key anywhere refuses the whole file; variants and campaigns stayed out while the editor's import did not know them, until the coordinator's decision on tsk-ets3x0c4ethg, 2026-11-01, took them in); the coordinator's decision on #961, 2026-10-31 (the template carries no registration; registration is the instance's own); docs/api.md §2.8.4 (a step-up holds 10 minutes); the dashboard's implementation, 2026-10-31
 **Revisit when:** the hub offers one call that saves several settings in a transaction, or a fourth setting joins the site file
 **See:** views.md#the-legal-pages-and-registration-import-and-export-json-too-text-not-loaded-stops-a-preview — 951ed7bf-6f23-4279-a4c6-f2c03c7c31ea — as of 2026-10-31
+
+Since tsk-fct4awzw3k30 it stands folded at the top of the admin's **Pages**
+tab, over the sub-tabs, as it spans them; `/admin/site` is gone without a
+redirect (alpha), and `/admin/pages/site` opens it.
 
 The instance admin has **Import or export everything** for the landing
 page, the legal pages and registration as one file, `maity-site/1`,
@@ -4332,3 +4336,17 @@ The section (`js/admin-sign-in.js`) lists the sign-in methods with each value's 
 **Reason:** the contract makes the code the proof that a mail of this hub arrived, so the page must not read as saved before it. The refusals `mail_not_ready` and `no_verified_address` can still come, as the state may change after the page was read; they are said at the field.
 
 **Rejected alternatives:** offering the value always and relying on the refusal: the contract says it is offered only while mail is ready. A cancelling `PATCH` on leaving: it would need a value to write back and a step-up for a change that never happened. Reading the settings again before showing the question: if that read failed, the mailed code would have no field.
+
+## The words of sign-in and sign-up are instance content; the forms stay the dashboard's
+
+**Id:** 133731df-a4ac-453d-923a-5df0878e69f0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish on tsk-fct4awzw3k30 and decision req-885kx86hhab4 on tsk-ya56x9gx986r, 2026-11-01; the plan the coordinator approved; docs/api.md §16.7.4
+
+The site file gives `/login` and `/register` their pitch per language: title, subline, three points and a note. Every word of the forms comes from the dashboard's catalogue, which is translated with the rest of the portal, and the catalogue also supplies a key left out or a failed read. The hub chooses the file's language as for the landing page.
+
+**Reason:** `next`, the device code's polling, the second factor and a session that ends under a page all live in the dashboard, so a second renderer would be a second sign-in path. No sign-in may depend on reading words.
+
+**Rejected alternatives:** form labels and buttons in the file too, with the file winning over the catalogue: two sources for one text, and an imported file would pin a form's words against later catalogue changes. The hub rendering the two pages as it does the landing page: a second path, above. Free HTML or sections from the file: the forms are a security surface. A format `maity-site/2`: it would invalidate files in use, and a part left out already stays as it is. Words in the `registration` part: those are settings, with their own environment rules. A table of its own with versions: unlike legal texts nothing needs to be proven later, so one setting row is enough.

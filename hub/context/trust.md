@@ -116,7 +116,7 @@ the three roles and `writer` went missing from some.
 
 **Id:** 25a99503-c0df-436b-a0b2-7b1d0b1a966f
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** `docs/api.md` §2.3 "Project roles"; the coordinator's go on the card tsk-chvx53e55hmg
 **Revisit when:** a card's `needs`, the role memory store or `membership.guide` in the packet is built

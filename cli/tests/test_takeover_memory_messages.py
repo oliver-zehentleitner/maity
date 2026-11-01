@@ -51,7 +51,7 @@ def query(seen: fakehub.Seen) -> list[tuple[str, str]]:
 # --- takeover ------------------------------------------------------------------------------------
 
 
-def test_takeover_opens_after_checking_the_card_has_no_hold(
+def test_takeover_opens_with_the_reason_and_the_receiver(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
     fake.routes[("POST", f"{P}/tasks/tsk-0004/takeover")] = lambda s: (201, TAKEOVER)

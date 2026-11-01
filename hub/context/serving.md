@@ -45,7 +45,7 @@ reported where it was made instead of as a 404 on `/` later.
 
 **Id:** 2b3a388d-15e6-4b30-a566-aad5e5116838
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** implementation session, 2026-10-21
 **Revisit when:** the hub authenticates every endpoint and serves TLS, or sits behind a documented reverse proxy
@@ -64,6 +64,28 @@ variable.
 development servers do so that a VM or a second machine reaches them
 without configuration. Convenient for exactly that case, at the price of
 exposing an unauthenticated hub on every network the machine is on.
+
+## A proxy's action body is capped at 48 KiB, below its request's 64 KiB
+
+**Id:** 4a2abcdf-296e-4a93-b449-cf41196365fa
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-1pg4p7eh6qww and the review of #1096, 2026-11-01; docs/api.md §2.3, §7
+**Revisit when:** a proxy needs a call whose body is between 48 and 64 KiB, or a body within the limit is refused with 413 through the CLI
+
+`ACTION_BODY_MAX` was 64 KiB, the cap of the whole request, so the field's own `too_large` could
+never trigger. It is now 48 KiB, and 16 KiB stay for the title and the JSON around it. The number
+is a choice, nothing else sets it. It counts the text, not its escaped form, so a hand-written
+request can still get the bare 413; the CLI measures the escaped form too and says so.
+
+**Reason:** the landing page below raised its route's cap because a page near its limit is normal
+use. No call a proxy asks for is known to come near 48 KiB, so the smaller limit costs little: a
+proxy cannot ask for a call of 48 to 64 KiB. That is a judgement, not a measurement.
+
+**Rejected alternatives:**
+- A larger cap for `POST /requests` in `middleware._body_cap`, the way of the landing PATCH: every
+  request would buffer more for one rare field.
 
 ## No Swagger UI: `/help` describes the API, `openapi.json` stays
 
@@ -154,6 +176,9 @@ keeps a request from buffering without bound. The rest of the API keeps 64 KiB.
 - Raising the cap to 384 KiB for control characters' sixfold escaping: no
   page needs them, and accepting them would only grow the cap.
 
+Checked on 2026-11-01 when a proxy's action body reached this cap: that field went the other way
+(see "A proxy's action body is capped at 48 KiB"), and this decision stands for the landing page.
+
 The fields refuse C0 control characters other than tab, newline and carriage
 return (`control_character`). Without them a valid page escapes to at most
 three times its size (`\u00e9` for a two-byte character, two `\uXXXX` for a
@@ -236,7 +261,7 @@ without a restart.
 
 **Id:** 261f1ce2-819b-4aac-ae4a-387bb83d0907
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** `docs/api.md` §16.11 and the maintainer's decision of 2026-10-29 behind it (the contract owner's `context/routing.md`, root context); the way to serve it is the implementer's
 **Revisit when:** the hub renders a dashboard page itself beyond the public pages, a handle may legitimately be a first segment the hub uses, or the dashboard gets a build step that changes which files it ships, or public pages (§16.9) arrive at `/<owner>/<slug>` and `/<handle>`: the shell sends `noindex` on every path of its own, and those pages are listed in the sitemap, so the shell must not claim them

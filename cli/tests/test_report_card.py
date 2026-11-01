@@ -197,6 +197,18 @@ def test_a_forge_that_can_not_be_asked_keeps_the_refusal_and_says_so(
     assert not _sent(fake)
 
 
+def test_a_url_naming_another_number_is_not_asked_about_the_reported_one(
+    joined: Path, fake: fakehub.FakeHub, bin_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _gh_view(bin_dir, _head(joined), "MERGED")  # what #781 would say, of no use for #780
+    before = _before(780, "open", observed="open")
+    before["pr"]["url"] = f"{REPO}/pull/781"
+    _card(fake, report=before)
+    assert _report() == cli.EXIT_REFUSED
+    assert "#780, still open (the hub's last observation" in capsys.readouterr().err
+    assert not _sent(fake)
+
+
 def test_no_code_reads_no_card(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:

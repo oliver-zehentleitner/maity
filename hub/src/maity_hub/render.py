@@ -197,7 +197,6 @@ WORDS: dict[str, dict[str, str]] = {
         "legal": "Legal",
         "as_of": "As of {version}",
         "draft": "Draft",
-        "earlier": "Earlier versions",
         "older": "This is an earlier version, as of {version}. The current one is at {current}.",
         "language": "Language",
         "people": "People",
@@ -226,7 +225,6 @@ WORDS: dict[str, dict[str, str]] = {
         "legal": "Rechtliches",
         "as_of": "Stand {version}",
         "draft": "Entwurf",
-        "earlier": "Frühere Fassungen",
         "older": "Dies ist eine frühere Fassung, Stand {version}. Die aktuelle steht unter {current}.",
         "language": "Sprache",
         "people": "Menschen",
@@ -255,7 +253,6 @@ WORDS: dict[str, dict[str, str]] = {
         "legal": "Legal",
         "as_of": "Vigente desde {version}",
         "draft": "Borrador",
-        "earlier": "Versiones anteriores",
         "older": "Esta es una versión anterior, vigente desde {version}. La actual está en {current}.",
         "language": "Idioma",
         "people": "Personas",
@@ -284,7 +281,6 @@ WORDS: dict[str, dict[str, str]] = {
         "legal": "Mentions légales",
         "as_of": "En vigueur au {version}",
         "draft": "Brouillon",
-        "earlier": "Versions antérieures",
         "older": "Ceci est une version antérieure, en vigueur au {version}. La version actuelle se trouve sur {current}.",
         "language": "Langue",
         "people": "Personnes",
@@ -313,7 +309,6 @@ WORDS: dict[str, dict[str, str]] = {
         "legal": "Informações legais",
         "as_of": "Em vigor desde {version}",
         "draft": "Rascunho",
-        "earlier": "Versões anteriores",
         "older": "Esta é uma versão anterior, em vigor desde {version}. A atual está em {current}.",
         "language": "Idioma",
         "people": "Pessoas",
@@ -342,7 +337,6 @@ WORDS: dict[str, dict[str, str]] = {
         "legal": "法律信息",
         "as_of": "版本日期 {version}",
         "draft": "草稿",
-        "earlier": "历史版本",
         "older": "这是较早的版本，日期为 {version}。当前版本见 {current}。",
         "language": "语言",
         "people": "用户",
@@ -371,7 +365,6 @@ WORDS: dict[str, dict[str, str]] = {
         "legal": "法的情報",
         "as_of": "{version} 時点",
         "draft": "下書き",
-        "earlier": "以前の版",
         "older": "これは {version} 時点の以前の版です。最新版は {current} にあります。",
         "language": "言語",
         "people": "人",
@@ -400,7 +393,6 @@ WORDS: dict[str, dict[str, str]] = {
         "legal": "Note legali",
         "as_of": "In vigore dal {version}",
         "draft": "Bozza",
-        "earlier": "Versioni precedenti",
         "older": "Questa è una versione precedente, in vigore dal {version}. Quella attuale si trova su {current}.",
         "language": "Lingua",
         "people": "Persone",
@@ -429,7 +421,6 @@ WORDS: dict[str, dict[str, str]] = {
         "legal": "Juridisch",
         "as_of": "Stand van {version}",
         "draft": "Concept",
-        "earlier": "Eerdere versies",
         "older": "Dit is een eerdere versie, stand van {version}. De huidige staat op {current}.",
         "language": "Taal",
         "people": "Mensen",
@@ -458,7 +449,6 @@ WORDS: dict[str, dict[str, str]] = {
         "legal": "법적 고지",
         "as_of": "{version} 기준",
         "draft": "초안",
-        "earlier": "이전 버전",
         "older": "{version} 기준의 이전 버전입니다. 현재 버전은 {current}에 있습니다.",
         "language": "언어",
         "people": "사람",
@@ -1030,14 +1020,13 @@ def legal_document(
     title: str,
     source: str,
     version: str | None,
-    earlier: list[str],
     current: str | None,
     languages: list[str],
     legal: dict[str, Any],
     setting: dict[str, Any],
     public_url: str,
 ) -> str:
-    """One legal page in one language: its text, its version and the earlier versions.
+    """One legal page in one language: its text and its version; no list of earlier versions.
     `version` is `None` for a draft; `current` is the served version when this is an earlier one."""
     words = WORDS.get(lang, WORDS["en"])
     stamp = words["draft"] if version is None else words["as_of"].format(version=version)
@@ -1047,12 +1036,6 @@ def legal_document(
         if current is not None and version is not None and version != current
         else ""
     )
-    history = ""
-    if earlier:
-        items = "".join(
-            f'<li><a href="{address}/{escape(v, quote=True)}">{escape(v)}</a></li>' for v in earlier
-        )
-        history = f'<h2>{escape(words["earlier"])}</h2><ul>{items}</ul>'
     header = (
         '<header class="top"><div class="wrap"><a class="mark" href="/">Maity</a>'
         f'<a href="/login">{escape(words["sign_in"])}</a></div></header>'
@@ -1060,7 +1043,7 @@ def legal_document(
     banner = f'<p class="note">{escape(words["preview"])}</p>' if version is None else ""
     body = (
         f'{header}<main><section><div class="wrap">{banner}<h1>{escape(title)}</h1>'
-        f'<p class="eyebrow">{escape(stamp)}</p>{older}{markdown(source)}{history}</div></section></main>'
+        f'<p class="eyebrow">{escape(stamp)}</p>{older}{markdown(source)}</div></section></main>'
         + _footer(setting, words, legal, lang, languages)
     )
     return _document(

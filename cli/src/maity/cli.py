@@ -939,7 +939,10 @@ def _card_pr_mismatch(card: Any, facts: gitfacts.Facts, card_id: str) -> str | N
         key = _pr_key(before.get("url"), before.get("number"))
         other = found is not None and key is not None and key[0] != found[0]
         if state == "open" and key is not None and key != found and not other:
-            now = gitfacts.pull_request_state(Path.cwd(), str(before.get("url")))
+            # A url that names another number than the report's can't answer for that one.
+            url = str(before.get("url"))
+            same = _pr_key(url) == key
+            now = gitfacts.pull_request_state(Path.cwd(), url) if same else None
             if now == "open" or now is None:
                 unchecked = "" if now else " (the hub's last observation; gh could not check it)"
                 return (
@@ -1076,7 +1079,7 @@ def _ask_body(args: argparse.Namespace) -> dict[str, Any]:
 
 
 ACTION_METHODS = ("POST", "PUT", "PATCH", "DELETE")
-ACTION_BODY_MAX = 64 * 1024  # §7
+ACTION_BODY_MAX = 48 * 1024  # §7
 
 
 def _read_bytes(source: str, flag: str) -> bytes:
@@ -1108,12 +1111,19 @@ def _action(spec: str, body_source: str | None) -> dict[str, Any]:
     if body_source is not None:
         data = _read_bytes(body_source, "--action-body")
         if len(data) > ACTION_BODY_MAX:
-            raise UsageError("--action-body is at most 64 KiB")
+            raise UsageError("--action-body is at most 48 KiB")
         try:
             body = data.decode("utf-8")
             json.loads(body)
         except (UnicodeDecodeError, json.JSONDecodeError):
             raise UsageError("--action-body is not JSON text in UTF-8") from None
+        # The hub counts the text, the request's own cap counts it escaped (§1.7),
+        # without the two quotes around it: a body with nothing to escape fits exactly.
+        if len(json.dumps(body)) - 2 > ACTION_BODY_MAX:
+            raise UsageError(
+                "--action-body is at most 48 KiB also once escaped as a JSON string: "
+                "quotes and non-ASCII characters take more bytes on the wire"
+            )
     return {
         "method": method,
         "path": path.removeprefix(hub.API),

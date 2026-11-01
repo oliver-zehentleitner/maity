@@ -273,35 +273,44 @@ window.Maity = window.Maity || {};
         h("p", null, M.t("join.state_dir.no_resume")));
     }
 
-    // §3.1: both lines come in the one answer, as the code appears nowhere else. The browser's
-    // platform is only a first guess, since the agent may run elsewhere; the choice is remembered
-    // per browser.
+    // §3.1: all lines come in the one answer, as the code appears nowhere else. The browser's
+    // system is only a first guess, since the agent may run elsewhere; the choice is remembered
+    // per browser. Which shell runs a line is the agent's business, so there is no choice of shell.
     const PLATFORM_KEY = "maity.join.platform";
-    function initialPlatform() {
+    function initialPlatform(lines) {
       try {
         const kept = window.localStorage.getItem(PLATFORM_KEY);
-        if (kept === "posix" || kept === "windows") return kept;
+        if (kept && lines[kept]) return kept;
       } catch (err) { /* this browser keeps nothing */ }
-      return /^win/i.test(navigator.platform || "") ? "windows" : "posix";
+      if (!/^win/i.test(navigator.platform || "")) return "posix";
+      // windows is null where the instance's install line cannot run in PowerShell (§3.2).
+      return lines.windows ? "windows" : "join";
     }
 
     function showLine(j, member) {
-      // windows is null where the instance's install line cannot run in PowerShell (§3.2).
-      const hasWindows = !!j.paste_lines.windows;
-      let platform = hasWindows ? initialPlatform() : "posix";
-      const line = h("code", { class: "paste-line" }, j.paste_lines[platform]);
-      const platformSelect = h("select", {
-        id: "join-platform",
-        onchange: () => {
-          platform = platformSelect.value;
-          line.textContent = j.paste_lines[platform];
-          copy.textContent = M.t("join.copy.label");
-          try { window.localStorage.setItem(PLATFORM_KEY, platform); } catch (err) { /* as above */ }
-        },
-      },
-      h("option", { value: "posix" }, M.t("join.platform.posix")),
-      hasWindows ? h("option", { value: "windows" }, M.t("join.platform.windows")) : null);
-      platformSelect.value = platform;
+      const lines = j.paste_lines;
+      let platform = initialPlatform(lines);
+      const line = h("code", { class: "paste-line" }, lines[platform]);
+      const offer = (value, label) => {
+        if (!lines[value]) return null;
+        const id = "join-line-" + value;
+        const radio = h("input", {
+          type: "radio", name: "join-line", id, value,
+          onchange: () => {
+            platform = value;
+            line.textContent = lines[value];
+            copy.textContent = M.t("join.copy.label");
+            try { window.localStorage.setItem(PLATFORM_KEY, value); } catch (err) { /* as above */ }
+          },
+        });
+        radio.checked = value === platform;
+        return h("div", { class: "join-offer" }, radio, " ", h("label", { for: id }, label));
+      };
+      const offers = h("fieldset", { class: "join-offers" },
+        h("legend", null, M.t("join.platform.label")),
+        offer("join", M.t("join.platform.join")),
+        offer("posix", M.t("join.platform.posix")),
+        offer("windows", M.t("join.platform.windows")));
       const copy = h("button", {
         type: "button",
         onclick: async () => {
@@ -317,7 +326,7 @@ window.Maity = window.Maity || {};
       append(clear(body), h("div", { class: "join-result" },
         h("p", null, h("strong", null, M.t("join.line.paste", { time: formatTime(j.expires_at) }))),
         member ? instanceNote(member) : null,
-        hasWindows ? h("label", { for: "join-platform" }, M.t("join.platform.label")) : null, hasWindows ? " " : null, hasWindows ? platformSelect : null,
+        offers,
         h("div", { class: "paste-row" }, line, copy),
         h("p", { class: "first-hint" }, M.t("join.line.hint")),
         h("div", { class: "actions" }, again, h("button", { type: "button", class: "primary", onclick: () => close(true) }, M.t("join.line.done")))));
