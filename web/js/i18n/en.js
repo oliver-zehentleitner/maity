@@ -49,7 +49,7 @@ window.MAITY_I18N["en"] = {
   "admin_sign_in.missing.second_factor_email": "The sign-in link is not offered while the second factor is mail: one mailbox is not two factors.",
   "admin_sign_in.missing.secret_key": "MAITY_SECRET_KEY is not set: authenticator apps need it.",
   "admin_sign_in.missing.signing_key": "MAITY_MAIL_SIGNING_KEY is not set: the sign-in link and Mail for everyone need it.",
-  "admin_sign_in.not_saved": "Not saved.",
+  "admin_sign_in.not_saved": "Not saved: ",
   "admin_sign_in.password": "Password: always on.",
   "admin_sign_in.policy.email": "Mail for everyone",
   "admin_sign_in.policy.email.note": "Whoever has no authenticator app gets a link and a code by mail at each sign-in. Saving this mails you a code first, and the setting changes only with that code. Instance admins should set up an authenticator app, so that a mail outage does not lock them out.",

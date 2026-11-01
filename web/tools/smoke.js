@@ -9889,6 +9889,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     byId("admin-sign-in-code").value = "000000";
     confirmForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
     expect(text(byId("admin-sign-in-code-error")) === "That code is wrong or was used." && byId("admin-sign-in-code").getAttribute("aria-invalid") === "true", "sign-in: a wrong code is said at the field");
+    // Too many wrong codes: the wait is said at the field, in minutes.
+    const siPost = win.Maity.api.post;
+    win.Maity.api.post = async () => { throw Object.assign(new Error("rate limited"), { code: "rate_limited", details: { retry_after: 120 } }); };
+    confirmForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    expect(text(byId("admin-sign-in-code-error")) === "Too many tries; wait about 2 min.", "sign-in: too many wrong codes say the wait at the field");
+    win.Maity.api.post = siPost;
     byId("admin-sign-in-code").value = "123 456";
     confirmForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
     const siOn = await win.Maity.api.get("/admin/settings/sign-in");
