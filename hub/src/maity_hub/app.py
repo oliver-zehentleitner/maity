@@ -415,7 +415,7 @@ def render_help(settings: Settings) -> str:
         hub_version=__version__,
         public_url=settings.public_url,
         cli_install=settings.cli_install,
-        join_line=join_line.command(settings.cli_install, "<url>", "<code>"),
+        join_line=join_line.posix(settings.cli_install, "<url>", "<code>"),
         ensurepath=join_line.ENSUREPATH,
     )
 

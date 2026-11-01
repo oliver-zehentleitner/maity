@@ -4059,9 +4059,12 @@ window.Maity = window.Maity || {};
         new_instance: !!body.new_instance, replaces: body.replaces || null, instance: null,
         takes_over: body.takes_over || null, handover,
       });
-      // §3.2 "The install line": installs and joins in one command.
+      // §3.2 "The install line": installs only when missing and joins, per platform.
       return {
-        id, join_url: url, code: "FIXT-URE0-0000", paste_line: "pipx install maity && export PATH=\"$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}\" && maity join " + url + " --code FIXT-URE0-0000",
+        id, join_url: url, code: "FIXT-URE0-0000", paste_lines: {
+          posix: "export PATH=\"$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}\" && { command -v maity >/dev/null 2>&1 || { pipx install maity; }; } && maity join " + url + " --code FIXT-URE0-0000",
+          windows: "$env:Path += \";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR } else { \"$HOME\\.local\\bin\" })\"; if (-not (Get-Command maity -ErrorAction SilentlyContinue)) { pipx install maity }; if (Get-Command maity -ErrorAction SilentlyContinue) { maity join " + url + " --code FIXT-URE0-0000 }",
+        },
         agent_id: agentId, project: fullOf(m[1]), expires_at: expires,
       };
     }],

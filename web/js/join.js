@@ -273,13 +273,40 @@ window.Maity = window.Maity || {};
         h("p", null, M.t("join.state_dir.no_resume")));
     }
 
+    // §3.1: both lines come in the one answer, as the code appears nowhere else. The browser's
+    // platform is only a first guess, since the agent may run elsewhere; the choice is remembered
+    // per browser.
+    const PLATFORM_KEY = "maity.join.platform";
+    function initialPlatform() {
+      try {
+        const kept = window.localStorage.getItem(PLATFORM_KEY);
+        if (kept === "posix" || kept === "windows") return kept;
+      } catch (err) { /* this browser keeps nothing */ }
+      return /^win/i.test(navigator.platform || "") ? "windows" : "posix";
+    }
+
     function showLine(j, member) {
-      const line = h("code", { class: "paste-line" }, j.paste_line);
+      // windows is null where the instance's install line cannot run in PowerShell (§3.2).
+      const hasWindows = !!j.paste_lines.windows;
+      let platform = hasWindows ? initialPlatform() : "posix";
+      const line = h("code", { class: "paste-line" }, j.paste_lines[platform]);
+      const platformSelect = h("select", {
+        id: "join-platform",
+        onchange: () => {
+          platform = platformSelect.value;
+          line.textContent = j.paste_lines[platform];
+          copy.textContent = M.t("join.copy.label");
+          try { window.localStorage.setItem(PLATFORM_KEY, platform); } catch (err) { /* as above */ }
+        },
+      },
+      h("option", { value: "posix" }, M.t("join.platform.posix")),
+      hasWindows ? h("option", { value: "windows" }, M.t("join.platform.windows")) : null);
+      platformSelect.value = platform;
       const copy = h("button", {
         type: "button",
         onclick: async () => {
           try {
-            await navigator.clipboard.writeText(j.paste_line);
+            await navigator.clipboard.writeText(j.paste_lines[platform]);
             copy.textContent = M.t("join.copy.done");
           } catch (err) {
             copy.textContent = M.t("join.copy.failed");
@@ -290,6 +317,7 @@ window.Maity = window.Maity || {};
       append(clear(body), h("div", { class: "join-result" },
         h("p", null, h("strong", null, M.t("join.line.paste", { time: formatTime(j.expires_at) }))),
         member ? instanceNote(member) : null,
+        hasWindows ? h("label", { for: "join-platform" }, M.t("join.platform.label")) : null, hasWindows ? " " : null, hasWindows ? platformSelect : null,
         h("div", { class: "paste-row" }, line, copy),
         h("p", { class: "first-hint" }, M.t("join.line.hint")),
         h("div", { class: "actions" }, again, h("button", { type: "button", class: "primary", onclick: () => close(true) }, M.t("join.line.done")))));
