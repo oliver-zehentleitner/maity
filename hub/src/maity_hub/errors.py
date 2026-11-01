@@ -105,6 +105,12 @@ def driver_code(error: Exception) -> str:
     return str(args[0]) if args and isinstance(args[0], int) else ""
 
 
+def driver_number(error: Exception) -> int | None:
+    """The driver's numeric code, also where it has a SQLSTATE; that alone can hide the cause."""
+    args = getattr(getattr(error, "orig", None), "args", ())
+    return args[0] if args and isinstance(args[0], int) else None
+
+
 # What a connection failure can be, found by phrases the drivers use. Nothing of the driver's text
 # is kept: the category is chosen from this list and only its name is logged, so a password, a
 # user, a host or a connection string in the text cannot reach the log, whatever escaping it uses.
@@ -174,9 +180,10 @@ def install(app: FastAPI) -> None:
         # Connection-level failures. The client never gets the driver's text (§1.3); the log gets it
         # masked, because without the cause a burst of these cannot be told apart.
         log.error(
-            "database unavailable: %s %s %s",
+            "database unavailable: %s %s number=%s %s",
             type(error).__name__,
             driver_code(error),
+            driver_number(error),
             driver_reason(error),
         )
         return error_response(503, "database_unavailable", "the database is unreachable")

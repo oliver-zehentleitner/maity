@@ -289,13 +289,18 @@ def create_revision(
 # and expects it to be run again. InnoDB reports them under ordinary
 # concurrency (two calls of one agent touching its credential and cards).
 TRANSIENT = {"40001", "40P01", "1213", "1205"}
+# A deadlock inside a savepoint on InnoDB takes the savepoint with it, and rolling back to it fails
+# with this in place of the deadlock: it has the SQLSTATE of a syntax error, so the number decides.
+SAVEPOINT_GONE = 1305
 RETRIES = 4
 
 
 def is_transient(error: BaseException) -> bool:
-    from maity_hub.errors import driver_code
+    from maity_hub.errors import driver_code, driver_number
 
-    return isinstance(error, OperationalError | DBAPIError) and driver_code(error) in TRANSIENT
+    if not isinstance(error, OperationalError | DBAPIError):
+        return False
+    return driver_code(error) in TRANSIENT or driver_number(error) == SAVEPOINT_GONE
 
 
 def retrying[T](work: Callable[[], T]) -> T:
