@@ -305,7 +305,7 @@ the hub records it on the session.
 
 | What | Cap |
 |---|---|
-| Request body | 64 KiB; the landing page's settings 256 KiB (§16.7); an uploaded logo or banner 1 MiB (§11.2), an uploaded avatar 1 MiB and 4096 pixels on a side (§6.10), an uploaded attachment 10 MiB (§8.7) |
+| Request body | 64 KiB; the landing page's settings 256 KiB (§16.7); the sign-in and sign-up pages' settings 512 KiB (§16.7.4); an uploaded logo or banner 1 MiB (§11.2), an uploaded avatar 1 MiB and 4096 pixels on a side (§6.10), an uploaded attachment 10 MiB (§8.7) |
 | Avatar changes | 10 `PUT` or `DELETE` per hour per account or profile, all its credentials together (§6.10) |
 | Handle changes | 3 per 24 hours per account or profile; at most 8 aliases per id (§6.24) |
 | Device codes and sign-in links | per human, per address and per source address as §2.6.4 |
@@ -1958,7 +1958,7 @@ change: until it exists, a registered account has exactly the limits
 every account has today, and an account gets the operator's default
 limits once part two defines them.
 
-The pitch of the page `/register` are instance content (§16.7.4); its form
+The pitch of the page `/register` is instance content (§16.7.4); its form
 and everything below are not.
 
 **Modes.** The instance setting `registration` (§16.4):
@@ -11044,6 +11044,7 @@ contract; until then nothing else in this section changes.
 | POST | `/auth/login`, `/auth/logout`, `/auth/password` | human | 2.1 |
 | GET | `/auth/session` | human | 2.1 |
 | GET | `/auth/methods` | — | 2.6.1, 2.7 |
+| GET | `/auth/pages/{page}` | — | 16.7.4 |
 | POST | `/auth/register` | — (refused in mode `closed`) | 2.7.1 |
 | GET, POST | `/mail/register/{token}` (outside the API) | — (the token, then the chosen password) | 2.7.1 |
 | POST | `/auth/device-codes` | human | 2.6.2 |
@@ -11194,6 +11195,8 @@ contract; until then nothing else in this section changes.
 | POST, DELETE | `/projects/{owner}/{slug}/forge/webhook/secret` | `project:admin`, human only | 17.4 |
 | GET, PATCH | `/admin/settings/mail` | `instance:admin`, human only | 16.2 |
 | GET, PATCH | `/admin/settings/registration` | `instance:admin`, human only | 16.4 |
+| GET, PATCH | `/admin/settings/auth-pages` | `instance:admin`, human only | 16.7.4 |
+| POST | `/admin/settings/auth-pages/check` | `instance:admin`, human only | 16.7.4 |
 | GET, PATCH | `/admin/settings/landing` | `instance:admin`, human only | 16.7 |
 | POST | `/admin/settings/landing/preview` | `instance:admin`, human only | 16.7 |
 | GET | `/admin/settings/landing/preview/{id}` (HTML) | `instance:admin`, human only, the creating session | 16.7 |
@@ -13527,15 +13530,16 @@ No session; on the public host only, as `GET /landing`. `page` is `sign_in`
 or `sign_up`; any other is `not_found`. The language is chosen as the
 landing page's is: `lang` if this page has it, else the best match of
 `Accept-Language` among the languages this page has, else `default_language`;
-an unknown `lang` is no error. A page with no text in the chosen language is
-still `200`: `language` is `default_language` and `texts` is `{}`.
+an unknown `lang` is no error. A language counts as this page's when it holds
+at least one key. A page without text in `default_language`, when that is the
+one chosen, is still `200`: `language` is `default_language` and `texts` is `{}`.
 
 ```json
 { "language": "de", "texts": { "title": "Willkommen zurück", "subline": "Melde dich an." } }
 ```
 
-`texts` holds each key from the chosen language, else from
-`default_language`; a key in neither is left out. `note` is the Markdown as
+`texts` holds the keys of the chosen language and no other: a key it lacks is
+left out, never taken from `default_language`. `note` is the Markdown as
 stored. `Cache-Control: public, max-age=60`, `ETag`, `Vary: Accept-Language`.
 
 **The dashboard** asks this once when it draws one of the two pages, passing
