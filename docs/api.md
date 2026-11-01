@@ -8069,7 +8069,7 @@ and a webhook delivery to
 `/projects/{slug}/forge/webhook` answer as any path the hub does not
 know, `not_found` (§1.3), the same whether the segment was ever a slug
 or not; a reserved slug (above)
-keeps every such path from reaching a project. Maity is in open beta (§16.11):
+keeps every such path from reaching a project. Maity is alpha (§16.11):
 there is no frozen old slug, no redirect and no answer of its own for an
 outdated caller. Aliases from a rename or a transfer (above) are not old
 addresses and stay.
@@ -13901,7 +13901,7 @@ organisation goes through a report on one of its projects (§16.8,
 
 The maintainer's decision of 2026-10-29 (`context/routing.md`): the
 dashboard is addressed by paths, as a forge is, and a public page has
-one canonical address, the same one a member opens. Maity was alpha then, so
+one canonical address, the same one a member opens. Maity is alpha, so
 the old forms are removed rather than carried: the hash routes
 (`/#/…`), `/app`, `/p/…`, `/u/…` and `/s/…` are not served, and no
 redirect or alias leads from them. This section is the one place for

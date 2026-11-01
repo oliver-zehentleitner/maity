@@ -4,7 +4,7 @@
 
 **Id:** e34ae588-4dbc-423c-8da8-29fc62436cb5
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's decision of 2026-10-29 in the team chat (paths like a forge, indexable public pages, alpha without legacy layers); the details are the contract owner's; contract `docs/api.md` §16.11, §16.7, §16.9, §6.25
 **Revisit when:** Maity leaves alpha (from then on an address change needs the §1.6 rule of a stated period, not a removal); or the hub must render a dashboard page itself beyond the public pages; or a word the hub or the dashboard needs as a first segment is already held by a handle
