@@ -231,7 +231,7 @@ helm install cert-manager jetstack/cert-manager -n cert-manager --create-namespa
 - The password has only letters and digits, so it needs no
   percent-encoding in the database URL.
 
-```sh
+```bash
 kubectl create namespace maity
 (umask 077; openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 40 > pg-password)
 kubectl -n maity create secret generic maity-postgres --from-file=password=./pg-password
