@@ -64,7 +64,7 @@ Why the Maity dashboard (`web/`) is built the way it is. Family-wide decisions a
 - [routing.md](routing.md) — the address read and changed in js/route.js alone, paths over http(s), the path in the fragment only in fixture mode, checked by make check; index.html relative under the hub's <base href="/assets/">, no anchor links; the swarm's public page and its routing gone (superseded); the legal pages are the one kind of hub path linked, by a fixed list
 
 ## S
-- [stack.md](stack.md) — no framework and no build step: static HTML, vanilla JS as classic scripts so the page also opens from file://; the smoke test on a bare node binary; a real-browser end-to-end test with Playwright for Python in CI; accessibility checked with axe-core from its pinned npm tarball; QR codes from the dashboard's own encoder, checked against an independent one; the browser test moves the hub's clock as the page sees it whenever it moves the browser's
+- [stack.md](stack.md) — no framework and no build step: static HTML, vanilla JS as classic scripts so the page also opens from file://; the smoke test on a bare node binary; a real-browser end-to-end test with Playwright for Python in CI; accessibility checked with axe-core from its pinned npm tarball; QR codes from the dashboard's own encoder, checked against an independent one; the browser test moves the hub's clock as the page sees it whenever it moves the browser's; the browser test removes the caller's MAITY_* settings from its own environment
 
 ## T
 

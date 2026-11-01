@@ -162,9 +162,11 @@ def _renamed(path: str, renamed: dict[str, str]) -> str:
 
 class Session:
     """A joined clone: its state directory, its state, and a signing client for its hub.
-    `on_request` is this command's `--on-request`, set once by `main` (§2.3)."""
+    `on_request` is this command's `--on-request`, `for_target` the global `--for`, both set
+    once by `main` (§2.3)."""
 
     on_request: str | None = None
+    for_target: str | None = None
 
     def __init__(self, hub_url: str | None = None) -> None:
         self.dir = state.resolve_state_dir()
@@ -184,6 +186,31 @@ class Session:
         self.client = ProjectClient(
             hub.hub_base(stored), key, on_request=Session.on_request, moved=self._moved
         )
+        target = Session.for_target
+        if target is not None:
+            # Sent as `Maity-For` on every call (§13); a handle is resolved as the bridge
+            # itself, once a call needs it.
+            self.client.for_given = True
+            if target.startswith("agt-"):
+                self.client.for_member = target
+            else:
+                self.client.for_resolve = lambda: _member_id(self, target)
+
+    @property
+    def for_member(self) -> str | None:
+        """The agent this command acts for through its bridge (`--for`), or None."""
+        return self.client.served()
+
+    @property
+    def me(self) -> str | None:
+        """The member this command acts as: the served agent under `--for`, else this clone."""
+        return self.for_member or self.data.get("member_id")
+
+    @property
+    def my_instance(self) -> str | None:
+        """This clone's instance; none under `--for`, where the served agent acts without one
+        (§2.3)."""
+        return None if Session.for_target is not None else self.data.get("instance")
 
     @property
     def project(self) -> str:
@@ -212,6 +239,8 @@ class Session:
         full_name = self.data.get("full_name")
         if not isinstance(full_name, str) or not _FULL_NAME.fullmatch(full_name):
             return None
+        if Session.for_target is not None:
+            return None  # `/me` is the bridge's own, never asked with --for (§13)
         old = self.project_path()
         if path != old and not path.startswith(old + "/"):
             return None
@@ -539,9 +568,20 @@ def _identity_dir(url: str, target: str, outside: Exception) -> Path:
 LAST_PACKET = "last-resume.json"
 
 
+def _own_only(command: str) -> None:
+    """A command of the bridge's own, under `/me`: `--for` is refused before anything else,
+    also where the command would answer from the state without a call (§13)."""
+    if Session.for_target is not None:
+        raise UsageError(
+            f"--for applies to project commands; {command} is the bridge's own: "
+            "run it without --for"
+        )
+
+
 def cmd_resume(args: argparse.Namespace) -> int:
     """`--full` renders the packet the last resume stored, in full and without calling the hub;
     without one it resumes as usual and prints in full."""
+    _own_only("resume")
     session = Session(args.hub)
     stored = state.load_state(session.dir, name=LAST_PACKET) if args.full else {}
     if not stored:
@@ -616,6 +656,29 @@ def _unread_note(session: Session, budget: float) -> None:
         )
 
 
+def _wait_cursor(session: Session) -> int:
+    """The cursor `wait` reads from: the bridge's own, or with `--for` the one it keeps per
+    served agent (`for_cursors.<member id>`), so its own never moves on that agent's events
+    (§13)."""
+    if session.for_member is None:
+        own = session.data.get("cursor") or 0
+        return own if isinstance(own, int) else 0
+    kept = session.data.get("for_cursors")
+    found = kept.get(session.for_member) if isinstance(kept, dict) else None
+    return found if isinstance(found, int) else 0
+
+
+def _save_wait_cursor(session: Session, cursor: Any) -> None:
+    if session.for_member is None:
+        session.data["cursor"] = cursor
+    else:
+        kept = session.data.get("for_cursors")
+        kept = kept if isinstance(kept, dict) else {}
+        kept[session.for_member] = cursor
+        session.data["for_cursors"] = kept
+    session.save()
+
+
 def cmd_wait(args: argparse.Namespace) -> int:
     session = Session()
     timeout = args.timeout or session.data.get("wait_timeout") or DEFAULT_WAIT
@@ -634,8 +697,10 @@ def cmd_wait(args: argparse.Namespace) -> int:
     # Every poll leaves the hub POLL_SLACK to answer, half of a short window.
     slack = min(POLL_SLACK, (deadline - time.monotonic()) / 2)
     asked = False
-    cursor = session.data.get("cursor") or 0
+    cursor = _wait_cursor(session)
     path = session.project_path("events")
+    # A bridge reads for the agent it serves with `for` (§2.3): what that agent's token sees.
+    served = [("for", session.for_member)] if session.for_member else []
     backoff = 2.0
     warned = False
     skewed = False
@@ -659,7 +724,7 @@ def cmd_wait(args: argparse.Namespace) -> int:
             page = session.client.call(
                 "GET",
                 path,
-                query=[("after", str(cursor)), ("wait", str(poll))],
+                query=[("after", str(cursor)), ("wait", str(poll)), *served],
                 timeout=read_timeout,
             )
         except hub.HubError as exc:
@@ -693,14 +758,13 @@ def cmd_wait(args: argparse.Namespace) -> int:
             if not wanted:
                 cursor = items[-1].get("seq", cursor)
                 if not args.keep_cursor:
-                    session.data["cursor"] = cursor
-                    session.save()
+                    _save_wait_cursor(session, cursor)
                 continue
             items = wanted
         if items:
             taken = items[:1] if args.one else items[:BATCH_MAX]
             for event in taken:
-                note = _pause_note(event, session.data.get("member_id"))
+                note = _pause_note(event, session.me)
                 if note:
                     _err(note)
                 for line in onboarding.jour_fixe_lines(event):  # §20.9: what it asks of you
@@ -712,15 +776,13 @@ def cmd_wait(args: argparse.Namespace) -> int:
             # signal, a closed pipe) has acknowledged nothing it did not hand over.
             sys.stdout.flush()
             if not args.keep_cursor:  # with it, the next resume still lists the events
-                session.data["cursor"] = taken[-1].get("seq", cursor)
-                session.save()
+                _save_wait_cursor(session, taken[-1].get("seq", cursor))
             return EXIT_OK
         new_cursor = page.get("cursor")
         if isinstance(new_cursor, int) and new_cursor != cursor:
             cursor = new_cursor  # this run polls on from here; --keep-cursor saves nothing
             if not args.keep_cursor:
-                session.data["cursor"] = cursor
-                session.save()
+                _save_wait_cursor(session, cursor)
         if time.monotonic() - started < 1:  # an empty answer that did not hold: do not spin
             time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
 
@@ -1093,7 +1155,7 @@ def cmd_claim(args: argparse.Namespace) -> int:
         task = session.client.call("POST", f"{path}/claim", body=body)
     except hub.HubError as exc:
         # A repeated claim after a dropped connection: the first one went through.
-        mine = session.data.get("member_id")
+        mine = session.me
         if exc.code != "already_claimed" or not mine or exc.details.get("holder") != mine:
             raise
         task, note = session.client.call("GET", path), " (it was already yours)"
@@ -1540,8 +1602,7 @@ def _unread_direct(
     """The agent's direct conversation (§9.1): its read position is the event cursor, which
     `wait` and `resume` move and reading here does not. Everything after the cursor, the
     last `limit` of it shown."""
-    cursor = session.data.get("cursor")
-    start = cursor if isinstance(cursor, int) and not isinstance(cursor, bool) else 0
+    start = _wait_cursor(session)  # under --for the one kept for the served agent (§13)
     after = _read_on(session, conversation, start)
     items = after[-limit:]
     notes = []
@@ -1658,18 +1719,18 @@ def cmd_say(args: argparse.Namespace) -> int:
     except argparse.ArgumentTypeError as exc:
         raise UsageError(str(exc)) from None
     text = _say_body(args.body, attach)
-    if to != "human" and (args.type is not None or Session().data.get("owner_id") != to):
-        to = _address(Session(), to, chat_hint=True)  # handles and aliases (§6.24)
+    session = Session()
+    if to != "human" and (args.type is not None or session.data.get("owner_id") != to):
+        to = _address(session, to, chat_hint=True)  # handles and aliases (§6.24)
     to_owner = to == "human"
     if not to_owner and args.type is None:
         # A reply to your own human is the chat of your conversation (§8.4, §9); to anyone
         # else a message needs a type. Ids are opaque (§1.1): compared, never parsed.
-        to_owner = Session().data.get("owner_id") == to
+        to_owner = session.data.get("owner_id") == to
     if to_owner:
         if args.type is not None or args.task is not None:
             raise UsageError("a chat with your human takes neither --type nor --task")
-        session = Session()
-        member_id = session.data.get("member_id")
+        member_id = session.me  # under --for the served agent's conversation (§2.3)
         if not isinstance(member_id, str):
             raise state.StateError("this agent's member id is not known yet; run `maity resume`")
         path = session.project_path("conversations", member_id, "messages")
@@ -1685,7 +1746,6 @@ def cmd_say(args: argparse.Namespace) -> int:
         body["task_id"] = args.task
     if review is not None:
         body["review"] = review  # as given: the hub checks it and names each bad path
-    session = Session()
 
     def post(ids: list[str]) -> Any:
         sent = {**body, "attachments": ids} if ids else body
@@ -2034,11 +2094,11 @@ def _check_holder(session: Session, tid: str, takeover: dict[str, Any]) -> None:
     """Only the holding instance answers for the card, and after a human's objection only
     that human (§6.19). Checked before sending, so an agent learns the rule, not a bare
     `forbidden`. The instance is the hub's to check: this clone does not know its own."""
-    me = session.data.get("member_id")
+    me = session.me  # a bridge answers for the card its served agent holds (§6.19)
     if not isinstance(me, str):
         raise state.StateError("this agent's member id is not known yet; run `maity resume`")
     holder = _obj(takeover.get("from"))
-    mine = session.data.get("instance")
+    mine = session.my_instance
     other_instance = isinstance(mine, str) and holder.get("instance") not in (None, mine)
     if holder.get("member_id") != me or other_instance:
         raise LocalRefusal(
@@ -2646,6 +2706,7 @@ def avatar_type(data: bytes) -> str | None:
 
 def cmd_profile_avatar(args: argparse.Namespace) -> int:
     """`PUT /me/avatar` with the file as it is, or `DELETE /me/avatar` (§6.10, §13)."""
+    _own_only("profile avatar")
     if args.remove == bool(args.file):
         raise UsageError("give an image file, or --remove")
     if args.remove:
@@ -3041,7 +3102,7 @@ def _my_answer(session: Session, round_id: str) -> dict[str, Any] | None:
 
 def _my_part(session: Session, round_: dict[str, Any]) -> str:
     """Invited or not, answered or not while the window is open, eligible in the open step."""
-    me = session.data.get("member_id")
+    me = session.me
     if me not in _member_ids(round_.get("invited")):
         return "you were not invited (not present when it opened)"
     parts = ["you were invited"]
@@ -3149,7 +3210,7 @@ def cmd_jourfixe_answer(args: argparse.Namespace) -> int:
     body = _answer_body(args)  # a usage error before any call
     session = Session()
     current = _obj(_jour_fixe(session).get("current_round"))
-    me = session.data.get("member_id")
+    me = session.me  # a bridge submits the served agent's answer (§20.3)
     if current.get("status") != "answering" or not isinstance(current.get("id"), str):
         raise UsageError("no jour fixe round is open for answers; nothing sent")
     if me not in _member_ids(current.get("participants")):
@@ -3482,6 +3543,13 @@ def build_parser() -> argparse.ArgumentParser:
         nargs=0,
         default=argparse.SUPPRESS,
         help="show the release version and code build",
+    )
+    parser.add_argument(
+        "--for",
+        dest="for_target",
+        metavar="AGENT",
+        help="act for an agent this bridge serves (handle or member id): every call of the "
+        "command carries Maity-For; not for commands that call /me",
     )
     sub = parser.add_subparsers(dest="command", metavar="<command>", required=True)
 
@@ -4537,13 +4605,6 @@ def _explain(exc: Exception) -> str:
             f"pause is lifted; {STILL_WORKS} still work. Park what you hold, then "
             f"`maity wait`.{_reason_last(paused)}"
         )
-    if isinstance(exc, hub.HubError) and exc.code == "client_outdated":
-        minimum = onboarding.inline(exc.details.get("minimum") or "a newer version")
-        install = onboarding.inline(exc.details.get("install") or "pipx upgrade maity")
-        return (
-            f"this maity ({__version__}) is older than the hub needs ({minimum}): projects "
-            f"are addressed as <owner>/<slug> now. Upgrade with: {install}"
-        )
     return str(exc)
 
 
@@ -4668,6 +4729,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error(f"unrecognized arguments: {' '.join(extra)}")
     handler: Handler = args.handler
     Session.on_request = getattr(args, "on_request", None)
+    Session.for_target = args.for_target
+    if args.for_target is not None and args.command == "join":
+        _err("--for applies to project commands; join is the bridge's own: run it without --for")
+        return EXIT_USAGE
     try:
         _load_texts(args)
         return handler(args)
@@ -4686,7 +4751,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         for problem in exc.problems:
             _err(problem)
         return EXIT_ERROR
-    except (UsageError, runner_commands.Refused) as exc:
+    except (UsageError, runner_commands.Refused, hub.ForRefused) as exc:
         _err(str(exc))
         return EXIT_USAGE
     except LocalRefusal as exc:

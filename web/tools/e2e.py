@@ -80,9 +80,16 @@ AXE_FAIL = {"serious", "critical"}
 # Light at desktop and phone width, then dark at desktop width.
 PASSES = ((1280, 900, "light"), (390, 844, "light"), (1280, 900, "dark"))
 
-# The caller's own MAITY_* settings (a state dir, a forge token) never reach
-# the throwaway hub or the scratch clones.
-CLEAN_ENV = {k: v for k, v in os.environ.items() if not k.startswith("MAITY_")}
+
+def clean_environment(environ) -> dict:
+    """Drop the caller's own MAITY_* settings (a state dir, a forge token) from `environ` and
+    return what is left, so no process this run starts can act on the real hub."""
+    for name in [k for k in environ if k.startswith("MAITY_")]:
+        del environ[name]
+    return dict(environ)
+
+
+CLEAN_ENV = clean_environment(os.environ)
 
 
 class Run:
@@ -751,6 +758,7 @@ def scenario(run: Run, page: Page) -> None:
     wait = subprocess.Popen(
         ["maity", "wait", "--one", "--timeout", str(WAIT_S)],
         cwd=alpha,
+        env=CLEAN_ENV,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,

@@ -3004,6 +3004,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   catch (err) { mdReservedErr = err; }
   expect(!mdReservedErr && mdReserved && !mdReserved.querySelector("a") && mdReserved.querySelectorAll("code.md-inline-copy").length === 3,
     "ids: in Markdown text and in backticks the same: no link, the code spans stay code " + (mdReservedErr && mdReservedErr.message));
+  // A reference right after a slash links only as the next of a list of references (tsk-8nbw39n0snsd).
+  const idList = idBox(IDS.link("#909/#911/#912, tsk-0123456789ab/req-abcdefghjkmn and #7/tsk-0123456789ab", idAt));
+  expect(idList.querySelectorAll("a.id-ref").map((a) => text(a)).join() === "#909,#911,#912,tsk-0123456789ab,req-abcdefghjkmn,#7,tsk-0123456789ab"
+    && text(idList) === "#909/#911/#912, tsk-0123456789ab/req-abcdefghjkmn and #7/tsk-0123456789ab",
+    "ids: references joined by a slash each link, and the text stays as written " + idHrefs(idList));
+  const idPaths = idBox(IDS.link("/#5 a/#5 x/issues/#5/#6 a/b#3/#4 https://x.example/#5/#6 maity/tsk-0123456789ab/#7 # 9/#10 ", idAt));
+  expect(!idPaths.querySelector("a"), "ids: inside a path or a URL a slash starts no list of references " + idHrefs(idPaths));
   const mdHash = idBox(win.Maity.markdown("PR `#12` and #12", idAt));
   expect(idHrefs(mdHash) === "#12=https://github.com/oliver-zehentleitner/maity/issues/12" && text(mdHash.querySelector("code.md-inline-copy")) === "#12",
     "ids: a lone #12 in backticks stays code; card, request and member ids alone link");
@@ -6755,11 +6762,30 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(ktPatches[0]) === JSON.stringify({ policy: { keep_the_why: "optional" }, reason: "A trial project" }) && byId("ktw-policy-select").value === "optional",
     "keep the why: switched to optional as a policy change with its reason");
   await ktPatch("/projects/maintainer/maity", { policy: { keep_the_why: "required" }, reason: "back" });
+  // Where a joining agent's personal settings come from (§6.23), between the commitment and the badge.
+  const kdForm = () => main.querySelector("form.ktw-defaults-form");
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/settings"); for (let k = 0; k < 6; k++) await tick();
+  const kdForms = main.querySelectorAll("form").map((f) => f.className.split(" "));
+  const kdAt = kdForms.findIndex((c) => c.includes("ktw-defaults-form"));
+  expect(kdAt > kdForms.findIndex((c) => c.includes("ktw-policy-form")) && kdAt < kdForms.findIndex((c) => c.includes("badge-form")),
+    "keep the why: the personal settings stand between the commitment and the badge");
+  expect(byId("ktw-defaults-select").value === "adopt" && text(kdForm()).includes(".keep-the-why"),
+    "keep the why: the personal settings read adopt and name the repository's file");
+  const kdPatches = [];
+  win.Maity.api.patch = (p, b) => { if (b && b.policy && "keep_the_why_defaults" in b.policy) kdPatches.push(b); return ktPatch(p, b); };
+  byId("ktw-defaults-select").value = "ask"; kdForm().dispatch("submit"); await tick();
+  expect(!kdPatches.length, "keep the why: changing the personal settings needs a reason");
+  byId("ktw-defaults-select").value = "ask"; byId("ktw-defaults-reason").value = "Each owner decides";
+  kdForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(kdPatches[0]) === JSON.stringify({ policy: { keep_the_why_defaults: "ask" }, reason: "Each owner decides" }) && byId("ktw-defaults-select").value === "ask",
+    "keep the why: the personal settings change as a policy change with its reason");
+  await ktPatch("/projects/maintainer/maity", { policy: { keep_the_why_defaults: "adopt" }, reason: "back" });
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? ktGet(p).then((x) => ({ ...x, memory: { provider: "none" }, policy: { ...x.policy, keep_the_why: "optional" } })) : ktGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/settings"); for (let k = 0; k < 6; k++) await tick();
   expect(ktForm() && byId("ktw-policy-select").getAttribute("disabled") !== null && byId("ktw-policy-reason").getAttribute("disabled") !== null
     && btn(ktForm(), "Change").getAttribute("disabled") !== null && text(ktForm()).includes("no memory provider"),
     "keep the why: under no memory provider the choice is disabled and says why");
+  expect(!kdForm(), "keep the why: under no memory provider the personal settings are not offered");
   win.Maity.api.get = ktGet; win.Maity.api.patch = ktPatch;
   // The why on a code report: a link to the entry's file at the report's head; a reason when there is none; a bad path stays text.
   const ktHead = "d91e294c" + "0".repeat(32);

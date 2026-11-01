@@ -17,13 +17,13 @@ from typing import Any
 
 from sqlalchemy import Connection, insert, or_, select, update
 
-from maity_hub import clock, namespace, policy, proposals
+from maity_hub import clock, longpoll, namespace, policy, proposals
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
 from maity_hub.cross_owner import owner_of
 from maity_hub.errors import ApiError, invalid
-from maity_hub.events import Actor, emit, lock_project
+from maity_hub.events import Actor, emit, lock_project, on_commit
 from maity_hub.ids import new_id
 from maity_hub.views import member_view, principal_id, ts
 
@@ -403,6 +403,7 @@ def end(
         .where(t.bridge.c.id == row.id)
         .values(ended_at=clock.now(), ended_by=by, end_reason=reason, live=None)
     )
+    on_commit(conn, lambda: longpoll.registry.end_bridge(row.id))
     if actor is not None:
         announce(conn, row.project_id, _active(conn, (row.served, row.bridge)), actor)
     return conn.execute(select(t.bridge).where(t.bridge.c.id == row.id)).one()
