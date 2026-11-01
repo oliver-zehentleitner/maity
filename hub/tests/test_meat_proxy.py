@@ -120,12 +120,22 @@ def test_the_agents_of_the_human_and_of_the_project_read_the_parts_and_the_note(
         "meat_proxy_hands": False,
         "meat_proxy_note": f"{MEAT_PROXY_INTRO} {MEAT_PROXY_LEAD}",
     }
-    assert packet["me"]["owner"] == {"id": owner.id, "handle": "maintainer", **said}
+    assert packet["me"]["owner"] == {
+        "id": owner.id,
+        "handle": "maintainer",
+        "language": "en",
+        **said,
+    }
     (peer,) = packet["peers"]
     assert {k: v for k, v in peer.items() if k.startswith("meat_proxy")} == said
     owner.patch("/me", {"meat_proxy": False})  # read live on every resume
     again = agent.resume().json()
-    assert again["me"]["owner"] == {"id": owner.id, "handle": "maintainer", "meat_proxy": False}
+    assert again["me"]["owner"] == {
+        "id": owner.id,
+        "handle": "maintainer",
+        "language": "en",
+        "meat_proxy": False,
+    }
     assert {k: v for k, v in again["peers"][0].items() if k.startswith("meat_proxy")} == {
         "meat_proxy": False
     }
