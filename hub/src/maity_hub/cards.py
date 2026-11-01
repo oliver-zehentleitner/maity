@@ -10,9 +10,10 @@ from typing import Any
 
 from sqlalchemy import Connection, delete, insert, select
 
+from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.access import Membership
-from maity_hub.errors import ApiError, invalid
+from maity_hub.errors import ApiError, forbidden, invalid
 from maity_hub.scopes import ROLES
 
 KINDS = ("task", "maintenance_round", "release", "contract", "setup")
@@ -23,6 +24,8 @@ NEEDS = tuple(role for role in ROLES if role not in ("proxy", "manager"))
 STATUSES = ("proposed", "open", "in_progress", "blocked", "review", "done", "cancelled")
 CLOSED = ("done", "cancelled")
 CREATE_STATUSES = ("proposed", "open")
+# The two signatures under `done_authority: reviewer_and_tester` and their scopes (§6.4).
+SIGNATURES = {"review": "tasks:review", "test": "tasks:test"}
 
 
 def invalid_transition(current: str, wanted: str) -> ApiError:
@@ -52,13 +55,63 @@ def sibling_holds(mine: Membership, card: Any) -> bool:
 
 
 def has_done_authority(mine: Membership, card: Any) -> bool:
-    """Who moves a card to done, by `policy.done_authority` (§6.1)."""
+    """Who moves a card to done, by `policy.done_authority` (§6.1); under
+    `reviewer_and_tester` who may sign it (`sign`)."""
     authority = mine.project.done_authority
     if authority == "holder":
         return holds(mine, card)
     if authority == "reviewer":
         return mine.may("tasks:review")
+    if authority == "tester":
+        return mine.may("tasks:test")
+    if authority == "reviewer_and_tester":
+        return mine.may("tasks:review") or mine.may("tasks:test")
     return mine.may("tasks:admin")
+
+
+def two_signatures(project: Any) -> bool:
+    return bool(project.done_authority == "reviewer_and_tester")
+
+
+def sign(mine: Membership, card: Any, approve: str | None, revision: int | None) -> dict[str, Any]:
+    """The card's `approvals` with the caller's signature on `revision` (§6.4): the one its
+    scope gives, or under both the one it names. One member never fills both; a place
+    already filled keeps its signature."""
+    slot = approve or _only_slot(mine)
+    if not mine.may(SIGNATURES[slot]):
+        raise forbidden(SIGNATURES[slot], "this signature needs another scope")
+    current = card.approvals or {"review": None, "test": None}
+    other = current["test" if slot == "review" else "review"]
+    if other is not None and other["by"] == mine.principal_id:
+        raise invalid({"approve": "same_member"})
+    if current[slot] is not None:
+        return dict(current)
+    mark = {"by": mine.principal_id, "at": clock.rfc3339(clock.now()), "revision": revision}
+    return {**current, slot: mark}
+
+
+def new_signature(before: dict[str, Any] | None, after: dict[str, Any]) -> dict[str, Any] | None:
+    """The place a call filled and the revision it signed, for the event: the card's view
+    shows no signatures once it closes, and a rework clears them, so the view cannot tell."""
+    was = before or {}
+    for slot in SIGNATURES:
+        mark = after.get(slot)
+        if mark is not None and was.get(slot) is None:
+            return {"slot": slot, "revision": mark["revision"]}
+    return None
+
+
+def _only_slot(mine: Membership) -> str:
+    held = [slot for slot, scope in SIGNATURES.items() if mine.may(scope)]
+    if len(held) != 1:
+        raise invalid({"approve": "required"})
+    return held[0]
+
+
+def signed_by_two(approvals: dict[str, Any], revision: int | None) -> bool:
+    """Both signatures, on the revision the card's report is at (§6.4)."""
+    marks = (approvals.get("review"), approvals.get("test"))
+    return all(m is not None and m["revision"] == revision for m in marks)
 
 
 def check_transition(mine: Membership, card: Any, wanted: str) -> None:
@@ -113,9 +166,12 @@ def refuse_same_team_review(mine: Membership, card: Any) -> None:
 
 
 def authority_scope(mine: Membership) -> str:
-    return {"reviewer": "tasks:review", "admin": "tasks:admin"}.get(
-        mine.project.done_authority, "tasks:write"
-    )
+    return {
+        "reviewer": "tasks:review",
+        "tester": "tasks:test",
+        "reviewer_and_tester": "tasks:review",
+        "admin": "tasks:admin",
+    }.get(mine.project.done_authority, "tasks:write")
 
 
 def open_dependencies(conn: Connection, card_id: str) -> list[str]:

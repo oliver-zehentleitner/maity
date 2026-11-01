@@ -46,6 +46,11 @@ _CLAIM = {
 _DONE = {
     "holder": "The holder of a card moves it to done.",
     "reviewer": "A reviewer moves a reported card from review to done.",
+    "tester": "A tester moves a reported card from review to done.",
+    "reviewer_and_tester": (
+        "A reported card goes from review to done on two signatures, a reviewer's and a "
+        "tester's, by two different members."
+    ),
     "admin": "An admin moves a reported card from review to done.",
 }
 _TAG = {
