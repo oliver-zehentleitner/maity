@@ -366,7 +366,7 @@ def test_the_circle_owner_leaving_leaves_no_request_of_the_round_open(circle: Ci
     [request_id] = _report(circle).json()["requests"]
     _delete_account(circle.friend, circle.engine)
     row = _status(circle.engine, request_id)
-    assert (row.status, row.withdraw_reason) == ("withdrawn", "member_removed")
+    assert (row.status, row.withdraw_reason) == ("withdrawn", "the addressee left the project")
 
 
 def test_a_forwarded_request_outlives_the_circle_owner_until_its_holder_goes_too(

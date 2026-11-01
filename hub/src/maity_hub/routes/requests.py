@@ -108,6 +108,7 @@ class ForwardIn(Strict):
 
 
 class AnswerIn(Written):
+    on_behalf_of: str | None = None  # the owner whose answer a proxy records (§2.3)
     reply_id: str | None = Field(default=None, max_length=64)
     text: str | None = markdown(default=None, min_length=1)
     talk: Literal[True] | None = None
@@ -1053,6 +1054,29 @@ def _check_answer(row: Any, body: AnswerIn) -> None:
         raise invalid({"markdown": "go_with_markdown_and_base_version"})
 
 
+def _relayed_owner(conn: Connection, mine: Membership, body: AnswerIn) -> str | None:
+    """The owner a proxy records the answer of (§2.3): it answers nothing in its own right,
+    and nobody else names one."""
+    if mine.role_base != "proxy":
+        if body.on_behalf_of is not None:
+            raise invalid({"on_behalf_of": "proxy_only"})
+        return None
+    if body.on_behalf_of is None:
+        raise ApiError(
+            403,
+            "forbidden",
+            "a proxy records its owner's answer, with on_behalf_of",
+            {"reason": "proxy_relays_only"},
+        )
+    try:
+        owner = member_row(conn, mine.project.id, body.on_behalf_of)
+    except ApiError:
+        raise invalid({"on_behalf_of": "not_a_member"}) from None
+    if owner.trust != "owner":
+        raise invalid({"on_behalf_of": "not_an_owner"})
+    return body.on_behalf_of
+
+
 def _refuse_by_kind(conn: Connection, row: Any, who: Any) -> None:
     """The proposal kind's own rule on who answers (`proposals.refusal`), for the one who
     answers, claims or is forwarded the request: `forbidden` with its reason."""
@@ -1108,6 +1132,7 @@ def answer(
                 "only a human with trust owner answers a proxy's call, directly",
                 {"reason": "action_needs_owner"},
             )
+        relayed = _relayed_owner(conn, mine, body)
         refusal = inbox.needs_a_human(row, mine)
         if refusal is not None:
             raise humans_only(refusal)
@@ -1126,7 +1151,9 @@ def answer(
         addressee = inbox.addressee_of(row)
         in_own_right = inbox.answered_in_own_right(conn, row, mine)
         on_behalf = None
-        if inbox.forwarded(row):  # answered for the one it was addressed to (§7)
+        if relayed is not None:
+            on_behalf = relayed
+        elif inbox.forwarded(row):  # answered for the one it was addressed to (§7)
             on_behalf = addressee.text(conn)
         elif not in_own_right and inbox.covers(row, mine):
             on_behalf = row.cover["for"]  # the covered addressee (§6.12)
@@ -1520,7 +1547,8 @@ def return_held(conn: Connection, request_id: str, by: str, reason: str) -> None
     (`holder: trust:admin`, §7), from inside the hub: a step `opened` in `forwarding` and
     `request_forwarded`, as a forward to the pool would write, with the hub as actor. One
     of an owner's round never reaches that pool (§20.7): it goes back to its addressee, a
-    step `forwarded`, or is withdrawn when that member has left too."""
+    step `forwarded`, or is withdrawn when that member has left too. Nor does a proxy's call,
+    which no admin may answer (§2.3): it goes back to the owner."""
     row = _row(conn, request_id)
     if row.status != "open" or row.holder_member is None:
         return
@@ -1529,7 +1557,8 @@ def return_held(conn: Connection, request_id: str, by: str, reason: str) -> None
     if alone and (row.holder_member == row.to_member or not _addressee_active(conn, row)):
         close_request(conn, row.id, "withdrawn", None, reason=reason)
         return
-    if alone:
+    to_addressee = alone or row.action is not None
+    if to_addressee:
         steps = _step(conn, row, "forwarded", inbox.addressee_of(row).text(conn), by, reason)
     else:
         steps = _step(conn, row, "opened", "trust:admin", by, reason)
@@ -1538,7 +1567,7 @@ def return_held(conn: Connection, request_id: str, by: str, reason: str) -> None
         .where(t.request.c.id == row.id)
         .values(
             holder_member=None,
-            holder_pool=None if alone else True,
+            holder_pool=None if to_addressee else True,
             forwarding=steps,
             changed_by_credential=None,
             changed_via=None,
@@ -1590,7 +1619,7 @@ def withdraw_owners_round(conn: Connection, member_id: int, actor: Actor | None)
         .order_by(t.request.c.created_at, t.request.c.id)
     ).all()
     for request_id in sorted(inbox.owners_alone(conn, rows)):
-        close_request(conn, request_id, "withdrawn", actor, reason="member_removed")
+        close_request(conn, request_id, "withdrawn", actor, reason="the addressee left the project")
 
 
 def close_request(

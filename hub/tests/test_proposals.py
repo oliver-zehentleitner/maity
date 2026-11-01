@@ -222,7 +222,7 @@ def test_a_kind_names_who_answers_it_whatever_the_answer(
     request_id = _file(migrated, flow.agent(make_client, owner, role="admin"), "test-admin")
     # requests:answer, not project:admin: refused for go, no, free text and talk alike
     for body in ({"reply_id": "go"}, {"reply_id": "no"}, {"text": "hm"}, {"talk": True}):
-        refused = answer(proxy, request_id, **body)
+        refused = answer(proxy, request_id, on_behalf_of=owner.id, **body)
         assert (refused.status_code, refused.json()["error"]["details"]) == (
             403,
             {"scope": "project:admin"},

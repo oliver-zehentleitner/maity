@@ -162,9 +162,12 @@ project at hand; the base on the row lets each of them stay a one-line read.
 **Status:** active
 **Evidence:** inferred
 **Source:** implementation of `action` on a request (docs/api.md §2.3, §7)
-**Revisit when:** `on_behalf_of` is enforced on a proxy's answer, or a route splits its membership check and its effect over two transactions
+**Revisit when:** a route splits its membership check and its effect over two transactions
 
-`scopes.py` still gives a proxy the coder's scopes and `requests:answer`.
+`scopes.py` still gives a proxy the coder's scopes and `requests:answer`; that it
+answers only as a relay, naming an owner in `on_behalf_of`, is checked in the answer
+route, so `has_scope` keeps meaning the same for every reader. The relay opens no
+scope: a request needing `project:admin` or `members:admin` stays refused with it.
 `Membership.may` and `require` open any other governance scope when the
 call's signed `Maity-On-Request` holds (`proxy_go`), and the first such
 check spends the go on the route's connection.
@@ -178,6 +181,10 @@ The call remembers its spend only as the event's `seq`, and counts it only while
 request's row shows that `seq`: a retried transaction (`db.retrying`, the idempotency
 key's race) has rolled the spend back and has to spend again, or its effect would commit
 with the go unused.
+This holds because PostgreSQL and InnoDB never give a rolled-back `seq` to another call.
+SQLite does reuse one, which is harmless today: `retrying` treats nothing there as transient,
+and a taken idempotency key replays instead of running the call again. A new path that runs a
+call again on SQLite needs another proof, such as an id of the call in the event.
 
 `action.path` is stored as the proxy sent it, in the `<owner>/<slug>` form of
 the call, and is compared bytewise: no later rename rewrites it. After a
