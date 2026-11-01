@@ -84,6 +84,9 @@ out_att="$(render -f "$minimal" --set attachments.existingClaim=c)"
     && [ "$(grep -c 'mountPath: "/var/lib/maity/attachments"' <<<"$out_att")" = 1 ] \
     && ok "the attachment volume reaches the hub once, at the default path" \
     || bad "the attachment volume is not in the hub exactly once"
+out_ee="$(render -f "$minimal" --set attachments.existingClaim=c --set attachments.quotaBytes=5000 --set "extraEnv[0].name=MAITY_ATTACHMENT_QUOTA" --set-string "extraEnv[0].value=9000" --show-only templates/deployment.yaml)"
+[ "$(grep -A1 'name: MAITY_ATTACHMENT_QUOTA' <<<"$out_ee" | grep 'value:' | tail -1 | tr -d ' ')" = 'value:"9000"' ] \
+    && ok "extraEnv still overrides the attachment settings" || bad "extraEnv no longer overrides the attachment settings"
 # A ReadWriteOnce claim in the Job blocks an upgrade on a second node (Multi-Attach).
 grep -q "MAITY_ATTACHMENT\|claimName\|name: attachments" <<<"$(render -f "$minimal" --set attachments.existingClaim=c --show-only templates/migrate-job.yaml)" \
     && bad "the migrate Job has the attachment volume or its settings" || ok "the migrate Job has no attachment volume or settings"

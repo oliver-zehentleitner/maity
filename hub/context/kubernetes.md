@@ -324,10 +324,10 @@ listing it before the volume is emptied.
 Changed on 2026-11-01: the migrate Job used to mount the claim too, only because it shares the hub's environment and `MAITY_ATTACHMENT_DIR` must name a
 writable directory. No migration reads the store. On a two-node cluster the Job landed on the other node than the running hub, the `ReadWriteOnce` claim
 gave a Multi-Attach error and the upgrade ran into its deadline, so the Job now has neither the variable nor the mount. A wrong directory is now found
-when the hub starts, after the migration, not before it. `extraVolumes` still reach the Job: a `ReadWriteOnce` claim there has the same problem.
+when the hub starts, after the migration, not before it, and the hub is down until it is fixed (`Recreate`: the old pod is already gone). The way back is another `helm upgrade` with the same image and the fixed value; `helm rollback` only helps if the upgrade did not move the schema, otherwise the old image needs the dump restored (no downgrade, see "A hub serves only on its own schema head"). A rare setting that fails loudly was weighed against a blocked upgrade on every second node. `extraVolumes` still reach the Job: a `ReadWriteOnce` claim there has the same problem.
 
 **Rejected alternatives:**
-- Scaling the hub to 0 before the migration, the workaround on that cluster: downtime on every upgrade for a mount nothing reads.
+- Relying on the hub being scaled to 0 first: `helm-upgrade.sh` does that, against migration deadlocks, but a plain `helm upgrade` would still block, for a mount nothing reads.
 - Affinity of the Job to the hub's node: the Job would keep a volume it has no use for, and stay pending when that node has no room.
 - `extraVolumes`, `extraVolumeMounts` and `extraEnv` in the values file: it works, and it is how a release forgets the volume at the next upgrade
   with other values; the files would then be orphaned and every attachment call would answer `attachments_not_configured`.
