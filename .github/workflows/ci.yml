@@ -323,7 +323,7 @@ jobs:
       - run: pip install -e '.[dev]'
       - run: make check
 
-  # Not in ci-ok's needs until it has run green: a new platform must not block everyone's merges.
+  # About 15 minutes, against about 7 on Linux; only when cli/ changes.
   cli-windows:
     needs: changes
     if: needs.changes.outputs.cli == 'true'
@@ -347,7 +347,7 @@ jobs:
   # needed (skipped by `changes`), red when one failed or was cancelled.
   ci-ok:
     if: always()
-    needs: [changes, changelog, web, web-e2e, hub-sqlite, hub-wheel, hub-lock, hub-image, helm, join-smoke, hub-postgresql, cli]
+    needs: [changes, changelog, web, web-e2e, hub-sqlite, hub-wheel, hub-lock, hub-image, helm, join-smoke, hub-postgresql, cli, cli-windows]
     runs-on: ubuntu-latest
     defaults:
       run:
