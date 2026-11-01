@@ -4183,3 +4183,18 @@ The project's Settings offer every `done_authority` of §6.1 to a human admin, w
 
 **Rejected alternatives:** a dialog on drop that asks which signature: a second way to do what the menu does. A separate Sign button on every card: the card already has one menu for what can be done with it.
 
+## The public page's form appears for the namespace owner, and its link cannot know the instance's switch
+
+**Id:** 7e873b54-6e5d-45de-b8e3-4db3621e7588
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §16.9, §6.26; tsk-0vccw54gj8e6
+**Revisit when:** the project view carries `page_served`, as `GET /people/{handle}` does
+
+The project's Settings show **Public page** only to the human who owns the namespace, or to an owner of the organisation that does (`GET /orgs/{handle}`, `my_role`); a slot fills when that answer comes. The account page shows **Public profile** to every human. Both say what becomes public before the switch. The project's **View public page** link shows while `public_page` is `on`, the project is not archived and it has no hold, with a note that the hub's operator must have public pages on. The profile's link follows the hub's `page_served`.
+
+**Reason:** a project admin who is not the namespace owner would only get a refusal from the hub, because the page is published under the owner's name. The project view has no `page_served` and `MAITY_PUBLIC_PAGES` is not readable from it, so the page cannot tell whether the instance serves pages; the note says so instead of implying more.
+
+**Rejected alternatives:** a hub field `page_served` on the project in this PR: a launch blocker should not wait for a contract change, and the card asks for the web. Fetching `?as=public` and telling the stored page from the app shell: guessing from HTML.
+

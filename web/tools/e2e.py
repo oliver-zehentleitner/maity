@@ -2159,6 +2159,7 @@ def board_cards_step(run: Run, page: Page) -> None:
     run.shot(page, "board-cards")
     no_problems(run, "board cards")
     two_signatures_step(run, page)
+    public_page_step(run, page)
     board_order_step(run, page)
     overview_step(run, page)
     ticker_step(run, page)
@@ -2224,6 +2225,45 @@ def two_signatures_step(run: Run, page: Page) -> None:
     finally:
         authority(before, "e2e: back")
     no_problems(run, "two signatures")
+
+
+def public_page_step(run: Run, page: Page) -> None:
+    """§16.9 against the hub: the namespace owner switches the project's page and writes its text,
+    and turns on their own profile; each is read back through the API."""
+    run.step("public page: the namespace owner sets the project's page, and their own profile")
+    page.goto(f"{run.base}/owner/e2e-alpha/settings")
+    form = page.locator("form.public-page-form")
+    expect(form).to_contain_text("Never public")
+    was_on = form.locator("#public-page").is_checked()
+    run.a11y(page, "settings, public page")
+    form.locator("#public-about").fill("# E2E Alpha")
+    form.locator("#public-page").set_checked(not was_on)
+    form.get_by_role("button", name="Save", exact=True).click()
+    expect(page.locator("main")).to_contain_text("Public page saved.")
+    read = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha").json()
+    assert read["public_about"] == "# E2E Alpha" and read["public_page"] == ("off" if was_on else "on"), read
+    form = page.locator("form.public-page-form")
+    form.locator("#public-about").fill("")
+    form.locator("#public-page").set_checked(was_on)
+    form.get_by_role("button", name="Save", exact=True).click()
+    expect(page.locator("form.public-page-form #public-about")).to_have_value("")
+    expect(page.locator("#public-page")).to_be_checked(checked=was_on)
+    page.goto(f"{run.base}/account")
+    profile = page.locator("form.public-profile-form")
+    run.a11y(page, "account, public profile")
+    profile.locator("#public-profile").check()
+    profile.locator("#public-bio").fill("Builds things in e2e.")
+    profile.get_by_role("button", name="Save", exact=True).click()
+    expect(profile).to_contain_text("Saved.")
+    member = page.request.get(f"{run.base}/api/v1/me").json()["member"]
+    assert member["public_profile"] is True and member["public_bio"] == "Builds things in e2e.", member
+    profile.locator("#public-profile").uncheck()
+    profile.locator("#public-bio").fill("")
+    profile.get_by_role("button", name="Save", exact=True).click()
+    expect(profile.locator("#public-bio")).to_have_value("")
+    member = page.request.get(f"{run.base}/api/v1/me").json()["member"]
+    assert member["public_profile"] is False and member["public_bio"] is None, member
+    no_problems(run, "public page")
 
 
 def board_order_step(run: Run, page: Page) -> None:

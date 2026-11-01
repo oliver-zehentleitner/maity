@@ -672,6 +672,7 @@ NON_WAKING = frozenset(
         "memory_deleted",
         "soul_changed",
         "request_claimed",  # a claim wakes nobody (§7)
+        "request_action_used",  # the record of a proxy's call; its owner already said go (§2.3)
         "keep_the_why_acknowledged",  # the owner's and the admins' record only (§6.23)
         "attachment_deleted",  # a deleted file wakes nobody (§8.7)
         "jour_fixe_skipped",  # a skip and a series change wake nobody (§20.9)

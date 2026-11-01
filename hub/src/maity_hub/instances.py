@@ -498,9 +498,10 @@ def instances_of(conn: Connection, credential_ids: Iterable[str | None]) -> dict
 
 def assigned_for(conn: Connection, member: Any, named: str | None) -> str | None:
     """The `assigned_instance` a card assigned to `member` gets (§6.18), on every path
-    that assigns it: none under `free`, where any instance claims; the named one under
-    `lead`; the named one or the next in turn under `round_robin`. A human has none."""
-    if member.agent_id is None or member.distribution == "free":
+    that assigns it: the named one under any distribution; without one none under `free`,
+    where any instance claims, and under `lead`, where the lead chooses; the next in turn under
+    `round_robin`. A human has none."""
+    if member.agent_id is None:
         return None
     if named is not None:
         return named

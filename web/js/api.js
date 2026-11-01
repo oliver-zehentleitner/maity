@@ -1717,6 +1717,16 @@ window.Maity = window.Maity || {};
         renameSelf(mm, body.handle, path);
         if (Object.keys(body).length === 1) return meView();
       }
+      // The person's public page (§16.9): at most 280 characters, no control character.
+      if ("public_bio" in body && body.public_bio) {
+        const bio = String(body.public_bio);
+        if (bio.length > 280) fail(400, "invalid", "the request does not validate", path, { fields: { public_bio: "too_long" } });
+        // eslint-disable-next-line no-control-regex
+        if (/[\x00-\x1f\u202a-\u202e\u2066-\u2069]/.test(bio)) fail(400, "invalid", "the request does not validate", path, { fields: { public_bio: "control_character" } });
+      }
+      if ("public_profile" in body) mm.public_profile = !!body.public_profile;
+      if ("public_bio" in body) mm.public_bio = body.public_bio || null;
+      if (Object.keys(body).length && Object.keys(body).every((k) => k === "public_profile" || k === "public_bio" || k === "handle")) return meView();
       const fields = {};
       const MEAT = ["meat_proxy", "meat_proxy_lead", "meat_proxy_hands"];
       if (!MEAT.some((k) => k in body && body[k] !== null)) fields.meat_proxy = "required";
@@ -2566,6 +2576,16 @@ window.Maity = window.Maity || {};
       }
       if ("policy" in body && "done_authority" in body.policy && !["holder", "reviewer", "tester", "reviewer_and_tester", "admin"].includes(body.policy.done_authority)) {
         fail(400, "invalid", "unknown done_authority", path, { fields: { "policy.done_authority": "unknown" } });
+      }
+      // The public page (§16.9): the fixture's signed-in human owns its namespaces.
+      if ("public_page" in body) {
+        if (!["on", "off"].includes(body.public_page)) fail(400, "invalid", "the request does not validate", path, { fields: { public_page: "required" } });
+        p.public_page = body.public_page;
+      }
+      if ("public_about" in body) {
+        // Bytes, as the hub counts them.
+        if (body.public_about && encodeURIComponent(body.public_about).replace(/%../g, "x").length > 4096) fail(400, "invalid", "the request does not validate", path, { fields: { public_about: "too_long" } });
+        p.public_about = body.public_about || null;
       }
       if ("policy" in body) {
         // A policy change needs a reason, except `badge` alone (§6.20); fields merge into the

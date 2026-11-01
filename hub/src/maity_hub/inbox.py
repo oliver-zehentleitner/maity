@@ -159,6 +159,12 @@ def needs_a_human(request: Any, mine: Membership) -> str | None:
     return rule.refusal if rule is not None and rule.humans_only else None
 
 
+def needs_the_owner(request: Any, mine: Membership) -> bool:
+    """A proxy's call waits for a human with trust `owner`, directly: nobody else answers it,
+    in any capacity (§2.3, §7)."""
+    return request.action is not None and (mine.kind != "human" or mine.trust != "owner")
+
+
 def answer_scope(request: Any) -> str:
     """The scope an answer needs: a proposal's kind may ask for more (§19.2)."""
     rule = proposals.answerer(request)
@@ -175,7 +181,7 @@ def may_answer(conn: Connection, request: Any, mine: Membership) -> bool:
         return False
     if mine.trust == "guest":  # answers none, whatever reaches it (§2.3 "Guest")
         return False
-    if needs_a_human(request, mine) is not None:
+    if needs_the_owner(request, mine) or needs_a_human(request, mine) is not None:
         return False
     if proposals.refusal(conn, request, mine) is not None:  # the kind's own rule
         return False

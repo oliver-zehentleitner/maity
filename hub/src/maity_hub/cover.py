@@ -134,6 +134,8 @@ def may_take_request(project: Any, request: Any, covered: Any, sub: Any) -> bool
 
     if sub.id in (request.asked_by, request.on_behalf_of):
         return False  # never its own question
+    if request.action is not None and (sub.agent_id or sub.trust != "owner"):
+        return False  # a proxy's call: a substitute could not answer it (§2.3)
     klass = getattr(request, "class")
     # Every request to the project's owner — `owner`, `trust:owner` or their member id —
     # is an owner decision and moves only to a human (§6.12).

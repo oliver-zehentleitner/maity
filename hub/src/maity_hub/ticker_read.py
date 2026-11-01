@@ -91,7 +91,9 @@ def details(conn: Connection, rows: Sequence[Any]) -> dict[int, dict[str, Any]]:
         if request is None:
             continue
         chosen = (request.answer or {}).get("reply_id")
-        options = replies(getattr(request, "class"), request.options or [])
+        options = replies(
+            getattr(request, "class"), request.options or [], action=request.action is not None
+        )
         label = next((o["label"] for o in options if o["id"] == chosen), None)
         found[seq] = {"request_title": request.title, "reply_label": label}
     return found

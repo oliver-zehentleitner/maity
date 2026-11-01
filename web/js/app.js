@@ -689,6 +689,8 @@ window.Maity = window.Maity || {};
     if (names) append(panel, names);
     if (M.projectSetup) append(panel, memoryPanel(ctx, save, humanAdmin));
     // Humans only, as every policy field (§2.3 ʰ); the commitment above the badge (the maintainer, 2026-11-01).
+    // The public page: the namespace owner's alone, however high the trust (§16.9).
+    if (M.publicPage) append(panel, M.publicPage.projectPart(ctx, save));
     if (humanAdmin) append(panel, keepTheWhyForm(ctx, save), keepTheWhyDefaultsForm(ctx, save), badgeForm(ctx, save));
     // The jour fixe's series and their moderators (§20.1, §20.2), kept by humans.
     if (humanAdmin && M.jourFixeSeries) append(panel, M.jourFixeSeries.settingsPart(ctx));
@@ -1039,9 +1041,6 @@ window.Maity = window.Maity || {};
     h("button", { type: "submit" }, M.t("settings.agent_owners.save")));
   }
 
-  // §3.1 "Bringing your own agent", §6.1: whether members add agents of
-  // their own, and how many each may hold here; a human with project:admin,
-  // with a reason, as every policy field.
   // Who moves a card from review to done (§6.1). A human changes it with a reason,
   // as every policy field; cards in review keep their state and read the new rule.
   const DONE_AUTHORITIES = () => [
@@ -1068,6 +1067,9 @@ window.Maity = window.Maity || {};
     h("button", { type: "submit" }, M.t("board.save")));
   }
 
+  // §3.1 "Bringing your own agent", §6.1: whether members add agents of
+  // their own, and how many each may hold here; a human with project:admin,
+  // with a reason, as every policy field.
   function memberAgentsForm(ctx, save) {
     const pol = ctx.project.policy;
     const on = h("select", { id: "member-agents-select" }, [["on", "On: members add agents of their own"], ["off", "Off: only admins add agents"]]
