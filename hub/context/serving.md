@@ -376,6 +376,10 @@ and a stall under 100 ms can hide between two; those are not what is being looke
 `threads_waiting_max` above zero says the threads ran out, which `threads_busy_max` at the limit
 only suggests.
 
+A stall across the end of a window counts in both: the line reports it as overdue, and the tick
+that finally runs reports its whole length in the next window. Without a tick in a window
+`loop_late_avg_ms` stays 0, so `loop_late_max_ms` is the field to alarm on.
+
 **Rejected alternatives:**
 - Timing how long each request waits for a thread: it would wrap every endpoint's hop to the
   thread, for a number the callers waiting already show.

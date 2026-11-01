@@ -312,3 +312,20 @@ def test_the_threads_busy_and_waiting_are_those_of_the_loops_limiter() -> None:
 def test_the_running_hub_watches_its_load(client: TestClient) -> None:
     """The fixture's client has run the lifespan, and with it the first tick."""
     assert _load_fields(request_stats.LOAD)["threads_limit"] == "40"
+
+
+def test_the_tick_ends_before_the_hub_stops_reporting(
+    settings: Settings, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cancelled by the lifespan itself, not left for the closing loop to clean up."""
+    seen: list[float | None] = []
+    stop = request_stats.Reporter.stop
+
+    def noting(reporter: request_stats.Reporter) -> None:
+        seen.append(request_stats.LOAD._due)
+        stop(reporter)
+
+    monkeypatch.setattr(request_stats.Reporter, "stop", noting)
+    with TestClient(create_app(settings, migrated)):
+        assert request_stats.LOAD._due is not None
+    assert seen == [None]
