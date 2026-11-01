@@ -405,6 +405,9 @@ def change_settings(conn: Connection, org: Any, fields: dict[str, Any], caller: 
         values["public_page"] = fields["public_page"]
     if values:
         conn.execute(update(t.org).where(t.org.c.id == org.id).values(**values))
+        from maity_hub import public_pages
+
+        public_pages.touch(conn, "organisation", org.id)
     return conn.execute(select(t.org).where(t.org.c.id == org.id)).one()
 
 
