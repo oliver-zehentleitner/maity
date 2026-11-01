@@ -1117,8 +1117,9 @@ def _action(spec: str, body_source: str | None) -> dict[str, Any]:
             json.loads(body)
         except (UnicodeDecodeError, json.JSONDecodeError):
             raise UsageError("--action-body is not JSON text in UTF-8") from None
-        # The hub counts the text, the request's own cap counts it escaped (§1.7).
-        if len(json.dumps(body, separators=(",", ":"))) > ACTION_BODY_MAX:
+        # The hub counts the text, the request's own cap counts it escaped (§1.7),
+        # without the two quotes around it: a body with nothing to escape fits exactly.
+        if len(json.dumps(body)) - 2 > ACTION_BODY_MAX:
             raise UsageError(
                 "--action-body is at most 48 KiB also once escaped as a JSON string: "
                 "quotes and non-ASCII characters take more bytes on the wire"
