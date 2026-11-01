@@ -1055,8 +1055,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && text(main).includes("@agent-b#wle2 is dormant.")
       && text(agRow("agt-b")).includes("dormant — ask @agent-b#wle2 directly")
       && text(agRow("agt-b")).includes("Resting: every instance is dormant")
-      && btn(drPart(), "Wake @agent-b#wle2"),
-      "dormant: sent with its instance; the row says how to reach it and that only an instance address reaches the team " + JSON.stringify(drPatches));
+      && btn(drPart(), "Wake @agent-b#wle2")
+      && !byId("team-lead-agt-b").querySelectorAll("option").some((o) => o.getAttribute("value") === "wle2"),
+      "dormant: not offered as the team's lead; sent with its instance; the row says how to reach it and that only an instance address reaches the team " + JSON.stringify(drPatches));
     btn(drPart(), "Wake @agent-b#wle2").click(); for (let k = 0; k < 8; k++) await tick();
     expect(JSON.stringify(drPatches[1][1]) === JSON.stringify({ dormant: false, instance: "wle2" }) && !text(agRow("agt-b")).includes("dormant")
       && btn(drPart(), "Put @agent-b#wle2 to rest"), "dormant: woken again, the notes gone");
@@ -1284,7 +1285,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && tabNames.indexOf("Why") < tabNames.indexOf("Settings") && tabNames.indexOf("Why") > tabNames.indexOf("Runners"),
     "header: the project's Settings are its last tab, after Runners and Why " + JSON.stringify(tabNames));
   // The row as the maintainer set it (2026-10-31): Agents right after Members, Jour fixe between Why and Settings.
-  expect(JSON.stringify(tabNames) === JSON.stringify(["Inbox", "Overview", "Board", "Members", "Agents", "Chat", "Messages", "Ticker", "Why", "Jour fixe", "Settings"]),
+  expect(JSON.stringify(tabNames) === JSON.stringify(["Inbox", "Overview", "Board", "Members", "Agents", "Chat", "Messages", "Ticker", "Why", "Memory", "Jour fixe", "Settings"]),
     "header: a human's project tabs in order, Agents beside Members, Jour fixe before Settings " + JSON.stringify(tabNames));
   const usersLink = header.querySelectorAll("a.menu-item").find((a) => a.textContent === "Instance administration");
   expect(usersLink && usersLink.getAttribute("href") === "#/admin", "users: in the settings menu for the instance admin");
@@ -3279,6 +3280,21 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   cpWatch().click(); await cpSettle();
   cpLate({ items: [cpUpdate(2, "tsk-0001")], next_cursor: null }); await cpSettle();
   expect(text(cpWatch()) === "Watch" && !cpPanel().querySelector(".card-update-list"), "card watch: a late read after the watch ended draws nothing");
+  // A PUT that fails keeps the button as it was and says so; a list with none says how far it read.
+  const cpWatchPut = win.Maity.api.put;
+  win.Maity.api.put = () => Promise.reject(Object.assign(new Error("the hub is away"), { code: "unavailable" }));
+  cpWatch().click(); await cpSettle();
+  expect(text(cpWatch()) === "Watch" && cpWatch().getAttribute("aria-pressed") === "false" && !cpWatch().disabled && text(cpPanel()).includes("Your watch did not change") && !cpMarked(),
+    "card watch: a failed PUT changes nothing and is said");
+  win.Maity.api.put = cpWatchPut;
+  win.Maity.api.get = (p) => (p.includes("/messages?type=update") ? Promise.resolve({ items: [cpUpdate(1, "tsk-0002")], next_cursor: "more" }) : cpWatchGet(p));
+  cpWatch().click(); await cpSettle();
+  expect(text(cpPanel()).includes("among the project's latest messages") && !text(cpPanel()).includes("No updates on this card yet"), "card watch: none in a page with more behind it is no claim about the card");
+  cpWatch().click(); await cpSettle();
+  win.Maity.api.get = (p) => (p.includes("/messages?type=update") ? Promise.resolve({ items: [cpUpdate(1, "tsk-0002")], next_cursor: null }) : cpWatchGet(p));
+  cpWatch().click(); await cpSettle();
+  expect(text(cpPanel()).includes("No updates on this card yet"), "card watch: none at the end of the list");
+  cpWatch().click(); await cpSettle();
   win.Maity.api.get = cpWatchGet;
   // A card's links: a pull request with the title and state the hub observed, an issue without, a plain URL by its label.
   const cpLinks = win.Maity.cardPanel.render({ base: "/projects/maintainer/maity", slug: "maity", project: { state: "archived" }, link: () => "#" },
@@ -8002,39 +8018,66 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/settings/mine"); for (let k = 0; k < 4; k++) await tick();
   expect(msTabs() === "Project=#/maintainer/maity/settings,Mine=#/maintainer/maity/settings/mine*" && !byId("project-language"),
     "settings: settings/mine shows one's own settings, its tab marked, not the project's");
-  // Role memory (§19.2), on Mine: add, delete with a row left behind, any role for an admin, nothing to write for a guest.
+  // Memory (§19): filters ask the hub, an entry says where and who, Delete with a reason leaves its row; souls of one's own agents.
   {
-    const rmText = () => text(main.querySelector("section.role-memory"));
-    const rmForm = () => main.querySelector("form.role-memory-add");
-    expect(main.querySelector("section.role-memory") && rmText().includes("Nothing in this memory yet") && byId("role-memory-role"), "role memory: on Mine, empty, a role to choose for an admin");
-    rmForm().dispatch("submit"); await tick();
-    expect(rmText().includes("write the entry first"), "role memory: no text, no call");
-    byId("role-memory-text").value = "Rebase before the review"; byId("role-memory-tags").value = "git, review";
-    rmForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
-    expect(rmText().includes("Rebase before the review") && rmText().includes("git, review") && byId("role-memory-text").value === "", "role memory: an entry is added with its tags");
-    const rmRole = byId("role-memory-role").value;
-    byId("role-memory-role").value = rmRole === "tester" ? "coder" : "tester"; byId("role-memory-role").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
-    expect(!rmText().includes("Rebase before the review"), "role memory: another role's memory is its own");
-    byId("role-memory-role").value = rmRole; byId("role-memory-role").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
-    const rmConfirm = win.confirm; win.confirm = () => true;
-    btn(main.querySelector("section.role-memory"), "Delete").click(); for (let k = 0; k < 4; k++) await tick();
-    win.confirm = rmConfirm;
-    expect(!rmText().includes("Rebase before the review"), "role memory: Delete takes the entry away");
-    byId("role-memory-deleted").checked = true; byId("role-memory-deleted").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
-    expect(rmText().includes("Deleted by") && !rmText().includes("Rebase before the review"), "role memory: its row says who, the text is gone");
-    byId("role-memory-deleted").checked = false;
-    const rmPost = win.Maity.api.post;
-    win.Maity.api.post = (p) => Promise.reject(new win.Maity.api.ApiError("raw", 409, p, "memory_full", {}));
-    byId("role-memory-text").value = "x"; rmForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
-    expect(rmText().includes("full at 64 KiB") && !rmText().includes("raw"), "role memory: full is said in words");
+    await go("#/maintainer/maity/memory"); for (let k = 0; k < 6; k++) await tick();
+    const mmBox = () => main.querySelector("section.memory-entries");
+    const mmText = () => text(mmBox());
+    const mmGets = [];
+    const mmGet = win.Maity.api.get;
+    win.Maity.api.get = (p, o) => { if (/\/memory\?/.test(p)) mmGets.push(p); return mmGet(p, o); };
+    expect(mmText().includes("The probe needs the PR head") && mmText().includes("Rebase before the review") && mmText().includes("agent-b#wqe2"), "memory: entries with author and instance");
+    expect(header.querySelectorAll("nav.views a").some((a) => text(a) === "Memory" && a.getAttribute("aria-current") === "page"), "memory: its tab");
+    byId("memory-store").value = "team"; byId("memory-store").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+    expect(!mmText().includes("Rebase before") && mmText().includes("The probe needs") && mmGets[mmGets.length - 1].includes("store=team"), "memory: filter by store asks the hub");
+    expect(!byId("memory-team").parentNode.hidden && byId("memory-role").parentNode.hidden, "memory: the agent picker for a team, no role picker");
+    byId("memory-store").value = "role"; byId("memory-store").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+    expect(mmGets[mmGets.length - 1].includes("role=") && !mmGets[mmGets.length - 1].includes("member_id"), "memory: role names the role store, never a team");
+    byId("memory-store").value = ""; byId("memory-store").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+    btn(mmBox(), "git").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(byId("memory-q").value === "git" && mmText().includes("Rebase before") && !mmText().includes("The probe needs"), "memory: a tag's button searches for it");
+    byId("memory-q").value = ""; byId("memory-q").dispatch("input"); await new Promise((r) => setTimeout(r, 340)); for (let k = 0; k < 4; k++) await tick();
+    const mmForm = () => main.querySelector("form.memory-add");
+    mmForm().dispatch("submit"); await tick();
+    expect(mmText().includes("write the entry first"), "memory: no text, no call");
+    byId("memory-add-text").value = "Note for the team"; byId("memory-add-tags").value = "Git, review";
+    mmForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(mmText().includes("Note for the team") && btn(mmBox(), "git") && btn(mmBox(), "review") && byId("memory-add-text").value === "", "memory: added, tags lowercased");
+    const mmPost = win.Maity.api.post;
     win.Maity.api.post = (p) => Promise.reject(new win.Maity.api.ApiError("raw", 400, p, "invalid", { fields: { "tags.0": "string_pattern_mismatch" } }));
-    rmForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
-    expect(rmText().includes("up to five tags") && !rmText().includes("raw"), "role memory: one bad tag, as the hub names it, is said in words");
-    win.Maity.api.post = rmPost;
-    byId("role-memory-text").value = "";
-    const rmDiv = document.createElement("div");
-    await win.Maity.roleMemory.section({ base: "/projects/maintainer/maity", role: "coder", trust: "guest", members: [] }, rmDiv);
-    expect(!rmDiv.querySelector("form.role-memory-add") && text(rmDiv).includes("As a guest you read"), "role memory: a guest writes nothing");
+    byId("memory-add-text").value = "x"; mmForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(mmText().includes("up to five tags") && !mmText().includes("raw"), "memory: a bad tag, as the hub names it, in words");
+    win.Maity.api.post = (p) => Promise.reject(new win.Maity.api.ApiError("raw", 409, p, "memory_full", {}));
+    mmForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(mmText().includes("full at 64 KiB"), "memory: full in words");
+    win.Maity.api.post = mmPost; byId("memory-add-text").value = "";
+    const mmRow = () => mmBox().querySelectorAll("ul.memory-list li").find((x) => text(x).includes("The probe needs"));
+    btn(mmRow(), "Delete").click(); await tick();
+    const mmReason = mmRow().querySelector("form.memory-delete");
+    mmReason.querySelector("input").value = "out of date"; mmReason.dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(!mmText().includes("The probe needs"), "memory: Delete takes the entry away");
+    byId("memory-deleted").checked = true; byId("memory-deleted").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+    expect(mmText().includes("because: out of date") && !mmText().includes("The probe needs"), "memory: its row says who and why, the text is gone");
+    byId("memory-deleted").checked = false; byId("memory-deleted").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+    // A failed read after a change leaves no old entries under the new filter (c47w on #1026).
+    win.Maity.api.get = (p, o) => (/\/memory\?/.test(p) ? Promise.reject(new win.Maity.api.ApiError("nope", 500, p, "x", {})) : mmGet(p, o));
+    byId("memory-store").value = "community"; byId("memory-store").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+    expect(mmText().includes("could not be read") && !mmText().includes("Rebase before"), "memory: a failed read shows no old entries");
+    win.Maity.api.get = mmGet;
+    // Souls: only one's own agents, read when opened, a version on save.
+    const mmSoul = () => main.querySelector("details.soul");
+    expect(mmSoul() && !byId("soul-" + mmSoul().getAttribute("data-soul")).value, "memory: a soul row for one's own agent");
+    const mmSid = mmSoul().getAttribute("data-soul");
+    mmSoul().open = true; mmSoul().dispatch("toggle"); for (let k = 0; k < 4; k++) await tick();
+    expect(text(mmSoul()).includes("No soul written yet"), "memory: an agent without a soul says so");
+    byId("soul-" + mmSid).value = "Small pull requests."; mmSoul().querySelector("form.soul-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(text(mmSoul()).includes("Version 1") && text(mmSoul()).includes("Saved."), "memory: saving makes a version");
+    // A guest: no form, no Delete.
+    win.Maity.api.get = (p, o) => (p === "/me" ? mmGet(p, o).then((x) => { x.projects.forEach((q) => { q.trust = "guest"; }); return x; }) : mmGet(p, o));
+    await go("#/all"); await go("#/maintainer/maity/memory"); for (let k = 0; k < 6; k++) await tick();
+    expect(!main.querySelector("form.memory-add") && !btn(mmBox(), "Delete"), "memory: a guest writes and deletes nothing");
+    win.Maity.api.get = mmGet;
+    await go("#/maintainer/maity/settings/mine"); for (let k = 0; k < 4; k++) await tick();
   }
   const msForm = () => main.querySelector("form.my-settings");
   expect(msForm() && byId("my-nl-default").checked && byId("my-nl-minutes").disabled && byId("my-nl-minutes").value === "90"
@@ -9024,6 +9067,39 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(leSections()[1].querySelectorAll("li.lp-item")[1], "Remove").click(); await tick();
   // Landing V3 (§16.7, #737): the demo (terminal lines of a kind, an optional inbox item, exactly three steps) and the open
   // source section (tiles, links), each list at its own path.
+  // Works with (§16.7): the agents picked in order from the hub's list, each once; the list is the hub's.
+  const wwHub = fs.readFileSync(path.join(WEB, "../hub/src/maity_hub/landing.py"), "utf8").match(/^AGENTS: dict\[str, str\] = \{\n([\s\S]*?)^\}/m)[1];
+  const wwSlugs = [...wwHub.matchAll(/^\s*"([^"]+)": "([^"]+)",$/gm)].map((m) => m[1] + "=" + m[2]);
+  byId("lp-add-type-en").value = "works_with"; btn(leBox().querySelector(".lp-add"), "Add the section").click(); await tick();
+  const wwAt = leSections().length - 1;
+  const wwId = (rest) => "lp-pages-en-sections-" + wwAt + "-" + rest;
+  const wwBox = () => leSections()[wwAt];
+  const wwOffered = byId(wwId("items-pick")).querySelectorAll("option").map((o) => o.getAttribute("value") + "=" + text(o));
+  expect(text(wwBox()).includes("Works with") && wwSlugs.length === 19 && JSON.stringify(wwOffered) === JSON.stringify(wwSlugs),
+    "landing editor: works_with offers exactly the hub's agents, by name, in its order " + JSON.stringify(wwOffered));
+  const wwAdd = async (slug) => { byId(wwId("items-pick")).value = slug; btn(wwBox().querySelector(".lp-agents .inline-form"), "Add").click(); await tick(); };
+  await wwAdd("codex"); await wwAdd("claude-code");
+  byId(wwId("label")).value = "Works with"; byId(wwId("label")).dispatch("input");
+  byId(wwId("more")).value = "+ any agent"; byId(wwId("more")).dispatch("input");
+  const wwNames = () => wwBox().querySelectorAll(".lp-agents .lp-item-title").map((x) => text(x));
+  expect(JSON.stringify(wwNames()) === JSON.stringify(["Codex", "Claude Code"]) && !byId(wwId("items-pick")).querySelectorAll("option").some((o) => o.getAttribute("value") === "codex"),
+    "landing editor: an agent picked is listed in order and no longer offered");
+  btn(wwBox().querySelectorAll(".lp-agents .lp-item")[1], "Up").click(); await tick();
+  expect(JSON.stringify(wwNames()) === JSON.stringify(["Claude Code", "Codex"]), "landing editor: an agent moves up");
+  const wwPatch = win.Maity.api.patch; let wwSent = null;
+  win.Maity.api.patch = (p, b) => { if (p === "/admin/settings/landing") wwSent = b; return wwPatch(p, b); };
+  await leSave();
+  win.Maity.api.patch = wwPatch;
+  expect(wwSent && JSON.stringify(((s) => [s.label, s.items, s.more])(wwSent.pages.en.sections[wwAt])) === JSON.stringify(["Works with", ["claude-code", "codex"], "+ any agent"]),
+    "landing editor: works_with is saved with its label, agents in order and more " + JSON.stringify(wwSent && wwSent.pages.en.sections[wwAt]));
+  const wwRefused = async (items) => {
+    try { await win.Maity.api.post("/admin/settings/landing/preview", { pages: { en: { title: "T", sections: [{ type: "works_with", enabled: true, label: "L", items }] } } }); return null; }
+    catch (err) { return err.details.fields; }
+  };
+  const wwBad = await Promise.all([[], ["nobody"], ["codex", "codex"]].map(wwRefused));
+  expect(wwBad[0]["pages.en.sections.0.items"] === "invalid" && wwBad[1]["pages.en.sections.0.items.0"] === "unknown_agent" && wwBad[2]["pages.en.sections.0.items.1"] === "duplicate",
+    "fixture hub: works_with refuses as the hub does " + JSON.stringify(wwBad));
+  btn(wwBox().querySelector(".lp-section-head"), "Remove").click(); await tick();
   byId("lp-add-type-en").value = "demo"; btn(leBox().querySelector(".lp-add"), "Add the section").click(); await tick();
   byId("lp-add-type-en").value = "opensource"; btn(leBox().querySelector(".lp-add"), "Add the section").click(); await tick();
   const leDemo = () => leSections()[4], leOss = () => leSections()[5];
@@ -9159,6 +9235,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await leSave();
     expect(lePatches.length === jsPatches + 1 && lePatches[jsPatches][1].pages.en.title === "Imported title" && lePatches[jsPatches][1].pages.en.description === "One page",
       "landing JSON: Save saves the imported draft, as one typed by hand");
+    // Variants or campaigns of the wrong kind refuse the import, as the whole site's does; the draft stays.
+    const jsKept = byId("lp-pages-en-title").value;
+    const jsWrong = JSON.parse(JSON.stringify(exported));
+    jsWrong.pages.en.title = jsKept + " from the file";
+    byId("lp-json").value = JSON.stringify(Object.assign(jsWrong, { campaigns: {} }));
+    await jsLoad();
+    expect(byId("lp-pages-en-title").value === jsKept && text(main).includes("variants must be an object and campaigns a list"),
+      "landing JSON: campaigns of the wrong kind refuse the import, and say so " + byId("lp-pages-en-title").value);
     // A body without a footer (#808's review): the editor's footer stays, as a PATCH keeps the stored one.
     const jsNoFooter = { enabled: false, default_language: "en", pages: { en: { title: "V3", description: "No footer here", sections: [] } } };
     byId("lp-json").value = JSON.stringify(jsNoFooter);

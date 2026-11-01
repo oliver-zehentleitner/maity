@@ -193,7 +193,8 @@ a human moderator writes the statement, adds a further step and files the report
 an eligible member posts once per topic in the open step;
 an invited human removes a text from the report.
 The series (§20.1) with their moderators (§20.2) are in Project settings, for a human with project:admin |
-| `/<owner>/<slug>/settings`, `/<owner>/<slug>/settings/mine` (with **Role memory**, §19.2) | the project's **Settings**, its last tab (after Why), with a link to the project's **Runners** (no tab of its own), one view with two tabs (§16.11): **Project** at `settings`, for a member with `project:admin` (anyone else who opens it gets `settings/mine`), and **Mine** at `settings/mine`, one's own settings for this project, for every human member — each either **Use my default** (the personal value from the account, sent as `null`) or a value for this project, "Applies now" with the value the hub uses; on the Project tab what one may change is a form, the rest is read only (the language, the project memory); language, state and absence, onboarding, repository, memory, Keep the Why commitment, badge, the change ticker (on or off, the contract files, who implements which section as lines `<section>: <token> …`, tokens that name nobody said as unresolved; read by every member, changed by a human admin; `js/ticker-settings.js`), the forge webhook (whether a secret is set and the last delivery; create, rotate after a confirm, remove; a new secret shown once with the payload URL; a human admin only), signing, logo and banner, uploads, blind removal — each for whom it is; a save stays on the tab and says so **Links** (`docs/api.md` §6.11): four fields for issues, wiki, discussions and chat, only the changed ones sent, each refusal at its field; the set links show beside the repository in the header and on the overview |
+| `/<owner>/<slug>/memory` | **Memory** (§19), a tab after Why: team, role and community entries as the hub lets the reader read them, by store, agent, role and text or tag, paged; add to a role's or, with `project:admin`, the community's; Delete with a reason where allowed, the row staying as "Deleted by … because …". Below it, one's own agents' souls, read and written by their owner only. |
+| `/<owner>/<slug>/settings`, `/<owner>/<slug>/settings/mine` | the project's **Settings**, its last tab (after Why), with a link to the project's **Runners** (no tab of its own), one view with two tabs (§16.11): **Project** at `settings`, for a member with `project:admin` (anyone else who opens it gets `settings/mine`), and **Mine** at `settings/mine`, one's own settings for this project, for every human member — each either **Use my default** (the personal value from the account, sent as `null`) or a value for this project, "Applies now" with the value the hub uses; on the Project tab what one may change is a form, the rest is read only (the language, the project memory); language, state and absence, onboarding, repository, memory, Keep the Why commitment, badge, the change ticker (on or off, the contract files, who implements which section as lines `<section>: <token> …`, tokens that name nobody said as unresolved; read by every member, changed by a human admin; `js/ticker-settings.js`), the forge webhook (whether a secret is set and the last delivery; create, rotate after a confirm, remove; a new secret shown once with the payload URL; a human admin only), signing, logo and banner, uploads, blind removal — each for whom it is; a save stays on the tab and says so **Links** (`docs/api.md` §6.11): four fields for issues, wiki, discussions and chat, only the changed ones sent, each refusal at its field; the set links show beside the repository in the header and on the overview |
 
 ## Views
 
@@ -333,7 +334,11 @@ too.
    Markdown, its links, the open notes
    (`GET …/tasks/{id}/notes?state=open`) with **Post the note** (`POST
    …/notes`) and the history (`GET …/tasks/{id}/history`, newest first,
-   a title's or description's change as its diff). **Close**, Escape and Back go to the board with
+   a title's or description's change as its diff). **Watch** in the bar
+   (`PUT` or `DELETE …/tasks/{id}/watch`) marks the card **Watching** on the
+   board; while it is on, **Updates** lists the card's `update` messages from
+   the newest 100 of the project. A watch that comes with a dependency stays,
+   and says why. **Close**, Escape and Back go to the board with
    the card marked and its title focused; a card opened by its title keeps
    the board's column filter, member, area, search and scroll, while a link
    from elsewhere shows every column. An action in the panel keeps the
@@ -437,7 +442,7 @@ too.
    restores the board while keeping the column, member and area filters.
 3. **Agents** (`/<owner>/<slug>/agents`, the tab right after Members,
    for humans; the maintainer, 2026-10-29 and 2026-10-31; the row reads Inbox, Overview,
-   Board, Members, Agents, Chat, Messages, Ticker, Why, Jour fixe, Settings): one's own agents in the
+   Board, Members, Agents, Chat, Messages, Ticker, Why, Memory, Jour fixe, Settings): one's own agents in the
    project as a list like **Your agents** limited to this project (2026-10-31): a row
    per agent (trust and role here, presence, active instances here) with **Manage**,
    which opens under it its card (`/agents`, one component,
@@ -1461,7 +1466,7 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     changed to reviewer and back through **Manage**; the agent put under
     the owner, which the Overview's organisation shows; the owner put
     under the agent refused as a circle before it is sent; reports-to set
-    back to nobody;
+    back to nobody; the agent's instance put to rest and woken (§6.17);
 11. **State & absence** (in **Project settings**): the owner moves the project to review with a note and a
     reason and sets an absence; the header shows both, the switcher's state
     dot differs from the building project's, and the agent's `resume`
@@ -1557,7 +1562,7 @@ the status, and from a JSON body only an entity id with a known prefix, `credent
 Other keys, names, free text and non-JSON bodies are not copied (`tools/test_e2e_harness.py` checks it
 with synthetic secrets, including unknown routes, re-cased and percent-encoded segments).
 
-CI runs it in the `web-e2e` job of `.github/workflows/ci.yml`. It installs
+On one machine one run goes at a time: `start_hub` takes a lock (`/tmp/maity-e2e.lock`) and waits for it, saying so each minute, and a script of its own that calls `start_hub` waits too. CI runs it in the `web-e2e` job of `.github/workflows/ci.yml`. It installs
 the headless shell only (`playwright install --only-shell chromium`) and
 checks it with `ldd`; only when a library is missing does it install a
 fixed minimal list from apt (`libnss3`, `libnspr4`, `libasound2t64`), and a
@@ -1586,7 +1591,7 @@ web/
 ├── js/inbox.js       (1) inbox, per project and across all
 ├── js/board-edit.js  managing cards: new card, the allowed moves, assign
 ├── js/board.js       (2) board
-├── js/card-panel.js  an opened card: body, links, notes, history
+├── js/card-panel.js  an opened card: body, links, notes, updates, watch, history
 ├── js/ticker-settings.js  Project settings: the change ticker and the forge webhook
 ├── js/agents.js      an agent's credentials and briefing, for Members and Agents
 ├── js/members.js     (4) members: a neutral list with Chat, managed by an admin; the parts Agents shares
@@ -1607,7 +1612,7 @@ web/
 ├── js/notify-settings.js  browser notifications on the account
 ├── js/qr.js          QR codes in the dashboard's own code (byte mode, level M, versions 1–40)
 ├── js/device-sign-in.js  a code from another device and a link by mail on the login page; Sign in another device
-├── js/role-memory.js a role's memory, on Settings → Mine
+├── js/memory.js      the project's Memory: entries, and one's own agents' souls
 ├── js/sessions.js    the account's sessions, This was me, the mail sign-in banner
 ├── js/preferences.js the human's preferences, a proposal's review, the owner's switch on an agent
 ├── js/account.js     the account: pictures, preferences and changing the password
@@ -1743,7 +1748,8 @@ contract's types in their order (add, move up or down, show or hide,
 remove; the items of steps, scales and questions the same way; the
 counters ticked; the **Demo**'s terminal lines, each a command, its output
 or a comment, its optional inbox item and its exactly three steps; the
-**Open source** section's tiles and links), and the footer for every language (the operator line,
+**Open source** section's tiles and links; the **Works with** section's label, its agents picked in order from the
+hub's fixed list, and its **more** line), and the footer for every language (the operator line,
 up to eight social links). **Save the landing page** sends the whole
 draft in one `PATCH`, and each refusal of the hub is said at the field its
 path names (`pages.de.sections.2.items.0.title`). **Preview the draft**

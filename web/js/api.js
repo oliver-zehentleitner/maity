@@ -35,7 +35,16 @@ window.Maity = window.Maity || {};
   let deviceSim = null;
   let deviceSerial = 0;
   let mailPending = false;
-  const mockRoleMemory = []; // §19.2, this tab's
+  // §19, this tab's: an agent's team entry and a role's, for the Memory view.
+  const mockMemory = [
+    { id: "mem-1", store: "team", member_id: "agt-b", text: "The probe needs the PR head, not the branch head.", tags: ["probe"],
+      by: { kind: "agent", member_id: "agt-b", instance: "wqe2", handle: "agent-b" }, confirmed_by: null, request_id: null, created_at: "2026-10-22T13:10:00Z", deleted: null },
+    { id: "mem-2", store: "role", member_id: null, role: "coder", text: "Rebase before the review.", tags: ["git"],
+      by: { kind: "agent", member_id: "agt-a", instance: "a1b2", handle: "agent-a" }, confirmed_by: null, request_id: null, created_at: "2026-10-23T09:00:00Z", deleted: null },
+  ];
+  const mockSouls = {};
+  const mockSoulVersions = {};
+  const mockSoul = (id) => mockSouls[id] || { agent_id: id, markdown: "", version: 0, by: null, confirmed_by: null, updated_at: null };
   let mockFactorOn = true; // §2.8.1: enrolled with TOTP until the page turns it off
   let mailNext = "/";
   function deviceOf(id, path) {
@@ -578,11 +587,12 @@ window.Maity = window.Maity || {};
       if (c.line !== undefined && c.line !== null && (typeof c.line !== "number" || !Number.isInteger(c.line) || c.line < 1)) add(at + ".line", "format");
     });
   }
+  const LANDING_AGENTS = ["claude-code", "codex", "opencode", "gemini", "antigravity", "copilot", "cursor", "pi", "goose", "cline", "roo", "kilo", "amp", "droid", "windsurf", "zed", "kiro-cli", "trae", "openclaw"];
   const LANDING_TYPES = {
     hero: ["eyebrow", "title", "subline", "cta_primary", "cta_secondary", "note"], stats: ["items"], steps: ["title", "items"],
     scales: ["title", "items"], faq: ["title", "items"], cta_band: ["title", "text", "cta"], text: ["title", "markdown"],
     activity: ["title", "count"], profiles: ["title", "markdown", "handles"], explore: ["title", "projects"],
-    collab: ["title", "text", "items", "footnote"],
+    collab: ["title", "text", "items", "footnote"], works_with: ["label", "items", "more"],
     demo: ["title", "subline", "terminal_lines", "inbox", "steps"], opensource: ["title", "markdown", "tiles", "links"],
   };
   // A list of a section with its bounds, as the hub's landing._list: a
@@ -661,6 +671,13 @@ window.Maity = window.Maity || {};
         });
       } else if (s.type === "cta_band") {
         landingText(s.title, sp + ".title", 120, true, errors); landingText(s.text, sp + ".text", 300, false, errors); landingCta(s.cta, sp + ".cta", true, errors);
+      } else if (s.type === "works_with") {
+        landingText(s.label, sp + ".label", 40, true, errors); landingText(s.more, sp + ".more", 60, false, errors);
+        if (!Array.isArray(s.items) || !s.items.length || s.items.length > LANDING_AGENTS.length) errors[sp + ".items"] = "invalid";
+        else s.items.forEach((slug, k) => {
+          if (!LANDING_AGENTS.includes(slug)) errors[sp + ".items." + k] = "unknown_agent";
+          else if (s.items.indexOf(slug) !== k) errors[sp + ".items." + k] = "duplicate";
+        });
       } else if (s.type === "text") {
         landingText(s.title, sp + ".title", 120, false, errors); landingMarkdown(s.markdown, sp + ".markdown", 16384, true, errors);
       } else if (s.type === "profiles") {
@@ -1457,26 +1474,41 @@ window.Maity = window.Maity || {};
       fixtureSignedIn = true;
       return { member: me().member, next: mailNext };
     }],
-    // §19.2: a role's memory; an entry belongs to the role, a deleted one keeps its row without the text.
+    // §19.2: an entry belongs to its store; a deleted one keeps its row without the text.
     ["GET", /^\/projects\/([^/]+)\/memory$/, (m, body, path, query) => {
-      const role = query.get("role");
-      const items = mockRoleMemory.filter((e) => e.role === role && (query.get("deleted") === "true" || !e.deleted)).slice().reverse();
-      return { items, next_cursor: null };
+      const q = (query.get("q") || "").toLowerCase();
+      const items = mockMemory.filter((e) => (!query.get("store") || e.store === query.get("store"))
+        && (!query.get("member_id") || e.member_id === query.get("member_id"))
+        && (!query.get("role") || e.role === query.get("role"))
+        && (!q || (e.text || "").toLowerCase().includes(q) || e.tags.includes(q))
+        && (query.get("deleted") === "true" || !e.deleted)).slice().reverse();
+      const limit = Number(query.get("limit") || 50);
+      const start = Number(query.get("cursor") || 0);
+      return { items: items.slice(start, start + limit), next_cursor: start + limit < items.length ? String(start + limit) : null };
     }],
     ["POST", /^\/projects\/([^/]+)\/memory$/, (m, body, path) => {
+      if (!body.text || !body.text.trim()) fail(400, "invalid", "an entry needs text", path, { fields: { text: "blank" } });
       // Without `role`, the caller's own (§19.2).
       const mineIn = (slug) => { const p = (me().projects || []).find((x) => x.slug === slug || x.full_name === slug || x.full_name.endsWith("/" + slug)); return p ? p.role : null; };
-      if (!body.text || !body.text.trim()) fail(400, "invalid", "an entry needs text", path, { fields: { text: "blank" } });
-      const entry = { id: "mem-" + (mockRoleMemory.length + 1), store: "role", member_id: null, role: body.role || mineIn(decodeURIComponent(m[1])), text: body.text, tags: body.tags || [],
+      const entry = { id: "mem-" + (mockMemory.length + 1), store: body.store, member_id: null, role: body.store === "role" ? body.role || mineIn(decodeURIComponent(m[1])) : undefined, text: body.text, tags: body.tags || [],
         by: { kind: "human", member_id: me().member.id, handle: me().member.handle }, confirmed_by: null, request_id: null, created_at: nowIso(), deleted: null };
-      mockRoleMemory.push(entry);
+      mockMemory.push(entry);
       return entry;
     }],
     ["DELETE", /^\/projects\/([^/]+)\/memory\/([^/]+)$/, (m, body, path) => {
-      const entry = mockRoleMemory.find((e) => e.id === m[2]);
+      const entry = mockMemory.find((e) => e.id === m[2]);
       if (!entry) fail(404, "not_found", "no such entry", path);
-      Object.assign(entry, { text: null, deleted: { by: { handle: me().member.handle }, reason: null, at: nowIso() } });
+      Object.assign(entry, { text: null, deleted: { by: { handle: me().member.handle }, reason: (body && body.reason) || null, at: nowIso() } });
       return entry;
+    }],
+    // §19.1: a soul, its owner's.
+    ["GET", /^\/agents\/([^/]+)\/soul$/, (m) => mockSoul(m[1])],
+    ["GET", /^\/agents\/([^/]+)\/soul\/versions$/, (m) => ({ items: mockSoulVersions[m[1]] || [] })],
+    ["PUT", /^\/agents\/([^/]+)\/soul$/, (m, body) => {
+      const soul = { agent_id: m[1], markdown: body.markdown, version: mockSoul(m[1]).version + 1, by: { kind: "human", id: me().member.id, handle: me().member.handle }, confirmed_by: null, updated_at: nowIso() };
+      (mockSoulVersions[m[1]] = mockSoulVersions[m[1]] || []).unshift({ version: soul.version, markdown: soul.markdown, by: soul.by, confirmed_by: null, at: soul.updated_at });
+      mockSouls[m[1]] = soul;
+      return soul;
     }],
     ["GET", /^\/auth\/session$/, (m, body, path) => {
       if (!fixtureSignedIn) fail(401, "unauthenticated", "Not signed in", path);
@@ -3523,6 +3555,7 @@ window.Maity = window.Maity || {};
         if (!["all", "lead", "next_free"].includes(next.wake)) errors["team.wake"] = "unknown";
         if ((next.distribution === "lead" || next.wake === "lead") && !next.lead_instance) errors["team.lead_instance"] = "required";
         if (next.lead_instance && !(target.instances || []).some((i) => i.id === next.lead_instance && !i.revoked_at)) errors["team.lead_instance"] = "not_an_instance";
+        else if (body.team.lead_instance && (target.instances || []).some((i) => i.id === body.team.lead_instance && i.dormant)) errors["team.lead_instance"] = "dormant";
         if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
         target.team = Object.assign(next, { updated_by: { kind: "human", id: who.member.id, handle: who.member.handle }, updated_at: nowIso() });
         return target;
