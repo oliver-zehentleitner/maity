@@ -26,6 +26,7 @@ What is checked:
 - i18n: every i18n/<lang>.json parses, its keys are dotted lowercase
   names, each text a string or plural forms with `other`, with no
   placeholder English lacks; js/i18n/<lang>.js is the current bundle of it;
+  every error code of docs/api.md §1.3 has words (js/errors.js);
   M.t takes its key as a string literal the English catalog holds, and
   every English key is used. Text in the views is ratcheted: each js file
   may hold no more prose string literals than tools/strings-baseline.json
@@ -466,6 +467,24 @@ def prose(text):
     return bool(re.fullmatch(r"\s*[A-Z][a-z]+[.!?:…]?\s*", text))
 
 
+def contract_error_codes():
+    """The codes of the contract's table (§1.3), or None where the repository's docs are absent."""
+    path = os.path.join(os.path.dirname(ROOT), "docs", "api.md")
+    if not os.path.exists(path):
+        return None
+    part = re.search(r"(?ms)^### 1\.3.*?^### 1\.4", read(path))
+    return set(re.findall(r"(?m)^\| \d{3} \| `([a-z_]+)`", part.group(0))) if part else None
+
+
+def check_error_words(english):
+    codes = contract_error_codes()
+    if codes is None:
+        return
+    for code in sorted(codes):
+        if "error." + code not in english:
+            finding(os.path.join(ROOT, "js", "errors.js"), 1, "error code %r of docs/api.md §1.3 has no words" % code)
+
+
 def check_i18n(write):
     catalogs = {}
     names = sorted(f for f in os.listdir(I18N) if f.endswith(".json")) if os.path.isdir(I18N) else []
@@ -507,7 +526,7 @@ def check_i18n(write):
             continue
         # M.t, M.tn or Maity.t(n), found in the code without comments (strip_js keeps
         # every position), its key read from the source at that place.
-        for m in re.finditer(r"\b(?:M|Maity)\.tn?\(\s*", code):
+        for m in re.finditer(r"\b(?:M|Maity)\.t(?:n|Own)?\(\s*", code):
             lineno = code.count("\n", 0, m.start()) + 1
             quote = src[m.end()] if m.end() < len(src) else ""
             close = src.find(quote, m.end() + 1) if quote in ("\"", "'") else -1
@@ -520,6 +539,7 @@ def check_i18n(write):
                 finding(path, lineno, "M.t key %r is not in i18n/en.json" % key)
         if f not in STRINGS_EXEMPT:
             counts[f] = sum(1 for _, text in literals if prose(text))
+    check_error_words(english)
     for key in sorted(set(english) - used):
         finding(os.path.join(I18N, "en.json"), 1, "key %r is used nowhere" % key)
     # Without a baseline file, --write takes today's counts once; after that a
