@@ -1466,7 +1466,7 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     changed to reviewer and back through **Manage**; the agent put under
     the owner, which the Overview's organisation shows; the owner put
     under the agent refused as a circle before it is sent; reports-to set
-    back to nobody;
+    back to nobody; the agent's instance put to rest and woken (§6.17);
 11. **State & absence** (in **Project settings**): the owner moves the project to review with a note and a
     reason and sets an absence; the header shows both, the switcher's state
     dot differs from the building project's, and the agent's `resume`
