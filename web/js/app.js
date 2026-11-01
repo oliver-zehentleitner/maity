@@ -311,7 +311,9 @@ window.Maity = window.Maity || {};
   // The session ended while the page was signed in (a 401 on a call that
   // needs it, js/api.js): everything in the background stops, and the
   // sign-in page comes with a note; nothing more is asked until a sign-in.
-  // A view left open when the hub requires the factor: drawn again, once, it becomes the setup.
+  // A view left open when the hub requires the factor: drawn again, it becomes the setup. While
+  // the setup is on the page a late refusal leaves it alone, so a secret being typed stays;
+  // any other drawing ends that, so a later refusal in this tab draws it again.
   let enrolling = false;
   M.onEnrolmentRequired = () => { if (!enrolling) { enrolling = true; render(); } };
   // Signing in again returns to the same route.
@@ -383,7 +385,8 @@ window.Maity = window.Maity || {};
   function renderEnrolment(main) {
     append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(false), themeMenu()));
     // Drawn again, not routed: the address stays what was asked for, often "/" already.
-    M.security.enrolPage(main, () => { enrolling = false; render(); }, logout);
+    enrolling = true;
+    M.security.enrolPage(main, render, logout);
   }
   function renderStepElsewhere(main, signedIn) {
     append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(false), themeMenu()));
@@ -1321,14 +1324,14 @@ window.Maity = window.Maity || {};
     if (focused) fresh.focus();
   }
 
-  // The Lead button beside Chat, once whom it reaches is known
-  // (js/lead-chat.js); none where it reaches no one.
+  // The Lead button left of Chat (the maintainer's order, tsk-td5c6z21xg5s), once whom it
+  // reaches is known (js/lead-chat.js); none where it reaches no one.
   function renderLead(ctx) {
     const me = document.getElementById("header").querySelector(".me");
     const chat = me && me.querySelector("a.chat-button");
     if (!chat || !ctx.chatFound || !M.leadChat) return;
     const lead = M.leadChat.leadControl(ctx, ctx.chatFound);
-    if (lead) me.insertBefore(lead, chat.nextSibling);
+    if (lead) me.insertBefore(lead, chat);
   }
 
   // The counts changed: only the switcher is replaced, so an open State &
@@ -1406,8 +1409,8 @@ window.Maity = window.Maity || {};
         M.api.source === "fixtures"
           ? h("span", { class: "source", title: M.t("header.fixtures.title") }, M.t("header.fixtures"))
           : null,
-        // Chat, (Lead,) "+", the gear, Notifications, the profile: in one row on a phone too.
-        // The Lead button goes in right after Chat once known (renderLead), so "+" stays to its right.
+        // (Lead,) Chat, "+", the gear, Notifications, the profile: in one row on a phone too.
+        // The Lead button goes in right before Chat once known (renderLead).
         h("span", { class: "me" }, M.notify.chatButton(ctx), add ? add.el : null, settings.el, M.notify.bell(ctx, () => ctx.refreshCounts()), profile.el)),
       // The projects, and at their right, apart, this project's state and
       // the owner's absence with the settings that change them.
@@ -1740,6 +1743,7 @@ window.Maity = window.Maity || {};
 
   async function render() {
     const seq = ++renderSeq;
+    enrolling = false;
     stopTimers();
     const main = document.getElementById("main");
     // The view being left stays on screen until the next one is drawn, but
@@ -1770,7 +1774,7 @@ window.Maity = window.Maity || {};
       // A session that owes the second factor reaches nothing else (§2.8.2): its step.
       if (session && session.second_factor === "required" && M.secondFactor) { renderStep(main, session); return; }
       // So does one that must set the factor up first (§2.8.5): the setup is its page.
-      if (session && session.second_factor === "enrolment_required" && M.security) { renderEnrolment(main); return; }
+      if (session && session.second_factor === "enrolment_required" && M.security) { if (seq === renderSeq) renderEnrolment(main); return; }
       // The link opened where the sign-in is already complete: nothing to post here.
       if (M.secondFactor && M.secondFactor.isMailLink()) { renderStepElsewhere(main, true); return; }
       // The step's own address (where a sign-in link's 303 lands) with the sign-in complete: the start.

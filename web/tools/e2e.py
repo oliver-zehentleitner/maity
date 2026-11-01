@@ -412,6 +412,18 @@ class MailCatcher:
             time.sleep(0.1)
         raise AssertionError(f"no mail to {to} within {timeout} s; got {len(self.mails)}")
 
+    def link_in(self, to: str, path: str, timeout: float = 20) -> str:
+        """The first link under `path` in a mail to `to`, whichever mail carries it."""
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            for rcpt, message in self.mails:
+                body = message.get_body(("plain",))
+                found = to in rcpt and body and re.search(r"https?://\S*" + path + r"\S+", body.get_content())
+                if found:
+                    return found.group(0)
+            time.sleep(0.1)
+        raise AssertionError(f"no {path} link to {to} within {timeout} s")
+
     def close(self) -> None:
         self.server.shutdown()
         self.server.server_close()
@@ -1759,7 +1771,9 @@ def second_hub_round(run: Run, browser, work: Path, artifacts: Path) -> None:
     try:
         mail_reaches_the_catcher(run, browser, catcher)
         secret, used = step_up_with_totp(run, browser)
-        sign_in_with_totp(run, browser, secret, used)
+        context, page = sign_in_with_totp(run, browser, secret, used)
+        reset_by_mail(run, browser, catcher, page)
+        context.close()
     finally:
         stop_hub(hub)
         catcher.close()
@@ -1846,7 +1860,73 @@ def sign_in_with_totp(run: Run, browser, secret: str, used: int) -> None:
     step.get_by_role("button", name="Verify", exact=True).click()
     expect(page.locator("header .me")).to_contain_text("Owner")
     expect(step).to_have_count(0)
+    page.goto(run.base + "/account/sessions")
+    expect(page.locator("li.session.current")).to_contain_text("second factor passed")
     no_problems(run, "sign-in with TOTP")
+    return context, page
+
+
+def reset_by_mail(run: Run, browser, catcher: MailCatcher, owner: Page) -> None:
+    """Admin → Users (§2.8.3, §2.8.7): the admin's press only sends a mail; the person's press on
+    the mail's page resets, ends their sessions, and the next sign-in starts with the setup."""
+    run.step("second hub: an admin resets a person's two-factor sign-in, which that person confirms by mail")
+    address, handle, password = "ada@e2e.example", "ada", "ada-e2e-password-1"
+    owner.evaluate("""() => window.Maity.api.patch("/admin/settings/registration", { mode: "open", approval: "automatic" })""")
+    context = browser.new_context(viewport={"width": 1280, "height": 900})
+    context.set_default_timeout(TIMEOUT_MS)
+    page = context.new_page()
+    watch_page(run, page)
+    page.goto(run.base + "/")
+    page.evaluate(
+        """([address, password]) => window.Maity.api.post("/auth/register", { address, password })""",
+        [address, password],
+    )
+    page.goto(catcher.link_in(address, "/mail/register/"))
+    page.locator("#password").fill(password)
+    page.locator("#handle").fill(handle)
+    page.locator("#display_name").fill("Ada")
+    page.locator("form button[type=submit]").click()
+    # A new account's first page is not the question here; the form is gone once the session is set.
+    page.wait_for_function("() => window.Maity && window.Maity.api")
+    assert page.evaluate("""() => window.Maity.api.get("/me")""")["member"]["handle"] == handle
+    started = page.evaluate("""() => window.Maity.api.post("/auth/second-factor/totp", {})""")
+    page.evaluate(
+        """(code) => window.Maity.api.post("/auth/second-factor/totp/confirm", { code })""",
+        totp_code(started["secret"], int(time.time() // 30)),
+    )
+
+    owner.goto(run.base + "/admin")
+    owner.locator("nav.admin-nav").get_by_role("button", name="Users", exact=True).click()
+    row = owner.locator("table.users tbody tr").filter(has_text="@" + handle)
+    row.get_by_role("button", name="Reset two-factor sign-in of Ada", exact=True).click()
+    form = owner.locator("form.user-reset")
+    expect(form).to_contain_text("by another channel first")
+    owner.locator("#user-reset-reason").fill("Ada lost the phone, we spoke on the telephone")
+    run.shot(owner, "user-reset")
+    run.a11y(owner, "Admin, Users: reset two-factor sign-in")
+    form.get_by_role("button", name="Send the mail", exact=True).click()
+    expect(form).to_contain_text("is on its way")
+    # Nothing has changed yet: Ada is still signed in, with the factor.
+    factor = page.evaluate("""() => window.Maity.api.get("/auth/second-factor")""")
+    assert factor["enrolled"], f"the factor went before the person pressed: {factor}"
+
+    other = browser.new_context(viewport={"width": 1280, "height": 900})
+    other.set_default_timeout(TIMEOUT_MS)
+    mail_page = other.new_page()
+    mail_page.goto(catcher.link_in(address, "/mail/second-factor-reset/"))
+    expect(mail_page.locator("body")).to_contain_text("Ada lost the phone")
+    mail_page.get_by_role("button", name="Reset my two-factor sign-in", exact=True).click()
+    expect(mail_page.locator("body")).to_contain_text("session")
+    other.close()
+
+    page.goto(run.base + "/")
+    page.locator("#login-handle").fill(handle)
+    page.locator("#login-password").fill(password)
+    page.get_by_role("button", name="Sign in", exact=True).click()
+    expect(page.get_by_role("heading", name="Set up two-factor sign-in", exact=True)).to_be_visible()
+    # The page's own 401 once the sessions ended is what the reset does, not a problem here.
+    run.problems = [p for p in run.problems if "answered 401" not in p]
+    no_problems(run, "the reset by mail")
     context.close()
 
 
@@ -2229,11 +2309,11 @@ def notifications_step(run: Run, page: Page) -> None:
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
     expect(page.locator("main section.view-inbox")).to_be_visible()
     bell = page.locator("header button.bell")
-    # The header's right block (the maintainer, 2026-10-31): Chat, the Lead button where there is a
-    # lead to reach, "+", the gear, Notifications, the profile, in one row also on a phone.
+    # The header's right block (the maintainer, 2026-10-31, 2026-11-01): the Lead button where there
+    # is a lead to reach, Chat, "+", the gear, Notifications, the profile, in one row also on a phone.
     order = page.evaluate("Array.from(document.querySelectorAll('header .me > *')).map((e) => e.className + (e.querySelector('.add-menu') ? ' add' : '') + (e.querySelector('.profile-menu') ? ' profile' : ''))")
-    lead = 1 if len(order) > 1 and "lead-button" in order[1] else 0
-    assert (len(order) == 5 + lead and "chat-button" in order[0] and "add" in order[1 + lead]
+    lead = 1 if "lead-button" in order[0] else 0
+    assert (len(order) == 5 + lead and "chat-button" in order[lead] and "add" in order[1 + lead]
             and "bell-box" in order[3 + lead] and "profile" in order[4 + lead]), f"header order: {order}"
     page.set_viewport_size({"width": 390, "height": 844})
     # One row: every button's vertical middle within the others' height (a pixel of alignment is no wrap).
