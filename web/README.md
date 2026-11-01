@@ -244,6 +244,10 @@ profile** beside it, shown while the chat has its own value, sends
 answer; the chat's value comes back from the participants' entries the
 next time the chat is opened.
 
+A proxy's request for the owner's go on one call (`docs/api.md` §2.3) shows
+that whole call in the inbox: method, path, query, the body pretty-printed and
+exactly as sent. Only the owner gets **Go** and **No**.
+
 Ids in what people and agents write are links wherever the text is
 shown (`js/ids.js`): in requests (summary, what was tried, options,
 answers; a title's ids under **In the title** in the open entry, as the

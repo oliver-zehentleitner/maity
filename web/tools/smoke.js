@@ -7330,6 +7330,39 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await patch("/projects/maintainer/maity", { policy: { done_authority: was }, reason: "back" });
     win.Maity.api.patch = patch;
   }
+  // A proxy's action request (§2.3): the whole call, pretty and as sent, Go and No; one who is no owner gets no buttons.
+  {
+    const getAll = win.Maity.api.getAll, post = win.Maity.api.post;
+    const raw = '{"a":1,"a":2}';
+    const act = (extra) => Object.assign({ id: "req-act", class: "consent", title: "Give the go", summary: "s", status: "open", to: "owner", created_at: "2026-11-01T10:00:00Z", asked_by: { kind: "agent", member_id: "agt-a", display_name: "Agent A" },
+      options: [], replies: [{ id: "go", label: "Go" }, { id: "no", label: "No" }], priority: "normal", action: { method: "PATCH", path: "/projects/maintainer/maity", query: "x=1", body: raw, body_sha256: "ab12", used_at: null, used_seq: null } }, extra || {});
+    let current = act();
+    const sent = [];
+    win.Maity.api.getAll = (p, ...r) => (/\/requests\?status=all$/.test(p) ? Promise.resolve({ items: [current] }) : getAll(p, ...r));
+    win.Maity.api.post = (p, b) => { if (/req-act\/answer$/.test(p)) { sent.push(b); return Promise.resolve(Object.assign(act(), { status: "answered" })); } return post(p, b); };
+    await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox/req-act"); for (let k = 0; k < 8; k++) await tick();
+    const call = () => main.querySelector(".request-action");
+    const pres = () => call().querySelectorAll("pre.request-action-body");
+    expect(call() && /PATCH/.test(text(call())) && /\/projects\/maintainer\/maity/.test(text(call())) && /x=1/.test(text(call())) && text(pres()[0]).includes('"a": 2') && text(pres()[1]) === raw && /ab12/.test(text(call())),
+      "action: the owner sees method, path, query, the body pretty-printed and exactly as sent");
+    const buttons = () => main.querySelectorAll(".entry-body .replies button.reply").map((b) => text(b));
+    expect(buttons().includes("Go") && buttons().includes("No"), "action: Go and No " + JSON.stringify(buttons()));
+    main.querySelectorAll(".entry-body .replies button.reply").find((b) => text(b) === "Go").click(); for (let k = 0; k < 8; k++) await tick();
+    expect(sent.length === 1 && sent[0].reply_id === "go", "action: Go sends the go " + JSON.stringify(sent));
+    current = act({ status: "answered", answered_at: "2026-11-01T10:00:00Z", answer: { reply_id: "go", by: "hum-maintainer", at: "2026-11-01T10:00:00Z" } });
+    await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox/req-act"); for (let k = 0; k < 8; k++) await tick();
+    expect(call() && /valid until/.test(text(call())), "action: an answered go says how long it holds");
+    current = act({ status: "answered", answered_at: "2026-11-01T10:00:00Z", answer: { reply_id: "go", by: "hum-maintainer", at: "2026-11-01T10:00:00Z" }, action: Object.assign(act().action, { used_at: "2026-11-01T11:00:00Z", used_seq: 9 }) });
+    await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox/req-act"); for (let k = 0; k < 8; k++) await tick();
+    expect(/Used /.test(text(call())), "action: a used go says when");
+    current = act();
+    const owner = win.Maity.trust.owner;
+    win.Maity.trust.owner = () => false;
+    await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox/req-act"); for (let k = 0; k < 8; k++) await tick();
+    expect(call() && buttons().length === 0 && /Only the project's owner/.test(text(main)), "action: one who is no owner sees the call and no buttons");
+    win.Maity.trust.owner = owner;
+    win.Maity.api.getAll = getAll; win.Maity.api.post = post;
+  }
   // Where a joining agent's personal settings come from (§6.23), between the commitment and the badge.
   const kdForm = () => main.querySelector("form.ktw-defaults-form");
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/settings"); for (let k = 0; k < 6; k++) await tick();

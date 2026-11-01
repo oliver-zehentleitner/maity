@@ -2160,10 +2160,61 @@ def board_cards_step(run: Run, page: Page) -> None:
     no_problems(run, "board cards")
     two_signatures_step(run, page)
     public_page_step(run, page)
+    request_action_step(run, page)
     board_order_step(run, page)
     overview_step(run, page)
     ticker_step(run, page)
     notifications_step(run, page)
+
+
+def request_action_step(run: Run, page: Page) -> None:
+    """§2.3 in the browser, for how the call looks: the hub's list is answered from here, as this
+    run has no proxy to file one. The hub's own tests (test_proxy_go.py) cover filing and using."""
+    run.step("inbox: a proxy's action request shows the whole call to the owner")
+    body = json.dumps({"policy": {"signing": "required"}, "reason": "a long reason " * 20})
+    entry = {
+        "id": "req-action",
+        "class": "consent",
+        "title": "E2E: go for one call",
+        "summary": "The proxy asks.",
+        "status": "open",
+        "priority": "normal",
+        "to": "owner",
+        "created_at": "2026-11-01T10:00:00Z",
+        "asked_by": None,
+        "options": [],
+        "replies": [{"id": "go", "label": "Go"}, {"id": "no", "label": "No"}],
+        "action": {
+            "method": "PATCH",
+            "path": "/projects/owner/e2e-alpha",
+            "query": None,
+            "body": body,
+            "body_sha256": "0" * 64,
+            "used_at": None,
+            "used_seq": None,
+        },
+    }
+    pattern = re.compile(r"/api/v1/projects/owner/e2e-alpha/requests\?status=all")
+
+    def answer(route) -> None:
+        route.fulfill(json={"items": [entry], "next_cursor": None})
+
+    page.route(pattern, answer)
+    try:
+        page.goto(f"{run.base}/owner/e2e-alpha/inbox/req-action")
+        call = page.locator(".request-action")
+        expect(call).to_contain_text("The call this go allows")
+        expect(call).to_contain_text("/projects/owner/e2e-alpha")
+        expect(call.locator("pre.request-action-body").first).to_contain_text('"signing": "required"')
+        call.get_by_text("Exactly as sent", exact=True).click()
+        expect(call.locator("pre.request-action-body").nth(1)).to_have_text(body)
+        expect(page.locator(".entry-body .replies").get_by_role("button", name="Go", exact=True)).to_be_visible()
+        # A long line in the body wraps; unwrapped it once stretched the whole page.
+        assert page.evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
+        run.a11y(page, "inbox, action request")
+        run.shot(page, "inbox-action-request")
+    finally:
+        page.unroute(pattern, answer)
 
 
 def two_signatures_step(run: Run, page: Page) -> None:
