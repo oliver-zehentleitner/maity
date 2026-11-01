@@ -596,14 +596,22 @@ every view, the invitation's and the registration's among them, gets the same ru
 Plural forms follow the catalog's language, not the locale of the numbers: a German browser reading
 the English catalog needs English forms.
 
+The registration sends `interface_language` only for an explicit choice (the picker on `/register`,
+`?lang=`, or the one kept in the browser). Without one it leaves the field out, so the account keeps
+`null` and goes on following the browser.
+
 **Reason:** the visible language must be known before a view draws its words, and several views read
 the session themselves. A catalog per language keeps nine languages off every page load.
 
 **Rejected alternatives:**
+- Always sending the page's language at registration: every account would get `en` while it is the
+  only catalog, which later could not be told apart from a real choice, and the hub's mails would then
+  ignore `language` (§6.2).
 - All ten in `index.html`: about 2 MB of script before anything is drawn, for one language used.
 - Asking in `render()` after its session read: `invite.js` and `register.js` draw before that line.
 - Picking the language in the hub before sign-in: an explicit choice is kept in the browser, where
   the hub does not see it, so the dashboard chooses and passes `lang` to the page texts (§16.7.4).
+
 ## A missing translation is a note until the release; a wrong one fails at once
 
 **Id:** 3d9a6c17-52e8-4b0f-a7c4-91e6f2b08d35

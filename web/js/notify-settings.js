@@ -310,7 +310,9 @@ window.Maity = window.Maity || {};
     if (M.i18n.available.length < 2) return null;
     const select = h("select", { id },
       withBrowser ? h("option", { value: "" }, M.t("language.interface.browser")) : null,
-      M.i18n.available.map((tag) => h("option", { value: tag }, M.languageName(tag))));
+      // A value chosen where no catalog is here yet stays shown, or saving would clear it.
+      [...M.i18n.available, ...(current && !M.i18n.available.includes(current) ? [current] : [])]
+        .map((tag) => h("option", { value: tag }, M.languageName(tag))));
     select.value = current;
     return select;
   };

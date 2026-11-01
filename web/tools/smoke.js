@@ -3171,7 +3171,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     win.location.search = "?lang=zh-Hans";
     await i18n.follow(null);
     win.location.search = "";
-    expect(i18n.language === "zh-Hans" && kept["maity.language"] === "zh-Hans", "language: ?lang= is a choice, and stays one");
+    expect(i18n.language === "zh-Hans" && kept["maity.language"] === "zh-Hans" && i18n.explicit() === "zh-Hans", "language: ?lang= is a choice, and stays one");
+    expect(i18n.fromBrowser(["de", "zh-Hans"]) === null, "language: the browser's first among some tags, none here");
+    win.navigator = { languages: ["zh-CN"] };
+    expect(i18n.fromBrowser(["de", "zh-Hans", "zh-Hant"]) === "zh-Hans", "language: the agents' language is matched as the page's is, zh-CN to zh-Hans");
+    win.navigator = { languages: ["en"] };
+    delete kept["maity.language"];
+    expect(i18n.explicit() === null, "language: what the browser says is no choice of the person's");
+    kept["maity.language"] = "zh-Hans";
     win.location.search = "?lang=xx";
     await i18n.follow(null);
     win.location.search = "";
@@ -3186,6 +3193,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     win.Maity.i18n.locale = i18nLocale;
     const select = win.Maity.interfacePicker("x", "", true);
     expect(select && select.querySelectorAll("option").length === 4, "language: with several, each by its name, and the browser's as a choice");
+    const noCatalog = win.Maity.interfacePicker("x", "fr", true);
+    expect(noCatalog.querySelectorAll("option").length === 5 && noCatalog.value === "fr", "language: a value without a catalog here stays shown, so saving keeps it");
     i18n.available.length = 1;
     delete win.MAITY_I18N.de; delete win.MAITY_I18N["zh-Hans"];
     win.navigator = oldNavigator; win.localStorage = oldStorage; win.location.search = oldSearch;
@@ -5739,7 +5748,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!rgPosts.length && text(rgForm()).includes("at least 12 characters"), "register: a short password is said before anything is sent");
   byId("register-password").value = "a long enough password"; byId("register-repeat").value = "a long enough password";
   rgForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
-  expect(JSON.stringify(rgPosts[0]) === JSON.stringify({ address: "anna@example.org", password: "a long enough password", interface_language: "en", language: "en", next: "/invite/bound-xxxxxxxxxxxxxxx3" })
+  expect(JSON.stringify(rgPosts[0]) === JSON.stringify({ address: "anna@example.org", password: "a long enough password", language: "en", next: "/invite/bound-xxxxxxxxxxxxxxx3" })
     && text(main).includes("Check your mail") && text(main).includes("works for 24 hours") && text(main).includes("come back to where you were"),
     "register: sent with the invitation as next, then 'check your mail' for every address alike");
   // The landing page's link carries where the visitor came from (§16.7.2): sent as origin; a malformed part is left out.

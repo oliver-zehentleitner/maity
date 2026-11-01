@@ -33,14 +33,15 @@ window.Maity = window.Maity || {};
 
   // The catalog a browser's tag means: de-AT reads de, zh-CN zh-Hans, and
   // zh-TW nothing, since Traditional is another script and not a close second.
-  function closest(tag) {
+  function closestIn(tags, tag) {
     if (typeof tag !== "string" || !tag) return null;
-    if (available.includes(tag)) return tag;
+    if (tags.includes(tag)) return tag;
     try {
       const l = new Intl.Locale(tag).maximize();
-      return [l.language + "-" + l.script, l.language].find((c) => available.includes(c)) || null;
+      return [l.language + "-" + l.script, l.language].find((c) => tags.includes(c)) || null;
     } catch { return null; }
   }
+  const closest = (tag) => closestIn(available, tag);
 
   function stored() {
     try { return window.localStorage.getItem(STORED); } catch { return null; }
@@ -51,11 +52,17 @@ window.Maity = window.Maity || {};
 
   // Without an account's language: ?lang= (which then stays the choice), the
   // explicit choice, the browser's list, English.
-  function browserChoice() {
+  // What the person chose themselves, or null: only this may go on an account.
+  function explicitChoice() {
     const asked = window.location ? closest(new URLSearchParams(window.location.search).get("lang")) : null;
     if (asked) { remember(asked); return asked; }
-    const candidates = [stored(), ...((window.navigator && window.navigator.languages) || [])];
-    for (const tag of candidates) {
+    return closest(stored());
+  }
+  const browserList = () => (window.navigator && window.navigator.languages) || [];
+  function browserChoice() {
+    const chosen = explicitChoice();
+    if (chosen) return chosen;
+    for (const tag of browserList()) {
       const found = closest(tag);
       if (found) return found;
     }
@@ -167,6 +174,15 @@ window.Maity = window.Maity || {};
     when,
   };
   i18n.available = available;
+  i18n.explicit = explicitChoice;
+  // The first of the browser's languages among these tags, or null.
+  i18n.fromBrowser = (tags) => {
+    for (const tag of browserList()) {
+      const found = closestIn(tags, tag);
+      if (found) return found;
+    }
+    return null;
+  };
   // The first language, before the first view is drawn.
   i18n.ready = use(browserChoice());
   // The account's interface language, or null: the rule without an account.

@@ -71,10 +71,8 @@ window.Maity = window.Maity || {};
     picker.select.addEventListener("change", () => { pickedLanguage = true; });
     M.languages().then((items) => {
       if (!items || pickedLanguage) return;
-      for (const tag of (window.navigator && window.navigator.languages) || []) {
-        const found = items.find((l) => l.common && (l.tag === tag || l.tag === tag.split("-")[0]));
-        if (found) { picker.set(found.tag); return; }
-      }
+      const found = M.i18n.fromBrowser(items.filter((l) => l.common).map((l) => l.tag));
+      if (found) picker.set(found);
     });
     const password = h("input", { id: "register-password", type: "password", autocomplete: "new-password", required: true, minlength: String(PASSWORD_MIN) });
     const repeat = h("input", { id: "register-repeat", type: "password", autocomplete: "new-password", required: true });
@@ -90,9 +88,11 @@ window.Maity = window.Maity || {};
         if (password.value !== repeat.value) { status.fail("Not sent: ", { message: "the two passwords differ" }); repeat.focus(); return; }
         submit.disabled = true;
         status.busy("Sending…");
+        // Only a choice of the person's goes on the account (§6.2): without one it follows the browser.
+        const chosenSite = M.i18n.explicit();
         let answer;
         try {
-          answer = await M.api.post("/auth/register", Object.assign({ address: address.value.trim(), password: password.value, interface_language: M.i18n.language, language: picker.select.value }, next ? { next } : {},
+          answer = await M.api.post("/auth/register", Object.assign({ address: address.value.trim(), password: password.value, language: picker.select.value }, chosenSite ? { interface_language: chosenSite } : {}, next ? { next } : {},
             Object.keys(origin).length ? { origin } : {}));
         } catch (err) {
           submit.disabled = false;
