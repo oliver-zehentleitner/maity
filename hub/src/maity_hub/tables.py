@@ -607,8 +607,8 @@ project = Table(
     Column("keep_the_why_policy", String(16)),
     Column("keep_the_why_defaults", String(8), nullable=False, server_default="adopt"),
     # The setup options chosen at creation and the ids of the cards made for them
-    # (§6.21); NULL for a project that predates the field.
-    Column("setup", JSON_VALUE),
+    # (§6.21).
+    Column("setup", JSON_VALUE, nullable=False),
     Column("absence_until", UtcDateTime),
     Column("absence_scope", MARKDOWN_TEXT),
     Column("settings", JSON_VALUE, nullable=False),
@@ -1337,6 +1337,7 @@ card = Table(
     Column("body", MARKDOWN_TEXT),
     Column("mentions", JSON_VALUE),  # resolved from `body` at write time (§8.6)
     Column("label", String(16)),
+    Column("needs", String(24)),  # the role the card is for (§6.4); routes nothing
     Column("status", String(16), nullable=False),
     # The two signatures under `reviewer_and_tester` (§6.4), set by the hub only.
     Column("approvals", JSON_VALUE),
@@ -1647,7 +1648,6 @@ jour_fixe_round = Table(
     _ref("series_id", "jour_fixe_series.id", index=True),
     Column("status", String(16), nullable=False),
     Column("trigger", String(16), nullable=False),  # schedule, manual
-    Column("mode", String(16), nullable=False),  # message, chat
     Column("reason", MARKDOWN_TEXT),  # a manual start's
     Column("skip_reason", String(32)),
     Column("missed_slots", Integer),

@@ -4061,6 +4061,20 @@ when it was written.
 - Merging updates and status changes into one list: the history has its
   own shape and pages, and already holds the status changes.
 
+## A membership's links stand only where they open
+
+**Id:** b805d135-78b3-47b7-b293-1d42fe4fc04c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** tsk-svqsdp6qf0f3; reviews of #1020
+
+On a profile, the project and rulebook links stand only where the human is a member, and Join link also needs a project that takes the agent. `member_agents` is not in `GET /me`, so a member can still follow Join link into a project with it `off`; the project's page then says there is no form.
+
+**Rejected alternatives:** always linking, which ends on a 404 or in silence; reading the policy per project on `/agents`, too many reads for one link.
+
+**Known limit:** a click on Join link at the same address does nothing, as `M.route.go` ignores that.
+
 ## Jour fixe and Why across projects: one read per project
 
 **Id:** c095fb26-7aa5-4529-a42a-08896de2d032
@@ -4089,3 +4103,15 @@ a round (§20.7) sees that round nowhere here, since no listing is open to them.
 - Waiting for every project before drawing: the slowest export would hold up
   the page.
 
+
+## Role memory is a part of Mine, not a view
+
+**Id:** f9ef2098-cadd-452c-ac4e-5945baa145d4
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §16.11, §19.2; tsk-hx8cbm2eqg45
+
+The role memory is a section on Settings → Mine, the one page every human member reaches in a project, with a role picker for trust owner and admin. No new address: §16.11 names Settings as one view with two tabs, and a view of its own would be a contract change for a list of a few entries.
+
+**Rejected alternative:** a third Settings tab or a project tab: both need §16.11 changed, and a tab row is already short of room on a phone.

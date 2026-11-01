@@ -2027,7 +2027,6 @@ window.MAITY_FIXTURES = {
         "circle": "all",
         "id": "jfx-0002",
         "missed_slots": 0,
-        "mode": "message",
         "opened_at": null,
         "project": "maintainer/maity",
         "scheduled_for": "2026-10-30T09:00:00Z",
@@ -2077,7 +2076,6 @@ window.MAITY_FIXTURES = {
             "member_id": "hum-maintainer"
           }
         ],
-        "mode": "message",
         "moderator": {
           "instance": "k7mq",
           "member_id": "agt-a"
@@ -2248,7 +2246,6 @@ window.MAITY_FIXTURES = {
         "circle": "owner",
         "id": "jfx-0003",
         "missed_slots": 0,
-        "mode": "message",
         "opened_at": null,
         "project": "maintainer/maity",
         "scheduled_for": "2026-10-23T13:00:00Z",
@@ -3155,7 +3152,15 @@ window.MAITY_FIXTURES = {
         "enabled": true
       }
     },
-    "setup": null,
+    "setup": {
+      "cards": [],
+      "dashboard_path": null,
+      "keep_the_why_badge": false,
+      "keep_the_why_ci": false,
+      "keep_the_why_dashboard": false,
+      "keep_the_why_init": false,
+      "maity_badge": false
+    },
     "slug": "maity",
     "state": "build",
     "state_changed_at": "2026-10-21T09:00:00Z",
@@ -5873,7 +5878,6 @@ window.MAITY_FIXTURES = {
             "member_id": "agt-s1"
           }
         ],
-        "mode": "message",
         "moderator": {
           "instance": null,
           "member_id": "hum-maintainer"
@@ -5951,7 +5955,6 @@ window.MAITY_FIXTURES = {
             "member_id": "agt-s1"
           }
         ],
-        "mode": "message",
         "moderator": {
           "instance": "s1aa",
           "member_id": "agt-s1"
@@ -6047,7 +6050,6 @@ window.MAITY_FIXTURES = {
             "member_id": "hum-maintainer"
           }
         ],
-        "mode": "message",
         "moderator": {
           "instance": null,
           "member_id": "hum-maintainer"
@@ -6112,7 +6114,6 @@ window.MAITY_FIXTURES = {
         "circle": "owner",
         "id": "jfx-s4",
         "missed_slots": 0,
-        "mode": "message",
         "opened_at": null,
         "project": "maintainer/sample",
         "scheduled_for": "2026-10-24T09:00:00Z",

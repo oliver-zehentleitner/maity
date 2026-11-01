@@ -193,7 +193,7 @@ a human moderator writes the statement, adds a further step and files the report
 an eligible member posts once per topic in the open step;
 an invited human removes a text from the report.
 The series (§20.1) with their moderators (§20.2) are in Project settings, for a human with project:admin |
-| `/<owner>/<slug>/settings`, `/<owner>/<slug>/settings/mine` | the project's **Settings**, its last tab (after Why), with a link to the project's **Runners** (no tab of its own), one view with two tabs (§16.11): **Project** at `settings`, for a member with `project:admin` (anyone else who opens it gets `settings/mine`), and **Mine** at `settings/mine`, one's own settings for this project, for every human member — each either **Use my default** (the personal value from the account, sent as `null`) or a value for this project, "Applies now" with the value the hub uses; on the Project tab what one may change is a form, the rest is read only (the language, the project memory); language, state and absence, onboarding, repository, memory, Keep the Why commitment, badge, the change ticker (on or off, the contract files, who implements which section as lines `<section>: <token> …`, tokens that name nobody said as unresolved; read by every member, changed by a human admin; `js/ticker-settings.js`), the forge webhook (whether a secret is set and the last delivery; create, rotate after a confirm, remove; a new secret shown once with the payload URL; a human admin only), signing, logo and banner, uploads, blind removal — each for whom it is; a save stays on the tab and says so **Links** (`docs/api.md` §6.11): four fields for issues, wiki, discussions and chat, only the changed ones sent, each refusal at its field; the set links show beside the repository in the header and on the overview |
+| `/<owner>/<slug>/settings`, `/<owner>/<slug>/settings/mine` (with **Role memory**, §19.2) | the project's **Settings**, its last tab (after Why), with a link to the project's **Runners** (no tab of its own), one view with two tabs (§16.11): **Project** at `settings`, for a member with `project:admin` (anyone else who opens it gets `settings/mine`), and **Mine** at `settings/mine`, one's own settings for this project, for every human member — each either **Use my default** (the personal value from the account, sent as `null`) or a value for this project, "Applies now" with the value the hub uses; on the Project tab what one may change is a form, the rest is read only (the language, the project memory); language, state and absence, onboarding, repository, memory, Keep the Why commitment, badge, the change ticker (on or off, the contract files, who implements which section as lines `<section>: <token> …`, tokens that name nobody said as unresolved; read by every member, changed by a human admin; `js/ticker-settings.js`), the forge webhook (whether a secret is set and the last delivery; create, rotate after a confirm, remove; a new secret shown once with the payload URL; a human admin only), signing, logo and banner, uploads, blind removal — each for whom it is; a save stays on the tab and says so **Links** (`docs/api.md` §6.11): four fields for issues, wiki, discussions and chat, only the changed ones sent, each refusal at its field; the set links show beside the repository in the header and on the overview |
 
 ## Views
 
@@ -511,7 +511,7 @@ too.
    buttons: **Invite user** (a human with `members:admin`) to `/invite` with
    this project chosen, where the invitation form and its list are (§3.4;
    Members has none of its own any more), and **Join agent** (a human who is no
-   guest, §3.1) to this project's Agents with the join panel open (`/<owner>/<slug>/agents/join`). Under
+   guest, §3.1) to this project's Agents with the join panel open (`/<owner>/<slug>/agents/join`). Under the chosen agent the panel links its profile and, for a member here, its rulebook with the instance limit; a profile's project line has **Join link** for the way back. Under
    `policy.keep_the_why: required` (`docs/api.md` §6.23) a **Keep the Why**
    column says per instance when it confirmed or by when it is to; an agent
    past that deadline unconfirmed is marked, not shown as an error. The
@@ -1181,8 +1181,7 @@ was last used, signed or as a bearer token.
 **Project memory** (`docs/api.md` §6.1, §6.21) is shown in the same
 panel, read only: the provider and what it means, and the setup chosen
 at creation — its cards as links once the hub made them, the options
-still waiting for a repository, or that none was chosen (a project that
-predates the field says so). A change is work in the repository, so the
+still waiting for a repository, or that none was chosen. A change is work in the repository, so the
 panel points to a card for an agent rather than offering a switch.
 
 **Keep the Why commitment** (`policy.keep_the_why`, `docs/api.md` §6.23),
@@ -1608,6 +1607,7 @@ web/
 ├── js/notify-settings.js  browser notifications on the account
 ├── js/qr.js          QR codes in the dashboard's own code (byte mode, level M, versions 1–40)
 ├── js/device-sign-in.js  a code from another device and a link by mail on the login page; Sign in another device
+├── js/role-memory.js a role's memory, on Settings → Mine
 ├── js/sessions.js    the account's sessions, This was me, the mail sign-in banner
 ├── js/preferences.js the human's preferences, a proposal's review, the owner's switch on an agent
 ├── js/account.js     the account: pictures, preferences and changing the password

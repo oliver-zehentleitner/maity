@@ -1156,6 +1156,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("join-agent").value = "agt-b"; byId("join-agent").dispatch("change");
   expect(text(byId("join-quota")) === "1 of 1 instances active; another one is over the team's limit.",
     "team: opening + Add an agent reads the members again, a limit changed elsewhere shows: " + text(byId("join-quota")));
+  // The way to the profile (tsk-svqsdp6qf0f3): one click from the form, none for a new agent.
+  const joinLinks = () => main.querySelector(".join-profile-links");
+  expect(joinLinks().querySelectorAll("a").map((a) => a.getAttribute("href")).join() === "#/agents/agt-b,#/maintainer/maity/agents/agt-b/rulebook",
+    "join: the chosen member's profile and rulebook are linked: " + joinLinks().querySelectorAll("a").map((a) => a.getAttribute("href")).join());
+  byId("join-agent").value = ""; byId("join-agent").dispatch("change");
+  expect(joinLinks().hidden, "join: a new agent has no profile to link");
+  byId("join-agent").value = "agt-b"; byId("join-agent").dispatch("change");
   // The panel open while the rulebook is saved: its count follows at once, the agent still chosen (antigravity's P3 on #616).
   byId("team-max-agt-b").value = "2"; teamOf("agt-b").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(!main.querySelector(".join-panel").hidden && byId("join-agent").value === "agt-b" && text(byId("join-quota")) === "1 of 2 instances active.",
@@ -5286,6 +5293,25 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !main.querySelector("fieldset.join-instance").hidden, "agents page: there the panel is open with the profile chosen, as an instance where it is a member");
   btn(main.querySelector(".join-panel"), "Cancel").click(); await tick();
   // Join an agent from /agents with the project chosen (Members' Join agent links it so): its join panel open at once.
+  // The profile's way back to the join form (tsk-svqsdp6qf0f3): only where the panel opens.
+  {
+    const jlLinks = () => main.querySelectorAll("a").filter((x) => text(x) === "Join link").length;
+    await go("#/agents"); for (let k = 0; k < 6; k++) await tick();
+    for (const row of main.querySelectorAll("button.agent-manage")) if (row.getAttribute("aria-expanded") !== "true") { row.click(); await tick(); }
+    expect(jlLinks() > 0, "join link: on a project where the panel opens");
+    const jlGet = win.Maity.api.get;
+    win.Maity.api.get = (p, o) => (p === "/me" ? jlGet(p, o).then((x) => { x.projects.forEach((q) => { q.trust = "guest"; }); return x; }) : jlGet(p, o));
+    await go("#/all"); await go("#/agents"); for (let k = 0; k < 6; k++) await tick();
+    for (const row of main.querySelectorAll("button.agent-manage")) if (row.getAttribute("aria-expanded") !== "true") { row.click(); await tick(); }
+    expect(jlLinks() === 0, "join link: none for a guest");
+    // member_agents off, known only on the project's own page: that page says why no panel opens.
+    win.Maity.api.get = (p, o) => (p === "/me" ? jlGet(p, o).then((x) => { x.projects.forEach((q) => { q.trust = "member"; }); return x; })
+      : p === "/projects/maintainer/maity" ? jlGet(p, o).then((x) => Object.assign({}, x, { policy: Object.assign({}, x.policy, { member_agents: "off" }) })) : jlGet(p, o));
+    await go("#/all"); await go("#/maintainer/maity/agents/join?agent=agt-b"); for (let k = 0; k < 8; k++) await tick();
+    expect(main.querySelector(".join-not-here") && !main.querySelector(".join-panel"), "join link: member_agents off, the page says there is no form");
+    expect(!main.querySelectorAll("a").some((x) => /guest\/guestlab/.test(x.getAttribute("href") || "")), "profile: no link into a project the human is not in");
+    win.Maity.api.get = jlGet;
+  }
   await go("#/agents?project=" + encodeURIComponent("maintainer/maity")); for (let k = 0; k < 10; k++) await tick();
   expect(byId("agents-join-project").value === "maintainer/maity" && main.querySelector("section.agents-join .join-panel")
     && !main.querySelector("section.agents-join .join-panel").hidden, "agents page: ?project= chooses the project and opens its join panel");
@@ -7976,6 +8002,40 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/settings/mine"); for (let k = 0; k < 4; k++) await tick();
   expect(msTabs() === "Project=#/maintainer/maity/settings,Mine=#/maintainer/maity/settings/mine*" && !byId("project-language"),
     "settings: settings/mine shows one's own settings, its tab marked, not the project's");
+  // Role memory (§19.2), on Mine: add, delete with a row left behind, any role for an admin, nothing to write for a guest.
+  {
+    const rmText = () => text(main.querySelector("section.role-memory"));
+    const rmForm = () => main.querySelector("form.role-memory-add");
+    expect(main.querySelector("section.role-memory") && rmText().includes("Nothing in this memory yet") && byId("role-memory-role"), "role memory: on Mine, empty, a role to choose for an admin");
+    rmForm().dispatch("submit"); await tick();
+    expect(rmText().includes("write the entry first"), "role memory: no text, no call");
+    byId("role-memory-text").value = "Rebase before the review"; byId("role-memory-tags").value = "git, review";
+    rmForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(rmText().includes("Rebase before the review") && rmText().includes("git, review") && byId("role-memory-text").value === "", "role memory: an entry is added with its tags");
+    const rmRole = byId("role-memory-role").value;
+    byId("role-memory-role").value = rmRole === "tester" ? "coder" : "tester"; byId("role-memory-role").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+    expect(!rmText().includes("Rebase before the review"), "role memory: another role's memory is its own");
+    byId("role-memory-role").value = rmRole; byId("role-memory-role").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+    const rmConfirm = win.confirm; win.confirm = () => true;
+    btn(main.querySelector("section.role-memory"), "Delete").click(); for (let k = 0; k < 4; k++) await tick();
+    win.confirm = rmConfirm;
+    expect(!rmText().includes("Rebase before the review"), "role memory: Delete takes the entry away");
+    byId("role-memory-deleted").checked = true; byId("role-memory-deleted").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+    expect(rmText().includes("Deleted by") && !rmText().includes("Rebase before the review"), "role memory: its row says who, the text is gone");
+    byId("role-memory-deleted").checked = false;
+    const rmPost = win.Maity.api.post;
+    win.Maity.api.post = (p) => Promise.reject(new win.Maity.api.ApiError("raw", 409, p, "memory_full", {}));
+    byId("role-memory-text").value = "x"; rmForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(rmText().includes("full at 64 KiB") && !rmText().includes("raw"), "role memory: full is said in words");
+    win.Maity.api.post = (p) => Promise.reject(new win.Maity.api.ApiError("raw", 400, p, "invalid", { fields: { "tags.0": "string_pattern_mismatch" } }));
+    rmForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(rmText().includes("up to five tags") && !rmText().includes("raw"), "role memory: one bad tag, as the hub names it, is said in words");
+    win.Maity.api.post = rmPost;
+    byId("role-memory-text").value = "";
+    const rmDiv = document.createElement("div");
+    await win.Maity.roleMemory.section({ base: "/projects/maintainer/maity", role: "coder", trust: "guest", members: [] }, rmDiv);
+    expect(!rmDiv.querySelector("form.role-memory-add") && text(rmDiv).includes("As a guest you read"), "role memory: a guest writes nothing");
+  }
   const msForm = () => main.querySelector("form.my-settings");
   expect(msForm() && byId("my-nl-default").checked && byId("my-nl-minutes").disabled && byId("my-nl-minutes").value === "90"
     && text(main.querySelector(".my-nl-effective")) === "Applies now: 90 minutes, your default.", "my settings: the default applies, its value shown");

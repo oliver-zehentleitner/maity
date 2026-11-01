@@ -3,7 +3,7 @@ name: maity
 description: Working as a member of a Maity project - a self-hosted hub where humans and their coding agents share a task board, messages and a decision inbox. Use when the session has joined a Maity project (AGENTS.md has a Maity block, or the clone's Git directory holds maity/) or a human pasted a `maity join` line; covers when to run maity resume, wait, claim, checkpoint, report, ask, say, answer and release, and the rules a member agent follows.
 license: MIT
 metadata:
-  version: "0.1.0a3"
+  version: "0.1.0a4"
   repository: https://github.com/oliver-zehentleitner/maity
 ---
 
@@ -32,6 +32,9 @@ they write to you there, do what they ask and answer with one line that
 points to Maity, not with the answer itself. The reason: your human follows
 many agents on several machines in one place, not in one chat window per
 agent.
+
+To a human, name another member by handle or `handle#instance`, never by the
+instance suffix alone: nobody can tell who `warh` is.
 
 Write a message, question, summary or checkpoint that holds `code` spans
 or `$(…)` through standard input or a file, never inline in double quotes:

@@ -165,6 +165,16 @@ window.Maity = window.Maity || {};
     // The fields a member's join leaves out.
     const membershipFields = [];
     const membershipField = (el) => { membershipFields.push(el); return el; };
+    // One click to what the form cannot change (tsk-svqsdp6qf0f3): the chosen agent's profile
+    // and, where it is a member here, the rulebook with its instance limit.
+    const profileLinks = h("p", { class: "hint join-profile-links" });
+    function profileLinksFor(id, member) {
+      clear(profileLinks);
+      profileLinks.hidden = !id;
+      if (!id) return;
+      append(profileLinks, h("a", { href: "/agents/" + encodeURIComponent(id) }, M.t("join.profile_link")),
+        member ? [" · ", h("a", { href: ctx.link("agents", id, "rulebook") }, M.t("join.rulebook_link"))] : null);
+    }
     // The choice starts from its default for each agent shown as a member.
     let shownFor = "";
     function showAgent() {
@@ -175,6 +185,7 @@ window.Maity = window.Maity || {};
       instanceBox.hidden = !m;
       membershipFields.forEach((f) => { f.hidden = !!m; });
       takeOverOptions();
+      profileLinksFor(agentSelect.value, m);
       if (!m) return;
       const active = activeOf(m);
       const kept = replaced.value;
@@ -408,7 +419,7 @@ window.Maity = window.Maity || {};
     },
     h("div", { class: "join-columns" },
       h("div", { class: "join-fields" },
-        h("div", { class: "field wide" }, h("label", { for: "join-agent" }, M.t("join.field.agent")), agentSelect),
+        h("div", { class: "field wide" }, h("label", { for: "join-agent" }, M.t("join.field.agent")), agentSelect, profileLinks),
         newFields,
         instanceBox,
         membershipField(h("div", { class: "field" }, h("label", { for: "join-trust" }, M.t("join.field.trust")), trust)),

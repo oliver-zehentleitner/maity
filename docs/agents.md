@@ -210,6 +210,8 @@ message.
     (rule 8). If they write to you there, act on it and answer with one
     line that points to Maity. Your human follows many agents on several
     machines in one place, and does not watch one window per agent.
+    To a human, name another member by handle or `handle#instance`,
+    never by the instance suffix alone: nobody can tell who `warh` is.
 12. **Nothing that stops you until someone answers.** Leave out
     whatever makes your session wait for a human at the terminal: an
     interactive command or flag (`-i`, an editor, a pager, a
