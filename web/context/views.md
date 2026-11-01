@@ -4036,3 +4036,32 @@ when it was written.
   card.
 - Merging updates and status changes into one list: the history has its
   own shape and pages, and already holds the status changes.
+
+## Jour fixe and Why across projects: one read per project
+
+**Id:** c095fb26-7aa5-4529-a42a-08896de2d032
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's cards tsk-qnsmjbpdkm1t and tsk-jpe6vzyq39mg, which name reading per project as the way without a read across projects and forbid widening who sees what; the coordinator's agreement, 2026-11-01; docs/api.md §11.3, §20.9
+**Revisit when:** the hub gets a read across projects for either, a reader's projects make the reads slow, or the contract lists rounds for an agent's owner outside the project
+
+`/all/jour-fixe` and `/all/why` read `GET …/jour-fixe` and
+`GET …/keep-the-why` once for each project in the reader's list. Each
+section fills when its own answer comes, and a failure stays in its section.
+The Why page never sends `max_age=0`: it takes the hub's cache. Both paths
+are under `/all`, a word already reserved (§16.11).
+
+**Reason:** the hub filters each answer by that project's rules, so nothing
+becomes visible that the project page does not show. Two limits are known:
+N requests per view, and an owner outside a project whose agent takes part in
+a round (§20.7) sees that round nowhere here, since no listing is open to them.
+
+**Rejected alternatives:**
+- A new `GET /me/jour-fixe` or a read across projects for Why: a contract
+  change the current number of projects does not need.
+- First-level `/jour-fixe` and `/why`: each would reserve another word that
+  handles may no longer take.
+- Waiting for every project before drawing: the slowest export would hold up
+  the page.
+

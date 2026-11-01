@@ -136,6 +136,8 @@ window.MAITY_I18N["en"] = {
   "agents.reread_failed": "Your agents could not be read again: {reason}",
   "agents.rulebook": "Team rulebook",
   "agents.title": "Your agents",
+  "all.jf.intro": "The jour fixe of each of your projects: its series, the next round and any open round.",
+  "all.jf.none": "No jour fixe series in this project.",
   "all.page.agents": "Agents",
   "all.page.chats": "Chats",
   "all.page.chats.count": {
@@ -147,7 +149,14 @@ window.MAITY_I18N["en"] = {
     "one": "{count} open",
     "other": "{count} open"
   },
+  "all.page.jour_fixe": "Jour fixe",
+  "all.page.no_projects": "You are in no project yet.",
+  "all.page.reading": "Reading…",
+  "all.page.unread": "Could not read this project: {reason}",
+  "all.page.why": "Why",
   "all.pages": "Pages of all projects",
+  "all.why.intro": "Keep the Why of each of your projects: what its export says, and the entries that need attention.",
+  "all.why.none": "This project publishes no Keep the Why export.",
   "attach.admin.delete.label": "Delete the pending upload of {size} by {who}",
   "attach.admin.deleted": "Deleted.",
   "attach.admin.expires": "expires {ago}",

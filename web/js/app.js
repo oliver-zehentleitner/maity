@@ -115,6 +115,8 @@ window.Maity = window.Maity || {};
     if (parts[0] === "chats") return { scope: "chats", args: parts.slice(1) };
     // The login page, always reachable (docs/api.md §16.7); signed in, the root.
     if (parts[0] === "login") return { scope: "login" };
+    if (parts[0] === "all" && parts[1] === "jour-fixe") return { scope: "all-jour-fixe" };
+    if (parts[0] === "all" && parts[1] === "why") return { scope: "all-why" };
     if (parts[0] === "all") return { scope: "all" };
     if (parts[0] === "new") return { scope: "new" };
     // /account/orgs[/<handle>]: organisations (§6.26), under the account (views.md).
@@ -1203,7 +1205,7 @@ window.Maity = window.Maity || {};
     const pill = (p) => (N.counts ? counted(M.notify.projectCount(p)) : count(p.open_requests));
     const all = N.counts ? counted({ requests: N.counts.inbox, chat: N.counts.chat, mention: N.counts.mention, total }) : count(total);
     return h("nav", { class: "switcher", "aria-label": "Projects" },
-      h("a", { href: "/all", "aria-current": ctx.scope === "all" || ctx.scope === "chats" || ctx.scope === "agents" ? "page" : null }, "All projects", all),
+      h("a", { href: "/all", "aria-current": ALL_PAGES.some((page) => page.scope === ctx.scope) ? "page" : null }, "All projects", all),
       ctx.projects.map((p) => h("a", {
         href: projectLink(p.full_name, "inbox"),
         "aria-current": ctx.scope === "project" && p.full_name === ctx.slug ? "page" : null,
@@ -1259,6 +1261,8 @@ window.Maity = window.Maity || {};
       count: (c) => c.chat || 0, said: (count) => M.t("all.page.chats.count", { count }) },
     // One's own agent profiles (/agents): a human's page, and nothing counted on it.
     { scope: "agents", href: "/agents", label: () => M.t("all.page.agents"), when: (ctx) => ctx.me.kind === "human", count: () => 0 },
+    { scope: "all-jour-fixe", href: "/all/jour-fixe", label: () => M.t("all.page.jour_fixe"), count: () => 0 },
+    { scope: "all-why", href: "/all/why", label: () => M.t("all.page.why"), count: () => 0 },
   ];
   function allCount(page) {
     const n = M.notify.state.counts ? page.count(M.notify.state.counts) : 0;
@@ -1427,7 +1431,7 @@ window.Maity = window.Maity || {};
             href: projectLink(ctx.slug, item.route),
             "aria-current": item.route === current ? "page" : null,
           }, item.label, tabCount(ctx, item.route))))
-        : ctx.scope === "all" || ctx.scope === "chats" || ctx.scope === "agents"
+        : ALL_PAGES.some((page) => page.scope === ctx.scope)
           ? h("nav", { class: "views", "aria-label": M.t("all.pages") },
             ALL_PAGES.filter((page) => !page.when || page.when(ctx)).map((page) => h("a", { href: page.href, "aria-current": ctx.scope === page.scope ? "page" : null }, page.label(), allCount(page))))
           : null);
@@ -1810,10 +1814,10 @@ window.Maity = window.Maity || {};
     const item = where.scope === "project" ? NAV.find((n) => n.route === where.route) : null;
     renderHeader(ctx, (item && item.current) || where.route);
     const empty = where.scope === "all" && !ctx.projects.length;
-    const known = ["all", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person"].includes(where.scope)
+    const known = ["all", "all-jour-fixe", "all-why", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person"].includes(where.scope)
       || (item && own(M.views, item.view || item.route) && offered(ctx, item));
     let viewName = "unknown";
-    if (["all", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person", "invitations"].includes(where.scope)) viewName = where.scope;
+    if (["all", "all-jour-fixe", "all-why", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person", "invitations"].includes(where.scope)) viewName = where.scope;
     // `section`: a view whose tab stands for another (`current`) keeps its own name here.
     else if (known) viewName = (item && (item.section || item.current)) || where.route;
     const root = h("section", { class: "view view-" + viewName });
@@ -1839,6 +1843,10 @@ window.Maity = window.Maity || {};
         await M.waiting.full(ctx, root);
       } else if (where.scope === "chats") {
         await M.views.chats(ctx, root, where.args || []);
+      } else if (where.scope === "all-jour-fixe") {
+        await M.views.allJourFixe(ctx, root);
+      } else if (where.scope === "all-why") {
+        await M.views.allWhy(ctx, root);
       } else if (where.scope === "observe") {
         await M.views.observe(ctx, root, where);
       } else if (where.scope === "new") {
@@ -1875,6 +1883,8 @@ window.Maity = window.Maity || {};
     else if (where.scope === "all") label = "All projects";
     else if (where.scope === "notifications") label = "Notifications";
     else if (where.scope === "chats") label = "Chats";
+    else if (where.scope === "all-jour-fixe") label = M.t("all.page.jour_fixe");
+    else if (where.scope === "all-why") label = M.t("all.page.why");
     else if (where.scope === "new") label = "New project";
     else if (where.scope === "account") label = "Your account";
     else if (where.scope === "orgs") label = where.args && where.args[0] ? "@" + M.orgs.handleOf(where.args[0]) + " · Organisations" : "Organisations";

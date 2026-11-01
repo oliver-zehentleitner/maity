@@ -165,6 +165,7 @@ does not know. There are no `#/` routes and no redirects from them.
 | `/<owner>/<slug>` | a project: without a session the hub's static public page where one is served, otherwise the dashboard (sign-in first); signed in, the project's inbox, with **View public page** (`?as=public`) where one is served |
 | `/chats` | every chat across one's projects (`js/chats.js`), laid out as a project's Chat tab: the list beside the open conversation (on a phone the list its own screen), merging each project's direct and group chats (one read across projects, `GET /me/conversations`, §9.3, then every 30 s and after the notifications stream says something changed, never a project's events feed), unread first, then the newest, each with its project as a 14 px mark after the who line (name on hover), and in the open chat each agent message with the marks of the reader's projects it is in; from the header's **Chat** |
 | `/chats/<owner>/<slug>/<id>` | one of those chats opened in place, with the Chat tab's messages, drafts and composer in its project's context; **← Conversations** goes back to `/chats` |
+| `/all/jour-fixe`, `/all/why` | a project's Jour fixe and Why side by side for every project of the reader (`js/all-pages.js`), one read per project, each section filled when its answer comes |
 | `/all` | the inbox across every project, each entry with its project's badge (logo or monogram, name, state) before it, as a link to the project; filterable by project and groupable by project (each group a heading with its own list; the filter holds in `/all` only, and answering opens the next entry as it stands on screen); the landing page with more than one project, and with none (then it offers **Create a project**) |
 | `/new` | create a project; also **+ New project** in the switcher. Where the hub takes `owner` and the human is in an organisation that lets them create projects, **Owner** chooses between them and that organisation (`docs/api.md` §6.26); the address is then `<organisation>/<slug>`. **Private** is unticked for the namespace owner and ticked and fixed for anyone else in an organisation (§16.9); the next page says what the hub made of it |
 | `/login` | the login page, always; signed in, the dashboard's start (the root without a session is the hub's own landing page where one is on, §16.7), with links to the legal pages that are set. `/login?next=<route>` signs in and goes on to that dashboard path (a path on this host, not one of the hub's own, `docs/api.md` §2.6.5), passed to the password, mail-link and device sign-in calls; the page offers **Create an account** where `GET /auth/methods` says the instance registers |
@@ -1586,6 +1587,7 @@ web/
 ├── js/attachments.js  files on messages: attach, show, delete; the admin's pending list
 ├── js/chat.js        (6) chat
 ├── js/chats.js       every chat across the projects (/chats)
+├── js/all-pages.js   Jour fixe and Why across the projects (/all/jour-fixe, /all/why)
 ├── js/group-chat.js  (6) group chats: create, open, manage, remove a message
 ├── js/observe.js     reading along in a project one is not in
 ├── js/join.js        (7) join an agent
