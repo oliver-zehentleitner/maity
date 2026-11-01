@@ -1467,7 +1467,7 @@ window.Maity = window.Maity || {};
     append(root, h("h2", null, "Settings"),
       tabs.length > 1 ? h("nav", { class: "settings-tabs", "aria-label": "Settings" },
         tabs.map(([label, href, on]) => h("a", { href, "aria-current": on ? "page" : null }, label))) : null);
-    if (mine) { await M.mySettings(ctx, root); return; }
+    if (mine) { await M.mySettings(ctx, root); await M.roleMemory.section(ctx, root); return; }
     append(root,
       h("p", { class: "muted" }, "This project's settings. Yours for this project are under Mine; the hub's are in the gear menu."),
       // The project's runners, no tab of their own any more.
