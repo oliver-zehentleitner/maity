@@ -191,6 +191,11 @@
   "attach.too_large.words": "the hub refused it as too large (the file is {size}): {words}",
   "attach.uploading": "Uploading {name}…",
   "attach.uploading_short": "uploading…",
+  "availability.covered_by": "Covered by {who} {ago}",
+  "availability.covering": "Covering {who} {ago}",
+  "availability.dormant": "Resting: every instance is dormant",
+  "availability.limited": "Away",
+  "availability.limited_until": "Away until {until}",
   "bell.all": "All notifications",
   "bell.chat": "Chats",
   "bell.chat.unread": {

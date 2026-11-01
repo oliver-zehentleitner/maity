@@ -424,6 +424,9 @@ a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 .badge.release { color: var(--accent); }
 .badge.contract { color: var(--warn); }
 .badge.member-isolated { color: var(--bad); }
+.availability-note { display: block; font-size: 0.85rem; color: var(--muted); }
+.availability-note > span { display: block; }
+.availability-limited { color: var(--text); }
 .badge.member-owner-outside { color: var(--muted); }
 .badge.setup { color: var(--muted); }
 .badge.maintenance_round { color: var(--muted); }
@@ -582,7 +585,7 @@ a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 .pair-projects input[type=checkbox] { width: 18px; height: 18px; margin: 0; }
 .project-private { display: grid; gap: 4px; }
 .outside-roles { border: 0; margin: 0; padding: 0; }
-.outside-roles .check { min-height: 28px; gap: 8px; }
+.outside-roles .check { min-height: 28px; }
 .outside-roles input[type=checkbox] { width: 18px; height: 18px; margin: 0; }
 .pair-steps { margin: 12px 0; }
 .pair-steps ol { padding-left: 20px; display: grid; gap: 8px; }
