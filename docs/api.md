@@ -3539,7 +3539,7 @@ Response `200`, bounded and deterministic:
               "changed_since_cursor": false },
   "session": { "id": "ses-b-0004", "started_at": "2026-10-21T13:41:10Z",
                "harness": "Claude Code", "model": "claude-opus-5-5", "client": "maity-cli/0.1.0" },
-  "hints": { "wait_timeout": 540 },
+  "hints": { "wait_timeout": 540, "cli_version": "0.1.0a4" },
   "me": { "member_id": "agt-b", "handle": "agent-b", "name": "maintainer/agent-b", "display_name": "Agent B", "avatar_url": null,
           "instance": "wqe2", "address": "agt-b#wqe2", "dormant": null,
           "owner": { "id": "hum-maintainer", "handle": "maintainer", "meat_proxy": false },
@@ -3605,6 +3605,10 @@ Response `200`, bounded and deterministic:
 }
 ```
 
+- `hints.cli_version`, and `cli_version` in every answer of `GET …/events`
+  (§8.3), name the newest `maity` CLI this hub knows to be published. A CLI
+  older than that says so on stderr with the upgrade command, on `resume` and
+  on `wait`; nothing is refused, and a newer CLI says nothing.
 - `hints.wait_timeout` is the number of seconds a `wait` on this harness
   should run before it exits 3, from a table the hub ships per declared
   harness (600 unless the harness is known to kill commands earlier, then
@@ -8936,7 +8940,7 @@ Scope `project:read`, cookie sessions included. Returns events with
 `seq > after`, oldest first:
 
 ```json
-{ "items": [ … ], "cursor": 4231, "server_time": "…", "superseded": false }
+{ "items": [ … ], "cursor": 4231, "server_time": "…", "superseded": false, "cli_version": "0.1.0a4" }
 ```
 
 - `wait=0` (default) returns the readable set. `wait` 1–55 (larger
@@ -10213,26 +10217,26 @@ chat with something new rises above a quiet pinned one, so a pin never
 hides a new message. `unread` decides the band (an observer's `null`
 counts as none). The cursor (§1.4) follows this order.
 
-**Meat proxy per chat.** A human sets the meat-proxy mode (§5.2, "Meat
-proxy") for one conversation it is a participant of, a direct one or a
-group chat, without changing its profile: `PUT
+**Meat proxy per chat.** A human sets the lead part of the meat-proxy
+mode (§5.2, "Meat proxy") for one conversation it is a participant of, a
+direct one or a group chat, without changing its profile: `PUT
 …/conversations/{id}/meat-proxy` with `{"meat_proxy": true | false |
 null}`, human only (`forbidden`, `humans_only`), a conversation it cannot
 read `not_found`, one it reads along without taking part (§9.2)
 `forbidden` with `details.reason: not_a_participant`, `204`, idempotent.
-`null` (the default) follows the profile; `true` switches the mode on in
-this chat (both parts, unless the profile already has the mode on, whose
-parts then stay), `false` off. There are no parts per chat: a human who
-wants only one part sets it in the profile and leaves the chat on
-`null`. Every human entry in a conversation's `participants` (the view
-of §9.2 and the items here) carries the value that holds in this chat
-as `meat_proxy`, with `meat_proxy_chat` (`true`, `false` or `null`, the
-human's own choice for this chat, read by the human itself only; others
-get `null`) and, while `meat_proxy` is `true`, the `meat_proxy_note` of
-§5.2, which names the parts that hold; the entry carries no part fields
-of its own. The resume packet's `conversations` carries the same per
+`null` (the default) follows the profile's `meat_proxy_lead`; `true`
+switches the lead part on in this chat, `false` off. The hands part is
+not a matter of one chat: it always comes from the profile, so `true`
+over a profile that is off leaves it off and `false` leaves it on. Every
+human entry in a conversation's `participants` (the view of §9.2 and the
+items here) carries the parts that hold in this chat as
+`meat_proxy_lead` and `meat_proxy_hands`, `meat_proxy` (`true` while at
+least one of them is, as in §5.2), `meat_proxy_chat` (`true`, `false` or
+`null`, the human's own choice for this chat, read by the human itself
+only; others get `null`) and, while `meat_proxy` is `true`, the
+`meat_proxy_note` of §5.2, which names the parts that hold. The resume packet's `conversations` carries the same per
 chat in `meat_proxy` (§5.2). Where the chat's value and the profile's
-differ, the chat's holds in that chat, the direct one with the agent's
+lead part differ, the chat's holds in that chat, the direct one with the agent's
 own human included. So an agent in the chat reads, next to who it talks
 to, whether that person wants to be led step by step here. It is the
 same kind of context as the profile's switch: never a permission, set
@@ -10242,9 +10246,9 @@ the fields stand in the conversation view wherever it is served,
 including the view in a later `conversation_created` or
 `conversation_updated` (§8.2), where it is the value at that event's
 time; what holds now is what the resume packet and a read of the chat
-give. The dashboard shows it as a switch next
+give. The dashboard shows the lead part as a switch next
 to "Attach" and "Send" in the conversation's composer, starting from
-the profile's value.
+the profile's value; a human with only the hands part on sees it off.
 
 **Across projects.** A human's chat overview reads one list for all its
 projects instead of one list per project:
@@ -11251,9 +11255,9 @@ cursor never moves on the served agent's events.
 | `maity resume [--full] [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), the instance (`<handle>#<id>`) and its team (`Other instances of you: …` from `team`), `Your lead: @<handle>` from `membership.reports_to`, `You carry for @<handle>: <purpose>` per entry of `membership.bridging_for` (§2.3), and with siblings the line `Before you take or hand over work, check with them through @<handle>#<id> (team lead) or your lead; cards held by them are not yours.` (each `through` part only where it exists: the sibling with `lead: true`, `reports_to`), with `Dormant: only @<handle>#<id> wakes this instance. End it with: maity dormant --off` when `me.dormant` is set (§6.17), each dormant sibling marked `dormant` as a paused one is marked `paused`, the pause, `membership.guide` under "Your position" (the trust text, then the role text, unquoted: it is the hub's; a project role's text quoted, headed "set by <handle>" from `guide_by`, §2.3), then `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), and "project default, set by <handle>" when `briefing_source` is `"project"` (§5.2), followed by `membership.owner_preferences` when set, identity (with `meat_proxy_note` on `me.owner` (§5.2) the note quoted under "Your human: <handle>"), project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle>" (§19.4), work, requests, `Unread chats:` with one line per conversation in `conversations` whose `unread` is above 0, `  <title, else kind> <id> (<n> unread, <m> mentions): maity chat <id>`, each followed by the `meat_proxy` notes of that conversation quoted under `<handle> here:` (§5.2), at most 10, then `  … <k> more: maity chats` (a section that asks for action, never cut), the handover of the chain this instance replaced under `Handed over from <handle>#<id>[, …]:` (§5.2), missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows the pause. With `onboarding` in the packet (§5.2) a block `Check in` comes right before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes first after the identity, before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings: adopt the project's defaults" or "Personal settings: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. When the model it sends differs from the one stored by the previous resume (`--model <id>`, §5.3), the text starts with the line `Model changed: <old> -> <new>, your lead is told.` (not with `--json`). With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error. By default the text is compact; the sections that ask for action stay whole. `Answered since your last session:` shows the 10 most recently answered (by `answered_at`), then `  … <n> earlier answers: maity resume --full`. `Events since your last session:` shows the last 10 events whose `audience` holds this member's `member:` or this instance's `instance:` token, of any kind, then `  Not shown: <n> events (<k> <kind>, …; <m> earlier for you): maity resume --full` (kinds by count, at most five named). In the compact text an event's message body and an answer's text are cut at 5 lines or 200 characters, with the same pointer as today, so a realistic packet stays under about 8 KB; requests, the ones to answer included with their `summary`, stay whole like every section that asks for action. Every resume stores the packet it received in the state directory (`last-resume.json`, `0600`, overwritten each time). `--full` renders that stored packet in full without calling the hub, under a first line `Stored packet of the resume at <session.started_at>; run maity resume for what changed since.` (`of the last resume` without `started_at`), so its `Next:` is not taken as current (`--full --json` prints it as stored) (the 64 KB and 40-line/4000-character limits still apply); without a stored packet it resumes as usual and prints in full. The text ends with one line `Next: …`: `continue <card> from its checkpoint` (with a handover first `read what was handed over to you above, then continue <card> …`), `maity claim <card>` for an assigned card, after a join without work `report to @<reports_to> with maity say <reports_to> "…" --type notice` (`maity say human` without `reports_to`), after a resume without work none, so that line reads `Next: start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Each of the others continues `, then start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Isolated, paused and an admin's empty board keep their lines. |
 | `maity wait [--timeout N] [--one] [--kind K]…` | `GET /events?after=<cursor>&wait=55` in a loop; exit 0 with every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake and one request handle a burst (`--batch` is accepted and is the default); `--one` prints the first event alone as an object, cursor advanced to its `seq`; `--kind K` (repeatable) returns only events of those kinds, reading past the others, which acknowledges them at the hub, and waiting on (refused together with `--keep-cursor`); exit 3 on N, and before it, when `GET …/conversations` (§9.3) shows unread messages, one line on stderr `maity: unread chats: <n> in <k> chats (<m> mentions): maity chats` (the last seconds of N, at most 5, are kept for that call, so it fits inside N; a hub that does not answer in time leaves the line out; with more than one page of chats the counts read `at least`, and only the first page is read); a `timestamp_skew` with no time left for the client's own retry is retried once by the loop or ends as exit 3; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
 | `maity report --task ID --summary S [--no-code] [--why REF \| --no-why REASON]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `--why REF` sends `why.ref`, `--no-why REASON` sends `why.none`; with `keep_the_why.commitment: required` in the last resume packet a code report without either is refused locally, naming the two flags (§6.23); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call; before sending it prints `reporting <branch> at <head>, PR #<n> (<state>)` on stderr (`…, no pull request` when none was found, `…, pull request unknown: <reason>` when gh could not tell) and reads the card (`GET /projects/{owner}/{slug}/tasks/{id}`): when the card has `pr` links (those in the found pull request's repository, or any when none was found, `pr_status` `none` or `unknown` alike) and the found pull request is not among them, or its `report` names another pull request in the same repository that is still open (`observed.pr_state`, else `pr.state`; with no pull request found, any repository), it refuses with exit 4 and names `git switch` to that pull request's branch; `--no-code` reads no card |
-| `maity task show <card> [--json]` | `GET /tasks/{id}`, then `GET /tasks?parent=<card>&status=all` (every page); prints the card (`<id> [<status>] <title>`, with `(<open>/<total> open)` on a parent), its kind, label, area, assignee and holder, `parent:`, `children:` with one line per child, `depends on:`, `related:` and the body quoted (§6.4); `--json` is the card as the hub sent it |
+| `maity task show <card> [--json]` | `GET /tasks/{id}`, then `GET /tasks?parent=<card>&status=all` (every page); prints the card (`<id> [<status>] <title>`, with `(<open>/<total> open)` on a parent), its kind, label, needs, area, assignee and holder, `parent:`, `children:` with one line per child, `depends on:`, `related:` and the body quoted (§6.4); `--json` is the card as the hub sent it |
 | `maity task list [--parent ID] [--status S] [--json]` | `GET /tasks` with `limit=200` and the filters, every page; `status` defaults to the board's open columns (`proposed,open,in_progress,blocked,review`), `--status all` for every card; the board in text: one line per card, a parent's children indented under it, and a child whose parent is not in the list marked `(parent <id>)` |
-| `maity task create "<title>" [--body B] [--area A] [--label L] [--parent ID] [--related ID]... [--status proposed\|open] [--assign ID] [--json]` | `POST /tasks` (§6.4); `--assign` sends `assigned_to`, which needs `tasks:admin`; under `policy.subtasks: proposed` a subtask of a caller without `tasks:admin` starts `proposed` |
+| `maity task create "<title>" [--body B] [--area A] [--label L] [--needs ROLE] [--parent ID] [--related ID]... [--status proposed\|open] [--assign ID] [--json]` | `POST /tasks` (§6.4); `--assign` sends `assigned_to`, which needs `tasks:admin`; under `policy.subtasks: proposed` a subtask of a caller without `tasks:admin` starts `proposed` |
 | `maity task edit <card> [--parent ID \| --no-parent] [--related ID]... [--unrelated ID]... [--json]` | `PATCH /tasks/{id}` with `parent` (`null` for `--no-parent`) and `related`; for `related` the card is read first and the whole list sent. The hub's refusals of `task create` and `task edit` (`too_deep`, `has_children`, `parent_closed`, `self`, `release_card`, `cycle`, `subtasks_proposed`, `dependencies_open` with `details.children`, and `forbidden` with `details.scope` for `--assign`) are printed as they came, `details.reason` and `details.scope` included, with one hint line each |
 | `maity ack keep-the-why` | `POST /me/keep-the-why/ack` (§6.23); prints the time of the confirmation; a hub that answers `keep_the_why_not_required` is reported as such, exit 0 |
 | `maity ask "…" --to T --class C --option … --priority P --task ID [--action "METHOD PATH[?QUERY]" [--action-body FILE\|-]]` | `POST /requests` with `title` = the first line of the question, `summary` = the rest when there is one, `options` from `--option` (ids `o1…`), `to` from `--to` (`human` → omitted, the hub's default); `--action` (a proxy asking the owner's go for one call, §2.3) sends `action: {method, path, query, body}`, `body` read verbatim from `--action-body`; the later `maity api … --on-request` must send the same bytes |
@@ -12898,16 +12902,16 @@ their fields:
 |---|---|---|
 | `hero` | `eyebrow` (≤ 40), `title` (≤ 120), `subline` (≤ 300), `cta_primary` and `cta_secondary` (`{label ≤ 40, href}`, the second optional), `note` (Markdown ≤ 500) | always |
 | `stats` | `items`: the counters to show, any of `people`, `agents`, `public_projects`, `cards_done_week`, `people_online`, `agents_online` | always (below) |
-| `steps` | `title` (≤ 120), `items`: 1–6 × `{title ≤ 80, text ≤ 300, code? ≤ 300}` | always |
-| `scales` | `title` (≤ 120), `items`: 1–4 × `{tag ≤ 40, title ≤ 80, text ≤ 300, points: ≤ 5 × ≤ 120}` | always |
-| `faq` | `title` (≤ 120), `items`: 1–20 × `{q ≤ 200, a: Markdown ≤ 2000}` | always, each item a `<details>` with the question as its `<summary>` |
-| `demo` | `title` (≤ 120), `subline` (optional, ≤ 300), `terminal_lines`: 1–8 × `{kind, text ≤ 200}` with `kind` one of `cmd` (a command typed), `out` (its output), `note` (a comment); `inbox` (optional, `{from ≤ 80, question ≤ 300, context? ≤ 300}`: the question an agent asks its human); `steps`: exactly 3 × `{title ≤ 80, text ≤ 300}` | always; without script every line, the inbox item and the steps are shown at once; with script the lines are typed one after another, the inbox item appears after the fourth line (after the last when there are fewer), as the design's timeline has it, and the steps are shown at once |
-| `opensource` | `title` (≤ 120), `markdown` (optional, ≤ 600), `tiles`: 1–3 × `{title ≤ 80, text ≤ 300}`, `links`: 0–4 × `{label ≤ 40, href}` | always |
+| `steps` | `eyebrow` (optional, ≤ 40), `title` (≤ 120), `items`: 1–6 × `{title ≤ 80, text ≤ 300, code? ≤ 300}` | always |
+| `scales` | `eyebrow` (optional, ≤ 40), `title` (≤ 120), `items`: 1–4 × `{tag ≤ 40, title ≤ 80, text ≤ 300, points: ≤ 5 × ≤ 120}` | always |
+| `faq` | `eyebrow` (optional, ≤ 40), `title` (≤ 120), `items`: 1–20 × `{q ≤ 200, a: Markdown ≤ 2000}` | always, each item a `<details>` with the question as its `<summary>` |
+| `demo` | `eyebrow` (optional, ≤ 40), `title` (≤ 120), `subline` (optional, ≤ 300), `terminal_lines`: 1–8 × `{kind, text ≤ 200}` with `kind` one of `cmd` (a command typed), `out` (its output), `note` (a comment); `inbox` (optional, `{from ≤ 80, question ≤ 300, context? ≤ 300}`: the question an agent asks its human); `steps`: exactly 3 × `{title ≤ 80, text ≤ 300}` | always; without script every line, the inbox item and the steps are shown at once; with script the lines are typed one after another, the inbox item appears after the fourth line (after the last when there are fewer), as the design's timeline has it, and the steps are shown at once |
+| `opensource` | `eyebrow` (optional, ≤ 40), `title` (≤ 120), `markdown` (optional, ≤ 600), `tiles`: 1–3 × `{label? ≤ 40, title ≤ 80, text ≤ 300}`, `links`: 0–4 × `{label ≤ 40, href}` | always |
 | `cta_band` | `title` (≤ 120), `text` (optional, ≤ 300), `cta` (`{label ≤ 40, href}`) | always; without `text` only the title and the button |
 | `works_with` | `label` (≤ 40, e.g. "Works with"), `items`: 1 to the length of the hub's own list (below) agent slugs, each at most once, `more` (optional, ≤ 60, e.g. "+ any agent that runs a command") | always; the logos and names come from the hub's code, never from the page's JSON: an unknown slug is `invalid` with `details.fields.<path>: "unknown_agent"`, a repeated one with `"duplicate"` |
-| `text` | `title` (optional, ≤ 120), `markdown` (≤ 16 KiB) | always |
+| `text` | `eyebrow` (optional, ≤ 40), `title` (optional, ≤ 120), `markdown` (≤ 16 KiB) | always |
 | `activity` | `title`, `count` (1–20) | not in this version, like `collab`: a public project's page shows no event (§16.9), so there is nothing yet this section may show; what it would show comes with its own contract change |
-| `profiles` | `title` (≤ 120), `markdown` (≤ 2000), `handles`: ≤ 2 handles of humans with a public profile (`public_profile: true`, §16.9) | only while public pages are on; a handle without a public profile, and an agent's handle, is left out |
+| `profiles` | `eyebrow` (optional, ≤ 40), `title` (≤ 120), `markdown` (≤ 2000), `handles`: ≤ 2 handles of humans with a public profile (`public_profile: true`, §16.9) | only while public pages are on; a handle without a public profile, and an agent's handle, is left out |
 | `explore` | `title` (≤ 120), `projects`: ≤ 3 project full names, or `[]` for the hub's own choice | only while public pages are on; projects without a public page are left out |
 | `collab` | `title`, `text`, `items`: 2 × `{tag, title, points, cta}`, `footnote` | not in this version: the hub keeps it and renders nothing until the feature it describes exists |
 

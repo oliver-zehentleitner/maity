@@ -1071,7 +1071,7 @@ the fixture hub with it: it refuses the field as the hub does.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the card tsk-73gz17sbq1k4 and docs/api.md §16.6 (per-day series, counts only, no chart library beyond the dashboard's); the dashboard's implementation, 2026-10-25; the designer was not asked yet
+**Source:** the cards tsk-73gz17sbq1k4 and tsk-h8805v7phn9b and docs/api.md §16.6 (per-day series, counts only, no chart library beyond the dashboard's); the dashboard's implementation, 2026-10-25; the designer was not asked yet
 **Revisit when:** the hub answers distinct active people per window, or the designer reworks the tiles
 
 Each day series is one row: the window's figure, today's value and a
@@ -1088,9 +1088,13 @@ drawing an unknown day as a solid zero.
 days would count the same person thirty times and look like growth that
 is not there; a distinct count per window is not in the answer, and the
 page invents no number. One line per series keeps every chart to one
-scale and one colour, so none needs a legend.
+scale and one colour, so none needs a legend. Every row spans the same
+width so the rows can be read against each other by day, and an unknown
+number is never shown as a 0.
 
 **Rejected alternative:** a sum for every series: wrong for people.
+A gap for the unknown days: the line starts in the middle of its row. A
+solid line at zero: it invents a number.
 One chart with all series: eight scales in one axis, and colours that
 would need a legend. A chart library: the contract and the CSP keep the
 page to its own code.
@@ -3325,14 +3329,17 @@ In a direct or group chat a human participant finds the meat-proxy
 switch in the composer's row, between **Attach files** and **Send**
 (`js/meat-proxy.js`, one part for both composers through
 `M.chatParts.actionRow`). It is drawn from one's own entry in the chat's
-participants: pressed while `meat_proxy` holds in this chat, its tooltip
-saying whether that is the profile's value or this chat's own. A click
+participants: pressed while `meat_proxy_lead` holds in this chat, never
+for the hands part alone, which is the profile's in every chat (the
+owner's word on tsk-rznymp9hb1qm: the mode in a chat means being told what
+to do); its tooltip says whether that is the profile's value or this
+chat's own. A click
 sends the opposite as this chat's value; **Follow my profile**, shown
 only while the chat has a value of its own, sends `null`. An agent, an
 observer (no entry of its own) and a hub whose entries carry no
-`meat_proxy` get no switch. Since the hub emits no event for the change,
+`meat_proxy_lead` get no switch. Since the hub emits no event for the change,
 the switch takes the hub's `204` as the new state and works out what
-holds itself (`null` follows the profile's value from `/me`); the chat's
+holds itself (`null` follows the profile's lead part from `/me`); the chat's
 value is read again from the participants the next time the chat opens.
 The icons are the designer's two SVGs in `web/brand/`, drawn as a CSS
 mask so that they take the button's colour (muted off, the accent on).
@@ -4162,8 +4169,9 @@ a round (§20.7) sees that round nowhere here, since no listing is open to them.
 
 The editor offers the agents of a **Works with** section from a list in
 `js/landing.js`, the slugs and names of `AGENTS` in
-`hub/src/maity_hub/landing.py`, in the same order. `tools/smoke.js` reads the
-hub's file and fails when the two differ.
+`hub/src/maity_hub/landing.py`, in the same order. The check before a save
+has the slugs as `LANDING_AGENTS` in `js/api.js`. `tools/smoke.js` reads the
+hub's file and fails when either copy differs from it.
 
 **Reason:** the contract serves no such list, and adding an agent is a change
 in the code anyway, so a comparison catches a drift when it is made.
@@ -4185,4 +4193,18 @@ The card shows `Needs: <role>` beside its label. It is set in the new-card form 
 **Reason:** the filter sits with Member and Area, which read the same loaded list, so one rule says what the filters see. A list of every role would offer choices that match nothing.
 
 **Rejected alternatives:** a server filter with `needs=`: a board redraw would have to merge a second list for one of its filters. A form of its own for needs in the opened card: the card has one edit form, and two would each need a Save.
+
+## Under two signatures the board's Done is a signature, and only the menu can say which one
+
+**Id:** 2668871f-769c-445b-94e1-f8802fa8e57e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.1, §6.4 (`approvals`, `approve`); the hub's #1028; tsk-tx9qcehevfnk
+
+A card in review under `done_authority: reviewer_and_tester` lists both places, signed or not. The Move menu offers the signatures the caller may still give, named as signatures rather than "Move to Done". A caller with one signature left may also drop the card on Done, which sends that signature. A caller holding both, such as an owner, cannot drop it there. Someone who has signed one place is offered neither, and rework still is.
+
+**Reason:** the hub refuses a call holding both scopes without `approve`, and a drop cannot ask. "Move to Done" would also be untrue, because the first signature leaves the card in review, so the status line says the signature was saved and the card waits for the other one.
+
+**Rejected alternatives:** a dialog on drop that asks which signature: a second way to do what the menu does. A separate Sign button on every card: the card already has one menu for what can be done with it.
 

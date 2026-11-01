@@ -1402,6 +1402,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     convs = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/conversations").json()["items"]
     entry = next(p for c in convs if (c.get("agent_id") or c["id"]) == agent_id for p in c["participants"] if p["kind"] == "human")
     assert entry["meat_proxy"] is True and entry["meat_proxy_chat"] is True and entry.get("meat_proxy_note"), entry
+    assert entry["meat_proxy_lead"] is True and entry["meat_proxy_hands"] is False, entry
     follow.click()
     expect(meat).to_have_attribute("aria-pressed", "false")
     expect(follow).to_be_hidden()
@@ -2157,10 +2158,60 @@ def board_cards_step(run: Run, page: Page) -> None:
     expect(page.locator('section.column[data-status="cancelled"]').locator("article.card", has_text="E2E: a card from the board")).to_be_visible()
     run.shot(page, "board-cards")
     no_problems(run, "board cards")
+    two_signatures_step(run, page)
     board_order_step(run, page)
     overview_step(run, page)
     ticker_step(run, page)
     notifications_step(run, page)
+
+
+def two_signatures_step(run: Run, page: Page) -> None:
+    """§6.4 against the hub: under reviewer_and_tester the owner signs one place, says which, and
+    the card stays in review. The second signature needs a second member: the hub's own tests."""
+    run.step("board: two signatures, the owner signs the review and the card stays in review")
+    base = "/projects/owner/e2e-alpha"
+
+    def api(method: str, path: str, body: dict | None = None):
+        return page.evaluate("([m, p, b]) => window.Maity.api[m](p, b)", [method, base + path, body])
+
+    before = api("get", "")["policy"]["done_authority"]
+    api("patch", "", {"policy": {"done_authority": "reviewer_and_tester"}, "reason": "e2e: two signatures"})
+    made = api("post", "/tasks", {"title": "E2E: two signatures", "status": "open"})
+    api("post", f"/tasks/{made['id']}/claim", {})
+    sha = "d91e294c" + "0" * 32
+    report = {
+        "summary": "Done for the signatures.",
+        "head": sha,
+        "branch": "agent-e2e/signatures",
+        "upstream": "origin/agent-e2e/signatures",
+        "remote_head": sha,
+        "pr": None,
+        "pr_status": "none",
+        "pr_unknown_reason": None,
+        "why": {"none": "a test report, nothing to keep"},
+    }
+    api("post", f"/tasks/{made['id']}/report", report)
+    page.goto(f"{run.base}/owner/e2e-alpha/board")
+    card = page.locator("article.card", has_text="E2E: two signatures")
+    approvals = card.locator(".card-approvals")
+    expect(approvals).to_contain_text("Review: not signed yet")
+    expect(approvals).to_contain_text("Test: not signed yet")
+    card.locator(".card-move .menu-button").click()
+    card.locator(".card-move").get_by_role("menuitem", name="Sign the review", exact=True).click()
+    expect(page.locator("main section.view-board .send-status").first).to_contain_text("signature saved")
+    card = page.locator('section.column[data-status="review"]').locator("article.card", has_text="E2E: two signatures")
+    expect(card.locator(".card-approvals")).to_contain_text("Review: signed by")
+    expect(card.locator(".card-approvals")).to_contain_text("Test: not signed yet")
+    run.shot(page, "board-two-signatures")
+    card.locator(".card-move .menu-button").click()
+    expect(card.locator(".card-move").get_by_role("menuitem", name="Sign the test", exact=True)).to_have_count(0)
+    page.keyboard.press("Escape")
+    # A rework clears them (§6.4), and the project goes back to what the later steps expect.
+    api("patch", f"/tasks/{made['id']}", {"status": "in_progress"})
+    assert api("get", f"/tasks/{made['id']}")["approvals"] is None
+    api("patch", f"/tasks/{made['id']}", {"status": "cancelled"})
+    api("patch", "", {"policy": {"done_authority": before}, "reason": "e2e: back"})
+    no_problems(run, "two signatures")
 
 
 def board_order_step(run: Run, page: Page) -> None:

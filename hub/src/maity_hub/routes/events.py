@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
 from maity_hub import (
+    CLI_VERSION,
     attachment_store,
     attachments,
     clock,
@@ -305,6 +306,7 @@ def answer(items: list[dict[str, Any]], cursor: int, superseded: bool) -> JSONRe
             "cursor": cursor,
             "server_time": clock.rfc3339(clock.now()),
             "superseded": superseded,
+            "cli_version": CLI_VERSION,
         }
     )
 

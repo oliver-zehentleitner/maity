@@ -140,6 +140,7 @@ def _points() -> Spec:
 
 # The text of a header link, on any section: the header shows only the sections that have one.
 NAV_LABEL: Spec = ("text", 24, False)
+EYEBROW: Spec = ("text", 40, False)
 
 # The marks that are a shape on transparency (Simple Icons' `pi`); every other file is a white
 # mark on an opaque black tile and is read by its luminance, which drops the tile (§16.7).
@@ -182,6 +183,7 @@ SECTIONS: dict[str, dict[str, Spec]] = {
     },
     "stats": {"items": ("choice", STATS, 1, len(STATS), True)},
     "steps": {
+        "eyebrow": EYEBROW,
         "title": ("text", 120, True),
         "items": (
             "list",
@@ -200,6 +202,7 @@ SECTIONS: dict[str, dict[str, Spec]] = {
         ),
     },
     "scales": {
+        "eyebrow": EYEBROW,
         "title": ("text", 120, True),
         "items": (
             "list",
@@ -219,6 +222,7 @@ SECTIONS: dict[str, dict[str, Spec]] = {
         ),
     },
     "faq": {
+        "eyebrow": EYEBROW,
         "title": ("text", 120, True),
         "items": (
             "list",
@@ -229,6 +233,7 @@ SECTIONS: dict[str, dict[str, Spec]] = {
         ),
     },
     "demo": {
+        "eyebrow": EYEBROW,
         "title": ("text", 120, True),
         "subline": ("text", 300, False),
         "terminal_lines": (
@@ -260,11 +265,20 @@ SECTIONS: dict[str, dict[str, Spec]] = {
         ),
     },
     "opensource": {
+        "eyebrow": EYEBROW,
         "title": ("text", 120, True),
         "markdown": ("md", 600, False),
         "tiles": (
             "list",
-            ("object", {"title": ("text", 80, True), "text": ("text", 300, True)}, True),
+            (
+                "object",
+                {
+                    "label": ("text", 40, False),
+                    "title": ("text", 80, True),
+                    "text": ("text", 300, True),
+                },
+                True,
+            ),
             1,
             3,
             True,
@@ -281,9 +295,14 @@ SECTIONS: dict[str, dict[str, Spec]] = {
         "items": ("agents", len(AGENTS), True),
         "more": ("text", 60, False),
     },
-    "text": {"title": ("text", 120, False), "markdown": ("md", 16 * 1024, True)},
+    "text": {
+        "eyebrow": EYEBROW,
+        "title": ("text", 120, False),
+        "markdown": ("md", 16 * 1024, True),
+    },
     "activity": {"title": ("text", 120, False), "count": ("int", 1, 20, True)},
     "profiles": {
+        "eyebrow": EYEBROW,
         "title": ("text", 120, True),
         "markdown": ("md", 2000, False),
         "handles": ("names", HANDLE, 2, True),

@@ -1,10 +1,11 @@
 """The meat-proxy mode per conversation (docs/api.md §9.3, "Meat proxy per chat", §5.2).
 
-A human sets the mode for one conversation it takes part in, without changing its profile: `true`
-(on, both parts unless the profile already has the mode on, whose parts then stay), `false` (off),
-`null` (follow the profile, no row). Every human entry of a conversation's participants carries the
-value that holds there as `meat_proxy`, the human's own choice as `meat_proxy_chat` (for the human
-itself only), and while it is on the `meat_proxy_note`. Context for an agent, never a permission;
+A human sets the lead part of the mode for one conversation it takes part in, without changing its
+profile: `true` (on), `false` (off), `null` (follow the profile, no row). The hands part always
+comes from the profile. Every human entry of a conversation's participants carries the parts that
+hold there as `meat_proxy_lead` and `meat_proxy_hands`, `meat_proxy` (at least one of them), the
+human's own choice as `meat_proxy_chat` (for the human itself only), and while the mode is on the
+`meat_proxy_note`. Context for an agent, never a permission;
 a change emits no event and wakes nobody.
 """
 
@@ -20,13 +21,9 @@ from maity_hub.views import meat_proxy_note
 
 
 def parts(lead: bool, hands: bool, chat: bool | None) -> tuple[bool, bool]:
-    """The parts that hold in a chat: the profile's when the chat follows it or the profile is on
-    already, none when the chat says off, both when the chat says on over a profile that is off."""
-    if chat is None:
-        return lead, hands
-    if not chat:
-        return False, False
-    return (lead, hands) if (lead or hands) else (True, True)
+    """The parts that hold in a chat: the chat's choice decides the lead part, the profile's when
+    it follows; the hands part is the profile's whatever the chat says."""
+    return (lead if chat is None else chat), hands
 
 
 def put(
@@ -57,7 +54,7 @@ Chat = tuple[str, str, list[dict[str, Any]]]  # project id, conversation id, its
 
 
 def shown(conn: Connection, chats: Iterable[Chat], viewer: str | None = None) -> None:
-    """Add the three fields to every human entry of the participants lists given, in place;
+    """Add the fields to every human entry of the participants lists given, in place;
     `viewer` is the human reading, who alone sees its own choice. A direct conversation's id is
     its agent's, the same in every project the agent is in: the project tells them apart."""
     chats = list(chats)
@@ -90,6 +87,8 @@ def shown(conn: Connection, chats: Iterable[Chat], viewer: str | None = None) ->
             chat = choices.get((who, project_id, conversation_id))
             lead, hands = parts(*profiles.get(who, (False, False)), chat)
             person["meat_proxy"] = lead or hands
+            person["meat_proxy_lead"] = lead
+            person["meat_proxy_hands"] = hands
             person["meat_proxy_chat"] = chat if who == viewer else None
             if lead or hands:
                 person["meat_proxy_note"] = meat_proxy_note(lead, hands)

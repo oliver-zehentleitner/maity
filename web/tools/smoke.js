@@ -1942,6 +1942,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "board: a member moves only its own cards; a reviewer has done authority");
   expect(JSON.stringify(T(Object.assign({}, mctx, { project: { policy: { done_authority: "holder" } } }), tc("in_progress", { claim: { holder: "hum-maintainer" } }))) === JSON.stringify(["done"]),
     "board: with holder authority the holder moves its card to done");
+  // Two signatures (§6.4): done is a signature; holding both, only the menu can say which; one member never fills both.
+  const SS = win.Maity.boardEdit.signSlots;
+  const twoCtx = (x) => Object.assign({}, bctx, { project: { policy: { done_authority: "reviewer_and_tester" } } }, x);
+  const signed = (by) => ({ by, at: "2026-11-01T10:00:00Z", revision: 1 });
+  expect(JSON.stringify(SS(twoCtx(), tc("review"))) === JSON.stringify(["review", "test"]) && JSON.stringify(T(twoCtx(), tc("review"))) === JSON.stringify(["in_progress", "cancelled"]),
+    "two signatures: an owner holds both and has to say which, so Done is no column to drop on");
+  const asTester = twoCtx({ trust: "member", role: "tester" });
+  expect(JSON.stringify(SS(asTester, tc("review"))) === JSON.stringify(["test"]) && JSON.stringify(T(asTester, tc("review"))) === JSON.stringify(["done", "in_progress"]),
+    "two signatures: a tester gives the test signature, by the menu or a drop");
+  expect(!SS(asTester, tc("review", { approvals: { review: null, test: signed("agt-a") } })).length && !T(asTester, tc("review", { approvals: { review: null, test: signed("agt-a") } })).includes("done"),
+    "two signatures: a place another member filled is not offered");
+  expect(!SS(twoCtx(), tc("review", { approvals: { review: signed("hum-maintainer"), test: null } })).length,
+    "two signatures: after signing one, the same member is offered no other");
+  expect(!SS(twoCtx(), tc("in_progress")).length && !SS(bctx, tc("review")).length, "two signatures: only on a card in review, only under this policy");
   const bWrites = [];
   const bPatch = win.Maity.api.patch, bPost = win.Maity.api.post;
   win.Maity.api.patch = (p, b) => { bWrites.push(["PATCH", p, b]); return bPatch(p, b); };
@@ -3304,6 +3318,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(cpPanel()).includes("No updates on this card yet"), "card watch: none at the end of the list");
   cpWatch().click(); await cpSettle();
   win.Maity.api.get = cpWatchGet;
+  // A card outside the board's window (closed long ago): in no list, read by its id; what the hub answers still reaches its panel.
+  const cpOldHref = cpLink.getAttribute("href").replace("tsk-0001", "tsk-0900");
+  const cpOld = Object.assign({}, await cpWatchGet("/projects/maintainer/maity/tasks/tsk-0001"), { id: "tsk-0900", title: "Closed long ago", status: "done", watching: false });
+  const cpOldPut = win.Maity.api.put;
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/tasks/tsk-0900" ? Promise.resolve(cpOld) : cpWatchGet(p));
+  win.Maity.api.put = (p) => (p.endsWith("/tasks/tsk-0900/watch") ? Promise.resolve(Object.assign({}, cpOld, { watching: true })) : cpOldPut(p));
+  await go(cpOldHref); await cpSettle();
+  const cpOldCardIn = () => cpPanel().querySelector(".card-panel-card article.card");
+  expect(cpPanel() && text(cpPanel().querySelector(".card-id")) === "tsk-0900" && cpOldCardIn() && !cpOldCardIn().querySelector(".card-watching")
+    && !main.querySelector(".columns").querySelectorAll("article.card").some((a) => a.attrs["data-card"] === "tsk-0900"),
+    "card panel: a card outside the board's window opens by its id, in no column");
+  cpWatch().click(); await cpSettle();
+  expect(text(cpWatch()) === "Watching" && cpOldCardIn() && cpOldCardIn().querySelector(".card-watching"),
+    "card watch: the panel of a card outside the board's window shows the hub's answer");
+  win.Maity.api.get = cpWatchGet; win.Maity.api.put = cpOldPut;
+  await go(cpLink.getAttribute("href")); await cpSettle();
   // A card's links: a pull request with the title and state the hub observed, an issue without, a plain URL by its label.
   const cpLinks = win.Maity.cardPanel.render({ base: "/projects/maintainer/maity", slug: "maity", project: { state: "archived" }, link: () => "#" },
     { id: "tsk-0001", title: "Links", links: [
@@ -3524,7 +3554,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   {
     const mpBtn = () => main.querySelector("form.compose .compose-actions button.meat-chat-toggle");
     const mpFollow = () => main.querySelector("form.compose .compose-actions button.meat-chat-follow");
-    const mpProfile = String(!!JSON.parse(fs.readFileSync(path.join(WEB, "fixtures/me.json"), "utf8")).member.meat_proxy);
+    const mpProfile = String(!!JSON.parse(fs.readFileSync(path.join(WEB, "fixtures/me.json"), "utf8")).member.meat_proxy_lead);
     const mpPuts = [], mpPut = win.Maity.api.put;
     win.Maity.api.put = (p, b) => { if (/\/meat-proxy$/.test(p)) mpPuts.push([p, JSON.stringify(b)]); return mpPut(p, b); };
     const mpRow = main.querySelector("form.compose .compose-actions");
@@ -3546,7 +3576,25 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(mpBtn() && mpBtn().getAttribute("aria-pressed") === String(mpWas !== "true") && !mpFollow().hidden, "meat proxy: the chat's value read again after leaving it");
     mpFollow().click(); for (let k = 0; k < 4; k++) await tick();
     win.Maity.api.put = mpPut;
-    expect(mpProfile === mpWas, "meat proxy: the switch starts from the profile's value (" + mpProfile + ", " + mpWas + ")");
+    expect(mpProfile === mpWas, "meat proxy: the switch starts from the profile's lead part (" + mpProfile + ", " + mpWas + ")");
+    // Only the hands part on: the switch is off, a click leads here, and the hands stay in the note.
+    const mpEntry = async () => (await win.Maity.api.get("/projects/maintainer/maity/conversations")).items
+      .find((c) => (c.agent_id || c.id) === "agt-a").participants.find((p) => p.kind === "human");
+    const mpBefore = await win.Maity.api.get("/me");
+    await win.Maity.api.patch("/me", { meat_proxy_lead: false, meat_proxy_hands: true });
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/agt-a"); for (let k = 0; k < 4; k++) await tick();
+    const mpHands = await mpEntry();
+    expect(mpBtn().getAttribute("aria-pressed") === "false" && mpHands.meat_proxy === true && mpHands.meat_proxy_lead === false && mpHands.meat_proxy_hands === true && /hands/.test(mpHands.meat_proxy_note) && !/Lead me/.test(mpHands.meat_proxy_note),
+      "meat proxy: with only the hands part on, the chat's switch is off and the note keeps the hands " + JSON.stringify(mpHands));
+    mpBtn().click(); for (let k = 0; k < 4; k++) await tick();
+    const mpLed = await mpEntry();
+    expect(mpBtn().getAttribute("aria-pressed") === "true" && /Lead me/.test(mpLed.meat_proxy_note) && /hands/.test(mpLed.meat_proxy_note), "meat proxy: on over the hands part adds the lead " + JSON.stringify(mpLed));
+    mpBtn().click(); for (let k = 0; k < 4; k++) await tick();
+    const mpOff = await mpEntry();
+    expect(mpBtn().getAttribute("aria-pressed") === "false" && mpOff.meat_proxy === true && /hands/.test(mpOff.meat_proxy_note), "meat proxy: off in this chat leaves the hands part " + JSON.stringify(mpOff));
+    mpFollow().click(); for (let k = 0; k < 4; k++) await tick();
+    await win.Maity.api.patch("/me", { meat_proxy_lead: !!mpBefore.member.meat_proxy_lead, meat_proxy_hands: !!mpBefore.member.meat_proxy_hands });
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/agt-a"); for (let k = 0; k < 4; k++) await tick();
   }
   expect(main.querySelector(".chat-list-pane") && conv("Agent A").getAttribute("aria-current") === "page" && conv("Agent A").classList.contains("current")
     && !conv("Agent A").querySelector(".count"), "chat: the list stays beside the open chat; the open one is marked, its unread gone");
@@ -9102,6 +9150,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const wwOffered = byId(wwId("items-pick")).querySelectorAll("option").map((o) => o.getAttribute("value") + "=" + text(o));
   expect(text(wwBox()).includes("Works with") && wwSlugs.length === 19 && JSON.stringify(wwOffered) === JSON.stringify(wwSlugs),
     "landing editor: works_with offers exactly the hub's agents, by name, in its order " + JSON.stringify(wwOffered));
+  // The check before a save (js/api.js) has its own copy, in the same order.
+  const wwChecked = fs.readFileSync(path.join(WEB, "js/api.js"), "utf8").match(/const LANDING_AGENTS = (\[[^\]]*\]);/)[1];
+  expect(wwChecked === JSON.stringify(wwSlugs.map((x) => x.split("=")[0])).replace(/,/g, ", "),
+    "landing editor: the check's LANDING_AGENTS are the hub's agents, in its order " + wwChecked);
   const wwAdd = async (slug) => { byId(wwId("items-pick")).value = slug; btn(wwBox().querySelector(".lp-agents .inline-form"), "Add").click(); await tick(); };
   await wwAdd("codex"); await wwAdd("claude-code");
   byId(wwId("label")).value = "Works with"; byId(wwId("label")).dispatch("input");
@@ -9140,7 +9192,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await leSave();
   const leV3 = lePatches[lePatches.length - 1][1].pages.en.sections;
   expect(leV3[4].terminal_lines.map((x) => x.kind).join() === "cmd,out" && leV3[4].steps.length === 3 && leV3[4].inbox && leV3[4].inbox.question === ""
-    && !("context" in leV3[4].inbox) && !("subline" in leV3[4]) && leV3[5].links.length === 0 && !("markdown" in leV3[5])
+    && !("context" in leV3[4].inbox) && !("subline" in leV3[4]) && leV3[5].links.length === 0 && !("markdown" in leV3[5]) && !("eyebrow" in leV3[5]) && !("label" in leV3[5].tiles[0])
     && text(byId("lp-pages-en-sections-4-terminal-lines-0-text-error")) && text(byId("lp-pages-en-sections-4-inbox-question-error"))
     && text(byId("lp-pages-en-sections-5-tiles-0-title-error")),
     "landing editor: the lists and the inbox item sent in the draft's shape; the hub's refusals said at each field's path");
@@ -9149,6 +9201,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   leFill("lp-pages-en-sections-4-terminal-lines-1-text", "joined");
   leFill("lp-pages-en-sections-4-inbox-from", "agent-a"); leFill("lp-pages-en-sections-4-inbox-question", "Merge #12?");
   [0, 1, 2].forEach((k) => { leFill("lp-pages-en-sections-4-steps-" + k + "-title", "Step " + k); leFill("lp-pages-en-sections-4-steps-" + k + "-text", "Does " + k); });
+  // The optional eyebrow and tile label (§16.7): over the limit refused at the path, by the same check as the hub's.
+  const leLong = await win.Maity.api.post("/admin/settings/landing/preview", { pages: { en: { title: "T", sections: [{ type: "opensource", enabled: true, eyebrow: "x".repeat(41), title: "O", tiles: [{ label: "x".repeat(41), title: "T", text: "t" }] }] } } }).catch((err) => err.details.fields);
+  expect(leLong["pages.en.sections.0.eyebrow"] && leLong["pages.en.sections.0.tiles.0.label"], "landing editor: an eyebrow or a tile label over 40 is refused " + JSON.stringify(leLong));
+  leFill("lp-pages-en-sections-5-eyebrow", "Open source · MIT"); leFill("lp-pages-en-sections-5-tiles-0-label", "laptop");
   leFill("lp-pages-en-sections-5-title", "Open source"); leFill("lp-pages-en-sections-5-tiles-0-title", "MIT"); leFill("lp-pages-en-sections-5-tiles-0-text", "Yours.");
   btn(leOss(), "Add link").click(); await tick();
   leFill("lp-pages-en-sections-5-links-0-label", "Code"); leFill("lp-pages-en-sections-5-links-0-href", "javascript:alert(1)");
@@ -9266,8 +9322,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     jsWrong.pages.en.title = jsKept + " from the file";
     byId("lp-json").value = JSON.stringify(Object.assign(jsWrong, { campaigns: {} }));
     await jsLoad();
-    expect(byId("lp-pages-en-title").value === jsKept && text(main).includes("variants must be an object and campaigns a list"),
+    expect(byId("lp-pages-en-title").value === jsKept && text(main).includes("the footer and variants must be objects and campaigns a list"),
       "landing JSON: campaigns of the wrong kind refuse the import, and say so " + byId("lp-pages-en-title").value);
+    // A footer of the wrong kind, as in the whole site's import: refused, never the editor's in its place.
+    for (const footer of ["x", null, []]) {
+      byId("lp-json").value = JSON.stringify(Object.assign(JSON.parse(JSON.stringify(jsWrong)), { campaigns: [], footer }));
+      await jsLoad();
+      expect(byId("lp-pages-en-title").value === jsKept && text(main).includes("the footer and variants must be objects"),
+        "landing JSON: a footer of the wrong kind refuses the import " + JSON.stringify(footer));
+    }
     // A body without a footer (#808's review): the editor's footer stays, as a PATCH keeps the stored one.
     const jsNoFooter = { enabled: false, default_language: "en", pages: { en: { title: "V3", description: "No footer here", sections: [] } } };
     byId("lp-json").value = JSON.stringify(jsNoFooter);

@@ -363,6 +363,7 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
     cursor = field(packet, "events", "cursor")
     if isinstance(cursor, int):
         session.data["cursor"] = cursor
+    _warn_old_cli(field(packet, "hints", "cli_version"))
     wait_timeout = field(packet, "hints", "wait_timeout")
     if isinstance(wait_timeout, int) and wait_timeout > 0:
         session.data["wait_timeout"] = wait_timeout
@@ -680,6 +681,13 @@ def _save_wait_cursor(session: Session, cursor: Any) -> None:
     session.save()
 
 
+def _warn_old_cli(expected: object) -> None:
+    """One line when the hub names a newer published CLI (§5.2); it refuses nothing."""
+    if versioninfo.older(__version__, expected):
+        shown = onboarding.inline(expected)
+        _err(f"this CLI is {__version__}, {shown} is out; `pipx upgrade maity` brings it")
+
+
 def cmd_wait(args: argparse.Namespace) -> int:
     session = Session()
     timeout = args.timeout or session.data.get("wait_timeout") or DEFAULT_WAIT
@@ -705,6 +713,7 @@ def cmd_wait(args: argparse.Namespace) -> int:
     backoff = 2.0
     warned = False
     skewed = False
+    version_checked = False
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -748,6 +757,9 @@ def cmd_wait(args: argparse.Namespace) -> int:
                 continue
             raise
         backoff = 2.0
+        if not version_checked:
+            _warn_old_cli(page.get("cli_version"))
+            version_checked = True
         if page.get("superseded"):
             _err("another `maity wait` of this credential took over; this one stops")
             return EXIT_SUPERSEDED
@@ -2377,7 +2389,7 @@ def cmd_task_show(args: argparse.Namespace) -> int:
             if isinstance(k.get("id"), str)]  # fmt: skip
     show = onboarding.inline
     print(_card_line(card))
-    for key in ("kind", "label", "area", "assigned_to"):
+    for key in ("kind", "label", "needs", "area", "assigned_to"):
         if card.get(key):
             print(f"  {key.replace('_', ' ')}: {show(card[key])}")
     holder = _obj(card.get("claim")).get("holder")
@@ -2408,7 +2420,7 @@ def cmd_task_create(args: argparse.Namespace) -> int:
         raise UsageError(f"the title may be {MAX_TITLE} characters at most")
     body: dict[str, Any] = {"title": title}
     for key, value in (("body", args.body), ("area", args.area), ("label", args.label),
-                       ("parent", args.parent), ("status", args.status),
+                       ("needs", args.needs), ("parent", args.parent), ("status", args.status),
                        ("assigned_to", args.assign)):  # fmt: skip
         if value:
             body[key] = value
@@ -4591,6 +4603,11 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--body", help="the card's body, Markdown; - reads stdin")
     r.add_argument("--area", help="the repository path the card is about")
     r.add_argument("--label", help="the card's label")
+    r.add_argument(
+        "--needs",
+        metavar="ROLE",
+        help="which role the card is for (coder, reviewer, a project role, ...); routes nothing",
+    )
     r.add_argument("--parent", type=_id, help="make it a subtask of this card")
     r.add_argument(
         "--related", type=_id, action="append", default=[], help="a related card; repeat"

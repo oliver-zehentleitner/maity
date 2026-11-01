@@ -198,3 +198,23 @@ def test_a_disconnect_before_the_deadline_still_warns(
     _events_calls(monkeypatch, answer)
     assert cli.main(["wait", "--timeout", "60"]) == cli.EXIT_TIMEOUT
     assert capsys.readouterr().err.count("hub connection lost, retrying until the timeout") == 1
+
+
+@pytest.mark.parametrize(("named", "warned"), [("99.0.0", True), ("0.0.1", False), (None, False)])
+def test_wait_warns_once_when_the_hub_names_a_newer_cli(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    named: str | None,
+    warned: bool,
+) -> None:
+    page = {
+        "items": [{"seq": 5, "kind": "ticker", "payload": {}}],
+        "cursor": 5,
+        "cli_version": named,
+    }
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/events")] = lambda seen: (200, page)
+    assert cli.main(["wait"]) == cli.EXIT_OK
+    err = capsys.readouterr().err
+    assert ("pipx upgrade maity" in err) is warned
+    assert err.count("pipx upgrade maity") == int(warned)

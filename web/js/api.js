@@ -314,6 +314,9 @@ window.Maity = window.Maity || {};
   // tasks:review: a reviewer or the purple team (§2.3), or the governance scopes.
   const tasksReview = (slug) => tasksAdmin(slug) || (mineIn(slug).trust !== "guest" && ["reviewer", "purple-team"].includes(mineIn(slug).role));
 
+  // tasks:test: a tester or the red team (§2.3), or the governance scopes.
+  const tasksTest = (slug) => tasksAdmin(slug) || (mineIn(slug).trust !== "guest" && ["tester", "red-team"].includes(mineIn(slug).role));
+
   // A card's PATCH as the hub checks it (hub cards.check_transition).
   // Subtasks and related cards (§6.4), checked on the card as it would be
   // after the write: two levels, no closed parent, no release, no cycle with
@@ -377,9 +380,10 @@ window.Maity = window.Maity || {};
     const meId = me().member.id;
     const holds = !!(card.claim && card.claim.holder === meId);
     const keys = Object.keys(body);
-    const reviewMove = keys.length === 1 && keys[0] === "status" && card.status === "review" && ["done", "in_progress"].includes(body.status);
+    const reviewMove = keys.filter((k) => k !== "approve").length === 1 && keys.includes("status") && card.status === "review" && ["done", "in_progress"].includes(body.status);
     const authority = project(slug, path).policy.done_authority;
-    const hasAuthority = authority === "holder" ? holds : authority === "reviewer" ? tasksReview(slug) : tasksAdmin(slug);
+    const hasAuthority = authority === "holder" ? holds : authority === "reviewer" ? tasksReview(slug) : authority === "tester" ? tasksTest(slug)
+      : authority === "reviewer_and_tester" ? tasksReview(slug) || tasksTest(slug) : tasksAdmin(slug);
     const editor = holds || card.created_by === meId || tasksAdmin(slug);
     if (!editor && !(reviewMove && hasAuthority)) fail(403, "forbidden", "only the holder, the creator or an admin edits a card", path, { scope: "tasks:admin" });
     if ("parent" in body || "related" in body || ("status" in body && card.parent)) {
@@ -397,6 +401,20 @@ window.Maity = window.Maity || {};
         if (!hasAuthority) fail(403, "forbidden", "this needs done authority", path, { scope: "tasks:review" });
       } else if (!(from === "in_progress" && to === "done" && authority === "holder" && holds)) {
         fail(409, "invalid_transition", "not a transition the hub allows", path, { from, to });
+      }
+      // §6.4: a signature, and the card stays in review until both are there; a rework clears them.
+      if (authority === "reviewer_and_tester" && from === "review" && to === "in_progress") card.approvals = null;
+      if (authority === "reviewer_and_tester" && from === "review" && to === "done") {
+        const held = [["review", tasksReview(slug)], ["test", tasksTest(slug)]].filter(([, may]) => may).map(([slot]) => slot);
+        const slot = body.approve || (held.length === 1 ? held[0] : null);
+        if (!slot) fail(400, "invalid", "say which signature", path, { fields: { approve: "required" } });
+        const a = card.approvals || { review: null, test: null };
+        const other = a[slot === "review" ? "test" : "review"];
+        if (other && other.by === meId) fail(400, "invalid", "one member never fills both", path, { fields: { approve: "same_member" } });
+        if (!a[slot]) a[slot] = { by: meId, at: nowIso(), revision: card.report ? card.report.revision : null };
+        card.approvals = a;
+        if (!(a.review && a.test)) { card.updated_at = nowIso(); return card; }
+        card.approvals = null;
       }
       if (to === "done") {
         const open = (card.depends_on || []).filter((d) => { const o = list.find((t) => t.id === d); return o && !closed.includes(o.status); });
@@ -589,11 +607,11 @@ window.Maity = window.Maity || {};
   }
   const LANDING_AGENTS = ["claude-code", "codex", "opencode", "gemini", "antigravity", "copilot", "cursor", "pi", "goose", "cline", "roo", "kilo", "amp", "droid", "windsurf", "zed", "kiro-cli", "trae", "openclaw"];
   const LANDING_TYPES = {
-    hero: ["eyebrow", "title", "subline", "cta_primary", "cta_secondary", "note"], stats: ["items"], steps: ["title", "items"],
-    scales: ["title", "items"], faq: ["title", "items"], cta_band: ["title", "text", "cta"], text: ["title", "markdown"],
-    activity: ["title", "count"], profiles: ["title", "markdown", "handles"], explore: ["title", "projects"],
+    hero: ["eyebrow", "title", "subline", "cta_primary", "cta_secondary", "note"], stats: ["items"], steps: ["eyebrow", "title", "items"],
+    scales: ["eyebrow", "title", "items"], faq: ["eyebrow", "title", "items"], cta_band: ["title", "text", "cta"], text: ["eyebrow", "title", "markdown"],
+    activity: ["title", "count"], profiles: ["eyebrow", "title", "markdown", "handles"], explore: ["title", "projects"],
     collab: ["title", "text", "items", "footnote"], works_with: ["label", "items", "more"],
-    demo: ["title", "subline", "terminal_lines", "inbox", "steps"], opensource: ["title", "markdown", "tiles", "links"],
+    demo: ["eyebrow", "title", "subline", "terminal_lines", "inbox", "steps"], opensource: ["eyebrow", "title", "markdown", "tiles", "links"],
   };
   // A list of a section with its bounds, as the hub's landing._list: a
   // missing one is required unless optional (`required` false), one outside
@@ -652,6 +670,7 @@ window.Maity = window.Maity || {};
       Object.keys(s).forEach((k) => { if (k !== "type" && k !== "enabled" && k !== "nav_label" && !known.includes(k)) errors[sp + "." + k] = "extra_forbidden"; });
       // A header link's label (§16.7, #909): trimmed, 1–24 characters, optional on every type.
       if (s.nav_label !== undefined && s.nav_label !== null) landingText(typeof s.nav_label === "string" ? s.nav_label.trim() : s.nav_label, sp + ".nav_label", 24, false, errors);
+      if (s.type !== "hero" && known.includes("eyebrow")) landingText(s.eyebrow, sp + ".eyebrow", 40, false, errors);
       const items = s.items || [];
       if (s.type === "hero") {
         landingText(s.eyebrow, sp + ".eyebrow", 40, false, errors); landingText(s.title, sp + ".title", 120, true, errors);
@@ -706,7 +725,7 @@ window.Maity = window.Maity || {};
         landingList(s.steps, sp + ".steps", 3, 3, errors, (x, ip) => { landingText(x.title, ip + ".title", 80, true, errors); landingText(x.text, ip + ".text", 300, true, errors); });
       } else if (s.type === "opensource") {
         landingText(s.title, sp + ".title", 120, true, errors); landingMarkdown(s.markdown, sp + ".markdown", 600, false, errors);
-        landingList(s.tiles, sp + ".tiles", 1, 3, errors, (x, ip) => { landingText(x.title, ip + ".title", 80, true, errors); landingText(x.text, ip + ".text", 300, true, errors); });
+        landingList(s.tiles, sp + ".tiles", 1, 3, errors, (x, ip) => { landingText(x.label, ip + ".label", 40, false, errors); landingText(x.title, ip + ".title", 80, true, errors); landingText(x.text, ip + ".text", 300, true, errors); });
         landingList(s.links, sp + ".links", 0, 4, errors, (x, ip) => landingCta(x, ip, true, errors), false);
       }
     });
@@ -1079,19 +1098,20 @@ window.Maity = window.Maity || {};
   const meatNote = (lead, hands) => ["This person says: I am a meat proxy."]
     .concat(lead ? ["Lead me step by step rather than expecting me to explain."] : [])
     .concat(hands ? ["When you need a human's hands, come to me first."] : []).join(" ");
-  // A human entry in one chat (§9.3): the value that holds there, one's own
-  // choice for oneself only (null for others), and the note while it holds.
+  // A human entry in one chat (§9.3): the parts that hold there, one's own
+  // choice for oneself only (null for others), and the note while one holds.
   function withMeat(slug, convId, x, path) {
     if (x.kind !== "human") return x;
     const mine = x.member_id === me().member.id;
     const key = slug + "/" + convId;
     const chosen = mine && Object.hasOwn(meatChats(), key) ? meatChats()[key] : null;
     const profile = mine ? me().member : (file(slug, "members.json", path).items.find((y) => y.id === x.member_id) || {});
-    const holds = chosen === null ? !!profile.meat_proxy : chosen;
-    // On in the chat while the profile is off: both parts (§9.3); else the profile's.
-    const note = !holds ? null : chosen === true && !profile.meat_proxy ? meatNote(true, true)
-      : profile.meat_proxy_note || meatNote(profile.meat_proxy_lead !== false, profile.meat_proxy_hands !== false);
-    return Object.assign({}, x, { meat_proxy: holds, meat_proxy_chat: chosen }, note ? { meat_proxy_note: note } : {});
+    const on = !!profile.meat_proxy;
+    // The chat decides the lead part, hands stay the profile's (§9.3).
+    const lead = chosen === null ? (on && profile.meat_proxy_lead !== false) : chosen;
+    const hands = on && profile.meat_proxy_hands !== false;
+    const holds = lead || hands;
+    return Object.assign({}, x, { meat_proxy: holds, meat_proxy_lead: lead, meat_proxy_hands: hands, meat_proxy_chat: chosen }, holds ? { meat_proxy_note: meatNote(lead, hands) } : {});
   }
   // Four bands, each by activity: pinned with unread, unpinned with unread,
   // quiet pinned, the rest (an observer's null unread is none).

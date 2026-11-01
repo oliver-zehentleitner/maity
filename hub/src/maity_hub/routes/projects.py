@@ -307,6 +307,8 @@ def _apply_policy(
         # A preset refills every field but those it must not loosen or reset (§6.1).
         kept = {name: current[name] for name in policy.KEPT_ON_PRESET}
         proposed = {**policy.filled(change.preset, owner_id), **kept}
+        if current["done_authority"] in policy.DONE_KEPT_ON_PRESET:
+            proposed["done_authority"] = current["done_authority"]
     errors: dict[str, str] = {}
     for name, choices in policy.CHOICES.items():
         value = getattr(change, name)

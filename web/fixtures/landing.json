@@ -32,6 +32,7 @@
         },
         {
           "type": "faq",
+          "eyebrow": "Questions",
           "enabled": false,
           "title": "Questions",
           "items": [

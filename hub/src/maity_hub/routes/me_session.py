@@ -11,6 +11,7 @@ from sqlalchemy import Connection, func, insert, literal, select, update
 
 from maity_hub import (
     API_VERSION,
+    CLI_VERSION,
     __version__,
     availability,
     avatars,
@@ -568,9 +569,13 @@ def _packet(
         "session": session,
         # Supervised: the runner starts a run on each event, so no wait to time (§15.11).
         "hints": (
-            {"duty": "supervised"}
+            {"duty": "supervised", "cli_version": CLI_VERSION}
             if body.supervisor is not None
-            else {"duty": "self", "wait_timeout": wait_timeout(session["harness"])}
+            else {
+                "duty": "self",
+                "wait_timeout": wait_timeout(session["harness"]),
+                "cli_version": CLI_VERSION,
+            }
         ),
         "me": {
             "member_id": agent.id,

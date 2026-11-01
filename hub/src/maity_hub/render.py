@@ -320,6 +320,10 @@ def _wrap(index: int, classes: str, inner: str, extra: str = "") -> str:
     )
 
 
+def _eyebrow(section: dict[str, Any]) -> str:
+    return f'<p class="eyebrow">{escape(section["eyebrow"])}</p>' if section.get("eyebrow") else ""
+
+
 def _demo(index: int, section: dict[str, Any], words: dict[str, str]) -> str:
     """The terminal's lines are `d1`…, the inbox item follows the fourth, the rest after it
     (`landing.css` times them); everything is in the HTML, so that without script the end
@@ -351,7 +355,7 @@ def _demo(index: int, section: dict[str, Any], words: dict[str, str]) -> str:
     )
     lead = f'<p class="lead">{escape(section["subline"])}</p>' if section.get("subline") else ""
     inner = (
-        f'<h2>{escape(section["title"])}</h2>{lead}<div class="demo-grid"><div>'
+        f'{_eyebrow(section)}<h2>{escape(section["title"])}</h2>{lead}<div class="demo-grid"><div>'
         f'<ol class="term" data-lp-terminal>{"".join(rows)}</ol>{inbox}</div>'
         f'<ol class="steps3">{steps}</ol></div>'
     )
@@ -361,7 +365,7 @@ def _demo(index: int, section: dict[str, Any], words: dict[str, str]) -> str:
 def _section(index: int, section: dict[str, Any], words: dict[str, str], stats: Any) -> str:
     kind = section["type"]
     title = section.get("title")
-    heading = f"<h2>{escape(title)}</h2>" if title else ""
+    heading = _eyebrow(section) + (f"<h2>{escape(title)}</h2>" if title else "")
     if kind == "hero":
         return ""  # drawn with the header, in the dark zone
     if kind == "stats":
@@ -409,18 +413,27 @@ def _section(index: int, section: dict[str, Any], words: dict[str, str], stats: 
             else ""
         )
         tiles = "".join(
-            f'<div class="tile card"><h3>{escape(tile["title"])}</h3><p>{escape(tile["text"])}</p></div>'
+            '<div class="tile card">{}<h3>{}</h3><p>{}</p></div>'.format(
+                (
+                    f'<span class="tile-label">{escape(tile["label"])}</span>'
+                    if tile.get("label")
+                    else ""
+                ),
+                escape(tile["title"]),
+                escape(tile["text"]),
+            )
             for tile in section["tiles"]
         )
         links = "".join(
-            f'<a class="btn btn-secondary" href="{escape(link["href"], quote=True)}">{escape(link["label"])}</a>'
+            f'<a class="text-link" href="{escape(link["href"], quote=True)}">{escape(link["label"])}</a>'
             for link in section.get("links", [])
         )
+        link_row = f'<div class="links">{links}</div>' if links else ""
         return _wrap(
             index,
-            "section section-alt",
-            f'{heading}{lead}<div class="tiles">{tiles}</div>'
-            + (f'<div class="links">{links}</div>' if links else ""),
+            "section section-alt opensource",
+            f'<div class="opensource-body"><div>{heading}{lead}{link_row}</div>'
+            f'<div class="tiles">{tiles}</div></div>',
         )
     if kind == "faq":
         rows = "".join(
@@ -438,7 +451,7 @@ def _section(index: int, section: dict[str, Any], words: dict[str, str], stats: 
     if kind == "works_with":
         return _works_with(index, section)
     if kind == "text":
-        return _wrap(index, "section", f'{heading}{markdown(section["markdown"])}')
+        return _wrap(index, "section section-text", f'{heading}{markdown(section["markdown"])}')
     return ""  # activity, profiles, explore, collab: nothing to show in this version
 
 

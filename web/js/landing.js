@@ -26,6 +26,8 @@ window.Maity = window.Maity || {};
   // ordered pick from the hub's list), count (a
   // number), choice (one of `choices`), group (an object of `fields`).
   const f = (key, label, kind, max, extra) => Object.assign({ key, label, kind, max }, extra || {});
+  // The small line above a section's title, optional on every type that has a title; the words are the catalog's when said.
+  const eyebrowField = { key: "eyebrow", kind: "text", max: 40, optional: true, get label() { return M.t("landing.eyebrow"); } };
   const STATS = [["people", "People"], ["agents", "Agents"], ["public_projects", "Public projects"], ["cards_done_week", "Cards done this week"],
     ["people_online", "People online"], ["agents_online", "Agents online"]];
   // The agents a works_with section may name, as the hub's fixed list (§16.7, AGENTS in
@@ -38,27 +40,27 @@ window.Maity = window.Maity || {};
     hero: { label: "Hero", fields: [f("eyebrow", "Eyebrow", "text", 40), f("title", "Title", "text", 120), f("subline", "Subline", "long", 300),
       f("cta_primary", "Main button", "cta"), f("cta_secondary", "Second button (optional)", "cta", null, { optional: true }), f("note", "Note (Markdown)", "md", 500)] },
     stats: { label: "Counters", fields: [f("items", "Counters", "stats")] },
-    steps: { label: "Steps", fields: [f("title", "Title", "text", 120)],
+    steps: { label: "Steps", fields: [eyebrowField, f("title", "Title", "text", 120)],
       items: { min: 1, max: 6, label: "Step", fields: [f("title", "Title", "text", 80), f("text", "Text", "long", 300), f("code", "Code (optional)", "long", 300, { optional: true })] } },
-    scales: { label: "Scales", fields: [f("title", "Title", "text", 120)],
+    scales: { label: "Scales", fields: [eyebrowField, f("title", "Title", "text", 120)],
       items: { min: 1, max: 4, label: "Scale", fields: [f("tag", "Tag", "text", 40), f("title", "Title", "text", 80), f("text", "Text", "long", 300),
         f("points", "Points, one per line", "lines", 5)] } },
-    faq: { label: "Questions", fields: [f("title", "Title", "text", 120)],
+    faq: { label: "Questions", fields: [eyebrowField, f("title", "Title", "text", 120)],
       items: { min: 1, max: 20, label: "Question", fields: [f("q", "Question", "text", 200), f("a", "Answer (Markdown)", "md", 2000)] } },
     cta_band: { label: "Call to action", fields: [f("title", "Title", "text", 120), f("text", "Text", "long", 300), f("cta", "Button", "cta")] },
-    text: { label: "Text", fields: [f("title", "Title (optional)", "text", 120, { optional: true }), f("markdown", "Text (Markdown)", "md", 16384)] },
+    text: { label: "Text", fields: [eyebrowField, f("title", "Title (optional)", "text", 120, { optional: true }), f("markdown", "Text (Markdown)", "md", 16384)] },
     // Getters: the words are the catalog's when said.
     works_with: { get label() { return M.t("landing.works_with.title"); }, fields: [
       { key: "label", kind: "text", max: 40, get label() { return M.t("landing.works_with.label"); } },
       { key: "items", kind: "agents", get label() { return M.t("landing.works_with.agents"); } },
       { key: "more", kind: "text", max: 60, optional: true, get label() { return M.t("landing.works_with.more"); } }] },
     profiles: { label: "Profiles", note: "Shown only while public pages are on; a handle without a public profile is left out.",
-      fields: [f("title", "Title", "text", 120), f("markdown", "Text (Markdown)", "md", 2000), f("handles", "Handles, one per line", "lines", 2)] },
+      fields: [eyebrowField, f("title", "Title", "text", 120), f("markdown", "Text (Markdown)", "md", 2000), f("handles", "Handles, one per line", "lines", 2)] },
     explore: { label: "Explore", note: "Shown only while public pages are on; empty for the hub's own choice.",
       fields: [f("title", "Title", "text", 120), f("projects", "Projects (owner/slug), one per line", "lines", 3)] },
     // §16.7 (#737): a terminal typed line by line, the question an agent asks
     // its human, and exactly three steps; the page shows them all without script.
-    demo: { label: "Demo", fields: [f("title", "Title", "text", 120), f("subline", "Subline (optional)", "long", 300, { optional: true }),
+    demo: { label: "Demo", fields: [eyebrowField, f("title", "Title", "text", 120), f("subline", "Subline (optional)", "long", 300, { optional: true }),
       f("inbox", "Inbox item (optional)", "group", null, { optional: true, fields: [f("from", "From", "text", 80), f("question", "Question", "long", 300),
         f("context", "Context (optional)", "long", 300, { optional: true })] })],
       lists: [
@@ -66,9 +68,9 @@ window.Maity = window.Maity || {};
           f("text", "Text", "text", 200)] },
         { key: "steps", min: 3, max: 3, label: "Step", fields: [f("title", "Title", "text", 80), f("text", "Text", "long", 300)] },
       ] },
-    opensource: { label: "Open source", fields: [f("title", "Title", "text", 120), f("markdown", "Text (Markdown, optional)", "md", 600, { optional: true })],
+    opensource: { label: "Open source", fields: [eyebrowField, f("title", "Title", "text", 120), f("markdown", "Text (Markdown, optional)", "md", 600, { optional: true })],
       lists: [
-        { key: "tiles", min: 1, max: 3, label: "Tile", fields: [f("title", "Title", "text", 80), f("text", "Text", "long", 300)] },
+        { key: "tiles", min: 1, max: 3, label: "Tile", fields: [{ key: "label", kind: "text", max: 40, optional: true, get label() { return M.t("landing.tile_label"); } }, f("title", "Title", "text", 80), f("text", "Text", "long", 300)] },
         { key: "links", min: 0, max: 4, label: "Link", fields: [f("label", "Label", "text", 40), f("href", "Link", "href")] },
       ] },
   };
@@ -574,8 +576,8 @@ window.Maity = window.Maity || {};
         const target = lang || "en";
         if (!window.confirm(whole ? M.t("landing.json.confirm_all") : M.t("landing.json.confirm_page", { lang: target }))) return;
         const before = { draft, lang };
-        // Variants and campaigns as in the whole site's import: a value of the wrong kind refuses, never the draft's in its place.
-        const wrongKind = whole && (("variants" in data && !isObject(data.variants)) || ("campaigns" in data && !Array.isArray(data.campaigns)));
+        // Footer, variants and campaigns as in the whole site's import: a value of the wrong kind refuses, never the draft's in its place.
+        const wrongKind = whole && (("footer" in data && !isObject(data.footer)) || ("variants" in data && !isObject(data.variants)) || ("campaigns" in data && !Array.isArray(data.campaigns)));
         let next;
         if (whole) {
           // A field the body leaves out keeps what the editor has, as a PATCH keeps the stored one (§16.7).
