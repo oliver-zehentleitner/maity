@@ -333,7 +333,8 @@ window.Maity = window.Maity || {};
     append(box, h("div", { class: "inline-form" }, h("label", { for: "agents-join-project" }, M.t("agents.join.project")), pick), status.el, slot);
     // Asked for from Members' Join agent: the panel open at once.
     if (asked) mount();
-    return { button, box, close: () => { if (mounted) mounted.close(false); box.hidden = true; button.hidden = false; } };
+    // Closed while it still reads: that mount is dropped, or it would open beside the other form.
+    return { button, box, close: () => { seq += 1; status.done(); button.disabled = false; if (mounted) mounted.close(false); box.hidden = true; button.hidden = false; } };
   }
 
   // Your agents (/agents, the maintainer's card tsk-05meme59sq1x): Add an agent
