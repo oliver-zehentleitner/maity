@@ -342,14 +342,17 @@ order the host answers with the wrong certificate or 404 in between.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's approval of the three join-friction points (install and join in one line, the `PATH` after a pipx install, the package's publisher on PyPI), 2026-10-31; contract in `docs/api.md` §3.1 and §3.2
-**Revisit when:** the default install line stops using pipx, or pipx changes how it reports its bin directory
+**Revisit when:** the default install line stops using pipx, or pipx changes how it reports its bin directory, or pipx's default bin directory changes on Linux, macOS or Windows
 **See:** join.md#the-install-line-is-one-instance-setting-maity_cli_install-installing-from-git-until-the-package-is-on-pypi — 001ad88d-5119-4347-b0d7-72f99ec3affd — as of 2026-10-31
 
-The join line a human copies is `<install line> && maity join <url>
---code <code>`, so a fresh machine needs nothing first. When the install
-line is a pipx one, the hub adds `export
-PATH="$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}"` between the two, so
-`maity` is found in the same shell. For later shells the join output says once to run `pipx
+The join line a human copies runs the install line only when `maity` is
+missing, then `maity join <url> --code <code>`, so a fresh machine needs
+nothing first and a machine with the CLI installs nothing (the card
+tsk-cbctj4ja0y35). When the install line is a pipx one, the line starts
+with `export PATH="$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}"`, so `maity`
+is found in the same shell, whether it was installed now or earlier.
+A plain `maity join` alone was rejected, as it fails on the fresh machine
+this line is for. For later shells the join output says once to run `pipx
 ensurepath`; the line itself changes no shell profile.
 
 **Reason:** after a first `pipx install`, its bin directory (often
@@ -438,3 +441,30 @@ harness show the same link, and the curl path gets it too.
 - Also printing the inbox link: the conversation links to the inbox
   already, and one link is the clearer step.
 
+## A join answers one line per platform, POSIX and PowerShell, and none for cmd.exe
+
+**Id:** d4ccef00-f488-4ad5-b8eb-132f78108b88
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-cbctj4ja0y35 (the maintainer's request for a choice of target platform); the lead's go for the contract, 2026-11-01; `docs/api.md` §3.1 and §3.2. Why `cmd.exe` is left out is the author's reasoning, not stated by the maintainer.
+**Revisit when:** someone needs a join from `cmd.exe`, or Windows PowerShell 5.1 stops being the shell to expect on Windows
+**See:** join.md#the-join-line-installs-the-cli-and-joins-in-one-command-and-finds-maity-without-touching-the-shell-profile — 915d69cd-01b4-4396-af66-5244c9ffb0fe — as of 2026-11-01
+
+`paste_lines` carries both lines in the one answer, because the code
+appears nowhere else: choosing another platform later could not ask again
+without creating a new join.
+
+The PowerShell line uses `;`, since Windows PowerShell 5.1 has no `&&`. So
+it checks for `maity` again before the join: otherwise a failed install
+would still run the join, and the code would land in the error message
+and in `$Error`. `MAITY_CLI_INSTALL` is a POSIX line, so `windows` is
+`null` unless it is a single command with no shell operators, rather than
+handing PowerShell a line it reads differently.
+
+**Rejected:**
+
+- A third line for `cmd.exe`: its quoting differs again, for a shell an
+  agent's session rarely runs in, and PowerShell is on every supported
+  Windows.
+- Asking the hub for the line per platform: the code is shown once.
