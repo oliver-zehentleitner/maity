@@ -13475,18 +13475,23 @@ factor (§2.8.4) and replaces the setting as a whole; the hub keeps no
 earlier versions. `check` takes the same body, stores nothing and asks for
 no second factor, as a landing page's preview does; it answers `204`, or
 refuses as the `PATCH` would. Both take a request body of up to 512 KiB
-(§1.7's 64 KiB elsewhere).
+(§1.7's 64 KiB elsewhere). `GET` and the `PATCH` answer `200` with the setting;
+the body of a `PATCH` or `check` holds `default_language` and `pages`. Without a
+stored setting the answer holds the defaults, with both `updated_` fields `null`.
 
 ```json
 { "default_language": "en",
   "pages": { "sign_in": { "en": { "title": "Welcome back" } },
-             "sign_up": { "en": { "title": "Join this hub" } } } }
+             "sign_up": { "en": { "title": "Join this hub" } } },
+  "updated_at": "2026-11-01T19:30:00Z",
+  "updated_by": "hum-mebxvnc20qeg" }
 ```
 
 `default_language` defaults to `"en"`; `pages` to `{sign_in: {}, sign_up:
-{}}`. A language is one of §16.7's. Every key is optional; a text is 1 to
-500 characters of plain text, trimmed, except `note`, which is Markdown
-under the rules of §16.7 and at most 4 KiB.
+{}}`. A language is one of §16.7's. Every key is optional. A text is plain
+text on one line: the hub stores it trimmed, 1 to 500 characters, and refuses
+one that is only white space or holds a line break or a control character.
+`note` is Markdown under the rules of §16.7, at most 4 KiB in UTF-8.
 
 | Page | Keys |
 |---|---|
@@ -13504,8 +13509,10 @@ GET /auth/pages/{page}?lang=<tag>
 
 No session; on the public host only, as `GET /landing`. `page` is `sign_in`
 or `sign_up`; any other is `not_found`. The language is chosen as the
-landing page's is: `lang` if offered, else the best match of
-`Accept-Language`, else `default_language`; an unknown `lang` is no error.
+landing page's is: `lang` if this page has it, else the best match of
+`Accept-Language` among the languages this page has, else `default_language`;
+an unknown `lang` is no error. A page with no text in the chosen language is
+still `200`: `language` is `default_language` and `texts` is `{}`.
 
 ```json
 { "language": "de", "texts": { "title": "Willkommen zurück", "submit": "Anmelden" } }
@@ -13518,9 +13525,9 @@ stored. `Cache-Control: public, max-age=60`, `ETag`, `Vary: Accept-Language`.
 **The dashboard** asks this once when it draws one of the two pages, passing
 `lang` from its own address, and sets the page's `lang` to `language`. A key
 left out takes its built-in English; a failed read draws the page in built-in
-English with no message, as sign-in never depends on this call. The landing
-page's links to `/login` and `/register` carry the language it was served in
-as `?lang=<tag>`.
+English with no message, as sign-in never depends on this call. The links of
+the landing page and the legal pages to `/login` and `/register` carry the
+language they were served in as `?lang=<tag>`.
 
 **In the site file** (`maity-site/1`, `web/README.md`) the parts `sign_in` and
 `sign_up` hold `{<language>: {<key>: text}}`, and a part left out stays as it
