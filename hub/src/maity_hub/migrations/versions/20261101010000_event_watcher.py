@@ -6,7 +6,7 @@ stored apart from the event and never served.
 The chain follows whatever head `main` has when it lands.
 
 Revision ID: 20261101010000_event_watcher
-Revises: 20261031180000_bridges
+Revises: 20261031191500_mail_factor
 Create Date: 2026-11-01
 """
 
@@ -17,7 +17,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "20261101010000_event_watcher"
-down_revision: str | None = "20261031180000_bridges"
+down_revision: str | None = "20261031191500_mail_factor"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
