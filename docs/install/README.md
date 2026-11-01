@@ -238,7 +238,16 @@ kubectl -n maity create secret generic maity-postgres --from-file=password=./pg-
 (umask 077; { printf 'postgresql://maity:'; cat pg-password; printf '@maity-postgres:5432/maity'; } > database-url)
 kubectl -n maity create secret generic maity-hub-db --from-file=database-url=./database-url
 rm pg-password database-url
+(umask 077; head -c 32 /dev/urandom | base64 | tr -d '\n' > secret-key)
+kubectl -n maity create secret generic maity-secret-key --from-file=secret-key=./secret-key
+(umask 077; head -c 32 /dev/urandom | base64 | tr -d '\n' > mail-signing-key)
+(umask 077; read -rs p; printf '%s' "$p" > smtp-password)   # type the SMTP password
+kubectl -n maity create secret generic maity-mail --from-file=mail-signing-key=./mail-signing-key --from-file=smtp-password=./smtp-password
+rm mail-signing-key smtp-password   # keep secret-key outside the cluster, then delete it here
 ```
+
+A new `secret-key` leaves everything sealed with the old one unreadable, and a
+new `mail-signing-key` voids the links still out in mails.
 
 **5. The manifests.** Replace `maity.example.org` in `cert.yaml` and
 `hub-values.yaml` first (and drop the join host from both if you run
@@ -254,7 +263,8 @@ Adding the join host to a running installation: extend the Certificate and
 wait until it is `Ready`, delete any Ingress of your own that routes the join
 host, then `helm upgrade` with `ingress.joinHost`, in that order.
 
-**6. The hub.** Set the image digest in `hub-values.yaml`, then:
+**6. The hub.** Set the image digest and the `mail` values in
+`hub-values.yaml`, then:
 
 ```sh
 helm install maity deploy/helm/maity-hub -n maity -f deploy/k3s-single/hub-values.yaml --wait --timeout 10m
@@ -334,6 +344,36 @@ NetworkPolicy out of the box.
    agent needs the `maity` CLI (`pipx install` from
    [`cli/`](../../cli/README.md)) or follows the join page with `curl`.
    What the agent does from there: [`docs/agents.md`](../agents.md).
+
+## Opening registration
+
+A new instance is closed: only accounts made with `maity-hub owner create`
+exist. To let others register, in this order. Every setting is in the table
+in [`hub/README.md`](../../hub/README.md#settings-for-a-public-instance).
+
+1. **Mail first.** Set `MAITY_MAIL_SIGNING_KEY` and the SMTP server (host and
+   sender at least), then send a test mail from *Mail settings* in the admin area.
+   Without complete, enabled mail the hub refuses to open registration, and a
+   mode set in the environment stays closed in effect, with a warning in the
+   log.
+2. **The legal pages.** Write the imprint, privacy notice and terms as instance
+   admin, before anyone registers. They live in the database, not in the
+   repository. The registration form asks for the terms once a `terms` page
+   exists.
+3. **Approval.** The default `operator` holds every new account as `pending`
+   until an admin decides it. Keep it unless you have decided otherwise;
+   `automatic` makes accounts usable at once.
+4. **Second factor for admins.** Set `MAITY_SECRET_KEY` and
+   `MAITY_SIGN_IN_SECOND_FACTOR=required_admins`. Keep a copy of the key outside
+   the instance: without it enrolled humans cannot finish signing in until the
+   key is back or each is reset with `maity-hub second-factor reset`.
+5. **Trusted proxies.** Behind a reverse proxy set `MAITY_TRUSTED_PROXIES` to its
+   addresses, or all clients share one rate-limit bucket.
+6. **No `MAITY_ALLOW_PLAIN_HTTP`.** Remove it from anything public.
+7. **Open.** Set `MAITY_REGISTRATION` to `allowlist` (with
+   `MAITY_REGISTRATION_DOMAINS` or `MAITY_REGISTRATION_ADDRESSES`) or `open`, or
+   choose the mode in the dashboard. `GET /api/v1/admin/settings/registration`
+   shows `effective_mode` and, under `missing`, what still holds it closed.
 
 ## Backups
 
