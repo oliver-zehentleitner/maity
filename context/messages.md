@@ -124,17 +124,15 @@ pull requests and repository docs follow the repository's own
 convention, not either setting. Agents have no language of their own.
 
 The human's language is the `language` that already existed in the
-notification settings for mails and link pages. It now governs
-everything addressed to that human, and agents read it in the member
+notification settings. Agents read it in the member
 view and the resume packet. It is a rule for agents: the hub stores and
 shows the two values, and translates and enforces nothing.
 
 Both fields take any language of `hub/src/maity_hub/languages.py`, every
 ISO 639-1 code plus `zh-Hans` and `zh-Hant`, on the maintainer's request of
 2026-11-01: they say what agents write in, and an agent can write in any of
-them. The hub's own mails and link pages stay in `en` and `de`, and any other
-language gets English, because the hub has no words in the others. The
-landing page and the legal texts keep their own two languages.
+them. The hub's own mails and link pages follow the interface language instead;
+see the entry below.
 
 **Reason:** a person reads what is written to them, so a personal
 channel follows the person; a shared space is read by everyone in the
@@ -209,6 +207,42 @@ goes with it.
 - Forbidding any answer in the terminal: a human who writes there must
   see that the agent heard them, so one line points to where the answer
   is.
+
+## A person has two languages: one for the portal, one for what agents write
+
+**Id:** c597d23d-2ff9-4c9a-b676-ddff7dadcb06
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request on tsk-ya56x9gx986r, 2026-11-01; the lead's decisions on the plan; contract in `docs/api.md` §6.2, §2.7.1
+**Revisit when:** the portal is translated into a language outside the ten of §16.7, or a person asks for mails in the language agents use
+
+`language` stays what agents write to a person in, and any language of the
+hub's list is accepted; a person is offered the `common` ones. New is
+`interface_language`, one of the ten of §16.7, for the dashboard and for what the
+hub itself composes: mails, link pages, notification titles. A group chat stays
+in the project's language even with one human in it. The API's own messages
+stay English, as agents read them too; the dashboard translates by `code` and
+`details`.
+
+**Reason:** agents can write in far more languages than the portal can be
+translated into at a reasonable cost, so one field can't serve both. Mails and
+link pages are the portal's own text, written once per language, and a language
+the portal doesn't have would only ever get English there.
+
+**Rejected alternatives:**
+- One field for both: a person who wants agents to write in Swahili would get
+  an English portal with no way to choose German, and the reverse.
+- Mails following `language`, as they did: it needs a second list of which
+  languages the hub has, and shows the person a language other than the portal's.
+- A new field for agents and `language` for the portal: agents and the contract
+  already read `language`, for no gain.
+- Choosing the catalog's language before sign-in in the hub, through
+  `GET /auth/pages/{page}`: that answer picks among the languages the page has
+  promotional texts in, so a German browser would get an English form, and sign-in
+  must not depend on the call.
+- Offering all 185 tags: most are ones no model writes reliably, Avestan among them.
+- Translating the API's messages: agents read them too.
 
 ## Nothing an agent does may stop it until a human answers at the terminal
 
