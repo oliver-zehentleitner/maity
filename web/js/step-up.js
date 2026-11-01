@@ -49,9 +49,11 @@ window.Maity = window.Maity || {};
     },
   };
 
-  // Whether this human proves the factor by mail: not enrolled with TOTP, and the mail is
-  // what the hub asks for (GET /auth/second-factor `via`). A failed read keeps the code question.
-  const byMail = () => M.api.get("/auth/second-factor").then((s) => !!s && !s.enrolled && s.via === "email", () => false);
+  // Whether this human proves the factor by mail: not enrolled with TOTP. The hub asks a human
+  // without TOTP for a step-up only under the mail factor (§2.8.4), so being asked is enough;
+  // `via`, where GET /auth/second-factor carries it, must then say email. A failed read keeps
+  // the code question.
+  const byMail = () => M.api.get("/auth/second-factor").then((s) => !!s && !s.enrolled && (!("via" in s) || s.via === "email"), () => false);
 
   // Shows the question in slot; resolves once proven, rejects on Cancel. A
   // question still open in the slot (another call's) is cancelled first, so

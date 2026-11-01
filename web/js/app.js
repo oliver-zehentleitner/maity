@@ -360,8 +360,13 @@ window.Maity = window.Maity || {};
   // nothing else, so the page is the step with the brand and the theme around it.
   function renderStep(main, session) {
     append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(false), themeMenu()));
-    // From the mail's link without a next: the dashboard's start, not that address again.
-    const done = (next) => (!safeNext(next) && M.secondFactor.isMailLink() ? M.route.go("/", { replace: true }) : goNext(next));
+    // The hub answers next "/" without a stored one (§2.8.2): from a /sign-in/ address that is the
+    // dashboard's start, not that address again (goNext stays put for "/").
+    const done = (next) => {
+      const n = safeNext(next);
+      if ((!n || n === "/") && M.route.current().path.startsWith("/sign-in/")) M.route.go("/", { replace: true });
+      else goNext(next);
+    };
     M.secondFactor.page(main, session, done, logout);
   }
   function renderStepElsewhere(main, signedIn) {
@@ -1731,16 +1736,19 @@ window.Maity = window.Maity || {};
         if (err.status === 401) { renderLogin(main); return; }
         throw err;
       }
+      // A new session after a sign-out or an ended one: what the old one still gets back (a late
+      // 401) ends nothing, and one that ends now is told again — the second step included.
+      if (sessionEnded) { sessionEnded = false; M.sessionEpoch = (M.sessionEpoch || 0) + 1; }
       // A session that owes the second factor reaches nothing else (§2.8.2): its step.
       if (session && session.second_factor === "required" && M.secondFactor) { renderStep(main, session); return; }
       // The link opened where the sign-in is already complete: nothing to post here.
       if (M.secondFactor && M.secondFactor.isMailLink()) { renderStepElsewhere(main, true); return; }
+      // The step's own address (where a sign-in link's 303 lands) with the sign-in complete: the start.
+      if (M.route.current().path === "/sign-in/second-factor") { M.route.go("/", { replace: true }); return; }
       const me = await M.api.get("/me");
       if (seq !== renderSeq) return;
       // Signed in again after signing out here: the stream may run again.
       M.notify.resume();
-      // A new session: what the old one still gets back (a late 401) ends nothing.
-      if (sessionEnded) { sessionEnded = false; M.sessionEpoch = (M.sessionEpoch || 0) + 1; }
       // An account that waits for approval (§2.7.5) sees that, and nothing else.
       if (me.member && me.member.account_status === "pending") {
         // Its one page has its own address (§16.11): /account/pending.

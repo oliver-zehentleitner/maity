@@ -109,9 +109,10 @@ window.Maity = window.Maity || {};
     status.el);
     append(clear(main), form);
 
-    // The mail's link opened in this browser: posted at once, the human typed nothing.
-    const token = email ? tokenFromAddress() : null;
-    if (token) verify({ email_token: token });
+    // The mail's link opened in this browser: posted at once, the human typed nothing. Read
+    // either way, so that no token stays in the address under a TOTP step.
+    const token = tokenFromAddress();
+    if (email && token) verify({ email_token: token });
     else window.setTimeout(() => input.focus(), 0);
   }
 

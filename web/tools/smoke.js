@@ -4381,7 +4381,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const sfPosts = [];
     win.Maity.api.get = (p, ...r) => (p === "/auth/session" ? (sfSession ? Promise.resolve(Object.assign({}, sfSession))
       : sfGet(p, ...r)) : sfGet(p, ...r));
-    win.Maity.api.post = (p, b) => { if (/^\/auth\/second-factor\//.test(p)) sfPosts.push([p, JSON.stringify(b)]); return sfPost(p, b); };
+    // As the hub does: a verify that goes through makes the session a full one (§2.8.2).
+    win.Maity.api.post = (p, b) => {
+      if (/^\/auth\/second-factor\//.test(p)) sfPosts.push([p, JSON.stringify(b)]);
+      const answer = sfPost(p, b);
+      if (p === "/auth/second-factor/verify") answer.then(() => { sfSession = null; }, () => {});
+      return answer;
+    };
     const sfForm = () => main.querySelector("form.second-factor");
     await go("#/all"); await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
     expect(sfForm() && text(sfForm()).includes("We sent a link and a code to your address. Open the link in this browser, or enter the code from the mail.")
@@ -4412,6 +4418,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     sfPosts.length = 0;
     await go("#/all"); await go("#/sign-in/second-factor/email?token=mailtoken"); for (let k = 0; k < 8; k++) await tick();
     expect(sfPosts.length === 1 && sfPosts[0][1] === JSON.stringify({ email_token: "mailtoken" }), "second factor: the mail's link posts its token from the page " + JSON.stringify(sfPosts));
+    // The hub answers next "/" (§2.8.2): from the link's address the page goes to the start (the fixture's root opens /all), never to the elsewhere page.
+    for (let k = 0; k < 10; k++) await tick();
+    expect(["#/", "#/all"].includes(win.location.hash) && !main.querySelector(".second-factor-elsewhere") && !sfForm(),
+      "second factor: with next \"/\" the link's sign-in goes on to the dashboard's start " + win.location.hash);
+    // The step's own address with the sign-in complete (a link's 303 landing late): the start, not "No such view".
+    await go("#/sign-in/second-factor"); for (let k = 0; k < 8; k++) await tick();
+    expect(["#/", "#/all"].includes(win.location.hash) && !text(main).includes("No such view"), "second factor: /sign-in/second-factor with a full session goes to the start " + win.location.hash);
+    sfSession = Object.assign({}, sfDone);
     // The link in a browser without that session: it completes nothing and says where to open it.
     win.Maity.api.get = (p, ...r) => (p === "/auth/session" ? Promise.reject(new win.Maity.api.ApiError("x", 401, p, "unauthenticated")) : sfGet(p, ...r));
     await go("#/all"); await go("#/sign-in/second-factor/email?token=other"); for (let k = 0; k < 6; k++) await tick();
@@ -4423,7 +4437,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const suSlot = document.createElement("div");
     const suPosts = [];
     let suCalls = 0;
-    win.Maity.api.get = (p, ...r) => (p === "/auth/second-factor" ? Promise.resolve({ enrolled: false, via: "email", required: false }) : sfGet(p, ...r));
+    // As the hub answers today: no via in GET /auth/second-factor; being asked without TOTP is the mail factor (§2.8.4).
+    win.Maity.api.get = (p, ...r) => (p === "/auth/second-factor" ? Promise.resolve({ instance_off: false, enrolled: false, required: false }) : sfGet(p, ...r));
     win.Maity.api.post = (p, b) => { if (/^\/auth\/second-factor\//.test(p)) suPosts.push([p, JSON.stringify(b)]); return sfPost(p, b); };
     const suRun = win.Maity.stepUp.run(() => (++suCalls === 1 ? Promise.reject(new win.Maity.api.ApiError("x", 403, "/x", "forbidden", { reason: "step_up_required" })) : Promise.resolve("done")),
       suSlot, "Changing your password");
