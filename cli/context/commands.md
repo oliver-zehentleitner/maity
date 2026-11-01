@@ -1494,3 +1494,18 @@ cost a call and could still be out of date.
 
 **Known limit:** `maity say --type update --task X human` sends the word
 `human` as the text.
+
+## `report` asks the forge before it refuses over a pull request the hub calls open
+
+**Id:** e44fcb30-5ba5-4e52-a801-c4763312826b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-rcn2xspk7e0h; PR #846 was closed on the forge on 2026-10-31 while its card's `report.observed.pr_state` stayed `open`, which stopped reports until the lead closed the card by hand
+**Revisit when:** the hub's observation is known to follow a closed pull request within seconds, or `report` must work without `gh`
+
+`report.observed` is the hub's last look, so it can be old. `_card_pr_mismatch` only refuses over it after `gh pr view` also says `open`. When `gh` can't answer, the refusal stays and says the state is unchecked. The call happens only on the way to a refusal, so an ordinary report costs no extra request. A link of kind `pr` on the card still refuses without asking: it is a statement about the card, not an observation.
+
+**Rejected alternatives:**
+- Letting the hub look again during the report: it needs a contract change and a forge read in the request, and the hub's observation is the part that was out of date. The hub's re-reading stays a question of its own on the card.
+- Reporting anyway when `gh` can't answer: the refusal protects the card from a report of the wrong pull request, and a failing `gh` proves nothing about the state.
