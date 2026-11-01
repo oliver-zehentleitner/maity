@@ -2938,7 +2938,10 @@ Response `201`:
   "id": "join-0007",
   "join_url": "https://join.maity.team/9fK2…",
   "code": "Q7MD-3XPL-8ZWE",
-  "paste_line": "pipx install maity && export PATH=\"$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}\" && maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE",
+  "paste_lines": {
+    "posix": "export PATH=\"$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}\" && { command -v maity >/dev/null 2>&1 || pipx install maity; } && maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE",
+    "windows": "$env:Path += \";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR } else { \"$HOME\\.local\\bin\" })\"; if (-not (Get-Command maity -ErrorAction SilentlyContinue)) { pipx install maity }; maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE"
+  },
   "agent_id": "agt-b",
   "project": "oliver/maity",
   "via": "join",
@@ -2946,13 +2949,16 @@ Response `201`:
 }
 ```
 
-`join_url` and `paste_line` follow `via`: on the join host the URL is
+`join_url` and `paste_lines` follow `via`: on the join host the URL is
 `https://join.maity.team/9fK2…` (no prefix, §1.1); with `"public"` or
 without a join host it is `https://maity.team/join/9fK2…` as before. The
-token is valid in both shapes whatever `via` says. `paste_line` installs
-and joins in one command, as §3.2 "The install line" builds it, so a
-fresh machine needs nothing first. `join_url`, `code` and `paste_line`
-appear in this response only. `GET` lists `{id, agent_id, trust, role,
+token is valid in both shapes whatever `via` says. `paste_lines` holds
+the command that installs the CLI if it is missing and joins, once per
+platform, as §3.2 "The install line" builds it: `posix` for a shell on
+Linux or macOS, `windows` for PowerShell. A fresh machine needs nothing
+first. The hub answers both because the code appears only here, so the
+dashboard can offer the choice without asking again. `join_url`, `code`
+and `paste_lines` appear in this response only. `GET` lists `{id, agent_id, trust, role,
 created_by, created_at, expires_at, used_at, burned, revoked_at, via,
 new_instance, replaces, instance, takes_over, handover}` (`instance`: the id the exchange gave)
 and nothing that opens the join. `DELETE` revokes
@@ -3123,21 +3129,29 @@ The page adds `pip install --user` with the same target as the
 alternative, the minimum Python version (3.11), and that the curl
 exchange needs no install at all.
 
-The join line is that install line and `maity join` in one command, so
-that a fresh machine needs nothing first: `<install line> && maity join
+The join line is that install line, run only when `maity` is missing,
+and `maity join` in one command, so that a fresh machine needs nothing
+first and a machine that has the CLI installs nothing:
+`{ command -v maity >/dev/null 2>&1 || <install line>; } && maity join
 <url> --code <code>`. The dashboard's join dialog shows it as
-`paste_line` (§3.1); the join page's item 7 and `/help` show the same
-shape with the placeholder `<code>`, since neither ever contains a code. pipx
-puts `maity` into its bin directory, `~/.local/bin` unless
+`paste_lines.posix` (§3.1); the join page's item 7 and `/help` show the
+same shape with the placeholder `<code>`, since neither ever contains a
+code. pipx puts `maity` into its bin directory, `~/.local/bin` unless
 `PIPX_BIN_DIR` says otherwise, which a shell started before the install
 often does not have on its `PATH`; so when the install line starts with
-`pipx `, the hub puts `export PATH="$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}"`
-between the two, and the command finds `maity` in the same shell. It
+`pipx `, the command begins with
+`export PATH="$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}" && `, and finds a
+`maity` installed earlier or by this command in the same shell. It
 asks pipx nothing: `pipx environment` exists only from pipx 1.1, and on
 an older pipx a failed `$(…)` would leave an empty `PATH` element, which
-means the current directory. A CLI already
-installed is kept as it is (`pipx install` leaves an existing one
-alone). For later shells the page, `/help` and `maity join`'s own output
+means the current directory.
+
+`paste_lines.windows` is the same command for PowerShell:
+`if (-not (Get-Command maity -ErrorAction SilentlyContinue)) { <install
+line> }; maity join <url> --code <code>`, with `;` because Windows
+PowerShell 5.1 has no `&&`. When the install line starts with `pipx `, it
+begins with `$env:Path += ";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR }
+else { "$HOME\.local\bin" })"; `. `cmd.exe` gets no line of its own. For later shells the page, `/help` and `maity join`'s own output
 add one sentence: if `maity` is not found, run `pipx ensurepath` once
 and open a new shell. The line changes no shell profile itself.
 
