@@ -1458,7 +1458,8 @@ window.Maity = window.Maity || {};
     }],
     ["GET", /^\/auth\/session$/, (m, body, path) => {
       if (!fixtureSignedIn) fail(401, "unauthenticated", "Not signed in", path);
-      return Object.assign({ session_id: fixtures()["sessions.json"].current }, fixtures()["auth-session.json"]);
+      return Object.assign({ session_id: fixtures()["sessions.json"].current }, fixtures()["auth-session.json"],
+        window.MAITY_FIXTURE_ENROLMENT ? { second_factor: "enrolment_required" } : null);
     }],
     // §2.6.5: the human's sessions, newest first; ended ones of 30 days on ask.
     ["GET", /^\/auth\/sessions$/, (m, body, path, query) => {
@@ -2059,6 +2060,14 @@ window.Maity = window.Maity || {};
       value.last_test = { ok: true, stage: null, smtp_code: 250, detail: null, at: nowIso() }; return value.last_test;
     }],
     // §16.1: the instance admin's list, by handle, filtered and paged.
+    // §2.8.3: a mail with a link; nothing changes here. The refusals the page words are the smoke's stubs.
+    ["POST", /^\/admin\/users\/([^/]+)\/second-factor\/reset$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      if (decodeURIComponent(m[1]) === me().member.id) fail(403, "forbidden", "use a recovery code", path, { reason: "own_account" });
+      if (!fixtures()["admin-users.json"].items.some((u) => u.id === decodeURIComponent(m[1]))) fail(404, "not_found", "no such human", path);
+      if (!body.reason || !body.reason.trim()) fail(400, "invalid", "reason", path, { fields: { reason: "invalid" } });
+      return { expires_at: new Date(Date.now() + 24 * 3600 * 1000).toISOString().replace(/\.\d{3}Z$/, "Z") };
+    }],
     ["GET", /^\/admin\/users$/, (m, body, path, query) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
       const q = query.get("q");
@@ -4249,6 +4258,8 @@ window.Maity = window.Maity || {};
       if (!fixtureSignedIn && !/^\/auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|device-codes(\/.*)?)$/.test(path) && path !== "/legal" && path !== "/openapi.json" && !path.startsWith("/invitations/")) {
         fail(401, "unauthenticated", "Not signed in", fullPath);
       }
+      // The fixture hub holds this session in enrolment (§2.8.5): outside /auth/* it refuses.
+      if (window.MAITY_FIXTURE_ENROLMENT && !path.startsWith("/auth/")) fail(403, "forbidden", "set up the second factor", fullPath, { reason: "second_factor_enrolment_required" });
       path = namespaced(path, fullPath);
       for (const [verb, pattern, handler] of routes) {
         if (verb !== method) continue;

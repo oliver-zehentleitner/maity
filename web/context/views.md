@@ -1247,7 +1247,7 @@ same as the panel, on a desktop it hides the board the card belongs to.
 **Source:** the maintainer's card tsk-05meme59sq1x, 2026-10-31 (bell between the gear and the profile, a bold "+" right of the Lead button with Agent and User, `/invite` for invitations, Invite user and Join agent on Members, the old invitation form on Members gone) and his word the same day to take the Runners tab out of the project tabs, linked from Project settings instead; docs/api.md §16.11 (`/invite`, contract #919); the dashboard's implementation, 2026-10-31
 **Revisit when:** the agents page gets its join at the top (the same card's next part), a project gets more ways to bring someone in, or an endpoint gives the invitations of all one's projects at once (then `/invite` no longer reads them one project at a time)
 
-The signed-in header reads Chat, Lead, "+", the gear, the bell, the
+The signed-in header reads Lead, Chat (the maintainer's order, tsk-td5c6z21xg5s, 2026-11-01), "+", the gear, the bell, the
 profile. "+" is a menu like the gear's with Agent (the agents page) and
 User (`/invite`), for humans only. `/invite` lists the projects where the
 human adds members. The one chosen (`?project=`, as Members' Invite user
@@ -2087,7 +2087,7 @@ to open: their credentials and the preferences switch were theirs on the
 Agents page. Loading every agent's credentials with the list: a call per
 agent on every visit, for rows mostly never opened.
 
-## The lead is reached by a Lead button beside Chat, not by Chat itself or a strip
+## The lead is reached by a Lead button left of Chat, not by Chat itself or a strip
 
 **Id:** 0ff66bde-7c26-412a-a856-069b52764910
 **Type:** decision
@@ -2097,7 +2097,7 @@ agent on every visit, for rows mostly never opened.
 **Revisit when:** the Team page (req-2mwv85k5e1s6) gives the leads a place of their own, or a project names more than one lead by policy
 
 Chat in the header is a button like the bell and always opens every chat.
-The Lead button beside it reaches whom `M.leadChat.targets` names (the
+The Lead button left of it (first right of Chat; the maintainer swapped them on 2026-11-01, tsk-td5c6z21xg5s) reaches whom `M.leadChat.targets` names (the
 policy's lead now, one's own proxy; without a lead the admin agents and
 one's own proxy; until 2026-10-30 on an older hub only one's own admin
 and proxy agents, e1699490), across every project outside one: one is opened at once,
@@ -3936,6 +3936,30 @@ The form shows an unset `agent_owners` as "Not set, follows the public page (now
 A session in `enrolment_required` gets the setup drawn by `render()` like the second-factor step, not routed, so the address asked for stays, often `/`. The secret and the recovery codes live only in the DOM of the step that shows them and go with it; the codes leave the page only by the human's **Download**. Setup, new codes and **Turn off** go through `M.stepUp.run`, as the hub asks for the password or the factor and the page repeats the call.
 
 **Rejected alternative:** a route of its own for the setup: a session in enrolment reaches nothing else, so the page must be the same either way. Keeping the codes until the next visit: §2.8.1 shows them once.
+
+## The enrolment page is guarded only while it is on the page
+
+**Id:** 056d57c5-e0d5-4fc1-83d1-d4042c55dab8
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.8.5; review of #1004; tsk-xtnxws153a7x
+
+A refusal `second_factor_enrolment_required` draws the setup through `render()`; a flag stops a late refusal from drawing it over itself, which would throw away the secret being typed. `render()` clears the flag and only `renderEnrolment` sets it for good, so it says "the setup is on the page". The first form, cleared only when the setup succeeded, left a tab that signed out, or whose hub let go of the requirement, deaf to the next refusal.
+
+**Rejected alternative:** tying the flag to the session epoch: a hub that releases the same session keeps the epoch, and the tab stays deaf.
+
+## The reset form stays open and names no enrolment state
+
+**Id:** a5c7675b-8785-4a40-b088-b0a0022818c5
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.8.3, §2.8.7; tsk-xtnxws153a7x
+
+Admin → Users offers **Reset two-factor sign-in** on every row but one's own, and the hub's `409 conflict` says when the person has no factor: `GET /admin/users` does not carry whether someone enrolled, and the list stays counts and times. The form is one under the list, not one per row, and stays through a search, so the warning to confirm by another channel is read beside the reason, not skimmed in a table cell.
+
+**Rejected alternative:** a confirm dialog: it has no room for the reason and the warning, and a modal is the wrong place for a text someone has to think about.
 
 ## Availability and cover hang under the presence as one note
 
