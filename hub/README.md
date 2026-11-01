@@ -228,6 +228,7 @@ All settings come from the environment.
 | `MAITY_DB_POOL_RECYCLE` | `1800` | Seconds after which a pooled connection is replaced when it is next taken, 0–86400; 0 never replaces. A connect that fails because the database host name does not resolve is tried once more after a short pause. |
 | `MAITY_DB_STATEMENT_TIMEOUT` | `30` | Seconds a statement may run on a PostgreSQL connection of the hub before the server cancels it (`statement_timeout`), 0–3600; 0 turns it off. Not set on `maity-hub migrate` and the other commands, nor on MariaDB or SQLite. |
 | `MAITY_DB_IDLE_IN_TRANSACTION_TIMEOUT` | `60` | Seconds a PostgreSQL connection of the hub may sit in an open transaction without a statement before the server ends it (`idle_in_transaction_session_timeout`), 0–3600; 0 turns it off. Same scope as above. |
+| `MAITY_DIRECT_DATABASE_URL` | unset | PostgreSQL only: the URL for the one connection per hub process that listens (`LISTEN`) for the wake-ups other replicas send, so a long-poll wakes when another replica writes. Set it when `MAITY_DATABASE_URL` goes through a pooler in transaction mode, which cannot hold a `LISTEN`; unset, the listener uses `MAITY_DATABASE_URL`. |
 | (the health check) | own connection | Not a setting. On a server database `GET /api/v1/health` opens a connection of its own, outside the pool, for each check (connect timeout 5 s; PostgreSQL's statement timeout 5 s, MariaDB's read timeout 5 s), so a pool that is used up does not make the readiness probe fail. SQLite has one engine. |
 | `MAITY_SECRET_KEY` | unset | The instance key for secrets stored at rest (`docs/api.md` §16.2, §17.4): 32 random bytes, base64 (`head -c 32 /dev/urandom \| base64`). AES-256-GCM, a random nonce per value and the field's name as associated data. Never in the database, never logged or returned; a value that is not 32 base64 bytes stops the hub. Without it a forge webhook secret cannot be created (`secret_key_missing`). A key that changes makes every stored secret unusable until it is set again.
 | `MAITY_TRUSTED_PROXIES` | empty | Comma-separated addresses or CIDRs of reverse proxies whose `X-Forwarded-Proto` and `X-Forwarded-For` the hub believes. Empty: forwarded headers change nothing. |
@@ -274,7 +275,12 @@ With `-n`, each worker gets a database of its own next to that one
 (`maity_test_gw0`, `maity_test_gw1`, …). The suite creates it through
 `MAITY_TEST_ADMIN_DATABASE_URL`, which defaults to the same URL; set it to an
 account that may create databases (on MariaDB, root, which also grants the
-test user) when the test user may not. `pytest -m wheel` runs only the tests
+test user) when the test user may not. On PostgreSQL the suite also sets the
+test database's default time zone to `Europe/Vienna` (`ALTER DATABASE`), so a
+time that depends on the session's zone fails there instead of passing on UTC.
+That runs through the account of `MAITY_TEST_ADMIN_DATABASE_URL` (by default the
+test user), which must own the test database or be a superuser, also without
+`-n`. `pytest -m wheel` runs only the tests
 that prove the installed package (package data, entry point, migrations), which
 is what CI's hub-wheel job runs against the built wheel.
 
@@ -302,9 +308,10 @@ agent picks its answer up with its next resume; then each agent waits
 wakes. It exits 0 only when all of that worked.
 
 CI (`.github/workflows/ci.yml`) runs `make check` on SQLite, the test
-suite on PostgreSQL 17 and MariaDB 11.4 and against the built wheel on
-Python 3.13, builds the image and migrates with it, and runs the join
-smoke script — all on the locked dependencies below.
+suite on PostgreSQL 17 and against the built wheel on Python 3.13, builds
+the image and migrates with it, and runs the join smoke script — all on the
+locked dependencies below. The suite on MariaDB 11.4 runs hourly on main
+(`.github/workflows/hub-mariadb.yml`), not per pull request.
 
 ### Dependencies
 
@@ -422,7 +429,14 @@ that comparison does not see, have tests of their own.
 
 Memory (`docs/api.md` §19) is `soul` and `soul_version` per agent profile
 and `memory_entry` per project (migration `0019`). A team's entries hang
-on its membership, community entries on none. A deleted entry stays as a
+on its membership, role entries on the role's actual name (including a
+project role), and community entries on neither. Members read and write
+their own role's store; owner/admin members may choose another role,
+while a proxy stays within its own role. Guests read without writing.
+The resume packet carries the current role's newest entries in its own
+4 KiB compact block, with `total` and `truncated` beside the team and
+community blocks. A role change changes the store read, leaving earlier
+entries with their original role. A deleted entry stays as a
 tombstone with its text removed. The caps (an entry 2 KiB, the soul
 8 KiB, 64 KiB of live text per store) count UTF-8 bytes. Agent soul proposals
 (`POST /me/soul/proposals`, `{markdown, reason}`) return a personal consent
@@ -430,5 +444,7 @@ for the profile owner, who can answer outside the project. Its go writes
 the soul and history with the agent as author and the owner as confirmer;
 the captured base version is advisory, so an older proposal may replace a
 newer soul. Project lists and events never contain the proposed text.
+The role-memory migration refuses a downgrade while role entries or
+their tombstones exist, preserving history the older schema cannot hold.
 
 Why it is built this way: [`context/`](context/index.md).

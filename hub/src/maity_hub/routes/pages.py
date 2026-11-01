@@ -15,7 +15,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, Response
 from sqlalchemy import Connection, select
 
-from maity_hub import landing, landing_stats, legal, render
+from maity_hub import campaigns, landing, landing_stats, legal, render
 from maity_hub import tables as t
 from maity_hub.auth import caller as auth_caller
 from maity_hub.deps import engine_of, settings_of
@@ -31,30 +31,86 @@ LANDING_CSP = (
 )
 LEGAL_CSP = "default-src 'none'; style-src 'unsafe-inline'"
 PUBLIC = "public, max-age=60"
+PRIVATE = "private, max-age=60"
 
 
 def landing_html(
-    conn: Connection, request: Request, setting: dict[str, Any], *, lang: str | None
+    conn: Connection,
+    request: Request,
+    setting: dict[str, Any],
+    *,
+    lang: str | None,
+    variant: str | None = None,
+    campaign: str | None = None,
 ) -> str:
-    """The landing page of the saved setting, for the language the visitor asked for."""
-    pages = setting["pages"]
+    """The landing page of the saved setting (or one of its variants), for the language the
+    visitor asked for. While variants or campaigns are set, every link to `/register` carries
+    the visitor's origin, `v` and (for a campaign the admin created) `c` (§16.7.2)."""
+    pages = setting["variants"][variant]["pages"] if variant else setting["pages"]
     chosen = render.choose_language(
-        list(pages), setting["default_language"], lang, request.headers.get("accept-language")
+        render.ordered_languages(pages, setting["default_language"]),
+        setting["default_language"],
+        lang,
+        request.headers.get("accept-language"),
     )
     stats = landing_stats.current(conn) if landing_stats.named(setting) else None
-    return render.landing_document(
+    html = render.landing_document(
         setting,
         chosen,
         public_url=settings_of(request).public_url,
         legal=legal.public(legal.stored(conn)),
         stats=stats,
+        variant=variant,
     )
+    if landing.configured(setting):
+        html = render.carry_origin(
+            html,
+            variant or landing.DEFAULT_VARIANT,
+            campaign,
+            settings_of(request).public_url,
+        )
+    return html
+
+
+def known_campaign(setting: dict[str, Any], code: str | None) -> str | None:
+    """The campaign code of `?c=` when the admin created it, else none: an unknown or malformed
+    code is treated as none, not echoed (§16.7.2)."""
+    if code is not None and code in {one["code"] for one in setting["campaigns"]}:
+        return code
+    return None
+
+
+def _count_view(
+    conn: Connection,
+    request: Request,
+    setting: dict[str, Any],
+    variant: str,
+    campaign: str | None,
+    as_: str | None,
+) -> None:
+    """A view of the main page or a variant, while variants or campaigns are set and the request
+    is a browser's top-level navigation (§16.7.2); the sum of the day, nothing about the visit."""
+    if landing.configured(setting) and campaigns.is_view(
+        request.method, request.headers, as_public=as_ == "public"
+    ):
+        campaigns.view(conn, variant, campaign)
+
+
+def landing_headers(setting: dict[str, Any]) -> dict[str, str]:
+    """The landing page's headers: `private` while campaigns or variants are set, so that a
+    shared cache does not swallow the views (§16.7.2); `public` otherwise (§16.7)."""
+    return {
+        "Cache-Control": PRIVATE if landing.configured(setting) else PUBLIC,
+        "Vary": "Cookie, Accept-Language",
+        "Content-Security-Policy": LANDING_CSP,
+    }
 
 
 @page_router.api_route("/", methods=["GET", "HEAD"], include_in_schema=False)
 def root(
     request: Request,
     lang: str | None = None,
+    c: str | None = None,
     as_: str | None = Query(None, alias="as"),
 ) -> Response:
     """The landing page for a visitor without a valid session, or for anyone who asks to see
@@ -64,18 +120,32 @@ def root(
         setting = landing.stored(conn)
         visitor = as_ == "public" or not auth_caller.has_live_session(conn, request.cookies)
         if setting["enabled"] and visitor:
-            body = landing_html(conn, request, setting, lang=lang)
-            return HTMLResponse(
-                body,
-                headers={
-                    "Cache-Control": PUBLIC,
-                    "Vary": "Cookie, Accept-Language",
-                    "Content-Security-Policy": LANDING_CSP,
-                },
-            )
+            campaign = known_campaign(setting, c)
+            body = landing_html(conn, request, setting, lang=lang, campaign=campaign)
+            _count_view(conn, request, setting, landing.DEFAULT_VARIANT, campaign, as_)
+            return HTMLResponse(body, headers=landing_headers(setting))
+    return _shell(settings)
+
+
+def _shell(settings: Any) -> Response:
     if settings.web_dir is None or not (settings.web_dir / "index.html").is_file():
         raise not_found()  # a hub without a dashboard serves the API alone
     return shell_response(settings.web_dir)
+
+
+@page_router.api_route("/for/{slug}", methods=["GET", "HEAD"], include_in_schema=False)
+def variant(request: Request, slug: str, lang: str | None = None, c: str | None = None) -> Response:
+    """A variant of the landing page (§16.7.2), for every visitor, with or without a session,
+    while the landing page is enabled and the variant exists; the app shell otherwise, as an
+    unknown path would be, so that an address does not tell whether a variant existed."""
+    with engine_of(request).begin() as conn:
+        setting = landing.stored(conn)
+        if setting["enabled"] and slug in setting["variants"]:
+            campaign = known_campaign(setting, c)
+            body = landing_html(conn, request, setting, lang=lang, variant=slug, campaign=campaign)
+            _count_view(conn, request, setting, slug, campaign, None)
+            return HTMLResponse(body, headers=landing_headers(setting))
+    return _shell(settings_of(request))
 
 
 def legal_html(

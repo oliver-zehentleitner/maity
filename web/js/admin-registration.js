@@ -12,6 +12,8 @@ window.Maity = window.Maity || {};
   const { h, append, clear, formatTime } = M.dom;
   const SETTINGS = "/admin/settings/registration";
   const PENDING = "/admin/registrations";
+  // How long a rejected or expired registration blocks its address (§16.4).
+  const BLOCK_DAYS = 30;
 
   // Getters: the words are the catalog's when shown.
   const MODES = ["closed", "allowlist", "open"];
@@ -82,8 +84,14 @@ window.Maity = window.Maity || {};
           M.t("reg.count.dropped", { count: current.requests_dropped_last_hour })].join(" · ")));
     }
 
+    // Values loaded from JSON and not saved yet: shown in the form, which
+    // compares them with the stored ones on Save as it does typed ones.
+    let loaded = {};
+    // The form's values as last drawn (for the export).
+    let formBody = () => ({});
     function draw(words) {
       const v = (name) => (current[name] || {}).value;
+      const shown = (name) => (Object.hasOwn(loaded, name) ? loaded[name] : v(name));
       const fromEnv = (name) => (current[name] || {}).source === "env";
       const source = (name) => {
         const from = (current[name] || {}).source;
@@ -95,27 +103,42 @@ window.Maity = window.Maity || {};
 
       const mode = h("select", { id: id("mode"), disabled: fromEnv("mode") ? true : null, "aria-describedby": id("mode") + "-error" },
         MODES.map((k) => h("option", { value: k }, MODE_LABELS[k])));
-      mode.value = v("mode");
+      mode.value = shown("mode");
       const domains = h("textarea", { id: id("domains"), rows: "3", placeholder: "@example.com", disabled: fromEnv("domains") ? true : null,
         "aria-describedby": id("domains") + "-hint " + id("domains") + "-error" });
-      domains.value = (v("domains") || []).join("\n");
+      domains.value = (shown("domains") || []).join("\n");
       const addresses = h("textarea", { id: id("addresses"), rows: "3", placeholder: "ada@example.net", disabled: fromEnv("addresses") ? true : null,
         "aria-describedby": id("addresses") + "-error" });
-      addresses.value = (v("addresses") || []).join("\n");
+      addresses.value = (shown("addresses") || []).join("\n");
       const approval = h("select", { id: id("approval"), disabled: fromEnv("approval") ? true : null },
         APPROVALS.map((k) => h("option", { value: k }, APPROVAL_LABELS[k])));
-      approval.value = v("approval");
+      approval.value = shown("approval");
       const terms = v("terms");
+      const termsShown = shown("terms");
       const termsOff = fromEnv("terms") || (current.terms || {}).source === "legal_pages";
       const termsUrl = h("input", { id: id("terms-url"), type: "url", placeholder: "https://example.com/terms", disabled: termsOff ? true : null,
         "aria-describedby": id("terms") + "-error" });
-      termsUrl.value = terms ? terms.url : "";
+      termsUrl.value = termsShown ? termsShown.url : "";
       const termsVersion = h("input", { id: id("terms-version"), placeholder: "2026-10", disabled: termsOff ? true : null,
         "aria-describedby": id("terms") + "-error" });
-      termsVersion.value = terms ? terms.version : "";
+      termsVersion.value = termsShown ? termsShown.version : "";
       const max = h("input", { id: id("max"), type: "number", min: "1", step: "1", disabled: fromEnv("max_new_accounts_per_hour") ? true : null,
         "aria-describedby": id("max") + "-error" });
-      max.value = String(v("max_new_accounts_per_hour"));
+      max.value = String(shown("max_new_accounts_per_hour"));
+      // What a PATCH would carry, from the form; a value the environment sets is left out.
+      formBody = () => {
+        const out = {};
+        const put = (name, value) => { if (!fromEnv(name)) out[name] = value; };
+        put("mode", mode.value);
+        put("domains", listOf(domains.value));
+        put("addresses", listOf(addresses.value));
+        put("approval", approval.value);
+        if (!termsOff) out.terms = termsUrl.value.trim() ? { url: termsUrl.value.trim(), version: termsVersion.value.trim() } : null;
+        // An empty or broken limit is left out, as Save would refuse it: the export stays importable.
+        const n = Number(max.value);
+        if (max.value.trim() && Number.isInteger(n) && n >= 1) put("max_new_accounts_per_hour", n);
+        return out;
+      };
       const save = h("button", { type: "submit" }, M.t("reg.save"));
       const formStatus = M.statusLine();
 
@@ -151,6 +174,7 @@ window.Maity = window.Maity || {};
           try {
             // A settings change asks for the password or a code where the hub requires it (§2.8.4).
             current = await M.stepUp.run(() => M.api.patch(SETTINGS, patch), stepSlot, M.t("reg.step_up"));
+            loaded = {};
             draw(M.t("reg.saved"));
             return;
           } catch (err) {
@@ -177,7 +201,7 @@ window.Maity = window.Maity || {};
       errors.domains,
       h("label", { for: id("addresses") }, M.t("reg.field.addresses"), source("addresses")), addresses, errors.addresses,
       h("label", { for: id("approval") }, M.t("reg.field.approval"), source("approval")), approval,
-      h("fieldset", { class: "reg-terms" }, h("legend", null, M.t("reg.field.terms"), source("terms")),
+      h("fieldset", { class: "reg-terms field-stack" }, h("legend", null, M.t("reg.field.terms"), source("terms")),
         h("label", { for: id("terms-url") }, M.t("reg.terms.url")), termsUrl,
         h("label", { for: id("terms-version") }, M.t("reg.terms.version")), termsVersion,
         h("p", { class: "hint" }, (current.terms || {}).source === "legal_pages" ? M.t("reg.terms.from_legal") : M.t("reg.terms.hint")),
@@ -190,6 +214,28 @@ window.Maity = window.Maity || {};
       append(clear(body), summary, form);
     }
     draw();
+    // Import and export of the setting as the PATCH body (§16.4). The hub has no
+    // dry check here: a loaded value is checked when it is saved.
+    append(root, M.jsonIo.part({
+      id: "reg-json",
+      hint: M.t("jsonio.reg.hint"),
+      body: () => formBody(),
+      load: async (data, io) => {
+        const keys = M.jsonIo.isObject(data) ? Object.keys(data) : [];
+        const refused = check(data);
+        if (refused) { io.fail(M.t("jsonio.not_loaded"), { message: refused }); return false; }
+        // A value the environment sets stays as it is (the hub refuses it, set_by_environment).
+        const fixed = keys.filter((k) => (current[k] || {}).source === "env" || (k === "terms" && (current.terms || {}).source === "legal_pages"));
+        if (!window.confirm(fixed.length ? M.t("jsonio.reg.confirm_fixed", { fields: M.fmt.list(fixed) }) : M.t("jsonio.reg.confirm"))) return false;
+        // What the form shows and the JSON does not name stays, typed or not: the form as it is, the import over it.
+        loaded = formBody();
+        keys.filter((k) => !fixed.includes(k)).forEach((k) => { loaded[k] = data[k]; });
+        draw();
+        io.done();
+        append(io.el, h("span", { class: "ok" }, M.t("jsonio.reg.loaded")));
+        return true;
+      },
+    }).el);
     status.done();
     const pendingBox = h("div", { class: "reg-pending" });
     append(root, pendingBox);
@@ -222,7 +268,7 @@ window.Maity = window.Maity || {};
       const approve = h("button", { type: "button", class: "primary" }, M.t("reg.pending.approve"));
       const reject = h("button", { type: "submit", class: "danger" }, M.t("reg.pending.reject"));
       const fail = (err) => rowStatus.fail(M.t("reg.pending.not_done"), err.code === "invalid_transition"
-        ? { message: M.t("reg.pending.decided", { from: (err.details || {}).from || "decided" }) } : err);
+        ? { message: (err.details || {}).from ? M.t("reg.pending.decided", { from: err.details.from }) : M.t("reg.pending.decided_unknown") } : err);
       approve.addEventListener("click", async () => {
         approve.disabled = true;
         rowStatus.busy(M.t("reg.pending.approving"));
@@ -245,7 +291,7 @@ window.Maity = window.Maity || {};
             rowStatus.busy(M.t("reg.pending.rejecting"));
             try {
               await M.api.post(PENDING + "/" + encodeURIComponent(r.id) + "/reject", { reason: why.value.trim() });
-              await decided(M.t("reg.pending.rejected", { handle: r.handle, count: 30 }));
+              await decided(M.t("reg.pending.rejected", { handle: r.handle, count: BLOCK_DAYS }));
             } catch (err) { reject.disabled = false; fail(err); if (err.code === "invalid_transition") load(); }
           },
         }, h("label", { for: reasonId }, M.t("reg.pending.reject_label")), why, reject),
@@ -277,9 +323,31 @@ window.Maity = window.Maity || {};
         go.disabled = false;
       },
     }, h("h3", null, M.t("reg.block.title")),
-    h("p", { class: "hint" }, M.t("reg.block.hint", { count: 30 })),
+    h("p", { class: "hint" }, M.t("reg.block.hint", { count: BLOCK_DAYS })),
     h("label", { for: "reg-block-address" }, M.t("reg.block.address")), address, go, status.el);
   }
 
-  M.adminRegistration = { section };
+  // The setting's JSON (the body of its PATCH, §16.4): which fields it may name, and what
+  // kind each value is, as the form can show it; the hub checks the rest on Save. Used by
+  // this section's import and by the whole site's (js/site-io.js).
+  const FIELDS = ["mode", "domains", "addresses", "approval", "terms", "max_new_accounts_per_hour"];
+  const strings = (x) => Array.isArray(x) && x.every((e) => typeof e === "string");
+  const KINDS = {
+    mode: (x) => MODES.includes(x),
+    domains: strings,
+    addresses: strings,
+    approval: (x) => APPROVALS.includes(x),
+    terms: (x) => x === null || (M.jsonIo.isObject(x) && typeof x.url === "string" && typeof x.version === "string"),
+    max_new_accounts_per_hour: (x) => Number.isInteger(x) && x >= 1,
+  };
+  // null when the JSON is a body the setting takes; else what is wrong, in words.
+  function check(data) {
+    const keys = M.jsonIo.isObject(data) ? Object.keys(data) : [];
+    const unknown = keys.filter((k) => !FIELDS.includes(k));
+    if (!keys.length || unknown.length) return unknown.length ? M.t("jsonio.reg.unknown", { fields: M.fmt.list(unknown) }) : M.t("jsonio.reg.shape");
+    const wrong = keys.filter((k) => !KINDS[k](data[k]));
+    return wrong.length ? M.t("jsonio.reg.wrong", { fields: M.fmt.list(wrong) }) : null;
+  }
+
+  M.adminRegistration = { section, check, FIELDS };
 })(window.Maity);

@@ -565,3 +565,35 @@ def test_an_admin_agent_asks_both_owners_and_only_its_own_request_may_be_ended_b
     assert all(r.status == "open" for r in _requests(migrated))
     assert put(admin, lent, reports_to=None).status_code == 200  # the asker may supersede
     assert all(r.status == "withdrawn" for r in _requests(migrated))
+
+
+def test_an_admin_agents_change_waiting_for_a_go_does_not_end_the_owners_decision(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§6.2 "Pending", where the `PATCH` would first wait for the owner's go (§2.3 ᵃ); the
+    asker's own change goes through and its go ends the pair."""
+    friend = flow.human(make_client, migrated, "friend")
+    lent = _lent(migrated, friend)
+    boss = flow.agent(make_client, owner)
+    admin = flow.agent(make_client, owner, role="admin", reports_to=owner.id)
+    other_admin = flow.agent(make_client, owner, role="admin", reports_to=owner.id)
+    asked = put(admin, lent, reports_to=boss.id)
+    assert asked.status_code == 202, asked.text
+    pair = asked.json()["id"]
+    lent_id = _row(migrated, lent).id
+    with migrated.begin() as conn:  # a reviewer: its change needs the owner's go (§2.3 ᵃ)
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == lent_id)
+            .values(role="reviewer", role_base="reviewer")
+        )
+    refused = put(other_admin, lent, reports_to=None, role="coder")
+    assert refused.status_code == 403
+    assert refused.json()["error"]["details"] == {"reason": "pending_consent"}
+    assert _status(migrated, pair).status == "open"
+    waiting = put(admin, lent, reports_to=None, role="coder")
+    assert waiting.status_code == 202, waiting.text
+    assert _status(migrated, pair).status == "open"  # until the go
+    go = owner.post(f"{PROJECT}/requests/{waiting.json()['id']}/answer", {"reply_id": "go"})
+    assert go.status_code == 200, go.text
+    assert _status(migrated, pair).status == "withdrawn"

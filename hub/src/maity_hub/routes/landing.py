@@ -10,11 +10,11 @@ from fastapi import APIRouter, Body, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from sqlalchemy import Connection
 
-from maity_hub import clock, landing, landing_stats, legal, previews, render
+from maity_hub import campaigns, clock, landing, landing_stats, legal, previews, render
 from maity_hub.admin import instance_admin_id
 from maity_hub.auth import second_factor
 from maity_hub.deps import HumanCaller, engine_of, settings_of
-from maity_hub.errors import forbidden
+from maity_hub.errors import forbidden, invalid, not_found
 from maity_hub.routes.pages import LANDING_CSP
 
 router = APIRouter()
@@ -26,7 +26,7 @@ def _require_admin(conn: Connection, caller: HumanCaller) -> None:
 
 
 def _admin_view(value: dict[str, Any]) -> dict[str, Any]:
-    return {key: value[key] for key in (*landing.FIELDS, "updated_at", "updated_by")}
+    return {key: value[key] for key in (*landing.ADMIN_FIELDS, "updated_at", "updated_by")}
 
 
 @router.get("/admin/settings/landing")
@@ -76,7 +76,7 @@ def create_landing_preview(
         draft = {k: v for k, v in body.items() if k != "enabled"}
         # Checked as an enabled page: a draft has to have a page to show in its language.
         after = landing.check({**draft, "enabled": True}, landing.stored(conn))
-        payload = {k: after[k] for k in ("default_language", "pages", "footer")}
+        payload = {k: after[k] for k in ("default_language", "pages", "footer", "variants")}
         draft_id, expires = previews.create(conn, caller.human_session or "", "landing", payload)
     return JSONResponse(
         {
@@ -90,7 +90,11 @@ def create_landing_preview(
 
 @router.get("/admin/settings/landing/preview/{draft_id}", response_class=HTMLResponse)
 def show_landing_preview(
-    draft_id: str, request: Request, caller: HumanCaller, lang: str | None = None
+    draft_id: str,
+    request: Request,
+    caller: HumanCaller,
+    lang: str | None = None,
+    variant: str | None = None,
 ) -> Response:
     """The page the hub would serve at `/` for that draft: the served page's own policy,
     `no-store`, `noindex`; another session's draft, an expired one and an unknown one are
@@ -99,9 +103,18 @@ def show_landing_preview(
         _require_admin(conn, caller)
         row = previews.read(conn, draft_id, caller.human_session or "", "landing")
         draft = row.payload
-        pages = draft["pages"]
+        # The draft of a variant (`?variant=<slug>`), else the main page's; a slug the draft does
+        # not have is `not_found`, like an unknown draft.
+        if variant is not None and variant not in draft.get("variants", {}):
+            raise not_found()
+        pages = draft["variants"][variant]["pages"] if variant else draft["pages"]
         # No `Accept-Language`: without `lang` the draft's own default language (§16.7).
-        chosen = render.choose_language(list(pages), draft["default_language"], lang, None)
+        chosen = render.choose_language(
+            render.ordered_languages(pages, draft["default_language"]),
+            draft["default_language"],
+            lang,
+            None,
+        )
         setting = {**landing.stored(conn), **draft}
         body = render.landing_document(
             setting,
@@ -110,6 +123,7 @@ def show_landing_preview(
             legal=legal.public(legal.stored(conn)),
             stats=landing_stats.current(conn) if landing_stats.named(setting) else None,
             preview=True,
+            variant=variant,
         )
     return HTMLResponse(
         body,
@@ -119,3 +133,29 @@ def show_landing_preview(
             "Cache-Control": "no-store",
         },
     )
+
+
+@router.get("/admin/statistics/campaigns")
+def campaign_statistics(
+    request: Request, caller: HumanCaller, days: int = campaigns.DEFAULT_DAYS, format: str = "json"
+) -> Response:
+    """What the hub counted per variant and campaign (§16.7.2): the rows with a non-zero sum,
+    newest day first, as JSON or, with `format=csv`, as an attachment. The counts, not which
+    variant won: that is the reader's."""
+    problems: dict[str, str] = {}
+    if not 1 <= days <= campaigns.MAX_DAYS:
+        problems["days"] = "invalid"
+    if format not in ("json", "csv"):
+        problems["format"] = "invalid"
+    with engine_of(request).begin() as conn:
+        _require_admin(conn, caller)
+        if problems:
+            raise invalid(problems)
+        found = campaigns.statistics(conn, days)
+    if format == "csv":
+        return Response(
+            campaigns.as_csv(found),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="campaigns.csv"'},
+        )
+    return JSONResponse(found)

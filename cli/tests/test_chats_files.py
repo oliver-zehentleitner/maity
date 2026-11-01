@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import errno
 import hashlib
+import io
 import json
 import os
 import stat
@@ -151,7 +152,8 @@ def test_chat_with_nothing_unread_fetches_nothing(
     assert "no unread messages; earlier: maity chat cnv-0007 --before 5021" in out
 
 
-DIRECT_TODAY = {"agent_id": "agt-b", "last_message_at": "x", "unread": 2,
+DIRECT_TODAY = {"id": "agt-b", "kind": "direct", "agent_id": "agt-b",
+                "last_message_at": "x", "unread": 2,
                 "last_message": {"seq": 4300, "from": "hum-1", "body": "?", "sent_at": "x",
                                  "redacted": False}}  # fmt: skip
 
@@ -242,6 +244,94 @@ def test_say_chat_posts_into_the_conversation(joined: Path, fake: fakehub.FakeHu
         201, message(5040))  # fmt: skip
     assert cli.main(["say", "--chat", "cnv-0007", "yes, tagging now"]) == cli.EXIT_OK
     assert fake.signed()[-1].json() == {"body": "yes, tagging now"}
+
+
+@pytest.mark.parametrize("options", [[], ["--type", "notice"]])
+@pytest.mark.parametrize("chat_id", ["cnv-0007", "opaque-chat"])
+def test_say_positional_chat_id_points_to_the_chat_option(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    options: list[str],
+    chat_id: str,
+) -> None:
+    fake.routes[("GET", f"{P}/conversations")] = lambda s: (
+        200, {"items": [{**GROUP, "id": chat_id}], "next_cursor": None}
+    )  # fmt: skip
+    monkeypatch.setattr("sys.stdin", io.StringIO("hello\n"))
+    assert cli.main(["say", chat_id, "-", *options]) == cli.EXIT_USAGE
+    err = capsys.readouterr().err
+    assert "chats take --chat <id>" in err
+    assert f"maity say --chat {chat_id} <message>" in err
+    assert "--type" not in err
+    assert [(s.method, s.path) for s in fake.signed()] == [
+        ("GET", f"{P}/members"), ("GET", f"{P}/conversations")
+    ]  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    ("recipient", "member_id", "handle", "aliases", "expected"),
+    [
+        ("cnv-bot", "agt-a", "cnv-bot", [], "agt-a"),
+        ("cnv-old", "agt-a", "agent-a", ["cnv-old"], "agt-a"),
+        ("cnv-bot#one", "agt-a", "cnv-bot", [], "agt-a#one"),
+        ("cnv-opaque", "cnv-opaque", "agent-a", [], "cnv-opaque"),
+        ("cnv-opaque#one", "cnv-opaque", "agent-a", [], "cnv-opaque#one"),
+    ],
+)
+def test_say_preserves_members_whose_name_or_id_looks_like_a_chat(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    recipient: str,
+    member_id: str,
+    handle: str,
+    aliases: list[str],
+    expected: str,
+) -> None:
+    fake.routes[("GET", f"{P}/members")] = lambda s: (
+        200, {"items": [{"id": member_id, "handle": handle, "aliases": aliases}]}
+    )  # fmt: skip
+    fake.routes[("POST", f"{P}/events")] = lambda s: (201, {"seq": 9})
+    assert cli.main(["say", recipient, "hello", "--type", "notice"]) == cli.EXIT_OK
+    assert fake.signed()[-1].json()["to"] == expected
+
+
+def test_say_unknown_chat_shaped_recipient_keeps_the_hubs_error(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("POST", f"{P}/events")] = lambda s: (
+        400, {"error": {"code": "not_a_member", "message": "not_a_member"}}
+    )  # fmt: skip
+    assert cli.main(["say", "cnv-unknown", "hello", "--type", "notice"]) == cli.EXIT_ERROR
+    assert "not_a_member" in capsys.readouterr().err
+    assert fake.signed()[-1].json()["to"] == "cnv-unknown"
+
+
+@pytest.mark.parametrize("status", [403, 500])
+@pytest.mark.parametrize("typed", [False, True])
+def test_say_failed_chat_hint_keeps_the_normal_command_outcome(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    status: int,
+    typed: bool,
+) -> None:
+    fake.routes[("GET", f"{P}/conversations")] = lambda s: (
+        status, {"error": {"code": "hint_unavailable", "message": "hint unavailable"}}
+    )  # fmt: skip
+    fake.routes[("POST", f"{P}/events")] = lambda s: (
+        400, {"error": {"code": "not_a_member", "message": "not_a_member"}}
+    )  # fmt: skip
+    options = ["--type", "notice"] if typed else []
+    expected = cli.EXIT_ERROR if typed else cli.EXIT_USAGE
+    assert cli.main(["say", "unknown", "hello", *options]) == expected
+    err = capsys.readouterr().err
+    assert ("not_a_member" if typed else "--type is required") in err
+    assert "hint unavailable" not in err
+    assert [s.method for s in fake.signed()] == (
+        ["GET", "GET", "POST"] if typed else ["GET", "GET"]
+    )
 
 
 @pytest.mark.parametrize(

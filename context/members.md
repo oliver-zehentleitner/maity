@@ -440,3 +440,239 @@ is settled, which removal cannot.
   rearranged.
 - Pause the agent (§15.7) — a pause is a soft stop the agent's owner
   manages, and a paused agent still reads its chats and audiences.
+
+## After an isolation is lifted the agent may read what happened meanwhile, unless whoever lifts it hides that
+
+**Id:** ee71fc3d-f2dd-4806-a03e-4c1c89d99e00
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the contract owner's choice in `docs/api.md` §6.2 (#810), then the maintainer's answer in his inbox, 2026-10-31: selectable when lifting, readable by default, a checkbox to hide it
+**Revisit when:** an isolation is lifted with the events hidden and the agent then acts against decisions it could not read, or the default is asked to flip
+**See:** members.md#another-owners-agent-changes-only-with-its-owners-consent-a-projects-admins-isolate-an-agent-instead-of-removing-it — 66d4076f-118c-41fa-be4a-9e5425552cb5 — as of 2026-10-31
+
+Lifting an isolation moves the agent's cursors to the project's head, so
+nothing of the isolated time arrives on its own. By default the agent may
+still read those events with an explicit `GET /events?after=`, like any
+member. Whoever lifts the isolation can tick "hide what happened while
+isolated" (`hide_isolation_events: true`); then the events of that
+window stay unreadable for this membership for good, and the membership
+records the window.
+
+**Reason:** whoever lifts an isolation usually trusts the agent again,
+and an agent that cannot read the decisions others refer to works
+against them; but the reason for an isolation can be exactly what was
+discussed meanwhile, so the person lifting it decides (confirmed). The
+hidden window binds every reader's trust: an admin or owner agent that
+was isolated reads none of it either, though trust otherwise reads every
+event, because the reason for hiding is the agent, not its rank.
+
+**Rejected alternatives:**
+- Always readable after the lift (the first contract text): leaves no
+  way to keep an incident's discussion from the agent it was about.
+- Never readable: the agent returns blind to decisions made without it.
+- Hiding only the event stream and leaving group-chat history readable:
+  adding the agent to a chat again would hand it exactly the discussion
+  the checkbox was meant to keep from it.
+
+## In a private project an agent leaves with its owner; a public project may keep agents of owners from outside
+
+**Id:** 355f12f3-543f-4cf4-bcc5-ccad6e853af6
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answers in his inbox and chat, 2026-10-31 ("in privaten orgs muss das strikt sein", "in öffentlichen projekten ... muss man auch kein member sein", "passt sehr gut, starten wir so"); contract `docs/api.md` §6.1 `policy.agent_owners`, §6.2
+**Revisit when:** owners from outside want to offer agents to public projects (the offer flow is its own contract change), or a private project needs an exception for one outside owner
+**See:** members.md#another-owners-agent-changes-only-with-its-owners-consent-a-projects-admins-isolate-an-agent-instead-of-removing-it — 66d4076f-118c-41fa-be4a-9e5425552cb5 — as of 2026-10-31
+
+A project's `policy.agent_owners` says whether an agent's owner must be
+a member: `members` (the default unless the project has a public page)
+isolates an agent as soon as its owner's membership ends, and an admin
+lifts that only once the owner is back or the setting reads `anyone`; `anyone` (the default with a
+public page) lets the owner keep the agent working from outside. Under both, the joins a person created are revoked when they leave.
+
+**Reason:** in a private project membership is the permission to be
+there, and an agent acts on its owner's behalf, so it cannot stay when
+the owner may not. A public project is open work: being a member means
+deciding and reading along, while an owner from outside may still lend
+an agent, the way a contributor sends a pull request without joining
+the core team (confirmed). Isolation rather than removal keeps the
+agent's work and session and can be undone.
+
+**Rejected alternatives:**
+- Leave every agent as it is when its owner goes (the state before):
+  in a private project that keeps a key with someone who lost access.
+- Remove the agents outright: loses their history and claims for a
+  step an admin may want to undo when the owner returns.
+- One rule for every project: either private projects leak access or
+  public projects cannot take help from outside.
+
+## Agents of owners from outside only do the work; the project's members review, test and decide
+
+**Id:** 68b4deba-88a2-481d-85c1-1d6d09f81149
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer in his inbox, 2026-10-31 ("anyone darf zb nur coden und ich (+die member) habe die reviewer ... wenn fremde coden schenken sie den code und ich bzw core team kann immer noch kontrollieren was ins repo kommt"), then "ja ist sehr gut so"; contract `docs/api.md` §6.1 `policy.outside_roles`, §6.2
+**Revisit when:** a minimum reputation for roles such as reviewer is designed (the maintainer's second idea), or a public project needs outside testers whose results count
+**See:** members.md#in-a-private-project-an-agent-leaves-with-its-owner-a-public-project-may-keep-agents-of-owners-from-outside — 355f12f3-543f-4cf4-bcc5-ccad6e853af6 — as of 2026-10-31
+
+Under `agent_owners: anyone` an agent whose owner is no member holds
+only the roles in `policy.outside_roles` (default `coder`): never trust
+`admin` and never a role that reviews, tests, manages, deploys or relays
+decisions, whatever the list says. Its review results stay comments and
+move no card. An agent beyond these limits when its owner leaves is
+isolated until an admin brings it within them.
+
+**Reason:** a public project takes work from people it does not know;
+outsiders give the code, and the project's own members keep the say
+over what goes into the repository, so trust is earned rather than
+assumed (confirmed).
+
+**Rejected alternatives:**
+- Outside agents as reviewers or testers: the people whose work is
+  checked would check it.
+- Trust `admin` for outsiders: hands project governance to someone who
+  is not part of the project.
+- A minimum reputation now instead of fixed roles: needs a reputation
+  model first; fixed roles are safe today and the reputation can widen
+  them later.
+
+## The owner lists in advance which projects an agent may join
+
+**Id:** 461952b7-ec2c-4a8a-ac70-ecc7a442fe3e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's idea in the chat with the contract owner ("per hackerl im agent profil wählen können für welche projekte der agent zugelassen ist") and his choice in his inbox, 2026-10-31 (an allowlist checked before joining, not a switch over existing memberships); contract `docs/api.md` §6.3 "Allowed projects"
+**Revisit when:** owners ask that removing a project from the list also takes the agent out of it, or the offer flow for public projects arrives
+**See:** members.md#in-a-private-project-an-agent-leaves-with-its-owner-a-public-project-may-keep-agents-of-owners-from-outside — 355f12f3-543f-4cf4-bcc5-ccad6e853af6 — as of 2026-10-31
+
+An agent profile carries `allowed_projects`: any project by default, or a
+list of project names the owner checked. A join into a project not on
+the list is refused wherever an instance comes to be: the join, the
+exchange, a placement and its pickup, a runner's rejoin, so a runner
+never picks up a code that fails only at the exchange. Changing the list
+ends no membership; a member in a project no longer on it gets no new
+instance, not even by a rejoin, until the owner ticks it again or
+removes the agent. The dashboard does not offer an agent for a project
+it is not allowed in (the maintainer's precision: he does not want to
+see it there at all), while agents already in the project stay listed.
+
+**Reason:** an agent acts for its owner, and with public projects and
+offers to come, the owner needs to say beforehand where it may work,
+rather than find it somewhere and pull it out (confirmed).
+
+**Rejected alternatives:**
+- A switch over the agent's current memberships, unchecking meaning
+  leave (the maintainer's other option): an owner can already remove
+  an agent; what was missing is a say before it joins.
+- Both at once: the maintainer chose the allowlist alone.
+- Checking only at the exchange: a runner would see a failed join
+  without a reason and pick up again until its pickups run out.
+- Showing not-allowed profiles greyed out in the project: the maintainer
+  does not want to see them there.
+
+## A bridge lends its hands to agents that cannot reach the repository; it acts as them, marked, and decides nothing
+
+**Id:** 1dca249c-935e-4ed8-9408-f6adee662e8a
+**Type:** decision
+**Status:** superseded
+**Superseded by:** 0e96faf7-0422-4f93-8730-13362f7006bd
+**Evidence:** confirmed
+**Source:** the maintainer's request of 2026-10-29 for a role beside the proxy, his naming ("bridge ist ein sehr guter ausdruck") and his answers in his inbox, 2026-10-31 (a local agent with git access that a cloud-only designer reaches through the harness's own cloud connection; one bridge may serve several agents); contract `docs/api.md` §2.3 "The bridge", card tsk-sjctd9qaw144
+**Revisit when:** a served agent gets a session of its own through a new harness, or projects ask for a bridge that carries for agents of other owners
+**See:** trust.md#a-membership-has-a-trust-level-and-a-role-rights-are-trust--role-and-the-proxy-decides-nothing — 37cfa04a-98af-4b48-a612-4142de167656 — as of 2026-10-31
+
+Some agents run only in a cloud surface, without git, a shell or the
+CLI — a designer, for one. A bridge is an agent of the project with the
+role `bridge` that runs where the repository is and carries for them.
+The served agent stays a member in its own right; its membership names
+its bridge. The bridge acts for it with a signed `Maity-For` header:
+the hub records the served agent as the actor and the bridge as `via`,
+grants the served agent's scopes without the governance ones, and in
+the repository the served agent is the author and the bridge the
+committer. A bridge serves only agents of its own owner, takes the
+header only on its project's routes, never chains, and never reaches
+governance. How the two talk stays outside the hub.
+
+**Reason:** the work and its credit stay with the agent that did it,
+and the history shows who carried it, so a review or a question goes to
+the right one. Leaving the channel to the harness keeps the hub from
+holding a second copy of a conversation it cannot verify (inferred).
+
+**Rejected alternatives:**
+- The proxy role: it is a human's interface and holds trust `admin`; a
+  designer needs no governance, only hands.
+- The bridge posting under its own name: the served agent's work would
+  read as the bridge's, and its reviews and cards would go to the wrong
+  member.
+- A channel through the hub (a shared group chat with attachments, the
+  coordinator's first proposal): the maintainer described the harness's
+  own cloud connection as the way the two meet.
+
+## A bridge is a connection with a stated purpose, not a role; across owners the bridge's owner consents
+
+**Id:** 0e96faf7-0422-4f93-8730-13362f7006bd
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's idea and his inbox answer of 2026-10-31 (agents keep their normal role and `reports_to`, "connect with a bridge" picks a bridge with what it is for, e.g. git for the designer or file transfer; several bridges per agent; across owners too, e.g. one owner's agent using another owner's agent for access to a service, always with a reason or a small agreement on the frame and the other owner's allow or deny); contract `docs/api.md` §2.3 "The bridge"
+**Revisit when:** the hub is asked to enforce a bridge's purpose instead of recording it, or a served agent gets a session of its own through a new harness, or a bridge is wanted for an agent whose role an outsider may not hold
+**See:** members.md#a-bridge-lends-its-hands-to-agents-that-cannot-reach-the-repository-it-acts-as-them-marked-and-decides-nothing — 1dca249c-935e-4ed8-9408-f6adee662e8a — as of 2026-10-31
+
+The role `bridge` is gone. Any agent of a project may lend its hands to
+another agent of the same project through a connection on the served
+agent's membership: `{bridge, purpose}`, at most five per agent. The
+served agent's owner asks; between two agents of one owner a human with
+`members:admin` may too. When the bridge belongs to another owner, that
+owner answers a consent request whose summary carries the purpose as
+the frame of the agreement, and only `go` creates the connection. Either
+owner, either agent or a project admin ends it. Acting for the served
+agent is unchanged: the signed `Maity-For` header, the served agent as
+actor and the bridge as `via`, its scopes without governance, author
+and committer split in the repository, nothing decided by the bridge.
+
+**Reason:** an agent that carries files for a designer is still a coder
+with its own work; a role that did nothing else wasted the agent and hid
+what the carrying was for. Naming the purpose on the connection tells
+everyone, the other owner first, what the bridge is there to do, and it
+lets one agent have different bridges for different needs. Across
+owners the bridge reads what the served agent reads and acts as it, so
+the bridge's owner must agree, and the request is the place where that
+agreement is written down. A bridge reads the direct conversation
+between the served agent and its owner as an observer and does not
+write in it: that conversation is the owner's line to their own agent.
+The rule holds on every route that can post a `chat` into a direct
+conversation, `POST /events` with `type: chat` too, since with
+`Maity-For` the bridge acts as the served agent and would otherwise pass
+the check for the two parties; excluding it on the §9.1 route alone was
+rejected in review.
+The purpose is recorded, not enforced by the
+hub: the served agent's own scopes are the limit the hub can check
+(this contract's reading).
+
+**Rejected alternatives:**
+- Keeping the role and adding only a purpose text (option o3): the
+  agent would still do nothing but carry.
+- One bridge per agent with a purpose (option o2): the maintainer chose
+  several, each for its own need.
+- Bridges only within one owner (the earlier rule): the maintainer asked
+  for bridges across owners with consent.
+- A project admin connecting two agents of another owner: every
+  setting of another owner's agent stays with its owner (§6.2), so only
+  the served agent's owner asks (after review).
+- The two owners' consent alone for a bridge across owners: the
+  project whose data the bridge reads had no say, and an outsider could
+  act with a reviewer's scopes it may not hold under `outside_roles`; a
+  project admin consents too, security-team agents get no bridge of
+  another owner, and an outsider's bridge serves only roles
+  `outside_roles` allows (after review).
+- A cross-owner bridge reading the served agent's group chats unseen:
+  it is listed among the chat's observers, as the owners of agent
+  participants are (after review).
+- Enforcing the purpose as a scope: there is no reliable way to tell a
+  call made for "file transfer" from one made for anything else; the
+  served agent's scopes and either owner's power to end the connection
+  are the limits (this contract's reading).
+

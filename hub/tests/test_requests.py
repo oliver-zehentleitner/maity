@@ -401,7 +401,7 @@ def test_an_answer_names_one_reply_or_text_or_talk(
     assert answer(owner, request, reply_id="c").json()["error"]["details"]["fields"] == {
         "reply_id": "not_a_reply"
     }
-    both = answer(owner, request, talk=True, text="x")
+    both = answer(owner, request, talk=True, reply_id="a")
     assert both.json()["error"]["details"]["fields"] == {"answer": "reply_id_or_text_or_talk"}
 
 
@@ -450,6 +450,31 @@ def test_talk_is_the_owning_humans_and_opens_the_conversation(
     assert body["answer"]["talk"] is True and body["answer"]["conversation_id"] == agent.id
 
 
+def test_talk_may_carry_a_text_and_never_a_reply(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """`{talk: true, text}`: the human says why they would rather talk, and the agent reads it in
+    the answer; the hub writes nothing into the direct chat for it (§7)."""
+    agent = flow.agent(make_client, owner)
+    request = asked(agent, options=[{"id": "a", "label": "A"}, {"id": "b", "label": "B"}])
+    both = answer(owner, request, talk=True, reply_id="a", text="x")
+    assert both.json()["error"]["details"]["fields"] == {"answer": "reply_id_or_text_or_talk"}
+    before = len(_events(migrated, "message"))
+    body = answer(owner, request, talk=True, text="Let us talk about the options first.").json()
+    assert body["answer"]["talk"] is True and body["answer"]["reply_id"] is None
+    assert body["answer"]["text"] == "Let us talk about the options first."
+    assert body["answer"]["conversation_id"] == agent.id
+    event = _events(migrated, "request_answered")[-1]
+    assert event.payload["answer"]["text"] == "Let us talk about the options first."
+    assert event.payload["answer"]["talk"] is True
+    assert len(_events(migrated, "message")) == before
+    # still the owning human's alone, with or without a text
+    other = asked(agent)
+    admin = flow.agent(make_client, owner, role="admin")
+    refused = answer(admin, other, talk=True, text="x")
+    assert refused.json()["error"]["details"]["fields"] == {"talk": "only_the_owner_of_the_agent"}
+
+
 def test_withdrawal_is_the_askers_or_an_answerers(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
@@ -481,6 +506,30 @@ def test_the_resume_packet_lists_requests(owner: flow.Human, make_client: Client
     assert [r["id"] for r in packet["answered_since_cursor"]] == [answered["id"]]
     assert [r["id"] for r in packet["to_answer"]] == [to_me["id"]]
     assert packet["answered_since_cursor"][0]["answer"]["text"] == "done"
+
+
+def test_the_resume_packet_keeps_the_newest_answers_when_it_cuts(
+    owner: flow.Human, make_client: ClientFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """dzse at #835: the cut at `PACKET_REQUESTS` (100) keeps the latest answers, in the order
+    they were answered, not the requests asked first."""
+    from maity_hub.routes import me_session
+
+    monkeypatch.setattr(me_session, "PACKET_REQUESTS", 3)  # the cut at 100, cheaper
+    agent = flow.agent(make_client, owner)
+    cursor = agent.resume().json()["events"]["cursor"]
+    asked_first = asked(agent)
+    others = [asked(agent) for _ in range(3)]
+    for request in others:
+        assert answer(owner, request, text="ok").status_code == 200
+    assert answer(owner, asked_first, text="late").status_code == 200  # answered last
+    packet = agent.resume(cursor=cursor).json()["requests"]
+    assert [r["id"] for r in packet["answered_since_cursor"]] == [
+        others[1]["id"],
+        others[2]["id"],
+        asked_first["id"],
+    ]
+    assert packet["truncated"] is True
 
 
 def test_a_card_stays_blocked_while_any_waiting_request_is_open(

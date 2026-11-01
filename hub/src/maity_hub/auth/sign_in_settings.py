@@ -4,18 +4,22 @@ and the second factor's policy (§2.8.5). The password cannot be switched off.""
 
 from __future__ import annotations
 
+import secrets
 from typing import Any
 
 from sqlalchemy import Connection
 
 from maity_hub import instance_settings as store
-from maity_hub.auth import device_codes, email_links
+from maity_hub.auth import device_codes, email_links, mail_factor
 from maity_hub.config import SECOND_FACTOR_POLICIES, Settings
-from maity_hub.errors import invalid
+from maity_hub.errors import invalid, rate_limited
 from maity_hub.mail import settings as mail
 
 SWITCHES = ("device_code", "email_link")
 SEEN = "sign_in.second_factor_seen"
+# The open confirmation of turning `email` on (§2.8.8), a nonce in its code's MAC: replacing it
+# voids every code mailed before, whichever admin asked. Not a secret, and in no view.
+PENDING = "sign_in.second_factor_pending"
 FIELDS = (*SWITCHES, "second_factor")
 
 store.register(
@@ -31,6 +35,7 @@ store.register(
     # `off` once the hub has told the switch to it, so it is told once, whether the
     # admin made it or the environment did (§2.8.5); no row otherwise.
     store.Setting(SEEN, lambda v: v if v in SECOND_FACTOR_POLICIES else None, None),
+    store.Setting(PENDING, lambda v: v if isinstance(v, str) else None, None),
 )
 
 
@@ -54,6 +59,8 @@ def view(conn: Connection, hub: Settings) -> dict[str, Any]:
     link_missing = []
     if not values["email_link"][0]:
         link_missing.append("switched_off")
+    if values["second_factor"][0] == "email":
+        link_missing.append("second_factor_email")  # one mailbox is not two factors (§2.8.8)
     resolved = mail.resolve(conn, hub.mail, hub.secret_key)
     if not (resolved.complete and resolved.enabled):
         link_missing.append("mail")
@@ -69,8 +76,11 @@ def view(conn: Connection, hub: Settings) -> dict[str, Any]:
     }
 
 
-def patch(conn: Connection, hub: Settings, body: dict[str, Any], by: str) -> None:
-    """All of the body or nothing; `invalid` names each refused field."""
+def patch(
+    conn: Connection, hub: Settings, body: dict[str, Any], by: str, session: Any = None
+) -> bool:
+    """All of the body or nothing; `invalid` names each refused field. True when `email` waits
+    for its confirmation (§2.8.8): the mail is on its way and the setting has not changed."""
     errors: dict[str, str] = {}
     for name, value in body.items():
         if name == "password":
@@ -84,16 +94,57 @@ def patch(conn: Connection, hub: Settings, body: dict[str, Any], by: str) -> Non
                 errors[name] = "invalid"
             elif value == "required_admins" and hub.secret_key is None:
                 errors[name] = "secret_key_missing"
+            elif value == "email" and not mail_factor.mail_ready(conn, hub):
+                errors[name] = "mail_not_ready"
+            elif value == "email" and mail_factor.address_of(conn, by) is None:
+                errors[name] = "no_verified_address"
         elif value is not None and not isinstance(value, bool):
             errors[name] = "invalid"
     if errors:
         raise invalid(errors)
+    waits = body.get("second_factor") == "email"
     for name, value in body.items():
-        store.put(conn, f"sign_in.{name}", value, by)
+        if not (name == "second_factor" and waits):
+            store.put(conn, f"sign_in.{name}", value, by)
+    if "second_factor" in body:  # a new `PATCH` replaces an open confirmation
+        store.put(conn, PENDING, secrets.token_urlsafe(16) if waits else None, by)
+    if waits:
+        nonce = store.stored(conn, "sign_in")[PENDING]
+        mail_factor.send_confirmation(conn, hub, session, nonce)
+    _settled(conn, hub, by)
+    return waits
+
+
+def confirm_email(conn: Connection, hub: Settings, session: Any, code: str, by: str) -> bool:
+    """`POST …/second-factor-email/confirm`: the code mailed to this session turns `email` on.
+    False for a wrong code, counted as any (§2.8.6); the caller commits the count, then refuses."""
+    from maity_hub.auth import second_factor  # it imports this module
+
+    wait = second_factor.WRONG_BY_HUMAN.blocked(by)
+    if wait:
+        raise rate_limited(wait)
+    nonce = store.stored(conn, "sign_in").get(PENDING)
+    if _environment(hub, "second_factor") is not None:
+        raise invalid({"second_factor": "set_by_environment"})
+    # What the `PATCH` checked may have changed in the 15 minutes, and either would lock out.
+    if not mail_factor.mail_ready(conn, hub):
+        raise invalid({"second_factor": "mail_not_ready"})
+    if mail_factor.address_of(conn, by) is None:
+        raise invalid({"second_factor": "no_verified_address"})
+    if not nonce or not mail_factor.check_confirmation(conn, hub, session, nonce, code):
+        second_factor.WRONG_BY_HUMAN.hit(by)
+        return False
+    store.put(conn, "sign_in.second_factor", "email", by)
+    store.put(conn, PENDING, None, by)
+    _settled(conn, hub, by)
+    return True
+
+
+def _settled(conn: Connection, hub: Settings, by: str) -> None:
     if not resolve(conn, hub)["device_code"][0]:
         # A method switched off voids its open codes at once (§2.6.5).
         device_codes.void_open(conn)
-    if not resolve(conn, hub)["email_link"][0]:
+    if not email_link_enabled(conn, hub):
         email_links.void_open(conn)
     note_second_factor(conn, hub, by)
 
@@ -124,4 +175,6 @@ def second_factor_policy(conn: Connection, hub: Settings) -> str:
 
 
 def email_link_enabled(conn: Connection, hub: Settings) -> bool:
-    return bool(resolve(conn, hub)["email_link"][0])
+    """Under `email` the mailbox is the second factor, so it cannot be the first too (§2.8.8)."""
+    values = resolve(conn, hub)
+    return bool(values["email_link"][0]) and values["second_factor"][0] != "email"

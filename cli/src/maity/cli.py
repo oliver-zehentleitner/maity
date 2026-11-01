@@ -22,7 +22,18 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from maity import __version__, environment, gitfacts, hub, onboarding, pointer, proc, sign, state
+from maity import (
+    __version__,
+    environment,
+    gitfacts,
+    hub,
+    onboarding,
+    pointer,
+    proc,
+    sign,
+    state,
+    versioninfo,
+)
 from maity.runner import commands as runner_commands
 from maity.runner import config
 
@@ -65,6 +76,18 @@ plain HTTP:
 """
 
 Handler = Callable[[argparse.Namespace], int]
+
+
+class VersionAction(argparse.Action):
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Any,
+        option_string: str | None = None,
+    ) -> None:
+        print(versioninfo.version_text(__version__))
+        parser.exit()
 
 
 class UsageError(Exception):
@@ -139,9 +162,11 @@ def _renamed(path: str, renamed: dict[str, str]) -> str:
 
 class Session:
     """A joined clone: its state directory, its state, and a signing client for its hub.
-    `on_request` is this command's `--on-request`, set once by `main` (§2.3)."""
+    `on_request` is this command's `--on-request`, `for_target` the global `--for`, both set
+    once by `main` (§2.3)."""
 
     on_request: str | None = None
+    for_target: str | None = None
 
     def __init__(self, hub_url: str | None = None) -> None:
         self.dir = state.resolve_state_dir()
@@ -161,6 +186,31 @@ class Session:
         self.client = ProjectClient(
             hub.hub_base(stored), key, on_request=Session.on_request, moved=self._moved
         )
+        target = Session.for_target
+        if target is not None:
+            # Sent as `Maity-For` on every call (§13); a handle is resolved as the bridge
+            # itself, once a call needs it.
+            self.client.for_given = True
+            if target.startswith("agt-"):
+                self.client.for_member = target
+            else:
+                self.client.for_resolve = lambda: _member_id(self, target)
+
+    @property
+    def for_member(self) -> str | None:
+        """The agent this command acts for through its bridge (`--for`), or None."""
+        return self.client.served()
+
+    @property
+    def me(self) -> str | None:
+        """The member this command acts as: the served agent under `--for`, else this clone."""
+        return self.for_member or self.data.get("member_id")
+
+    @property
+    def my_instance(self) -> str | None:
+        """This clone's instance; none under `--for`, where the served agent acts without one
+        (§2.3)."""
+        return None if Session.for_target is not None else self.data.get("instance")
 
     @property
     def project(self) -> str:
@@ -189,6 +239,8 @@ class Session:
         full_name = self.data.get("full_name")
         if not isinstance(full_name, str) or not _FULL_NAME.fullmatch(full_name):
             return None
+        if Session.for_target is not None:
+            return None  # `/me` is the bridge's own, never asked with --for (§13)
         old = self.project_path()
         if path != old and not path.startswith(old + "/"):
             return None
@@ -223,6 +275,7 @@ SUPERVISOR = re.compile(r"maity-runner/[A-Za-z0-9.+_-]{1,64}", re.ASCII)
 
 
 def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> int:
+    model_before = session.data.get("model")
     for key in ("harness", "harness_version", "model"):
         value = getattr(args, key, None)
         if value:
@@ -282,7 +335,12 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
             board_empty = isinstance(board, dict) and board.get("items") == []
         except hub.HubError:
             pass  # An unavailable board is unknown, not empty; resume still succeeds.
-    text = None if args.json else onboarding.render(packet, first=first, board_empty=board_empty)
+    full = bool(getattr(args, "full", False))
+    text = (
+        None
+        if args.json
+        else onboarding.render(packet, first=first, board_empty=board_empty, full=full)
+    )
     session_id = field(packet, "session", "id")
     if isinstance(session_id, str):
         session.data["session_id"] = session_id
@@ -311,10 +369,18 @@ def _resume(session: Session, args: argparse.Namespace, first: bool = False) -> 
     session.data["keep_the_why_required"] = (
         field(packet, "keep_the_why", "commitment") == "required"
     )
+    session.data["board_empty"] = board_empty  # the board check `--full` cannot repeat
     session.save()
+    # What `--full` renders again without a second resume, which would open another session.
+    state.save_state(session.dir, packet, name=LAST_PACKET)
+    model_after = session.data.get("model")
     if text is None:
         _print_json(packet)
     else:
+        # An own change of model: the hub told the lead and the admins (§5.3), so say so first.
+        if isinstance(model_before, str) and model_after not in (None, model_before):
+            old, new = onboarding.inline(model_before), onboarding.inline(model_after)
+            print(f"Model changed: {old} -> {new}, your lead is told.\n")
         print(text, end="")
     return EXIT_OK
 
@@ -418,16 +484,52 @@ def cmd_join(args: argparse.Namespace) -> int:
             end="",
         )
     print(pointer.PROJECT_CHANNEL, file=sys.stderr)
-    if args.no_resume:
-        return EXIT_OK
-    try:
-        return _resume(Session(), args, first=True)
-    except hub.HubError as exc:
-        _err(
-            f"joined, but the first resume failed: {exc}; run `maity resume`. "
-            f"How to work as a member: {onboarding.HANDBOOK}"
-        )
-        return EXIT_ERROR
+    status = EXIT_OK
+    if not args.no_resume:
+        try:
+            session = Session()
+            try:
+                status = _resume(session, args, first=True)
+            finally:
+                # The resume text is on stdout, the closing lines on stderr: through one pipe,
+                # the way a harness reads both, stdout is buffered and would come after them.
+                # On every way out, so a resume that fails after printing keeps the order too.
+                sys.stdout.flush()
+            _chat_note(state.load_state(session.dir, name=LAST_PACKET))
+        except hub.HubError as exc:
+            _err(
+                f"joined, but the first resume failed: {exc}; run `maity resume`. "
+                f"How to work as a member: {onboarding.HANDBOOK}"
+            )
+            status = EXIT_ERROR
+    _path_note()
+    return status
+
+
+def _chat_note(packet: dict[str, Any]) -> None:
+    """The line an agent gives its human as its last message in the agent's window (§5.2):
+    the direct chat with its owner, where the two talk from then on. Left out when the
+    packet has no web address there (a human's membership)."""
+    url = onboarding.get(packet, "membership", "chat_url")
+    if isinstance(url, str) and url.startswith(("https://", "http://")):
+        print(f"Talk to me in Maity: {onboarding.inline(url)}", file=sys.stderr)
+
+
+PATH_SENTENCE = "If `maity` is not found later, run `pipx ensurepath` once and open a new shell."
+
+
+def _path_note() -> None:
+    """The last line of `join` (§3.2): pipx puts `maity` where a new shell often does not look.
+    When this run itself is not on PATH, the sentence names the directory instead."""
+    if shutil.which("maity") is not None:
+        print(PATH_SENTENCE, file=sys.stderr)
+        return
+    ran = Path(sys.argv[0]) if sys.argv and sys.argv[0] else None
+    where = f" (this run is {ran.parent})" if ran is not None and ran.name == "maity" else ""
+    _err(
+        f"`maity` is not on PATH{where}, so later commands will not find it: run "
+        "`pipx ensurepath` and open a new shell, or put its directory on PATH"
+    )
 
 
 # The join page's table row naming the agent (docs/join-page.md, §3.2).
@@ -463,11 +565,48 @@ def _identity_dir(url: str, target: str, outside: Exception) -> Path:
     return state.identity_dir(host, handle.group(1))
 
 
+LAST_PACKET = "last-resume.json"
+
+
+def _own_only(command: str) -> None:
+    """A command of the bridge's own, under `/me`: `--for` is refused before anything else,
+    also where the command would answer from the state without a call (§13)."""
+    if Session.for_target is not None:
+        raise UsageError(
+            f"--for applies to project commands; {command} is the bridge's own: "
+            "run it without --for"
+        )
+
+
 def cmd_resume(args: argparse.Namespace) -> int:
-    return _resume(Session(args.hub), args)
+    """`--full` renders the packet the last resume stored, in full and without calling the hub;
+    without one it resumes as usual and prints in full."""
+    _own_only("resume")
+    session = Session(args.hub)
+    stored = state.load_state(session.dir, name=LAST_PACKET) if args.full else {}
+    if not stored:
+        return _resume(session, args)
+    if args.json:
+        _print_json(stored)
+        return EXIT_OK
+    # The packet may be hours old, and its `Next:` with it: say so before anything else.
+    started = onboarding.get(stored, "session", "started_at")
+    when = f"the resume at {onboarding.inline(started)}" if started else "the last resume"
+    print(f"Stored packet of {when}; run maity resume for what changed since.\n")
+    board_empty = session.data.get("board_empty") is True
+    print(onboarding.render(stored, board_empty=board_empty, full=True), end="")
+    return EXIT_OK
 
 
 BATCH_MAX = 50
+
+
+def _harness_model(side: Any) -> str:
+    """`harness/model` of one side of a `session_model_changed`, `?` where it is not set."""
+    if not isinstance(side, dict):
+        return "?"
+    parts = [onboarding.inline(side.get(key)) for key in ("harness", "model") if side.get(key)]
+    return "/".join(parts) or "?"
 
 
 def _event_line(event: dict[str, Any]) -> str:
@@ -477,9 +616,67 @@ def _event_line(event: dict[str, Any]) -> str:
     line = f"#{onboarding.inline(event.get('seq'))} {onboarding.inline(event.get('kind'))}"
     if subject:
         line += f" {onboarding.inline(subject)}"
+    if event.get("kind") == "session_model_changed":
+        before = onboarding.get(event, "payload", "from") or {}
+        after = onboarding.get(event, "payload", "to") or {}
+        return line + f": {_harness_model(before)} -> {_harness_model(after)}"
     if title:
         line += f": {onboarding.inline(title)[:120]}"
     return line
+
+
+NOTE_RESERVE = 5.0  # seconds of --timeout kept for the unread-chats note
+POLL_SLACK = 10.0  # seconds a long-poll leaves the hub to answer before the read gives up
+
+
+def _unread_note(session: Session, budget: float) -> None:
+    """On a timeout, one line on stderr when chats hold unread messages: a group chat's
+    messages wake nobody unless they mention you (§9.2), so a quiet wait can hide them. A
+    hint only, within what is left of --timeout: a hub that does not answer leaves it out."""
+    if budget < 0.5:
+        return
+    try:
+        page = session.client.call(
+            "GET", session.project_path("conversations"), query=[("limit", "50")], timeout=budget
+        )
+    except hub.HubError:
+        return
+    counts = [
+        (c.get("unread"), c.get("mentions_unread") or 0)
+        for c in (_field(page, "items") or []) if isinstance(c, dict)
+    ]  # fmt: skip
+    unread = [(n, m) for n, m in counts if isinstance(n, int) and n > 0 and isinstance(m, int)]
+    if unread:
+        total, mentions = sum(n for n, _ in unread), sum(m for _, m in unread)
+        # One page only, within the budget: past it the counts are a floor.
+        more = "at least " if _field(page, "next_cursor") else ""
+        _err(
+            f"unread chats: {more}{total} in {more}{len(unread)} chats "
+            f"({more}{mentions} mentions): maity chats"
+        )
+
+
+def _wait_cursor(session: Session) -> int:
+    """The cursor `wait` reads from: the bridge's own, or with `--for` the one it keeps per
+    served agent (`for_cursors.<member id>`), so its own never moves on that agent's events
+    (§13)."""
+    if session.for_member is None:
+        own = session.data.get("cursor") or 0
+        return own if isinstance(own, int) else 0
+    kept = session.data.get("for_cursors")
+    found = kept.get(session.for_member) if isinstance(kept, dict) else None
+    return found if isinstance(found, int) else 0
+
+
+def _save_wait_cursor(session: Session, cursor: Any) -> None:
+    if session.for_member is None:
+        session.data["cursor"] = cursor
+    else:
+        kept = session.data.get("for_cursors")
+        kept = kept if isinstance(kept, dict) else {}
+        kept[session.for_member] = cursor
+        session.data["for_cursors"] = kept
+    session.save()
 
 
 def cmd_wait(args: argparse.Namespace) -> int:
@@ -494,30 +691,47 @@ def cmd_wait(args: argparse.Namespace) -> int:
             "--kind reads past other events, which acknowledges them at the hub; "
             "it does not go with --keep-cursor"
         )
-    deadline = time.monotonic() + timeout
-    cursor = session.data.get("cursor") or 0
+    end = time.monotonic() + timeout
+    # The last seconds are kept for the unread-chats note, so it never runs past --timeout.
+    deadline = end - min(NOTE_RESERVE, timeout / 4)
+    # Every poll leaves the hub POLL_SLACK to answer, half of a short window.
+    slack = min(POLL_SLACK, (deadline - time.monotonic()) / 2)
+    asked = False
+    cursor = _wait_cursor(session)
     path = session.project_path("events")
+    # A bridge reads for the agent it serves with `for` (§2.3): what that agent's token sees.
+    served = [("for", session.for_member)] if session.for_member else []
     backoff = 2.0
     warned = False
+    skewed = False
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
+            _unread_note(session, end - time.monotonic())
             return EXIT_TIMEOUT
-        # The hub holds for `poll` and gets a second to answer; the read never outlasts the
+        if asked and remaining - slack < 1:
+            # Too little left for a poll and its answer: rest out the window instead of a
+            # chain of short polls that would mostly be cut off.
+            time.sleep(remaining)
+            continue
+        # The hub holds for `poll` and keeps `slack` to answer; the read never outlasts the
         # deadline, so a hub that stops answering cannot keep `wait` running past --timeout.
-        poll = max(1, min(LONG_POLL, int(remaining) - 1))
+        poll = max(1, min(LONG_POLL, int(remaining - slack)))
         read_timeout = max(0.5, min(poll + 15, remaining))
         started = time.monotonic()
+        asked = True
         try:
             page = session.client.call(
                 "GET",
                 path,
-                query=[("after", str(cursor)), ("wait", str(poll))],
+                query=[("after", str(cursor)), ("wait", str(poll)), *served],
                 timeout=read_timeout,
             )
         except hub.HubError as exc:
             server_error = exc.status is not None and 500 <= exc.status < 600
             disconnected = exc.status is None and exc.code is None
+            if disconnected and time.monotonic() >= deadline:
+                continue  # the window's last read ran out: a timeout like any other
             if server_error or disconnected:  # retry the same `after`, within the deadline
                 if not warned:
                     reason = f"hub answered {exc.status}" if server_error else "hub connection lost"
@@ -525,6 +739,11 @@ def cmd_wait(args: argparse.Namespace) -> int:
                     warned = True
                 time.sleep(min(backoff, max(0.0, deadline - time.monotonic())))
                 backoff = min(backoff * 2, 30.0)
+                continue
+            if exc.code == "timestamp_skew" and not skewed:
+                # The client corrected its clock but had no time left to retry within this
+                # read; the loop retries once, or ends as a timeout if the deadline is gone.
+                skewed = True
                 continue
             raise
         backoff = 2.0
@@ -539,16 +758,17 @@ def cmd_wait(args: argparse.Namespace) -> int:
             if not wanted:
                 cursor = items[-1].get("seq", cursor)
                 if not args.keep_cursor:
-                    session.data["cursor"] = cursor
-                    session.save()
+                    _save_wait_cursor(session, cursor)
                 continue
             items = wanted
         if items:
             taken = items[:1] if args.one else items[:BATCH_MAX]
             for event in taken:
-                note = _pause_note(event, session.data.get("member_id"))
+                note = _pause_note(event, session.me)
                 if note:
                     _err(note)
+                for line in onboarding.jour_fixe_lines(event):  # §20.9: what it asks of you
+                    _err(line)
             for event in taken:  # one line a person reads; stdout stays the JSON scripts parse
                 _err(_event_line(event))
             _print_json(taken[0] if args.one else taken)
@@ -556,15 +776,13 @@ def cmd_wait(args: argparse.Namespace) -> int:
             # signal, a closed pipe) has acknowledged nothing it did not hand over.
             sys.stdout.flush()
             if not args.keep_cursor:  # with it, the next resume still lists the events
-                session.data["cursor"] = taken[-1].get("seq", cursor)
-                session.save()
+                _save_wait_cursor(session, taken[-1].get("seq", cursor))
             return EXIT_OK
         new_cursor = page.get("cursor")
         if isinstance(new_cursor, int) and new_cursor != cursor:
             cursor = new_cursor  # this run polls on from here; --keep-cursor saves nothing
             if not args.keep_cursor:
-                session.data["cursor"] = cursor
-                session.save()
+                _save_wait_cursor(session, cursor)
         if time.monotonic() - started < 1:  # an empty answer that did not hold: do not spin
             time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
 
@@ -623,6 +841,70 @@ def _why(args: argparse.Namespace) -> dict[str, str] | None:
     return None
 
 
+_PR_URL = re.compile(r"^https://[^/]+/([^/]+/[^/]+)/pull/(\d+)/?$")
+
+
+def _described(facts: gitfacts.Facts) -> str:
+    """What the report states, in one line: branch, head and pull request."""
+    where = f"{onboarding.inline(facts.branch)} at {facts.head[:12]}"
+    if facts.pr is not None:
+        return f"{where}, PR #{facts.pr.number} ({onboarding.inline(facts.pr.state.lower())})"
+    if facts.pr_unknown_reason is not None:
+        return f"{where}, pull request unknown: {onboarding.inline(facts.pr_unknown_reason)}"
+    return f"{where}, no pull request"
+
+
+def _pr_key(url: Any, number: Any = None) -> tuple[str, int] | None:
+    """`(owner/repo, number)` of a pull request URL, lowercased; None for anything else."""
+    match = _PR_URL.match(url) if isinstance(url, str) else None
+    if match is None:
+        return None
+    return match.group(1).lower(), int(number if isinstance(number, int) else match.group(2))
+
+
+def _card_pr_mismatch(card: Any, facts: gitfacts.Facts, card_id: str) -> str | None:
+    """Why the pull request found for this checkout is not the card's, or None (§6.6, §6.13).
+
+    Two things on the card name its pull request: a link of kind `pr`, and the pull request
+    of its last report while that one is still open. A report from another PR's branch (a
+    follow-up branch checked out after the merge) is refused rather than filed on the card."""
+    found = _pr_key(facts.pr.url, facts.pr.number) if facts.pr is not None else None
+    if facts.pr is not None:
+        shown = f"PR #{facts.pr.number}"
+    elif facts.pr_unknown_reason is not None:
+        shown = f"an unknown pull request ({onboarding.inline(facts.pr_unknown_reason)})"
+    else:
+        shown = "no pull request"
+    switch = (
+        f"check out that pull request's branch (`git switch <branch>`; after a merge with the "
+        f"branch deleted, `git switch -c <branch> <merged head>`) and report {card_id} from there"
+    )
+    links = card.get("links") if isinstance(card, dict) else None
+    linked = {
+        key
+        for link in (links if isinstance(links, list) else [])
+        if isinstance(link, dict) and link.get("kind") == "pr"
+        if (key := _pr_key(link.get("forge_url"), link.get("number"))) is not None
+    }
+    if found is not None:  # links to another repository of the owner say nothing about this one
+        linked = {key for key in linked if key[0] == found[0]}
+    if linked and found not in linked:
+        named = ", ".join(f"#{number}" for _, number in sorted(linked))
+        return f"{card_id} links pull request {named}, this checkout has {shown}; {switch}"
+    report = onboarding.get(card, "report")
+    before = onboarding.get(report, "pr")
+    if isinstance(before, dict):
+        state = onboarding.get(report, "observed", "pr_state") or before.get("state")
+        key = _pr_key(before.get("url"), before.get("number"))
+        other = found is not None and key is not None and key[0] != found[0]
+        if state == "open" and key is not None and key != found and not other:
+            return (
+                f"the last report on {card_id} names pull request #{key[1]}, still open; this "
+                f"checkout has {shown}; {switch}"
+            )
+    return None
+
+
 def cmd_report(args: argparse.Namespace) -> int:
     if not args.summary.strip():
         raise UsageError("the summary is empty")
@@ -657,6 +939,13 @@ def cmd_report(args: argparse.Namespace) -> int:
     body = _report_body(facts, args.summary.strip(), args.done)
     if why is not None:
         body["why"] = why
+    # Said before anything is sent, so a report from the wrong checkout shows as such.
+    _err(f"reporting {_described(facts)}")
+    card = session.client.call("GET", session.project_path("tasks", args.task))
+    mismatch = _card_pr_mismatch(card, facts, args.task)
+    if mismatch:
+        _err(f"report refused: {mismatch}")
+        return EXIT_REFUSED
     path = session.project_path("tasks", args.task, "report")
     task = session.client.call("POST", path, body=body)
     pr = body["pr"]
@@ -685,6 +974,31 @@ def cmd_ack(args: argparse.Namespace) -> int:
     instance = _field(answer, "instance")
     of = f" for instance {onboarding.inline(instance)}" if instance else ""
     return _done(args, answer, f"confirmed Keep the Why{of} at {when}")
+
+
+def cmd_dormant(args: argparse.Namespace) -> int:
+    """`PATCH /me` with `dormant` (§6.17): the calling instance puts itself to rest, or wakes
+    with --off. The line comes only from what the hub stored for this instance, never from the
+    request; an answer without this instance's entry gets a hint instead, and still exit 0."""
+    session = Session()
+    answer = session.client.call("PATCH", "/me", body={"dormant": not args.off})
+    mine = session.data.get("instance")
+    instances = _field(answer, "instances")
+    item = next(
+        (i for i in instances if isinstance(i, dict) and i.get("id") == mine),
+        None,
+    ) if isinstance(instances, list) and mine else None  # fmt: skip
+    if item is None:
+        if args.json:
+            _print_json(answer)
+        _err("the hub's answer does not show this instance; run `maity resume` to see whether "
+             "it is dormant")  # fmt: skip
+        return EXIT_OK
+    given = item.get("label")
+    label = given if isinstance(given, str) else f"{_field(answer, 'handle') or '?'}#{mine}"
+    if not item.get("dormant"):
+        return _done(args, answer, "awake")
+    return _done(args, answer, f"dormant: only @{onboarding.inline(label)} wakes this instance")
 
 
 def _ask_body(args: argparse.Namespace) -> dict[str, Any]:
@@ -774,6 +1088,30 @@ def cmd_ask(args: argparse.Namespace) -> int:
     return _done(args, request, f"asked {rid} ({rclass}, {rstatus})")
 
 
+def cmd_request_withdraw(args: argparse.Namespace) -> int:
+    body = {} if args.reason is None else {"reason": _text(args.reason, "--reason")}
+    session = Session()
+    path = session.project_path("requests", args.request, "withdraw")
+    request = session.client.call("POST", path, body=body)
+    return _done(args, request, f"withdrawn {onboarding.inline(args.request)}")
+
+
+def cmd_request_forward(args: argparse.Namespace) -> int:
+    body = {} if args.reason is None else {"reason": _text(args.reason, "--reason")}
+    session = Session()
+    body["to"] = _address(session, args.to)
+    path = session.project_path("requests", args.request, "forward")
+    request = session.client.call("POST", path, body=body)
+    return _done(args, request, f"forwarded {onboarding.inline(args.request)}", ascii_json=True)
+
+
+def cmd_request_claim(args: argparse.Namespace) -> int:
+    session = Session()
+    path = session.project_path("requests", args.request, "claim")
+    request = session.client.call("POST", path, body={})
+    return _done(args, request, f"claimed {onboarding.inline(args.request)}", ascii_json=True)
+
+
 def _done(args: argparse.Namespace, result: Any, line: str, ascii_json: bool = False) -> int:
     """Print the hub's answer with --json, otherwise one status line. `ascii_json` escapes
     every non-ASCII character, for answers that carry other members' text."""
@@ -817,7 +1155,7 @@ def cmd_claim(args: argparse.Namespace) -> int:
         task = session.client.call("POST", f"{path}/claim", body=body)
     except hub.HubError as exc:
         # A repeated claim after a dropped connection: the first one went through.
-        mine = session.data.get("member_id")
+        mine = session.me
         if exc.code != "already_claimed" or not mine or exc.details.get("holder") != mine:
             raise
         task, note = session.client.call("GET", path), " (it was already yours)"
@@ -829,6 +1167,18 @@ def cmd_unclaim(args: argparse.Namespace) -> int:
     session = Session()
     task = session.client.call("POST", session.project_path("tasks", args.card, "release"), body={})
     return _done(args, task, f"gave {args.card} back; it is {_field(task, 'status')} again")
+
+
+def cmd_watch(args: argparse.Namespace) -> int:
+    session = Session()
+    task = session.client.call("PUT", session.project_path("tasks", args.card, "watch"))
+    return _done(args, task, f"watching {args.card}")
+
+
+def cmd_unwatch(args: argparse.Namespace) -> int:
+    session = Session()
+    task = session.client.call("DELETE", session.project_path("tasks", args.card, "watch"))
+    return _done(args, task, f"no longer watching {args.card}")
 
 
 def cmd_checkpoint(args: argparse.Namespace) -> int:
@@ -1151,15 +1501,6 @@ def _conversations(session: Session) -> list[dict[str, Any]]:
             return items
 
 
-def _conversation_id(c: dict[str, Any]) -> Any:
-    # A hub from before §9.3's shape lists the direct conversation as `{agent_id, …}` alone.
-    return c.get("id") or c.get("agent_id")
-
-
-def _conversation_kind(c: dict[str, Any]) -> Any:
-    return c.get("kind") or ("direct" if c.get("agent_id") else None)
-
-
 def _handles(conversation: dict[str, Any]) -> dict[str, str]:
     people = [_obj(p) for p in conversation.get("participants") or []]
     shown = onboarding.shown_names(
@@ -1197,8 +1538,8 @@ def cmd_chats(args: argparse.Namespace) -> int:
             )
         closed = "  closed" if c.get("closed_at") else ""
         print(
-            f"{onboarding.inline(_conversation_id(c))}  "
-            f"{onboarding.inline(_conversation_kind(c))}  {title}  {people}  {unread}{closed}"
+            f"{onboarding.inline(c.get('id'))}  "
+            f"{onboarding.inline(c.get('kind'))}  {title}  {people}  {unread}{closed}"
         )
     return EXIT_OK
 
@@ -1264,8 +1605,7 @@ def _unread_direct(
     """The agent's direct conversation (§9.1): its read position is the event cursor, which
     `wait` and `resume` move and reading here does not. Everything after the cursor, the
     last `limit` of it shown."""
-    cursor = session.data.get("cursor")
-    start = cursor if isinstance(cursor, int) and not isinstance(cursor, bool) else 0
+    start = _wait_cursor(session)  # under --for the one kept for the served agent (§13)
     after = _read_on(session, conversation, start)
     items = after[-limit:]
     notes = []
@@ -1311,7 +1651,7 @@ def _unread_group(
 def cmd_chat(args: argparse.Namespace) -> int:
     session = Session()
     conversation = args.conversation
-    listed = next((c for c in _conversations(session) if _conversation_id(c) == conversation), None)
+    listed = next((c for c in _conversations(session) if c.get("id") == conversation), None)
     handles = _handles(listed) if listed else {}
     limit = args.limit or CHAT_DEFAULT
     notes: list[str] = []
@@ -1325,7 +1665,7 @@ def cmd_chat(args: argparse.Namespace) -> int:
         items, _ = _messages(session, conversation, query)
     elif listed is None:
         raise CommandError(f"{conversation} is not in your conversations (`maity chats`)")
-    elif _conversation_kind(listed) == "direct":
+    elif listed.get("kind") == "direct":
         items, notes = _unread_direct(session, conversation, limit)
     else:
         items, notes = _unread_group(session, conversation, listed, limit)
@@ -1349,7 +1689,15 @@ def cmd_chat(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
-SAY_TYPES = ("interface_change", "blocker", "go_request", "review_result", "handover", "notice")
+SAY_TYPES = (
+    "interface_change",
+    "blocker",
+    "go_request",
+    "review_result",
+    "handover",
+    "notice",
+    "update",
+)
 
 
 def cmd_say(args: argparse.Namespace) -> int:
@@ -1373,6 +1721,18 @@ def cmd_say(args: argparse.Namespace) -> int:
         path = session.project_path("conversations", args.chat, "messages")
         message = _post_with(session, attach, lambda ids: _chat_post(session, path, text, ids))
         return _done(args, message, f"said in {args.chat} (seq {_field(message, 'seq')})")
+    if args.type == "update" and args.task is None:
+        raise UsageError("--type update needs --task: the card whose watchers it reaches (§6.4)")
+    if args.type == "update" and args.to is None:
+        text = _say_body(args.body, attach)
+        session = Session()
+        return _say_event(
+            args,
+            session,
+            {"kind": "message", "type": "update", "body": text, "task_id": args.task},
+            attach,
+            f"sent update to the watchers of {args.task}",
+        )
     if args.to is None:
         raise UsageError(
             "say to whom: 'all', 'role:<role>', 'trust:admin', a member id, 'human', or --chat"
@@ -1382,18 +1742,18 @@ def cmd_say(args: argparse.Namespace) -> int:
     except argparse.ArgumentTypeError as exc:
         raise UsageError(str(exc)) from None
     text = _say_body(args.body, attach)
-    if to != "human" and (args.type is not None or Session().data.get("owner_id") != to):
-        to = _address(Session(), to)  # a handle or a former one names the member (§6.24)
+    session = Session()
+    if to != "human" and (args.type is not None or session.data.get("owner_id") != to):
+        to = _address(session, to, chat_hint=True)  # handles and aliases (§6.24)
     to_owner = to == "human"
     if not to_owner and args.type is None:
         # A reply to your own human is the chat of your conversation (§8.4, §9); to anyone
         # else a message needs a type. Ids are opaque (§1.1): compared, never parsed.
-        to_owner = Session().data.get("owner_id") == to
+        to_owner = session.data.get("owner_id") == to
     if to_owner:
         if args.type is not None or args.task is not None:
             raise UsageError("a chat with your human takes neither --type nor --task")
-        session = Session()
-        member_id = session.data.get("member_id")
+        member_id = session.me  # under --for the served agent's conversation (§2.3)
         if not isinstance(member_id, str):
             raise state.StateError("this agent's member id is not known yet; run `maity resume`")
         path = session.project_path("conversations", member_id, "messages")
@@ -1409,14 +1769,22 @@ def cmd_say(args: argparse.Namespace) -> int:
         body["task_id"] = args.task
     if review is not None:
         body["review"] = review  # as given: the hub checks it and names each bad path
-    session = Session()
+    return _say_event(args, session, body, attach, f"sent {args.type} to {to}")
 
+
+def _say_event(
+    args: argparse.Namespace,
+    session: Session,
+    body: dict[str, Any],
+    attach: list[str],
+    said: str,
+) -> int:
     def post(ids: list[str]) -> Any:
         sent = {**body, "attachments": ids} if ids else body
         return session.client.call("POST", session.project_path("events"), body=sent)
 
     event = _post_with(session, attach, post)
-    return _done(args, event, f"sent {args.type} to {to} (seq {_field(event, 'seq')})")
+    return _done(args, event, f"{said} (seq {_field(event, 'seq')})")
 
 
 def _say_body(value: str | None, attach: list[str]) -> str:
@@ -1509,9 +1877,11 @@ def cmd_messages(args: argparse.Namespace) -> int:
                   f"removed by {by}")  # fmt: skip
             continue
         card = f"  {show(m.get('task_id'))}" if m.get("task_id") else ""
+        # an `update` may have no recipient: it goes to the card's watchers (§6.4)
+        to = "" if m.get("to") is None else f" -> {who(m.get('to'))}"
         print(
             f"{show(m.get('seq'))}  {show(m.get('sent_at'))}  {show(m.get('type'))}  "
-            f"{sender(m)} -> {who(m.get('to'))}{card}"
+            f"{sender(m)}{to}{card}"
         )
         for line in onboarding.quote(m.get("body") or ""):
             print(line)
@@ -1758,11 +2128,11 @@ def _check_holder(session: Session, tid: str, takeover: dict[str, Any]) -> None:
     """Only the holding instance answers for the card, and after a human's objection only
     that human (§6.19). Checked before sending, so an agent learns the rule, not a bare
     `forbidden`. The instance is the hub's to check: this clone does not know its own."""
-    me = session.data.get("member_id")
+    me = session.me  # a bridge answers for the card its served agent holds (§6.19)
     if not isinstance(me, str):
         raise state.StateError("this agent's member id is not known yet; run `maity resume`")
     holder = _obj(takeover.get("from"))
-    mine = session.data.get("instance")
+    mine = session.my_instance
     other_instance = isinstance(mine, str) and holder.get("instance") not in (None, mine)
     if holder.get("member_id") != me or other_instance:
         raise LocalRefusal(
@@ -1996,6 +2366,8 @@ def cmd_task_show(args: argparse.Namespace) -> int:
     if holder:
         print(f"  held by: {show(holder)}")
     print(f"  parent: {show(card.get('parent')) if card.get('parent') else 'none'}")
+    if isinstance(card.get("watching"), bool):
+        print(f"  watching: {'yes' if card['watching'] else 'no'}")
     if kids:
         counts = _obj(card.get("children"))
         print(f"  children: {show(counts.get('open'))}/{show(counts.get('total'))} open")
@@ -2223,14 +2595,27 @@ _TOKENS = ("all", "human", "owner")
 _TOKEN_PREFIXES = ("role:", "trust:", "area:", "member:")
 
 
-def _address(session: Session, to: str, members: list[dict[str, Any]] | None = None) -> str:
+def _address(
+    session: Session,
+    to: str,
+    members: list[dict[str, Any]] | None = None,
+    *,
+    chat_hint: bool = False,
+) -> str:
     """An addressee with a handle in it resolved to the member id (§6.24): `<handle>` and
     `<handle>#<instance>` (§6.17). Tokens, ids and names no member has go on unchanged: the
     hub answers for those as before."""
     if to in _TOKENS or to.startswith(_TOKEN_PREFIXES):
         return to
     who, hash_, instance = to.partition("#")
-    member = resolve_member(members if members is not None else _members(session), who, False)
+    members = members if members is not None else _members(session)
+    member = resolve_member(members, who, False)
+    if chat_hint and member == who and not any(m["id"] == who for m in members):
+        # An unavailable advisory read must not replace the command's own outcome.
+        with contextlib.suppress(hub.HubError):
+            if any(c.get("id") == to for c in _conversations(session)):
+                shown = shlex.quote(onboarding.inline(to))
+                raise UsageError(f"chats take --chat <id>: maity say --chat {shown} <message>")
     return f"{member}{hash_}{instance}"
 
 
@@ -2357,6 +2742,7 @@ def avatar_type(data: bytes) -> str | None:
 
 def cmd_profile_avatar(args: argparse.Namespace) -> int:
     """`PUT /me/avatar` with the file as it is, or `DELETE /me/avatar` (§6.10, §13)."""
+    _own_only("profile avatar")
     if args.remove == bool(args.file):
         raise UsageError("give an image file, or --remove")
     if args.remove:
@@ -2630,8 +3016,7 @@ def _ticker_limit(value: str) -> int:
 
 
 def cmd_ticker_post(args: argparse.Namespace) -> int:
-    """`POST …/ticker` (§17.6), every flag to its field. Against a hub without the ticker it
-    prints the interim `maity say` line and sends nothing."""
+    """`POST …/ticker` (§17.6), every flag to its field."""
     to = args.to or []
     if any(t in ("computed", "all") for t in to) and len(to) > 1:
         raise UsageError("--to computed or --to all stands alone")
@@ -2687,6 +3072,496 @@ def cmd_ticker_subscription(args: argparse.Namespace) -> int:
         for value in [v for v in follow.get(key) or [] if v in (mute.get(key) or [])]:
             print(f"{onboarding.inline(value)}: followed and muted — listed for you, never woken")
     return EXIT_OK
+
+
+# --- jour fixe (§20) -----------------------------------------------------------------------------
+
+JOUR_FIXE_FIELDS = ("went_well", "went_badly", "would_help")
+# §20.4 "What anonymity does not cover", printed before an anonymous answer goes out.
+ANONYMITY_LIMITS = (
+    "An anonymous answer reaches the moderator without your name. It does not cover:",
+    "- wording: style, details only you know and what you said elsewhere can identify you;",
+    "- timing while the window is open: every call updates your presence, and until the round's"
+    " key is destroyed whoever runs the hub and reads its database can link the answer to you;",
+    "- copies of the database (backups, write-ahead log, replicas) taken during the window;",
+    "- the transport: a proxy or TLS terminator sees which credential called, and when;",
+    "- small rounds: with two participants, an anonymous answer is the other one's.",
+)
+
+
+def _jour_fixe(session: Session) -> dict[str, Any]:
+    return _obj(session.client.call("GET", session.project_path("jour-fixe")))
+
+
+def _open_step(round_: dict[str, Any]) -> dict[str, Any]:
+    """The step whose window is open: the last one that opened, while it has no `closed_at`;
+    {} when none is. A further step waits at the end with `opened_at` null (§20.5)."""
+    opened = [s for s in round_.get("steps") or [] if isinstance(s, dict) and s.get("opened_at")]
+    return opened[-1] if opened and not opened[-1].get("closed_at") else {}
+
+
+def _phase(round_: dict[str, Any]) -> str:
+    """The round's status with the deadline that belongs to it (§20.7)."""
+    status = round_.get("status")
+    line = onboarding.inline(status or "?")
+    step = _open_step(round_)
+    if status == "answering" and round_.get("answers_close_at"):
+        line += f", answers close at {onboarding.inline(round_['answers_close_at'])}"
+    elif status in ("statement", "exchange") and step:
+        line += f", step {onboarding.inline(step.get('n'))} ({onboarding.inline(step.get('kind'))})"
+        if step.get("closes_at"):
+            line += f", closes at {onboarding.inline(step['closes_at'])}"
+    elif status == "reporting" and round_.get("report_due_at"):
+        line += f", report due at {onboarding.inline(round_['report_due_at'])}"
+    return line
+
+
+def _member_ids(entries: Any) -> list[Any]:
+    return [e.get("member_id") for e in entries or [] if isinstance(e, dict)]
+
+
+def _my_answer(session: Session, round_id: str) -> dict[str, Any] | None:
+    """The caller's own answer while the hub shows it (§20.3, §20.4), or None."""
+    try:
+        page = session.client.call(
+            "GET", session.project_path("jour-fixe", "rounds", round_id, "answers"),
+            query=[("mine", "true")],
+        )  # fmt: skip
+    except hub.HubError as exc:
+        if exc.code == "not_found":
+            return None
+        raise
+    items = [a for a in (_field(page, "items") or []) if isinstance(a, dict)]
+    return items[0] if items else None
+
+
+def _my_part(session: Session, round_: dict[str, Any]) -> str:
+    """Invited or not, answered or not while the window is open, eligible in the open step."""
+    me = session.me
+    if me not in _member_ids(round_.get("invited")):
+        return "you were not invited (not present when it opened)"
+    parts = ["you were invited"]
+    if round_.get("status") == "answering" and isinstance(round_.get("id"), str):
+        answer = _my_answer(session, round_["id"])
+        if answer is None:
+            parts.append(
+                "not answered, or withdrawn, which still counts (`maity jourfixe answer`, "
+                "or not at all)"
+            )
+        else:
+            parts.append("answered" + (" anonymously" if answer.get("anonymous") else ""))
+    step = _open_step(round_)
+    if me in (step.get("eligible") or []):
+        parts.append(f"eligible in step {onboarding.inline(step.get('n'))}")
+    return ", ".join(parts)
+
+
+def _report_lines(round_: dict[str, Any]) -> list[str]:
+    report = _obj(round_.get("report"))
+    when = onboarding.inline(round_.get("reported_at") or "?")
+    lines = [f"Last report: {onboarding.inline(round_.get('id'))}, {when}"]
+    if report.get("summary"):
+        lines += ["  " + q for q in onboarding.quote(report["summary"])]
+    proposals = [x for x in report.get("proposals") or [] if isinstance(x, dict)]
+    for proposal in proposals:
+        filed = proposal.get("request_id") or proposal.get("task_id")
+        title, triage = (onboarding.inline(proposal.get(k)) for k in ("title", "triage"))
+        line = f"  - {title} [{triage}]"
+        lines.append(line + (f" -> {onboarding.inline(filed)}" if filed else ""))
+    return lines
+
+
+def _series(overview: dict[str, Any]) -> list[dict[str, Any]]:
+    return [x for x in overview.get("series") or [] if isinstance(x, dict)]
+
+
+def _series_lines(session: Session, entry: dict[str, Any]) -> list[str]:
+    """One series of `GET …/jour-fixe` (§20.1, §20.9): its topic and circle, next slot,
+    moderators, current round with the caller's part, last report, and the caller's own
+    choices (§20.2)."""
+    sid = onboarding.inline(entry.get("id"))
+    if "topic" not in entry:  # an owner's series an admin sees only exists (§20.1)
+        owner = onboarding.inline(entry.get("circle_owner"))
+        return [f"Series {sid}: the own series of {owner} (you see only that it exists)"]
+    topic, circle = onboarding.inline(entry.get("topic")), onboarding.inline(entry.get("circle"))
+    next_at = entry.get("next_at")
+    lines = [
+        f"Series {sid}: {topic} (circle {circle})",
+        f"  Next: {onboarding.inline(next_at) if next_at else 'none scheduled'}",
+    ]
+    moderators = [onboarding.inline(m) for m in _member_ids(entry.get("moderators"))]
+    pending = [onboarding.inline(m) for m in _member_ids(entry.get("pending_moderators"))]
+    line = f"  Moderators: {', '.join(moderators) if moderators else 'nobody'}"
+    lines.append(line + (f" (pending: {', '.join(pending)})" if pending else ""))
+    current = _obj(entry.get("current_round"))
+    if current:
+        lines.append(f"  Current round {onboarding.inline(current.get('id'))}: {_phase(current)}")
+        lines.append(f"    {_my_part(session, current)}")
+    else:
+        lines.append("  No round open")
+    last = _obj(entry.get("last_round"))
+    if last:
+        lines += ["  " + x for x in _report_lines(last)]
+    mine = []
+    if entry.get("opted_out"):
+        mine.append("you opted out (`maity jourfixe opt-out " + sid + " --back` to return)")
+    if entry.get("report_recipient"):
+        mine.append("you receive the report")
+    if mine:
+        lines.append("  " + "; ".join(mine))
+    return lines
+
+
+def cmd_jourfixe(args: argparse.Namespace) -> int:
+    """`GET …/jour-fixe` (§20.9): every series the caller sees; `--all` lists every round,
+    every page."""
+    session = Session()
+    if args.all:
+        rounds: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        cursor: str | None = None
+        while True:
+            query = [("limit", "50")] + ([("cursor", cursor)] if cursor else [])
+            page = session.client.call(
+                "GET", session.project_path("jour-fixe", "rounds"), query=query
+            )
+            rounds.extend(r for r in (_field(page, "items") or []) if isinstance(r, dict))
+            cursor = _next_cursor(page, seen)
+            if cursor is None:
+                break
+        if args.json:
+            _print_json(rounds)
+            return EXIT_OK
+        if not rounds:
+            print("no jour fixe rounds yet")
+        for r in rounds:
+            when = onboarding.inline(r.get("scheduled_for") or r.get("opened_at") or "?")
+            topic = f" [{onboarding.inline(r['topic'])}]" if r.get("topic") else ""
+            print(f"{onboarding.inline(r.get('id'))} {when}{topic}: {_phase(r)}")
+        return EXIT_OK
+    overview = _jour_fixe(session)
+    if args.json:
+        _print_json(overview)
+        return EXIT_OK
+    series = _series(overview)
+    if not series:
+        print("no jour fixe series")
+    print("\n\n".join("\n".join(_series_lines(session, entry)) for entry in series))
+    return EXIT_OK
+
+
+def _answer_body(args: argparse.Namespace) -> dict[str, Any]:
+    """The three texts from --file, a JSON object with any of those keys as strings, and from
+    the flags, which replace the file's field (§13)."""
+    given: dict[str, Any] = {}
+    if args.file is not None:
+        raw = sys.stdin.read() if args.file == "-" else _read_text_file(args.file, "--file")
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise UsageError(f"--file is not JSON: {exc.msg}") from None
+        if not isinstance(data, dict) or set(data) - set(JOUR_FIXE_FIELDS):
+            keys = ", ".join(JOUR_FIXE_FIELDS)
+            raise UsageError(f"--file holds one JSON object with any of the keys {keys}")
+        if not all(isinstance(v, str) for v in data.values()):
+            raise UsageError("--file: every answer is a string")
+        given = dict(data)
+    given.update({f: getattr(args, f) for f in JOUR_FIXE_FIELDS if getattr(args, f) is not None})
+    if not any(v.strip() for v in given.values()):
+        raise UsageError("the answer is empty: give --went-well, --went-badly or --would-help")
+    return {**given, "anonymous": bool(args.anonymous)}
+
+
+def cmd_jourfixe_answer(args: argparse.Namespace) -> int:
+    """`POST …/rounds/{id}/answers` for the caller's current round (§20.3). Refused with exit 2,
+    nothing sent, without a round the caller may answer; `--anonymous` prints §20.4's limits
+    first."""
+    body = _answer_body(args)  # a usage error before any call
+    session = Session()
+    current = _to_answer(session)
+    if body["anonymous"]:
+        for line in ANONYMITY_LIMITS:
+            _err(line)
+    path = session.project_path("jour-fixe", "rounds", current["id"], "answers")
+    try:
+        answer = session.client.call("POST", path, body=body)
+    except hub.HubError as exc:
+        if exc.code == "jour_fixe_answered":
+            raise CommandError(
+                f"you have answered {onboarding.inline(current['id'])} already; one answer per "
+                "round, and a withdrawn answer still counts"
+            ) from None
+        raise
+    named = _field(answer, "id")
+    return _done(args, answer, f"answered {onboarding.inline(named)}" if named else "answered")
+
+
+def _to_answer(session: Session) -> dict[str, Any]:
+    """The round the caller answers: of the rounds open for answers that it takes part in
+    and has not answered, the one whose window closes first; exit 2 without one. A bridge
+    answers for the agent it serves (`session.me`, §20.3)."""
+    me = session.me
+    open_ = [
+        r
+        for r in (_obj(e.get("current_round")) for e in _series(_jour_fixe(session)))
+        if r.get("status") == "answering" and isinstance(r.get("id"), str)
+    ]
+    if not open_:
+        raise UsageError("no jour fixe round is open for answers; nothing sent")
+    mine = [r for r in open_ if me in _member_ids(r.get("participants"))]
+    if not mine:
+        names = ", ".join(onboarding.inline(r["id"]) for r in open_)
+        raise UsageError(f"you are not a participant of {names}; nothing sent")
+    left = [r for r in mine if _my_answer(session, r["id"]) is None] or mine
+    return min(left, key=lambda r: str(r.get("answers_close_at") or ""))
+
+
+def _round_for(session: Session, given: str | None) -> str:
+    """The round named, else a current one, else the newest reported one."""
+    if given:
+        return given
+    series = _series(_jour_fixe(session))
+    for entry in series:
+        found = _field(entry, "current_round", "id")
+        if isinstance(found, str):
+            return found
+    last = [_obj(e.get("last_round")) for e in series if _obj(e.get("last_round")).get("id")]
+    if last:
+        return str(max(last, key=lambda r: str(r.get("reported_at") or ""))["id"])
+    raise UsageError("there is no jour fixe round yet")
+
+
+def cmd_jourfixe_answers(args: argparse.Namespace) -> int:
+    """`GET …/rounds/{id}/answers` in the hub's shuffled order; `--mine` for the author."""
+    session = Session()
+    round_id = _round_for(session, args.round)
+    query = [("mine", "true")] if args.mine else []
+    page = session.client.call(
+        "GET", session.project_path("jour-fixe", "rounds", round_id, "answers"), query=query
+    )
+    items = [a for a in (_field(page, "items") or []) if isinstance(a, dict)]
+    if args.json:
+        _print_ascii_json(items)  # other members' text
+        return EXIT_OK
+    if not items:
+        print(f"no answers to show for {onboarding.inline(round_id)}")
+    titles = {"went_well": "Went well", "went_badly": "Went badly", "would_help": "Would help"}
+    for answer in items:
+        who = "anonymous" if answer.get("anonymous") else onboarding.inline(answer.get("author"))
+        state = " (withdrawn)" if answer.get("withdrawn") else ""
+        state += " (redacted)" if answer.get("redaction") else ""
+        print(f"{onboarding.inline(answer.get('id'))}, {who}{state}:")
+        for key, title in titles.items():
+            if answer.get(key):
+                print(f"  {title}:")
+                print("\n".join("    " + q for q in onboarding.quote(answer[key])))
+    return EXIT_OK
+
+
+def cmd_jourfixe_withdraw(args: argparse.Namespace) -> int:
+    """`DELETE …/rounds/{id}/answers/mine` while the window is open (§20.3, §20.4)."""
+    session = Session()
+    round_id = _round_for(session, args.round)
+    mine = _my_answer(session, round_id)  # read first: a withdrawn anonymous one is gone
+    answer = session.client.call(
+        "DELETE", session.project_path("jour-fixe", "rounds", round_id, "answers", "mine")
+    )
+    line = "withdrawn"
+    if mine is not None and mine.get("anonymous"):
+        line += "; the moderator may already have read it"
+    return _done(args, answer, line)
+
+
+def _json_file(path: str, flag: str) -> dict[str, Any]:
+    """A request body from FILE, or stdin with `-`: one JSON object, sent as read."""
+    raw = sys.stdin.read() if path == "-" else _read_text_file(path, flag)
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise UsageError(f"{flag}: not JSON: {exc.msg}") from None
+    if not isinstance(data, dict):
+        raise UsageError(f"{flag}: the body is one JSON object")
+    return data
+
+
+def _round_path(session: Session, round_id: str, *rest: str) -> str:
+    return session.project_path("jour-fixe", "rounds", round_id, *rest)
+
+
+def cmd_jourfixe_statement(args: argparse.Namespace) -> int:
+    """`POST …/rounds/{id}/statement` (§20.5): the moderator's topics, items and proposals,
+    from a JSON file as §20.5 writes it; prints the ids the hub gave them."""
+    body = _json_file(args.file, "--file")
+    session = Session()
+    round_ = session.client.call("POST", _round_path(session, args.round, "statement"), body=body)
+    topics = [x for x in _field(round_, "statement", "topics") or [] if isinstance(x, dict)]
+    lines = [f"statement posted to {onboarding.inline(args.round)}"]
+    for topic in topics:
+        ids = [onboarding.inline(s.get("id")) for s in topic.get("proposals") or []
+               if isinstance(s, dict)]  # fmt: skip
+        line = f"  {onboarding.inline(topic.get('id'))} {onboarding.inline(topic.get('title'))}"
+        lines.append(line + (f" (proposals {', '.join(ids)})" if ids else ""))
+    return _done(args, round_, "\n".join(lines), ascii_json=True)
+
+
+def cmd_jourfixe_post(args: argparse.Namespace) -> int:
+    """`POST …/rounds/{id}/posts` (§20.5): once per topic in a step the caller is eligible for;
+    `--to` names members by handle or id, `--reply-to` the responses a reply answers."""
+    session = Session()
+    body: dict[str, Any] = {"step": args.step, "topic_id": args.topic, "body": args.body}
+    if args.to:
+        members = _members(session)
+        body["to"] = [resolve_member(members, name) for name in args.to]
+    if args.reply_to:
+        body["in_reply_to"] = list(args.reply_to)
+    post = session.client.call("POST", _round_path(session, args.round, "posts"), body=body)
+    return _done(args, post, f"posted {onboarding.inline(_field(post, 'id'))}")
+
+
+def cmd_jourfixe_step(args: argparse.Namespace) -> int:
+    """`POST …/rounds/{id}/steps` (§20.5): a further step after the last one, by default for
+    every current participant on every topic."""
+    session = Session()
+    body: dict[str, Any] = {"reason": args.reason}
+    if args.member:
+        members = _members(session)
+        body["members"] = [resolve_member(members, name) for name in args.member]
+    if args.topic:
+        body["topics"] = list(args.topic)
+    round_ = session.client.call("POST", _round_path(session, args.round, "steps"), body=body)
+    steps = [s for s in _field(round_, "steps") or [] if isinstance(s, dict)]
+    added = steps[-1] if steps else {}
+    line = f"further step added to {onboarding.inline(args.round)}"
+    if not added.get("opened_at"):
+        line += "; it opens when the last step closes"
+    return _done(args, round_, line)
+
+
+def cmd_jourfixe_report(args: argparse.Namespace) -> int:
+    """`POST …/rounds/{id}/report` (§20.6) from a JSON file; prints each proposal's triage
+    with the request or card the hub filed or opened."""
+    body = _json_file(args.file, "--file")
+    session = Session()
+    answer = session.client.call("POST", _round_path(session, args.round, "report"), body=body)
+    round_ = _obj(_field(answer, "round"))
+    lines = [f"reported {onboarding.inline(args.round)}"]
+    report = _obj(round_.get("report"))
+    for proposal in [x for x in report.get("proposals") or [] if isinstance(x, dict)]:
+        title, triage = (onboarding.inline(proposal.get(k)) for k in ("title", "triage"))
+        decision = _obj(proposal.get("decision")).get("outcome")
+        line = f"  - {title} [{triage}" + (f": {onboarding.inline(decision)}" if decision else "")
+        filed = proposal.get("request_id") or proposal.get("task_id")
+        lines.append(line + "]" + (f" -> {onboarding.inline(filed)}" if filed else ""))
+    for left in [x for x in report.get("proposals_not_carded") or [] if isinstance(x, dict)]:
+        left_id, why = (onboarding.inline(left.get(k)) for k in ("proposal_id", "reason"))
+        lines.append(f"  not carded: {left_id} ({why})")
+    return _done(args, answer, "\n".join(lines), ascii_json=True)
+
+
+# Why a start did not open (§20.1), as the hub names it; no round is recorded.
+START_REFUSALS = {
+    "jour_fixe_open": "an earlier round is not final yet",
+    "project_closed": "the project is archived",
+    "no_moderator": "nobody who may moderate is present",
+    "too_few": "fewer than two members are present",
+}
+
+
+def _series_path(session: Session, series_id: str, *rest: str) -> str:
+    return session.project_path("jour-fixe", "series", series_id, *rest)
+
+
+def cmd_jourfixe_start(args: argparse.Namespace) -> int:
+    """`POST …/jour-fixe/series/{jfs}/rounds` (§20.1): a round of the series now. A start that
+    cannot open is the hub's 409 with its reason, printed as such with exit 1."""
+    session = Session()
+    try:
+        round_ = session.client.call(
+            "POST", _series_path(session, args.series, "rounds"), body={"reason": args.reason}
+        )
+    except hub.HubError as exc:
+        if exc.code in START_REFUSALS or exc.details.get("reason") == "circle_owner_gone":
+            open_round = exc.details.get("round")
+            why = START_REFUSALS.get(exc.code or "", "the series' owner left the project") + (
+                f" ({onboarding.inline(open_round)})" if open_round else ""
+            )
+            raise CommandError(f"no round started: {exc.code}, {why}; nothing recorded") from None
+        raise
+    line = f"started {onboarding.inline(_field(round_, 'id'))}: {_phase(_obj(round_))}"
+    return _done(args, round_, line)
+
+
+def cmd_jourfixe_moderators(args: argparse.Namespace) -> int:
+    """The series' moderators (`GET …/jour-fixe`), or `--grant` / `--end` one (§20.2); a
+    grant needs --reason and may wait for an owner's consent."""
+    session = Session()
+    if args.grant is None and args.end is None:
+        if args.reason:
+            raise UsageError("--reason goes with --grant")
+        entry = next((e for e in _series(_jour_fixe(session)) if e.get("id") == args.series), None)
+        if entry is None:
+            raise CommandError(f"no series {onboarding.inline(args.series)} you can see")
+        shown = {k: entry.get(k) or [] for k in ("moderators", "pending_moderators")}
+        if args.json:
+            _print_json(shown)
+            return EXIT_OK
+        names = [onboarding.inline(m) for m in _member_ids(shown["moderators"])]
+        pending = [onboarding.inline(m) for m in _member_ids(shown["pending_moderators"])]
+        print(
+            (", ".join(names) or "nobody")
+            + (f" (pending: {', '.join(pending)})" if pending else "")
+        )
+        return EXIT_OK
+    if args.grant is not None and args.end is not None:
+        raise UsageError("give --grant or --end, not both")
+    members = _members(session)
+    if args.end is not None:
+        member_id = resolve_member(members, args.end)
+        answer = session.client.call(
+            "DELETE", _series_path(session, args.series, "moderators", member_id)
+        )
+        return _done(args, answer, f"moderator right of {onboarding.inline(member_id)} ended")
+    if not args.reason:
+        raise UsageError("--reason is required to grant the moderator right")
+    member_id = resolve_member(members, args.grant)
+    answer = session.client.call(
+        "POST", _series_path(session, args.series, "moderators"),
+        body={"member_id": member_id, "reason": args.reason},
+    )  # fmt: skip
+    requests = _field(answer, "requests")
+    if isinstance(requests, list) and requests:
+        waiting = ", ".join(onboarding.inline(r) for r in requests)
+        line = f"the grant to {onboarding.inline(member_id)} waits for consent: {waiting}"
+    else:
+        line = f"{onboarding.inline(member_id)} may moderate {onboarding.inline(args.series)}"
+    return _done(args, answer, line)
+
+
+def _choice(args: argparse.Namespace, tail: str, off: bool, on_line: str, off_line: str) -> int:
+    """`PUT` or `DELETE …/series/{jfs}/<tail>` for the calling member (§20.2)."""
+    session = Session()
+    answer = session.client.call(
+        "DELETE" if off else "PUT", _series_path(session, args.series, tail)
+    )
+    return _done(args, answer, off_line if off else on_line)
+
+
+def cmd_jourfixe_opt_out(args: argparse.Namespace) -> int:
+    """Out of a series, or back in with --back (§20.2)."""
+    sid = onboarding.inline(args.series)
+    return _choice(args, "opt-out", args.back, f"opted out of {sid}", f"back in {sid}")
+
+
+def cmd_jourfixe_report_to(args: argparse.Namespace) -> int:
+    """On a series' report list, or off it with --off (§20.2)."""
+    sid = onboarding.inline(args.series)
+    return _choice(
+        args,
+        "report",
+        args.off,
+        f"you receive the reports of {sid}",
+        f"you no longer receive the reports of {sid}",
+    )
 
 
 def cmd_release_show(args: argparse.Namespace) -> int:
@@ -2791,7 +3666,20 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=OUTPUT_DISCIPLINE,
         formatter_class=fmt,
     )
-    parser.add_argument("--version", action="version", version=f"maity {__version__}")
+    parser.add_argument(
+        "--version",
+        action=VersionAction,
+        nargs=0,
+        default=argparse.SUPPRESS,
+        help="show the release version and code build",
+    )
+    parser.add_argument(
+        "--for",
+        dest="for_target",
+        metavar="AGENT",
+        help="act for an agent this bridge serves (handle or member id): every call of the "
+        "command carries Maity-For; not for commands that call /me",
+    )
     sub = parser.add_subparsers(dest="command", metavar="<command>", required=True)
 
     def add(name: str, summary: str, description: str) -> argparse.ArgumentParser:
@@ -2841,8 +3729,15 @@ def build_parser() -> argparse.ArgumentParser:
         "Open a session and print what it says: the briefing, identity and role, the project's "
         "state and rules (in full when they changed), the cards you hold with their checkpoints, "
         "answered and open requests, the events since your last session, and the next step. "
-        "--json prints the resume packet itself. Run it at the start of every session and after "
-        "a context compaction.",
+        "The text is compact: the last 10 answers and the last 10 events addressed to you, the "
+        "rest counted; --full prints the packet of the last resume in full, without opening "
+        "another session. --json prints the resume packet itself. Run it at the start of every "
+        "session and after a context compaction.",
+    )
+    p.add_argument(
+        "--full",
+        action="store_true",
+        help="print the last resume's packet in full, without calling the hub",
     )
     p.add_argument(
         "--hub", help="the hub URL, once, when the credential came from the page-driven join"
@@ -2948,6 +3843,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(handler=cmd_ack)
 
     p = add(
+        "dormant",
+        "put this instance to rest, woken only by its own address",
+        "`PATCH /me` with `dormant` (§6.17): this instance keeps its session, its claims and "
+        "everything it may do, but its `wait` ends only for events addressed to it by name "
+        "(`@<handle>#<id>`, an assignment naming it, the cards it holds); messages to the "
+        "member, its role or the team no longer wake it. Run it when your work has moved to a "
+        "sibling instance but you should stay reachable for a question only you can answer. "
+        "`resume` does not end it; `maity dormant --off` does.",
+    )
+    p.add_argument("--off", action="store_true", help="wake this instance again")
+    _json_flag(p)
+    p.set_defaults(handler=cmd_dormant)
+
+    p = add(
         "ask",
         "put a request into a human's or a role's inbox",
         "Ask for a decision, a consent, a contract change or information. The question's first "
@@ -2997,6 +3906,51 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(handler=cmd_ask)
 
     p = add(
+        "request",
+        "manage project requests",
+        "Forward, claim or withdraw project requests. Use ask to create a new request.",
+    )
+    rsub = p.add_subparsers(dest="request_command", metavar="<action>", required=True)
+    r = rsub.add_parser(
+        "forward",
+        help="forward a decision request you hold",
+        description="Forward an open decision request (POST …/requests/{id}/forward) to an "
+        "admin, its original addressee or trust:admin. The hub checks the holder and target.",
+        epilog=OUTPUT_DISCIPLINE,
+        formatter_class=fmt,
+    )
+    r.add_argument("request", type=_id, help="the request id")
+    r.add_argument("--to", required=True, help="a member id or handle, or trust:admin")
+    r.add_argument("--reason", help="why the request is forwarded")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_request_forward)
+    r = rsub.add_parser(
+        "claim",
+        help="take a decision request from the admin pool",
+        description="Claim an open request held by trust:admin (POST …/requests/{id}/claim). "
+        "The first eligible admin wins; the hub checks rights and humans-only restrictions.",
+        epilog=OUTPUT_DISCIPLINE,
+        formatter_class=fmt,
+    )
+    r.add_argument("request", type=_id, help="the request id")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_request_claim)
+    r = rsub.add_parser(
+        "withdraw",
+        help="withdraw an open project request",
+        description="Withdraw an open project request (POST …/requests/{id}/withdraw). "
+        "The asker or a holder of requests:answer may withdraw a non-personal request. "
+        "The hub checks rights "
+        "and request state; its refusals are printed as they come.",
+        epilog=OUTPUT_DISCIPLINE,
+        formatter_class=fmt,
+    )
+    r.add_argument("request", type=_id, help="the request id")
+    r.add_argument("--reason", help="why the request is withdrawn")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_request_withdraw)
+
+    p = add(
         "claim",
         "take a card: it stays yours until it is closed or you give it back",
         "Claim an open card (POST …/tasks/{card}/claim). The lease is renewed by every call this "
@@ -3018,6 +3972,26 @@ def build_parser() -> argparse.ArgumentParser:
     _json_flag(p)
     _on_request_flag(p)
     p.set_defaults(handler=cmd_unclaim)
+
+    p = add(
+        "watch",
+        "follow a card you wait for: its status changes and updates wake you",
+        "Watch a card (PUT …/tasks/{card}/watch): every status change and every `say --type "
+        "update` on it reach and wake you, whoever holds it. Allowed on closed cards too.",
+    )
+    p.add_argument("card", type=_id, help="the card id")
+    _json_flag(p)
+    p.set_defaults(handler=cmd_watch)
+
+    p = add(
+        "unwatch",
+        "stop following a card",
+        "Stop watching a card (DELETE …/tasks/{card}/watch). A watch that comes with your own "
+        "card depending on this one stays while the dependency does: the hub answers `invalid`.",
+    )
+    p.add_argument("card", type=_id, help="the card id")
+    _json_flag(p)
+    p.set_defaults(handler=cmd_unwatch)
 
     p = add(
         "checkpoint",
@@ -3051,7 +4025,9 @@ def build_parser() -> argparse.ArgumentParser:
         "chat with the human who owns this agent (POST …/conversations/{you}/messages); "
         "--chat <conversation> writes in any chat you are in, a group chat included. Each "
         "--attach uploads a file first (POST …/attachments) and the message then carries it; "
-        "a failed upload sends no message. Status is not a message: the board shows it.",
+        "a failed upload sends no message. Status is not a message: the board shows it. "
+        "--type update --task CARD needs no TO: it reaches everyone watching the card, and the "
+        "one positional is the message.",
     )
     p.add_argument(
         "to",
@@ -3294,7 +4270,7 @@ def build_parser() -> argparse.ArgumentParser:
         "(PATCH /me), the conversation history. PATH is relative to /api/v1, e.g. "
         "/projects/oliver/maity/tasks/tsk-0004. See `maity help`.",
     )
-    p.add_argument("method", type=str.upper, choices=("GET", "POST", "PATCH", "DELETE"))
+    p.add_argument("method", type=str.upper, choices=("GET", "POST", "PUT", "PATCH", "DELETE"))
     p.add_argument("path", help="the endpoint path, starting with /")
     p.add_argument("--json", metavar="FILE", help="request body from a JSON file, or - for stdin")
     p.add_argument(
@@ -3352,8 +4328,7 @@ def build_parser() -> argparse.ArgumentParser:
         "post",
         help="post an item by hand (owner and admin): a note, a deploy, a release",
         description="`POST …/ticker` (§17.6), every flag to its field. --to and --area repeat, "
-        "one value each; --to computed or --to all stands alone. Against a hub without the "
-        "ticker it prints the `maity say` line to use instead and exits 2, sending nothing.",
+        "one value each; --to computed or --to all stands alone.",
         formatter_class=fmt,
     )
     r.add_argument("text", help="1 to 280 characters, plain text")
@@ -3382,6 +4357,172 @@ def build_parser() -> argparse.ArgumentParser:
         r.add_argument("--type", action="append", choices=TICKER_SUB_TYPES, help="repeat")
         _json_flag(r)
         r.set_defaults(handler=cmd_ticker_subscription)
+
+    p = add(
+        "jourfixe",
+        "the project's jour fixe: the round, your answer, the answers",
+        "The jour fixe (§20): a project has several series, each with a topic, a circle and a "
+        "schedule; a round asks the present members of its circle three questions, the "
+        "moderator reads the answers, opens the exchange and reports. Without an action it "
+        "shows each series with its next slot, its moderators, its current round with its "
+        "phase and deadline and your part in it, and its last report. Answering is optional, "
+        "and nobody is reminded.",
+    )
+    p.add_argument("--all", action="store_true", help="list every round instead, newest first")
+    _json_flag(p)
+    p.set_defaults(handler=cmd_jourfixe)
+    jsub = p.add_subparsers(dest="jourfixe_command", metavar="<action>")
+    r = jsub.add_parser(
+        "answer",
+        help="answer your current round: what went well, badly, what would help",
+        description="`POST …/rounds/{id}/answers` for the round open for answers (§20.3). At "
+        "least one text; each at most 4 KiB. The answer goes to the moderator only. "
+        "--anonymous first prints what anonymity does not cover (§20.4). Without a round you "
+        "may answer it exits 2 and sends nothing.",
+        formatter_class=fmt,
+    )
+    r.add_argument("--went-well", dest="went_well", metavar="T", help="what went well")
+    r.add_argument("--went-badly", dest="went_badly", metavar="T", help="what went badly")
+    r.add_argument("--would-help", dest="would_help", metavar="T", help="what would help")
+    r.add_argument("--anonymous", action="store_true", help="answer without your name")
+    r.add_argument(
+        "--file",
+        metavar="FILE",
+        help='the answer as JSON, {"went_well": …, "went_badly": …, "would_help": …}; - for stdin',
+    )
+    _json_flag(r)
+    r.set_defaults(handler=cmd_jourfixe_answer)
+    r = jsub.add_parser(
+        "answers",
+        help="read a round's answers (moderator, admin humans, or your own with --mine)",
+        description="`GET …/rounds/{id}/answers` in the hub's shuffled order (§20.3); an "
+        "anonymous answer carries no author. The round defaults to the current one, else the "
+        "last reported one.",
+        formatter_class=fmt,
+    )
+    r.add_argument("round", nargs="?", type=_id, help="the round id")
+    r.add_argument("--mine", action="store_true", help="only your own answer")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_jourfixe_answers)
+    r = jsub.add_parser(
+        "withdraw",
+        help="withdraw your answer while the answer window is open",
+        description="`DELETE …/rounds/{id}/answers/mine` (§20.3, §20.4). An anonymous answer is "
+        "deleted outright; the moderator may already have read it.",
+        formatter_class=fmt,
+    )
+    r.add_argument("round", nargs="?", type=_id, help="the round id")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_jourfixe_withdraw)
+    r = jsub.add_parser(
+        "statement",
+        help="the moderator's statement: topics, items, proposals (step 1)",
+        description="`POST …/rounds/{id}/statement` (§20.5) with the body as §20.5 writes it, "
+        '{"topics": [{"title", "summary", "items": [{"text", "from"}], "proposals": [{"title", '
+        '"reason"}]}]}, read from FILE or stdin (-) and sent as read. Each item\'s `from` is a '
+        'member id with a named answer in the round, or "anonymous".',
+        formatter_class=fmt,
+    )
+    r.add_argument("round", type=_id, help="the round id")
+    r.add_argument("--file", required=True, metavar="FILE", help="the body as JSON; - for stdin")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_jourfixe_statement)
+    r = jsub.add_parser(
+        "post",
+        help="post once per topic in a step you are eligible for",
+        description="`POST …/rounds/{id}/posts` (§20.5). STEP is response, reply, rejoinder or "
+        "further; --to (responses and further steps) names members by handle or id, --reply-to "
+        "the responses a reply answers. The text is Markdown; - reads it from stdin.",
+        formatter_class=fmt,
+    )
+    r.add_argument("round", type=_id, help="the round id")
+    r.add_argument(
+        "--step", required=True, choices=("response", "reply", "rejoinder", "further"),
+        help="the open step",
+    )  # fmt: skip
+    r.add_argument("--topic", required=True, metavar="T", help="the topic id, e.g. t1")
+    r.add_argument("--to", action="append", metavar="H", help="a member the post addresses")
+    r.add_argument("--reply-to", dest="reply_to", action="append", metavar="P",
+                   help="a response this reply answers")  # fmt: skip
+    r.add_argument("body", help="the post, Markdown; - for stdin")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_jourfixe_post)
+    r = jsub.add_parser(
+        "step",
+        help="the moderator adds a further step to the exchange",
+        description="`POST …/rounds/{id}/steps` (§20.5): after step 2 has opened and before the "
+        "last step's window ends, at most 3 per round; by default for every current "
+        "participant on every topic.",
+        formatter_class=fmt,
+    )
+    r.add_argument("round", type=_id, help="the round id")
+    r.add_argument("--reason", required=True, metavar="R", help="why the step is needed")
+    r.add_argument("--member", action="append", metavar="H", help="a member it opens to")
+    r.add_argument("--topic", action="append", metavar="T", help="a topic it opens on")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_jourfixe_step)
+    r = jsub.add_parser(
+        "report",
+        help="the moderator's report: findings and triaged proposals",
+        description="`POST …/rounds/{id}/report` (§20.6) with the body as §20.6 writes it, from "
+        "FILE or stdin (-), sent as read. Prints each proposal's triage with the request or "
+        "card the hub filed or opened.",
+        formatter_class=fmt,
+    )
+    r.add_argument("round", type=_id, help="the round id")
+    r.add_argument("--file", required=True, metavar="FILE", help="the body as JSON; - for stdin")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_jourfixe_report)
+    r = jsub.add_parser(
+        "start",
+        help="start a round of a series now (its keepers and moderators)",
+        description="`POST …/jour-fixe/series/{jfs}/rounds` (§20.1). A start that cannot open "
+        "is printed with the hub's reason (jour_fixe_open, project_closed, no_moderator, "
+        "too_few, circle_owner_gone), exit 1; no round is recorded.",
+        formatter_class=fmt,
+    )
+    r.add_argument("series", type=_id, help="the series id")
+    r.add_argument("--reason", required=True, metavar="R", help="why a round now")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_jourfixe_start)
+    r = jsub.add_parser(
+        "moderators",
+        help="a series' moderators, or grant or end the right",
+        description="Without options, the series' moderators and pending ones (`GET "
+        "…/jour-fixe`). --grant H with --reason: `POST …/series/{jfs}/moderators`; a grant "
+        "that waits for an owner's consent prints the requests. --end H: `DELETE "
+        "…/series/{jfs}/moderators/{member_id}` (§20.2).",
+        formatter_class=fmt,
+    )
+    r.add_argument("series", type=_id, help="the series id")
+    r.add_argument("--grant", metavar="H", help="a member, by handle or id")
+    r.add_argument("--end", metavar="H", help="a member, by handle or id")
+    r.add_argument("--reason", metavar="R", help="why, required with --grant")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_jourfixe_moderators)
+    r = jsub.add_parser(
+        "opt-out",
+        help="leave a series, or come back with --back",
+        description="`PUT …/series/{jfs}/opt-out`, or `DELETE` with --back (§20.2). Out of a "
+        "series you are not invited and never its moderator; you still read its reports. Under "
+        "the global --for, for the agent you serve.",
+        formatter_class=fmt,
+    )
+    r.add_argument("series", type=_id, help="the series id")
+    r.add_argument("--back", action="store_true", help="come back")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_jourfixe_opt_out)
+    r = jsub.add_parser(
+        "report-to",
+        help="receive a series' reports, or stop with --off",
+        description="`PUT …/series/{jfs}/report`, or `DELETE` with --off (§20.2): the report "
+        "then wakes you once. Under the global --for, for the agent you serve.",
+        formatter_class=fmt,
+    )
+    r.add_argument("series", type=_id, help="the series id")
+    r.add_argument("--off", action="store_true", help="take yourself off the list")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_jourfixe_report_to)
 
     p = add(
         "limit",
@@ -3428,7 +4569,7 @@ def build_parser() -> argparse.ArgumentParser:
         "create", help="create a card, or a subtask with --parent", formatter_class=fmt
     )
     r.add_argument("title", help="the card's title")
-    r.add_argument("--body", help="the card's body, Markdown")
+    r.add_argument("--body", help="the card's body, Markdown; - reads stdin")
     r.add_argument("--area", help="the repository path the card is about")
     r.add_argument("--label", help="the card's label")
     r.add_argument("--parent", type=_id, help="make it a subtask of this card")
@@ -3466,7 +4607,8 @@ def build_parser() -> argparse.ArgumentParser:
     nsub = p.add_subparsers(dest="note_command", metavar="<action>", required=True)
     r = nsub.add_parser("add", help="post a note on a card", formatter_class=fmt)
     r.add_argument("card", type=_id, help="the card id")
-    r.add_argument("body", help="the note, Markdown, at most 4 KiB")
+    r.add_argument("body", nargs="?", help="the note, Markdown, at most 4 KiB; - reads stdin")
+    r.add_argument("--body-file", metavar="FILE", help="read the note from this UTF-8 file")
     _json_flag(r)
     r.set_defaults(handler=cmd_note_add)
     r = nsub.add_parser("list", help="a card's notes, oldest first", formatter_class=fmt)
@@ -3641,13 +4783,6 @@ def _explain(exc: Exception) -> str:
             f"pause is lifted; {STILL_WORKS} still work. Park what you hold, then "
             f"`maity wait`.{_reason_last(paused)}"
         )
-    if isinstance(exc, hub.HubError) and exc.code == "client_outdated":
-        minimum = onboarding.inline(exc.details.get("minimum") or "a newer version")
-        install = onboarding.inline(exc.details.get("install") or "pipx upgrade maity")
-        return (
-            f"this maity ({__version__}) is older than the hub needs ({minimum}): projects "
-            f"are addressed as <owner>/<slug> now. Upgrade with: {install}"
-        )
     return str(exc)
 
 
@@ -3684,7 +4819,10 @@ def _say_body_after_options(args: argparse.Namespace, extra: list[str]) -> bool:
 # errors, required). A value of `-` reads standard input, once per command.
 TEXT_ARGS: dict[Handler, tuple[tuple[str, str, str, bool], ...]] = {
     cmd_ask: (("question", "body_file", "the question", True),),
+    cmd_note_add: (("body", "body_file", "the note", True),),
+    cmd_task_create: (("body", "body_file", "--body", False),),
     cmd_report: (("summary", "summary_file", "--summary", True),),
+    cmd_jourfixe_post: (("body", "body_file", "the post", True),),
     cmd_checkpoint: (
         ("message", "message_file", "-m", True),
         ("next", "next_file", "--next", True),
@@ -3711,9 +4849,19 @@ def _read_text_file(path: str, flag: str) -> str:
 _EATEN = re.compile(r"\w  +\w|\w +[.,;:!?)](?:\s|$)")
 
 
+def _say_update_text(args: argparse.Namespace) -> None:
+    """`maity say --type update --task ID "…"`: no recipient, so the one positional is the
+    message (§6.4)."""
+    if getattr(args, "handler", None) is not cmd_say or args.type != "update":
+        return
+    if args.chat is None and args.body is None and args.body_file is None:
+        args.to, args.body = None, args.to
+
+
 def _load_texts(args: argparse.Namespace) -> None:
     """Resolve `-` and the `--…-file` flags into the text arguments, before the command runs,
     and warn about text that looks like the shell already ran parts of it."""
+    _say_update_text(args)
     stdin_used = False
     for attr, file_attr, flag, required in _texts(args):
         value, path = getattr(args, attr, None), getattr(args, file_attr, None)
@@ -3770,6 +4918,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error(f"unrecognized arguments: {' '.join(extra)}")
     handler: Handler = args.handler
     Session.on_request = getattr(args, "on_request", None)
+    Session.for_target = args.for_target
+    if args.for_target is not None and args.command == "join":
+        _err("--for applies to project commands; join is the bridge's own: run it without --for")
+        return EXIT_USAGE
     try:
         _load_texts(args)
         return handler(args)
@@ -3788,7 +4940,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         for problem in exc.problems:
             _err(problem)
         return EXIT_ERROR
-    except (UsageError, runner_commands.Refused) as exc:
+    except (UsageError, runner_commands.Refused, hub.ForRefused) as exc:
         _err(str(exc))
         return EXIT_USAGE
     except LocalRefusal as exc:

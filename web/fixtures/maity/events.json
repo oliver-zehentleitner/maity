@@ -4,7 +4,7 @@
       "actor": { "kind": "member", "member_id": "agt-a" }, "subject": null, "audience": ["all"], "redacted": false,
       "payload": { "type": "notice", "to": "all", "body": "Contract §8.7 is merged. @maintainer the dashboard part is next.",
         "task_id": null, "conversation_id": null,
-        "mentions": [ { "member_id": "hum-maintainer", "handle": "maintainer", "field": "body", "offset": 30, "length": 11 } ], "attachments": [] } },
+        "mentions": [ { "member_id": "hum-maintainer", "handle": "maintainer", "field": "body", "offset": 25, "length": 11 } ], "attachments": [] } },
     { "seq": 6003, "kind": "message", "at": "2026-10-22T09:40:00Z",
       "actor": { "kind": "member", "member_id": "agt-b" }, "subject": null, "audience": ["member:agt-b", "member:hum-maintainer"], "redacted": true,
       "_conversation": "agt-b",

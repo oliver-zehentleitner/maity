@@ -13,9 +13,10 @@
 A report is stored and answered without touching the forge; its card id
 then goes onto the queue of one daemon thread per hub process, which reads
 the branch and the pull request and fills `report.observed`. The same
-thread sweeps every five minutes: reports still without an observation on
-open cards of any age and on cards closed within a day, and the open
-release of every observable project. A round ends at the first read the
+thread sweeps every five minutes: reports without an observation on open
+cards of any age and on cards closed within a day, the open release of
+every observable project, then the 15 reports with the oldest observation
+whose pull request was last seen open. A round ends at the first read the
 forge does not answer, and between two reads when the hub stops. Forge reads
 happen with no database connection held; each result is written in a short
 transaction of its own under the project lock. The thread starts only when
@@ -34,6 +35,46 @@ delay a long-poll's wake-up, and it fits the single replica V1 runs.
   database access would have to leave the loop again.
 - A separate probe process or cron job: one more thing to deploy and
   supervise for work that takes milliseconds every few minutes.
+
+## A sweep reads a report again while its pull request was last seen open
+
+**Id:** 9092661c-3553-4e0f-81d1-fa521fa05581
+**Type:** incident
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-bex2nzwmceh8, 2026-11-01
+**Revisit when:** a verified `pull_request` delivery refreshes the report itself, or the forge budget (§11) cannot carry these reads
+
+Until 2026-11-01 a sweep read only reports without an observation, so a
+report first seen with its pull request open stayed `open` after the
+merge: `task_merged` and `merged_closes` (§6.6) never fired for it, and
+`maity report` refused a follow-up pull request on the card because the
+last one looked open. The tests called `observe_report` directly on a merged pull
+request, so none noticed. A sweep now also reads reports last seen open, up
+to 15 a round, oldest observation first, after everything else it reads.
+
+**Reason:** the contract's "A merge closes the loop" needs someone to look
+again, and the sweep is the only reader that runs on its own.
+
+**Consequence:** one report costs at least four forge requests (branch, pull
+request, check runs, statuses), so about 60 per sweep and 720 an hour, some 14%
+of a 5000-an-hour source, with no cache help since the 60 s of `MAX_AGE` are
+shorter than the sweep. A forgotten open pull request on an open card keeps
+its turn at any age. Beyond 15 such reports a merge shows later: one round
+per 15 reports, so 150 reports take up to 50 minutes. A merge into the default
+branch is still announced by the ticker in that time; only the card lags.
+
+**Rejected alternatives:**
+- Refreshing from the merge ticker alone: it sees only merges into the
+  default branch, and a pull request closed unmerged or merged into another
+  base would stay open on its card.
+- A turn counter per process, as `_rotated` keeps: it restarts with the
+  process and each replica would count alone, while the oldest `observed_at`
+  needs no state of its own.
+- Reading every such report each round: about 48 requests an hour per report
+  would use a 5000-an-hour source up at about 100 of them, and as the round
+  ends at the first unanswered read, releases and links behind them would
+  starve.
 
 ## A change is detected where the observation is written, by whichever read sees it first
 

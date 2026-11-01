@@ -6,15 +6,21 @@
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** docs/api.md §1.7 and §19.2 (an entry 2 KiB, the soul 8 KiB, a team and the community 64 KiB of live entries, `memory_full` instead of eviction); implementation session, 2026-10-23
+**Source:** docs/api.md §1.7 and §19.2 (an entry 2 KiB, the soul 8 KiB, a team and the community 64 KiB of live entries, `memory_full` instead of eviction); implementation session, 2026-10-23; role-lifetime regression for card tsk-ysrb6pwqwhc6, 2026-10-31
 **Revisit when:** the contract states the caps in characters, or a second replica writes memory (the lock is per database, so it still holds)
 
 The caps are measured in bytes of UTF-8, not in characters: an entry is
-refused above 2048 bytes, the soul above 8192. A team's or the
+refused above 2048 bytes, the soul above 8192. A team's, a role's or the
 community's live text is summed from the rows before every write. The
 write takes the project row lock first (`events.lock_project`). Two
 agents of one team writing at once cannot both pass a check that only
 one of them fits under.
+
+Role writes also recheck their role name against the fresh project row
+returned by that lock. Role removal uses the same lock for its in-use
+check. Trusting only the earlier request-validation snapshot was rejected:
+a role could disappear before the write acquired the lock, leaving a
+live entry for a role whose removal had already succeeded.
 
 **Reason:** "KiB" names a size. In characters the same cap would let a
 text in a non-Latin script take up to four times the room. The sum is
@@ -118,7 +124,7 @@ privacy and withdrawal checks and needs no second proposal table.
 The packet's `changed_since_cursor` reads the project's `memory_added`,
 `memory_deleted` and `soul_changed` events with a `seq` after the
 resume's cursor. It is true when one of them is the community's, names
-the agent's team, or is the agent's soul. The cost grows with the
+the agent's team or current role, or is the agent's soul. The cost grows with the
 memory history since the cursor, not with the project's events: the
 `kind` filter runs on the indexed `(project_id, seq)` range.
 
@@ -149,3 +155,52 @@ would tell another team's agent that an entry with that id exists in a
 team it cannot read. Every other project route answers what the caller
 cannot see with `not_found` (§1.3). The effect the contract wants holds
 either way: no agent deletes another team's memory.
+
+## Role memory follows the named role, including a project's custom role
+
+**Id:** 254f8287-0836-41d3-9e57-00c5abc728e7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §2.3 and §19.2–§19.3; card tsk-ysrb6pwqwhc6 and coordinating clarification, 2026-10-31
+**See:** memory.md — 2d7764da-8ff4-4d04-88c2-7c1eccd5b15b — as of 2026-10-31
+**Revisit when:** the contract changes role-memory ownership or proxy governance calls become available
+
+Role entries belong to the project and the role's own name. Members
+share that store, with its own 64 KiB live quota and 4 KiB resume block.
+A membership changing roles reads the new store; existing entries stay
+with the old role. Live entries prevent removing a custom role, while
+tombstones retain its name as history without keeping the role in use.
+
+**Reason:** §2.3 explicitly separates a custom role's memory from its
+base's scope inheritance, and §19.2 makes entries the role's rather than
+the author's. Reads and idempotent replays therefore check the current
+role. Owner/admin members may read and manage other roles. A proxy is
+excluded from that extra authority and retains its own role's coder
+access; the coordinating clarification requires this boundary until
+governance consent per call is implemented. General consent infrastructure
+is outside this change.
+
+**Rejected alternatives:** share a custom role's memory with its base,
+which §2.3 excludes; grant foreign role memory solely from a proxy's
+`admin` trust, which would let the interface act without its owner's
+decision and was explicitly rejected in the clarification.
+
+## A downgrade does not discard role-memory history
+
+**Id:** 5e540987-9cc9-4fcd-84e9-e6a35df75159
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** role-memory schema migration and downgrade regression, 2026-10-31
+**Revisit when:** an explicit export or retention policy defines how role history survives a downgrade
+
+The role-store migration refuses a downgrade while any role entry,
+including a tombstone, remains. An empty role store can downgrade;
+existing team and community entries retain their previous shape.
+
+**Reason:** the previous schema can represent neither the role store
+nor its ownership name. Deleting those rows would silently erase live
+knowledge or deletion history; assigning them to community or a team
+would change their readers. Both were rejected in favor of a refusal
+before altering the table.

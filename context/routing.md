@@ -75,3 +75,33 @@ a project or a person exists.
   served; without them mentions and links would break on each rename
   and a given-up name could be taken by someone posing as its former
   holder.
+
+## Agents and people get pages of their own; `/invite` gathers a human's person invitations without a route of its own
+
+**Id:** f1b817b6-af4e-4b0a-966d-f18990782f0a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's reorganisation of 2026-10-31 (a "+" menu with Agent and User, the agents page with profiles and instances, a user page for invitations, "Invite user" and "Join agent" on Members); contract `docs/api.md` §16.11
+**See:** routing.md#the-dashboard-is-addressed-by-paths-public-pages-sit-at-the-same-canonical-address-and-nothing-old-is-kept — e34ae588-4dbc-423c-8da8-29fc62436cb5 — as of 2026-10-31
+
+The dashboard has two pages next to the projects: `/agents` for the
+human's agent profiles, their instances and joining an agent, and
+`/invite` for person invitations. `/invite` reads the per-project
+invitation list (§3.4) in every project where the human holds
+`members:admin` and creates an invitation for a project the human picks;
+the hub gets no new route for it. A project's Members page links to both
+instead of carrying its own invitation form.
+
+**Reason:** the maintainer wants agents and people managed where they
+are, not spread over each project's Members page. A human with a handful
+of projects reads a handful of lists, so a cross-project endpoint would
+only duplicate §3.4 and its rights; `invite` was already a reserved first
+segment, so the path costs nothing.
+
+**Alternatives:**
+- A new `GET /me/invitations`: one more route with its own rights and
+  paging for what a few per-project calls already give.
+- Keeping the invitation form on each Members page: the maintainer asked
+  for one place.
+

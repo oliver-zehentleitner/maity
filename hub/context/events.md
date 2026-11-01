@@ -311,6 +311,40 @@ statements per stay; that and the per-agent direct count are replaced by `unread
 `tests/test_me_conversations.py` holds the bell and `totals.unread` equal, also after a read
 mark.
 
+## A pin belongs to the human, lives while it reads the chat, and is dropped where access ends
+
+**Id:** cc8d2f9e-a34c-4d3c-8008-8619dcc77b72
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §9.3 "Pinned" (contract #914) and the card tsk-9a3ph3jvhhrb; the contract fixes the routes, the 20 across projects, the four bands and that a chat left keeps no pin; how the hub keeps that is this entry's reading
+**Revisit when:** a way to lose access to a chat appears that neither ends a stay nor removes a membership (a trust change that ends reading a round's thread along is one today), or the lists move into SQL
+
+`conversation_pin` is keyed by human, project and chat id, not by membership: an owner outside the
+project reads its agents' chats along without a membership (§9.2) and may pin them, and the 20 are
+counted across projects. `pins.prune(project)` runs where a stay in a group chat ends
+(`group_chats.remove`, which a membership's removal and an isolation pass through) and after a
+membership's removal (its direct chats), and drops every pin of the project its holder no longer
+reads; `PUT …/pin` prunes the holder's own pins before it counts, under the human's row lock, so a
+pin lost some other way never blocks a new one and two projects cannot both take the 21st. A chat
+left and joined again therefore comes back unpinned. The lists add `pinned` after the entries are
+built and sort in Python, a stable sort per band; the cursor carries the band, and the cursor scope
+changed so a cursor from before the bands is refused instead of read wrongly.
+
+**Reason:** the contract says a chat left keeps no pin, and a stale row would count against the 20
+and come back on a later join. The places where access ends are few and already central. The
+downgrade only drops the table, and the index goes with it: MariaDB refuses
+`DROP INDEX ix_conversation_pin_project` while the foreign key on `project_id` needs it (error 1553).
+
+**Rejected alternatives:**
+- A pin valid while its `pinned_at` is after the start of the current access: every list would need
+  each chat's access start, which the entries do not carry, and the 20 would still count dead rows.
+- Pruning while reading a list: a `GET` that writes, and a list without `observed` cannot tell a
+  chat read along from one no longer read.
+- Keying by membership: an owner outside the project holds none, and the limit is per human.
+- A downgrade that drops the foreign key and then the index before the table: dropping the table
+  already removes both, so the extra steps would order nothing.
+
 ## A review result's `review` is checked for its shape and stored as given; the repository is never read
 
 **Id:** d6ea47d4-3ad6-435e-8806-f1faa96a6360
@@ -347,3 +381,60 @@ instead of one problem per attempt.
 - Stopping at the first problem: a reviewer would fix and resend up to five times for one review.
 - Keeping `review` optional for a while: nothing posts a review result without it that is not about
   to be changed, and alpha keeps no layers for the old shape.
+
+## The meat-proxy choice per chat is a row of its own, keyed by human, project and conversation, and one function adds it to every participants list
+
+**Id:** ab4caa81-c57d-418f-a664-7ff498f1e6e7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §9.3 "Meat proxy per chat", §5.2 (contract #922); the card tsk-2yqm0gebktrk
+**Verification:** corroborated
+**Revisit when:** a chat may carry more than the human's own on/off choice, or the participants lists are built in one place
+
+`conversation_meat_proxy(human_id, project_id, conversation_id, meat_proxy)` holds a human's own choice for one chat, `true` or `false`; `null` deletes the row and the chat follows the profile. `chat_meat_proxy.shown` adds `meat_proxy`, `meat_proxy_chat` (only for the human reading) and, while on, `meat_proxy_note` to every human entry of the participants lists it is given, in the conversation view (`group_chats.view`), the direct item and both lists; the resume packet's `conversations[].meat_proxy` is read from the same entries. `PUT …/meat-proxy` emits no event. The account's deletion and export name the table.
+
+**Reason:** a direct chat has no participant row (its id is the agent's), and the choice must work there as much as in a group chat, so a column on `conversation_participant` would cover only half. The same agent's direct chat exists once per project under one id, which is why the project is part of the key: a choice in one project must not switch the mode on in another. One function over the lists keeps the fields from drifting between the four places participants are built. The migration's primary key and foreign keys must be the same as in `tables.py` (human, project, conversation; foreign keys on human and project): the tests build the schema from the migrations, so a key only in `tables.py` is never checked. A first version had `(human_id, conversation_id)` in the migration, and a second project's direct chat then failed with a unique violation.
+
+**Rejected alternatives:**
+- A column on `conversation_participant`: no row for a direct chat, and a stay per join in a group chat that would lose the choice when the human leaves and comes back.
+- Keying by conversation id alone: the same agent in two projects would share one choice.
+- Emitting an event on a change: the contract has the agents read it on their next resume and wakes nobody; an event would reach every reader of the chat for what is context about a person.
+
+## A watch reaches an event through a list fixed at write, added where every event is written
+
+**Id:** 036f7df6-94c3-47e3-8852-17984b326859
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.4 "Audience" and §8.2 (contract #458), which fix the token, the private list and the per-reader `wakes`; the card tsk-9rbf4xt4ggzg; how the hub keeps that is this entry's reading
+**See:** https://github.com/oliver-zehentleitner/maity — 95001efe-eb05-4bd0-af03-ffa42b6dbe9e — as of 2026-11-01
+**Revisit when:** a new way to move a card's status appears, or the events move into a store that cannot join a second table
+
+`events.emit` adds `watchers:<card>` to a `task_updated` with `status` among its fields and to an
+`update` message, whether anyone watches or not, and writes the memberships watching then into
+`event_watcher`. A read turns the rows of its batch into `watching:<seq>` beside the batch's other
+hidden facts, and `wakes` takes the set as an argument. `_wakes` in `views.py` serves only the
+reader's own entries of such an event, and nothing to a view without a reader. A claim, a release, a
+report, a request that blocks or unblocks the card, and a holder's isolation or removal write a `task_updated` when they move the
+status, after their own event, which never carries the token: a reader takes one event at a time
+(`maity wait --one`) and sees what happened before what followed from it. A merge remembered while
+the card was blocked is told after the `task_updated` of its return to `review`. A refresh writes none. The contract
+names the report; the claim and the release are the coordinator's reading of §6.4's "a status
+change" (2026-11-01), and a blocking request is this entry's reading of the same words. A redaction
+and a deleted attachment take over the list of the event they are about, so they stay readable as
+that event is (§8.5, §8.7). `event_watcher` is neither deleted nor exported: it references memberships,
+whose rows stay, a member gone reads nothing more, and like a `member:` token in an audience it is
+the history of whom an event reached.
+
+**Reason:** the token must be there when nobody watches, or its presence would say that someone
+does, and one place in `emit` covers every site that writes `task_updated`. A reader's watches
+are read per batch, so an event without the token costs nothing and no card lookup runs at read.
+
+**Rejected alternatives:**
+- The token at each site that writes `task_updated`: a new site that forgets it silently reaches no
+  watcher.
+- The private list as a column of `event`: every read of the row would carry it, one serialization
+  away from being served, and the contract keeps it apart.
+- Resolving watchers at read: a watch begun later would reach earlier events, which §6.4 excludes.
+

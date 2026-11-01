@@ -13,9 +13,9 @@ from sqlalchemy import select
 
 from maity_hub import clock
 from maity_hub import tables as t
-from maity_hub.auth import second_factor, sessions
+from maity_hub.auth import mail_factor, second_factor, sessions
 from maity_hub.deps import HumanCaller, engine_of, settings_of
-from maity_hub.errors import unauthenticated
+from maity_hub.errors import ApiError, unauthenticated
 from maity_hub.routes.auth import member_of, set_session_cookies
 
 router = APIRouter(prefix="/auth")
@@ -32,11 +32,14 @@ class Confirm(Strict):
 class Verify(Strict):
     code: str | None = Field(default=None, min_length=1, max_length=32)
     recovery_code: str | None = Field(default=None, min_length=1, max_length=32)
+    email_code: str | None = Field(default=None, min_length=1, max_length=16)
+    email_token: str | None = Field(default=None, min_length=1, max_length=128)
 
     @model_validator(mode="after")
     def one_of(self) -> Verify:
-        if (self.code is None) == (self.recovery_code is None):
-            raise ValueError("give code or recovery_code")
+        given = [v for v in (self.code, self.recovery_code, self.email_code, self.email_token) if v]
+        if len(given) != 1:
+            raise ValueError("give one of code, recovery_code, email_code or email_token")
         return self
 
 
@@ -110,7 +113,13 @@ def verify(body: Verify, request: Request, caller: HumanCaller) -> JSONResponse:
             select(t.human_session).where(t.human_session.c.id_hash == current)
         ).one()
         result = second_factor.verify(
-            conn, hub, caller, code=body.code, recovery_code=body.recovery_code
+            conn,
+            hub,
+            caller,
+            code=body.code,
+            recovery_code=body.recovery_code,
+            email_code=body.email_code,
+            email_token=body.email_token,
         )
         if isinstance(result, tuple):
             member = member_of(conn, row.human_id)
@@ -125,3 +134,35 @@ def verify(body: Verify, request: Request, caller: HumanCaller) -> JSONResponse:
     response = JSONResponse({"member": member, "next": next_route})
     set_session_cookies(response, request, result[0], result[1], device)
     return response
+
+
+@router.post("/second-factor/email")
+def send_mail_factor(request: Request, caller: HumanCaller) -> JSONResponse:
+    """A new mail of the mail factor (§2.8.8): from a second-factor session `via: email` a link
+    and a code, from a full session of a human without TOTP, under `email`, a code only for the
+    step-up. A new mail voids the earlier link and code."""
+    current = _session(caller)
+    hub = settings_of(request)
+    unavailable: ApiError | None = None
+    with engine_of(request).begin() as conn:
+        row = conn.execute(
+            select(t.human_session).where(t.human_session.c.id_hash == current)
+        ).one()
+        if second_factor.policy(conn, hub) != "email" or (
+            second_factor.via(conn, hub, row.human_id) != mail_factor.VIA
+        ):
+            raise second_factor.refused("method_disabled", "the mail is not the second factor")
+        step = row.state == "second_factor"
+        try:
+            mail_factor.send(conn, hub, row, with_link=step)
+        except ApiError as refused:
+            if refused.code != "address_unverified":
+                raise
+            unavailable = refused
+            if mail_factor.ever_had_address(conn, row.human_id):
+                second_factor.failed(
+                    conn, row.human_id, mail_factor.UNAVAILABLE, row.ip, row.browser, row.os
+                )
+    if unavailable is not None:
+        raise unavailable  # after the commit: the account record stays
+    return JSONResponse({"mail": "sent"})

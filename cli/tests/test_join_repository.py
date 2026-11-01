@@ -114,7 +114,7 @@ def test_unknown_board_does_not_claim_empty(
 def test_admin_pause_and_work_take_priority() -> None:
     p = _packet("admin")
     p["claims"] = [{"id": "tsk-a", "title": "work"}]
-    assert "Continue tsk-a" in onboarding.render(p, board_empty=True)
+    assert "continue tsk-a" in onboarding.render(p, board_empty=True)
     p["membership"]["paused"] = {"reason": "hold"}
     assert "Next: You are paused" in onboarding.render(p, board_empty=True)
 
@@ -145,7 +145,7 @@ def test_isolation_outranks_work_and_a_pause() -> None:
     p["membership"]["isolated"] = ISOLATED
     text = onboarding.render(p)
     assert "Next: You are isolated" in text
-    assert "Continue tsk-a" not in text and "You are paused" not in text
+    assert "continue tsk-a" not in text and "You are paused" not in text
     p["membership"]["isolated"] = None  # lifted: the packet says null
     text = onboarding.render(p)
     assert "ISOLATED" not in text and "Next: You are paused" in text

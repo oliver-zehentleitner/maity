@@ -151,38 +151,27 @@ window.Maity = window.Maity || {};
     return owner === String(m.name || "").split("/")[0] || (!!named && (named.aliases || []).indexOf(owner) >= 0);
   }
 
-  // A scanned text with its stored mentions (docs/api.md §8.6) as text
-  // nodes and member links. Offsets and lengths count code points; only the
-  // stored ones for this field are links, and only where the text there is
-  // "@" + the stored handle; nothing the writer typed becomes a member link.
-  // `at` (M.ids.where): the project the text belongs to, for the ids in
-  // the text between mentions as links (js/ids.js). `ctx` (optional): the
-  // member views it knows; a mention typed as an alias of the member (§6.24),
-  // alone or after an owner or an owner's alias, is a link as well.
-  function withMentions(text, mentions, field, hrefOf, at, ctx) {
+  // The stored mentions of a text (docs/api.md §8.6) that stand where they
+  // say: offsets and lengths count code points; only the stored ones for
+  // this field count, and only where the text there is "@" + the stored
+  // handle (or the long @owner/handle, or an alias the members in `ctx` know,
+  // §6.24), with an instance's #id after it; nothing the writer typed becomes
+  // a member link. js/markdown.js draws them as links.
+  function mentionSpans(text, mentions, field, ctx) {
     const chars = Array.from(String(text || ""));
-    const marks = (mentions || [])
-      .filter((x) => x && x.field === field && Number.isInteger(x.offset) && Number.isInteger(x.length) && x.length > 1)
-      .sort((a, b) => a.offset - b.offset);
     const out = [];
-    const plain = (s) => (at && M.ids ? M.ids.link(s, at) : [s]);
     let from = 0;
-    marks.forEach((x) => {
-      if (x.offset < from || x.offset + x.length > chars.length) return;
-      const said = chars.slice(x.offset, x.offset + x.length).join("");
-      // The hub stores a long mention (§8.6) with the whole @owner/handle,
-      // and an instance mention with its #id after either form.
-      const suffix = x.instance ? "#" + x.instance : "";
-      if (said !== "@" + x.handle + suffix && !(x.name && said === "@" + x.name + suffix) && !aliasSaid(ctx, x, said, suffix)) return;
-      if (x.offset > from) out.push(...plain(chars.slice(from, x.offset).join("")));
-      // No href: a mention named where its member cannot be opened. An
-      // instance mention links to the member; the instance is in the title.
-      const href = hrefOf(x.member_id);
-      const title = x.instance ? "instance " + x.instance : null;
-      out.push(href ? h("a", { class: "mention", href, title }, said) : h("span", { class: "mention", title }, said));
-      from = x.offset + x.length;
-    });
-    if (from < chars.length) out.push(...plain(chars.slice(from).join("")));
+    (mentions || [])
+      .filter((x) => x && x.field === field && Number.isInteger(x.offset) && Number.isInteger(x.length) && x.length > 1)
+      .sort((a, b) => a.offset - b.offset)
+      .forEach((x) => {
+        if (x.offset < from || x.offset + x.length > chars.length) return;
+        const said = chars.slice(x.offset, x.offset + x.length).join("");
+        const suffix = x.instance ? "#" + x.instance : "";
+        if (said !== "@" + x.handle + suffix && !(x.name && said === "@" + x.name + suffix) && !aliasSaid(ctx, x, said, suffix)) return;
+        out.push({ offset: x.offset, length: x.length, said, member_id: x.member_id, instance: x.instance || null });
+        from = x.offset + x.length;
+      });
     return out;
   }
 
@@ -299,6 +288,8 @@ window.Maity = window.Maity || {};
   // <handle>#<id> (owner/handle#id where two agents share the handle),
   // the #id muted with the session's harness and model as its tooltip, so
   // two instances of one agent read apart. A human has no instances.
+  // The handle and the #id are two links (the maintainer, tsk-bczgjkfpw1wg):
+  // the member's page, and the same page's Sessions with that instance.
   function memberRef(ctx, who, opts) {
     const o = opts || {};
     const id = typeof who === "string" ? who : who && (who.member_id || who.id);
@@ -309,16 +300,23 @@ window.Maity = window.Maity || {};
     const agent = !(m && m.kind === "human") && !(who && who.kind === "human");
     // Without a handle (a reference read across projects carries none) the
     // name stands before the #id: the instance is said all the same.
-    const suffix = inst && agent ? h("span", { class: "member-instance muted", title: instanceTitle(inst) }, "#" + inst.id) : null;
+    const linkable = !!m && !ctx.outsider && typeof ctx.link === "function";
+    const suffix = inst && agent
+      ? (linkable
+        ? h("a", { class: "member-instance muted", href: instanceHref(ctx, id, inst.id), title: instanceTitle(inst) }, "#" + inst.id)
+        : h("span", { class: "member-instance muted", title: instanceTitle(inst) }, "#" + inst.id))
+      : null;
     const label = suffix && handle ? (o.text === "handle" ? "@" : "") + handle
       : o.text === "handle" ? (handle ? "@" + handle : name) : (o.text || name);
     const pic = o.avatar && m && M.avatar ? M.avatar(m, o.avatar) : null;
-    const ref = !m || ctx.outsider || typeof ctx.link !== "function"
+    const ref = !linkable
       ? h("span", { class: "member-ref plain", title: name }, pic, label)
       : h("a", { class: "member-ref", href: ctx.link("members", id), title: name, "data-member": id }, pic, label);
-    // The #id stays outside the link (the designer's pass on #429): it names, it leads nowhere else.
+    // The #id is a link of its own beside the handle's, never inside it.
     return suffix ? h("span", { class: "member-ref-instance" }, ref, suffix) : ref;
   }
+  // Where an instance's #id leads: its member's page, Sessions, with it chosen.
+  const instanceHref = (ctx, memberId, instanceId) => ctx.link("members", memberId, "sessions", instanceId);
   const INSTANCE = /^[2-9a-hjkmnp-z]{4,5}$/; // an instance id (§6.17)
   function instanceOf(x) {
     const src = typeof x === "string" ? { instance: x } : x;
@@ -371,5 +369,5 @@ window.Maity = window.Maity || {};
   const dormantOf = (m) => ((m && m.instances) || []).filter((i) => !i.revoked_at && i.dormant);
   const dormantNote = (ctx, m, inst) => M.t("instance.dormant", { address: "@" + (handleOf(ctx, m) || m.handle || m.id) + "#" + inst.id });
 
-  M.dom = { handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, memberRef, memberChip, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, withMentions, sniffImage, IMAGE_MAX, SEND_KEYS, sendKeysFor, showSendKeys, sendOnCtrlEnter };
+  M.dom = { handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, memberRef, instanceHref, memberChip, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, SEND_KEYS, sendKeysFor, showSendKeys, sendOnCtrlEnter };
 })(window.Maity);

@@ -91,6 +91,9 @@ def test_a_human_proxy_decides_no_jour_fixe_proposal() -> None:
 
     from maity_hub.jourfixe.triage import may_decide
 
-    assert may_decide(SimpleNamespace(kind="human", trust="admin", role="coder"))
-    assert not may_decide(SimpleNamespace(kind="human", trust="admin", role="proxy"))
-    assert not may_decide(SimpleNamespace(kind="agent", trust="admin", role="proxy"))
+    round_row = SimpleNamespace(config={"circle": "all"})
+    for kind, role, decides in (("human", "coder", True), ("human", "proxy", False)):
+        mine = SimpleNamespace(kind=kind, trust="admin", role=role)
+        assert may_decide(None, round_row, mine) is decides  # type: ignore[arg-type]
+    mine = SimpleNamespace(kind="agent", trust="admin", role="proxy")
+    assert not may_decide(None, round_row, mine)  # type: ignore[arg-type]

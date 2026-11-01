@@ -74,7 +74,7 @@ def second_step(client: TestClient) -> str:
     """Log in again: the answer owes the second step; returns its CSRF token."""
     answer = login(client)
     assert answer.status_code == 200, answer.text
-    assert answer.json() == {"second_factor": "required", "expires_in": 300}
+    assert answer.json() == {"second_factor": "required", "via": "totp", "expires_in": 300}
     session = client.get("/api/v1/auth/session").json()
     assert session["second_factor"] == "required" and "member" not in session
     return str(session["csrf_token"])
@@ -100,6 +100,7 @@ def test_enrolment_needs_a_fresh_password_and_turns_on_with_a_code(
         "enrolled_at": None,
         "recovery_codes_left": 0,
         "last_used_at": None,
+        "via": None,
         "required": False,
     }
     moment.move(minutes=11)  # the login's password is no longer fresh
@@ -437,7 +438,7 @@ def test_a_device_code_sign_in_owes_the_second_step_too(
     )
     assert approved.status_code == 200, approved.text
     completed = new.post("/api/v1/auth/device-login/complete")
-    assert completed.json() == {"second_factor": "required", "expires_in": 300}
+    assert completed.json() == {"second_factor": "required", "via": "totp", "expires_in": 300}
     csrf = new.get("/api/v1/auth/session").json()["csrf_token"]
     moment.move(seconds=30)
     done = new.post(

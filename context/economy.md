@@ -51,7 +51,7 @@ maintainer.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day
+**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day; reworded without revenue on 2026-10-31 (request req-gdkhw8df0r33)
 **See:** scope.md#later-stages-agreed-in-principle-and-deliberately-not-in-v1-public-projects-and-discovery-sponsoring-and-credits-a-managed-instance-per-customer-federation — 54e1a38b-1e54-480f-87f2-014139a563d1 — as of 2026-10-27
 
 A member who wants to give more than they take sponsors and earns social
@@ -63,7 +63,7 @@ is no market where members trade points for money.
 **Reason:** a peer-to-peer money market would make the operator a
 payment service or a broker, with licensing, identity checks and tax
 duties. A closed loop where only Maity sells is like an in-app currency:
-simpler legally, and revenue for the hosted offering.
+simpler legally.
 
 **Rejected alternatives:**
 - A peer-to-peer market for points against money, which the maintainer
@@ -86,9 +86,8 @@ Maity already stores (card, history, review, pull request, timestamps).
 The steps follow a court: claim, answer, reply, rejoinder, judgement, at
 most one appeal. Judges are first the Maity crew; later members with
 high social credit, paid per case in points, and an AI arbiter with a
-quota (more with a subscription, one per month on the free tier, a small
-fee beyond). Nobody judges their own case or their own team. A first
-judgement against someone is a warning they must acknowledge; after that
+quota the operator sets. Nobody judges their own case or their own team.
+A first judgement against someone is a warning they must acknowledge; after that
 each one deducts social credit, rising with every judgement, and points
 can be moved back.
 
@@ -126,38 +125,34 @@ from being outrun on their own idea.
 - A deposit for every proposal, returned on acceptance, as an anti-spam
   measure: dropped in favour of owner tools and blocking.
 
-## Paid work happens outside Maity; Maity provides the evidence of work and charges for seats, not for brokering
+## Paid work happens outside Maity; Maity provides the evidence of work and brokers nothing
 
 **Id:** 8cf5aed0-3d79-4601-a81d-72960ece376f
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day
-**See:** scope.md#the-beta-is-free-later-plans-price-humans-and-organisations-never-agents-one-hard-ceiling-of-agent-profiles-per-human-protects-the-hosted-instance — 37803db9-3f8a-4a1a-b42f-20ba9c783e1f — as of 2026-10-27
+**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day; reworded without revenue on 2026-10-31 (request req-gdkhw8df0r33)
+**See:** scope.md#agents-never-limit-an-account-one-hard-ceiling-of-agent-profiles-per-human-protects-the-hosted-instance — 37803db9-3f8a-4a1a-b42f-20ba9c783e1f — as of 2026-10-27
 
 Projects can take on developers as staff and pay them privately, by
 invoice or in crypto; Maity holds no money and brokers nothing. It
 provides the evidence of work from what it already stores (finished
 cards, reports with pull requests and commits, review status, time
 range), exportable per person and period. That work does not count
-towards points. The hosted offering earns from seats per organisation;
-self-hosting stays free. A legal check happens only once someone
+towards points. A legal check happens only once someone
 complains: the accepted proposal had named a lawyer's check before the
 build, the maintainer's chat said to wait for a complaint, and asked to
 settle the conflict he chose the latter (req-6bv3vgh6f0xn).
 
 **Reason:** in the maintainer's words, Maity does not broker; work
 arises on the platform and Maity only provides the management tools,
-which makes it attractive to workers and companies and gives seats a
-sense for companies. That brokering or a commission would be regulated
-(job placement, labour leasing) is the coordinator's caution from the
-accepted proposal.
+which makes it attractive to workers and companies. That brokering or a
+commission would be regulated (job placement, labour leasing) is the
+coordinator's caution from the accepted proposal.
 
 **Rejected alternatives:**
-- A marketplace with matching and a commission: in the maintainer's
-  words that is where the big money is, but Maity would be something like
-  a job broker, and as open source it cannot charge much when people can
-  host it themselves.
+- A marketplace with matching and a commission: Maity would be
+  something like a job broker.
 
 ## A referral earns social credit once the referred person earns it by their own work, one level only
 

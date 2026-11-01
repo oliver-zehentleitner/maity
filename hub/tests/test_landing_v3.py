@@ -12,6 +12,7 @@ import pytest
 from sqlalchemy import Engine
 
 from maity_hub import landing_files, landing_stats
+from maity_hub.landing import AGENTS, ALPHA_MARKS
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_pages import ADMIN, SECTIONS, hero, publish
@@ -137,6 +138,9 @@ def test_the_files_travel_with_the_package(make_client: ClientFactory) -> None:
     assert client.get("/assets/landing/fonts/OFL-inter.txt").status_code == 200
     for picture in ("hero-rings.svg", "band-loader.svg", "mark.svg"):
         assert landing_files.svg(picture).startswith("<svg")
+    # the third-party marks go with their NOTICE, or not at all (docs/api.md §16.7)
+    assert client.get("/assets/landing/agents/NOTICE").status_code == 200
+    assert client.get("/assets/landing/agents/claude-code.svg").status_code == 200
 
 
 def test_nothing_else_is_served_from_the_directory(
@@ -206,7 +210,7 @@ def test_the_header_has_the_theme_switch_hidden_and_in_the_pages_language(
     )
     german = make_client().get("/?lang=de").text
     assert 'aria-label="Zwischen hellem und dunklem Farbschema wechseln"' in german
-    assert 'aria-label="Menschen und Agenten in drei Ringen' in german
+    assert 'aria-label="Menschen und Agents in drei Ringen' in german
 
 
 def test_the_hero_is_a_dark_zone_with_the_rings_as_inline_svg(
@@ -239,7 +243,10 @@ def test_the_demo_has_every_line_the_inbox_item_and_the_steps_in_the_html(
     assert re.search(
         r'<div class="inbox-item card d5" data-lp-inbox>.*Merge it\?.*CI is green\.', html
     )
-    assert 'class="yes" aria-hidden="true">Approve</span>' in html
+    assert (
+        '<span class="yes">Yes</span><span class="no">No</span><span class="reply">Reply</span>'
+        in html
+    )
     assert [m for m in re.findall(r'<li class="step (s\d)">', html)] == ["s1", "s2", "s3"]
     assert "The agent asks." in html and "One question, one answer." in html
 
@@ -294,12 +301,12 @@ def test_the_faq_is_details_and_the_band_carries_the_loader(
     )
 
 
-def test_a_counter_is_its_number_for_the_script_and_a_floor_stays_text(
+def test_a_counter_is_its_number_for_the_script(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
     html = page(owner, make_client, SECTIONS[1])
     assert re.search(r'<b><span data-lp-count>1</span></b><span class="label">People</span>', html)
-    assert re.search(r'<b>&lt; 5</b><span class="label">People online</span>', html)
+    assert "&lt; 5" not in html  # no "< 5" stands in place of a number (§16.7)
 
 
 def test_an_operators_words_are_escaped_in_every_new_section(
@@ -416,3 +423,116 @@ def test_the_preview_answers_with_the_pages_policy(
     assert shown.status_code == 200
     assert shown.headers["content-security-policy"] == LANDING_CSP
     assert "data-lp-demo" in shown.text and shown.headers["x-robots-tag"] == "noindex"
+
+
+# --- works_with: the agents' logos ---------------------------------------------------------------
+
+WORKS_WITH: dict[str, Any] = {
+    "type": "works_with",
+    "enabled": True,
+    "label": "Works with",
+    "items": ["claude-code", "codex", "pi"],
+    "more": "+ any agent that runs a command",
+}
+
+
+def test_works_with_names_agents_by_slug_and_only_from_the_hubs_list(owner: flow.Human) -> None:
+    assert put(owner, WORKS_WITH).status_code == 200
+    every = {**WORKS_WITH, "items": list(AGENTS), "more": None}
+    assert put(owner, every).status_code == 200
+    answer = put(owner, {**WORKS_WITH, "items": ["codex", "nope", "pi", "codex", "../x"]})
+    assert answer.status_code == 400
+    assert fields(answer) == {
+        "pages.en.sections.1.items.1": "unknown_agent",
+        "pages.en.sections.1.items.3": "duplicate",
+        "pages.en.sections.1.items.4": "unknown_agent",
+    }
+    for bad in ([], "codex", [1], {"codex": 1}, ["codex"] * 20):
+        assert put(owner, {**WORKS_WITH, "items": bad}).status_code == 400, bad
+    for extra in ({"logo": "https://evil.example/x.svg"}, {"label": "x" * 41}, {"more": "x" * 61}):
+        assert put(owner, {**WORKS_WITH, **extra}).status_code == 400, extra
+
+
+def test_works_with_draws_the_band_without_script(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    html = page(owner, make_client, WORKS_WITH)
+    assert '<p class="agents-label">Works with</p>' in html
+    assert "+ any agent that runs a command" in html
+    for slug in WORKS_WITH["items"]:
+        assert f"/assets/landing/agents/{slug}.svg?v=" in html
+    first, copy = html.split('<ul class="agents-list agents-copy"')
+    assert first.count('class="agent"') == 3 and "Claude Code" in first
+    # the copy that makes the loop seamless is hidden from assistive technology and inert
+    assert (
+        copy.startswith(' aria-hidden="true" inert>') and "agent-name" not in copy.split("</ul>")[0]
+    )
+    assert "<img" not in html and "<script" not in html.split("</head>")[1].split("<body")[0]
+
+
+def test_the_agent_logos_are_served_like_the_other_files(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    client = make_client()
+    for slug in AGENTS:
+        logo = client.get(f"/assets/landing/agents/{slug}.svg")
+        assert logo.status_code == 200 and logo.headers["content-type"] == "image/svg+xml"
+        assert logo.content.lstrip().startswith(b"<svg"), slug
+        assert b"<script" not in logo.content and b"href=" not in logo.content, slug
+        assert logo.headers["x-content-type-options"] == "nosniff"
+    notice = client.get("/assets/landing/agents/NOTICE")
+    assert (
+        notice.status_code == 200 and "skills.sh" in notice.text and "Simple Icons" in notice.text
+    )
+    assert client.get("/assets/landing/agents/missing.svg").status_code == 404
+
+
+def test_every_agent_has_a_logo_and_every_logo_an_agent() -> None:
+    folder = landing_files.HERE / "agents"
+    assert {p.stem for p in folder.glob("*.svg")} == set(AGENTS)
+    assert (folder / "NOTICE").is_file()
+
+
+def test_the_licence_and_readme_point_to_the_notice() -> None:
+    root = Path(__file__).resolve().parents[2]
+    for name in ("LICENSE", "README.md"):
+        assert "landing_assets/agents" in (root / name).read_text(encoding="utf-8"), name
+
+
+def test_the_marks_are_read_by_luminance_except_the_one_on_transparency(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    """The skills.sh files are white marks on an opaque black tile: read by alpha they are solid
+    squares, so the mask uses luminance; `pi` is a black shape on transparency and is read by alpha.
+    """
+    css = make_client().get("/assets/landing/landing.css").text
+    assert re.search(r"\.agent-logo\{[^}]*mask-mode:luminance", css)
+    assert re.search(r"\.agent-alpha\{[^}]*mask-mode:alpha", css)
+    html = page(owner, make_client, WORKS_WITH)
+    assert html.count('class="agent-logo agent-alpha"') == 2  # `pi`, in both copies
+    assert html.count('class="agent-logo"') == 4
+    for slug in AGENTS:
+        source = (landing_files.HERE / "agents" / f"{slug}.svg").read_text(encoding="utf-8")
+        tile = re.search(r'fill="(#000|black)"', source) is not None
+        assert tile or slug in ALPHA_MARKS, slug
+
+
+def test_the_demo_cannot_widen_the_page_on_a_phone(make_client: ClientFactory) -> None:
+    """A grid track of `1fr` is `minmax(auto, 1fr)`, so a terminal line that cannot break pushed
+    the page wider than a 390 px screen. The stylesheet must let the track shrink, let a line
+    break, and keep the typing's `nowrap` to screens wide enough for one line. (A browser's
+    `scrollWidth` check is not possible here: this pins the rules that fix it.)"""
+    css = make_client().get("/assets/landing/landing.css").text
+    assert "@media (max-width:900px){.demo-grid{grid-template-columns:minmax(0,1fr)}}" in css
+    assert ".demo-grid>*{min-width:0}" in css
+    assert re.search(r"\.term li\{[^}]*overflow-wrap:anywhere", css)
+    assert re.search(r"@media \(min-width:760px\)\{\.demo-on \.d1\{white-space:nowrap", css)
+    assert not re.search(r"(?<!\{)\.demo-on \.d1\{white-space:nowrap", css)
+
+
+def test_an_agent_is_named_once_for_a_screen_reader(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    """The text of `.agent-name` is the name; a `title` besides it names the logo twice."""
+    html = page(owner, make_client, WORKS_WITH)
+    assert 'class="agent" tabindex="0">' in html and "title=" not in html.split("<main")[1]

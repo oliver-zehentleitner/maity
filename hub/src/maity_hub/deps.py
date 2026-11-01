@@ -73,6 +73,12 @@ async def _resolve(request: Request, renew_leases: bool) -> Caller:
                     _confine_runner(path)
                 if caller.kind == "agent" and slug is not None:
                     _refuse_other_project(conn, caller, slug)
+                if "maity-for" in facts.headers:  # a bridge calling for an agent (§2.3)
+                    from maity_hub import bridges
+
+                    caller = bridges.carry(
+                        conn, caller, facts.headers["maity-for"], path, slug, renew_leases
+                    )
                 if caller.kind == "human":
                     _confine_pending(conn, caller, request.method, path)
                 return caller

@@ -58,7 +58,10 @@ def test_a_join_answers_the_paste_line_once(owner: flow.Human) -> None:
     assert body["join_url"].startswith("https://hub.example/join/")
     assert len(_token(body)) >= 22  # 128 bits, base64url
     assert CODE.match(body["code"])
-    assert body["paste_line"] == f"maity join {body['join_url']} --code {body['code']}"
+    assert body["paste_line"] == (
+        'pipx install maity && export PATH="$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}" '
+        f"&& maity join {body['join_url']} --code {body['code']}"
+    )  # the install line and the join in one command (§3.2)
     assert body["agent_id"].startswith("agt-")
     assert body["project"] == "maintainer/maity"
     listed = owner.get("/projects/maintainer/maity/joins").json()["items"]
@@ -77,6 +80,8 @@ def test_a_join_answers_the_paste_line_once(owner: flow.Human) -> None:
         "new_instance",
         "replaces",
         "instance",
+        "takes_over",
+        "handover",
     }
     assert body["code"] not in str(listed) and _token(body) not in str(listed)
 

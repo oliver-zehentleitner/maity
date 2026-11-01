@@ -28,8 +28,8 @@ router = APIRouter(route_class=ProjectRoute)
 PAGE_MAX = 200
 
 # §17.6: at most 20 manual posts per membership per hour, of them 5 to everyone.
-POSTS = Limiter(20, 3600)
-POSTS_TO_ALL = Limiter(5, 3600)
+POSTS = Limiter(20, 3600, name="routes.ticker.POSTS")
+POSTS_TO_ALL = Limiter(5, 3600, name="routes.ticker.POSTS_TO_ALL")
 URL_MAX = 2048
 TOKENS_MAX = 20
 AREAS_MAX = 20
@@ -151,15 +151,15 @@ def _check(conn: Connection, mine: Membership, body: PostIn) -> Any:
 
 def _charge(conn: Connection, mine: Membership, to_all: bool) -> None:
     key = str(mine.id)
-    wait = POSTS.hit(key)
+    wait, mark = POSTS.place(key)
     if wait:
         raise rate_limited(wait)
-    events.on_rollback(conn, lambda: POSTS.give_back(key, 1))
+    events.on_rollback(conn, lambda: POSTS.release(key, mark))
     if to_all:
-        wait = POSTS_TO_ALL.hit(key)
+        wait, to_all_mark = POSTS_TO_ALL.place(key)
         if wait:
             raise rate_limited(wait)
-        events.on_rollback(conn, lambda: POSTS_TO_ALL.give_back(key, 1))
+        events.on_rollback(conn, lambda: POSTS_TO_ALL.release(key, to_all_mark))
 
 
 @router.post("/projects/{owner}/{slug}/ticker")

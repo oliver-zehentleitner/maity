@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import stat
+import sys
 import threading
 import time
 from pathlib import Path
@@ -340,6 +342,39 @@ def test_a_clock_skew_is_corrected_once(joined: Path, fake: fakehub.FakeHub) -> 
     assert int(second.headers["maity-timestamp"]) > int(first.headers["maity-timestamp"]) + 10**9
 
 
+def test_a_clock_skew_is_not_retried_past_the_callers_timeout(
+    joined: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The second attempt gets only what is left of the timeout (`wait` relies on it)."""
+    fake.skew_once = True
+    session = cli.Session()
+    real = time.monotonic
+
+    def clock() -> float:  # once the first attempt reached the hub, its 5 seconds are gone
+        return real() + (6.0 if fake.seen else 0.0)
+
+    monkeypatch.setattr(time, "monotonic", clock)
+    with pytest.raises(hub.HubError) as raised:
+        session.client.call("GET", session.project_path("events"), timeout=5)
+    assert raised.value.code == "timestamp_skew"
+    assert len(fake.signed()) == 1
+
+
+def test_a_clock_skew_after_the_deadline_ends_wait_as_a_timeout(
+    joined: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No time is left for the client's own retry: exit 3 as for any timeout, not exit 1."""
+    fake.skew_once = True
+    real = time.monotonic
+
+    def clock() -> float:  # the first request used up the whole --timeout
+        return real() + (100.0 if fake.seen else 0.0)
+
+    monkeypatch.setattr(time, "monotonic", clock)
+    assert cli.main(["wait", "--timeout", "8"]) == cli.EXIT_TIMEOUT
+    assert len(fake.signed()) == 1
+
+
 # --- report, ask, api ---------------------------------------------------------------------
 
 
@@ -600,6 +635,131 @@ def test_join_takes_the_line_from_one_place_only(
     assert cli.main(argv) == cli.EXIT_USAGE
 
 
+def test_a_join_started_off_path_says_how_to_put_maity_on_path(
+    clone: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`pipx install` leaves `~/.local/bin` off PATH on many machines."""
+    monkeypatch.setattr(sys, "argv", ["/home/a/.local/bin/maity"])
+    args = ["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", fakehub.CODE, "--no-resume"]
+    assert cli.main(args) == cli.EXIT_OK
+    err = capsys.readouterr().err
+    assert (
+        "maity: `maity` is not on PATH (this run is /home/a/.local/bin), so later commands "
+        "will not find it: run `pipx ensurepath` and open a new shell"
+    ) in err
+
+
+def test_a_join_with_maity_on_path_ends_with_the_ensurepath_sentence(
+    clone: Path, bin_dir: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """For later shells (§3.2): the sentence is the last line, after the resume."""
+    (bin_dir / "maity").write_text("#!/bin/sh\n")
+    (bin_dir / "maity").chmod(0o755)
+    assert cli.main(["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", fakehub.CODE]) == 0
+    err = capsys.readouterr().err
+    assert "not on PATH" not in err
+    assert err.endswith(cli.PATH_SENTENCE + "\n")
+
+
+CHAT_URL = "https://maity.team/oliver/maity/chat/cnv-1"
+
+
+@pytest.mark.parametrize("chat_url", [CHAT_URL, None, "javascript:alert(1)"])
+def test_a_join_ends_with_the_chat_with_its_human(
+    clone: Path,
+    bin_dir: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    chat_url: str | None,
+) -> None:
+    """§5.2: the line the agent gives its human, before the PATH sentence."""
+    (bin_dir / "maity").write_text("#!/bin/sh\n")
+    (bin_dir / "maity").chmod(0o755)
+    packet: dict[str, Any] = {"session": {"id": "ses-b-0004"}, "membership": {}}
+    if chat_url is not None:
+        packet["membership"]["chat_url"] = chat_url
+    fake.routes[("POST", "/api/v1/me/resume")] = lambda seen: (200, packet)
+    assert cli.main(["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", fakehub.CODE]) == 0
+    lines = capsys.readouterr().err.splitlines()
+    assert lines[-1] == cli.PATH_SENTENCE
+    if chat_url == CHAT_URL:
+        assert lines[-2] == f"Talk to me in Maity: {CHAT_URL}"
+    else:  # no address, or none a browser opens as a page: no line
+        assert not any("Talk to me" in line for line in lines)
+
+
+def test_through_a_pipe_the_chat_line_still_comes_after_the_resume_text(
+    clone: Path, fake: fakehub.FakeHub
+) -> None:
+    """A harness reads stdout and stderr through one pipe, where stdout is buffered."""
+    import subprocess
+
+    packet = {"session": {"id": "ses-b-0004"}, "membership": {"chat_url": CHAT_URL}}
+    fake.routes[("POST", "/api/v1/me/resume")] = lambda seen: (200, packet)
+    src = Path(cli.__file__).resolve().parents[1]
+    done = subprocess.run(
+        [sys.executable, "-m", "maity", "join", f"{fake.url}/j/{fakehub.TOKEN}"]
+        + ["--code", fakehub.CODE],
+        cwd=clone,
+        env={**os.environ, "PYTHONPATH": str(src)},
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert done.returncode == 0, done.stdout
+    lines = done.stdout.splitlines()
+    assert lines[-2] == f"Talk to me in Maity: {CHAT_URL}"
+    assert "pipx ensurepath" in lines[-1]
+    assert done.stdout.index("No briefing was given") < done.stdout.index("Talk to me")
+
+
+def test_a_resume_that_fails_after_printing_keeps_its_text_before_the_closing_lines(
+    clone: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The flush is on every way out of the first resume, not only on success."""
+    import io
+
+    from maity import hub
+
+    seen: list[str] = []
+
+    class Buffered(io.StringIO):  # stdout through a pipe: nothing reaches the reader unflushed
+        def flush(self) -> None:
+            seen.append(self.getvalue())
+            self.seek(0)
+            self.truncate()
+
+    class Unbuffered(io.StringIO):
+        def write(self, text: str) -> int:
+            seen.append(text)
+            return len(text)
+
+    def resume(*args: Any, **kwargs: Any) -> int:
+        print("partial resume text")
+        raise hub.HubError("reset", status=None)
+
+    monkeypatch.setattr(cli, "_resume", resume)
+    monkeypatch.setattr(sys, "stdout", Buffered())
+    monkeypatch.setattr(sys, "stderr", Unbuffered())
+    assert cli.main(["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", fakehub.CODE]) == 1
+    text = "".join(seen)
+    assert text.index("partial resume text") < text.index("the first resume failed")
+
+
+def test_a_join_without_resume_has_no_chat_line(
+    clone: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--no-resume` has no packet, so no chat address to give."""
+    args = ["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", fakehub.CODE, "--no-resume"]
+    assert cli.main(args) == cli.EXIT_OK
+    assert "Talk to me" not in capsys.readouterr().err
+
+
 def test_a_join_file_with_the_wrong_shape_is_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -646,11 +806,12 @@ def test_join_names_maity_as_the_work_channel_after_the_pointer(
     assert cli.main(args) == cli.EXIT_OK
     out = capsys.readouterr()
     lines = out.err.splitlines()
-    assert lines[-1] == pointer.PROJECT_CHANNEL
-    assert "main channel" in lines[-1]
-    assert all(command in lines[-1] for command in ["maity say", "maity ask", "maity report"])
+    assert "pipx ensurepath" in lines[-1]  # the last line is about PATH (§3.2)
+    assert lines[-2] == pointer.PROJECT_CHANNEL
+    assert "main channel" in lines[-2]
+    assert all(command in lines[-2] for command in ["maity say", "maity ask", "maity report"])
     # Once joined the human is reached through Maity alone, and the agent is told why.
-    assert pointer.HUMAN_CHANNEL in lines[-1]
+    assert pointer.HUMAN_CHANNEL in lines[-2]
     for words in [
         "only through Maity",
         "maity say human",

@@ -78,6 +78,8 @@ def test_one_document_to_save(owner: flow.Human) -> None:
         "forge_links",
         "organisations",
         "abuse_reports",
+        "campaign_origin",
+        "conversation_meat_proxy",
         "organisation_invitations",
         "runners",
         "agent_profiles",
@@ -90,6 +92,7 @@ def test_one_document_to_save(owner: flow.Human) -> None:
         "card_reports",
         "card_notes",
         "jour_fixe_answers",
+        "pinned_conversations",
     }
     account = body["account"]
     assert (account["handle"], account["id"]) == ("maintainer", owner.id)
@@ -362,3 +365,25 @@ def test_the_invitations_a_human_sent_are_in_their_export(
         "closed",
     }
     assert "request" not in str(shown)
+
+
+def test_the_campaign_origin_is_in_the_export_while_the_hub_keeps_it(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    from sqlalchemy import insert
+
+    assert export(owner).json()["campaign_origin"] is None
+    with migrated.begin() as conn:
+        conn.execute(
+            insert(t.campaign_origin).values(
+                human_id=owner.id,
+                variant="maintainers",
+                campaign="x-h1-w1",
+                registered_at=clock.now(),
+            )
+        )
+    assert export(owner).json()["campaign_origin"] == {
+        "variant": "maintainers",
+        "campaign": "x-h1-w1",
+        "registered_on": clock.now().date().isoformat(),
+    }

@@ -38,7 +38,7 @@ window.Maity = window.Maity || {};
     const direct = mine.map((m) => {
       const c = byAgent[m.id] || {};
       return { id: m.id, kind: "direct", title: m.display_name, participants: [m], unread: c.unread || 0,
-        last_message_at: c.last_message_at || null, last_message: c.last_message || null };
+        last_message_at: c.last_message_at || null, last_message: c.last_message || null, pinned: !!c.pinned, rank: c.rank };
     });
     const byId = ctx.memberById || {};
     const member = (p) => byId[p.member_id] || { id: p.member_id, display_name: "@" + p.handle, kind: p.kind };
@@ -46,17 +46,35 @@ window.Maity = window.Maity || {};
       const people = g.participants.map(member).filter((x) => x.id !== ctx.me.id);
       return { id: g.id, kind: "group", title: g.title || people.map((x) => x.display_name).join(", ") || "Group chat",
         participants: people, unread: g.unread || 0, mentions: g.mentions_unread || 0, access: g.access, closed: !!g.closed_at,
-        last_message_at: g.last_message_at || g.created_at || null, last_message: g.last_message || null };
+        last_message_at: g.last_message_at || g.created_at || null, last_message: g.last_message || null, pinned: !!g.pinned, rank: g.rank };
     }));
   }
 
-  // Unread chats first, then the newest; the ones without messages after,
-  // by title. The open chat counts as read, as the list shows it.
-  function ordered(chats, currentId) {
-    const at = (c) => c.last_message_at || "";
-    const unread = (c) => (c.id !== currentId && (c.unread || c.mentions) ? 1 : 0);
-    return chats.slice().sort((a, b) => unread(b) - unread(a)
-      || (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : a.title.localeCompare(b.title)));
+  // In the hub's order (§9.3: four bands, pinned with unread, unpinned with
+  // unread, quiet pinned, the rest; `rank` its position in the list read),
+  // which the dashboard never re-sorts; one's own agents without a
+  // conversation yet after them, by title.
+  function ordered(chats) {
+    const ranked = (c) => typeof c.rank === "number";
+    return chats.slice().sort((a, b) => (ranked(a) && ranked(b) ? a.rank - b.rank
+      : ranked(a) ? -1 : ranked(b) ? 1 : a.title.localeCompare(b.title)));
+  }
+
+  // A pin's refusal (§9.3), in words.
+  const pinSaid = (err) => (err.code === "invalid" && err.details && err.details.fields && err.details.fields.pin === "too_many"
+    ? { message: M.t("pin.too_many") } : err);
+
+  // Pins or unpins a chat (§9.3, human only), then onDone() re-reads the list for the hub's order.
+  async function togglePin(ctx, chat, status, onDone) {
+    const path = ctx.base + "/conversations/" + encodeURIComponent(chat.id) + "/pin";
+    try {
+      await (chat.pinned ? M.api.del(path) : M.api.put(path));
+    } catch (err) {
+      status.fail(chat.pinned ? M.t("pin.not_unpinned") : M.t("pin.not_pinned"), pinSaid(err));
+      return;
+    }
+    status.done();
+    onDone();
   }
 
   // Up to three participants' pictures (js/avatar.js); with one, its
@@ -70,8 +88,8 @@ window.Maity = window.Maity || {};
 
   // Under the title: who it is — for a direct chat the agent's handle and
   // harness, which tell apart names that share their owner's prefix; for a
-  // group its people — then an unsent draft, else the last message where
-  // the hub sends it (`last_message`), else nothing. Presence is the dot
+  // group its people — then an unsent draft, else the last message
+  // (`last_message`, null in a chat with none yet), else nothing. Presence is the dot
   // (and its words for a screen reader), not a line of its own. The open
   // chat's own draft is in its composer, not repeated here.
   function sublines(ctx, chat, current) {
@@ -91,7 +109,8 @@ window.Maity = window.Maity || {};
     return { who, presence, line, draft: !!draft };
   }
 
-  function listItem(ctx, chat, currentId) {
+  // onPin(chat): the row's pin button does that; none without it (an agent, or a list that pins nothing).
+  function listItem(ctx, chat, currentId, onPin) {
     const current = chat.id === currentId;
     // The open chat is read: its unread is gone even before the list says so.
     const unread = current ? 0 : chat.unread;
@@ -110,13 +129,20 @@ window.Maity = window.Maity || {};
     // The full name, wrapped, never cut; as the tooltip too.
     h("span", { class: "conv-title", title: chat.title }, chat.title),
     sub.presence ? apart(", " + sub.presence) : null,
-    when ? [apart(", "), h("span", { class: "conv-time" }, when)] : null,
+    // A pinned chat's mark leads its time cell (§9.3), said as "pinned".
+    when || chat.pinned ? [apart(", "), h("span", { class: "conv-time" },
+      chat.pinned ? h("span", { class: "pin-mark", title: M.t("pin.mark") }, h("span", { "aria-hidden": "true" }, "📌"), apart(M.t("pin.mark") + (when ? ", " : ""))) : null,
+      when)] : null,
     // Both counters in one cell, side by side: the unread count, then the @.
     unread || (!current && chat.mentions) ? h("span", { class: "conv-counts" },
       unread ? [apart(", "), h("span", { class: "count" }, String(unread)), apart(" unread")] : null,
       !current && chat.mentions ? [apart(", "), h("span", { class: "count mention-count", title: "mentions you" }, "@"), apart(" mentions you")] : null) : null,
     apart(", "), h("span", { class: "conv-sub" }, sub.who),
-    sub.line ? [apart(": "), h("span", { class: "preview" + (sub.draft ? " draft" : "") }, sub.line)] : null));
+    sub.line ? [apart(": "), h("span", { class: "preview" + (sub.draft ? " draft" : "") }, sub.line)] : null),
+    // Beside the link, not in it: a button inside a link is no button.
+    onPin ? h("button", { type: "button", class: "icon-button pin-toggle", "aria-pressed": String(!!chat.pinned),
+      "aria-label": chat.pinned ? M.t("pin.unpin_label", { title: chat.title }) : M.t("pin.pin_label", { title: chat.title }),
+      title: chat.pinned ? M.t("pin.unpin") : M.t("pin.pin"), onclick: () => onPin(chat) }, "📌") : null);
   }
 
   // The conversation list; refresh() re-reads it and presence in place.
@@ -132,7 +158,9 @@ window.Maity = window.Maity || {};
       const focused = document.activeElement && ul.contains && ul.contains(document.activeElement)
         ? document.activeElement.getAttribute("href") : null;
       clear(ul);
-      ordered(chatsOf(ctx, mine, byAgent, groups), currentId).forEach((chat) => append(ul, listItem(ctx, chat, currentId)));
+      // A human pins (§9.3): the list is read again for the hub's order.
+      const onPin = ctx.me.kind === "human" ? (chat) => togglePin(ctx, chat, status, () => refresh(false)) : null;
+      ordered(chatsOf(ctx, mine, byAgent, groups)).forEach((chat) => append(ul, listItem(ctx, chat, currentId, onPin)));
       none.hidden = mine.length > 0 || groups.length > 0;
       if (focused) {
         const again = Array.from(ul.querySelectorAll("a.conv")).find((a) => a.getAttribute("href") === focused);
@@ -151,7 +179,7 @@ window.Maity = window.Maity || {};
     ]).then(([list, members]) => {
       byAgent = {};
       groups = [];
-      list.items.forEach((c) => { if (c.kind === "direct") byAgent[c.agent_id || c.id] = c; else groups.push(c); });
+      list.items.forEach((c, i) => { c.rank = i; if (c.kind === "direct") byAgent[c.agent_id || c.id] = c; else groups.push(c); });
       if (members) mine = members.items.filter((m) => m.kind === "agent" && m.owner_id === ctx.me.id);
       draw();
       status.done();
@@ -204,7 +232,58 @@ window.Maity = window.Maity || {};
 
   // A composer's one row of actions (the designer's pass on #431): Attach
   // at the start, the keys and Send at the end.
-  const actionRow = (files, button) => h("div", { class: "compose-actions" }, files ? files.chooser : null, button);
+  // extra: the chat's meat-proxy switch (js/meat-proxy.js), between Attach and Send.
+  const actionRow = (files, button, extra) => h("div", { class: "compose-actions" }, files ? files.chooser : null, extra || null, button);
+
+  // The composer's head (tsk-k6nakahy6fnj): its label, and on a phone a
+  // button that folds the composer away for reading and brings it back;
+  // on a wider screen three buttons for the field's height, one, two or
+  // three times its rows. Both are this browser's choice, kept for every
+  // chat; the hub has no field for them. CSS shows each on its own screen.
+  const COMPOSE_KEY = "maity.compose";
+  const SIZES = [1, 2, 3];
+  function readCompose() {
+    try { const v = JSON.parse(window.localStorage.getItem(COMPOSE_KEY) || "{}"); return v && typeof v === "object" ? v : {}; } catch (err) { return {}; }
+  }
+  function keepCompose(v) {
+    try { window.localStorage.setItem(COMPOSE_KEY, JSON.stringify(v)); } catch (err) { /* this browser keeps nothing */ }
+  }
+  function composeHead(form, text, label) {
+    const rows = Number(text.getAttribute("rows")) || 3;
+    const saved = readCompose();
+    let hidden = saved.hidden === true;
+    let size = SIZES.includes(saved.size) ? saved.size : 1;
+    // The toggle controls the whole composer, not the field alone; it says
+    // what a press does next, so no aria-expanded besides (#824's review).
+    if (!form.id) form.id = text.id + "-form";
+    const toggle = h("button", { type: "button", class: "small compose-toggle", "aria-controls": form.id });
+    const sizes = SIZES.map((n) => {
+      const b = h("button", { type: "button", class: "small", "data-size": String(n) }, M.t("compose.size.times", { count: n }));
+      b.addEventListener("click", () => { size = n; keepCompose(Object.assign(readCompose(), { size })); apply(); });
+      return b;
+    });
+    function apply() {
+      form.classList.toggle("compose-hidden", hidden);
+      toggle.textContent = hidden ? M.t("compose.show") : M.t("compose.hide");
+      text.setAttribute("rows", String(rows * size));
+      sizes.forEach((b) => b.setAttribute("aria-pressed", b.getAttribute("data-size") === String(size) ? "true" : "false"));
+    }
+    const show = (yes) => {
+      hidden = !yes;
+      keepCompose(Object.assign(readCompose(), { hidden }));
+      apply();
+    };
+    toggle.addEventListener("click", () => {
+      show(hidden);
+      if (!hidden) text.focus();
+    });
+    // A quote opens a folded composer, so what it put in is seen.
+    text.composeOpen = () => { if (hidden) show(true); };
+    apply();
+    return h("div", { class: "compose-head" }, label,
+      h("span", { class: "compose-tools" },
+        h("span", { class: "compose-size", role: "group", "aria-label": M.t("compose.size.label") }, sizes), toggle));
+  }
 
   // In the global chat (ctx.projectsOf, js/chats.js) an agent's message
   // names the projects it is in, each by its logo with the name on hover;
@@ -238,7 +317,8 @@ window.Maity = window.Maity || {};
     // A removed message reads body null (§9); who and why only where known
     // (this page's own removal, or the event_redacted that said so).
     const removed = isRemoved(msg);
-    const body = removed ? tombstone(ctx, msg.redaction) : h("div", { class: "md" }, M.markdown(msg.body, M.ids.where(ctx)));
+    const body = removed ? tombstone(ctx, msg.redaction) : h("div", { class: "md" }, M.markdown(msg.body, M.ids.where(ctx),
+      { mentions: msg.mentions, hrefOf: (id) => (ctx.memberById && ctx.memberById[id] && typeof ctx.link === "function" ? ctx.link("members", id) : null), ctx }));
     return h("li", { class: "msg " + (own ? "out" : "in") + (grouped ? " grouped" : ""), "data-seq": String(msg.seq) },
       !own && !grouped ? h("span", { class: "msg-avatar" }, M.avatar(sender || { id: msg.from }, 28)) : null,
       h("div", { class: "msg-body" }, body,
@@ -397,8 +477,8 @@ window.Maity = window.Maity || {};
 
   // What js/group-chat.js draws with: the same history, Markdown, quotes,
   // drafts, sizing and the same reading of mentions.
-  M.chatParts = { actionRow, newestPage, PAGE, KEEP, NEAR_TOP, timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, drafts, isRemoved, askReason, HISTORY_PAGE,
-    chatsOf, ordered, listItem, LIST_MS, RESYNC };
+  M.chatParts = { actionRow, composeHead, newestPage, PAGE, KEEP, NEAR_TOP, timeline, quoteOf, withoutCode, atBottom, follower, fitToScreen, drafts, isRemoved, askReason, HISTORY_PAGE,
+    chatsOf, ordered, listItem, togglePin, LIST_MS, RESYNC };
 
   // One focus handler for the page; it serves the chat view on screen.
   let onFocus = null;
@@ -638,6 +718,7 @@ window.Maity = window.Maity || {};
     }
     // Quote: the message goes into the composer as a quote, before what is there.
     function quote(msg) {
+      if (text.composeOpen) text.composeOpen();
       text.value = quoteOf(ctx, msg) + text.value;
       drafts.set(key, text.value);
       hintMention();
@@ -686,6 +767,9 @@ window.Maity = window.Maity || {};
 
     // Files go with the message (§8.7): uploaded when chosen, named when sent.
     const files0 = M.attachments ? M.attachments.picker(ctx, "chat") : null;
+    // The meat-proxy mode for this chat (§9.3), from one's own entry in the list's participants.
+    const ownEntry = listed && (listed.participants || []).find((p) => p.member_id === ctx.me.id);
+    const meat = M.meatProxy ? M.meatProxy.toggle(ctx, ctx.base + "/conversations/" + encodeURIComponent(agent.id), ownEntry || null) : null;
     async function send(e) {
       e.preventDefault();
       const body = text.value.trim();
@@ -715,6 +799,7 @@ window.Maity = window.Maity || {};
     M.dom.sendOnCtrlEnter(text, send, button);
 
     const heading = h("h2", { tabindex: "-1" }, "Chat with ", M.dom.memberRef(ctx, agent.id));
+    const composeForm = h("form", { class: "compose", onsubmit: send });
     append(pane,
       h("a", { class: "chat-back", href: ctx.link("chat") }, "← Conversations"),
       h("div", { class: "toolbar" },
@@ -728,9 +813,9 @@ window.Maity = window.Maity || {};
       messages,
       jump,
       pollStatus.el,
-      h("form", { class: "compose", onsubmit: send },
-        h("label", { for: "chat-text" }, "Message", h("span", { class: "visually-hidden" }, " (" + M.dom.SEND_KEYS + " sends)")),
-        text, mentionHint, files0 ? files0.el : null, actionRow(files0, button), status.el));
+      append(composeForm,
+        composeHead(composeForm, text, h("label", { for: "chat-text" }, "Message", h("span", { class: "visually-hidden" }, " (" + M.dom.SEND_KEYS + " sends)"))),
+        text, mentionHint, files0 ? files0.el : null, actionRow(files0, button, meat), status.el));
     // Sizing, scrolling and focus need the view in the page, which the
     // router does once this function has returned.
     window.setTimeout(() => {

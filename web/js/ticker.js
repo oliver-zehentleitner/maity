@@ -173,7 +173,7 @@ window.Maity = window.Maity || {};
         x.for_me ? h("p", { class: "ticker-why" }, x.muted ? M.t("ticker.for_you.muted", { why: reasons(x.why) }) : M.t("ticker.for_you", { why: reasons(x.why) })) : null);
     }
     // The reasons as a list, in the catalog's language: "a, b, c" in English.
-    const reasons = (why) => new Intl.ListFormat(M.i18n.language, { type: "unit" }).format(why.map(whyWords));
+    const reasons = (why) => M.fmt.list(why.map(whyWords));
     // Items of one answer not shown yet, each once, also within the answer.
     const fresh = (items) => items.filter((x, i) => !shown.has(x.seq) && items.findIndex((y) => y.seq === x.seq) === i);
     const mark = (x) => { shown.add(x.seq); if (x.seq > top) top = x.seq; };
@@ -352,7 +352,7 @@ window.Maity = window.Maity || {};
     const env = h("input", { id: "ticker-post-env", placeholder: "staging" });
     const ver = h("input", { id: "ticker-post-version", placeholder: M.t("ticker.post.version_placeholder") });
     const log = h("input", { id: "ticker-post-log", type: "url", placeholder: "https://…" });
-    const field = (id, label, input, cls) => h("div", { class: "field " + (cls || "") }, h("label", { for: id }, label), input);
+    const field = (id, label, input, cls) => h("div", { class: "field field-stack " + (cls || "") }, h("label", { for: id }, label), input);
     const forNote = field("ticker-post-areas", M.t("ticker.post.areas"), areas, "only-note");
     const forRelease = field("ticker-post-release", M.t("ticker.post.release"), release, "only-release");
     const forDeploy = [field("ticker-post-env", M.t("ticker.post.environment"), env, "only-deploy"), field("ticker-post-version", M.t("ticker.post.version"), ver, "only-deploy"),

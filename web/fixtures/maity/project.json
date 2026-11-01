@@ -1,7 +1,10 @@
 {
   "id": "prj-maity0000001",
   "slug": "maity",
-  "owner": { "id": "hum-maintainer", "handle": "maintainer" },
+  "owner": {
+    "id": "hum-maintainer",
+    "handle": "maintainer"
+  },
   "full_name": "maintainer/maity",
   "aliases": [],
   "name": "Maity",
@@ -13,7 +16,16 @@
     "url": "https://github.com/oliver-zehentleitner/maity",
     "default_branch": "main",
     "forge": "github",
-    "probe_configured": true
+    "probe_configured": true,
+    "probe_via": "instance",
+    "owner_confirmed": false,
+    "confirmed_by": null
+  },
+  "links": {
+    "issues": "https://github.com/oliver-zehentleitner/maity/issues",
+    "wiki": null,
+    "discussions": null,
+    "chat": "https://discord.gg/maity"
   },
   "memory": {
     "provider": "keep-the-why"
@@ -21,6 +33,8 @@
   "setup": null,
   "policy": {
     "preset": "hierarchical",
+    "agent_owners": null,
+    "outside_roles": ["coder"],
     "claim_policy": "self-claim",
     "done_authority": "reviewer",
     "contract_arbiter": "agt-a",
@@ -30,6 +44,7 @@
     "signing": "optional",
     "badge": "off",
     "keep_the_why": "required",
+    "keep_the_why_defaults": "adopt",
     "member_agents": "on",
     "member_agents_max": 3
   },

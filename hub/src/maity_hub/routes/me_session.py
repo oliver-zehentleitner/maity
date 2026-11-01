@@ -7,13 +7,14 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import Field, StrictBool
-from sqlalchemy import Connection, func, insert, select, update
+from sqlalchemy import Connection, func, insert, literal, select, update
 
 from maity_hub import (
     API_VERSION,
     __version__,
     availability,
     avatars,
+    bridges,
     briefings,
     clock,
     commitment,
@@ -29,6 +30,7 @@ from maity_hub import (
     mentions,
     moderation,
     namespace,
+    not_listening,
     onboarding,
     person_links,
     preferences,
@@ -165,6 +167,7 @@ class MePatch(Strict):
     public page (`public_profile`, `public_bio`, §16.9)."""
 
     paused: PausedIn | None = None
+    dormant: StrictBool | None = None  # the calling instance rests or wakes (§6.17)
     meat_proxy: StrictBool | None = None
     handle: str | None = None  # a human's own (§6.24); an agent's is `forbidden`
     meat_proxy_lead: StrictBool | None = None
@@ -218,7 +221,9 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
             .where(t.credential.c.id == caller.credential_id)
             .values(
                 last_used_at=now,
-                resumed_at=func.coalesce(t.credential.c.resumed_at, now),
+                resumed_at=func.coalesce(
+                    t.credential.c.resumed_at, literal(now, t.credential.c.resumed_at.type)
+                ),
             )
         )
         # The instance's own pause ends with its next session too (§5.3).
@@ -258,15 +263,19 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
             # A new instance (§6.17) starts at the project's head, not at 0: the handover
             # replaces the backlog, and `GET …/events?after=` still serves the history (§8.3).
             cursor = events.highest_readable(conn, mine.project.id, mine.row, caller.principal_id)
+        # A resume that omits `model` keeps the previous session's (§5.3); so does one that omits
+        # `harness`, so that a switch across such a resume is still seen.
+        model = body.model if body.model is not None or previous is None else previous.model
+        harness = body.harness if body.harness is not None or previous is None else previous.harness
         session_id = new_id("session")
         conn.execute(
             insert(t.agent_session).values(
                 id=session_id,
                 credential_id=caller.credential_id,
                 membership_id=mine.id,
-                harness=body.harness,
+                harness=harness,
                 harness_version=body.harness_version,
-                model=body.model,
+                model=model,
                 client=body.client,
                 user_agent=request.headers.get("user-agent"),
                 started_at=now,
@@ -293,13 +302,11 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
         session = {
             "id": session_id,
             "started_at": ts(now),
-            "harness": body.harness,
-            "model": body.model,
+            "harness": harness,
+            "model": model,
             "client": body.client,
         }
-        actor = events.Actor(
-            mine.id, session_id, caller.credential_id, caller.via, body.harness, body.model
-        )
+        actor = events.Actor(mine.id, session_id, caller.credential_id, caller.via, harness, model)
         started = events.emit(
             conn,
             mine.project.id,
@@ -309,6 +316,8 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
             actor=actor,
             subject=("session", session_id),
         )
+        if previous is not None:
+            _announce_model_change(conn, mine, caller, previous, harness, model, session_id)
         # The member's next resume clears its limit (§6.12); a returning agent is
         # announced before its packet is built.
         if mine.row.limit_until is not None:
@@ -324,6 +333,40 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
             commitment.reconcile(conn, mine.project, now, caller.credential_id)
         packet = _packet(conn, mine, caller, body, cursor, started, session, settings)
     return packet
+
+
+def _announce_model_change(
+    conn: Connection,
+    mine: Membership,
+    caller: Caller,
+    previous: Any,
+    harness: str | None,
+    model: str | None,
+    session_id: str,
+) -> None:
+    """`session_model_changed` when this instance's harness or model differs from its previous
+    session (§5.3), so that its lead can re-route. A value not known on both sides is no change:
+    a first declaration is not a switch."""
+    changed = any(
+        before is not None and now is not None and before != now
+        for before, now in ((previous.harness, harness), (previous.model, model))
+    )
+    if not changed or mine.row.agent_id is None:
+        return
+    events.emit(
+        conn,
+        mine.project.id,
+        "session_model_changed",
+        not_listening.audience_of(conn, mine.row),
+        {
+            "member_id": mine.row.agent_id,
+            "instance": caller.instance,
+            "from": {"harness": previous.harness, "model": previous.model},
+            "to": {"harness": harness, "model": model},
+            "session_id": session_id,
+        },
+        subject=("member", mine.row.agent_id),
+    )
 
 
 def _handover(
@@ -410,13 +453,17 @@ def _packet(
     rules_seq = project.rules_changed_seq or 0
     changed = body.cursor is None or body.cursor < rules_seq
     rules_block: dict[str, Any] = {"version": project.rules_version, "changed": changed}
-    if changed or body.supervisor is not None:  # the supervised duty is in every packet
+    connections = bridges.views(conn, [mine.id])[mine.id]  # §2.3
+    bridging_for = connections["bridging_for"]
+    # The supervised duty and a bridge's guide are in every packet: neither moves the version.
+    if changed or body.supervisor is not None or bridging_for:
         rules_block["markdown"] = rules.generate(
             project,
             mine.trust,
             mine.role,
             arbiter_text(conn, project),
             supervised=body.supervisor is not None,
+            bridging=bool(bridging_for),
         )
     members = conn.execute(
         select(t.membership).where(
@@ -488,7 +535,17 @@ def _packet(
     siblings = [
         {
             key: view[key]
-            for key in ("id", "address", "harness", "model", "presence", "paused", "lead", "claims")
+            for key in (
+                "id",
+                "address",
+                "harness",
+                "model",
+                "presence",
+                "paused",
+                "dormant",
+                "lead",
+                "claims",
+            )
         }
         for view in instances.views(conn, [mine.row], {agent.id: agent.handle}).get(mine.id, [])
         if view["id"] != caller.instance
@@ -513,7 +570,7 @@ def _packet(
         "hints": (
             {"duty": "supervised"}
             if body.supervisor is not None
-            else {"duty": "self", "wait_timeout": wait_timeout(body.harness)}
+            else {"duty": "self", "wait_timeout": wait_timeout(session["harness"])}
         ),
         "me": {
             "member_id": agent.id,
@@ -523,6 +580,8 @@ def _packet(
             "avatar_url": avatars.urls(conn, [agent.id])[agent.id],
             "instance": caller.instance,
             "address": instances.address(agent.id, caller.instance or ""),
+            # Put to rest: only its own address wakes it (§6.17); `null` when awake.
+            "dormant": instances.dormant_view(_credential(conn, caller)),
             "owner": {
                 "id": owner.id,
                 "handle": owner.handle,
@@ -541,6 +600,16 @@ def _packet(
             "paused": paused(mine.row) or instances.paused_view(_credential(conn, caller)),
             "isolated": isolated(mine.row),  # why every other call is refused (§6.2)
             **_briefing(project, mine.row, written),
+            # The dashboard address of its direct conversation with its owner, on the public
+            # URL, never the join host (§5.2, §16.11): how the human gets into Maity.
+            "chat_url": "/".join(
+                (settings.public_url, namespace.full_name(conn, project), "chat", agent.id)
+            ),
+            # Until the membership has checked in; the member view keeps them (§5.2).
+            "bridges": connections["bridges"],  # the agents that lend it their hands (§2.3)
+            "bridging_for": bridging_for,  # the agents it lends its hands to
+            "takes_over": None if mine.row.onboarded_at else mine.row.takes_over,
+            "handover": None if mine.row.onboarded_at else mine.row.handover,
             "team": instances.team(conn, mine.row),
             "owner_preferences": owner_preferences,
             "availability_policy": availability.policy_of(mine.row),  # §6.12
@@ -580,8 +649,8 @@ def _packet(
             ),
             "instruction": KEEP_THE_WHY_INSTRUCTION if project.keep_the_why else None,
         },
-        "claims": task_views(conn, held, fg),
-        "assigned": task_views(conn, assigned, fg),
+        "claims": task_views(conn, held, fg, mine),
+        "assigned": task_views(conn, assigned, fg, mine),
         "requests": _requests_block(conn, mine, cursor),
         "ticker": ticker.packet(conn, mine, cursor),
         "events": {
@@ -658,7 +727,12 @@ def _requests_block(conn: Connection, mine: Membership, cursor: int) -> dict[str
             )
         ).scalars()
     )
-    answered = [r for r in rows if r.id in answered_ids and inbox.is_asker(r, mine)]
+    # In the order they were answered, an answer without its moment last: a cut keeps the
+    # newest, which a long-standing member's rejoin would otherwise lose to old ones.
+    answered = sorted(
+        (r for r in rows if r.id in answered_ids and inbox.is_asker(r, mine)),
+        key=lambda r: (r.answered_at is None, r.answered_at or r.created_at, r.id),
+    )
     to_answer = [
         r
         for r in rows
@@ -670,7 +744,7 @@ def _requests_block(conn: Connection, mine: Membership, cursor: int) -> dict[str
     # Bounded like the rest of the packet (§5.2): an admin may answer everything open.
     return {
         "mine_open": [request_view(conn, r) for r in mine_open[:PACKET_REQUESTS]],
-        "answered_since_cursor": [request_view(conn, r) for r in answered[:PACKET_REQUESTS]],
+        "answered_since_cursor": [request_view(conn, r) for r in answered[-PACKET_REQUESTS:]],
         "to_answer": [request_view(conn, r) for r in to_answer[:PACKET_REQUESTS]],
         "truncated": any(len(x) > PACKET_REQUESTS for x in (mine_open, answered, to_answer)),
     }
@@ -763,8 +837,8 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
     given = body.model_fields_set
 
     def human_action(conn: Connection) -> idempotency.Outcome:
-        if "paused" in given:
-            raise invalid({"paused": "agents_only"})
+        if "paused" in given or "dormant" in given:
+            raise invalid({"paused" if "paused" in given else "dormant": "agents_only"})
         parts = {"meat_proxy_lead": body.meat_proxy_lead, "meat_proxy_hands": body.meat_proxy_hands}
         public = {"public_profile", "public_bio"} & given
         links = {"website", "social", "links_visible"} & given
@@ -855,6 +929,20 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             raise humans_only("only a human sets their own profile")
         if "handle" in given:  # nobody renames an agent but its owner (§2.3, §6.24)
             raise humans_only("only the owner of an agent profile renames its handle")
+        if "dormant" in given:
+            if given != {"dormant"} or body.dormant is None:
+                raise invalid({"dormant": "alone"}, "set dormant on its own, true or false")
+            mine = _own_membership(conn, caller)
+            instances.set_dormant(
+                conn,
+                mine.row,
+                _credential(conn, caller),
+                body.dormant,
+                caller.principal_id,
+                caller.actor(mine.id),
+                own=True,
+            )
+            return idempotency.Outcome(200, "member", str(mine.id), load_member(conn, str(mine.id)))
         if "paused" not in given:
             raise invalid({"paused": "required"}, "nothing to change")
         mine = _own_membership(conn, caller)

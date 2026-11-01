@@ -30,7 +30,8 @@ window.Maity = window.Maity || {};
   function editor(who, path, what, done) {
     const id = "handle-" + Math.random().toString(36).slice(2, 8);
     const input = h("input", { id, type: "text", value: who.handle, autocomplete: "off", spellcheck: "false", maxlength: "31", "aria-describedby": id + "-error" });
-    const error = h("p", { class: "error", id: id + "-error", role: "alert" });
+    // A field's error, empty until the hub or the rule refuses (field-error takes no space while empty).
+    const error = h("p", { class: "field-error", id: id + "-error", role: "alert" });
     const status = M.statusLine();
     const aliases = who.aliases || [];
     const save = h("button", { type: "submit" }, M.t("handles.rename"));

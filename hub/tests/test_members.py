@@ -58,6 +58,8 @@ def test_the_member_view_has_the_contract_shape(
         "role_base",  # the role itself for a built-in one (§2.3)
         "reports_to",
         "cross_owner",
+        "bridges",  # the connections that serve it, and those it serves (§2.3)
+        "bridging_for",
         "line_consent",
         "areas",
         "capabilities",
@@ -68,6 +70,7 @@ def test_the_member_view_has_the_contract_shape(
         "presence",
         "paused",
         "isolated",  # §6.2
+        "isolation_windows",  # §6.2
         "availability",  # §6.12
         "availability_policy",
         "covered_by",
@@ -82,6 +85,8 @@ def test_the_member_view_has_the_contract_shape(
         "credentials",
         "shared_environment",  # likewise (§5.3)
         "owner_preferences",  # likewise (§19.4)
+        "takes_over",  # agents only, in every reader's view (§3.1)
+        "handover",
         "team",  # the team's rulebook and its instances (§6.17, §6.18)
         "instances",
         "keep_the_why_unconfirmed",  # §6.1: set while the commitment is open
@@ -306,6 +311,7 @@ def test_profiles_belong_to_their_human(
         "avatar_source",  # the profile's owner reads it (§6.10)
         "owner_id",
         "git_identity",
+        "allowed_projects",
         "memberships",
         "created_at",
         "deleted_at",  # null until its owner deletes it (§6.3)

@@ -20,7 +20,7 @@ from maity_hub.mail import address, headers, settings, smtp
 router = APIRouter()
 
 # Five test sends per hour per instance admin (§16.3).
-test_limiter = ratelimit.Limiter(5, 3600)
+test_limiter = ratelimit.Limiter(5, 3600, name="routes.mail_settings.test_limiter")
 
 
 @router.get("/admin/settings/mail")

@@ -12,8 +12,6 @@ window.Maity = window.Maity || {};
 
   const PRESENCE_MS = 30000;
 
-  const agents = (n) => n + (n === 1 ? " agent" : " agents");
-
   M.views.projectRunners = async function (ctx, root) {
     const words = M.runnerWords;
     const status = M.statusLine();
@@ -26,9 +24,10 @@ window.Maity = window.Maity || {};
     const attached = await M.api.getAll(ctx.base + "/runners");
     status.el.setAttribute("tabindex", "-1");
 
-    // done: what went through, in words, for the status line that gets the focus.
-    async function act(label, done, call) {
-      status.busy(label + "…");
+    // busy and failed: the status line's words while it runs and when it is
+    // refused; done: what went through, for the status line that gets the focus.
+    async function act(busy, failed, done, call) {
+      status.busy(busy);
       try {
         await call();
         status.done();
@@ -36,12 +35,12 @@ window.Maity = window.Maity || {};
       } catch (err) {
         if (err.code === "already_attached") {
           status.done();
-          append(status.el, h("span", { class: "ok" }, "It was allowed here already."));
+          append(status.el, h("span", { class: "ok" }, M.t("prunners.already")));
         } else {
-          status.fail(label + " failed: ", err);
+          status.fail(failed, err);
         }
       }
-      await reload().catch((err) => status.fail("Could not refresh: ", err));
+      await reload().catch((err) => status.fail(M.t("prunners.refresh_failed"), err));
       // The control that acted may be gone: the line that says what happened has the focus.
       status.el.focus();
     }
@@ -59,16 +58,16 @@ window.Maity = window.Maity || {};
           h("h3", null, r.name),
           h("span", { class: "presence " + words.presenceClass(r) }, words.presenceText(r)),
           h("span", { class: "muted" }, " · " + words.backendLabel(r) + (r.version ? " · " + r.version : ""))),
-        h("p", { class: "muted" }, "Allowed here " + formatAgo(a.attached_at) + " · " + (shownN ? agents(shownN) + " running here" : "no agent running here")),
+        h("p", { class: "muted" }, M.t("prunners.allowed_since", { ago: formatAgo(a.attached_at) }), " · ",
+          shownN ? M.t("prunners.running", { count: shownN }) : M.t("prunners.running.none")),
         // §15.3: revoked, or none (attached through an enrollment, never paired).
         r.credential_state === "revoked"
-          ? h("p", { class: "flag" }, "Its credential was revoked: it starts nothing until it is paired again, on the ", h("a", { href: "/runners" }, "Runners page"), ".")
+          ? h("p", { class: "flag" }, M.tn("prunners.revoked", { page: h("a", { href: "/runners" }, M.t("prunners.runners_page")) }))
           : r.credential_state && r.credential_state !== "active"
-            ? h("p", { class: "flag" }, "It has not been paired yet: it starts nothing until it is, on the ", h("a", { href: "/runners" }, "Runners page"), ".")
+            ? h("p", { class: "flag" }, M.tn("prunners.unpaired", { page: h("a", { href: "/runners" }, M.t("prunners.runners_page")) }))
             : null,
         notInConfig
-          ? h("p", { class: "flag" }, "Its own configuration does not allow " + ctx.slug
-            + ", so it starts nothing here; add it to [limits] projects on that machine.")
+          ? h("p", { class: "flag" }, M.t("prunners.not_in_config", { project: ctx.slug }))
           : null,
         words.capabilities(r),
         h("div", { class: "runner-actions" },
@@ -86,14 +85,14 @@ window.Maity = window.Maity || {};
                 // The last refresh's count, then: the hub still decides.
               }
               // The hub closes the placements; the runner, still connected, ends the agents.
-              const what = n
-                ? "The hub closes the placement" + (n === 1 ? "" : "s") + " of the " + agents(n) + " it runs here, and the runner stops "
-                  + (n === 1 ? "it." : "them.")
-                : "Nothing runs on it here.";
-              if (!window.confirm("Detach " + r.name + " from " + projectName + "? " + what)) return;
-              act("Detaching", r.name + " is detached from " + projectName + ".", () => M.api.del(ctx.base + "/runners/" + encodeURIComponent(r.id)));
+              const ask = n
+                ? M.t("prunners.detach.confirm", { runner: r.name, project: projectName, count: n })
+                : M.t("prunners.detach.confirm.none", { runner: r.name, project: projectName });
+              if (!window.confirm(ask)) return;
+              act(M.t("prunners.detaching"), M.t("prunners.detach.failed"), M.t("prunners.detached", { runner: r.name, project: projectName }),
+                () => M.api.del(ctx.base + "/runners/" + encodeURIComponent(r.id)));
             },
-          }, "Detach")));
+          }, M.t("prunners.detach"))));
     }
 
     // The free runners last drawn: the Allow form is rebuilt only when they change.
@@ -107,11 +106,11 @@ window.Maity = window.Maity || {};
       // A focus inside the form comes back to the same control after the rebuild.
       const had = document.activeElement && allow.contains(document.activeElement) ? document.activeElement.getAttribute("data-focus") : null;
       clear(allow);
-      append(allow, h("h3", null, "Allow a runner here"));
+      append(allow, h("h3", null, M.t("prunners.allow.title")));
       if (!free.length) {
-        append(allow, h("p", { class: "muted" },
-          mine.some((r) => !r.removed_at && r.owner_id === ctx.me.id) ? "All your runners are allowed here. " : "You have no runner yet. ",
-          h("a", { href: "/runners" }, "Pair one on the Runners page"), "."));
+        const pair = h("a", { href: "/runners" }, M.t("prunners.pair_link"));
+        append(allow, h("p", { class: "muted" }, mine.some((r) => !r.removed_at && r.owner_id === ctx.me.id)
+          ? M.tn("prunners.all_allowed", { pair }) : M.tn("prunners.none_yet", { pair })));
         return;
       }
       const select = h("select", { id: "allow-runner", "data-focus": "allow" }, free.map((r) => h("option", { value: r.id }, r.name)));
@@ -120,10 +119,11 @@ window.Maity = window.Maity || {};
         class: "inline-form",
         onsubmit: (e) => {
           e.preventDefault();
-          const name = (free.find((r) => r.id === select.value) || {}).name || "The runner";
-          act("Allowing", name + " is allowed here.", () => M.api.post(ctx.base + "/runners", { runner_id: select.value }));
+          const name = (free.find((r) => r.id === select.value) || {}).name;
+          act(M.t("prunners.allowing"), M.t("prunners.allow.failed"), name ? M.t("prunners.allowed", { runner: name }) : M.t("prunners.allowed.unnamed"),
+            () => M.api.post(ctx.base + "/runners", { runner_id: select.value }));
         },
-      }, h("label", { for: "allow-runner" }, "Runner"), select, h("button", { type: "submit", "data-focus": "allow-submit" }, "Allow it here")));
+      }, h("label", { for: "allow-runner" }, M.t("prunners.runner")), select, h("button", { type: "submit", "data-focus": "allow-submit" }, M.t("prunners.allow"))));
       const again = had && Array.from(allow.querySelectorAll("select, button")).find((e) => e.getAttribute("data-focus") === had);
       if (again) again.focus();
     }
@@ -138,7 +138,7 @@ window.Maity = window.Maity || {};
       shownKey = key;
       const had = document.activeElement && list.contains(document.activeElement) ? document.activeElement.getAttribute("data-focus") : null;
       clear(list);
-      if (!items.length) append(list, h("div", { class: "empty-state" }, h("p", null, "No runner is allowed in this project yet.")));
+      if (!items.length) append(list, h("div", { class: "empty-state" }, h("p", null, M.t("prunners.empty"))));
       items.forEach((a) => append(list, card(a)));
       const again = had && Array.from(list.querySelectorAll("button")).find((b) => b.getAttribute("data-focus") === had);
       if (again) again.focus();
@@ -149,12 +149,11 @@ window.Maity = window.Maity || {};
       draw(a.items, mine.items);
     }
 
-    append(root, h("h2", null, "Runners"),
-      h("p", { class: "muted" }, "A runner allowed here can start agents for " + projectName
-        + ", within what its own configuration allows. Detaching it closes the agents it runs here."),
+    append(root, h("h2", null, M.t("prunners.title")),
+      h("p", { class: "muted" }, M.t("prunners.hint", { project: projectName })),
       allow, status.el, list);
     draw(attached.items, (await M.api.getAll("/runners")).items);
     // Presence and capabilities emit no events: re-read them (docs/api.md §15.1).
-    ctx.every(PRESENCE_MS, () => reload().catch((err) => status.fail("Could not refresh: ", err)));
+    ctx.every(PRESENCE_MS, () => reload().catch((err) => status.fail(M.t("prunners.refresh_failed"), err)));
   };
 })(window.Maity);

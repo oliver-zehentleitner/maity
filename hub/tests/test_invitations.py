@@ -36,7 +36,7 @@ def _fresh() -> Iterator[None]:
         registration_routes.BY_PAIR_DAY,
         registration_routes.BY_ADDRESS_DAY,
     ):
-        limiter._hits.clear()
+        limiter.reset()
     registration.BREAKER._at.clear()
     registration.BREAKER._open_until = 0.0
     yield

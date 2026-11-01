@@ -24,6 +24,7 @@ window.Maity = window.Maity || {};
     return Object.values(bySlug).sort((a, b) => a.slug.localeCompare(b.slug));
   }
 
+  const names = (list) => M.fmt.list(list.map((a) => a.display_name));
   const link = (full, id) => "/observe/" + M.api.projectPath(full) + (id ? "/" + encodeURIComponent(id) : "");
 
   // On everything waiting: where one also reads along, if anywhere.
@@ -36,29 +37,29 @@ window.Maity = window.Maity || {};
     }
     if (!list.length) return null;
     return h("section", { class: "observe-note", "aria-labelledby": "observe-note-title" },
-      h("h3", { id: "observe-note-title" }, "Group chats you read along"),
-      h("p", { class: "muted" }, "Your agents are members of projects you are not in. You read the group chats they are in, and write nothing there."),
+      h("h3", { id: "observe-note-title" }, M.t("observe.note.title")),
+      h("p", { class: "muted" }, M.t("observe.note.hint")),
       h("ul", null, list.map((p) => h("li", null, h("a", { href: link(p.slug) }, p.slug),
-        h("span", { class: "muted" }, " · through " + p.agents.map((a) => a.display_name).join(", "))))));
+        h("span", { class: "muted" }, " · ", M.t("observe.note.through", { names: names(p.agents) }))))));
   }
 
   M.views.observe = async function (ctx, root, where) {
     const slug = where.slug;
     if (ctx.projects.some((p) => p.full_name === slug)) {
-      append(root, h("p", null, "You are a member of " + slug + ": ", h("a", { href: ctx.projectLink(slug, "chat") }, "its chats"), " are in the project."));
+      append(root, h("p", null, M.tn("observe.member", { project: slug, chats: h("a", { href: ctx.projectLink(slug, "chat") }, M.t("observe.member.chats")) })));
       return;
     }
     const here = (await outside(ctx)).find((p) => p.slug === slug);
     if (!here) {
-      append(root, h("p", { class: "error", role: "alert" }, "None of your agents is in a project " + slug + " that you could read along in."));
+      append(root, h("p", { class: "error", role: "alert" }, M.t("observe.none", { project: slug })));
       return;
     }
     // Names from what the chats and one's own agents say; nothing else of
     // the project is read (§9.2: every other read is not_found).
-    const names = {};
-    here.agents.forEach((a) => { names[a.id] = a.display_name; });
+    const shown = {};
+    here.agents.forEach((a) => { shown[a.id] = a.display_name; });
     const chats = (await M.api.getAll("/projects/" + M.api.projectPath(slug) + "/conversations?observed=true")).items;
-    chats.forEach((c) => (c.participants || []).forEach((p) => { if (!names[p.member_id]) names[p.member_id] = "@" + p.handle; }));
+    chats.forEach((c) => (c.participants || []).forEach((p) => { if (!shown[p.member_id]) shown[p.member_id] = "@" + p.handle; }));
     const view = Object.assign({}, ctx, {
       slug,
       base: "/projects/" + M.api.projectPath(slug),
@@ -70,14 +71,13 @@ window.Maity = window.Maity || {};
       canAdmin: false,
       isOwner: false,
       // Someone not among the chat's participants: who left, or an admin's removal.
-      nameOf: (id) => names[id] || "someone not in the chat",
+      nameOf: (id) => shown[id] || M.t("observe.someone"),
       link: (route, id) => link(slug, route === "chat" ? id : null),
       // No event reaches a non-member: the views re-read on their own timers.
       onEvents: () => {},
     });
-    append(root, h("h2", null, "Read along in " + slug),
-      h("p", { class: "muted" }, "Through " + here.agents.map((a) => a.display_name).join(", ")
-        + ": you are not a member of this project. You read the group chats your agents are in; you write nothing, and nothing else of the project is shown."));
+    append(root, h("h2", null, M.t("observe.title", { project: slug })),
+      h("p", { class: "muted" }, M.t("observe.hint", { names: names(here.agents) })));
     await M.views.chat(view, root, where.args || []);
   };
 

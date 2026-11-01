@@ -96,6 +96,43 @@ def test_unclaim_calls_release_on_the_card(
     assert capsys.readouterr().out == "gave tsk-0004 back; it is open again\n"
 
 
+def test_watch_and_unwatch_call_the_card_without_a_body(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    answer(fake, "PUT", f"{TASK}/watch", {"id": "tsk-0004", "watching": True})
+    assert cli.main(["watch", "tsk-0004"]) == cli.EXIT_OK
+    assert (last(fake).method, last(fake).path, last(fake).body) == ("PUT", f"{TASK}/watch", b"")
+    answer(fake, "DELETE", f"{TASK}/watch", {"id": "tsk-0004", "watching": False})
+    assert cli.main(["unwatch", "tsk-0004"]) == cli.EXIT_OK
+    assert (last(fake).method, last(fake).path) == ("DELETE", f"{TASK}/watch")
+    assert capsys.readouterr().out == "watching tsk-0004\nno longer watching tsk-0004\n"
+
+
+def test_unwatch_of_an_implied_watch_shows_the_hubs_reason(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    why = "the watch comes with a card that depends on this one"
+    error = {"error": {"code": "invalid", "message": why, "details": {"reason": "implied"}}}
+    answer(fake, "DELETE", f"{TASK}/watch", error, status=400)
+    assert cli.main(["unwatch", "tsk-0004"]) != cli.EXIT_OK
+    assert why in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(("value", "shown"), [(True, "yes"), (False, "no")])
+def test_task_show_prints_the_callers_watch(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    value: bool,
+    shown: str,
+) -> None:
+    card = {"id": "tsk-0004", "title": "A card", "status": "open", "watching": value}
+    answer(fake, "GET", TASK, card)
+    answer(fake, "GET", TASK.rsplit("/", 1)[0], {"items": []})
+    assert cli.main(["task", "show", "tsk-0004"]) == cli.EXIT_OK
+    assert f"  watching: {shown}\n" in capsys.readouterr().out
+
+
 def test_card_ids_are_one_path_segment(joined: Path, fake: fakehub.FakeHub) -> None:
     cli.main(["claim", "../members/agt-a"])
     # The 404 asks `GET /me` whether the project moved (§6.25); the claim went out first.
@@ -158,12 +195,41 @@ def test_say_posts_a_typed_message(
     assert capsys.readouterr().out == "sent blocker to role:admin (seq 4300)\n"
 
 
+def test_say_update_goes_to_the_cards_watchers_without_a_recipient(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    answer(fake, "POST", "/api/v1/projects/oliver/maity/events", {"seq": 4301, "kind": "message"})
+    assert cli.main(["say", "--type", "update", "--task", "tsk-0004", "it landed"]) == cli.EXIT_OK
+    assert last(fake).json() == {
+        "kind": "message",
+        "type": "update",
+        "body": "it landed",
+        "task_id": "tsk-0004",
+    }
+    assert capsys.readouterr().out == "sent update to the watchers of tsk-0004 (seq 4301)\n"
+
+
+def test_say_update_keeps_a_recipient_given_as_well(joined: Path, fake: fakehub.FakeHub) -> None:
+    answer(fake, "POST", "/api/v1/projects/oliver/maity/events", {"seq": 4302, "kind": "message"})
+    argv = ["say", "role:reviewer", "it landed", "--type", "update", "--task", "tsk-0004"]
+    assert cli.main(argv) == cli.EXIT_OK
+    assert (last(fake).json()["to"], last(fake).json()["body"]) == ("role:reviewer", "it landed")
+
+
+def test_say_update_needs_a_card(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert cli.main(["say", "--type", "update", "it landed"]) == cli.EXIT_USAGE
+    assert "--type update needs --task" in capsys.readouterr().err
+    assert not [s for s in fake.signed() if s.method == "POST"]
+
+
 def test_say_to_members_needs_a_type(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert cli.main(["say", "agt-a", "hello"]) == cli.EXIT_USAGE
     assert "--type is required" in capsys.readouterr().err
-    assert [s.method for s in fake.signed()] == ["GET"]  # the member list, nothing posted
+    assert [s.method for s in fake.signed()] == ["GET", "GET"]  # members and chats, no post
 
 
 def test_say_offers_no_chat_type() -> None:
@@ -390,6 +456,8 @@ def test_checkpoint_on_an_unborn_head_is_an_error(
     [
         ["claim", "{}"],
         ["unclaim", "{}"],
+        ["watch", "{}"],
+        ["unwatch", "{}"],
         ["checkpoint", "{}", "-m", "a", "--next", "b"],
         ["answer", "{}", "--reply", "o1"],
         ["release", "show", "{}"],

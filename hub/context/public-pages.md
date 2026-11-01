@@ -374,3 +374,96 @@ and the people of the overview.
   hidden card would stay on the Board until the next run.
 - Three kinds, one per view: the three share one query for the people and one rule for who is named, and a
   member change touches all of them.
+
+## An agent's page follows its public projects and its owner, and a median is pooled, not averaged
+
+**Id:** 6ac39513-fcf3-476d-9d49-e682cfc21626
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §16.9 ("An agent's page", "A person's page"), §6.22; the plan of 2026-10-30 on the cards tsk-w89mspg3gwx1 and tsk-xr6fqx8e0vw5
+**Revisit when:** an organisation's page lists agents, or §6.22 counts a median over something the window does not keep
+
+`public_agents` renders `/{owner}/agents/{handle}` while the owner's profile is public, no hold of moderation stands on the agent's profile and the agent is an active, not isolated member of at least one project whose page is served. Two things keep the page true. The kind `project` names the agent pages of its agents and the person pages that list it or them (its human members' and the owners' of its agent members, who need not be members: `touch` goes one level deep) as dependents, so a project's page going on or off, its name, a member joining, leaving or being isolated renders them at once, and the last public project going takes the agent's page with it. The kind `person` names the agent pages of the person's agents: the page's address contains the owner's handle and its existence follows the owner's profile. The person's page lists the public projects they are a member of and their agents that have a page, from the same `served` rules. The statistics are the agent's own counters summed over its public projects and its two medians over the pooled samples of all of them (`swarm` windows read per project), because a median of medians is no median; a project that is not public contributes nothing. The Members view of a project links a named agent to this page, since the agent is named exactly when the page exists.
+
+**Reason:** an agent belongs to several projects and the page speaks for all the public ones; a page that is stored and taken off in the changing transaction needs every input to name the pages that show it.
+
+**Rejected alternatives:**
+- Medians of the per-project medians: the figure would not be a median of anything, and a project with three samples would weigh as much as one with three hundred.
+- Rendering the agent pages only from the worker's run: the contract takes a page off at once, and a renamed handle would leave the old address standing.
+- One page per agent and project: the contract has one page under the owner's page.
+
+## A project's links share the website rule as one function, and change the project like any setting
+
+**Id:** 66b41773-d5d3-447c-b130-b98e5477e37a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-ayaav7naskbe, taken over from #846 with its review (the rule copied from `person_links`, `project_updated` with a list); the coordinator's go for the object form, 2026-10-31; docs/api.md §6.11, §16.9
+**See:** https://github.com/oliver-zehentleitner/maity — 11b7e786-ecf7-4971-ae04-48760fd1fd41 — as of 2026-10-31
+**Revisit when:** a person's website and a project's link need different rules beyond their length
+
+`project_links` checks each link with `person_links.website_problem`,
+which takes the length as a parameter (200 for a website, 500 for a
+link). A PATCH merges by key as a person's `social` does. A change puts
+`"links": true` into the PATCH's one `project_updated`, beside the other
+settings it changed; the links are read from the project, not the
+event. The public page asks `project_links.public` which links to show:
+a link on the repository's host whose path starts with the repository's
+path, compared segment by segment and without case after decoding
+percent-escapes and resolving `.` and `..` as a browser does, only while
+the repository is public; every other link as set. The page's digest holds
+the shown links, so a change renders it again.
+
+**Reason:** §6.11 says "as for a person's `website`", and two copies of
+that rule would drift apart. Every other settings change in
+`project_updated` is a key in the `fields` object, so a second event, or
+a list just for links, would make readers handle two shapes.
+
+**Rejected alternatives:**
+- A rule of its own in `project_links` (#846): the same checks twice.
+- `fields: ["links"]` in an event of its own (#846, the contract's
+  first wording): the only `project_updated` with a list.
+- Comparing the path as a string prefix: `acme/maity-other` would count
+  as inside `acme/maity`.
+- Comparing the raw segments (review of #884): `x/../maity`, `%6Daity`,
+  `%2e%2e` and `%2F` resolve into the repository's path in a browser but
+  not in the comparison, so a private repository's issues would show.
+- Only `/` as the separator (delta review of #884): browsers read `\` in
+  an https URL as `/`, so `acme\maity` lies inside the repository; `\` is
+  therefore a separator after decoding.
+
+## A new project is public for its namespace owner, and the hub's own look at the repository decides before anything is stored
+
+**Id:** 7bc52549-f0eb-4596-800d-e3ec61b563a8
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** `docs/api.md` §6.1 and §16.9 (#865, #875); the card tsk-es3adbcyvy4v from the coordinator, 2026-10-31; the implementation of `create_project` and `patch_project`
+**Revisit when:** the instance offers a way to ask the forge without a token for a repository that is public, or the dashboard's create form needs the hub's answer before it sends
+**See:** public-pages.md#a-public-page-is-a-row-of-public_page-served-by-the-app-shells-route — 1e42dae2-4d67-4f1d-80b7-b2bb4aecfc3b — as of 2026-10-31
+
+`POST /projects` stores `public_page: on` for a creator who owns the namespace (for an organisation, one of its owners)
+and `off` for anyone else; `off` is taken from anyone, `on` from an owner only. When a `repository` comes with the call
+(or later with a `PATCH`), `routes/projects._looks_public` asks the forge once, with the hub's own reader
+(`Forge.repository_public`: anything but `private: false` counts as private), and the page stays `off` unless the answer
+was public. The call is made before the transaction opens, so no database transaction waits on the forge, and a first
+answer of public is stored in `repository_public`, so the page need not wait for the probe's round. A `PATCH` that
+changes the repository to one the hub does not see public turns an `on` page `off` and writes `project_updated`; the
+same pass as any other way the page stops being served (`agent_owners.reconcile`, here also archiving) follows.
+
+A hub without its own forge token sees no repository public, so there every project with a repository starts `off` until
+its namespace owner turns the page on. The look is made for every caller that does not send `off`, a member of an
+organisation who is no owner included, whose project starts `off` anyway: the role is only known inside the transaction,
+and reading it beforehand would read the same rows twice for one request, so one uncached forge request is spent instead.
+
+**Reason:** a project is public by default so a new project is findable and its outside agents are allowed (the
+maintainer's decision, 2026-10-31), but creating one must never publish what the creator could not see the hub see: a
+private repository's name and a page that links it. Looking before the transaction keeps a slow forge from holding a
+write lock; storing the first answer avoids a window in which a page of a public repository shows no link.
+
+**Rejected alternatives:**
+- Create the project `on` and let the probe turn it off: for the length of a round a private repository's page is public.
+- Look inside the transaction: a slow or down forge would hold the project's rows, and the call still has to answer.
+- Treat an unreadable repository as public: the contract says no answer counts as private (§16.9), and the unreadable
+  case is exactly the private one without a grant.

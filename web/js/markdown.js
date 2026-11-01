@@ -5,7 +5,9 @@
 // text node: raw HTML stays visible as text, and no markup is parsed
 // (context/rendering.md). What is not understood is shown as written. Ids
 // in the text outside code become links (js/ids.js) where the caller says
-// which project the text belongs to.
+// which project the text belongs to; the mentions the hub stored for the
+// text (§8.6) become member links outside code. One renderer for chats,
+// requests, project messages, cards and notes (the maintainer, 2026-10-31).
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -13,20 +15,45 @@ window.Maity = window.Maity || {};
 (function (M) {
   const { h, safeUrl } = M.dom;
 
+  // The text being drawn: its mentions, marked in the source as private-use
+  // placeholders (\uE000<n>\uE001) that no other rule reads, each drawn as a
+  // member link in text and restored to what was written inside code.
+  const MARK = /\uE000(\d+)\uE001/g;
+  let marks = [];
+  const restore = (s) => String(s).replace(MARK, (all, n) => (marks[n] ? marks[n].said : ""));
+  function withMarks(s, plain) {
+    const out = [];
+    let from = 0;
+    for (const m of s.matchAll(MARK)) {
+      if (m.index > from) out.push(...plain(s.slice(from, m.index)));
+      const x = marks[m[1]];
+      // @handle#id: the handle and the #id are two links side by side (tsk-bczgjkfpw1wg).
+      if (x && x.href && x.instanceHref) {
+        const cut = x.said.length - x.instance.length - 1;
+        out.push(h("a", { class: "mention", href: x.href }, x.said.slice(0, cut)),
+          h("a", { class: "mention mention-instance", href: x.instanceHref, title: x.title }, x.said.slice(cut)));
+      } else if (x) out.push(x.href ? h("a", { class: "mention", href: x.href, title: x.title }, x.said) : h("span", { class: "mention", title: x.title }, x.said));
+      from = m.index + m[0].length;
+    }
+    if (from < s.length) out.push(...plain(s.slice(from)));
+    return out;
+  }
+
   // The clipboard, and what is said after it: "Copied", or how to copy by hand.
   async function copied(text) {
     try {
       await navigator.clipboard.writeText(text);
-      return "Copied";
+      return M.t("md.copied");
     } catch (err) {
-      return "Copy failed — select the text";
+      return M.t("md.copy_failed");
     }
   }
 
   // Inline code copies itself on a click, or Enter or Space (the maintainer,
   // tsk-rdx6gaqveygx); a click that ends a selection inside it copies nothing.
   // "Copied" stands beside it for two seconds, a status for a screen reader.
-  function inlineCode(text) {
+  function inlineCode(written) {
+    const text = restore(written);
     const said = h("span", { class: "md-copied", role: "status" });
     const copy = async () => {
       said.textContent = await copied(text);
@@ -38,7 +65,7 @@ window.Maity = window.Maity || {};
       const sel = window.getSelection ? window.getSelection() : null;
       return !!sel && !sel.isCollapsed && String(sel) !== "" && typeof sel.containsNode === "function" && sel.containsNode(code, true);
     };
-    const code = h("code", { class: "md-inline-copy", tabindex: "0", role: "button", title: "Click to copy", "aria-label": "Copy " + text,
+    const code = h("code", { class: "md-inline-copy", tabindex: "0", role: "button", title: M.t("md.click_to_copy"), "aria-label": M.t("md.copy.label", { what: text }),
       onclick: () => { if (!selectedHere()) copy(); },
       onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); copy(); } } }, text);
     return [code, said];
@@ -57,7 +84,7 @@ window.Maity = window.Maity || {};
       out.push(...spans(text.slice(from, open.index), at));
       const inner = text.slice(open.index + open[0].length, runs[close].index);
       const code = inner.length > 2 && inner.startsWith(" ") && inner.endsWith(" ") ? inner.slice(1, -1) : inner;
-      const linked = at && M.ids.only(code, at);
+      const linked = at && M.ids.only(restore(code), at);
       if (linked) out.push(linked);
       else out.push(...inlineCode(code));
       from = runs[close].index + runs[close][0].length;
@@ -73,20 +100,24 @@ window.Maity = window.Maity || {};
   const TOKEN = /\[([^\[\]\n]+)\]\((https:\/\/[^\s)]+)\)|(https:\/\/[^\s<>()]+[^\s<>().,;:!?'"])|\*\*([^*\n]+)\*\*|(?:^|(?<=[\s(]))[*_]([^*_\n]+)[*_](?=$|[\s).,;:!?])/g;
   function spans(text, where) {
     const out = [];
-    const plain = (s) => (where ? M.ids.link(s, where) : [s]);
+    const plain = (s) => withMarks(s, (t) => (where ? M.ids.link(t, where) : [t]));
     let at = 0;
     for (const m of text.matchAll(TOKEN)) {
       if (m.index > at) out.push(...plain(text.slice(at, m.index)));
       if (m[1] !== undefined) {
-        const url = safeUrl(m[2]);
+        // A mention the hub stored inside a link (a label, an address's query) is the link's
+        // text as written, never a placeholder and never a member link.
+        const label = restore(m[1]), target = restore(m[2]);
+        const url = safeUrl(target);
         // A text that looks like another address says where the link goes.
-        const looks = /^\s*(https?:\/\/|www\.)/i.test(m[1]) && hostOf(m[1]) !== hostOf(m[2]);
+        const looks = /^\s*(https?:\/\/|www\.)/i.test(label) && hostOf(label) !== hostOf(target);
         // An https link opens apart, without an opener.
-        out.push(!url ? m[0] : h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, m[1]));
-        if (url && looks) out.push(h("span", { class: "md-real-href" }, " (goes to " + hostOf(m[2]) + ")"));
+        out.push(!url ? restore(m[0]) : h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, label));
+        if (url && looks) out.push(h("span", { class: "md-real-href" }, " ", M.t("md.goes_to", { host: hostOf(target) })));
       } else if (m[3] !== undefined) {
-        const url = safeUrl(m[3]);
-        out.push(url ? h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, m[3]) : m[0]);
+        const written = restore(m[3]);
+        const url = safeUrl(written);
+        out.push(url ? h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, written) : restore(m[0]));
       } else if (m[4] !== undefined) {
         out.push(h("strong", null, plain(m[4])));
       } else {
@@ -110,23 +141,24 @@ window.Maity = window.Maity || {};
   // Characters that make code read differently from what runs (Trojan Source).
   const INVISIBLE = /[\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/;
   let blocks = 0;
-  function codeBlock(code, lang) {
+  function codeBlock(written, lang) {
+    const code = restore(written);
     blocks += 1;
-    const name = "Code" + (lang ? " (" + lang + ")" : "") + ", block " + blocks;
+    const name = lang ? M.t("md.block.lang", { lang, n: blocks }) : M.t("md.block", { n: blocks });
     const pre = h("pre", { class: "md-code", tabindex: "0", role: "region", "aria-label": name }, h("code", null, code));
     const copy = h("button", {
       type: "button",
       class: "small md-copy",
-      "aria-label": "Copy " + name,
+      "aria-label": M.t("md.copy.label", { what: name }),
       onclick: async () => {
         copy.textContent = await copied(code);
-        window.setTimeout(() => { copy.textContent = "Copy"; }, 2000);
+        window.setTimeout(() => { copy.textContent = M.t("md.copy"); }, 2000);
       },
-    }, "Copy");
+    }, M.t("md.copy"));
     // The language and Copy sit inside the block's corner (the designer's
     // pass part 1); a warning about invisible characters stands above it.
     return h("div", { class: "md-code-box" },
-      INVISIBLE.test(code) ? h("p", { class: "flag md-invisible" }, "This code contains invisible characters (bidi or zero-width); what you copy may differ from what you see.") : null,
+      INVISIBLE.test(code) ? h("p", { class: "flag md-invisible" }, M.t("md.invisible")) : null,
       h("div", { class: "md-code-frame" },
         h("div", { class: "md-code-bar" }, lang ? h("span", { class: "md-lang" }, lang) : null, copy),
         pre));
@@ -172,7 +204,30 @@ window.Maity = window.Maity || {};
 
   // Blocks, line by line. `at`: the project the text belongs to
   // ({slug, repository}, M.ids.where), for its ids as links; none, none.
-  M.markdown = function (source, at, depth) {
+  // `opts`: {mentions, field, hrefOf, ctx}, the hub's stored mentions of the
+  // text (§8.6), the field they are for ("body" by default), the member's
+  // address (none: shown, not linked) and the members it knows for aliases.
+  M.markdown = function (source, at, opts) {
+    const o = opts || {};
+    const text = String(source || "");
+    // A text that already holds the placeholders' characters is drawn without mention links.
+    const spans = /[\uE000\uE001]/.test(text) ? [] : M.dom.mentionSpans(text, o.mentions, o.field || "body", o.ctx);
+    const chars = Array.from(text);
+    let marked = "";
+    let from = 0;
+    marks = spans.map((x, n) => {
+      marked += chars.slice(from, x.offset).join("") + "\uE000" + n + "\uE001";
+      from = x.offset + x.length;
+      const href = o.hrefOf ? o.hrefOf(x.member_id) : null;
+      // The instance's own link where the member's is one and the text says its #id.
+      const instanceHref = href && x.instance && o.ctx && typeof o.ctx.link === "function" && x.said.endsWith("#" + x.instance)
+        ? M.dom.instanceHref(o.ctx, x.member_id, x.instance) : null;
+      return { said: x.said, href, instance: x.instance, instanceHref, title: x.instance ? M.t("member.instance", { id: x.instance }) : null };
+    });
+    marked += chars.slice(from).join("");
+    try { return render(marked, at, 0); } finally { marks = []; }
+  };
+  function render(source, at, depth) {
     const level = depth || 0;
     const all = String(source || "").replace(/\r\n?/g, "\n").split("\n");
     const out = [];
@@ -187,7 +242,7 @@ window.Maity = window.Maity || {};
       const fence = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
       if (fence && !(fence[1][0] === "`" && fence[2].includes("`"))) {
         flush();
-        const lang = (fence[2].trim().split(/\s+/)[0] || "").slice(0, 40);
+        const lang = (restore(fence[2]).trim().split(/\s+/)[0] || "").slice(0, 40);
         const close = new RegExp("^ {0,3}" + (fence[1][0] === "`" ? "`" : "~") + "{" + fence[1].length + ",}\\s*$");
         const body = [];
         i += 1;
@@ -209,7 +264,7 @@ window.Maity = window.Maity || {};
         const quoted = [];
         while (i < all.length && /^>\s?/.test(all[i])) { quoted.push(all[i].replace(/^>\s?/, "")); i += 1; }
         out.push(level < MAX_DEPTH
-          ? h("blockquote", null, M.markdown(quoted.join("\n"), at, level + 1))
+          ? h("blockquote", null, render(quoted.join("\n"), at, level + 1))
           : h("p", { class: "md-deep" }, lines(quoted, at)));
         continue;
       }
@@ -226,5 +281,5 @@ window.Maity = window.Maity || {};
     }
     flush();
     return out;
-  };
+  }
 })(window.Maity);

@@ -15,8 +15,10 @@ from sqlalchemy import Connection, select, update
 
 from maity_hub import (
     admin_agents,
+    agent_owners,
     attachments,
     availability,
+    bridges,
     briefings,
     clock,
     cross_owner,
@@ -28,6 +30,7 @@ from maity_hub import (
     line,
     namespace,
     person_links,
+    pins,
     placements,
     project_roles,
     rules,
@@ -86,6 +89,8 @@ class MemberPatch(Strict):
     areas: list[str] | None = Field(default=None, max_length=50)
     capabilities: list[str] | None = Field(default=None, max_length=20)
     paused: MemberPausedIn | None = None
+    # One instance's rest or wake: `{"dormant": true|false, "instance": "<id>"}` (§6.17).
+    dormant: bool | None = None
     # Lifting one instance's pause: `{"paused": null, "instance": "<id>"}` (§5.3).
     instance: str | None = Field(default=None, max_length=5)
     briefing: str | None = markdown(default=None)
@@ -439,6 +444,10 @@ def apply_patch(
         held = target.role == "manager" and target.trust != "guest"
         if held and not (row.role == "manager" and row.trust != "guest"):
             line.manager_lost(conn, change, target)
+        if "role" in changed and row.agent_id is not None:
+            # A proxy carries and is carried by no bridge; a role the limits across owners
+            # exclude ends those connections (§2.3, "Ending on its own").
+            bridges.after_role_change(conn, change.project, row, change.actor)
     given, reason = pause
     if given:
         if target.agent_id is None:
@@ -472,6 +481,8 @@ def patch_member(
             return idempotency.Outcome(200, "member_team", str(target.id), view)
         if "owner_preferences" in given:
             return _owner_preferences(conn, caller, slug, member_id, body, given)
+        if "dormant" in given:
+            return _dormant(conn, caller, slug, member_id, body, given)
         lifted = _owner_lifts_line_pause(conn, caller, slug, member_id, body, given)
         if lifted is not None:
             return lifted
@@ -520,6 +531,7 @@ def patch_member(
             values["briefing"] = body.briefing or None
         if new_policy is not None and new_policy != availability.policy_of(target):
             values["availability_policy"] = new_policy
+        agent_owners.check_assignment(conn, mine.project, target, values)  # outsiders (§6.2)
         _require_owner_for_change(mine, target, values)
         demotes = values.get("trust", "owner") != "owner" and target.trust == "owner"
         if demotes and _owners(conn, mine.project.id) <= 1:
@@ -537,6 +549,8 @@ def patch_member(
             held = instances.require_active(conn, target, instance, "instance")
             if agent_admin:
                 admin_agents.check_instance_pause(held, mine.principal_id, pause[1] is None)
+        if "reports_to" in given:
+            cross_owner.check_may_supersede(conn, mine, target.id)
         if line_lead and line.needs_consent(mine.project, target, values, pause):
             # The whole PATCH waits for a human's go, as under ᵃ (§2.3 "The manager").
             request_id = line.propose(
@@ -572,16 +586,7 @@ def patch_member(
                 pause, instance = (False, None), None
         if "reports_to" in given:
             # §6.2 "Pending": a further PATCH of `reports_to` ends every open consent request
-            # of the member; an agent that did not ask for them does not end the decision of
-            # the two owners.
-            pending = cross_owner.open_pair(conn, target.id)
-            if pending and mine.kind == "agent" and mine.id not in {r.asked_by for r in pending}:
-                raise ApiError(
-                    403,
-                    "forbidden",
-                    "an agent that did not ask for the edge does not end the owners' decision",
-                    {"reason": "pending_consent"},
-                )
+            # of the member (who may do so is checked above).
             cross_owner.withdraw_open(conn, target.id, change.actor, "superseded")
             boss_row = (
                 member_row(conn, mine.project.id, body.reports_to)
@@ -603,6 +608,27 @@ def patch_member(
         return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
 
     return idempotency.run(engine_of(request), request, caller, action)
+
+
+def _dormant(
+    conn: Connection, caller: Caller, slug: str, member_id: str, body: Any, given: set[str]
+) -> idempotency.Outcome:
+    """`{"dormant", "instance"}` alone (§6.17): the agent's owner, member or not, or a human
+    with `members:admin`; for another owner's agent the change waits for its owner. An
+    agent never sets it through here (its own instance rests through `PATCH /me`)."""
+    if caller.kind != "human":
+        raise humans_only("an instance rests through PATCH /me, and only the owner sets another")
+    if given - {"dormant", "instance"}:
+        raise invalid({"dormant": "alone"}, "set dormant and instance on their own")
+    target, reader, asked = instances.patch_dormant(
+        conn, caller, slug, member_id, body.dormant, body.instance
+    )
+    if asked is not None:
+        return idempotency.Outcome(202, "request", asked, _request(conn, asked))
+    if reader is None:
+        return idempotency.Outcome(204, None, None, {})  # nothing of the project (§1.3)
+    view = member_view(conn, target, briefing=reader.may("members:admin"))
+    return idempotency.Outcome(200, "member_team", str(target.id), view)
 
 
 def _owner_lifts_line_pause(
@@ -854,6 +880,7 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     )
     foreign_agent.withdraw_open(conn, target.id, change.actor, "member_removed")
     cross_owner.withdraw_for_member(conn, target.id, change.actor)  # §6.2 "Pending"
+    bridges.end_for_member(conn, target.id, change.actor, "member_removed")  # §2.3
     now = clock.now()
     credentials = (
         conn.execute(
@@ -868,7 +895,7 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
         revoke(conn, credential_id, "member_removed", by=change.approver)
     placements.membership_removed(conn, target.id, change.actor, change.approver)
     takeovers.membership_removed(conn, target.id, change.actor)
-    isolation.release_claims(conn, target.id)
+    released = isolation.release_claims(conn, target.id)
     conn.execute(
         update(t.membership)
         .where(t.membership.c.id == target.id)
@@ -885,6 +912,7 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
         actor=change.actor,
         subject=("member", view["id"]),
     )
+    isolation.tell_released(conn, released, change.actor)
     # The chain never names a former member: nor does a join still to be used.
     reported = conn.execute(
         select(t.membership.c.id).where(
@@ -923,9 +951,12 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     placements.forget_boss(conn, change.project.id, target.id)
     # Out of every group chat too, which may close one (§6.2, §9.2).
     group_chats.membership_removed(conn, target, change.actor, change.by)
+    pins.prune(conn, change.project.id)  # its direct chats go with it (§9.1, §9.3)
     attachments.drop_pending(conn, target.id)  # its pending uploads go (§6.2)
     seats.reset(conn, change.project.id, removed, change.actor)
     instances.refresh_team_wake(conn, change.project.id)  # it may have been the last team
+    if removed.human_id is not None:  # its joins and placements go, and its agents may (§6.2)
+        agent_owners.human_left(conn, change.project, removed.human_id, change.actor, change.by)
 
 
 @router.delete("/projects/{owner}/{slug}/members/{member_id}")
@@ -994,14 +1025,33 @@ def isolate_member(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
+class LiftIn(Strict):
+    # The events of the isolation stay out of what the agent may read for good (§6.2).
+    hide_isolation_events: bool = False
+
+
 @router.delete("/projects/{owner}/{slug}/members/{member_id}/isolate")
-def lift_isolation(slug: str, member_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
+def lift_isolation(
+    slug: str,
+    member_id: str,
+    request: Request,
+    caller: AnyCaller,
+    body: LiftIn | None = None,
+) -> JSONResponse:
     """Give an isolated agent its access back, nothing it held (§6.2, "Isolation")."""
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         target = _isolation_target(conn, mine, caller, member_id)
-        isolation.lift(conn, mine.project, target, mine.principal_id, caller.actor(mine.id))
+        agent_owners.refuse_lift(conn, mine.project, target)  # an owner who is no member (§6.2)
+        isolation.lift(
+            conn,
+            mine.project,
+            target,
+            mine.principal_id,
+            caller.actor(mine.id),
+            hide=bool(body and body.hide_isolation_events),
+        )
         return idempotency.Outcome(200, "member", str(target.id), load_member(conn, str(target.id)))
 
     return idempotency.run(engine_of(request), request, caller, action)

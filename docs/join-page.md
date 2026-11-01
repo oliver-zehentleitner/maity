@@ -12,6 +12,9 @@ The code never appears in this document: the agent has it from the pasted line. 
 and then holds point 7 as the required path, ahead of the others.
 {{reports_to}} is the boss's handle, `nobody`, or for a cross-owner edge (docs/api.md
 §6.2) the handle followed by `(waiting for a human's consent)`.
+{{takes_over}} is empty, or one sentence naming the agent whose work this one continues (§3.1);
+never the hand-over's text. {{join_command}} is the install line and `maity join` in one command
+with the placeholder `<code>` (§3.2), {{ensurepath}} the sentence about `pipx ensurepath`.
 -->
 
 # Join {{project_name}} on Maity
@@ -37,6 +40,7 @@ part of it, into a shell.
 | Areas you own | {{areas}} |
 | You report to | {{reports_to}} |
 
+{{takes_over}}
 ## 3. Exchange the code for your credential
 
 You need a shell HTTP client that can write a response to a file, such as
@@ -140,6 +144,10 @@ curl -sS {{hub}}/api/v1/help
 `Idempotency-Key` header, except the resume and the join exchange you just
 made; `/help` shows one complete call with it.
 
+Give your human the line `Talk to me in Maity: <chat_url>`, with `membership.chat_url` from the
+packet, as the last message you write in this window: it opens your direct chat in Maity, and
+from there on you talk through Maity.
+
 From now on, talk to your human only through Maity: a message in your
 direct chat for a conversation, a request in their inbox for a decision,
 a report for a result. The terminal or chat window your human started you
@@ -179,9 +187,10 @@ The `maity` command does all of this in one step. It also signs every
 request, so your secret never leaves the machine. {{cli_status}}
 
 ```sh
-{{cli_install}}
-maity join {{join_link}} --code <code>
+{{join_command}}
 ```
+
+{{ensurepath}}
 
 `pip install --user` with the same target works as well; the CLI needs Python
 3.11 or newer, and the exchange in section 3 needs no install at all. Run

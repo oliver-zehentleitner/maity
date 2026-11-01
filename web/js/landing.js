@@ -62,6 +62,36 @@ window.Maity = window.Maity || {};
   const listsOf = (type) => (type.items ? [Object.assign({ key: "items" }, type.items)] : []).concat(type.lists || []);
   const KEPT = { activity: "Activity", collab: "Collaboration" };
 
+  // Whether pages can be drawn as the editor: each page an object, its
+  // sections a list of objects, and every value the editor binds to an
+  // object or a list of the right kind: a button (cta) an object, or absent
+  // where optional; a group an object or absent; each list a list of
+  // objects whose own fields hold the same; lines and counters lists. What
+  // the values say is the hub's to check; only their kind decides here.
+  const isObject = (x) => !!x && typeof x === "object" && !Array.isArray(x);
+  function fieldsOk(fields, obj) {
+    return fields.every((x) => {
+      const v = obj[x.key];
+      if (x.kind === "cta") return x.optional ? v === undefined || v === null || isObject(v) : isObject(v);
+      if (x.kind === "group") return v === undefined || v === null || (isObject(v) && fieldsOk(x.fields, v));
+      if (x.kind === "lines" || x.kind === "stats") return v === undefined || Array.isArray(v);
+      return true;
+    });
+  }
+  function sectionOk(sec) {
+    if (!isObject(sec)) return false;
+    // Own keys only: "constructor" or "__proto__" as a type is no section type.
+    const type = Object.hasOwn(TYPES, sec.type) ? TYPES[sec.type] : null;
+    if (!type) return true;
+    return fieldsOk(type.fields || [], sec) && listsOf(type).every((l) => sec[l.key] === undefined
+      || (Array.isArray(sec[l.key]) && sec[l.key].every((item) => isObject(item) && fieldsOk(l.fields, item))));
+  }
+  function drawable(pages, footer) {
+    const social = footer && footer.social;
+    return Object.values(pages).every((pg) => isObject(pg) && (pg.sections === undefined || (Array.isArray(pg.sections) && pg.sections.every(sectionOk))))
+      && (!footer || (isObject(footer) && (social === undefined || (Array.isArray(social) && social.every(isObject)))));
+  }
+
   // A new object of `fields`, as the hub would take it.
   function freshOf(fields) {
     const o = {};
@@ -111,7 +141,7 @@ window.Maity = window.Maity || {};
       if (!obj[x.key] && x.optional) {
         const add = h("button", { type: "button", class: "small" }, "Add " + x.label.replace(/ \(optional\)$/, "").toLowerCase());
         add.addEventListener("click", () => { obj[x.key] = { label: "", href: "" }; redraw(); });
-        return h("div", { class: "lp-field" }, h("span", { class: "lp-label" }, x.label), add, error);
+        return h("div", { class: "lp-field field-stack" }, h("span", { class: "lp-label" }, x.label), add, error);
       }
       const cta = obj[x.key];
       const label = h("input", Object.assign({ id: id + "-label", maxlength: "40" }, described));
@@ -125,13 +155,13 @@ window.Maity = window.Maity || {};
       errors[path + ".label"] = error;
       const remove = x.optional ? h("button", { type: "button", class: "small" }, "Remove") : null;
       if (remove) remove.addEventListener("click", () => { delete obj[x.key]; redraw(); });
-      return h("fieldset", { class: "lp-field lp-cta" }, h("legend", null, x.label),
+      return h("fieldset", { class: "lp-field field-stack lp-cta" }, h("legend", null, x.label),
         h("label", { for: id + "-label" }, "Label"), label, error,
         h("label", { for: id + "-href" }, "Link"), href, hrefError, remove);
     }
     if (x.kind === "stats") {
       const chosen = obj[x.key] = obj[x.key] || [];
-      return h("fieldset", { class: "lp-field lp-stats" }, h("legend", null, x.label),
+      return h("fieldset", { class: "lp-field field-stack lp-stats" }, h("legend", null, x.label),
         STATS.map(([k, l]) => {
           const box = h("input", { type: "checkbox", id: id + "-" + k });
           box.checked = chosen.includes(k);
@@ -148,30 +178,30 @@ window.Maity = window.Maity || {};
       input = h("select", Object.assign({ id }, described), x.choices.map(([v, l]) => h("option", { value: v }, l)));
       input.value = obj[x.key] || x.choices[0][0];
       input.addEventListener("change", () => { obj[x.key] = input.value; });
-      return h("div", { class: "lp-field" }, h("label", { for: id }, x.label), input, error);
+      return h("div", { class: "lp-field field-stack" }, h("label", { for: id }, x.label), input, error);
     }
     if (x.kind === "group") {
       if (!obj[x.key]) {
         const add = h("button", { type: "button", class: "small" }, "Add " + x.label.replace(/ \(optional\)$/, "").toLowerCase());
         add.addEventListener("click", () => { obj[x.key] = freshOf(x.fields); redraw(); });
-        return h("div", { class: "lp-field" }, h("span", { class: "lp-label" }, x.label), add, error);
+        return h("div", { class: "lp-field field-stack" }, h("span", { class: "lp-label" }, x.label), add, error);
       }
       const remove = x.optional ? h("button", { type: "button", class: "small" }, "Remove") : null;
       if (remove) remove.addEventListener("click", () => { delete obj[x.key]; redraw(); });
-      return h("fieldset", { class: "lp-field lp-group" }, h("legend", null, x.label),
+      return h("fieldset", { class: "lp-field field-stack lp-group" }, h("legend", null, x.label),
         x.fields.map((y) => control(y, obj[x.key], path + "." + y.key, errors, redraw)), remove, error);
     }
     if (x.kind === "href") {
       input = h("input", Object.assign({ id, placeholder: "/register or https://…" }, described));
       input.value = obj[x.key] || "";
       input.addEventListener("input", () => { obj[x.key] = input.value.trim(); });
-      return h("div", { class: "lp-field" }, h("label", { for: id }, x.label), input, error);
+      return h("div", { class: "lp-field field-stack" }, h("label", { for: id }, x.label), input, error);
     }
     if (x.kind === "lines") {
       input = h("textarea", Object.assign({ id, rows: String(Math.max(2, x.max)) }, described));
       input.value = (obj[x.key] || []).join("\n");
       input.addEventListener("input", () => { obj[x.key] = input.value.split("\n").map((s) => s.trim()).filter(Boolean); });
-      return h("div", { class: "lp-field" }, h("label", { for: id }, x.label + " (at most " + x.max + ")"), input, error);
+      return h("div", { class: "lp-field field-stack" }, h("label", { for: id }, x.label + " (at most " + x.max + ")"), input, error);
     }
     input = x.kind === "text"
       ? h("input", Object.assign({ id, maxlength: String(x.max) }, described))
@@ -181,7 +211,7 @@ window.Maity = window.Maity || {};
       if (x.optional && !input.value) delete obj[x.key];
       else obj[x.key] = input.value;
     });
-    return h("div", { class: "lp-field" }, h("label", { for: id }, x.label), input,
+    return h("div", { class: "lp-field field-stack" }, h("label", { for: id }, x.label), input,
       x.kind === "md" ? h("p", { class: "hint" }, "Headings, paragraphs, emphasis, lists, quotes, fenced code and links (https, or a path like /register); no images, no HTML. "
         + limitWords(x.max).replace(/^at/, "At") + ".")
         : x.kind === "long" ? h("p", { class: "hint" }, limitWords(x.max).replace(/^at/, "At") + ".") : null,
@@ -201,7 +231,7 @@ window.Maity = window.Maity || {};
   function sectionBox(lang, sections, i, errors, redraw) {
     const s = sections[i];
     const path = "pages." + lang + ".sections." + i;
-    const type = TYPES[s.type];
+    const type = Object.hasOwn(TYPES, s.type) ? TYPES[s.type] : null;
     const on = h("input", { type: "checkbox", id: "lp-" + lang + "-" + i + "-enabled" });
     on.checked = s.enabled !== false;
     on.addEventListener("change", () => { s.enabled = on.checked; });
@@ -209,7 +239,7 @@ window.Maity = window.Maity || {};
     errors[path] = error;
     errors[path + ".type"] = error;
     const head = h("div", { class: "lp-section-head" },
-      h("h5", { class: "lp-section-title" }, (i + 1) + ". " + (type ? type.label : KEPT[s.type] || s.type)),
+      h("h5", { class: "lp-section-title" }, (i + 1) + ". " + (type ? type.label : Object.hasOwn(KEPT, s.type) ? KEPT[s.type] : s.type)),
       h("label", { class: "check", for: "lp-" + lang + "-" + i + "-enabled" }, on, " Shown"),
       small("Up", () => move(sections, i, -1), i === 0, redraw), small("Down", () => move(sections, i, 1), i === sections.length - 1, redraw),
       small("Remove", () => sections.splice(i, 1), false, redraw));
@@ -252,12 +282,14 @@ window.Maity = window.Maity || {};
 
   // The hub's refusal said at each field it names; a path without a field
   // on screen is listed in the status line.
-  function showErrors(errors, err, status) {
+  // prefix: what the status line says before the hub's words; a save's by default.
+  function showErrors(errors, err, status, prefix) {
+    const before = prefix || "Not saved: ";
     Object.values(errors).forEach((e) => { e.textContent = ""; });
     const fields = err && err.code === "invalid" && err.details && err.details.fields;
     // A request over the hub's cap (§16.7: 512 KiB for these two calls) never reaches the checks.
-    if (err && err.code === "payload_too_large") { status.fail("Not saved: ", { message: "the draft is larger than the hub takes in one request (512 KiB)" }); return; }
-    if (!fields) { status.fail("Not saved: ", err); return; }
+    if (err && err.code === "payload_too_large") { status.fail(before, { message: "the draft is larger than the hub takes in one request (512 KiB)" }); return; }
+    if (!fields) { status.fail(before, err); return; }
     const rest = [];
     let first = null;
     Object.entries(fields).forEach(([path, reason]) => {
@@ -265,7 +297,7 @@ window.Maity = window.Maity || {};
       const words = at && at.limit && reason === "invalid" ? "empty, or longer than allowed (" + at.limit + ")" : reasonText(reason);
       if (at) { at.textContent = words; if (!first) first = at; } else rest.push(path + ": " + words);
     });
-    status.fail("Not saved: ", { message: rest.length ? rest.join("; ") : "see the fields marked below" });
+    status.fail(before, { message: rest.length ? rest.join("; ") : "see the fields marked below" });
     const input = first && first.parentNode && first.parentNode.querySelector ? first.parentNode.querySelector("input, textarea") : null;
     if (input && input.focus) input.focus();
   }
@@ -275,6 +307,15 @@ window.Maity = window.Maity || {};
   // POST with the CSRF token, then opened by its url in a tab of its own, a
   // top-level page under the page's own policy. The tab is opened at the
   // click, before the hub answers, so no pop-up blocker stops it.
+  // A preview while the JSON field holds text not loaded would show the
+  // editor's draft, not that text: said instead, and the field shown.
+  function unloaded(pending, status, focus) {
+    if (!pending()) return false;
+    status.fail(M.t("jsonio.pending_prefix"), { message: M.t("jsonio.pending") });
+    focus();
+    return true;
+  }
+
   const PREVIEW = /^(\/api\/v1)?\/admin\/settings\/(landing|legal)\/preview\/[A-Za-z0-9_-]+$/;
   async function preview(path, body, lang, status, errors) {
     const tab = window.open("about:blank", "_blank");
@@ -303,10 +344,19 @@ window.Maity = window.Maity || {};
     let saved = await M.api.get(LANDING);
     let draft = JSON.parse(JSON.stringify(saved));
     draft.pages = draft.pages || {};
-    draft.footer = draft.footer || { operator: "", social: [] };
+    // No operator line is none, never an empty one, which the hub refuses (§16.7).
+    draft.footer = draft.footer || { social: [] };
     let lang = draft.default_language || Object.keys(draft.pages)[0] || "en";
+    // What the JSON field holds and was not loaded (jsonPart sets these).
+    let jsonPending = () => false;
+    let jsonFocus = () => {};
+    // The fields drawn last, by the hub's path: an import's check marks them.
+    let errors = {};
+    // Where the step-up asks for the second factor, kept across redraws.
+    const stepSlot = h("div", { class: "step-up-slot" });
+    stepSlot.hidden = true;
     const draw = () => {
-      const errors = {};
+      errors = {};
       const langs = Object.keys(draft.pages);
       if (!langs.includes(lang)) lang = langs[0] || null;
       const enabled = h("input", { type: "checkbox", id: "lp-enabled" });
@@ -344,15 +394,17 @@ window.Maity = window.Maity || {};
           status.busy("Saving…");
           const body = { enabled: !!draft.enabled, default_language: draft.default_language, pages: draft.pages, footer: draft.footer };
           try {
-            saved = await M.api.patch(LANDING, body);
+            // A sensitive call (§2.8.4): the second factor asked for here when the hub wants it.
+            saved = await M.stepUp.run(() => M.api.patch(LANDING, body), stepSlot, M.t("landing.save.step_up"));
             draft = JSON.parse(JSON.stringify(saved));
             draft.pages = draft.pages || {};
-            draft.footer = draft.footer || { operator: "", social: [] };
+            draft.footer = draft.footer || { social: [] };
             draw();
             status.done();
             append(status.el, h("span", { class: "ok" }, "Saved. Visitors see it within a minute."));
           } catch (err) {
-            showErrors(errors, err, status);
+            if (err.code === "cancelled") status.done();
+            else showErrors(errors, err, status);
           }
         },
       },
@@ -363,18 +415,106 @@ window.Maity = window.Maity || {};
           pageEditor(draft, lang, errors, draw)] : null]
         : h("p", { class: "muted" }, "No language yet: add one to write its page."),
       h("h4", null, "Footer, for every language"),
-      control(f("operator", "Operator line (name, country)", "text", 120), footer, "footer.operator", errors, draw),
+      control(f("operator", "Operator line (name, country)", "text", 120, { optional: true }), footer, "footer.operator", errors, draw),
       social, small("Add a social link", () => footer.social.push({ label: "", href: "" }), footer.social.length >= 8, draw),
       h("p", { class: "hint" }, "A Mastodon link gets rel=“me”. The legal pages set below are linked here too."),
+      stepSlot,
       h("div", { class: "actions" }, h("button", { type: "submit", class: "primary" }, "Save the landing page"),
-        h("button", { type: "button", onclick: () => preview(LANDING + "/preview", { default_language: draft.default_language, pages: draft.pages, footer: draft.footer }, lang, status, errors) },
-          "Preview the draft"),
+        h("button", { type: "button", onclick: () => {
+          if (unloaded(jsonPending, status, jsonFocus)) return;
+          preview(LANDING + "/preview", { default_language: draft.default_language, pages: draft.pages, footer: draft.footer }, lang, status, errors);
+        } }, "Preview the draft"),
         // The saved page as a visitor sees it (§16.7, ?as=public), only while it is on.
         saved.enabled ? h("a", { href: "/?as=public" + (lang ? "&lang=" + encodeURIComponent(lang) : ""), target: "_blank", rel: "noopener" }, "View as a visitor") : null),
       saved.updated_at ? h("p", { class: "muted" }, "Last saved " + formatTime(saved.updated_at) + ".") : null);
       append(clear(box), form);
     };
     draw();
+    append(root, jsonPart());
+
+    // Import and export as JSON (tsk-36d575f5yybz): the draft as text, or
+    // text as the draft. An import replaces the draft after a confirmation
+    // and is checked by the hub's preview call, which stores nothing; only
+    // Save saves it, as for a draft typed by hand.
+    function jsonPart() {
+      const io = M.statusLine();
+      const area = h("textarea", { id: "lp-json", rows: "10", spellcheck: "false", "aria-describedby": "lp-json-hint" });
+      // The text last exported or loaded: anything else in the field is not in the editor.
+      let settled = "";
+      jsonPending = () => area.value.trim() !== "" && area.value !== settled;
+      jsonFocus = () => { area.parentNode.open = true; area.focus(); };
+      const file = h("input", { type: "file", id: "lp-json-file", accept: ".json,application/json" });
+      file.addEventListener("change", async () => {
+        const chosen = file.files && file.files[0];
+        if (!chosen) return;
+        try { area.value = await chosen.text(); io.done(); } catch (err) { io.fail(M.t("landing.json.file_failed"), err); }
+      });
+      const bodyOf = () => ({ enabled: !!draft.enabled, default_language: draft.default_language, pages: draft.pages, footer: draft.footer });
+      const exportIt = () => {
+        area.value = settled = JSON.stringify(bodyOf(), null, 2);
+        io.done();
+        append(io.el, h("span", { class: "ok" }, M.t("landing.json.exported")));
+        area.focus();
+      };
+      const copy = async () => {
+        try { await navigator.clipboard.writeText(area.value); io.done(); append(io.el, h("span", { class: "ok" }, M.t("landing.json.copied"))); }
+        catch (err) { io.fail(M.t("landing.json.copy_failed"), err); }
+      };
+      async function importIt() {
+        let data;
+        try { data = JSON.parse(area.value); } catch (err) { io.fail(M.t("landing.json.not_loaded"), { message: M.t("landing.json.not_json", { reason: err.message }) }); area.focus(); return; }
+        // The body of PATCH …/landing, or one language's page.
+        const whole = isObject(data) && isObject(data.pages);
+        const one = isObject(data) && !whole && Array.isArray(data.sections);
+        if (!whole && !one) { io.fail(M.t("landing.json.not_loaded"), { message: M.t("landing.json.shape") }); area.focus(); return; }
+        const target = lang || "en";
+        if (!window.confirm(whole ? M.t("landing.json.confirm_all") : M.t("landing.json.confirm_page", { lang: target }))) return;
+        const before = { draft, lang };
+        let next;
+        if (whole) {
+          // A field the body leaves out keeps what the editor has, as a PATCH keeps the stored one (§16.7).
+          next = { enabled: "enabled" in data ? !!data.enabled : !!draft.enabled,
+            default_language: data.default_language || Object.keys(data.pages)[0] || "en",
+            pages: data.pages, footer: isObject(data.footer) ? data.footer : draft.footer };
+        } else {
+          next = Object.assign({}, draft, { pages: Object.assign({}, draft.pages,
+            { [target]: { title: data.title || "", description: data.description || "", sections: data.sections } }) });
+          if (!next.default_language || !next.pages[next.default_language]) next.default_language = target;
+        }
+        // The hub checks it first: a part of the wrong kind (a list that is no list) is its to
+        // name, and the editor is drawn from what it would take.
+        status.busy(M.t("landing.json.checking"));
+        let refused = null;
+        try {
+          await M.api.post(LANDING + "/preview", { default_language: next.default_language, pages: next.pages, footer: next.footer });
+        } catch (err) {
+          refused = err;
+        }
+        // Not drawable as an editor: the draft stays as it was, the hub's refusals listed.
+        if (!drawable(next.pages, next.footer)) {
+          draft = before.draft;
+          lang = before.lang;
+          showErrors({}, refused || { message: M.t("landing.json.shape") }, status, M.t("landing.json.not_loaded"));
+          return;
+        }
+        draft = next;
+        lang = whole ? next.default_language : target;
+        settled = area.value;
+        draw();
+        if (refused) { showErrors(errors, refused, status, M.t("landing.json.refused")); return; }
+        status.done();
+        append(status.el, h("span", { class: "ok" }, M.t("landing.json.loaded")));
+      }
+      return h("details", { class: "lp-json field-stack" }, h("summary", null, M.t("landing.json.title")),
+        h("p", { class: "hint", id: "lp-json-hint" }, M.t("landing.json.hint")),
+        h("label", { for: "lp-json" }, M.t("landing.json.label")), area,
+        h("div", { class: "inline-form" }, h("label", { for: "lp-json-file" }, M.t("landing.json.file")), file),
+        h("div", { class: "actions" },
+          h("button", { type: "button", onclick: importIt }, M.t("landing.json.import")),
+          h("button", { type: "button", onclick: exportIt }, M.t("landing.json.export")),
+          h("button", { type: "button", onclick: copy }, M.t("landing.json.copy"))),
+        io.el);
+    }
   }
 
   // ---- the legal pages (§16.7.1) ------------------------------------------
@@ -388,6 +528,11 @@ window.Maity = window.Maity || {};
     // It opens on the setting's default language where the page has it.
     let lang = draft[defaultLanguage] ? defaultLanguage : Object.keys(draft)[0] || null;
     const body = h("div");
+    // A sensitive call (§2.8.4: PATCH /admin/settings/*): the second factor asked for here when the hub wants it.
+    const stepSlot = h("div", { class: "step-up-slot" });
+    stepSlot.hidden = true;
+    const patchLegal = (value) => M.stepUp.run(() => M.api.patch(LEGAL, value), stepSlot, M.t("legal.save.step_up", { page: label }));
+    const failed = (err) => { if (err.code === "cancelled") status.done(); else showErrors(errors, err, status); };
     const draw = () => {
       Object.keys(errors).forEach((k) => delete errors[k]);
       const langs = Object.keys(draft);
@@ -412,7 +557,7 @@ window.Maity = window.Maity || {};
         unset.addEventListener("click", async () => {
           if (!window.confirm("Take the " + label.toLowerCase() + " down? Its earlier versions stay readable at their addresses.")) return;
           status.busy("Taking it down…");
-          try { done(await M.api.patch(LEGAL, { [key]: null }), "The " + label.toLowerCase() + " is down."); } catch (err) { showErrors(errors, err, status); }
+          try { done(await patchLegal({ [key]: null }), "The " + label.toLowerCase() + " is down."); } catch (err) { failed(err); }
         });
       }
       const form = h("form", {
@@ -420,7 +565,7 @@ window.Maity = window.Maity || {};
         onsubmit: async (e) => {
           e.preventDefault();
           status.busy("Saving…");
-          try { done(await M.api.patch(LEGAL, { [key]: draft }), "Saved as a new version of the " + label.toLowerCase() + "."); } catch (err) { showErrors(errors, err, status); }
+          try { done(await patchLegal({ [key]: draft }), "Saved as a new version of the " + label.toLowerCase() + "."); } catch (err) { failed(err); }
         },
       },
       h("div", { class: "inline-form" }, h("label", { for: "lg-" + key + "-new-language" }, "Languages"), tabs, newLang, addLang),
@@ -428,10 +573,45 @@ window.Maity = window.Maity || {};
         control(f("markdown", "Text (Markdown)", "md", 65536), draft[lang], key + "." + lang + ".markdown", errors, draw),
         small("Remove this language", () => { delete draft[lang]; }, false, draw)] : h("p", { class: "muted" }, "No language yet: add one to write the page."),
       h("div", { class: "actions" }, save,
-        lang ? h("button", { type: "button", onclick: () => preview(LEGAL + "/preview?page=" + key, draft, lang, status, errors) }, "Preview the draft") : null,
-        unset), status.el);
+        lang ? h("button", { type: "button", onclick: () => {
+          if (unloaded(json.pending, status, json.focus)) return;
+          preview(LEGAL + "/preview?page=" + key, draft, lang, status, errors);
+        } }, "Preview the draft") : null,
+        unset), stepSlot, status.el);
       append(clear(body), form);
     };
+    // Import and export of this page's languages (§16.7.1: a PATCH changes one page).
+    const json = M.jsonIo.part({
+      id: "lg-" + key + "-json",
+      hint: M.t("jsonio.legal.hint", { page: key }),
+      body: () => draft,
+      load: async (data, io) => {
+        const langs = M.jsonIo.isObject(data) && Object.hasOwn(data, key) ? data[key] : data;
+        const tags = M.jsonIo.isObject(langs) ? Object.keys(langs) : [];
+        if (!tags.length || tags.length > 8 || !tags.every((t) => LANG.test(t) && M.jsonIo.isObject(langs[t])
+          && typeof langs[t].title === "string" && typeof langs[t].markdown === "string")) {
+          io.fail(M.t("jsonio.not_loaded"), { message: M.t("jsonio.legal.shape") });
+          return false;
+        }
+        if (!window.confirm(M.t("jsonio.legal.confirm", { page: label }))) return false;
+        io.busy(M.t("jsonio.checking"));
+        // The hub checks it by its preview call, which stores nothing (§16.7.1).
+        let refused = null;
+        try { await M.api.post(LEGAL + "/preview?page=" + key, langs); } catch (err) { refused = err; }
+        Object.keys(draft).forEach((t) => { delete draft[t]; });
+        tags.forEach((t) => { draft[t] = { title: langs[t].title, markdown: langs[t].markdown }; });
+        lang = draft[defaultLanguage] ? defaultLanguage : tags[0];
+        draw();
+        io.done();
+        if (refused) { showErrors(errors, refused, status, M.t("jsonio.refused")); return true; }
+        status.done();
+        append(status.el, h("span", { class: "ok" }, M.t("jsonio.loaded")));
+        // A file of several pages loads only this one (a PATCH changes one page): the others named.
+        const others = PAGES.map(([k]) => k).filter((k) => k !== key && M.jsonIo.isObject(data) && Object.hasOwn(data, k));
+        if (others.length) append(status.el, " ", h("span", { class: "muted" }, M.t("jsonio.legal.others", { pages: M.fmt.list(others) })));
+        return true;
+      },
+    });
     draw();
     const versions = (current && current.versions) || [];
     return h("section", { class: "lg-page", "aria-label": label },
@@ -440,7 +620,7 @@ window.Maity = window.Maity || {};
         ? h("p", { class: "muted" }, "Served at ", h("a", { href: served, target: "_blank", rel: "noopener" }, served), ", as of " + formatTime(current.version) + ".",
           versions.length ? [" Earlier: ", versions.map((v, i) => [i ? ", " : null, h("a", { href: served + "/" + v, target: "_blank", rel: "noopener" }, formatTime(v))])] : null)
         : h("p", { class: "muted" }, "Not set: " + served + " answers not found, and nothing links to it."),
-      body);
+      body, json.el);
   }
 
   async function legalSection(ctx, root) {

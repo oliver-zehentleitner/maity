@@ -51,6 +51,7 @@ def _entry(
             at=at,
             actor_membership=actor.membership_id,
             actor_session_id=actor.session_id,
+            actor_bridge=actor.bridge,
             field=field,
             link_id=link["id"] if link else None,
             link_change=change,
@@ -150,7 +151,15 @@ def view(row: Any, actors: dict[int, dict[str, Any]]) -> dict[str, Any]:
     shown: dict[str, Any] = {
         "id": row.id,
         "at": clock.rfc3339(row.at),
-        "actor": {**actor, "session_id": row.actor_session_id} if actor else None,
+        "actor": (
+            {
+                **actor,
+                "session_id": row.actor_session_id,
+                **({"via": row.actor_bridge} if row.actor_bridge else {}),
+            }
+            if actor
+            else None
+        ),
         "field": row.field,
     }
     if row.redacted:
