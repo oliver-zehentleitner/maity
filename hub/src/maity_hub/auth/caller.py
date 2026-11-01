@@ -15,7 +15,7 @@ import hashlib
 import hmac
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
@@ -52,6 +52,7 @@ class RequestFacts:
     origin: Origin
     allow_plain_http: bool
     cli_install: str = DEFAULT_CLI_INSTALL
+    request: object = field(default_factory=object)  # one per request, whatever runs again
 
 
 @dataclass(frozen=True)
@@ -306,7 +307,7 @@ def _signed(conn: Connection, facts: RequestFacts, credential_id: str, renew: bo
     spent_first = (
         nonces.first_use(conn, credential_id, nonce)
         if nonces.shared(conn)
-        else NONCES.first_use(credential_id, nonce)
+        else NONCES.first_use(credential_id, nonce, facts.request)
     )
     if not spent_first:
         raise ApiError(401, "nonce_reused", "this nonce was used within the window")

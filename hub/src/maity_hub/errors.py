@@ -125,7 +125,8 @@ def driver_fields(error: Exception) -> str:
     """What the log says of a database error: codes and numbers, never the driver's text. On
     PostgreSQL only `code` is set."""
     behind = ",".join(
-        str(driver_number(earlier) or driver_code(earlier)) for earlier in errors_behind(error)
+        str(driver_number(earlier) or driver_code(earlier) or "?")
+        for earlier in errors_behind(error)
     )
     number = driver_number(error) or "-"
     return f"code={driver_code(error) or '-'} number={number} behind={behind or '-'}"
