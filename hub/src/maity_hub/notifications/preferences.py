@@ -347,6 +347,7 @@ def patch(
     wrong_password: Any,
     password_blocked: Any,
     step_up: Callable[[], None],
+    keeps_factor: Callable[[], None],
 ) -> int:
     """Apply a `PATCH`; returns 200, or 202 when an address change is held for approval.
     `wrong_password` counts a mismatched `current_password` against the login limits,
@@ -382,6 +383,7 @@ def patch(
             wrong_password=wrong_password,
             password_blocked=password_blocked,
             step_up=step_up,
+            keeps_factor=keeps_factor,
         )
         row = row_of(conn, human.id, lock=True)
     stored = dict(row.preferences or {})
@@ -476,6 +478,7 @@ def _change_address(
     wrong_password: Any,
     password_blocked: Any,
     step_up: Callable[[], None],
+    keeps_factor: Callable[[], None],
 ) -> int:
     if wanted is not None and not mail_ready:
         raise ApiError(409, "mail_not_configured", "the instance cannot send mail")
@@ -483,6 +486,8 @@ def _change_address(
     moves = verified and wanted != row.address
     if moves:
         step_up()  # changing or removing the verified address is a sensitive call (§2.8.4)
+        if wanted is None and row.address_status == "verified":
+            keeps_factor()  # under `email` it may be the account's second factor (§2.8.8)
         if human.password_hash is not None:
             if not isinstance(given_password, str) or not given_password:
                 raise invalid({"current_password": "required"})
@@ -739,6 +744,7 @@ def decide_held(
     signing_key: bytes | None,
     public_url: str,
     step_up: Callable[[], None],
+    keeps_factor: Callable[[], None],
 ) -> None:
     """Approve or reject a held address change (§18.4); approving is a sensitive call, so
     `step_up` raises when the session owes the second factor (§2.8.4)."""
@@ -757,6 +763,8 @@ def decide_held(
         )
         return
     step_up()
+    if held["address"] is None and row.address_status == "verified":
+        keeps_factor()  # the policy may have come to `email` since it was held (§2.8.8)
     if clock.now() - session.created_at < APPROVER_AGE:
         raise _session_forbidden("session_too_new")
     apply_address(
