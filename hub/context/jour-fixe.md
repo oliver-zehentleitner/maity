@@ -211,7 +211,9 @@ A series (`jour_fixe_series`) stores its schedule and windows as one JSON
 own; `jourfixe.schedule` reads it unchanged, so the slots, the DST handling
 and the weekly interval did not move. The upgrade from the single schedule
 runs in the migration whole, the `jour_fixe_series_changed` event and the
-rules bump included, written as `rules.bump` writes them. An owner's series
+rules bump included, written as `rules.bump` writes them; only the consent
+requests of the grants it leaves `pending` are not, the jour fixe sweep of
+part 2 files them (8dcb08a3), and both parts deploy together. An owner's series
 whose owner left is set to `enabled: false` by the jour fixe sweep (within
 its 30 seconds) and refused at a manual start, not where the membership
 ends. Report recipients are rows with a `receives` flag, so that a keeper who
