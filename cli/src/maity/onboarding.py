@@ -469,13 +469,31 @@ def jour_fixe_lines(event: dict[str, Any]) -> list[str]:
     return []
 
 
+def standing(event: dict[str, Any]) -> str:
+    """` (guest, other owner)`: how far the author's sentence can bind (rule 4). Trust is shown
+    where it is not `member`, as in the dashboard; a hub that sends none shows nothing."""
+    actor = _dict(event.get("actor"))
+    if actor.get("kind") == "human":  # §8.1: a human who is no member of the project
+        return " (no member)"
+    if "trust" not in actor:
+        return ""
+    trust = actor.get("trust")
+    parts = ["former member"] if trust is None else [] if trust == "member" else [inline(trust)]
+    if actor.get("via"):
+        parts.append("through a bridge")
+    if actor.get("cross_owner"):
+        parts.append("other owner")
+    return f" ({', '.join(parts)})" if parts else ""
+
+
 def _event(
     event: dict[str, Any], slug: str, names: dict[str, str], compact: bool = False
 ) -> list[str]:
-    actor = get(event, "actor", "member_id") or "the hub"
+    actor = get(event, "actor", "member_id") or get(event, "actor", "handle") or "the hub"
     subject = get(event, "subject", "id")
     seq = event.get("seq")
     head = f"  #{inline(seq)} {inline(event.get('kind'))} by {_name(actor, names)}"
+    head += standing(event)
     if subject:
         head += f" on {_name(subject, names)}"
     if event.get("kind") != "message":

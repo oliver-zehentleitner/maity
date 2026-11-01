@@ -434,4 +434,4 @@ def test_quickstart_refuses_a_reserved_handle_for_the_first_account(
     _banner_only(monkeypatch)
     _stdin(monkeypatch, ACCOUNT_PASSWORD + "\n")
     assert main(["quickstart", "--handle", "admin"]) == 2
-    assert "reserved first segment" in capsys.readouterr().err
+    assert "is reserved" in capsys.readouterr().err

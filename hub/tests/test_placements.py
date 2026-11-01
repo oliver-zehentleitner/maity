@@ -851,3 +851,9 @@ def test_a_placement_its_proposer_leaves_behind_closes_when_they_leave(setup: Se
     assert rows[pending["id"]].active is None
     assert rows[pending["id"]].closed_reason == "withdrawn"
     assert rows[kept["id"]].active is True  # another person's, and it has its membership
+
+
+def test_a_new_profile_cannot_have_a_handle_that_speaks_for_the_hub(setup: Setup) -> None:
+    refused = place(setup, agent={"handle": "hub", "display_name": "Looks official"})
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"handle": "reserved"}

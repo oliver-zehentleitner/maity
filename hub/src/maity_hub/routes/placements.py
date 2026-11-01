@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import ColumnElement, Connection, select
 
-from maity_hub import allowed_projects, events, handles, idempotency, moderation, namespace
+from maity_hub import allowed_projects, events, handles, idempotency, moderation, namespace, paths
 from maity_hub import placements as pl
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
@@ -376,6 +376,8 @@ def _agent_values(
         raise invalid({"agent": "id_required"}, "a proposal names an existing member")
     if body.agent.handle is None or body.agent.display_name is None:
         raise invalid({"agent": "id_or_handle"}, "name an agent by id, or give handle and name")
+    if paths.handle_reserved(body.agent.handle, of_agent=True):
+        raise invalid({"handle": "reserved"}, "this handle reads as the hub")
     # The handle or an alias of one of the owner's profiles (§6.24); a placement's reservation
     # of it comes after the project's own `placement_exists` below.
     held = handles.holder(conn, mine.principal_id, body.agent.handle)
