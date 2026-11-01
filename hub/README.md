@@ -277,8 +277,10 @@ With `-n`, each worker gets a database of its own next to that one
 account that may create databases (on MariaDB, root, which also grants the
 test user) when the test user may not. On PostgreSQL the suite also sets the
 test database's default time zone to `Europe/Vienna` (`ALTER DATABASE`), so a
-time that depends on the session's zone fails there instead of passing on UTC;
-the test user must own that database, including a database it runs without `-n`. `pytest -m wheel` runs only the tests
+time that depends on the session's zone fails there instead of passing on UTC.
+That runs through the account of `MAITY_TEST_ADMIN_DATABASE_URL` (by default the
+test user), which must own the test database or be a superuser, also without
+`-n`. `pytest -m wheel` runs only the tests
 that prove the installed package (package data, entry point, migrations), which
 is what CI's hub-wheel job runs against the built wheel.
 
