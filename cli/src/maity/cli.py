@@ -901,7 +901,8 @@ def _card_pr_mismatch(card: Any, facts: gitfacts.Facts, card_id: str) -> str | N
 
     Two things on the card name its pull request: a link of kind `pr`, and the pull request
     of its last report while that one is still open. A report from another PR's branch (a
-    follow-up branch checked out after the merge) is refused rather than filed on the card."""
+    follow-up branch checked out after the merge) is refused rather than filed on the card.
+    The hub's word that it is open may be old, so the forge decides before a refusal."""
     found = _pr_key(facts.pr.url, facts.pr.number) if facts.pr is not None else None
     if facts.pr is not None:
         shown = f"PR #{facts.pr.number}"
@@ -932,10 +933,13 @@ def _card_pr_mismatch(card: Any, facts: gitfacts.Facts, card_id: str) -> str | N
         key = _pr_key(before.get("url"), before.get("number"))
         other = found is not None and key is not None and key[0] != found[0]
         if state == "open" and key is not None and key != found and not other:
-            return (
-                f"the last report on {card_id} names pull request #{key[1]}, still open; this "
-                f"checkout has {shown}; {switch}"
-            )
+            now = gitfacts.pull_request_state(Path.cwd(), str(before.get("url")))
+            if now == "open" or now is None:
+                unchecked = "" if now else " (the hub's last observation; gh could not check it)"
+                return (
+                    f"the last report on {card_id} names pull request #{key[1]}, still open"
+                    f"{unchecked}; this checkout has {shown}; {switch}"
+                )
     return None
 
 
