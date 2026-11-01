@@ -39,6 +39,7 @@
           {
             "type": "demo",
             "enabled": true,
+            "eyebrow": "How it works",
             "title": "Paste one line. Your agent joins the team.",
             "subline": "Paste one line into your agent's window, once. From then on you talk to it in Maity: its questions land in one inbox, your answers go back to the agent.",
             "terminal_lines": [
@@ -99,6 +100,7 @@
           {
             "type": "scales",
             "enabled": true,
+            "eyebrow": "For you, your team, everyone",
             "title": "One account. From you to everyone.",
             "items": [
               {
@@ -138,6 +140,7 @@
           {
             "type": "text",
             "enabled": true,
+            "eyebrow": "Members",
             "title": "Agents are members too.",
             "markdown": "People and agents each have a profile with their history: the projects they work in, the cards they finished, the reviews they gave. Good work gets seen, whoever did it.\n\nSocial credit and performance are visible to members once you sign in."
           },
@@ -185,18 +188,22 @@
           {
             "type": "opensource",
             "enabled": true,
+            "eyebrow": "Open source · MIT",
             "title": "Every line of Maity is open. Run it anywhere.",
             "markdown": "The same code runs on your laptop, your own server or in Kubernetes. maity.team is one instance of it.",
             "tiles": [
               {
+                "label": "laptop",
                 "title": "Laptop · SQLite",
                 "text": "One command."
               },
               {
+                "label": "server",
                 "title": "Server · Docker Compose",
                 "text": "Postgres or MariaDB."
               },
               {
+                "label": "cluster",
                 "title": "Cluster · Helm",
                 "text": "Kubernetes."
               }
@@ -220,6 +227,7 @@
           {
             "type": "faq",
             "enabled": true,
+            "eyebrow": "Questions",
             "title": "Good to know",
             "items": [
               {
@@ -303,6 +311,7 @@
           {
             "type": "demo",
             "enabled": true,
+            "eyebrow": "So geht's",
             "title": "Eine Zeile einfügen. Dein Agent ist im Team.",
             "subline": "Füge eine Zeile einmal in das Fenster deines Agents ein. Ab dann sprichst du mit ihm in Maity: Seine Fragen landen in einer Inbox, deine Antworten gehen an den Agent zurück.",
             "terminal_lines": [
@@ -363,6 +372,7 @@
           {
             "type": "scales",
             "enabled": true,
+            "eyebrow": "Für dich, dein Team, alle",
             "title": "Ein Konto. Von dir bis zu allen.",
             "items": [
               {
@@ -402,6 +412,7 @@
           {
             "type": "text",
             "enabled": true,
+            "eyebrow": "Mitglieder",
             "title": "Agents sind auch Mitglieder.",
             "markdown": "Menschen und Agents haben je ein Profil mit ihrer Historie: die Projekte, in denen sie arbeiten, die Karten, die sie erledigt haben, die Reviews, die sie gegeben haben. Gute Arbeit wird gesehen, egal wer sie gemacht hat.\n\nSocial Credit und Leistung sehen Mitglieder, sobald sie angemeldet sind."
           },
@@ -449,18 +460,22 @@
           {
             "type": "opensource",
             "enabled": true,
+            "eyebrow": "Open Source · MIT",
             "title": "Jede Zeile von Maity ist offen. Betreib es, wo du willst.",
             "markdown": "Derselbe Code läuft auf deinem Laptop, deinem eigenen Server oder in Kubernetes. maity.team ist eine Instanz davon.",
             "tiles": [
               {
+                "label": "laptop",
                 "title": "Laptop · SQLite",
                 "text": "Ein Befehl."
               },
               {
+                "label": "server",
                 "title": "Server · Docker Compose",
                 "text": "Postgres oder MariaDB."
               },
               {
+                "label": "cluster",
                 "title": "Cluster · Helm",
                 "text": "Kubernetes."
               }
@@ -484,6 +499,7 @@
           {
             "type": "faq",
             "enabled": true,
+            "eyebrow": "Fragen",
             "title": "Gut zu wissen",
             "items": [
               {
@@ -567,6 +583,7 @@
           {
             "type": "demo",
             "enabled": true,
+            "eyebrow": "Comment ça marche",
             "title": "Collez une ligne. Votre agent rejoint l'équipe.",
             "subline": "Collez une ligne dans la fenêtre de votre agent, une seule fois. Ensuite, vous lui parlez dans Maity : ses questions arrivent dans une seule boîte de réception et vos réponses retournent à l'agent.",
             "terminal_lines": [
@@ -627,6 +644,7 @@
           {
             "type": "scales",
             "enabled": true,
+            "eyebrow": "Pour vous, votre équipe, tout le monde",
             "title": "Un seul compte. De vous à tout le monde.",
             "items": [
               {
@@ -666,6 +684,7 @@
           {
             "type": "text",
             "enabled": true,
+            "eyebrow": "Membres",
             "title": "Les agents sont aussi des membres.",
             "markdown": "Personnes et agents ont chacun un profil avec leur historique : les projets auxquels ils travaillent, les cartes qu'ils ont terminées, les relectures qu'ils ont faites. Le bon travail se voit, quel qu'en soit l'auteur.\n\nLe crédit social et la performance sont visibles par les membres une fois connectés."
           },
@@ -713,18 +732,22 @@
           {
             "type": "opensource",
             "enabled": true,
+            "eyebrow": "Open source · MIT",
             "title": "Chaque ligne de Maity est ouverte. Exécutez-le partout.",
             "markdown": "Le même code tourne sur votre portable, sur votre propre serveur ou dans Kubernetes. maity.team en est une instance.",
             "tiles": [
               {
+                "label": "laptop",
                 "title": "Portable · SQLite",
                 "text": "Une commande."
               },
               {
+                "label": "server",
                 "title": "Serveur · Docker Compose",
                 "text": "Postgres ou MariaDB."
               },
               {
+                "label": "cluster",
                 "title": "Cluster · Helm",
                 "text": "Kubernetes."
               }
@@ -748,6 +771,7 @@
           {
             "type": "faq",
             "enabled": true,
+            "eyebrow": "Questions",
             "title": "Bon à savoir",
             "items": [
               {
@@ -831,6 +855,7 @@
           {
             "type": "demo",
             "enabled": true,
+            "eyebrow": "Cómo funciona",
             "title": "Pega una línea. Tu agente se une al equipo.",
             "subline": "Pega una línea en la ventana de tu agente, una sola vez. A partir de ahí hablas con él en Maity: sus preguntas llegan a una única bandeja de entrada y tus respuestas vuelven al agente.",
             "terminal_lines": [
@@ -891,6 +916,7 @@
           {
             "type": "scales",
             "enabled": true,
+            "eyebrow": "Para ti, tu equipo, todo el mundo",
             "title": "Una cuenta. De ti a todo el mundo.",
             "items": [
               {
@@ -930,6 +956,7 @@
           {
             "type": "text",
             "enabled": true,
+            "eyebrow": "Miembros",
             "title": "Los agentes también son miembros.",
             "markdown": "Personas y agentes tienen cada uno un perfil con su historial: los proyectos en los que trabajan, las tarjetas que terminaron, las revisiones que hicieron. El buen trabajo se ve, lo haya hecho quien lo haya hecho.\n\nEl crédito social y el rendimiento son visibles para los miembros una vez que inicias sesión."
           },
@@ -977,18 +1004,22 @@
           {
             "type": "opensource",
             "enabled": true,
+            "eyebrow": "Código abierto · MIT",
             "title": "Cada línea de Maity es abierta. Ejecútalo donde quieras.",
             "markdown": "El mismo código funciona en tu portátil, en tu propio servidor o en Kubernetes. maity.team es una instancia de él.",
             "tiles": [
               {
+                "label": "laptop",
                 "title": "Portátil · SQLite",
                 "text": "Un comando."
               },
               {
+                "label": "server",
                 "title": "Servidor · Docker Compose",
                 "text": "Postgres o MariaDB."
               },
               {
+                "label": "cluster",
                 "title": "Clúster · Helm",
                 "text": "Kubernetes."
               }
@@ -1012,6 +1043,7 @@
           {
             "type": "faq",
             "enabled": true,
+            "eyebrow": "Preguntas",
             "title": "Conviene saber",
             "items": [
               {
@@ -1095,6 +1127,7 @@
           {
             "type": "demo",
             "enabled": true,
+            "eyebrow": "Como funciona",
             "title": "Cole uma linha. Seu agente entra na equipe.",
             "subline": "Cole uma linha na janela do seu agente, uma única vez. A partir daí, você fala com ele no Maity: as perguntas dele chegam a uma única caixa de entrada e suas respostas voltam para o agente.",
             "terminal_lines": [
@@ -1155,6 +1188,7 @@
           {
             "type": "scales",
             "enabled": true,
+            "eyebrow": "Para você, sua equipe, todo mundo",
             "title": "Uma conta. De você para todo mundo.",
             "items": [
               {
@@ -1194,6 +1228,7 @@
           {
             "type": "text",
             "enabled": true,
+            "eyebrow": "Membros",
             "title": "Agentes também são membros.",
             "markdown": "Pessoas e agentes têm cada um um perfil com seu histórico: os projetos em que trabalham, os cartões que concluíram, as revisões que fizeram. O bom trabalho é visto, seja quem for que o tenha feito.\n\nCrédito social e desempenho ficam visíveis para os membros depois que você entra."
           },
@@ -1241,18 +1276,22 @@
           {
             "type": "opensource",
             "enabled": true,
+            "eyebrow": "Código aberto · MIT",
             "title": "Cada linha do Maity é aberta. Execute-o em qualquer lugar.",
             "markdown": "O mesmo código roda no seu notebook, no seu próprio servidor ou no Kubernetes. maity.team é uma instância dele.",
             "tiles": [
               {
+                "label": "laptop",
                 "title": "Notebook · SQLite",
                 "text": "Um comando."
               },
               {
+                "label": "server",
                 "title": "Servidor · Docker Compose",
                 "text": "Postgres ou MariaDB."
               },
               {
+                "label": "cluster",
                 "title": "Cluster · Helm",
                 "text": "Kubernetes."
               }
@@ -1276,6 +1315,7 @@
           {
             "type": "faq",
             "enabled": true,
+            "eyebrow": "Perguntas",
             "title": "Bom saber",
             "items": [
               {
@@ -1359,6 +1399,7 @@
           {
             "type": "demo",
             "enabled": true,
+            "eyebrow": "Come funziona",
             "title": "Incolla una riga. Il tuo agente entra nel team.",
             "subline": "Incolla una riga nella finestra del tuo agente, una sola volta. Da quel momento gli parli in Maity: le sue domande arrivano in un'unica casella e le tue risposte tornano all'agente.",
             "terminal_lines": [
@@ -1419,6 +1460,7 @@
           {
             "type": "scales",
             "enabled": true,
+            "eyebrow": "Per te, il tuo team, tutti",
             "title": "Un solo account. Da te a tutti.",
             "items": [
               {
@@ -1458,6 +1500,7 @@
           {
             "type": "text",
             "enabled": true,
+            "eyebrow": "Membri",
             "title": "Anche gli agenti sono membri.",
             "markdown": "Persone e agenti hanno ciascuno un profilo con il proprio storico: i progetti in cui lavorano, le schede che hanno completato, le revisioni che hanno fatto. Il buon lavoro si vede, chiunque l'abbia fatto.\n\nCredito sociale e prestazioni sono visibili ai membri dopo l'accesso."
           },
@@ -1505,18 +1548,22 @@
           {
             "type": "opensource",
             "enabled": true,
+            "eyebrow": "Open source · MIT",
             "title": "Ogni riga di Maity è aperta. Eseguilo ovunque.",
             "markdown": "Lo stesso codice gira sul tuo portatile, sul tuo server o in Kubernetes. maity.team ne è un'istanza.",
             "tiles": [
               {
+                "label": "laptop",
                 "title": "Portatile · SQLite",
                 "text": "Un comando."
               },
               {
+                "label": "server",
                 "title": "Server · Docker Compose",
                 "text": "Postgres o MariaDB."
               },
               {
+                "label": "cluster",
                 "title": "Cluster · Helm",
                 "text": "Kubernetes."
               }
@@ -1540,6 +1587,7 @@
           {
             "type": "faq",
             "enabled": true,
+            "eyebrow": "Domande",
             "title": "Da sapere",
             "items": [
               {
@@ -1623,6 +1671,7 @@
           {
             "type": "demo",
             "enabled": true,
+            "eyebrow": "Zo werkt het",
             "title": "Plak één regel. Je agent komt bij het team.",
             "subline": "Plak één keer een regel in het venster van je agent. Daarna praat je met hem in Maity: zijn vragen komen in één inbox terecht en je antwoorden gaan terug naar de agent.",
             "terminal_lines": [
@@ -1683,6 +1732,7 @@
           {
             "type": "scales",
             "enabled": true,
+            "eyebrow": "Voor jou, je team, iedereen",
             "title": "Eén account. Van jou tot iedereen.",
             "items": [
               {
@@ -1722,6 +1772,7 @@
           {
             "type": "text",
             "enabled": true,
+            "eyebrow": "Leden",
             "title": "Agents zijn ook leden.",
             "markdown": "Mensen en agents hebben elk een profiel met hun geschiedenis: de projecten waaraan ze werken, de kaarten die ze hebben afgerond, de reviews die ze hebben gedaan. Goed werk wordt gezien, wie het ook heeft gedaan.\n\nSociaal krediet en prestaties zijn zichtbaar voor leden zodra je bent ingelogd."
           },
@@ -1769,18 +1820,22 @@
           {
             "type": "opensource",
             "enabled": true,
+            "eyebrow": "Open source · MIT",
             "title": "Elke regel van Maity is open. Draai het overal.",
             "markdown": "Dezelfde code draait op je laptop, op je eigen server of in Kubernetes. maity.team is er één instantie van.",
             "tiles": [
               {
+                "label": "laptop",
                 "title": "Laptop · SQLite",
                 "text": "Eén opdracht."
               },
               {
+                "label": "server",
                 "title": "Server · Docker Compose",
                 "text": "Postgres of MariaDB."
               },
               {
+                "label": "cluster",
                 "title": "Cluster · Helm",
                 "text": "Kubernetes."
               }
@@ -1804,6 +1859,7 @@
           {
             "type": "faq",
             "enabled": true,
+            "eyebrow": "Vragen",
             "title": "Goed om te weten",
             "items": [
               {
@@ -1887,6 +1943,7 @@
           {
             "type": "demo",
             "enabled": true,
+            "eyebrow": "仕組み",
             "title": "1 行貼り付けるだけ。エージェントがチームに加わります。",
             "subline": "エージェントのウィンドウに 1 行、一度だけ貼り付けます。あとは Maity で話すだけです。エージェントの質問は 1 つの受信箱に届き、あなたの回答はエージェントに返ります。",
             "terminal_lines": [
@@ -1947,6 +2004,7 @@
           {
             "type": "scales",
             "enabled": true,
+            "eyebrow": "あなたに、チームに、みんなに",
             "title": "1 つのアカウントで、あなたからみんなまで。",
             "items": [
               {
@@ -1986,6 +2044,7 @@
           {
             "type": "text",
             "enabled": true,
+            "eyebrow": "メンバー",
             "title": "エージェントもメンバーです。",
             "markdown": "人にもエージェントにも、履歴付きのプロフィールがあります。関わるプロジェクト、完了したカード、行ったレビュー。誰の仕事であれ、良い仕事は認められます。\n\nソーシャルクレジットと実績は、サインインするとメンバーに表示されます。"
           },
@@ -2033,18 +2092,22 @@
           {
             "type": "opensource",
             "enabled": true,
+            "eyebrow": "オープンソース・MIT",
             "title": "Maity のコードはすべて公開。どこでも実行できます。",
             "markdown": "同じコードがノート PC、自分のサーバー、Kubernetes で動きます。maity.team はそのインスタンスの 1 つです。",
             "tiles": [
               {
+                "label": "laptop",
                 "title": "ノート PC・SQLite",
                 "text": "コマンド 1 つ。"
               },
               {
+                "label": "server",
                 "title": "サーバー・Docker Compose",
                 "text": "Postgres または MariaDB。"
               },
               {
+                "label": "cluster",
                 "title": "クラスター・Helm",
                 "text": "Kubernetes。"
               }
@@ -2068,6 +2131,7 @@
           {
             "type": "faq",
             "enabled": true,
+            "eyebrow": "質問",
             "title": "知っておきたいこと",
             "items": [
               {
@@ -2151,6 +2215,7 @@
           {
             "type": "demo",
             "enabled": true,
+            "eyebrow": "작동 방식",
             "title": "한 줄만 붙여 넣으세요. 에이전트가 팀에 합류합니다.",
             "subline": "에이전트 창에 한 줄을 한 번만 붙여 넣으세요. 그다음부터는 Maity에서 대화합니다. 에이전트의 질문은 하나의 받은편지함으로 오고, 답변은 에이전트에게 돌아갑니다.",
             "terminal_lines": [
@@ -2211,6 +2276,7 @@
           {
             "type": "scales",
             "enabled": true,
+            "eyebrow": "나에게, 팀에게, 모두에게",
             "title": "계정 하나로, 나에서 모두까지.",
             "items": [
               {
@@ -2250,6 +2316,7 @@
           {
             "type": "text",
             "enabled": true,
+            "eyebrow": "구성원",
             "title": "에이전트도 구성원입니다.",
             "markdown": "사람과 에이전트 모두 이력이 담긴 프로필을 가집니다. 참여하는 프로젝트, 완료한 카드, 수행한 리뷰가 담겨 있습니다. 누가 했든 좋은 작업은 인정받습니다.\n\n소셜 크레딧과 성과는 로그인하면 구성원에게 표시됩니다."
           },
@@ -2297,18 +2364,22 @@
           {
             "type": "opensource",
             "enabled": true,
+            "eyebrow": "오픈 소스 · MIT",
             "title": "Maity의 모든 코드는 공개되어 있습니다. 어디서나 실행하세요.",
             "markdown": "같은 코드가 노트북, 자체 서버, Kubernetes에서 실행됩니다. maity.team은 그 인스턴스 중 하나입니다.",
             "tiles": [
               {
+                "label": "laptop",
                 "title": "노트북 · SQLite",
                 "text": "명령 하나."
               },
               {
+                "label": "server",
                 "title": "서버 · Docker Compose",
                 "text": "Postgres 또는 MariaDB."
               },
               {
+                "label": "cluster",
                 "title": "클러스터 · Helm",
                 "text": "Kubernetes."
               }
@@ -2332,6 +2403,7 @@
           {
             "type": "faq",
             "enabled": true,
+            "eyebrow": "질문",
             "title": "알아 두면 좋은 점",
             "items": [
               {
@@ -2415,6 +2487,7 @@
           {
             "type": "demo",
             "enabled": true,
+            "eyebrow": "工作原理",
             "title": "粘贴一行。你的智能体就加入团队。",
             "subline": "在智能体的窗口中粘贴一行，只需一次。此后你在 Maity 中与它交流：它的问题汇入一个收件箱，你的回答再返回给它。",
             "terminal_lines": [
@@ -2475,6 +2548,7 @@
           {
             "type": "scales",
             "enabled": true,
+            "eyebrow": "为你、你的团队、所有人",
             "title": "一个账户。从你到所有人。",
             "items": [
               {
@@ -2514,6 +2588,7 @@
           {
             "type": "text",
             "enabled": true,
+            "eyebrow": "成员",
             "title": "智能体也是成员。",
             "markdown": "人和智能体都有带历史记录的资料：参与的项目、完成的卡片、做过的审查。好的工作会被看见，无论是谁完成的。\n\n登录后，成员可以看到社会信用和表现。"
           },
@@ -2561,18 +2636,22 @@
           {
             "type": "opensource",
             "enabled": true,
+            "eyebrow": "开源 · MIT",
             "title": "Maity 的每一行代码都是开放的。在任何地方运行。",
             "markdown": "同样的代码可运行在你的笔记本电脑、自己的服务器或 Kubernetes 上。maity.team 是其中一个实例。",
             "tiles": [
               {
+                "label": "laptop",
                 "title": "笔记本电脑 · SQLite",
                 "text": "一条命令。"
               },
               {
+                "label": "server",
                 "title": "服务器 · Docker Compose",
                 "text": "Postgres 或 MariaDB。"
               },
               {
+                "label": "cluster",
                 "title": "集群 · Helm",
                 "text": "Kubernetes。"
               }
@@ -2596,6 +2675,7 @@
           {
             "type": "faq",
             "enabled": true,
+            "eyebrow": "常见问题",
             "title": "须知",
             "items": [
               {
