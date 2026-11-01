@@ -12,8 +12,8 @@ its verifier, a join or enrollment token, a code hash, a nonce, a second factor'
 or recovery code. What the document shows is picked field by field; where a row is read
 whole for the hub's own read rules (`inbox.may_read`), only named fields leave it.
 
-Not in this hub yet, so not in the export: handle aliases (§6.24), languages, the public
-profile (§16.9) and card approvals (§6.4, `reviewer_and_tester`).
+Not in this hub yet, so not in the export: handle aliases (§6.24), languages and the public
+profile (§16.9).
 """
 
 from __future__ import annotations
@@ -79,6 +79,7 @@ def build(conn: Connection, human_id: str, now: datetime) -> dict[str, Any]:
         "answers_given": [_answer_view(row, names, titles) for row in answered],
         "cards_created": _cards_created(conn, member_project_ids, my_ids, names, titles),
         "card_reports": _card_reports(conn, member_project_ids, my_ids, names, titles),
+        "card_approvals": _card_approvals(conn, member_project_ids, my_ids, names, titles),
         "card_notes": _card_notes(conn, my_ids, names, titles),
         "jour_fixe_answers": _jour_fixe_answers(conn, my_ids, names, human_id),
         "pinned_conversations": _pinned_conversations(conn, human_id),
@@ -888,6 +889,31 @@ def _card_reports(
             item.update({key: payload.get(key) for key in _REPORT_FIELDS}, redacted=False)
         out.append(item)
     return out
+
+
+def _card_approvals(
+    conn: Connection,
+    project_ids: list[str],
+    my_ids: set[int],
+    names: dict[str, str],
+    titles: _Titles,
+) -> list[dict[str, Any]]:
+    """Every signature the caller gave on a card (§6.4), from the log: a card clears them."""
+    rows = [
+        row
+        for row in _events(conn, project_ids, "task_updated", my_ids)
+        if "approvals" in ((row.payload or {}).get("fields") or [])
+    ]
+    titles.load_cards(row.subject_id for row in rows)
+    return [
+        {
+            "project": names.get(row.project_id),
+            "id": f"evt-{row.seq}",
+            "at": ts(row.at),
+            "card": titles.card(row.subject_id),
+        }
+        for row in rows
+    ]
 
 
 def _card_notes(

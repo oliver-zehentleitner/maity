@@ -1338,6 +1338,8 @@ card = Table(
     Column("mentions", JSON_VALUE),  # resolved from `body` at write time (§8.6)
     Column("label", String(16)),
     Column("status", String(16), nullable=False),
+    # The two signatures under `reviewer_and_tester` (§6.4), set by the hub only.
+    Column("approvals", JSON_VALUE),
     _ref("parent", "card.id", index=True),
     # The card's place in its status column (§6.4): set by the hub only, compared
     # bytewise in Python (`ranks`), null until the card is first placed.

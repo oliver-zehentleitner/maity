@@ -35,6 +35,7 @@ TASK_KEYS = {
     "ktw_ref",
     "jour_fixe",
     "report",
+    "approvals",
     "release",
     "contract",
     "imported_from",  # §6.14: null unless imported

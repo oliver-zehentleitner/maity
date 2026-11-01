@@ -1046,6 +1046,13 @@ def watching(conn: Connection, card_ids: Sequence[str], viewer: Any) -> set[str]
     return card_watches.watching(conn, card_ids, viewer.id)
 
 
+def _approvals(row: Any, signing: set[str]) -> dict[str, Any] | None:
+    """The two signatures while the card is in `review` under `reviewer_and_tester` (§6.4)."""
+    if row.project_id not in signing or row.status != "review":
+        return None
+    return row.approvals or {"review": None, "test": None}
+
+
 def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[dict[str, Any]]:
     edges: dict[str, dict[str, list[str]]] = {
         r.id: {"depends_on": [], "ships_with": [], "related": []} for r in rows
@@ -1064,6 +1071,14 @@ def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[
         children[child.parent]["open"] += child.status not in ("done", "cancelled")
     members = principal_ids(
         conn, (m for r in rows for m in (r.claim_holder, r.created_by, r.assigned_to))
+    )
+    signing = set(
+        conn.execute(
+            select(t.project.c.id).where(
+                t.project.c.id.in_({r.project_id for r in rows}),
+                t.project.c.done_authority == "reviewer_and_tester",
+            )
+        ).scalars()
     )
     from maity_hub.board import links, notes  # board reads views for member ids
     from maity_hub.instances import address
@@ -1112,6 +1127,7 @@ def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[
                 "ktw_ref": row.ktw_ref,
                 "jour_fixe": row.jour_fixe,
                 "report": row.report,
+                "approvals": _approvals(row, signing),
                 "release": _release(conn, row, fg, release_tags),
                 "contract": row.contract,
                 "imported_from": row.imported_from,

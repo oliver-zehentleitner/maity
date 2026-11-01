@@ -90,6 +90,7 @@ def test_one_document_to_save(owner: flow.Human) -> None:
         "answers_given",
         "cards_created",
         "card_reports",
+        "card_approvals",
         "card_notes",
         "jour_fixe_answers",
         "pinned_conversations",
