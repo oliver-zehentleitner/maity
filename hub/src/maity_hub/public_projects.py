@@ -327,7 +327,8 @@ def touch_owned(conn: Connection, human_id: str, *, removal: bool = True) -> Non
 
 
 def touch_of_org(conn: Connection, org_id: str, *, removal: bool = True) -> None:
-    """The pages of every project the organisation owns: it was suspended or deleted."""
+    """The pages of every project the organisation owns: it was suspended, deleted or
+    renamed."""
     for project_id in conn.execute(
         select(t.project.c.id).where(
             t.project.c.owner_org_id == org_id, t.project.c.public_page == "on"

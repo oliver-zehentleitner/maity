@@ -990,7 +990,13 @@ def test_the_single_schedule_becomes_one_series_with_its_rounds_and_grants(
             )
         )
         # This revision still has `mode`, which the code's table no longer names.
-        rounds = sa.Table("jour_fixe_round", sa.MetaData(), autoload_with=conn)
+        # MariaDB reflects a JSON column as LONGTEXT, so the JSON type is named here.
+        rounds = sa.Table(
+            "jour_fixe_round",
+            sa.MetaData(),
+            *(sa.Column(name, JSON_VALUE) for name in ("steps", "invited", "absent", "posts")),
+            autoload_with=conn,
+        )
         for n, project_id in enumerate((scheduled, by_hand)):
             conn.execute(
                 rounds.insert().values(

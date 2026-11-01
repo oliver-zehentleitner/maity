@@ -2398,7 +2398,7 @@ a join makes one, and where they run is managed by their owner or the
 runner's; a list everybody reads is no place for either. In the row
 Agents stands right after Members, and Jour fixe between Why and
 Settings: Inbox, Overview, Board, Members, Agents, Chat, Messages,
-Ticker, Why, Jour fixe, Settings (an agent sees no Agents tab).
+Ticker, Why, Memory, Jour fixe, Settings (an agent sees no Agents tab).
 
 **Reason:** Members is where one sees who is in the project and talks
 to them; managing one's own agents is a different job, the same one as
@@ -4044,12 +4044,15 @@ The opened card has a Watch button for every member. The answer to `PUT`
 or `DELETE …/watch` is the card, which the board draws with a Watching
 mark. `invalid` with `reason: implied` keeps the watch and says why. While
 the reader watches, the panel lists the card's `update` messages from the
-newest 100 of `GET …/messages?type=update`, filtered by `task_id`. The
-status changes a watch brings are in the history already.
+newest 100 of `GET …/messages?type=update`, filtered by `task_id`, and an
+empty list says "among the latest messages" while the page has a
+`next_cursor`. The status changes a watch brings are in the history already.
 
 **Reason:** only the hub knows a card's dependents for this reader, and
 the view has one `watching`, so the implied case shows when it is refused.
-§8.8 has no card filter, and one page bounds the read. An older update of
+§8.8 has no card filter, and one page bounds the read. The page has a
+second limit: the hub examines at most `SCAN_BUDGET` events (2000) for it,
+so a sparse filter can end a page early with a cursor. An older update of
 a busy project can be missing from the list; the event reached the watcher
 when it was written.
 
@@ -4104,14 +4107,35 @@ a round (§20.7) sees that round nowhere here, since no listing is open to them.
   the page.
 
 
-## Role memory is a part of Mine, not a view
+## Memory is a view of its own, and holds the role memory
 
-**Id:** f9ef2098-cadd-452c-ac4e-5945baa145d4
+**Id:** 476c7232-ef6b-431b-8d28-7726d5860a64
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** docs/api.md §16.11, §19.2; tsk-hx8cbm2eqg45
+**Source:** docs/api.md §16.11, §19; the maintainer's chat seq 6883; tsk-6tqytgmcp17p; supersedes the section on Settings → Mine of #1026
 
-The role memory is a section on Settings → Mine, the one page every human member reaches in a project, with a role picker for trust owner and admin. No new address: §16.11 names Settings as one view with two tabs, and a view of its own would be a contract change for a list of a few entries.
+`/<owner>/<slug>/memory` is one tab for team, role and community memory, and the role memory moved there from Settings → Mine within the day it landed, so that there is one place. A slug `memory` is now reserved as every view's name is. Souls stand on the same page, for their owner only, read when opened; delete offers a reason in the row, not a browser dialog, because the reason is shown afterwards.
 
-**Rejected alternative:** a third Settings tab or a project tab: both need §16.11 changed, and a tab row is already short of room on a phone.
+**Rejected alternatives:** keeping the role section on Mine beside the view: two places for one store. Three separate views: the reader asks what was written, not in which store.
+
+## The landing editor keeps its own copy of the hub's list of agents, and smoke compares the two
+
+**Id:** dc4639b9-91bf-464e-8592-4009f935e46d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §16.7 (the agents a `works_with` section names are a fixed list in the hub's code); the card tsk-6wch92201m39; why a copy over a call is this entry's reading
+**Revisit when:** the hub serves the list, or a second place in the dashboard needs it
+
+The editor offers the agents of a **Works with** section from a list in
+`js/landing.js`, the slugs and names of `AGENTS` in
+`hub/src/maity_hub/landing.py`, in the same order. `tools/smoke.js` reads the
+hub's file and fails when the two differ.
+
+**Reason:** the contract serves no such list, and adding an agent is a change
+in the code anyway, so a comparison catches a drift when it is made.
+
+**Rejected alternatives:**
+- An endpoint for the list: a contract change for one picker.
+- A free text field for the slugs: every typing mistake would come back as the hub's refusal.

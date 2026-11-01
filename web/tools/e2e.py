@@ -38,6 +38,7 @@ import base64
 import collections
 import email
 import email.policy
+import fcntl
 import hashlib
 import hmac
 import io
@@ -295,11 +296,57 @@ def port_taken(port: int) -> bool:
         return False
 
 
+# One browser run at a time on a machine: agents share it, and two runs together ran it out of
+# memory. A kernel lock goes with its process, however that ends; no stale file blocks anyone.
+LOCK_PATH = Path("/tmp/maity-e2e.lock")
+_machine_lock = None
+
+
+def open_lock_file(path: Path) -> int:
+    """The lock file, whichever user came first. Never O_CREAT on a file that exists: in sticky
+    /tmp, fs.protected_regular refuses that for another user's file, whatever its mode."""
+    while True:
+        try:
+            return os.open(path, os.O_RDWR)
+        except FileNotFoundError:
+            pass
+        try:
+            descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o666)
+        except FileExistsError:
+            continue  # another run made it just now
+        os.fchmod(descriptor, 0o666)  # the mode above passes through the umask; holds no secret
+        return descriptor
+
+
+def take_machine_lock(path: Path = LOCK_PATH, say=print, every: float = 60, pause: float = 1) -> None:
+    """Hold the machine's e2e lock until this process ends, waiting for it as long as it takes.
+    In start_hub, not main, so that a script of a few lines borrowing the hub waits too."""
+    global _machine_lock
+    if _machine_lock is not None:  # a run starts several hubs
+        return
+    descriptor = open_lock_file(path)
+    told = 0.0
+    while True:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except BlockingIOError:
+            if time.monotonic() - told >= every:
+                told = time.monotonic()
+                holder = os.pread(descriptor, 32, 0).decode(errors="replace").strip() or "?"
+                say(f"another e2e holds {path} (pid {holder}); waiting", flush=True)
+            time.sleep(pause)
+    os.ftruncate(descriptor, 0)
+    os.pwrite(descriptor, str(os.getpid()).encode(), 0)
+    _machine_lock = descriptor
+
+
 def start_hub(
     work: Path, logs: Path, port: int, extra: dict[str, str] | None = None, log_name: str = "hub.log"
 ) -> subprocess.Popen:
     """Migrate, create the owner and serve, with `extra` in the environment; every output goes
     to logs/<log_name>."""
+    take_machine_lock()
     base = f"http://127.0.0.1:{port}"
     # A local store for attachments (§8.7), so the attachments step uploads for real:
     # messages name their attachments since E's #474, and the sent image is read back
@@ -3319,18 +3366,28 @@ def my_settings_step(run: Run, page: Page) -> None:
     page.locator("#my-nl-minutes").fill("20")
     page.locator("form.my-settings").get_by_role("button", name="Save", exact=True).click()
     expect(effective).to_have_text("Applies now: 20 minutes, set here.")
-    # Role memory (§19.2), against the real hub: added, deleted, its row stays without the text.
-    memory = page.locator("section.role-memory")
-    page.locator("#role-memory-text").fill("Rebase before the review.")
-    page.locator("#role-memory-tags").fill("git")
+    # Memory (§19), against the real hub: an entry added, deleted with a reason, its row stays.
+    page.goto(f"{run.base}/owner/e2e-alpha/memory")
+    memory = page.locator("section.memory-entries")
+    # The agent and role pickers only for their store: a display rule must not undo `hidden`.
+    expect(page.locator("#memory-team")).to_be_hidden()
+    expect(page.locator("#memory-role")).to_be_hidden()
+    page.locator("#memory-store").select_option("team")
+    expect(page.locator("#memory-team")).to_be_visible()
+    page.locator("#memory-store").select_option("")
+    page.locator("#memory-add-text").fill("Rebase before the review.")
+    page.locator("#memory-add-tags").fill("Git")
     memory.get_by_role("button", name="Add to the memory", exact=True).click()
-    expect(memory.locator(".role-memory-list")).to_contain_text("Rebase before the review.")
-    run.a11y(page, "settings: role memory")
-    page.once("dialog", lambda dialog: dialog.accept())
+    expect(memory.locator(".memory-list")).to_contain_text("Rebase before the review.")
+    run.shot(page, "memory")
+    run.a11y(page, "memory")
     memory.get_by_role("button", name="Delete the entry: Rebase before the review.", exact=True).click()
+    page.locator("form.memory-delete input").fill("out of date")
+    memory.get_by_role("button", name="Delete the entry", exact=True).click()
     expect(memory).not_to_contain_text("Rebase before the review.")
-    page.locator("#role-memory-deleted").check()
-    expect(memory.locator(".role-memory-list")).to_contain_text("Deleted by")
+    page.locator("#memory-deleted").check()
+    expect(memory.locator(".memory-list")).to_contain_text("because: out of date")
+    page.goto(f"{run.base}/owner/e2e-alpha/settings/mine")
     run.a11y(page, "my settings")
     page.locator("#my-nl-default").check()
     page.locator("form.my-settings").get_by_role("button", name="Save", exact=True).click()

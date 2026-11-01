@@ -378,7 +378,8 @@ def test_a_forwarded_request_outlives_the_circle_owner_until_its_holder_goes_too
     assert colleague.get(f"{BASE}/requests/{request_id}").status_code == 200
     _delete_account(colleague, circle.engine)
     row = _status(circle.engine, request_id)
-    assert row.status == "withdrawn" and not row.holder_pool
+    assert (row.status, row.withdraw_reason) == ("withdrawn", "the holder's account was deleted")
+    assert not row.holder_pool
 
 
 def _remove(circle: Circle, who: flow.Human) -> None:
@@ -407,7 +408,7 @@ def test_the_owner_gone_and_then_the_holder_removed_withdraws_it(
     assert _status(circle.engine, request_id).status == "open"
     _remove(circle, colleague)
     row = _status(circle.engine, request_id)
-    assert (row.status, row.withdraw_reason) == ("withdrawn", "member_removed")
+    assert (row.status, row.withdraw_reason) == ("withdrawn", "the holder left the project")
     assert not row.holder_pool
 
 
