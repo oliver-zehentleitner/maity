@@ -3,18 +3,22 @@
 Every request is logged by `HubMiddleware` as `METHOD path status ms=<n> route=<pattern>`;
 here that same call is also counted, and once a minute one `stats` line says how many requests
 the last window had, how many of them were 5xx, the slowest, and the state of the connection
-pool. Up to `ROUTE_LINES` `stats_route` lines name the routes that had a slow request in that
-window. There is no log stack to read them with (k3s and `kubectl logs`), so the lines are
-meant for `grep`, and an alarm built on them needs nothing from the hub.
+pool, the event loop and the worker threads. Up to `ROUTE_LINES` `stats_route` lines name the
+routes that had a slow request in that window. There is no log stack to read them with (k3s and
+`kubectl logs`), so the lines are meant for `grep`, and an alarm built on them needs nothing from
+the hub.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
+import anyio.to_thread
 from sqlalchemy import Engine
 
 from maity_hub import API_VERSION
@@ -29,6 +33,7 @@ ROUTE_LINES = 10  # at most this many `stats_route` lines per window
 # The server passes any method token on; only these become a key, or a client could grow the
 # window without bound and write what it likes into the log.
 METHODS = frozenset({"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"})
+LOAD_TICK = 0.1  # seconds between two looks at the event loop and the threads
 
 
 @dataclass
@@ -91,6 +96,78 @@ class Window:
 WINDOW = Window()
 
 
+class LoadWindow:
+    """What the event loop's own tick saw since the last `stats` line: how late it ran, and how
+    many worker threads were busy or wanted. `sync` endpoints queue for those threads."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._reset()
+        self._due: float | None = None  # when the tick should run next; None without a tick
+        self._limit = 0
+
+    def _reset(self) -> None:
+        self._ticks = self._late_total = self._late_max = 0
+        self._busy_total = self._busy_max = self._waiting_max = 0
+
+    def record(self, late_ms: int, busy: int, waiting: int, limit: int, due: float) -> None:
+        with self._lock:
+            self._ticks += 1
+            self._late_total += late_ms
+            self._late_max = max(self._late_max, late_ms)
+            self._busy_total += busy
+            self._busy_max = max(self._busy_max, busy)
+            self._waiting_max = max(self._waiting_max, waiting)
+            self._limit = limit
+            self._due = due
+
+    def stopped(self) -> None:
+        with self._lock:
+            self._due = None
+
+    def fields(self) -> str:
+        """The window as `key=value`, which then starts again. A loop stuck right now has no tick
+        to report it, so the tick that is overdue counts too; this runs on the reporter's thread."""
+        with self._lock:
+            overdue = 0 if self._due is None else (time.monotonic() - self._due) * 1000
+            late_max = max(self._late_max, round(overdue))
+            ticks = max(self._ticks, 1)
+            text = (
+                f"loop_late_avg_ms={self._late_total // ticks} loop_late_max_ms={late_max} "
+                f"threads_busy_avg={self._busy_total / ticks:.1f} "
+                f"threads_busy_max={self._busy_max} "
+                f"threads_waiting_max={self._waiting_max} threads_limit={self._limit}"
+            )
+            self._reset()
+        return text
+
+
+LOAD = LoadWindow()
+
+
+async def watch_load(load: LoadWindow, tick: float = LOAD_TICK) -> None:
+    """Runs on the server's event loop until cancelled. The limiter is that loop's own, the one
+    `run_in_threadpool` takes its threads from, and can only be asked from there."""
+    limiter = anyio.to_thread.current_default_thread_limiter()
+    due = time.monotonic() + tick
+    load.record(0, 0, 0, round(limiter.total_tokens), due)
+    try:
+        while True:
+            await asyncio.sleep(tick)
+            now = time.monotonic()
+            late_ms = round(max(now - due, 0) * 1000)
+            due = now + tick
+            load.record(
+                late_ms,
+                limiter.borrowed_tokens,
+                limiter.statistics().tasks_waiting,
+                round(limiter.total_tokens),
+                due,
+            )
+    finally:
+        load.stopped()
+
+
 def route_of(scope: Any) -> str:
     """The pattern of the route that answered, as it was declared (`/api/v1/tasks/{id}`), so it
     holds nothing from the request; `-` for a request no route answered, or one whose route
@@ -119,7 +196,7 @@ def pool_fields(engine: Engine) -> str:
     return f"pool_open={checked_out + checked_in} pool_checked_out={checked_out} pool_max={ceiling}"
 
 
-def lines(window: Window, engine: Engine, seconds: float) -> list[str]:
+def lines(window: Window, engine: Engine, seconds: float, load: LoadWindow) -> list[str]:
     """The `stats` line, then the routes with a slow request, the worst first. `slow_routes` says
     how many there were, so a cut list shows itself."""
     taken = window.take()
@@ -129,7 +206,7 @@ def lines(window: Window, engine: Engine, seconds: float) -> list[str]:
     )
     return [
         f"stats window={seconds:g}s requests={taken.requests} 5xx={taken.errors} "
-        f"max_ms={taken.slowest_ms} slow_routes={len(slow)} {pool_fields(engine)}",
+        f"max_ms={taken.slowest_ms} slow_routes={len(slow)} {pool_fields(engine)} {load.fields()}",
         *(
             f"stats_route window={seconds:g}s method={method} route={route} "
             f"requests={times.requests} over_1s={times.over_1s} over_3s={times.over_3s} "
@@ -143,11 +220,16 @@ class Reporter:
     """Logs the `stats` lines once a minute."""
 
     def __init__(
-        self, engine: Engine, interval: float | None = None, window: Window | None = None
+        self,
+        engine: Engine,
+        interval: float | None = None,
+        window: Window | None = None,
+        load: LoadWindow | None = None,
     ) -> None:
         self.engine = engine
         self.interval = INTERVAL if interval is None else interval  # read now: tests set it
         self.window = WINDOW if window is None else window
+        self.load = LOAD if load is None else load
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -163,7 +245,7 @@ class Reporter:
     def _run(self) -> None:
         while not self._stop.wait(self.interval):
             try:
-                for text in lines(self.window, self.engine, self.interval):
+                for text in lines(self.window, self.engine, self.interval, self.load):
                     log.info(text)
             except Exception:
                 log.exception("the stats line failed")

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -253,6 +255,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         notify_worker.start()
         stats_reporter = request_stats.Reporter(engine)
         stats_reporter.start()
+        load_watch = asyncio.create_task(request_stats.watch_load(request_stats.LOAD))
         pages_worker = public_pages.Worker(engine, settings)
         pages_worker.start()
         # A long-poll wakes when another replica writes (hub/context/replicas.md 387c2409).
@@ -269,6 +272,9 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         if listener is not None:
             listener.stop()
         pages_worker.stop()
+        load_watch.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await load_watch
         stats_reporter.stop()
         notify_worker.stop()
         if sweeper is not None:
