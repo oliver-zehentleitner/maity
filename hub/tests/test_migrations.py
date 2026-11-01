@@ -1015,3 +1015,24 @@ def test_an_account_with_a_verified_or_disabled_address_counts_as_having_had_one
             )
         }
     assert flags == {"none": False, "pending": False, "verified": True, "disabled": True}
+
+
+def test_the_mail_factor_downgrade_refuses_while_email_is_stored(engine: Engine) -> None:
+    """Below this revision a stored `email` would silently fall to the environment's policy,
+    which §2.8.8's rule 5 forbids: the operator switches first."""
+    from maity_hub import clock
+    from maity_hub import tables as t
+
+    revision = "20261031191500_mail_factor"
+    migrate(engine)
+    with engine.begin() as conn:
+        conn.execute(
+            t.instance_setting.insert().values(
+                name="sign_in.second_factor", value="email", updated_at=clock.now()
+            )
+        )
+    with pytest.raises(RuntimeError, match="sign_in.second_factor is email"):
+        downgrade(engine, _before(engine, revision))
+    with engine.begin() as conn:
+        conn.execute(t.instance_setting.delete())
+    downgrade(engine, _before(engine, revision))

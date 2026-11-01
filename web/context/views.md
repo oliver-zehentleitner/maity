@@ -3795,9 +3795,16 @@ so it was dropped.
 **See:** https://github.com/oliver-zehentleitner/maity — 11b7e786-ecf7-4971-ae04-48760fd1fd41 — as of 2026-10-31
 **Revisit when:** a fifth kind of link is added, or the header row has no room for the buttons on a phone
 
-The header's row beside the state shows the repository, then the
+The header's row shows the repository, then Pull Requests, then the
 project's own links that are set (issues, wiki, discussions, chat, each
-with its mark), then the Keep the Why dashboard. Each is plain https
+with its mark), then the
+Keep the Why dashboard, and after them, at the right end, the state: the
+maintainer asked for the state on that side and for the Pull Requests
+button (tsk-hf70q6maf8cv, 2026-11-01; no reason was recorded). Unlike the
+own links, Pull Requests is derived in the browser from the repository's
+URL and forge, and a forge outside the table gets no button; the hub knows
+only GitHub today, so the other three targets wait for it (tsk-sqpcbndm0tvd).
+Each link is plain https
 only and opens in a tab of its own with `rel="noopener noreferrer"`. The
 repository's button reads "Repository" for every forge. Its mark and
 its name for a screen reader ("Repository on GitHub") still say which
@@ -3833,6 +3840,19 @@ would overwrite another admin's change to a link it did not touch.
 The form shows an unset `agent_owners` as "Not set, follows the public page (now: …)", worked out in the page from `public_page`, `state` and `moderation`, since the hub's policy returns only the stored value. Once set the option is gone, as the hub never takes null again. The roles offered are the four bases of §6.1 and project roles on them; a role already stored stays offered, so that saving cannot drop it unseen.
 
 **Rejected alternative:** a new hub field for the effective value: a change of contract for one sentence. The page reads a hide by moderation from the project view's `moderation`, present only while a hold stands (§16.8), and then says `members`. The cost that remains: the page does not know a suspension or deletion of the namespace owner, in which the hub reads `members` while the sentence says `anyone`.
+
+## Two-factor sign-in sits on the account; a session that must enrol gets the setup as its one page
+
+**Id:** ed407146-2c2b-4686-87ef-a5d8e6d020e2
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.8.1, §2.8.5, §2.8.7; the card tsk-94jtz06aps4b; #1004
+**Revisit when:** mail as a factor gets a section of its own
+
+A session in `enrolment_required` gets the setup drawn by `render()` like the second-factor step, not routed, so the address asked for stays, often `/`. The secret and the recovery codes live only in the DOM of the step that shows them and go with it; the codes leave the page only by the human's **Download**. Setup, new codes and **Turn off** go through `M.stepUp.run`, as the hub asks for the password or the factor and the page repeats the call.
+
+**Rejected alternative:** a route of its own for the setup: a session in enrolment reaches nothing else, so the page must be the same either way. Keeping the codes until the next visit: §2.8.1 shows them once.
 
 ## Availability and cover hang under the presence as one note
 
@@ -3903,3 +3923,33 @@ project's page, so a separate Join there needed Add to mean something else.
   action twice.
 - Leaving the join section open on `/agents`: the maintainer asked for the form
   to open on the click.
+
+## A watch in the opened card: the toggle, and the updates read from one page
+
+**Id:** 7a86a9ca-fd3b-472f-b54d-486f5a82a70f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.4 and §8.8 (contract #458); the card tsk-hvgggzkf08rj; how the dashboard shows it is this entry's reading
+**Revisit when:** `GET …/messages` gets a card filter, or a watcher misses an update older than the newest page
+
+The opened card has a Watch button for every member. The answer to `PUT`
+or `DELETE …/watch` is the card, which the board draws with a Watching
+mark. `invalid` with `reason: implied` keeps the watch and says why. While
+the reader watches, the panel lists the card's `update` messages from the
+newest 100 of `GET …/messages?type=update`, filtered by `task_id`. The
+status changes a watch brings are in the history already.
+
+**Reason:** only the hub knows a card's dependents for this reader, and
+the view has one `watching`, so the implied case shows when it is refused.
+§8.8 has no card filter, and one page bounds the read. An older update of
+a busy project can be missing from the list; the event reached the watcher
+when it was written.
+
+**Rejected alternatives:**
+- Paging through every update for each opened card: the hub scans a
+  project's messages for it, for each card opened.
+- A card filter on `GET …/messages`: a contract change, not part of this
+  card.
+- Merging updates and status changes into one list: the history has its
+  own shape and pages, and already holds the status changes.

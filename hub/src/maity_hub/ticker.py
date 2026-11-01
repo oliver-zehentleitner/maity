@@ -343,6 +343,10 @@ def on_request_answered(
         return
     if answer.get("talk") or not (answer.get("reply_id") or answer.get("text")):
         return
+    from maity_hub import inbox
+
+    if inbox.owners_alone(conn, [request]):  # no item of an owner's round (§20.7, §20.9)
+        return
     people = members(conn, project.id)
     readable = [m for m in people if may_read_request(request, m)]
     may = {m.principal for m in readable}

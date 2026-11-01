@@ -695,14 +695,16 @@ def main() -> int:
                 watch_page(run, page)
                 try:
                     scenario(run, page)
+                    # Inside the same report: a failure in a later round shows its trace too (review of #997).
+                    fixture_views(run, browser)
+                    second_hub_round(run, browser, work, artifacts)
+                    security_round(run, browser, work, artifacts)
                 except Exception:
                     report_failure(list(run.recent), base, artifacts)
                     # What the page itself said before the step failed: its errors explain more than a missing element.
                     for problem in run.problems:
                         print("  page: " + problem)
                     raise
-                fixture_views(run, browser)
-                second_hub_round(run, browser, work, artifacts)
             finally:
                 browser.close()
                 failing = run.a11y_report()
@@ -1610,8 +1612,32 @@ def images_step(run: Run, page: Page, alpha: Path) -> None:
     no_problems(run, "images")
 
 
-def sign_in(run: Run, browser):
-    """A context of its own, signed in as the owner, and its page."""
+def security_round(run: Run, browser, work: Path, artifacts: Path) -> None:
+    """The setup of the second factor in the page, against the real hub (§2.8.5, §2.8.7): as the
+    one page of a session that must enrol, and on the account, each on a hub of its own policy."""
+    first_base = run.base
+    try:
+        for policy, walk in (("required_admins", enrolment_page), ("optional", security_section)):
+            home = work / f"hub-{policy}"
+            home.mkdir()
+            port = free_port()
+            run.base = f"http://127.0.0.1:{port}"
+            run.step(f"hub on {run.base} with the second factor {policy}")
+            extra = {
+                "MAITY_SECRET_KEY": base64.b64encode(os.urandom(32)).decode(),
+                "MAITY_SIGN_IN_SECOND_FACTOR": policy,
+            }
+            hub = start_hub(home, artifacts, port, extra, f"hub-{policy}.log")
+            try:
+                walk(run, browser)
+            finally:
+                stop_hub(hub)
+    finally:
+        run.base = first_base
+
+
+def signed_in_page(run: Run, browser):
+    """The first factor only: what comes next is the hub's to say."""
     context = browser.new_context(viewport={"width": 1280, "height": 900})
     context.set_default_timeout(TIMEOUT_MS)
     page = context.new_page()
@@ -1620,6 +1646,79 @@ def sign_in(run: Run, browser):
     page.locator("#login-handle").fill(OWNER)
     page.locator("#login-password").fill(OWNER_PASSWORD)
     page.get_by_role("button", name="Sign in", exact=True).click()
+    return context, page
+
+
+def set_up_factor(page: Page) -> str:
+    """To the code: the QR is drawn and the key is readable. The key, for the code."""
+    page.get_by_role("button", name="Set up two-factor sign-in", exact=True).click()
+    expect(page.locator(".qr-box svg")).to_be_visible()
+    return page.locator(".security-key").inner_text()
+
+
+def turn_on(page: Page, code: str) -> None:
+    page.locator("#security-code").fill(code)
+    page.get_by_role("button", name="Turn on", exact=True).click()
+
+
+def enrolment_page(run: Run, browser) -> None:
+    run.step("must enrol: the setup is the page, the codes download, then the dashboard")
+    context, page = signed_in_page(run, browser)
+    expect(page.get_by_role("heading", name="Set up two-factor sign-in", exact=True)).to_be_visible()
+    run.a11y(page, "must enrol: the setup")
+    secret = set_up_factor(page)
+    run.shot(page, "enrol-qr")
+    run.a11y(page, "must enrol: QR and key")
+    turn_on(page, totp_code(secret, int(time.time() // 30)))
+    expect(page.locator(".security-code-list li")).to_have_count(10)
+    run.shot(page, "enrol-codes")
+    run.a11y(page, "must enrol: the recovery codes")
+    with page.expect_download() as saved:
+        page.get_by_role("button", name="Download", exact=True).click()
+    assert len(Path(saved.value.path()).read_text().split()) == 10, "the codes in the file"
+    page.get_by_role("button", name="I have saved them", exact=True).click()
+    expect(page.locator("header .me")).to_contain_text("Owner")
+    page.goto(run.base + "/account/security")
+    expect(page.locator("section.security")).to_contain_text("recovery codes left")
+    expect(page.get_by_role("button", name="Turn off", exact=True)).to_have_count(0)
+    page.get_by_role("button", name="New recovery codes", exact=True).click()
+    expect(page.locator(".security-code-list li")).to_have_count(10)
+    page.get_by_role("button", name="I have saved them", exact=True).click()
+    expect(page.locator("section.security")).to_contain_text("New recovery codes are in place")
+    no_problems(run, "must enrol")
+    context.close()
+
+
+def security_section(run: Run, browser) -> None:
+    run.step("Security on the account: off, a wrong code said, on, off again")
+    context, page = signed_in_page(run, browser)
+    expect(page.locator("header .me")).to_contain_text("Owner")
+    page.locator("header .profile-menu").click()
+    page.get_by_role("menuitem", name="Security", exact=True).click()
+    section = page.locator("section.security")
+    expect(section).to_contain_text("Off.")
+    run.a11y(page, "security: off")
+    secret = set_up_factor(page)
+    step = int(time.time() // 30)
+    turn_on(page, "000000")
+    expect(section).to_contain_text("That code is not valid.")
+    turn_on(page, totp_code(secret, step))
+    expect(page.locator(".security-code-list li")).to_have_count(10)
+    page.get_by_role("button", name="I have saved them", exact=True).click()
+    expect(section).to_contain_text("Two-factor sign-in is on.")
+    run.shot(page, "security-on")
+    run.a11y(page, "security: on")
+    page.get_by_role("button", name="Turn off", exact=True).click()
+    expect(section).to_contain_text("Two-factor sign-in is off.")
+    # The wrong code above, expected here.
+    run.problems = [p for p in run.problems if "/totp/confirm answered 403" not in p]
+    no_problems(run, "security on the account")
+    context.close()
+
+
+def sign_in(run: Run, browser):
+    """A context of its own, signed in as the owner, and its page."""
+    context, page = signed_in_page(run, browser)
     expect(page.locator("header .me")).to_contain_text("Owner")
     return context, page
 
@@ -1646,7 +1745,8 @@ def second_hub_round(run: Run, browser, work: Path, artifacts: Path) -> None:
     hub = start_hub(second, artifacts, port, extra, "hub-second.log")
     try:
         mail_reaches_the_catcher(run, browser, catcher)
-        step_up_with_totp(run, browser)
+        secret, used = step_up_with_totp(run, browser)
+        sign_in_with_totp(run, browser, secret, used)
     finally:
         stop_hub(hub)
         catcher.close()
@@ -1665,8 +1765,9 @@ def mail_reaches_the_catcher(run: Run, browser, catcher: MailCatcher) -> None:
     context.close()
 
 
-def step_up_with_totp(run: Run, browser) -> None:
-    """A session from before the enrolment has not given the factor, so the page must ask."""
+def step_up_with_totp(run: Run, browser) -> tuple[str, int]:
+    """A session from before the enrolment has not given the factor, so the page must ask.
+    Returns the secret and the last step the hub took, for the sign-in that follows."""
     run.step("second hub: enrol TOTP; an older session's export asks for the code")
     older_context, older = sign_in(run, browser)
     context, page = sign_in(run, browser)
@@ -1688,8 +1789,10 @@ def step_up_with_totp(run: Run, browser) -> None:
     code.fill("000000")
     older.locator("form.step-up").get_by_role("button", name="Confirm", exact=True).click()
     expect(older.locator("#step-up-step_up_required-error")).to_have_text("That code is not valid.")
-    # The next step: the step of the enrolment is used up, and the hub allows one step of skew.
-    code.fill(totp_code(secret, step + 1))
+    # A step after the enrolment's, which is used up; the hub takes only now ± 1 step, so after a
+    # slow screenshot or axe run the current step (review of #997).
+    used = max(step + 1, int(time.time() // 30))
+    code.fill(totp_code(secret, used))
     with older.expect_download() as saved:
         older.locator("form.step-up").get_by_role("button", name="Confirm", exact=True).click()
     assert json.loads(Path(saved.value.path()).read_text()).get("exported_at"), "an empty export"
@@ -1702,6 +1805,36 @@ def step_up_with_totp(run: Run, browser) -> None:
     ]
     no_problems(run, "step-up with TOTP")
     older_context.close()
+    return secret, used
+
+
+def sign_in_with_totp(run: Run, browser, secret: str, used: int) -> None:
+    """The second step of a sign-in (§2.8.2, tsk-73kkzr3x6exy): after the password the page
+    asks for the app's code and nothing else, then the dashboard."""
+    run.step("second hub: a sign-in asks for the app's code before anything else")
+    context = browser.new_context(viewport={"width": 1280, "height": 900})
+    context.set_default_timeout(TIMEOUT_MS)
+    page = context.new_page()
+    watch_page(run, page)
+    page.goto(run.base + "/")
+    page.locator("#login-handle").fill(OWNER)
+    page.locator("#login-password").fill(OWNER_PASSWORD)
+    page.get_by_role("button", name="Sign in", exact=True).click()
+    step = page.locator("form.second-factor")
+    expect(step).to_contain_text("Enter the code from your authenticator app")
+    # Nobody is shown as signed in yet (the header keeps only the brand and the theme).
+    expect(page.locator("header .me-name")).to_have_count(0)
+    run.shot(page, "second-hub-sign-in-totp")
+    run.a11y(page, "second hub: the sign-in step with TOTP")
+    # The hub takes only a step newer than the last one used, within one step of skew.
+    while int(time.time() // 30) < used:
+        time.sleep(1)
+    page.locator("#sf-code").fill(totp_code(secret, used + 1))
+    step.get_by_role("button", name="Verify", exact=True).click()
+    expect(page.locator("header .me")).to_contain_text("Owner")
+    expect(step).to_have_count(0)
+    no_problems(run, "sign-in with TOTP")
+    context.close()
 
 
 def fixture_views(run: Run, browser) -> None:

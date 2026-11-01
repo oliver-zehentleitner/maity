@@ -2,6 +2,7 @@
   "items": [
     {
       "id": "tsk-0001",
+      "watching": false,
       "parent": null,
       "related": [],
       "kind": "task",
@@ -34,6 +35,7 @@
     },
     {
       "id": "tsk-0004",
+      "watching": false,
       "parent": null,
       "related": [],
       "kind": "task",
@@ -74,6 +76,7 @@
     },
     {
       "id": "tsk-0005",
+      "watching": false,
       "parent": null,
       "related": [],
       "kind": "task",
@@ -134,6 +137,7 @@
     },
     {
       "id": "tsk-0006",
+      "watching": false,
       "parent": null,
       "related": [],
       "kind": "task",
@@ -165,6 +169,7 @@
     },
     {
       "id": "tsk-0007",
+      "watching": false,
       "parent": null,
       "related": [],
       "kind": "task",
@@ -196,6 +201,7 @@
     },
     {
       "id": "tsk-0008",
+      "watching": false,
       "parent": null,
       "related": [],
       "kind": "maintenance_round",
@@ -221,6 +227,7 @@
     },
     {
       "id": "tsk-0009",
+      "watching": false,
       "parent": null,
       "related": [],
       "kind": "contract",
@@ -261,6 +268,7 @@
     },
     {
       "id": "tsk-0003",
+      "watching": false,
       "parent": null,
       "related": [],
       "kind": "task",
@@ -292,6 +300,7 @@
     },
     {
       "id": "tsk-0002",
+      "watching": false,
       "parent": null,
       "related": [],
       "kind": "task",
@@ -534,6 +543,7 @@
       },
       "parent": null,
       "id": "tsk-0010",
+      "watching": false,
       "title": "Board: subtasks",
       "status": "review"
     },
@@ -563,6 +573,7 @@
       },
       "parent": "tsk-0010",
       "id": "tsk-0011",
+      "watching": false,
       "title": "Subtasks: the collapsed row",
       "status": "open"
     },
@@ -592,6 +603,7 @@
       },
       "parent": "tsk-0010",
       "id": "tsk-0012",
+      "watching": false,
       "title": "Subtasks: the counts",
       "status": "done"
     },
@@ -621,6 +633,7 @@
       },
       "parent": null,
       "id": "tsk-0013",
+      "watching": false,
       "title": "Old plan for the board",
       "status": "cancelled"
     },
@@ -650,6 +663,7 @@
       },
       "parent": "tsk-0013",
       "id": "tsk-0014",
+      "watching": false,
       "title": "A step of the old plan, still open",
       "status": "open"
     }
