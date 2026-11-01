@@ -1799,6 +1799,7 @@ window.Maity = window.Maity || {};
     Array.from(main.childNodes).forEach((n) => { if (n.setAttribute) n.setAttribute("inert", ""); });
     let where = { scope: "unknown" };
     let ctx;
+    await M.i18n.ready;
     try {
       where = parseRoute();
       if (where.scope === "invite" && M.invite) { await M.invite.page(main, document.getElementById("header"), where.token); return; }
@@ -2000,6 +2001,7 @@ window.Maity = window.Maity || {};
       h("div", { class: "page-failed-actions" }, signIn, again));
   }
 
+  M.redraw = render;
   M.errorBox = errorBox;
   M.withMembers = withMembers;
   M.logout = logout;

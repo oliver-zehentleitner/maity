@@ -3143,6 +3143,54 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     i18n.language = was;
     delete win.MAITY_I18N.de;
   }
+  // The reader's language (§6.2): the account's, else ?lang= or the choice, then the browser's, then en.
+  {
+    const i18n = win.Maity.i18n;
+    expect(JSON.stringify([...i18n.available]) === '["en"]' && win.Maity.interfacePicker("x", "en", false) === null,
+      "language: only languages with a catalog are offered, and with one there is no choice to make");
+    const oldNavigator = win.navigator, oldStorage = win.localStorage, oldSearch = win.location.search;
+    const kept = {};
+    win.localStorage = { getItem: (k) => kept[k] ?? null, setItem: (k, v) => { kept[k] = v; }, removeItem: (k) => { delete kept[k]; } };
+    win.MAITY_I18N.de = { "chat.instance.label": "Senden an" };
+    win.MAITY_I18N["zh-Hans"] = {};
+    i18n.available.push("de", "zh-Hans");
+    win.navigator = { languages: ["de-AT", "en"] };
+    await i18n.follow(null);
+    expect(i18n.language === "de" && tr("chat.instance.label") === "Senden an" && tr("account.title") !== "account.title",
+      "language: de-AT reads de, a key without a translation reads in English");
+    win.navigator = { languages: ["zh-TW", "fr"] };
+    await i18n.follow(null);
+    expect(i18n.language === "en", "language: Traditional Chinese does not fall to Simplified, and with nothing close the page is English");
+    win.navigator = { languages: ["zh-CN"] };
+    await i18n.follow(null);
+    expect(i18n.language === "zh-Hans", "language: zh-CN reads zh-Hans");
+    await i18n.choose("de");
+    win.navigator = { languages: ["en"] };
+    await i18n.follow(null);
+    expect(i18n.language === "de", "language: an explicit choice comes before the browser's");
+    win.location.search = "?lang=zh-Hans";
+    await i18n.follow(null);
+    win.location.search = "";
+    expect(i18n.language === "zh-Hans" && kept["maity.language"] === "zh-Hans", "language: ?lang= is a choice, and stays one");
+    win.location.search = "?lang=xx";
+    await i18n.follow(null);
+    win.location.search = "";
+    expect(i18n.language === "zh-Hans", "language: ?lang= without a catalog changes nothing");
+    await i18n.follow("de");
+    expect(i18n.language === "de", "language: the account's comes before any choice");
+    win.MAITY_I18N.de["test.forms"] = { one: "ein", other: "viele" };
+    win.MAITY_I18N["zh-Hans"]["test.forms"] = { other: "多" };
+    win.Maity.i18n.locale = "en";
+    await i18n.follow("zh-Hans");
+    expect(tr("test.forms", { count: 1 }) === "多", "language: plural forms follow the catalog's language, not the locale of the numbers");
+    win.Maity.i18n.locale = i18nLocale;
+    const select = win.Maity.interfacePicker("x", "", true);
+    expect(select && select.querySelectorAll("option").length === 4, "language: with several, each by its name, and the browser's as a choice");
+    i18n.available.length = 1;
+    delete win.MAITY_I18N.de; delete win.MAITY_I18N["zh-Hans"];
+    win.navigator = oldNavigator; win.localStorage = oldStorage; win.location.search = oldSearch;
+    await i18n.follow(null);
+  }
   // Markdown in a chat (js/markdown.js): text nodes only, https links only.
   const MD = (src) => { const box = document.createElement("div"); win.Maity.dom.append(box, win.Maity.markdown(src)); return box; };
   const tagsOf = (box) => box.childNodes.filter((n) => n.tagName).map((n) => n.tagName.toLowerCase());
@@ -5691,7 +5739,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!rgPosts.length && text(rgForm()).includes("at least 12 characters"), "register: a short password is said before anything is sent");
   byId("register-password").value = "a long enough password"; byId("register-repeat").value = "a long enough password";
   rgForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
-  expect(JSON.stringify(rgPosts[0]) === JSON.stringify({ address: "anna@example.org", password: "a long enough password", next: "/invite/bound-xxxxxxxxxxxxxxx3" })
+  expect(JSON.stringify(rgPosts[0]) === JSON.stringify({ address: "anna@example.org", password: "a long enough password", interface_language: "en", language: "en", next: "/invite/bound-xxxxxxxxxxxxxxx3" })
     && text(main).includes("Check your mail") && text(main).includes("works for 24 hours") && text(main).includes("come back to where you were"),
     "register: sent with the invitation as next, then 'check your mail' for every address alike");
   // The landing page's link carries where the visitor came from (§16.7.2): sent as origin; a malformed part is left out.
@@ -9141,7 +9189,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   {
     const picker = win.Maity.languagePicker("language-under-test", "fr");
     await tick();
-    expect(picker.select.value === "fr" && picker.select.querySelectorAll("option").length === 7, "language: the picker lists the hub's languages and keeps the choice");
+    expect(picker.select.value === "fr" && picker.select.querySelectorAll("option").length === 6, "language: the picker lists the languages the hub offers and keeps the choice");
+    const outside = win.Maity.languagePicker("language-outside", "aa");
+    await tick();
+    expect(outside.select.value === "aa" && outside.select.querySelectorAll("option").length === 7, "language: a value chosen outside the offered ones stays valid and shown");
     picker.search.value = "japan";
     picker.search.dispatch("input");
     expect(picker.select.querySelectorAll("option").length === 2 && picker.select.value === "fr", "language: search by English name narrows and keeps the choice");

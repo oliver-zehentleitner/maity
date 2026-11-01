@@ -1335,13 +1335,17 @@ fails while the bundle is stale.
 ## Words: the text catalog
 
 The dashboard's sentences come from a catalog per language,
-`i18n/<lang>.json` (English only so far), read with `Maity.t(key,
-values)` (`js/i18n.js`): one key per sentence, `{name}` placeholders,
+`i18n/<lang>.json` (English only so far; only languages with a file are
+offered), read with `Maity.t(key, values)` (`js/i18n.js`): one key per sentence, `{name}` placeholders,
 and plural forms (`{"one": …, "other": …}`, chosen by `values.count`
 through `Intl.PluralRules`); never a sentence put together from pieces.
 Dates and numbers go through `Intl` (`Maity.fmt.number`, `.date`,
 `.time`, `.dateTime`) in the reader's locale. As with the fixtures, the
-page loads `js/i18n/<lang>.js`, which `make fixtures` builds from the JSON.
+page loads `js/i18n/<lang>.js`, which `make fixtures` builds from the JSON,
+with the list of them in `js/i18n/languages.js`. English is always loaded,
+the reader's language on top of it: the account's `interface_language`,
+without one the choice on `/register` or `?lang=`, then the browser's
+(`docs/api.md` §6.2).
 `make check` fails on a key that is malformed, missing, unused, or not
 a string literal at `M.t`, and on any view whose prose string literals
 grow past `tools/strings-baseline.json`: new text goes into the catalog,

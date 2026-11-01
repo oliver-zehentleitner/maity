@@ -10,6 +10,8 @@ window.Maity = window.Maity || {};
 (function (M) {
   const { h, append, clear } = M.dom;
   const PASSWORD_MIN = 12;
+  // The address typed so far: choosing a language draws the form again in it.
+  let typedAddress = "";
   // The bar of a page without a project: the lockup and the theme.
   function bar(header) {
     append(clear(header), h("div", { class: "bar" }, M.brandTitle ? M.brandTitle() : null,
@@ -54,6 +56,26 @@ window.Maity = window.Maity || {};
       return;
     }
     const address = h("input", { id: "register-address", type: "email", autocomplete: "email", required: true });
+    address.value = typedAddress;
+    typedAddress = "";
+    // The two languages of §6.2: this page's, and the one agents write in, which starts as the
+    // first of the browser's the hub offers.
+    const site = M.interfacePicker("register-interface", M.i18n.language, false);
+    if (site) site.addEventListener("change", async () => {
+      typedAddress = address.value;
+      await M.i18n.choose(site.value);
+      M.redraw();
+    });
+    const picker = M.languagePicker("register-language", M.i18n.language);
+    let pickedLanguage = false;
+    picker.select.addEventListener("change", () => { pickedLanguage = true; });
+    M.languages().then((items) => {
+      if (!items || pickedLanguage) return;
+      for (const tag of (window.navigator && window.navigator.languages) || []) {
+        const found = items.find((l) => l.common && (l.tag === tag || l.tag === tag.split("-")[0]));
+        if (found) { picker.set(found.tag); return; }
+      }
+    });
     const password = h("input", { id: "register-password", type: "password", autocomplete: "new-password", required: true, minlength: String(PASSWORD_MIN) });
     const repeat = h("input", { id: "register-repeat", type: "password", autocomplete: "new-password", required: true });
     const status = M.statusLine();
@@ -70,7 +92,7 @@ window.Maity = window.Maity || {};
         status.busy("Sending…");
         let answer;
         try {
-          answer = await M.api.post("/auth/register", Object.assign({ address: address.value.trim(), password: password.value }, next ? { next } : {},
+          answer = await M.api.post("/auth/register", Object.assign({ address: address.value.trim(), password: password.value, interface_language: M.i18n.language, language: picker.select.value }, next ? { next } : {},
             Object.keys(origin).length ? { origin } : {}));
         } catch (err) {
           submit.disabled = false;
@@ -93,6 +115,9 @@ window.Maity = window.Maity || {};
     h("label", { for: "register-address" }, "Your address"), address,
     h("label", { for: "register-password" }, "Password (at least " + PASSWORD_MIN + " characters)"), password,
     h("label", { for: "register-repeat" }, "The password again"), repeat,
+    site ? h("label", { for: "register-interface" }, M.t("language.interface.label")) : null, site,
+    h("label", { for: "register-language" }, M.t("register.language.label")), picker.search, picker.select,
+    h("p", { class: "hint" }, M.t("register.language.hint")),
     submit, status.el,
     h("p", { class: "muted" }, "Have an account? ", h("a", { href: signIn }, "Sign in"), "."));
     // The instance's terms (§2.7.2, from GET /auth/methods): accepted on the

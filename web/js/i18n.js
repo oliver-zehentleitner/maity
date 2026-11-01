@@ -1,7 +1,13 @@
 // The dashboard's words from a catalog, one per language (i18n/<lang>.json,
 // loaded as js/i18n/<lang>.js, which tools/check.py builds from it, since
-// file:// cannot fetch JSON). English is the only language so far; a
-// translation later fills a file, it touches no view (context/rendering.md).
+// file:// cannot fetch JSON). English is always loaded, as what a key without
+// a translation reads in; the reader's language comes on top, as a script of
+// its own (context/rendering.md). A translation fills a file, it touches no
+// view; js/i18n/languages.js, built the same way, says which files there are.
+//
+// Which language (docs/api.md §6.2): the account's interface_language, which
+// M.api gives M.i18n.follow with every GET /auth/session; without one, and
+// before sign-in, the explicit choice or ?lang=, then the browser's, then en.
 //
 // M.t(key, values): one key per sentence, never a sentence put together
 // from pieces. `{name}` in the text takes values.name, a number formatted
@@ -19,6 +25,63 @@ window.Maity = window.Maity || {};
   // The catalog's language, and the locale Intl formats in: undefined is
   // the browser's own, the reader's locale until the account sets one.
   const i18n = { language: "en", locale: undefined };
+  // The languages with a catalog: a tag outside them is never loaded.
+  const available = window.MAITY_I18N_LANGUAGES || ["en"];
+  const STORED = "maity.language";
+  // js/i18n.js's own address: a route's path is deep, the bundles stay beside this file.
+  const here = (window.document && window.document.currentScript && window.document.currentScript.src) || "js/i18n.js";
+
+  // The catalog a browser's tag means: de-AT reads de, zh-CN zh-Hans, and
+  // zh-TW nothing, since Traditional is another script and not a close second.
+  function closest(tag) {
+    if (typeof tag !== "string" || !tag) return null;
+    if (available.includes(tag)) return tag;
+    try {
+      const l = new Intl.Locale(tag).maximize();
+      return [l.language + "-" + l.script, l.language].find((c) => available.includes(c)) || null;
+    } catch { return null; }
+  }
+
+  function stored() {
+    try { return window.localStorage.getItem(STORED); } catch { return null; }
+  }
+  function remember(tag) {
+    try { window.localStorage.setItem(STORED, tag); } catch { /* the page still follows it */ }
+  }
+
+  // Without an account's language: ?lang= (which then stays the choice), the
+  // explicit choice, the browser's list, English.
+  function browserChoice() {
+    const asked = window.location ? closest(new URLSearchParams(window.location.search).get("lang")) : null;
+    if (asked) { remember(asked); return asked; }
+    const candidates = [stored(), ...((window.navigator && window.navigator.languages) || [])];
+    for (const tag of candidates) {
+      const found = closest(tag);
+      if (found) return found;
+    }
+    return "en";
+  }
+
+  function load(tag) {
+    if (catalogs[tag]) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const script = window.document.createElement("script");
+      script.src = new URL("i18n/" + tag + ".js", new URL(here, window.location.href)).href;
+      script.onload = () => resolve(!!catalogs[tag]);
+      script.onerror = () => resolve(false);
+      window.document.head.appendChild(script);
+    });
+  }
+
+  // Never rejects: a catalog that cannot be had leaves the page in the language it has.
+  let asked = 0;
+  async function use(tag) {
+    const mine = ++asked;
+    if (tag !== i18n.language && !(await load(tag))) return;
+    if (mine !== asked) return;
+    i18n.language = tag;
+    if (window.document && window.document.documentElement) window.document.documentElement.lang = tag;
+  }
 
   // Own keys only: a key like "constructor" is no text of the catalog.
   const text = (key) => {
@@ -40,7 +103,8 @@ window.Maity = window.Maity || {};
     const entry = text(key);
     if (entry === undefined || typeof entry === "string") return entry;
     const count = values && typeof values.count === "number" ? values.count : 0;
-    const form = new Intl.PluralRules(i18n.locale).select(count);
+    // The forms the catalog's language has, whatever locale formats the numbers.
+    const form = new Intl.PluralRules(i18n.language).select(count);
     return entry[form] !== undefined ? entry[form] : entry.other;
   }
 
@@ -102,5 +166,12 @@ window.Maity = window.Maity || {};
     time: (value) => when(value, { hour: "2-digit", minute: "2-digit" }),
     when,
   };
+  i18n.available = available;
+  // The first language, before the first view is drawn.
+  i18n.ready = use(browserChoice());
+  // The account's interface language, or null: the rule without an account.
+  i18n.follow = (tag) => use(closest(tag) || browserChoice());
+  // A choice made on a page before sign-in.
+  i18n.choose = (tag) => { remember(tag); return use(tag); };
   M.i18n = i18n;
 })(window.Maity);
