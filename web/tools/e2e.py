@@ -596,7 +596,7 @@ def join_line(
     # for one of the two, since the count line is drawn before either, and an
     # instant look could see neither and click a button that stays hidden.
     panel = page.locator(".join-panel")
-    add = page.get_by_role("button", name="+ Add an agent", exact=True)
+    add = page.get_by_role("button", name="Join an agent", exact=True)
     expect(panel.or_(add).first).to_be_visible()
     if not panel.is_visible():
         add.click()
@@ -2895,11 +2895,13 @@ def isolate_step(run: Run, page: Page) -> None:
 
 
 def agents_page_step(run: Run, page: Page) -> None:
-    """Your agents (/agents, tsk-05meme59sq1x): Join an agent at the top; the profiles as rows,
+    """Your agents (/agents, tsk-05meme59sq1x): Add and Join an agent at the head; the profiles as rows,
     Manage opening a row with the instances of each membership read on the real hub."""
     run.step("agents page: the profiles as rows; Manage shows the instances in each project")
     page.goto(f"{run.base}/agents")
-    expect(page.locator("section.agents-join")).to_be_visible()
+    expect(page.get_by_role("button", name="+ Add an agent", exact=True)).to_be_visible()
+    expect(page.get_by_role("button", name="Join an agent", exact=True)).to_be_visible()
+    expect(page.locator("section.agents-join")).to_be_hidden()
     row = page.locator("tr.agent-row", has_text="E2E Agent").first
     expect(row).to_be_visible()
     row.get_by_role("button", name=re.compile(r"^Manage ")).click()

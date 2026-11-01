@@ -2450,7 +2450,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const byoButton = () => main.querySelector("button.join-open");
   const byoNote = () => main.querySelector(".member-agents-limit");
   // At the limit (§3.1) the panel still makes an instance of one already in the project; a new one is refused before sending.
-  expect(byoButton() && text(byoButton()) === "+ Add my agent" && !byoButton().disabled && /^\d+ of 3 agents of yours/.test(text(byoNote()))
+  expect(byoButton() && text(byoButton()) === "Join an agent" && !byoButton().disabled && /^\d+ of 3 agents of yours/.test(text(byoNote()))
     && text(byoNote()).includes("no new one; another instance or a replacement still"), "own agents: at the project's limit Add my agent stays for an instance, and says why " + (byoNote() && text(byoNote())));
   const byoFullPosts = [];
   const byoFullPost = win.Maity.api.post;
@@ -3958,9 +3958,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 4; k++) await tick(); await openAgentCards();
   const jpPanel = () => main.querySelector(".join-panel");
   const jpButton = () => main.querySelector("button.join-open");
-  expect(jpPanel() && jpPanel().hidden && jpButton() && !jpButton().hidden && text(jpButton()) === "+ Add an agent"
+  expect(jpPanel() && jpPanel().hidden && jpButton() && !jpButton().hidden && text(jpButton()) === "Join an agent"
     && main.querySelector(".agents-head") && main.querySelector(".agents-head").querySelector("button.join-open") === jpButton(),
-    "join: Agents has + Add an agent at its head, the panel closed");
+    "join: Agents has Join an agent at its head, the panel closed");
+  // tsk-mzaf9w83emn6: + Add an agent is the new profile's form; one form at a time, a Cancel gives the focus back.
+  const jpAdd = () => main.querySelector("button.agent-add-open");
+  expect(jpAdd() && !main.querySelector("form.agent-new") && text(jpAdd()) === "+ Add an agent", "join: + Add an agent at the head, its form closed");
+  jpAdd().click(); await tick();
+  expect(main.querySelector("form.agent-new") && jpAdd().hidden && jpPanel().hidden, "join: Add opens the new profile's form");
+  jpButton().click(); await tick();
+  expect(!main.querySelector("form.agent-new") && !jpAdd().hidden && !jpPanel().hidden && jpButton().hidden, "join: Join closes it and opens the panel");
+  jpAdd().click(); await tick();
+  expect(main.querySelector("form.agent-new") && jpPanel().hidden && !jpButton().hidden, "join: Add closes the panel again");
+  btn(main.querySelector("form.agent-new"), "Cancel").click(); await tick();
+  expect(!main.querySelector("form.agent-new") && !jpAdd().hidden, "join: Cancel closes the form");
   const jpProto = Object.getPrototypeOf(main);
   const jpFocus = jpProto.focus;
   jpProto.focus = function () { document.activeElement = this; };
@@ -4988,11 +4999,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "picture: the account has no agents of its own any more, a link to Your agents instead");
   // Your agents (/agents): every profile across projects, its memberships with instances, Add to a project.
   await go("#/agents"); for (let k = 0; k < 6; k++) await tick();
+  // All projects' tabs lead here and show here too (tsk-8sdgr8fbrn5v).
+  const agTabs = () => header.querySelectorAll("nav.views a");
+  expect(text(agTabs()[0]).startsWith("Inbox") && text(agTabs()[1]).startsWith("Chats") && text(agTabs()[2]) === "Agents" && agTabs().find((a) => text(a) === "Agents").getAttribute("aria-current") === "page"
+    && agTabs().find((a) => text(a) === "Agents").getAttribute("href") === "#/agents", "agents page: the Agents tab under All projects, current here");
   // A list like Members (tsk-05meme59sq1x): one row per profile, Manage opens what its card holds under it.
   const agRows = () => main.querySelectorAll("tr.agent-row");
-  expect(agRows().length >= 2 && !main.querySelector("li.agent-card") && main.querySelector("section.agents-join") && byId("agents-join-project")
+  expect(agRows().length >= 2 && !main.querySelector("li.agent-card") && main.querySelector("section.agents-join").hidden && byId("agents-join-project") && !main.querySelector("form.agent-new")
+    && main.querySelector(".agents-head button.agent-add-open") && text(main.querySelector(".agents-head button.join-open")) === "Join an agent"
     && agRows().every((tr) => tr.querySelector("button.agent-manage").getAttribute("aria-expanded") === "false"),
-    "agents page: Join an agent at the top, the profiles as rows, closed, each with Manage");
+    "agents page: Add and Join an agent at the head, their forms closed, the profiles as rows, closed, each with Manage");
   for (let guard = 0; guard < 10; guard++) {
     const closed = main.querySelectorAll("button.agent-manage").find((b) => b.getAttribute("aria-expanded") === "false");
     if (!closed) break;
@@ -5046,8 +5062,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(byId("agents-join-project").value === "maintainer/maity" && main.querySelector("section.agents-join .join-panel")
     && !main.querySelector("section.agents-join .join-panel").hidden, "agents page: ?project= chooses the project and opens its join panel");
   btn(main.querySelector("section.agents-join .join-panel"), "Cancel").click(); await tick();
+  expect(main.querySelector("section.agents-join").hidden && !main.querySelector(".agents-head button.join-open").hidden, "agents page: Cancel folds the join away, the button back");
+  main.querySelector(".agents-head button.join-open").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(!main.querySelector("section.agents-join").hidden && !main.querySelector("section.agents-join .join-panel").hidden, "agents page: Join an agent opens the form again");
+  main.querySelector(".agents-head button.agent-add-open").click(); await tick();
+  expect(main.querySelector("section.agents-join").hidden && main.querySelector("form.agent-new"), "agents page: Add an agent folds the join away");
+  // On a project's Agents a profile just made goes on to the join panel, chosen there.
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 6; k++) await tick();
+  main.querySelector("button.agent-add-open").click(); await tick();
+  byId("agent-new-handle").value = "fresh-here"; byId("agent-new-name").value = "Fresh Here"; main.querySelector("form.agent-new").dispatch("submit"); for (let k = 0; k < 10; k++) await tick();
+  const freshOption = byId("join-agent").querySelectorAll("option").find((o) => o.textContent.startsWith("Fresh Here"));
+  expect(!main.querySelector("form.agent-new") && !main.querySelector(".join-panel").hidden && freshOption && byId("join-agent").value === freshOption.getAttribute("value")
+    && text(main).includes("The profile @fresh-here was created."), "project agents: a profile made here opens the join panel with it chosen");
+  btn(main.querySelector(".join-panel"), "Cancel").click(); await tick();
   // A new profile, a refused handle, then a rename that keeps the old handle as an earlier one.
   await go("#/agents"); for (let k = 0; k < 6; k++) await tick();
+  main.querySelector(".agents-head button.agent-add-open").click(); await tick();
   byId("agent-new-handle").value = "Bad Handle"; byId("agent-new-name").value = "Bad"; main.querySelector("form.agent-new").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(text(main.querySelector("form.agent-new")).includes("Not created: handle:"), "agents page: a handle the hub refuses is said at the form");
   byId("agent-new-handle").value = "@helper"; byId("agent-new-name").value = " Helper "; main.querySelector("form.agent-new").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
@@ -7149,7 +7179,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 6; k++) await tick();
   const ivInvite = main.querySelector("a.members-invite-user"), ivJoin = main.querySelector("a.members-join-agent");
   expect(ivInvite && ivInvite.getAttribute("href") === "#/invite?project=maintainer%2Fmaity" && text(ivInvite) === "Invite user"
-    && ivJoin && ivJoin.getAttribute("href") === "#/agents?project=maintainer%2Fmaity" && !main.querySelector("section.invitations"),
+    && ivJoin && ivJoin.getAttribute("href") === "#/maintainer/maity/agents/join" && !main.querySelector("section.invitations"),
     "invite: Members has Invite user and Join agent at the top, and no invitation form of its own");
   await go("#/invite?project=" + encodeURIComponent("maintainer/maity")); for (let k = 0; k < 8; k++) await tick();
   const ivBox = () => main.querySelector("section.invitations");
@@ -7390,14 +7420,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const apAll = () => header.querySelectorAll("nav.switcher a").find((a) => a.getAttribute("href") === "#/all");
   const apCounts = win.Maity.notify.state.counts;
   const apCount = (a) => (a.querySelector(".count") ? text(a.querySelector(".count")) : "");
-  expect(apPages().length === 2 && apPages()[0].getAttribute("href") === "#/all" && text(apPages()[0]).startsWith("Inbox")
+  expect(apPages().length === 3 && apPages()[0].getAttribute("href") === "#/all" && text(apPages()[0]).startsWith("Inbox")
     && apPages()[1].getAttribute("href") === "#/chats" && text(apPages()[1]).startsWith("Chats")
     && apPages()[1].getAttribute("aria-current") === "page" && !apPages()[0].getAttribute("aria-current") && apAll().getAttribute("aria-current") === "page"
     && apCount(apPages()[1]) === (apCounts.chat ? String(apCounts.chat) : "") && apCount(apPages()[0]) === (apCounts.inbox ? String(apCounts.inbox) : "")
     && header.querySelector("nav.views").getAttribute("aria-label") === "Pages of all projects" && text(header.querySelector(".bar .project")) === "Everything waiting for you",
     "all projects: Chats is its second page, current, with the unread count; All projects stays current in the switcher " + JSON.stringify(apPages().map((a) => text(a))));
   await go("#/all"); for (let k = 0; k < 4; k++) await tick();
-  expect(apPages().length === 2 && apPages()[0].getAttribute("aria-current") === "page" && !apPages()[1].getAttribute("aria-current")
+  expect(apPages().length === 3 && text(apPages()[2]) === "Agents" && apPages()[2].getAttribute("href") === "#/agents" && apPages()[0].getAttribute("aria-current") === "page" && !apPages()[1].getAttribute("aria-current")
     && apAll().getAttribute("aria-current") === "page", "all projects: the Inbox is the first page, current on /all");
   // A refresh of the counts updates the pages' badges in place, in the fixture's #/ links too (#844's review).
   const apGet = win.Maity.api.get;

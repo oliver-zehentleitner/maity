@@ -549,7 +549,9 @@ window.Maity = window.Maity || {};
     // The members changed under an open panel (a rulebook saved on Agents):
     // the choice drawn again from them, the chosen agent and instance kept.
     const refresh = () => { if (!panel.hidden) showAgent(); };
-    return { open, close, seats, earlier, openCount, openAgents, reread, refresh };
+    // A profile made beside the panel (the Agents view's Add an agent): offered from now on.
+    const reprofile = async () => { profiles = await readProfiles(ctx); profileOptions(); };
+    return { open, close, seats, earlier, openCount, openAgents, reread, refresh, reprofile };
   }
 
   // On a page the router has not attached yet (a direct /<owner>/<slug>/agents/join), the
@@ -632,6 +634,7 @@ window.Maity = window.Maity || {};
       // A failed first read keeps its Try again.
       reread: () => (impl ? impl.reread() : Promise.resolve()),
       refresh: () => { if (impl) impl.refresh(); },
+      reprofile: () => (impl ? impl.reprofile() : Promise.resolve()),
       // An open panel holds a form being filled in or a line shown once: a
       // redraw of the view would lose either.
       busy: () => !panel.hidden,

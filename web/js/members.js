@@ -870,12 +870,12 @@ window.Maity = window.Maity || {};
     // The Chat button may start a group chat with anyone (§9.2).
     const groupsServed = !!M.groupChat;
     const ownHere = ctx.me.kind === "human" && items.some(ownAgent);
-    // Bringing someone in (the maintainer, 2026-10-31): a person on the invitations
-    // page, an agent on Your agents' Join an agent, each with this project chosen. A guest brings no agent (§3.1).
+    // Bringing someone in (the maintainer, 2026-10-31): a person on the invitations page with this project
+    // chosen, an agent on this project's Agents with the join panel open (2026-11-01). A guest brings no agent (§3.1).
     const inviteUser = ctx.canAdmin && ctx.me.kind === "human"
       ? h("a", { class: "button primary members-invite-user", href: "/invite?project=" + encodeURIComponent(ctx.slug) }, M.t("members.invite_user")) : null;
     const joinAgent = ctx.me.kind === "human" && !M.trust.guest(ctx)
-      ? h("a", { class: "button primary members-join-agent", href: "/agents?project=" + encodeURIComponent(ctx.slug) }, M.t("members.join_agent")) : null;
+      ? h("a", { class: "button primary members-join-agent", href: "/" + M.api.projectPath(ctx.slug) + "/agents/join" }, M.t("members.join_agent")) : null;
     append(root, M.teamTabs(ctx, "members"), h("h2", null, M.t("members.title")),
       inviteUser || joinAgent ? h("div", { class: "actions members-add" }, inviteUser, joinAgent) : null,
       h("p", { class: "muted" }, M.t("members.hint", { project: ctx.project.name || ctx.slug }),

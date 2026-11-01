@@ -1145,7 +1145,9 @@ a.bell:hover, .menu-button.bell:hover { border-color: var(--accent); }
 .ticker-sub, .ticker-post-box { margin-top: 16px; }
 
 /* Joining in Agents (js/join.js): the panel under the title, open joins as seats in the grid. */
-.agents-head .join-open { margin-inline-start: auto; min-height: 40px; }
+/* + Add an agent and Join an agent, the same at the head of /agents and of a project's Agents. */
+.agents-head-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-inline-start: auto; }
+.agents-head-actions button { min-height: 40px; }
 button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .agents-count { margin: -6px 0 12px; }
 .join-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
