@@ -1002,7 +1002,7 @@ def test_outside_a_clone_the_error_names_maity_state_dir(
     monkeypatch.chdir(tmp_path)
     with pytest.raises(state.StateError) as info:
         state.resolve_state_dir()
-    assert "export MAITY_STATE_DIR=~/.local/state/maity/<agent-handle>" in str(info.value)
+    assert state.state_dir_example("<agent-handle>") in str(info.value)
 
 
 def test_wait_batch_over_the_cap_comes_in_two_calls_each_event_once(

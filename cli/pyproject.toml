@@ -17,6 +17,7 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Programming Language :: Python :: 3",
     "Environment :: Console",
+    "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX",
 ]
 

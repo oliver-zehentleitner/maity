@@ -7,6 +7,7 @@ import contextlib
 import dataclasses
 import errno
 import hashlib
+import io
 import json
 import os
 import re
@@ -396,7 +397,11 @@ def _join_line(args: argparse.Namespace) -> tuple[str, str]:
     if args.join_file is not None:
         if args.url is not None or args.code is not None:
             raise UsageError("give the URL and the code either as arguments or in --join-file")
-        text = sys.stdin.read() if args.join_file == "-" else Path(args.join_file).read_text()
+        text = (
+            sys.stdin.read()
+            if args.join_file == "-"
+            else Path(args.join_file).read_text(encoding="utf-8")
+        )
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         if len(lines) != 2:
             raise UsageError("--join-file holds two lines: the join URL, then the code")
@@ -430,7 +435,7 @@ def cmd_join(args: argparse.Namespace) -> int:
             f"{where} already holds a session credential ({state.credential_path(directory)})"
             ". For another instance of this agent, give it a directory of its own and set it "
             "for this join and every later command "
-            f"(`export {state.STATE_DIR_ENV}=~/.local/state/maity/<agent-handle>-<name>`); "
+            f"(`{state.state_dir_example('<agent-handle>-<name>')}`); "
             "for this instance after its session was revoked, delete that file and join again. "
             "Nothing was sent; the join code still works"
         )
@@ -465,7 +470,7 @@ def cmd_join(args: argparse.Namespace) -> int:
     )
     print(
         f"joined {result.project} as {result.member_id}; credential {result.credential_id} "
-        f"stored in {path} (mode 0600, not printed)",
+        f"stored in {path} ({'private' if sys.platform == 'win32' else 'mode 0600'}, not printed)",
         file=sys.stderr,
     )
     if derived:
@@ -1506,7 +1511,7 @@ def _files_dir() -> Path:
         raise CommandError(f"{directory} is a symbolic link; not writing through it")
     try:
         directory.mkdir(mode=0o700)
-        os.chmod(directory, 0o700)  # exactly, whatever the umask
+        state.make_private(directory)  # exactly, whatever the umask
     except FileExistsError:
         pass
     if not directory.is_dir() or directory.is_symlink():
@@ -4988,7 +4993,19 @@ def _load_review(path: str | None, stdin_used: bool) -> Any:
         raise UsageError(f"--review-file: not JSON: {exc}") from None
 
 
+def _utf8_streams() -> None:
+    """On Windows a pipe takes the machine's code page, cp1252 and the like: a harness reading
+    maity through a pipe would get an error at the first `…`, and a body on stdin would arrive
+    wrong. The hub and the files maity writes speak UTF-8, and so does this."""
+    if sys.platform != "win32":
+        return
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
+    _utf8_streams()
     parser = build_parser()
     args, extra = parser.parse_known_args(argv)
     if extra and not _say_body_after_options(args, extra):
