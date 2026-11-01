@@ -743,10 +743,11 @@ window.Maity = window.Maity || {};
       append(mentionHint, "In this chat @" + found[2] + " notifies nobody. ",
         h("a", { href: ctx.link("message", "@" + found[2]) }, "Write a project message to draw them in"), ".");
     }
-    text.addEventListener("input", () => {
+    const typedInChat = () => {
       if (text.value.trim()) drafts.set(key, text.value); else drafts.delete(key);
       hintMention();
-    });
+    };
+    text.addEventListener("input", typedInChat);
     hintMention();
     const status = M.statusLine();
     const button = h("button", { type: "submit", class: "primary" }, "Send");
@@ -815,7 +816,7 @@ window.Maity = window.Maity || {};
       pollStatus.el,
       append(composeForm,
         composeHead(composeForm, text, h("label", { for: "chat-text" }, "Message", h("span", { class: "visually-hidden" }, " (" + M.dom.SEND_KEYS + " sends)"))),
-        text, mentionHint, files0 ? files0.el : null, actionRow(files0, button, meat), status.el));
+        text, M.projectMentionPicker(ctx, text, { onPick: typedInChat }), mentionHint, files0 ? files0.el : null, actionRow(files0, button, meat), status.el));
     // Sizing, scrolling and focus need the view in the page, which the
     // router does once this function has returned.
     window.setTimeout(() => {

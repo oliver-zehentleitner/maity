@@ -348,7 +348,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && text(box).includes("ask @agent-b") && !box.querySelector("a.mention"),
       "markdown: a stored mention inside a link or a fence's info string stays as written, no placeholder, no member link " + JSON.stringify(hrefs));
   }
+  // The @ picker on a field: what it offers for what is typed.
+  const picksOn = async (field, typed) => {
+    field.focus(); field.value = typed; field.dispatch("input"); for (let k = 0; k < 6; k++) await tick();
+    const list = field.parentNode.querySelector(".mention-list");
+    return list && !list.hidden ? list.querySelectorAll("li .mention-handle").map((x) => x.textContent) : [];
+  };
   const freeText = hashEntry.querySelector(".free-text textarea");
+  {
+    // Ctrl+Enter sends; with the list open it does not also pick.
+    freeText.value = "Ask @age"; freeText.dispatch("input"); await tick(); await tick();
+    freeText.dispatch("keydown", { key: "Enter", ctrlKey: true }); await tick();
+    expect(freeText.value === "Ask @age", "mentions: Ctrl+Enter does not pick " + freeText.value);
+    freeText.value = ""; freeText.dispatch("input"); await tick();
+  }
   const pickList = hashEntry.querySelector(".mention-list");
   const options = () => pickList.querySelectorAll("li").map((li) => li.querySelector(".mention-handle").textContent);
   freeText.value = "Ask @age"; freeText.dispatch("input"); await tick(); await tick();
@@ -2142,6 +2155,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(nf && btn(main, "New card").getAttribute("aria-expanded") === "true" && byId("new-card-assigned"), "board: New card opens the form; an admin may assign");
   nf.dispatch("submit"); await tick();
   expect(!bWrites.some((w) => w[1] === "/projects/maintainer/maity/tasks") && text(main).includes("Not created: the card needs a title"), "board: no card without a title");
+  expect((await picksOn(byId("new-card-body"), "@agent-a")).includes("@agent-a"), "mentions: a new card's text offers the members");
+  byId("new-card-body").value = ""; byId("new-card-body").dispatch("input");
   byId("new-card-title").value = "Web: a card from the board";
   byId("new-card-area").value = "web/board/";
   byId("new-card-status").value = "open";
@@ -2814,6 +2829,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   }
   // From a chat: an @name there tells nobody; the hint offers a project message with it.
   await go("#/maintainer/maity/chat/agt-d");
+  {
+    // A direct chat offers the members too; a pick keeps the draft and the hint that a mention tells nobody here.
+    const dmText = byId("chat-text");
+    const dmWas = dmText.value;
+    expect((await picksOn(dmText, "Ask @agent-b")).includes("@agent-b"), "mentions: a direct chat offers the members");
+    dmText.dispatch("keydown", { key: "Enter" }); await tick();
+    expect(dmText.value === "Ask @agent-b " && text(main.querySelector(".mention-hint")).includes("@agent-b"), "mentions: the pick reaches the chat's hint " + dmText.value);
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/agt-d");
+    expect(byId("chat-text").value === "Ask @agent-b ", "mentions: the pick reaches the chat's draft " + byId("chat-text").value);
+    byId("chat-text").value = dmWas; byId("chat-text").dispatch("input");
+  }
   const chatText = byId("chat-text");
   const hintEl = () => main.querySelector(".mention-hint");
   expect(hintEl() && hintEl().hidden, "message: no hint while the chat has no @name");
@@ -3350,6 +3376,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     .el.querySelectorAll(".card-links li").map((li) => text(li));
   expect(JSON.stringify(cpLinks) === JSON.stringify(["Pull request acme/widget#7: Add the API (merged)", "Issue acme/widget#8", "The spec"]),
     "card panel: the links in words, a pull request with its observed title and state " + JSON.stringify(cpLinks));
+  expect((await picksOn(byId("card-note-body"), "@agent-a")).includes("@agent-a"), "mentions: a note offers the members");
+  byId("card-note-body").value = ""; byId("card-note-body").dispatch("input");
   byId("card-note-body").value = "  "; cpPanel().querySelector("form.card-note-form").dispatch("submit"); await tick();
   expect(!cpPosts.length, "card panel: an empty note is not sent");
   byId("card-note-body").value = "Check §6.16 too."; cpPanel().querySelector("form.card-note-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
@@ -6066,6 +6094,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     return f;
   };
   await go("#/maintainer/maity/chat/cnv-0007");
+  {
+    // A group chat offers its participants alone: the hub resolves a mention against them only (§8.6).
+    const gcView = await win.Maity.api.get("/projects/maintainer/maity/conversations/cnv-0007");
+    const inChat = gcView.participants.map((p) => "@" + p.handle);
+    const offered = await picksOn(byId("chat-text"), "@");
+    expect(offered.length > 0 && offered.every((o) => inChat.includes(o.split("#")[0])) && !offered.includes("@maintainer"), "mentions: a group chat offers its participants, not the reader " + JSON.stringify(offered) + JSON.stringify(inChat));
+    byId("chat-text").value = ""; byId("chat-text").dispatch("input");
+  }
   win.Maity.chatParts.follower = gfReal;
   expect(gfOpened.length === 1 && gfOpened[0] && gfOpened[0].className === "new-line", "group chat: it opens at the first unread message");
   expect(main.querySelector(".group-chat form.compose .compose-actions button.meat-chat-toggle"), "meat proxy: a group chat's participant has the switch too");

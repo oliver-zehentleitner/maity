@@ -302,7 +302,7 @@ window.Maity = window.Maity || {};
     h("h3", null, parent ? M.t("cards.new.subtask_title") : M.t("cards.new.title")),
     parent ? h("p", { class: "muted new-card-parent" }, M.t("cards.new.subtask_of", { id: parent.id }), " · " + parent.title) : null,
     h("label", { for: id("title") }, M.t("cards.new.field.title")), title,
-    h("label", { for: id("body") }, M.t("cards.new.field.body", { keys: M.dom.SEND_KEYS })), body,
+    h("label", { for: id("body") }, M.t("cards.new.field.body", { keys: M.dom.SEND_KEYS })), body, M.projectMentionPicker(ctx, body),
     h("label", { for: id("kind") }, M.t("cards.new.field.kind")), kind,
     h("label", { for: id("label") }, M.t("cards.new.field.label")), label,
     h("label", { for: id("needs") }, M.t("cards.new.field.needs")), needs,

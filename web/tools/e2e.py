@@ -2365,6 +2365,12 @@ def board_order_step(run: Run, page: Page) -> None:
     for title in ("E2E order: first", "E2E order: second"):
         page.get_by_role("button", name="New card", exact=True).click()
         page.locator("#new-card-title").fill(title)
+        if title.endswith("first"):
+            # The @ picker on a card's text.
+            page.locator("#new-card-body").press_sequentially("for @e2e-ag")
+            expect(page.locator("form.new-card .mention-list li").first).to_be_visible()
+            page.locator("#new-card-body").press("Enter")
+            expect(page.locator("#new-card-body")).to_have_value("for @e2e-agent ")
         page.locator("#new-card-status").select_option("open")
         page.locator("form.new-card").get_by_role("button", name="Create card", exact=True).click()
         expect(view.locator(".send-status").first).to_contain_text("created in open")
@@ -2508,6 +2514,13 @@ def message_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     # In a private chat an @name tells nobody: the hub resolves nothing there.
     wait = run.wait_start(alpha)
     page.goto(f"{run.base}/owner/e2e-alpha/chat/{agent_id}")
+    # The @ picker as in the inbox; a pick reaches the hint below.
+    page.locator("#chat-text").press_sequentially("Ask @e2e-ag")
+    expect(page.locator("form.compose .mention-list li").first.locator(".mention-handle")).to_have_text("@e2e-agent")
+    run.a11y(page, "chat, the @ list open")
+    page.locator("#chat-text").press("Enter")
+    expect(page.locator("#chat-text")).to_have_value("Ask @e2e-agent ")
+    expect(page.locator(".mention-hint")).to_contain_text("In this chat @e2e-agent notifies nobody.")
     page.locator("#chat-text").fill("Ask @e2e-agent about it later.")
     hint = page.locator(".mention-hint")
     expect(hint).to_contain_text("In this chat @e2e-agent notifies nobody.")

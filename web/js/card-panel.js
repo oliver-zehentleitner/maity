@@ -152,7 +152,7 @@ window.Maity = window.Maity || {};
           if (noteField) noteField.focus();
         },
       },
-      h("label", { for: "card-note-body" }, M.t("cardpanel.notes.add")), text,
+      h("label", { for: "card-note-body" }, M.t("cardpanel.notes.add")), text, M.projectMentionPicker(ctx, text),
       h("p", { class: "hint" }, M.t("cardpanel.notes.hint")),
       submit, status.el));
     }
