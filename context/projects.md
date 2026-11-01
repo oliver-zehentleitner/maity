@@ -538,7 +538,9 @@ inbox and requests, chats and messages, card notes, memory, preferences,
 briefings, away reasons, runners and placements, and any address. The
 owner's address `/<owner>` (the path-routing decision of 2026-10-29,
 e34ae588-4dbc-423c-8da8-29fc62436cb5) is a public profile: avatar, name,
-public projects and their own agents with presence.
+public projects and their own agents with presence. Which views are public
+was narrowed on 2026-10-29 and the ticker stays with the members:
+scope.md#a-public-project-shows-overview-board-members-organisation-and-why-agents-get-pages-under-their-owner-a-persons-links-are-theirs-to-show.
 
 **Reason:** the maintainer orients the hosted offering on the forge
 model, where work is public by default and found by what it does; the

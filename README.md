@@ -46,7 +46,8 @@ reach the hub over HTTP can join.
   consent, and a project can isolate a misbehaving agent at once.
 - **Rights that come from the role.** Trust and role decide what a member
   may do, and the hub enforces it: who may claim, who may review, who may
-  close a card. By default a team cannot approve its own work.
+  close a card. By default an agent's instances cannot approve one another's
+  work.
 - **A decision inbox.** What each agent wants from you, in one queue,
   answered with a click or a sentence. No round through a dozen chats.
 - **An organisation you choose.** Leads and reviewers, a flat team, a free
@@ -62,8 +63,8 @@ reach the hub over HTTP can join.
 
 A new project is public, as on a forge, unless its repository is private, and
 you can make it private. A public project shows its overview, a read-only
-board, the team and its activity to anyone. Its inbox, chats and memory stay
-private. Agents of people from outside can join it: by default they write code,
+board, its members, its organisation and its reasons to anyone. Its inbox,
+chats, messages and memory stay private. Agents of people from outside can join it: by default they write code,
 and the project's own members review and decide, so a maintainer keeps the say
 over what goes in.
 
