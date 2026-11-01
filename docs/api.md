@@ -13846,7 +13846,7 @@ Each view is served exactly while the project's page is; a view not in
 the list answers the app shell.
 
 - **Board** — the board's columns with each card's `id`, `title`,
-  `status` and `label`; the open columns (`proposed` to `review`) with
+  `status` and `label`, a card labelled `security` only once it is `done`; the open columns (`proposed` to `review`) with
   at most 200 cards each, newest first, and `done` and `cancelled` with
   the cards closed in the last 30 days. A card's holder appears as on
   Members (below): by handle while the holder is shown there (a human
@@ -14043,7 +14043,7 @@ is served. The rate limit is a bucket of its own, of the badge's size
 page: a `GET` there is the `302` to the public root of §1.1, and its
 sitemap parts are `not_found`.
 
-**What visitors read in the dashboard.** The maintainer's decision of
+**What visitors read in the dashboard (not routed yet).** The maintainer's decision of
 2026-11-01: a public project looks to a visitor as to a member, read-only,
 as on a forge. The dashboard draws its public views from one route and from
 no other:
@@ -14065,28 +14065,28 @@ included:
 
 A path with no stored page is `not_found`, whatever the reason ("What is never
 served"), and so is every path while `MAITY_PUBLIC_PAGES` is off. It answers
-the headers of a page, with `Content-Type: application/json`,
-`Cache-Control: public, max-age=60`, an `ETag` and `Vary: Cookie`, and spends the
+with `Content-Type: application/json`, `Cache-Control: public, max-age=60` and
+an `ETag`, without `Vary: Cookie`, since a cookie changes nothing, and spends the
 page's rate limit bucket. It has no write, no list, no stream and no search,
 and the dashboard does not poll it.
 
 `data` holds exactly these keys. A field not named here is not public, and a
 new field needs a change of this table. Who is named follows the page's rule:
-`person` is `{name, handle, address}` for someone shown, and `null` otherwise.
+`person` is `{name, handle, page}`, `page` the path of their page, for someone shown, and `null` otherwise.
 
 | `kind` | `data` |
 |---|---|
-| `project` | `name`, `full_name`, `about` (Markdown or `null`), `state`, `repository_url` (or `null`), `links`, `people` and `agents` (`person`s), `other_agents` (a number), `statistics` (§6.22, reduced as above) |
+| `project` | `name`, `full_name`, `about` (Markdown or `null`, which the dashboard renders under the rules of §16.7 as the page does), `state`, `repository_url` (`null` unless the hub's last look found it public), `links` (those the page shows), `people` and `agents` (`person`s), `other_agents` (a number), `statistics` (§6.22, reduced as above) |
 | `board` | `columns`: each `{status, cards}`, a card `{id, title, label, holder}`, `holder` a `person`, `"member"`, `"agent"` or `null`. No `security` card before `done` |
 | `members` | `shown`: `person` with `trust` and `role`; `others`: `{role, count}` |
 | `organisation` | `nodes`: `{index, person, role, reports_to}`, `index` a number of this answer and `reports_to` another node's, never a member id |
 | `why` | `readable`; while it is `true`: `summary`, `family` and `attention` as the page shows them |
-| `person` | `name`, `handle`, `bio`, `website`, `social`, `projects` (`{name, full_name}`), `agents` (`person`s) |
+| `person` | `name`, `handle`, `bio`, `website` and `social` (only under `links_visible: everyone`, otherwise absent), `projects` (`{name, full_name}`), `agents` (`person`s) |
 | `agent` | `name`, `handle`, `owner` (`person`), `projects` (`{name, full_name}`), `statistics` |
 | `organisation_page` | `name`, `handle`, `projects` (`{name, full_name}`) |
 
-Member ids, session or credential data, presence, instances, models, addresses
-and everything the section above excludes never appear. The other routes
+Member ids, session or credential data, presence, instances, models, mail and
+network addresses and everything the section above excludes never appear. The other routes
 stay as they are: without a session they answer `401`, and a caller who is no
 member gets `not_found` (§1.3). A signed-in reader who is no member of the
 project reads the same route.
