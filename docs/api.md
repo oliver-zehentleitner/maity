@@ -2939,8 +2939,8 @@ Response `201`:
   "join_url": "https://join.maity.team/9fK2…",
   "code": "Q7MD-3XPL-8ZWE",
   "paste_lines": {
-    "posix": "export PATH=\"$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}\" && { command -v maity >/dev/null 2>&1 || pipx install maity; } && maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE",
-    "windows": "$env:Path += \";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR } else { \"$HOME\\.local\\bin\" })\"; if (-not (Get-Command maity -ErrorAction SilentlyContinue)) { pipx install maity }; maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE"
+    "posix": "export PATH=\"$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}\" && { command -v maity >/dev/null 2>&1 || { pipx install maity; }; } && maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE",
+    "windows": "$env:Path += \";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR } else { \"$HOME\\.local\\bin\" })\"; if (-not (Get-Command maity -ErrorAction SilentlyContinue)) { pipx install maity }; if (Get-Command maity -ErrorAction SilentlyContinue) { maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE }"
   },
   "agent_id": "agt-b",
   "project": "oliver/maity",
@@ -2955,7 +2955,8 @@ without a join host it is `https://maity.team/join/9fK2…` as before. The
 token is valid in both shapes whatever `via` says. `paste_lines` holds
 the command that installs the CLI if it is missing and joins, once per
 platform, as §3.2 "The install line" builds it: `posix` for a shell on
-Linux or macOS, `windows` for PowerShell. A fresh machine needs nothing
+Linux or macOS, `windows` for PowerShell, or `null` where the instance's
+install line cannot run there. A fresh machine needs nothing
 first. The hub answers both because the code appears only here, so the
 dashboard can offer the choice without asking again. `join_url`, `code`
 and `paste_lines` appear in this response only. `GET` lists `{id, agent_id, trust, role,
@@ -3132,8 +3133,8 @@ exchange needs no install at all.
 The join line is that install line, run only when `maity` is missing,
 and `maity join` in one command, so that a fresh machine needs nothing
 first and a machine that has the CLI installs nothing:
-`{ command -v maity >/dev/null 2>&1 || <install line>; } && maity join
-<url> --code <code>`. The dashboard's join dialog shows it as
+`{ command -v maity >/dev/null 2>&1 || { <install line>; }; } && maity
+join <url> --code <code>`. The dashboard's join dialog shows it as
 `paste_lines.posix` (§3.1); the join page's item 7 and `/help` show the
 same shape with the placeholder `<code>`, since neither ever contains a
 code. pipx puts `maity` into its bin directory, `~/.local/bin` unless
@@ -3148,10 +3149,17 @@ means the current directory.
 
 `paste_lines.windows` is the same command for PowerShell:
 `if (-not (Get-Command maity -ErrorAction SilentlyContinue)) { <install
-line> }; maity join <url> --code <code>`, with `;` because Windows
-PowerShell 5.1 has no `&&`. When the install line starts with `pipx `, it
-begins with `$env:Path += ";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR }
-else { "$HOME\.local\bin" })"; `. `cmd.exe` gets no line of its own. For later shells the page, `/help` and `maity join`'s own output
+line> }; if (Get-Command maity -ErrorAction SilentlyContinue) { maity join
+<url> --code <code> }`, with `;` because Windows PowerShell 5.1 has no
+`&&`, and the second check because `;` would run the join after a failed
+install, and the code would land in the error message and in `$Error`.
+When the install line starts with `pipx `, it begins with
+`$env:Path += ";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR } else {
+"$HOME\.local\bin" })"; `. `MAITY_CLI_INSTALL` is written for a POSIX
+shell, so `windows` exists only when it is a single command with no shell
+operators (none of `&`, `|`, `;`, `<`, `>`, `$`, a backtick, or
+parentheses), and is `null` otherwise; the dashboard then offers no
+Windows line. `cmd.exe` gets no line of its own. For later shells the page, `/help` and `maity join`'s own output
 add one sentence: if `maity` is not found, run `pipx ensurepath` once
 and open a new shell. The line changes no shell profile itself.
 
