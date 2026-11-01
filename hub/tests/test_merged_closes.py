@@ -10,7 +10,7 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
 from maity_hub import events, forge, probe
 from maity_hub import tables as t
@@ -109,6 +109,54 @@ def test_a_sweep_sees_the_merge_of_a_report_first_observed_open(
     reads = len(github.calls)
     probe.sweep(migrated, READER)  # a merged report has nothing more to say
     assert [c for c in github.calls[reads:] if "/pulls/7" in c] == []
+
+
+def test_reports_last_seen_open_are_read_oldest_first_after_everything_else(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    github: FakeGitHub,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(probe, "MAX_AGE", 0)
+    monkeypatch.setattr(probe, "REREAD_PER_ROUND", 2)
+    github.pull(7)
+    cards = [_reported(owner, make_client)[1] for _ in range(3)]
+    never = _reported(owner, make_client)[1]
+    ages = dict(
+        zip(
+            cards,
+            ("2026-10-03T00:00:00Z", "2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z"),
+            strict=True,
+        )
+    )
+    with migrated.begin() as conn:
+        for card_id, at in ages.items():
+            report = conn.execute(
+                select(t.card.c.report).where(t.card.c.id == card_id)
+            ).scalar_one()
+            observed = {"pr_state": "open", "observed_at": at}
+            conn.execute(
+                update(t.card)
+                .where(t.card.c.id == card_id)
+                .values(report={**report, "observed": observed})
+            )
+    jobs: list[tuple[str, str]] = []
+
+    def job(name: str) -> Any:
+        return lambda _engine, _fg, ref, *_: jobs.append((name, ref))
+
+    monkeypatch.setattr(probe, "observe_report", job("report"))
+    monkeypatch.setattr(probe, "observe_release", job("release"))
+    monkeypatch.setattr(probe, "observe_links", job("links"))
+    probe.sweep(migrated, READER)
+    assert jobs == [
+        ("report", never),
+        ("release", jobs[1][1]),
+        ("links", jobs[2][1]),
+        ("report", cards[1]),  # the oldest
+        ("report", cards[2]),
+    ]
 
 
 def test_auto_under_holder_closes_the_card_itself(
