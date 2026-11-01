@@ -121,6 +121,16 @@ def errors_behind(error: BaseException) -> Iterator[Exception]:
         earlier = earlier.__context__
 
 
+def driver_fields(error: Exception) -> str:
+    """What the log says of a database error: codes and numbers, never the driver's text. On
+    PostgreSQL only `code` is set."""
+    behind = ",".join(
+        str(driver_number(earlier) or driver_code(earlier)) for earlier in errors_behind(error)
+    )
+    number = driver_number(error) or "-"
+    return f"code={driver_code(error) or '-'} number={number} behind={behind or '-'}"
+
+
 # What a connection failure can be, found by phrases the drivers use. Nothing of the driver's text
 # is kept: the category is chosen from this list and only its name is logged, so a password, a
 # user, a host or a connection string in the text cannot reach the log, whatever escaping it uses.
@@ -190,11 +200,9 @@ def install(app: FastAPI) -> None:
         # Connection-level failures. The client never gets the driver's text (§1.3); the log gets it
         # masked, because without the cause a burst of these cannot be told apart.
         log.error(
-            "database unavailable: %s %s number=%s behind=%s %s",
+            "database unavailable: %s %s %s",
             type(error).__name__,
-            driver_code(error),
-            driver_number(error),
-            ",".join(str(driver_number(behind)) for behind in errors_behind(error)) or "-",
+            driver_fields(error),
             driver_reason(error),
         )
         return error_response(503, "database_unavailable", "the database is unreachable")

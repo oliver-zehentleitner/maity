@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 from collections.abc import Callable
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from sqlalchemy import Engine, insert, select, update
 from sqlalchemy.exc import OperationalError
 
+from maity_hub import errors as hub_errors
 from maity_hub import tables as t
 from maity_hub.db import RETRIES, retrying
 
@@ -134,3 +138,37 @@ def test_a_real_deadlock_inside_a_savepoint_is_run_again(migrated: Engine) -> No
     for thread in threads:
         thread.join(30)
     assert results == ["done", "done"]
+
+
+def test_each_repeat_logs_a_line_with_the_codes_and_no_statement(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    deadlock = OperationalError("SELECT secret FROM t", {"p": "secret"}, _Deadlock())
+    with caplog.at_level(logging.WARNING, logger="maity_hub.db"):
+        assert retrying(_raising([deadlock, _gone_after(_Deadlock())])) == "done"
+    assert [r.getMessage() for r in caplog.records if r.name == "maity_hub.db"] == [
+        "database retry: attempt=1 of=4 code=40001 number=- behind=-",
+        "database retry: attempt=2 of=4 code=42000 number=1305 behind=40001",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("error", "fields"),
+    [
+        (_gone_after(_Deadlock()), "code=42000 number=1305 behind=40001"),
+        (OperationalError("s", {}, _SavepointGone()), "code=42000 number=1305 behind=-"),
+    ],
+)
+def test_the_failure_line_gives_the_codes(
+    error: OperationalError, fields: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    app = FastAPI()
+    hub_errors.install(app)
+
+    @app.get("/")
+    def fail() -> None:
+        raise error
+
+    client = TestClient(app, raise_server_exceptions=False)
+    assert client.get("/").status_code == 503
+    assert any(fields in r.getMessage() for r in caplog.records)
