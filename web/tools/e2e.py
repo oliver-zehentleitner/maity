@@ -2975,7 +2975,7 @@ def site_json_step(run: Run, page: Page) -> None:
     languages = list(template["landing"]["pages"])
     assert len(languages) == 10 and set(languages) == set(next(iter(template["legal"].values()))["languages"]), languages
     page.evaluate("Maity.api.patch('/admin/settings/landing', { enabled: true })")
-    visitor = page.context.browser.new_context()
+    visitor = page.context.browser.new_context(viewport={"width": 390, "height": 844})
     seen = visitor.new_page()
     for tag in languages:
         for address in ("/", "/impressum", "/privacy", "/terms"):
@@ -2984,6 +2984,10 @@ def site_json_step(run: Run, page: Page) -> None:
             assert seen.locator("html").get_attribute("lang") == tag, f"{address} in {tag}: another language"
             body = seen.locator("body").inner_text()
             assert "{{" not in body, f"{address} in {tag}: a placeholder is left"
+            wide = seen.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+            assert wide <= 0, f"{address} in {tag}: {wide} px wider than a phone"
+            if address == "/" and tag in ("ja", "ko", "zh-Hans"):
+                run.shot(seen, f"site-{tag}-phone")
             if address == "/":
                 assert seen.locator(".site-footer .langs a").count() == 10, f"the language bar in {tag}"
             else:
