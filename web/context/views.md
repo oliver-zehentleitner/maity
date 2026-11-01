@@ -2790,6 +2790,53 @@ passwordless account. A modal dialog: the dashboard has none, and a
 slot in place keeps the focus and the context where the human was.
 
 
+## The second step of a sign-in is a page of its own for both ways; the mail's link is posted from the page
+
+**Id:** 4fdf4cc1-e916-44d7-9064-5b07989b0d06
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §2.8.2 (the second-factor session reaches only `GET /auth/session`, the verify, the mail's resend and the logout), §2.8.7 and §2.8.8 after the contract #925 and the hub's first part #943 (`via: email`, `mail`, the link `/sign-in/second-factor/email#<token>` bound to the signing-in browser, the step-up by a mailed code); the coordinator's card tsk-ekpb0pvgw4bh and the lead's answers of 2026-11-01 (the step for both ways in this change, TOTP enrolment and the security page on tsk-94jtz06aps4b; `address_hint` to come with the hub's second part, "your address" until then; Admin → Sign-in in a second web change); the page's shape is the implementer's, 2026-11-01
+**See:** views.md#a-sensitive-call-asks-for-the-password-or-a-code-where-it-stands-then-is-made-again — bddf61cb-f6a0-4290-891f-2f3b3006946d — as of 2026-11-01
+**Revisit when:** the hub sends `address_hint` (drop "your address"), Admin → Sign-in can switch the mail factor on, TOTP enrolment gets its page (tsk-94jtz06aps4b), or the e2e gets a hub with a secret key and a mail catcher
+
+A session that owes the second factor (`GET /auth/session` answers
+`second_factor: "required"`) gets one page and nothing else
+(`js/second-factor.js`): with `via: totp` a field for the app's code or
+a recovery code (six digits, spaces ignored, are a code); with `via:
+email` the mail's state in words (sent, to `address_hint` or "your
+address"; the next mail's wait when rate-limited; unavailable), a field
+for the mailed code and **Send again**, which reads the session again
+for what the hub says of the new mail. **Sign out and start again**
+ends it. The mail's link lands on
+`/sign-in/second-factor/email#<token>`: the page reads the token from
+the fragment (the query `?token=` in fixture mode), drops it from the
+address and posts it at once. A browser without that session, or one
+already signed in, gets the contract's sentence on where to open the
+link instead. The step-up asks `GET /auth/second-factor` when the hub
+wants the factor: a human whose `via` there is `email` is mailed
+a code as the question opens, with Send again, and types it
+(`email_code`); everyone else keeps the app's code.
+
+**Reason:** the dashboard had no second step at all, for TOTP neither;
+both ways run in the same second-factor session, so one page serves
+both. The mail's token completes only the sign-in of the browser that
+asked for it, so posting it without a tap gives nobody anything; a tap
+would only add a step to the one place where the human has just
+clicked a link for exactly this.
+
+**Rejected alternative:** a step for the mail alone, leaving an
+enrolled human at a session that reaches nothing. A confirm button
+before posting the link's token, as the device code has: the device
+code approves another browser's sign-in, the token only this one's.
+Trying the app's code first at a step-up and falling back to the mail
+after a failure: one wrong code counts toward the limit (§2.8.6) and
+says nothing a read of `GET /auth/second-factor` does not. The e2e
+runs neither way: its hub has no `MAITY_SECRET_KEY`, which TOTP needs
+and which the forge step checks is missing, and no mail settings; the
+step for both ways, the link, the page elsewhere and the step-up by
+mail are in smoke.
+
 ## Organisations live under the account: `/account/orgs`, not `/orgs`
 
 **Id:** 73999dde-dbb6-4982-a448-e1441e7a5b6b
