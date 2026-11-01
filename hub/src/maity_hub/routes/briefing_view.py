@@ -40,9 +40,11 @@ from maity_hub.views import isolated, paused
 
 router = APIRouter(route_class=ProjectRoute)
 
-KEEP_THE_WHY = ("enabled", "instruction", "skill", "config", "personal_defaults")
+KEEP_THE_WHY = ("skill", "config", "personal_defaults", "enabled")
+COMMITMENT = ("commitment", "acknowledged_at", "acknowledge_by", "ack")
 SOUL_OUTLINE = ("version", "by", "confirmed_by", "updated_at")
-TEXT = "markdown"
+# Never "all but the text": `proposed_by` can name a project the reader is no member of.
+PREFERENCES_OUTLINE = ("human", *SOUL_OUTLINE)
 
 
 def briefing_block(conn: Connection, project: Any, row: Any) -> dict[str, Any]:
@@ -65,7 +67,7 @@ def _caller_membership(conn: Connection, caller: Caller, slug: str) -> Membershi
 
 
 def _outline(text: dict[str, Any] | None) -> dict[str, Any] | None:
-    return None if text is None else {k: v for k, v in text.items() if k != TEXT}
+    return None if text is None else {k: text[k] for k in PREFERENCES_OUTLINE if k in text}
 
 
 def _preferences(block: dict[str, Any], caller: Caller) -> dict[str, Any]:
@@ -185,7 +187,7 @@ def _view(
     ).first()
     waiting = setup_cards.waiting(conn, project.id)
     check_in = onboarding.hint(conn, project, target)
-    loading = ktw_skill.loading_block(project, settings)
+    loading = ktw_skill.loading_block(project, settings, credential)
     return {
         **head,
         **({"onboarding": check_in} if check_in else {}),
@@ -210,7 +212,7 @@ def _view(
         "preferences": _preferences(texts, caller),
         **({"setup": waiting} if waiting else {}),
         "keep_the_why": {
-            **{key: loading[key] for key in KEEP_THE_WHY if key in loading},
+            **{key: loading[key] for key in (*KEEP_THE_WHY, *COMMITMENT) if key in loading},
             "instruction": rules.KEEP_THE_WHY if project.keep_the_why else None,
         },
         "memory": _memory(conn, told, agent.id, reader, owns),

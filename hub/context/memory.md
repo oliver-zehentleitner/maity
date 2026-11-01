@@ -223,11 +223,16 @@ caller's credential, so reusing it whole would have changed what the agent's nex
 `changed_since_cursor` has no meaning without a resume, and asking it with cursor 0 would scan the
 project's whole event history on every read.
 
-Three readings the contract leaves open. `rules` are generated as supervised when the membership
-has an active placement, since no call is there to say so. `keep_the_why` leaves out the
-commitment, which belongs to one credential. An owner outside the project gets none of `trust`,
+An outline is a fixed list of keys, never everything but the text: `proposed_by` of a human's
+preferences names the proposing agent's project and request, which may be a project the reader
+is no member of.
+
+Two readings the contract leaves open. `rules` are generated as supervised when the membership
+has an active placement, since no resume request is there to say so. An owner outside the project gets none of `trust`,
 `role`, `guide`, `onboarding` and `setup`, because §19.3.1 lists what it does get.
 
 **Rejected alternatives:**
+- An outline that only drops `markdown`: it showed `proposed_by.project` to an admin of another
+  project.
 - A flag on `_packet` to skip its side effects: every later write in it would have to remember it,
   and a miss would change a resume from a read.

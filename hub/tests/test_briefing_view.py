@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, func, select, update
 
-from maity_hub import rules
+from maity_hub import commitment, rules
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -163,3 +163,43 @@ def test_the_keep_the_why_instruction_is_the_one_the_agent_gets(
         conn.execute(update(t.project).values(keep_the_why=enabled))
     block = _read(owner, agent.id).json()["keep_the_why"]
     assert block["instruction"] == (rules.KEEP_THE_WHY if enabled else None)
+
+
+def test_an_outline_never_names_where_a_proposal_came_from(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    written = owner.client.put(
+        "/api/v1/me/preferences",
+        json={"markdown": "be brief"},
+        headers={"X-CSRF-Token": owner.csrf},
+    )
+    assert written.status_code == 200, written.text
+    origin = {"project": "someone/private", "request_id": "req-1"}
+    with migrated.begin() as conn:
+        conn.execute(update(t.preferences).values(proposed_by=origin))
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == agent.id)
+            .values(owner_preferences=True)
+        )
+    outline = _read(_admin(make_client, migrated), agent.id).json()["membership"]
+    assert set(outline["owner_preferences"]) == {
+        "human", "version", "by", "confirmed_by", "updated_at"
+    }  # fmt: skip
+    assert "someone/private" not in str(outline)
+
+
+def test_the_commitment_shows_for_one_instance_only(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = flow.agent(make_client, owner)
+    with migrated.begin() as conn:
+        conn.execute(update(t.project).values(keep_the_why=True))
+    monkeypatch.setattr(commitment, "required", lambda project: True)
+    assert "commitment" not in _read(owner, agent.id).json()["keep_the_why"]
+    block = _read(owner, agent.id, instance=agent.instance).json()["keep_the_why"]
+    assert block["commitment"] == "required" and block["ack"]
