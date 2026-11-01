@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock, cross_owner, events
+from maity_hub import CLI_VERSION, clock, cross_owner, events
 from maity_hub import tables as t
 from maity_hub.routes import agents, joins
 from tests import factory, flow
@@ -464,7 +464,7 @@ def test_a_new_profile_under_another_owners_boss_waits_for_the_boss_side(
 def test_a_supervised_resume_says_so(setup: Setup) -> None:
     placement = placed(setup)
     supervised = setup.agent.resume(supervisor="maity-runner/0.1.0").json()
-    assert supervised["hints"] == {"duty": "supervised"}
+    assert supervised["hints"] == {"duty": "supervised", "cli_version": CLI_VERSION}
     assert "## Supervised" in supervised["rules"]["markdown"]
     assert supervised["membership"]["placement"] == {
         "id": placement["id"], "runner_name": "home-laptop", "harness": "claude-code",

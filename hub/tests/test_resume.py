@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import Engine, func, select
 
+from maity_hub import CLI_VERSION
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -60,7 +61,11 @@ def test_the_packet_has_every_part_of_the_contract(
     assert set(packet) == PACKET
     assert packet["api_version"] == "v1"
     assert set(packet["session"]) == {"id", "started_at", "harness", "model", "client"}
-    assert packet["hints"] == {"duty": "self", "wait_timeout": 540}  # Claude Code
+    assert packet["hints"] == {
+        "duty": "self",
+        "wait_timeout": 540,  # Claude Code
+        "cli_version": CLI_VERSION,
+    }
     assert packet["me"]["owner"] == {"id": owner.id, "handle": "maintainer", "meat_proxy": False}
     assert packet["membership"] == {
         "trust": "member",

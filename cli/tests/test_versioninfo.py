@@ -293,3 +293,24 @@ def test_sdist_to_wheel_preserves_the_build_and_runs_without_git(
     )
     assert ran.returncode == 0, ran.stderr
     assert ran.stdout.strip() == f"maity {__version__} (build {head[:12]})"
+
+
+@pytest.mark.parametrize(
+    ("version", "than", "expected"),
+    [
+        ("0.1.0a3", "0.1.0a4", True),
+        ("0.1.0a4", "0.1.0a4", False),
+        ("0.1.0a5", "0.1.0a4", False),
+        ("0.1.0a9", "0.1.0a10", True),
+        ("0.1.0a4", "0.1.0b1", True),
+        ("0.1.0rc1", "0.1.0", True),
+        ("0.1.0", "0.1.0rc1", False),
+        ("0.1.0a4", "0.2.0a1", True),
+        ("0.1.0a4", None, False),
+        ("0.1.0a4", 4, False),
+        ("0.1.0a4", "new", False),
+        ("0.1.0.dev1", "0.1.0a4", False),
+    ],
+)
+def test_older_compares_release_numbers(version: str, than: object, expected: bool) -> None:
+    assert versioninfo.older(version, than) is expected
