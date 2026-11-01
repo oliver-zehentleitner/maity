@@ -4020,12 +4020,15 @@ The opened card has a Watch button for every member. The answer to `PUT`
 or `DELETE …/watch` is the card, which the board draws with a Watching
 mark. `invalid` with `reason: implied` keeps the watch and says why. While
 the reader watches, the panel lists the card's `update` messages from the
-newest 100 of `GET …/messages?type=update`, filtered by `task_id`. The
-status changes a watch brings are in the history already.
+newest 100 of `GET …/messages?type=update`, filtered by `task_id`, and an
+empty list says "among the latest messages" while the page has a
+`next_cursor`. The status changes a watch brings are in the history already.
 
 **Reason:** only the hub knows a card's dependents for this reader, and
 the view has one `watching`, so the implied case shows when it is refused.
-§8.8 has no card filter, and one page bounds the read. An older update of
+§8.8 has no card filter, and one page bounds the read. The page has a
+second limit: the hub examines at most `SCAN_BUDGET` events (2000) for it,
+so a sparse filter can end a page early with a cursor. An older update of
 a busy project can be missing from the list; the event reached the watcher
 when it was written.
 

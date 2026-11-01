@@ -547,6 +547,8 @@ window.Maity = window.Maity || {};
         const target = lang || "en";
         if (!window.confirm(whole ? M.t("landing.json.confirm_all") : M.t("landing.json.confirm_page", { lang: target }))) return;
         const before = { draft, lang };
+        // As the whole site's import does: a value of the wrong kind refuses, never the draft's in its place.
+        const wrongKind = whole && (("variants" in data && !isObject(data.variants)) || ("campaigns" in data && !Array.isArray(data.campaigns)));
         let next;
         if (whole) {
           // A field the body leaves out keeps what the editor has, as a PATCH keeps the stored one (§16.7).
@@ -572,7 +574,7 @@ window.Maity = window.Maity || {};
           refused = err;
         }
         // Not drawable as an editor: the draft stays as it was, the hub's refusals listed.
-        if (!drawable(next.pages, next.footer) || !Object.values(next.variants || {}).every((v) => isObject(v) && isObject(v.pages) && drawable(v.pages, next.footer))
+        if (wrongKind || !drawable(next.pages, next.footer) || !Object.values(next.variants || {}).every((v) => isObject(v) && isObject(v.pages) && drawable(v.pages, next.footer))
           || !(next.campaigns || []).every(isObject)) {
           draft = before.draft;
           lang = before.lang;

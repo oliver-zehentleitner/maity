@@ -333,7 +333,11 @@ too.
    Markdown, its links, the open notes
    (`GET …/tasks/{id}/notes?state=open`) with **Post the note** (`POST
    …/notes`) and the history (`GET …/tasks/{id}/history`, newest first,
-   a title's or description's change as its diff). **Close**, Escape and Back go to the board with
+   a title's or description's change as its diff). **Watch** in the bar
+   (`PUT` or `DELETE …/tasks/{id}/watch`) marks the card **Watching** on the
+   board; while it is on, **Updates** lists the card's `update` messages from
+   the newest 100 of the project. A watch that comes with a dependency stays,
+   and says why. **Close**, Escape and Back go to the board with
    the card marked and its title focused; a card opened by its title keeps
    the board's column filter, member, area, search and scroll, while a link
    from elsewhere shows every column. An action in the panel keeps the
@@ -1578,7 +1582,7 @@ web/
 ├── js/inbox.js       (1) inbox, per project and across all
 ├── js/board-edit.js  managing cards: new card, the allowed moves, assign
 ├── js/board.js       (2) board
-├── js/card-panel.js  an opened card: body, links, notes, history
+├── js/card-panel.js  an opened card: body, links, notes, updates, watch, history
 ├── js/ticker-settings.js  Project settings: the change ticker and the forge webhook
 ├── js/agents.js      an agent's credentials and briefing, for Members and Agents
 ├── js/members.js     (4) members: a neutral list with Chat, managed by an admin; the parts Agents shares

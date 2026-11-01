@@ -3492,6 +3492,7 @@ window.Maity = window.Maity || {};
         if (!["all", "lead", "next_free"].includes(next.wake)) errors["team.wake"] = "unknown";
         if ((next.distribution === "lead" || next.wake === "lead") && !next.lead_instance) errors["team.lead_instance"] = "required";
         if (next.lead_instance && !(target.instances || []).some((i) => i.id === next.lead_instance && !i.revoked_at)) errors["team.lead_instance"] = "not_an_instance";
+        else if (body.team.lead_instance && (target.instances || []).some((i) => i.id === body.team.lead_instance && i.dormant)) errors["team.lead_instance"] = "dormant";
         if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
         target.team = Object.assign(next, { updated_by: { kind: "human", id: who.member.id, handle: who.member.handle }, updated_at: nowIso() });
         return target;

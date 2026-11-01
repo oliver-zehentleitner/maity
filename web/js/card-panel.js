@@ -192,7 +192,7 @@ window.Maity = window.Maity || {};
           ? h("ul", { class: "card-update-list" }, items.map((m) => h("li", null,
             h("p", { class: "muted" }, byline(ctx, { member_id: m.from, instance: m.from_instance }), " · " + formatTime(m.sent_at)),
             h("div", { class: "md" }, M.markdown(m.body || "", where, { mentions: m.mentions, hrefOf: (id) => ctx.link("members", id), ctx })))))
-          : h("p", { class: "muted" }, M.t("cardpanel.updates.none")));
+          : h("p", { class: "muted" }, page.next_cursor === null ? M.t("cardpanel.updates.none") : M.t("cardpanel.updates.none_latest")));
       } catch (err) {
         if (run !== updatesRun) return;
         append(updatesBox, h("h3", null, M.t("cardpanel.updates")),

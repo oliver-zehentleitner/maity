@@ -270,9 +270,10 @@ window.Maity = window.Maity || {};
       };
       const distribution = pick("distribution", DISTRIBUTION, t.distribution);
       const wake = pick("wake", WAKE, t.wake);
-      // A lead revoked since stays chosen, marked, so saving another field does not clear it.
+      // A dormant instance is not offered: the hub refuses it as a lead (§6.17). A lead revoked since
+      // stays chosen, marked, so saving another field does not clear it.
       const gone = t.lead_instance && !active.some((i) => i.id === t.lead_instance) ? [[t.lead_instance, M.t("team.lead.revoked", { id: t.lead_instance })]] : [];
-      const lead = pick("lead", [["", M.t("team.lead.none")]].concat(active.map((i) => [i.id, i.label ? M.t("team.lead.labelled", { label: i.label, id: i.id }) : "#" + i.id]), gone), t.lead_instance || "");
+      const lead = pick("lead", [["", M.t("team.lead.none")]].concat(active.filter((i) => !i.dormant || i.id === t.lead_instance).map((i) => [i.id, i.label ? M.t("team.lead.labelled", { label: i.label, id: i.id }) : "#" + i.id]), gone), t.lead_instance || "");
       const review = h("input", { id: id("review"), type: "checkbox" });
       review.checked = !!t.review_within_team;
       const error = h("p", { class: "field-error", id: id("error"), role: "alert" });

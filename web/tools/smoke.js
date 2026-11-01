@@ -1055,8 +1055,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && text(main).includes("@agent-b#wle2 is dormant.")
       && text(agRow("agt-b")).includes("dormant — ask @agent-b#wle2 directly")
       && text(agRow("agt-b")).includes("Resting: every instance is dormant")
-      && btn(drPart(), "Wake @agent-b#wle2"),
-      "dormant: sent with its instance; the row says how to reach it and that only an instance address reaches the team " + JSON.stringify(drPatches));
+      && btn(drPart(), "Wake @agent-b#wle2")
+      && !byId("team-lead-agt-b").querySelectorAll("option").some((o) => o.getAttribute("value") === "wle2"),
+      "dormant: not offered as the team's lead; sent with its instance; the row says how to reach it and that only an instance address reaches the team " + JSON.stringify(drPatches));
     btn(drPart(), "Wake @agent-b#wle2").click(); for (let k = 0; k < 8; k++) await tick();
     expect(JSON.stringify(drPatches[1][1]) === JSON.stringify({ dormant: false, instance: "wle2" }) && !text(agRow("agt-b")).includes("dormant")
       && btn(drPart(), "Put @agent-b#wle2 to rest"), "dormant: woken again, the notes gone");
@@ -3231,6 +3232,21 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   cpWatch().click(); await cpSettle();
   cpLate({ items: [cpUpdate(2, "tsk-0001")], next_cursor: null }); await cpSettle();
   expect(text(cpWatch()) === "Watch" && !cpPanel().querySelector(".card-update-list"), "card watch: a late read after the watch ended draws nothing");
+  // A PUT that fails keeps the button as it was and says so; a list with none says how far it read.
+  const cpWatchPut = win.Maity.api.put;
+  win.Maity.api.put = () => Promise.reject(Object.assign(new Error("the hub is away"), { code: "unavailable" }));
+  cpWatch().click(); await cpSettle();
+  expect(text(cpWatch()) === "Watch" && cpWatch().getAttribute("aria-pressed") === "false" && !cpWatch().disabled && text(cpPanel()).includes("Your watch did not change") && !cpMarked(),
+    "card watch: a failed PUT changes nothing and is said");
+  win.Maity.api.put = cpWatchPut;
+  win.Maity.api.get = (p) => (p.includes("/messages?type=update") ? Promise.resolve({ items: [cpUpdate(1, "tsk-0002")], next_cursor: "more" }) : cpWatchGet(p));
+  cpWatch().click(); await cpSettle();
+  expect(text(cpPanel()).includes("among the project's latest messages") && !text(cpPanel()).includes("No updates on this card yet"), "card watch: none in a page with more behind it is no claim about the card");
+  cpWatch().click(); await cpSettle();
+  win.Maity.api.get = (p) => (p.includes("/messages?type=update") ? Promise.resolve({ items: [cpUpdate(1, "tsk-0002")], next_cursor: null }) : cpWatchGet(p));
+  cpWatch().click(); await cpSettle();
+  expect(text(cpPanel()).includes("No updates on this card yet"), "card watch: none at the end of the list");
+  cpWatch().click(); await cpSettle();
   win.Maity.api.get = cpWatchGet;
   // A card's links: a pull request with the title and state the hub observed, an issue without, a plain URL by its label.
   const cpLinks = win.Maity.cardPanel.render({ base: "/projects/maintainer/maity", slug: "maity", project: { state: "archived" }, link: () => "#" },
@@ -9047,6 +9063,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await leSave();
     expect(lePatches.length === jsPatches + 1 && lePatches[jsPatches][1].pages.en.title === "Imported title" && lePatches[jsPatches][1].pages.en.description === "One page",
       "landing JSON: Save saves the imported draft, as one typed by hand");
+    // Variants or campaigns of the wrong kind refuse the import, as the whole site's does; the draft stays.
+    const jsKept = byId("lp-pages-en-title").value;
+    const jsWrong = JSON.parse(JSON.stringify(exported));
+    jsWrong.pages.en.title = jsKept + " from the file";
+    byId("lp-json").value = JSON.stringify(Object.assign(jsWrong, { campaigns: {} }));
+    await jsLoad();
+    expect(byId("lp-pages-en-title").value === jsKept, "landing JSON: campaigns of the wrong kind refuse the import " + byId("lp-pages-en-title").value);
     // A body without a footer (#808's review): the editor's footer stays, as a PATCH keeps the stored one.
     const jsNoFooter = { enabled: false, default_language: "en", pages: { en: { title: "V3", description: "No footer here", sections: [] } } };
     byId("lp-json").value = JSON.stringify(jsNoFooter);

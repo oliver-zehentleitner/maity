@@ -392,6 +392,7 @@ window.MAITY_I18N["en"] = {
   "cardpanel.notes.read_failed": "Could not read the notes: {reason}",
   "cardpanel.updates": "Updates",
   "cardpanel.updates.none": "No updates on this card yet.",
+  "cardpanel.updates.none_latest": "No updates on this card among the project's latest messages.",
   "cardpanel.updates.read_failed": "Could not read the updates: {reason}",
   "cardpanel.watch.implied": "You watch this card because a card of yours depends on it. The watch ends with the dependency.",
   "cardpanel.watch.not_saved": "Your watch did not change: ",
