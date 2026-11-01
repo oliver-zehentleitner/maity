@@ -241,7 +241,7 @@ rm pg-password database-url
 (umask 077; head -c 32 /dev/urandom | base64 | tr -d '\n' > secret-key)
 kubectl -n maity create secret generic maity-secret-key --from-file=secret-key=./secret-key
 (umask 077; head -c 32 /dev/urandom | base64 | tr -d '\n' > mail-signing-key)
-(umask 077; read -rs p; printf '%s' "$p" > smtp-password)   # type the SMTP password
+(umask 077; read -rs p && printf '%s' "$p" > smtp-password)   # type the SMTP password
 kubectl -n maity create secret generic maity-mail --from-file=mail-signing-key=./mail-signing-key --from-file=smtp-password=./smtp-password
 rm mail-signing-key smtp-password   # keep secret-key outside the cluster, then delete it here
 ```

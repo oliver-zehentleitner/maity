@@ -194,6 +194,10 @@ def test_a_variant_is_served_at_its_address_to_every_visitor(
     assert got.status_code == 200
     assert "<title>For maintainers</title>" in got.text and "The main page" not in got.text
     assert '<link rel="canonical" href="https://hub.example/">' in got.text
+    assert (
+        '<meta property="og:image" content="https://hub.example/assets/brand/og-image-team.png">'
+        in got.text
+    )
     assert '<meta name="robots" content="noindex">' in got.text
     assert got.headers["content-type"].startswith("text/html")
     assert got.headers["cache-control"] == "private, max-age=60"
@@ -308,7 +312,7 @@ def test_the_language_switch_keeps_the_campaign_but_the_alternate_links_do_not(
         },
     )
     got = make_client().get("/?c=k").text
-    assert '<a href="?lang=de&amp;c=k">' in got
+    assert '<a href="?lang=de&amp;c=k" lang="de">' in got
     assert '<link rel="alternate" hreflang="de" href="?lang=de">' in got  # for search engines
     assert 'hreflang="de" href="?lang=de&amp;c=k"' not in got
 

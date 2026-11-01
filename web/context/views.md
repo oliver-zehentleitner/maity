@@ -3649,13 +3649,46 @@ fixed until the next import, as the request asks. `[Name]` collided with
 Markdown links. The hub's rule also catches a slip such as `{{ Name }}`, which
 would otherwise reach the page; it leaves `{{ .Values.x }}` and `{{#if x}}`,
 which a page about a template language may quote and no site file's
-placeholder can be.
+placeholder can be. The rule catches a slip, not intent: `{\{name}}`, a
+Markdown escape, passes and shows as `{{name}}`.
+
+**Known limit:** a value goes in as written, so Markdown in it (`*`, backticks,
+a link) takes effect where the placeholder sits in Markdown. HTML cannot get in:
+the finished text passes the hub's Markdown check and the renderer escapes.
+Values are one line, so none can start a block of its own.
 
 **Rejected alternative:** the hub replacing on every read: a later value change
 would rewrite published legal text with no new version. A check in the
 dashboard alone: the request names other ways round it. Refusing every `{{`:
 it would hit legitimate quoted text. A value per language: not asked for, and
 a name per language does the same (`{{country_de}}`).
+
+## The public pages are in ten languages, each translated and checked as a whole
+
+**Id:** 4b8e2d71-6a0c-4e39-9f15-c27d3a6e8b02
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's list `en de fr es pt it nl ja ko zh-Hans`, passed on in the message on the card tsk-q5f23gacz1mp (seq 30343), and on the same card that the legal pages are translated too; how the list is carried and checked is this entry's reading
+**Revisit when:** a language writes right to left, or a legal text has been reviewed by a lawyer
+
+`landing.LANGUAGE_NAMES` carries the list and each language's own name, which
+the language bar shows, since ten bare tags read as a code list. The page's
+frame words are in `render.WORDS`. `web/tools/maity-site.json` holds every text
+in all ten; a command line in the demo, an agent's handle and a cookie's name
+stay as they are. `hub/tests/test_site_values.py` and the e2e step import the
+real file, filled with made-up values, and read every language.
+
+**Reason:** the operator asked that the import works for certain, so the test
+is the file itself. A wrong placeholder in one language would otherwise show
+only on the live page.
+
+**Rejected alternative:** Right-to-left support: no listed language needs it,
+and it touches the stylesheet's every side. Traditional Chinese answered with
+Simplified: `Accept-Language: zh-TW` goes on to the reader's next language.
+
+The translated legal texts are machine translations, reviewed by nobody with
+legal training. The English and German are not changed by them.
 
 ## The whole site is one JSON, maity-site/1, checked part by part and saved in turn by the dashboard
 
@@ -4239,5 +4272,7 @@ The inbox entry lists the method, path and query and the pretty-printed body, an
 
 **Reason:** the owner is approving the exact bytes the hub later compares. `JSON.parse` keeps only the last of a repeated key and rounds large numbers, so a pretty-printed body alone could show something other than what the go allows; a proxy is the one writing that text.
 
-**Rejected alternatives:** the raw text only: hard to read, and the contract asks for pretty-printing. Refusing to show a body whose parsed form differs: the hub stores it as valid JSON, and the owner can say No.
+A body whose parsed form differs from its text (compared without the white space between tokens) opens **Exactly as sent** and says so; an escape or a moved key counts too, so a harmless difference can warn. Control, format and separator characters, the default-ignorable ones and the blank braille cell (bidi overrides, zero-width characters, no-break spaces, fillers among them) appear as a marked `[U+XXXX]` in the method, path, query and both bodies, with a sentence above them, also when the body carries them as a JSON escape. Not `\uXXXX`: a body can hold those six plain characters, with another SHA-256. Someone who is not the owner keeps **Later**, which touches nothing at the hub, and loses **Talk**, which the hub refuses them too. Look-alike letters are not marked: they are visible characters.
+
+**Rejected alternatives:** the raw text only: hard to read, and the contract asks for pretty-printing. A sentence only under Exactly as sent, closed by default: the owner reads the open form first. An allow-list of printable ASCII for what counts as visible: a path or a body may carry real non-ASCII text the owner must read as it is. Refusing to show a body whose parsed form differs: the hub stores it as valid JSON, and the owner can say No.
 

@@ -334,7 +334,7 @@ the order the authentication side effects use: credential, membership,
 session, cards — the resume packet was reordered to match. Each whole
 transaction of authentication, resume, the join exchange and the
 idempotent writes runs through `maity_hub.db.retrying`: on a deadlock or
-serialisation failure (SQLSTATE `40001`, `40P01`, MySQL `1213`, `1205`) it
+serialisation failure (SQLSTATE `40001`, `40P01`, MySQL `1213`) it
 is run again, at most four times, with a short randomised backoff.
 
 **Reason:** InnoDB answers a lock cycle between two transactions with a
@@ -352,6 +352,34 @@ next one is identifiable.
 - Locking the project row at the start of every authenticated call —
   removes every cycle, but serialises all calls of a project, reads
   included.
+
+## A lost savepoint is run again only with a deadlock behind it, and a lock wait timeout not at all
+
+**Id:** a26bee17-aeb3-4992-862d-a2ca3191bb91
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-2fsdy2ggde42, `hub-mariadb` on 2026-11-01 (run 41312749448), #1057 and its review; lead's decision on `1205`, 2026-11-01
+**Revisit when:** the log shows `number=1205` on routes people wait for, or a lock wait timeout is set far below the server's default, or `number=1305 behind=-` appears
+
+A deadlock inside a savepoint reaches `retrying` in disguise: InnoDB rolls the whole transaction
+back, the savepoint goes with it, and rolling back to it fails with `1305` (SQLSTATE `42000`), which
+replaces the deadlock. `retrying` takes a `1305` only when a transient error stands behind it in the
+exception's context, and the log line of a database failure gives both numbers (`number=1305
+behind=1213`). A lock wait timeout (`1205`) is not run again.
+
+**Reason:** the mechanism and the chain were checked on MariaDB 10.11. That the loser of the agent
+cap's race answered 503 for this reason is inferred from the `42000` that run logged, the only
+number it gave; the other side of that cycle is unknown, and about 600 local races showed no
+deadlock. `1205` stood in `TRANSIENT` without effect, because the driver reports SQLSTATE `HY000`
+and `driver_code` prefers that; it left the list rather than start working, since each attempt can
+wait the server's whole lock timeout (50 s by default, up to 200 s over four attempts) while the
+caller holds a thread and a connection.
+
+**Rejected alternatives:**
+- Running every `1305` again, which #1057 did: a bug that loses a savepoint would run four times, and
+  the number of the real cause stayed unlogged.
+- Retrying `1205` by adding `HY000`: that SQLSTATE covers unrelated errors too.
 
 ## READ COMMITTED on every server engine
 

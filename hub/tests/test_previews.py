@@ -181,7 +181,7 @@ def test_a_legal_draft_takes_the_languages_alone_and_counts_no_limit(owner: flow
     [
         ("", TEXT, "page"),
         ("?page=nope", TEXT, "page"),
-        ("?page=terms", {"fr": TEXT["en"]}, "terms.fr"),
+        ("?page=terms", {"xx": TEXT["en"]}, "terms.xx"),
         ("?page=terms", {"en": {"title": "T", "markdown": "<b>x"}}, "terms.en.markdown"),
         ("?page=terms", {}, "terms"),
     ],

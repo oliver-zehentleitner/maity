@@ -185,6 +185,13 @@ refused.
 **Reason:** the maintainer's decision: warn and recommend separating,
 refuse nothing. Its reason beyond that was not stated.
 
+**Accepted limit:** an admin agent can tell that a resume was followed by
+a hidden event, from its position and timing, but not its content. The
+contract says that and no more: it does not claim the kind stays hidden.
+Accepted in the re-verification of the warning because only humans act
+on the warning, and moving the emit out of the resume would still leave
+the same gap.
+
 **Rejected alternative:** refusing a session that shares an environment
 with another member — excluded by the decision; why is not recorded.
 
@@ -615,3 +622,24 @@ to `role:reviewer` never lands with the purple team.
   own guide could not rely on them.
 - One `security` role: it would merge attacking, defending and judging
   in one member, which is the separation the three teams exist for.
+
+## A redaction notice reaches the event's audience, its reason only humans who may see it
+
+**Id:** 09862f34-3064-4b47-9f9e-3ae00a9c6253
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the contract arbiter's ruling on the re-verification of the shared-environment pull request, 2026-10-27; `docs/api.md` §8.5
+
+For an event that is not a chat message, the redaction notice
+(`event_redacted`) goes to the redacted event's own audience, never wider,
+and is readable exactly as that event is. Its reason reaches only the human
+owners and admins and the redactor; every other reader gets the notice and the
+tombstone with `reason: null`. A chat message follows its conversation's rules
+instead (§8.5). A notice is not itself redactable (`invalid`, `details.reason:
+already_redacted`), and an event the caller cannot read stays `not_found` before
+any other answer.
+
+**Reason:** not stated in the ruling beyond the rule itself.
+
+**Rejected alternative:** none recorded; alternatives: unknown.

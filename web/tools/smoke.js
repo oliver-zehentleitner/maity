@@ -1229,7 +1229,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && thCss.includes(':root:not([data-theme="light"]) .brand-lockup.brand-dark { display: block; }')
     && thCss.includes(':root[data-theme="dark"] .brand-lockup.brand-light { display: none; }'),
     "brand: the dark lockup shows where the page is dark, by the system or by the pick");
-  expect(['rel="icon" href="brand/favicon.svg"', 'rel="apple-touch-icon" href="brand/apple-touch-icon.png"', 'property="og:image" content="brand/og-image.png"', 'href="brand/loader.css"']
+  expect(['rel="icon" href="brand/favicon.svg"', 'rel="apple-touch-icon" href="brand/apple-touch-icon.png"', 'property="og:image" content="brand/og-image-team.png"', 'href="brand/loader.css"']
     .every((x) => html.includes(x)) && /<p class="page-loading" role="status"><svg class="maity-loader"[^]*<\/svg> Loading Maity…<\/p>/.test(html)
     && !/ style=/.test(html.split('<main id="main">')[1]), "brand: favicons, the social image and the page loader, with no inline style (CSP)");
   expect(!main.querySelector(".page-loading"), "brand: the first view replaces the loader");
@@ -7355,11 +7355,32 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     current = act({ status: "answered", answered_at: "2026-11-01T10:00:00Z", answer: { reply_id: "go", by: "hum-maintainer", at: "2026-11-01T10:00:00Z" }, action: Object.assign(act().action, { used_at: "2026-11-01T11:00:00Z", used_seq: 9 }) });
     await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox/req-act"); for (let k = 0; k < 8; k++) await tick();
     expect(/Used /.test(text(call())), "action: a used go says when");
-    current = act();
+    // What the proxy wrote cannot hide from the owner: a body that parsing changes, invisible characters.
+    const again = async () => { await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox/req-act"); for (let k = 0; k < 8; k++) await tick(); };
+    const warns = () => main.querySelectorAll(".request-action-warning").map((p) => text(p)).join(" | ");
+    current = act({ action: Object.assign(act().action, { body: '{"n":9007199254740993}' }) });
+    await again();
+    expect(/differs/.test(warns()) && call().querySelector("details").getAttribute("open") !== null && text(pres()[1]).includes("9007199254740993"), "action: a rounded number is said, and the text as sent is open " + warns());
+    current = act({ action: Object.assign(act().action, { body: '{ "a": 1,\n  "b": "x y" }' }) });
+    await again();
+    expect(warns() === "", "action: white space alone is no difference " + warns());
+    current = act({ action: Object.assign(act().action, { path: "/projects/a\u202eb", query: "", body: '{"a":"x\u200by"}' }) });
+    await again();
+    expect(/cannot normally see/.test(warns()) && text(call()).includes("[U+202E]") && text(pres()[0]).includes("[U+200B]") && !text(call()).includes("\u202e") && /\(empty\)/.test(text(call())), "action: invisible characters are named, in the path too; an empty query shows " + text(call()));
+    current = act({ action: Object.assign(act().action, { body: '{"a":"x\\u202ey"}' }) });
+    await again();
+    expect(/cannot normally see/.test(warns()) && /differs/.test(warns()) && text(pres()[0]).includes("[U+202E]") && text(pres()[1]).includes("\\u202e"), "action: one sent as an escape warns too, and the text as sent keeps the escape " + warns());
+    current = act({ action: Object.assign(act().action, { path: "/a\u00a0b\u3164c\u2800d e" }) });
+    await again();
+    expect(["[U+00A0]", "[U+3164]", "[U+2800]"].every((m) => text(call()).includes(m)) && text(call()).includes("d e"), "action: a space that is none, a filler and a blank cell are named, a plain space is not " + text(call()));
+    // Asked by the reader's own agent: Talk for the owner; the hub refuses it to anyone else (action_needs_owner).
+    current = act({ asked_by: { kind: "agent", member_id: "agt-a", display_name: "Own" } });
+    await again();
+    expect(buttons().includes("Talk"), "action: the owner may talk to their own proxy " + JSON.stringify(buttons()));
     const owner = win.Maity.trust.owner;
     win.Maity.trust.owner = () => false;
     await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox/req-act"); for (let k = 0; k < 8; k++) await tick();
-    expect(call() && buttons().length === 0 && /Only the project's owner/.test(text(main)), "action: one who is no owner sees the call and no buttons");
+    expect(call() && !buttons().includes("Go") && !buttons().includes("No") && !buttons().includes("Talk") && buttons().includes("Later") && /Only the project's owner/.test(text(main)), "action: one who is no owner sees the call and only Later " + JSON.stringify(buttons()));
     win.Maity.trust.owner = owner;
     win.Maity.api.getAll = getAll; win.Maity.api.post = post;
   }
@@ -9466,7 +9487,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await leSave();
     // The prepared landing V3 itself (tsk-k7pwrzs8vb8k; the landing part of tools/maity-site.json): loaded, checked without a refusal,
     // every section of both languages in the editor, its own footer taken; saved as it is.
+    // Its footer's one placeholder takes a value here, as the site import would.
     const v3 = JSON.parse(fs.readFileSync(path.join(WEB, "tools/maity-site.json"), "utf8")).landing;
+    v3.footer.operator = "Example operator";
     byId("lp-json").value = JSON.stringify(v3);
     await jsLoad();
     const v3Patches = lePatches.length;
@@ -9581,6 +9604,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await win.Maity.api.patch("/admin/settings/site-values", { values: Object.fromEntries(siNames.map((n) => [n, "Example " + n])) });
     let siNow = await SI.readNow();
     const siT = await SI.check(template, siNow);
+    // All ten languages, the same placeholders in each page's every language.
+    const siHeld = (x) => JSON.stringify([...JSON.stringify(x).matchAll(/\{\{[a-z_]+\}\}/g)].map((m) => m[0]).sort());
+    expect(Object.keys(template.landing.pages).length === 10 && ["imprint", "privacy", "terms"].every((pg) => {
+      const langs = template.legal[pg].languages;
+      return Object.keys(langs).length === 10 && Object.values(langs).every((x) => siHeld(x) === siHeld(langs.en));
+    }), "site: the template holds ten languages, each with the English text's placeholders");
     expect(siT.placeholders.every((p) => p.replaced) && siT.parts.legal.state === "changes", "site: with values every placeholder is replaced and the parts are checked");
     // What is saved is the finished text, the value read once, a value never read as a placeholder; a slip has no value.
     const siSent = [], siFillReal = win.Maity.api.patch;
@@ -9654,6 +9683,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const siNew = siBox().querySelectorAll("ol.site-values input");
     const siFill = (el, v) => { el.value = v; el.dispatch("input"); };
     siFill(siNew[siNew.length - 2], "city"); siFill(siNew[siNew.length - 1], "Example Town");
+    const siValuesBefore = (await win.Maity.api.get("/admin/settings/site-values")).values;
+    btn(siBox(), "Add a value").click();
+    const siTwice = siBox().querySelectorAll("ol.site-values input");
+    siFill(siTwice[siTwice.length - 2], "city"); siFill(siTwice[siTwice.length - 1], "Other Town");
+    btn(siBox(), "Save the values").click(); for (let k = 0; k < 6; k++) await tick();
+    expect(text(siBox()).includes("city is there twice") && JSON.stringify((await win.Maity.api.get("/admin/settings/site-values")).values) === JSON.stringify(siValuesBefore),
+      "site: a name written twice is refused in the form and nothing is saved");
+    btn(siBox().querySelectorAll("ol.site-values li")[siBox().querySelectorAll("ol.site-values li").length - 1], "Remove").click();
     btn(siBox(), "Save the values").click(); for (let k = 0; k < 6; k++) await tick();
     expect((await win.Maity.api.get("/admin/settings/site-values")).values.city === "Example Town" && !siBox().querySelector("ul.site-placeholders") && text(siBox()).includes("Check the file again"),
       "site: Save the values keeps the new pair and drops the old check");

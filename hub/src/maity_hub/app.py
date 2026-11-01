@@ -463,7 +463,7 @@ def _mount_web(app: FastAPI, settings: Settings) -> None:
     if web_dir is not None and web_dir.is_dir():
         # Mounted last: the API routes above take precedence over files.
         app.router.routes.append(Mount("/assets", app=AssetFiles(directory=web_dir), name="assets"))
-        app.router.routes.append(ShellRoute(web_dir))
+        app.router.routes.append(ShellRoute(web_dir, settings.public_url))
     elif settings.web_dir_required:
         raise ConfigError(f"MAITY_WEB_DIR {web_dir} is not a directory")
     elif web_dir is None:

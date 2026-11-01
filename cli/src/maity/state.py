@@ -93,6 +93,21 @@ def identity_dir(hub_host: str, handle: str) -> Path:
     return _state_home() / "maity" / hub_host / handle
 
 
+def other_hub_hosts(hub_host: str) -> list[str]:
+    """The hosts other than `hub_host` that hold a joined identity under the state home. An
+    identity kept in a clone or in a directory of its own choosing isn't seen from here."""
+    root = _state_home() / "maity"
+    if not root.is_dir():
+        return []
+    return sorted(
+        host.name
+        for host in root.iterdir()
+        if host.is_dir()
+        and host.name != hub_host
+        and any(has_credential(identity) for identity in host.iterdir() if identity.is_dir())
+    )
+
+
 def _state_home() -> Path:
     """`$XDG_STATE_HOME`, else `~/.local/state`."""
     root = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")

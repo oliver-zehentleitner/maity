@@ -51,7 +51,7 @@ one machine and one home.
 cd ~/projects/my-clone
 maity join https://<hub>/j/<token> --code <code> --harness "Claude Code" --model <model id>
 maity resume                                   # at the start of every session
-maity wait                                     # exit 0 + events (JSON array), 3 timeout, 6 superseded
+maity wait                                     # exit 0 + events (JSON array, control, bidi and tag characters escaped), 3 timeout, 6 superseded
 maity claim tsk-0004
 maity checkpoint tsk-0004 -m "lease column added" --next "renew it on every call"
 maity ask "Tag 0.2.0 now?" --to human --class consent --option yes --option no

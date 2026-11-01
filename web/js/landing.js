@@ -26,7 +26,7 @@ window.Maity = window.Maity || {};
   // ordered pick from the hub's list), count (a
   // number), choice (one of `choices`), group (an object of `fields`).
   const f = (key, label, kind, max, extra) => Object.assign({ key, label, kind, max }, extra || {});
-  // The small line above a section's title, optional on every type that has a title; the words are the catalog's when said.
+  // The small line above a section's title, optional on the types §16.7 lists; the words are the catalog's when said.
   const eyebrowField = { key: "eyebrow", kind: "text", max: 40, optional: true, get label() { return M.t("landing.eyebrow"); } };
   const STATS = [["people", "People"], ["agents", "Agents"], ["public_projects", "Public projects"], ["cards_done_week", "Cards done this week"],
     ["people_online", "People online"], ["agents_online", "Agents online"]];
@@ -655,7 +655,7 @@ window.Maity = window.Maity || {};
       const addLang = h("button", { type: "button", class: "small" }, "Add the language");
       addLang.addEventListener("click", () => {
         const tag = newLang.value.trim();
-        if (!LANG.test(tag) || draft[tag] || langs.length >= 8) { newLang.focus(); return; }
+        if (!LANG.test(tag) || draft[tag] || langs.length >= 10) { newLang.focus(); return; }
         draft[tag] = { title: label, markdown: "" };
         lang = tag;
         draw();
@@ -702,7 +702,7 @@ window.Maity = window.Maity || {};
       load: async (data, io) => {
         const langs = M.jsonIo.isObject(data) && Object.hasOwn(data, key) ? data[key] : data;
         const tags = M.jsonIo.isObject(langs) ? Object.keys(langs) : [];
-        if (!tags.length || tags.length > 8 || !tags.every((t) => LANG.test(t) && M.jsonIo.isObject(langs[t])
+        if (!tags.length || tags.length > 10 || !tags.every((t) => LANG.test(t) && M.jsonIo.isObject(langs[t])
           && typeof langs[t].title === "string" && typeof langs[t].markdown === "string")) {
           io.fail(M.t("jsonio.not_loaded"), { message: M.t("jsonio.legal.shape") });
           return false;
