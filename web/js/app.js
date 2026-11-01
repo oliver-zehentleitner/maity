@@ -356,6 +356,19 @@ window.Maity = window.Maity || {};
       M.legal ? M.legal.links() : null);
   }
 
+  // The second step of a sign-in (js/second-factor.js, §2.8.2): the session reaches
+  // nothing else, so the page is the step with the brand and the theme around it.
+  function renderStep(main, session) {
+    append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(false), themeMenu()));
+    // From the mail's link without a next: the dashboard's start, not that address again.
+    const done = (next) => (!safeNext(next) && M.secondFactor.isMailLink() ? M.route.go("/", { replace: true }) : goNext(next));
+    M.secondFactor.page(main, session, done, logout);
+  }
+  function renderStepElsewhere(main, signedIn) {
+    append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(false), themeMenu()));
+    M.secondFactor.elsewhere(main, signedIn);
+  }
+
   // The one page of a pending account (§2.7.5): it may sign out, nothing else.
   function renderPending(main) {
     document.title = "Waiting for approval · Maity";
@@ -1707,14 +1720,21 @@ window.Maity = window.Maity || {};
       where = parseRoute();
       if (where.scope === "invite" && M.invite) { await M.invite.page(main, document.getElementById("header"), where.token); return; }
       if (where.scope === "register" && M.register) { await M.register.page(main, document.getElementById("header"), routeNext()); return; }
+      let session;
       try {
-        await M.api.get("/auth/session");
+        session = await M.api.get("/auth/session");
       } catch (err) {
+        // The mail's second-factor link in a browser without the session it was sent for (§2.8.8).
+        if (err.status === 401 && M.secondFactor && M.secondFactor.isMailLink()) { renderStepElsewhere(main, false); return; }
         // Without a session the login page; the landing page at the root
         // is the hub's own static page (§16.7), never drawn here.
         if (err.status === 401) { renderLogin(main); return; }
         throw err;
       }
+      // A session that owes the second factor reaches nothing else (§2.8.2): its step.
+      if (session && session.second_factor === "required" && M.secondFactor) { renderStep(main, session); return; }
+      // The link opened where the sign-in is already complete: nothing to post here.
+      if (M.secondFactor && M.secondFactor.isMailLink()) { renderStepElsewhere(main, true); return; }
       const me = await M.api.get("/me");
       if (seq !== renderSeq) return;
       // Signed in again after signing out here: the stream may run again.

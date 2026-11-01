@@ -1786,10 +1786,17 @@ window.Maity = window.Maity || {};
       if (body.password !== "correct horse") fail(400, "invalid", "the request does not validate", path, { fields: { password: "mismatch" } });
       return { valid_until: new Date(Date.now() + 600000).toISOString().replace(/\.\d{3}Z$/, "Z") };
     }],
+    // §2.8.1: enrolled with TOTP, so a step-up asks for the app's code.
+    ["GET", /^\/auth\/second-factor$/, () => ({ enrolled: true, enrolled_at: "2026-10-20T09:00:00Z", recovery_codes_left: 8,
+      last_used_at: "2026-10-21T13:00:00Z", required: false, via: "totp" })],
+    // §2.8.8: the mail factor's code ("654321") or link ("mailtoken") besides the app's code and a recovery code.
     ["POST", /^\/auth\/second-factor\/verify$/, (m, body, path) => {
-      if (body.code !== "123456" && body.recovery_code !== "abcde-fghij") fail(400, "code_invalid", "the code is not valid", path);
+      if (body.code !== "123456" && body.recovery_code !== "abcde-fghij" && body.email_code !== "654321" && body.email_token !== "mailtoken") {
+        fail(400, "code_invalid", "the code is not valid", path);
+      }
       return { valid_until: new Date(Date.now() + 600000).toISOString().replace(/\.\d{3}Z$/, "Z") };
     }],
+    ["POST", /^\/auth\/second-factor\/email$/, () => ({ mail: "sent" })],
     ["PATCH", /^\/me\/notification-settings$/, (m, body, path) => {
       const set = fixtures()["notifications.json"].settings;
       if (body.email && "language" in body.email) {
