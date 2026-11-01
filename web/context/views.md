@@ -3628,6 +3628,35 @@ cannot differ from what the contract names.
 - Sending `v` and `c` unchecked: the hub drops them silently anyway, but
   a malformed value would then sit in the request for nothing.
 
+## A site file's placeholders are filled by the dashboard, and the hub refuses any left over
+
+**Id:** 7c1e4a52-9d3b-4f06-8a27-5e0b6c9f1d34
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-yjbzd8wvwz4n (the maintainer's request: values kept in the backend, `{{name}}`, the finished text stored, no way past the check); which texts the hub's rule leaves alone is this entry's reading
+**Revisit when:** a public page has to quote a `{{name}}` literally, or a value has to differ by language
+
+`{{name}}` in a site file takes its value from
+`/admin/settings/site-values` in the dashboard, before the file is checked.
+The hub stores finished text and never replaces anything; it refuses a text
+still holding a placeholder on the landing page, legal and registration
+writes, so a section's own import or a direct call cannot publish one either.
+
+**Reason:** the template is in a public repository and the operator's details
+are not, so they live in the instance. Stored text keeps what a visitor reads
+fixed until the next import, as the request asks. `[Name]` collided with
+Markdown links. The hub's rule also catches a slip such as `{{ Name }}`, which
+would otherwise reach the page; it leaves `{{ .Values.x }}` and `{{#if x}}`,
+which a page about a template language may quote and no site file's
+placeholder can be.
+
+**Rejected alternative:** the hub replacing on every read: a later value change
+would rewrite published legal text with no new version. A check in the
+dashboard alone: the request names other ways round it. Refusing every `{{`:
+it would hit legitimate quoted text. A value per language: not asked for, and
+a name per language does the same (`{{country_de}}`).
+
 ## The whole site is one JSON, maity-site/1, checked part by part and saved in turn by the dashboard
 
 **Id:** 3b7c4d67-90b2-497a-9dd7-1f7a7ddfb7bd

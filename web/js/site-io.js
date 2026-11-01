@@ -16,6 +16,9 @@ window.Maity = window.Maity || {};
   const LANDING = "/admin/settings/landing";
   const LEGAL = "/admin/settings/legal";
   const REGISTRATION = "/admin/settings/registration";
+  const VALUES = "/admin/settings/site-values";
+  // As the hub reads a placeholder (§16.7.3): a slip such as {{ Name }} counts, and has no value.
+  const PLACEHOLDER = /\{\{\s*[A-Za-z][A-Za-z0-9_-]*\s*\}\}/g;
   const PAGES = ["imprint", "privacy", "terms"];
   const KEYS = ["format", "landing", "legal", "registration"];
   // The landing part takes what the landing editor imports.
@@ -32,13 +35,14 @@ window.Maity = window.Maity || {};
 
   // What the three settings hold now, each in the shape its section exports.
   async function readNow() {
-    const [landing, legal, registration] = await Promise.all([M.api.get(LANDING), M.api.get(LEGAL), M.api.get(REGISTRATION)]);
+    const [landing, legal, registration, values] = await Promise.all([M.api.get(LANDING), M.api.get(LEGAL), M.api.get(REGISTRATION), M.api.get(VALUES)]);
     const fixed = (k) => (registration[k] || {}).source === "env" || (k === "terms" && (registration.terms || {}).source === "legal_pages");
     return {
       landing: { enabled: !!landing.enabled, default_language: landing.default_language, pages: landing.pages || {}, footer: landing.footer || { social: [] }, variants: landing.variants || {}, campaigns: landing.campaigns || [] },
       legal: Object.fromEntries(PAGES.filter((p) => legal.pages && legal.pages[p]).map((p) => [p, { languages: legal.pages[p].languages }])),
       registration: Object.fromEntries(M.adminRegistration.FIELDS.filter((k) => registration[k] && !fixed(k)).map((k) => [k, registration[k].value])),
       fixed: M.adminRegistration.FIELDS.filter(fixed),
+      values: values.values,
     };
   }
   // Registration left out when the environment sets every field: an empty part is
@@ -56,6 +60,21 @@ window.Maity = window.Maity || {};
       PAGES.filter((p) => isObject(data.legal[p])).forEach((p) => Object.keys(data.legal[p]).filter((k) => k !== "languages").forEach((k) => out.push("legal." + p + "." + k)));
     }
     return out;
+  }
+
+  // Every string of the file with its placeholders replaced, once: a value is never read as one.
+  // `seen` is each placeholder as written, and whether it had a value.
+  function fill(v, values, seen) {
+    if (typeof v === "string") {
+      return v.replace(PLACEHOLDER, (found) => {
+        const name = found.slice(2, -2);
+        const known = Object.hasOwn(values, name);
+        seen.set(found, known);
+        return known ? values[name] : found;
+      });
+    }
+    if (Array.isArray(v)) return v.map((x) => fill(x, values, seen));
+    return isObject(v) ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, fill(x, values, seen)])) : v;
   }
 
   // The hub's refusal in a few words: the fields it names, or its message.
@@ -118,12 +137,17 @@ window.Maity = window.Maity || {};
     if (data.format !== FORMAT) return { refused: M.t("site.refused.format", { format: String(data.format), expected: FORMAT }) };
     const unknown = unknownPaths(data);
     if (unknown.length) return { refused: M.t("site.refused.unknown", { keys: M.fmt.list(unknown) }) };
+    const seen = new Map();
+    const file = fill(data, now.values, seen);
+    const placeholders = Array.from(seen, ([text, replaced]) => ({ text, replaced })).sort((a, b) => a.text.localeCompare(b.text));
+    // The hub would refuse each one again; the list below already says what to do.
+    if (placeholders.some((p) => !p.replaced)) return { refused: null, placeholders, parts: null };
     const parts = {
-      landing: Object.hasOwn(data, "landing") ? await checkLanding(data.landing, now) : { state: "missing" },
-      legal: Object.hasOwn(data, "legal") ? await checkLegal(data.legal, now) : { state: "missing" },
-      registration: Object.hasOwn(data, "registration") ? checkRegistration(data.registration, now) : { state: "missing" },
+      landing: Object.hasOwn(file, "landing") ? await checkLanding(file.landing, now) : { state: "missing" },
+      legal: Object.hasOwn(file, "legal") ? await checkLegal(file.legal, now) : { state: "missing" },
+      registration: Object.hasOwn(file, "registration") ? checkRegistration(file.registration, now) : { state: "missing" },
     };
-    return { refused: null, parts };
+    return { refused: null, placeholders, parts };
   }
 
   async function section(ctx, root) {
@@ -136,7 +160,15 @@ window.Maity = window.Maity || {};
       get changes() { return M.t("site.state.changes"); }, get refused() { return M.t("site.state.refused"); } };
 
     // The parts' states in a list, and one Save for every change, legal, registration, landing in that order.
-    function show(parts) {
+    function show(result) {
+      const parts = result.parts;
+      const list = result.placeholders.length ? h("ul", { class: "site-placeholders" }, result.placeholders.map((p) => h("li", { "data-replaced": p.replaced ? "true" : "false" },
+        h("code", null, p.text), ": ", p.replaced ? M.t("site.placeholder.replaced") : h("span", { class: "field-error" }, M.t("site.placeholder.no_value"))))) : null;
+      if (!parts) {
+        append(clear(overview), list, h("p", { class: "field-error" }, M.t("site.placeholder.blocked")),
+          h("button", { type: "button", class: "primary site-save", disabled: true }, M.t("site.save")));
+        return;
+      }
       const steps = ["legal", "registration", "landing"].flatMap((k) => parts[k].steps || []);
       const refused = Object.values(parts).some((p) => p.state === "refused");
       const save = h("button", { type: "button", class: "primary site-save", disabled: refused || !steps.length ? true : null }, M.t("site.save"));
@@ -162,10 +194,45 @@ window.Maity = window.Maity || {};
         append(status.el, h("span", { class: "ok" }, M.t("site.saved_all", { parts: M.fmt.list(saved) })));
         clear(overview);
       });
-      append(clear(overview), h("ul", { class: "site-parts" }, ["landing", "legal", "registration"].map((k) => h("li", { class: "site-part site-" + parts[k].state, "data-part": k },
+      append(clear(overview), list, h("ul", { class: "site-parts" }, ["landing", "legal", "registration"].map((k) => h("li", { class: "site-part site-" + parts[k].state, "data-part": k },
         h("strong", null, PART_WORDS[k]), ": ", STATE_WORDS[parts[k].state], parts[k].words ? [" · ", h("span", { class: parts[k].state === "refused" ? "field-error" : "muted" }, parts[k].words)] : null))),
         refused ? h("p", { class: "field-error" }, M.t("site.refused.some")) : !steps.length ? h("p", { class: "muted" }, M.t("site.nothing")) : null,
         save);
+    }
+
+    // The values a file's placeholders take. Saved as a whole; a check made before a change no longer holds.
+    function valuesForm() {
+      let rows = Object.entries(now.values).map(([name, value]) => ({ name, value }));
+      const box = h("div");
+      const said = M.statusLine();
+      const draw = () => {
+        append(clear(box), h("ol", { class: "lp-items site-values" }, rows.map((row, k) => h("li", { class: "lp-item inline-form" },
+          h("label", { for: "site-value-" + k + "-name" }, M.t("site.values.name")),
+          h("input", { id: "site-value-" + k + "-name", maxlength: "40", value: row.name, oninput: (e) => { row.name = e.target.value; } }),
+          h("label", { for: "site-value-" + k + "-value" }, M.t("site.values.value")),
+          h("input", { id: "site-value-" + k + "-value", maxlength: "500", value: row.value, oninput: (e) => { row.value = e.target.value; } }),
+          h("button", { type: "button", class: "small", onclick: () => { rows.splice(k, 1); draw(); } }, M.t("site.values.remove"))))),
+        h("div", { class: "actions" },
+          h("button", { type: "button", disabled: rows.length >= 50 ? true : null, onclick: () => { rows.push({ name: "", value: "" }); draw(); } }, M.t("site.values.add")),
+          h("button", { type: "button", class: "site-values-save", onclick: saveValues }, M.t("site.values.save"))));
+      };
+      async function saveValues() {
+        const filled = rows.filter((r) => r.name.trim() || r.value.trim());
+        said.busy(M.t("site.values.saving"));
+        try {
+          const answer = await M.stepUp.run(() => M.api.patch(VALUES, { values: Object.fromEntries(filled.map((r) => [r.name.trim(), r.value.trim()])) }), stepSlot, M.t("site.step_up"));
+          now.values = answer.values;
+          rows = Object.entries(answer.values).map(([name, value]) => ({ name, value }));
+          draw();
+          clear(overview);
+          said.done();
+          append(said.el, h("span", { class: "ok" }, M.t("site.values.saved")));
+        } catch (err) {
+          said.fail(M.t("site.values.not_saved"), { message: err.code === "cancelled" ? M.t("site.cancelled") : refusalWords(err) });
+        }
+      }
+      draw();
+      return h("div", { class: "site-values-box field-stack" }, h("h4", null, M.t("site.values.title")), h("p", { class: "hint" }, M.t("site.values.hint", { example: "{{name}}" })), box, said.el);
     }
 
     const json = M.jsonIo.part({
@@ -181,7 +248,7 @@ window.Maity = window.Maity || {};
         const result = await check(data, now);
         if (result.refused) { io.fail(M.t("jsonio.not_loaded"), { message: result.refused }); clear(overview); return false; }
         io.done();
-        show(result.parts);
+        show(result);
         return true;
       },
     });
@@ -190,7 +257,7 @@ window.Maity = window.Maity || {};
       status.done();
       if (M.yourData) M.yourData.save("maity-site.json", JSON.stringify(bundleOf(now), null, 2) + "\n");
     } }, M.t("site.download"));
-    append(root, h("h3", null, M.t("site.title")), h("p", { class: "hint" }, M.t("site.intro")), json.el,
+    append(root, h("h3", null, M.t("site.title")), h("p", { class: "hint" }, M.t("site.intro")), valuesForm(), json.el,
       h("div", { class: "actions" }, download), overview, stepSlot, status.el);
   }
 

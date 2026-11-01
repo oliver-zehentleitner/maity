@@ -1814,6 +1814,11 @@ and what is not, and goes no further; nothing is rolled back. The
 sections' own imports stay. `web/tools/maity-site.json` is the template:
 the landing page as it runs, the privacy notice and the terms in en and
 de, the imprint with placeholders only, and no registration, which is
-the instance's own (a part the file leaves out stays as it is);
-placeholders are in square brackets (`[Operator]`), which the hub's
-Markdown rules take as text.
+the instance's own (a part the file leaves out stays as it is).
+Placeholders are written `{{name}}` (`{{operator}}`, `{{address}}`), and
+**Site values** in the same section keeps their values (`docs/api.md`
+§16.7.3). **Check the file** replaces them in every text and says for
+each whether it was replaced or has no value; one without a value blocks
+**Save all changes**. What is saved is the finished text, so a value
+changed later counts from the next import on. The values become public
+text: no secrets.

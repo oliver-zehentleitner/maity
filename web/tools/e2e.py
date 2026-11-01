@@ -2983,8 +2983,20 @@ def site_json_step(run: Run, page: Page) -> None:
 
     # The template carries no registration: what the instance has stays.
     before = export()
+    # Its placeholders first have no value and block the save (§16.7.3); then the values, made up here.
     page.locator("#site-json").fill(json.dumps(template))
     io.get_by_role("button", name="Check the file", exact=True).click()
+    expect(section.locator("ul.site-placeholders li[data-replaced='false']")).to_have_count(7)
+    expect(section.get_by_role("button", name="Save all changes", exact=True)).to_be_disabled()
+    values = {name: f"Example {name}" for name in ("name", "address", "email", "operator", "date", "hosting_provider", "mail_provider")}
+    for index, (name, value) in enumerate(values.items()):
+        section.get_by_role("button", name="Add a value", exact=True).click()
+        page.locator(f"#site-value-{index}-name").fill(name)
+        page.locator(f"#site-value-{index}-value").fill(value)
+    section.get_by_role("button", name="Save the values", exact=True).click()
+    expect(section).to_contain_text("Check the file again")
+    io.get_by_role("button", name="Check the file", exact=True).click()
+    expect(section.locator("ul.site-placeholders li[data-replaced='true']")).to_have_count(7)
     expect(section.locator("li.site-part")).to_have_count(3)
     expect(section.locator("li.site-refused")).to_have_count(0)
     section.get_by_role("button", name="Save all changes", exact=True).click()
@@ -2993,7 +3005,11 @@ def site_json_step(run: Run, page: Page) -> None:
     out = export()
     assert out["format"] == "maity-site/1", out.get("format")
     assert out["landing"]["pages"] == template["landing"]["pages"], "the landing pages differ after the round trip"
-    for key, value in template["legal"].items():
+    filled = json.dumps(template["legal"])
+    for name, value in values.items():
+        filled = filled.replace("{{" + name + "}}", value)
+    assert "{{" not in filled, "a placeholder is left in the template"
+    for key, value in json.loads(filled).items():
         assert out["legal"][key]["languages"] == value["languages"], f"legal {key} differs after the round trip"
     assert "registration" not in template, "the template carries a registration part"
     # Registration as it was; only `terms` may leave the export: with the terms page saved and no

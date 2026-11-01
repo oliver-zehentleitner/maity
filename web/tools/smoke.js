@@ -9493,8 +9493,30 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   {
     const SI = win.Maity.siteIo;
     const template = JSON.parse(fs.readFileSync(path.join(WEB, "tools/maity-site.json"), "utf8"));
+    // Placeholders (§16.7.3): each one in the template named, none filled yet, so nothing can be saved and the hub is not asked.
+    const siNames = ["address", "date", "email", "hosting_provider", "mail_provider", "name", "operator"];
+    const siEmpty = await SI.check(template, await SI.readNow());
+    expect(!siEmpty.refused && siEmpty.parts === null && JSON.stringify(siEmpty.placeholders) === JSON.stringify(siNames.map((n) => ({ text: "{{" + n + "}}", replaced: false }))),
+      "site: without values the template's placeholders are listed as having none, and no part is checked " + JSON.stringify(siEmpty));
+    expect(!/\[(Name|Address|Anschrift|Email|E-Mail|Operator|Betreiber|Date|Datum)\]/.test(JSON.stringify(template)), "site: the template has no square-bracket placeholder left");
+    await win.Maity.api.patch("/admin/settings/site-values", { values: Object.fromEntries(siNames.map((n) => [n, "Example " + n])) });
     let siNow = await SI.readNow();
     const siT = await SI.check(template, siNow);
+    expect(siT.placeholders.every((p) => p.replaced) && siT.parts.legal.state === "changes", "site: with values every placeholder is replaced and the parts are checked");
+    // What is saved is the finished text, the value read once, a value never read as a placeholder; a slip has no value.
+    const siSent = [], siFillReal = win.Maity.api.patch;
+    win.Maity.api.patch = (p, b) => { siSent.push(b); return Promise.resolve({}); };
+    await siT.parts.legal.steps[0].call();
+    win.Maity.api.patch = siFillReal;
+    expect(JSON.stringify(siSent).includes("Example operator") || JSON.stringify(siSent).includes("Example name"), "site: the save sends the value " + JSON.stringify(siSent).slice(0, 200));
+    expect(!JSON.stringify(siSent).includes("{{"), "site: the save sends no placeholder");
+    const siSlip = await SI.check({ format: "maity-site/1", legal: { imprint: { languages: { en: { title: "I", markdown: "{{ name }} and {{Name}} and {{ .Values.x }}" } } } } }, siNow);
+    expect(siSlip.parts === null && JSON.stringify(siSlip.placeholders) === JSON.stringify([{ text: "{{ name }}", replaced: false }, { text: "{{Name}}", replaced: false }]),
+      "site: a slip counts as a placeholder without a value, {{ .Values.x }} as none " + JSON.stringify(siSlip.placeholders));
+    const siBadValue = await win.Maity.api.patch("/admin/settings/site-values", { values: { Bad: "x", self: "{{name}}" } }).catch((err) => err.details.fields);
+    expect(siBadValue["values.Bad"] === "invalid" && siBadValue["values.self"] === "unresolved_placeholder", "site: a bad name and a value holding a placeholder are refused " + JSON.stringify(siBadValue));
+    const siPlaced = await win.Maity.api.post("/admin/settings/legal/preview?page=imprint", { en: { title: "I", markdown: "By {{name}}" } }).catch((err) => err.details.fields);
+    expect(siPlaced["imprint.en.markdown"] === "unresolved_placeholder", "site: the hub refuses a text still holding a placeholder " + JSON.stringify(siPlaced));
     expect(!("registration" in template) && siT.parts && siT.parts.registration.state === "missing",
       "site: the template carries no registration, so importing it leaves the instance's own as it is");
     expect(!siT.refused && Object.values(siT.parts).every((x) => x.state !== "refused"),
@@ -9542,7 +9564,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const siBox = () => main.querySelectorAll("section.admin-section").find((x) => x.getAttribute("aria-label") === "Import or export everything");
     byId("site-json").value = JSON.stringify(template);
     const siConfirm = win.confirm; win.confirm = () => true;
-    btn(siBox().querySelector("details.json-io"), "Check the file").click(); for (let k = 0; k < 10; k++) await tick();
+    // A placeholder without a value: named, Save off; the value added in the same section, then the file checks.
+    const siCheck = async () => { btn(siBox().querySelector("details.json-io"), "Check the file").click(); for (let k = 0; k < 10; k++) await tick(); };
+    byId("site-json").value = JSON.stringify({ format: "maity-site/1", legal: { imprint: { languages: { en: { title: "I", markdown: "By {{city}}" } } } } });
+    await siCheck();
+    const siRows = () => siBox().querySelectorAll("ul.site-placeholders li").map((li) => text(li));
+    expect(JSON.stringify(siRows()) === JSON.stringify(["{{city}}: no value"]) && btn(siBox(), "Save all changes").getAttribute("disabled") === "",
+      "site: a placeholder without a value is named and Save is off " + JSON.stringify(siRows()));
+    btn(siBox(), "Add a value").click(); await tick();
+    const siNew = siBox().querySelectorAll("ol.site-values input");
+    const siFill = (el, v) => { el.value = v; el.dispatch("input"); };
+    siFill(siNew[siNew.length - 2], "city"); siFill(siNew[siNew.length - 1], "Example Town");
+    btn(siBox(), "Save the values").click(); for (let k = 0; k < 6; k++) await tick();
+    expect((await win.Maity.api.get("/admin/settings/site-values")).values.city === "Example Town" && !siBox().querySelector("ul.site-placeholders") && text(siBox()).includes("Check the file again"),
+      "site: Save the values keeps the new pair and drops the old check");
+    await siCheck();
+    expect(JSON.stringify(siRows()) === JSON.stringify(["{{city}}: replaced"]) && btn(siBox(), "Save all changes").getAttribute("disabled") === undefined, "site: with its value the placeholder is replaced and Save is on " + JSON.stringify(siRows()));
+    byId("site-json").value = JSON.stringify(template);
+    await siCheck();
     const siParts = () => siBox().querySelectorAll("li.site-part").map((li) => li.getAttribute("data-part") + ":" + li.className.split(" ").find((c) => c.startsWith("site-") && c !== "site-part"));
     // The fixture's landing page is the template's, so only the legal pages change.
     expect(JSON.stringify(siParts()) === JSON.stringify(["landing:site-same", "legal:site-changes", "registration:site-missing"]),

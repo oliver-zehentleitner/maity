@@ -646,6 +646,12 @@ window.Maity = window.Maity || {};
     landingText(x.label, path + ".label", 40, true, errors);
     if (!landingHref(x.href)) errors[path + ".href"] = "invalid_href";
   }
+  // §16.7.3: a text still holding a placeholder, by its path, as the hub refuses it.
+  function landingPlaceholders(v, at, errors) {
+    if (typeof v === "string") { if (/\{\{\s*[A-Za-z][A-Za-z0-9_-]*\s*\}\}/.test(v) && !errors[at]) errors[at] = "unresolved_placeholder"; return; }
+    if (v && typeof v === "object") Object.entries(v).forEach(([k, x]) => landingPlaceholders(x, at ? at + "." + k : k, errors));
+  }
+  let fixtureSiteValues = {};
   function landingPage(pg, at, errors) {
     if (!pg || typeof pg !== "object") { errors[at] = "invalid"; return; }
     landingText(pg.title, at + ".title", 120, true, errors);
@@ -2994,10 +3000,29 @@ window.Maity = window.Maity || {};
       if (!Object.keys(errors).length && v.enabled) {
         Object.entries(v.variants || {}).forEach(([slug, x]) => { if (!(x.pages || {})[v.default_language]) errors["variants." + slug + ".pages." + v.default_language] = "required"; });
       }
+      landingPlaceholders(body, "", errors);
       if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
       v.updated_at = nowIso(); v.updated_by = me().member.id;
       fixtures()["landing.json"] = JSON.parse(JSON.stringify(v));
       return v;
+    }],
+    ["GET", /^\/admin\/settings\/site-values$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      return { values: fixtureSiteValues };
+    }],
+    ["PATCH", /^\/admin\/settings\/site-values$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      const errors = {};
+      Object.keys(body).filter((k) => k !== "values").forEach((k) => { errors[k] = "extra_forbidden"; });
+      const values = body.values;
+      if (!values || typeof values !== "object" || Array.isArray(values) || Object.keys(values).length > 50) errors.values = "invalid";
+      else Object.entries(values).forEach(([name, v]) => {
+        if (!/^[a-z][a-z0-9_]{0,39}$/.test(name) || typeof v !== "string" || !v || v.length > 500 || v.trim() !== v || /[\x00-\x1f\x7f]/.test(v)) errors["values." + name] = "invalid";
+        else if (v.includes("{{")) errors["values." + name] = "unresolved_placeholder";
+      });
+      if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+      fixtureSiteValues = values;
+      return { values };
     }],
     ["GET", /^\/admin\/settings\/legal$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
@@ -3021,6 +3046,7 @@ window.Maity = window.Maity || {};
           landingMarkdown(x && x.markdown, at + ".markdown", 65536, true, errors);
         });
       });
+      landingPlaceholders(body, "", errors);
       if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
       if ("default_language" in body) v.default_language = body.default_language;
       named.forEach((page) => {
@@ -3041,6 +3067,7 @@ window.Maity = window.Maity || {};
       if ("footer" in body) landingFooter(body.footer || {}, errors);
       if ("variants" in body) landingVariants(body.variants, errors);
       if ("campaigns" in body) landingCampaigns(body.campaigns, errors);
+      landingPlaceholders(body, "", errors);
       if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
       const id = localId("lpv");
       return { id, url: "/api/v1/admin/settings/landing/preview/" + id, expires_at: new Date(Date.now() + 600000).toISOString().replace(/\.\d{3}Z$/, "Z") };
@@ -3056,6 +3083,7 @@ window.Maity = window.Maity || {};
         landingText(x && x.title, page + "." + lang + ".title", 120, true, errors);
         landingMarkdown(x && x.markdown, page + "." + lang + ".markdown", 65536, true, errors);
       });
+      landingPlaceholders(body, page, errors);
       if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
       const id = localId("lgv");
       return { id, url: "/api/v1/admin/settings/legal/preview/" + id, expires_at: new Date(Date.now() + 600000).toISOString().replace(/\.\d{3}Z$/, "Z") };

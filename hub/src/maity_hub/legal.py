@@ -14,7 +14,7 @@ from typing import Any
 from sqlalchemy import Connection, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock
+from maity_hub import clock, site_values
 from maity_hub import tables as t
 from maity_hub.errors import invalid, rate_limited
 from maity_hub.landing import CONTROL, LANGUAGES, Problems, markdown_problem
@@ -70,6 +70,7 @@ def _languages(value: Any, page: str, found: Problems) -> dict[str, dict[str, st
                 found.add(f"{here}.markdown", problem)
         if f"{here}.title" not in found.fields and f"{here}.markdown" not in found.fields:
             out[tag] = {"title": str(title), "markdown": str(markdown)}
+    site_values.refuse_placeholders(value, page, found.add)
     return out if len(found.fields) == before else None
 
 
