@@ -1156,6 +1156,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("join-agent").value = "agt-b"; byId("join-agent").dispatch("change");
   expect(text(byId("join-quota")) === "1 of 1 instances active; another one is over the team's limit.",
     "team: opening + Add an agent reads the members again, a limit changed elsewhere shows: " + text(byId("join-quota")));
+  // The way to the profile (tsk-svqsdp6qf0f3): one click from the form, none for a new agent.
+  const joinLinks = () => main.querySelector(".join-profile-links");
+  expect(joinLinks().querySelectorAll("a").map((a) => a.getAttribute("href")).join() === "#/agents/agt-b,#/maintainer/maity/agents/agt-b/rulebook",
+    "join: the chosen member's profile and rulebook are linked: " + joinLinks().querySelectorAll("a").map((a) => a.getAttribute("href")).join());
+  byId("join-agent").value = ""; byId("join-agent").dispatch("change");
+  expect(joinLinks().hidden, "join: a new agent has no profile to link");
+  byId("join-agent").value = "agt-b"; byId("join-agent").dispatch("change");
   // The panel open while the rulebook is saved: its count follows at once, the agent still chosen (antigravity's P3 on #616).
   byId("team-max-agt-b").value = "2"; teamOf("agt-b").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(!main.querySelector(".join-panel").hidden && byId("join-agent").value === "agt-b" && text(byId("join-quota")) === "1 of 2 instances active.",

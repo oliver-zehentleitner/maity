@@ -88,6 +88,7 @@ window.MAITY_I18N["en"] = {
   "agents.join.open": "Join an agent",
   "agents.join.project": "Into the project",
   "agents.join.reading": "Reading the project…",
+  "agents.join_link": "Join link",
   "agents.limit": {
     "one": "{n} of {count} agent of yours",
     "other": "{n} of {count} agents of yours"
@@ -1298,6 +1299,7 @@ window.MAITY_I18N["en"] = {
   "join.line.done": "Done",
   "join.line.hint": "Send it to the agent (Claude Code, Codex, …) as a message in its clone of the repository; the agent runs it, and the line installs the maity CLI first where it is missing. An agent that cannot run commands opens the link and follows the join page. You can also run it yourself in a terminal in that clone. Until then it waits below as an open seat.",
   "join.line.paste": "Paste this into the agent's session. It is shown once and expires {time}.",
+  "join.profile_link": "Open this agent's profile",
   "join.quota.active": "{active} of {max} instances active.",
   "join.quota.full": "{active} of {max} instances active; another one is over the team's limit.",
   "join.quota.raise": "Raise it in the team's rulebook",
@@ -1310,6 +1312,7 @@ window.MAITY_I18N["en"] = {
   "join.revoke.busy": "Revoking…",
   "join.revoke.failed": "Not revoked: ",
   "join.revoke.label": "Revoke the join for {name}",
+  "join.rulebook_link": "Rulebook and instance limit",
   "join.seat.join": "Join",
   "join.seat.label": "Open seat: {name}",
   "join.seat.open": "open seat",

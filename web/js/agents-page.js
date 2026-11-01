@@ -94,6 +94,7 @@ window.Maity = window.Maity || {};
       h("a", { href: "/" + M.api.projectPath(m.project) + "/agents/" + encodeURIComponent(a.id) }, m.project),
       h("span", { class: "muted" }, " · " + M.trust.words(m)),
       active === null ? null : h("span", { class: "muted" }, " · " + (max ? M.t("agents.instances_max", { active, count: max }) : M.t("agents.instances", { count: active }))),
+      " ", h("a", { class: "small", href: "/" + M.api.projectPath(m.project) + "/agents/join?agent=" + encodeURIComponent(a.id) }, M.t("agents.join_link")),
       " ", h("a", { class: "small", href: "/" + M.api.projectPath(m.project) + "/agents/" + encodeURIComponent(a.id) + "/rulebook" }, M.t("agents.rulebook")));
   }
 
