@@ -460,7 +460,10 @@ it checks for `maity` again before the join: otherwise a failed install
 would still run the join, and the code would land in the error message
 and in `$Error`. `MAITY_CLI_INSTALL` is a POSIX line, so `windows` is
 `null` unless it is a single command with no shell operators, rather than
-handing PowerShell a line it reads differently.
+handing PowerShell a line it reads differently. A known limit: an install
+line with an environment prefix or a `~` passes that check, and PowerShell
+reads it differently too. Such a line fails without joining, so no code
+leaks, and only an operator with an install line of their own is affected.
 
 **Rejected:**
 
