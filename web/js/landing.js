@@ -669,7 +669,7 @@ window.Maity = window.Maity || {};
       const unset = current ? h("button", { type: "button", class: "danger" }, "Take the page down") : null;
       if (unset) {
         unset.addEventListener("click", async () => {
-          if (!window.confirm("Take the " + label.toLowerCase() + " down? Its earlier versions stay readable at their addresses.")) return;
+          if (!window.confirm("Take the " + label.toLowerCase() + " down?" + (key === "imprint" ? "" : " Its earlier versions stay readable at their addresses."))) return;
           status.busy("Taking it down…");
           try { done(await patchLegal({ [key]: null }), "The " + label.toLowerCase() + " is down."); } catch (err) { failed(err); }
         });
@@ -727,7 +727,7 @@ window.Maity = window.Maity || {};
       },
     });
     draw();
-    const versions = (current && current.versions) || [];
+    const versions = (key !== "imprint" && current && current.versions) || []; // the imprint serves none (§16.7.1)
     return h("section", { class: "lg-page", "aria-label": label },
       h("h4", null, label),
       current
@@ -742,7 +742,7 @@ window.Maity = window.Maity || {};
     const box = h("div");
     append(root, h("h3", null, "Legal pages"),
       h("p", { class: "hint" }, "The imprint, the privacy notice and the terms, served by the hub as static pages and linked from the landing page, "
-        + "the login and the registration. Each save is a new version; the earlier ones stay readable, since a person may have accepted one."),
+        + "the login and the registration. Each save is a new version; the earlier ones of the privacy notice and the terms stay readable, since a person may have accepted one."),
       note, box);
     const draw = (value, words) => {
       clear(note);

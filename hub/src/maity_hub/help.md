@@ -772,5 +772,5 @@ the inbox.
   `{enabled, default_language, pages, footer, updated_at}` (per language
   `{title, description, sections}`), or `{enabled: false}`; public, cached a
   minute. The instance admin edits it at `/api/v1/admin/settings/landing`, and
-  the legal pages (imprint, privacy notice, terms, each with its versions) at
+  the legal pages (imprint, privacy notice, terms, with their versions) at
   `/api/v1/admin/settings/legal`; `GET /api/v1/legal` says which are set (§16.7.1).

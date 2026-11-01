@@ -1,6 +1,7 @@
 """The pages the hub renders itself, outside the API (docs/api.md §16.7, §16.7.1): the
 landing page at `/` for a visitor without a session while it is enabled, and the legal pages
-at `/impressum`, `/privacy` and `/terms` with their earlier versions at `/<page>/<version>`.
+at `/impressum`, `/privacy` and `/terms`, the last two with their earlier versions readable at
+`/<page>/<version>`, linked from no public page.
 
 The landing page loads the hub's own first-party files (`landing_files`, §16.7) and answers
 with a Content-Security-Policy that allows exactly those; the legal pages carry no script.
@@ -156,7 +157,10 @@ def legal_html(
     version: str | None,
     lang: str | None,
 ) -> str:
-    """One legal page: the served version, or an earlier one by its version."""
+    """One legal page: the served version, or an earlier one by its version where the page
+    serves those."""
+    if version is not None and page not in legal.EARLIER_SERVED:
+        raise not_found()
     setting = legal.stored(conn)
     served = setting["pages"][page]
     if version is None:
@@ -174,22 +178,12 @@ def legal_html(
     chosen = render.choose_language(
         list(texts), setting["default_language"], lang, request.headers.get("accept-language")
     )
-    versions = [
-        v
-        for v in conn.execute(
-            select(t.legal_version.c.version)
-            .where(t.legal_version.c.page == page)
-            .order_by(t.legal_version.c.version.desc())
-        ).scalars()
-        if v != version
-    ]
     return render.legal_document(
         page=page,
         lang=chosen,
         title=texts[chosen]["title"],
         source=texts[chosen]["markdown"],
         version=version,
-        earlier=versions,
         current=served["version"] if served else None,
         languages=list(texts),
         legal=legal.public(setting),

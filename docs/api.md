@@ -13291,16 +13291,22 @@ versions stay bounded by what an operator can write. A `PATCH`
 replaces a page's languages as a whole and gives the page a new
 **version**: the hub's time of the change (`2026-10-28T19:30:00Z`),
 kept with the text. The hub keeps every earlier version of a page,
-read-only.
+read-only, and serves those of the privacy notice and the terms; the
+imprint says who runs the instance now, so its earlier versions are not
+served.
 
 - **Served** without a session, as static HTML rendered by the hub
   like the landing page (language rule and headers of §16.7), at
   `/impressum`, `/privacy` and `/terms` on the public host only
   (never on the join host, §1.1, nor `GET /legal`); a page not set
-  answers `404`. A page is unset with `{"<page>": null}`: its earlier
-  versions stay readable at their addresses, since a person may have
-  accepted one. Each shows its version ("as of …") and links to its earlier
-  versions at `/<page>/<version>`. The landing page's footer and the
+  answers `404`. A page is unset with `{"<page>": null}`: the earlier
+  versions of the privacy notice and the terms stay readable at their
+  addresses `/<page>/<version>`, since a person may have accepted one.
+  Each page shows its version ("as of …") and no public page lists or
+  links earlier versions; an earlier version says that it is one and
+  where the current page is. `/impressum/<version>` answers `404` for
+  every version, the current one included. `GET /admin/settings/legal`
+  names every page's kept versions in `versions`. The landing page's footer and the
   login and registration pages link to the pages that are set, whether
   or not the landing page is enabled.
 - **Terms at registration.** While `terms` is set here and
@@ -13318,8 +13324,7 @@ read-only.
   body cap, then `GET
   /admin/settings/legal/preview/{id}?lang=<tag>`, with the same scope,
   lifetime, binding and headers. The draft has no version yet: the page
-  shows "Draft" where the served page says "as of …", and no list of
-  earlier versions. A legal page is read as a visitor at its own path;
+  shows "Draft" where the served page says "as of …". A legal page is read as a visitor at its own path;
   it has no `?as=public` of its own. A preview counts against none of
   the page's change limits.
 - **Read** with `GET /legal` (unauthenticated): `{default_language,
