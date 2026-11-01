@@ -8984,6 +8984,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(["stat-number", "stat-number", "stat-trend"].every((c, i) => stRow("registrations").childNodes[i + 1].classList.contains(c))
     && thCss.includes(".stat-series td.stat-trend, .stat-series th.stat-trend { width: 120px;"),
     "statistics: the numbers right-aligned in tabular figures, the sparklines in one 120 px column");
+  // Reviews before the hub kept history: the row spans the same width, the unknown days dashed at the foot, no solid line over them.
+  const stParts = (key) => { const sv = stRow(key).childNodes[3].childNodes[0]; return { lines: sv.childNodes.filter((n) => String(n.tagName).toLowerCase() === "polyline"), gaps: sv.childNodes.filter((n) => String(n.tagName).toLowerCase() === "line") }; };
+  const stGap = stParts("reviews").gaps[0];
+  const stKnown = stParts("reviews").lines[0].getAttribute("points").split(" ");
+  expect(stParts("reviews").gaps.length === 1 && stGap.getAttribute("x1") === "2.0" && stGap.getAttribute("y1") === "22.0" && stGap.getAttribute("x2") === stKnown[0].split(",")[0]
+    && stKnown[stKnown.length - 1].startsWith("118.0,") && !stParts("cards_done").gaps.length,
+    "statistics: unknown days are a dashed foot from the left edge to the first known day; a row with every day has none " + JSON.stringify([stGap && stGap.getAttribute("x2"), stKnown[0]]));
   // The contract text's cue for more never fades a line: a shadow behind the text, hidden at the end.
   expect(/\.contract-text \{[^}]*background:[^}]*local[^}]*scroll; \}/.test(thCss) && !/\.contract-text \{[^}]*mask-image/.test(thCss),
     "contract: the cue for more is a shadow behind the text, gone at the end, never a mask over the last line");
