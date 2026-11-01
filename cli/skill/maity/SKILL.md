@@ -64,6 +64,8 @@ Every command has `--help`.
 | You start a task | `maity claim <card>` |
 | You finished a step and may lose your context | `maity checkpoint <card> -m "<what is done>" --next "<what comes next>"` |
 | You stop a task unfinished | `maity unclaim <card>` |
+| You wait for someone else's card | `maity watch <card>`: its status changes and updates wake you; `maity unwatch <card>` ends it |
+| Others wait for your card and something happened | `maity say --type update --task <card> "<what happened>"` reaches everyone watching it |
 | A task is done and pushed | `maity report --task <id> --summary "<one or two sentences>"` |
 | A task's result is not code (a review, a draft, a decision prepared for a human) | `maity report --task <id> --summary "<the result>" --no-code` |
 | A card is too big for one piece of work | `maity task create "<title>" --parent <card>` per piece; `maity task show <card>` shows its children |

@@ -1169,6 +1169,18 @@ def cmd_unclaim(args: argparse.Namespace) -> int:
     return _done(args, task, f"gave {args.card} back; it is {_field(task, 'status')} again")
 
 
+def cmd_watch(args: argparse.Namespace) -> int:
+    session = Session()
+    task = session.client.call("PUT", session.project_path("tasks", args.card, "watch"))
+    return _done(args, task, f"watching {args.card}")
+
+
+def cmd_unwatch(args: argparse.Namespace) -> int:
+    session = Session()
+    task = session.client.call("DELETE", session.project_path("tasks", args.card, "watch"))
+    return _done(args, task, f"no longer watching {args.card}")
+
+
 def cmd_checkpoint(args: argparse.Namespace) -> int:
     body: dict[str, Any] = {
         "last_step": _text(args.message, "-m"),
@@ -1677,7 +1689,15 @@ def cmd_chat(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
-SAY_TYPES = ("interface_change", "blocker", "go_request", "review_result", "handover", "notice")
+SAY_TYPES = (
+    "interface_change",
+    "blocker",
+    "go_request",
+    "review_result",
+    "handover",
+    "notice",
+    "update",
+)
 
 
 def cmd_say(args: argparse.Namespace) -> int:
@@ -1701,6 +1721,18 @@ def cmd_say(args: argparse.Namespace) -> int:
         path = session.project_path("conversations", args.chat, "messages")
         message = _post_with(session, attach, lambda ids: _chat_post(session, path, text, ids))
         return _done(args, message, f"said in {args.chat} (seq {_field(message, 'seq')})")
+    if args.type == "update" and args.task is None:
+        raise UsageError("--type update needs --task: the card whose watchers it reaches (§6.4)")
+    if args.type == "update" and args.to is None:
+        text = _say_body(args.body, attach)
+        session = Session()
+        return _say_event(
+            args,
+            session,
+            {"kind": "message", "type": "update", "body": text, "task_id": args.task},
+            attach,
+            f"sent update to the watchers of {args.task}",
+        )
     if args.to is None:
         raise UsageError(
             "say to whom: 'all', 'role:<role>', 'trust:admin', a member id, 'human', or --chat"
@@ -1737,13 +1769,22 @@ def cmd_say(args: argparse.Namespace) -> int:
         body["task_id"] = args.task
     if review is not None:
         body["review"] = review  # as given: the hub checks it and names each bad path
+    return _say_event(args, session, body, attach, f"sent {args.type} to {to}")
 
+
+def _say_event(
+    args: argparse.Namespace,
+    session: Session,
+    body: dict[str, Any],
+    attach: list[str],
+    said: str,
+) -> int:
     def post(ids: list[str]) -> Any:
         sent = {**body, "attachments": ids} if ids else body
         return session.client.call("POST", session.project_path("events"), body=sent)
 
     event = _post_with(session, attach, post)
-    return _done(args, event, f"sent {args.type} to {to} (seq {_field(event, 'seq')})")
+    return _done(args, event, f"{said} (seq {_field(event, 'seq')})")
 
 
 def _say_body(value: str | None, attach: list[str]) -> str:
@@ -2323,6 +2364,8 @@ def cmd_task_show(args: argparse.Namespace) -> int:
     if holder:
         print(f"  held by: {show(holder)}")
     print(f"  parent: {show(card.get('parent')) if card.get('parent') else 'none'}")
+    if isinstance(card.get("watching"), bool):
+        print(f"  watching: {'yes' if card['watching'] else 'no'}")
     if kids:
         counts = _obj(card.get("children"))
         print(f"  children: {show(counts.get('open'))}/{show(counts.get('total'))} open")
@@ -3929,6 +3972,26 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(handler=cmd_unclaim)
 
     p = add(
+        "watch",
+        "follow a card you wait for: its status changes and updates wake you",
+        "Watch a card (PUT …/tasks/{card}/watch): every status change and every `say --type "
+        "update` on it reach and wake you, whoever holds it. Allowed on closed cards too.",
+    )
+    p.add_argument("card", type=_id, help="the card id")
+    _json_flag(p)
+    p.set_defaults(handler=cmd_watch)
+
+    p = add(
+        "unwatch",
+        "stop following a card",
+        "Stop watching a card (DELETE …/tasks/{card}/watch). A watch that comes with your own "
+        "card depending on this one stays while the dependency does: the hub answers `invalid`.",
+    )
+    p.add_argument("card", type=_id, help="the card id")
+    _json_flag(p)
+    p.set_defaults(handler=cmd_unwatch)
+
+    p = add(
         "checkpoint",
         "record where the work on a card stands, for the next session",
         "Record the last and the next step on a card you hold. The branch and the head commit "
@@ -3960,7 +4023,9 @@ def build_parser() -> argparse.ArgumentParser:
         "chat with the human who owns this agent (POST …/conversations/{you}/messages); "
         "--chat <conversation> writes in any chat you are in, a group chat included. Each "
         "--attach uploads a file first (POST …/attachments) and the message then carries it; "
-        "a failed upload sends no message. Status is not a message: the board shows it.",
+        "a failed upload sends no message. Status is not a message: the board shows it. "
+        "--type update --task CARD needs no TO: it reaches everyone watching the card, and the "
+        "one positional is the message.",
     )
     p.add_argument(
         "to",
@@ -4203,7 +4268,7 @@ def build_parser() -> argparse.ArgumentParser:
         "(PATCH /me), the conversation history. PATH is relative to /api/v1, e.g. "
         "/projects/oliver/maity/tasks/tsk-0004. See `maity help`.",
     )
-    p.add_argument("method", type=str.upper, choices=("GET", "POST", "PATCH", "DELETE"))
+    p.add_argument("method", type=str.upper, choices=("GET", "POST", "PUT", "PATCH", "DELETE"))
     p.add_argument("path", help="the endpoint path, starting with /")
     p.add_argument("--json", metavar="FILE", help="request body from a JSON file, or - for stdin")
     p.add_argument(
@@ -4782,9 +4847,19 @@ def _read_text_file(path: str, flag: str) -> str:
 _EATEN = re.compile(r"\w  +\w|\w +[.,;:!?)](?:\s|$)")
 
 
+def _say_update_text(args: argparse.Namespace) -> None:
+    """`maity say --type update --task ID "…"`: no recipient, so the one positional is the
+    message (§6.4)."""
+    if getattr(args, "handler", None) is not cmd_say or args.type != "update":
+        return
+    if args.chat is None and args.body is None and args.body_file is None:
+        args.to, args.body = None, args.to
+
+
 def _load_texts(args: argparse.Namespace) -> None:
     """Resolve `-` and the `--…-file` flags into the text arguments, before the command runs,
     and warn about text that looks like the shell already ran parts of it."""
+    _say_update_text(args)
     stdin_used = False
     for attr, file_attr, flag, required in _texts(args):
         value, path = getattr(args, attr, None), getattr(args, file_attr, None)
