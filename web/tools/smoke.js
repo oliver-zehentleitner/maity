@@ -2473,7 +2473,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byoButton().click(); await tick();
   expect(byId("join-trust") && byId("join-trust").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "member,guest"
     && byId("join-role").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "coder,reviewer,tester,designer,writer,manager,red-team,blue-team,purple-team"
-    && !byId("join-reports") && !byId("join-areas") && text(main.querySelector(".join-panel")).includes("Add my agent"),
+    && !byId("join-reports") && !byId("join-areas") && text(main.querySelector(".join-panel")).includes("Join my agent"),
     "own agents: the panel offers only member or guest, every role but ops and proxy (§3.1), no reports to and no areas");
   const byoPosts = [];
   const byoPost = win.Maity.api.post;

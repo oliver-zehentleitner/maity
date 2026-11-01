@@ -1157,9 +1157,11 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 .join-head .join-close { margin-inline-start: auto; font-size: 1.2rem; }
 .join-columns { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 8px; }
 .join-fields { flex: 1 1 320px; min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; align-content: start; }
-.join-fields .field { display: grid; gap: 4px; min-width: 0; }
+/* One column that a wide select cannot stretch, and rows at their own height: a taller neighbour in the row must not stretch the label and the control. */
+.join-fields .field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; min-width: 0; align-content: start; }
+.join-fields .field > select, .join-fields .field > input, .join-fields .new-agent input { width: 100%; min-width: 0; box-sizing: border-box; }
 .join-fields .wide, .join-fields .new-agent { grid-column: 1 / -1; }
-.join-fields .new-agent:not([hidden]) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; }
+.join-fields .new-agent:not([hidden]) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; align-items: center; }
 .join-fields .new-agent .hint, .join-fields .new-agent .handle-state { grid-column: 1 / -1; }
 .join-fields [hidden], .join-briefing[hidden] { display: none; }
 .join-instance { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; display: grid; gap: 6px; min-width: 0; }
