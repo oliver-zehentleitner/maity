@@ -397,5 +397,5 @@ def downgrade() -> None:
     op.drop_table("jour_fixe_recipient")
     op.drop_table("jour_fixe_opt_out")
     op.drop_table("jour_fixe_moderator")
-    op.drop_index("ix_jour_fixe_series_project_id", table_name="jour_fixe_series")
+    # The table alone: its index goes with it, and MariaDB refuses to drop one a foreign key needs.
     op.drop_table("jour_fixe_series")
