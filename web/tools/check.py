@@ -293,7 +293,7 @@ def strip_js(src, literals=None):
     keeping newlines, so that patterns and brackets are checked on code only.
     Returns (code, error) where error is (line, message) or None. With
     `literals`, a list, each string and template literal is appended to it
-    as (line, text, the source just before it)."""
+    as (line, text, the source before it on its line)."""
     out = []
     i, n, line = 0, len(src), 1
     prev = ""  # last significant code character
@@ -328,7 +328,7 @@ def strip_js(src, literals=None):
                 return None, (line, "unterminated string")
             chunk = src[i:j + 1]
             if literals is not None:
-                literals.append((line, chunk[1:-1], src[max(0, i - 80):i]))
+                literals.append((line, chunk[1:-1], src[max(src.rfind("\n", 0, i) + 1, i - 240):i]))
             line += chunk.count("\n") - (1 if c == "\n" else 0)
             out.append(c + re.sub(r"[^\n]", " ", chunk[1:-1]) + c)
             prev = c
@@ -588,8 +588,10 @@ def load_catalog(path):
     return data
 
 
-# Literals that read as words but are code: the strict-mode directive.
-NOT_PROSE = {"use strict"}
+# Literals that read as words but stay as they are in every language: the strict-mode
+# directive, product names, the brand in a page title, keys as a browser names them.
+NOT_PROSE = {"use strict", " · Maity", "Codex", "Hermes", "Kimi Code", "Cline", "Claude Code",
+             "⌘+Enter", "Ctrl+Enter", "Strg+Enter", "Control+Enter Meta+Enter"}
 
 
 # What comes before a literal that is code whatever it reads like: a class, an
@@ -602,11 +604,14 @@ CODE_BEFORE = re.compile(
              createElement|createElementNS|setAttribute|getAttribute|removeAttribute|getItem|setItem|removeItem|
              includes|startsWith|endsWith|split|join|replace|get|has|set|append|delete|matchMedia|
              api\.\w+|route\.\w+|go|t|tn|tOwn)\(\s*
+         |\bnew\ TypeError\([^;]*|!\(\s*
          |[=!]==?\s*|\bcase\s+|\btypeof\s+|\bh\(\s*|\bdispatch\(\s*)$""", re.X)
 # Where a word is on screen: the content of an element, or an attribute a person reads.
 TEXT_BEFORE = re.compile(
     r"""(?:\.textContent\s*=\s*|\btitle["']?\s*[:=]\s*|placeholder["']?\s*[:=]\s*|aria-label["']?\s*[:=]\s*|\blabel["']?\s*:\s*|alt["']?\s*:\s*
          |\bh\([^;\n]*(?:null|\}),\s*)$""", re.X)
+# A line of a generated config file or a shell command: `key = value`, `<<'EOF'`, `&&`.
+CONFIG_OR_SHELL = re.compile(r"""^\s*[a-z_.]+\s=(\s|$)|^(maity|pipx|export)\s|<<'|\s&&\s|\$\(""")
 HTML_NAMES = {"a", "button", "input", "select", "textarea", "form", "label", "summary", "details", "li", "ul", "ol",
               "div", "span", "p", "h2", "h3", "nav", "main", "section", "article", "header", "footer", "dialog"}
 
@@ -638,7 +643,9 @@ def prose(text, before=""):
     if all(t.strip(",") in HTML_NAMES for t in tokens):  # a selector
         return False
     alone = len(tokens) == 1
-    if all(re.fullmatch(r"[a-z0-9_.#/:()-]+,?", t) for t in tokens) and any(technical(t, alone) for t in tokens):
+    if all(re.fullmatch(r"[a-z0-9_.#/:()@*…=-]+,?", t) for t in tokens) and any(technical(t, alone) for t in tokens):
+        return False
+    if CONFIG_OR_SHELL.search(text):
         return False
     if re.match(r"\s*[^A-Za-z]{0,2}[A-Z][a-z]", text) or not alone:
         return True
