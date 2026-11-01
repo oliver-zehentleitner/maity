@@ -42,6 +42,25 @@ def test_a_read_only_entry_counts() -> None:
     assert winacl.judge(ME, ME, [allow(USERS, mask=0x120089)]).others == (USERS,)
 
 
+def test_owner_rights_stand_for_the_owner() -> None:
+    """Python's own `mkdir(mode=0o700)` writes this entry: the CI's first run refused it."""
+    entries = [allow(winacl.OWNER_RIGHTS)]
+    assert winacl.judge(ME, ME, entries) == winacl.Reach(None, ())
+    assert winacl.judge(ME, USERS, entries) == winacl.Reach(USERS, ())
+
+
+def test_the_way_out_removes_what_cutting_inheritance_leaves(tmp_path: Path) -> None:
+    command = winacl.fix_command(tmp_path, ME, (USERS, "an access entry of type 9"))
+    assert f'/grant:r "*{ME}:(OI)(CI)F" /remove "*{USERS}"' in command
+    assert "type 9" not in command
+
+
+def test_a_port_is_no_part_of_a_windows_directory_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert state.host_dir("hub.example:8443") == "hub.example:8443"
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert state.host_dir("hub.example:8443") == "hub.example_8443"
+
+
 def test_another_owner_is_named() -> None:
     assert winacl.judge(ME, USERS, [allow(ME)]).foreign_owner == USERS
 
@@ -157,7 +176,7 @@ def test_the_way_out_a_refusal_names_works(tmp_path: Path) -> None:
     directory = tmp_path / "s"
     state.write_credential(directory, state.Secret("tok"))
     _grant_users(directory)
-    command = winacl.fix_command(directory, real.current_user())
+    command = winacl.fix_command(directory, real.current_user(), real.reach(directory).others)
     subprocess.run(command, shell=True, check=True, capture_output=True)  # noqa: S602
     assert real.reach(directory).others == ()
 
@@ -182,3 +201,12 @@ def test_a_join_leaves_a_dir_with_something_in_it(tmp_path: Path) -> None:
     with pytest.raises(state.StateError, match="accessible"):
         state.prepare_for_join(full)
     assert USERS in real.reach(full).others
+
+
+@windows
+def test_a_secret_someone_else_can_reach_is_not_used(tmp_path: Path) -> None:
+    path = tmp_path / "s" / "env-secret"
+    assert state.secret_once(path)
+    _grant_users(path)
+    with pytest.raises(state.StateError, match="icacls"):
+        state.secret_once(path)

@@ -97,7 +97,12 @@ def identity_dir(hub_host: str, handle: str) -> Path:
     """The state directory `maity join` gives an agent outside a Git clone (context/join.md):
     one per identity, `$XDG_STATE_HOME/maity/<hub host>/<handle>`, `~/.local/state` by
     default. Both parts come checked: `hub_host` from a parsed URL, `handle` by its pattern."""
-    return _state_home() / "maity" / hub_host / handle
+    return _state_home() / "maity" / host_dir(hub_host) / handle
+
+
+def host_dir(hub_host: str) -> str:
+    """A hub's host as a directory name. A port's colon is no part of a Windows file name."""
+    return hub_host.replace(":", "_") if sys.platform == "win32" else hub_host
 
 
 def other_hub_hosts(hub_host: str) -> list[str]:
@@ -112,10 +117,10 @@ def other_hub_hosts(hub_host: str) -> list[str]:
         if not entry.is_dir():
             continue
         if has_credential(entry):
-            hosts.add(_hub_host_of(entry))
+            hosts.add(host_dir(_hub_host_of(entry)))
         elif any(has_credential(identity) for identity in entry.iterdir() if identity.is_dir()):
             hosts.add(entry.name)
-    return sorted(hosts - {hub_host, ""})
+    return sorted(hosts - {host_dir(hub_host), ""})
 
 
 def _hub_host_of(state_dir: Path) -> str:
@@ -200,7 +205,8 @@ def check_private(path: Path, revoke: str = "revoke the session in the dashboard
         if reach.others:
             raise StateError(
                 f"{path} is accessible by others ({', '.join(reach.others)}); run "
-                f"`{winacl.fix_command(path, winacl.current_user())}` if it is yours, or {revoke}"
+                f"`{winacl.fix_command(path, winacl.current_user(), reach.others)}` "
+                f"if it is yours, or {revoke}"
             )
         return
     st = path.stat()

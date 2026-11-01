@@ -19,12 +19,12 @@ def test_block_is_refreshed_in_place(tmp_path: Path) -> None:
     agents = tmp_path / "AGENTS.md"
     agents.write_text(f"head\n\n{pointer.BEGIN}\nold\n{pointer.END}\ntail\n")
     pointer.write(tmp_path)
-    assert agents.read_text() == f"head\n\n{pointer.BLOCK}tail\n"
+    assert agents.read_text(encoding="utf-8") == f"head\n\n{pointer.BLOCK}tail\n"
 
 
 def test_agents_md_is_created_when_missing(tmp_path: Path) -> None:
     pointer.write(tmp_path)
-    assert (tmp_path / "AGENTS.md").read_text() == pointer.BLOCK
+    assert (tmp_path / "AGENTS.md").read_text(encoding="utf-8") == pointer.BLOCK
 
 
 def test_claude_md_only_when_it_does_not_import_agents_md(tmp_path: Path) -> None:

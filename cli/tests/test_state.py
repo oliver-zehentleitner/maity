@@ -5,6 +5,7 @@ import stat
 from pathlib import Path
 
 import pytest
+from conftest import posix
 
 from maity import state
 
@@ -37,6 +38,7 @@ def test_env_override_wins(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     assert state.resolve_state_dir() == (tmp_path / "custom").resolve()
 
 
+@posix
 def test_credential_is_written_private(tmp_path: Path) -> None:
     directory = tmp_path / "s"
     path = state.write_credential(directory, state.Secret("tok-123"))
@@ -52,6 +54,7 @@ def test_credential_is_replaced_atomically(tmp_path: Path) -> None:
     assert state.read_credential(tmp_path).reveal() == "new"
 
 
+@posix
 def test_loose_credential_is_refused(tmp_path: Path) -> None:
     path = state.write_credential(tmp_path, state.Secret("tok-123"))
     os.chmod(path, 0o644)
@@ -99,6 +102,7 @@ def test_broken_state_is_refused(tmp_path: Path) -> None:
         state.load_state(tmp_path)
 
 
+@posix
 def test_a_loose_state_dir_is_refused_not_chmodded(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -113,6 +117,7 @@ def test_a_loose_state_dir_is_refused_not_chmodded(
     assert not (named / "credential").exists()
 
 
+@posix
 def test_reading_refuses_a_loose_state_dir(tmp_path: Path) -> None:
     directory = tmp_path / "s"
     state.write_credential(directory, state.Secret("tok"))

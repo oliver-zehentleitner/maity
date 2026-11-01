@@ -12,7 +12,7 @@ from typing import Any
 
 import fakehub
 import pytest
-from conftest import fake_gh, git
+from conftest import fake_gh, git, posix
 
 from maity import cli, hub, pointer, state
 
@@ -965,6 +965,7 @@ def test_a_join_page_without_a_handle_keeps_the_refusal(
     assert not [s for s in fake.seen if s.method == "POST"]  # the code was not spent
 
 
+@posix
 @pytest.mark.parametrize("derived", [False, True])
 def test_join_tightens_an_empty_state_directory_it_owns(
     derived: bool,
@@ -988,6 +989,7 @@ def test_join_tightens_an_empty_state_directory_it_owns(
     assert state.has_credential(directory)
 
 
+@posix
 def test_join_never_loosens_the_rule_for_a_directory_with_a_credential(tmp_path: Path) -> None:
     directory = tmp_path / "agent"
     state.write_credential(directory, state.Secret(fakehub.CREDENTIAL))
@@ -998,6 +1000,7 @@ def test_join_never_loosens_the_rule_for_a_directory_with_a_credential(tmp_path:
         state.check_private(directory)
 
 
+@posix
 def test_a_directory_join_cannot_write_never_reaches_the_exchange(
     no_clone: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1067,6 +1070,7 @@ def test_a_join_in_a_clone_never_reads_the_page(clone: Path, fake: fakehub.FakeH
     assert not [s for s in fake.seen if s.method == "GET" and "join" in s.path]
 
 
+@posix
 def test_join_never_tightens_a_directory_with_something_in_it(
     no_clone: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

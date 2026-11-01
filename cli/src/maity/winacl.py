@@ -19,6 +19,7 @@ SYSTEM = "S-1-5-18"
 ADMINISTRATORS = "S-1-5-32-544"
 # The counterpart of root: they can take any file, so naming them on a list changes nothing.
 ALWAYS = frozenset({SYSTEM, ADMINISTRATORS})
+OWNER_RIGHTS = "S-1-3-4"  # whoever owns the file; Python's own mkdir(mode=0o700) writes this one
 
 ACCESS_ALLOWED = 0
 ACCESS_DENIED = 1
@@ -51,6 +52,7 @@ def judge(me: str, owner: str, entries: list[Entry] | None) -> Reach:
     as someone else: a refusal can be fixed, a silent pass can't be seen."""
     mine = ALWAYS | {me}
     foreign_owner = None if owner in mine else owner
+    mine |= {OWNER_RIGHTS}  # someone else as the owner is named above
     if entries is None:
         return Reach(foreign_owner, ("everyone (no access list)",))
     others: list[str] = []
@@ -74,10 +76,12 @@ def private_sddl(me: str) -> str:
     return f"D:PAI(A;OICI;FA;;;{me})(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
 
 
-def fix_command(path: Path, me: str) -> str:
-    """The way out a refusal names, with SIDs, because account names are localized."""
+def fix_command(path: Path, me: str, others: tuple[str, ...]) -> str:
+    """The way out a refusal names, with SIDs, because account names are localized. Cutting
+    inheritance takes what the parent passed down; what was set on `path` itself goes by name."""
     inherit = "(OI)(CI)" if path.is_dir() else ""
-    return f'icacls "{path}" /inheritance:r /grant:r "*{me}:{inherit}F"'
+    remove = "".join(f' /remove "*{sid}"' for sid in others if sid.startswith("S-"))
+    return f'icacls "{path}" /inheritance:r /grant:r "*{me}:{inherit}F"{remove}'
 
 
 if sys.platform == "win32":

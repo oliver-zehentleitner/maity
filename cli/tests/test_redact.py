@@ -8,7 +8,7 @@ from pathlib import Path
 
 import fakehub
 import pytest
-from conftest import fake_gh, git
+from conftest import fake_gh, git, posix
 
 from maity import cli, gitfacts
 from maity.redact import without_userinfo
@@ -122,6 +122,7 @@ def test_a_git_error_that_repeats_the_url_loses_the_token(clone: Path) -> None:
     assert SECRET not in str(raised.value)
 
 
+@posix
 def test_the_runner_prints_a_claimed_clones_origin_without_the_token(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -159,6 +160,7 @@ def test_a_url_remote_on_github_is_asked_about_its_pull_request(clone: Path, bin
     assert facts.pr_unknown_reason is None and facts.pr is not None and facts.pr.number == 3
 
 
+@posix
 def test_runner_gc_names_a_config_section_without_its_token(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

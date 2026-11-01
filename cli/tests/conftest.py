@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -11,6 +12,22 @@ import pytest
 
 GIT = shutil.which("git")
 GITHUB_URL = "https://github.com/acme/widget"
+
+# The runner does not run on Windows (context/credentials.md).
+collect_ignore = (
+    [
+        "test_agent_user.py",
+        "test_confinement.py",
+        "test_operate.py",
+        "test_runner.py",
+        "test_serve.py",
+        "test_ssh.py",
+        "test_supervisor.py",
+    ]
+    if sys.platform == "win32"
+    else []
+)
+posix = pytest.mark.skipif(sys.platform == "win32", reason="POSIX modes; see test_winacl.py")
 
 
 def git(cwd: Path, *args: str) -> str:
@@ -48,6 +65,9 @@ def bin_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     assert GIT is not None, "the tests need git"
     path = tmp_path / "bin"
     path.mkdir()
+    if sys.platform == "win32":  # git.exe finds its parts beside itself, and links need rights
+        monkeypatch.setenv("PATH", os.pathsep.join([str(path), str(Path(GIT).parent)]))
+        return path
     (path / "git").symlink_to(GIT)
     monkeypatch.setenv("PATH", str(path))
     return path
@@ -55,6 +75,8 @@ def bin_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def fake_gh(bin_dir: Path, stdout: str, exit_code: int = 0, stderr: str = "") -> None:
     """A gh that answers every call with `stdout`; shell builtins only, PATH holds just git."""
+    if sys.platform == "win32":
+        pytest.skip("Windows starts only an .exe by a bare name, and this gh is a shell script")
     assert "'" not in stdout + stderr
     script = bin_dir / "gh"
     script.write_text(

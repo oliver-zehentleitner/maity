@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 import pytest
-from conftest import fake_gh, git
+from conftest import fake_gh, git, posix
 
 from maity import cli, gitfacts
 
@@ -143,6 +143,7 @@ def test_remote_host(url: str, host: str | None) -> None:
     assert gitfacts.remote_host(url) == host
 
 
+@posix
 def test_a_failing_git_status_is_an_error_not_a_clean_tree(clone: Path) -> None:
     if os.geteuid() == 0:
         pytest.skip("root reads an unreadable index")
