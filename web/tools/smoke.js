@@ -942,6 +942,44 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.confirm = agConfirm;
   const agAAfter = main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-a");
   expect(agAAfter && agAAfter.querySelectorAll(".credentials li.revoked").length === 1, "revoke keeps the credential listed as revoked, the row open");
+  // Bridges (§2.3): the owner connects one in the Manage row, both sides list it with its purpose, End ends it.
+  {
+    const brRow = () => main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-a");
+    const brBox = () => brRow() && brRow().querySelector(".member-bridges");
+    const brPosts = [], brDels = [], brPost = win.Maity.api.post, brDel = win.Maity.api.del;
+    win.Maity.api.post = (p, b) => { if (/\/bridges$/.test(p)) brPosts.push([p, JSON.stringify(b)]); return brPost(p, b); };
+    win.Maity.api.del = (p, b) => { if (/\/bridges\//.test(p)) brDels.push(p); return brDel(p, b); };
+    expect(brBox() && text(brBox()).includes("No bridges.") && byId("bridge-pick-agt-a") && byId("bridge-purpose-agt-a")
+      && !byId("bridge-pick-agt-a").querySelectorAll("option").some((o) => o.getAttribute("value") === "agt-a"),
+      "bridges: the owner's Manage row offers Connect with a bridge, the agent itself not among the choices");
+    byId("bridge-pick-agt-a").value = "agt-b";
+    byId("bridge-purpose-agt-a").value = "git for the designer's files";
+    brBox().querySelector("form.member-bridge-connect").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    expect(brPosts.length === 1 && brPosts[0][0] === "/projects/maintainer/maity/members/agt-a/bridges"
+      && brPosts[0][1] === JSON.stringify({ bridge: "agt-b", purpose: "git for the designer's files" })
+      && brBox() && brBox().querySelectorAll("ul.bridges-serving-this li.bridge").length === 1 && text(brBox()).includes("lends its hands: git for the designer's files")
+      && /now lends its hands/.test(text(main)),
+      "bridges: connecting posts the bridge and the purpose, and the list shows it " + JSON.stringify(brPosts) + " " + (brBox() ? text(brBox()).slice(0, 160) : ""));
+    // The other side: Agent B's row lists whom it lends its hands to.
+    const brB = await agOpen("agt-b");
+    expect(brB && brB.querySelector(".member-bridges ul.bridges-serving-other li.bridge") && text(brB.querySelector(".member-bridges")).includes("Lends its hands to"),
+      "bridges: the bridge's own row lists the agent it serves");
+    btn(brBox(), "End").click(); for (let k = 0; k < 6; k++) await tick();
+    expect(brDels.length === 1 && /\/members\/agt-a\/bridges\/brg-/.test(brDels[0]) && text(brBox()).includes("No bridges."),
+      "bridges: End ends it on the served agent's membership " + JSON.stringify(brDels));
+    // Across owners: the 202 is a consent; the line names the bridge's owner and the project.
+    win.Maity.api.post = (p, b) => (/\/bridges$/.test(p) ? Promise.resolve({ id: "req-brg1", class: "consent", to: "hum-other", title: "Bridge" }) : brPost(p, b));
+    byId("bridge-pick-agt-a").value = "agt-b";
+    byId("bridge-purpose-agt-a").value = "access to X";
+    brBox().querySelector("form.member-bridge-connect").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    expect(/Waiting for the consent of .* and the project/.test(text(main)), "bridges: across owners it waits for the bridge's owner and the project");
+    // A refusal is said in words.
+    win.Maity.api.post = (p, b) => (/\/bridges$/.test(p) ? Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", { fields: { bridge: "already" } })) : brPost(p, b));
+    byId("bridge-purpose-agt-a").value = "again";
+    brBox().querySelector("form.member-bridge-connect").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+    expect(text(main).includes("That agent is already a bridge for this one."), "bridges: a refusal is said in words");
+    win.Maity.api.post = brPost; win.Maity.api.del = brDel;
+  }
   // Isolation (§6.2): an admin human isolates an agent with a reason, after a confirmation; the badge, then Lift isolation.
   {
     await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
@@ -5675,6 +5713,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => (p.startsWith("/projects/maintainer/maity/conversations/cnv-0007/messages?")
     ? gcEvGet(p).then((r) => { if (gcNullSeq === null && r.items.length > 1) gcNullSeq = r.items[1].seq;
       return Object.assign({}, r, { items: r.items.map((m) => (m.seq === gcNullSeq ? Object.assign({}, m, { body: null }) : m)) }); }) : gcEvGet(p));
+  // A bridge serving a participant across owners reads along (§2.3, §9.2): among the observers, "carries for".
+  {
+    const obGet = win.Maity.api.get;
+    const bridgeAgent = { id: "agt-x", kind: "agent", handle: "outside-bridge", display_name: "Outside Bridge", owner_id: "hum-other", trust: "member", role: "coder",
+      areas: [], capabilities: [], presence: "online", paused: null, bridges: [], bridging_for: [{ id: "brg-x", member_id: "agt-a", handle: "agent-a", purpose: "access to X", cross_owner: true }] };
+    win.Maity.api.get = (p, ...r) => (/\/members$/.test(p) ? obGet(p, ...r).then((x) => Object.assign({}, x, { items: x.items.concat([bridgeAgent]) }))
+      : /\/conversations\/cnv-0007$/.test(p) ? obGet(p, ...r).then((v) => Object.assign({}, v, { observers: (v.observers || []).concat(["agt-x"]) }))
+      : obGet(p, ...r));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/cnv-0007"); for (let k = 0; k < 6; k++) await tick();
+    const obLine = main.querySelector(".group-chat .group-observers");
+    expect(obLine && /Outside Bridge \(carries for Agent A\)/.test(text(obLine)), "bridges: a cross-owner bridge stands among a group chat's observers, carrying for its participant " + (obLine ? text(obLine) : "none"));
+    win.Maity.api.get = obGet;
+  }
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/cnv-0007");
   const gcNull = gcList().querySelectorAll("li.msg")[1];
   expect(text(gcNull).includes("This message was removed.") && !btn(gcNull, "Quote") && !btn(gcNull, "Remove"), "group chat: body null reads as removed, nothing to quote or remove");

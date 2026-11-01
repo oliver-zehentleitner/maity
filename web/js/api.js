@@ -3863,6 +3863,53 @@ window.Maity = window.Maity || {};
       if (body.meat_proxy === null) delete meatChats()[m[1] + "/" + id]; else meatChats()[m[1] + "/" + id] = body.meat_proxy;
       return null;
     }],
+    // §2.3 bridges: a connection on the served agent's membership, asked by its owner;
+    // one owner behind both connects at once, across owners two consents are filed (202).
+    ["POST", /^\/projects\/([^/]+)\/members\/([^/]+)\/bridges$/, (m, body, path) => {
+      const who = me().member;
+      if (who.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+      const items = file(m[1], "members.json", path).items;
+      const served = items.find((x) => x.id === decodeURIComponent(m[2]) && !x.removed_at);
+      if (!served) fail(404, "not_found", "Not found", path);
+      if (served.owner_id !== who.id) fail(403, "forbidden", "only the served agent's owner", path, { reason: "agent_owner" });
+      const bridge = items.find((x) => x.id === body.bridge && !x.removed_at);
+      const purpose = typeof body.purpose === "string" ? body.purpose.trim() : "";
+      const fields = {};
+      if (served.kind !== "agent") fields.member = "not_an_agent";
+      else if (served.role === "proxy") fields.member = "role";
+      else if ((served.bridges || []).length >= 5) fields.member = "too_many";
+      if (!bridge) fields.bridge = "not_a_member";
+      else if (bridge.kind !== "agent") fields.bridge = "not_an_agent";
+      else if (bridge.id === served.id) fields.bridge = "self";
+      else if (bridge.role === "proxy") fields.bridge = "role";
+      else if ((served.bridges || []).some((c) => c.member_id === bridge.id)) fields.bridge = "already";
+      if (!purpose || purpose.length > 200) fields.purpose = "invalid";
+      if (Object.keys(fields).length) fail(400, "invalid", "the connection is not valid", path, { fields });
+      if (bridge.owner_id !== served.owner_id) {
+        return { id: "req-bridge" + Date.now().toString(36), class: "consent", to: bridge.owner_id, status: "open",
+          title: "Bridge " + bridge.handle + " for " + served.handle + ": " + purpose };
+      }
+      const id = "brg-" + Math.random().toString(36).slice(2, 10);
+      served.bridges = (served.bridges || []).concat([{ id, member_id: bridge.id, handle: bridge.handle, purpose, cross_owner: false }]);
+      bridge.bridging_for = (bridge.bridging_for || []).concat([{ id, member_id: served.id, handle: served.handle, purpose, cross_owner: false }]);
+      return { id, served: served.id, bridge: bridge.id, purpose, cross_owner: false, created_by: who.id, created_at: new Date().toISOString() };
+    }],
+    // Either agent's owner, either agent or members:admin ends it (§2.3).
+    ["DELETE", /^\/projects\/([^/]+)\/members\/([^/]+)\/bridges\/([^/]+)$/, (m, body, path) => {
+      const who = me().member;
+      const items = file(m[1], "members.json", path).items;
+      const served = items.find((x) => x.id === decodeURIComponent(m[2]));
+      const brg = decodeURIComponent(m[3]);
+      const c = served && (served.bridges || []).find((x) => x.id === brg);
+      if (!c) fail(404, "not_found", "Not found", path);
+      const bridge = items.find((x) => x.id === c.member_id) || {};
+      if (![served.owner_id, bridge.owner_id, served.id, bridge.id].includes(who.id) && !["owner", "admin"].includes(trustIn(m[1]))) {
+        fail(403, "forbidden", "members:admin", path, { scope: "members:admin" });
+      }
+      served.bridges = served.bridges.filter((x) => x.id !== brg);
+      bridge.bridging_for = (bridge.bridging_for || []).filter((x) => x.id !== brg);
+      return { id: brg, served: served.id, bridge: c.member_id, purpose: c.purpose, cross_owner: c.cross_owner, ended_at: new Date().toISOString() };
+    }],
     // §9.2 group chats.
     ["POST", /^\/projects\/([^/]+)\/conversations$/, (m, body, path) => {
       const chats = groupChats(m[1]);

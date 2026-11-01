@@ -41,6 +41,14 @@ window.Maity = window.Maity || {};
     "member:outside_owner": () => M.t("members.refused.outside_owner_lift"),
     "trust:outside_owner": () => M.t("members.refused.outside_owner_trust"),
     "role:outside_owner": () => M.t("members.refused.outside_owner_role"),
+    // §2.3 "The bridge": the connection's checks, on the served side and the bridge's.
+    "member:too_many": () => M.t("bridges.refused.too_many"),
+    "member:security_team": () => M.t("bridges.refused.security_team"),
+    "member:outside_role": () => M.t("bridges.refused.outside_role"),
+    "member:role": () => M.t("bridges.refused.proxy"),
+    "bridge:role": () => M.t("bridges.refused.proxy"),
+    "bridge:already": () => M.t("bridges.refused.already"),
+    "purpose:invalid": () => M.t("bridges.refused.purpose"),
   };
   const CYCLE = () => M.t("members.refused.reports_to_cycle");
   const BAD_AREA = () => M.t("members.refused.areas_invalid_path");
@@ -70,6 +78,10 @@ window.Maity = window.Maity || {};
     // owner of the organisation that holds it, stays an owner here.
     if (err.code === "namespace_owner") {
       return { message: M.t("members.refused.namespace_owner") };
+    }
+    // §2.3: only the served agent's owner connects a bridge.
+    if (err.code === "forbidden" && err.details && err.details.reason === "agent_owner") {
+      return { message: M.t("bridges.refused.agent_owner") };
     }
     const fields = err.code === "invalid" && err.details && err.details.fields;
     if (!fields) return err;
@@ -446,7 +458,91 @@ window.Maity = window.Maity || {};
       h("p", { class: "hint" }, M.t("members.reports.hint")));
     }
 
-    return { pausedText, act, ownAgent, credentialsPart, picturePart, teamForm, pausePart, isolatePart, removePart, reportsToPart };
+    // Bridges (§2.3 "The bridge"): the connections that serve this agent and those it
+    // serves, each with its purpose; End for either agent's owner or members:admin.
+    // Its owner connects a new one: an agent of the project and what for (1–200
+    // characters). Across owners the hub files the bridge owner's and the project's
+    // consent and answers 202 with the first; nothing is connected until both said go.
+    function bridgesPart(m, memberPath) {
+      if (m.kind !== "agent" || !Array.isArray(m.bridges)) return null;
+      const mine = ownAgent(m);
+      const byId = ctx.memberById || {};
+      const owns = (id) => !!byId[id] && byId[id].owner_id === ctx.me.id;
+      const serving = m.bridging_for || [];
+      if (!mine && !ctx.canAdmin && !m.bridges.some((c) => owns(c.member_id)) && !serving.some((c) => owns(c.member_id))) return null;
+      // servedId: whose membership holds the connection (its bridges list).
+      const line = (c, words, servedId) => h("li", { class: "bridge", "data-bridge": c.id }, words,
+        c.cross_owner ? [" ", h("span", { class: "badge bridge-cross" }, M.t("bridges.cross_owner"))] : null,
+        mine || ctx.canAdmin || owns(c.member_id) ? [" ", keyed("bridge-end:" + c.id, h("button", {
+          type: "button", class: "small bridge-end", "aria-label": M.t("bridges.end_label", { purpose: c.purpose }),
+          onclick: () => act(M.t("bridges.ending"), M.t("bridges.ended", { purpose: c.purpose }),
+            () => M.api.del(ctx.base + "/members/" + encodeURIComponent(servedId) + "/bridges/" + encodeURIComponent(c.id)), "bridge-pick:" + m.id),
+        }, M.t("bridges.end")))] : null);
+      const lists = [
+        m.bridges.length ? h("ul", { class: "bridges-list bridges-serving-this" }, m.bridges.map((c) =>
+          line(c, M.tn("bridges.serves_this", { member: M.dom.memberRef(ctx, c.member_id), purpose: c.purpose }), m.id))) : null,
+        serving.length ? h("ul", { class: "bridges-list bridges-serving-other" }, serving.map((c) =>
+          line(c, M.tn("bridges.serves_other", { member: M.dom.memberRef(ctx, c.member_id), purpose: c.purpose }), c.member_id))) : null,
+        !m.bridges.length && !serving.length ? h("p", { class: "muted" }, M.t("bridges.none")) : null,
+      ];
+      return h("div", { class: "member-bridges" }, h("h5", null, M.t("bridges.title")), lists, mine ? connectForm(m, memberPath) : null);
+    }
+
+    function connectForm(m, memberPath) {
+      const choices = (ctx.members || []).filter((x) => x.kind === "agent" && x.id !== m.id && !x.removed_at && x.role !== "proxy"
+        && !m.bridges.some((c) => c.member_id === x.id));
+      if (!choices.length) return h("p", { class: "hint" }, M.t("bridges.no_choice"));
+      const pickId = "bridge-pick-" + m.id, purposeId = "bridge-purpose-" + m.id;
+      const pick = keyed("bridge-pick:" + m.id, h("select", { id: pickId }, choices.map((x) => h("option", { value: x.id }, x.display_name + " (@" + x.handle + ")"))));
+      const purpose = keyed("bridge-purpose:" + m.id, h("input", { id: purposeId, maxlength: "200", autocomplete: "off", placeholder: M.t("bridges.purpose_placeholder") }));
+      const draft = edits.get(m.id) || {};
+      if (draft.bridgePick && choices.some((x) => x.id === draft.bridgePick)) pick.value = draft.bridgePick;
+      purpose.value = draft.bridgePurpose || "";
+      pick.addEventListener("change", () => { edits.set(m.id, Object.assign(edits.get(m.id) || {}, { bridgePick: pick.value })); });
+      purpose.addEventListener("input", () => { edits.set(m.id, Object.assign(edits.get(m.id) || {}, { bridgePurpose: purpose.value })); });
+      return h("form", {
+        class: "member-bridge-connect field-stack",
+        onsubmit: (e) => {
+          e.preventDefault();
+          if (!purpose.value.trim()) { purpose.focus(); return; }
+          connect(m, memberPath, pick.value, purpose.value.trim());
+        },
+      }, h("label", { for: pickId }, M.t("bridges.pick")), pick,
+      h("label", { for: purposeId }, M.t("bridges.purpose")), purpose,
+      h("p", { class: "hint" }, M.t("bridges.hint")),
+      h("button", { type: "submit" }, M.t("bridges.connect")));
+    }
+
+    // Said here rather than through act(): across owners two humans decide, the
+    // bridge's owner and the project, and the 202 names only the first.
+    async function connect(m, memberPath, bridgeId, purpose) {
+      const label = M.t("bridges.connecting");
+      const bridge = (ctx.memberById || {})[bridgeId];
+      status.busy(M.t("members.act.busy", { action: label }));
+      let answer;
+      try {
+        answer = await M.api.post(memberPath + "/bridges", { bridge: bridgeId, purpose });
+      } catch (err) {
+        status.fail(M.t("members.act.failed", { action: label }), refusal(err));
+        return;
+      }
+      const draft = edits.get(m.id);
+      if (draft) { delete draft.bridgePurpose; delete draft.bridgePick; }
+      const done = bridge ? M.t("bridges.connected", { name: bridge.display_name }) : M.t("bridges.connected_plain");
+      try {
+        await reload();
+        redraw("bridge-pick:" + m.id);
+      } catch (err) {
+        status.fail(M.t("members.act.refresh_failed", { done }), err);
+        return;
+      }
+      status.done();
+      append(status.el, isConsent(answer)
+        ? h("span", { class: "flag" }, M.tn("bridges.waiting", { owner: bridge && bridge.owner_id ? M.dom.memberRef(ctx, bridge.owner_id) : M.t("members.consent.owner") }))
+        : h("span", { class: "ok" }, done));
+    }
+
+    return { pausedText, act, ownAgent, credentialsPart, picturePart, teamForm, pausePart, isolatePart, removePart, reportsToPart, bridgesPart };
   }
   M.memberParts = memberParts;
   M.presenceNodes = presenceNodes;
@@ -518,14 +614,14 @@ window.Maity = window.Maity || {};
         return h("tr", { class: "member-manage member-level-" + level, id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" },
           P.reportsToPart(m, memberPath),
           M.preferences && "owner_preferences" in m ? M.preferences.ownerToggle(ctx, m) : null,
-          P.teamForm(m, memberPath)));
+          P.teamForm(m, memberPath), P.bridgesPart(m, memberPath)));
       }
       const parts = [editForm(m, memberPath, self)];
       if (m.kind === "agent") {
         // The briefing (§6.2), edited here; an admin is sent every member's.
         if (M.agentParts) parts.push(M.agentParts.briefingControl(ctx, m));
         if (ownAgent(m) && M.preferences && "owner_preferences" in m) parts.push(M.preferences.ownerToggle(ctx, m));
-        parts.push(P.picturePart(m), P.teamForm(m, memberPath), P.credentialsPart(m), P.pausePart(m, memberPath), P.isolatePart(m, memberPath));
+        parts.push(P.picturePart(m), P.teamForm(m, memberPath), P.credentialsPart(m), P.bridgesPart(m, memberPath), P.pausePart(m, memberPath), P.isolatePart(m, memberPath));
       }
       parts.push(P.removePart(m, memberPath, self, () => { if (self) M.route.go("/all"); }));
       return h("tr", { class: "member-manage member-level-" + level, id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" }, parts));

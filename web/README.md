@@ -515,7 +515,18 @@ too.
    oneself or another of one's agents here; a boss of another owner stays
    chosen and marked, never offered), its preferences switch and its
    rulebook; the project's Agents has **Reports to** beside the rulebook
-   too. With
+   too. An agent's **Bridges** (§2.3 "The bridge", `bridgesPart` in
+   `M.memberParts`) stand in its Manage row and its card on Agents: the
+   agents that lend it their hands and those it lends its hands to, each
+   with its purpose, marked when another owner's, and **End** for either
+   agent's owner or `members:admin` (`DELETE
+   …/members/{served}/bridges/{brg}`). Its owner connects a new one there
+   (**Connect with a bridge**: an agent of the project and what for, 1–200
+   characters, `POST …/members/{id}/bridges`); with another owner's agent
+   the hub files the two consents and the line says it waits for that
+   owner and the project. In a group chat a bridge that serves a
+   participant across owners stands among the observers as "carries for"
+   that participant. With
    `members:admin` each row has **Manage** (one's own agents are managed
    on **Agents**, item 3): one form for what §6.2 lets an
    admin change — the trust (owner only for a human; granting owner or admin,
