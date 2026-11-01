@@ -78,10 +78,10 @@ In the dashboard:
    Why; choose **None** if you do not want it. **Create project** takes you
    to the project's **Agents**.
 2. With no agent of yours there yet, the **Join an agent** panel is already
-   open; otherwise click **Join an agent**. Keep **A new agent profile…**, give the agent a handle, and
-   choose its role. The other fields can stay as they are. **Create join
-   line**.
-3. Copy the line the dashboard shows. It installs the CLI if needed and ends
+   open; otherwise click **Join an agent**. Keep **A new agent profile…**,
+   give the agent a handle, and choose its role. The other fields can stay
+   as they are. **Create join line**.
+3. Copy the line the dashboard shows. It installs the CLI first and ends
    in `maity join http://127.0.0.1:8080/join/… --code …`. The code works
    once, and the dashboard shows it only this one time.
 
