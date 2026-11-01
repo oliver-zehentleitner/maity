@@ -4905,6 +4905,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       const last = await win.Maity.api.del("/projects/maintainer/sample/jour-fixe/series/" + made.id, { reason: "smoke done" });
       expect(last.id === made.id && !("opted_out_members" in last) && !("report_list" in last), "fixture hub: the delete answers the series as a reader sees it");
     }
+    // A round needs two who take part: the circle without those who opted out, and the moderator (§20.1, §20.2); here the
+    // owner is the only one left, and the moderator too. A moderator who opts out moderates nothing.
+    {
+      const base = "/projects/maintainer/sample/jour-fixe/series/";
+      const mine = await win.Maity.api.post(base.slice(0, -1), { topic: "Smoke: two are needed", circle: "owner", circle_owner: "hum-maintainer", reason: "smoke" });
+      await win.Maity.api.post(base + mine.id + "/moderators", { member_id: "hum-maintainer", reason: "smoke" });
+      let view = (await win.Maity.api.get("/projects/maintainer/sample/jour-fixe")).series.find((x) => x.id === mine.id);
+      for (const one of view.own_agents || []) await win.Maity.api.put(base + mine.id + "/opt-out?member=" + one.member_id);
+      const start = async () => { try { await win.Maity.api.post(base + mine.id + "/rounds", { reason: "smoke" }); return "started"; } catch (e) { return e.code || (e.details && e.details.code) || String(e.status); } };
+      let started = await start();
+      expect(started === "too_few", "fixture hub: nobody left but the moderator is too few, " + started);
+      await win.Maity.api.put(base + mine.id + "/opt-out");
+      started = await start();
+      expect(started === "no_moderator", "fixture hub: the only moderator opted out, so nobody moderates, " + started);
+      await win.Maity.api.del(base + mine.id, { reason: "smoke done" });
+    }
     // The view says nothing of it: no block, no topic, none of its rounds; a round of it is not found.
     await go("#/maintainer/sample/jour-fixe"); await settle(6);
     const jfSampleRounds = main.querySelectorAll("li.jf-round").map((li) => li.getAttribute("data-round"));
@@ -5427,6 +5443,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(rgPosts[0]) === JSON.stringify({ address: "anna@example.org", password: "a long enough password", next: "/invite/bound-xxxxxxxxxxxxxxx3" })
     && text(main).includes("Check your mail") && text(main).includes("works for 24 hours") && text(main).includes("come back to where you were"),
     "register: sent with the invitation as next, then 'check your mail' for every address alike");
+  // The landing page's link carries where the visitor came from (§16.7.2): sent as origin; a malformed part is left out.
+  const rgSend = async (q) => {
+    await go("#/register?next=%2Finvite%2Fbound-xxxxxxxxxxxxxxx3&" + q); for (let k = 0; k < 6; k++) await tick();
+    byId("register-address").value = "anna@example.org"; byId("register-password").value = "a long enough password"; byId("register-repeat").value = "a long enough password";
+    rgForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    return rgPosts[rgPosts.length - 1];
+  };
+  const rgOrigin = await rgSend("v=maintainers&c=x-h1-w1");
+  const rgHalf = await rgSend("v=Bad_Variant&c=x-h1-w1");
+  const rgNone = await rgSend("v=..&c=Bad%20Code");
+  expect(JSON.stringify(rgOrigin.origin) === JSON.stringify({ variant: "maintainers", campaign: "x-h1-w1" })
+    && JSON.stringify(rgHalf.origin) === JSON.stringify({ campaign: "x-h1-w1" }) && !("origin" in rgNone),
+    "register: v and c from the landing page's link sent as origin, a malformed part left out, none without either");
   win.Maity.api.post = rgPost;
   await go("#/register"); for (let k = 0; k < 6; k++) await tick();
   expect(!rgForm() && text(main).includes("This hub does not create new accounts on request."), "register: a hub that does not register says so, with the way to sign in");
@@ -7588,15 +7617,41 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const apAll = () => header.querySelectorAll("nav.switcher a").find((a) => a.getAttribute("href") === "#/all");
   const apCounts = win.Maity.notify.state.counts;
   const apCount = (a) => (a.querySelector(".count") ? text(a.querySelector(".count")) : "");
-  expect(apPages().length === 3 && apPages()[0].getAttribute("href") === "#/all" && text(apPages()[0]).startsWith("Inbox")
+  expect(apPages().length === 5 && apPages()[0].getAttribute("href") === "#/all" && text(apPages()[0]).startsWith("Inbox")
     && apPages()[1].getAttribute("href") === "#/chats" && text(apPages()[1]).startsWith("Chats")
     && apPages()[1].getAttribute("aria-current") === "page" && !apPages()[0].getAttribute("aria-current") && apAll().getAttribute("aria-current") === "page"
     && apCount(apPages()[1]) === (apCounts.chat ? String(apCounts.chat) : "") && apCount(apPages()[0]) === (apCounts.inbox ? String(apCounts.inbox) : "")
     && header.querySelector("nav.views").getAttribute("aria-label") === "Pages of all projects" && text(header.querySelector(".bar .project")) === "Everything waiting for you",
     "all projects: Chats is its second page, current, with the unread count; All projects stays current in the switcher " + JSON.stringify(apPages().map((a) => text(a))));
   await go("#/all"); for (let k = 0; k < 4; k++) await tick();
-  expect(apPages().length === 3 && text(apPages()[2]) === "Agents" && apPages()[2].getAttribute("href") === "#/agents" && apPages()[0].getAttribute("aria-current") === "page" && !apPages()[1].getAttribute("aria-current")
+  expect(apPages().length === 5 && text(apPages()[2]) === "Agents" && apPages()[2].getAttribute("href") === "#/agents" && apPages()[0].getAttribute("aria-current") === "page" && !apPages()[1].getAttribute("aria-current")
     && apAll().getAttribute("aria-current") === "page", "all projects: the Inbox is the first page, current on /all");
+  // Jour fixe and Why across projects (js/all-pages.js): a section per project, each from that project's own endpoint.
+  const apSections = () => main.querySelectorAll("section.all-project");
+  const apOf = (slug) => apSections().find((s) => s.getAttribute("data-project").endsWith("/" + slug));
+  const apGo = async (route) => { await go(route); for (let k = 0; k < 6; k++) await tick(); await new Promise((r) => setTimeout(r, 5)); };
+  await apGo("#/all/jour-fixe");
+  expect(apPages()[3].getAttribute("href") === "#/all/jour-fixe" && apPages()[3].getAttribute("aria-current") === "page" && apAll().getAttribute("aria-current") === "page"
+    && apSections().length >= 2 && apOf("maity").querySelector(".all-jf-series li") && text(apOf("maity")).includes("How we work")
+    && apOf("maity").querySelector("a").getAttribute("href").endsWith("/maity/jour-fixe"),
+    "all projects: the Jour fixe page, a section per project with its series " + text(apSections()[0]).slice(0, 160));
+  await apGo("#/all/why");
+  expect(apPages()[4].getAttribute("aria-current") === "page" && apOf("maity").querySelector(".why-summary") && text(apOf("sample")).includes("publishes no Keep the Why export"),
+    "all projects: the Why page, a project's summary, and a project without an export says so");
+  const apWhyGet = win.Maity.api.get;
+  // The page stands while an answer is on its way: a project's section says it is reading.
+  let apLate = null;
+  win.Maity.api.get = (p) => (p.includes("/maity/keep-the-why") ? new Promise((resolve) => { apLate = resolve; }) : apWhyGet(p));
+  await apGo("#/all/why");
+  expect(text(apOf("maity")).includes("Reading") && text(apOf("sample")).includes("publishes no Keep the Why export"),
+    "all projects: a slow project holds up neither the page nor another project");
+  apLate({ summary: { attention: 0, members: 0, entries: 0, failed: 0 }, members: [], attention: [] });
+  win.Maity.api.get = (p) => (p.includes("/maity/keep-the-why") ? Promise.reject(Object.assign(new Error("nope"), { code: "internal" })) : apWhyGet(p));
+  await apGo("#/all/why");
+  expect(text(apOf("maity")).includes("Could not read this project: nope") && text(apOf("sample")).includes("publishes no Keep the Why export"),
+    "all projects: a project that fails says so and hides no other");
+  win.Maity.api.get = apWhyGet;
+  await apGo("#/all");
   // A refresh of the counts updates the pages' badges in place, in the fixture's #/ links too (#844's review).
   const apGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p.startsWith("/me/notifications?limit=0")
@@ -8782,10 +8837,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && stBox().querySelectorAll("details.stat-days tbody tr").length === 30,
     "statistics: reviews from when they are known, who comes back explained, when counted, every day in a table");
   btn(stBox(), "90 days").click(); for (let k = 0; k < 4; k++) await tick();
-  expect(stGets[stGets.length - 1] === "/admin/statistics?days=90" && btn(stBox(), "90 days").getAttribute("aria-pressed") === "true"
+  expect(stGets.includes("/admin/statistics?days=90") && btn(stBox(), "90 days").getAttribute("aria-pressed") === "true"
     && btn(stBox(), "30 days").getAttribute("aria-pressed") === "false" && stBox().querySelectorAll("details.stat-days tbody tr").length === 90
     && text(stBox().querySelectorAll("details.stat-days tbody tr")[89]).endsWith("–"),
     "statistics: the switch reads 90 days; days before history show reviews as –");
+  // Campaigns (§16.7.2): the same window, per day, page and campaign; views approximate; a removed code said so.
+  const cpRows = () => main.querySelectorAll("table.campaign-table tbody tr").map((tr) => tr.querySelectorAll("th, td").map((c) => text(c)).join("|"));
+  expect(stGets.includes("/admin/statistics/campaigns?days=90") && text(main).includes("Views (approximate)")
+    && cpRows()[0] === "2026-10-31|main page|none|140|3|1" && cpRows()[1] === "2026-10-31|/for/maintainers|x-h1-w1 (removed)|212|9|4"
+    && text(main).includes("Views are approximate") && !main.querySelectorAll("a").some((a) => a.textContent === "Download as CSV"),
+    "statistics: the campaign table for the same window, views marked approximate, a code no longer configured marked removed; no CSV link in fixtures " + JSON.stringify(cpRows()));
   // A fresh instance: zeros, nothing broken.
   win.Maity.api.get = (p) => (p.startsWith("/admin/statistics")
     ? Promise.resolve({ as_of: "2026-10-25T10:00:00Z", window_days: 7, totals: { humans: 1, humans_pending: 0, agents: 0, projects: 0, instances_online: 0, humans_with_an_agent: 0 },
@@ -8905,7 +8966,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const pvPost = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { if (/\/preview/.test(p)) pvPosts.push([p, JSON.parse(JSON.stringify(b))]); return pvPost(p, b); };
   btn(leBox(), "Preview the draft").click(); for (let k = 0; k < 6; k++) await tick();
-  expect(pvPosts.length === 1 && pvPosts[0][0] === "/admin/settings/landing/preview" && Object.keys(pvPosts[0][1]).join() === "default_language,pages,footer"
+  expect(pvPosts.length === 1 && pvPosts[0][0] === "/admin/settings/landing/preview" && Object.keys(pvPosts[0][1]).join() === "default_language,pages,footer,variants"
     && pvTabs.length === 1 && pvTabs[0].url === "about:blank" && pvTabs[0].opener === null
     && /^file:\/\/\/api\/v1\/admin\/settings\/landing\/preview\/[^?]+\?lang=de$/.test(pvTabs[0].location.href),
     "landing editor: Preview the draft posts it and opens the hub's url in a tab opened at the click, in the language shown " + JSON.stringify(pvTabs[0] && pvTabs[0].location));
@@ -8913,6 +8974,43 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(leBox(), "Preview the draft").click(); for (let k = 0; k < 6; k++) await tick();
   expect(pvTabs.length === 2 && pvTabs[1].closed && text(byId("lp-pages-de-title-error")) === "required", "landing editor: a refused preview closes its tab and says why at the field");
   byId("lp-pages-de-title").value = "Maity — bring deine Agents"; byId("lp-pages-de-title").dispatch("input");
+  // Variants and campaigns (§16.7.2, tsk-ets3x0c4ethg): a variant edited with the same editor at /for/<slug>,
+  // previewed as itself; campaigns with code and label beside the privacy hint; both saved with the setting.
+  {
+    const vaTabs = () => leBox().querySelector(".lp-variant-tabs").querySelectorAll("button").map((b) => b.textContent + ":" + b.getAttribute("aria-pressed")).join();
+    byId("lp-new-variant").value = "Bad_Slug"; btn(leBox(), "Add the variant").click(); await tick();
+    expect(text(byId("lp-new-variant-error")).startsWith("Not a free slug") && vaTabs() === "Main page:true", "variants: a malformed slug is refused at its field");
+    byId("lp-new-variant").value = "maintainers"; btn(leBox(), "Add the variant").click(); for (let k = 0; k < 4; k++) await tick();
+    const vaTitle = () => byId("lp-variants-maintainers-pages-en-title") || byId("lp-variants-maintainers-pages-de-title");
+    expect(vaTabs() === "Main page:false,/for/maintainers:true" && vaTitle() && !byId("lp-default-language") && text(leBox()).includes("never the main page's"),
+      "variants: a new variant opens in the same editor with its own page in the default language, falling back to its own page");
+    vaTitle().value = "Maity for maintainers"; vaTitle().dispatch("input");
+    const cpBox = () => leBox().querySelector("section.lp-campaigns");
+    expect(text(cpBox()).includes("Say in your privacy notice that the hub counts visits per campaign link") && text(cpBox()).includes("No campaign"),
+      "campaigns: the list with the privacy hint the contract asks for");
+    btn(cpBox(), "Add a campaign").click(); await tick();
+    leFill("lp-campaigns-0-code", "x-h1-w1"); leFill("lp-campaigns-0-label", "X, hook 1, week 1");
+    await leSave();
+    const vaSaved = lePatches[lePatches.length - 1][1];
+    const vaLang = Object.keys(vaSaved.variants.maintainers.pages)[0];
+    expect(text(main).includes("Saved.") && vaSaved.variants.maintainers.pages[vaLang].title === "Maity for maintainers"
+      && JSON.stringify(vaSaved.campaigns) === JSON.stringify([{ code: "x-h1-w1", label: "X, hook 1, week 1" }]) && vaTabs() === "Main page:false,/for/maintainers:true",
+      "variants: saved with the setting, the variant and the campaign in the body, the variant still shown " + JSON.stringify(Object.keys(vaSaved)));
+    const vaOpen = leBox().querySelectorAll("a").find((a) => a.textContent === "Open /for/maintainers as a visitor");
+    expect(vaOpen && vaOpen.getAttribute("target") === "_blank" && /\/for\/maintainers$/.test(vaOpen.getAttribute("href")) && text(cpBox()).includes("?c=x-h1-w1"),
+      "variants: a saved variant opened as a visitor in a page of its own; a campaign shows its link parameter");
+    btn(leBox(), "Preview /for/maintainers").click(); for (let k = 0; k < 6; k++) await tick();
+    const vaPv = pvPosts[pvPosts.length - 1];
+    expect(vaPv[1].variants && vaPv[1].variants.maintainers && /[?&]variant=maintainers(&|$)/.test(pvTabs[pvTabs.length - 1].location.href),
+      "variants: the preview sends the variants and opens that variant's draft " + JSON.stringify(pvTabs[pvTabs.length - 1].location));
+    leFill("lp-campaigns-0-code", "Bad Code"); await leSave();
+    expect(text(byId("lp-campaigns-0-code-error")) && lePatches[lePatches.length - 1][1].campaigns[0].code === "Bad Code", "campaigns: a malformed code refused at its field by the hub");
+    leFill("lp-campaigns-0-code", "x-h1-w1");
+    btn(leBox().querySelector(".lp-variant-tabs"), "Main page").click(); await tick();
+    expect(vaTabs() === "Main page:true,/for/maintainers:false" && byId("lp-default-language"), "variants: back to the main page, its default language shown again");
+    // The cases below go on with the German page shown, as before.
+    leBox().querySelector(".lp-tabs").querySelectorAll("button").find((b) => b.textContent === "de").click(); await tick();
+  }
   // Import and export as JSON (tsk-36d575f5yybz): the draft as text; text as the draft after a confirmation, checked by
   // the hub's preview call, which stores nothing and opens no tab; only Save saves.
   {
@@ -8923,7 +9021,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     let jsAsked = null;
     btn(js(), "Export the draft").click(); await tick();
     const exported = JSON.parse(byId("lp-json").value);
-    expect(Object.keys(exported).join() === "enabled,default_language,pages,footer" && exported.pages.de.title === "Maity — bring deine Agents"
+    expect(Object.keys(exported).join() === "enabled,default_language,pages,footer,variants,campaigns" && exported.pages.de.title === "Maity — bring deine Agents"
       && exported.footer.operator === "Maintainer, Austria", "landing JSON: Export puts the draft as the hub takes it into the field");
     byId("lp-json").value = "{nope"; await jsLoad();
     expect(text(js()).includes("Not loaded: this is not JSON"), "landing JSON: text that is not JSON is said, nothing replaced");
@@ -9102,16 +9200,29 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const siUnknown = await SI.check({ format: "maity-site/1", landing: siNow.landing, colours: {} }, siNow);
     const siFormat = await SI.check({ format: "maity-site/9" }, siNow);
     expect(/colours/.test(siUnknown.refused || "") && /maity-site\/9/.test(siFormat.refused || ""), "site: an unknown key and an unknown format are refused, by name");
-    // An unknown key inside a part refuses the whole file too, by its path; variants and campaigns are not in maity-site/1.
-    const siDeep = await SI.check({ format: "maity-site/1", landing: Object.assign({}, siNow.landing, { enabeld: true, variants: {} }),
+    // An unknown key inside a part refuses the whole file too, by its path.
+    const siDeep = await SI.check({ format: "maity-site/1", landing: Object.assign({}, siNow.landing, { enabeld: true }),
       legal: { privacy: { languages: template.legal.privacy.languages, foo: 1 }, faq: {} }, registration: { colour: "red" } }, siNow);
-    expect(["landing.enabeld", "landing.variants", "legal.privacy.foo", "legal.faq", "registration.colour"].every((k) => (siDeep.refused || "").includes(k)) && !siDeep.parts,
+    expect(["landing.enabeld", "legal.privacy.foo", "legal.faq", "registration.colour"].every((k) => (siDeep.refused || "").includes(k)) && !siDeep.parts,
       "site: an unknown key inside a part refuses the whole file, named by its path " + siDeep.refused);
+    // Variants and campaigns are in the landing part: a change saves them, and a file that leaves them out keeps the saved ones.
+    const siAB = { variants: { spring: { pages: siNow.landing.pages } }, campaigns: [{ code: "spring", label: "Spring" }] };
+    const siWith = await SI.check({ format: "maity-site/1", landing: Object.assign({}, siNow.landing, siAB) }, siNow);
+    expect(!siWith.refused && siWith.parts.landing.state === "changes", "site: variants and campaigns in the file are a change to the landing part " + JSON.stringify(siWith.refused || siWith.parts.landing));
+    const siSaved = Object.assign({}, siNow, { landing: Object.assign({}, siNow.landing, siAB) });
+    const { variants: siNoV, campaigns: siNoC, ...siWithout } = siSaved.landing;
+    const siKept = await SI.check({ format: "maity-site/1", landing: siWithout }, siSaved);
+    expect(siKept.parts.landing.state === "same", "site: a file without variants and campaigns keeps the saved ones");
+    // The campaign counts' download link: fixtures give no address, so its shape is drawn here; only that shape passes.
+    const csvLink = win.Maity.dom.h("a", { href: "/api/v1/admin/statistics/campaigns?days=30&format=csv" });
+    let csvOther = null;
+    try { win.Maity.dom.h("a", { href: "/api/v1/admin/statistics/campaigns?days=30&format=csv&x=1" }); } catch (err) { csvOther = err; }
+    expect(csvLink.getAttribute("href").endsWith("format=csv") && csvOther, "statistics: the campaign CSV link draws, and no other address beside it");
     // A landing value of the wrong kind refuses the part, never the saved value in its place.
-    const siKinds = await Promise.all([{ footer: "x" }, { enabled: "yes" }, { default_language: 7 }, { default_language: "" }].map((bad) =>
+    const siKinds = await Promise.all([{ footer: "x" }, { enabled: "yes" }, { default_language: 7 }, { default_language: "" }, { variants: [] }, { campaigns: {} }].map((bad) =>
       SI.check({ format: "maity-site/1", landing: Object.assign({}, siNow.landing, bad) }, siNow)));
     expect(siKinds.every((r) => r.parts && r.parts.landing.state === "refused"),
-      "site: a landing footer, enabled or default language of the wrong kind (or an empty language) refuses the part " + JSON.stringify(siKinds.map((r) => r.parts && r.parts.landing.state)));
+      "site: a landing footer, enabled, default language, variants or campaigns of the wrong kind (or an empty language) refuses the part " + JSON.stringify(siKinds.map((r) => r.parts && r.parts.landing.state)));
     // Registration all from the environment: the export leaves the part out, and imports again.
     const siNoReg = SI.bundleOf(Object.assign({}, siNow, { registration: {} }));
     const siNoRegCheck = await SI.check(JSON.parse(JSON.stringify(siNoReg)), siNow);

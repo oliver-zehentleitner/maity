@@ -211,4 +211,5 @@ window.Maity = window.Maity || {};
   }
 
   M.views.jourFixe = view;
+  M.jourFixe = { statusWord: (s) => words(STATUS, s) };
 })(window.Maity);

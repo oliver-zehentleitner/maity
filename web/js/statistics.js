@@ -135,7 +135,7 @@ window.Maity = window.Maity || {};
     }
 
     let seq = 0;
-    async function load() {
+    let load = async function () {
       const mine = ++seq;
       status.busy(M.t("stats.counting"));
       try {
@@ -148,9 +148,52 @@ window.Maity = window.Maity || {};
         clear(body);
         status.fail(M.t("stats.read_failed"), err);
       }
-    }
+    };
 
-    append(root, h("h2", null, M.t("stats.title")), switcher, status.el, body);
+    // Campaigns (§16.7.2): per day, variant and campaign, what the links brought; the
+    // same window as above, the hub's CSV beside it. Who won is the reader's to judge.
+    const cStatus = M.statusLine();
+    const cBody = h("div", { class: "campaign-stats", "aria-live": "polite" });
+    let cSeq = 0;
+    async function loadCampaigns() {
+      const mine = ++cSeq;
+      cStatus.busy(M.t("campaigns.reading"));
+      let c;
+      try {
+        c = await M.api.get("/admin/statistics/campaigns?days=" + days);
+      } catch (err) {
+        if (mine !== cSeq) return;
+        clear(cBody);
+        cStatus.fail(M.t("campaigns.unread"), err);
+        return;
+      }
+      if (mine !== cSeq) return;
+      cStatus.done();
+      const labels = Object.fromEntries((c.campaigns || []).map((x) => [x.code, x]));
+      const campaignText = (code) => {
+        if (!code) return M.t("campaigns.none");
+        const x = labels[code];
+        return code + (x && x.label ? " · " + x.label : "") + (x && x.removed ? " " + M.t("campaigns.removed") : "");
+      };
+      const csv = M.api.campaignsCsvUrl(days);
+      append(clear(cBody),
+        h("p", { class: "muted" }, M.t("campaigns.as_of", { at: formatTime(c.as_of), days: c.window_days })),
+        (c.rows || []).length ? h("div", { class: "table-scroll" }, h("table", { class: "campaign-table" },
+          h("thead", null, h("tr", null, h("th", { scope: "col" }, M.t("campaigns.date")), h("th", { scope: "col" }, M.t("campaigns.variant")),
+            h("th", { scope: "col" }, M.t("campaigns.campaign")),
+            h("th", { scope: "col", class: "stat-number" }, c.views_approximate ? M.t("campaigns.views_approx") : M.t("campaigns.views")),
+            h("th", { scope: "col", class: "stat-number" }, M.t("campaigns.registrations")), h("th", { scope: "col", class: "stat-number" }, M.t("campaigns.activations")))),
+          h("tbody", null, c.rows.map((r) => h("tr", null, h("th", { scope: "row" }, r.date),
+            h("td", null, r.variant === "default" ? M.t("campaigns.main_page") : "/for/" + r.variant), h("td", null, campaignText(r.campaign)),
+            h("td", { class: "stat-number" }, String(r.views)), h("td", { class: "stat-number" }, String(r.registrations)),
+            h("td", { class: "stat-number" }, String(r.activations))))))) : h("p", { class: "muted" }, M.t("campaigns.empty")),
+        c.views_approximate ? h("p", { class: "hint" }, M.t("campaigns.approx_hint")) : null,
+        csv ? h("p", null, h("a", { href: csv, download: "", class: "button-link" }, M.t("campaigns.csv"))) : null);
+    }
+    const reload = load;
+    load = () => { reload(); loadCampaigns(); };
+    append(root, h("h2", null, M.t("stats.title")), switcher, status.el, body,
+      h("h3", null, M.t("campaigns.title")), cStatus.el, cBody);
     // Not awaited: the admin area's other sections need not wait for the
     // instance's heaviest read.
     load();
