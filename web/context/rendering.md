@@ -579,6 +579,26 @@ stop under reduced motion by the stylesheet itself. The file under
 `web/landing/`: a hub serving only the landing page, without the
 dashboard's files, would have no script.
 
+## A missing translation is a note until the release; a wrong one fails at once
+
+**Id:** 3d9a6c17-52e8-4b0f-a7c4-91e6f2b08d35
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-ya56x9gx986r, 2026-11-01; docs/api.md §6.2 (a key without a translation reads in English)
+**Revisit when:** the release workflow of the hub runs `make release-check` itself, or a language with other plural rules joins the ten
+
+Placeholders that differ, a key English lacks and impossible plural forms fail `make check`, since
+they break a sentence on screen. A missing or out-of-date key fails only `make release-check`: every
+English text a PR adds would otherwise have to arrive in ten languages in that PR. Which English a
+translation follows is kept per key as two hashes in `i18n/<lang>.meta.json`, its own text beside the
+English: when the translation's text changes it follows today's English, with no step to remember.
+
+**Rejected alternatives:**
+- Finding out-of-date keys from `git log`: shallow CI clones have no history, and a reformat of the
+  file would read as new translations.
+- A command that marks a language as translated: one run after any edit would mark every key current.
+
 ## A refusal is translated by code in `ApiError`; in English the hub's message stays
 
 **Id:** 8b52e0d4-1f7a-4c69-b3d8-60a7c9e1f24d

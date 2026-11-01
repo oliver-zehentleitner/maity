@@ -1348,6 +1348,16 @@ grow past `tools/strings-baseline.json`: new text goes into the catalog,
 old text moves over view by view (`make fixtures` then lowers the
 baseline; nothing raises it but an edit to the file).
 
+A translation is `i18n/<lang>.json`, one of the ten languages of
+`docs/api.md` §16.7. `make check` fails on a key English does not have,
+placeholders that differ from English's in either direction, an empty text,
+and plural forms its language does not have (`PLURALS` in `tools/check.py`).
+A key left out reads in English and is only a note. `make fixtures` keeps
+`i18n/<lang>.meta.json`, which says which English text each translation
+follows, so a change of the English marks it out of date until its translation
+changes too; `tools/check.py --missing <lang>` lists what is missing or out of
+date, and `make release-check` fails on either.
+
 The hub's refusals stay in English in the API. `js/errors.js` gives them the
 reader's words by `code` and `details.reason`, in one place (`ApiError`), so
 every view that shows `err.message` gets them. In English the hub's own message
