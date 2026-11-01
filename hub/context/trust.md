@@ -90,7 +90,8 @@ Losing the guest is the safer failure, and an admin can re-invite them.
 `blue-team` with the coder's and `purple-team` with the reviewer's. `ROLES`, `WORK_ROLES`,
 `MEMBER_RULE_ROLES` and `SENSITIVE_ROLES` are derived from it, and the role of an invitation is checked
 against `ROLES`, so a new role cannot be added to one list and forgotten in another (the invitation list had
-no `writer` and the join list no security team). Where the hub resolves a built-in role by name (the
+no `writer` and the join list no security team). `cards.NEEDS`, the built-in roles a card may be for, is
+derived too: `ROLES` without `proxy` and `manager`, which §6.4 leaves out. Where the hub resolves a built-in role by name (the
 audience of a merge that wakes the done authority, the members whose change waits for a human's go),
 `scopes.counts_as` gives the role whose scopes a security team has; `cover.cover_order` resolves a
 `role:<role>` entry in `substitutes` the same way, so that a substitute is found among the holders of a
