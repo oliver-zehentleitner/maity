@@ -644,16 +644,17 @@ window.Maity = window.Maity || {};
     const language = (ctx.project.settings || {}).language || "en";
     const humanAdmin = ctx.me.kind === "human" && ctx.canAdmin;
     if (humanAdmin) {
-      const select = h("select", { id: "project-language" },
-        h("option", { value: "en" }, "English"), h("option", { value: "de" }, "Deutsch"));
-      select.value = language;
+      const picker = M.languagePicker("project-language", language);
+      const select = picker.select;
       append(panel, h("form", { class: "inline-form project-language", onsubmit: (e) => {
         e.preventDefault(); save({ settings: { language: select.value } }, "Language");
       } }, h("h2", { class: "panel-title" }, "Project language"),
-      h("label", { for: "project-language" }, "Language"), select,
+      h("label", { for: "project-language" }, "Language"), picker.search, select,
       h("button", { type: "submit" }, "Save language")));
     } else {
-      append(panel, h("p", { class: "project-language" }, "Project language: " + (language === "de" ? "Deutsch" : "English")));
+      const shown = h("p", { class: "project-language" });
+      M.writeLanguageName(language, (name) => { shown.textContent = "Project language: " + name; });
+      append(panel, shown);
     }
 
     if (ctx.canAdmin) {

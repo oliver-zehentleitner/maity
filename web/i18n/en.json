@@ -2033,6 +2033,7 @@
   "notify.language.failed": "Language not saved: ",
   "notify.language.hint": "For messages addressed to you personally, and for emails and sign-in links.",
   "notify.language.label": "Language",
+  "notify.language.search": "Search languages",
   "notify.language.save": "Save personal language",
   "notify.language.saved": "Personal language saved.",
   "notify.language.title": "Your language",

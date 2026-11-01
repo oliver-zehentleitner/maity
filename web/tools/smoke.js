@@ -8958,6 +8958,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       { ...value.items.find((m) => m.kind === "human"), id: "hum-removed-language", handle: "removed", language: "de", removed_at: "2026-10-23T00:00:00Z" }
     ]) } : value);
   await go("#/maintainer/maity/members");
+  {
+    const picker = win.Maity.languagePicker("language-under-test", "fr");
+    await tick();
+    expect(picker.select.value === "fr" && picker.select.querySelectorAll("option").length === 7, "language: the picker lists the hub's languages and keeps the choice");
+    picker.search.value = "japan";
+    picker.search.dispatch("input");
+    expect(picker.select.querySelectorAll("option").length === 2 && picker.select.value === "fr", "language: search by English name narrows and keeps the choice");
+    let written = "";
+    win.Maity.writeLanguageName("aa", (name) => { written = name; });
+    await tick();
+    expect(written === "Afaraf", "language: a shown name ends as the hub's, where ICU has none of its own");
+  }
   const languages = main.querySelectorAll(".member-language");
   expect(languages.length === 1 && text(languages[0]) === "Language: Deutsch", "language: only active human profile shows language");
   win.Maity.api.get = languageGet;

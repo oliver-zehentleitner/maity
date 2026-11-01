@@ -27,7 +27,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import Connection, Engine, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock
+from maity_hub import clock, languages
 from maity_hub import tables as t
 from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail_settings
@@ -347,7 +347,7 @@ def _send(
     zone: ZoneInfo,
 ) -> int:
     chosen = sorted(chosen, key=lambda i: i.order)
-    words = _WORDS[prefs["language"]]
+    words = _WORDS[languages.own_text(prefs["language"])]
     subject, body, kinds = compose(conn, chosen, prefs, public_url, zone)
     tokens = {
         kind: preferences.unsubscribe_token(signing_key, row.human_id, kind, row.epoch)
@@ -377,7 +377,7 @@ def compose(
     conn: Connection, chosen: list[Item], prefs: dict[str, Any], public_url: str, zone: ZoneInfo
 ) -> tuple[str, str, list[str]]:
     """(subject, body without the closing lines, the kinds in the mail, in order)."""
-    words = _WORDS[prefs["language"]]
+    words = _WORDS[languages.own_text(prefs["language"])]
     projects = _project_names(conn, chosen)
     if len(chosen) == 1:
         only = chosen[0]
@@ -441,7 +441,7 @@ def _sign_in_mail(
 ) -> None:
     """Time, method, browser, system and address of the new session, and where to end
     it; never a session id, a code or a link that signs anyone in (§2.6.5)."""
-    words = _WORDS[prefs["language"]]
+    words = _WORDS[languages.own_text(prefs["language"])]
     record = conn.execute(select(t.account_record).where(t.account_record.c.n == item.record)).one()
     data = record.data or {}
     token = preferences.unsubscribe_token(signing_key, row.human_id, "security", row.epoch)
@@ -482,7 +482,7 @@ def _two_factor_mail(
 ) -> None:
     """A change of the second factor, or wrong codes after a sign-in (§2.8.1): what happened
     and when, and where to look; never a code, a secret or a link that changes anything."""
-    words = _WORDS[prefs["language"]]
+    words = _WORDS[languages.own_text(prefs["language"])]
     record = conn.execute(select(t.account_record).where(t.account_record.c.n == item.record)).one()
     token = preferences.unsubscribe_token(signing_key, row.human_id, "security", row.epoch)
     stop = f"{public_url}/mail/unsubscribe/{token}"

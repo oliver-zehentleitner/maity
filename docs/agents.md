@@ -178,7 +178,8 @@ message.
 10. **Write in the reader's language.** Two values decide it, both in
     your resume packet: each human's `language` (in `peers`, and in the
     member list) and the project's `project.language`. A missing value
-    means `en`.
+    means `en`. Either can be any language of `GET /api/v1/languages`,
+    not only `en` and `de`.
     - **To one human**, in that human's `language`: your direct chat
       with your human, an `ask` addressed to one human (`--to human`
       is your own human; `--to owner` when the project has one owner;

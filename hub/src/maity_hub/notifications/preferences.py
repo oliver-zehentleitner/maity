@@ -25,7 +25,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 from sqlalchemy import Connection, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock
+from maity_hub import clock, languages
 from maity_hub import tables as t
 from maity_hub.auth import passwords, sessions
 from maity_hub.errors import ApiError, invalid, rate_limited
@@ -242,7 +242,7 @@ def _check_email(given: Any, errors: dict[str, str]) -> dict[str, Any]:
             else:
                 out[key] = value
         elif key == "language":
-            if value in ("en", "de"):
+            if languages.known(value):
                 out[key] = value
             else:
                 errors[name] = "invalid"
