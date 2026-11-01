@@ -1574,6 +1574,7 @@ window.MAITY_I18N["en"] = {
   "limits.step_up": "Changing the limits",
   "limits.title": "Limits per person",
   "limits.unchanged": "Nothing changed.",
+  "login.public_page": "This project has a public page: view it without signing in",
   "mail.complete": "Mail configuration is complete.",
   "mail.count.failures": {
     "one": "{count} failure",

@@ -360,6 +360,7 @@ def start_hub(
         MAITY_PUBLIC_URL=base,
         MAITY_WEB_DIR=str(WEB),
         MAITY_ATTACHMENT_DIR=str(attachments),
+        MAITY_PUBLIC_PAGES="on",
         **(extra or {}),
     )
     log_path = logs / log_name
@@ -2457,6 +2458,39 @@ def two_signatures_step(run: Run, page: Page) -> None:
     no_problems(run, "two signatures")
 
 
+def visitor_step(run: Run, page: Page) -> None:
+    """A browser without a session never ends at the login on a public address (tsk-jj1tfre7n6zb)."""
+    run.step("public pages: a visitor reaches them, a dashboard address links them from the login")
+    form = page.locator("form.public-page-form")
+    page.goto(f"{run.base}/owner/e2e-alpha/settings")
+    was_on = form.locator("#public-page").is_checked()
+    if not was_on:
+        form.locator("#public-page").set_checked(True)
+        form.get_by_role("button", name="Save", exact=True).click()
+        expect(page.locator("main")).to_contain_text("Public page saved.")
+    assert page.request.get(f"{run.base}/owner/e2e-alpha?as=public").headers.get("etag"), "no public page served"
+    context = page.context.browser.new_context()
+    guest = context.new_page()
+    guest.goto(f"{run.base}/explore")
+    expect(guest.locator("h1")).to_have_text("Public projects")
+    guest.locator('a[href="/owner/e2e-alpha"]').click()
+    expect(guest).to_have_url(f"{run.base}/owner/e2e-alpha")
+    expect(guest.locator("#login-handle")).to_have_count(0)
+    guest.goto(f"{run.base}/owner/e2e-alpha/")
+    expect(guest).to_have_url(f"{run.base}/owner/e2e-alpha")
+    expect(guest.locator("#login-handle")).to_have_count(0)
+    guest.goto(f"{run.base}/owner/e2e-alpha/inbox")
+    expect(guest.locator("#login-handle")).to_be_visible()
+    guest.locator(".public-page-link a").click()
+    expect(guest).to_have_url(f"{run.base}/owner/e2e-alpha")
+    context.close()
+    if not was_on:
+        page.goto(f"{run.base}/owner/e2e-alpha/settings")
+        form.locator("#public-page").set_checked(False)
+        form.get_by_role("button", name="Save", exact=True).click()
+        expect(page.locator("main")).to_contain_text("Public page saved.")
+
+
 def public_page_step(run: Run, page: Page) -> None:
     """§16.9 against the hub: the namespace owner switches the project's page and writes its text,
     and turns on their own profile; each is read back through the API."""
@@ -2484,6 +2518,7 @@ def public_page_step(run: Run, page: Page) -> None:
     assert read["public_about"] is None and read["public_page"] == ("on" if was_on else "off"), read
     expect(page.locator("form.public-page-form #public-about")).to_have_value("")
     expect(page.locator("#public-page")).to_be_checked(checked=was_on)
+    visitor_step(run, page)
     page.goto(f"{run.base}/account")
     profile = page.locator("form.public-profile-form")
     run.a11y(page, "account, public profile")

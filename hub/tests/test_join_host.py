@@ -170,7 +170,6 @@ def test_a_dead_link_says_so(make_client: ClientFactory, owner: flow.Human) -> N
         "/api/v1/help",
         "/api/v1/health",
         "/r/xyz",
-        "/anything/else",
     ],
 )
 def test_every_other_get_goes_to_the_public_start_page(
@@ -421,3 +420,18 @@ def test_a_single_command_keeps_its_windows_line_without_the_pipx_path() -> None
     line = join_line.windows("uv tool install maity", "U", "C")
     assert line is not None
     assert "{ uv tool install maity }" in line and "$env:Path" not in line
+
+
+def test_a_public_address_on_the_join_host_keeps_its_path(
+    make_client: ClientFactory, migrated: Any
+) -> None:
+    client = make_client(base_url=JOIN, join_url=JOIN)
+    for sent, went in (
+        ("/owner/project?x=1", f"{PUBLIC}/owner/project"),
+        ("/owner/project/board", f"{PUBLIC}/owner/project/board"),
+        ("/api/v1/help", f"{PUBLIC}/"),
+        ("/join/abc", f"{PUBLIC}/"),
+        ("/a", f"{PUBLIC}/"),
+    ):
+        got = client.get(sent, follow_redirects=False)
+        assert (got.status_code, got.headers["location"]) == (302, went), sent

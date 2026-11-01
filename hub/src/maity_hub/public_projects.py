@@ -358,4 +358,32 @@ def dependents(conn: Connection, project_id: str) -> list[tuple[str, str]]:
     ]
 
 
+def explore_html(conn: Connection, hub: Settings) -> str:
+    """The page of `/explore`: every project that has a page now, by name. It shows only what
+    those pages already show, and is rendered per request, behind the public cache."""
+    shown = sorted(
+        (
+            (namespace.full_name(conn, project), project.name)
+            for project in conn.execute(
+                select(t.project).where(
+                    t.project.c.public_page == "on", t.project.c.state != "archived"
+                )
+            )
+            if served(conn, project)
+        ),
+        key=lambda item: (item[1].casefold(), item[0]),
+    )
+    items = "".join(
+        f'<li><a href="/{escape(full, quote=True)}">{escape(name)}</a> ({escape(full)})</li>'
+        for full, name in shown
+    )
+    listed = f"<ul>{items}</ul>" if items else "<p>No project has a public page yet.</p>"
+    return render.page_document(
+        lang="en",
+        title="Public projects on Maity",
+        canonical=f"{hub.public_url.rstrip('/')}/explore",
+        content=f"<h1>Public projects</h1>{listed}",
+    )
+
+
 public_pages.register(public_pages.Kind(KIND, render_project, targets, dependents))

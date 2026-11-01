@@ -14,7 +14,7 @@ from datetime import timedelta
 from html import escape
 from typing import Any
 
-from sqlalchemy import Connection, select
+from sqlalchemy import Connection, func, or_, select
 
 from maity_hub import cards, clock, moderation, namespace, public_pages, public_people, render
 from maity_hub import tables as t
@@ -155,6 +155,8 @@ def board(conn: Connection, project_id: str, who: dict[int, Person]) -> str:
         )
         if status in CLOSED:
             query = query.where(c.closed_at >= cutoff)
+        if status != "done":  # a `security` card stays internal until it is done (§16.9)
+            query = query.where(or_(c.label.is_(None), func.lower(c.label) != "security"))
         if held:  # the cards under a hold are left out in the query, so the limit counts the rest
             query = query.where(c.id.notin_(held))
         rows = list(

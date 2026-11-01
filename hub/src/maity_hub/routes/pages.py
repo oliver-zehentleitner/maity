@@ -15,11 +15,19 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, Response
 from sqlalchemy import Connection, select
 
-from maity_hub import campaigns, landing, landing_stats, legal, render
+from maity_hub import (
+    campaigns,
+    landing,
+    landing_stats,
+    legal,
+    public_pages,
+    public_projects,
+    render,
+)
 from maity_hub import tables as t
 from maity_hub.auth import caller as auth_caller
-from maity_hub.deps import engine_of, settings_of
-from maity_hub.errors import not_found
+from maity_hub.deps import engine_of, origin_of, settings_of
+from maity_hub.errors import not_found, rate_limited
 from maity_hub.shell import shell_response
 
 page_router = APIRouter()
@@ -132,6 +140,29 @@ def _shell(settings: Any) -> Response:
     if settings.web_dir is None or not (settings.web_dir / "index.html").is_file():
         raise not_found()  # a hub without a dashboard serves the API alone
     return shell_response(settings.web_dir, settings.public_url)
+
+
+@page_router.api_route("/explore", methods=["GET", "HEAD"], include_in_schema=False)
+def explore(request: Request) -> Response:
+    """The public projects (§16.9), for every visitor, with or without a session; the shell
+    while the instance serves no public pages, as for any address it does not have."""
+    settings = settings_of(request)
+    if not settings.public_pages:
+        return _shell(settings)
+    wait = public_pages.BY_ADDRESS.hit(origin_of(request).address)
+    if wait:
+        raise rate_limited(wait)
+    with engine_of(request).begin() as conn:
+        body = public_projects.explore_html(conn, settings)
+    return HTMLResponse(
+        body,
+        headers={
+            "Cache-Control": public_pages.CACHE,
+            "Vary": "Cookie",
+            "Content-Security-Policy": public_pages.CSP,
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @page_router.api_route("/for/{slug}", methods=["GET", "HEAD"], include_in_schema=False)
