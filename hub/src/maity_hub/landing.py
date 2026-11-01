@@ -26,7 +26,20 @@ from maity_hub.errors import invalid
 from maity_hub.views import ts
 
 ROW = "landing"  # the one row of `instance_landing`
-LANGUAGES = ("en", "de")  # the languages of §6.2
+# The languages a page may be written in (§16.7), each by the name it calls itself.
+LANGUAGE_NAMES = {
+    "en": "English",
+    "de": "Deutsch",
+    "fr": "Français",
+    "es": "Español",
+    "pt": "Português",
+    "it": "Italiano",
+    "nl": "Nederlands",
+    "ja": "日本語",
+    "ko": "한국어",
+    "zh-Hans": "简体中文",
+}
+LANGUAGES = tuple(LANGUAGE_NAMES)
 SECTION_MAX = 20
 STORED_MAX = 256 * 1024  # bytes of UTF-8 (§16.7)
 FIELDS = ("enabled", "default_language", "pages", "footer")

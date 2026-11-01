@@ -316,8 +316,8 @@ def test_the_footer_has_the_designers_columns_the_operator_line_and_the_language
     assert 'rel="noopener me">Mastodon</a>' in footer.group(1)
     assert '<p class="operator">Maity, Austria</p>' in footer.group(1)
     assert (
-        '<p class="langs"><a href="?lang=en">en</a> <a href="?lang=de">de</a></p>'
-        in footer.group(1)
+        '<p class="langs"><a href="?lang=en" lang="en">English</a> '
+        '<a href="?lang=de" lang="de">Deutsch</a></p>' in footer.group(1)
     )
 
 
@@ -378,7 +378,10 @@ def test_the_languages_are_listed_default_first_then_alphabetically(owner: flow.
     html = render.landing_document(
         setting, "en", public_url="https://hub.example", legal={"pages": {}}, stats=None
     )
-    assert '<p class="langs"><a href="?lang=en">en</a> <a href="?lang=de">de</a> ' in html
+    assert (
+        '<p class="langs"><a href="?lang=en" lang="en">English</a> '
+        '<a href="?lang=de" lang="de">Deutsch</a> ' in html
+    )
     assert re.findall(r'<link rel="alternate" hreflang="([a-z-]+)"', html) == ["en", "de", "fr"]
 
 

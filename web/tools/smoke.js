@@ -9363,7 +9363,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await leSave();
     // The prepared landing V3 itself (tsk-k7pwrzs8vb8k; the landing part of tools/maity-site.json): loaded, checked without a refusal,
     // every section of both languages in the editor, its own footer taken; saved as it is.
+    // Its footer's one placeholder takes a value here, as the site import would.
     const v3 = JSON.parse(fs.readFileSync(path.join(WEB, "tools/maity-site.json"), "utf8")).landing;
+    v3.footer.operator = "Example operator";
     byId("lp-json").value = JSON.stringify(v3);
     await jsLoad();
     const v3Patches = lePatches.length;
@@ -9478,6 +9480,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await win.Maity.api.patch("/admin/settings/site-values", { values: Object.fromEntries(siNames.map((n) => [n, "Example " + n])) });
     let siNow = await SI.readNow();
     const siT = await SI.check(template, siNow);
+    // All ten languages, the same placeholders in each page's every language.
+    const siHeld = (x) => JSON.stringify([...JSON.stringify(x).matchAll(/\{\{[a-z_]+\}\}/g)].map((m) => m[0]).sort());
+    expect(Object.keys(template.landing.pages).length === 10 && ["imprint", "privacy", "terms"].every((pg) => {
+      const langs = template.legal[pg].languages;
+      return Object.keys(langs).length === 10 && Object.values(langs).every((x) => siHeld(x) === siHeld(langs.en));
+    }), "site: the template holds ten languages, each with the English text's placeholders");
     expect(siT.placeholders.every((p) => p.replaced) && siT.parts.legal.state === "changes", "site: with values every placeholder is replaced and the parts are checked");
     // What is saved is the finished text, the value read once, a value never read as a placeholder; a slip has no value.
     const siSent = [], siFillReal = win.Maity.api.patch;
@@ -9551,6 +9559,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const siNew = siBox().querySelectorAll("ol.site-values input");
     const siFill = (el, v) => { el.value = v; el.dispatch("input"); };
     siFill(siNew[siNew.length - 2], "city"); siFill(siNew[siNew.length - 1], "Example Town");
+    const siValuesBefore = (await win.Maity.api.get("/admin/settings/site-values")).values;
+    btn(siBox(), "Add a value").click();
+    const siTwice = siBox().querySelectorAll("ol.site-values input");
+    siFill(siTwice[siTwice.length - 2], "city"); siFill(siTwice[siTwice.length - 1], "Other Town");
+    btn(siBox(), "Save the values").click(); for (let k = 0; k < 6; k++) await tick();
+    expect(text(siBox()).includes("city is there twice") && JSON.stringify((await win.Maity.api.get("/admin/settings/site-values")).values) === JSON.stringify(siValuesBefore),
+      "site: a name written twice is refused in the form and nothing is saved");
+    btn(siBox().querySelectorAll("ol.site-values li")[siBox().querySelectorAll("ol.site-values li").length - 1], "Remove").click();
     btn(siBox(), "Save the values").click(); for (let k = 0; k < 6; k++) await tick();
     expect((await win.Maity.api.get("/admin/settings/site-values")).values.city === "Example Town" && !siBox().querySelector("ul.site-placeholders") && text(siBox()).includes("Check the file again"),
       "site: Save the values keeps the new pair and drops the old check");

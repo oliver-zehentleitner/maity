@@ -3,11 +3,16 @@ no placeholder on any public text, whichever way it is written."""
 
 from __future__ import annotations
 
+import json
+import re
+from pathlib import Path
 from typing import Any
 
 import pytest
 from sqlalchemy import Engine
 
+from maity_hub.landing import LANGUAGES
+from maity_hub.render import WORDS, choose_language
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_pages import ADMIN, hero
@@ -79,6 +84,15 @@ def test_only_an_instance_admin_reads_or_writes(
     assert owner.get(PATH).json() == {"values": {}}
 
 
+def test_an_agent_credential_is_refused_before_any_read(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    flow.project(owner)
+    agent = flow.agent(make_client, owner)
+    assert agent.get(PATH).status_code == 403
+    assert agent.patch(PATH, {"values": {"name": "x"}}).status_code == 403
+
+
 LEGAL_PAGE = {"en": {"title": "Imprint", "markdown": "Words."}}
 
 
@@ -121,3 +135,53 @@ def test_a_registration_setting_holding_a_placeholder_is_refused(owner: flow.Hum
     )
     assert answer.status_code == 400
     assert "unresolved_placeholder" in fields(answer).values()
+
+
+TEMPLATE = Path(__file__).resolve().parents[2] / "web" / "tools" / "maity-site.json"
+
+
+def test_the_real_site_file_imports_in_every_language(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    """What the dashboard does: fill the placeholders, then each save, then read each page."""
+    text = TEMPLATE.read_text(encoding="utf-8")
+    values = {name: f"Example {name}" for name in set(re.findall(r"\{\{([a-z_]+)\}\}", text))}
+    for name, value in values.items():
+        text = text.replace("{{" + name + "}}", value)
+    site = json.loads(text)
+    assert set(site["landing"]["pages"]) == set(LANGUAGES)
+    for page, one in site["legal"].items():
+        assert set(one["languages"]) == set(LANGUAGES), page
+        saved = owner.patch(LEGAL, {page: one["languages"]})
+        assert saved.status_code == 200, saved.text
+    saved = owner.patch(ADMIN, site["landing"])
+    assert saved.status_code == 200, saved.text
+    visitor = make_client()
+    for tag in LANGUAGES:
+        for address in ("/", "/impressum", "/privacy", "/terms"):
+            page = visitor.get(address, params={"lang": tag})
+            assert page.status_code == 200, f"{address} {tag}"
+            assert f'<html lang="{tag}">' in page.text, f"{address} {tag}"
+            assert "{{" not in page.text, f"{address} {tag}"
+
+
+def test_every_language_has_every_word_of_the_frame() -> None:
+    assert set(WORDS) == set(LANGUAGES)
+    for tag, words in WORDS.items():
+        assert set(words) == set(WORDS["en"]), tag
+
+
+@pytest.mark.parametrize(
+    "header, expected",
+    [
+        ("zh-CN,zh;q=0.9", "zh-Hans"),
+        ("zh-Hans", "zh-Hans"),
+        ("zh", "zh-Hans"),
+        ("zh-TW,ja;q=0.8", "ja"),
+        ("zh-Hant-HK", "en"),
+        ("ko-KR", "ko"),
+        ("pt-BR,en;q=0.5", "pt"),
+    ],
+)
+def test_the_browsers_language_finds_the_offered_one(header: str, expected: str) -> None:
+    assert choose_language(list(LANGUAGES), "en", None, header) == expected

@@ -391,3 +391,16 @@ address in the page; a fixed list also keeps the marks' terms in one reviewable 
   responsibility with no record of their terms.
 - Redrawing or recoloring the files: the designer's source keeps them byte for byte so a removal or replacement is file by file.
 - The list in the stylesheet or script: the band would then depend on the script, and validation could not know the names.
+
+## An eyebrow is offered on the titled content sections, and the open-source links are text links
+
+**Id:** ca3ca30f-ea8a-4a10-8053-7d08da43b8c8
+**Type:** decision
+**Status:** active
+**Evidence:** unknown
+**Source:** the card tsk-pb6574gqyhy0 for what was chosen; why the excluded types have none could not be established
+**Revisit when:** the designer reworks the sections
+
+`docs/api.md` §16.7 lists the types with an optional `eyebrow`; `cta_band`, `explore`, `activity` and
+`collab` have none. The `opensource` section's links are text links, not buttons. Why these four types go
+without is unknown. Alternatives: unknown.

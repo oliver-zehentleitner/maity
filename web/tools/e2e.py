@@ -2908,7 +2908,13 @@ def landing_json_step(run: Run, page: Page) -> None:
     assert json.loads(page.locator("#lp-json").input_value())["pages"]["en"]["title"] == "E2E landing"
     # The prepared landing V3 itself (tsk-k7pwrzs8vb8k): the real hub's check refuses nothing.
     # Its landing part, from the one site file (tsk-xw8a2hd84x3a).
-    v3 = json.dumps(json.loads((WEB / "tools" / "maity-site.json").read_text(encoding="utf-8"))["landing"])
+    # The footer's one placeholder takes a value here, as the site import would.
+    v3 = json.dumps(
+        {
+            **(landing := json.loads((WEB / "tools" / "maity-site.json").read_text(encoding="utf-8"))["landing"]),
+            "footer": {**landing["footer"], "operator": "Example operator"},
+        }
+    )
     page.locator("#lp-json").fill(v3)
     page.once("dialog", lambda d: d.accept())
     io.get_by_role("button", name="Load into the editor", exact=True).click()
@@ -2965,6 +2971,25 @@ def site_json_step(run: Run, page: Page) -> None:
     out = export()
     assert out["format"] == "maity-site/1", out.get("format")
     assert out["landing"]["pages"] == template["landing"]["pages"], "the landing pages differ after the round trip"
+    # Every language on the public pages, as a visitor without a session gets it: nothing refused, no placeholder left.
+    languages = list(template["landing"]["pages"])
+    assert len(languages) == 10 and set(languages) == set(next(iter(template["legal"].values()))["languages"]), languages
+    page.evaluate("Maity.api.patch('/admin/settings/landing', { enabled: true })")
+    visitor = page.context.browser.new_context()
+    seen = visitor.new_page()
+    for tag in languages:
+        for address in ("/", "/impressum", "/privacy", "/terms"):
+            answer = seen.goto(f"{run.base}{address}?lang={tag}")
+            assert answer.status == 200, f"{address} in {tag}: {answer.status}"
+            assert seen.locator("html").get_attribute("lang") == tag, f"{address} in {tag}: another language"
+            body = seen.locator("body").inner_text()
+            assert "{{" not in body, f"{address} in {tag}: a placeholder is left"
+            if address == "/":
+                assert seen.locator(".site-footer .langs a").count() == 10, f"the language bar in {tag}"
+            else:
+                assert "Example " in body or address == "/privacy" and "Example" in body, f"{address} in {tag}: no value"
+    visitor.close()
+    page.evaluate("Maity.api.patch('/admin/settings/landing', { enabled: false })")
     filled = json.dumps(template["legal"])
     for name, value in values.items():
         filled = filled.replace("{{" + name + "}}", value)

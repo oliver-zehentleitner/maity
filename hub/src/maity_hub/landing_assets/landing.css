@@ -201,10 +201,13 @@ code{font-family:var(--font-mono);font-size:.92em}
 .foot-col ul{list-style:none;margin:0;padding:0}
 .foot-col li{margin:0 0 8px}
 .site-footer .operator{padding-top:20px;border-top:1px solid var(--border)}
-.site-footer .langs a{margin-right:14px}
+.site-footer .langs{display:flex;flex-wrap:wrap;gap:6px 14px}
 .preview-note{background:var(--surface2);border-bottom:1px solid var(--border);padding:8px 0;text-align:center;font-weight:600}
 a:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
 
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}
 .agents-band{flex-wrap:wrap;-webkit-mask-image:none;mask-image:none;overflow:visible}
 .agents-copy{display:none}.agents-list{flex-wrap:wrap;justify-content:center;gap:24px 40px}}
+/* Chinese and Japanese break between characters by their own rules; Korean breaks between words. */
+html[lang="zh-Hans"],html[lang="ja"]{line-break:strict;overflow-wrap:anywhere}
+html[lang="ko"]{word-break:keep-all;overflow-wrap:anywhere}
