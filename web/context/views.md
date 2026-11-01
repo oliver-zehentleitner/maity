@@ -1080,6 +1080,9 @@ reviews the figure is the sum of the days; for humans and agent
 instances active it is the highest day ("up to N a day"). The days are
 also a folded table, which is what a screen reader reads; the lines are
 inline SVG drawn by the page.
+Days the hub cannot know (reviews before it kept card history) are a dashed
+line at the foot of the row, so every row spans the same width without
+drawing an unknown day as a solid zero.
 
 **Reason:** the hub counts a person active once per day, so adding the
 days would count the same person thirty times and look like growth that
@@ -3322,14 +3325,17 @@ In a direct or group chat a human participant finds the meat-proxy
 switch in the composer's row, between **Attach files** and **Send**
 (`js/meat-proxy.js`, one part for both composers through
 `M.chatParts.actionRow`). It is drawn from one's own entry in the chat's
-participants: pressed while `meat_proxy` holds in this chat, its tooltip
-saying whether that is the profile's value or this chat's own. A click
+participants: pressed while `meat_proxy_lead` holds in this chat, never
+for the hands part alone, which is the profile's in every chat (the
+owner's word on tsk-rznymp9hb1qm: the mode in a chat means being told what
+to do); its tooltip says whether that is the profile's value or this
+chat's own. A click
 sends the opposite as this chat's value; **Follow my profile**, shown
 only while the chat has a value of its own, sends `null`. An agent, an
 observer (no entry of its own) and a hub whose entries carry no
-`meat_proxy` get no switch. Since the hub emits no event for the change,
+`meat_proxy_lead` get no switch. Since the hub emits no event for the change,
 the switch takes the hub's `204` as the new state and works out what
-holds itself (`null` follows the profile's value from `/me`); the chat's
+holds itself (`null` follows the profile's lead part from `/me`); the chat's
 value is read again from the participants the next time the chat opens.
 The icons are the designer's two SVGs in `web/brand/`, drawn as a CSS
 mask so that they take the button's colour (muted off, the accent on).
@@ -4139,3 +4145,18 @@ in the code anyway, so a comparison catches a drift when it is made.
 **Rejected alternatives:**
 - An endpoint for the list: a contract change for one picker.
 - A free text field for the slugs: every typing mistake would come back as the hub's refusal.
+
+## A card's needs is a tag, a field in the two card forms and a filter over what the board has loaded
+
+**Id:** 053b2259-181f-4545-a58c-fe2cb27ed5a9
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.4 ("shown on the card and filtered on"); the hub's #1025; tsk-10ptyz8kf63p
+
+The card shows `Needs: <role>` beside its label. It is set in the new-card form and, for whoever may edit the card, in the opened card's form with parent and related cards. The board's filter offers the roles its cards name now and works on the loaded cards, as Area does; it does not call `needs=`.
+
+**Reason:** the filter sits with Member and Area, which read the same loaded list, so one rule says what the filters see. A list of every role would offer choices that match nothing.
+
+**Rejected alternatives:** a server filter with `needs=`: a board redraw would have to merge a second list for one of its filters. A form of its own for needs in the opened card: the card has one edit form, and two would each need a Save.
+

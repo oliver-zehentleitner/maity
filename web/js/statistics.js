@@ -42,9 +42,10 @@ window.Maity = window.Maity || {};
     return el;
   }
 
-  // A line of the window, oldest day left; a day the hub cannot know
-  // (null) breaks it. Decorative: the row says the numbers, the table
-  // below says every day.
+  // A line of the window, oldest day left, every row across the same width.
+  // Days the hub cannot know (null: reviews before it kept history) are a
+  // dashed line at the foot, never a solid zero. Decorative: the row says
+  // the numbers, the table below says every day.
   const W = 120, H = 24, PAD = 2;
   function sparkline(values) {
     const box = svg("svg", { viewBox: "0 0 " + W + " " + H, width: W, height: H, "aria-hidden": "true", focusable: "false" });
@@ -61,6 +62,15 @@ window.Maity = window.Maity || {};
     };
     values.forEach((v, i) => { if (v === null) flush(); else run.push(x(i).toFixed(1) + "," + y(v).toFixed(1)); });
     flush();
+    // Each stretch of unknown days, reaching the known day on either side.
+    for (let i = 0; i < values.length; i++) {
+      if (values[i] !== null) continue;
+      let end = i;
+      while (end + 1 < values.length && values[end + 1] === null) end++;
+      const from = x(Math.max(i - 1, 0)), to = x(Math.min(end + 1, values.length - 1));
+      box.appendChild(svg("line", { x1: from.toFixed(1), y1: y(0).toFixed(1), x2: to.toFixed(1), y2: y(0).toFixed(1), class: "spark-unknown" }));
+      i = end;
+    }
     return box;
   }
 

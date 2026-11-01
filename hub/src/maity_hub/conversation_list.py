@@ -38,6 +38,8 @@ SHORT = (
     "handle",
     "name",
     "meat_proxy",
+    "meat_proxy_lead",
+    "meat_proxy_hands",
     "meat_proxy_chat",
     "meat_proxy_note",
 )

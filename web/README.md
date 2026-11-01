@@ -235,8 +235,8 @@ screen (`M.dom.showSendKeys`). A chat composer has one row of actions:
 **Attach files** at the start, the keys and **Send** at the end. For a
 human participant of a direct or group chat, the **meat-proxy switch**
 stands between them (`js/meat-proxy.js`, `docs/api.md` §9.3 "Meat proxy
-per chat"): the designer's icon, pressed while the mode holds in this
-chat, its tooltip saying whether that comes from the profile or from
+per chat"): the designer's icon, pressed while the lead part holds in
+this chat (the hands part alone does not press it), its tooltip saying whether that comes from the profile or from
 this chat. A click switches it for this chat only (`PUT
 …/conversations/{id}/meat-proxy`, `true` or `false`), and **Follow my
 profile** beside it, shown while the chat has its own value, sends
@@ -1650,7 +1650,8 @@ Held cards show the holder's presence beside the claim. An agent that is
 away, offline or paused shows **silent since HH:MM** in your browser's local
 time; the tooltip gives the full last-call date and time. If no last call
 is available, the hint says so. Admins get warning styling and **Held by a
-silent agent** beside the board filters. The member list uses the same hint.
+silent agent** beside the board filters, which also take the role a card
+needs (§6.4). The member list uses the same hint.
 Presence refreshes every 30 seconds. A live claim does not imply an online
 agent. The assigner's warning awaits card history; the creator is not
 assumed to be the assigner.
@@ -1701,7 +1702,7 @@ cards created, claimed and done, reviews — with the window's figure (the
 sum, or for people their highest day), today's value and a small line of
 the window; who comes back after 7 and 30 days, in one sentence; when the
 hub counted. **7 / 30 / 90 days** reads that window again. Reviews before
-the hub kept card history are unknown and show –, with the date from
+the hub kept card history are unknown: a dashed line in the row's trend, and –, with the date from
 which they count. Every day is in a folded table, the readable form of
 the lines; a failed read clears the old counts and says so. The lines are
 the dashboard's own SVG, no chart library.

@@ -1402,6 +1402,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     convs = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/conversations").json()["items"]
     entry = next(p for c in convs if (c.get("agent_id") or c["id"]) == agent_id for p in c["participants"] if p["kind"] == "human")
     assert entry["meat_proxy"] is True and entry["meat_proxy_chat"] is True and entry.get("meat_proxy_note"), entry
+    assert entry["meat_proxy_lead"] is True and entry["meat_proxy_hands"] is False, entry
     follow.click()
     expect(meat).to_have_attribute("aria-pressed", "false")
     expect(follow).to_be_hidden()
@@ -2116,11 +2117,17 @@ def board_cards_step(run: Run, page: Page) -> None:
     page.locator("#new-card-title").fill("E2E: a card from the board")
     page.locator("#new-card-area").fill("web/")
     page.locator("#new-card-status").select_option("proposed")
+    page.locator("#new-card-needs").select_option("tester")
     run.a11y(page, "board, new card")
     page.locator("form.new-card").get_by_role("button", name="Create card", exact=True).click()
     view = page.locator("main section.view-board")
     expect(view.locator(".send-status").first).to_contain_text("created in proposed")
     card = page.locator("article.card", has_text="E2E: a card from the board")
+    # needs (§6.4): shown on the card and filtered by the hub's own value.
+    expect(card.locator(".card-needs")).to_have_text("Needs: Tester")
+    page.locator("#board-needs").select_option("tester")
+    expect(card).to_be_visible()
+    page.locator("#board-needs").select_option("")
     proposed = page.locator('section.column[data-status="proposed"]')
     expect(proposed.locator("article.card", has_text="E2E: a card from the board")).to_be_visible()
     # The status menu, the keyboard's way: proposed to open, the focus stays on the menu.

@@ -2125,14 +2125,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("new-card-area").value = "web/board/";
   byId("new-card-status").value = "open";
   byId("new-card-label").value = "feature";
+  byId("new-card-needs").value = "tester";
   byId("new-card-assigned").value = "agt-d";
   byId("new-card-depends").querySelectorAll("option").find((o) => o.attrs.value === "tsk-0007").selected = true;
   nf.dispatch("submit"); for (let k = 0; k < 5; k++) await tick();
   const createdW = bWrites.find((w) => w[1] === "/projects/maintainer/maity/tasks");
   expect(JSON.stringify(createdW) === JSON.stringify(["POST", "/projects/maintainer/maity/tasks", { title: "Web: a card from the board", kind: "task", status: "open",
-    label: "feature", area: "web/board/", assigned_to: "agt-d", depends_on: ["tsk-0007"] }]) && colOf("tsk-f001") && colOf("tsk-f001").attrs["data-status"] === "open"
+    label: "feature", needs: "tester", area: "web/board/", assigned_to: "agt-d", depends_on: ["tsk-0007"] }]) && colOf("tsk-f001") && colOf("tsk-f001").attrs["data-status"] === "open"
     && !main.querySelector("form.new-card"), "board: a new card, created in Open");
   expect(byId("board-area").querySelectorAll("option").some((o) => o.attrs.value === "web/board/"), "board: the area filter offers a new card's area");
+  // needs (§6.4): shown on the card, offered and applied by the board's filter, routing nothing.
+  expect(/Needs: Tester/.test(colOf("tsk-f001").textContent), "board: a card shows which role it is for");
+  const needsF = byId("board-needs");
+  expect(needsF.querySelectorAll("option").some((o) => o.attrs.value === "tester"), "board: the needs filter offers the role a card names");
+  needsF.value = "tester"; needsF.dispatch("change");
+  expect(colOf("tsk-f001") && !colOf("tsk-0007"), "board: the needs filter keeps only that role's cards");
+  byId("board-needs").value = ""; byId("board-needs").dispatch("change");
   // Cancel the new card again with the menu; its menu goes, so the focus goes to what was said.
   const bProto2 = Object.getPrototypeOf(main);
   const bFocus2 = bProto2.focus;
@@ -3516,7 +3524,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   {
     const mpBtn = () => main.querySelector("form.compose .compose-actions button.meat-chat-toggle");
     const mpFollow = () => main.querySelector("form.compose .compose-actions button.meat-chat-follow");
-    const mpProfile = String(!!JSON.parse(fs.readFileSync(path.join(WEB, "fixtures/me.json"), "utf8")).member.meat_proxy);
+    const mpProfile = String(!!JSON.parse(fs.readFileSync(path.join(WEB, "fixtures/me.json"), "utf8")).member.meat_proxy_lead);
     const mpPuts = [], mpPut = win.Maity.api.put;
     win.Maity.api.put = (p, b) => { if (/\/meat-proxy$/.test(p)) mpPuts.push([p, JSON.stringify(b)]); return mpPut(p, b); };
     const mpRow = main.querySelector("form.compose .compose-actions");
@@ -3538,7 +3546,25 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(mpBtn() && mpBtn().getAttribute("aria-pressed") === String(mpWas !== "true") && !mpFollow().hidden, "meat proxy: the chat's value read again after leaving it");
     mpFollow().click(); for (let k = 0; k < 4; k++) await tick();
     win.Maity.api.put = mpPut;
-    expect(mpProfile === mpWas, "meat proxy: the switch starts from the profile's value (" + mpProfile + ", " + mpWas + ")");
+    expect(mpProfile === mpWas, "meat proxy: the switch starts from the profile's lead part (" + mpProfile + ", " + mpWas + ")");
+    // Only the hands part on: the switch is off, a click leads here, and the hands stay in the note.
+    const mpEntry = async () => (await win.Maity.api.get("/projects/maintainer/maity/conversations")).items
+      .find((c) => (c.agent_id || c.id) === "agt-a").participants.find((p) => p.kind === "human");
+    const mpBefore = await win.Maity.api.get("/me");
+    await win.Maity.api.patch("/me", { meat_proxy_lead: false, meat_proxy_hands: true });
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/agt-a"); for (let k = 0; k < 4; k++) await tick();
+    const mpHands = await mpEntry();
+    expect(mpBtn().getAttribute("aria-pressed") === "false" && mpHands.meat_proxy === true && mpHands.meat_proxy_lead === false && mpHands.meat_proxy_hands === true && /hands/.test(mpHands.meat_proxy_note) && !/Lead me/.test(mpHands.meat_proxy_note),
+      "meat proxy: with only the hands part on, the chat's switch is off and the note keeps the hands " + JSON.stringify(mpHands));
+    mpBtn().click(); for (let k = 0; k < 4; k++) await tick();
+    const mpLed = await mpEntry();
+    expect(mpBtn().getAttribute("aria-pressed") === "true" && /Lead me/.test(mpLed.meat_proxy_note) && /hands/.test(mpLed.meat_proxy_note), "meat proxy: on over the hands part adds the lead " + JSON.stringify(mpLed));
+    mpBtn().click(); for (let k = 0; k < 4; k++) await tick();
+    const mpOff = await mpEntry();
+    expect(mpBtn().getAttribute("aria-pressed") === "false" && mpOff.meat_proxy === true && /hands/.test(mpOff.meat_proxy_note), "meat proxy: off in this chat leaves the hands part " + JSON.stringify(mpOff));
+    mpFollow().click(); for (let k = 0; k < 4; k++) await tick();
+    await win.Maity.api.patch("/me", { meat_proxy_lead: !!mpBefore.member.meat_proxy_lead, meat_proxy_hands: !!mpBefore.member.meat_proxy_hands });
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/agt-a"); for (let k = 0; k < 4; k++) await tick();
   }
   expect(main.querySelector(".chat-list-pane") && conv("Agent A").getAttribute("aria-current") === "page" && conv("Agent A").classList.contains("current")
     && !conv("Agent A").querySelector(".count"), "chat: the list stays beside the open chat; the open one is marked, its unread gone");
@@ -7348,6 +7374,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!stOptions.includes("tsk-0013") && !stOptions.includes("tsk-0011") && !stOptions.some((v) => v.startsWith("rel-")) && stOptions.includes("tsk-0001"),
     "subtasks: a parent is chosen among open cards that are no subtask and no release");
   // tsk-0006 depends on tsk-0001: as its parent that would wait forever, and the hub says so.
+  // needs (§6.4) in the opened card: set, then taken away; null clears it.
+  const needsPatch = win.Maity.api.patch, needsSent = [];
+  win.Maity.api.patch = (p, b) => { needsSent.push(b); return needsPatch(p, b); };
+  byId("card-needs-tsk-0006").value = "reviewer";
+  stPanel().querySelector("form.card-family-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(needsSent[0]) === JSON.stringify({ needs: "reviewer" }) && /Needs: Reviewer/.test(text(stPanel())), "board: the opened card sets which role it needs " + JSON.stringify(needsSent));
+  byId("card-needs-tsk-0006").value = "";
+  stPanel().querySelector("form.card-family-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(needsSent[1]) === JSON.stringify({ needs: null }) && !/Needs: /.test(text(stPanel().querySelector("header"))), "board: and clears it " + JSON.stringify(needsSent));
+  win.Maity.api.patch = needsPatch;
   byId("card-parent-tsk-0006").value = "tsk-0001";
   stPanel().querySelector("form.card-family-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(JSON.stringify(stPatches[0]) === JSON.stringify(["/projects/maintainer/maity/tasks/tsk-0006", { parent: "tsk-0001" }]) && stCard("tsk-0006")
@@ -8984,6 +9020,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(["stat-number", "stat-number", "stat-trend"].every((c, i) => stRow("registrations").childNodes[i + 1].classList.contains(c))
     && thCss.includes(".stat-series td.stat-trend, .stat-series th.stat-trend { width: 120px;"),
     "statistics: the numbers right-aligned in tabular figures, the sparklines in one 120 px column");
+  // Reviews before the hub kept history: the row spans the same width, the unknown days dashed at the foot, no solid line over them.
+  const stParts = (key) => { const sv = stRow(key).childNodes[3].childNodes[0]; return { lines: sv.childNodes.filter((n) => String(n.tagName).toLowerCase() === "polyline"), gaps: sv.childNodes.filter((n) => String(n.tagName).toLowerCase() === "line") }; };
+  const stGap = stParts("reviews").gaps[0];
+  const stKnown = stParts("reviews").lines[0].getAttribute("points").split(" ");
+  expect(stParts("reviews").gaps.length === 1 && stGap.getAttribute("x1") === "2.0" && stGap.getAttribute("y1") === "22.0" && stGap.getAttribute("x2") === stKnown[0].split(",")[0]
+    && stKnown[stKnown.length - 1].startsWith("118.0,") && !stParts("cards_done").gaps.length,
+    "statistics: unknown days are a dashed foot from the left edge to the first known day; a row with every day has none " + JSON.stringify([stGap && stGap.getAttribute("x2"), stKnown[0]]));
   // The contract text's cue for more never fades a line: a shadow behind the text, hidden at the end.
   expect(/\.contract-text \{[^}]*background:[^}]*local[^}]*scroll; \}/.test(thCss) && !/\.contract-text \{[^}]*mask-image/.test(thCss),
     "contract: the cue for more is a shadow behind the text, gone at the end, never a mask over the last line");
