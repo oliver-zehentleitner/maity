@@ -1653,16 +1653,11 @@ def assign(
         takes = card.claim_holder is not None and card.claim_holder != assignee
         if body.instance is not None:
             instances.require_active(conn, assignee_row, body.instance, "instance")
-            if assignee_row.distribution == "free" and not takes:
-                # Under `free` any instance claims and none is assigned (§6.18); the
-                # instance only names where an expired claim lands.
-                raise invalid(
-                    {"instance": "distribution_free"},
-                    "the team's distribution is free: no instance is assigned",
-                )
         if body.instance is None and card.assigned_to == assignee:
             # The same team again: its instance stays; a new turn only for a new team.
             chosen = card.assigned_instance
+        elif takes and assignee_row.distribution == "free":
+            chosen = None  # the instance only names where the expired claim lands (§6.18)
         else:
             chosen = instances.assigned_for(conn, assignee_row, body.instance)
         now = clock.now()

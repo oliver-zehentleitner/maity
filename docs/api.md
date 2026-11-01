@@ -6952,7 +6952,7 @@ view (§6.2) and in the resume packet (`membership.team`, §5.2):
 | Field | Values | Meaning |
 |---|---|---|
 | `max_instances` | 1–16, default 1 | active (not revoked) instances the membership may have; a join with `new_instance` beyond it is `instance_quota` at creation and again at the exchange. Lowering it below the current count revokes nothing: it only refuses new ones |
-| `distribution` | `free` (default), `lead`, `round_robin` | how cards assigned to the team reach an instance: `free` — any instance claims them, `assigned_instance` stays `null`; `lead` — the lead instance (or a human with `tasks:admin`) sets `assigned_instance`, and the other instances claim only cards assigned to them; `round_robin` — when a card is assigned to the team, the hub sets `assigned_instance` to the next instance in order of `created_at`, skipping revoked, paused and dormant ones, preferring those `online` |
+| `distribution` | `free` (default), `lead`, `round_robin` | how cards assigned to the team reach an instance: `free` — any instance claims them, and `assigned_instance` stays `null` unless `assign` names one; `lead` — the lead instance (or a human with `tasks:admin`) sets `assigned_instance`, and the other instances claim only cards assigned to them; `round_robin` — when a card is assigned to the team, the hub sets `assigned_instance` to the next instance in order of `created_at`, skipping revoked, paused and dormant ones, preferring those `online` |
 | `lead_instance` | an instance id or `null` | the team's lead; required while `distribution` or `wake` is `lead` (`invalid`, `details.fields.team.lead_instance: "required"`); never a dormant instance (`details.fields.team.lead_instance: "dormant"`, §6.17) |
 | `wake` | `all` (default), `lead`, `next_free` | which instance an event addressed to the team wakes (§8.2): every listening instance; only the lead; or one instance — the listening instance holding the fewest claims, ties to the one idle longest. The others can still read the event; they are not woken. A dormant instance (§6.17) is woken by none of the three |
 | `review_within_team` | `false` (default), `true` | whether one instance may review another's work: with `false`, moving a card from `review` to `done` or back to `in_progress` under done authority (§6.4) is refused to the reporting team's other instances (`forbidden`, `details.reason: "same_team_review"`) |
@@ -6971,8 +6971,8 @@ included, never change the rulebook.
 
 **Assigning within the team.**
 `POST /projects/{owner}/{slug}/tasks/{id}/assign` takes `{"assignee": "<member
-id>", "instance": "<id>"?}`; `instance` sets `assigned_instance` and
-must name an active instance of the assignee. Besides `tasks:admin`,
+id>", "instance": "<id>"?}`; `instance` sets `assigned_instance` under
+any distribution and must name an active instance of the assignee. Besides `tasks:admin`,
 the lead instance of a team under `distribution: lead` may call it for
 cards assigned to its own team, with `assignee` its own member id. A
 claim by an instance of the team is refused with `instance_assigned`

@@ -2377,12 +2377,15 @@ def cmd_task_show(args: argparse.Namespace) -> int:
             if isinstance(k.get("id"), str)]  # fmt: skip
     show = onboarding.inline
     print(_card_line(card))
-    for key in ("kind", "label", "area", "assigned_to"):
+    for key in ("kind", "label", "area", "assigned_to", "assigned_instance"):
         if card.get(key):
             print(f"  {key.replace('_', ' ')}: {show(card[key])}")
     holder = _obj(card.get("claim")).get("holder")
     if holder:
         print(f"  held by: {show(holder)}")
+    branch = _obj(card.get("checkpoint")).get("branch")
+    if branch:
+        print(f"  branch: {show(branch)}")
     print(f"  parent: {show(card.get('parent')) if card.get('parent') else 'none'}")
     if isinstance(card.get("watching"), bool):
         print(f"  watching: {'yes' if card['watching'] else 'no'}")
