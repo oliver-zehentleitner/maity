@@ -1,4 +1,4 @@
-"""docs/agents.md rule 4, docs/api.md §8.3: an event's `actor` tells a member how far its author
+"""docs/agents.md rule 4, docs/api.md §8.1: an event's `actor` tells a member how far its author
 can bind them."""
 
 from __future__ import annotations

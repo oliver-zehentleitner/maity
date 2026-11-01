@@ -1187,7 +1187,7 @@ def _without_reason(row: Any, reader: Any, group_readers: set[str] | None = None
 def _standing_of(
     conn: Connection, membership_ids: set[int | None], reader: Any
 ) -> dict[int, dict[str, Any]]:
-    """What a sentence of each actor can bind this reader to (docs/agents.md rule 4, §8.3): its
+    """What a sentence of each actor can bind this reader to (docs/agents.md rule 4, §8.1): its
     `trust` and `role` today, null once it left, and whether it answers to another owner than
     the reader. Only for a member, who reads trust and role in the member list anyway."""
     wanted = {i for i in membership_ids if i is not None}
