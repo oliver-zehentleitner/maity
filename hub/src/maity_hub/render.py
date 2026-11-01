@@ -500,7 +500,7 @@ nav a{margin-right:1rem;text-decoration:none;color:var(--muted)}
 border:1px solid var(--accent);color:var(--accent);font-weight:600}
 .btn.primary{background:var(--accent);color:var(--accent-fg)}
 section{padding:2.5rem 0}section+section{border-top:1px solid var(--line)}
-h1{font-size:2.4rem;line-height:1.15;margin:.3rem 0 1rem}h2{font-size:1.5rem;margin:0 0 1rem}
+h1{font-size:2.4rem;line-height:1.15;margin:.3rem 0 1rem;overflow-wrap:break-word;hyphens:auto}h2{font-size:1.5rem;margin:0 0 1rem}
 .eyebrow{color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-size:.8rem;margin:0}
 .sub{font-size:1.2rem;color:var(--muted);max-width:42rem}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:1rem;padding:0;
@@ -982,10 +982,13 @@ def _footer(
         for item in footer.get("social", [])
     )
     switch = " ".join(_language_link(tag) for tag in tags) if len(tags) > 1 else ""
-    row = (
-        "".join(links)
-        + f'<a href="/login">{escape(words["sign_in"])}</a>'
-        + (f'<a href="/register">{escape(words["register"])}</a>')
+    # With a space between them the links can wrap on a phone.
+    row = " ".join(
+        [
+            *links,
+            f'<a href="/login">{escape(words["sign_in"])}</a>',
+            f'<a href="/register">{escape(words["register"])}</a>',
+        ]
     )
     return (
         f'<footer><div class="wrap"><p>{row}</p>{"".join(parts)}'

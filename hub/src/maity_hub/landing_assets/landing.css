@@ -211,3 +211,4 @@ a:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid var
 /* Chinese and Japanese break between characters by their own rules; Korean breaks between words. */
 html[lang="zh-Hans"],html[lang="ja"]{line-break:strict;overflow-wrap:anywhere}
 html[lang="ko"]{word-break:keep-all;overflow-wrap:anywhere}
+h1,h2,h3{overflow-wrap:break-word;hyphens:auto}
