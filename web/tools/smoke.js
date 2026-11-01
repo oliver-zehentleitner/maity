@@ -1325,7 +1325,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Each section's id is a fixed word, the same in every language (#891's review).
   const adminIds = main.querySelectorAll("section.admin-section").map((x) => x.getAttribute("id"));
   expect(JSON.stringify(adminIds) === JSON.stringify(["admin-statistics", "admin-users", "admin-limits", "admin-reports", "admin-mail-settings",
-    "admin-registration", "admin-sign-in", "admin-landing-page", "admin-legal-pages", "admin-whole-site", "admin-instance-information"]),
+    "admin-registration", "admin-sign-in", "admin-pages", "admin-instance-information"]),
     "admin: every section keyed by its fixed word " + JSON.stringify(adminIds));
   const meRow = userRows().find((tr) => text(tr).includes("Maintainer"));
   expect(text(meRow).includes("(you)") && text(meRow).includes("instance admin") && /Projects2|>2</.test(meRow.querySelectorAll("td").map((td) => td.attrs["data-label"] + td.textContent).join("")),
@@ -9749,8 +9749,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "site: with every registration field from the environment the export leaves registration out and imports again");
     // In the admin: Check, then one Save; the second PATCH fails, so the message says what is saved and what is not.
     await go("#/admin"); for (let k = 0; k < 6; k++) await tick();
-    btn(main.querySelector("nav.admin-nav"), "Import or export everything").click(); for (let k = 0; k < 4; k++) await tick();
-    const siBox = () => main.querySelectorAll("section.admin-section").find((x) => x.getAttribute("aria-label") === "Import or export everything");
+    btn(main.querySelector("nav.admin-nav"), "Pages").click(); for (let k = 0; k < 4; k++) await tick();
+    const siBox = () => byId("admin-whole-site");
     byId("site-json").value = JSON.stringify(template);
     const siConfirm = win.confirm; win.confirm = () => true;
     // A placeholder without a value: named, Save off; the value added in the same section, then the file checks.
@@ -9798,9 +9798,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "site: Export reads the settings again, so an edit saved since the page opened is in the file");
     win.Maity.api.get = siGetReal;
     win.Maity.api.patch = siPatchReal; win.confirm = siConfirm;
-    // Its own address: /admin/site opens this section, not the landing page's.
-    await go("#/admin/site"); for (let k = 0; k < 6; k++) await tick();
-    expect(siBox() && !siBox().hidden, "site: /admin/site opens Import or export everything");
+    // Pages at its address: the file folded, a part open; the file by its own word; the old address and an unknown part name no view.
+    const pagesOpen = () => main.querySelectorAll(".admin-section").find((x) => !x.hidden);
+    const subShown = () => main.querySelectorAll(".admin-subsection").filter((x) => !x.hidden).map((x) => x.getAttribute("id"));
+    await go("#/admin/pages"); for (let k = 0; k < 6; k++) await tick();
+    expect(pagesOpen().getAttribute("id") === "admin-pages" && !siBox().parentNode.open && JSON.stringify(subShown()) === JSON.stringify(["admin-landing-page"]),
+      "pages: /admin/pages opens the tab on Landing pages, the file folded " + subShown());
+    await go("#/admin/pages/legal"); for (let k = 0; k < 6; k++) await tick();
+    expect(JSON.stringify(subShown()) === JSON.stringify(["admin-legal-pages"]), "pages: /admin/pages/legal opens Legal pages " + subShown());
+    btn(main.querySelector("nav.admin-subnav"), "Landing pages").click(); await tick();
+    expect(JSON.stringify(subShown()) === JSON.stringify(["admin-landing-page"]), "pages: a sub-tab switches the part " + subShown());
+    await go("#/admin/pages/site"); for (let k = 0; k < 6; k++) await tick();
+    expect(siBox().parentNode.open, "pages: /admin/pages/site opens the whole site's file");
+    await go("#/admin/site"); for (let k = 0; k < 4; k++) await tick();
+    expect(text(main).includes("No such view"), "pages: /admin/site is gone");
+    await go("#/admin/pages/nothing"); for (let k = 0; k < 4; k++) await tick();
+    expect(text(main).includes("No such view"), "pages: an unknown part names no view");
   }
   await go("#/all");
 
@@ -9861,7 +9874,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const siPatches = [];
     const siPatch = win.Maity.api.patch;
     win.Maity.api.patch = (p, b) => { if (p === "/admin/settings/sign-in") siPatches.push(b); return siPatch(p, b); };
-    const siSection = () => main.querySelectorAll(".admin-section").find((x) => x.getAttribute("aria-label") === "Sign-in");
+    const siSection = () => main.querySelectorAll(".admin-section").find((x) => x.getAttribute("aria-label") === "Sign-in methods");
     const siSubmit = async () => { siSection().querySelector("form.admin-sign-in").dispatch("submit"); for (let k = 0; k < 8; k++) await tick(); };
     const redraw = async () => { await go("#/account/preferences"); await tick(); await go("#/admin"); for (let k = 0; k < 10; k++) await tick(); };
     const policyOptions = () => byId("admin-sign-in-second_factor").querySelectorAll("option").map((o) => o.getAttribute("value"));
