@@ -2218,6 +2218,8 @@ window.Maity = window.Maity || {};
           // The commitment reads required under Keep the Why, optional under None (§6.23).
           keep_the_why: provider === "none" ? "optional" : "required",
         }),
+        // As the hub: the namespace owner's choice, default on; anyone else's starts off (§6.1).
+        public_page: org && orgRole(org) !== "owner" ? "off" : (body.public_page || "on"),
         absence: null, settings: { release_checklist: [] }, rules_version: 1, created_at: nowIso(),
       };
       const data = fixtures();

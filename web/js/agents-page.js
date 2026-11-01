@@ -345,6 +345,13 @@ window.Maity = window.Maity || {};
   // args: ["join"] (the panel open, ?agent=<id> choosing the profile), [<id>]
   // (that card marked), [<id>, "rulebook"] (at its rulebook, a join's quota refusal).
   M.views.projectAgents = async function (ctx, root, args) {
+    // The value the creation's answer returned (§6.1): a private repository keeps a project private.
+    const created = M.projectCreated;
+    M.projectCreated = null;
+    if (created && created.full_name === ctx.project.full_name && created.public_page) {
+      append(root, h("p", { class: "ok project-created-page", role: "status" },
+        created.public_page === "on" ? M.t("new_project.created.public") : M.t("new_project.created.private")));
+    }
     if (ctx.me.kind !== "human") {
       append(root, h("h2", null, M.t("agents.project.title")), h("p", null, M.t("agents.project.humans_only")));
       return;

@@ -5274,6 +5274,26 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.patch = memPatch;
   await projectSettings();
   // Keep the Why without a repository: the options are kept, the cards wait for the repository.
+  // Private on /new (§16.9, §6.1): sent only when ticked, fixed for a non-owner of an organisation, the 201's value said.
+  const createPrivateGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/orgs" ? Promise.resolve({ items: [{ handle: "ours", display_name: "Ours", my_role: "owner" }, { handle: "theirs", display_name: "Theirs", my_role: "admin" }] }) : createPrivateGet(p));
+  await go("#/all"); await go("#/new"); await tick(); await tick();
+  expect(byId("project-private") && !byId("project-private").checked && !byId("project-private").disabled && text(main).includes("A private repository keeps the project private"),
+    "create: Private starts unticked for the namespace owner, with the repository's note");
+  byId("project-owner").value = "theirs"; byId("project-owner").dispatch("change");
+  expect(byId("project-private").checked && byId("project-private").disabled && text(main).includes("an owner of the organisation can make it public"),
+    "create: Private is ticked and fixed for anyone else creating in an organisation");
+  byId("project-owner").value = "ours"; byId("project-owner").dispatch("change");
+  expect(!byId("project-private").checked && !byId("project-private").disabled, "create: back with an owner's organisation, Private is free again");
+  win.Maity.api.get = createPrivateGet;
+  await go("#/all"); await go("#/new"); await tick(); await tick();
+  byId("project-name").value = "Closed"; byId("project-name").dispatch("input");
+  byId("project-private").checked = true;
+  main.querySelector("form").dispatch("submit"); await tick(); await tick();
+  expect(posts[posts.length - 1][1].public_page === "off", "create: Private ticked sends public_page off");
+  win.onhashchange(); for (let k = 0; k < 6; k++) await tick();
+  expect(main.querySelector(".project-created-page") && text(main.querySelector(".project-created-page")).includes("This project is private"),
+    "create: the page that follows says what the hub answered");
   await go("#/new");
   byId("project-name").value = "Later"; byId("project-name").dispatch("input");
   byId("setup-keep_the_why_badge").checked = false; byId("project-preset").value = "hierarchical";
