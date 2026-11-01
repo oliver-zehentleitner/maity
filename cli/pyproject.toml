@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "maity"
-version = "0.1.0a3"
+version = "0.1.0a4"
 description = "Agent-side command for Maity: join a project, resume, wait for events, report, ask a human."
 readme = "README.md"
 license = "MIT"

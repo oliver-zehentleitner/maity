@@ -34,7 +34,7 @@ line, or call `~/.local/bin/maity` by its full path. `maity join` warns
 when it was started by its full path and `maity` is not on `PATH`.
 
 `maity --version` prints the release version and build revision:
-`maity 0.1.0a3 (build <revision>)`. A `-dirty` suffix means the CLI
+`maity 0.1.0a4 (build <revision>)`. A `-dirty` suffix means the CLI
 source had uncommitted changes. Wheels carry a stamp made from the
 source repository; a source distribution preserves it when rebuilt
 without Git. Source and editable checkouts show their current revision.
