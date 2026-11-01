@@ -878,7 +878,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(agC.querySelector(".member-credentials .error") && main.querySelectorAll(".error").length === 1, "one failing credentials call costs that agent's row its list");
   win.Maity.api.getAll = realGetAll;
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
-  expect(!main.querySelector(".error") && main.querySelectorAll("tr.member-agent").length === 5, "agents in Members: five agent rows");
+  expect(!main.querySelector(".error") && main.querySelectorAll(".members-agents tr.member").length === 5, "agents in Members: five agent rows");
   // Whose work an agent continues and where its hand-over is (§6.2): links to the member and to the messages.
   const takeOverP = agRow("agt-d").querySelector(".member-takes-over");
   expect(takeOverP && text(takeOverP) === "Takes over from @agent-c; the hand-over is in message #6001."
@@ -929,17 +929,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     win.localStorage = { getItem: (k) => (k in mineStore ? mineStore[k] : null), setItem: (k, v) => { mineStore[k] = String(v); }, removeItem: (k) => { delete mineStore[k]; } };
     const sm = (await win.Maity.api.getAll("/projects/maintainer/sample/members")).items;
     const mineIds = sm.filter((m) => m.kind === "agent" && m.owner_id === "hum-maintainer").map((m) => m.id).sort().join();
-    const shownAgents = () => main.querySelectorAll("tr.member-agent").map((tr) => tr.attrs["data-member"]).sort().join();
+    const shownAgents = () => main.querySelectorAll(".members-agents tr.member").map((tr) => tr.attrs["data-member"]).sort().join();
     await go("#/maintainer/sample/inbox"); await go("#/maintainer/sample/members"); for (let k = 0; k < 4; k++) await tick();
     expect(byId("members-mine") && !byId("members-mine").checked && sm.some((m) => m.kind === "agent" && m.owner_id !== "hum-maintainer")
-      && shownAgents().split(",").length === sm.filter((m) => m.kind === "agent").length && main.querySelectorAll("tr.member-human").length > 0,
+      && shownAgents().split(",").length === sm.filter((m) => m.kind === "agent").length && byId("members-human"),
       "members: Only my agents offered, off: every agent, the humans too");
     const mineProto = Object.getPrototypeOf(byId("members-mine"));
     const mineFocus = mineProto.focus;
     mineProto.focus = function () { document.activeElement = this; };
     byId("members-mine").checked = true; byId("members-mine").dispatch("change"); await tick();
     mineProto.focus = mineFocus;
-    expect(shownAgents() === mineIds && !main.querySelectorAll("tr.member-human").length && document.activeElement === byId("members-mine")
+    expect(shownAgents() === mineIds && !byId("members-human") && document.activeElement === byId("members-mine")
       && mineStore["maity.members.mine.hum-maintainer"] === "1", "members: Only my agents shows the viewer's own agents alone, the focus kept, remembered");
     document.activeElement = undefined;
     await go("#/maintainer/maity/inbox"); await go("#/maintainer/sample/members"); for (let k = 0; k < 4; k++) await tick();
@@ -953,9 +953,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Revoking keeps the credential listed, as revoked; the row stays open, its list read again.
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
   const agARow = await agOpen("agt-a");
-  const agALevel = main.querySelectorAll("tr.member").find((r) => r.getAttribute("data-member") === "agt-a").getAttribute("data-level");
-  expect(agALevel !== "0" && agARow.className.split(" ").includes("member-level-" + agALevel),
-    "members: the open Manage card carries its member's level, for the indent on a phone (level " + agALevel + ")");
   const agConfirm = win.confirm;
   win.confirm = () => true;
   btn(agARow.querySelector(".credentials"), "Revoke").click(); for (let k = 0; k < 6; k++) await tick();
@@ -1923,7 +1920,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.getAll = (p) => (p === "/projects/maintainer/maity/members"
     ? realGet3(p).then((r) => { r.items.forEach((m) => { m.presence = "away"; }); return r; })
     : realGet3(p));
-  main.querySelectorAll("tr.member-agent")[0].querySelectorAll("button").find((x) => /^Manage /.test(x.getAttribute("aria-label") || "")).click(); for (let k = 0; k < 4; k++) await tick();
+  main.querySelectorAll(".members-agents tr.member")[0].querySelectorAll("button").find((x) => /^Manage /.test(x.getAttribute("aria-label") || "")).click(); for (let k = 0; k < 4; k++) await tick();
   const pauseBefore = main.querySelector("form.member-pause");
   await fireIntervals(); await tick(); await tick();
   const labels = main.querySelectorAll("tr.member").map((tr) => tr.childNodes.find((td) => td.attrs && td.attrs["data-label"] === "Presence")).filter(Boolean);
@@ -2300,24 +2297,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/members");
   const mRow = (name) => main.querySelectorAll("tr.member").find((tr) => tr.querySelector(".member-name").textContent === name);
   const tables = main.querySelectorAll("table.members");
-  // One list as the project's hierarchy by trust (the maintainer, 2026-10-31): the owner, then the admin, then the members,
-  // each a level deeper; no guest here, so no level for one.
-  const mLevels = tables.length === 1 ? tables[0].querySelectorAll("tr.member").map((tr) => tr.getAttribute("data-member") + ":" + tr.getAttribute("data-level")) : [];
-  expect(plainTitle() === "Members · Maity · Maity" && tables.length === 1 && text(main).includes("Members (6)")
-    && JSON.stringify(mLevels) === JSON.stringify(["hum-maintainer:0", "agt-a:1", "agt-b:2", "agt-c:2", "agt-d:2", "agt-r:2"]),
-    "members: one list by trust, owner, admin, members, each a level deeper " + JSON.stringify(mLevels));
-  // Every level the four trusts can give has its indent (review of #949: with all four held, a guest is level 3).
+  // Two tables, humans first; no levels on Members (the maintainer, 2026-11-01): those are the Organisation tree's.
   const mCss = fs.readFileSync(path.join(WEB, "css/app.css"), "utf8");
-  expect(win.Maity.trust.TRUSTS.slice(1).every((t, i) => new RegExp("tr\\.member-level-" + (i + 1) + " > th \\{ padding-inline-start: \\d+px; \\}").test(mCss)),
-    "members: an indent for every level the trusts can give");
-  // On a phone the cell padding wins over the name cell's indent: the card itself moves in per level (review of #949).
-  const mPhone = (mCss.match(/@media \(max-width: 600px\) \{[\s\S]*?\n\}/g) || []).join("\n");
-  expect(win.Maity.trust.TRUSTS.slice(1).every((t, i) => new RegExp("\\.members tr\\.member-level-" + (i + 1) + " \\{ margin-inline-start: \\d+px; \\}").test(mPhone)),
-    "members: on a phone each level indents its card");
-  // The open Manage card keeps its member's indent: the level class on its row, no inline margin in its phone rule (#953).
-  expect(/\.members tr\.member-manage \{ margin-block: [^;]+; \}/.test(mPhone) && !/\.members tr\.member-manage \{[^}]*margin(-inline)?(-start)?:/.test(mPhone),
-    "members: on a phone the open Manage card sets block margins only, so its level indent stays");
-  const ths = tables[0].querySelector("thead").querySelectorAll("th").map((t) => t.textContent);
+  expect(plainTitle() === "Members · Maity · Maity" && tables.length === 2 && tables[0].querySelectorAll("tr.member").length === 1
+    && tables[1].querySelectorAll("tr.member").length === 5 && text(main).includes("Humans (1)") && text(main).includes("Agents (5)"),
+    "members: humans first, then agents");
+  expect(!main.querySelectorAll("tr.member").some((tr) => tr.getAttribute("data-level") || /member-level-/.test(tr.className)) && !/member-level-/.test(mCss),
+    "members: no level by trust on a row, and no rule for one");
+  const ths = tables[1].querySelector("thead").querySelectorAll("th").map((t) => t.textContent);
   expect(JSON.stringify(ths) === JSON.stringify(["Name", "Trust and role", "Owner", "Presence", "Joined", "Paused", "Keep the Why", "Actions"]),
     "members: an admin's agent columns, with the owner; the credentials are in Manage and on Agents " + JSON.stringify(ths));
   expect(text(mRow("Agent C")).includes("paused itself") && text(mRow("Agent C")).includes("Waiting for the API contract")
@@ -2584,7 +2571,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     : p === "/projects/maintainer/maity/members" ? mGet(p).then((x) => ({ items: x.items.map((y) => { const o = Object.assign({}, y); delete o.owner; delete o.credentials; return o; }), next_cursor: null }))
       : mGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members");
-  const ths2 = main.querySelectorAll("table.members")[0].querySelector("thead").querySelectorAll("th").map((t) => t.textContent);
+  const ths2 = main.querySelectorAll("table.members")[1].querySelector("thead").querySelectorAll("th").map((t) => t.textContent);
   expect(!btn(mRow("Maintainer"), "Manage") && !ths2.includes("Credentials") && text(mRow("Agent A")).includes("Maintainer"),
     "members: a member reads the list without managing anyone but their own agents; the owner from the members");
   // A human's own agents are on Agents: the credentials and the owner's preferences switch, nothing that changes the membership.
@@ -8587,7 +8574,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("new-card-title").value = "From the keyboard";
   await ceCase("new card", byId("new-card-body"), "Body text", "/projects/maintainer/maity/tasks", ceSubmitOf(byId("new-card-body")));
   await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick(); await tick();
-  main.querySelectorAll("tr.member-agent")[0].querySelectorAll("button").find((x) => /^Manage /.test(x.getAttribute("aria-label") || "")).click();
+  main.querySelectorAll(".members-agents tr.member")[0].querySelectorAll("button").find((x) => /^Manage /.test(x.getAttribute("aria-label") || "")).click();
   for (let k = 0; k < 4; k++) await tick();
   const ceBox = main.querySelectorAll(".briefing")[0];
   (btn(ceBox, "Edit briefing") || btn(ceBox, "Write a briefing")).click(); await tick();

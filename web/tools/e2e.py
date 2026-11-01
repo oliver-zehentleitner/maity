@@ -850,7 +850,7 @@ def scenario(run: Run, page: Page) -> None:
     print(f"   joined as {agent_id}")
     view_tab(page, "Members").click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/members$"))
-    agents = page.locator("main .members-list")
+    agents = page.locator("main .members-agents")
     expect(agents).to_contain_text("@e2e-agent")
     expect(agents).to_contain_text("member")
     expect(agents).to_contain_text("Online")
@@ -1457,7 +1457,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     run.step("pause: the owner pauses the agent; the agent cannot lift it itself")
     # The pause is in the agent's row on Members (tsk-7v2snhk002ak), once.
     view_tab(page, "Members").click()
-    agents = page.locator("main .members-list")
+    agents = page.locator("main .members-agents")
     agents.get_by_role("button", name="Manage E2E Agent", exact=True).click()
     form = agents.locator("form.member-pause")
     expect(form).to_contain_text(
@@ -2841,7 +2841,7 @@ def signing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     assert status == 200, status
     # The credentials are in the agent's row on Members (tsk-7v2snhk002ak).
     page.goto(f"{run.base}/owner/e2e-alpha/members")
-    page.locator("main .members-list").get_by_role("button", name="Manage E2E Agent", exact=True).click()
+    page.locator("main .members-agents").get_by_role("button", name="Manage E2E Agent", exact=True).click()
     expect(page.locator("main tr.member-manage")).to_contain_text("(bearer token)")
     # Its bridges (§2.3, tsk-x0krjnw8p78t): the owner connects the reviewer (one owner behind
     # both, so at once), the hub's member views carry it on both sides, then End ends it. Read
@@ -3463,7 +3463,7 @@ def isolate_step(run: Run, page: Page) -> None:
     releases its claims, which the steps before rely on, and lifting does not bring them back."""
     run.step("members: the owner isolates the agent with a reason, sees the badge, and lifts the isolation")
     page.goto(f"{run.base}/owner/e2e-alpha/members")
-    agents = page.locator("table.members").first
+    agents = page.locator("main .members-agents")
     row = agents.locator("tr.member", has_text="E2E Agent")
     row.get_by_role("button", name="Manage E2E Agent").click()
     manage = page.locator("tr.member-manage")
@@ -3656,21 +3656,21 @@ def my_settings_step(run: Run, page: Page) -> None:
 
 def members_step(run: Run, page: Page) -> None:
     """Members (docs/api.md §6.2): humans and agents; the owner changes an agent's role and back."""
-    run.step("members: the owner and the agent in one list; an agent's role changed and back")
+    run.step("members: the owner and the agent in two tables; an agent's role changed and back")
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
     view_tab(page, "Members").click()
     expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/members$"))
-    # One list in the project's hierarchy (the maintainer, 2026-10-31): the owner at the top, the agent,
-    # a member, one level under it (no admin here, so no level for one).
+    # Two tables, humans first; the levels by trust are the Organisation tree's (the maintainer, 2026-11-01).
     table = page.locator("table.members")
-    expect(table).to_have_count(1)
-    expect(table.locator("tr.member").first).to_contain_text("owner")
-    expect(table.locator("tr.member").first).to_have_attribute("data-level", "0")
-    row = table.locator("tr.member", has_text="E2E Agent")
-    expect(row).to_have_attribute("data-level", "1")
+    expect(table).to_have_count(2)
+    humans, agents = table.nth(0), table.nth(1)
+    expect(humans.locator("tr.member")).to_have_count(1)
+    expect(humans.locator("tr.member")).to_contain_text("owner")
+    row = agents.locator("tr.member", has_text="E2E Agent")
+    expect(page.locator("tr.member[data-level]")).to_have_count(0)
     expect(row.locator("td").nth(0)).to_contain_text("member")
     # A neutral list: no credentials column (they are in Manage and on Agents), a Chat per entry.
-    header = table.locator("thead th")
+    header = agents.locator("thead th")
     expect(header.filter(has_text="Credentials")).to_have_count(0)
     expect(row.locator("a.member-chat")).to_have_count(1)
     run.a11y(page, "members")
@@ -3687,7 +3687,7 @@ def members_step(run: Run, page: Page) -> None:
     expect(page.get_by_role("checkbox", name="Only my agents", exact=True)).to_be_checked()
     expect(page.locator("table.members")).to_have_count(1)
     page.get_by_role("checkbox", name="Only my agents", exact=True).uncheck()
-    expect(page.locator("table.members")).to_have_count(1)
+    expect(page.locator("table.members")).to_have_count(2)
     expect(page.locator("table.members tr.member")).to_have_count(2)
     # A member's page (#6484, read only): the agent's name leads there; header, Actions, tabs.
     row.locator("a.member-ref").first.click()
@@ -3854,7 +3854,7 @@ def change_password(run: Run, page: Page) -> None:
 def briefing_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     """The briefing (docs/api.md §3, §6.2)."""
     # The briefing is in the agent's row on Members (tsk-7v2snhk002ak).
-    agents = page.locator("main .members-list")
+    agents = page.locator("main .members-agents")
     page.reload()
     expect(agents).to_contain_text("@e2e-agent")
     agents.get_by_role("button", name="Manage E2E Agent", exact=True).click()

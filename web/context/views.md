@@ -2339,11 +2339,25 @@ repeat the project's join rules (§3.1's member limits, the team's
 instance limit) apart from the panel and drift from it. Keeping the
 agents in no project on the account: two places for the same profile.
 
+## Members is two tables without levels; only the organisation tree follows trust
+
+**Id:** f4ec0c89-33e8-4f62-b192-371a23b91581
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer on tsk-xxewyredc97a, 2026-11-01: the indent was agreed for the organisation chart only, and the two tables of humans and agents were good
+**See:** views.md#the-organisation-tree-is-computed-from-reports_to-and-scope-ownership-never-stored — 5fd2c906-3178-4b74-a1da-82a613302536 — as of 2026-11-01
+
+Members shows a table of humans and one of agents, each in the hub's order, with no indent and no level by trust; the columns are again each table's own. In the Organisation tree, a member with no parent by `reports_to` or area stands at its trust's level, owners at the top, then admins, members and guests, each a level deeper; a level nobody holds leaves no step. Such a member is not put under one owner's node: with several owners that would draw a line to one of them that the project does not have.
+
+**Rejected alternatives:** one list with levels (#949): a misunderstanding of the wish, which was about the chart only. Two tables each indented by trust: the same indent nobody asked for on the list.
+
 ## Members and the organisation tree follow trust: owners at the top, then admins, members and guests
 
 **Id:** 9333bd7a-dbda-4c4f-88d8-fa08124ef06d
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** f4ec0c89-33e8-4f62-b192-371a23b91581
 **Evidence:** inferred
 **Source:** the maintainer's wishes on the card tsk-05meme59sq1x, 2026-10-31, given in three steps: only owners at the top and everyone else indented; the order owners, members, guests; then the levels follow trust, owner, admin, member, guest, each a level deeper, and a level nobody holds leaves no empty step; for both the Organisation tree and the Members list, which becomes one list
 **Revisit when:** a project needs a level the trust does not express, or the Team page shows reports_to in Members too
