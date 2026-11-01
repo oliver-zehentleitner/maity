@@ -486,3 +486,21 @@ of public projects (projects.md, 038e685e) said and the code did not.
 
 **Rejected:** redirecting a dashboard address to the public page: a card's link from a mail would end there
 after a session expired, instead of going on after the sign-in.
+
+## The public Why is a stored row, an exception to "the export stays in memory"
+
+**Id:** aed779e9-be9c-40d2-a7ea-217cee06e470
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's decision of 2026-11-02 on the card tsk-jj1tfre7n6zb
+**Revisit when:** the hub runs more than one process, since each holds its own cache and a render with an empty one would show "not read yet"
+
+The view keeps counts, the family's links and attention titles of a public repository in `public_page`, beside
+the other views. Its export is read ahead of the interval render with the instance's token alone, in a cache of
+its own, because the members' cache may have read with an owner's grant. A render stays off the network, as it
+runs in a transaction. The price is a view up to one interval old; a repository turning private empties it with
+the look that finds it.
+
+**Rejected:** answering `why` at request time from the memory cache: §11.3 would stay untouched, but the route
+would need a rule for the one kind without a row, and search engines would lose the page.

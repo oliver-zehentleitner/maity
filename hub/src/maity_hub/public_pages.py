@@ -192,6 +192,9 @@ class Kind:
     # The pages of other kinds that show this target (a person on the pages of their
     # projects): `touch` renders them again with it, `(kind, target_id)` each.
     dependents: Callable[[Connection, str], list[tuple[str, str]]] | None = None
+    # What the worker fetches before its renders, outside any transaction: a render itself
+    # never touches the network.
+    prepare: Callable[[Engine, Settings], None] | None = None
 
 
 KINDS: dict[str, Kind] = {}
@@ -320,8 +323,13 @@ class Worker:
             self._thread.join(timeout=5)
 
     def _run(self) -> None:
-        while not self._stop.wait(self.interval):
+        while True:
             try:
+                for kind in KINDS.values():
+                    if kind.prepare is not None:
+                        kind.prepare(self.engine, self.hub)
                 render_all(self.engine, self.hub)
             except Exception:
                 log.exception("rendering the public pages again failed")
+            if self._stop.wait(self.interval):
+                return

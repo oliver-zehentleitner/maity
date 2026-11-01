@@ -175,7 +175,7 @@ def test_a_matching_etag_answers_304(world: World) -> None:
 
 
 def test_a_path_with_no_page_is_not_found_and_removal_is_at_once(world: World) -> None:
-    for path in (f"{BASE}/why", f"{BASE}/inbox", "nobody", f"{BASE}/board/"):
+    for path in (f"{BASE}/inbox", "nobody", f"{BASE}/board/"):
         assert world.anyone.get(f"{ROUTE}/{path}").status_code == 404, path
     assert world.owner.patch(f"/projects/{BASE}", {"public_page": "off"}).status_code == 200
     for path in (BASE, f"{BASE}/board"):

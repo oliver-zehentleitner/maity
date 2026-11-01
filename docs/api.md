@@ -10681,6 +10681,10 @@ state (`state.json`), read-only: the hub reads what the project already
 publishes and never reads or writes `context/` (`context/scope.md`: Keep
 the Why stays external). It holds the export in memory only, never in
 its database, and keeps no copy of the entries beyond the cache below.
+One exception, and only this one: the stored public view of a project
+whose repository the hub last found public (§16.9, **Why**) holds the
+summary counts, the family's links and the attention entries' titles,
+statuses, topics and links, never anything else of an entry.
 
 **Where the URL comes from — the repository only.** The `dashboard-state:`
 line inside the `keep-the-why:config` block of the repository's root
@@ -13878,6 +13882,12 @@ the list answers the app shell.
   own token only and only while the hub's last look found the repository
   public (below); while it is private or unread the view says so and
   shows nothing of it. An owner's grant is never used for it (§11.4).
+  The hub reads the export ahead of its interval render
+  (`MAITY_PUBLIC_PAGES_INTERVAL_HOURS`), never during a render, so the view
+  may be that much older than the export and says "not read yet" after a
+  start until the first such read. The look that finds the repository no
+  longer public empties the stored view in its own transaction; looks run
+  every 5 minutes while the forge answers. Turning the page off removes the row at once.
 
 **An agent's page.** `GET /{owner}/agents/{handle}`, the agent's global
 name (§6.3) under its owner's page, while the owner's `public_profile`
