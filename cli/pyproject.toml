@@ -14,7 +14,7 @@ maintainers = [{ name = "Oliver Zehentleitner" }]
 # Standard library only, on purpose: this has to install anywhere an agent runs.
 dependencies = []
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Programming Language :: Python :: 3",
     "Environment :: Console",
     "Operating System :: POSIX",

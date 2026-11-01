@@ -8,7 +8,7 @@ contributors and for the agents that work on or with the hub.
 Status: design, 2026-10-21. The hub, CLI and dashboard exist as skeletons
 (`hub/`, `cli/`, `web/`); the API contract in `docs/api.md` is the
 binding shape of every field and endpoint named here. A separate
-security document is planned (`TASKS.md`) and does not exist yet; until
+security document is planned and does not exist yet; until
 it does, the security design is §4 and §5 here, the wire rules are
 `docs/api.md` §1.5 and §2, and the recorded rationale is
 `context/security.md`. Where a decision is recorded
@@ -754,9 +754,6 @@ maintainer's next real build. Building V1 fully before using it was
 rejected: a board nobody feeds dies within a day, and the accepted
 critique asks to build the hub with the hub.
 
-Until the API exists, `TASKS.md` is the board, by hand, with the known
-failure mode.
-
 ## 12. Reconciliation with the dashboard's endpoint proposal
 
 The dashboard skeleton (`web/`) proposes endpoints through its fixtures,
@@ -766,7 +763,7 @@ only states what was decided at the architecture level. Kept: every
 path, the error envelope with `csrf_mismatch`, the inline `asked_by` and
 `on_behalf_of` objects on requests, `open_requests` per membership on
 `/me` and the cross-project `GET /requests` (the switcher and the landing
-page need them, TASKS.md asks for them), the project-level `absence`,
+page need them), the project-level `absence`,
 the member read model, credentials as id and dates, the claim shape and
 the observed pull request list. Changed: `kind` → `class` with the four
 classes and `info` meaning a question for a fact; `scopes` → `areas`;
