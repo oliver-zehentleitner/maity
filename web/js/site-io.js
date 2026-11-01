@@ -257,8 +257,8 @@ window.Maity = window.Maity || {};
       status.done();
       if (M.yourData) M.yourData.save("maity-site.json", JSON.stringify(bundleOf(now), null, 2) + "\n");
     } }, M.t("site.download"));
-    append(root, h("h3", null, M.t("site.title")), h("p", { class: "hint" }, M.t("site.intro")), json.el,
-      h("div", { class: "actions" }, download), overview, stepSlot, status.el, valuesForm());
+    append(root, h("h3", null, M.t("site.title")), h("p", { class: "hint" }, M.t("site.intro")), valuesForm(), json.el,
+      h("div", { class: "actions" }, download), overview, stepSlot, status.el);
   }
 
   M.siteIo = { section, check, readNow, bundleOf, FORMAT };
