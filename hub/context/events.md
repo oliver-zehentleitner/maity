@@ -392,7 +392,7 @@ instead of one problem per attempt.
 **Verification:** corroborated
 **Revisit when:** a chat may carry more than the human's own on/off choice, or the participants lists are built in one place
 
-`conversation_meat_proxy(human_id, project_id, conversation_id, meat_proxy)` holds a human's own choice for one chat, `true` or `false`; `null` deletes the row and the chat follows the profile. `chat_meat_proxy.shown` adds `meat_proxy`, `meat_proxy_chat` (only for the human reading) and, while on, `meat_proxy_note` to every human entry of the participants lists it is given, in the conversation view (`group_chats.view`), the direct item and both lists; the resume packet's `conversations[].meat_proxy` is read from the same entries. `PUT …/meat-proxy` emits no event. The account's deletion and export name the table.
+`conversation_meat_proxy(human_id, project_id, conversation_id, meat_proxy)` holds a human's own choice for one chat, `true` or `false`; `null` deletes the row and the chat follows the profile. `chat_meat_proxy.shown` adds `meat_proxy`, `meat_proxy_lead`, `meat_proxy_hands`, `meat_proxy_chat` (only for the human reading) and, while on, `meat_proxy_note` to every human entry of the participants lists it is given, in the conversation view (`group_chats.view`), the direct item and both lists; the resume packet's `conversations[].meat_proxy` is read from the same entries. `PUT …/meat-proxy` emits no event. The account's deletion and export name the table.
 
 **Reason:** a direct chat has no participant row (its id is the agent's), and the choice must work there as much as in a group chat, so a column on `conversation_participant` would cover only half. The same agent's direct chat exists once per project under one id, which is why the project is part of the key: a choice in one project must not switch the mode on in another. One function over the lists keeps the fields from drifting between the four places participants are built. The migration's primary key and foreign keys must be the same as in `tables.py` (human, project, conversation; foreign keys on human and project): the tests build the schema from the migrations, so a key only in `tables.py` is never checked. A first version had `(human_id, conversation_id)` in the migration, and a second project's direct chat then failed with a unique violation.
 
@@ -400,6 +400,25 @@ instead of one problem per attempt.
 - A column on `conversation_participant`: no row for a direct chat, and a stay per join in a group chat that would lose the choice when the human leaves and comes back.
 - Keying by conversation id alone: the same agent in two projects would share one choice.
 - Emitting an event on a change: the contract has the agents read it on their next resume and wakes nobody; an event would reach every reader of the chat for what is context about a person.
+
+## A chat's meat-proxy choice decides the lead part only; the hands part stays the profile's
+
+**Id:** 5f1c4bef-59da-4382-a2d5-a65de2958052
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-rznymp9hb1qm (the owner: the mode in a chat means being told what to do, and a profile with only the hands part must not read as active there); `docs/api.md` §9.3 "Meat proxy per chat"
+**Verification:** corroborated
+**See:** events.md#the-meat-proxy-choice-per-chat-is-a-row-of-its-own-keyed-by-human-project-and-conversation-and-one-function-adds-it-to-every-participants-list — ab4caa81-c57d-418f-a664-7ff498f1e6e7 — as of 2026-11-01
+**Revisit when:** a chat should offer or withdraw a human's hands on its own
+
+`chat_meat_proxy.parts` takes the lead part from the chat's value (the profile's while it is `null`) and the hands part from the profile, always. The participant entry carries both as `meat_proxy_lead` and `meat_proxy_hands`. `meat_proxy` stays "at least one part", as in §5.2, and the note and the resume packet follow it, so agents keep reading the hands part in every chat.
+
+**Reason:** the entry used to carry only the derived value, so a profile with only the hands part showed the chat's switch as on. Asking to be led is about one conversation; being the first person to ask for a click is about the person, whichever chat an agent reads. Before this, `true` over a hands-only profile changed nothing, so nobody with that profile could be led in one chat, and `false` hid the hands from the agents as well. Two results change on purpose: `true` over a profile that is off now gives the lead part alone (it gave both), and `false` over a profile with the hands part keeps that part (it gave none).
+
+**Rejected alternatives:**
+- Redefining `meat_proxy` on the entry as the lead part: one field would mean two things between §5.2 and §9.3, and the resume packet would need another filter so as not to lose the hands.
+- Changing only the page: the entry had no part fields, so the page would have had to parse the note's sentences.
 
 ## A watch reaches an event through a list fixed at write, added where every event is written
 

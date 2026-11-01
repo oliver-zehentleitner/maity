@@ -1402,6 +1402,7 @@ def chat_pause_state(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
     convs = page.request.get(f"{run.base}/api/v1/projects/owner/e2e-alpha/conversations").json()["items"]
     entry = next(p for c in convs if (c.get("agent_id") or c["id"]) == agent_id for p in c["participants"] if p["kind"] == "human")
     assert entry["meat_proxy"] is True and entry["meat_proxy_chat"] is True and entry.get("meat_proxy_note"), entry
+    assert entry["meat_proxy_lead"] is True and entry["meat_proxy_hands"] is False, entry
     follow.click()
     expect(meat).to_have_attribute("aria-pressed", "false")
     expect(follow).to_be_hidden()

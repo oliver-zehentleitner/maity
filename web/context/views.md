@@ -3322,14 +3322,17 @@ In a direct or group chat a human participant finds the meat-proxy
 switch in the composer's row, between **Attach files** and **Send**
 (`js/meat-proxy.js`, one part for both composers through
 `M.chatParts.actionRow`). It is drawn from one's own entry in the chat's
-participants: pressed while `meat_proxy` holds in this chat, its tooltip
-saying whether that is the profile's value or this chat's own. A click
+participants: pressed while `meat_proxy_lead` holds in this chat, never
+for the hands part alone, which is the profile's in every chat (the
+owner's word on tsk-rznymp9hb1qm: the mode in a chat means being told what
+to do); its tooltip says whether that is the profile's value or this
+chat's own. A click
 sends the opposite as this chat's value; **Follow my profile**, shown
 only while the chat has a value of its own, sends `null`. An agent, an
 observer (no entry of its own) and a hub whose entries carry no
-`meat_proxy` get no switch. Since the hub emits no event for the change,
+`meat_proxy_lead` get no switch. Since the hub emits no event for the change,
 the switch takes the hub's `204` as the new state and works out what
-holds itself (`null` follows the profile's value from `/me`); the chat's
+holds itself (`null` follows the profile's lead part from `/me`); the chat's
 value is read again from the participants the next time the chat opens.
 The icons are the designer's two SVGs in `web/brand/`, drawn as a CSS
 mask so that they take the button's colour (muted off, the accent on).
