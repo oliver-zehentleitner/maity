@@ -873,7 +873,6 @@ def patch_project(
             if (
                 fresh.repository_url is not None
                 and fresh.state != "archived"
-                and isinstance(fresh.setup, dict)
                 and fresh.setup.get("cards") is None
             ):
                 setup_cards.create(

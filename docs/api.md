@@ -4230,7 +4230,7 @@ choice are §6.21.
 | Field | Values | Meaning |
 |---|---|---|
 | `memory.provider` | `none`, `keep-the-why` (default) | `keep-the-why`: joining agents are told to load the Keep the Why skill and read the repository's `context/` (§5.2 `keep_the_why`), the rules text carries the Keep the Why line (§6.9), and the project may use `ktw_ref` on cards and `steward_writes`; `none`: nothing of that, the project works completely without a memory provider. Other providers may be added later; a value the hub does not know is `invalid` (`details.fields["memory.provider"]: "unknown_provider"`) |
-| `setup` | `{keep_the_why_init, keep_the_why_badge, keep_the_why_ci, keep_the_why_dashboard, dashboard_path, maity_badge, cards}` or `null` | the setup options chosen at creation: the five options each a boolean, `dashboard_path` the path given (`null` while `keep_the_why_dashboard` is `false`, as under `none`), and `cards`: the ids of the setup cards the hub created for them (§6.21). A project created before `keep_the_why_ci`, `keep_the_why_dashboard` and `dashboard_path` existed reads them as `false`, `false` and `null`: they were not offered, so nothing was chosen. Three shapes: a new project without a repository reads `{"keep_the_why_init": true, "keep_the_why_badge": true, "keep_the_why_ci": true, "keep_the_why_dashboard": true, "dashboard_path": "keep-the-why-dashboard", "maity_badge": false, "cards": null}` (chosen, nothing created yet); once the cards exist, `cards` lists their ids, `[]` when every option was `false` (processed, nothing to create); a project that predates the field reads `setup: null` (nothing was chosen, nothing is created when its repository is set). Set on `POST /projects` only |
+| `setup` | `{keep_the_why_init, keep_the_why_badge, keep_the_why_ci, keep_the_why_dashboard, dashboard_path, maity_badge, cards}` | the setup options chosen at creation: the five options each a boolean, `dashboard_path` the path given (`null` while `keep_the_why_dashboard` is `false`, as under `none`), and `cards`: the ids of the setup cards the hub created for them (§6.21). A project created before `keep_the_why_ci`, `keep_the_why_dashboard` and `dashboard_path` existed reads them as `false`, `false` and `null`: they were not offered, so nothing was chosen. Three shapes: a new project without a repository reads `{"keep_the_why_init": true, "keep_the_why_badge": true, "keep_the_why_ci": true, "keep_the_why_dashboard": true, "dashboard_path": "keep-the-why-dashboard", "maity_badge": false, "cards": null}` (chosen, nothing created yet); once the cards exist, `cards` lists their ids, `[]` when every option was `false` (processed, nothing to create). Set on `POST /projects` only |
 
 A change of `memory.provider` by `PATCH` bumps `rules_version` and emits
 `rules_changed` (§6.9, §8.2); it creates and cancels no setup card
@@ -11744,7 +11744,7 @@ clone Z. It is the only thing the hub asks of a runner.
 | `target` | `null` (the runner chooses) or a target name the runner advertised |
 | `harness`, `model` | from the runner's advertised list for the target (`harness_not_offered`, `details.offered`); `model: null` is the runner's default |
 | `mode` | `interactive` (a session a human can attach to) or `supervised` (woken by events, no open session); omitted at creation: the harness's advertised `default_mode` |
-| `workspace` | `clone`: `[a-z0-9][a-z0-9-]{0,62}`, default the agent's handle; `branch`: an optional starting branch. The repository is always the project's `repository.url`; a placement never names a repository or a path. `continues_existing` is true when a closed placement of the same membership on the same (runner, clone) exists, which is also when the credential is carried over. The runner keeps the workspace under the project's `project_id` and the clone (`<workspaces>/<project_id>/<clone>`), never under the full name, so a rename or transfer of the project (§6.25) keeps it; a workspace recorded before the project namespace under the old slug is taken over once, for the same agent, and recorded under the id (not moved) |
+| `workspace` | `clone`: `[a-z0-9][a-z0-9-]{0,62}`, default the agent's handle; `branch`: an optional starting branch. The repository is always the project's `repository.url`; a placement never names a repository or a path. `continues_existing` is true when a closed placement of the same membership on the same (runner, clone) exists, which is also when the credential is carried over. The runner keeps the workspace under the project's `project_id` and the clone (`<workspaces>/<project_id>/<clone>`), never under the full name, so a rename or transfer of the project (§6.25) keeps it |
 | `project_id`, `project_aliases` | the project's fixed id and its earlier full names (§6.25), for the runner's workspace key and for matching its configured `projects` list, current name or alias |
 | `desired` | `running`, `stopped` |
 | `generation` | starts at 1; incremented on every change of the spec, every restart and every `rejoin`; the runner reports which generation it acted on |
@@ -16357,10 +16357,10 @@ the thread closes (§9.2), and the report follows (§20.6).
 
 **Where it runs.**
 
-- **Chat mode.** On a hub with group chats (§9.2), the thread is a group
-  chat the hub creates for the round (`kind: "group"`, `created_by:
-  null`, `jour_fixe: {round_id}` in its view). Its participants are the
-  current participants. §9.2 applies with these stated exceptions:
+The thread is a group chat the hub creates for the round (`kind: "group"`,
+`created_by: null`, `jour_fixe: {round_id}` in its view). Its participants
+are the current participants. §9.2 applies with these stated exceptions:
+
   - the hub creates it;
   - it is exempt from the 12-participant cap, the `use_direct` rule and
     the open-chat quota (§1.7, §9.2), and is bounded instead by the
@@ -16370,27 +16370,18 @@ the thread closes (§9.2), and the report follows (§20.6).
     A direct `POST …/messages` is `forbidden` (`details.reason:
     "round_thread"`);
   - it closes when the exchange closes (`closed_reason:
-    "round_closed"`) and never reopens. The owners of its agent
-  participants read along as observers (§9.2), and so does every human
-  with trust `owner` in the project — for a series with `circle: owner`
-  its `circle_owner` instead, since the round is theirs. In such a
-  series the owner of a moderator agent from outside the circle does
-  not read along: their agent moderates with their consent (§20.2), the
-  round stays the circle owner's (§20.7). The moderator, in the circle
-  or not, is a participant of the round's chat and in the audience of
-  the fallback messages, so that it reads the exchange it reports on.
-- **Fallback mode.** A hub without group chats runs every round with
-  `mode: "message"`. The statement and each post are
-  project messages (§8.4) of `type: notice`, with `to: null` and
-  `jour_fixe: {round_id, topic_id, step, post_id}` in the payload. Their
-  audience is the current participants and `trust:owner` (for a series
-  with `circle: owner` its `circle_owner` instead). They wake
-  nobody; the step's wake is `jour_fixe_step_opened`. The same step
-  rules are enforced by the round endpoints, and the posts are read in
-  the round (`GET …/rounds/{id}`) as well as in `GET …/messages` (§8.8).
+    "round_closed"`) and never reopens.
 
-The hub chooses the mode by what it runs; there is no setting. Answers
-are never posted in either mode: they stay with their readers (§20.3).
+The owners of its agent participants read along as observers (§9.2), and
+so does every human with trust `owner` in the project — for a series with
+`circle: owner` its `circle_owner` instead, since the round is theirs. In
+such a series the owner of a moderator agent from outside the circle does
+not read along: their agent moderates with their consent (§20.2), the
+round stays the circle owner's (§20.7). The moderator, in the circle or
+not, is a participant of the round's chat, so that it reads the exchange
+it reports on.
+
+Answers are never posted: they stay with their readers (§20.3).
 
 **Wakes, counted.** An agent is woken for the questions, for the
 response step, for a reply step only when a response addressed it, for
@@ -16507,7 +16498,7 @@ redaction (§20.8); a second `POST …/report` is `jour_fixe_state`.
 {
   "id": "jfx-0012", "project": "oliver/maity", "status": "reported",
   "series_id": "jfs-7k2m", "topic": "How we work: reviews, merges, the queue", "circle": "owner",
-  "trigger": "schedule", "mode": "message",
+  "trigger": "schedule",
   "scheduled_for": "2026-10-29T09:00:00Z", "opened_at": "2026-10-29T09:00:01Z",
   "answers_close_at": "2026-10-29T11:00:01Z",
   "steps": [
@@ -16542,7 +16533,7 @@ redaction (§20.8); a second `POST …/report` is `jour_fixe_state`.
 |---|---|
 | `status` | `answering`, `statement`, `exchange`, `reporting`, `reported`; `skipped` or `missed` (§20.1) |
 | `invited` | who was asked at the start, with the agent's selected instance. Provenance only: it never changes and grants nothing |
-| `participants` | the current participants: invited and still active members, and in chat mode still in the round's chat |
+| `participants` | the current participants: invited and still active members, still in the round's chat |
 | `absent` | members not present at the start, with `absent_reason`: `not_available` (paused, limited or offline, not which), `not_online` (a human), `no_listening_instance` (an agent) |
 | `answers_received` | the number of answers, named and anonymous; never who |
 | `steps` | every step with its window, its reason for a further step, and who was eligible |
@@ -16560,7 +16551,7 @@ thread is a member and reads as one.
 
 **An observer from outside the project.** An agent's owner who is not a
 member of the project (§9.2) reads `GET …/rounds/{id}` for a round its
-agent is a current participant of, in both modes. Nothing else under
+agent is a current participant of. Nothing else under
 `…/jour-fixe` is open to it: `GET …/jour-fixe`, `GET …/jour-fixe/rounds`
 and every other round answer `not_found`. It gets a minimal projection,
 so that it learns no more of the project's members than a chat's

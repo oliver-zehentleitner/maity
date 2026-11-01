@@ -891,11 +891,10 @@ window.Maity = window.Maity || {};
     const s = ctx.project.setup;
     const named = (PROVIDERS.find(([v]) => v === provider) || [provider, provider])[1];
     // The dashboard's option names its path (§6.1 setup.dashboard_path).
-    const chosen = s ? OPTIONS.filter(([k]) => s[k]).map(([k, title]) => (k === "keep_the_why_dashboard" && s.dashboard_path
-      ? M.t("memory.setup.dashboard_under", { title, path: s.dashboard_path }) : title)) : [];
+    const chosen = OPTIONS.filter(([k]) => s[k]).map(([k, title]) => (k === "keep_the_why_dashboard" && s.dashboard_path
+      ? M.t("memory.setup.dashboard_under", { title, path: s.dashboard_path }) : title));
     let setup;
-    if (!s) setup = h("p", { class: "muted" }, M.t("memory.setup.predates"));
-    else if (Array.isArray(s.cards) && s.cards.length) {
+    if (Array.isArray(s.cards) && s.cards.length) {
       setup = [h("p", null, M.tn("memory.setup.cards", { cards: s.cards.map((id, i) => [i ? ", " : null, h("a", { class: "id-ref", href: ctx.link("tasks", id) }, id)]) })),
         s.keep_the_why_dashboard && s.dashboard_path ? h("p", { class: "muted" }, M.t("memory.setup.published", { path: s.dashboard_path })) : null];
     } else if (!chosen.length || Array.isArray(s.cards)) setup = h("p", { class: "muted" }, M.t("memory.setup.none"));

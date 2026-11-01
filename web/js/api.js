@@ -2441,7 +2441,7 @@ window.Maity = window.Maity || {};
             : { url, default_branch: "main", forge: "github", probe_configured: false, probe_via: null, owner_confirmed: false, confirmed_by: null }) : null;
         if (!same && "keep_the_why_export" in p) p.keep_the_why_export = back ? back.export : null;
         // The repository first set: the setup cards chosen at creation (§6.21).
-        if (url && p.setup && p.setup.cards === null && p.state !== "archived") makeSetupCards(m[1], p.setup, me().member.id, url);
+        if (url && p.setup.cards === null && p.state !== "archived") makeSetupCards(m[1], p.setup, me().member.id, url);
       }
       // memory.provider by PATCH (§6.1, §6.21): rules_version moves, no setup card is
       // made or cancelled. The commitment reads optional under none, and required

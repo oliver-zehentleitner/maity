@@ -41,8 +41,9 @@ small: at most 1500 rows per agent.
 **Source:** implementation session, 2026-10-25 (jour fixe, part 2)
 **Revisit when:** a round needs a thread it did not have from the start, or a second pending further step is allowed
 
-This hub runs group chats, so every round runs in chat mode (`docs/api.md`
-§20.5). The hub creates the round's thread when the round opens, with the
+Every round runs in its own group chat (`docs/api.md` §20.5); the `mode`
+field and column that once named a fallback without group chats were removed
+on 2026-11-01, since nothing could reach it. The hub creates the round's thread when the round opens, with the
 invited members, right after the round row so that the thread's view names
 the round. A further step the moderator asks for is an entry in the round's
 `steps` with `opened_at` null until it opens; when the exchange closes

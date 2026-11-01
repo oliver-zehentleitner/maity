@@ -329,8 +329,11 @@ mirrors its guide the same way, so one instance setting is enough.
 **Revisit when:** a project may change its setup options after creation, or setup cards need to be told apart by option
 
 `project.setup` is a JSON column holding the options and `cards`: `null`
-before the cards exist, the list of ids after (`[]` when no option was on),
-and the whole column `NULL` for a project that predates it. The cards carry
+before the cards exist, the list of ids after (`[]` when no option was on).
+The column is `NOT NULL` since 2026-11-01: the maintainer knew of no project
+without it but nobody had checked production, so the migration writes every
+option `false` and `cards: []` into any `NULL` row, which is what the code did
+with a `NULL`: nothing chosen, nothing created. The cards carry
 `kind: setup`, which only the hub creates (`POST …/tasks` answers `kind: hub_only`).
 The packet's `setup` is read from the cards by kind and status, not from the
 stored id list, so a cancelled or done card drops out without any bookkeeping.
@@ -365,8 +368,7 @@ and the board is the cards.
 `project.setup` (56fcd342). A project created before they were offered
 had nothing chosen for them: migration 0107 writes `false`, `false` and
 `null` into every non-null `setup`, so the view reads one shape and the
-code keeps no branch for the old one; a `setup` that is `NULL` stays
-`NULL`. `dashboard_path` is checked for its shape whenever it is sent,
+code keeps no branch for the old one. `dashboard_path` is checked for its shape whenever it is sent,
 also with the dashboard option `false`, and only then dropped: the value
 read back is `null` while the option is off, as under `none`. A `..`
 anywhere in the value is refused, not only as a whole segment, which

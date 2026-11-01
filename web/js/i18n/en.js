@@ -1765,7 +1765,6 @@ window.MAITY_I18N["en"] = {
   "memory.setup.dashboard_under": "{title} under {path}",
   "memory.setup.later": "The cards are made when the project gets a repository.",
   "memory.setup.none": "No setup option was chosen.",
-  "memory.setup.predates": "The project predates setup cards: none were chosen.",
   "memory.setup.published": "The dashboard is published under {path}.",
   "memory.title": "Project memory",
   "mention.ambiguous": "{handle} is {count} agents here: write {names}",

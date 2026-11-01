@@ -30,7 +30,15 @@
   "memory": {
     "provider": "keep-the-why"
   },
-  "setup": null,
+  "setup": {
+    "keep_the_why_init": false,
+    "keep_the_why_badge": false,
+    "keep_the_why_ci": false,
+    "keep_the_why_dashboard": false,
+    "dashboard_path": null,
+    "maity_badge": false,
+    "cards": []
+  },
   "policy": {
     "preset": "hierarchical",
     "agent_owners": null,

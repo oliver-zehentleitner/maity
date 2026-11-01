@@ -109,11 +109,10 @@ def stored(options: dict[str, Any]) -> dict[str, Any]:
     return {**options, "cards": None}
 
 
-def view(project: Any) -> dict[str, Any] | None:
-    """`setup` of the project view (§6.1); `null` for a project that predates the field.
-    A project from before the CI, dashboard and path options has them as `false`,
-    `false` and `null`, written by the migration that added them."""
-    value: dict[str, Any] | None = project.setup
+def view(project: Any) -> dict[str, Any]:
+    """`setup` of the project view (§6.1). A project from before the CI, dashboard and path
+    options has them as `false`, `false` and `null`, written by the migration that added them."""
+    value: dict[str, Any] = project.setup
     return value
 
 

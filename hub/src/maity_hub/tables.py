@@ -608,7 +608,7 @@ project = Table(
     Column("keep_the_why_defaults", String(8), nullable=False, server_default="adopt"),
     # The setup options chosen at creation and the ids of the cards made for them
     # (§6.21); NULL for a project that predates the field.
-    Column("setup", JSON_VALUE),
+    Column("setup", JSON_VALUE, nullable=False),
     Column("absence_until", UtcDateTime),
     Column("absence_scope", MARKDOWN_TEXT),
     Column("settings", JSON_VALUE, nullable=False),
@@ -1645,7 +1645,6 @@ jour_fixe_round = Table(
     _ref("series_id", "jour_fixe_series.id", index=True),
     Column("status", String(16), nullable=False),
     Column("trigger", String(16), nullable=False),  # schedule, manual
-    Column("mode", String(16), nullable=False),  # message, chat
     Column("reason", MARKDOWN_TEXT),  # a manual start's
     Column("skip_reason", String(32)),
     Column("missed_slots", Integer),
