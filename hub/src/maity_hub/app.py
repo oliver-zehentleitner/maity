@@ -79,6 +79,7 @@ from maity_hub.routes import (
     badges,
     board,
     bridges,
+    briefing_view,
     contract_text,
     conversations,
     device_codes,
@@ -336,6 +337,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(mail_settings.router, prefix=prefix)
     app.include_router(sign_in_settings.router, prefix=prefix)
     app.include_router(me_session.router, prefix=prefix)
+    app.include_router(briefing_view.router, prefix=prefix)
     app.include_router(limit.router, prefix=prefix)
     app.include_router(limits_routes.router, prefix=prefix)
     app.include_router(site_values_routes.router, prefix=prefix)

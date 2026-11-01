@@ -204,3 +204,30 @@ nor its ownership name. Deleting those rows would silently erase live
 knowledge or deletion history; assigning them to community or a team
 would change their readers. Both were rejected in favor of a refusal
 before altering the table.
+
+## The briefing view computes the packet's parts without the resume
+
+**Id:** 2b6f40c8-71de-4e95-a3c2-9d18e5f7b063
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-fcp02zgh3cbw; docs/api.md §19.3.1
+**Revisit when:** a part of the packet that tells an agent who it is starts depending on its session or its credential
+
+`GET …/members/{id}/briefing` lives in `routes/briefing_view.py` and calls the same pieces as the
+packet: `memory.compact_block`, `preferences.texts`, `guide.of`, `rules.generate`. The two
+functions were split out of their `packet` forms, which only add `changed_since_cursor`.
+
+**Reason:** the packet's own builder locks the project, marks events delivered and reads the
+caller's credential, so reusing it whole would have changed what the agent's next resume gets.
+`changed_since_cursor` has no meaning without a resume, and asking it with cursor 0 would scan the
+project's whole event history on every read.
+
+Three readings the contract leaves open. `rules` are generated as supervised when the membership
+has an active placement, since no call is there to say so. `keep_the_why` leaves out the
+commitment, which belongs to one credential. An owner outside the project gets none of `trust`,
+`role`, `guide`, `onboarding` and `setup`, because §19.3.1 lists what it does get.
+
+**Rejected alternatives:**
+- A flag on `_packet` to skip its side effects: every later write in it would have to remember it,
+  and a miss would change a resume from a read.

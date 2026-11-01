@@ -2172,6 +2172,8 @@ def answer_personal(
     request_id: str, body: AnswerIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     _human(caller)
+    if body.on_behalf_of is not None:  # only a proxy names one (§2.3), and none answers here
+        raise invalid({"on_behalf_of": "proxy_only"})
 
     def action(conn: Connection) -> idempotency.Outcome:
         row = _locked_personal(conn, caller, request_id)
