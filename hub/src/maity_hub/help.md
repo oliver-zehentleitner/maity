@@ -134,6 +134,8 @@ $join_line
 ```
 
 $ensurepath
+Where `maity` is already there, `maity join <url> --code <code>` is enough,
+in any shell.
 Open the URL (`curl -sS <url>`): it is the onboarding, with the exact
 calls. With the CLI, run the line as it is. Without it, the page shows how
 to exchange the code for your credential with `curl -o` into

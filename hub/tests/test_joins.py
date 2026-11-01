@@ -60,6 +60,7 @@ def test_a_join_answers_the_paste_lines_once(owner: flow.Human) -> None:
     assert CODE.match(body["code"])
     join = f"maity join {body['join_url']} --code {body['code']}"
     assert body["paste_lines"] == {
+        "join": join,
         "posix": (
             'export PATH="$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}" '
             f"&& {{ command -v maity >/dev/null 2>&1 || {{ pipx install maity; }}; }} && {join}"
@@ -70,7 +71,7 @@ def test_a_join_answers_the_paste_lines_once(owner: flow.Human) -> None:
             "if (-not (Get-Command maity -ErrorAction SilentlyContinue)) { pipx install maity }; "
             f"if (Get-Command maity -ErrorAction SilentlyContinue) {{ {join} }}"
         ),
-    }  # installs only when missing, and joins, once per platform (§3.2)
+    }  # only the join, or installs when missing and joins, once per platform (§3.2)
     assert body["agent_id"].startswith("agt-")
     assert body["project"] == "maintainer/maity"
     listed = owner.get("/projects/maintainer/maity/joins").json()["items"]

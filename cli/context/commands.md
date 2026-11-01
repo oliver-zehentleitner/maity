@@ -352,8 +352,9 @@ so a caller can tell them from a hub error.
   `objection_open`, a human's objection) until the hold is built: the hub
   sends none of them and no human can object, so the lines could never
   run, and they told agents about a rule that does not hold. Opening a
-  takeover also lost its `GET`, which only served that check. The hold's
-  card brings them back with the feature.
+  takeover also lost its `GET`, which only served that check. Building the
+  hold brings back the checks in `_takeover_call`, `_check_holder` and
+  `_takeover_lines`, and the hold's sentence in rule 11 of the skill.
 
 ## A 404 asks the hub's openapi.json whether the route exists at all
 

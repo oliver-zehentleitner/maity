@@ -34,6 +34,7 @@ What is checked:
   the same placeholders, and the plural forms its language has; its
   i18n/<lang>.meta.json is current. A key it lacks or that follows an older
   English text is a note, and a finding only with --release;
+  every error code of docs/api.md §1.3 has words (js/errors.js);
   M.t takes its key as a string literal the English catalog holds, and
   every English key is used. Text in the views is ratcheted: each js file
   may hold no more prose string literals than tools/strings-baseline.json
@@ -464,10 +465,15 @@ def translation_problems(lang, data, english):
         if placeholders(entry) != placeholders(english[key]):
             problems.append("key %r: placeholders %s, English has %s" % (
                 key, sorted(placeholders(entry)), sorted(placeholders(english[key]))))
-        if isinstance(entry, str):
-            if not entry.strip():
-                problems.append("key %r: empty; leave a key out until it is translated" % key)
-        elif not needed <= set(entry) <= needed | optional:
+        texts = [entry] if isinstance(entry, str) else list(entry.values())
+        if not all(text.strip() for text in texts):
+            problems.append("key %r: empty; leave a key out until it is translated" % key)
+        if not isinstance(entry, str) and "other" in entry and "other" in english[key] \
+                and placeholders(entry["other"]) != placeholders(english[key]["other"]):
+            # `one` may say the number in words ("eine Datei"), `other` cannot.
+            problems.append("key %r: placeholders of `other` %s, English has %s" % (
+                key, sorted(placeholders(entry["other"])), sorted(placeholders(english[key]["other"]))))
+        if not isinstance(entry, str) and not needed <= set(entry) <= needed | optional:
             problems.append("key %r: %s has the forms %s, here %s" % (
                 key, lang, sorted(needed | optional), sorted(entry)))
     return problems
@@ -496,6 +502,14 @@ def translation_gaps(data, english, meta):
     return missing, stale
 
 
+def read_meta(path):
+    try:
+        meta = json.loads(read(path))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return meta if isinstance(meta, dict) else {}
+
+
 def check_translations(catalogs, write, release, notes):
     english = catalogs["en"]
     for lang, data in sorted(catalogs.items()):
@@ -505,15 +519,13 @@ def check_translations(catalogs, write, release, notes):
         for problem in translation_problems(lang, data, english):
             finding(path, 1, problem)
         meta_path = os.path.join(I18N, lang + I18N_META)
-        try:
-            meta = json.loads(read(meta_path))
-        except (OSError, json.JSONDecodeError):
-            meta = {}
+        meta = read_meta(meta_path)
         fresh = translation_meta(data, english, meta)
+        body = json.dumps(fresh, indent=2, sort_keys=True) + "\n"
         if write:
             with open(meta_path, "w", encoding="utf-8") as f:
-                f.write(json.dumps(fresh, indent=2, sort_keys=True) + "\n")
-        elif fresh != meta:
+                f.write(body)
+        elif not os.path.exists(meta_path) or read(meta_path) != body:
             finding(meta_path, 1, "stale: run `make fixtures`")
         missing, stale = translation_gaps(data, english, fresh)
         if missing or stale:
@@ -534,10 +546,7 @@ def list_gaps(lang):
     data = load_catalog(path)
     if data is None:
         return 1
-    try:
-        meta = json.loads(read(os.path.join(I18N, lang + I18N_META)))
-    except (OSError, json.JSONDecodeError):
-        meta = {}
+    meta = read_meta(os.path.join(I18N, lang + I18N_META))
     missing, stale = translation_gaps(data, english, translation_meta(data, english, meta))
     for key in missing:
         print("missing " + key)
@@ -590,6 +599,24 @@ def prose(text):
     return bool(re.fullmatch(r"\s*[A-Z][a-z]+[.!?:…]?\s*", text))
 
 
+def contract_error_codes():
+    """The codes of the contract's table (§1.3), or None where the repository's docs are absent."""
+    path = os.path.join(os.path.dirname(ROOT), "docs", "api.md")
+    if not os.path.exists(path):
+        return None
+    part = re.search(r"(?ms)^### 1\.3.*?^### 1\.4", read(path))
+    return set(re.findall(r"(?m)^\| \d{3} \| `([a-z_]+)`", part.group(0))) if part else None
+
+
+def check_error_words(english):
+    codes = contract_error_codes()
+    if codes is None:
+        return
+    for code in sorted(codes):
+        if "error." + code not in english:
+            finding(os.path.join(ROOT, "js", "errors.js"), 1, "error code %r of docs/api.md §1.3 has no words" % code)
+
+
 def check_i18n(write, release=False, notes=None):
     catalogs = {}
     names = sorted(f for f in os.listdir(I18N) if f.endswith(".json") and not f.endswith(I18N_META)) if os.path.isdir(I18N) else []
@@ -628,7 +655,7 @@ def check_i18n(write, release=False, notes=None):
             continue
         # M.t, M.tn or Maity.t(n), found in the code without comments (strip_js keeps
         # every position), its key read from the source at that place.
-        for m in re.finditer(r"\b(?:M|Maity)\.tn?\(\s*", code):
+        for m in re.finditer(r"\b(?:M|Maity)\.t(?:n|Own)?\(\s*", code):
             lineno = code.count("\n", 0, m.start()) + 1
             quote = src[m.end()] if m.end() < len(src) else ""
             close = src.find(quote, m.end() + 1) if quote in ("\"", "'") else -1
@@ -641,6 +668,7 @@ def check_i18n(write, release=False, notes=None):
                 finding(path, lineno, "M.t key %r is not in i18n/en.json" % key)
         if f not in STRINGS_EXEMPT:
             counts[f] = sum(1 for _, text in literals if prose(text))
+    check_error_words(english)
     for key in sorted(set(english) - used):
         finding(os.path.join(I18N, "en.json"), 1, "key %r is used nowhere" % key)
     # Without a baseline file, --write takes today's counts once; after that a

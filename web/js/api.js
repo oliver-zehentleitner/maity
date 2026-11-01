@@ -16,7 +16,7 @@ window.Maity = window.Maity || {};
 
   class ApiError extends Error {
     constructor(message, status, path, code, details) {
-      super(message);
+      super(M.errorWords(code, details, message));  // the reader's language, the hub's English else
       this.name = "ApiError";
       this.status = status;
       this.path = path;
@@ -4059,9 +4059,10 @@ window.Maity = window.Maity || {};
         new_instance: !!body.new_instance, replaces: body.replaces || null, instance: null,
         takes_over: body.takes_over || null, handover,
       });
-      // §3.2 "The install line": installs only when missing and joins, per platform.
+      // §3.2 "The install line": only the join, or installs when missing and joins, per platform.
       return {
         id, join_url: url, code: "FIXT-URE0-0000", paste_lines: {
+          join: "maity join " + url + " --code FIXT-URE0-0000",
           posix: "export PATH=\"$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}\" && { command -v maity >/dev/null 2>&1 || { pipx install maity; }; } && maity join " + url + " --code FIXT-URE0-0000",
           windows: "$env:Path += \";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR } else { \"$HOME\\.local\\bin\" })\"; if (-not (Get-Command maity -ErrorAction SilentlyContinue)) { pipx install maity }; if (Get-Command maity -ErrorAction SilentlyContinue) { maity join " + url + " --code FIXT-URE0-0000 }",
         },

@@ -410,11 +410,25 @@ def test_the_public_host_has_no_invitation_redirect(make_client: ClientFactory) 
 
 
 @pytest.mark.parametrize(
-    "install", ["pip install maity && hash -r", "curl x | sh", "a; b", "a $(b)", "a > b"]
+    "install",
+    [
+        "pip install maity && hash -r",
+        "curl x | sh",
+        "a; b",
+        "a $(b)",
+        "a > b",
+        "PIPX_HOME=/opt/p pipx install maity",
+        "~/bin/install-maity",
+        "pipx install ~/maity.whl",
+    ],
 )
 def test_a_compound_install_line_has_no_windows_line(install: str) -> None:
     assert join_line.windows(install, "U", "C") is None
     assert f"|| {{ {install}; }}; }}" in join_line.posix(install, "U", "C")  # kept whole
+
+
+def test_an_equals_sign_or_a_tilde_later_in_the_line_keeps_the_windows_line() -> None:
+    assert join_line.windows("pipx install --index-url=https://x/a~b maity", "U", "C") is not None
 
 
 def test_a_single_command_keeps_its_windows_line_without_the_pipx_path() -> None:

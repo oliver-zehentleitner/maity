@@ -3123,6 +3123,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(win.Maity.fmt.number(1234.5) === "1.234,5" && win.Maity.fmt.date("2026-10-30T08:00:00Z").includes("2026") && win.Maity.fmt.date("not a date") === "not a date",
     "i18n: numbers and dates through Intl in the reader's locale; an unreadable date as given");
   win.Maity.i18n.locale = i18nLocale;
+  // The hub's refusals (js/errors.js): the hub's English as it is, a translation by code and reason.
+  {
+    const said = win.Maity.errorWords;
+    expect(said("not_holder", {}, "only the holder of tsk-x may report") === "only the holder of tsk-x may report",
+      "errors: in English the hub's own message stands, it names the case");
+    const i18n = win.Maity.i18n;
+    win.MAITY_I18N.de = { "error.not_holder": "Nur wer die Karte hält.", "error.reason.humans_only": "Nur ein Mensch." };
+    const was = i18n.language;
+    i18n.language = "de";
+    expect(said("not_holder", {}, "hub") === "Nur wer die Karte hält.", "errors: a translated code");
+    expect(said("forbidden", { reason: "humans_only" }, "hub") === "Nur ein Mensch.", "errors: a translated reason comes before its code");
+    expect(said("paused", {}, "hub") === "hub" && said("no_such_code", {}, "hub") === "hub" && said(null, {}, "hub") === "hub" && said("constructor", {}, "hub") === "hub",
+      "errors: without a translation, or for a code unknown here, the hub's English");
+    i18n.language = was;
+    delete win.MAITY_I18N.de;
+  }
   // Markdown in a chat (js/markdown.js): text nodes only, https links only.
   const MD = (src) => { const box = document.createElement("div"); win.Maity.dom.append(box, win.Maity.markdown(src)); return box; };
   const tagsOf = (box) => box.childNodes.filter((n) => n.tagName).map((n) => n.tagName.toLowerCase());
@@ -4102,17 +4118,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(joinPosts[0][1].takes_over === "agt-a" && joinPosts[0][1].handover === 6001, "join: takes_over and a message's seq as a number go with a first join");
   win.Maity.api.post = realPost2;
   expect(text(main).includes("maity join https://maity.example/j/FIXTURE") && text(main).includes("shown once"), "paste line shown once");
-  expect(text(main).includes("as a message in its clone of the repository") && text(main).includes("installs the maity CLI first") && text(main).includes("follows the join page"), "the paste line says where it goes");
+  expect(text(main).includes("as a message in its clone of the repository") && text(main).includes("install the maity CLI first") && text(main).includes("follows the join page"), "the paste line says where it goes");
   btn(main, "Copy").click(); await tick();
   expect(ctx.copied && ctx.copied.startsWith("export PATH=") && ctx.copied.includes("|| { pipx install maity; }; }") && / && maity join https:\/\/maity\.example\/j\/FIXTURE-\S+ --code FIXT-URE0-0000$/.test(ctx.copied),
     "copy puts the line as the hub gave it on the clipboard: installs if missing, and joins");
-  const platformSelect = byId("join-platform");
-  expect(platformSelect && platformSelect.value === "posix", "the platform choice starts at the browser's platform");
-  platformSelect.value = "windows"; platformSelect.dispatch("change");
+  expect(byId("join-line-posix").checked === true && !byId("join-line-join").checked, "the line starts at the browser's system");
+  byId("join-line-windows").checked = true; byId("join-line-windows").dispatch("change");
   btn(main, "Copy").click(); await tick();
   expect(ctx.copied.includes("Get-Command maity") && ctx.copied.endsWith(" }") && !ctx.copied.includes("&&") && text(main.querySelector(".join-result .paste-line")) === ctx.copied,
     "choosing Windows shows and copies the PowerShell line");
-  platformSelect.value = "posix"; platformSelect.dispatch("change");
+  byId("join-line-join").checked = true; byId("join-line-join").dispatch("change");
+  btn(main, "Copy").click(); await tick();
+  expect(/^maity join https:\/\/maity\.example\/j\/FIXTURE-\S+ --code FIXT-URE0-0000$/.test(ctx.copied) && text(main.querySelector(".join-result .paste-line")) === ctx.copied,
+    "choosing only join shows and copies the plain command, nothing installed");
+  byId("join-line-posix").checked = true; byId("join-line-posix").dispatch("change");
   expect(main.querySelector(".join-result") && !main.querySelector("form.join-form"), "the line takes the form's place in the panel");
   expect(!main.querySelector(".instance-note"), "a new agent's line has no note on another instance's state directory");
   btn(main.querySelector("article.seat"), "Revoke").click(); for (let k = 0; k < 4; k++) await tick();
@@ -4128,7 +4147,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(main.querySelectorAll("article.seat").length + main.querySelectorAll(".closed-joins li").length === joinsBefore && text(main).includes("No join created: the handle: Lowercase letters, digits and -, 2–31 characters, starting with a letter or digit."),
     "a handle against the rule is refused before sending, with the rule");
   byId("join-handle").value = "agent-new"; byId("join-display").value = "Agent New";
+  // An install line PowerShell cannot run (§3.2), in a browser on Windows that remembers nothing.
+  const postBefore = win.Maity.api.post, lsBefore = win.localStorage;
+  win.Maity.api.post = async (p, b) => { const r = await postBefore(p, b); return { ...r, paste_lines: { ...r.paste_lines, windows: null } }; };
+  win.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
+  ctx.navigator.platform = "Win32";
   main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 5; k++) await tick();
+  expect(byId("join-line-join").checked === true && !byId("join-line-windows") && text(main.querySelector(".join-result .paste-line")).startsWith("maity join "),
+    "no Windows line: a browser on Windows starts at only join, and no Windows offer is shown");
+  win.Maity.api.post = postBefore; win.localStorage = lsBefore; delete ctx.navigator.platform;
   btn(main.querySelector(".join-result"), "Join another").click(); await tick();
   const newOpt = byId("join-agent").querySelectorAll("option").find((o) => o.textContent.startsWith("Agent New (@agent-new)"));
   expect(newOpt && byId("join-agent").value === newOpt.attrs.value && /^agt-/.test(newOpt.attrs.value),

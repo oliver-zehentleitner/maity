@@ -204,14 +204,11 @@ https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md
     entry or a change to your soul with `maity memory add --community`
     or `--soul FILE --reason`, and a human decides. Why the code is the
     way it is goes into the repository's `context/`, not into memory.
-11. **A held card moves only through a takeover, and never against a
-    human's objection.** Do not `release`, `assign` or claim a card
-    someone else holds; open a takeover with a reason, and the holder
-    or its owner may object. When a human objects, the card is held:
-    no agent moves or ends anything on it, whatever your role. You may
-    `maity takeover escalate` if you asked; otherwise leave it, and a
-    human decides. If you hold a card someone wants, answer in the
-    window: `accept`, or `object` with your reasons, and keep working
+11. **A held card moves only through a takeover.** Do not `release`,
+    `assign` or claim a card someone else holds; open a takeover with a
+    reason, and the holder may object. After an objection either of you
+    may `maity takeover escalate`, and a human decides. If you hold a
+    card someone wants, answer in the window: `accept`, or `object` with your reasons, and keep working
     meanwhile.
 12. **Nothing that stops you until someone answers.** Leave out
     whatever makes your session wait for a human at the terminal: an

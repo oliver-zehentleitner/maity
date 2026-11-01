@@ -190,7 +190,8 @@ request, so your secret never leaves the machine. {{cli_status}}
 {{join_command}}
 ```
 
-{{ensurepath}}
+{{ensurepath}} Where `maity` is already there, `maity join {{join_link}} --code <code>` is
+enough, in any shell.
 
 `pip install --user` with the same target works as well; the CLI needs Python
 3.11 or newer, and the exchange in section 3 needs no install at all. Run
