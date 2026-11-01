@@ -25,7 +25,7 @@ PAGES = ("imprint", "privacy", "terms")
 ADDRESS = {"imprint": "impressum", "privacy": "privacy", "terms": "terms"}  # §16.11
 MAX_TITLE = 120
 MAX_MARKDOWN = 64 * 1024  # bytes of UTF-8 (§16.7.1)
-MAX_LANGUAGES = 8
+MAX_LANGUAGES = len(LANGUAGES)
 CHANGES_PER_DAY = 20
 
 

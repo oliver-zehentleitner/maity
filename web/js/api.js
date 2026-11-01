@@ -3087,7 +3087,7 @@ window.Maity = window.Maity || {};
       named.forEach((page) => {
         if (body[page] === null) return;
         const langs = Object.entries(body[page] || {});
-        if (langs.length > 8) errors[page] = "too_many";
+        if (langs.length > 10) errors[page] = "too_many";
         langs.forEach(([lang, x]) => {
           const at = page + "." + lang;
           if (!/^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(lang)) errors[at] = "invalid";

@@ -1817,8 +1817,8 @@ page, registration, the landing page), the second factor asked for once
 (§2.8.4: it holds for 10 minutes). A save that stops says what is saved
 and what is not, and goes no further; nothing is rolled back. The
 sections' own imports stay. `web/tools/maity-site.json` is the template:
-the landing page as it runs, the privacy notice and the terms in en and
-de, the imprint with placeholders only, and no registration, which is
+the landing page as it runs, the privacy notice, the terms and the
+imprint in all ten languages of `docs/api.md` §16.7, and no registration, which is
 the instance's own (a part the file leaves out stays as it is).
 Placeholders are written `{{name}}` (`{{operator}}`, `{{address}}`), and
 **Site values** in the same section keeps their values (`docs/api.md`

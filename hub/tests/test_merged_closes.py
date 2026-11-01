@@ -266,8 +266,21 @@ def test_a_merge_seen_elsewhere_is_told_when_the_card_returns_to_review(
     assert told.payload["task"] == card_id and told.payload["merge_sha"] == "f" * 40
 
 
-def test_the_answer_comes_before_the_return_to_review_and_the_merge(
-    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+@pytest.mark.parametrize(
+    ("verb", "body", "kind"),
+    [
+        ("answer", {"text": "go ahead"}, "request_answered"),
+        ("withdraw", {"reason": "not needed"}, "request_withdrawn"),
+    ],
+)
+def test_the_end_of_a_request_comes_before_the_return_to_review_and_the_merge(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    github: FakeGitHub,
+    verb: str,
+    body: dict[str, str],
+    kind: str,
 ) -> None:
     """What happened first, then what followed from it (§6.4, §6.6), one event at a time."""
     _policy(owner, done_authority="holder", merged_closes="auto")
@@ -278,9 +291,9 @@ def test_the_answer_comes_before_the_return_to_review_and_the_merge(
     )
     assert asked.status_code == 201, asked.text
     probe.observe_report(migrated, READER, card_id)
-    answered = owner.post(f"{BASE}/requests/{asked.json()['id']}/answer", {"text": "go ahead"})
-    assert answered.status_code == 200, answered.text
-    [told] = _events(migrated, "request_answered")
+    ended = owner.post(f"{BASE}/requests/{asked.json()['id']}/{verb}", body)
+    assert ended.status_code == 200, ended.text
+    [told] = _events(migrated, kind)
     moves = [e for e in _events(migrated, "task_updated") if e.seq > told.seq]
     assert [m.payload["status"] for m in moves] == ["review", "done"]
     [merge] = _events(migrated, "task_merged")

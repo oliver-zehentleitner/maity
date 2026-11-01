@@ -3649,13 +3649,46 @@ fixed until the next import, as the request asks. `[Name]` collided with
 Markdown links. The hub's rule also catches a slip such as `{{ Name }}`, which
 would otherwise reach the page; it leaves `{{ .Values.x }}` and `{{#if x}}`,
 which a page about a template language may quote and no site file's
-placeholder can be.
+placeholder can be. The rule catches a slip, not intent: `{\{name}}`, a
+Markdown escape, passes and shows as `{{name}}`.
+
+**Known limit:** a value goes in as written, so Markdown in it (`*`, backticks,
+a link) takes effect where the placeholder sits in Markdown. HTML cannot get in:
+the finished text passes the hub's Markdown check and the renderer escapes.
+Values are one line, so none can start a block of its own.
 
 **Rejected alternative:** the hub replacing on every read: a later value change
 would rewrite published legal text with no new version. A check in the
 dashboard alone: the request names other ways round it. Refusing every `{{`:
 it would hit legitimate quoted text. A value per language: not asked for, and
 a name per language does the same (`{{country_de}}`).
+
+## The public pages are in ten languages, each translated and checked as a whole
+
+**Id:** 4b8e2d71-6a0c-4e39-9f15-c27d3a6e8b02
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's list `en de fr es pt it nl ja ko zh-Hans`, passed on in the message on the card tsk-q5f23gacz1mp (seq 30343), and on the same card that the legal pages are translated too; how the list is carried and checked is this entry's reading
+**Revisit when:** a language writes right to left, or a legal text has been reviewed by a lawyer
+
+`landing.LANGUAGE_NAMES` carries the list and each language's own name, which
+the language bar shows, since ten bare tags read as a code list. The page's
+frame words are in `render.WORDS`. `web/tools/maity-site.json` holds every text
+in all ten; a command line in the demo, an agent's handle and a cookie's name
+stay as they are. `hub/tests/test_site_values.py` and the e2e step import the
+real file, filled with made-up values, and read every language.
+
+**Reason:** the operator asked that the import works for certain, so the test
+is the file itself. A wrong placeholder in one language would otherwise show
+only on the live page.
+
+**Rejected alternative:** Right-to-left support: no listed language needs it,
+and it touches the stylesheet's every side. Traditional Chinese answered with
+Simplified: `Accept-Language: zh-TW` goes on to the reader's next language.
+
+The translated legal texts are machine translations, reviewed by nobody with
+legal training. The English and German are not changed by them.
 
 ## The whole site is one JSON, maity-site/1, checked part by part and saved in turn by the dashboard
 

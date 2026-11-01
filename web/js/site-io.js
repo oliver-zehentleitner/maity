@@ -106,7 +106,7 @@ window.Maity = window.Maity || {};
     for (const page of PAGES.filter((p) => Object.hasOwn(d, p))) {
       const langs = isObject(d[page]) ? d[page].languages : null;
       const tags = isObject(langs) ? Object.keys(langs) : [];
-      if (!tags.length || tags.length > 8 || !tags.every((t) => LANG.test(t) && isObject(langs[t]) && typeof langs[t].title === "string" && typeof langs[t].markdown === "string")) {
+      if (!tags.length || tags.length > 10 || !tags.every((t) => LANG.test(t) && isObject(langs[t]) && typeof langs[t].title === "string" && typeof langs[t].markdown === "string")) {
         return { state: "refused", words: M.t("site.refused.legal_page", { page: PAGE_WORDS[page] }) };
       }
       if (now.legal[page] && same(langs, now.legal[page].languages)) continue;
@@ -218,6 +218,9 @@ window.Maity = window.Maity || {};
       };
       async function saveValues() {
         const filled = rows.filter((r) => r.name.trim() || r.value.trim());
+        const names = filled.map((r) => r.name.trim());
+        const twice = names.find((name, k) => names.indexOf(name) !== k);
+        if (twice !== undefined) { said.fail(M.t("site.values.not_saved"), { message: M.t("site.values.twice", { name: twice }) }); return; }
         said.busy(M.t("site.values.saving"));
         try {
           const answer = await M.stepUp.run(() => M.api.patch(VALUES, { values: Object.fromEntries(filled.map((r) => [r.name.trim(), r.value.trim()])) }), stepSlot, M.t("site.step_up"));

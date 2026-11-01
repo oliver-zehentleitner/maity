@@ -20,7 +20,13 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from maity_hub import landing_files
-from maity_hub.landing import AGENTS, ALPHA_MARKS, FENCE, safe_target
+from maity_hub.landing import (
+    AGENTS,
+    ALPHA_MARKS,
+    FENCE,
+    LANGUAGE_NAMES,
+    safe_target,
+)
 
 # --- the visitor's language (§16.7) ----------------------------------------------------------
 
@@ -31,6 +37,19 @@ def ordered_languages(pages: Iterable[str], default: str) -> list[str]:
     MySQL's JSON does too), so the language bar, `hreflang`, the fallback page and the choice of
     a language when nothing matches are the same on every database (§16.7)."""
     return sorted(pages, key=lambda tag: (tag != default, tag))
+
+
+def _offered_match(tag: str, offered: list[str]) -> str | None:
+    """The offered language a lowercase `Accept-Language` tag asks for: itself, or one with its
+    primary subtag (`zh-CN` reads `zh-Hans`). Traditional Chinese is not served Simplified: such a
+    reader goes on to the next language asked for."""
+    if tag.startswith(("zh-hant", "zh-tw", "zh-hk", "zh-mo")):
+        return None
+    primary = tag.split("-")[0]
+    for one in offered:
+        if one.lower() == tag or one.lower().split("-")[0] == primary:
+            return one
+    return None
 
 
 def choose_language(
@@ -49,9 +68,9 @@ def choose_language(
                 weight = float(rest.strip()[2:])
             except ValueError:
                 weight = 0.0
-        primary = tag.strip().lower().split("-")[0]
-        if primary in offered and weight > 0:
-            ranked.append((-weight, position, primary))
+        match = _offered_match(tag.strip().lower(), offered)
+        if match is not None and weight > 0:
+            ranked.append((-weight, position, match))
     if ranked:
         return sorted(ranked)[0][2]
     return default if default in offered else (offered[0] if offered else default)
@@ -230,6 +249,238 @@ WORDS: dict[str, dict[str, str]] = {
         "open_source": "Open Source",
         "follow": "Folgen",
     },
+    "es": {
+        "sign_in": "Iniciar sesión",
+        "register": "Crea tu cuenta",
+        "legal": "Legal",
+        "as_of": "Vigente desde {version}",
+        "draft": "Borrador",
+        "earlier": "Versiones anteriores",
+        "older": "Esta es una versión anterior, vigente desde {version}. La actual está en {current}.",
+        "language": "Idioma",
+        "people": "Personas",
+        "agents": "Agentes",
+        "public_projects": "Proyectos públicos",
+        "cards_done_week": "Tarjetas completadas esta semana",
+        "people_online": "Personas en línea",
+        "agents_online": "Agentes en línea",
+        "imprint": "Aviso legal",
+        "privacy": "Privacidad",
+        "terms": "Condiciones de uso",
+        "preview": "Vista previa de un borrador sin guardar",
+        "theme": "Cambiar entre tema claro y oscuro",
+        "rings": "Personas y agentes en tres anillos: tú, tu equipo, la comunidad",
+        "you": "tú",
+        "yes": "Sí",
+        "no": "No",
+        "reply": "Responder",
+        "platform": "Plataforma",
+        "open_source": "Código abierto",
+        "follow": "Seguir",
+    },
+    "fr": {
+        "sign_in": "Se connecter",
+        "register": "Créer votre compte",
+        "legal": "Mentions légales",
+        "as_of": "En vigueur au {version}",
+        "draft": "Brouillon",
+        "earlier": "Versions antérieures",
+        "older": "Ceci est une version antérieure, en vigueur au {version}. La version actuelle se trouve sur {current}.",
+        "language": "Langue",
+        "people": "Personnes",
+        "agents": "Agents",
+        "public_projects": "Projets publics",
+        "cards_done_week": "Cartes terminées cette semaine",
+        "people_online": "Personnes en ligne",
+        "agents_online": "Agents en ligne",
+        "imprint": "Mentions légales",
+        "privacy": "Confidentialité",
+        "terms": "Conditions d'utilisation",
+        "preview": "Aperçu d'un brouillon non enregistré",
+        "theme": "Basculer entre le thème clair et le thème sombre",
+        "rings": "Les personnes et les agents en trois cercles : vous, votre équipe, la communauté",
+        "you": "vous",
+        "yes": "Oui",
+        "no": "Non",
+        "reply": "Répondre",
+        "platform": "Plateforme",
+        "open_source": "Open source",
+        "follow": "Suivre",
+    },
+    "pt": {
+        "sign_in": "Entrar",
+        "register": "Crie sua conta",
+        "legal": "Informações legais",
+        "as_of": "Em vigor desde {version}",
+        "draft": "Rascunho",
+        "earlier": "Versões anteriores",
+        "older": "Esta é uma versão anterior, em vigor desde {version}. A atual está em {current}.",
+        "language": "Idioma",
+        "people": "Pessoas",
+        "agents": "Agentes",
+        "public_projects": "Projetos públicos",
+        "cards_done_week": "Cartões concluídos esta semana",
+        "people_online": "Pessoas online",
+        "agents_online": "Agentes online",
+        "imprint": "Aviso legal",
+        "privacy": "Privacidade",
+        "terms": "Termos de uso",
+        "preview": "Pré-visualização de um rascunho não salvo",
+        "theme": "Alternar entre o tema claro e o escuro",
+        "rings": "Pessoas e agentes em três anéis: você, sua equipe, a comunidade",
+        "you": "você",
+        "yes": "Sim",
+        "no": "Não",
+        "reply": "Responder",
+        "platform": "Plataforma",
+        "open_source": "Código aberto",
+        "follow": "Seguir",
+    },
+    "zh-Hans": {
+        "sign_in": "登录",
+        "register": "创建账户",
+        "legal": "法律信息",
+        "as_of": "版本日期 {version}",
+        "draft": "草稿",
+        "earlier": "历史版本",
+        "older": "这是较早的版本，日期为 {version}。当前版本见 {current}。",
+        "language": "语言",
+        "people": "用户",
+        "agents": "智能体",
+        "public_projects": "公开项目",
+        "cards_done_week": "本周完成的卡片",
+        "people_online": "在线用户",
+        "agents_online": "在线智能体",
+        "imprint": "运营者信息",
+        "privacy": "隐私",
+        "terms": "使用条款",
+        "preview": "未保存草稿的预览",
+        "theme": "在浅色和深色主题之间切换",
+        "rings": "三个圈层中的人与智能体：你、你的团队、社区",
+        "you": "你",
+        "yes": "是",
+        "no": "否",
+        "reply": "回复",
+        "platform": "平台",
+        "open_source": "开源",
+        "follow": "关注",
+    },
+    "ja": {
+        "sign_in": "サインイン",
+        "register": "アカウントを作成",
+        "legal": "法的情報",
+        "as_of": "{version} 時点",
+        "draft": "下書き",
+        "earlier": "以前の版",
+        "older": "これは {version} 時点の以前の版です。最新版は {current} にあります。",
+        "language": "言語",
+        "people": "人",
+        "agents": "エージェント",
+        "public_projects": "公開プロジェクト",
+        "cards_done_week": "今週完了したカード",
+        "people_online": "オンラインの人",
+        "agents_online": "オンラインのエージェント",
+        "imprint": "運営者情報",
+        "privacy": "プライバシー",
+        "terms": "利用規約",
+        "preview": "未保存の下書きのプレビュー",
+        "theme": "ライトテーマとダークテーマを切り替える",
+        "rings": "3 つの輪の中の人とエージェント：あなた、あなたのチーム、コミュニティ",
+        "you": "あなた",
+        "yes": "はい",
+        "no": "いいえ",
+        "reply": "返信",
+        "platform": "プラットフォーム",
+        "open_source": "オープンソース",
+        "follow": "フォロー",
+    },
+    "it": {
+        "sign_in": "Accedi",
+        "register": "Crea il tuo account",
+        "legal": "Note legali",
+        "as_of": "In vigore dal {version}",
+        "draft": "Bozza",
+        "earlier": "Versioni precedenti",
+        "older": "Questa è una versione precedente, in vigore dal {version}. Quella attuale si trova su {current}.",
+        "language": "Lingua",
+        "people": "Persone",
+        "agents": "Agenti",
+        "public_projects": "Progetti pubblici",
+        "cards_done_week": "Schede completate questa settimana",
+        "people_online": "Persone online",
+        "agents_online": "Agenti online",
+        "imprint": "Note legali",
+        "privacy": "Privacy",
+        "terms": "Condizioni d'uso",
+        "preview": "Anteprima di una bozza non salvata",
+        "theme": "Passa dal tema chiaro a quello scuro",
+        "rings": "Persone e agenti in tre cerchi: tu, il tuo team, la community",
+        "you": "tu",
+        "yes": "Sì",
+        "no": "No",
+        "reply": "Rispondi",
+        "platform": "Piattaforma",
+        "open_source": "Open source",
+        "follow": "Segui",
+    },
+    "nl": {
+        "sign_in": "Inloggen",
+        "register": "Maak je account aan",
+        "legal": "Juridisch",
+        "as_of": "Stand van {version}",
+        "draft": "Concept",
+        "earlier": "Eerdere versies",
+        "older": "Dit is een eerdere versie, stand van {version}. De huidige staat op {current}.",
+        "language": "Taal",
+        "people": "Mensen",
+        "agents": "Agents",
+        "public_projects": "Openbare projecten",
+        "cards_done_week": "Kaarten afgerond deze week",
+        "people_online": "Mensen online",
+        "agents_online": "Agents online",
+        "imprint": "Colofon",
+        "privacy": "Privacy",
+        "terms": "Gebruiksvoorwaarden",
+        "preview": "Voorbeeld van een niet-opgeslagen concept",
+        "theme": "Wisselen tussen licht en donker thema",
+        "rings": "Mensen en agents in drie ringen: jij, je team, de community",
+        "you": "jij",
+        "yes": "Ja",
+        "no": "Nee",
+        "reply": "Antwoorden",
+        "platform": "Platform",
+        "open_source": "Open source",
+        "follow": "Volgen",
+    },
+    "ko": {
+        "sign_in": "로그인",
+        "register": "계정 만들기",
+        "legal": "법적 고지",
+        "as_of": "{version} 기준",
+        "draft": "초안",
+        "earlier": "이전 버전",
+        "older": "{version} 기준의 이전 버전입니다. 현재 버전은 {current}에 있습니다.",
+        "language": "언어",
+        "people": "사람",
+        "agents": "에이전트",
+        "public_projects": "공개 프로젝트",
+        "cards_done_week": "이번 주 완료된 카드",
+        "people_online": "온라인 사람",
+        "agents_online": "온라인 에이전트",
+        "imprint": "운영자 정보",
+        "privacy": "개인정보",
+        "terms": "이용 약관",
+        "preview": "저장되지 않은 초안 미리 보기",
+        "theme": "밝은 테마와 어두운 테마 전환",
+        "rings": "세 개의 고리 속 사람과 에이전트: 나, 내 팀, 커뮤니티",
+        "you": "나",
+        "yes": "예",
+        "no": "아니요",
+        "reply": "답장",
+        "platform": "플랫폼",
+        "open_source": "오픈 소스",
+        "follow": "팔로우",
+    },
 }
 LEGAL_ADDRESS = {"imprint": "impressum", "privacy": "privacy", "terms": "terms"}
 
@@ -249,7 +500,7 @@ nav a{margin-right:1rem;text-decoration:none;color:var(--muted)}
 border:1px solid var(--accent);color:var(--accent);font-weight:600}
 .btn.primary{background:var(--accent);color:var(--accent-fg)}
 section{padding:2.5rem 0}section+section{border-top:1px solid var(--line)}
-h1{font-size:2.4rem;line-height:1.15;margin:.3rem 0 1rem}h2{font-size:1.5rem;margin:0 0 1rem}
+h1{font-size:2.4rem;line-height:1.15;margin:.3rem 0 1rem;overflow-wrap:break-word;hyphens:auto}h2{font-size:1.5rem;margin:0 0 1rem}
 .eyebrow{color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-size:.8rem;margin:0}
 .sub{font-size:1.2rem;color:var(--muted);max-width:42rem}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:1rem;padding:0;
@@ -291,6 +542,11 @@ def _document(
         f"<title>{escape(title)}</title>{meta if description else ''}{head}{alternates}"
         f"{f'<style>{style}</style>' if style else ''}</head><body>{body}</body></html>"
     )
+
+
+def _language_link(tag: str) -> str:
+    name = LANGUAGE_NAMES.get(tag, tag)
+    return f'<a href="?lang={escape(tag)}" lang="{escape(tag)}">{escape(name)}</a>'
 
 
 def _counter(stats: dict[str, Any] | None, key: str, words: dict[str, str]) -> str | None:
@@ -691,9 +947,7 @@ def _landing_footer(
         f'<p class="operator">{escape(footer["operator"])}</p>' if footer.get("operator") else ""
     )
     switch = (
-        '<p class="langs">'
-        + " ".join(f'<a href="?lang={escape(tag)}">{escape(tag)}</a>' for tag in tags)
-        + "</p>"
+        '<p class="langs">' + " ".join(_language_link(tag) for tag in tags) + "</p>"
         if len(tags) > 1
         else ""
     )
@@ -727,15 +981,14 @@ def _footer(
         + " "
         for item in footer.get("social", [])
     )
-    switch = (
-        " ".join(f'<a href="?lang={escape(tag)}">{escape(tag)}</a>' for tag in tags)
-        if len(tags) > 1
-        else ""
-    )
-    row = (
-        "".join(links)
-        + f'<a href="/login">{escape(words["sign_in"])}</a>'
-        + (f'<a href="/register">{escape(words["register"])}</a>')
+    switch = " ".join(_language_link(tag) for tag in tags) if len(tags) > 1 else ""
+    # With a space between them the links can wrap on a phone.
+    row = " ".join(
+        [
+            *links,
+            f'<a href="/login">{escape(words["sign_in"])}</a>',
+            f'<a href="/register">{escape(words["register"])}</a>',
+        ]
     )
     return (
         f'<footer><div class="wrap"><p>{row}</p>{"".join(parts)}'

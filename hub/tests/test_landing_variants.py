@@ -308,7 +308,7 @@ def test_the_language_switch_keeps_the_campaign_but_the_alternate_links_do_not(
         },
     )
     got = make_client().get("/?c=k").text
-    assert '<a href="?lang=de&amp;c=k">' in got
+    assert '<a href="?lang=de&amp;c=k" lang="de">' in got
     assert '<link rel="alternate" hreflang="de" href="?lang=de">' in got  # for search engines
     assert 'hreflang="de" href="?lang=de&amp;c=k"' not in got
 

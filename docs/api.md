@@ -12895,7 +12895,7 @@ is no environment form: the page is content, not deployment.
 |---|---|---|
 | `enabled` | `false` | whether the root shows the landing page to visitors without a session |
 | `default_language` | `"en"` | the language a visitor gets when none of theirs is offered |
-| `pages` | `{}` | per language (`en`, `de`), the page: `{title, description, sections}`; `enabled` requires a page in `default_language` |
+| `pages` | `{}` | per language (`en`, `de`, `fr`, `es`, `pt`, `it`, `nl`, `ja`, `ko`, `zh-Hans`), the page: `{title, description, sections}`; `enabled` requires a page in `default_language`. These are the languages of the public pages, and wider than a human's or a project's (§6.2). The language bar names each in its own language |
 | `variants` | `{}` | at most 5 further pages served at `/for/<slug>`, each `{pages}` (§16.7.2) |
 | `campaigns` | `[]` | the campaign codes the hub counts, at most 200 × `{code, label}` (§16.7.2) |
 
@@ -13174,8 +13174,8 @@ GET, PATCH /admin/settings/legal
 Scope `instance:admin`, human only. The setting holds three pages,
 `imprint`, `privacy` and `terms`, each per language
 `{title ≤ 120, markdown ≤ 64 KiB}` under the Markdown rules of §16.7,
-plus the setting's `default_language` (default `"en"`); at most 8
-languages per page. `PATCH /admin/settings/legal` and `POST /admin/settings/legal/preview` take a request body
+plus the setting's `default_language` (default `"en"`); any of the
+landing page's languages (§16.7), each at most once. `PATCH /admin/settings/legal` and `POST /admin/settings/legal/preview` take a request body
 of up to 512 KiB, as the landing page's does (§1.7's 64 KiB
 elsewhere), and changes at most one page per call; the hub accepts at
 most 20 changes per page per 24 hours (`rate_limited`), so the kept
@@ -13376,7 +13376,8 @@ to 500 characters on one line, without leading or trailing space. A
 refused pair is `invalid` at `values.<name>`, and a value holding `{{`
 is `unresolved_placeholder` there.
 
-The values are not secrets: once imported they are public text.
+The values are not secrets: once imported they are public text. A value
+is put in as written, so Markdown in it takes effect in a Markdown text.
 
 **On import.** A site file (`maity-site/1`, `web/README.md`) may write
 `{{name}}` in any text. The dashboard replaces each with its current
