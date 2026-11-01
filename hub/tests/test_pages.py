@@ -359,17 +359,18 @@ def test_earlier_versions_stay_readable_also_after_the_page_is_unset(
     new = second["pages"]["terms"]["version"]
     visitor = make_client()
     current = visitor.get("/terms").text
-    assert "<h1>Terms 2</h1>" in current and f'<a href="/terms/{old}">{old}</a>' in current
+    assert "<h1>Terms 2</h1>" in current and old not in current  # no public page lists it
+    assert "Earlier versions" not in current
     earlier = visitor.get(f"/terms/{old}").text
     assert "<h1>Terms 1</h1>" in earlier and "This is an earlier version" in earlier
-    assert f'<a href="/terms/{new}">{new}</a>' in earlier
+    assert f'href="/terms/{new}"' not in earlier and "Earlier versions" not in earlier
     owner.patch(LEGAL, {"terms": None})
     assert visitor.get("/terms").status_code == 404
     assert "<h1>Terms 2</h1>" in visitor.get(f"/terms/{new}").text  # unset, still readable
     assert visitor.get("/terms/2020-01-01T00:00:00Z").status_code == 404
 
 
-def test_the_imprint_neither_lists_nor_serves_its_earlier_versions(
+def test_the_imprint_serves_no_earlier_versions(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
     start = clock.now().replace(microsecond=0)

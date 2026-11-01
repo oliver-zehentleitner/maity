@@ -59,7 +59,7 @@ immutable. Counting the versions needs no counter row that could drift from them
 - A `deleted` flag on the version row for an unset page: the question "which version is served" would
   then need the newest row without a flag, and an unset page set again would reuse a flagged row.
 
-## The imprint serves no earlier versions; the privacy notice and the terms keep theirs
+## No public legal page lists earlier versions; the imprint serves none, the privacy notice and the terms stay readable by address
 
 **Id:** fb324f60-d0ee-47e1-aa33-fd624e0ecb2e
 **Type:** decision
@@ -68,18 +68,21 @@ immutable. Counting the versions needs no counter row that could drift from them
 **Source:** the maintainer's direction, 2026-11-01 (tsk-rpc893kx92tw); contract `docs/api.md` §16.7.1
 **Revisit when:** a law or an operator needs an earlier imprint to be readable by visitors
 
-The public imprint lists no earlier versions, and `/impressum/<version>` answers `404` for every
-version. The rows stay in `legal_version`, as for every page, and `GET /admin/settings/legal` still
-names them.
+No public legal page lists earlier versions. `/privacy/<version>` and `/terms/<version>` still answer;
+`/impressum/<version>` answers `404` for every version. The rows stay in `legal_version` for every
+page, `GET /admin/settings/legal` names them, and the dashboard links those of the privacy notice and
+the terms for the operator.
 
-**Reason:** a person may have accepted or relied on a version of the terms or the privacy notice,
-which is why those stay readable (c321fdcc-6917-4363-97f2-4d3858ea33ec). The imprint has no such
-reason: it only says who runs the instance now. That much is the maintainer's; the `404` at the old
-addresses was recommended on the card and decided in the implementation.
+**Reason:** the maintainer wants the list gone from all three pages. A person may have accepted a
+version of the terms or relied on one of the privacy notice, so those stay readable for whoever holds
+the address (c321fdcc-6917-4363-97f2-4d3858ea33ec); the imprint only says who runs the instance now.
+That the addresses stay, and the `404` for the imprint's, were decided in the implementation.
 
 **Rejected alternatives:**
-- Only dropping the list and leaving the old addresses readable: an address somebody kept would go
-  on showing an outdated imprint.
+- Leaving the imprint's old addresses readable too: an address somebody kept would go on showing an
+  outdated imprint, with no acceptance to justify it.
+- Ending the addresses of the terms and the privacy notice as well: a version a person may have
+  accepted could then no longer be read.
 - Deleting the imprint's old rows: not asked for, and every page's versions are immutable by design.
 
 ## Migration 0090 makes a `hero` only when the old landing had both a title and a call to action

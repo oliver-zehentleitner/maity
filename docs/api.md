@@ -13247,12 +13247,12 @@ served.
   (never on the join host, §1.1, nor `GET /legal`); a page not set
   answers `404`. A page is unset with `{"<page>": null}`: the earlier
   versions of the privacy notice and the terms stay readable at their
-  addresses, since a person may have accepted one. Each page shows its
-  version ("as of …"). The privacy notice and the terms link to their
-  earlier versions at `/<page>/<version>`; the imprint lists none, and
-  `/impressum/<version>` answers `404` for every version, the current
-  one included. `GET /admin/settings/legal` still names the imprint's
-  kept versions in `versions`. The landing page's footer and the
+  addresses `/<page>/<version>`, since a person may have accepted one.
+  Each page shows its version ("as of …") and no public page lists or
+  links earlier versions; an earlier version says that it is one and
+  where the current page is. `/impressum/<version>` answers `404` for
+  every version, the current one included. `GET /admin/settings/legal`
+  names every page's kept versions in `versions`. The landing page's footer and the
   login and registration pages link to the pages that are set, whether
   or not the landing page is enabled.
 - **Terms at registration.** While `terms` is set here and
@@ -13270,8 +13270,7 @@ served.
   body cap, then `GET
   /admin/settings/legal/preview/{id}?lang=<tag>`, with the same scope,
   lifetime, binding and headers. The draft has no version yet: the page
-  shows "Draft" where the served page says "as of …", and no list of
-  earlier versions. A legal page is read as a visitor at its own path;
+  shows "Draft" where the served page says "as of …". A legal page is read as a visitor at its own path;
   it has no `?as=public` of its own. A preview counts against none of
   the page's change limits.
 - **Read** with `GET /legal` (unauthenticated): `{default_language,
