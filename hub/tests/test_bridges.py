@@ -415,6 +415,7 @@ def test_the_bridges_owner_outside_the_project_ends_the_connection(
     [
         ("bridge", {"active": None}, {"bridge": "not_a_member"}),
         ("served", {"active": None}, {"member": "not_an_agent"}),
+        ("served", {"isolated_since": "now"}, {"member": "isolated"}),
         ("bridge", {"isolated_since": "now"}, {"bridge": "isolated"}),
     ],
 )
