@@ -9067,6 +9067,39 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(leSections()[1].querySelectorAll("li.lp-item")[1], "Remove").click(); await tick();
   // Landing V3 (§16.7, #737): the demo (terminal lines of a kind, an optional inbox item, exactly three steps) and the open
   // source section (tiles, links), each list at its own path.
+  // Works with (§16.7): the agents picked in order from the hub's list, each once; the list is the hub's.
+  const wwHub = fs.readFileSync(path.join(WEB, "../hub/src/maity_hub/landing.py"), "utf8").match(/^AGENTS: dict\[str, str\] = \{\n([\s\S]*?)^\}/m)[1];
+  const wwSlugs = [...wwHub.matchAll(/^\s*"([^"]+)": "([^"]+)",$/gm)].map((m) => m[1] + "=" + m[2]);
+  byId("lp-add-type-en").value = "works_with"; btn(leBox().querySelector(".lp-add"), "Add the section").click(); await tick();
+  const wwAt = leSections().length - 1;
+  const wwId = (rest) => "lp-pages-en-sections-" + wwAt + "-" + rest;
+  const wwBox = () => leSections()[wwAt];
+  const wwOffered = byId(wwId("items-pick")).querySelectorAll("option").map((o) => o.getAttribute("value") + "=" + text(o));
+  expect(text(wwBox()).includes("Works with") && wwSlugs.length === 19 && JSON.stringify(wwOffered) === JSON.stringify(wwSlugs),
+    "landing editor: works_with offers exactly the hub's agents, by name, in its order " + JSON.stringify(wwOffered));
+  const wwAdd = async (slug) => { byId(wwId("items-pick")).value = slug; btn(wwBox().querySelector(".lp-agents .inline-form"), "Add").click(); await tick(); };
+  await wwAdd("codex"); await wwAdd("claude-code");
+  byId(wwId("label")).value = "Works with"; byId(wwId("label")).dispatch("input");
+  byId(wwId("more")).value = "+ any agent"; byId(wwId("more")).dispatch("input");
+  const wwNames = () => wwBox().querySelectorAll(".lp-agents .lp-item-title").map((x) => text(x));
+  expect(JSON.stringify(wwNames()) === JSON.stringify(["Codex", "Claude Code"]) && !byId(wwId("items-pick")).querySelectorAll("option").some((o) => o.getAttribute("value") === "codex"),
+    "landing editor: an agent picked is listed in order and no longer offered");
+  btn(wwBox().querySelectorAll(".lp-agents .lp-item")[1], "Up").click(); await tick();
+  expect(JSON.stringify(wwNames()) === JSON.stringify(["Claude Code", "Codex"]), "landing editor: an agent moves up");
+  const wwPatch = win.Maity.api.patch; let wwSent = null;
+  win.Maity.api.patch = (p, b) => { if (p === "/admin/settings/landing") wwSent = b; return wwPatch(p, b); };
+  await leSave();
+  win.Maity.api.patch = wwPatch;
+  expect(wwSent && JSON.stringify(((s) => [s.label, s.items, s.more])(wwSent.pages.en.sections[wwAt])) === JSON.stringify(["Works with", ["claude-code", "codex"], "+ any agent"]),
+    "landing editor: works_with is saved with its label, agents in order and more " + JSON.stringify(wwSent && wwSent.pages.en.sections[wwAt]));
+  const wwRefused = async (items) => {
+    try { await win.Maity.api.post("/admin/settings/landing/preview", { pages: { en: { title: "T", sections: [{ type: "works_with", enabled: true, label: "L", items }] } } }); return null; }
+    catch (err) { return err.details.fields; }
+  };
+  const wwBad = await Promise.all([[], ["nobody"], ["codex", "codex"]].map(wwRefused));
+  expect(wwBad[0]["pages.en.sections.0.items"] === "invalid" && wwBad[1]["pages.en.sections.0.items.0"] === "unknown_agent" && wwBad[2]["pages.en.sections.0.items.1"] === "duplicate",
+    "fixture hub: works_with refuses as the hub does " + JSON.stringify(wwBad));
+  btn(wwBox().querySelector(".lp-section-head"), "Remove").click(); await tick();
   byId("lp-add-type-en").value = "demo"; btn(leBox().querySelector(".lp-add"), "Add the section").click(); await tick();
   byId("lp-add-type-en").value = "opensource"; btn(leBox().querySelector(".lp-add"), "Add the section").click(); await tick();
   const leDemo = () => leSections()[4], leOss = () => leSections()[5];
@@ -9208,7 +9241,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     jsWrong.pages.en.title = jsKept + " from the file";
     byId("lp-json").value = JSON.stringify(Object.assign(jsWrong, { campaigns: {} }));
     await jsLoad();
-    expect(byId("lp-pages-en-title").value === jsKept, "landing JSON: campaigns of the wrong kind refuse the import " + byId("lp-pages-en-title").value);
+    expect(byId("lp-pages-en-title").value === jsKept && text(main).includes("variants must be an object and campaigns a list"),
+      "landing JSON: campaigns of the wrong kind refuse the import, and say so " + byId("lp-pages-en-title").value);
     // A body without a footer (#808's review): the editor's footer stays, as a PATCH keeps the stored one.
     const jsNoFooter = { enabled: false, default_language: "en", pages: { en: { title: "V3", description: "No footer here", sections: [] } } };
     byId("lp-json").value = JSON.stringify(jsNoFooter);
