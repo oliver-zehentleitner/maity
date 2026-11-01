@@ -35,6 +35,7 @@ window.Maity = window.Maity || {};
   let deviceSim = null;
   let deviceSerial = 0;
   let mailPending = false;
+  let mockFactorOn = true; // §2.8.1: enrolled with TOTP until the page turns it off
   let mailNext = "/";
   function deviceOf(id, path) {
     if (!deviceSim || deviceSim.id !== id) fail(404, "not_found", "Not found", path);
@@ -1787,8 +1788,18 @@ window.Maity = window.Maity || {};
       return { valid_until: new Date(Date.now() + 600000).toISOString().replace(/\.\d{3}Z$/, "Z") };
     }],
     // §2.8.1: enrolled with TOTP, so a step-up asks for the app's code.
-    ["GET", /^\/auth\/second-factor$/, () => ({ enrolled: true, enrolled_at: "2026-10-20T09:00:00Z", recovery_codes_left: 8,
-      last_used_at: "2026-10-21T13:00:00Z", required: false, via: "totp" })],
+    ["GET", /^\/auth\/second-factor$/, () => (mockFactorOn ? { enrolled: true, enrolled_at: "2026-10-20T09:00:00Z", recovery_codes_left: 8,
+      last_used_at: "2026-10-21T13:00:00Z", required: false, via: "totp" }
+      : { enrolled: false, enrolled_at: null, recovery_codes_left: 0, last_used_at: null, required: false, via: null })],
+    ["POST", /^\/auth\/second-factor\/totp$/, () => ({ secret: "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
+      otpauth_uri: "otpauth://totp/Maity:maintainer?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=Maity&digits=6&period=30", expires_in: 600 })],
+    ["POST", /^\/auth\/second-factor\/totp\/confirm$/, (m, body, path) => {
+      if (body.code !== "123456") fail(403, "code_invalid", "the code is wrong or was used", path);
+      mockFactorOn = true;
+      return { recovery_codes: Array.from({ length: 10 }, (_, i) => "abcde-fghi" + i) };
+    }],
+    ["POST", /^\/auth\/second-factor\/recovery-codes$/, () => ({ recovery_codes: Array.from({ length: 10 }, (_, i) => "klmno-pqrs" + i) })],
+    ["DELETE", /^\/auth\/second-factor$/, () => { mockFactorOn = false; return { enrolled: false, enrolled_at: null, recovery_codes_left: 0, last_used_at: null, required: false, via: null }; }],
     // §2.8.8: the mail factor's code ("654321") or link ("mailtoken") besides the app's code and a recovery code.
     // The hub answers a step-up with valid_until and a sign-in's step with {member, next}, next "/"
     // without a stored one (§2.8.2); the mock cannot tell the two apart and answers both.
@@ -4277,6 +4288,8 @@ window.Maity = window.Maity || {};
         return answer;
       }, (err) => {
         if (err && err.status === 401 && M.onSessionEnded) M.onSessionEnded(path, epoch);
+        // The hub moved a running session into enrolment (§2.8.5): the setup is all it reaches now.
+        if (err && err.status === 403 && err.details && err.details.reason === "second_factor_enrolment_required" && M.onEnrolmentRequired) M.onEnrolmentRequired();
         throw err;
       });
     }

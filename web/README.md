@@ -54,7 +54,7 @@ real button (`aria-haspopup`, `aria-expanded`): a **gear** with what is
 not the project's — **Agents** (one's agent profiles, `/agents`),
 **Runners** and, for the instance admin, **Users of this hub**; and the **profile**, the human's avatar and name, with
 **Profile**, **Picture** (`/account/picture`), **Preferences**
-(`/account/preferences`), **Theme** (`/account/theme`), **Organisations** (`/account/orgs`,
+(`/account/preferences`), **Theme** (`/account/theme`), **Security** (`/account/security`, for a human), **Organisations** (`/account/orgs`,
 for a human), **Sign in another device** (`/account/sign-in-device`), **Change password**, **Linked
 accounts** (later) and
 **Sign out**. Arrow keys, Home and End move in a
@@ -1505,7 +1505,12 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     has neither, which the forge step relies on): the test mail arrives;
     TOTP is enrolled, and a session from before that gets the question on
     **Export my data**, refuses a wrong code and saves the file on the
-    right one.
+    right one;
+19. on a hub with `required_admins`, the setup is the one page of the owner's
+    session: QR and key, the code, ten recovery codes with **Download**, then
+    the dashboard, and on the account new codes but no **Turn off**. On a hub
+    with `optional`, **Security** in the profile menu sets it up, says a wrong
+    code, and turns it off.
 
 **Accessibility:** axe-core (`AXE_VERSION` in the script, the npm tarball
 checked against its pinned sha512 and read without npm; `context/stack.md`)
