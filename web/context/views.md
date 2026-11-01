@@ -592,7 +592,7 @@ The page no longer reads `GET /openapi.json`: there is no `M.api.hubHas`,
 test whether the hub sends a field it always sends (`"signing" in
 policy`, `"logo" in project`, a card's `parent`): only fields the hub
 sends to some readers or under a condition are tested, such as a
-member's `briefing`, `owner_preferences` or `keep_the_why_unconfirmed`.
+member's `owner_preferences` or `keep_the_why_unconfirmed`.
 The notifications' counts are read like any other call: until they are read the switcher
 counts the open requests from `/me`, and a failed read is said.
 Settings a hub really may have off stay explicit in its answers, such as
@@ -2907,12 +2907,11 @@ project that is not there, and the links behind it lead nowhere.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** docs/api.md §2 `GET /me` ("the dashboard shows it under the switch from here and keeps no copy of its own") and §5.2 "Meat proxy"; the change that replaced the page's own sentence with `meat_proxy_note`
+**Source:** docs/api.md §2 `GET /me` ("the dashboard shows it under the switch from here and keeps no copy of its own") and §5.2 "Meat proxy"; the change that replaced the page's own sentence with `meat_proxy_note`; #990 removed the case for a hub without the note
 **Revisit when:** the note gets text per human or a translation, or `/me` stops carrying it
 
 Under the switch **I am a meat proxy** the account quotes
-`meat_proxy_note` from `/me` as text, never through HTML. A hub that
-does not send the field gets the switch and its hint without a quote.
+`meat_proxy_note` from `/me` as text, never through HTML.
 
 **Reason:** the human should read exactly what the agents that deal
 with them read. Any wording of the page's own drifts from the hub's as
@@ -2920,8 +2919,9 @@ soon as the note changes, as it did once already.
 
 **Rejected alternative:** keeping the old sentence as a fallback where
 the field is missing: on a hub whose note has changed, it would show
-words the agents no longer read, the drift this avoids. The price is a
-hint without the words on a hub that does not send the note yet.
+words the agents no longer read, the drift this avoids. Keeping a case
+for a hub without the field: no such hub runs under the alpha rule
+(§1.6), so #990 removed it.
 Copying the text into the page: the same drift with every change of
 the wording.
 
