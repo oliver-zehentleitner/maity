@@ -48,7 +48,7 @@ window.Maity = window.Maity || {};
     const member = (p) => byId[p.member_id] || { id: p.member_id, display_name: "@" + p.handle, kind: p.kind };
     return direct.concat(groups.map((g) => {
       const people = g.participants.map(member).filter((x) => x.id !== ctx.me.id);
-      return { id: g.id, kind: "group", title: g.title || people.map((x) => x.display_name).join(", ") || M.t("chat.group.untitled"),
+      return { id: g.id, kind: "group", title: g.title || M.fmt.list(people.map((x) => x.display_name)) || M.t("chat.group.untitled"),
         participants: people, unread: g.unread || 0, mentions: g.mentions_unread || 0, access: g.access, closed: !!g.closed_at,
         last_message_at: g.last_message_at || g.created_at || null, last_message: g.last_message || null, pinned: !!g.pinned, rank: g.rank };
     }));
@@ -102,7 +102,7 @@ window.Maity = window.Maity || {};
       ? [chat.access === "observer" ? M.t("chat.who.observer") : null, chat.closed ? M.t("chat.who.closed") : null, M.t("chat.who.group", { names: M.fmt.list(chat.participants.map((m) => m.display_name)) })].filter(Boolean).join(" · ")
       : one
       ? [one.kind === "human" ? M.t("chat.who.human") : M.t("chat.who.agent"), one.handle ? "@" + M.dom.handleOf(ctx, one) : null, one.harness || null].filter(Boolean).join(" · ")
-      : chat.participants.map((m) => m.display_name).join(", ");
+      : M.fmt.list(chat.participants.map((m) => m.display_name));
     const presence = chat.kind !== "group" && one ? presenceWord(one.presence) || null : null;
     const draft = current ? null : drafts.get(ctx.slug + "/" + chat.id);
     const last = chat.last_message;

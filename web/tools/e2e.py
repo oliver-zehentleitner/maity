@@ -3286,7 +3286,7 @@ def landing_json_step(run: Run, page: Page) -> None:
 
 
 def site_json_step(run: Run, page: Page) -> None:
-    """The whole site as one JSON (maity-site/1, tsk-xw8a2hd84x3a) on the real hub: the template with en and de
+    """The whole site as one JSON (maity-site/1, tsk-xw8a2hd84x3a) on the real hub: the test file with every language
     is checked, saved in one go, and exported again unchanged."""
     me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
     if not me.get("instance_admin"):

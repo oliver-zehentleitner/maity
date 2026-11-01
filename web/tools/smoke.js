@@ -6856,10 +6856,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("Only messages within the hub's latest 5,000 events (all projects counted) are shown") && text(main).includes("No project messages yet."),
     "messages: a long log is read from its latest events, and that is said");
   let pmCalls = 0;
-  win.Maity.api.get = (p) => (/\/events\?after=\d+&wait=0&limit=200$/.test(p)
-    ? (pmCalls++, Promise.resolve({ items: Array.from({ length: 200 }, () => ({ seq: 5, kind: "member_joined", payload: {} })), cursor: 5 })) : pmGet(p));
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/events?after=latest&wait=0" ? Promise.resolve({ items: [], cursor: 20000 })
+    : /\/events\?after=\d+&wait=0&limit=200$/.test(p)
+    ? (pmCalls++, Promise.resolve({ items: Array.from({ length: 200 }, () => ({ seq: 15000, kind: "member_joined", payload: {} })), cursor: 15000 })) : pmGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/messages"); for (let k = 0; k < 4; k++) await tick();
-  expect(pmCalls === 1 && text(main).includes("did not move"), "messages: a cursor that does not move stops the scan, said");
+  expect(pmCalls === 1 && text(main).includes("did not move past 15000"), "messages: a cursor that does not move stops the scan, said, its number as written");
   // A member without events:admin: only what it may read, no Remove, Delete only on what it sent.
   win.Maity.api.get = (p) => (p === "/me" ? pmGet(p).then((x) => { x.projects.find((y) => y.slug === "maity").trust = "member"; return x; }) : pmGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/messages");
