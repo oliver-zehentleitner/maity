@@ -89,7 +89,7 @@ window.Maity = window.Maity || {};
   // the team's limit as that project's member view has them.
   // A link in a membership's line only where its target opens for this human: their own agent can
   // be in a project they are not in (reviews of #1020). The policy is known only on the project's
-  // own page; elsewhere the page behind the link says it.
+  // own page; from elsewhere the link may lead there, and that page says why no panel opens.
   const ownProject = (ctx, m) => (ctx.projects || []).find((p) => p.full_name === m.project) || null;
   const bringsHere = (ctx, a, m) => {
     const p = ownProject(ctx, m);
@@ -685,6 +685,7 @@ window.Maity = window.Maity || {};
     }
     // A card asked for by the URL: its title, or its rulebook, takes the
     // focus; a profile of the caller's that is not here is said.
+    if (joinAsked && !mayAdd) append(status.el, h("span", { class: "join-not-here" }, M.t("agents.project.join_off")));
     if (wanted) {
       const at = rulebookAsked ? focusables.get("team-max:" + wanted) : Array.from(cards.querySelectorAll("li.agent-card.wanted .agent-card-title"))[0];
       if (at) window.setTimeout(() => at.focus(), 0);

@@ -119,6 +119,7 @@
   "agents.project.hint_admin": "Your own agents in {name}: each profile as on {link}, with its rulebook, its instances and their credentials here. Pause or remove one under its card.",
   "agents.project.humans_only": "Agent profiles belong to humans: each manages their own agents here.",
   "agents.project.in": "In {name}",
+  "agents.project.join_off": "This project does not let you bring your own agents here, so there is no join form.",
   "agents.project.joins_failed": "Could not read the joins: {reason}",
   "agents.project.none": "None of your agents is in this project yet.",
   "agents.project.none_add": "None of your agents is in this project yet. Join one: its join line is made here.",

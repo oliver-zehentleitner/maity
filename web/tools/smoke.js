@@ -5237,6 +5237,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await go("#/all"); await go("#/agents"); for (let k = 0; k < 6; k++) await tick();
     for (const row of main.querySelectorAll("button.agent-manage")) if (row.getAttribute("aria-expanded") !== "true") { row.click(); await tick(); }
     expect(jlLinks() === 0, "join link: none for a guest");
+    // member_agents off, known only on the project's own page: that page says why no panel opens.
+    win.Maity.api.get = (p, o) => (p === "/me" ? jlGet(p, o).then((x) => { x.projects.forEach((q) => { q.trust = "member"; }); return x; })
+      : p === "/projects/maintainer/maity" ? jlGet(p, o).then((x) => Object.assign({}, x, { policy: Object.assign({}, x.policy, { member_agents: "off" }) })) : jlGet(p, o));
+    await go("#/all"); await go("#/maintainer/maity/agents/join?agent=agt-b"); for (let k = 0; k < 8; k++) await tick();
+    expect(main.querySelector(".join-not-here") && !main.querySelector(".join-panel"), "join link: member_agents off, the page says there is no form");
     expect(!main.querySelectorAll("a").some((x) => /guest\/guestlab/.test(x.getAttribute("href") || "")), "profile: no link into a project the human is not in");
     win.Maity.api.get = jlGet;
   }
