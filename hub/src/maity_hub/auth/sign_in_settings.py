@@ -126,6 +126,11 @@ def confirm_email(conn: Connection, hub: Settings, session: Any, code: str, by: 
     nonce = store.stored(conn, "sign_in").get(PENDING)
     if _environment(hub, "second_factor") is not None:
         raise invalid({"second_factor": "set_by_environment"})
+    # What the `PATCH` checked may have changed in the 15 minutes, and either would lock out.
+    if not mail_factor.mail_ready(conn, hub):
+        raise invalid({"second_factor": "mail_not_ready"})
+    if mail_factor.address_of(conn, by) is None:
+        raise invalid({"second_factor": "no_verified_address"})
     if not nonce or not mail_factor.check_confirmation(conn, hub, session, nonce, code):
         second_factor.WRONG_BY_HUMAN.hit(by)
         return False

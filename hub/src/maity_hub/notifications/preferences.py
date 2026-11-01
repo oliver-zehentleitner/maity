@@ -744,6 +744,7 @@ def decide_held(
     signing_key: bytes | None,
     public_url: str,
     step_up: Callable[[], None],
+    keeps_factor: Callable[[], None],
 ) -> None:
     """Approve or reject a held address change (§18.4); approving is a sensitive call, so
     `step_up` raises when the session owes the second factor (§2.8.4)."""
@@ -762,6 +763,8 @@ def decide_held(
         )
         return
     step_up()
+    if held["address"] is None and row.address_status == "verified":
+        keeps_factor()  # the policy may have come to `email` since it was held (§2.8.8)
     if clock.now() - session.created_at < APPROVER_AGE:
         raise _session_forbidden("session_too_new")
     apply_address(

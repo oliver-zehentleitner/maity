@@ -193,18 +193,21 @@ def test_a_human_without_a_password_needs_an_old_session(
         assert change["address"] == "new@example.org" and change["id"].startswith("adc-")
         with pytest.raises(ApiError) as too_new:
             preferences.decide_held(
-                conn, step_up=lambda: None, human=human, session=session, change_id=change["id"],
+                conn, step_up=lambda: None, keeps_factor=lambda: None,
+                human=human, session=session, change_id=change["id"],
                 address=change["address"], approve=True, signing_key=None, public_url="",
             )  # fmt: skip
         assert too_new.value.details == {"reason": "session_too_new"}
         with pytest.raises(ApiError) as wrong:
             preferences.decide_held(
-                conn, step_up=lambda: None, human=human, session=session, change_id="adc-other",
+                conn, step_up=lambda: None, keeps_factor=lambda: None,
+                human=human, session=session, change_id="adc-other",
                 address=change["address"], approve=False, signing_key=None, public_url="",
             )  # fmt: skip
         assert wrong.value.code == "conflict"
         preferences.decide_held(
-            conn, step_up=lambda: None, human=human, session=session, change_id=change["id"],
+            conn, step_up=lambda: None, keeps_factor=lambda: None,
+                human=human, session=session, change_id=change["id"],
             address=change["address"], approve=False, signing_key=None, public_url="",
         )  # fmt: skip
         assert "address_change" not in preferences.view(conn, owner.id, True)["email"]
@@ -316,7 +319,7 @@ def test_only_a_session_in_good_standing_decides_or_replaces_a_held_change(
             preferences.decide_held(
                 conn, human=human, session=weak, change_id=change["id"],
                 address=change["address"], approve=True, signing_key=None, public_url="",
-                step_up=lambda: None,
+                step_up=lambda: None, keeps_factor=lambda: None,
             )  # fmt: skip
         assert decided.value.details == {"reason": "not_in_good_standing"}
 

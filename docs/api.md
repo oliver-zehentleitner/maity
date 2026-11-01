@@ -2702,7 +2702,9 @@ sets it so, so that no such account falls under "never had one".
   second-factor reset --handle <handle>` (§2.8.3) sends the next sign-in
   into enrolment once. Removing the verified address under `email` is
   refused for a human without TOTP (`forbidden`, `details.reason:
-  second_factor_required`), so nobody locks themselves out by it.
+  second_factor_required`), so nobody locks themselves out by it; so is
+  turning TOTP off (§2.8.1) for a human without a verified address, and
+  `required` in `GET /auth/second-factor` says so.
 
 The second-factor session never tells a verified address from an
 unverified one beyond this: the first factor already proved the

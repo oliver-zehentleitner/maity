@@ -153,5 +153,6 @@ def _decide(
             signing_key=hub.mail.signing_key,
             public_url=hub.public_url,
             step_up=lambda: second_factor.require_step_up(conn, hub, caller),  # §2.8.4
+            keeps_factor=lambda: second_factor.refuse_losing_the_address(conn, hub, human.id),
         )
         return JSONResponse(preferences.view(conn, human.id, _mail_ready(conn, request)))

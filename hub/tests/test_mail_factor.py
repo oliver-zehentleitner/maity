@@ -639,3 +639,95 @@ def test_a_human_without_totp_cannot_remove_the_address_under_email(
     assert answer.json()["error"]["details"]["reason"] == "second_factor_required"
     with migrated.connect() as conn:
         assert mail_factor.address_of(conn, human) is not None
+
+
+def test_confirming_rechecks_the_address_and_the_mail(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    admin = _admin(make_client, migrated)
+    assert _turn_on(admin).status_code == 202
+    _, code, _ = last_mail(migrated)
+    with migrated.begin() as conn:
+        conn.execute(update(t.notification_settings).values(address_status="disabled"))
+    refused = _confirm(admin, code)
+    assert refused.json()["error"]["details"]["fields"] == {"second_factor": "no_verified_address"}
+    assert admin.get(SIGN_IN).json()["second_factor"]["value"] != "email"
+
+
+def _enrol(engine: Engine, human: str) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            t.second_factor.insert().values(
+                human_id=human, secret=b"x", enrolled_at=clock.now(), generation=1
+            )
+        )
+
+
+def test_totp_stays_while_it_is_the_only_way_in(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """Under `email` without a verified address, TOTP off would lock the human out (§2.8.8)."""
+    client, human = setup(make_client, migrated, verified=False, stored=True)
+    hub = replace(_hub(), secret_key=b"k" * 32)
+    _enrol(migrated, human)
+    with migrated.connect() as conn:
+        assert second_factor.view(conn, hub, human)["required"] is True
+    addresses.prepare(migrated, None)
+    with migrated.begin() as conn:
+        assert preferences.claim_verified(conn, "ada@example.com", human, secret_key=None)
+    with migrated.connect() as conn:
+        assert second_factor.view(conn, hub, human)["required"] is False
+    with migrated.begin() as conn:
+        conn.execute(update(t.notification_settings).values(address_status="disabled"))
+        caller = SimpleNamespace(principal_id=human, human_session=None)
+        with pytest.raises(ApiError) as refused, _no_proof():
+            second_factor.disable(conn, hub, caller)  # type: ignore[arg-type]
+    assert refused.value.details == {"reason": "second_factor_required"}
+
+
+def _no_proof() -> Any:
+    from unittest import mock
+
+    return mock.patch.multiple(
+        second_factor, require_proof=lambda *_: None, require_step_up=lambda *_: None
+    )
+
+
+def test_approving_a_held_removal_keeps_the_factor(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    called: list[bool] = []
+
+    def keeps() -> None:
+        called.append(True)
+        raise ApiError(403, "forbidden", "kept", {"reason": "second_factor_required"})
+
+    _, human = setup(make_client, migrated, stored=True)
+    change = {"id": "adc-1", "address": None, "requested_at": "2026-10-31T12:00:00Z"}
+    with migrated.begin() as conn:
+        conn.execute(update(t.notification_settings).values(address_change=change))
+        row = SimpleNamespace(id=human)
+        session = SimpleNamespace(state="full", method="password", second_factor_via="totp")
+        with (
+            mock_good_standing(),
+            pytest.raises(ApiError),
+        ):
+            preferences.decide_held(
+                conn,
+                human=row,
+                session=session,
+                change_id="adc-1",
+                address=None,
+                approve=True,
+                signing_key=None,
+                public_url="https://hub.example",
+                step_up=lambda: None,
+                keeps_factor=keeps,
+            )
+    assert called == [True]
+
+
+def mock_good_standing() -> Any:
+    from unittest import mock
+
+    return mock.patch.object(sessions, "good_standing", lambda *_: True)
