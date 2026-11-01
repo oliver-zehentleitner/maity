@@ -4332,3 +4332,17 @@ The section (`js/admin-sign-in.js`) lists the sign-in methods with each value's 
 **Reason:** the contract makes the code the proof that a mail of this hub arrived, so the page must not read as saved before it. The refusals `mail_not_ready` and `no_verified_address` can still come, as the state may change after the page was read; they are said at the field.
 
 **Rejected alternatives:** offering the value always and relying on the refusal: the contract says it is offered only while mail is ready. A cancelling `PATCH` on leaving: it would need a value to write back and a step-up for a change that never happened. Reading the settings again before showing the question: if that read failed, the mailed code would have no field.
+
+## The words of sign-in and sign-up are instance content; the forms stay the dashboard's
+
+**Id:** 133731df-a4ac-453d-923a-5df0878e69f0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish on tsk-fct4awzw3k30, 2026-11-01; the plan the coordinator approved; docs/api.md §16.7.4
+
+The site file gives `/login` and `/register` their words per language from a fixed list of keys; the dashboard renders both, with its built-in English for a key left out or a failed read. The hub chooses the language as for the landing page. The rest of the dashboard, the second step of a sign-in included, stays English until the maintainer says otherwise.
+
+**Reason:** `next`, the device code's polling, the second factor and a session that ends under a page all live in the dashboard, so a second renderer would be a second sign-in path. No sign-in may depend on reading words.
+
+**Rejected alternatives:** the hub rendering the two pages as it does the landing page: a second path, above. Free HTML or sections from the file: the forms are a security surface. A format `maity-site/2`: it would invalidate files in use, and a part left out already stays as it is. Words in the `registration` part: those are settings, with their own environment rules. A table of its own with versions: unlike legal texts nothing needs to be proven later, so one setting row is enough.
