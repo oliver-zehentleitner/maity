@@ -2,6 +2,7 @@
   "items": [
     {
       "id": "tsk-0001",
+      "watching": false,
       "parent": null,
       "related": [],
       "kind": "task",

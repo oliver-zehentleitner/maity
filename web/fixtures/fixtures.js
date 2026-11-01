@@ -3932,7 +3932,8 @@ window.MAITY_FIXTURES = {
         "ships_with": [],
         "status": "in_progress",
         "title": "API contract: docs/api.md",
-        "updated_at": "2026-10-21T13:00:00Z"
+        "updated_at": "2026-10-21T13:00:00Z",
+        "watching": false
       },
       {
         "area": "hub/",

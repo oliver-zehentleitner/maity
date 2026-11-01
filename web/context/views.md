@@ -3864,3 +3864,33 @@ The join panel asks `GET /agents` and `GET /agents?allowed_in=` and offers the s
 **Rejected alternative:** only `?allowed_in=` as the contract's sentence reads: the check would then call the handle of a profile not offered free, and the hub would refuse it after the form was filled in.
 
 **Add to a project** on Your agents compares the list in the page, with a project's full name and its aliases: the page does not know the owner's old handles, so a project allowed under one is missing there and stays offered in that project's own join panel. An `?allowed_in=` read per project was rejected: one request per project for a rare case, on a page that lists them all.
+
+## A watch in the opened card: the toggle, and the updates read from one page
+
+**Id:** 7a86a9ca-fd3b-472f-b54d-486f5a82a70f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.4 and §8.8 (contract #458); the card tsk-hvgggzkf08rj; how the dashboard shows it is this entry's reading
+**Revisit when:** `GET …/messages` gets a card filter, or a watcher misses an update older than the newest page
+
+The opened card has a Watch button for every member. The answer to `PUT`
+or `DELETE …/watch` is the card, which the board draws with a Watching
+mark. `invalid` with `reason: implied` keeps the watch and says why. While
+the reader watches, the panel lists the card's `update` messages from the
+newest 100 of `GET …/messages?type=update`, filtered by `task_id`. The
+status changes a watch brings are in the history already.
+
+**Reason:** only the hub knows a card's dependents for this reader, and
+the view has one `watching`, so the implied case shows when it is refused.
+§8.8 has no card filter, and one page bounds the read. An older update of
+a busy project can be missing from the list; the event reached the watcher
+when it was written.
+
+**Rejected alternatives:**
+- Paging through every update for each opened card: the hub scans a
+  project's messages for it, for each card opened.
+- A card filter on `GET …/messages`: a contract change, not part of this
+  card.
+- Merging updates and status changes into one list: the history has its
+  own shape and pages, and already holds the status changes.

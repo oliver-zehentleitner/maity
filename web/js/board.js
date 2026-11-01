@@ -567,6 +567,7 @@ window.Maity = window.Maity || {};
           ? h("span", { class: "badge " + c.kind }, KIND_LABELS[c.kind] + (c.kind === "release" ? " " + c.release.version : ""))
           : null,
         c._searchClosed ? h("span", { class: "badge" }, "Closed · outside board window") : null,
+        c.watching ? h("span", { class: "card-watching" }, M.t("cards.watching")) : null,
         Array.isArray(c.match) && c.match.length
           ? h("span", { class: "label-tag" }, "Matched: " + c.match.join(", ")) : null,
         c.label ? h("span", { class: "label-tag" }, c.label) : null,
@@ -834,7 +835,8 @@ window.Maity = window.Maity || {};
     const boardBody = h("div", { class: "board-body" }, columnsBox);
     function openPanel(c) {
       lastBoard = { slug: ctx.slug, id: c.id, fromTitle: false, snapshot };
-      panel = M.cardPanel.render(ctx, c, card(ctx, c, byId, manage, true), () => M.route.go(ctx.link("board"), { replace: true }));
+      panel = M.cardPanel.render(ctx, c, card(ctx, c, byId, manage, true), () => M.route.go(ctx.link("board"), { replace: true }),
+        (updated) => { Object.assign(byId[updated.id] || {}, updated); draw(); });
       boardBody.className = "board-body has-panel";
       append(boardBody, panel.el);
       window.setTimeout(() => panel.focus(), 0);

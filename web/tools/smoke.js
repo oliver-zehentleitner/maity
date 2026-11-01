@@ -3146,6 +3146,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(cpHist.length === 3 && cpHist[0].startsWith("@maintainer changed the description") && cpPanel().querySelector("pre.history-diff").textContent.includes("+The REST contract hub")
     && cpHist[1].startsWith("@maintainer changed the label: fix → feature") && cpHist[2].startsWith("@agent-a created the card"),
     "card panel: the history, newest first, a description's change as its diff " + JSON.stringify(cpHist));
+  // The reader's own watch (§6.4): the toggle, the mark on the board, the updates, and the watch that comes with a dependency.
+  const cpWatch = () => cpPanel().querySelector("button.card-watch");
+  const cpSettle = async () => { for (let k = 0; k < 6; k++) await tick(); await new Promise((r) => setTimeout(r, 5)); };
+  const cpMarked = () => !!cpCard().querySelector(".card-watching");
+  expect(text(cpWatch()) === "Watch" && cpWatch().getAttribute("aria-pressed") === "false" && !cpMarked() && !cpPanel().querySelector(".card-update-list"),
+    "card watch: off, unmarked, no updates read");
+  const cpWatchGet = win.Maity.api.get, cpWatchDel = win.Maity.api.del;
+  const cpUpdate = (id, task) => ({ seq: id, type: "update", from: "agt-b", from_instance: null, to: null, task_id: task, body: "landed " + id, sent_at: "2026-10-22T09:00:00Z", mentions: [] });
+  win.Maity.api.get = (p) => (p.includes("/messages?type=update") ? Promise.resolve({ items: [cpUpdate(2, "tsk-0001"), cpUpdate(1, "tsk-0002")], next_cursor: null }) : cpWatchGet(p));
+  cpWatch().click(); await cpSettle();
+  expect(text(cpWatch()) === "Watching" && cpWatch().getAttribute("aria-pressed") === "true" && cpMarked()
+    && cpPanel().querySelectorAll(".card-update-list li").length === 1 && text(cpPanel().querySelector(".card-update-list li")).includes("landed 2"),
+    "card watch: on, marked on the board, this card's update only");
+  win.Maity.api.del = () => Promise.reject(Object.assign(new Error("the watch comes with a card that depends on this one"), { code: "invalid", details: { reason: "implied" } }));
+  cpWatch().click(); await cpSettle();
+  expect(text(cpWatch()) === "Watching" && text(cpPanel()).includes("a card of yours depends on it") && !cpWatch().disabled,
+    "card watch: an implied watch stays and says why");
+  win.Maity.api.del = cpWatchDel;
+  cpWatch().click(); await cpSettle();
+  expect(text(cpWatch()) === "Watch" && !cpMarked() && !cpPanel().querySelector(".card-update-list"), "card watch: off again, updates gone");
+  win.Maity.api.get = cpWatchGet;
   // A card's links: a pull request with the title and state the hub observed, an issue without, a plain URL by its label.
   const cpLinks = win.Maity.cardPanel.render({ base: "/projects/maintainer/maity", slug: "maity", project: { state: "archived" }, link: () => "#" },
     { id: "tsk-0001", title: "Links", links: [
