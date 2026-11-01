@@ -20,7 +20,7 @@ import urllib.parse
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 from maity import (
     __version__,
@@ -440,7 +440,7 @@ def cmd_join(args: argparse.Namespace) -> int:
         # credential afterwards must refuse it now, while the join can still be retried.
         was = state.prepare_for_join(directory)
         if was is not None:
-            _err(f"set {directory} to mode 0700 (it was {was:04o}): it will hold the credential")
+            _err(f"{was}: it will hold the credential")
     _warn_other_hubs(url)
     result = hub.exchange(target, code.strip(), client=args.client or hub.CLIENT)
     base = hub.accept_hub(url, result.hub)  # before anything is kept
@@ -472,7 +472,7 @@ def cmd_join(args: argparse.Namespace) -> int:
         os.environ[state.STATE_DIR_ENV] = str(directory)  # the first resume below uses it
         print(
             f"This agent's identity lives in {directory}. Every later maity "
-            f"command needs it: export {state.STATE_DIR_ENV}={shlex.quote(str(directory))}",
+            f"command needs it: {_state_dir_line(directory)}",
             file=sys.stderr,
         )
     if args.pointer:
@@ -1472,7 +1472,7 @@ def cmd_files_get(args: argparse.Namespace) -> int:
                 fh.write(chunk)
 
             got = session.client.download(content, save, size)
-            os.fchmod(fh.fileno(), 0o644)
+            _readable_by_all(fh)
         if got != size or check.hexdigest() != digest.lower():
             raise CommandError("SHA-256 mismatch: the hub sent other bytes; nothing was saved")
         if args.force:
@@ -1484,6 +1484,14 @@ def cmd_files_get(args: argparse.Namespace) -> int:
             os.unlink(part)
     print(f"saved {onboarding.inline(target)} ({described})")
     return EXIT_OK
+
+
+def _state_dir_line(directory: Path) -> str:
+    """The line that names a state directory, in the shell of this system."""
+    if sys.platform == "win32":
+        quoted = str(directory).replace("'", "''")
+        return f"$env:{state.STATE_DIR_ENV} = '{quoted}'"
+    return f"export {state.STATE_DIR_ENV}={shlex.quote(str(directory))}"
 
 
 FILES_DIR = "maity-files"
@@ -1518,7 +1526,8 @@ def _place(part: str, target: Path) -> None:
     except OSError as exc:
         if exc.errno not in NO_HARD_LINKS:
             raise
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+    # Windows has no such flag; O_EXCL there refuses a link at the name as well.
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     try:
         fd = os.open(target, flags, 0o644)
     except FileExistsError:
@@ -1526,10 +1535,17 @@ def _place(part: str, target: Path) -> None:
     try:
         with os.fdopen(fd, "wb") as out, open(part, "rb") as src:
             shutil.copyfileobj(src, out)
-            os.fchmod(out.fileno(), 0o644)
+            _readable_by_all(out)
     except BaseException:
         os.unlink(target)
         raise
+
+
+def _readable_by_all(fh: IO[bytes]) -> None:
+    """A saved file is an ordinary file (0644), not `mkstemp`'s 0600. Windows has no such bits:
+    it takes the access list of the folder it lands in."""
+    if sys.platform != "win32":
+        os.fchmod(fh.fileno(), 0o644)
 
 
 NO_HARD_LINKS = (errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.ENOSYS)
@@ -4983,6 +4999,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.for_target is not None and args.command == "join":
         _err("--for applies to project commands; join is the bridge's own: run it without --for")
         return EXIT_USAGE
+    if args.command == "runner" and sys.platform == "win32":
+        _err(
+            "the runner does not run on Windows: it needs tmux, systemd and OS users. "
+            "Run it inside WSL; every other maity command works here"
+        )
+        return EXIT_REFUSED
     try:
         _load_texts(args)
         return handler(args)

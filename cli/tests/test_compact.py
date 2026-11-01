@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import json
-import os
-import stat
 from pathlib import Path
 from typing import Any
 
 import fakehub
 import pytest
+from conftest import assert_private
 from test_onboarding import packet
 
 from maity import cli, onboarding, state
@@ -223,7 +222,7 @@ def test_resume_stores_the_packet_privately_and_full_renders_it_without_the_hub(
     assert cli.main(["resume"]) == cli.EXIT_OK
     compact = capsys.readouterr().out
     stored = joined / cli.LAST_PACKET
-    assert stat.S_IMODE(os.stat(stored).st_mode) == 0o600
+    assert_private(Path(stored))
     assert state.load_state(joined, name=cli.LAST_PACKET) == data
 
     calls = len(fake.seen)

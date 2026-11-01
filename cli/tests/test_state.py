@@ -5,6 +5,7 @@ import stat
 from pathlib import Path
 
 import pytest
+from conftest import assert_private, posix
 
 from maity import state
 
@@ -37,6 +38,7 @@ def test_env_override_wins(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     assert state.resolve_state_dir() == (tmp_path / "custom").resolve()
 
 
+@posix
 def test_credential_is_written_private(tmp_path: Path) -> None:
     directory = tmp_path / "s"
     path = state.write_credential(directory, state.Secret("tok-123"))
@@ -52,6 +54,7 @@ def test_credential_is_replaced_atomically(tmp_path: Path) -> None:
     assert state.read_credential(tmp_path).reveal() == "new"
 
 
+@posix
 def test_loose_credential_is_refused(tmp_path: Path) -> None:
     path = state.write_credential(tmp_path, state.Secret("tok-123"))
     os.chmod(path, 0o644)
@@ -83,9 +86,9 @@ def test_secret_does_not_print() -> None:
 
 
 def test_state_round_trip(tmp_path: Path) -> None:
-    path = state.save_state(tmp_path, {"hub": "https://hub.example", "cursor": 7})
-    assert mode(path) == 0o600
-    assert state.load_state(tmp_path) == {"hub": "https://hub.example", "cursor": 7}
+    path = state.save_state(tmp_path / "s", {"hub": "https://hub.example", "cursor": 7})
+    assert_private(path)
+    assert state.load_state(tmp_path / "s") == {"hub": "https://hub.example", "cursor": 7}
 
 
 def test_missing_state_is_empty(tmp_path: Path) -> None:
@@ -99,6 +102,7 @@ def test_broken_state_is_refused(tmp_path: Path) -> None:
         state.load_state(tmp_path)
 
 
+@posix
 def test_a_loose_state_dir_is_refused_not_chmodded(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -113,6 +117,7 @@ def test_a_loose_state_dir_is_refused_not_chmodded(
     assert not (named / "credential").exists()
 
 
+@posix
 def test_reading_refuses_a_loose_state_dir(tmp_path: Path) -> None:
     directory = tmp_path / "s"
     state.write_credential(directory, state.Secret("tok"))
@@ -130,3 +135,40 @@ def test_secret_cannot_be_pickled_or_copied() -> None:
         pickle.dumps(secret)
     with pytest.raises(TypeError):
         copy.copy(secret)
+
+
+def test_only_a_permission_error_is_tried_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Windows refuses a replace while another process holds the file for a moment."""
+    monkeypatch.setattr(state, "REPLACE_TRIES", 3)
+    monkeypatch.setattr(state, "REPLACE_PAUSE", 0)
+    real = os.replace
+    calls = []
+
+    def busy_twice(src: Path, dst: Path) -> None:
+        calls.append(src)
+        if len(calls) < 3:
+            raise PermissionError("held")
+        real(src, dst)
+
+    monkeypatch.setattr(os, "replace", busy_twice)
+    path = state.save_state(tmp_path / "s", {"a": 1})
+    assert len(calls) == 3
+    assert state.load_state(path.parent) == {"a": 1}
+
+
+def test_a_replace_still_held_after_the_last_try_fails_and_leaves_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(state, "REPLACE_TRIES", 2)
+    monkeypatch.setattr(state, "REPLACE_PAUSE", 0)
+
+    def held(src: Path, dst: Path) -> None:
+        raise PermissionError("held")
+
+    monkeypatch.setattr(os, "replace", held)
+    directory = tmp_path / "s"
+    with pytest.raises(PermissionError):
+        state.save_state(directory, {"a": 1})
+    assert list(directory.iterdir()) == []

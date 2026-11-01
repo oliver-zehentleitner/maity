@@ -12,7 +12,7 @@ from typing import Any
 
 import fakehub
 import pytest
-from conftest import fake_gh, git
+from conftest import assert_private, fake_gh, fake_maity, git, posix
 
 from maity import cli, hub, pointer, state
 
@@ -635,6 +635,7 @@ def test_join_takes_the_line_from_one_place_only(
     assert cli.main(argv) == cli.EXIT_USAGE
 
 
+@posix
 def test_a_join_started_off_path_says_how_to_put_maity_on_path(
     clone: Path,
     fake: fakehub.FakeHub,
@@ -656,8 +657,7 @@ def test_a_join_with_maity_on_path_ends_with_the_ensurepath_sentence(
     clone: Path, bin_dir: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """For later shells (§3.2): the sentence is the last line, after the resume."""
-    (bin_dir / "maity").write_text("#!/bin/sh\n")
-    (bin_dir / "maity").chmod(0o755)
+    fake_maity(bin_dir)
     assert cli.main(["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", fakehub.CODE]) == 0
     err = capsys.readouterr().err
     assert "not on PATH" not in err
@@ -676,8 +676,7 @@ def test_a_join_ends_with_the_chat_with_its_human(
     chat_url: str | None,
 ) -> None:
     """§5.2: the line the agent gives its human, before the PATH sentence."""
-    (bin_dir / "maity").write_text("#!/bin/sh\n")
-    (bin_dir / "maity").chmod(0o755)
+    fake_maity(bin_dir)
     packet: dict[str, Any] = {"session": {"id": "ses-b-0004"}, "membership": {}}
     if chat_url is not None:
         packet["membership"]["chat_url"] = chat_url
@@ -843,6 +842,8 @@ def no_clone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.delenv("MAITY_STATE_DIR", raising=False)
     monkeypatch.delenv("XDG_STATE_HOME", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "home" / ".local" / "state"))
     return tmp_path / "home"
 
 
@@ -852,11 +853,11 @@ def test_join_outside_a_clone_derives_the_identity_directory(
     code = cli.main(["join", f"{fake.url}/join/{fakehub.TOKEN}", "--code", fakehub.CODE])
     out = output(capsys)
     assert code == cli.EXIT_OK, out
-    host = fake.url.removeprefix("http://")
+    host = state.host_dir(fake.url.removeprefix("http://"))
     directory = no_clone / ".local" / "state" / "maity" / host / "agent-b"
     assert state.credential_path(directory).read_bytes() == fakehub.CREDENTIAL.encode()
-    assert stat.S_IMODE(directory.stat().st_mode) == 0o700
-    assert f"export MAITY_STATE_DIR={directory}" in out
+    assert_private(directory)
+    assert cli._state_dir_line(directory) in out
     assert fakehub.SECRET not in out and fakehub.CODE not in out
     assert fake.signed()[0].path == "/api/v1/me/resume"  # the first resume found it
 
@@ -888,7 +889,7 @@ def test_join_warns_about_an_identity_directly_under_the_state_home(
 def test_join_does_not_warn_about_its_own_hub_or_an_empty_directory(
     no_clone: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    host = fake.url.removeprefix("http://")
+    host = state.host_dir(fake.url.removeprefix("http://"))
     sibling = no_clone / ".local/state/maity" / host / "sibling"
     sibling.mkdir(parents=True)
     state.credential_path(sibling).write_text("mty1.cred-x.secret")
@@ -905,7 +906,9 @@ def test_a_second_identity_outside_a_clone_gets_its_own_directory(
     monkeypatch.delenv("MAITY_STATE_DIR")  # what the first join set for its own resume
     fake.join_used, fake.join_handle = False, "agent-c"
     assert cli.main(line) == cli.EXIT_OK
-    base = no_clone / ".local" / "state" / "maity" / fake.url.removeprefix("http://")
+    base = (
+        no_clone / ".local" / "state" / "maity" / state.host_dir(fake.url.removeprefix("http://"))
+    )
     assert state.has_credential(base / "agent-b") and state.has_credential(base / "agent-c")
 
 
@@ -930,13 +933,15 @@ def test_another_instance_outside_a_clone_gets_a_directory_of_its_own(
     capsys.readouterr()
     fake.join_used, fake.join_instance = False, "k7mq"
     assert cli.main(line) == cli.EXIT_OK
-    base = no_clone / ".local" / "state" / "maity" / fake.url.removeprefix("http://")
+    base = (
+        no_clone / ".local" / "state" / "maity" / state.host_dir(fake.url.removeprefix("http://"))
+    )
     first, second = base / "agent-b", base / "agent-b#k7mq"
     assert state.has_credential(first) and state.has_credential(second)
-    assert stat.S_IMODE(second.stat().st_mode) == 0o700
+    assert_private(second)
     out = output(capsys)
-    assert f"export MAITY_STATE_DIR='{second}'" in out
-    assert "resume" not in out.split("export MAITY_STATE_DIR")[0]  # never the first's resume
+    assert cli._state_dir_line(second) in out
+    assert "resume" not in out.split(cli._state_dir_line(second))[0]  # never the first's resume
 
 
 def test_another_instance_without_a_valid_instance_id_keeps_its_credential(
@@ -965,6 +970,7 @@ def test_a_join_page_without_a_handle_keeps_the_refusal(
     assert not [s for s in fake.seen if s.method == "POST"]  # the code was not spent
 
 
+@posix
 @pytest.mark.parametrize("derived", [False, True])
 def test_join_tightens_an_empty_state_directory_it_owns(
     derived: bool,
@@ -974,7 +980,13 @@ def test_join_tightens_an_empty_state_directory_it_owns(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     if derived:
-        directory = no_clone / ".local" / "state" / "maity" / fake.url.removeprefix("http://")
+        directory = (
+            no_clone
+            / ".local"
+            / "state"
+            / "maity"
+            / state.host_dir(fake.url.removeprefix("http://"))
+        )
         directory = directory / "agent-b"
     else:
         directory = no_clone / "agent"
@@ -988,6 +1000,7 @@ def test_join_tightens_an_empty_state_directory_it_owns(
     assert state.has_credential(directory)
 
 
+@posix
 def test_join_never_loosens_the_rule_for_a_directory_with_a_credential(tmp_path: Path) -> None:
     directory = tmp_path / "agent"
     state.write_credential(directory, state.Secret(fakehub.CREDENTIAL))
@@ -998,6 +1011,7 @@ def test_join_never_loosens_the_rule_for_a_directory_with_a_credential(tmp_path:
         state.check_private(directory)
 
 
+@posix
 def test_a_directory_join_cannot_write_never_reaches_the_exchange(
     no_clone: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1034,8 +1048,8 @@ def test_a_credential_refused_after_the_exchange_is_kept_elsewhere(
     err = capsys.readouterr().err
     (rescued,) = (no_clone / ".local" / "state" / "maity").glob("rescued-*")
     assert state.credential_path(rescued).read_bytes() == fakehub.CREDENTIAL.encode()
-    assert stat.S_IMODE(rescued.stat().st_mode) == 0o700
-    assert f"export MAITY_STATE_DIR={rescued}" in err and fakehub.SECRET not in err
+    assert_private(rescued)
+    assert cli._state_dir_line(rescued) in err and fakehub.SECRET not in err
     assert state.load_state(rescued)["member_id"] == "agt-b"
 
 
@@ -1057,7 +1071,7 @@ def test_the_identity_directory_follows_xdg_state_home(
     monkeypatch.setenv("XDG_STATE_HOME", str(no_clone / "xdg"))
     line = ["join", f"{fake.url}/join/{fakehub.TOKEN}", "--code", fakehub.CODE, "--no-resume"]
     assert cli.main(line) == cli.EXIT_OK
-    host = fake.url.removeprefix("http://")
+    host = state.host_dir(fake.url.removeprefix("http://"))
     assert state.has_credential(no_clone / "xdg" / "maity" / host / "agent-b")
 
 
@@ -1067,6 +1081,7 @@ def test_a_join_in_a_clone_never_reads_the_page(clone: Path, fake: fakehub.FakeH
     assert not [s for s in fake.seen if s.method == "GET" and "join" in s.path]
 
 
+@posix
 def test_join_never_tightens_a_directory_with_something_in_it(
     no_clone: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1083,6 +1098,7 @@ def test_join_never_tightens_a_directory_with_something_in_it(
     assert not fake.join_used
 
 
+@posix  # Windows can create the place that stands for a state home that refuses
 def test_a_rescue_falls_back_to_a_temp_directory_when_the_home_refuses(
     no_clone: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

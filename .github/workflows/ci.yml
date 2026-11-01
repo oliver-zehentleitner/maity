@@ -323,11 +323,31 @@ jobs:
       - run: pip install -e '.[dev]'
       - run: make check
 
+  # About 15 minutes, against about 7 on Linux; only when cli/ changes.
+  cli-windows:
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e '.[dev]'
+      - run: python -m pytest -q --tb=short
+
   # The one check to require: green when every suite either passed or was not
   # needed (skipped by `changes`), red when one failed or was cancelled.
   ci-ok:
     if: always()
-    needs: [changes, changelog, web, web-e2e, hub-sqlite, hub-wheel, hub-lock, hub-image, helm, join-smoke, hub-postgresql, cli]
+    needs: [changes, changelog, web, web-e2e, hub-sqlite, hub-wheel, hub-lock, hub-image, helm, join-smoke, hub-postgresql, cli, cli-windows]
     runs-on: ubuntu-latest
     defaults:
       run:

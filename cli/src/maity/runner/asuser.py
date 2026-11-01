@@ -14,7 +14,6 @@ there, and a harness setting an agent changes only widens what that same user co
 from __future__ import annotations
 
 import os
-import pwd
 import re
 import shlex
 import shutil
@@ -94,6 +93,8 @@ class AsUser:
     def home(self) -> Path:
         if self.direct:
             return Path.home()
+        import pwd  # POSIX only, and every maity command imports this module
+
         return Path(pwd.getpwnam(str(self.user)).pw_dir)
 
     def write(self, path: Path, text: str) -> Path:

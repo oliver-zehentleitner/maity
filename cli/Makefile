@@ -14,6 +14,7 @@ format:
 
 typecheck:
 	$(PY) -m mypy src tests
+	$(PY) -m mypy --platform win32 --follow-imports=silent src/maity/winacl.py src/maity/state.py
 
 test:
 	$(PY) -m pytest -q
