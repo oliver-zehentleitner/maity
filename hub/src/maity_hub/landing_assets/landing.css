@@ -175,7 +175,7 @@ code{font-family:var(--font-mono);font-size:.92em}
 @media (max-width:900px){.opensource-body{grid-template-columns:minmax(0,1fr);gap:28px}}
 .faq{max-width:52rem}
 .faq details p{margin:.6rem 0 0;color:var(--muted)}
-.cta-band{display:grid;grid-template-columns:auto minmax(0,1fr);gap:32px;align-items:center;padding:56px 0}
+.cta-band{display:grid;grid-template-columns:auto minmax(0,1fr);gap:32px;align-items:center;padding-block:56px}
 @media (max-width:760px){.cta-band{grid-template-columns:1fr}}
 .cta-band h2{margin:0 0 10px;color:#e6e9ec}.cta-band p{margin:0 0 18px;color:#9aa4ae}
 .band-loader{display:block}

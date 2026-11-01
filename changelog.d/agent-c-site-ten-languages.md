@@ -5,4 +5,4 @@
 
 ### Fixed
 
-- legal pages: the footer's links and a long title wrap on a phone instead of widening the page.
+- legal pages, landing page: the footer's links, a long title and a longer call to action wrap on a phone instead of widening the page, and the call-to-action band keeps its side margin.
