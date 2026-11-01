@@ -240,7 +240,10 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
                 "id": join_id,
                 "join_url": join_url,
                 "code": code,
-                "paste_line": join_line.command(settings.cli_install, join_url, code),
+                "paste_lines": {
+                    "posix": join_line.posix(settings.cli_install, join_url, code),
+                    "windows": join_line.windows(settings.cli_install, join_url, code),
+                },
                 "agent_id": agent_id,
                 "project": namespace.full_name(conn, mine.project),
                 "expires_at": clock.rfc3339(now + timedelta(seconds=body.ttl_seconds)),
@@ -679,7 +682,7 @@ def render_page(
             reports_to_text += " (waiting for a human's consent)"
     else:
         reports_to_text = "nobody"
-    join_command = join_line.command(settings.cli_install, link, "<code>")
+    join_command = join_line.posix(settings.cli_install, link, "<code>")
     values = {
         "project_name": _md(project.name),
         "project_repository": _md(project.repository_url or "not configured"),

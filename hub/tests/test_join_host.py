@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from maity_hub import join_line
 from maity_hub.config import DEFAULT_CLI_INSTALL, ConfigError, Settings, parse_join_url
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -86,9 +87,12 @@ def test_links_go_to_the_join_host_by_default(make_client: ClientFactory, migrat
     via_join = create(owner)
     assert via_join["via"] == "join"
     assert via_join["join_url"] == f"{JOIN}/{token_of(via_join)}"
-    assert via_join["paste_line"].startswith("pipx install maity && export PATH=")
-    assert via_join["paste_line"].endswith(
+    assert via_join["paste_lines"]["posix"].startswith("export PATH=")
+    assert via_join["paste_lines"]["posix"].endswith(
         f"&& maity join {JOIN}/{token_of(via_join)} --code {via_join['code']}"
+    )
+    assert via_join["paste_lines"]["windows"].endswith(
+        f"{{ maity join {JOIN}/{token_of(via_join)} --code {via_join['code']} }}"
     )
     via_public = create(owner, agent={"handle": "agent-p", "display_name": "P"}, via="public")
     assert via_public["join_url"] == f"{PUBLIC}/join/{token_of(via_public)}"
@@ -294,7 +298,8 @@ def test_the_page_names_the_instances_install_line_and_the_state_directory(
     token = token_of(create(owner))
     page = make_client(cli_install="pipx install maity-fork").get(f"/join/{token}").text
     assert (
-        'pipx install maity-fork && export PATH="$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}" '
+        'export PATH="$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}" '
+        "&& { command -v maity >/dev/null 2>&1 || { pipx install maity-fork; }; } "
         "&& maity join https://hub.example/join/" in page
     )
     assert "--code <code>" in page and "pipx ensurepath" in page
@@ -303,7 +308,7 @@ def test_the_page_names_the_instances_install_line_and_the_state_directory(
     assert "pipx install maity\n" not in page
     help_text = make_client(cli_install="pipx install maity-fork").get("/api/v1/help").text
     assert "(`pipx install maity-fork`)" in help_text
-    assert "pipx install maity-fork && export PATH=" in help_text and "pipx ensurepath" in help_text
+    assert "|| { pipx install maity-fork; }; }" in help_text and "pipx ensurepath" in help_text
 
 
 # --- a person's invitation (§1.1, §3.4) ---------------------------------------------------------
@@ -402,3 +407,17 @@ def test_the_log_masks_an_invitations_token_on_the_join_host(
 def test_the_public_host_has_no_invitation_redirect(make_client: ClientFactory) -> None:
     response = make_client(join_url=JOIN).get(f"/i/{INVITED}", follow_redirects=False)
     assert response.status_code != 302 or not response.headers["location"].endswith(INVITED)
+
+
+@pytest.mark.parametrize(
+    "install", ["pip install maity && hash -r", "curl x | sh", "a; b", "a $(b)", "a > b"]
+)
+def test_a_compound_install_line_has_no_windows_line(install: str) -> None:
+    assert join_line.windows(install, "U", "C") is None
+    assert f"|| {{ {install}; }}; }}" in join_line.posix(install, "U", "C")  # kept whole
+
+
+def test_a_single_command_keeps_its_windows_line_without_the_pipx_path() -> None:
+    line = join_line.windows("uv tool install maity", "U", "C")
+    assert line is not None
+    assert "{ uv tool install maity }" in line and "$env:Path" not in line

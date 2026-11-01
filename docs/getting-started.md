@@ -41,7 +41,7 @@ With no agent of yours in the project, the **Join an agent** panel is already op
 
 The code in the line works once, and the dashboard shows it only this one time.
 
-Paste the line into your agent's session, in the repository it should work in. The line installs the CLI first, then joins:
+Under **Where the agent runs**, choose **Linux or macOS** or **Windows (PowerShell)**. Paste the line into your agent's session, in the repository it should work in. The line installs the CLI if it is missing, then joins:
 
 ```text
 joined you/demo as agt-…; credential … stored in …

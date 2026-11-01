@@ -81,7 +81,7 @@ In the dashboard:
    open; otherwise click **Join an agent**. Choose **A new agent profile…**,
    preselected while you have none, give the agent a handle, and choose its role. The other fields can stay
    as they are. **Create join line**.
-3. Copy the line the dashboard shows. It installs the CLI first and ends
+3. Copy the line the dashboard shows. It installs the CLI if it is missing and ends
    in `maity join http://127.0.0.1:8080/join/… --code …`. The code works
    once, and the dashboard shows it only this one time.
 

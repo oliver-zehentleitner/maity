@@ -30,7 +30,7 @@ def _token(created: dict[str, str]) -> str:
 # --- §3.1 the join link ---------------------------------------------------------------
 
 
-def test_a_join_answers_the_paste_line_once(owner: flow.Human) -> None:
+def test_a_join_answers_the_paste_lines_once(owner: flow.Human) -> None:
     response = owner.post(
         "/projects/maintainer/maity/joins",
         {
@@ -48,7 +48,7 @@ def test_a_join_answers_the_paste_line_once(owner: flow.Human) -> None:
         "id",
         "join_url",
         "code",
-        "paste_line",
+        "paste_lines",
         "agent_id",
         "project",
         "expires_at",
@@ -58,10 +58,19 @@ def test_a_join_answers_the_paste_line_once(owner: flow.Human) -> None:
     assert body["join_url"].startswith("https://hub.example/join/")
     assert len(_token(body)) >= 22  # 128 bits, base64url
     assert CODE.match(body["code"])
-    assert body["paste_line"] == (
-        'pipx install maity && export PATH="$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}" '
-        f"&& maity join {body['join_url']} --code {body['code']}"
-    )  # the install line and the join in one command (§3.2)
+    join = f"maity join {body['join_url']} --code {body['code']}"
+    assert body["paste_lines"] == {
+        "posix": (
+            'export PATH="$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}" '
+            f"&& {{ command -v maity >/dev/null 2>&1 || {{ pipx install maity; }}; }} && {join}"
+        ),
+        "windows": (
+            '$env:Path += ";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR } '
+            'else { "$HOME\\.local\\bin" })"; '
+            "if (-not (Get-Command maity -ErrorAction SilentlyContinue)) { pipx install maity }; "
+            f"if (Get-Command maity -ErrorAction SilentlyContinue) {{ {join} }}"
+        ),
+    }  # installs only when missing, and joins, once per platform (§3.2)
     assert body["agent_id"].startswith("agt-")
     assert body["project"] == "maintainer/maity"
     listed = owner.get("/projects/maintainer/maity/joins").json()["items"]
