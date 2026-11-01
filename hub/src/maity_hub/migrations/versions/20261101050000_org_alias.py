@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "20261101050000_org_alias"
-down_revision: str | None = "20261031191500_mail_factor"
+down_revision: str | None = "20261101010000_event_watcher"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
