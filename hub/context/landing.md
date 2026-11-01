@@ -59,6 +59,29 @@ immutable. Counting the versions needs no counter row that could drift from them
 - A `deleted` flag on the version row for an unset page: the question "which version is served" would
   then need the newest row without a flag, and an unset page set again would reuse a flagged row.
 
+## The imprint serves no earlier versions; the privacy notice and the terms keep theirs
+
+**Id:** fb324f60-d0ee-47e1-aa33-fd624e0ecb2e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's direction, 2026-11-01 (tsk-rpc893kx92tw); contract `docs/api.md` §16.7.1
+**Revisit when:** a law or an operator needs an earlier imprint to be readable by visitors
+
+The public imprint lists no earlier versions, and `/impressum/<version>` answers `404` for every
+version. The rows stay in `legal_version`, as for every page, and `GET /admin/settings/legal` still
+names them.
+
+**Reason:** a person may have accepted or relied on a version of the terms or the privacy notice,
+which is why those stay readable (c321fdcc-6917-4363-97f2-4d3858ea33ec). The imprint has no such
+reason: it only says who runs the instance now. That much is the maintainer's; the `404` at the old
+addresses was recommended on the card and decided in the implementation.
+
+**Rejected alternatives:**
+- Only dropping the list and leaving the old addresses readable: an address somebody kept would go
+  on showing an outdated imprint.
+- Deleting the imprint's old rows: not asked for, and every page's versions are immutable by design.
+
 ## Migration 0090 makes a `hero` only when the old landing had both a title and a call to action
 
 **Id:** 3a007583-49e3-484a-b2e4-0049619c01af

@@ -13237,16 +13237,22 @@ versions stay bounded by what an operator can write. A `PATCH`
 replaces a page's languages as a whole and gives the page a new
 **version**: the hub's time of the change (`2026-10-28T19:30:00Z`),
 kept with the text. The hub keeps every earlier version of a page,
-read-only.
+read-only, and serves those of the privacy notice and the terms; the
+imprint says who runs the instance now, so its earlier versions are not
+served.
 
 - **Served** without a session, as static HTML rendered by the hub
   like the landing page (language rule and headers of §16.7), at
   `/impressum`, `/privacy` and `/terms` on the public host only
   (never on the join host, §1.1, nor `GET /legal`); a page not set
-  answers `404`. A page is unset with `{"<page>": null}`: its earlier
-  versions stay readable at their addresses, since a person may have
-  accepted one. Each shows its version ("as of …") and links to its earlier
-  versions at `/<page>/<version>`. The landing page's footer and the
+  answers `404`. A page is unset with `{"<page>": null}`: the earlier
+  versions of the privacy notice and the terms stay readable at their
+  addresses, since a person may have accepted one. Each page shows its
+  version ("as of …"). The privacy notice and the terms link to their
+  earlier versions at `/<page>/<version>`; the imprint lists none, and
+  `/impressum/<version>` answers `404` for every version, the current
+  one included. `GET /admin/settings/legal` still names the imprint's
+  kept versions in `versions`. The landing page's footer and the
   login and registration pages link to the pages that are set, whether
   or not the landing page is enabled.
 - **Terms at registration.** While `terms` is set here and

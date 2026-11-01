@@ -369,6 +369,27 @@ def test_earlier_versions_stay_readable_also_after_the_page_is_unset(
     assert visitor.get("/terms/2020-01-01T00:00:00Z").status_code == 404
 
 
+def test_the_imprint_neither_lists_nor_serves_its_earlier_versions(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    start = clock.now().replace(microsecond=0)
+    clock.set_source(lambda: start)
+    old = owner.patch(LEGAL, {"imprint": IMPRINT}).json()["pages"]["imprint"]["version"]
+    later = start + timedelta(minutes=1)
+    clock.set_source(lambda: later)
+    saved = owner.patch(LEGAL, {"imprint": {"en": {"title": "Now", "markdown": "two"}}}).json()
+    new = saved["pages"]["imprint"]["version"]
+    assert saved["pages"]["imprint"]["versions"] == [old]  # kept, the admin still sees that
+    visitor = make_client()
+    current = visitor.get("/impressum").text
+    assert "<h1>Now</h1>" in current and "Earlier versions" not in current and old not in current
+    for version in (old, new):
+        answer = visitor.get(f"/impressum/{version}")
+        assert answer.status_code == 404 and answer.json()["error"]["code"] == "not_found"
+    owner.patch(LEGAL, {"imprint": None})
+    assert visitor.get(f"/impressum/{new}").status_code == 404  # unset changes nothing here
+
+
 def test_the_footer_links_the_legal_pages_that_are_set(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:

@@ -2,8 +2,10 @@
 use, written by the instance admin and kept in the database, every version of them.
 
 A `PATCH` replaces one page's languages as a whole and gives the page a new version, the hub's
-time of the change; the earlier versions stay readable at their addresses, since a person may
-have accepted one. A page is unset with `null`: it is not served, its versions stay.
+time of the change. The earlier versions of the privacy notice and the terms stay readable at
+their addresses, since a person may have accepted one; the imprint only says who runs the
+instance now, so its earlier versions are kept but not served. A page is unset with `null`: it
+is not served, its versions stay.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from maity_hub.views import ts
 ROW = "legal"  # the one row of `instance_legal`
 PAGES = ("imprint", "privacy", "terms")
 ADDRESS = {"imprint": "impressum", "privacy": "privacy", "terms": "terms"}  # §16.11
+EARLIER_SERVED = ("privacy", "terms")  # §16.7.1
 MAX_TITLE = 120
 MAX_MARKDOWN = 64 * 1024  # bytes of UTF-8 (§16.7.1)
 MAX_LANGUAGES = len(LANGUAGES)
