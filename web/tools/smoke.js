@@ -1040,6 +1040,43 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const isoHuman = await win.Maity.api.post("/projects/maintainer/maity/members/hum-maintainer/isolate", { reason: "x" }).catch((e) => e);
     expect(isoHuman.status === 400 && isoHuman.details.fields.member === "not_an_agent", "isolate: the fixture hub refuses a human, as the hub does");
   }
+  // A dormant instance (§6.17, tsk-p6edzbw9gwjp): put to rest from the agent's row, said with the address that reaches it, woken again.
+  {
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
+    const drPatches = [];
+    const drPatch = win.Maity.api.patch;
+    win.Maity.api.patch = (p, b) => { if ("dormant" in (b || {})) drPatches.push([p, b]); return drPatch(p, b); };
+    await agOpen("agt-b");
+    const drPart = () => main.querySelectorAll("tr.member-manage").find((r) => r.id === "member-manage-agt-b").querySelector(".member-dormant-part");
+    expect(drPart() && btn(drPart(), "Put @agent-b#wle2 to rest") && !text(agRow("agt-b")).includes("dormant"),
+      "dormant: the agent's row offers to put each instance to rest, by its address");
+    btn(drPart(), "Put @agent-b#wle2 to rest").click(); for (let k = 0; k < 8; k++) await tick();
+    expect(JSON.stringify(drPatches[0]) === JSON.stringify(["/projects/maintainer/maity/members/agt-b", { dormant: true, instance: "wle2" }])
+      && text(main).includes("@agent-b#wle2 is dormant.")
+      && text(agRow("agt-b")).includes("dormant — ask @agent-b#wle2 directly")
+      && text(agRow("agt-b")).includes("Resting: every instance is dormant")
+      && btn(drPart(), "Wake @agent-b#wle2"),
+      "dormant: sent with its instance; the row says how to reach it and that only an instance address reaches the team " + JSON.stringify(drPatches));
+    btn(drPart(), "Wake @agent-b#wle2").click(); for (let k = 0; k < 8; k++) await tick();
+    expect(JSON.stringify(drPatches[1][1]) === JSON.stringify({ dormant: false, instance: "wle2" }) && !text(agRow("agt-b")).includes("dormant")
+      && btn(drPart(), "Put @agent-b#wle2 to rest"), "dormant: woken again, the notes gone");
+    win.Maity.api.patch = drPatch;
+    // The fixture hub as the hub: an instance named, a human only, never the team's lead.
+    const drPath = "/projects/maintainer/maity/members/agt-b";
+    // Seen by everyone where the instance is shown: the member's Sessions tab and the organisation (§6.17).
+    await win.Maity.api.patch(drPath, { dormant: true, instance: "wle2" });
+    await go("#/maintainer/maity/members/agt-b/sessions"); for (let k = 0; k < 6; k++) await tick();
+    const drSaid = "dormant — ask @agent-b#wle2 directly";
+    expect(main.querySelector(".member-instances .member-dormant") && text(main.querySelector(".member-instances")).includes(drSaid),
+      "dormant: the member's instances say it, with its address");
+    await go("#/maintainer/maity/organisation"); for (let k = 0; k < 6; k++) await tick();
+    expect(main.querySelector(".org-tree .member-dormant") && text(main.querySelector(".org-tree")).includes(drSaid), "dormant: the organisation says it too");
+    await win.Maity.api.patch(drPath, { dormant: false, instance: "wle2" });
+    const noInst = await win.Maity.api.patch(drPath, { dormant: true }).catch((e) => e);
+    expect(noInst.status === 400 && noInst.details.fields.instance === "required", "dormant: without an instance it is invalid, as the hub answers");
+    const ghost = await win.Maity.api.patch(drPath, { dormant: true, instance: "zzzz" }).catch((e) => e);
+    expect(ghost.status === 400 && ghost.details.fields.instance === "not_an_instance", "dormant: an unknown instance is invalid");
+  }
   // The team's rulebook (§6.18, tsk-xzbk67raztm0): in the agent's row, for its owner; the active count beside the limit.
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/members"); for (let k = 0; k < 4; k++) await tick();
   const tmRow = await agOpen("agt-c");

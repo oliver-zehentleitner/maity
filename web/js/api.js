@@ -3401,6 +3401,30 @@ window.Maity = window.Maity || {};
         target.owner_preferences = body.owner_preferences;
         return target;
       }
+      // §6.17: an instance put to rest or woken, by a human only: the profile's
+      // owner, member or not, or members:admin, whose change to another
+      // owner's agent waits for that owner's consent (§6.2).
+      if ("dormant" in body) {
+        const target = member(m[1], m[2], path);
+        if (who.member.kind !== "human") fail(403, "forbidden", "a human puts an instance to rest", path, { reason: "humans_only" });
+        const own = target.kind === "agent" && target.owner_id === who.member.id;
+        if (!own && !who.admin) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
+        const errors = {};
+        if (Object.keys(body).some((k) => k !== "dormant" && k !== "instance")) errors.dormant = "alone";
+        if (typeof body.dormant !== "boolean") errors.dormant = "not_a_boolean";
+        if (!body.instance) errors.instance = "required";
+        const inst = (target.instances || []).find((i) => i.id === body.instance && !i.revoked_at);
+        if (body.instance && !inst) errors.instance = "not_an_instance";
+        if (inst && body.dormant && (target.team || {}).lead_instance === inst.id) errors.dormant = "lead";
+        if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+        if (!own) return consentFor(who.member, (body.dormant ? "Put to rest " : "Wake ") + target.handle + "#" + inst.id);
+        inst.dormant = body.dormant ? { since: nowIso(), by: who.member.id } : null;
+        // Every active instance at rest: the team is limited (§6.12, source dormant, no until).
+        const active = target.instances.filter((i) => !i.revoked_at);
+        if (active.every((i) => i.dormant)) target.availability = { state: "limited", since: nowIso(), source: "dormant" };
+        else if (target.availability && target.availability.source === "dormant") target.availability = { state: "available", since: nowIso() };
+        return target;
+      }
       // §6.18: the team's rulebook, by the human who owns the agent profile only.
       if ("team" in body) {
         const target = member(m[1], m[2], path);

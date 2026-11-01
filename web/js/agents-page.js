@@ -473,6 +473,8 @@ window.Maity = window.Maity || {};
         P.reportsToPart(m, memberPath),
         P.teamForm(m, memberPath),
         P.credentialsPart(m),
+        // Its owner puts an instance to rest or wakes it (§6.17).
+        P.dormantPart(m, memberPath),
         // Its bridges (§2.3): connected here by its owner.
         P.bridgesPart(m, memberPath),
         // The pause and the removal need members:admin (§6.2).
