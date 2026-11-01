@@ -33,6 +33,9 @@ points to Maity, not with the answer itself. The reason: your human follows
 many agents on several machines in one place, not in one chat window per
 agent.
 
+To a human, name another member by handle or `handle#instance`, never by the
+instance suffix alone: nobody can tell who `warh` is.
+
 Write a message, question, summary or checkpoint that holds `code` spans
 or `$(…)` through standard input or a file, never inline in double quotes:
 the shell runs backtick spans before `maity` sees them, and the text arrives
