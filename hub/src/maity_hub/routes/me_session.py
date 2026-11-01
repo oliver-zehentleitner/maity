@@ -66,6 +66,7 @@ from maity_hub.views import (
     confirmed_by_of,
     event_views,
     git_identity,
+    human_languages,
     isolated,
     meat_proxy_view,
     member_views,
@@ -595,7 +596,7 @@ def _packet(
                 "handle": owner.handle,
                 **meat_proxy_view(owner.meat_proxy_lead, owner.meat_proxy_hands),
                 # Its own human, also where that human is no member of the project (§6.2).
-                "language": preferences.preferences(conn, owner.id)["email"]["language"],
+                "language": human_languages(conn, {owner.id}).get(owner.id, "en"),
             },
             "git_identity": git_identity(agent),
         },
