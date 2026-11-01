@@ -366,7 +366,10 @@ A deadlock inside a savepoint reaches `retrying` in disguise: InnoDB rolls the w
 back, the savepoint goes with it, and rolling back to it fails with `1305` (SQLSTATE `42000`), which
 replaces the deadlock. `retrying` takes a `1305` only when a transient error stands behind it in the
 exception's context, and the log line of a database failure gives both numbers (`number=1305
-behind=1213`). A lock wait timeout (`1205`) is not run again.
+behind=1213`). A lock wait timeout (`1205`) is not run again. Each repeat logs `database retry:
+attempt=<n> of=4 code=<c> number=<n> behind=<n>` (the number where the driver gives one, else the
+code), so a load test can count them, as nothing else
+shows a conflict that a repeat resolved.
 
 **Reason:** the mechanism and the chain were checked on MariaDB 10.11. That the loser of the agent
 cap's race answered 503 for this reason is inferred from the `42000` that run logged, the only
