@@ -1557,7 +1557,7 @@ the status, and from a JSON body only an entity id with a known prefix, `credent
 Other keys, names, free text and non-JSON bodies are not copied (`tools/test_e2e_harness.py` checks it
 with synthetic secrets, including unknown routes, re-cased and percent-encoded segments).
 
-CI runs it in the `web-e2e` job of `.github/workflows/ci.yml`. It installs
+On one machine one run goes at a time: `start_hub` takes a lock (`/tmp/maity-e2e.lock`) and waits for it, saying so each minute, and a script of its own that calls `start_hub` waits too. CI runs it in the `web-e2e` job of `.github/workflows/ci.yml`. It installs
 the headless shell only (`playwright install --only-shell chromium`) and
 checks it with `ldd`; only when a library is missing does it install a
 fixed minimal list from apt (`libnss3`, `libnspr4`, `libasound2t64`), and a

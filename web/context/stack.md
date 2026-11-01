@@ -245,3 +245,17 @@ a way to set the hub's time in a running hub, for a test, which the hub
 does not offer and should not need. Changing the page to keep its first
 offset: the offset follows the hub on purpose, across a long session.
 
+## The e2e waits for a kernel lock in `start_hub`
+
+**Id:** 7d70baa3-950a-4895-bd61-65df6ee0f288
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the jour fixe of 2026-11-01; tsk-n2e2w72fd1vx
+
+Runs on a shared machine overlapped, and agents gated them by hand with `pgrep`. `start_hub` now holds an `flock` on `/tmp/maity-e2e.lock` until the process ends, and waits for it without a limit, so a script that only borrows the hub queues too. The kernel drops the lock with the process, so a killed run blocks nobody.
+
+**Rejected alternatives:** a PID file, which a crash leaves behind and which then needs checking; failing when the lock is taken, which hands the waiting back to whoever started the run; taking it in `main()`, which ad-hoc scripts never call.
+
+**Known limit:** a script that starts a browser without `start_hub` does not wait.
+

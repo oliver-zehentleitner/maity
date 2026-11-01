@@ -38,6 +38,7 @@ import base64
 import collections
 import email
 import email.policy
+import fcntl
 import hashlib
 import hmac
 import io
@@ -295,11 +296,46 @@ def port_taken(port: int) -> bool:
         return False
 
 
+# One browser run at a time on a machine: agents share it, and two runs together ran it out of
+# memory. A kernel lock goes with its process, however that ends; no stale file blocks anyone.
+LOCK_PATH = Path("/tmp/maity-e2e.lock")
+_machine_lock = None
+
+
+def take_machine_lock(path: Path = LOCK_PATH, say=print, every: float = 60, pause: float = 1) -> None:
+    """Hold the machine's e2e lock until this process ends, waiting for it as long as it takes.
+    In start_hub, not main, so that a script of a few lines borrowing the hub waits too."""
+    global _machine_lock
+    if _machine_lock is not None:  # a run starts several hubs
+        return
+    # 0o666, whichever user came first: the file holds no secret.
+    descriptor = os.open(path, os.O_RDWR | os.O_CREAT, 0o666)
+    try:
+        os.fchmod(descriptor, 0o666)  # the mode above passes through the umask
+    except PermissionError:
+        pass  # another user's file, already open to all
+    told = 0.0
+    while True:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except BlockingIOError:
+            if time.monotonic() - told >= every:
+                told = time.monotonic()
+                holder = os.pread(descriptor, 32, 0).decode(errors="replace").strip() or "?"
+                say(f"another e2e holds {path} (pid {holder}); waiting", flush=True)
+            time.sleep(pause)
+    os.ftruncate(descriptor, 0)
+    os.pwrite(descriptor, str(os.getpid()).encode(), 0)
+    _machine_lock = descriptor
+
+
 def start_hub(
     work: Path, logs: Path, port: int, extra: dict[str, str] | None = None, log_name: str = "hub.log"
 ) -> subprocess.Popen:
     """Migrate, create the owner and serve, with `extra` in the environment; every output goes
     to logs/<log_name>."""
+    take_machine_lock()
     base = f"http://127.0.0.1:{port}"
     # A local store for attachments (§8.7), so the attachments step uploads for real:
     # messages name their attachments since E's #474, and the sent image is read back

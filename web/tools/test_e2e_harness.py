@@ -7,11 +7,16 @@ on stand-in answers. Python standard library only: python3 web/tools/test_e2e_ha
 
 import ast
 import contextlib
+import fcntl
 import io
 import json
+import os
 import re
+import subprocess
 import sys
 import tempfile
+import threading
+import time
 from pathlib import Path
 
 SOURCE = Path(__file__).with_name("e2e.py")
@@ -20,6 +25,7 @@ WANTED = {
     "TRACE_BODY", "TRACE_ROUTE", "TRACE_ENUMS", "TRACE_CODES", "TRACE_ID",
     "trace_path", "trace_data", "trace_line", "report_failure",
     "clean_environment",
+    "LOCK_PATH", "_machine_lock", "take_machine_lock",
 }
 
 
@@ -34,7 +40,7 @@ def load() -> dict:
     found = {n.name if isinstance(n, ast.FunctionDef) else n.targets[0].id for n in nodes}
     if found != WANTED:
         sys.exit(f"e2e.py lacks {sorted(WANTED - found)}")
-    namespace = {"re": re, "json": json, "sys": sys, "Path": Path, "Run": object}
+    namespace = {"re": re, "json": json, "sys": sys, "Path": Path, "Run": object, "os": os, "fcntl": fcntl, "time": time}
     exec(compile(ast.Module(body=nodes, type_ignores=[]), str(SOURCE), "exec"), namespace)
     return namespace
 
@@ -160,6 +166,46 @@ def environment_cases(ns: dict) -> int:
     return failed
 
 
+HOLD = """
+import fcntl, os, sys
+d = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o666)
+fcntl.flock(d, fcntl.LOCK_EX)
+os.pwrite(d, str(os.getpid()).encode(), 0)
+print("held", flush=True)
+sys.stdin.readline()
+"""
+
+
+def lock_cases(ns: dict) -> int:
+    """It waits for a holder, names it, goes on once it ends, and takes the lock only once."""
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "lock"
+        holder = subprocess.Popen(
+            [sys.executable, "-c", HOLD, str(path)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, env={},
+        )
+        holder.stdout.readline()
+        said = []
+        say = lambda line, flush=False: said.append(line)
+        # The holder ends with a kill, as a crashed run does: the lock must not outlive it.
+        threading.Timer(0.3, holder.kill).start()
+        ns["take_machine_lock"](path, say, every=0, pause=0.02)
+        holder.wait()
+        first = ns["_machine_lock"]
+        cases = [
+            ("the lock: waits for a holder and names it", any(f"pid {holder.pid}" in x for x in said)),
+            ("the lock: goes on once the holder is gone, however it ended", first is not None),
+            ("the lock: says who holds it now", path.read_text() == str(os.getpid())),
+        ]
+        ns["take_machine_lock"](path, say, every=0, pause=0.02)
+        cases.append(("the lock: a second hub of the same run takes it no further", ns["_machine_lock"] == first))
+        os.close(first)
+        ns["_machine_lock"] = None
+    for name, ok in cases:
+        print(("ok   " if ok else "FAIL ") + name)
+    return sum(not ok for _, ok in cases)
+
+
 def main() -> int:
     ns = load()
     cases = [
@@ -176,6 +222,7 @@ def main() -> int:
         print(("ok   " if ok else "FAIL ") + name + ("" if ok else f": {got}"))
     failed += trace_cases(ns)
     failed += environment_cases(ns)
+    failed += lock_cases(ns)
     print("all ok" if not failed else f"{failed} failure(s)")
     return 1 if failed else 0
 
