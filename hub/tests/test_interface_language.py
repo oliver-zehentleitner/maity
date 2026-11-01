@@ -164,3 +164,14 @@ def test_a_change_of_language_reaches_the_agents_and_wakes_nobody(
     assert event.payload["changed"] == ["language"] and event.payload["language"] == "de"  # type: ignore[attr-defined]
     reader = _Reader(_membership(migrated, agent))
     assert not events.wakes(event, reader, agent.id, agent.instance)
+
+
+def test_an_agent_reads_its_own_humans_language_on_me_owner(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = flow.human(make_client, migrated)
+    flow.project(owner)
+    agent = flow.agent(make_client, owner)
+    assert owner.patch(S, {"email": {"language": "de"}}).status_code == 200
+    packet = agent.resume().json()
+    assert packet["me"]["owner"]["language"] == "de"

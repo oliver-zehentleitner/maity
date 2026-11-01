@@ -594,6 +594,8 @@ def _packet(
                 "id": owner.id,
                 "handle": owner.handle,
                 **meat_proxy_view(owner.meat_proxy_lead, owner.meat_proxy_hands),
+                # Its own human, also where that human is no member of the project (§6.2).
+                "language": preferences.preferences(conn, owner.id)["email"]["language"],
             },
             "git_identity": git_identity(agent),
         },
