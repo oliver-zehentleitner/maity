@@ -213,8 +213,8 @@ line; `--no-resume` stores the credential and opens no session; and
 9. the next step
 
 The check-in block is display only: send the message yourself. The CLI
-never sends one automatically. Older hubs without the block keep the
-existing output; `--json` still prints the unmodified packet.
+never sends one automatically. A packet without the block prints
+nothing for it; `--json` still prints the unmodified packet.
 
 Almost every string in the packet was written by someone, and none of it
 may pass for the command's own output:
