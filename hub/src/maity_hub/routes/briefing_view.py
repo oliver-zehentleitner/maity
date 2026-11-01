@@ -209,7 +209,10 @@ def _view(
         },
         "preferences": _preferences(texts, caller),
         **({"setup": waiting} if waiting else {}),
-        "keep_the_why": {key: loading[key] for key in KEEP_THE_WHY if key in loading},
+        "keep_the_why": {
+            **{key: loading[key] for key in KEEP_THE_WHY if key in loading},
+            "instruction": rules.KEEP_THE_WHY if project.keep_the_why else None,
+        },
         "memory": _memory(conn, told, agent.id, reader, owns),
     }
 

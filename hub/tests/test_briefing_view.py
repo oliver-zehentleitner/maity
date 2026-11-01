@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, func, select, update
 
+from maity_hub import rules
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -151,3 +152,14 @@ def test_a_store_the_caller_does_not_read_is_only_its_count(
     view = _read(anna, agent_id).json()["memory"]
     assert set(view["team"]) >= {"items", "total"}  # its owner reads its team
     assert set(view["role"]) == {"role", "total"}  # another role's, and no admin
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_the_keep_the_why_instruction_is_the_one_the_agent_gets(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, enabled: bool
+) -> None:
+    agent = flow.agent(make_client, owner)
+    with migrated.begin() as conn:
+        conn.execute(update(t.project).values(keep_the_why=enabled))
+    block = _read(owner, agent.id).json()["keep_the_why"]
+    assert block["instruction"] == (rules.KEEP_THE_WHY if enabled else None)
