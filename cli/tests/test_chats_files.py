@@ -9,6 +9,7 @@ import io
 import json
 import os
 import stat
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -603,7 +604,8 @@ def test_files_get_without_hard_links_still_never_overwrites(
     target = tmp_path / "out.txt"
     assert cli.main(["files", "get", "att-0042", "-o", str(target)]) == cli.EXIT_OK
     assert target.read_bytes() == b"hello"
-    assert stat.S_IMODE(target.stat().st_mode) == 0o644
+    if sys.platform != "win32":  # no such bits there
+        assert stat.S_IMODE(target.stat().st_mode) == 0o644
     assert cli.main(["files", "get", "att-0042", "-o", str(target)]) == cli.EXIT_ERROR
     assert not [p for p in tmp_path.iterdir() if p.name.endswith(".part")]
 

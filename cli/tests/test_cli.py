@@ -857,7 +857,7 @@ def test_join_outside_a_clone_derives_the_identity_directory(
     directory = no_clone / ".local" / "state" / "maity" / host / "agent-b"
     assert state.credential_path(directory).read_bytes() == fakehub.CREDENTIAL.encode()
     assert_private(directory)
-    assert f"export MAITY_STATE_DIR={directory}" in out
+    assert cli._state_dir_line(directory) in out
     assert fakehub.SECRET not in out and fakehub.CODE not in out
     assert fake.signed()[0].path == "/api/v1/me/resume"  # the first resume found it
 
@@ -940,8 +940,8 @@ def test_another_instance_outside_a_clone_gets_a_directory_of_its_own(
     assert state.has_credential(first) and state.has_credential(second)
     assert_private(second)
     out = output(capsys)
-    assert f"export MAITY_STATE_DIR='{second}'" in out
-    assert "resume" not in out.split("export MAITY_STATE_DIR")[0]  # never the first's resume
+    assert cli._state_dir_line(second) in out
+    assert "resume" not in out.split(cli._state_dir_line(second))[0]  # never the first's resume
 
 
 def test_another_instance_without_a_valid_instance_id_keeps_its_credential(
@@ -1049,7 +1049,7 @@ def test_a_credential_refused_after_the_exchange_is_kept_elsewhere(
     (rescued,) = (no_clone / ".local" / "state" / "maity").glob("rescued-*")
     assert state.credential_path(rescued).read_bytes() == fakehub.CREDENTIAL.encode()
     assert_private(rescued)
-    assert f"export MAITY_STATE_DIR={rescued}" in err and fakehub.SECRET not in err
+    assert cli._state_dir_line(rescued) in err and fakehub.SECRET not in err
     assert state.load_state(rescued)["member_id"] == "agt-b"
 
 
@@ -1098,6 +1098,7 @@ def test_join_never_tightens_a_directory_with_something_in_it(
     assert not fake.join_used
 
 
+@posix  # Windows can create the place that stands for a state home that refuses
 def test_a_rescue_falls_back_to_a_temp_directory_when_the_home_refuses(
     no_clone: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

@@ -472,7 +472,7 @@ def cmd_join(args: argparse.Namespace) -> int:
         os.environ[state.STATE_DIR_ENV] = str(directory)  # the first resume below uses it
         print(
             f"This agent's identity lives in {directory}. Every later maity "
-            f"command needs it: export {state.STATE_DIR_ENV}={shlex.quote(str(directory))}",
+            f"command needs it: {_state_dir_line(directory)}",
             file=sys.stderr,
         )
     if args.pointer:
@@ -1484,6 +1484,14 @@ def cmd_files_get(args: argparse.Namespace) -> int:
             os.unlink(part)
     print(f"saved {onboarding.inline(target)} ({described})")
     return EXIT_OK
+
+
+def _state_dir_line(directory: Path) -> str:
+    """The line that names a state directory, in the shell of this system."""
+    if sys.platform == "win32":
+        quoted = str(directory).replace("'", "''")
+        return f"$env:{state.STATE_DIR_ENV} = '{quoted}'"
+    return f"export {state.STATE_DIR_ENV}={shlex.quote(str(directory))}"
 
 
 FILES_DIR = "maity-files"

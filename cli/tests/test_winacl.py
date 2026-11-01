@@ -109,6 +109,15 @@ def test_maity_imports_without_the_posix_modules(tmp_path: Path) -> None:
     assert done.stdout.strip() == "imported", done.stderr
 
 
+def test_the_state_dir_line_fits_the_shell(monkeypatch: pytest.MonkeyPatch) -> None:
+    from maity import cli
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert cli._state_dir_line(Path("a b")) == "export MAITY_STATE_DIR='a b'"
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert cli._state_dir_line(Path("o'b")) == "$env:MAITY_STATE_DIR = 'o''b'"
+
+
 def test_the_runner_refuses_on_windows(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
