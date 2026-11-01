@@ -1259,7 +1259,8 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* The admin area's sections, one at a time (the designer's pass part 3). */
 .admin-nav { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
 .admin-nav button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
-.admin-section[hidden] { display: none; }
+.admin-section[hidden], .admin-subsection[hidden] { display: none; }
+.admin-pages-file { margin-bottom: 12px; }
 /* At most 16rem, so a long section never pushes the card's action row off
    screen (the designer's pass part 3). A shadow at the bottom says there
    is more, only while there is: a cover scrolling with the content

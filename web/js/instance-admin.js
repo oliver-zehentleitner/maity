@@ -152,6 +152,41 @@ window.Maity = window.Maity || {};
       else status.fail(M.t("info.read_failed"), err);
     }
   }
+  // Pages: a tab with sub-tabs, one at a time, as the sections above it are. `open`: what the
+  // address names (/admin/pages/landing, /legal, /site); the whole site's file is folded by default.
+  async function pagesSection(ctx, root, open) {
+    const parts = [
+      ["landing", "landing-page", M.t("admin.pages.landing"), (s) => M.landing.section(ctx, s)],
+      ["legal", "legal-pages", M.t("admin.pages.legal"), (s) => M.legal.section(ctx, s)],
+    ];
+    const whole = h("section", { "aria-label": M.t("admin.section.site"), id: "admin-whole-site" });
+    const fold = h("details", { class: "admin-pages-file" }, h("summary", null, M.t("admin.section.site")), whole);
+    fold.open = open === "site";
+    const nav = h("nav", { class: "admin-nav admin-subnav", "aria-label": M.t("admin.pages.sections") });
+    append(root, h("h2", null, M.t("admin.section.pages")), fold, nav);
+    const failed = (label, into) => (err) => {
+      const status = M.statusLine();
+      status.fail(M.t("admin.section_failed", { section: label }), err);
+      append(into, status.el);
+    };
+    await M.siteIo.section(ctx, whole).catch(failed(M.t("admin.section.site"), whole));
+    const shown = [];
+    for (const [name, key, label, load] of parts) {
+      const part = h("section", { class: "admin-subsection", "aria-label": label, id: "admin-" + key });
+      append(root, part);
+      shown.push([name, part]);
+      await load(part).catch(failed(label, part));
+    }
+    const buttons = parts.map(([, key, label], i) => h("button", { type: "button", "aria-controls": "admin-" + key, "aria-pressed": "false", onclick: () => pick(i) }, label));
+    function pick(chosen) {
+      shown.forEach(([, part], i) => {
+        part.hidden = i !== chosen;
+        buttons[i].setAttribute("aria-pressed", String(i === chosen));
+      });
+    }
+    append(nav, buttons);
+    pick(Math.max(0, shown.findIndex(([name]) => name === open)));
+  }
   M.views.instanceAdmin = async (ctx, root, where) => {
     const into = (where && where.section) || null;
     append(root, h("h2", null, M.t("admin.title")));
@@ -166,11 +201,8 @@ window.Maity = window.Maity || {};
       [MAIL, "mail-settings", M.t("admin.section.mail"), (s) => mailSection(ctx, s)],
       ["/admin/settings/registration", "registration", M.t("admin.section.registration"), (s) => M.adminRegistration.section(ctx, s)],
       ["/admin/settings/sign-in", "sign-in", M.t("admin.section.sign_in"), (s) => M.adminSignIn.section(ctx, s)],
-      ["/admin/settings/landing", "landing-page", M.t("admin.section.landing"), (s) => M.landing.section(ctx, s)],
-      ["/admin/settings/legal", "legal-pages", M.t("admin.section.legal"), (s) => M.legal.section(ctx, s)],
-      // The three above as one JSON (tsk-xw8a2hd84x3a): exported and imported in one go.
-      // Keyed /admin/site, a word of its own for an address (it reads all three).
-      ["/admin/site", "whole-site", M.t("admin.section.site"), (s) => M.siteIo.section(ctx, s)],
+      // Landing and legal pages under one tab, the whole site's file above them (tsk-fct4awzw3k30).
+      ["/admin/pages", "pages", M.t("admin.section.pages"), (s) => pagesSection(ctx, s, into === "pages" ? where.args[0] || null : null)],
       ["/health", "instance-information", M.t("admin.section.info"), infoSection],
     ];
     // One section at a time, picked in a row of buttons at the top (the

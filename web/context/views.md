@@ -3726,6 +3726,10 @@ legal training. The English and German are not changed by them.
 **Revisit when:** the hub offers one call that saves several settings in a transaction, or a fourth setting joins the site file
 **See:** views.md#the-legal-pages-and-registration-import-and-export-json-too-text-not-loaded-stops-a-preview — 951ed7bf-6f23-4279-a4c6-f2c03c7c31ea — as of 2026-10-31
 
+Since tsk-fct4awzw3k30 it stands folded at the top of the admin's **Pages**
+tab, over the sub-tabs, as it spans them; `/admin/site` is gone without a
+redirect (alpha), and `/admin/pages/site` opens it.
+
 The instance admin has **Import or export everything** for the landing
 page, the legal pages and registration as one file, `maity-site/1`,
 extended language by language and imported again. Each part has the shape

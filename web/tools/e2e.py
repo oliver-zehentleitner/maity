@@ -2025,7 +2025,7 @@ def verify_address(run: Run, page, catcher: MailCatcher) -> None:
 def turn_on_mail_factor(run: Run, page, catcher: MailCatcher) -> None:
     """Admin → Sign-in: the admin's own switch, on only with the mailed code (§2.8.8)."""
     page.goto(run.base + "/admin")
-    page.get_by_role("button", name="Sign-in", exact=True).click()
+    page.get_by_role("button", name="Sign-in methods", exact=True).click()
     section = page.locator("#admin-sign-in")
     choice = section.locator("#admin-sign-in-second_factor")
     expect(choice.locator("option[value=email]")).to_have_count(1)
@@ -3203,8 +3203,7 @@ def landing_json_step(run: Run, page: Page) -> None:
     if not me.get("instance_admin"):
         return
     run.step("landing page: the admin imports a page as JSON, the hub checks it, then it is saved")
-    page.goto(f"{run.base}/admin")
-    page.locator("nav.admin-nav").get_by_role("button", name="Landing page", exact=True).click()
+    page.goto(f"{run.base}/admin/pages/landing")
     io = page.locator("details.lp-json")
     io.locator("summary").click()
     # No footer, as the prepared landing V3 file: the editor's footer stays (§16.7, #808's review).
@@ -3218,7 +3217,7 @@ def landing_json_step(run: Run, page: Page) -> None:
     asked = []
     page.once("dialog", lambda d: (asked.append(d.message), d.accept()))
     io.get_by_role("button", name="Load into the editor", exact=True).click()
-    section = page.locator("section.admin-section[aria-label='Landing page']")
+    section = page.locator("#admin-landing-page")
     expect(section.locator(".send-status").first).to_contain_text("checked by the hub")
     assert asked and asked[0].startswith("Replace the whole draft"), asked
     expect(page.locator("#lp-pages-en-title")).to_have_value("E2E landing")
@@ -3261,9 +3260,8 @@ def site_json_step(run: Run, page: Page) -> None:
     template = json.loads((WEB / "tools" / "maity-site.json").read_text(encoding="utf-8"))
     # Off for this run: a landing page that is on would greet the signed-out steps after this one.
     template["landing"]["enabled"] = False
-    page.goto(f"{run.base}/admin")
-    page.locator("nav.admin-nav").get_by_role("button", name="Import or export everything", exact=True).click()
-    section = page.locator("section.admin-section[aria-label='Import or export everything']")
+    page.goto(f"{run.base}/admin/pages/site")
+    section = page.locator("#admin-whole-site")
     io = section.locator("details.json-io")
     io.locator("summary").click()
 
@@ -3346,9 +3344,10 @@ def landing_variants_step(run: Run, page: Page) -> None:
     settings = f"{run.base}/api/v1/admin/settings/landing"
     language = page.request.get(settings).json()["default_language"]
     page.goto(f"{run.base}/admin")
-    nav = page.locator("nav.admin-nav")
-    nav.get_by_role("button", name="Landing page", exact=True).click()
-    section = page.locator("section.admin-section[aria-label='Landing page']")
+    page.locator("nav.admin-nav").get_by_role("button", name="Pages", exact=True).click()
+    nav = page.locator("nav.admin-subnav")
+    nav.get_by_role("button", name="Landing pages", exact=True).click()
+    section = page.locator("#admin-landing-page")
     form = page.locator("form.lp-form")
 
     def save() -> dict:
@@ -3368,8 +3367,8 @@ def landing_variants_step(run: Run, page: Page) -> None:
     assert saved["campaigns"] == [{"code": "e2e-spring", "label": "E2E spring"}], saved["campaigns"]
 
     # The whole site's file carries both, and the hub's preview takes them: its own export changes nothing.
-    nav.get_by_role("button", name="Import or export everything", exact=True).click()
-    whole = page.locator("section.admin-section[aria-label='Import or export everything']")
+    page.locator("details.admin-pages-file > summary").click()
+    whole = page.locator("#admin-whole-site")
     io = whole.locator("details.json-io")
     io.locator("summary").click()
     page.locator("#site-json").fill("")
@@ -3391,7 +3390,6 @@ def landing_variants_step(run: Run, page: Page) -> None:
     assert download.value.suggested_filename == "campaigns.csv", download.value.suggested_filename
 
     # Off again: while either is set the hub rewrites links and keeps an origin (§16.7.2).
-    nav.get_by_role("button", name="Landing page", exact=True).click()
     section.locator(".lp-variant-tabs").get_by_role("button", name="/for/e2e-spring", exact=True).click()
     section.get_by_role("button", name="Remove /for/e2e-spring", exact=True).click()
     section.locator(".lp-campaign-list").get_by_role("button", name="Remove", exact=True).click()
@@ -3408,8 +3406,7 @@ def legal_json_step(run: Run, page: Page) -> None:
     if not me.get("instance_admin"):
         return
     run.step("legal pages: the admin imports the imprint as JSON, the hub checks it, then it is saved")
-    page.goto(f"{run.base}/admin")
-    page.locator("nav.admin-nav").get_by_role("button", name="Legal pages", exact=True).click()
+    page.goto(f"{run.base}/admin/pages/legal")
     imprint = page.locator("section.lg-page[aria-label='Imprint']")
     io = imprint.locator("details.json-io")
     io.locator("summary").click()
