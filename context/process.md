@@ -402,7 +402,16 @@ resume opens a new session with the new `model` and keeps the claims.
 When the model or harness differs from the instance's previous
 session, the hub tells the agent's lead (woken) and the admins and the
 agent's owner (not woken), so the lead can re-route a card the new
-model should not hold. Rule 14 of the agent skill says so.
+model should not hold. Rule 14 of the agent skill says so. A resume
+that omits `model` or `harness` keeps the previous session's value, so a
+switch across such a resume is still seen.
+
+The agent's own `maity resume` also prints one line when it changed the
+model it had stored, `Model changed: <old> -> <new>, your lead is told.`,
+and `maity wait` reads the event as `harness/model -> harness/model`.
+The line was first left out, since the contract asked for none; the
+coordinator's card for the CLI (tsk-5zev9p7dh680, 2026-11-01) asks for it,
+and the contract's §13 now says so. Why the card wants it is not stated.
 
 **Reason:** security, contract and migration cards go to the strongest
 model and well-cut cards to a faster one; a session that silently runs
@@ -415,9 +424,9 @@ nobody can see it.
   so a second way would only add a code path.
 - Leaving it to the agent to tell its lead in a message: the hub would
   still show the old model, and every lead would have to read it.
-- A line in the agent's own `maity resume` naming its switch: the agent
-  made the switch and passed `--model` itself, and the event reaches
-  whoever re-routes; the contract asks for no such line.
+- Taking over only the previous `model` and not the `harness` of a resume
+  that omits it: the session in between would hold no harness, and a
+  switch from one harness to another over it would never be announced.
 
 ## The site's sitemap and robots.txt are made at deploy from the pages, not kept in the repository
 
