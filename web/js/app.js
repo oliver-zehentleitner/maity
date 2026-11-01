@@ -689,6 +689,8 @@ window.Maity = window.Maity || {};
     if (names) append(panel, names);
     if (M.projectSetup) append(panel, memoryPanel(ctx, save, humanAdmin));
     // Humans only, as every policy field (§2.3 ʰ); the commitment above the badge (the maintainer, 2026-11-01).
+    // The public page: the namespace owner's alone, however high the trust (§16.9).
+    if (M.publicPage) append(panel, M.publicPage.projectPart(ctx, save));
     if (humanAdmin) append(panel, keepTheWhyForm(ctx, save), keepTheWhyDefaultsForm(ctx, save), badgeForm(ctx, save));
     // The jour fixe's series and their moderators (§20.1, §20.2), kept by humans.
     if (humanAdmin && M.jourFixeSeries) append(panel, M.jourFixeSeries.settingsPart(ctx));

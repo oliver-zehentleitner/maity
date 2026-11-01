@@ -282,6 +282,7 @@ window.Maity = window.Maity || {};
     // The agents' pictures, names and deletion are on the Agents page
     // (/agents, js/agents-page.js): one place for one's agents.
     const meatProxy = await meatProxySection(ctx);
+    const publicProfile = M.publicPage ? await M.publicPage.profileSection(ctx) : null;
     const notify = M.notifySettings ? await M.notifySettings(ctx) : null;
     const security = M.security ? await M.security.section() : null;
     const sessions = M.sessions ? await M.sessions.section(ctx) : null;
@@ -312,6 +313,7 @@ window.Maity = window.Maity || {};
       pictureEditor(ctx.me, "/me/avatar", true, changed),
       h("p", { class: "muted" }, M.tn("account.agents_hint", { link: h("a", { href: "/agents" }, M.t("account.agents_link")) })),
       meatProxy,
+      publicProfile ? publicProfile.el : null,
       themeBox ? [themeHeading, h("p", { class: "muted" }, M.t("account.theme_hint")), themeBox] : null,
       preferences ? preferences.el : null,
       notify ? notify.el : null,
