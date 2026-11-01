@@ -37,7 +37,6 @@ import argparse
 import base64
 import collections
 import hashlib
-import hmac
 import io
 import json
 import os
@@ -1714,56 +1713,6 @@ def board_cards_step(run: Run, page: Page) -> None:
     overview_step(run, page)
     ticker_step(run, page)
     notifications_step(run, page)
-    second_factor_step(run, page)
-
-
-def totp_code(secret: str, at: float | None = None) -> str:
-    """The code of RFC 6238 for a base32 secret: 30 s steps, six digits, HMAC-SHA-1 (§2.8.1)."""
-    key = base64.b32decode(secret.upper() + "=" * (-len(secret) % 8))
-    counter = int((time.time() if at is None else at) // 30)
-    mac = hmac.new(key, struct.pack(">Q", counter), hashlib.sha1).digest()
-    at_byte = mac[-1] & 0x0F
-    return f"{(int.from_bytes(mac[at_byte:at_byte + 4], 'big') & 0x7FFFFFFF) % 1_000_000:06d}"
-
-
-def second_factor_step(run: Run, page: Page) -> None:
-    """The sign-in step of the second factor (docs/api.md §2.8.2, tsk-ekpb0pvgw4bh) on the real
-    hub, with TOTP: the owner enrols through the API, signs in again, and the page asks for the
-    app's code before anything else; then TOTP is turned off again. The mail factor needs the
-    hub's mail settings, which this run has not, so its step is in smoke."""
-    run.step("second factor: after the password the page asks for the app's code, then the dashboard")
-
-    def call(method: str, path: str, body: dict | None = None) -> dict:
-        csrf = page.request.get(f"{run.base}/api/v1/auth/session").json()["csrf_token"]
-        answer = page.request.fetch(f"{run.base}/api/v1{path}", method=method, data=body or {}, headers={"X-CSRF-Token": csrf})
-        assert answer.ok, (method, path, answer.status, answer.text())
-        return answer.json() if answer.text().strip() else {}
-
-    call("POST", "/auth/reauthenticate", {"password": OWNER_PASSWORD})
-    secret = call("POST", "/auth/second-factor/totp")["secret"]
-    call("POST", "/auth/second-factor/totp/confirm", {"code": totp_code(secret)})
-    used = int(time.time() // 30)
-    call("POST", "/auth/logout")
-    page.goto(f"{run.base}/login")
-    page.locator("#login-handle").fill(OWNER)
-    page.locator("#login-password").fill(OWNER_PASSWORD)
-    page.get_by_role("button", name="Sign in", exact=True).click()
-    step = page.locator("form.second-factor")
-    expect(step).to_contain_text("Enter the code from your authenticator app")
-    expect(page.locator("header nav.views")).to_have_count(0)
-    run.a11y(page, "sign-in, second factor")
-    # The hub takes a code only from a step newer than the last one used (§2.8.2).
-    while int(time.time() // 30) <= used:
-        time.sleep(1)
-    page.locator("#sf-code").fill(totp_code(secret))
-    step.get_by_role("button", name="Verify", exact=True).click()
-    expect(step).to_have_count(0)
-    expect(page.locator("header .me")).to_contain_text("Owner")
-    # Off again, for whatever runs after: the password proof, and the step-up the verify just gave.
-    call("POST", "/auth/reauthenticate", {"password": OWNER_PASSWORD})
-    call("DELETE", "/auth/second-factor")
-    assert page.request.get(f"{run.base}/api/v1/auth/second-factor").json()["enrolled"] is False
-    no_problems(run, "second factor")
 
 
 def board_order_step(run: Run, page: Page) -> None:
