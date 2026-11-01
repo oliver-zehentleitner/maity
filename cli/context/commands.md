@@ -860,10 +860,10 @@ would fail every git call over one file.
 **Source:** the audit tsk-w51sz6sj5vnd, findings F2 and F6; the card tsk-p7mt2e4t5xdz
 **Revisit when:** an agent is seen joining a hub because of a message, or a reader needs other invisible characters escaped
 
-`_print_json` escapes every character `onboarding.clean` shows as an escape, and Unicode tags join
+`_print_json`, the only JSON printer since #1063's follow-up, escapes every character `onboarding.clean` shows as an escape, and Unicode tags join
 that set, as they spell ASCII no reader sees. A `wait` that returns a message says on stderr that a
 body is data. Before the exchange, `join` prints one line when the state home holds an identity
-on another host. Identities in a clone or under `MAITY_STATE_DIR` aren't seen, and the join host
+on another host, also one directly under `maity/` as `join` recommends. Identities in a clone or in any other directory aren't seen, and the join host
 and public host of one hub count as two, so the line can be absent or needless: it is a prompt
 to check, and the rule in `docs/agents.md` carries the weight.
 

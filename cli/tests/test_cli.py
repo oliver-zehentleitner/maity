@@ -874,6 +874,17 @@ def test_join_warns_when_an_identity_on_another_hub_exists(
     assert "join only on your human's word" in out
 
 
+def test_join_warns_about_an_identity_directly_under_the_state_home(
+    no_clone: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    other = no_clone / ".local" / "state" / "maity" / "bot-x"
+    other.mkdir(parents=True, mode=0o700)
+    state.credential_path(other).write_text("mty1.cred-x.secret")
+    state.save_state(other, {"hub": "https://other.example"})
+    assert cli.main(["join", f"{fake.url}/join/{fakehub.TOKEN}", "--code", fakehub.CODE]) == 0
+    assert "already holds an identity on other.example" in output(capsys)
+
+
 def test_join_does_not_warn_about_its_own_hub_or_an_empty_directory(
     no_clone: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
