@@ -130,3 +130,40 @@ def test_secret_cannot_be_pickled_or_copied() -> None:
         pickle.dumps(secret)
     with pytest.raises(TypeError):
         copy.copy(secret)
+
+
+def test_only_a_permission_error_is_tried_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Windows refuses a replace while another process holds the file for a moment."""
+    monkeypatch.setattr(state, "REPLACE_TRIES", 3)
+    monkeypatch.setattr(state, "REPLACE_PAUSE", 0)
+    real = os.replace
+    calls = []
+
+    def busy_twice(src: Path, dst: Path) -> None:
+        calls.append(src)
+        if len(calls) < 3:
+            raise PermissionError("held")
+        real(src, dst)
+
+    monkeypatch.setattr(os, "replace", busy_twice)
+    path = state.save_state(tmp_path / "s", {"a": 1})
+    assert len(calls) == 3
+    assert state.load_state(path.parent) == {"a": 1}
+
+
+def test_a_replace_still_held_after_the_last_try_fails_and_leaves_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(state, "REPLACE_TRIES", 2)
+    monkeypatch.setattr(state, "REPLACE_PAUSE", 0)
+
+    def held(src: Path, dst: Path) -> None:
+        raise PermissionError("held")
+
+    monkeypatch.setattr(os, "replace", held)
+    directory = tmp_path / "s"
+    with pytest.raises(PermissionError):
+        state.save_state(directory, {"a": 1})
+    assert list(directory.iterdir()) == []

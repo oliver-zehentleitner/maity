@@ -440,7 +440,7 @@ def cmd_join(args: argparse.Namespace) -> int:
         # credential afterwards must refuse it now, while the join can still be retried.
         was = state.prepare_for_join(directory)
         if was is not None:
-            _err(f"set {directory} to mode 0700 (it was {was:04o}): it will hold the credential")
+            _err(f"{was}: it will hold the credential")
     _warn_other_hubs(url)
     result = hub.exchange(target, code.strip(), client=args.client or hub.CLIENT)
     base = hub.accept_hub(url, result.hub)  # before anything is kept
@@ -4987,6 +4987,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.for_target is not None and args.command == "join":
         _err("--for applies to project commands; join is the bridge's own: run it without --for")
         return EXIT_USAGE
+    if args.command == "runner" and sys.platform == "win32":
+        _err(
+            "the runner does not run on Windows: it needs tmux, systemd and OS users. "
+            "Run it inside WSL; every other maity command works here"
+        )
+        return EXIT_REFUSED
     try:
         _load_texts(args)
         return handler(args)

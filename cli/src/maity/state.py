@@ -15,15 +15,21 @@ import json
 import os
 import secrets
 import stat
+import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, SupportsIndex
 
-from maity import proc
+from maity import proc, winacl
 
 STATE_DIR_ENV = "MAITY_STATE_DIR"
 CREDENTIAL_FILE = "credential"
 STATE_FILE = "state.json"
+# Windows refuses to replace a file another process holds open for that moment: a second maity
+# reading state.json, a virus scanner. POSIX has no such moment, and its refusal is meant.
+REPLACE_TRIES = 20 if sys.platform == "win32" else 1
+REPLACE_PAUSE = 0.05
 
 
 class StateError(Exception):
@@ -109,9 +115,22 @@ def other_hub_hosts(hub_host: str) -> list[str]:
 
 
 def _state_home() -> Path:
-    """`$XDG_STATE_HOME`, else `~/.local/state`."""
-    root = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
+    """`$XDG_STATE_HOME`, else `~/.local/state`; `%LOCALAPPDATA%` on Windows, where that is the
+    place for it and sits inside the user's own profile."""
+    root = os.environ.get("XDG_STATE_HOME")
+    if not root and sys.platform == "win32":
+        root = os.environ.get("LOCALAPPDATA")
+    root = root or str(Path.home() / ".local" / "state")
     return Path(root).expanduser().resolve()
+
+
+def _make_private(directory: Path) -> None:
+    """Only this user from now on: 0700 exactly, whatever the umask; the private access list
+    on Windows (`winacl`), which what is created in it inherits."""
+    if sys.platform == "win32":
+        winacl.protect(directory)
+    else:
+        os.chmod(directory, 0o700)
 
 
 def _ensure_dir(path: Path) -> None:
@@ -123,7 +142,7 @@ def _ensure_dir(path: Path) -> None:
         check_private(path)
         return
     path.mkdir(mode=0o700, parents=True)
-    os.chmod(path, 0o700)  # mkdir's mode is masked by the umask; this one is not
+    _make_private(path)  # mkdir's mode is masked by the umask; this is not
 
 
 def _atomic_write(path: Path, data: str, private_dir: bool = True) -> None:
@@ -140,15 +159,36 @@ def _atomic_write(path: Path, data: str, private_dir: bool = True) -> None:
             fh.write(data)
             fh.flush()
             os.fsync(fh.fileno())
-        os.replace(tmp, path)
+        _replace(tmp, path)
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
 
 
+def _replace(tmp: Path, path: Path) -> None:
+    for tries_left in range(REPLACE_TRIES - 1, -1, -1):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if not tries_left:
+                raise
+            time.sleep(REPLACE_PAUSE)
+
+
 def check_private(path: Path, revoke: str = "revoke the session in the dashboard") -> None:
     """Refuse a file or directory others could reach, the way ssh refuses a loose private key.
     `revoke` is the way out when the file is not yours."""
+    if sys.platform == "win32":
+        reach = winacl.reach(path)
+        if reach.foreign_owner:
+            raise StateError(f"{path} belongs to another user; refusing to use it")
+        if reach.others:
+            raise StateError(
+                f"{path} is accessible by others ({', '.join(reach.others)}); run "
+                f"`{winacl.fix_command(path, winacl.current_user())}` if it is yours, or {revoke}"
+            )
+        return
     st = path.stat()
     if st.st_uid != os.getuid():
         raise StateError(f"{path} belongs to another user; refusing to use it")
@@ -161,15 +201,15 @@ def check_private(path: Path, revoke: str = "revoke the session in the dashboard
         )
 
 
-def prepare_for_join(path: Path) -> int | None:
+def prepare_for_join(path: Path) -> str | None:
     """Everything that could stop the credential from being written, checked before the
     join's single-use code is spent: the directory exists (created 0700 when missing), an
     empty one of this user's that is open to others is set to 0700 (`tighten_for_join`),
-    it is private and ours (`check_private`), and writable. Returns the mode a tightened
-    directory had, or None."""
+    it is private and ours (`check_private`), and writable. Returns what was tightened, as
+    words, or None."""
     if not path.exists():
         path.mkdir(mode=0o700, parents=True)
-        os.chmod(path, 0o700)
+        _make_private(path)
     was = tighten_for_join(path)
     check_private(path, revoke="give this agent a directory of its own")
     if not os.access(path, os.W_OK | os.X_OK):
@@ -186,22 +226,29 @@ def rescue_credential(value: Secret) -> Path:
         rescue = Path(tempfile.mkdtemp(prefix="rescued-", dir=root))  # mkdtemp: 0700
     except OSError:  # the home itself may be what refused: the system's temp directory
         rescue = Path(tempfile.mkdtemp(prefix="maity-rescued-"))
+    _make_private(rescue)
     return write_credential(rescue, value)
 
 
-def tighten_for_join(path: Path) -> int | None:
+def tighten_for_join(path: Path) -> str | None:
     """Before a join: an empty state directory of this user that is open to group or
-    others is set to 0700, the mode it would have been created with. Returns the mode it
-    had, or None when nothing changed. A directory with anything in it (a credential, or
-    a home someone named by mistake), or another user's, is left to `check_private` and
-    its refusal."""
+    others is made private, as it would have been created. Returns what was done, as words,
+    or None when nothing changed. A directory with anything in it (a credential, or a home
+    someone named by mistake), or another user's, is left to `check_private` and its
+    refusal."""
     if not path.is_dir() or next(path.iterdir(), None) is not None:
         return None
+    if sys.platform == "win32":
+        reach = winacl.reach(path)
+        if reach.foreign_owner or not reach.others:
+            return None
+        winacl.protect(path)
+        return f"limited {path} to this user (it was open to {', '.join(reach.others)})"
     st = path.stat()
     if st.st_uid != os.getuid() or not st.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
         return None
     os.chmod(path, 0o700)
-    return stat.S_IMODE(st.st_mode)
+    return f"set {path} to mode 0700 (it was {stat.S_IMODE(st.st_mode):04o})"
 
 
 def write_file(path: Path, text: str) -> Path:
