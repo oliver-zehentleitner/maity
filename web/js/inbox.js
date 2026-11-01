@@ -189,6 +189,33 @@ window.Maity = window.Maity || {};
     return !!agent && agent.kind === "agent" && agent.owner_id === ctx.me.id;
   }
 
+  // A proxy's request for the owner's go on one call (§2.3): the whole call, as
+  // the go binds it. The body is shown pretty-printed, and also as sent: a parsed
+  // body can hide a repeated key or a rounded number, and the hub compares the bytes.
+  function actionCall(req) {
+    const a = req.action;
+    let pretty = null;
+    if (a.body !== null && a.body !== undefined) {
+      try { pretty = JSON.stringify(JSON.parse(a.body), null, 2); } catch (err) { pretty = null; }
+    }
+    const fact = (label, value) => [h("dt", null, label), h("dd", null, h("code", null, value))];
+    const answeredGo = req.status === "answered" && req.answer && req.answer.reply_id === "go";
+    return h("div", { class: "request-action" },
+      h("h3", { class: "sub" }, M.t("inbox.action.title")),
+      h("dl", { class: "facts" },
+        fact(M.t("inbox.action.method"), a.method),
+        fact(M.t("inbox.action.path"), a.path),
+        a.query ? fact(M.t("inbox.action.query"), a.query) : null),
+      a.body === null || a.body === undefined ? h("p", { class: "muted" }, M.t("inbox.action.no_body"))
+        : [h("h4", null, M.t("inbox.action.body")), h("pre", { class: "request-action-body", tabindex: "0" }, pretty === null ? a.body : pretty),
+          h("details", null, h("summary", null, M.t("inbox.action.as_sent")),
+            h("pre", { class: "request-action-body", tabindex: "0" }, a.body),
+            a.body_sha256 ? h("p", { class: "muted" }, "SHA-256 ", h("code", null, a.body_sha256)) : null)],
+      a.used_at ? h("p", { class: "ok" }, M.t("inbox.action.used", { at: formatTime(a.used_at) }))
+        : answeredGo && req.answered_at ? h("p", { class: "muted" }, M.t("inbox.action.valid", { at: formatTime(new Date(Date.parse(req.answered_at) + 86400000).toISOString()) }))
+          : req.status === "open" ? h("p", { class: "hint" }, M.t("inbox.action.hint")) : null);
+  }
+
   function entryBody(ctx, req, names, onAnswer, onLater) {
     const body = h("div", { class: "entry-body" });
     const at = textAt(ctx, req);
@@ -248,6 +275,8 @@ window.Maity = window.Maity || {};
         nis.reason));
     }
 
+    if (req.action) append(body, actionCall(req));
+
     const preference = M.preferences && M.preferences.isProposal(req);
     // Not read in full: no reply that could apply a proposal unseen.
     const unread = req.personal && req.status === "open" && req.unreadable;
@@ -297,6 +326,9 @@ window.Maity = window.Maity || {};
     // takes its text along when it holds any (§7); Send is the answer in
     // words alone, offered where there are no replies to press. A preference
     // proposal's words go with its Decline, in the review.
+    // Inside a project the trust is known: only the owner answers an action (§2.3).
+    const notOwner = !!req.action && ctx.scope === "project" && !ctx.isOwner;
+    if (notOwner) { append(body, h("p", { class: "muted" }, M.t("inbox.action.owner_only"))); return body; }
     const noField = preference || unread;
     const replies = noField ? [] : req.replies || [];
     const withText = (payload) => {

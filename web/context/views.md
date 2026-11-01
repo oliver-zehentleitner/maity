@@ -4227,3 +4227,17 @@ The project's Settings show **Public page** only to the human who owns the names
 
 **Rejected alternatives:** a hub field `page_served` on the project in this PR: a launch blocker should not wait for a contract change, and the card asks for the web. Fetching `?as=public` and telling the stored page from the app shell: guessing from HTML.
 
+## A proxy's action request shows the body twice: pretty-printed, and exactly as sent
+
+**Id:** 77f97db2-6696-4d9f-8c74-8e65065f7fdb
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.3 ("rendered on the request"), §7 `action`; the hub's #1030; tsk-tx9qcehevfnk
+
+The inbox entry lists the method, path and query and the pretty-printed body, and under **Exactly as sent** the stored text with its SHA-256. Inside a project someone who is not the owner sees the call and no buttons, with a sentence saying who answers. Across projects the trust is not known, so the buttons stay and the hub's `action_needs_owner` is what they hear.
+
+**Reason:** the owner is approving the exact bytes the hub later compares. `JSON.parse` keeps only the last of a repeated key and rounds large numbers, so a pretty-printed body alone could show something other than what the go allows; a proxy is the one writing that text.
+
+**Rejected alternatives:** the raw text only: hard to read, and the contract asks for pretty-printing. Refusing to show a body whose parsed form differs: the hub stores it as valid JSON, and the owner can say No.
+
