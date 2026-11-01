@@ -591,6 +591,7 @@ maity task list --status all             # every card, the closed ones included
 maity task list --parent tsk-0004        # one card's open children (--status all for every one)
 maity task show tsk-0004                 # the card, its parent, children and related cards
 maity task create "Split the exchange" --parent tsk-0004 --area hub/
+maity task create "Check the exchange" --needs tester   # which role it is for; routes nothing
 maity task edit tsk-0012 --parent tsk-0004 --related tsk-0009
 maity task edit tsk-0012 --no-parent --unrelated tsk-0009
 ```
