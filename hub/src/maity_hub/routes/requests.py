@@ -1441,7 +1441,7 @@ def return_held(conn: Connection, request_id: str, by: str, reason: str) -> None
     project = lock_project(conn, row.project_id)
     alone = bool(inbox.owners_alone(conn, [row]))
     if alone and (row.holder_member == row.to_member or not _addressee_active(conn, row)):
-        close_request(conn, row.id, "withdrawn", None, reason="member_removed")
+        close_request(conn, row.id, "withdrawn", None, reason=reason)
         return
     if alone:
         steps = _step(conn, row, "forwarded", inbox.addressee_of(row).text(conn), by, reason)
