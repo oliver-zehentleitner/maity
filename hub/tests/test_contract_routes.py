@@ -20,6 +20,8 @@ NOT_ROUTED = {
     ("DELETE", "/projects/{}/{}/tasks/{}/objection-hold"),
     # Contract without a route yet: tsk-r97n4e6v4kaz.
     ("PATCH", "/projects/{}/{}/conversations/{}/participants/{}"),
+    # Contract without a route yet: tsk-962vfr5m8z7t.
+    ("GET", "/public/pages/{}"),
 }
 
 
