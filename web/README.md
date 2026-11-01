@@ -511,7 +511,7 @@ too.
    buttons: **Invite user** (a human with `members:admin`) to `/invite` with
    this project chosen, where the invitation form and its list are (§3.4;
    Members has none of its own any more), and **Join agent** (a human who is no
-   guest, §3.1) to this project's Agents with the join panel open (`/<owner>/<slug>/agents/join`). Under
+   guest, §3.1) to this project's Agents with the join panel open (`/<owner>/<slug>/agents/join`). Under the chosen agent the panel links its profile and, for a member here, its rulebook with the instance limit; a profile's project line has **Join link** for the way back. Under
    `policy.keep_the_why: required` (`docs/api.md` §6.23) a **Keep the Why**
    column says per instance when it confirmed or by when it is to; an agent
    past that deadline unconfirmed is marked, not shown as an error. The

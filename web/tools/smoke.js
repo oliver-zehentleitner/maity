@@ -1156,6 +1156,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("join-agent").value = "agt-b"; byId("join-agent").dispatch("change");
   expect(text(byId("join-quota")) === "1 of 1 instances active; another one is over the team's limit.",
     "team: opening + Add an agent reads the members again, a limit changed elsewhere shows: " + text(byId("join-quota")));
+  // The way to the profile (tsk-svqsdp6qf0f3): one click from the form, none for a new agent.
+  const joinLinks = () => main.querySelector(".join-profile-links");
+  expect(joinLinks().querySelectorAll("a").map((a) => a.getAttribute("href")).join() === "#/agents/agt-b,#/maintainer/maity/agents/agt-b/rulebook",
+    "join: the chosen member's profile and rulebook are linked: " + joinLinks().querySelectorAll("a").map((a) => a.getAttribute("href")).join());
+  byId("join-agent").value = ""; byId("join-agent").dispatch("change");
+  expect(joinLinks().hidden, "join: a new agent has no profile to link");
+  byId("join-agent").value = "agt-b"; byId("join-agent").dispatch("change");
   // The panel open while the rulebook is saved: its count follows at once, the agent still chosen (antigravity's P3 on #616).
   byId("team-max-agt-b").value = "2"; teamOf("agt-b").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(!main.querySelector(".join-panel").hidden && byId("join-agent").value === "agt-b" && text(byId("join-quota")) === "1 of 2 instances active.",
@@ -5286,6 +5293,25 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !main.querySelector("fieldset.join-instance").hidden, "agents page: there the panel is open with the profile chosen, as an instance where it is a member");
   btn(main.querySelector(".join-panel"), "Cancel").click(); await tick();
   // Join an agent from /agents with the project chosen (Members' Join agent links it so): its join panel open at once.
+  // The profile's way back to the join form (tsk-svqsdp6qf0f3): only where the panel opens.
+  {
+    const jlLinks = () => main.querySelectorAll("a").filter((x) => text(x) === "Join link").length;
+    await go("#/agents"); for (let k = 0; k < 6; k++) await tick();
+    for (const row of main.querySelectorAll("button.agent-manage")) if (row.getAttribute("aria-expanded") !== "true") { row.click(); await tick(); }
+    expect(jlLinks() > 0, "join link: on a project where the panel opens");
+    const jlGet = win.Maity.api.get;
+    win.Maity.api.get = (p, o) => (p === "/me" ? jlGet(p, o).then((x) => { x.projects.forEach((q) => { q.trust = "guest"; }); return x; }) : jlGet(p, o));
+    await go("#/all"); await go("#/agents"); for (let k = 0; k < 6; k++) await tick();
+    for (const row of main.querySelectorAll("button.agent-manage")) if (row.getAttribute("aria-expanded") !== "true") { row.click(); await tick(); }
+    expect(jlLinks() === 0, "join link: none for a guest");
+    // member_agents off, known only on the project's own page: that page says why no panel opens.
+    win.Maity.api.get = (p, o) => (p === "/me" ? jlGet(p, o).then((x) => { x.projects.forEach((q) => { q.trust = "member"; }); return x; })
+      : p === "/projects/maintainer/maity" ? jlGet(p, o).then((x) => Object.assign({}, x, { policy: Object.assign({}, x.policy, { member_agents: "off" }) })) : jlGet(p, o));
+    await go("#/all"); await go("#/maintainer/maity/agents/join?agent=agt-b"); for (let k = 0; k < 8; k++) await tick();
+    expect(main.querySelector(".join-not-here") && !main.querySelector(".join-panel"), "join link: member_agents off, the page says there is no form");
+    expect(!main.querySelectorAll("a").some((x) => /guest\/guestlab/.test(x.getAttribute("href") || "")), "profile: no link into a project the human is not in");
+    win.Maity.api.get = jlGet;
+  }
   await go("#/agents?project=" + encodeURIComponent("maintainer/maity")); for (let k = 0; k < 10; k++) await tick();
   expect(byId("agents-join-project").value === "maintainer/maity" && main.querySelector("section.agents-join .join-panel")
     && !main.querySelector("section.agents-join .join-panel").hidden, "agents page: ?project= chooses the project and opens its join panel");
