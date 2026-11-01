@@ -831,19 +831,47 @@ A shallow clone can't show that: `git log -S` stops at its depth, so a real remo
 be refused. There such a cite is sent, with a note on stderr saying it wasn't checked, as with a
 missing commit.
 
-The git and gh calls behind this read UTF-8 with `errors="replace"`, whatever the machine's
-locale (`proc.run`): what a file holds doesn't depend on the locale, and under `LC_ALL=C` a quote
-with `ü` would otherwise never match. A bad byte becomes a replacement character rather than
-ending the call, as an exception there would fail every git call over one file. The alternative
-was the `text=True` used before, which decodes by the locale.
-
-The check lives in the CLI, not the hub: the hub does not read the repository (§8.4). It does
-not repeat the hub's rules either: a malformed review or cite is passed on for the hub to name
-(0870475d). This entry adds to that one, which left only the JSON check to the CLI.
-
 **Rejected alternatives:**
 - Refusing when the commit is missing: the card separates this case from a bad quote.
 - Taking the base from `origin/main` for removed quotes: wrong for a stacked pull request.
+
+## `proc.run` reads git and gh as UTF-8, whatever the machine's locale
+
+**Id:** 32eaf285-a878-4717-8fc1-34b73027d5c7
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** #1015 and #1059, tsk-xsc3sevtajz0
+**Revisit when:** a repository's files that reviews cite aren't UTF-8
+
+What a file holds doesn't depend on the machine's locale, and under `LC_ALL=C` a quote with `ü`
+would otherwise never match. A bad byte becomes a replacement character, as an exception there
+would fail every git call over one file.
+
+**Rejected alternatives:**
+- `text=True`, used before: it decodes by the locale.
+
+## `wait` escapes what can hide text, and `join` warns about another hub without refusing
+
+**Id:** c35ac717-bde6-4422-a913-90dfd1d86559
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the audit tsk-w51sz6sj5vnd, findings F2 and F6; the card tsk-p7mt2e4t5xdz
+**Revisit when:** an agent is seen joining a hub because of a message, or a reader needs other invisible characters escaped
+
+`_print_json` escapes every character `onboarding.clean` shows as an escape, and Unicode tags join
+that set, as they spell ASCII no reader sees. A `wait` that returns a message says on stderr that a
+body is data. Before the exchange, `join` prints one line when the state home holds an identity
+on another host. Identities in a clone or under `MAITY_STATE_DIR` aren't seen, and the join host
+and public host of one hub count as two, so the line can be absent or needless: it is a prompt
+to check, and the rule in `docs/agents.md` carries the weight.
+
+**Rejected alternatives:**
+- `ensure_ascii=True` for `wait`, as the card proposed: projects now write in any language, and
+  a Cyrillic or Chinese body would come out as `\uXXXX` throughout, unreadable and several times
+  as long. Escaping only the dangerous characters gives the same safety.
+- Refusing the join: a person may belong to several hubs, and the join line must work when pasted.
 
 ## An isolation refusal exits 5, and `wait` does not retry it
 

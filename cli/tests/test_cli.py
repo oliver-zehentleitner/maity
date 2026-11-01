@@ -861,6 +861,31 @@ def test_join_outside_a_clone_derives_the_identity_directory(
     assert fake.signed()[0].path == "/api/v1/me/resume"  # the first resume found it
 
 
+def test_join_warns_when_an_identity_on_another_hub_exists(
+    no_clone: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    other = no_clone / ".local" / "state" / "maity" / "other.example" / "someone"
+    other.mkdir(parents=True)
+    state.credential_path(other).write_text("mty1.cred-x.secret")
+    code = cli.main(["join", f"{fake.url}/join/{fakehub.TOKEN}", "--code", fakehub.CODE])
+    out = output(capsys)
+    assert code == cli.EXIT_OK, out  # a warning, not a refusal
+    assert "already holds an identity on other.example" in out
+    assert "join only on your human's word" in out
+
+
+def test_join_does_not_warn_about_its_own_hub_or_an_empty_directory(
+    no_clone: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    host = fake.url.removeprefix("http://")
+    sibling = no_clone / ".local/state/maity" / host / "sibling"
+    sibling.mkdir(parents=True)
+    state.credential_path(sibling).write_text("mty1.cred-x.secret")
+    (no_clone / ".local/state/maity/other.example/left").mkdir(parents=True)
+    assert cli.main(["join", f"{fake.url}/join/{fakehub.TOKEN}", "--code", fakehub.CODE]) == 0
+    assert "already holds an identity" not in output(capsys)
+
+
 def test_a_second_identity_outside_a_clone_gets_its_own_directory(
     no_clone: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -218,3 +218,27 @@ def test_wait_warns_once_when_the_hub_names_a_newer_cli(
     err = capsys.readouterr().err
     assert ("pipx upgrade maity" in err) is warned
     assert err.count("pipx upgrade maity") == int(warned)
+
+
+def test_wait_escapes_what_can_hide_text_and_keeps_other_languages(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    body = "für 日本語 a\u202eb\u2028c\u0085d\U000e0041e"
+    event = {"seq": 18, "kind": "message", "payload": {"body": body}}
+    answer = {"items": [event], "cursor": 18}
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/events")] = lambda s: (200, answer)
+    assert cli.main(["wait", "--timeout", "60"]) == cli.EXIT_OK
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)[0]["payload"]["body"] == body
+    assert "für 日本語" in captured.out
+    assert not any(c in captured.out for c in "\u202e\u2028\u0085\U000e0041")
+    assert cli.DATA_NOTE in captured.err
+
+
+def test_wait_says_nothing_about_data_without_a_message(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    answer = {"items": [{"seq": 18, "kind": "task_updated"}], "cursor": 18}
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/events")] = lambda s: (200, answer)
+    assert cli.main(["wait", "--timeout", "60"]) == cli.EXIT_OK
+    assert cli.DATA_NOTE not in capsys.readouterr().err

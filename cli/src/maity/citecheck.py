@@ -97,7 +97,7 @@ def check(cwd: Path, review: Any) -> Result:
             path, line, quote = cite["path"], cite.get("line"), cite["quote"]
             problem = _problem(cwd, head, path, line, quote)
             if problem == _NOT_REMOVED and _shallow(cwd):
-                unsure.append(path)
+                unsure.append(f"review.cites.{index} {path}")
             elif problem is not None:
                 place = f"{path}:{line}" if line is not None else path
                 bad.append(f"review.cites.{index} {place}: {problem}: {json.dumps(quote)}")
@@ -105,5 +105,9 @@ def check(cwd: Path, review: Any) -> Result:
         return Result([], str(exc))
     if unsure:
         # The history stops at the clone's depth, so "not removed" can't be said.
-        return Result(bad, f"a shallow clone can't show what was removed from {', '.join(unsure)}")
+        named = ", ".join(unsure)
+        return Result(
+            bad,
+            f"{named}: a shallow clone can't show what was removed; `git fetch --unshallow` can",
+        )
     return Result(bad)
