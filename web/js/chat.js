@@ -20,7 +20,11 @@ window.Maity = window.Maity || {};
   // The global chat's "read what is shown again" (js/chats.js), in place of
   // the project feed's events it does not hold.
   const RESYNC = "chat_resync";
-  const PRESENCE_LABELS = { online: "online", away: "away", offline: "offline", paused: "paused" };
+  const PRESENCE_LABELS = {
+    online: () => M.t("chat.presence.online"), away: () => M.t("chat.presence.away"),
+    offline: () => M.t("chat.presence.offline"), paused: () => M.t("chat.presence.paused"),
+  };
+  const presenceWord = (presence) => (Object.hasOwn(PRESENCE_LABELS, presence) ? PRESENCE_LABELS[presence]() : presence);
 
   // Unsent text per conversation ("<full name>/<agent id>"), kept while the
   // human switches between them in this tab; never stored or sent.
@@ -99,7 +103,7 @@ window.Maity = window.Maity || {};
       : one
       ? [one.kind === "human" ? M.t("chat.who.human") : M.t("chat.who.agent"), one.handle ? "@" + M.dom.handleOf(ctx, one) : null, one.harness || null].filter(Boolean).join(" · ")
       : chat.participants.map((m) => m.display_name).join(", ");
-    const presence = chat.kind !== "group" && one ? PRESENCE_LABELS[one.presence] || one.presence || null : null;
+    const presence = chat.kind !== "group" && one ? presenceWord(one.presence) || null : null;
     const draft = current ? null : drafts.get(ctx.slug + "/" + chat.id);
     const last = chat.last_message;
     let line = null;
@@ -293,7 +297,7 @@ window.Maity = window.Maity || {};
     if (!ctx.projectsOf || !sender || sender.kind !== "agent") return null;
     const projects = ctx.projectsOf(sender.id);
     if (!projects.length) return null;
-    return h("span", { class: "msg-projects" }, h("span", { class: "visually-hidden" }, ", in "),
+    return h("span", { class: "msg-projects" }, h("span", { class: "visually-hidden" }, M.t("chat.in_projects")),
       projects.map((p, i) => h("span", { class: "msg-project", title: p.name },
         M.projectMark(p.slug, p.name, p.view, "small"), h("span", { class: "visually-hidden" }, (i ? ", " : "") + p.name))));
   }
@@ -313,7 +317,7 @@ window.Maity = window.Maity || {};
     // One's own message sent to one instance says which (§9.1 to_instance).
     const meta = h("span", { class: "meta" }, grouped || own ? null
       : [M.dom.memberRef(ctx, msg.from, { instance: msg.from_instance }), projectsOf(ctx, sender), " · "],
-    own && msg.to_instance ? [h("span", { class: "msg-to" }, "to ", M.dom.memberRef(ctx, msg.to, { instance: msg.to_instance })), " · "] : null, when);
+    own && msg.to_instance ? [h("span", { class: "msg-to" }, M.tn("chat.to_instance", { who: M.dom.memberRef(ctx, msg.to, { instance: msg.to_instance }) })), " · "] : null, when);
     if (own && !o.group && !msg.delivered_at) pending.set(msg.seq, (fresh) => { when.textContent = said(fresh); });
     // A removed message reads body null (§9); who and why only where known
     // (this page's own removal, or the event_redacted that said so).
@@ -512,7 +516,7 @@ window.Maity = window.Maity || {};
     }
     if (!agent) {
       if (args[0]) append(layout, h("p", { class: "error", role: "alert" }, M.t("chat.no_such", { id: args[0] })));
-      else if (mine.length || ctx.outsider) append(layout, h("p", { class: "chat-none muted" }, "Pick a conversation."));
+      else if (mine.length || ctx.outsider) append(layout, h("p", { class: "chat-none muted" }, M.t("chat.pick")));
       await list.refresh(false);
       return;
     }
@@ -559,7 +563,7 @@ window.Maity = window.Maity || {};
       if (loaded.length) append(messages, loaded.map(draw));
       else {
         append(messages, h("li", { class: "empty" }, h("p", null, M.t("chat.empty")),
-          h("p", { class: "muted" }, M.dom.memberRef(ctx, agent.id), " reads what you write here at its next wait or resume.")));
+          h("p", { class: "muted" }, M.tn("chat.reads_at_wait", { who: M.dom.memberRef(ctx, agent.id) }))));
       }
       drawEarlier();
     }
@@ -761,7 +765,7 @@ window.Maity = window.Maity || {};
     const target = live.length > 1 ? h("select", { id: "chat-instance", "aria-describedby": "chat-instance-hint" },
       h("option", { value: "" }, M.t("chat.instance.team")),
       live.map((i) => h("option", { value: i.id }, (agent.handle || agent.display_name) + "#" + i.id + " · "
-        + (i.dormant ? M.t("chat.instance.dormant") : PRESENCE_LABELS[i.presence] || i.presence || "unknown")))) : null;
+        + (i.dormant ? M.t("chat.instance.dormant") : presenceWord(i.presence) || M.t("chat.presence.unknown"))))) : null;
     if (target) {
       target.value = targets.get(key) || "";
       target.addEventListener("change", () => { if (target.value) targets.set(key, target.value); else targets.delete(key); });
