@@ -31,6 +31,10 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return proc.run([*proc.GIT, "--literal-pathspecs", *args], cwd)
 
 
+def _shallow(cwd: Path) -> bool:
+    return _git(cwd, "rev-parse", "--is-shallow-repository").stdout.strip() == "true"
+
+
 def _well_formed(cite: Any) -> bool:
     if not isinstance(cite, dict):
         return False
@@ -49,6 +53,9 @@ def _removed(cwd: Path, head: str, path: str, quote: str) -> bool:
     return found.returncode == 0 and bool(found.stdout.strip())
 
 
+_NOT_REMOVED = "the quote is neither in the file nor removed from it"
+
+
 def _problem(cwd: Path, head: str, path: str, line: int | None, quote: str) -> str | None:
     shown = _git(cwd, "show", f"{head}:{path}")
     lines = shown.stdout.split("\n") if shown.returncode == 0 else None
@@ -57,7 +64,7 @@ def _problem(cwd: Path, head: str, path: str, line: int | None, quote: str) -> s
             return None
         if _removed(cwd, head, path, quote):
             return None
-        return "the quote is neither in the file nor removed from it"
+        return _NOT_REMOVED
     if lines is None:
         return "the file is not at this commit"
     if line <= len(lines) and quote in lines[line - 1]:
@@ -83,15 +90,20 @@ def check(cwd: Path, review: Any) -> Result:
         cwd = cwd / up.stdout.strip()
         if _git(cwd, "cat-file", "-e", f"{head}^{{commit}}").returncode != 0:
             return Result([], f"commit {head} is not in this clone; `git fetch` brings it")
-        bad = []
+        bad, unsure = [], []
         for index, cite in enumerate(cites):
             if not _well_formed(cite):
                 continue
             path, line, quote = cite["path"], cite.get("line"), cite["quote"]
             problem = _problem(cwd, head, path, line, quote)
-            if problem is not None:
+            if problem == _NOT_REMOVED and _shallow(cwd):
+                unsure.append(path)
+            elif problem is not None:
                 place = f"{path}:{line}" if line is not None else path
                 bad.append(f"review.cites.{index} {place}: {problem}: {json.dumps(quote)}")
     except proc.ToolError as exc:
         return Result([], str(exc))
+    if unsure:
+        # The history stops at the clone's depth, so "not removed" can't be said.
+        return Result(bad, f"a shallow clone can't show what was removed from {', '.join(unsure)}")
     return Result(bad)

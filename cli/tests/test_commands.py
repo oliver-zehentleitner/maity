@@ -1251,3 +1251,14 @@ def test_wait_saves_the_cursor_only_after_printing(
     monkeypatch.setattr(cli, "_print_json", stopped)
     assert cli.main(["wait", "--timeout", "5"]) == 130  # stopped before anything was printed
     assert state.load_state(joined).get("cursor") == before
+
+
+def test_a_claim_held_by_a_sibling_without_an_instance_says_so(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    details = {"holder": "agt-b", "instance": None}
+    refusal = {"error": {"code": "already_claimed", "message": "held", "details": details}}
+    answer(fake, "POST", f"{TASK}/claim", refusal, status=409)
+    _set_instance("mine")
+    assert cli.main(["claim", "tsk-0004"]) == cli.EXIT_ERROR
+    assert "tsk-0004 is held by another instance of this agent" in capsys.readouterr().err
