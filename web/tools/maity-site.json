@@ -37,6 +37,33 @@
             ]
           },
           {
+            "type": "works_with",
+            "enabled": true,
+            "label": "Works with your agents",
+            "items": [
+              "claude-code",
+              "codex",
+              "gemini",
+              "antigravity",
+              "copilot",
+              "cursor",
+              "opencode",
+              "pi",
+              "goose",
+              "cline",
+              "roo",
+              "kilo",
+              "amp",
+              "droid",
+              "windsurf",
+              "zed",
+              "kiro-cli",
+              "trae",
+              "openclaw"
+            ],
+            "more": "and any agent that can reach the hub over HTTP"
+          },
+          {
             "type": "demo",
             "enabled": true,
             "eyebrow": "How it works",
@@ -307,6 +334,33 @@
               "public_projects",
               "cards_done_week"
             ]
+          },
+          {
+            "type": "works_with",
+            "enabled": true,
+            "label": "Läuft mit deinen Agents",
+            "items": [
+              "claude-code",
+              "codex",
+              "gemini",
+              "antigravity",
+              "copilot",
+              "cursor",
+              "opencode",
+              "pi",
+              "goose",
+              "cline",
+              "roo",
+              "kilo",
+              "amp",
+              "droid",
+              "windsurf",
+              "zed",
+              "kiro-cli",
+              "trae",
+              "openclaw"
+            ],
+            "more": "und jedem Agent, der den Hub über HTTP erreicht"
           },
           {
             "type": "demo",
@@ -581,6 +635,33 @@
             ]
           },
           {
+            "type": "works_with",
+            "enabled": true,
+            "label": "Fonctionne avec vos agents",
+            "items": [
+              "claude-code",
+              "codex",
+              "gemini",
+              "antigravity",
+              "copilot",
+              "cursor",
+              "opencode",
+              "pi",
+              "goose",
+              "cline",
+              "roo",
+              "kilo",
+              "amp",
+              "droid",
+              "windsurf",
+              "zed",
+              "kiro-cli",
+              "trae",
+              "openclaw"
+            ],
+            "more": "et tout agent qui joint le hub en HTTP"
+          },
+          {
             "type": "demo",
             "enabled": true,
             "eyebrow": "Comment ça marche",
@@ -851,6 +932,33 @@
               "public_projects",
               "cards_done_week"
             ]
+          },
+          {
+            "type": "works_with",
+            "enabled": true,
+            "label": "Funciona con tus agentes",
+            "items": [
+              "claude-code",
+              "codex",
+              "gemini",
+              "antigravity",
+              "copilot",
+              "cursor",
+              "opencode",
+              "pi",
+              "goose",
+              "cline",
+              "roo",
+              "kilo",
+              "amp",
+              "droid",
+              "windsurf",
+              "zed",
+              "kiro-cli",
+              "trae",
+              "openclaw"
+            ],
+            "more": "y cualquier agente que llegue al hub por HTTP"
           },
           {
             "type": "demo",
@@ -1125,6 +1233,33 @@
             ]
           },
           {
+            "type": "works_with",
+            "enabled": true,
+            "label": "Funciona com os seus agentes",
+            "items": [
+              "claude-code",
+              "codex",
+              "gemini",
+              "antigravity",
+              "copilot",
+              "cursor",
+              "opencode",
+              "pi",
+              "goose",
+              "cline",
+              "roo",
+              "kilo",
+              "amp",
+              "droid",
+              "windsurf",
+              "zed",
+              "kiro-cli",
+              "trae",
+              "openclaw"
+            ],
+            "more": "e qualquer agente que alcance o hub por HTTP"
+          },
+          {
             "type": "demo",
             "enabled": true,
             "eyebrow": "Como funciona",
@@ -1395,6 +1530,33 @@
               "public_projects",
               "cards_done_week"
             ]
+          },
+          {
+            "type": "works_with",
+            "enabled": true,
+            "label": "Funziona con i tuoi agenti",
+            "items": [
+              "claude-code",
+              "codex",
+              "gemini",
+              "antigravity",
+              "copilot",
+              "cursor",
+              "opencode",
+              "pi",
+              "goose",
+              "cline",
+              "roo",
+              "kilo",
+              "amp",
+              "droid",
+              "windsurf",
+              "zed",
+              "kiro-cli",
+              "trae",
+              "openclaw"
+            ],
+            "more": "e qualsiasi agente che raggiunga l'hub via HTTP"
           },
           {
             "type": "demo",
@@ -1669,6 +1831,33 @@
             ]
           },
           {
+            "type": "works_with",
+            "enabled": true,
+            "label": "Werkt met je agents",
+            "items": [
+              "claude-code",
+              "codex",
+              "gemini",
+              "antigravity",
+              "copilot",
+              "cursor",
+              "opencode",
+              "pi",
+              "goose",
+              "cline",
+              "roo",
+              "kilo",
+              "amp",
+              "droid",
+              "windsurf",
+              "zed",
+              "kiro-cli",
+              "trae",
+              "openclaw"
+            ],
+            "more": "en elke agent die de hub via HTTP bereikt"
+          },
+          {
             "type": "demo",
             "enabled": true,
             "eyebrow": "Zo werkt het",
@@ -1939,6 +2128,33 @@
               "public_projects",
               "cards_done_week"
             ]
+          },
+          {
+            "type": "works_with",
+            "enabled": true,
+            "label": "あなたのエージェントで動きます",
+            "items": [
+              "claude-code",
+              "codex",
+              "gemini",
+              "antigravity",
+              "copilot",
+              "cursor",
+              "opencode",
+              "pi",
+              "goose",
+              "cline",
+              "roo",
+              "kilo",
+              "amp",
+              "droid",
+              "windsurf",
+              "zed",
+              "kiro-cli",
+              "trae",
+              "openclaw"
+            ],
+            "more": "HTTP でハブに届くエージェントなら何でも"
           },
           {
             "type": "demo",
@@ -2213,6 +2429,33 @@
             ]
           },
           {
+            "type": "works_with",
+            "enabled": true,
+            "label": "내 에이전트와 함께 작동합니다",
+            "items": [
+              "claude-code",
+              "codex",
+              "gemini",
+              "antigravity",
+              "copilot",
+              "cursor",
+              "opencode",
+              "pi",
+              "goose",
+              "cline",
+              "roo",
+              "kilo",
+              "amp",
+              "droid",
+              "windsurf",
+              "zed",
+              "kiro-cli",
+              "trae",
+              "openclaw"
+            ],
+            "more": "HTTP로 허브에 닿는 모든 에이전트도 함께"
+          },
+          {
             "type": "demo",
             "enabled": true,
             "eyebrow": "작동 방식",
@@ -2483,6 +2726,33 @@
               "public_projects",
               "cards_done_week"
             ]
+          },
+          {
+            "type": "works_with",
+            "enabled": true,
+            "label": "适用于你的智能体",
+            "items": [
+              "claude-code",
+              "codex",
+              "gemini",
+              "antigravity",
+              "copilot",
+              "cursor",
+              "opencode",
+              "pi",
+              "goose",
+              "cline",
+              "roo",
+              "kilo",
+              "amp",
+              "droid",
+              "windsurf",
+              "zed",
+              "kiro-cli",
+              "trae",
+              "openclaw"
+            ],
+            "more": "以及任何能通过 HTTP 访问中枢的智能体"
           },
           {
             "type": "demo",
