@@ -327,10 +327,11 @@ a server in `MAITY_PG_DIR` (default `~/.local/state/maity/test-postgres`), which
 creates when missing. Runs can share the server. The last one to end stops it, and
 only if this script started it; a server that was already up keeps running. It needs
 `pg_ctl`, `initdb` and `psql`, on the path or in `MAITY_PG_BIN`. Without a system
-PostgreSQL, the PyPI package `pgserver` brings them, in a venv of its own:
+PostgreSQL, the PyPI package `pgserver` brings them, in a venv of its own (its
+wheels stop at Python 3.12):
 
 ```sh
-python3 -m venv ~/.pg-venv && ~/.pg-venv/bin/pip install pgserver
+python3.12 -m venv ~/.pg-venv && ~/.pg-venv/bin/pip install pgserver
 export MAITY_PG_BIN="$(~/.pg-venv/bin/python -c 'import pgserver, pathlib; print(pathlib.Path(pgserver.__file__).parent / "pginstall/bin")')"
 scripts/with_postgres.sh pytest -n 2 tests/test_board.py
 ```

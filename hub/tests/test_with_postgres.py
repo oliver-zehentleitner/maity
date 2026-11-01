@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import signal
 import subprocess
 from pathlib import Path
 
@@ -16,8 +17,8 @@ FAKE = """#!/bin/sh
 echo "$(basename "$0") $*" >> "$FAKE_LOG"
 case "$(basename "$0") $*" in
   "pg_ctl -D "*" status") [ -f "$FAKE_UP" ] ;;
-  "pg_ctl "*" start") touch "$FAKE_UP" ;;
-  "pg_ctl "*" stop") rm -f "$FAKE_UP" ;;
+  "pg_ctl "*" start") touch "$FAKE_UP"; echo "$$" > "$MAITY_PG_DIR/postmaster.pid" ;;
+  "pg_ctl "*" stop") rm -f "$FAKE_UP" "$MAITY_PG_DIR/postmaster.pid" ;;
   initdb*) touch "$3/PG_VERSION" ;;
 esac
 """
@@ -74,6 +75,33 @@ def test_the_last_run_stops_it_not_the_first(run: dict[str, str]) -> None:
     gate.touch()
     assert first.wait(timeout=30) == 0
     assert len(calls(run, "stop")) == 1
+
+
+def test_a_mark_left_by_a_killed_run_stops_no_later_server(run: dict[str, str]) -> None:
+    data = Path(run["MAITY_PG_DIR"])
+    (data / "PG_VERSION").touch()
+    (data.parent / "data.locks").mkdir()
+    (data.parent / "data.locks" / "started-by-script").write_text("1\n")
+    (data / "postmaster.pid").write_text("2\n")
+    Path(run["FAKE_UP"]).touch()
+    subprocess.run([SCRIPT, "true"], env=run, check=True)
+    assert calls(run, "stop") == []
+
+
+@pytest.mark.parametrize("sent", [signal.SIGTERM, signal.SIGINT, signal.SIGHUP])
+def test_a_signal_reaches_the_command_and_the_cleanup_waits_for_it(
+    run: dict[str, str], tmp_path: Path, sent: signal.Signals
+) -> None:
+    ended = tmp_path / "ended"
+    ready = tmp_path / "ready"
+    command = f"trap 'sleep 0.3; touch {ended}; exit 7' {sent.name[3:]}; touch {ready}; "
+    command += "while :; do sleep 0.05; done"
+    script = subprocess.Popen([SCRIPT, "sh", "-c", command], env=run)
+    while not ready.exists():
+        assert script.poll() is None
+    script.send_signal(sent)
+    assert script.wait(timeout=30) == 7
+    assert ended.exists() and len(calls(run, "stop")) == 1
 
 
 def test_the_commands_exit_status_is_kept(run: dict[str, str]) -> None:
