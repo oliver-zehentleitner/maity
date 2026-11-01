@@ -325,40 +325,35 @@ what arrived.
   on a mismatch: for a moment the wrong bytes sit under the real name,
   and with `--force` the old file is gone before the check.
 
-## `maity takeover` checks the objection hold and the holder before it sends
+## `maity takeover` checks the holder before it answers
 
 **Id:** b6e5cc6a-59a8-4556-8e74-547b23ac8af4
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
 **Source:** `docs/api.md` §6.19 (the objection hold, `respond` only by the holding instance or its owner), §13 (`maity takeover`); the coordinator's card for the CLI side, 2026-10-23
-**Revisit when:** the hub's refusals carry enough in `details` to explain themselves, or a takeover needs to be opened on a card the CLI cannot read first
+**Revisit when:** the hub's refusals carry enough in `details` to explain themselves, or the objection hold of §6.19 is built (tsk-4xqfxezvz0dh)
 
-Before `maity takeover <card>` posts, it reads the card and refuses
-locally when `objection_hold` is set. Before `takeover accept` or
-`object`, it reads the takeover and refuses when `from.member_id` is not
-this agent, or while a human's objection stands (`objected` or
-`escalated`; a retract reopens the takeover, and the holder answers
-again). Once the hub sends `me.instance` on resume (§5.2), the CLI stores
-it and also refuses a takeover held by another instance of its team;
-until then the instance is left to the hub. A
-`forbidden` answer with `objection_open` on any takeover call is shown
-with what is still open: only a human lifts the hold, the requester may
-escalate, and the holder keeps working.
+Before `takeover accept` or `object`, the CLI reads the takeover and
+refuses when `from.member_id` is not this agent. Once the hub sends
+`me.instance` on resume (§5.2), the CLI stores it and also refuses a
+takeover held by another instance of its team; until then the instance
+is left to the hub.
 
-**Reason:** the hub refuses all of these. But a bare `forbidden` teaches
-an agent nothing, and the contract's point is that an agent never tries
-to move a held card. One extra `GET` per takeover call is cheap;
-takeovers are rare. These refusals exit 4 (refused locally, nothing
-sent), like `report`'s, so a caller can tell them from a hub error.
+**Reason:** the hub refuses these too, but a bare `forbidden` teaches an
+agent nothing. One extra `GET` per answer is cheap; takeovers are rare.
+These refusals exit 4 (refused locally, nothing sent), like `report`'s,
+so a caller can tell them from a hub error.
 
 **Rejected alternatives:**
 - Sending and relying on the hub's refusal alone: correct, but the agent
   gets an error code where it needs the rule.
-- Checking every move command (`unclaim`, `release`) for a hold as well:
-  the holder's own `release` under a hold is the one move it might try.
-  The hub refuses it with `objection_open`, and the skill's rule 11 says
-  so. A `GET` before every `unclaim` costs more than it explains.
+- Keeping the checks for the objection hold (`objection_hold` on the card,
+  `objection_open`, a human's objection) until the hold is built: the hub
+  sends none of them and no human can object, so the lines could never
+  run, and they told agents about a rule that does not hold. Opening a
+  takeover also lost its `GET`, which only served that check. The hold's
+  card brings them back with the feature.
 
 ## A 404 asks the hub's openapi.json whether the route exists at all
 

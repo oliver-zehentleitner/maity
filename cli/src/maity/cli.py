@@ -2133,17 +2133,7 @@ def _takeover_lines(t: dict[str, Any]) -> list[str]:
             f"  objected by {who}:",
             *("  " + q for q in onboarding.quote(objection.get("reasons") or "")),
         ]
-        if by.get("kind") == "human":
-            out.append("  a human objected: the card is held until a human lifts it (§6.19)")
     return out
-
-
-def _objection_hold(card: Any) -> str | None:
-    hold = _obj(_field(card, "objection_hold"))
-    if not hold:
-        return None
-    by = _obj(hold.get("by"))
-    return onboarding.inline(by.get("member_id") or by.get("id") or "a human")
 
 
 def _takeover_call(session: Session, method: str, path: str, body: Any = None) -> Any:
@@ -2159,12 +2149,6 @@ def _takeover_call(session: Session, method: str, path: str, body: Any = None) -
                 f"{exc}\nmost likely another instance of your team holds the card: only the "
                 "holding instance accepts or objects (§6.19)"
             ) from None
-        if exc.code == "forbidden" and _field(exc.details, "reason") == "objection_open":
-            raise CommandError(
-                f"{exc}\nthe card is under a human's objection hold: no agent moves it, whatever "
-                "its scopes; only a human lifts it. The requester may still `maity takeover "
-                "escalate <takeover>`; the holder goes on working (§6.19)"
-            ) from None
         raise
 
 
@@ -2178,13 +2162,6 @@ def cmd_takeover(args: argparse.Namespace) -> int:
     if not args.reason:
         raise UsageError("--reason is required: the holder and its owner read it")
     card_id = _id_or_usage(args.what)
-    card = session.client.call("GET", session.project_path("tasks", card_id))
-    holder = _objection_hold(card)
-    if holder is not None:
-        raise LocalRefusal(
-            f"{card_id} is held by {holder}'s objection: no agent opens a takeover on it; "
-            "only a human lifts the hold (§6.19)"
-        )
     body: dict[str, Any] = {"reason": _text(args.reason, "--reason")}
     if args.to:
         body["to"] = _address(session, args.to)
@@ -2198,9 +2175,9 @@ def cmd_takeover(args: argparse.Namespace) -> int:
 
 
 def _check_holder(session: Session, tid: str, takeover: dict[str, Any]) -> None:
-    """Only the holding instance answers for the card, and after a human's objection only
-    that human (§6.19). Checked before sending, so an agent learns the rule, not a bare
-    `forbidden`. The instance is the hub's to check: this clone does not know its own."""
+    """Only the holding instance answers for the card (§6.19). Checked before sending, so an
+    agent learns the rule, not a bare `forbidden`. The instance is the hub's to check: this clone
+    does not know its own."""
     me = session.me  # a bridge answers for the card its served agent holds (§6.19)
     if not isinstance(me, str):
         raise state.StateError("this agent's member id is not known yet; run `maity resume`")
@@ -2211,14 +2188,6 @@ def _check_holder(session: Session, tid: str, takeover: dict[str, Any]) -> None:
         raise LocalRefusal(
             f"{tid}: only the holder ({_instance(holder)}) or its owner accepts or objects; "
             "the requester may withdraw or escalate"
-        )
-    by = _obj(_obj(takeover.get("objection")).get("by"))
-    # A retracted objection reopens the takeover: the holder answers again (§6.19).
-    if by.get("kind") == "human" and takeover.get("status") in ("objected", "escalated"):
-        who = onboarding.inline(by.get("member_id") or by.get("id"))
-        raise LocalRefusal(
-            f"{tid}: a human ({who}) objected; after a human's objection only that human moves "
-            "the takeover on, and no agent's accept or objection counts. Keep working (§6.19)"
         )
 
 
@@ -4260,9 +4229,7 @@ def build_parser() -> argparse.ArgumentParser:
         "and, between owners, its owner may object within the window. `accept` and `object "
         "--reasons R` are the holder's answers; `withdraw` and `escalate` the requester's "
         "(escalate: either party, once objected); `list` shows open takeovers (--status all, "
-        "--card). Under a human's objection hold no agent moves the card, whatever its "
-        "scopes: only a human lifts it, the requester may still escalate, and the holder goes "
-        "on working.",
+        "--card).",
     )
     p.add_argument(
         "what", metavar="CARD|ACTION", help=f"a card id, or {', '.join(TAKEOVER_ACTIONS)}"
