@@ -27,6 +27,7 @@ from maity_hub import (
     idempotency,
     instances,
     ktw_skill,
+    languages,
     memory,
     mentions,
     moderation,
@@ -65,6 +66,7 @@ from maity_hub.views import (
     confirmed_by_of,
     event_views,
     git_identity,
+    human_languages,
     isolated,
     meat_proxy_view,
     member_views,
@@ -179,6 +181,7 @@ class MePatch(Strict):
     website: str | None = None
     social: Any = None  # an object, checked with the other fields: `social: "format"`
     links_visible: str | None = None
+    interface_language: str | None = None  # §6.2; null clears it
 
 
 LINKS = ("website", "social", "links_visible")
@@ -191,6 +194,7 @@ HUMAN_FIELDS = (
     "website",
     "social",
     "links_visible",
+    "interface_language",
 )
 
 
@@ -591,6 +595,8 @@ def _packet(
                 "id": owner.id,
                 "handle": owner.handle,
                 **meat_proxy_view(owner.meat_proxy_lead, owner.meat_proxy_hands),
+                # Its own human, also where that human is no member of the project (§6.2).
+                "language": human_languages(conn, {owner.id}).get(owner.id, "en"),
             },
             "git_identity": git_identity(agent),
         },
@@ -840,6 +846,7 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             and all(v is None for v in parts.values())
             and not (public or links)
             and body.handle is None
+            and "interface_language" not in given
         ):
             raise invalid({"handle": "required", "meat_proxy": "required"}, "nothing to change")
         if body.meat_proxy is False and any(parts.values()):
@@ -874,6 +881,11 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             if problem is not None:
                 raise invalid({"public_bio": problem})
             values["public_bio"] = body.public_bio or None  # an empty text clears it
+        if "interface_language" in given:
+            chosen = body.interface_language
+            if chosen is not None and chosen not in languages.INTERFACE:
+                raise invalid({"interface_language": "unknown_language"})
+            values["interface_language"] = chosen
         links_given = {"website", "social", "links_visible"} & given
         changed = False
         if links_given:

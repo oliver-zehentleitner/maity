@@ -66,7 +66,12 @@ def test_the_packet_has_every_part_of_the_contract(
         "wait_timeout": 540,  # Claude Code
         "cli_version": CLI_VERSION,
     }
-    assert packet["me"]["owner"] == {"id": owner.id, "handle": "maintainer", "meat_proxy": False}
+    assert packet["me"]["owner"] == {
+        "id": owner.id,
+        "handle": "maintainer",
+        "language": "en",
+        "meat_proxy": False,
+    }
     assert packet["membership"] == {
         "trust": "member",
         "role": "coder",

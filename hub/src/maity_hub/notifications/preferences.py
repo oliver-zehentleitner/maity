@@ -157,6 +157,26 @@ def preferences(conn: Connection, human_id: str) -> dict[str, Any]:
     return _merged(row_of(conn, human_id).preferences)
 
 
+def text_language(conn: Connection, human_id: str) -> str:
+    """The language of what the hub itself composes for this human (§6.2)."""
+    chosen = conn.execute(
+        select(t.human.c.interface_language).where(t.human.c.id == human_id)
+    ).scalar_one_or_none()
+    return languages.of_interface(chosen, preferences(conn, human_id)["email"]["language"])
+
+
+def set_language(conn: Connection, human_id: str, language: str) -> None:
+    """What agents write in, chosen at registration (§2.7.1): no account has projects yet, so
+    this tells nobody."""
+    stored = dict(row_of(conn, human_id, lock=True).preferences or {})
+    stored["email"] = {**(stored.get("email") or {}), "language": language}
+    conn.execute(
+        update(t.notification_settings)
+        .where(t.notification_settings.c.human_id == human_id)
+        .values(preferences=stored, updated_at=clock.now())
+    )
+
+
 def view(conn: Connection, human_id: str, mail_available: bool) -> dict[str, Any]:
     row = row_of(conn, human_id)
     held = _held(row)

@@ -137,7 +137,7 @@ def request(conn: Connection, hub: Settings, caller: Any, human_id: str, reason:
         },
     )
     admin_handle = second_factor._handle(conn, caller.principal_id)
-    language = str(preferences.preferences(conn, human_id)["email"]["language"])
+    language = preferences.text_language(conn, human_id)
     words = _WORDS.get(language, _WORDS["en"])
     outbox.enqueue(
         conn,
@@ -197,7 +197,7 @@ def page(conn: Connection, hub: Settings, token: str) -> dict[str, str] | None:
         "display_name": human.display_name,
         "admin": second_factor._handle(conn, row.requested_by),
         "reason": row.reason,
-        "language": str(preferences.preferences(conn, row.human_id)["email"]["language"]),
+        "language": preferences.text_language(conn, row.human_id),
     }
 
 
