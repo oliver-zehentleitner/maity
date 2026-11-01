@@ -53,6 +53,63 @@ never have to open it.
 - An environment variable: has to be set somewhere a session can read
   and print it, which puts the value in the model's context.
 
+## On Windows an access list set through `ctypes` takes the place of the mode bits
+
+**Id:** 60793da2-e21a-48af-9aef-9e7963d60384
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-dv24gngs9qaa, the proposal on the card and the lead's decision of 2026-11-01; `cli/src/maity/winacl.py`
+**Revisit when:** the credential no longer has to be the same file as a `curl -o` join writes (then DPAPI can add encryption), or the CLI takes on a dependency
+**See:** credentials.md — 42a53009-dc84-4434-855e-23bbc5473924 — as of 2026-11-01
+
+On Windows `st_mode` says nothing about who can read a file and `os.chmod`
+sets only the read-only flag. So the state directory gets a protected access
+list of its own: full access for this user, `SYSTEM` and `Administrators`,
+passed on to what is created in it. `check_private` reads the owner and the
+real list and refuses anyone else, as it refuses mode bits on POSIX, and
+names an `icacls` command as the way out. `SYSTEM` and `Administrators` are
+allowed because they are the counterpart of root: they can take any file, so
+naming them changes nothing. An entry the code cannot read, and a file with no
+list at all (exFAT), count as someone else.
+
+**Reason:** a clone under `C:\work` inherits write access for
+`Authenticated Users` from the drive root, so a credential there is open to
+every user of the machine. Under the profile it happens to be closed, which is
+no protection to rely on. `mkstemp` makes no private file on Windows either;
+it inherits, which is why the list lives on the directory.
+
+**Rejected alternatives:**
+- DPAPI (`CryptProtectData`): encrypts per user and protects more, but the
+  credential has to stay byte for byte the file a `curl -o` join writes
+  (`docs/api.md` §3.3), and it fails without a loaded profile.
+- Credential Manager or another keyring: per user, not per clone (42a53009),
+  and out of reach without a logon session, which is how agents run.
+- `icacls` as a subprocess: its output is localized, parsing it breaks.
+- `pywin32`: the CLI has no dependencies, on purpose.
+- Skipping the check on Windows: the silent gap `check_private` exists to close.
+
+## The runner does not run on Windows, by decision
+
+**Id:** c7109a1d-4f47-40e2-9165-ec01f5f94277
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-dv24gngs9qaa, the lead's decision of 2026-11-01
+**Revisit when:** someone needs a native runner on Windows
+
+`maity runner` refuses on Windows and points to WSL. Every other command works
+there. `pwd` is imported inside the two functions that use it, because
+`maity.cli` imports the runner's parser and every command would die on start.
+
+**Reason:** the runner needs more than `pwd`, `fcntl` and `killpg`: `tmux` for
+the agents' sessions, `systemd` for the service, OS users for the separation.
+WSL has all of them, so a port would build for a case nobody has asked for.
+
+**Rejected alternatives:**
+- Porting it as a second stage: replacing `tmux` and the user separation is a
+  second implementation, not a port.
+
 ## Another instance of an agent joined outside a clone gets `<handle>#<instance>` beside the first
 
 **Id:** bb201120-1f26-456e-ad30-2d483d4d921d
