@@ -124,6 +124,8 @@ window.Maity = window.Maity || {};
     }
     const form = h("form", {
       class: "inline-form public-profile-form",
+      // The hub's refusal in words at the field, never the browser's bubble stopping the whole save.
+      novalidate: true,
       onsubmit: async (e) => {
         e.preventDefault();
         [bio, website].concat(Object.values(networks)).forEach((f) => { f.error.textContent = ""; });

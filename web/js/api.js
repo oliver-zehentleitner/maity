@@ -1763,7 +1763,9 @@ window.Maity = window.Maity || {};
         if (body.website) { const problem = websiteProblem(body.website, 200); if (problem) errors.website = problem; }
         if ("links_visible" in body && !["private", "friends", "colleagues", "friends_and_colleagues", "everyone"].includes(body.links_visible)) errors.links_visible = "unknown";
         const merged = Object.assign({}, mm.social || {});
-        Object.entries(body.social || {}).forEach(([network, name]) => {
+        const isObject = body.social && typeof body.social === "object" && !Array.isArray(body.social);
+        if (body.social !== undefined && body.social !== null && !isObject) errors.social = "format";
+        Object.entries(isObject ? body.social : {}).forEach(([network, name]) => {
           if (!(network in PERSON_NETWORK_FORMS)) errors["social." + network] = "unknown";
           else if (!name) delete merged[network];
           else { const fixed = personNetworkName(network, name); if (fixed === null) errors["social." + network] = "format"; else merged[network] = fixed; }

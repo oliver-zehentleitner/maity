@@ -864,7 +864,12 @@
   "inbox.fact.to": "To",
   "inbox.fact.waits": "the agent waits for the answer",
   "inbox.fact.your_agents": "Your agents",
+  "inbox.filter.hidden": {
+    "one": "This filter hides {count} open request in other projects.",
+    "other": "This filter hides {count} open requests in other projects."
+  },
   "inbox.filter.project": "Project",
+  "inbox.filter.show_all": "Show every project",
   "inbox.free_text": "Free text",
   "inbox.free_text_label": "Free text ({keys} sends)",
   "inbox.group": "Group by project",

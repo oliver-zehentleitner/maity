@@ -279,6 +279,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(maityOpenNow > 0 && main.querySelectorAll("li.entry").length === maityOpenNow, "inbox: a project's inbox ignores the cross-project filter, and holds its personal requests too");
   await go("#/all");
   expect(byId("inbox-project").value === "maintainer/sample" && main.querySelectorAll("li.entry").length === 1, "inbox: back in all projects, the filter is still set");
+  // A filter outlives a reload: what it hides is said, and one click lifts it (the owner's "only F5 brings it").
+  const filterNote = () => main.querySelector(".inbox-filter-hidden");
+  expect(filterNote() && /hides \d+ open request/.test(text(filterNote())), "inbox: the filter says what it hides " + (filterNote() ? text(filterNote()) : "none"));
+  const allBefore = main.querySelectorAll("li.entry").length;
+  btn(filterNote(), "Show every project").click(); await tick();
+  expect(byId("inbox-project").value === "" && main.querySelectorAll("li.entry").length > allBefore && !filterNote(), "inbox: Show every project lifts the filter");
+  byId("inbox-project").value = "maintainer/sample"; byId("inbox-project").dispatch("change"); await tick();
   byId("inbox-project").value = ""; byId("inbox-project").dispatch("change"); await tick();
   const grp = byId("inbox-group"); grp.checked = true; grp.dispatch("change"); await tick();
   const groupHeads = main.querySelectorAll("section.entry-group").map((x) => x.childNodes[0].childNodes[0].textContent);
@@ -7411,6 +7418,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   {
     // A person's page (§16.9): sent through PATCH /me, the hub's page_served decides the link.
     {
+      const notObject = await win.Maity.api.patch("/me", { social: "anna" }).catch((e) => e);
+      expect(notObject.details.fields.social === "format" && Object.keys(notObject.details.fields).length === 1, "profile links: a social that is no object is refused as the hub does " + JSON.stringify(notObject.details && notObject.details.fields));
       const refusedLinks = await win.Maity.api.patch("/me", { website: "http://x", social: { github: "https://github.com/a", mastodon: "anna", nope: "a" }, links_visible: "all" }).catch((e) => e);
       const f = refusedLinks.details.fields;
       expect(f.website === "format" && f["social.github"] === "format" && f["social.mastodon"] === "format" && f["social.nope"] === "unknown" && f.links_visible === "unknown", "profile links: the fixture hub refuses as the hub " + JSON.stringify(f));
