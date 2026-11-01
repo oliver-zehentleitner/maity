@@ -3185,6 +3185,20 @@ window.Maity = window.Maity || {};
       if (!file(m[1], "tasks.json", path).items.some((c) => c.id === m[2])) fail(404, "not_found", "Not found", path);
       return { items: (fixtures()[m[1] + "/task-history.json"] || {})[m[2]] || [], next_cursor: null };
     }],
+    // A watch (docs/api.md §6.4): the reader's own, on the card as the fixture has it.
+    ["PUT", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/watch$/, (m, body, path) => {
+      const card = file(m[1], "tasks.json", path).items.find((c) => c.id === m[2]);
+      if (!card) fail(404, "not_found", "Not found", path);
+      card.watching = true;
+      return card;
+    }],
+    ["DELETE", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/watch$/, (m, body, path) => {
+      const card = file(m[1], "tasks.json", path).items.find((c) => c.id === m[2]);
+      if (!card) fail(404, "not_found", "Not found", path);
+      card.watching = false;
+      return card;
+    }],
+    ["GET", /^\/projects\/([^/]+)\/messages$/, () => ({ items: [], next_cursor: null })],
     // Release edits (docs/api.md §6.7). Readiness stays as the fixture has
     // it: computing it is the hub's, never the page's.
     ["PATCH", /^\/projects\/([^/]+)\/tasks\/([^/]+)$/, (m, body, path) => {
