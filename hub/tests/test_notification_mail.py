@@ -83,6 +83,20 @@ def test_an_immediate_item_waits_its_window_and_goes_once(
     assert len(notifications(migrated)) == 1  # an item goes out once
 
 
+def test_a_language_the_hub_has_no_words_in_gets_the_english_mail(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    owner, agent = setup(make_client, migrated)
+    assert (
+        owner.patch("/me/notification-settings", {"email": {"language": "ja"}}).status_code == 200
+    )
+    ask(agent)
+    at(minutes=3)
+    run(migrated)
+    [mail] = notifications(migrated)
+    assert "Stop these mails (inbox): https://hub.example/mail/unsubscribe/" in mail.body
+
+
 def test_an_item_read_first_is_not_mailed(
     make_client: ClientFactory, migrated: Engine, at: Any
 ) -> None:

@@ -789,7 +789,7 @@ window.Maity = window.Maity || {};
       return h("th", { scope: "row", role: "rowheader", "data-label": M.t("members.col.name"), tabindex: m.id === wanted ? "-1" : null },
         h("span", { class: "member-name" }, M.dom.memberRef(ctx, m.id, { avatar: 20 })), h("span", { class: "muted" }, " @" + M.dom.handleOf(ctx, m)),
         m.kind === "human" && !m.removed_at && m.language
-          ? h("p", { class: "muted member-language" }, M.t("members.language", { language: m.language === "de" ? "Deutsch" : "English" })) : null,
+          ? h("p", { class: "muted member-language" }, M.t("members.language", { language: M.languageName(m.language) })) : null,
         ownerOutside(ctx, m) ? h("span", { class: "badge member-owner-outside", title: M.t("members.owner_outside.title") }, M.t("members.owner_outside.badge")) : null,
         m.kind === "agent" && m.isolated
           ? h("span", { class: "badge member-isolated", title: M.t("members.isolated.title", { reason: m.isolated.reason }) }, M.t("members.isolated.badge")) : null,

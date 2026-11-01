@@ -26,7 +26,7 @@ from maity_hub.errors import invalid
 from maity_hub.views import ts
 
 ROW = "landing"  # the one row of `instance_landing`
-LANGUAGES = ("en", "de")  # the languages of §6.2
+LANGUAGES = ("en", "de")  # the languages the hub has words in, not the list of §6.2
 SECTION_MAX = 20
 STORED_MAX = 256 * 1024  # bytes of UTF-8 (§16.7)
 FIELDS = ("enabled", "default_language", "pages", "footer")

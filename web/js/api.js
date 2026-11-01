@@ -116,6 +116,7 @@ window.Maity = window.Maity || {};
   // Fixture mode keeps a project in fixtures/<slug>/; its full name is the
   // project view's, else its owner's handle as the fixtures name it.
   const FIXTURE_OWNERS = { guestlab: "guest" };
+  const FIXTURE_LANGUAGES = [["ar", "العربية"], ["de", "Deutsch"], ["en", "English"], ["fr", "français"], ["ja", "日本語"], ["zh-Hans", "简体中文"]].map(([tag, name]) => ({ tag, name }));
   const fixtureSlug = (full) => String(full).split("/").pop();
   function fullOf(slug) {
     const view = fixtures()[slug + "/project.json"];
@@ -1908,10 +1909,11 @@ window.Maity = window.Maity || {};
       return { valid_until: new Date(Date.now() + 600000).toISOString().replace(/\.\d{3}Z$/, "Z"), member: me().member, next: "/" };
     }],
     ["POST", /^\/auth\/second-factor\/email$/, () => ({ mail: "sent" })],
+    ["GET", /^\/languages$/, () => ({ items: FIXTURE_LANGUAGES })],
     ["PATCH", /^\/me\/notification-settings$/, (m, body, path) => {
       const set = fixtures()["notifications.json"].settings;
       if (body.email && "language" in body.email) {
-        if (!["en", "de"].includes(body.email.language)) fail(400, "invalid", "unknown language", path);
+        if (!FIXTURE_LANGUAGES.some((l) => l.tag === body.email.language)) fail(400, "invalid", "unknown language", path);
         set.email.language = body.email.language;
       }
       // §18.4: not_listening's mode and its minutes, each checked at its path.
@@ -2480,7 +2482,7 @@ window.Maity = window.Maity || {};
       if ("absence" in body) p.absence = body.absence;
       if (body.settings && "language" in body.settings) {
         if (me().member.kind !== "human" || !["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "human project:admin needed", path);
-        if (!["en", "de"].includes(body.settings.language)) fail(400, "invalid", "unknown language", path);
+        if (!FIXTURE_LANGUAGES.some((l) => l.tag === body.settings.language)) fail(400, "invalid", "unknown language", path);
         p.settings = Object.assign({}, p.settings, { language: body.settings.language });
       }
 

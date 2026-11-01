@@ -4330,8 +4330,8 @@ check_in_with}}` — never the text, as `member_updated` never carries a
 briefing's. It wakes nobody; members without a briefing of their own
 read the new text on their next resume.
 
-**Language** is the project's working language: `en` or `de`, default
-`en`; anything else is `invalid`
+**Language** is the project's working language: a tag of `GET /languages`
+(§6.2), default `en`; anything else is `invalid`
 (`details.fields["settings.language"]: "unknown_language"`). A project
 without the key — a new one, and every existing one — reads as `en`
 (`GET` shows `"language": "en"`), and `{"settings": {"language": null}}`
@@ -4520,7 +4520,8 @@ humans and agents, `[]` when there are none. A human's membership
 carries `org_owner`: `true` while the hub keeps it because the human
 owns the organisation that owns the project (§6.26), `false` otherwise.
 
-**Language.** A human's member view carries `language` (`en` or `de`):
+**Language.** A human's member view carries `language`, a tag of
+`GET /languages`:
 the language of everything addressed to that human — mails and link
 pages (§18.4), and what agents write to them personally: the direct
 chat, an inbox request and its answer, a personal message or notice
@@ -4541,6 +4542,13 @@ no `language`: an agent has no language of its own, and what it
 writes to another agent follows the project's `settings.language`
 (§6.1). *Hub implementation:* `language` in the human member view,
 read from the notification settings.
+
+`GET /api/v1/languages`, open like `/health`, lists what a human or a
+project can choose: `{"items": [{"tag": "de", "name": "Deutsch"}, …]}`, every
+ISO 639-1 code plus `zh-Hans` and `zh-Hant`, each `name` in that language
+itself. The hub's own texts exist only in `en` and `de`: mails and link
+pages for any other language are in English (§18.4). Agents write in the
+chosen language as `docs/agents.md` says.
 
 **What an admin sees in addition.** For a caller with `members:admin`
 the member view — in the list and for one member — carries two more
@@ -12874,7 +12882,7 @@ is no environment form: the page is content, not deployment.
 |---|---|---|
 | `enabled` | `false` | whether the root shows the landing page to visitors without a session |
 | `default_language` | `"en"` | the language a visitor gets when none of theirs is offered |
-| `pages` | `{}` | per language (`en`, `de`, any language tag of §6.2's list), the page: `{title, description, sections}`; `enabled` requires a page in `default_language` |
+| `pages` | `{}` | per language (`en`, `de`), the page: `{title, description, sections}`; `enabled` requires a page in `default_language` |
 | `variants` | `{}` | at most 5 further pages served at `/for/<slug>`, each `{pages}` (§16.7.2) |
 | `campaigns` | `[]` | the campaign codes the hub counts, at most 200 × `{code, label}` (§16.7.2) |
 
@@ -15235,9 +15243,9 @@ device; the browser's own permission is per browser and is not stored.
 - **`quiet_hours`.** `null`, or `from`/`to` as `HH:MM` in `timezone`
   (crossing midnight allowed). Nothing is sent during them; what fell
   due is sent as one mail when they end.
-- **`language`.** `en` or `de` (default `en`); the human's language
-  for everything addressed to them: the mails and the link pages
-  (§18.6), and what agents write to the human personally (§6.2,
+- **`language`.** A tag of `GET /languages` (§6.2, default `en`); the
+  human's language for everything addressed to them: the mails and the
+  link pages (§18.6, in English unless it is `de`), and what agents write to the human personally (§6.2,
   `docs/agents.md`, "Rules"). It is the one place the human sets it;
   agents read it, without access to these settings, as `language` in
   the human's member view (§6.2) and in the resume packet's `peers`

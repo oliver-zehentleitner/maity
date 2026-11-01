@@ -65,7 +65,7 @@ def test_the_defaults_and_who_reads_them(make_client: ClientFactory, migrated: E
         ({"email": {"timezone": "Mars/Base"}}, {"email.timezone": "invalid"}),
         ({"email": {"daily_at": "25:00"}}, {"email.daily_at": "invalid"}),
         ({"email": {"quiet_hours": {"from": "22:00"}}}, {"email.quiet_hours": "invalid"}),
-        ({"email": {"language": "fr"}}, {"email.language": "invalid"}),
+        ({"email": {"language": "xx"}}, {"email.language": "invalid"}),
         ({"browser": {"kinds": {"inbox": "yes"}}}, {"browser.kinds.inbox": "invalid"}),
         ({"browser": {"content": {"inbox": True}}}, {"browser.content": "invalid"}),
         ({"browser": {"kinds": {"card": True}}}, {"browser.kinds.card": "unknown"}),

@@ -2040,6 +2040,7 @@ window.MAITY_I18N["en"] = {
   "notify.language.label": "Language",
   "notify.language.save": "Save personal language",
   "notify.language.saved": "Personal language saved.",
+  "notify.language.search": "Search languages",
   "notify.language.title": "Your language",
   "notify.minutes.range": "A whole number of minutes from {min} to {max}.",
   "notify.mode.bell": "An item on the bell",

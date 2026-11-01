@@ -15,7 +15,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import Connection, select
 
-from maity_hub import account_deletion, clock, events
+from maity_hub import account_deletion, clock, events, languages
 from maity_hub import tables as t
 from maity_hub.auth import second_factor_reset
 from maity_hub.db import retrying
@@ -163,7 +163,9 @@ def _language(conn: Connection, request: Request, token: str) -> str:
     payload = tokens.read(settings_of(request).mail.signing_key, token)
     if payload is None:
         return "en"
-    return str(preferences.preferences(conn, str(payload.get("h")))["email"]["language"])
+    return languages.own_text(
+        preferences.preferences(conn, str(payload.get("h")))["email"]["language"]
+    )
 
 
 def _dead(words: dict[str, str]) -> HTMLResponse:

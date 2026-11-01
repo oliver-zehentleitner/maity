@@ -29,6 +29,7 @@ from maity_hub import (
     images,
     join_line,
     landing_files,
+    languages,
     listening,
     longpoll,  # noqa: F401  (subscribes the long-poll to new events)
     namespace,
@@ -409,6 +410,11 @@ def render_help(settings: Settings) -> str:
 
 def _api_router() -> APIRouter:
     router = APIRouter()
+
+    @router.get("/languages")
+    def language_list() -> JSONResponse:
+        items = [{"tag": tag, "name": name} for tag, name in languages.NAMES.items()]
+        return JSONResponse({"items": items})
 
     @router.get("/health")
     def health(request: Request) -> JSONResponse:

@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Connection, Engine, select, update
 
+from maity_hub import languages
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -72,7 +73,7 @@ def test_language_merges_and_emits_only_effective_changes(
     assert project.rules_version == before
 
 
-@pytest.mark.parametrize("language", ["fr", "EN", "", 1, True, [], {}])
+@pytest.mark.parametrize("language", ["xx", "EN", "zh-hans", "", 1, True, [], {}])
 def test_unknown_language_has_contract_error(owner: flow.Human, language: Any) -> None:
     response = owner.patch("/projects/maintainer/maity", {"settings": {"language": language}})
     assert response.headers["Maity-Error"] == "invalid"
@@ -153,3 +154,47 @@ def test_settings_merge_uses_the_row_read_under_the_project_lock(
         )
     language_events = [p for p in language_events if "settings.language" in p.get("fields", {})]
     assert language_events == ([] if checklist_write else [{"fields": {"settings.language": "en"}}])
+
+
+@pytest.mark.parametrize("language", ["fr", "ja", "zh-Hant"])
+def test_any_listed_language_reaches_the_project_and_the_packet(
+    owner: flow.Human, make_client: ClientFactory, language: str
+) -> None:
+    agent = flow.agent(make_client, owner)
+    assert (
+        owner.patch("/projects/maintainer/maity", {"settings": {"language": language}}).json()[
+            "settings"
+        ]["language"]
+        == language
+    )
+    assert agent.resume().json()["project"]["language"] == language
+
+
+def test_a_humans_language_reaches_their_member_view_and_the_peers(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    owner.patch("/me/notification-settings", {"email": {"language": "fr"}})
+    members = agent.get("/projects/maintainer/maity/members").json()["items"]
+    assert [m["language"] for m in members if m["kind"] == "human"] == ["fr"]
+    peers = agent.resume().json()["peers"]
+    assert [p["language"] for p in peers if p.get("kind") == "human"] == ["fr"]
+
+
+def test_the_list_is_open_complete_and_names_each_language_itself(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    items = make_client().get("/api/v1/languages").json()["items"]
+    tags = [item["tag"] for item in items]
+    assert len(tags) == len(set(tags)) == 185  # ISO 639-1's 183 and the two Chinese scripts
+    named = {item["tag"]: item["name"] for item in items}
+    assert (named["de"], named["en"], named["ja"]) == ("Deutsch", "English", "日本語")
+    assert {"zh-Hans", "zh-Hant"} <= set(tags)
+    assert max(len(tag) for tag in tags) <= 7 and all(named.values())
+
+
+@pytest.mark.parametrize(
+    ("language", "text"), [("de", "de"), ("en", "en"), ("fr", "en"), (None, "en")]
+)
+def test_the_hubs_own_text_falls_back_to_english(language: str | None, text: str) -> None:
+    assert languages.own_text(language) == text

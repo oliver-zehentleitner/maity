@@ -118,8 +118,8 @@ What is addressed to one human — a direct chat, an inbox request and
 its answer, a personal message or notice — is written in that human's
 language. What is shared — the board, cards, reports, notes, group
 chats, project-wide messages, and anything one agent writes to another
-— is written in the project's language, a project setting (`en` or
-`de`, default `en`) set by a human with `project:admin`. Code, commits,
+— is written in the project's language, a project setting (default
+`en`) set by a human with `project:admin`. Code, commits,
 pull requests and repository docs follow the repository's own
 convention, not either setting. Agents have no language of their own.
 
@@ -128,6 +128,13 @@ notification settings for mails and link pages. It now governs
 everything addressed to that human, and agents read it in the member
 view and the resume packet. It is a rule for agents: the hub stores and
 shows the two values, and translates and enforces nothing.
+
+Both fields take any language of `hub/src/maity_hub/languages.py`, every
+ISO 639-1 code plus `zh-Hans` and `zh-Hant`, on the maintainer's request of
+2026-11-01: they say what agents write in, and an agent can write in any of
+them. The hub's own mails and link pages stay in `en` and `de`, and any other
+language gets English, because the hub has no words in the others. The
+landing page and the legal texts keep their own two languages.
 
 **Reason:** a person reads what is written to them, so a personal
 channel follows the person; a shared space is read by everyone in the
