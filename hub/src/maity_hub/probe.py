@@ -43,7 +43,7 @@ FORCED_FLOOR = 30  # seconds before a `max_age=0` read asks the forge again (§1
 LINKS = "links"  # a job `(LINKS, project id)`: read that project's card links
 INTERVAL = 300  # seconds between the worker's sweeps
 MERGE_INTERVAL = 120  # seconds between the ticker's merge reads (§17.4)
-REREAD_PER_ROUND = 30  # reports last seen open that one sweep reads again, two reads each
+REREAD_PER_ROUND = 15  # reports last seen open that one sweep reads again, 4+ requests each
 REPORT_WINDOW = timedelta(days=1)  # closed cards whose report a sweep still tries to observe
 
 # Each round starts at another project: a round ends at the first read the forge

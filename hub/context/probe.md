@@ -15,7 +15,7 @@ then goes onto the queue of one daemon thread per hub process, which reads
 the branch and the pull request and fills `report.observed`. The same
 thread sweeps every five minutes: reports without an observation on open
 cards of any age and on cards closed within a day, the open release of
-every observable project, then the 30 reports with the oldest observation
+every observable project, then the 15 reports with the oldest observation
 whose pull request was last seen open. A round ends at the first read the
 forge does not answer, and between two reads when the hub stops. Forge reads
 happen with no database connection held; each result is written in a short
@@ -51,17 +51,18 @@ merge: `task_merged` and `merged_closes` (§6.6) never fired for it, and
 `maity report` refused a follow-up pull request on the card because the
 last one looked open. The tests called `observe_report` directly on a merged pull
 request, so none noticed. A sweep now also reads reports last seen open, up
-to 30 a round, oldest observation first, after everything else it reads.
+to 15 a round, oldest observation first, after everything else it reads.
 
 **Reason:** the contract's "A merge closes the loop" needs someone to look
 again, and the sweep is the only reader that runs on its own.
 
-**Consequence:** at most 60 forge reads per sweep, 720 an hour, about 14% of
-a 5000-an-hour source, with no cache help since the 60 s of `MAX_AGE` are
+**Consequence:** one report costs at least four forge requests (branch, pull
+request, check runs, statuses), so about 60 per sweep and 720 an hour, some 14%
+of a 5000-an-hour source, with no cache help since the 60 s of `MAX_AGE` are
 shorter than the sweep. A forgotten open pull request on an open card keeps
-its turn at any age. Beyond 30 such reports a merge shows later: one round
-per 30 reports, so 300 reports take up to 50 minutes. A merge into the default branch
-is still announced by the ticker in that time; only the card lags.
+its turn at any age. Beyond 15 such reports a merge shows later: one round
+per 15 reports, so 150 reports take up to 50 minutes. A merge into the default
+branch is still announced by the ticker in that time; only the card lags.
 
 **Rejected alternatives:**
 - Refreshing from the merge ticker alone: it sees only merges into the
@@ -70,9 +71,10 @@ is still announced by the ticker in that time; only the card lags.
 - A turn counter per process, as `_rotated` keeps: it restarts with the
   process and each replica would count alone, while the oldest `observed_at`
   needs no state of its own.
-- Reading every such report each round: 24 reads an hour per report would use
-  a 5000-an-hour source up at about 200 of them, and as the round ends at the
-  first unanswered read, releases and links behind them would starve.
+- Reading every such report each round: about 48 requests an hour per report
+  would use a 5000-an-hour source up at about 100 of them, and as the round
+  ends at the first unanswered read, releases and links behind them would
+  starve.
 
 ## A change is detected where the observation is written, by whichever read sees it first
 
