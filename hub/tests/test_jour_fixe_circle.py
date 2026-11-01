@@ -381,6 +381,66 @@ def test_a_forwarded_request_outlives_the_circle_owner_until_its_holder_goes_too
     assert row.status == "withdrawn" and not row.holder_pool
 
 
+def _remove(circle: Circle, who: flow.Human) -> None:
+    gone = circle.owner.client.delete(
+        f"/api/v1{BASE}/members/{who.id}", headers=_headers(circle.owner)
+    )
+    assert gone.status_code in (200, 204), gone.text
+
+
+def test_a_holder_removed_from_the_project_gives_it_back_to_the_owner(
+    circle: Circle, make_client: ClientFactory
+) -> None:
+    request_id, colleague = _given_to_a_colleague(circle, make_client)
+    _remove(circle, colleague)
+    path = f"{BASE}/requests/{request_id}"
+    assert circle.friend.get(path).json()["holder"] == circle.friend.id
+    answered = circle.friend.post(f"{path}/answer", {"reply_id": "reject"})
+    assert answered.status_code == 200, answered.text
+
+
+def test_the_owner_gone_and_then_the_holder_removed_withdraws_it(
+    circle: Circle, make_client: ClientFactory
+) -> None:
+    request_id, colleague = _given_to_a_colleague(circle, make_client)
+    _remove(circle, circle.friend)
+    assert _status(circle.engine, request_id).status == "open"
+    _remove(circle, colleague)
+    row = _status(circle.engine, request_id)
+    assert (row.status, row.withdraw_reason) == ("withdrawn", "member_removed")
+    assert not row.holder_pool
+
+
+def test_a_removed_holder_of_any_other_request_returns_it_to_the_admins(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§7: as an account's deletion does; it lay with nobody able to answer it."""
+    admin = _member(make_client, migrated, "heldby")
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.human_id == admin.id).values(trust="admin")
+        )
+    asker = flow.agent(make_client, owner)
+    asked = asker.post(
+        f"{BASE}/requests",
+        {
+            "class": "decision",
+            "title": "Which?",
+            "to": "owner",
+            "options": [{"id": "go", "label": "Go"}, {"id": "no", "label": "No"}],
+            "while_open": "wait",
+        },
+    )
+    assert asked.status_code == 201, asked.text
+    request_id = asked.json()["id"]
+    given = owner.post(f"{BASE}/requests/{request_id}/forward", {"to": admin.id, "reason": "t"})
+    assert given.status_code == 200, given.text
+    gone = owner.client.delete(f"/api/v1{BASE}/members/{admin.id}", headers=_headers(owner))
+    assert gone.status_code in (200, 204), gone.text
+    row = _status(migrated, request_id)
+    assert (row.status, row.holder_member, row.holder_pool) == ("open", None, True)
+
+
 def test_a_substitute_gets_no_request_of_an_owners_round(circle: Circle, migrated: Engine) -> None:
     """§20.7: a cover would let the substitute read it."""
     circle.worker.post(_rounds(circle.id, "/answers"), {"went_badly": "slow CI"})

@@ -1419,8 +1419,8 @@ def return_held(conn: Connection, request_id: str, by: str, reason: str) -> None
         return
     project = lock_project(conn, row.project_id)
     alone = bool(inbox.owners_alone(conn, [row]))
-    if alone and not _addressee_active(conn, row):
-        close_request(conn, row.id, "withdrawn", None, reason=reason)
+    if alone and (row.holder_member == row.to_member or not _addressee_active(conn, row)):
+        close_request(conn, row.id, "withdrawn", None, reason="member_removed")
         return
     if alone:
         steps = _step(conn, row, "forwarded", inbox.addressee_of(row).text(conn), by, reason)
@@ -1458,10 +1458,21 @@ def _addressee_active(conn: Connection, row: Any) -> bool:
     )
 
 
+def return_held_by(conn: Connection, member_id: int, by: str) -> None:
+    """A member leaves the project (§6.2): what it holds would lie with nobody to answer."""
+    rows = conn.execute(
+        select(t.request.c.id)
+        .where(t.request.c.holder_member == member_id, t.request.c.status == "open")
+        .order_by(t.request.c.created_at, t.request.c.id)
+    ).scalars()
+    for request_id in rows.all():
+        return_held(conn, request_id, by, "the holder left the project")
+
+
 def withdraw_owners_round(conn: Connection, member_id: int, actor: Actor | None) -> None:
     """The addressee of a request of an owner's round leaves (§6.2, §20.7): nobody else may
     read it, so it would lie open with nobody to answer it. One it forwarded stays with its
-    holder."""
+    holder, until `return_held_by` when that holder leaves too."""
     rows = conn.execute(
         select(t.request)
         .where(
