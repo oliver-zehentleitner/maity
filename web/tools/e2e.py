@@ -36,7 +36,10 @@ from __future__ import annotations
 import argparse
 import base64
 import collections
+import email
+import email.policy
 import hashlib
+import hmac
 import io
 import json
 import os
@@ -44,16 +47,19 @@ import re
 import shlex
 import shutil
 import socket
+import socketserver
 import struct
 import subprocess
 import sys
 import tarfile
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
 import zlib
 from datetime import datetime, timedelta, timezone
+from email.message import EmailMessage
 from pathlib import Path
 
 from playwright.sync_api import Error as PlaywrightError
@@ -289,8 +295,11 @@ def port_taken(port: int) -> bool:
         return False
 
 
-def start_hub(work: Path, logs: Path, port: int) -> subprocess.Popen:
-    """Migrate, create the owner and serve; every output goes to logs/hub.log."""
+def start_hub(
+    work: Path, logs: Path, port: int, extra: dict[str, str] | None = None, log_name: str = "hub.log"
+) -> subprocess.Popen:
+    """Migrate, create the owner and serve, with `extra` in the environment; every output goes
+    to logs/<log_name>."""
     base = f"http://127.0.0.1:{port}"
     # A local store for attachments (§8.7), so the attachments step uploads for real:
     # messages name their attachments since E's #474, and the sent image is read back
@@ -304,8 +313,9 @@ def start_hub(work: Path, logs: Path, port: int) -> subprocess.Popen:
         MAITY_PUBLIC_URL=base,
         MAITY_WEB_DIR=str(WEB),
         MAITY_ATTACHMENT_DIR=str(attachments),
+        **(extra or {}),
     )
-    log_path = logs / "hub.log"
+    log_path = logs / log_name
     with open(log_path, "w") as log:  # the hub keeps its own copy of the descriptor
         for args, stdin in (
             (["migrate"], None),
@@ -350,6 +360,70 @@ def start_hub(work: Path, logs: Path, port: int) -> subprocess.Popen:
         raise
     stop_hub(hub)
     raise SystemExit("e2e: the hub did not come up:\n" + log_path.read_text())
+
+
+class MailCatcher:
+    """A plain SMTP listener on 127.0.0.1 that keeps what it receives, so a round reads the
+    mail the real hub sent. The standard library's has gone (`smtpd`, Python 3.12), and this
+    is little enough not to add a dependency to the e2e."""
+
+    def __init__(self) -> None:
+        self.mails: list[tuple[list[str], EmailMessage]] = []
+        catcher = self
+
+        class Session(socketserver.StreamRequestHandler):
+            def handle(self) -> None:
+                self.say("220 e2e catcher")
+                rcpt: list[str] = []
+                while line := self.rfile.readline():
+                    verb = line[:4].upper()
+                    if verb == b"QUIT":
+                        self.say("221 bye")
+                        return
+                    if verb == b"RCPT":
+                        rcpt.append(line.decode().split(":", 1)[1].strip().strip("<>"))
+                    if verb == b"DATA":
+                        self.say("354 go on")
+                        raw = bytearray()
+                        while (part := self.rfile.readline()) not in (b".\r\n", b""):
+                            raw += part[1:] if part.startswith(b".") else part
+                        catcher.mails.append(
+                            (rcpt, email.message_from_bytes(bytes(raw), policy=email.policy.default))
+                        )
+                        rcpt = []
+                    self.say("250 ok")
+
+            def say(self, text: str) -> None:
+                self.wfile.write(text.encode() + b"\r\n")
+
+        socketserver.ThreadingTCPServer.allow_reuse_address = True
+        self.server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), Session)
+        self.server.daemon_threads = True
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def wait_for(self, to: str, timeout: float = 20) -> EmailMessage:
+        """The first mail to `to`; fails the run when none comes in time."""
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            for rcpt, message in self.mails:
+                if to in rcpt:
+                    return message
+            time.sleep(0.1)
+        raise AssertionError(f"no mail to {to} within {timeout} s; got {len(self.mails)}")
+
+    def close(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+
+def totp_code(secret: str, step: int) -> str:
+    """RFC 6238 from the secret the hub hands out, on purpose not the hub's own code."""
+    key = base64.b32decode(secret + "=" * (-len(secret) % 8))
+    digest = hmac.new(key, struct.pack(">Q", step), "sha1").digest()
+    start = digest[-1] & 0x0F
+    value = struct.unpack(">I", digest[start : start + 4])[0] & 0x7FFFFFFF
+    return str(value % 10**6).zfill(6)
 
 
 def stop_hub(hub: subprocess.Popen) -> None:
@@ -628,6 +702,7 @@ def main() -> int:
                         print("  page: " + problem)
                     raise
                 fixture_views(run, browser)
+                second_hub_round(run, browser, work, artifacts)
             finally:
                 browser.close()
                 failing = run.a11y_report()
@@ -1533,6 +1608,100 @@ def images_step(run: Run, page: Page, alpha: Path) -> None:
     project_settings(page)
     assert run.api(alpha, "GET", "/projects/owner/e2e-alpha")["logo"]["available"] is False
     no_problems(run, "images")
+
+
+def sign_in(run: Run, browser):
+    """A context of its own, signed in as the owner, and its page."""
+    context = browser.new_context(viewport={"width": 1280, "height": 900})
+    context.set_default_timeout(TIMEOUT_MS)
+    page = context.new_page()
+    watch_page(run, page)
+    page.goto(run.base + "/")
+    page.locator("#login-handle").fill(OWNER)
+    page.locator("#login-password").fill(OWNER_PASSWORD)
+    page.get_by_role("button", name="Sign in", exact=True).click()
+    expect(page.locator("header .me")).to_contain_text("Owner")
+    return context, page
+
+
+def second_hub_round(run: Run, browser, work: Path, artifacts: Path) -> None:
+    """A second hub with an instance key and a mail catcher (§2.8, §16.2). The first hub stays
+    without either, as the forge step checks exactly that absence (`secret_key_missing`)."""
+    second = work / "second-hub"
+    second.mkdir()
+    port = free_port()
+    catcher = MailCatcher()
+    extra = {
+        "MAITY_SECRET_KEY": base64.b64encode(os.urandom(32)).decode(),
+        "MAITY_MAIL_SIGNING_KEY": base64.b64encode(os.urandom(32)).decode(),
+        "MAITY_SMTP_HOST": "127.0.0.1",
+        "MAITY_SMTP_PORT": str(catcher.port),
+        "MAITY_SMTP_TLS": "none",
+        "MAITY_SMTP_ALLOW_PLAINTEXT": "1",
+        "MAITY_SMTP_FROM": "hub@e2e.example",
+    }
+    first_base = run.base
+    run.base = f"http://127.0.0.1:{port}"
+    run.step(f"second hub on {run.base}, with an instance key and a mail catcher")
+    hub = start_hub(second, artifacts, port, extra, "hub-second.log")
+    try:
+        mail_reaches_the_catcher(run, browser, catcher)
+        step_up_with_totp(run, browser)
+    finally:
+        stop_hub(hub)
+        catcher.close()
+        run.base = first_base
+
+
+def mail_reaches_the_catcher(run: Run, browser, catcher: MailCatcher) -> None:
+    run.step("second hub: the instance's test mail arrives, sent by the real hub")
+    context, page = sign_in(run, browser)
+    page.evaluate(
+        """() => window.Maity.api.post("/admin/settings/mail/test", { to: "owner@e2e.example" })"""
+    )
+    mail = catcher.wait_for("owner@e2e.example")
+    assert mail["From"] and "hub@e2e.example" in mail["From"], mail["From"]
+    no_problems(run, "the test mail")
+    context.close()
+
+
+def step_up_with_totp(run: Run, browser) -> None:
+    """A session from before the enrolment has not given the factor, so the page must ask."""
+    run.step("second hub: enrol TOTP; an older session's export asks for the code")
+    older_context, older = sign_in(run, browser)
+    context, page = sign_in(run, browser)
+    started = page.evaluate("""() => window.Maity.api.post("/auth/second-factor/totp", {})""")
+    secret = started["secret"]
+    step = int(time.time() // 30)
+    page.evaluate(
+        """(code) => window.Maity.api.post("/auth/second-factor/totp/confirm", { code })""",
+        totp_code(secret, step),
+    )
+    context.close()
+
+    older.goto(run.base + "/account/data")
+    older.get_by_role("button", name="Export my data", exact=True).click()
+    code = older.locator("#step-up-step_up_required")
+    expect(code).to_be_visible()
+    run.shot(older, "second-hub-step-up")
+    run.a11y(older, "second hub: the step-up question")
+    code.fill("000000")
+    older.locator("form.step-up").get_by_role("button", name="Confirm", exact=True).click()
+    expect(older.locator("#step-up-step_up_required-error")).to_have_text("That code is not valid.")
+    # The next step: the step of the enrolment is used up, and the hub allows one step of skew.
+    code.fill(totp_code(secret, step + 1))
+    with older.expect_download() as saved:
+        older.locator("form.step-up").get_by_role("button", name="Confirm", exact=True).click()
+    assert json.loads(Path(saved.value.path()).read_text()).get("exported_at"), "an empty export"
+    expect(older.locator(".data-export")).to_contain_text("Your export was saved.")
+    # What the question answers: the first refusal and the wrong code, both expected here.
+    run.problems = [
+        p
+        for p in run.problems
+        if "/me/export answered 403" not in p and "/second-factor/verify answered 403" not in p
+    ]
+    no_problems(run, "step-up with TOTP")
+    older_context.close()
 
 
 def fixture_views(run: Run, browser) -> None:
