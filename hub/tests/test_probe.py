@@ -785,6 +785,45 @@ def test_a_project_no_source_covers_costs_the_others_nothing(
     assert lines == [f"probe: project {other_project}: no source covers the repository ({reason})"]
 
 
+def test_a_project_no_source_covers_is_asked_once_a_round(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    github: FakeGitHub,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The first refusal takes the project's other jobs out of the round: one log line."""
+    github.pull(7)
+    github.branch("agent-b/probe")
+    _reported_card(owner, make_client)
+    other = _other_project_report(owner, make_client, github)
+    assert probe.observe_report(migrated, READER, other) is True
+    with migrated.connect() as conn:
+        other_project = conn.execute(
+            select(t.card.c.project_id).where(t.card.c.id == other)
+        ).scalar_one()
+    releases: list[str] = []
+    links: list[str] = []
+
+    def refused(_engine: Engine, _fg: Any, project_id: str) -> None:
+        releases.append(project_id)
+        if project_id == other_project:
+            raise forge.NotCoveredError("no_grant")
+
+    monkeypatch.setattr(probe, "observe_release", refused)
+    monkeypatch.setattr(probe, "observe_links", lambda _e, _f, p: links.append(p))
+    monkeypatch.setattr(probe, "MAX_AGE", 0)
+    before = _observed(migrated, other)
+    with caplog.at_level("WARNING", logger="maity_hub.probe"):
+        probe.sweep(migrated, READER)
+    assert releases.count(other_project) == 1
+    assert other_project not in links and len(links) == 1  # the covered project still has its turn
+    assert _observed(migrated, other) == before  # nor is its report read again
+    lines = [r.getMessage() for r in caplog.records if "no_grant" in r.getMessage()]
+    assert lines == [f"probe: project {other_project}: no source covers the repository (no_grant)"]
+
+
 def test_a_merge_round_goes_on_past_a_project_no_source_covers(
     monkeypatch: pytest.MonkeyPatch, owner: flow.Human, migrated: Engine, github: FakeGitHub
 ) -> None:

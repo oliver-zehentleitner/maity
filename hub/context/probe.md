@@ -32,6 +32,8 @@ probe free of a new dependency and of the event loop: a slow forge cannot
 delay a long-poll's wake-up, and it fits the single replica V1 runs.
 
 **Rejected alternatives:**
+- Ending the round at a project no source covers, like at any forge failure: one such project stopped every round before the re-reads.
+- Counting its report against the 15 re-reads: it stays the oldest, so such projects could use up all 15. The refusal itself is cached for 600 seconds per token and repository (§11.4), so a project left out costs at most one read of the repository in that time.
 - FastAPI background tasks after the response: tied to the request, so
   nothing would run the interval sweep, and a retry after a failed read
   would need a second mechanism anyway.
