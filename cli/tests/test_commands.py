@@ -504,6 +504,41 @@ def test_a_repeated_claim_of_an_own_card_succeeds(
     assert capsys.readouterr().out == "claimed tsk-0004 (it was already yours); lease until T2\n"
 
 
+def _set_instance(instance: str) -> None:
+    from maity import state
+
+    directory = state.resolve_state_dir()
+    state.save_state(directory, {**state.load_state(directory), "instance": instance})
+
+
+def test_a_repeated_claim_of_this_instance_succeeds(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _set_instance("wqe2")
+    details = {"holder": "agt-b", "instance": "wqe2", "lease_until": "T2", "expired": False}
+    refusal = {"error": {"code": "already_claimed", "message": "held", "details": details}}
+    answer(fake, "POST", f"{TASK}/claim", refusal, status=409)
+    answer(fake, "GET", TASK, {"id": "tsk-0004", "claim": {"holder": "agt-b", "lease_until": "T2"}})
+    assert cli.main(["claim", "tsk-0004"]) == cli.EXIT_OK
+    assert capsys.readouterr().out == "claimed tsk-0004 (it was already yours); lease until T2\n"
+
+
+def test_a_claim_held_by_a_sibling_instance_names_it_and_the_takeover(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _set_instance("wqe2")
+    details = {"holder": "agt-b", "instance": "abcd", "lease_until": "T2", "expired": True}
+    refusal = {"error": {"code": "already_claimed", "message": "held", "details": details}}
+    answer(fake, "POST", f"{TASK}/claim", refusal, status=409)
+    assert cli.main(["claim", "tsk-0004"]) == cli.EXIT_ERROR
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "agt-b#abcd" in captured.err
+    assert "maity takeover tsk-0004" in captured.err
+    assert "already_claimed" in captured.err
+    assert last(fake).method == "POST"  # no read that would pass it off as claimed
+
+
 def test_a_claim_held_by_someone_else_stays_an_error(joined: Path, fake: fakehub.FakeHub) -> None:
     details = {"holder": "agt-c", "lease_until": "T2", "expired": False}
     refusal = {"error": {"code": "already_claimed", "message": "held", "details": details}}
