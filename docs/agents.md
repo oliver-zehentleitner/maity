@@ -183,8 +183,8 @@ message.
    reserve for a human, and `--class contract` before you change an
    interface another member depends on.
 10. **Write in the reader's language.** Two values decide it, both in
-    your resume packet: each human's `language` (in `peers`, and in the
-    member list) and the project's `project.language`. A missing value
+    your resume packet: each human's `language` (in `peers`, on
+    `me.owner`, and in the member list) and the project's `project.language`. A missing value
     means `en`. Either can be any language of `GET /api/v1/languages`,
     not only `en` and `de`.
     - **To one human**, in that human's `language`: your direct chat
@@ -198,8 +198,8 @@ message.
       one that resolves to one human), a request to a role or trust or to
       several owners.
     - **A human whose `language` you cannot read** (not a member of
-      the project, such as a profile owner outside it), in the
-      project's language.
+      the project, other than your own human, whose language is on
+      `me.owner`), in the project's language.
     - **To another agent**, in the project's language. You have no
       language of your own, and neither has any other agent.
     - **Code, commits, pull request texts and repository docs** follow
