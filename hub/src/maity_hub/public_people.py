@@ -69,9 +69,9 @@ def _links(human: Any) -> str:
     return f"<ul>{''.join(items)}</ul>" if items else ""
 
 
-def _listed(conn: Connection, human: Any) -> str:
-    """The projects with a public page the person is a member of and their agents that have a
-    page, each with a link (§16.9)."""
+def _listed(conn: Connection, human: Any) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    """The projects with a public page the person is a member of, as `(full name, name)`, and
+    their agents that have a page, as `(handle, name)` (§16.9)."""
     from maity_hub import namespace, public_agents, public_projects
 
     m = t.membership.c
@@ -89,6 +89,10 @@ def _listed(conn: Connection, human: Any) -> str:
         for a in conn.execute(select(t.agent_profile).where(t.agent_profile.c.owner_id == human.id))
         if public_agents.served(conn, a, human) is not None
     )
+    return named, agents
+
+
+def _listed_html(human: Any, named: list[tuple[str, str]], agents: list[tuple[str, str]]) -> str:
     html = ""
     if named:
         items = "".join(
@@ -107,12 +111,35 @@ def _listed(conn: Connection, human: Any) -> str:
     return html
 
 
+def _data(
+    human: Any, named: list[tuple[str, str]], agents: list[tuple[str, str]]
+) -> dict[str, Any]:
+    """What the visitors' route answers; `website` and `social` only as the page shows them."""
+    data: dict[str, Any] = {
+        "name": human.display_name,
+        "handle": human.handle,
+        "bio": human.public_bio,
+        "projects": [{"name": name, "full_name": full} for full, name in named],
+        "agents": [
+            {"name": name, "handle": handle, "page": f"/{human.handle}/agents/{handle}"}
+            for handle, name in agents
+        ],
+    }
+    if human.links_visible == "everyone":
+        data["website"] = human.website
+        data["social"] = {
+            network: human.social[network] for network in person_links.built(human.social)
+        }
+    return data
+
+
 def render_person(conn: Connection, hub: Settings, human_id: str) -> list[public_pages.Page]:
     human = conn.execute(select(t.human).where(t.human.c.id == human_id)).first()
     if human is None or not served(conn, human):
         return []
     bio = f'<p class="sub">{escape(human.public_bio)}</p>' if human.public_bio else ""
-    listed = _listed(conn, human)
+    named, agents = _listed(conn, human)
+    listed = _listed_html(human, named, agents)
     content = (
         f'<p class="eyebrow">{escape(human.handle)}</p><h1>{escape(human.display_name)}</h1>'
         f"{bio}{_links(human)}{listed}"
@@ -135,7 +162,16 @@ def render_person(conn: Connection, hub: Settings, human_id: str) -> list[public
             )
         ).encode()
     )
-    return [public_pages.Page(path=path, body=body, inputs=inputs.hexdigest(), lastmod=clock.now())]
+    return [
+        public_pages.Page(
+            path=path,
+            body=body,
+            inputs=inputs.hexdigest(),
+            lastmod=clock.now(),
+            view="person",
+            data=_data(human, named, agents),
+        )
+    ]
 
 
 def targets(conn: Connection) -> list[str]:

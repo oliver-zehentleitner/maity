@@ -85,7 +85,7 @@ window.Maity = window.Maity || {};
         if (paths.length > FILES_MAX) errors.push(M.t("tickerset.err.files_max", { count: FILES_MAX }));
         if (errors.length) { status.fail(M.t("tickerset.not_saved"), { message: errors.join("; ") }); return; }
         // Sent whole (§6.1): what the form leaves out is gone.
-        save({ settings: { ticker: { enabled: enabled.checked, contract_files: paths, contract_implementers: map } } }, { saved: M.t("tickerset.saved"), notSaved: M.t("tickerset.save_failed") });
+        save({ settings: { ticker: { enabled: enabled.checked, contract_files: paths, contract_implementers: map } } }, { saved: M.t("tickerset.saved"), notSaved: M.t("tickerset.saved_not") });
       },
     },
     h("h2", { class: "panel-title" }, M.t("tickerset.title")),
