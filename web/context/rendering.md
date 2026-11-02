@@ -993,6 +993,11 @@ inbox (`caixa de entrada`), so a join or a sign-in never shares its word. A cust
 because a role's name cannot be put in the plural and the role may be an agent's. A project's launch is `estreia`, since
 `lançamento` is its release. Step-up subjects are infinitives, as in Spanish, because `stepup.*.hint` puts them first in
 a sentence (`{what} exige …`). Legal pages are `páginas jurídicas`: `legal` in Brazilian Portuguese also means "cool".
+In Dutch, taking a member out of a project or an organisation is `weghalen` on every key, because `verwijderen` is
+deleting and an agent that is taken out is not deleted; buttons that take a value, a link or a picture out of a list
+keep the usual `Verwijderen`. An entry (of memory, of Keep the Why) is `item`, a join `deelname`, a sign-in `inloggen`
+(two-factor sign-in `inloggen met tweede factor`), three words for three things. Step-up subjects are infinitives
+(`De landingspagina opslaan`), not `Het opslaan van …`, so that every one reads alike before `stepup.*.hint`.
 
 **Rejected alternatives:**
 - `Übernahme` for both claim and takeover: an error then says a card "needs a takeover" next to "nobody has claimed it".
