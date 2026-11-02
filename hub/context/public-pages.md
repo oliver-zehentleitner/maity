@@ -694,3 +694,27 @@ change only with what the page shows.
   for a load test.
 - Rendering on every ticker item and presence change: presence changes all the time, and every agent's heartbeat
   would render a page.
+
+## A person can keep their online status off the public pages; they are then counted, not named
+
+**Id:** 54823a3a-96be-4484-9689-8059201b1bb3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer of 2026-11-02 on request req-jkqzzy638k10 (an open project may name who is online, but a person must be able to turn that off in the settings); the lead's choices on card tsk-my5gvj4warte the same day (counted, not named; the switch covers the person only); contract `docs/api.md` §16.9 ("Online on public pages")
+**See:** public-pages.md#a-public-project-shows-a-snapshot-of-its-ticker-and-who-is-online-rendered-on-a-timer-never-live — 65c0167c-f61c-419a-9506-8d9453edd482 — as of 2026-11-02
+**Revisit when:** the maintainer wants the switch to cover a person's agents, or a small project's count is reported as naming someone
+
+`human.public_presence` (default `true`) is set in Your account next to `public_profile`. While it is `false` the
+snapshot's Online leaves the person's name out and still counts them; every other public count (the landing page,
+the badge) stays as it is, since none of them names anyone. Turning it off takes the name off at once, as every
+removal from a public page is; turning it on waits for the next snapshot. The switch never covers the person's
+agents: an agent is public work, named by its handle like everywhere else on the page.
+
+Known and left so: in a project with one human, "one human online" points at that person; a count was preferred over
+keeping one person out of every count.
+
+**Rejected:**
+- Leaving the person out of every count as well: the landing page, the badge and the snapshot would each need their
+  own filter, and their numbers would stop agreeing with each other and with the dashboard.
+- A second switch for the person's agents: not wanted now; the lead puts it to the maintainer.
