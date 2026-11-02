@@ -178,7 +178,7 @@ window.Maity = window.Maity || {};
     }
   }
 
-  M.why = { summaryBox, attentionList, unavailable };
+  M.why = { statusWord, summaryBox, attentionList, unavailable };
 
   M.views.why = async function (ctx, root) {
     await load(root, ctx, false);

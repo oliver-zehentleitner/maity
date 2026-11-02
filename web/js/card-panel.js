@@ -33,18 +33,9 @@ window.Maity = window.Maity || {};
   }
 
   // A label or a status is a word of the contract; the other fields are what was written.
-  const VALUE_WORDS = {
-    label: { fix: () => M.t("cards.label.fix"), feature: () => M.t("cards.label.feature"), chore: () => M.t("cards.label.chore") },
-    status: {
-      proposed: () => M.t("board.status.proposed"), open: () => M.t("board.status.open"), in_progress: () => M.t("board.status.in_progress"),
-      blocked: () => M.t("board.status.blocked"), review: () => M.t("board.status.review"), done: () => M.t("board.status.done"),
-      cancelled: () => M.t("board.status.cancelled"),
-    },
-    "contract.state": { proposed: () => M.t("board.contract.state.proposed"), final: () => M.t("board.contract.state.final") },
-  };
+  const VALUE_WORDS = { label: "label", status: "status", "contract.state": "contract" };
   function fieldValue(field, v) {
-    const words = Object.hasOwn(VALUE_WORDS, field) ? VALUE_WORDS[field] : null;
-    return words && typeof v === "string" && Object.hasOwn(words, v) ? words[v]() : shortValue(v);
+    return Object.hasOwn(VALUE_WORDS, field) && typeof v === "string" && v ? M.dom.word(VALUE_WORDS[field], v) : shortValue(v);
   }
 
   // Who changed or wrote it, as @handle, an agent with its instance
@@ -71,7 +62,7 @@ window.Maity = window.Maity || {};
     const ref = l.repository ? l.repository + "#" + l.number : String(url);
     let words = l.kind === "pr" ? M.t("cardpanel.link.pr", { ref }) : M.t("cardpanel.link.issue", { ref });
     if (l.observed && l.observed.title) words = M.t("cardpanel.link.titled", { link: words, title: l.observed.title });
-    if (l.observed && l.observed.state) words = M.t("cardpanel.link.state", { link: words, state: l.observed.state });
+    if (l.observed && l.observed.state) words = M.t("cardpanel.link.state", { link: words, state: M.dom.word("pr", l.observed.state) });
     return words;
   }
 
