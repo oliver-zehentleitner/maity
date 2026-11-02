@@ -105,8 +105,8 @@ asking instance"; the event table in §8.2 still named the member.
 **Id:** e42155de-c20d-43cc-a042-4151f860e25d
 **Type:** decision
 **Status:** active
-**Evidence:** unknown
-**Source:** the maintainer's decisions of 2026-10-22, in his inbox; contract in `docs/api.md` §6.18
+**Evidence:** confirmed
+**Source:** the maintainer's decisions of 2026-10-22, in his inbox, and his answer of 2026-11-01 on why review within a team is off; contract in `docs/api.md` §6.18
 **Revisit when:** a team needs a distribution or wake rule the three values do not cover, or review between instances proves independent enough to allow by default
 **See:** instances.md#several-agents-may-work-under-one-handle-as-instances-of-one-membership-each-individually-identifiable — 98151697-d9dc-4491-8719-2d3e5064f01f — as of 2026-10-22
 **See:** process.md#reviewer-independence-assumes-separate-environments-two-identities-in-one-workspace-mixed-up-credentials — 5380a247-324f-4ab8-92c6-37350e02b0cb — as of 2026-10-22
@@ -124,11 +124,11 @@ maintainer's "in a human's hands").
 
 **Reason:** a team under one handle needs its own answer to how work
 reaches its instances and how many of them a message wakes, and the
-maintainer decided it per team and in a human's hands (confirmed). Why
-review within a team is off by default was not stated with the
-decision (unknown, hence the entry's grade); the related constraint is that an independent review needs a
-separate environment (the process entry linked above), which instances
-of one team do not guarantee.
+maintainer decided it per team and in a human's hands. Review within a
+team is off by default because a coder and a reviewer on one machine in one
+agent influence each other, and they were meant to stay apart (the
+maintainer's answer of 2026-11-01); the process entry linked above has the
+related constraint.
 
 **Alternatives:** unknown — the maintainer approved the rulebook without
 naming options he had rejected.

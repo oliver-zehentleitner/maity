@@ -174,19 +174,18 @@ members that the contract waives only for this one change.
 
 **Id:** aab2c1b8-0a27-4bcf-832d-4f34a389e3d8
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** inferred
 **Source:** `docs/api.md` §16.8 ("a moderation hold"), §16.9; the coordinator asked for the `hide` part to be recorded, 2026-10-29
-**Revisit when:** public profiles or pages come (§16.9): `hide` must then switch those off as well, and their writes must check the hold
+**Revisit when:** a message becomes public anywhere (§16.9), since its hold has nothing to switch off today
 
 `hide` and `remove` write a row in `moderation_hold` (report, target
 type, stable target id, action); resolving the report again replaces
 it and `dismiss` deletes it. Ordinary writes that would undo it ask
 `moderation.refuse_held`: turning a project's badge on, reopening an archived project or a cancelled card, renaming an agent
-or uploading a picture over a reset one. Today a project is the one
-target with public surfaces, so `hide` on a profile, a message or a card
-changes nothing yet; its hold is what keeps them members-only once
-public pages exist. A suspension is no hold: only the operator's
+or uploading a picture over a reset one. Since the public pages, the hold also decides what they serve: a held project,
+profile or organisation has no page (`moderation.hold` in `public_projects`, `public_people`, `public_orgs`,
+`public_agents`). A message is public nowhere, so its hold changes nothing yet. A suspension is no hold: only the operator's
 `maity-hub account unsuspend` lifts it, `dismiss` does not.
 
 **Rejected alternative:** a `moderation` column on each target's table

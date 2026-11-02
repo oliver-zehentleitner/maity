@@ -44,21 +44,23 @@ probe shares on the same API host.
 - A table of its own for the forge cache: the same columns twice, and
   the precedence (upload over forge) would need two queries.
 
-## Responses choose their own caching only for images; uploads have a cap of their own
+## A response chooses its own caching or is `no-store`; uploads have a cap of their own
 
 **Id:** 96d70040-21c8-4c0f-9d75-0b7a5802ef4c
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** inferred
 **Source:** implementation session, 2026-10-22 (docs/api.md §1.1, §1.7, §11.2)
-**Revisit when:** another route needs to be cached by the browser, or another upload is added
+**Revisit when:** `no-store` stops being the default, or an upload's cap has to apply after the route has seen the body
 
 The middleware writes `Cache-Control: no-store` on every answer unless
-the route set a `Cache-Control` itself. Only the image routes do, with
-`private, max-age=21600` on the image and on its `304`. The body cap is
-64 KiB everywhere except `PUT /projects/{slug}/logo` and `…/banner`, which
-take 1 MiB and answer a larger body with `invalid` and
-`fields.body: too_large`, as §11.2 says, rather than 413.
+the route set a `Cache-Control` itself. The image routes were the first, with
+`private, max-age=21600` on the image and on its `304`; avatars, attachments, the
+public and landing pages, the badge and the shell have since set their own the same way.
+The body cap is 64 KiB except where a route has its own: `PUT /projects/{slug}/logo` and
+`…/banner` take 1 MiB and answer a larger body with `invalid` and
+`fields.body: too_large`, as §11.2 says, rather than 413; attachments and landing files
+have larger caps and answer 413.
 
 **Reason:** the contract makes the image the one exception to
 `no-store`, and the 304 has no `Content-Type` to recognise it by. A rule

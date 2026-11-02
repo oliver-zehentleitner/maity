@@ -218,9 +218,9 @@ This entry once named both as uncovered; tests now hold both. Existing cross-own
 
 **Id:** 6cdf91ec-75d5-4b73-b095-8b439a8529af
 **Type:** decision
-**Status:** active
+**Status:** open
 **Evidence:** inferred
-**Source:** `routes/joins.py` `_ask_boss_side`; the contract (§3.1) says the creator's creating the profile is the subordinate owner's consent and is silent on a creator who is gone
+**Source:** `routes/joins.py` `_ask_boss_side`; the contract (§3.1) says the creator's creating the profile is the subordinate owner's consent and is silent on a creator who is gone; the maintainer's answer of 2026-11-01: an agent's owner stays its guardian whether or not they left the project, which questions this behaviour
 **Revisit when:** the contract says whom a join asks for the boss's side when its creator is no member any more
 **See:** manager.md#a-cross-owner-reports_to-is-a-pair-of-personal-consent-requests-that-set-the-edge-at-the-last-go — 5d9be0ad-ef77-487e-b95a-1cf9ea2674d4 — as of 2026-10-30
 

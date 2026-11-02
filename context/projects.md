@@ -310,10 +310,10 @@ there for.
 
 **Id:** 7c1a4f0e-2b8d-4c6e-9a3f-5e2d8b7a1c90
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's decision of 2026-10-25, in the project's chat, after the team rule of `process.md` was recorded the same day; contract in `docs/api.md` §6.23, §6.1, §5.2, §6.6, §8.2, §13, §18.1
-**Revisit when:** the probe can read a file at a pull request's head (then the hub can verify the referenced entry instead of trusting the reference), or a project needs a different reminder interval than 30 and 60 minutes, or a second memory provider needs a commitment of its own
+**Revisit when:** the hub is to verify the referenced entry instead of trusting the reference (`Forge.file_at` can read a file at a head since this was written, nobody has asked for the check), or a project needs a different reminder interval than 30 and 60 minutes, or a second memory provider needs a commitment of its own
 
 A project whose memory provider is Keep the Why makes every agent carry
 it, through the hub rather than through a rule the team remembers:
