@@ -549,6 +549,38 @@ def check_translations(catalogs, write, release, notes):
                 notes.append(line)
 
 
+def check_hub_words(write, release, notes):
+    """The hub's words follow English as the dashboard's do; what each translation follows
+    lies beside the package, not in it (hub/words-meta). Absent where this is web/ alone."""
+    words = os.path.join(os.path.dirname(ROOT), "hub", "src", "maity_hub", "words")
+    if not os.path.isdir(words):
+        return
+    metas = os.path.join(os.path.dirname(ROOT), "hub", "words-meta")
+    english = load_catalog(os.path.join(words, "en.json"))
+    if english is None:
+        return
+    for name in sorted(f for f in os.listdir(words) if f.endswith(".json") and f != "en.json"):
+        path, meta_path = os.path.join(words, name), os.path.join(metas, name)
+        data = load_catalog(path)
+        if data is None:
+            continue
+        fresh = translation_meta(data, english, read_meta(meta_path))
+        body = json.dumps(fresh, indent=2, sort_keys=True) + "\n"
+        if write:
+            os.makedirs(metas, exist_ok=True)
+            with open(meta_path, "w", encoding="utf-8") as f:
+                f.write(body)
+        elif not os.path.exists(meta_path) or read(meta_path) != body:
+            finding(meta_path, 1, "stale: run `make fixtures`")
+        missing, stale = translation_gaps(data, english, fresh)
+        if missing or stale:
+            line = "hub words %s: %d key(s) missing, %d out of date" % (name[:-5], len(missing), len(stale))
+            if release:
+                finding(path, 1, line)
+            else:
+                notes.append(line)
+
+
 def list_gaps(lang):
     english = load_catalog(os.path.join(I18N, "en.json"))
     path = os.path.join(I18N, lang + ".json")
@@ -856,6 +888,7 @@ def main(argv):
     # The catalog's bundle before the page that loads it, so --write on a
     # fresh checkout makes js/i18n/*.js before index.html is checked.
     check_i18n(write, "--release" in argv, notes)
+    check_hub_words(write, "--release" in argv, notes)
     check_html()
     node = shutil.which("node")
     check_js(node)

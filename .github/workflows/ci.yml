@@ -83,7 +83,7 @@ jobs:
                 hub:hub/*|hub:docs/join-page.md) hit=true ;;
                 image:hub/*|image:docs/join-page.md|image:deploy/Dockerfile*) hit=true ;;
                 join:hub/*|join:cli/*|join:docs/join-page.md) hit=true ;;
-                web:web/*) hit=true ;;
+                web:web/*|web:hub/src/maity_hub/words/*|web:hub/words-meta/*) hit=true ;;
                 e2e:web/*|e2e:hub/*|e2e:cli/*|e2e:docs/join-page.md) hit=true ;;
                 cli:cli/*) hit=true ;;
                 helm:deploy/*) hit=true ;;

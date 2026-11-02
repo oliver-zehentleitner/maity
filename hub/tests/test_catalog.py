@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from maity_hub import catalog, languages
+from maity_hub import catalog, languages, registration_mail
 from maity_hub.auth import email_links
 
 WORDS = Path(catalog.__file__).with_name("words")
@@ -24,8 +24,9 @@ def _fields(text: str) -> set[str]:
     return {field for _, field, _, _ in string.Formatter().parse(text) if field}
 
 
-def test_every_file_is_a_language_of_the_portal() -> None:
-    assert {path.stem for path in WORDS.glob("*.json")} <= set(languages.INTERFACE)
+@pytest.mark.wheel
+def test_every_language_of_the_portal_has_its_file() -> None:
+    assert {path.stem for path in WORDS.glob("*.json")} == set(languages.INTERFACE)
 
 
 @pytest.mark.parametrize("tag", languages.INTERFACE)
@@ -77,6 +78,23 @@ def test_the_sign_in_mail_reads_as_it_did(language: str, opening: str, line: str
         code="123456",
     )
     assert body.startswith(opening) and line in body and "https://x/l" in body
+
+
+@pytest.mark.parametrize(
+    ("asked", "language"),
+    [
+        ("zh-CN", "zh-Hans"),
+        ("zh-hans", "zh-Hans"),
+        ("zh-Hans", "zh-Hans"),
+        ("zh-TW, de", "de"),
+        ("de-AT", "de"),
+        ("xx, de;q=0.5", "de"),
+        ("xx", "en"),
+        (None, "en"),
+    ],
+)
+def test_a_language_is_matched_as_on_the_public_pages(asked: str | None, language: str) -> None:
+    assert registration_mail.language_of(asked, "frame") == language
 
 
 def test_values_with_braces_stay_as_they_are() -> None:
