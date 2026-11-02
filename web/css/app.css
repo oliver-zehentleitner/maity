@@ -854,6 +854,9 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
    invitation as one centred card. */
 .door { max-width: 28rem; margin: 10vh auto; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; display: grid; gap: 12px; box-sizing: border-box; }
 .door h2 { margin: 0; }
+.door-subline { margin: 6px 0 0; }
+.door-points { margin: 8px 0 0; padding-left: 1.2rem; }
+.door-note { margin-top: 8px; font-size: 0.88rem; color: var(--muted); }
 .door .door-action { width: 100%; justify-content: center; text-align: center; box-sizing: border-box; }
 .door-alt { text-align: center; margin: 0; }
 .door-mark { font-size: 2rem; color: var(--muted); }

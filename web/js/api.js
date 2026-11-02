@@ -3137,6 +3137,13 @@ window.Maity = window.Maity || {};
       fixtures()["landing.json"] = JSON.parse(JSON.stringify(v));
       return v;
     }],
+    ["GET", /^\/auth\/pages\/([^/?]+)/, (m, body, path) => {
+      const langs = fixtureAuthPages.pages[m[1]];
+      if (!langs) fail(404, "not_found", "no such page", path);
+      const asked = new URLSearchParams(path.split("?")[1] || "").get("lang");
+      const language = asked && langs[asked] ? asked : fixtureAuthPages.default_language;
+      return { language, texts: langs[language] || {} };
+    }],
     ["GET", /^\/admin\/settings\/auth-pages$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
       return fixtureAuthPages;

@@ -124,5 +124,24 @@ window.Maity = window.Maity || {};
     return { section };
   }
 
-  M.authPages = { editor, PAGES, LANGUAGES, shapeOk };
+  // The head of /login or /register: the heading at once in the catalogue's words, the pitch
+  // when the hub has answered. The sign-in never waits for it, and a failed read leaves the heading.
+  function pitch(page, fallback) {
+    const title = h("h2", null, fallback);
+    const rest = h("div", { class: "door-pitch" });
+    const el = h("div", { class: "door-head" }, title, rest);
+    M.api.get("/auth/pages/" + page + "?lang=" + encodeURIComponent(M.i18n.language)).then((answer) => {
+      const t = answer.texts || {};
+      // The form stays in the language it is drawn in; these words say their own.
+      if (answer.language !== M.i18n.language) el.setAttribute("lang", answer.language);
+      if (t.title) title.textContent = t.title;
+      const points = ["point_1", "point_2", "point_3"].filter((k) => t[k]);
+      append(clear(rest), t.subline ? h("p", { class: "door-subline" }, t.subline) : null,
+        points.length ? h("ul", { class: "door-points" }, points.map((k) => h("li", null, t[k]))) : null,
+        t.note ? h("div", { class: "md door-note" }, M.markdown(t.note)) : null);
+    }).catch(() => {});
+    return el;
+  }
+
+  M.authPages = { editor, pitch, PAGES, LANGUAGES, shapeOk };
 })(window.Maity);
