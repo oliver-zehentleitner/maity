@@ -2116,6 +2116,18 @@ def cmd_memory_add(args: argparse.Namespace) -> int:
     return _done(args, answer, f"added {added} to your team's memory")
 
 
+def cmd_memory_delete(args: argparse.Namespace) -> int:
+    """`DELETE …/memory/{id}` (§19.2): the hub decides who may; the answer is the tombstone."""
+    _memory_flags_after_action(args)
+    entry = _text(args.entry, "the entry")
+    if not re.fullmatch(r"mem-[a-z0-9]+", entry):
+        raise UsageError(f"{entry!r} is not an entry id (mem-…)")
+    session = Session()
+    body = {"reason": _text(args.reason, "--reason")} if args.reason is not None else None
+    answer = session.client.call("DELETE", session.project_path("memory", entry), body=body)
+    return _done(args, answer, f"deleted {onboarding.inline(entry)}")
+
+
 # --- takeover (§6.19) ---------------------------------------------------------------------------
 
 TAKEOVER_ACTIONS = ("accept", "object", "withdraw", "escalate", "list")
@@ -4218,7 +4230,7 @@ def build_parser() -> argparse.ArgumentParser:
     msub = p.add_subparsers(dest="memory_command", metavar="<action>")
     r = msub.add_parser("add", help="add a team or role entry, or propose a community entry "
                         "or soul", formatter_class=fmt)  # fmt: skip
-    r.add_argument("text", nargs="?", help="the entry, at most 2 KiB")
+    r.add_argument("text", nargs="?", help="the entry, at most 2 KiB; - reads it from stdin")
     r.add_argument("--tag", action="append", help="up to 5, a-z 0-9 -, for search")
     r.add_argument("--role", action="store_true",
                    help="add it to your role's memory, shared by every member of the "
@@ -4231,6 +4243,12 @@ def build_parser() -> argparse.ArgumentParser:
     _json_flag(r)
     _on_request_flag(r)
     r.set_defaults(handler=cmd_memory_add)
+    r = msub.add_parser("delete", help="delete an entry of your team's or role's memory",
+                        formatter_class=fmt)  # fmt: skip
+    r.add_argument("entry", metavar="ID", help="the entry, mem-…")
+    r.add_argument("--reason", help="why, kept on the tombstone")
+    _json_flag(r)
+    r.set_defaults(handler=cmd_memory_delete)
     r = msub.add_parser("search", help="entries whose text or tag contains TEXT",
                         formatter_class=fmt)  # fmt: skip
     r.add_argument("text", help="1 to 200 characters, case-insensitive")
@@ -4887,6 +4905,7 @@ TEXT_ARGS: dict[Handler, tuple[tuple[str, str, str, bool], ...]] = {
     cmd_task_create: (("body", "body_file", "--body", False),),
     cmd_report: (("summary", "summary_file", "--summary", True),),
     cmd_jourfixe_post: (("body", "body_file", "the post", True),),
+    cmd_memory_add: (("text", "text_file", "the entry", False),),
     cmd_checkpoint: (
         ("message", "message_file", "-m", True),
         ("next", "next_file", "--next", True),

@@ -3,6 +3,7 @@ hub; the resume packet's memory section (§19.3)."""
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 from typing import Any
@@ -207,6 +208,34 @@ def test_memory_add_to_the_team_and_propose_to_the_community(
     out = capsys.readouterr().out
     assert "added mem-0042 to your team's memory" in out
     assert "proposed for the community memory; request req-0091" in out
+
+
+def test_memory_add_reads_the_entry_from_stdin(
+    joined: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake.routes[("POST", f"{P}/memory")] = lambda s: (201, ENTRY)
+    monkeypatch.setattr("sys.stdin", io.StringIO("Run `make check` first.\n"))
+    assert cli.main(["memory", "add", "-", "--role"]) == cli.EXIT_OK
+    assert fake.signed()[-1].json() == {"store": "role", "text": "Run `make check` first."}
+
+
+def test_memory_add_refuses_an_entry_from_stdin_over_2_kib(
+    joined: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("sys.stdin", io.StringIO("x" * 2049))
+    assert cli.main(["memory", "add", "-"]) == cli.EXIT_USAGE
+    assert not fake.signed()
+
+
+def test_memory_delete_sends_the_reason_and_names_the_entry(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("DELETE", f"{P}/memory/mem-0042")] = lambda s: (200, {"id": "mem-0042"})
+    assert cli.main(["memory", "delete", "mem-0042", "--reason", "outdated"]) == cli.EXIT_OK
+    assert fake.signed()[-1].json() == {"reason": "outdated"}
+    assert "deleted mem-0042" in capsys.readouterr().out
+    assert cli.main(["memory", "delete", "mem-0042"]) == cli.EXIT_OK
+    assert cli.main(["memory", "delete", "../tasks/x"]) == cli.EXIT_USAGE
 
 
 def test_memory_add_soul_proposes_the_file(

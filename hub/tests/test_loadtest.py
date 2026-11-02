@@ -86,6 +86,12 @@ def test_the_scripts_signature_is_the_one_the_hub_expects(
         ("postgresql://u@db.maity.team,other.example/m", "other.example:/m", True),
         ("sqlite://", "", True),
         ("postgresql:///loadtest", "/loadtest", True),
+        (
+            "postgresql://u@db.example:5432/host%3Dprod.example",
+            "db.example:5432/host%3Dprod.example",
+            True,
+        ),
+        ("postgresql://u@db.example:5432/load#x", "db.example:5432/load", True),
         ("postgresql://u@db.example/m?sslmode=require", "db.example:/m", True),
         ("postgresql://u:secret@db.maity.team/m", "db.maity.team:/m", True),
         ("sqlite:///x.db", None, True),
