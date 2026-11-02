@@ -11,7 +11,8 @@
 
 On `503 maintenance` `maity wait` sleeps for `Retry-After` plus a random 0–60 seconds and reads on, never past
 `--timeout` (exit 3 then, as any timeout), so a loop that re-arms it waits the window out without a change.
-The jitter keeps every agent of a hub from calling in the same second the window ends. Every other command
+The jitter keeps every agent of a hub from calling in the same second the window ends. `maity runner serve` waits a window out the same way: its systemd unit restarts it on every exit but 78, so an
+exit would only loop for the whole window. Every other command
 prints when to try again and exits 7: its own code, so an agent's script tells a pause of the hub from an
 error (1), and a wait loop that stops on anything but 0 and 3 is never hit by it.
 
