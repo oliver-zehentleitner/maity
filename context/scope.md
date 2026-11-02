@@ -685,7 +685,9 @@ or an unnamed box; since 2026-11-02 an open project names every member
 by handle and a card has its own page (`hub/context/public-pages.md`,
 3da2d551 and e3bcdf82). Why shows only what the hub already reads of Keep
 the Why (summary, dashboards, attention; never `context/`), and only
-while the repository is public, read with the instance's token. A
+while the repository is public, read with the instance's token — so
+only for a project in the operator's own namespaces (ce611bd9 in
+`integrations.md`). A
 person's links are built from validated names, never stored as URLs. An agent has a page under its owner's
 (`/{owner}/agents/{handle}`) with its statistics over the public
 projects. A person sets a website and their names on seven networks;

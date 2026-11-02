@@ -10,6 +10,7 @@ import hashlib
 import io
 import json
 import os
+import random
 import re
 import shlex
 import shutil
@@ -46,6 +47,7 @@ EXIT_TIMEOUT = 3
 EXIT_REFUSED = 4
 EXIT_ISOLATED = 5
 EXIT_SUPERSEDED = 6
+EXIT_MAINTENANCE = 7  # §13, §16.12: the hub is in a maintenance window; never from `wait`
 EXIT_INTERRUPTED = 130
 
 REQUEST_CLASSES = ("decision", "consent", "contract", "info")
@@ -70,8 +72,8 @@ state:
 
 exit codes:
   0 success, 1 error, 2 usage, 3 wait timed out, 4 refused locally, nothing sent,
-  6 wait superseded by another wait of this credential (do not start a second one),
-  130 interrupted (Ctrl-C)
+  5 isolated, 6 wait superseded by another wait of this credential (do not start a
+  second one), 7 the hub is in a maintenance window (never from wait), 130 interrupted
 
 plain HTTP:
   refused except to a hub on loopback; there is no flag to allow it
@@ -731,13 +733,15 @@ def cmd_wait(args: argparse.Namespace) -> int:
     # Every poll leaves the hub POLL_SLACK to answer, half of a short window.
     slack = min(POLL_SLACK, (deadline - time.monotonic()) / 2)
     asked = False
-    cursor = _wait_cursor(session)
     path = session.project_path("events")
-    # A bridge reads for the agent it serves with `for` (§2.3): what that agent's token sees.
-    served = [("for", session.for_member)] if session.for_member else []
+    # Both read inside the loop: under `--for <handle>` they resolve the handle with a call of
+    # its own, which a maintenance window or an outage answers like the poll (§13, §16.12).
+    cursor: Any = None
+    served: list[tuple[str, str]] = []
     backoff = 2.0
     warned = False
     skewed = False
+    paused = False
     version_checked = False
     while True:
         remaining = deadline - time.monotonic()
@@ -756,6 +760,11 @@ def cmd_wait(args: argparse.Namespace) -> int:
         started = time.monotonic()
         asked = True
         try:
+            if cursor is None:
+                # A bridge reads for the agent it serves with `for` (§2.3): what that agent's
+                # token sees.
+                served = [("for", session.for_member)] if session.for_member else []
+                cursor = _wait_cursor(session)
             page = session.client.call(
                 "GET",
                 path,
@@ -763,6 +772,21 @@ def cmd_wait(args: argparse.Namespace) -> int:
                 timeout=read_timeout,
             )
         except hub.HubError as exc:
+            until = hub.maintenance_until(exc)
+            if until is not None:
+                # A window (§16.12): sleep it out and read on with the same cursor; never
+                # past --timeout, which then ends as any timeout so the loop re-arms.
+                if not paused:
+                    text = onboarding.inline(exc.details.get("text") or "")
+                    _err(f"Maintenance until {until} UTC" + (f": {text}" if text else ""))
+                    paused = True
+                time.sleep(
+                    min(
+                        hub.maintenance_sleep(exc, random.random),
+                        max(0.0, deadline - time.monotonic()),
+                    )
+                )
+                continue
             server_error = exc.status is not None and 500 <= exc.status < 600
             disconnected = exc.status is None and exc.code is None
             if disconnected and time.monotonic() >= deadline:
@@ -5050,6 +5074,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         CommandError,
         OSError,
     ) as exc:
+        until = hub.maintenance_until(exc) if isinstance(exc, hub.HubError) else None
+        if until is not None:
+            _err(f"Maintenance until {until} UTC, try again then")
+            return EXIT_MAINTENANCE
         _err(_explain(exc))
         return EXIT_ISOLATED if _isolated(exc) is not None else EXIT_ERROR
     except config.ConfigError as exc:

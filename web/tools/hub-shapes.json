@@ -654,6 +654,26 @@
       "language": "string",
       "last_seen_at": "string",
       "line_consent": "boolean",
+      "manages": {
+       "object": {
+        "direct": {
+         "object": {
+          "dormant": "number",
+          "instances": "number",
+          "members": "number",
+          "online": "number"
+         }
+        },
+        "total": {
+         "object": {
+          "dormant": "number",
+          "instances": "number",
+          "members": "number",
+          "online": "number"
+         }
+        }
+       }
+      },
       "model": "null",
       "name": "string",
       "org_owner": "boolean",
@@ -1018,6 +1038,7 @@
       },
       "body": "string",
       "created_at": "string",
+      "edited": "null",
       "id": "string",
       "mentions": {
        "array": {
