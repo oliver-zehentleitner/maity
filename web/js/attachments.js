@@ -32,9 +32,11 @@ window.Maity = window.Maity || {};
 
   function sizeOf(n) {
     if (n === null || n === undefined) return "";
-    if (n < 1024) return M.t("attach.size.b", { size: n });
-    if (n < 1024 * 1024) return M.t("attach.size.kb", { size: (n / 1024).toFixed(n < 10240 ? 1 : 0) });
-    return M.t("attach.size.mb", { size: (n / 1024 / 1024).toFixed(1) });
+    // A string to M.t, which would group a number: 1023 B, never 1,023 B; the decimal mark is the reader's.
+    const fixed = (x, digits) => M.fmt.number(x, { useGrouping: false, minimumFractionDigits: digits, maximumFractionDigits: digits });
+    if (n < 1024) return M.t("attach.size.b", { size: fixed(n, 0) });
+    if (n < 1024 * 1024) return M.t("attach.size.kb", { size: fixed(n / 1024, n < 10240 ? 1 : 0) });
+    return M.t("attach.size.mb", { size: fixed(n / 1024 / 1024, 1) });
   }
 
   // The hub's refusals of an upload, in words.

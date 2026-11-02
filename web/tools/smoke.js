@@ -6728,6 +6728,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.postRaw = () => Promise.reject(new win.Maity.api.ApiError("d", 400, "/x", "invalid", { fields: { body: "dimensions" } }));
   await atPick("chat-files", [atFile("huge.png", PNG, 100, "image/png")]);
   expect(text(main).includes("the image is larger than 8192 pixels"), "attachments: an image too large in pixels in words");
+  // File sizes as they always read in English, whatever M.t does with a number; a sentence per role and trust.
+  const szOf = win.Maity.attachments.sizeOf;
+  expect(szOf(1023) === "1023 B" && szOf(1536) === "1.5 KB" && szOf(20480) === "20 KB" && szOf(1572864) === "1.5 MB", "attachments: sizes stay as they read " + szOf(1023));
+  const twords = win.Maity.trust.tokenWords;
+  expect(twords("trust:admin") === "every admin" && twords("role:red-team") === "every red-team" && twords("role:legal") === "every legal" && twords("other") === "other", "trust: a token in its words");
   // A 300 KB picture refused by a hub's 64 KiB body cap (no upload route yet): its own words and the real size, no 10 MiB.
   win.Maity.api.postRaw = () => Promise.reject(new win.Maity.api.ApiError("the body is over 64 KiB", 413, "/x", "payload_too_large", {}));
   await atPick("chat-files", [atFile("shot300.png", PNG, 300 * 1024, "image/png")]);

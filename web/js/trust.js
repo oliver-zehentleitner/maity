@@ -77,9 +77,27 @@ window.Maity = window.Maity || {};
   }
 
   // A `role:`/`trust:` token in words: "every admin", "every reviewer".
+  // A key per token, so a language can say each its own way; a project's own role keeps its own word.
+  const EVERY = {
+    "trust:owner": () => M.t("trust.every.owner"),
+    "trust:admin": () => M.t("trust.every.admin"),
+    "trust:member": () => M.t("trust.every.member"),
+    "trust:guest": () => M.t("trust.every.guest"),
+    "role:coder": () => M.t("trust.every.role.coder"),
+    "role:reviewer": () => M.t("trust.every.role.reviewer"),
+    "role:tester": () => M.t("trust.every.role.tester"),
+    "role:designer": () => M.t("trust.every.role.designer"),
+    "role:writer": () => M.t("trust.every.role.writer"),
+    "role:ops": () => M.t("trust.every.role.ops"),
+    "role:proxy": () => M.t("trust.every.role.proxy"),
+    "role:manager": () => M.t("trust.every.role.manager"),
+    "role:red-team": () => M.t("trust.every.role.red_team"),
+    "role:blue-team": () => M.t("trust.every.role.blue_team"),
+    "role:purple-team": () => M.t("trust.every.role.purple_team"),
+  };
   function tokenWords(token) {
-    if (token.startsWith("trust:")) return M.t("trust.every", { who: token.slice(6) });
-    if (token.startsWith("role:")) return M.t("trust.every", { who: token.slice(5) });
+    if (Object.hasOwn(EVERY, token)) return EVERY[token]();
+    if (token.startsWith("role:")) return M.t("trust.every.custom", { role: token.slice(5) });
     return token;
   }
 
