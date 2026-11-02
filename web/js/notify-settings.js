@@ -144,7 +144,19 @@ window.Maity = window.Maity || {};
           if (fields && fields["email.address"]) fail("address", M.t("mail.address.invalid"));
           if (fields && fields.current_password === "required") fail("password", M.t("mail.address.password_required"));
           if (fields && fields.current_password === "mismatch") fail("password", M.t("mail.address.password_wrong"));
-          status.fail(err.code === "mail_not_configured" ? M.t("mail.address.not_configured") : M.t("notify.not_saved"), err);
+          // A refusal of this session (§2.6.3) is said with its reason; the sessions decide a held change.
+          const reason = err.code === "forbidden" && err.details && err.details.reason;
+          const link = () => ({ link: h("a", { href: "/account/sessions" }, M.t("mail.address.held_link")) });
+          const why = {
+            not_in_good_standing: () => M.tn("mail.address.forbidden.not_in_good_standing", link()),
+            session_too_new: () => M.tn("mail.address.forbidden.session_too_new", link()),
+          }[reason];
+          if (why) {
+            status.fail(M.t("notify.not_saved"), { message: "" });
+            append(status.el, why());
+          } else {
+            status.fail(err.code === "mail_not_configured" ? M.t("mail.address.not_configured") : M.t("notify.not_saved"), err);
+          }
           buttons.forEach((b) => { b.disabled = false; });
         }
       }
@@ -153,7 +165,11 @@ window.Maity = window.Maity || {};
         ? h("button", { type: "button", class: "secondary", onclick: () => send(email.pending_address, M.t("mail.address.sending")) }, M.t("mail.address.again"))
         : null;
       const remove = email.address || email.pending_address
-        ? h("button", { type: "button", class: "secondary danger", onclick: () => send(null, M.t("notify.saving")) }, M.t("mail.address.remove"))
+        ? h("button", { type: "button", class: "secondary danger", onclick: () => {
+          // Removing it stops all mail and a sign-in by mail: asked first.
+          if (!window.confirm(M.t("mail.address.remove_confirm", { address: email.address || email.pending_address }))) return;
+          send(null, M.t("notify.saving"));
+        } }, M.t("mail.address.remove"))
         : null;
       buttons.push(...[save, again, remove].filter(Boolean));
       const state = {

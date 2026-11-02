@@ -8715,6 +8715,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(JSON.stringify(maPatches[maPatches.length - 1][1]) === JSON.stringify({ email: { address: "held@example.net" } })
       && text(maBox()).includes("The change waits for your approval.") && !!main.querySelector(".mail-address-held"),
       "mail address: a change the hub holds is said as waiting for approval, with the way to the sessions");
+    // A session not in good standing may not replace a held change (§2.6.3): the reason is said.
+    win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("x", 403, "/me/notification-settings", "forbidden", { reason: "not_in_good_standing" }));
+    byId("mail-address").value = "other@example.net"; main.querySelector("form.mail-address-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(text(maBox()).includes("this session is not confirmed, so it cannot change the address while a change waits. Decide that change in your sessions")
+      && maBox().querySelectorAll("a").some((l) => /\/account\/sessions$/.test(l.getAttribute("href")) && text(l) === "your sessions" && l.parentNode !== main.querySelector(".mail-address-held")),
+      "mail address: a session not in good standing is told why, not only that nothing was saved");
+    // Removing is asked first; declined, nothing is sent.
+    const maConfirm = win.confirm;
+    let maAsked = "";
+    win.confirm = (q) => { maAsked = q; return false; };
+    const maBefore = maPatches.length;
+    main.querySelectorAll("button").find((b) => text(b) === "Remove the address").dispatch("click"); for (let k = 0; k < 4; k++) await tick();
+    expect(maPatches.length === maBefore && maAsked.startsWith("Remove maintainer@example.org?"), "mail address: removing is asked first, declined nothing is sent");
+    win.confirm = maConfirm;
     // The removal answered here, so the fixture keeps its confirmed address for what follows.
     win.Maity.api.patch = (p, b) => {
       maPatches.push([p, JSON.parse(JSON.stringify(b))]);
