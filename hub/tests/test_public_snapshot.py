@@ -222,6 +222,24 @@ def test_with_public_presence_off_a_person_is_neither_named_nor_counted(
     assert any(p["handle"] == "anna" for p in snapshot(world)["online"]["named"])
 
 
+def test_a_person_under_a_hold_is_neither_named_nor_counted_online(world: World, hub: Any) -> None:
+    seen(world, world.anna_member, clock.now())
+    worker = public_snapshot.Worker(world.migrated, hub)
+    worker.run_once()
+    before = snapshot(world)["online"]["humans"]
+    made = report(world.owner, {"type": "profile", "id": world.anna.id}, "spam")
+    assert made.status_code == 201, made.text
+    path = f"/admin/reports/{made.json()['id']}/resolve"
+    assert world.owner.post(path, {"action": "hide"}).status_code == 200
+    worker.run_once()
+    up = snapshot(world)["online"]
+    assert all(p["handle"] != "anna" for p in up["named"])
+    assert up["humans"] == before - 1
+    assert world.owner.post(path, {"action": "dismiss"}).status_code == 200
+    worker.run_once()
+    assert snapshot(world)["online"]["humans"] == before
+
+
 def test_public_presence_off_takes_the_name_off_at_once_also_under_interval(
     world: World, hub: Any
 ) -> None:

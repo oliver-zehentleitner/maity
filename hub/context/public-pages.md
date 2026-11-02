@@ -680,8 +680,9 @@ page; a decision only on such a card; deploys, releases, notes, renames and jour
 text names what the card rule does not cover. `public_snapshot.Worker` renders every public project page again every
 `MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES` under one `worker_runs` claim; presence is read at that moment. A card change
 that may take a ticker item off renders the project page at once, so a removal never waits for the timer; a new
-item waits for it. The counts of who is online include a member the page does not name (a profile under a hold),
-as Members counts them by role; only the names follow the Board's rule. Known and left so: a decision's text keeps
+item waits for it. Who is online is counted as the names are shown: a member the page does not name (a profile
+under a hold, a person who keeps their online status off) is not counted either, since a count beside the names
+would point at them; the contract always said so, and the hub counted them until the online switch's change. Known and left so: a decision's text keeps
 the card's title from the moment it was decided, since a ticker item is stored text; a later rename does not change it.
 
 The load grows with the page cache, not with connections: a visitor reads a stored row behind the public cache and
