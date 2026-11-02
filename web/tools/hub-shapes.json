@@ -88,7 +88,14 @@
  "GET /me": {
   "object": {
    "deletion": "null",
-   "maintenance": "null",
+   "maintenance": {
+    "object": {
+     "from": "string",
+     "state": "string",
+     "text": "string",
+     "until": "string"
+    }
+   },
    "member": {
     "object": {
      "account_status": "string",

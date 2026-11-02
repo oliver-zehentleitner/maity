@@ -449,6 +449,8 @@ window.Maity = window.Maity || {};
     append(root, h("div", { class: "toolbar agents-head" }, heading, h("div", { class: "agents-head-actions" }, add.button, join ? join.button : null)),
       h("p", { class: "hint" }, M.t("agents.intro")), add.slot, join ? join.box : null, note, body);
     await draw();
+    // Which of them the hub tells about a maintenance window (§16.12).
+    if (M.broadcasts) append(root, M.broadcasts.part(ctx, read.profiles));
     // /agents/<id> (a link to one profile): its card's title focused, once.
     const title = wanted && !titled ? Array.from(body.querySelectorAll("li.agent-card.wanted .agent-card-title"))[0] : null;
     if (title) { titled = true; title.focus(); }

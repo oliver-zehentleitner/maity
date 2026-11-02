@@ -78,7 +78,11 @@ window.Maity = window.Maity || {};
           // §2.7: offered only where the instance registers.
           methods.registration ? h("p", { class: "register-link" }, M.tn("device.register", {
             link: h("a", { href: "/register" + (next ? "?next=" + encodeURIComponent(next) : "") }, M.t("device.register.link")) })) : null);
-      }, () => {});
+      }, (err) => {
+        // §16.12: a hub that refuses this read during a maintenance window still takes the
+        // mailed sign-in, so the instance admin can sign in and end the window.
+        if (err && err.code === "maintenance") append(box, mailLink(signedIn));
+      });
     return box;
   }
 

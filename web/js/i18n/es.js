@@ -962,6 +962,8 @@ window.MAITY_I18N["es"] = {
   "error.load_failed_at": "No se pudo cargar ({path})",
   "error.mail_not_configured": "Este hub no puede enviar correo.",
   "error.maintenance": "El hub está en mantenimiento. Inténtalo de nuevo cuando termine.",
+  "error.maintenance_not_running": "No hay ningún mantenimiento en curso.",
+  "error.maintenance_running": "Un mantenimiento en curso se termina, no se cancela.",
   "error.memory_full": "Esta memoria está llena.",
   "error.method_not_allowed": "Esta acción no está disponible aquí.",
   "error.namespace_owner": "El propietario del espacio de nombres de este proyecto no se puede cambiar ni quitar de esta manera.",

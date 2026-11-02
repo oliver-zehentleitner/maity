@@ -98,7 +98,7 @@ LANDING_FILES_CACHE = b"public, max-age=31536000, immutable"
 # sign-in a signed-out admin needs to end it early. Registration is refused like the rest.
 MAINTENANCE_OPEN = re.compile(
     r"/api/v1/(health|maintenance|admin/maintenance(/end|/changes)?"
-    r"|auth/(login|logout|session|email-link|email-code|second-factor/(verify|email)))"
+    r"|auth/(login|logout|session|methods|pages/sign_in|email-link|email-code|second-factor/(verify|email)))"
     r"|/mail/sign-in/[^/]+"
 )
 # Read only: the web learns from `GET /me` who signed in, so the instance admin finds the
