@@ -70,7 +70,7 @@ def test_the_views_are_served_exactly_while_the_page_is(world: World) -> None:
         text = view(world.anyone, name)
         assert text is not None and "<script" not in text
         assert f'<link rel="canonical" href="https://hub.example{BASE}/{name}">' in text
-    assert view(world.anyone, "why") is None and view(world.anyone, "inbox") is None
+    assert view(world.anyone, "inbox") is None
     world.owner.patch("/projects/maintainer/maity", {"public_page": "off"})
     assert [view(world.anyone, n) for n in ("board", "members", "organisation")] == [None] * 3
 

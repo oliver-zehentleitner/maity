@@ -512,3 +512,38 @@ of public projects (projects.md, 038e685e) said and the code did not.
 
 **Rejected:** redirecting a dashboard address to the public page: a card's link from a mail would end there
 after a session expired, instead of going on after the sign-in.
+
+## The public Why is a stored row, an exception to "the export stays in memory"
+
+**Id:** aed779e9-be9c-40d2-a7ea-217cee06e470
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's decision of 2026-11-02 on the card tsk-jj1tfre7n6zb
+**Revisit when:** the export's read must reach every replica at once, which a read per process does not do
+
+The view keeps counts, the family's links and attention titles of a public repository in `public_page`, beside
+the other views. Its export is read ahead of the interval render with the instance's token alone, in a cache of
+its own, because the members' cache may have read with an owner's grant. A render stays off the network, as it
+runs in a transaction. The price is a view up to one interval old; a repository turning private empties it with
+the look that finds it. Each replica holds its own read and only one renders a pass, so a render with no read, or
+an older one by `observed_at`, keeps the stored view instead of emptying it, and every process reads once at start.
+A failed read keeps it too, as a failure says nothing about the export; a read that finds the repository names no
+export any more empties it.
+
+**Rejected:** answering `why` at request time from the memory cache: §11.3 would stay untouched, but the route
+would need a rule for the one kind without a row, and search engines would lose the page.
+
+## An organisation's page reads none of its members
+
+**Id:** 3f7a9d24-6c1e-4b58-9e02-7d41c8a5b6f3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §16.9; the build on the card tsk-jj1tfre7n6zb
+
+`render_org` does not query `org_member`, so a mistake there cannot name one. An organisation without a page has no
+row, which makes a private organisation and an unknown handle the same `not_found`. A project moved to another
+owner has its page turned off rather than appearing under the new one unasked.
+
+**Rejected:** a list of the organisation's members with public profiles: §16.9 says who belongs to it is not public.
