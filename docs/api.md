@@ -13931,9 +13931,9 @@ address of the card (§16.11), while the project's page is served. The
 maintainer's decision of 2026-11-02: a card's text is public as an
 issue's is on a forge. Every card of the project has one, also a `done`
 or `cancelled` card the Board no longer lists (after its 30 days or
-beyond its limit), so a card keeps its address once it is closed. The page shows the card's `id`, `title`,
-`status` and `label`, its holder as the Board names them, and its
-`body` as Markdown under the rules of §16.7, raw HTML as text. Below it
+beyond its limit), so a card keeps its address once it is closed. The
+page shows the card's `id`, `title`, `status` and `label`, its holder
+as the Board names them, and its `body` as Markdown under the rules of §16.7, raw HTML as text. Below it
 stand its notes (§6.16), oldest first, as comments stand under an issue
 (the maintainer's second decision of that day; what must stay private
 belongs in memory, §19): each with its author named as the Board names
