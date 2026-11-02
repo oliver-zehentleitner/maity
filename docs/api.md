@@ -2782,7 +2782,8 @@ without an operator's help.
 **The export** holds what is about the caller or written by them, and
 nothing that is only another person's: the account (handle, aliases,
 display name, avatar URL, addresses with their state, languages,
-preferences, notification settings, `terms`, the public profile
+preferences, notification settings, the broadcast choice (§16.12),
+`terms`, the public profile
 fields), the sessions (method, created, last seen, device text — no
 token), the second factor's state (enrolled or not, never a secret or
 code), the forge links (forge, login, kind, status, created — never a token), the
@@ -11593,6 +11594,11 @@ contract; until then nothing else in this section changes.
 | GET, PATCH | `/admin/settings/limits` | instance admin | 16.5 |
 | GET | `/admin/statistics` | instance admin | 16.6 |
 | GET | `/landing` | — | 16.7 |
+| GET | `/maintenance` | — | 16.12 |
+| GET, PUT, DELETE | `/admin/maintenance` | instance admin, human only | 16.12 |
+| POST | `/admin/maintenance/end` | instance admin, human only | 16.12 |
+| GET | `/admin/maintenance/changes` | instance admin, human only | 16.12 |
+| GET, PATCH | `/me/broadcasts` | human | 16.12 |
 
 `DELETE` answers `200` with the resource in its final state. A call that
 sets or clears a caller's own setting and has no resource of its own to

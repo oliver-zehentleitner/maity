@@ -34,6 +34,7 @@ PACKET = {
     "preferences",  # §19.4
     "operations",
     "team",
+    "maintenance",  # §16.12
 }
 
 

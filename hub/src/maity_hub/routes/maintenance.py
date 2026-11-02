@@ -10,11 +10,11 @@ from fastapi.responses import JSONResponse
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 from sqlalchemy import Connection, or_, select, update
 
-from maity_hub import clock, maintenance, paging
+from maity_hub import clock, events, maintenance, paging
 from maity_hub import tables as t
-from maity_hub.admin import instance_admin_id
+from maity_hub.admin import require_instance_admin
 from maity_hub.deps import HumanCaller, engine_of
-from maity_hub.errors import ApiError, forbidden, invalid
+from maity_hub.errors import ApiError, invalid
 from maity_hub.views import ts
 
 router = APIRouter()
@@ -39,8 +39,7 @@ class BroadcastsBody(BaseModel):
 
 
 def _admin(conn: Connection, caller: Any) -> None:
-    if caller.principal_id != instance_admin_id(conn):
-        raise forbidden("instance:admin")
+    require_instance_admin(conn, caller.principal_id)
 
 
 @router.get("/maintenance")
@@ -59,7 +58,7 @@ def admin_window(request: Request, caller: HumanCaller) -> JSONResponse:
 @router.put("/admin/maintenance")
 def put_window(request: Request, caller: HumanCaller, body: WindowBody) -> JSONResponse:
     text = body.text.strip()
-    with engine_of(request).begin() as conn:
+    with events.transaction(engine_of(request)) as conn:
         _admin(conn, caller)
         row = maintenance.current(conn)
         errors = maintenance.check({"from": body.from_, "until": body.until, "text": text}, row)
@@ -71,7 +70,7 @@ def put_window(request: Request, caller: HumanCaller, body: WindowBody) -> JSONR
 
 @router.delete("/admin/maintenance")
 def cancel_window(request: Request, caller: HumanCaller) -> JSONResponse:
-    with engine_of(request).begin() as conn:
+    with events.transaction(engine_of(request)) as conn:
         _admin(conn, caller)
         row = maintenance.current(conn)
         if row is not None and maintenance.state(row) == "running":
@@ -138,19 +137,13 @@ def _own_agents(conn: Connection, human_id: str) -> list[str]:
     )
 
 
-def _choice(value: Any) -> dict[str, Any]:
-    if isinstance(value, dict) and value.get("mode") in maintenance.MODES:
-        return {"mode": value["mode"], "agents": list(value.get("agents") or [])}
-    return {"mode": "accept_all", "agents": []}
-
-
 @router.get("/me/broadcasts")
 def get_broadcasts(request: Request, caller: HumanCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
         value = conn.execute(
             select(t.human.c.broadcasts).where(t.human.c.id == caller.principal_id)
         ).scalar_one_or_none()
-    return JSONResponse(_choice(value))
+    return JSONResponse(maintenance.choice(value))
 
 
 @router.patch("/me/broadcasts")

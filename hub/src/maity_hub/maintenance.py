@@ -263,11 +263,18 @@ def shift(conn: Connection, starts_at: datetime, ends_at: datetime) -> None:
     length = ends_at - starts_at
 
     def move(table: Any, column: Any, *where: Any) -> None:
-        conn.execute(
-            update(table)
-            .where(_inside(column, starts_at, ends_at), *where)
-            .values({column.name: column + length})
-        )
+        # Row by row: date arithmetic in SQL differs between SQLite, PostgreSQL and MariaDB,
+        # and a window touches few rows.
+        keys = list(table.primary_key.columns)
+        found = conn.execute(
+            select(*keys, column).where(_inside(column, starts_at, ends_at), *where)
+        ).all()
+        for row in found:
+            conn.execute(
+                update(table)
+                .where(*(key == row._mapping[key] for key in keys))
+                .values({column.name: row._mapping[column] + length})
+            )
 
     move(t.card, t.card.c.lease_until)
     move(t.membership, t.membership.c.outage_since)
@@ -349,6 +356,13 @@ def _shifted_steps(
 
 
 # --- the broadcast and each owner's choice --------------------------------------------------
+
+
+def choice(value: Any) -> dict[str, Any]:
+    """An owner's stored `broadcasts` choice as `{mode, agents}`; never set is `accept_all`."""
+    if isinstance(value, dict) and value.get("mode") in MODES:
+        return {"mode": value["mode"], "agents": list(value.get("agents") or [])}
+    return {"mode": "accept_all", "agents": []}
 
 
 def accepts(choice: Any, agent_id: str) -> bool:

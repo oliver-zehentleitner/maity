@@ -49,6 +49,15 @@ def rfc(at: datetime) -> str:
     return clock.rfc3339(at)
 
 
+def later_human(engine: Engine, now: Clock, handle: str) -> str:
+    """Another account, made after the admin's (the earliest account is the instance admin)."""
+    at = now.at
+    now.set(at + timedelta(seconds=1))
+    found = factory.human(engine, handle)
+    now.set(at)
+    return found
+
+
 def put(who: flow.Human, starts: datetime = FROM, ends: datetime = UNTIL, text: str = "DB") -> Any:
     return who.client.put(
         "/api/v1/admin/maintenance",
@@ -65,7 +74,7 @@ def running(now: Clock, at: datetime = FROM + timedelta(minutes=5)) -> None:
 # --- the window and its routes ----------------------------------------------------------
 
 
-def test_the_admin_sets_changes_and_cancels_a_window(admin: flow.Human) -> None:
+def test_the_admin_sets_changes_and_cancels_a_window(admin: flow.Human, now: Clock) -> None:
     assert admin.get("/maintenance").json() == {"window": None}
     made = put(admin, text="  Database upgrade  ")
     assert made.status_code == 200, made.text
@@ -86,9 +95,11 @@ def test_the_admin_sets_changes_and_cancels_a_window(admin: flow.Human) -> None:
         "text": "Database upgrade",
         "state": "upcoming",
     }
+    now.set(START + timedelta(seconds=1))
     changed = put(admin, ends=UNTIL + timedelta(minutes=10), text="Longer")
     assert changed.status_code == 200, changed.text
     assert changed.json()["window"]["until"] == rfc(UNTIL + timedelta(minutes=10))
+    now.set(START + timedelta(seconds=2))
     assert admin.delete("/admin/maintenance").json() == {"window": None}
     assert admin.get("/admin/maintenance").json() == {"window": None}
     actions = [c["action"] for c in admin.get("/admin/maintenance/changes").json()["items"]]
@@ -118,9 +129,11 @@ def test_the_fields_are_checked(admin: flow.Human, now: Clock) -> None:
 
 
 def test_only_the_instance_admin_sets_one(
-    make_client: ClientFactory, migrated: Engine, admin: flow.Human
+    make_client: ClientFactory, migrated: Engine, admin: flow.Human, now: Clock
 ) -> None:
+    now.set(START + timedelta(seconds=1))  # after the admin: the earliest account is the admin
     other = flow.human(make_client, migrated, "other")
+    now.set(START)
     assert put(other).status_code == 403
     assert other.get("/admin/maintenance").status_code == 403
     assert other.delete("/admin/maintenance").status_code == 403
@@ -143,8 +156,9 @@ def test_ending_early_ends_the_window_now(admin: flow.Human, now: Clock) -> None
     assert latest["window"]["until"] == rfc(FROM + timedelta(minutes=5))
 
 
-def test_the_changes_are_paged(admin: flow.Human) -> None:
+def test_the_changes_are_paged(admin: flow.Human, now: Clock) -> None:
     for minutes in range(3):
+        now.set(START + timedelta(seconds=minutes))
         put(admin, ends=UNTIL + timedelta(minutes=minutes))
     first = admin.get("/admin/maintenance/changes?limit=2").json()
     assert len(first["items"]) == 2 and first["next_cursor"]
@@ -247,11 +261,13 @@ def test_the_broadcast_reaches_the_agents_their_owners_accept(
 
 
 def test_the_choice_is_checked(
-    make_client: ClientFactory, migrated: Engine, admin: flow.Human
+    make_client: ClientFactory, migrated: Engine, admin: flow.Human, now: Clock
 ) -> None:
     flow.project(admin, "maity")
     flow.agent(make_client, admin)
+    now.set(START + timedelta(seconds=1))  # after the admin: the earliest account is the admin
     other = flow.human(make_client, migrated, "other")
+    now.set(START)
     flow.project(other, "theirs")
     flow.agent(make_client, other, "other/theirs")
     theirs = other.get("/agents").json()["items"][0]["id"]
@@ -267,6 +283,16 @@ def test_the_choice_is_checked(
 
 
 # --- the deadlines -----------------------------------------------------------------------
+
+
+def owner_membership(engine: Engine, project_id: str, human_id: str) -> int:
+    with engine.begin() as conn:
+        found: int = conn.execute(
+            select(t.membership.c.id).where(
+                t.membership.c.project_id == project_id, t.membership.c.human_id == human_id
+            )
+        ).scalar_one()
+    return found
 
 
 def lease(engine: Engine, card_id: str) -> datetime:
@@ -288,9 +314,7 @@ def leased_cards(engine: Engine, project_id: str, member: int) -> dict[str, str]
         ("margin", UNTIL + timedelta(seconds=60)),
         ("after", UNTIL + timedelta(seconds=61)),
     ):
-        found[name] = factory.card(
-            engine, project_id, member, status="in_progress", lease_until=at
-        )
+        found[name] = factory.card(engine, project_id, member, status="in_progress", lease_until=at)
     return found
 
 
@@ -298,7 +322,7 @@ def test_the_deadlines_in_the_window_and_the_minute_after_move_by_its_length(
     make_client: ClientFactory, migrated: Engine, admin: flow.Human, now: Clock
 ) -> None:
     project_id = flow.project(admin, "maity")["id"]
-    member = factory.membership(migrated, project_id, human_id=admin.id)
+    member = owner_membership(migrated, project_id, admin.id)
     cards = leased_cards(migrated, project_id, member)
     put(admin)
     running(now)
@@ -323,7 +347,7 @@ def test_a_sweep_before_any_request_finds_the_deadlines_moved(
     make_client: ClientFactory, migrated: Engine, admin: flow.Human, now: Clock
 ) -> None:
     project_id = flow.project(admin, "maity")["id"]
-    member = factory.membership(migrated, project_id, human_id=admin.id)
+    member = owner_membership(migrated, project_id, admin.id)
     card = factory.card(
         migrated, project_id, member, status="in_progress", lease_until=UNTIL - timedelta(seconds=1)
     )
@@ -339,7 +363,7 @@ def test_an_early_end_moves_by_the_time_it_ran(
     make_client: ClientFactory, migrated: Engine, admin: flow.Human, now: Clock
 ) -> None:
     project_id = flow.project(admin, "maity")["id"]
-    member = factory.membership(migrated, project_id, human_id=admin.id)
+    member = owner_membership(migrated, project_id, admin.id)
     card = factory.card(
         migrated, project_id, member, status="in_progress", lease_until=FROM + timedelta(minutes=8)
     )
@@ -356,7 +380,7 @@ def test_a_cancelled_window_moves_nothing(
     make_client: ClientFactory, migrated: Engine, admin: flow.Human, now: Clock
 ) -> None:
     project_id = flow.project(admin, "maity")["id"]
-    member = factory.membership(migrated, project_id, human_id=admin.id)
+    member = owner_membership(migrated, project_id, admin.id)
     card = factory.card(
         migrated, project_id, member, status="in_progress", lease_until=FROM + timedelta(minutes=8)
     )
@@ -375,9 +399,8 @@ def test_every_listed_deadline_moves_and_closed_ones_do_not(
     bot = factory.agent(migrated, project_id, admin.id)
     other = factory.agent(migrated, project_id, admin.id, instance="b2c3")
     card = factory.card(migrated, project_id, bot.membership_id)
-    pending = factory.human(migrated, "pending")
-    active = factory.human(migrated, "active")
-    org_id = flow.post_org(admin) if hasattr(flow, "post_org") else None
+    pending = later_human(migrated, now, "pending")
+    active = later_human(migrated, now, "active")
     made_org = admin.post("/orgs", {"handle": "oz-team", "display_name": "OZ"})
     assert made_org.status_code == 201, made_org.text
     org_id = made_org.json()["id"]
@@ -440,13 +463,23 @@ def test_every_listed_deadline_moves_and_closed_ones_do_not(
                     human_id=human_id, created_at=START, expires_at=inside, status=status
                 )
             )
-        change = {"id": "adc-1", "address": "new@example.org", "requested_at": rfc(inside - HELD_FOR)}
+        change = {
+            "id": "adc-1",
+            "address": "new@example.org",
+            "requested_at": rfc(inside - HELD_FOR),
+        }
         conn.execute(
             insert(t.notification_settings).values(
-                human_id=pending, preferences={}, address_status="none", address_change=change
+                human_id=pending,
+                preferences={},
+                address_status="none",
+                address_change=change,
+                epoch=0,
+                hard_failures=0,
+                updated_at=START,
             )
         )
-    put(admin)
+    assert put(admin).status_code == 200
     now.set(UNTIL + timedelta(minutes=5))
     admin.get("/maintenance")
     later = inside + LENGTH
@@ -507,3 +540,23 @@ def test_me_and_the_packet_carry_the_window(
     window = {"from": rfc(FROM), "until": rfc(UNTIL), "text": "Upgrade", "state": "upcoming"}
     assert admin.get("/me").json()["maintenance"] == window
     assert bot.resume().json()["maintenance"] == window
+
+
+def test_the_export_carries_the_broadcast_choice(
+    make_client: ClientFactory, admin: flow.Human
+) -> None:
+    flow.project(admin, "maity")
+    flow.agent(make_client, admin)
+    assert admin.get("/me/export").json()["account"]["broadcasts"] == {
+        "mode": "accept_all",
+        "agents": [],
+    }
+    agent_id = admin.get("/agents").json()["items"][0]["id"]
+    admin.patch("/me/broadcasts", {"mode": "accept_only", "agents": [agent_id]})
+    from maity_hub.routes import me
+
+    me.EXPORTS.reset()  # at most one export per 10 minutes
+    assert admin.get("/me/export").json()["account"]["broadcasts"] == {
+        "mode": "accept_only",
+        "agents": [agent_id],
+    }
