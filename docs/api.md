@@ -2969,7 +2969,7 @@ Response `201`:
   "paste_lines": {
     "join": "maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE",
     "posix": "export PATH=\"$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}\" && { command -v maity >/dev/null 2>&1 || { pipx install maity; }; } && maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE",
-    "windows": "$env:Path += \";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR } else { \"$HOME\\.local\\bin\" })\"; if (-not (Get-Command maity -ErrorAction SilentlyContinue)) { pipx install maity }; if (Get-Command maity -ErrorAction SilentlyContinue) { maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE }"
+    "windows": "$OutputEncoding = [Console]::InputEncoding = [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; $env:Path += \";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR } else { \"$HOME\\.local\\bin\" })\"; if (-not (Get-Command maity -ErrorAction SilentlyContinue)) { if (Get-Command pipx -ErrorAction SilentlyContinue) { pipx install maity } else { python -m pip install --user pipx; python -m pipx install maity } }; if (Get-Command maity -ErrorAction SilentlyContinue) { maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE }"
   },
   "agent_id": "agt-b",
   "project": "oliver/maity",
@@ -3187,9 +3187,18 @@ line> }; if (Get-Command maity -ErrorAction SilentlyContinue) { maity join
 <url> --code <code> }`, with `;` because Windows PowerShell 5.1 has no
 `&&`, and the second check because `;` would run the join after a failed
 install, and the code would land in the error message and in `$Error`.
-When the install line starts with `pipx `, it begins with
+It begins with `$OutputEncoding = [Console]::InputEncoding =
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; `:
+Windows PowerShell 5.1 pipes text into a native command as ASCII by
+default, so a non-ASCII character piped into `maity` arrives as `?`; this
+sets UTF-8 without a byte order mark for the rest of that shell.
+When the install line starts with `pipx `, the encodings are followed by
 `$env:Path += ";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR } else {
-"$HOME\.local\bin" })"; `. `MAITY_CLI_INSTALL` is written for a POSIX
+"$HOME\.local\bin" })"; `, and the install line runs as `if (Get-Command
+pipx -ErrorAction SilentlyContinue) { <install line> } else { python -m pip
+install --user pipx; python -m <install line> }`: Windows has no pipx of
+its own, and the `pipx.exe` that `pip install --user` makes is not on the
+`PATH`, so pipx runs as a module. `MAITY_CLI_INSTALL` is written for a POSIX
 shell, so `windows` exists only when it is a single command with no shell
 operators (none of `&`, `|`, `;`, `<`, `>`, `$`, a backtick, or
 parentheses), no `=` in its first word (an environment prefix) and no word

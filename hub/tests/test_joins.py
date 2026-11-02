@@ -66,9 +66,13 @@ def test_a_join_answers_the_paste_lines_once(owner: flow.Human) -> None:
             f"&& {{ command -v maity >/dev/null 2>&1 || {{ pipx install maity; }}; }} && {join}"
         ),
         "windows": (
+            "$OutputEncoding = [Console]::InputEncoding = [Console]::OutputEncoding = "
+            "New-Object System.Text.UTF8Encoding $false; "
             '$env:Path += ";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR } '
             'else { "$HOME\\.local\\bin" })"; '
-            "if (-not (Get-Command maity -ErrorAction SilentlyContinue)) { pipx install maity }; "
+            "if (-not (Get-Command maity -ErrorAction SilentlyContinue)) { "
+            "if (Get-Command pipx -ErrorAction SilentlyContinue) { pipx install maity } "
+            "else { python -m pip install --user pipx; python -m pipx install maity } }; "
             f"if (Get-Command maity -ErrorAction SilentlyContinue) {{ {join} }}"
         ),
     }  # only the join, or installs when missing and joins, once per platform (§3.2)

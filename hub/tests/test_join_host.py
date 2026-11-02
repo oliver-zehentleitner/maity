@@ -436,6 +436,31 @@ def test_a_single_command_keeps_its_windows_line_without_the_pipx_path() -> None
     assert "{ uv tool install maity }" in line and "$env:Path" not in line
 
 
+def test_the_windows_line_sets_utf8_first_whatever_the_install_line() -> None:
+    """PowerShell 5.1 pipes ASCII by default and an `ü` arrives as `?`; set before anything
+    runs, without a byte order mark."""
+    for install in ("pipx install maity", "uv tool install maity"):
+        line = join_line.windows(install, "U", "C")
+        assert line is not None and line.startswith(f"{join_line.UTF8_POWERSHELL}; ")
+    assert "UTF8Encoding $false" in join_line.UTF8_POWERSHELL
+
+
+def test_the_windows_line_installs_pipx_where_it_is_missing() -> None:
+    """Without pipx the line used to fail at `pipx`; pipx from `pip --user` is not on the
+    PATH, so it runs as a module, and only a pipx install line gets this."""
+    line = join_line.windows("pipx install maity", "U", "C")
+    assert line is not None
+    assert (
+        "{ if (Get-Command pipx -ErrorAction SilentlyContinue) { pipx install maity } "
+        "else { python -m pip install --user pipx; python -m pipx install maity } }"
+    ) in line
+    assert line.endswith(
+        "if (Get-Command maity -ErrorAction SilentlyContinue) " "{ maity join U --code C }"
+    )
+    other = join_line.windows("uv tool install maity", "U", "C")
+    assert other is not None and "pipx" not in other
+
+
 def test_a_public_address_on_the_join_host_keeps_its_path(
     make_client: ClientFactory, migrated: Any
 ) -> None:

@@ -378,6 +378,40 @@ covers a changed one.
 - A hint only when `maity` is not found: the line would still fail first
   on a fresh machine and need a second paste.
 
+## On Windows the join line sets the shell to UTF-8 and installs pipx where it is missing
+
+**Id:** 202c44d8-9e5d-476f-a0a2-fdd8c594d974
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-yetyn5sctbdc, from the Windows 11 machine test on tsk-mfsxyznpfzrj (PowerShell 5.1 and 7, 2026-11-02); contract in `docs/api.md` §3.2
+**Revisit when:** the oldest Windows PowerShell an agent runs in pipes UTF-8 by default, or the default install line stops using pipx
+**See:** join.md#the-join-line-installs-the-cli-and-joins-in-one-command-and-finds-maity-without-touching-the-shell-profile — 915d69cd-01b4-4396-af66-5244c9ffb0fe — as of 2026-11-02
+
+`paste_lines.windows` starts by setting `$OutputEncoding`,
+`[Console]::InputEncoding` and `[Console]::OutputEncoding` to UTF-8 without
+a byte order mark. For a pipx install line, where `pipx` is not found, it
+runs `python -m pip install --user pipx` and then the install line as
+`python -m pipx …`.
+
+**Reason:** the machine test showed both failures on a fresh Windows 11.
+Without pipx the line stopped at `pipx` with `CommandNotFoundException`.
+Under Windows PowerShell 5.1, `$OutputEncoding` is ASCII, so an `ü` piped
+into `maity` arrived as `?`, and strict UTF-8 cannot catch that because `?`
+is valid. A mark is left out because maity would otherwise receive it as
+the first character of a text. pipx runs as a module because the
+`pipx.exe` that `pip install --user` writes lands in a `Scripts` directory
+that is not on the `PATH`.
+
+**Alternatives:**
+- `pipx ensurepath` in the line, to fix the `PATH` for later shells as
+  well: already rejected for the join line (915d69cd), because it changes
+  the user's environment and the shell running the line does not see it.
+- Only a README hint about the encodings: the person pasting the line has
+  not read it, and the `?` goes unnoticed until a human reads the message.
+- `py -m` instead of `python -m`: unknown which one is more often present
+  on agent machines; the test machine had `python`.
+
 ## A first join can name the agent whose work the new one takes over, and where the hand-over is
 
 **Id:** 5bdd0ea0-7457-4a70-9af6-88da28a81c97
