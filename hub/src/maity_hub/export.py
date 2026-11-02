@@ -12,8 +12,7 @@ its verifier, a join or enrollment token, a code hash, a nonce, a second factor'
 or recovery code. What the document shows is picked field by field; where a row is read
 whole for the hub's own read rules (`inbox.may_read`), only named fields leave it.
 
-Not in this hub yet, so not in the export: handle aliases (§6.24), languages and the public
-profile (§16.9).
+Not in this hub yet, so not in the export: handle aliases (§6.24) and the public profile (§16.9).
 """
 
 from __future__ import annotations

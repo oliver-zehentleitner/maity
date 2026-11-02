@@ -8,7 +8,7 @@ from collections.abc import Callable
 
 from sqlalchemy import Engine, select
 
-from maity_hub import events, languages, registration_mail
+from maity_hub import catalog, events, languages
 from maity_hub import tables as t
 from maity_hub.landing import LANGUAGES
 from tests import flow
@@ -101,7 +101,7 @@ def test_registration_takes_both_languages_to_the_account(
         mail = conn.execute(select(t.mail_outbox).order_by(t.mail_outbox.c.id.desc())).first()
     assert mail is not None
     assert (
-        mail.subject == registration_mail._WORDS["de"]["confirm_subject"]
+        mail.subject == catalog.section("registration_mail", "de")["confirm_subject"]
     )  # not the browser's `en`
     found = re.search(r"https://hub\.example(/mail/register/\S+)", mail.body)
     assert found
@@ -175,3 +175,33 @@ def test_an_agent_reads_its_own_humans_language_on_me_owner(
     assert owner.patch(S, {"email": {"language": "de"}}).status_code == 200
     packet = agent.resume().json()
     assert packet["me"]["owner"]["language"] == "de"
+
+
+def test_an_agent_reads_the_language_of_a_human_who_is_no_member(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = flow.human(make_client, migrated)
+    flow.project(owner)
+    agent = flow.agent(make_client, owner)
+    other = flow.human(make_client, migrated, handle="other")
+    assert other.patch(S, {"email": {"language": "de"}}).status_code == 200
+    with migrated.begin() as conn:  # its human stands outside the project
+        conn.execute(
+            t.agent_profile.update()
+            .where(t.agent_profile.c.id == agent.id)
+            .values(owner_id=other.id)
+        )
+    assert agent.resume().json()["me"]["owner"] == {
+        "id": other.id,
+        "handle": "other",
+        "language": "de",
+        "meat_proxy": False,
+    }
+
+
+def test_the_export_carries_the_interface_language(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = flow.human(make_client, migrated)
+    assert owner.patch("/me", {"interface_language": "de"}).status_code == 200
+    assert owner.get("/me/export").json()["account"]["interface_language"] == "de"
