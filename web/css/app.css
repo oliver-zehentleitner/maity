@@ -1506,6 +1506,12 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .mail-address-state { margin: 0 0 6px; }
 .mail-address-form { display: grid; gap: 6px; }
 .mail-address-form .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.mail-modes { margin: 16px 0; max-width: 32rem; }
+.mail-modes h3 { margin: 0 0 6px; }
+.mail-modes-form { display: grid; gap: 6px; }
+.mail-kinds, .mail-quiet { display: grid; gap: 6px; }
+.mail-modes-form .mail-kind { display: grid; gap: 4px; }
+.mail-modes-form button[type=submit] { justify-self: start; margin-top: 6px; }
 /* My settings: each choice a row of at least 28 px, so the radios are targets of their own. */
 .my-nl { display: grid; gap: 6px; }
 .my-nl .check { display: flex; align-items: center; gap: 8px; min-height: 28px; }

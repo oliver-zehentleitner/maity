@@ -4457,3 +4457,29 @@ contract change for one hint, and it would tell any script in the page something
 account's sign-in. Asking for the password always: a human who never set one could not
 change the address at all. Never asking and waiting for the refusal: one failed request
 on every change of a confirmed address.
+
+## When mail goes out: the page sends only what changed, the browser's zone only offered
+
+**Id:** 444115c8-aaaf-408e-a16c-571aa48f69cf
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §18.4 "Defaults and what was saved", the web mail section of tsk-x9g29m2rcx72 (#1223), 2026-11-02
+**Revisit when:** the hub can reset a kind to its default
+
+The modes and times on `/account/notifications` are compared with the hub's merged answer, and
+the `PATCH` names only what differs: in `email.kinds` only the kinds that changed, each with only
+its changed part (`mode` or `content`). The time zone is the account's. When the browser reports
+another one, a button offers it, but the page never sets it unasked.
+
+**Reason:** the hub stores only what the human set, and a kind it was sent counts as set even if
+the value is unchanged. Sending the whole form would pin every kind at today's default, and a
+later change of the default (as the digest defaults of 2026-11-02) would no longer reach them. The
+zone decides when digests and quiet hours fall; a browser on a trip should not move them.
+
+**Rejected alternatives:** sending the whole `email` object on each save: it pins every default.
+Setting the browser's zone when the account still has `UTC`: a person who chose UTC on purpose
+would see it changed.
+
+**Known limit:** a mode changed and later set back to the default stays set; the contract has no
+reset.
