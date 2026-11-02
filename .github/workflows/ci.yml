@@ -171,6 +171,9 @@ jobs:
           fi
           if ldd "$shell" | grep "not found"; then exit 1; fi
       - run: python web/tools/e2e.py --artifacts e2e-screenshots
+      # A report while the texts move to the catalog; --strict with the last language's PR.
+      - if: always()
+        run: mkdir -p e2e-screenshots && python web/tools/pseudo_run.py --report e2e-screenshots/pseudo-report.json
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
