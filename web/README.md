@@ -337,7 +337,12 @@ too.
    the controls right under the claim line, then the description as
    Markdown, its links, the open notes
    (`GET …/tasks/{id}/notes?state=open`) with **Post the note** (`POST
-   …/notes`) and the history (`GET …/tasks/{id}/history`, newest first,
+   …/notes`), each with "Edited by X · T" and its reason once edited and
+   **Edit** for its author or an owner or admin (`PATCH …/notes/{note_id}`,
+   in place; a reason is required for another's note) and **Remove** for an
+   owner or admin (`POST …/notes/{note_id}/redact`, a reason asked first; the
+   tombstone with the reason only for those the hub gives it, §8.5; still
+   allowed in a closed project, Edit not), and the history (`GET …/tasks/{id}/history`, newest first,
    a title's or description's change as its diff). **Watch** in the bar
    (`PUT` or `DELETE …/tasks/{id}/watch`) marks the card **Watching** on the
    board; while it is on, **Updates** lists the card's `update` messages from

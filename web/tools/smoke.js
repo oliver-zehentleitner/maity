@@ -3430,7 +3430,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(cpPanel().querySelector(".card-body")) === "The REST contract hub, CLI and dashboard build against; ask @agent-b."
     // Its stored mention a link where it stands (the one renderer, review of #860).
     && cpPanel().querySelector(".card-body a.mention") && cpPanel().querySelector(".card-body a.mention").getAttribute("href") === "#/maintainer/maity/members/agt-b"
-    && cpNotes()[0] === "@agent-c · " + win.Maity.dom.formatTime("2026-10-21T10:30:00Z") + "The CLI needs --no-code here too."
+    && cpNotes()[0] === "@agent-c · " + win.Maity.dom.formatTime("2026-10-21T10:30:00Z") + "Edited by @agent-c · " + win.Maity.dom.formatTime("2026-10-21T10:35:00Z")
+      + ": typoThe CLI needs --no-code here too.EditRemove"
     && cpNotes().length === 2 && cpGets.includes("/projects/maintainer/maity/tasks/tsk-0001/notes?state=open"),
     "card panel: the card with its controls (no link to itself, not dragged), the body as Markdown, the open notes only " + JSON.stringify(cpNotes()));
   // A redacted note (§6.16) keeps its place; its body is §8.5's tombstone, never "[object Object]".
@@ -3536,6 +3537,84 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.post = (p, b) => { if (p.includes("/notes")) cpPosts.push([p, b]); return cpPost(p, b); };
   cpForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(cpPosts.length === cpBefore + 2 && cpNotes().length === 4, "card panel: the note is sent again after the refusal");
+  // Edit and Remove (§6.16): the owner edits another's note with a reason, the old text gone, "edited" shown; Remove leaves the tombstone.
+  const neNote = (id) => cpPanel().querySelectorAll("li.card-note").find((li) => li.getAttribute("data-note") === id);
+  const cpPatches = [], cpPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { cpPatches.push([p, b]); return cpPatch(p, b); };
+  btn(neNote("nte-0031"), "Edit").click(); await tick();
+  const cpEditText = byId("card-note-edit-nte-0031"), cpEditReason = byId("card-note-reason-nte-0031");
+  expect(cpEditText && cpEditText.value === "The CLI needs `--no-code` here too." && document.activeElement === cpEditText && !neNote("nte-0031").querySelector(".card-note-actions")
+    && text(neNote("nte-0031")).includes("Why you change someone else's note"),
+    "note edit: the text in a field, focused, the reason asked for another's note");
+  cpEditText.value = "The CLI needs `--no-code` and `--quiet`.";
+  neNote("nte-0031").querySelector("form.card-note-edit-form").dispatch("submit"); await tick();
+  expect(!cpPatches.length && text(neNote("nte-0031")).includes("Say why you change someone else's note.") && document.activeElement === cpEditReason,
+    "note edit: another's note is not sent without a reason");
+  cpEditReason.value = "  scope  ";
+  neNote("nte-0031").querySelector("form.card-note-edit-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(cpPatches[0]) === JSON.stringify(["/projects/maintainer/maity/tasks/tsk-0001/notes/nte-0031", { body: "The CLI needs `--no-code` and `--quiet`.", reason: "scope" }])
+    && text(neNote("nte-0031")).includes("Edited by @maintainer") && text(neNote("nte-0031")).includes(": scope")
+    && text(neNote("nte-0031")).includes("The CLI needs --no-code and --quiet.") && !text(neNote("nte-0031")).includes("here too")
+    && document.activeElement === btn(neNote("nte-0031"), "Edit"),
+    "note edit: sent with the reason, the new text and the mark shown, the focus back on Edit " + text(neNote("nte-0031")));
+  // One's own note: no reason needed; Cancel and Escape leave it as it was.
+  const cpMine = cpPanel().querySelectorAll("li.card-note")[2].getAttribute("data-note");
+  btn(neNote(cpMine), "Edit").click(); await tick();
+  expect(text(neNote(cpMine)).includes("Why (optional"), "note edit: the reason is optional for one's own note");
+  byId("card-note-edit-" + cpMine).value = "changed?";
+  btn(neNote(cpMine), "Cancel").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(cpPatches.length === 1 && text(neNote(cpMine)).includes("Check §6.16 too.") && !neNote(cpMine).querySelector("form") && document.activeElement === btn(neNote(cpMine), "Edit"),
+    "note edit: Cancel sends nothing and leaves the note as it was");
+  btn(neNote(cpMine), "Edit").click(); await tick();
+  byId("card-note-edit-" + cpMine).value = "Check §6.16 and §8.5.";
+  neNote(cpMine).querySelector("form.card-note-edit-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(cpPatches[1][1]) === JSON.stringify({ body: "Check §6.16 and §8.5." }) && text(neNote(cpMine)).includes("Edited by @maintainer")
+    && !text(neNote(cpMine).querySelector(".card-note-edited")).includes(": "),
+    "note edit: one's own note is saved without a reason, its mark without one");
+  // A refusal keeps the form and says why.
+  win.Maity.api.patch = () => Promise.reject(Object.assign(new Error("the note was removed"), { code: "invalid", details: { reason: "redacted" } }));
+  btn(neNote(cpMine), "Edit").click(); await tick();
+  neNote(cpMine).querySelector("form.card-note-edit-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(neNote(cpMine).querySelector("form.card-note-edit-form") && text(neNote(cpMine)).includes("Not saved") && !btn(neNote(cpMine), "Save").disabled,
+    "note edit: a refusal keeps the form and says so");
+  neNote(cpMine).querySelector("form.card-note-edit-form").dispatch("keydown", { key: "Escape" }); for (let k = 0; k < 4; k++) await tick();
+  expect(!neNote(cpMine).querySelector("form") && cpPanel(), "note edit: Escape in the form leaves the edit, not the card");
+  win.Maity.api.patch = cpPatch;
+  // Remove: a reason asked for (again when empty), the tombstone in place and focused; cancelled sends nothing.
+  const cpPrompt = win.prompt, cpAsks = [];
+  win.prompt = () => null;
+  btn(neNote(cpMine), "Remove").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(cpPosts.length === cpBefore + 2 && !neNote(cpMine).querySelector(".card-note-removed"), "note remove: cancelled, nothing sent");
+  win.prompt = (q) => { cpAsks.push(q); return cpAsks.length === 1 ? "  " : "posted twice"; };
+  btn(neNote(cpMine), "Remove").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(cpAsks.length === 2 && cpAsks[1].startsWith("A reason is needed")
+    && JSON.stringify(cpPosts[cpPosts.length - 1]) === JSON.stringify(["/projects/maintainer/maity/tasks/tsk-0001/notes/" + cpMine + "/redact", { reason: "posted twice" }])
+    && text(neNote(cpMine)).includes("The note was removed by Maintainer: posted twice") && !neNote(cpMine).querySelector(".md, .card-note-actions, .card-note-edited")
+    && document.activeElement === neNote(cpMine).querySelector(".card-note-removed"),
+    "note remove: asked for a reason, the tombstone in place, no buttons, the focus on it " + text(neNote(cpMine)));
+  win.prompt = cpPrompt;
+  // A member without events:admin: Edit on their own note only, no Remove; a tombstone
+  // without the reason the hub keeps from them (§8.5); a closed project takes no edit.
+  const cpOthersAll = win.Maity.api.getAll;
+  const cpList = [
+    { id: "nte-a", author: { member_id: "hum-x", handle: "x", kind: "human" }, body: "Mine.", mentions: [], state: "open", edited: null, created_at: "2026-10-21T10:00:00Z" },
+    { id: "nte-b", author: { member_id: "agt-c", handle: "agent-c", kind: "agent" }, body: "Theirs.", mentions: [], state: "open", edited: null, created_at: "2026-10-21T10:00:00Z" },
+    { id: "nte-c", author: { member_id: "agt-b", handle: "agent-b", kind: "agent" }, body: { redacted: true, reason: null, by: "hum-maintainer", at: "2026-10-21T12:00:00Z" }, mentions: [], state: "open", edited: null, created_at: "2026-10-21T10:00:00Z" },
+    { id: "nte-d", author: { member_id: "agt-b", handle: "agent-b", kind: "agent" }, body: { redacted: true, reason: null, by: null, at: null }, mentions: [], state: "open", edited: null, created_at: "2026-10-21T10:00:00Z" }];
+  win.Maity.api.getAll = (p) => (p.endsWith("/notes?state=open") ? Promise.resolve({ items: cpList }) : cpOthersAll(p));
+  const cpReader = (state, canAdmin) => win.Maity.cardPanel.render({ base: "/projects/maintainer/maity", slug: "maity", project: { state }, link: () => "#", canAdmin,
+    me: { id: "hum-x", kind: "human" }, members: [], memberById: {} }, { id: "tsk-0001", title: "Notes", links: [] }, win.Maity.dom.h("article"), () => {});
+  const cpPlain = cpReader("build", false); for (let k = 0; k < 4; k++) await tick();
+  const cpLi = (panel, id) => panel.el.querySelectorAll("li.card-note").find((li) => li.getAttribute("data-note") === id);
+  const cpButtons = (panel, id) => cpLi(panel, id).querySelectorAll("button").map((b) => text(b));
+  expect(JSON.stringify(cpButtons(cpPlain, "nte-a")) === JSON.stringify(["Edit"]) && !cpButtons(cpPlain, "nte-b").length && !cpButtons(cpPlain, "nte-c").length
+    && text(cpLi(cpPlain, "nte-c")).includes("The note was removed by hum-maintainer. · ") && !text(cpLi(cpPlain, "nte-c")).includes("null")
+    && text(cpLi(cpPlain, "nte-d")).endsWith("The note was removed."),
+    "note edit: a member edits their own note only, removes none; a tombstone without its reason " + text(cpLi(cpPlain, "nte-c")));
+  const cpClosed = cpReader("archived", true); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(cpButtons(cpClosed, "nte-a")) === JSON.stringify(["Remove"]) && JSON.stringify(cpButtons(cpClosed, "nte-b")) === JSON.stringify(["Remove"]),
+    "note edit: a closed project takes no edit, a removal still");
+  win.Maity.api.getAll = cpOthersAll;
   // Escape closes, as Close does: the board again, the card marked, its title focused.
   cpPanel().dispatch("keydown", { key: "Escape" }); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
   expect(win.location.hash === "#/maintainer/maity/board" && !cpPanel() && cpCard().classList.contains("wanted") && document.activeElement === cpCard().querySelector("a.card-open"),

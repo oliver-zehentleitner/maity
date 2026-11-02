@@ -1038,7 +1038,19 @@
       },
       "body": "string",
       "created_at": "string",
-      "edited": "null",
+      "edited": {
+       "object": {
+        "at": "string",
+        "by": {
+         "object": {
+          "handle": "string",
+          "kind": "string",
+          "member_id": "string"
+         }
+        },
+        "reason": "string"
+       }
+      },
       "id": "string",
       "mentions": {
        "array": {
