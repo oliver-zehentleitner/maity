@@ -1804,8 +1804,14 @@ page and campaign, the views (marked approximate), registrations and
 those with an agent, a removed code said so, and the hub's CSV linked.
 The registration page sends the link's `v` and `c` as `origin`.
 
+**Sign in** and **Sign up** (`js/auth-pages.js`, §16.7.4) hold the pitch of
+`/login` and `/register` per language: title, subline, three points and a
+note. An empty field is left out; the form's own words are the catalogue's.
+Both sub-tabs edit one setting, so Save stores both; each has its own JSON
+import and export of its languages.
+
 **Import or export everything** (`js/site-io.js`, tsk-xw8a2hd84x3a) takes
-the three sections as one JSON, extended language by language and
+these sections as one JSON, extended language by language and
 imported again:
 
 ```json
@@ -1813,6 +1819,8 @@ imported again:
   "format": "maity-site/1",
   "landing": { "enabled": true, "default_language": "en", "pages": { "en": {…}, "de": {…} }, "footer": {…}, "variants": {…}, "campaigns": […] },
   "legal": { "imprint": { "languages": { "en": { "title": "…", "markdown": "…" } } }, "privacy": {…}, "terms": {…} },
+  "sign_in": { "en": { "title": "…", "subline": "…", "point_1": "…", "note": "…" } },
+  "sign_up": { "en": { "title": "…" } },
   "registration": { "mode": "closed", "domains": [], "addresses": [], "approval": "operator", "terms": null, "max_new_accounts_per_hour": 20 }
 }
 ```

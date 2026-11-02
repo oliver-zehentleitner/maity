@@ -9816,7 +9816,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await siCheck();
     const siParts = () => siBox().querySelectorAll("li.site-part").map((li) => li.getAttribute("data-part") + ":" + li.className.split(" ").find((c) => c.startsWith("site-") && c !== "site-part"));
     // The fixture's landing page is the template's, so only the legal pages change.
-    expect(JSON.stringify(siParts()) === JSON.stringify(["landing:site-same", "legal:site-changes", "registration:site-missing"]),
+    expect(JSON.stringify(siParts()) === JSON.stringify(["landing:site-same", "legal:site-changes", "sign_in:site-changes", "sign_up:site-changes", "registration:site-missing"]),
       "site: Check shows each part's state " + JSON.stringify(siParts()));
     const siPatches = [], siPatchReal = win.Maity.api.patch;
     win.Maity.api.patch = (p, b) => { siPatches.push(p); return siPatches.length === 2
@@ -9841,6 +9841,31 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "pages: /admin/pages opens the tab on Landing pages, the file folded " + subShown());
     await go("#/admin/pages/legal"); for (let k = 0; k < 6; k++) await tick();
     expect(JSON.stringify(subShown()) === JSON.stringify(["admin-legal-pages"]), "pages: /admin/pages/legal opens Legal pages " + subShown());
+    // Sign in and Sign up (§16.7.4): one setting, an empty field left out, a refusal said at its field, JSON checked before it loads.
+    btn(main.querySelector("nav.admin-subnav"), "Sign in").click(); await tick();
+    expect(JSON.stringify(subShown()) === JSON.stringify(["admin-sign-in-page"]), "auth pages: the Sign in sub-tab shows its part " + subShown());
+    const apBox = byId("admin-sign-in-page");
+    const apInput = (key) => byId("ap-sign_in-" + key);
+    const apType = (el, value) => { el.value = value; el.dispatch("input"); };
+    apType(apInput("title"), "Welcome");
+    apType(apInput("subline"), "   ");
+    const apSent = [], apPatch = win.Maity.api.patch;
+    win.Maity.api.patch = (p, b) => { apSent.push(b); return apPatch(p, b); };
+    btn(apBox, "Save the sign-in and sign-up pages").click(); for (let k = 0; k < 6; k++) await tick();
+    expect(apSent.length === 1 && JSON.stringify(apSent[0].pages.sign_in.en) === JSON.stringify({ title: "Welcome" }) && /Saved\./.test(text(apBox)),
+      "auth pages: Save sends the text and leaves out an empty field " + JSON.stringify(apSent));
+    apType(byId("ap-sign_in-title"), "Hello {{name}}");
+    btn(apBox, "Save the sign-in and sign-up pages").click(); for (let k = 0; k < 6; k++) await tick();
+    win.Maity.api.patch = apPatch;
+    expect(/Still holds a placeholder/.test(text(apBox)) && /Not saved/.test(text(apBox)), "auth pages: the hub's refusal is said at the field " + text(apBox));
+    apType(byId("ap-sign_in-title"), "Welcome");
+    const apIo = (value) => { const area = byId("ap-sign_in-json"); area.value = value; btn(apBox, "Load into the editor").click(); };
+    apIo("[1]"); for (let k = 0; k < 4; k++) await tick();
+    expect(/not a page/.test(text(apBox)), "auth pages: a file that is not a page is refused");
+    apIo(JSON.stringify({ en: { title: "Loaded", label: "x" } })); for (let k = 0; k < 6; k++) await tick();
+    expect(/extra_forbidden/.test(text(apBox)) && byId("ap-sign_in-title").value === "Welcome", "auth pages: a key not listed is refused, the editor stays");
+    apIo(JSON.stringify({ en: { title: "Loaded", note: "A note" } })); for (let k = 0; k < 6; k++) await tick();
+    expect(byId("ap-sign_in-title").value === "Loaded" && byId("ap-sign_in-note").value === "A note", "auth pages: a checked file loads into the editor");
     btn(main.querySelector("nav.admin-subnav"), "Landing pages").click(); await tick();
     expect(JSON.stringify(subShown()) === JSON.stringify(["admin-landing-page"]), "pages: a sub-tab switches the part " + subShown());
     await go("#/admin/pages/site"); for (let k = 0; k < 6; k++) await tick();
