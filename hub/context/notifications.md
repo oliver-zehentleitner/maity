@@ -358,12 +358,15 @@ If it equals the stamp of the last pass, no item was left waiting for its hour o
 (`notification_mail_state.waiting`) and the human is not held over the budget, the pass
 ends there. Otherwise it derives the unread items as the bell does and keeps those not yet
 in `mail_item_sent` and not older than the address's `verified_at`; the open matters
-`registration_pending` and `mail_disabled` are never mailed (§18.5). A new sign-in goes out
-at once as a security mail. Outside quiet hours, `immediate` items go out together once the
+`registration_pending` and `mail_disabled` are never mailed (§18.5). A changed or failed
+second factor goes out at once as a security mail without an unsubscribe link, whatever the
+mode; a new sign-in does so while `security` is `immediate` and joins the digest the human put
+security in otherwise (context/notifications.md da12f2b5). Outside quiet hours, `immediate` items go out together once the
 oldest is two minutes old, unless ten notification mails left in the past hour; then they
-join the hour's digest. `hourly` and `daily` digests go out when the full hour or `daily_at`
-(in the human's time zone) has passed since the last one, recorded in
-`notification_mail_state`. A human's first pass only starts those two clocks. When the
+join the hour's digest. `hourly`, `daily` and `weekly` digests go out when the full hour,
+`daily_at` or the latest `weekly_on` at `daily_at` (in the human's time zone) has passed since
+the last one, recorded in `notification_mail_state`; a moment missed while the hub was down
+goes out at the next pass. A human's first pass only starts those clocks. When the
 notification mail of the past hour, sent or waiting, reaches the instance's `max_per_hour`,
 nothing is queued for the human; their items stay pending and the first pass with room again
 sends everything due in one mail (§18.5, "merged into each human's next mail"). A kind set
