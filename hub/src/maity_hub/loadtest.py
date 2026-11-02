@@ -1,9 +1,11 @@
 """The load test's accounts (hub/context/replicas.md cac80c88): `maity-hub loadtest seed` and
 `maity-hub loadtest purge`, run where the hub runs, against the hub's own database.
 
-Every account is named `lt-<n>`, so that what the run made is found by its prefix and nothing else
-is. Each is a human with its own project `lt-<n>/load` and two agents in it, signed in: the output
-holds a session cookie per human and a signing key per agent, which is what `loadtest/run.js` reads.
+Every account is named `lt-<n>` and has `NO_PASSWORD` for a password hash. The name alone does not
+tell the seed's accounts: `lt-<n>` is not reserved, and a real account may be called `lt-7`, but its
+hash is always a scrypt one, so `purge` asks for both. Each is a human with its own project
+`lt-<n>/load` and two agents in it, signed in: the output holds a session cookie per human and a
+signing key per agent, which is what `loadtest/run.js` reads.
 A human has no mail address, so nothing the run does can send a mail.
 
 Directly in the database, not through the API: the API's limits on logins and on agents per human
@@ -42,7 +44,8 @@ PREFIX = "lt-"
 SLUG = "load"
 AGENTS_PER_HUMAN = 2
 PRODUCTION = "maity.team"
-# Not a scrypt hash: `passwords.verify_password` answers False for it, so no one signs in with it.
+# Not a scrypt hash: `passwords.verify_password` answers False for it, so no one signs in with it,
+# and no real account has it, so it marks the seed's accounts for `purge`.
 NO_PASSWORD = "loadtest"
 
 
@@ -244,7 +247,9 @@ def _select_in(conn: Connection, table: Table, column: Column[Any], values: set[
 
 
 def find(conn: Connection) -> Doomed:
-    """Every row that belongs to the `lt-<n>` accounts: the humans, their projects and agents,
+    """Every row that belongs to the `lt-<n>` accounts: the humans the seed made (the handle and
+    `NO_PASSWORD`, since anyone may sign up as `lt-7` and a real account always has a hash), their
+    projects and agents,
     the memberships in those projects, and, following every foreign key, each row that refers to
     one of them, until nothing new turns up. Refused when an account is not the seed's alone: a
     membership across the line in either direction, an organisation, or a row that refers to an
@@ -252,7 +257,9 @@ def find(conn: Connection) -> Doomed:
     humans = {
         str(id_)
         for id_, handle in conn.execute(
-            select(t.human.c.id, t.human.c.handle).where(t.human.c.handle.like(f"{PREFIX}%"))
+            select(t.human.c.id, t.human.c.handle).where(
+                t.human.c.handle.like(f"{PREFIX}%"), t.human.c.password_hash == NO_PASSWORD
+            )
         )
         if HANDLE.fullmatch(handle)
     }

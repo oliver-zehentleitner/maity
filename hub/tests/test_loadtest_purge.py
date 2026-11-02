@@ -116,6 +116,19 @@ def test_purge_takes_only_lt_and_a_number(migrated: Engine, make_client: ClientF
         assert conn.execute(select(t.human.c.id).where(t.human.c.handle == "lt-x")).first()
 
 
+def test_purge_leaves_a_real_account_called_lt_and_a_number(
+    migrated: Engine, make_client: ClientFactory
+) -> None:
+    """`lt-<n>` is no reserved handle: a real person called `lt-7`, with a project of their own,
+    passes every refusal, and only the seed's password marker keeps them out."""
+    person = flow.human(make_client, migrated, "lt-7")
+    flow.project(person)
+    before = everything(migrated)
+    loadtest.seed_one(migrated, 8)
+    assert loadtest.purge(migrated, change=True)["human"] == 1
+    assert everything(migrated) == before
+
+
 def test_purge_refuses_a_project_with_a_real_member(
     make_client: ClientFactory, migrated: Engine, real: flow.Human
 ) -> None:

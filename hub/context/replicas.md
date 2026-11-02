@@ -637,8 +637,9 @@ balancer (req-gjzkcdtbg7t2). The seed became `maity-hub loadtest seed`, in the h
 runs where the hub runs, on the hub's own database, since nobody connects to production's database
 from outside, and a checkout's `tests/factory.py` is not in the image. That made the database URL
 rules above moot: the name checked is the host of the hub's own `MAITY_PUBLIC_URL`, never a guessed
-one. Accounts are `lt-<n>`, without a mail address or a password, so that they are found by the
-prefix and nothing the run does sends a mail.
+one. Accounts are `lt-<n>`, without a mail address or a password, so that nothing the run does
+sends a mail; they are found by the prefix together with the password marker, not by the prefix
+alone (see the purge paragraph below).
 
 Changed on 2026-11-02, again: `maity-hub loadtest purge` deletes the accounts afterwards, every row
 in every table (req-3efa9j1v8ez2, the maintainer chose this). The account deletion of §2.9 was the
@@ -646,7 +647,12 @@ other option and lost: it revokes every key but keeps the account as a tombstone
 taken, needs the projects archived first and keeps them with their events, since the hub has no way
 to delete a project. `purge` follows the foreign keys from the humans, projects, agents and
 memberships until nothing new turns up, adds the few tables that name an account without one, and
-is refused when an account shares a project or a row with anyone else. Its test reads every table
+is refused when an account shares a project or a row with anyone else. It takes only humans with
+both the name and the seed's password marker: `lt-<n>` is not a reserved handle, and a real person
+who signed up as `lt-7` with a project of their own would otherwise pass every refusal and be
+deleted (found in the review of the purge). Reserving the prefix was the other option; it changes
+the contract's reserved words and was left for its own change, and the marker is needed even then,
+for an account made before the reservation. Its test reads every table
 after a purge for the accounts' ids, keys and handles, so a new table that keeps one fails there.
 The 60 000 held connections are spread over several generator pods with their own source
 addresses: one source address has about 64 000 ephemeral ports, and the run must measure the
