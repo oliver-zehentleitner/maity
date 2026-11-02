@@ -876,6 +876,31 @@ context (a descendant selector counts only under its ancestor) and leaves
 out rules inside `@media` and CSS comments: a layout that holds at some
 widths only is no layout for the label.
 
+## A size is handed to the catalog as a finished string; each role and trust token has its own sentence
+
+**Id:** 3ffde266-1d35-4e6a-8ce3-516e13c620e7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the reviews of #1144, which moved `attachments.js` and `trust.js` into the catalog, 2026-11-02
+**Revisit when:** a second language is added, or a token's sentence needs a role's label rather than its slug
+
+A file size in `attachments.js` passes `M.t` a string that `M.fmt.number`
+has already formatted, without grouping and with the digits the size
+calls for. `trust.js` has a key per `role:` or `trust:` token
+(`trust.every.<trust>`, `trust.every.role.<role>`); a token the web does
+not know, such as a project's own role, falls back to the neutral
+`trust.every.custom`, with its slug as the value.
+
+**Reason:** `M.t` would format a number itself, with grouping, and
+`1023 B` would become `1,023 B`. "Every admin" may need a different form
+of "every" or of the noun in another language, so each token gets a whole
+sentence of its own.
+
+**Rejected alternative:** `toFixed`, which writes the digits but not the
+reader's decimal separator. One sentence `every {who}` with the word put in,
+which is a sentence from pieces.
+
 ## The proof that the texts are in the catalog
 
 **Id:** ce9ba9bb-087c-44bd-b1af-3a697a7727d3

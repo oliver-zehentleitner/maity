@@ -97,7 +97,8 @@ window.Maity = window.Maity || {};
   };
   function tokenWords(token) {
     if (Object.hasOwn(EVERY, token)) return EVERY[token]();
-    if (token.startsWith("role:")) return M.t("trust.every.custom", { role: token.slice(5) });
+    const unknown = /^(?:role|trust):(.+)$/.exec(token);
+    if (unknown) return M.t("trust.every.custom", { role: unknown[1] });
     return token;
   }
 
