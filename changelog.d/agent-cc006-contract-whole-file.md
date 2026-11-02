@@ -8,3 +8,5 @@
 ### Changed
 
 - docs/api.md §6.8: the contract file cap is 4 MiB (was 1 MiB) for a card's section too.
+- docs/api.md §16.11: `contract` is a reserved project view, so a project slug or alias
+  `contract` stops `maity-hub migrate`, which names the holder to the operator.

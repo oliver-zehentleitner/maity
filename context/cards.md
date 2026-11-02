@@ -242,7 +242,7 @@ through the probe gives that without a second source of truth.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's wish in the Maity chat, 2026-11-02, that the overview link the contract and better show it rendered inside Maity (card tsk-yhbmz7mjng7n); the coordinator's go the same day for the implementer to write the contract; the arbiter's ruling on #1235, 2026-11-02; contract in `docs/api.md` §6.8, §6.1, §6.11, §16.11
+**Source:** the maintainer's wish in the Maity chat, 2026-11-02, that the overview link the contract and better show it rendered inside Maity (card tsk-yhbmz7mjng7n); the coordinator's go the same day for the implementer to write the contract; the arbiter's ruling on #1235, 2026-11-02; the contract review of #1235 the same day (Markdown only, `private, no-cache`); contract in `docs/api.md` §6.8, §6.1, §6.11, §16.11
 **Revisit when:** a project's contract outgrows 4 MiB, or a project keeps its contract in more than one file
 **See:** cards.md#a-contracts-text-stays-in-the-repository-the-card-shows-the-section-read-from-it — f29e3cb3-12ab-4af6-83f1-9b04dbaeb578 — as of 2026-11-02
 
@@ -250,8 +250,9 @@ The overview links the project's contract and shows it in a view of its
 own, read-only: the hub reads the file a project setting names
 (`settings.contract_path`, default `docs/api.md`) through the probe at
 the default branch's commit and answers it whole, with a table of
-contents and an anchor per heading, under an `ETag` over the path and
-the file's bytes. The file cap for this read and for a card's section is
+contents and an anchor per heading, under an `ETag` over the
+repository, the path and the file's bytes. The setting names a Markdown
+file only. The file cap for this read and for a card's section is
 4 MiB instead of 1 MiB; a larger file is refused, never cut.
 
 **Reason:** a setting is the one place that says which file is the
@@ -260,7 +261,10 @@ over the entire contract and costs one read, which the `ETag` makes
 cheap to repeat while the file does not change. The cap moved because
 this project's own contract passed 1 MiB on 2026-11-02, so a card's
 section read already refused it; cutting instead would show part of a
-contract as if it were all of it.
+contract as if it were all of it. The answer is `private, no-cache`, as
+attachments are, so a new tab or a reload revalidates instead of
+reading up to 4 MiB again; after a `304` the view keeps the `ref` and
+`fetched_at` of the last full answer.
 
 **Rejected alternatives:**
 - The table of contents plus one section per request: smaller answers,
@@ -270,6 +274,13 @@ contract as if it were all of it.
 - The file taken from the contract cards' `path`: no card, no contract;
   several paths, no answer.
 - The 1 MiB cap kept, with the text cut: a cut contract reads as whole.
+- Any file of the repository as the contract: the whole-file read shows
+  everything, unlike a card's section, which shows only Markdown under a
+  matching heading; so the setting names a Markdown file (`.md`,
+  `.markdown`), lest a committed secret reach every `project:read`
+  holder, guests included.
+- `no-store` like the other API answers: every tab and reload would
+  read the whole file again, so the load would grow with tabs.
 
 ## Agents watch cards too: a status change or an update message wakes everyone waiting on the card
 

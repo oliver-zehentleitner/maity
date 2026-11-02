@@ -100,7 +100,8 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   (the dashboard, the HTML join page), `Content-Security-Policy:
   default-src 'self'`. The one exception to `no-store` is the images —
   the logo and banner (§11.2) and the avatars (§6.10) — and the
-  attachments (§8.7), which are revalidated by `ETag`, and the project
+  attachments (§8.7) and the whole contract (§6.8), which are revalidated
+  by `ETag`, and the project
   badge (§6.20), the one answer with a public cache (`public,
   max-age=60`), because it carries nothing but a count, and the app
   shell (§16.11), which is `no-cache`: it holds no data and must follow
@@ -5998,9 +5999,20 @@ keeps no copy:
   only in `text`. The dashboard gives each rendered heading its
   anchor's `id`, so `/<owner>/<slug>/contract#s-6.8` opens a section, and
   a card's `section` links there (§16.11).
-- **`ETag`** is a digest over `path` and the file's bytes: a new commit
-  that leaves the file as it is keeps the tag, so a dashboard that
-  re-reads gets `304` and no second megabyte. The hub may keep one read
+- **`ETag`** is a digest over the project's repository, `path` and the
+  file's bytes: a new commit that leaves the file as it is keeps the
+  tag, so a dashboard that re-reads gets `304` and no second megabyte; a
+  changed repository setting is a new tag even for the same bytes. The
+  answer carries `Cache-Control: private, no-cache`, as an attachment
+  does (§8.7): the browser keeps it and revalidates on every use, so a
+  new tab, a reload or a step back in the history sends `If-None-Match`
+  instead of reading the file again, and access ends with the
+  membership, not when a cache expires. The hub authorizes first and
+  only then compares `If-None-Match`: a caller without `project:read`
+  gets `not_found`, never `304`. A `304` has no body; the view keeps
+  showing the `ref`, `url` and `fetched_at` of the last full answer, so
+  after one the commit shown may be older than the default branch's
+  head while the file is the same. The hub may keep one read
   for 60 s and answer concurrent calls from it, keyed by the repository,
   the resolved commit and `path`, as for the card's section; it stores
   nothing beyond that.
@@ -6012,8 +6024,13 @@ keeps no copy:
 **The setting.** `settings.contract_path` (§6.1) names the file: a
 repository-relative path under the rule for `contract.path` above (no
 leading slash, no `..` segment, no URL, no scheme, at most 255
-characters), else `invalid` with
-`details.fields["settings.contract_path"]: "not_a_path"`. Without the
+characters) that ends in `.md` or `.markdown`, else `invalid` with
+`details.fields["settings.contract_path"]: "not_a_path"`. A Markdown file
+only, because this read shows the whole file to every holder of
+`project:read`, guests included and whether or not they can read the
+repository on the forge — unlike a card's section, which shows only
+Markdown under a matching heading, so a file without one (an `.env`)
+shows nothing there. Without the
 key it is `docs/api.md`; `null` removes the key and the default applies
 again (§6.1). Set by `PATCH /projects/{owner}/{slug}` under
 `project:admin`, like every setting; a change emits `project_updated`
