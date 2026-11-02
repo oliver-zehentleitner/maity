@@ -132,8 +132,19 @@ for text, outside in [
     ("Deutsch", False),
     ("42", False),
     ("the lab notes today", False),
+    ("⟦Sàvé⟧ · Untranslated text", True),
+    ("Hardcoded prefix: ⟦Sàvé⟧", True),
+    ("Agent D · ⟦Sàvé⟧", False),
+    ("Read/write", True),
+    ("Sign in/register", True),
+    ("docs/api.md", False),
+    ("hub/", False),
 ]:
     expect(pseudo_run.unmarked(text, data, "take over the lab notes today, please") is outside, "pseudo: %r outside the catalog: %s" % (text, outside))
+real = pseudo_run.fixture_strings()
+for word in ["online", "open", "Sign in"]:
+    expect(pseudo_run.unmarked(word, real, ""), "pseudo: %r is no data, though a fixture has it" % word)
+expect(pseudo_run.unmarked("Agent D · Sep 14, 2026, 12:05 · online", real, ""), "pseudo: a raw state in a composed line counts with the real fixtures")
 expect(len(pseudo_run.routes_of_smoke()) > 50, "pseudo: the routes come from the smoke test")
 
 raise SystemExit(1 if failures else 0)

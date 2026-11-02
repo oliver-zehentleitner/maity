@@ -61,32 +61,50 @@ def pseudo_catalog(english: dict[str, Any]) -> dict[str, Any]:
     return {key: one(entry) for key, entry in english.items()}
 
 
+# A value under these keys is a word of the contract the interface has to put in words,
+# so a page that shows it as it comes has a text outside the catalog.
+ENUM_KEYS = {"state", "status", "kind", "presence", "role", "trust", "type", "reason", "code", "scope", "severity", "mode"}
+
+
 def strings_in(value: Any) -> set[str]:
     if isinstance(value, str):
         return {value.strip()}
-    items = value.values() if isinstance(value, dict) else value if isinstance(value, list) else []
-    return {s for item in items for s in strings_in(item)}
+    if isinstance(value, dict):
+        return {s for key, item in value.items() if key not in ENUM_KEYS for s in strings_in(item)}
+    return {s for item in value for s in strings_in(item)} if isinstance(value, list) else set()
 
 
 # What a page composes around words and is no word: a count in the title, a date in the
 # browser's format, a handle, an instance, a card, an address, a path.
 NOT_WORDS = re.compile(
     r"""^\(\d+\)\s | \b[A-Z][a-z]{2}\ \d{1,2},\ \d{4}(?:,\ \d{1,2}:\d{2}(?:\s?[AP]M)?)? | \b\d{1,2}:\d{2}(?:\s?[AP]M)?
-        | (?:^|(?<=\s))[@\#]\S+ | \b(?:tsk|req|agt|hum|att)-\S+ | \bhttps?://\S+ | \S*/\S* """,
+        | (?:^|(?<=\s))[@\#]\S+ | \b(?:tsk|req|agt|hum|att)-\S+ | \bhttps?://\S+ """,
     re.X,
 )
+MARKED = re.compile(f"{OPEN}[^{CLOSE}]*{CLOSE}")
 ACCENTED = "".join(sorted(set("ÀàÉéÎîÕõÜüÇçÑñÝý")))
 
 
+def _no_paths(text: str, data: set[str]) -> str:
+    """Out with a path or a project's name; `Read/write` is two words and stays."""
+    def keep(token: str) -> bool:
+        return "/" not in token or (re.fullmatch(r"[^\W\d_]+/[^\W\d_]+[.,;:]?", token) is not None and token.strip(".,;:") not in data)
+
+    return " ".join(t if keep(t) else " " for t in text.split())
+
+
 def unmarked(text: str, data: set[str], data_text: str = "") -> bool:
-    """A text of the interface the catalog's marks did not reach. Each piece of a line
-    composed with `·` is judged by itself; data and what has no word are no text. Long
-    pieces are data also inside a fixture's text, which markup splits into several nodes."""
-    if OPEN in text or CLOSE in text or any(c in ACCENTED for c in text):
-        return False
-    for piece in re.split(r"\s[·–—]\s|^[·–—]\s", NOT_WORDS.sub(" ", text)):
-        piece = piece.strip(" ·–—,;:.()")
+    """A text of the interface the catalog's marks did not reach. What is marked comes out
+    first, so a word beside a marked one still counts; each piece of a line composed with
+    `·` is judged by itself; data and what has no word are no text. Long pieces are data
+    also inside a fixture's text, which markup splits into several nodes. An accent without
+    a mark is a catalog text with its ends cut off."""
+    rest = _no_paths(NOT_WORDS.sub(" ", MARKED.sub(" · ", text)), data)
+    for piece in re.split(r"\s[·–—]\s|^[·–—]\s", rest):
+        piece = piece.strip(" ·–—,;:.()⟦⟧")
         if not re.search(r"[^\W\d_]{2}", piece) or piece in data or piece + "." in data:
+            continue
+        if any(c in ACCENTED for c in piece):
             continue
         if piece in KEPT or piece in check.NOT_PROSE or (len(piece.split()) > 2 and piece in data_text):
             continue
@@ -95,10 +113,13 @@ def unmarked(text: str, data: set[str], data_text: str = "") -> bool:
 
 
 def fixture_strings() -> set[str]:
+    """What the fixtures say as data. A catalog's text among them does not count: a page
+    that shows that wording without the catalog is what this run looks for."""
     out: set[str] = set()
     for path in (WEB / "fixtures").rglob("*.json"):
         out |= strings_in(json.loads(path.read_text(encoding="utf-8")))
-    return out
+    english = json.loads((WEB / "i18n" / "en.json").read_text(encoding="utf-8"))
+    return out - {t.strip() for e in english.values() for t in ([e] if isinstance(e, str) else e.values())}
 
 
 def routes_of_smoke() -> list[str]:
