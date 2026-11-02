@@ -14,14 +14,27 @@ from datetime import timedelta
 from html import escape
 from typing import Any
 
-from sqlalchemy import Connection, func, or_, select
+from sqlalchemy import Connection, Engine, func, or_, select
 
-from maity_hub import cards, clock, moderation, namespace, public_pages, public_people, render
+from maity_hub import (
+    cards,
+    clock,
+    forge,
+    ktw,
+    moderation,
+    namespace,
+    public_pages,
+    public_people,
+    render,
+)
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from maity_hub.public_projects import served
 
 KIND = "project_views"
+# Apart from the members' cache, which may have read with an owner's grant: what the public
+# Why shows comes from the instance's own token only (§11.4, §16.9).
+WHY_CACHE = ktw.Cache()
 BOARD_LIMIT = 200  # cards per open column (§16.9)
 CLOSED_DAYS = 30  # the window of `done` and `cancelled`
 CLOSED = ("done", "cancelled")
@@ -310,6 +323,84 @@ def organisation_html(who: dict[int, Person]) -> str:
     return "<ul>" + "".join(node(p, frozenset({p.id})) for p in roots) + "</ul>" if roots else ""
 
 
+def why_data(conn: Connection, project: Any, path: str) -> dict[str, Any]:
+    """What the page shows of the Keep the Why export: the counts, the family's links and the
+    attention entries, read beforehand. Nothing while the repository is not public. Each
+    process holds its own read: a render with none, with a failed one or with one older than
+    the stored view keeps that view (hub/context/public-pages.md)."""
+    if project.repository_public is not True:
+        return {"readable": False}
+    row = public_pages.get(conn, path)
+    stored = row.data if row is not None and row.view == "why" and row.data["readable"] else None
+    entry = WHY_CACHE.cached(project.id)
+    if entry is None or entry.repository_url != project.repository_url:
+        return stored or {"readable": False}  # no read of this repository in this process
+    snapshot = entry.snapshot
+    if snapshot is None:  # read, and the repository names no export any more
+        return {"readable": False}
+    if snapshot.error is not None:  # a failed read says nothing about the export
+        return stored or {"readable": False}
+    if stored and stored["observed_at"] > snapshot.observed_at:
+        return dict(stored)
+    answer = snapshot.answer()
+    return {
+        "readable": True,
+        "observed_at": snapshot.observed_at,
+        "summary": answer["summary"],
+        "family": [
+            {"name": m["name"], "path": m["path"], "dashboard_url": m["dashboard_url"]}
+            for m in answer["members"]
+        ],
+        "attention": [
+            {key: item[key] for key in ("member", "title", "status", "topic", "link")}
+            for item in answer["attention"]
+        ],
+    }
+
+
+def why_html(data: dict[str, Any]) -> str:
+    if not data["readable"]:
+        return "<p>The Keep the Why of this project is not public, or not read yet.</p>"
+    status = data["summary"]["status"]
+    counts = "".join(f"<li>{escape(key)}: {value}</li>" for key, value in status.items() if value)
+    family = "".join(
+        (
+            f'<li><a href="{escape(m["dashboard_url"], quote=True)}" rel="nofollow ugc">'
+            f'{escape(m["name"] or m["path"])}</a></li>'
+            if m["dashboard_url"]
+            else f'<li>{escape(m["name"] or m["path"])}</li>'
+        )
+        for m in data["family"]
+    )
+    attention = "".join(
+        f'<li><a href="{escape(a["link"], quote=True)}" rel="nofollow ugc">{escape(a["title"])}</a>'
+        f' <span class="tag">{escape(a["status"])}</span></li>'
+        for a in data["attention"]
+    )
+    return (
+        f"<p>{data['summary']['entries']} entries</p><ul>{counts}</ul>"
+        + (f"<h2>Family</h2><ul>{family}</ul>" if family else "")
+        + (f"<h2>Needs attention</h2><ul>{attention}</ul>" if attention else "")
+    )
+
+
+def prepare_why(engine: Engine, hub: Settings) -> None:
+    """Read the exports of the projects whose repository the hub last found public, with the
+    instance's token and no grant, for the renders that follow."""
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(t.project.c.id, t.project.c.repository_url).where(
+                t.project.c.public_page == "on", t.project.c.repository_public.is_(True)
+            )
+        ).all()
+    reader = forge.Forge(hub.forge_github_token)
+    for row in rows:
+        try:
+            WHY_CACHE.get(reader, row.id, row.repository_url, 0)
+        except ktw.Busy:
+            continue
+
+
 def render_views(conn: Connection, hub: Settings, project_id: str) -> list[public_pages.Page]:
     project = conn.execute(select(t.project).where(t.project.c.id == project_id)).first()
     if project is None or not served(conn, project):
@@ -317,10 +408,12 @@ def render_views(conn: Connection, hub: Settings, project_id: str) -> list[publi
     full = namespace.full_name(conn, project)
     who = members(conn, project_id)
     columns, gone = board_rows(conn, project_id, who)
+    why = why_data(conn, project, f"/{full}/why")
     views = (
         ("board", "Board", board_html(columns, who, gone), board_data(columns, who, gone)),
         ("members", "Members", members_html(who), members_data(who)),
         ("organisation", "Organisation", organisation_html(who), organisation_data(who)),
+        ("why", "Why", why_html(why), why),
     )
     pages = []
     for view, heading, inner, data in views:
@@ -356,4 +449,4 @@ def targets(conn: Connection) -> list[str]:
     )
 
 
-public_pages.register(public_pages.Kind(KIND, render_views, targets))
+public_pages.register(public_pages.Kind(KIND, render_views, targets, prepare=prepare_why))

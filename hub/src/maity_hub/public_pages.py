@@ -209,6 +209,9 @@ class Kind:
     # The pages of other kinds that show this target (a person on the pages of their
     # projects): `touch` renders them again with it, `(kind, target_id)` each.
     dependents: Callable[[Connection, str], list[tuple[str, str]]] | None = None
+    # What the worker fetches before its renders, outside any transaction: a render itself
+    # never touches the network.
+    prepare: Callable[[Engine, Settings], None] | None = None
 
 
 KINDS: dict[str, Kind] = {}
@@ -346,13 +349,32 @@ class Worker:
         if self._thread is not None:
             self._thread.join(timeout=5)
 
+    def _prepare(self) -> list[Kind]:
+        kinds = [kind for kind in KINDS.values() if kind.prepare is not None]
+        for kind in kinds:
+            assert kind.prepare is not None
+            kind.prepare(self.engine, self.hub)
+        return kinds
+
     def _run(self) -> None:
+        # What a kind prepares lives in this process's memory, and the start cleared its pages:
+        # every process reads once, outside the pass that only one replica of them claims.
+        try:
+            for kind in self._prepare():
+                with self.engine.connect() as conn:
+                    ids = kind.targets(conn)
+                for target_id in ids:
+                    with self.engine.begin() as conn:
+                        refresh(conn, self.hub, kind.name, target_id)
+        except Exception:
+            log.exception("preparing the public pages failed")
         while not self._stop.wait(self.interval):
             try:
                 with worker_runs.claim(
                     self.engine, "public-pages", self.interval, self._stop
                 ) as held:
                     if held is not None:
+                        self._prepare()
                         render_all(self.engine, self.hub, held)
             except Exception:
                 log.exception("rendering the public pages again failed")

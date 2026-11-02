@@ -39,7 +39,7 @@ def ordered_languages(pages: Iterable[str], default: str) -> list[str]:
     return sorted(pages, key=lambda tag: (tag != default, tag))
 
 
-def _offered_match(tag: str, offered: list[str]) -> str | None:
+def offered_match(tag: str, offered: list[str]) -> str | None:
     """The offered language a lowercase `Accept-Language` tag asks for: itself, or one with its
     primary subtag (`zh-CN` reads `zh-Hans`). Traditional Chinese is not served Simplified: such a
     reader goes on to the next language asked for."""
@@ -76,7 +76,7 @@ def best_language(offered: list[str], query: str | None, accept_language: str | 
                 weight = float(rest.strip()[2:])
             except ValueError:
                 weight = 0.0
-        match = _offered_match(tag.strip().lower(), offered)
+        match = offered_match(tag.strip().lower(), offered)
         if match is not None and weight > 0:
             ranked.append((-weight, position, match))
     return sorted(ranked)[0][2] if ranked else None

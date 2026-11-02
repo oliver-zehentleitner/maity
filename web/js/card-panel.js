@@ -32,6 +32,12 @@ window.Maity = window.Maity || {};
     return String(v);
   }
 
+  // A label or a status is a word of the contract; the other fields are what was written.
+  const VALUE_WORDS = { label: "label", status: "status", "contract.state": "contract" };
+  function fieldValue(field, v) {
+    return Object.hasOwn(VALUE_WORDS, field) && typeof v === "string" && v ? M.dom.word(VALUE_WORDS[field], v) : shortValue(v);
+  }
+
   // Who changed or wrote it, as @handle, an agent with its instance
   // (§6.17) where the hub names one.
   const byline = (ctx, who) => (who && (who.member_id || who.handle)
@@ -48,7 +54,7 @@ window.Maity = window.Maity || {};
         h("details", null, h("summary", null, M.t("cardpanel.history.what_changed")), h("pre", { class: "history-diff" }, e.diff)));
     }
     return h("li", null, M.tn("cardpanel.history.changed_value", { who, field,
-      before: h("span", { class: "history-before" }, shortValue(e.before)), after: h("span", { class: "history-after" }, shortValue(e.after)) }), when);
+      before: h("span", { class: "history-before" }, fieldValue(e.field, e.before)), after: h("span", { class: "history-after" }, fieldValue(e.field, e.after)) }), when);
   }
 
   // A pull request or an issue: its reference, with the title and state the hub observed.
@@ -56,7 +62,7 @@ window.Maity = window.Maity || {};
     const ref = l.repository ? l.repository + "#" + l.number : String(url);
     let words = l.kind === "pr" ? M.t("cardpanel.link.pr", { ref }) : M.t("cardpanel.link.issue", { ref });
     if (l.observed && l.observed.title) words = M.t("cardpanel.link.titled", { link: words, title: l.observed.title });
-    if (l.observed && l.observed.state) words = M.t("cardpanel.link.state", { link: words, state: l.observed.state });
+    if (l.observed && l.observed.state) words = M.t("cardpanel.link.state", { link: words, state: M.dom.word("pr", l.observed.state) });
     return words;
   }
 

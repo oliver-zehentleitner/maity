@@ -338,13 +338,17 @@ window.Maity = window.Maity || {};
   // rounded square for an agent, a presence dot on it, then @handle; the
   // full name, trust and role, kind and presence in its tooltip and accessible name.
   // A member the project does not list is the same chip without a link.
-  const PRESENCE_WORDS = { online: "online", away: "away", offline: "offline", paused: "paused", revoked: "revoked" };
+  const PRESENCE_WORDS = {
+    online: () => M.t("chat.presence.online"), away: () => M.t("chat.presence.away"), offline: () => M.t("chat.presence.offline"),
+    paused: () => M.t("chat.presence.paused"), revoked: () => M.t("chat.presence.revoked"),
+  };
+  const KIND_WORDS = { agent: () => M.t("chat.who.agent"), human: () => M.t("chat.who.human") };
   function memberChip(ctx, who) {
     const id = typeof who === "string" ? who : who && (who.member_id || who.id);
     const m = (id && ctx.memberById && ctx.memberById[id]) || (typeof who === "object" ? who : null) || { id };
     const handle = handleOf(ctx, m) || m.handle || id;
     const presence = m.presence || "offline";
-    const said = [m.display_name || handle, M.trust ? M.trust.words(m) : m.role, m.kind, PRESENCE_WORDS[presence] || presence].filter(Boolean).join(" · ");
+    const said = [m.display_name || handle, M.trust ? M.trust.words(m) : m.role, Object.hasOwn(KIND_WORDS, m.kind) ? KIND_WORDS[m.kind]() : m.kind, Object.hasOwn(PRESENCE_WORDS, presence) ? PRESENCE_WORDS[presence]() : presence].filter(Boolean).join(" · ");
     const face = [
       h("span", { class: "chip-avatar " + (m.kind === "agent" ? "agent" : "human") }, M.avatar ? M.avatar(m, 22) : null,
         h("span", { class: "chip-dot presence-" + presence, "aria-hidden": "true" })),
@@ -374,5 +378,18 @@ window.Maity = window.Maity || {};
   const dormantOf = (m) => ((m && m.instances) || []).filter((i) => !i.revoked_at && i.dormant);
   const dormantNote = (ctx, m, inst) => M.t("instance.dormant", { address: "@" + (handleOf(ctx, m) || m.handle || m.id) + "#" + inst.id });
 
-  M.dom = { handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, memberRef, instanceHref, memberChip, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, get SEND_KEYS() { return sendKeys(); }, sendKeysFor, showSendKeys, sendOnCtrlEnter };
+  // Words of the contract that more than one page shows; a value the hub adds later reads as it comes.
+  const WORDS = {
+    label: { fix: () => M.t("cards.label.fix"), feature: () => M.t("cards.label.feature"), chore: () => M.t("cards.label.chore") },
+    status: {
+      proposed: () => M.t("board.status.proposed"), open: () => M.t("board.status.open"), in_progress: () => M.t("board.status.in_progress"),
+      blocked: () => M.t("board.status.blocked"), review: () => M.t("board.status.review"), done: () => M.t("board.status.done"),
+      cancelled: () => M.t("board.status.cancelled"),
+    },
+    contract: { proposed: () => M.t("board.contract.state.proposed"), final: () => M.t("board.contract.state.final") },
+    pr: { open: () => M.t("board.pr.state.open"), merged: () => M.t("board.pr.state.merged"), closed: () => M.t("board.pr.state.closed") },
+  };
+  const word = (set, value) => (Object.hasOwn(WORDS[set], value) ? WORDS[set][value]() : value);
+
+  M.dom = { word, handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, memberRef, instanceHref, memberChip, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, get SEND_KEYS() { return sendKeys(); }, sendKeysFor, showSendKeys, sendOnCtrlEnter };
 })(window.Maity);

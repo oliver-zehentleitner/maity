@@ -146,10 +146,9 @@ window.Maity = window.Maity || {};
   }
 
   function errorBox(err) {
-    const where = err.path ? " (" + err.path + ")" : "";
     const status = err.status ? "HTTP " + err.status + (err.code ? " " + err.code : "") + ": " : "";
     return h("div", { class: "error", role: "alert" },
-      h("strong", null, "Could not load" + where),
+      h("strong", null, err.path ? M.t("error.load_failed_at", { path: err.path }) : M.t("error.load_failed")),
       h("p", null, status + err.message));
   }
 
@@ -172,7 +171,7 @@ window.Maity = window.Maity || {};
   // page (/); the link carries the name, the pictures none of their own.
   function brandTitle(signedIn) {
     const home = signedIn === undefined ? !!M.api.session() : signedIn;
-    const label = home ? "Maity: everything waiting for you" : "Maity: home";
+    const label = home ? M.t("header.brand.signed_in") : M.t("header.brand.signed_out");
     return h("h1", { class: "brand" },
       h("a", { class: "brand-home", href: home ? "/all" : "/", "aria-label": label, title: label },
         h("img", { class: "brand-lockup brand-light", src: "brand/maity-lockup.svg", alt: "", width: "94", height: "28" }),
@@ -182,12 +181,15 @@ window.Maity = window.Maity || {};
   // Light, dark, or as the system has it; per browser (js/theme.js). The
   // header's menu is for pages without a session (the maintainer's
   // instruction): signed in, the theme is chosen in Your account.
-  const THEME_WORDS = { system: "System", light: "Light", dark: "Dark" };
+  const THEME_WORDS = {
+    get system() { return M.t("theme.system"); }, get light() { return M.t("theme.light"); }, get dark() { return M.t("theme.dark"); },
+  };
+  const themeLabel = (t) => M.t("theme.label", { theme: THEME_WORDS[t] });
   function themeMenu() {
     if (!M.theme) return null;
     const theme = M.menuButton({
-      label: "Theme: " + THEME_WORDS[M.theme.get()],
-      listLabel: "Theme",
+      label: themeLabel(M.theme.get()),
+      listLabel: M.t("theme.title"),
       class: "theme-menu",
       face: M.icons.theme(M.theme.get(), 18),
       items: () => M.theme.THEMES.map((t) => ({
@@ -197,8 +199,8 @@ window.Maity = window.Maity || {};
           M.theme.set(t);
           clear(theme.button);
           append(theme.button, M.icons.theme(t, 18));
-          theme.button.setAttribute("aria-label", "Theme: " + THEME_WORDS[t]);
-          theme.button.setAttribute("title", "Theme: " + THEME_WORDS[t]);
+          theme.button.setAttribute("aria-label", themeLabel(t));
+          theme.button.setAttribute("title", themeLabel(t));
         },
       })),
     });
@@ -213,8 +215,6 @@ window.Maity = window.Maity || {};
 
   // The released mark (docs/api.md §6.1): set once with the first release
   // tag, never cleared; shown beside the state wherever the state is.
-  const RELEASED_RULES = "interfaces change only with versioning and a stated transition period, "
-    + "migrations stay backward compatible, and the release checklist is required";
   function releasedDay(project) {
     const d = new Date(project.released_at);
     return Number.isNaN(d.getTime()) ? project.released_at
@@ -277,14 +277,14 @@ window.Maity = window.Maity || {};
         "aria-label": M.t("project.link.opens", { what: x.label }), title: x.url },
       mark(x.d), h("span", { class: "header-link-text" }, x.label))),
       why ? h("a", { class: "header-link", href: why, target: "_blank", rel: "noopener noreferrer",
-        "aria-label": "Keep the Why dashboard (opens in a new tab)", title: why },
-      mark(BOOK), h("span", { class: "header-link-text" }, "Why")) : null,
+        "aria-label": M.t("project.link.opens", { what: M.t("project.link.ktw_dashboard") }), title: why },
+      mark(BOOK), h("span", { class: "header-link-text" }, M.t("project.link.why"))) : null,
     ];
   }
 
   function releasedMark(project) {
     if (!project || !project.released_at) return null;
-    return h("span", { class: "state released", title: "Released since " + releasedDay(project) + ": " + RELEASED_RULES + "." }, "Released");
+    return h("span", { class: "state released", title: M.t("project.released.since", { day: releasedDay(project) }) }, M.t("project.released"));
   }
 
   // ---- sign-in ------------------------------------------------------------
@@ -332,15 +332,15 @@ window.Maity = window.Maity || {};
     // As a sign-out does: the next human in this tab starts with their own settings.
     M.notify.stopBrowser();
     M.notify.state.settings = null;
-    renderLogin(document.getElementById("main"), "Your session has ended. Sign in again to go on where you were.");
+    renderLogin(document.getElementById("main"), M.t("login.session_ended"));
   };
 
   let keptHandle = "";
   function renderLogin(main, note) {
-    document.title = "Sign in · Maity";
+    document.title = M.t("login.page_title");
     append(clear(document.getElementById("header")), h("div", { class: "bar" },
       brandTitle(false),
-      M.api.source === "fixtures" ? h("span", { class: "source" }, "Fixtures") : null,
+      M.api.source === "fixtures" ? h("span", { class: "source" }, M.t("login.fixtures")) : null,
       themeMenu()));
     const handle = h("input", { id: "login-handle", name: "handle", autocomplete: "username", required: true });
     handle.value = keptHandle;
@@ -358,7 +358,7 @@ window.Maity = window.Maity || {};
       class: "login door",
       onsubmit: async (e) => {
         e.preventDefault();
-        status.busy("Signing in…");
+        status.busy(M.t("login.busy"));
         try {
           const next = routeNext();
           const answer = await M.api.post("/auth/login", Object.assign({ handle: handle.value.trim(), password: password.value }, next ? { next } : {}));
@@ -366,15 +366,15 @@ window.Maity = window.Maity || {};
           goNext(answer && answer.next);
         } catch (err) {
           password.value = "";
-          status.fail("Not signed in: ", err);
+          status.fail(M.t("login.failed"), err);
         }
       },
     },
-    M.authPages.pitch("sign_in", "Sign in"),
-    h("label", { for: "login-handle" }, "Handle"), handle,
-    h("label", { for: "login-password" }, "Password"), password,
+    M.authPages.pitch("sign_in", M.t("login.title")),
+    h("label", { for: "login-handle" }, M.t("login.handle")), handle,
+    h("label", { for: "login-password" }, M.t("login.password")), password,
     site ? h("label", { for: "login-interface" }, M.t("language.interface.label")) : null, site,
-    h("button", { type: "submit" }, "Sign in"),
+    h("button", { type: "submit" }, M.t("login.title")),
     status.el);
     // A code from another device or a link by mail, as the hub offers them
     // (js/device-sign-in.js), on this page's own timers.
@@ -420,12 +420,12 @@ window.Maity = window.Maity || {};
 
   // The one page of a pending account (§2.7.5): it may sign out, nothing else.
   function renderPending(main) {
-    document.title = "Waiting for approval · Maity";
+    document.title = M.t("pending.page_title");
     append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(false), themeMenu()));
     append(clear(main), h("section", { class: "pending-account" },
-      h("h2", null, "Your account waits for the operator's approval"),
-      h("p", null, "Once it is approved you get a mail, and this page becomes your dashboard. An invitation you followed waits for you meanwhile."),
-      h("button", { type: "button", onclick: logout }, "Sign out")));
+      h("h2", null, M.t("pending.title")),
+      h("p", null, M.t("pending.text")),
+      h("button", { type: "button", onclick: logout }, M.t("pending.sign_out"))));
   }
 
   // back: a dashboard path (checked as a sign-in's next is) to
@@ -1264,15 +1264,15 @@ window.Maity = window.Maity || {};
     // What asks for the human, requests, unread chats and mentions
     // (docs/api.md §18.2); until the counts are read, the open requests.
     const total = N.counts ? N.counts.total : ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0);
-    const count = (n) => (n ? h("span", { class: "count", "aria-label": n + " open" }, String(n)) : null);
+    const count = (n) => (n ? h("span", { class: "count", "aria-label": M.t("header.count.open", { count: n }) }, String(n)) : null);
     // The same words on every pill: what the number is made of.
-    const counted = (c) => (c.total ? h("span", { class: "count", "aria-label": [c.requests ? c.requests + " open" : null,
-      c.chat ? c.chat + " unread in chats" : null, c.mention ? c.mention + (c.mention === 1 ? " mention" : " mentions") : null].filter(Boolean).join(", ") },
+    const counted = (c) => (c.total ? h("span", { class: "count", "aria-label": M.fmt.list([c.requests ? M.t("header.count.open", { count: c.requests }) : null,
+      c.chat ? M.t("header.count.unread_chats", { count: c.chat }) : null, c.mention ? M.t("header.count.mentions", { count: c.mention }) : null].filter(Boolean)) },
     String(c.total)) : null);
     const pill = (p) => (N.counts ? counted(M.notify.projectCount(p)) : count(p.open_requests));
     const all = N.counts ? counted({ requests: N.counts.inbox, chat: N.counts.chat, mention: N.counts.mention, total }) : count(total);
-    return h("nav", { class: "switcher", "aria-label": "Projects" },
-      h("a", { href: "/all", "aria-current": ALL_PAGES.some((page) => page.scope === ctx.scope) ? "page" : null }, "All projects", all),
+    return h("nav", { class: "switcher", "aria-label": M.t("header.projects") },
+      h("a", { href: "/all", "aria-current": ALL_PAGES.some((page) => page.scope === ctx.scope) ? "page" : null }, M.t("header.all_projects"), all),
       ctx.projects.map((p) => h("a", {
         href: projectLink(p.full_name, "inbox"),
         "aria-current": ctx.scope === "project" && p.full_name === ctx.slug ? "page" : null,
@@ -1283,7 +1283,7 @@ window.Maity = window.Maity || {};
       pill(p))),
     // Runners belong to the person, not to a project (the maintainer's
     // wish, tsk-cb6myw32def0): they are in the gear menu, not this row.
-    h("a", { href: "/new", class: "new-project", "aria-current": ctx.scope === "new" ? "page" : null }, "+ New project"));
+    h("a", { href: "/new", class: "new-project", "aria-current": ctx.scope === "new" ? "page" : null }, M.t("header.new_project")));
   }
 
   // A row that scrolls shows it: a fade on the side with more entries. Set
@@ -1315,7 +1315,7 @@ window.Maity = window.Maity || {};
     if (!M.notify.state.counts || (route !== "inbox" && route !== "chat")) return null;
     const c = M.notify.projectCount(ctx.projects.find((p) => p.full_name === ctx.slug) || { full_name: ctx.slug });
     const n = route === "inbox" ? c.requests : c.chat;
-    return n ? h("span", { class: "count", "aria-label": n + (route === "inbox" ? " open" : " unread") }, String(n)) : null;
+    return n ? h("span", { class: "count", "aria-label": route === "inbox" ? M.t("header.count.open", { count: n }) : M.t("header.count.unread", { count: n }) }, String(n)) : null;
   }
 
   // All projects has two pages (the maintainer, tsk-gw59z3w3fenf): the
@@ -1526,14 +1526,14 @@ window.Maity = window.Maity || {};
     const mine = (args || [])[0] === "mine";
     const human = ctx.me.kind === "human";
     if (!mine && !ctx.canAdmin) { M.route.go(projectLink(ctx.slug, "settings", "mine"), { replace: true }); return; }
-    const tabs = [ctx.canAdmin ? ["Project", projectLink(ctx.slug, "settings"), !mine] : null,
-      human ? ["Mine", projectLink(ctx.slug, "settings", "mine"), mine] : null].filter(Boolean);
-    append(root, h("h2", null, "Settings"),
-      tabs.length > 1 ? h("nav", { class: "settings-tabs", "aria-label": "Settings" },
+    const tabs = [ctx.canAdmin ? [M.t("settings.tab.project"), projectLink(ctx.slug, "settings"), !mine] : null,
+      human ? [M.t("settings.tab.mine"), projectLink(ctx.slug, "settings", "mine"), mine] : null].filter(Boolean);
+    append(root, h("h2", null, M.t("settings.title")),
+      tabs.length > 1 ? h("nav", { class: "settings-tabs", "aria-label": M.t("settings.title") },
         tabs.map(([label, href, on]) => h("a", { href, "aria-current": on ? "page" : null }, label))) : null);
     if (mine) { await M.mySettings(ctx, root); return; }
     append(root,
-      h("p", { class: "muted" }, "This project's settings. Yours for this project are under Mine; the hub's are in the gear menu."),
+      h("p", { class: "muted" }, M.t("settings.intro")),
       // The project's runners, no tab of their own any more.
       h("p", { class: "settings-runners" }, h("a", { href: projectLink(ctx.slug, "runners") }, M.t("settings.runners_link"))),
       settingsSaved ? h("p", { class: "ok", role: "status" }, settingsSaved) : null,
@@ -1614,7 +1614,7 @@ window.Maity = window.Maity || {};
     if (where.scope !== "project") return ctx;
     const mine = me.projects.find((p) => p.full_name === where.slug);
     if (!mine) {
-      throw new M.api.ApiError("You are not a member of the project " + where.slug, 404, "/me", "not_found");
+      throw new M.api.ApiError(M.t("error.not_member", { slug: where.slug }), 404, "/me", "not_found");
     }
     ctx.slug = where.slug;
     // Trust × role (docs/api.md §2.3): owner and admin hold project:admin and
@@ -1644,7 +1644,7 @@ window.Maity = window.Maity || {};
   M.withMembers = (ctx, members) => withMembers(ctx, members);
   M.projectContext = async (ctx, slug, chatLink) => {
     const mine = ctx.projects.find((p) => p.full_name === slug);
-    if (!mine) throw new M.api.ApiError("You are not a member of the project " + slug, 404, "/me", "not_found");
+    if (!mine) throw new M.api.ApiError(M.t("error.not_member", { slug }), 404, "/me", "not_found");
     const pctx = Object.assign({}, ctx, {
       slug, trust: mine.trust, role: mine.role, canAdmin: M.trust.governs(mine), isOwner: M.trust.owner(mine),
       base: "/projects/" + M.api.projectPath(slug), listeners: [], outsider: false,
@@ -1693,7 +1693,7 @@ window.Maity = window.Maity || {};
       append(countLine, h("p", { class: "muted" }, quietNote));
       quietNote = null;
     }
-    const reload = h("button", { type: "button", class: "small", onclick: () => render() }, "Reload");
+    const reload = h("button", { type: "button", class: "small", onclick: () => render() }, M.t("watch.reload"));
     const changed = new Set();
 
     async function counts() {
@@ -1708,16 +1708,16 @@ window.Maity = window.Maity || {};
         const busy = header.querySelector(".panel") || (document.activeElement && header.contains(document.activeElement));
         if (ctx.quietReload && ctx.quietReload() && !busy) {
           const n = now - seen;
-          quietNote = n > 0 ? n + (n === 1 ? " new request." : " new requests.") : "The list was updated (" + now + " open).";
+          quietNote = n > 0 ? M.t("watch.new_requests", { count: n }) : M.t("watch.list_updated", { count: now });
           render();
           return;
         }
-        append(countLine, h("p", { class: "flag" }, "What waits for you changed (" + now + " open). ",
-          h("button", { type: "button", class: "small", onclick: () => render() }, "Reload the list")));
+        append(countLine, h("p", { class: "flag" }, M.t("watch.changed", { count: now }) + " ",
+          h("button", { type: "button", class: "small", onclick: () => render() }, M.t("watch.reload_list"))));
       }
     }
-    const failed = (err) => append(clear(failLine), h("p", { class: "send-status failed" }, "Could not refresh: " + err.message));
-    if (notifyError) { append(failLine, h("p", { class: "send-status failed" }, "Could not read your notifications: " + notifyError.message)); notifyError = null; }
+    const failed = (err) => append(clear(failLine), h("p", { class: "send-status failed" }, M.t("watch.refresh_failed", { message: err.message })));
+    if (notifyError) { append(failLine, h("p", { class: "send-status failed" }, M.t("watch.notifications_failed", { message: notifyError.message }))); notifyError = null; }
     // A hidden tab asks nothing; shown again, it reads what it missed.
     let missed = false;
     const poll = () => { missed = false; return counts().then(() => clear(failLine), failed); };
@@ -1731,7 +1731,7 @@ window.Maity = window.Maity || {};
     ctx.onEvents((events) => {
       const theirs = events.filter((e) => !(e.actor && e.actor.member_id === ctx.me.id));
       const texts = [];
-      if (theirs.some((e) => PROJECT_KINDS.test(e.kind))) texts.push("The project changed.");
+      if (theirs.some((e) => PROJECT_KINDS.test(e.kind))) texts.push(M.t("watch.project_changed"));
       if (item && item.watch && theirs.some((e) => item.watch.test(e.kind))) texts.push(item.changed);
       texts.forEach((t) => changed.add(t));
       if (texts.length) append(clear(changeLine), h("p", { class: "flag" }, Array.from(changed).join(" ") + " ", reload));
@@ -1958,7 +1958,7 @@ window.Maity = window.Maity || {};
       } else if (known) {
         await M.views[item.view || item.route](ctx, root, where.args);
       } else {
-        append(root, h("p", null, "No such view. ", h("a", { href: "/all" }, "Go to everything waiting for you.")));
+        append(root, h("p", null, M.tn("view.none_link", { link: h("a", { href: "/all" }, M.t("view.none_go")) })));
       }
     } catch (err) {
       if (seq !== renderSeq) return;
@@ -1968,22 +1968,22 @@ window.Maity = window.Maity || {};
     append(clear(main), root);
     renderBanner(ctx);
     watch(ctx, where, known ? item : null, main);
-    let label = "No such view";
-    if (empty) label = "No projects yet";
-    else if (where.scope === "all") label = "All projects";
-    else if (where.scope === "notifications") label = "Notifications";
-    else if (where.scope === "chats") label = "Chats";
+    let label = M.t("view.none");
+    if (empty) label = M.t("view.no_projects");
+    else if (where.scope === "all") label = M.t("header.all_projects");
+    else if (where.scope === "notifications") label = M.t("view.notifications");
+    else if (where.scope === "chats") label = M.t("view.chats");
     else if (where.scope === "all-jour-fixe") label = M.t("all.page.jour_fixe");
     else if (where.scope === "all-why") label = M.t("all.page.why");
-    else if (where.scope === "new") label = "New project";
-    else if (where.scope === "account") label = "Your account";
-    else if (where.scope === "orgs") label = where.args && where.args[0] ? "@" + M.orgs.handleOf(where.args[0]) + " · Organisations" : "Organisations";
-    else if (where.scope === "runners") label = "Runners";
+    else if (where.scope === "new") label = M.t("view.new_project");
+    else if (where.scope === "account") label = M.t("view.account");
+    else if (where.scope === "orgs") label = where.args && where.args[0] ? M.t("view.org", { handle: M.orgs.handleOf(where.args[0]) }) : M.t("view.orgs");
+    else if (where.scope === "runners") label = M.t("view.runners");
     else if (where.scope === "invitations") label = M.t("header.invitations");
-    else if (where.scope === "agents") label = "Your agents";
+    else if (where.scope === "agents") label = M.t("view.agents");
     else if (where.scope === "person") label = "@" + where.handle;
-    else if (where.scope === "instance-admin") label = "Instance administration";
-    else if (where.scope === "observe") label = "Read along · " + where.slug;
+    else if (where.scope === "instance-admin") label = M.t("view.instance_admin");
+    else if (where.scope === "observe") label = M.t("view.read_along", { slug: where.slug });
     else if (known) label = item.label + " · " + ctx.project.name;
     baseTitle = label + " · Maity";
     document.title = M.notify.title(baseTitle);
@@ -1998,7 +1998,7 @@ window.Maity = window.Maity || {};
     svg.setAttribute("class", "maity-loader");
     svg.setAttribute("viewBox", "0 0 64 64");
     svg.setAttribute("role", "img");
-    svg.setAttribute("aria-label", "Loading");
+    svg.setAttribute("aria-label", M.t("page.loading"));
     const seats = [[32, 10], [51, 21], [51, 43], [32, 54], [13, 43], [13, 21]];
     seats.forEach(([cx, cy]) => {
       const c = document.createElementNS(SVG, "circle");
@@ -2012,7 +2012,7 @@ window.Maity = window.Maity || {};
       r.setAttribute("width", "12"); r.setAttribute("height", "12"); r.setAttribute("rx", "3");
       svg.appendChild(r);
     });
-    return h("p", { class: "page-loading", role: "status" }, svg, " Loading Maity…");
+    return h("p", { class: "page-loading", role: "status" }, svg, " ", M.t("page.loading_maity"));
   }
 
   // A page that could not load, in plain words for the person (the
@@ -2022,21 +2022,21 @@ window.Maity = window.Maity || {};
   function pageFailed(err) {
     const fixtures = M.api.source === "fixtures";
     const unreachable = !err.status;
-    const title = fixtures ? "The sample data didn't load"
-      : unreachable ? "Maity can't reach its hub" : "Maity couldn't load this page";
-    const advice = fixtures ? "Reload the page. If it keeps happening, the fixtures are missing from this copy."
-      : unreachable ? "Check your connection, then try again. If it keeps happening, the hub may be down."
-        : "Try again. If it keeps happening, the hub may have a problem; the details say which.";
-    const again = h("button", { type: "button", class: "primary", onclick: () => { append(clear(document.getElementById("main")), loading()); render(); } }, "Try again");
+    const title = fixtures ? M.t("page.failed.fixtures")
+      : unreachable ? M.t("page.failed.unreachable") : M.t("page.failed.other");
+    const advice = fixtures ? M.t("page.failed.fixtures_advice")
+      : unreachable ? M.t("page.failed.unreachable_advice")
+        : M.t("page.failed.other_advice");
+    const again = h("button", { type: "button", class: "primary", onclick: () => { append(clear(document.getElementById("main")), loading()); render(); } }, M.t("page.failed.again"));
     const signIn = err.status === 401
-      ? h("button", { type: "button", onclick: () => { M.route.go("/login"); } }, "Sign in again") : null;
+      ? h("button", { type: "button", onclick: () => { M.route.go("/login"); } }, M.t("page.failed.sign_in")) : null;
     const mark = (file, theme) => h("img", { class: "page-failed-mark brand-mark " + theme, src: "brand/" + file, alt: "", width: "40", height: "40" });
     return h("div", { class: "page-failed", role: "alert" },
       mark("maity-mark-small.svg", "brand-light"), mark("maity-mark-small-dark.svg", "brand-dark"),
       h("h2", { class: "page-failed-title" }, title),
       h("p", { class: "muted" }, advice),
-      h("details", null, h("summary", null, "Details"), h("p", { class: "page-failed-reason" },
-        [err.status ? "HTTP " + err.status + (err.code ? " " + err.code : "") : "No answer", err.message, err.path || null].filter(Boolean).join(" · "))),
+      h("details", null, h("summary", null, M.t("page.failed.details")), h("p", { class: "page-failed-reason" },
+        [err.status ? "HTTP " + err.status + (err.code ? " " + err.code : "") : M.t("page.failed.no_answer"), err.message, err.path || null].filter(Boolean).join(" · "))),
       h("div", { class: "page-failed-actions" }, signIn, again));
   }
 

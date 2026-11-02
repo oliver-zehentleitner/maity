@@ -26,14 +26,15 @@ window.Maity = window.Maity || {};
     get setup() { return M.t("board.kind.setup"); },
   };
 
-  // A card's status inside a sentence, lowercase; a status the hub adds later reads as its own word.
-  const STATUS_WORDS = {
-    proposed: () => M.t("board.status.proposed"), open: () => M.t("board.status.open"),
-    in_progress: () => M.t("board.status.in_progress"), blocked: () => M.t("board.status.blocked"),
-    review: () => M.t("board.status.review"), done: () => M.t("board.status.done"),
-    cancelled: () => M.t("board.status.cancelled"),
+  // A pull request's checks as the forge reports them (§6.11), in words.
+  const CHECK_WORDS = {
+    success: () => M.t("board.checks.success"), failure: () => M.t("board.checks.failure"), pending: () => M.t("board.checks.pending"),
+    none: () => M.t("board.checks.none"), unknown: () => M.t("board.checks.unknown"),
   };
-  const statusWord = (s) => (Object.hasOwn(STATUS_WORDS, s) ? STATUS_WORDS[s]() : s.replace("_", " "));
+  const VERIFICATION_WORDS = { signed: () => M.t("board.verification.signed"), bearer: () => M.t("board.verification.bearer") };
+  const word = (words, value) => (Object.hasOwn(words, value) ? words[value]() : value);
+  // A card's status inside a sentence, lowercase; a status the hub adds later reads as its own word.
+  const statusWord = (s) => M.dom.word("status", s).replace("_", " ");
 
   const PRESENCE_WORDS = {
     online: () => M.t("chat.presence.online"), away: () => M.t("chat.presence.away"),
@@ -252,7 +253,7 @@ window.Maity = window.Maity || {};
     // Two lines at most on the card; the whole text as its tooltip.
     const said = M.t("board.checkpoint.text", { done: cp.last_step, next: cp.next_step });
     return h("div", { class: "checkpoint" },
-      h("span", { class: "label" }, M.t("board.checkpoint.label", { ago: formatAgo(cp.updated_at), verification: cp.verification })),
+      h("span", { class: "label" }, M.t("board.checkpoint.label", { ago: formatAgo(cp.updated_at), verification: word(VERIFICATION_WORDS, cp.verification) })),
       h("p", { class: "pre clamp", title: said }, M.ids.link(said, M.ids.where(ctx))),
       cp.branch ? h("p", { class: "muted" }, cp.branch + (cp.head ? " @ " + cp.head : "")) : null);
   }
@@ -272,10 +273,10 @@ window.Maity = window.Maity || {};
     if (!r) return null;
     const pr = r.pr ? M.t("board.report.pr", { number: "#" + r.pr.number }) : (r.pr_status === "none" ? M.t("board.report.no_pr") : M.t("board.report.pr_unknown", { reason: r.pr_unknown_reason || "—" }));
     const observed = r.observed
-      ? M.t("board.report.observed", { state: r.observed.pr_state, checks: r.observed.checks, ago: formatAgo(r.observed.observed_at) })
+      ? M.t("board.report.observed", { state: M.dom.word("pr", r.observed.pr_state), checks: word(CHECK_WORDS, r.observed.checks), ago: formatAgo(r.observed.observed_at) })
       : M.t("board.report.not_observed");
     return h("div", { class: "report" + (r.mismatch ? " mismatch" : "") },
-      h("span", { class: "label" }, M.t("board.report.label", { ago: formatAgo(r.reported_at), verification: r.verification })),
+      h("span", { class: "label" }, M.t("board.report.label", { ago: formatAgo(r.reported_at), verification: word(VERIFICATION_WORDS, r.verification) })),
       h("div", { class: "md report-summary" }, M.markdown(r.summary, M.ids.where(ctx), { mentions: r.mentions, field: "summary", hrefOf: (id) => ctx.link("members", id), ctx })),
       h("p", { class: "muted" }, pr + " · " + observed),
       r.mismatch ? h("p", { class: "flag" }, M.t("board.report.mismatch")) : null,
@@ -308,9 +309,9 @@ window.Maity = window.Maity || {};
     if (pr.found === false) return h("td", { class: "pr-missing" }, M.t("board.pr.not_found"));
     if (!pr.observed_at) {
       return h("td", { class: "pr-unverified" }, M.t("board.pr.unverified"),
-        pr.state ? h("span", { class: "muted" }, " · ", M.t("board.pr.claimed_state", { source: pr.source, state: pr.state })) : null);
+        pr.state ? h("span", { class: "muted" }, " · ", M.t("board.pr.claimed_state", { source: pr.source, state: M.dom.word("pr", pr.state) })) : null);
     }
-    return h("td", { class: "pr-" + pr.state }, pr.state || "—");
+    return h("td", { class: "pr-" + pr.state }, pr.state ? M.dom.word("pr", pr.state) : "—");
   }
 
   function pullRequests(rel) {
@@ -325,7 +326,7 @@ window.Maity = window.Maity || {};
         h("td", null, safeUrl(pr.url) ? h("a", { href: safeUrl(pr.url), rel: "noopener noreferrer" }, "#" + pr.number) : "#" + pr.number,
           " " + (pr.title || ""), h("span", { class: "muted" }, " · " + (pr.task_id ? M.t("board.prs.source_by", { source: pr.source, card: pr.task_id }) : pr.source))),
         prState(pr),
-        h("td", { class: "checks-" + pr.checks }, pr.observed_at && pr.checks ? pr.checks : "—"),
+        h("td", { class: "checks-" + pr.checks }, pr.observed_at && pr.checks ? word(CHECK_WORDS, pr.checks) : "—"),
         h("td", null, pr.observed_at ? formatAgo(pr.observed_at) + (pr.head_sha ? " @ " + pr.head_sha : "") : M.t("board.pr.never"))))));
   }
 
@@ -549,7 +550,6 @@ window.Maity = window.Maity || {};
   const arbiterName = (ctx, a) => {
     if (a === "trust:admin") return M.t("board.contract.arbiter_admins");
     if (/^role:/.test(a || "")) return M.t("board.contract.arbiter_role", { role: M.trust.roleLabel(a.slice(5)) });
-    if (/^trust:/.test(a || "")) return M.t("board.contract.arbiter_trust", { trust: a.slice(6) });
     return M.dom.memberRef(ctx, a);
   };
 
@@ -599,7 +599,7 @@ window.Maity = window.Maity || {};
         c.watching ? h("span", { class: "card-watching" }, M.t("cards.watching")) : null,
         Array.isArray(c.match) && c.match.length
           ? h("span", { class: "label-tag" }, M.t("board.search.matched", { fields: M.fmt.list(c.match) })) : null,
-        c.label ? h("span", { class: "label-tag" }, c.label) : null,
+        c.label ? h("span", { class: "label-tag" }, M.dom.word("label", c.label)) : null,
         c.needs ? h("span", { class: "label-tag card-needs" }, M.t("cards.needs.tag", { role: M.trust.roleLabel(c.needs) })) : null,
         c.area ? h("span", { class: "area" }, c.area) : null,
         assignee(ctx, c)),
@@ -622,9 +622,9 @@ window.Maity = window.Maity || {};
         : null,
       c.contract
         ? h("p", { class: "muted" }, (c.contract.watchers || []).length
-          ? M.tn("board.contract.line_watched", { state: c.contract.state, arbiter: arbiterName(ctx, c.contract.arbiter),
+          ? M.tn("board.contract.line_watched", { state: M.dom.word("contract", c.contract.state), arbiter: arbiterName(ctx, c.contract.arbiter),
             watchers: c.contract.watchers.map((w, i) => [i ? ", " : null, M.dom.memberRef(ctx, w)]) })
-          : M.tn("board.contract.line", { state: c.contract.state, arbiter: arbiterName(ctx, c.contract.arbiter) }))
+          : M.tn("board.contract.line", { state: M.dom.word("contract", c.contract.state), arbiter: arbiterName(ctx, c.contract.arbiter) }))
         : null,
       // Its section from the repository (§6.8).
       c.contract && M.contractPanel ? M.contractPanel.panel(ctx, c, redraw) : null,

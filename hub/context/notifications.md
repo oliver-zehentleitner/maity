@@ -21,6 +21,11 @@ is why the second-factor mail has one key with its link and one without.
 `language_of` passes over a language without words for its section yet (`catalog.speaks`): a person who
 accepts `fr, de` reads German rather than English until the French arrives.
 
+What each translation follows lies in `hub/words-meta/`, beside the package and not in it, and is written by
+`make -C web fixtures` as for the dashboard's catalogs (`web/tools/check.py`): a changed English marks its
+translations out of date, a note until `make release-check` makes it a finding. A separate tool for the hub
+would repeat the same rule; a hub test would stop every change of an English word.
+
 **Rejected alternatives:**
 - Keeping a dict per module: eight places to translate, with the fallback repeated in each.
 - Reading `interface_language` at each call site: the fallback would be repeated a dozen times.
