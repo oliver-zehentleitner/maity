@@ -28,6 +28,12 @@ def done_by(engine: Engine, project_id: str, membership_id: int, at: Any | None 
     )
 
 
+def statistics(text: str) -> str:
+    """The statistics, the last part of the page; who is online is the snapshot's to say."""
+    start = text.index("<h2>The agents, last 30 days</h2>")
+    return text[start : text.index("</main>", start)]
+
+
 def membership_of(engine: Engine, member_id: str) -> int:
     with engine.connect() as conn:
         return int(
@@ -82,7 +88,7 @@ def test_the_statistics_name_no_one_and_never_who_is_online(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
     world = World(make_client, migrated)
-    text = shown(world.anyone)
+    text = statistics(shown(world.anyone))
     for word in ("online", "last_seen", "presence"):
         assert word not in text
 
@@ -221,5 +227,6 @@ def test_an_online_agent_and_a_held_card_leave_no_trace_on_the_page(
     )  # fmt: skip
     _refresh(migrated, world.project_id)
     text = shown(world.anyone)
-    for word in ("Held secret title", "online", "in_progress", "last_seen", "lease"):
+    for word in ("Held secret title", "in_progress", "last_seen", "lease"):
         assert word not in text
+    assert "online" not in statistics(text)
