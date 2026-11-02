@@ -6,7 +6,8 @@ How the hub stores and serves the pages a search engine can read (`docs/api.md` 
 
 **Id:** 1e42dae2-4d67-4f1d-80b7-b2bb4aecfc3b
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 70c80e4f-bf45-430d-beb2-7abbab2c8e4c
 **Evidence:** confirmed
 **Source:** `docs/api.md` §16.9 and §16.11; the coordinator's answer of 2026-10-30 on the cards tsk-w89mspg3gwx1 and tsk-xr6fqx8e0vw5 (the stored page is a row in the database)
 **Revisit when:** the pages grow so large or so many that a row per page is the wrong place, or a page has to be served from the join host
@@ -512,6 +513,26 @@ of public projects (projects.md, 038e685e) said and the code did not.
 
 **Rejected:** redirecting a dashboard address to the public page: a card's link from a mail would end there
 after a session expired, instead of going on after the sign-in.
+
+## A visitor gets the stored page inside the app shell, and `?as=public` the bare page
+
+**Id:** 70c80e4f-bf45-430d-beb2-7abbab2c8e4c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's words of 2026-11-01 on the card tsk-jj1tfre7n6zb (logged out sees what logged in sees, read-only); the plan the lead approved
+**See:** public-pages.md#a-public-page-is-a-row-of-public_page-served-by-the-app-shells-route — 1e42dae2-4d67-4f1d-80b7-b2bb4aecfc3b — as of 2026-11-02
+**Revisit when:** the shell's scripts grow slow enough that the page's text is what most visitors read
+
+A public address now serves the shell with the row's title, description, share tags, canonical link and text
+placed in it, so a crawler and a reader without scripts still read the page and the dashboard takes over at the same address.
+The row, its removal and the sitemap stay as they were; a page is still a row, and the decision between page and
+shell still falls in the shell's route. A failed read of `data` leaves the page's text standing instead of the login.
+The marker on the shell counts for the first drawing only; a later visit to the login inside the same load is the
+login, not this page.
+
+**Rejected:** a separate address for the app view (two addresses for one thing, as a forge has one); a script tag in
+the stored page alone (the bare page's policy allows no script, and the row would hold the shell's file names).
 
 ## The public Why is a stored row, an exception to "the export stays in memory"
 

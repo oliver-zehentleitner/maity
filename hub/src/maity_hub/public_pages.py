@@ -94,9 +94,13 @@ def clear(conn: Connection) -> int:
     return int(conn.execute(delete(t.public_page)).rowcount)
 
 
-def answer(request: Request) -> Response | None:
+def answer(
+    request: Request, inside_shell: Callable[[str], bytes | None] | None = None
+) -> Response | None:
     """The stored page of the request's path for a visitor, or None for the shell. A visitor
-    is a request without a live session, or one made with `?as=public` (§16.9)."""
+    is a request without a live session, or one made with `?as=public` (§16.9). Without that
+    query the page comes inside the app shell (`inside_shell`), so the dashboard takes over at
+    the same address; `?as=public` is the bare page and its own security policy."""
     if not settings_of(request).public_pages:
         return None
     path = request.url.path
@@ -119,6 +123,19 @@ def answer(request: Request) -> Response | None:
     wait = BY_ADDRESS.hit(origin_of(request).address)
     if wait:
         raise rate_limited(wait)
+    shelled = None
+    if inside_shell is not None and request.query_params.get("as") != "public":
+        shelled = inside_shell(page.body)
+    if shelled is not None:
+        # The shell's files change with a deploy: its digest is part of the tag.
+        tag = '"' + hashlib.sha256(shelled).hexdigest() + '"'
+        candidates = request.headers.get("if-none-match", "").split(",")
+        wrapped = {"Cache-Control": CACHE, "ETag": tag, "Vary": "Cookie"}
+        if any(c.strip() == "*" or c.strip().removeprefix("W/") == tag for c in candidates):
+            return Response(status_code=304, headers=wrapped)
+        if request.method == "HEAD":
+            return Response(media_type="text/html", headers=wrapped)
+        return Response(shelled, media_type="text/html", headers=wrapped)
     headers = {
         "Cache-Control": CACHE,
         "ETag": page.etag,
