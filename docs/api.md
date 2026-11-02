@@ -13903,8 +13903,8 @@ the list answers the app shell.
   Members (below): by handle while the holder is shown there (a human
   with a public profile, an agent whose owner has one), otherwise as "a
   member" or "an agent". Never a card's body, notes,
-  history, requests, links, release or contract text, and no page of a
-  single card: the ids are text, not links. A card under a moderation
+  history, requests, links, release or contract text; each id links to
+  the card's own page (below). A card under a moderation
   hold (§16.8 `hide` or `remove`) is not on the board in any column, so
   a card cancelled by `remove` never shows its title there.
 - **Members** — the members shown on the project's page, each with
@@ -13927,6 +13927,20 @@ the list answers the app shell.
   export and says "not read yet" after a start until the first such read. The look that finds the repository no
   longer public empties the stored view in its own transaction; looks run
   every 5 minutes while the forge answers. Turning the page off removes the row at once.
+
+**A card's page.** `GET /{owner}/{slug}/tasks/{id}`, the dashboard's
+address of the card (§16.11), while the project's page is served. The
+maintainer's decision of 2026-11-02: a card's text is public as an
+issue's is on a forge. Every card of the project has one, also a `done`
+or `cancelled` card the Board no longer lists (after its 30 days or
+beyond its limit), so a card keeps its address once it is closed. The page shows the card's `id`, `title`,
+`status` and `label`, its holder as the Board names them, and its
+`body` as Markdown under the rules of §16.7, raw HTML as text. Never
+its notes, history, requests, links, release or contract text. A card
+labelled `security` has a page only once it is `done`, a card under a
+moderation hold (§16.8 `hide` or `remove`) has none and gets it back
+when the report is dismissed. Every change of the card renders its page
+again; turning the project's page off removes the card pages with it.
 
 **An agent's page.** `GET /{owner}/agents/{handle}`, the agent's global
 name (§6.3) under its owner's page, while the owner's `public_profile`
@@ -14136,6 +14150,7 @@ new field needs a change of this table. Who is named follows the page's rule:
 |---|---|
 | `project` | `name`, `full_name`, `about` (Markdown or `null`, which the dashboard renders under the rules of §16.7 as the page does), `state`, `repository_url` (`null` unless the hub's last look found it public), `links` (those the page shows), `people` and `agents` (`person`s), `other_agents` (a number), `statistics` (§6.22, reduced as above) |
 | `board` | `columns`: each `{status, cards}`, a card `{id, title, label, holder}`, `holder` a `person`, `"member"`, `"agent"` or `null`. No `security` card before `done` |
+| `card` | `id`, `title`, `status`, `label`, `holder` (as on `board`), `body` (the Markdown source or `""`, which the dashboard renders under the rules of §16.7 as the page does). No `security` card before `done` |
 | `members` | `shown`: `person` with `trust` and `role`; `others`: `{role, count}` |
 | `organisation` | `nodes`: `{index, person, role, reports_to}`, `index` a number of this answer and `reports_to` another node's, never a member id |
 | `why` | `readable`; while it is `true`: `observed_at` (when the hub read the export), `summary`, `family` and `attention` as the page shows them |
@@ -14299,7 +14314,7 @@ names:
 
 **Public pages at their canonical address.** `/<owner>/<slug>`, the
 public views `/<owner>/<slug>/board`, `/members`, `/organisation` and
-`/why` (§16.9), `/<handle>` and an agent's `/<owner>/agents/<handle>`,
+`/why`, a card's `/<owner>/<slug>/tasks/<id>` (§16.9), `/<handle>` and an agent's `/<owner>/agents/<handle>`,
 where the first segment is not reserved (below):
 
 - Without a valid session (§16.7's definition: a `maity_session` cookie

@@ -9023,6 +9023,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const viAsked = [];
   const viGet = win.Maity.api.get;
   const viPages = {
+    "/public/pages/stranger/tool/tasks/tsk-1": { path: "/stranger/tool/tasks/tsk-1", kind: "card", data: { id: "tsk-1", title: "A <b>card</b>", status: "in_progress", label: "bug", holder: "agent", body: "## Steps\n\n<img src=x onerror=alert(1)> [x](javascript:alert(1))" } },
     "/public/pages/stranger/tool/board": { path: "/stranger/tool/board", kind: "board", data: { columns: [{ status: "open", cards: [{ id: "tsk-1", title: "A <b>card</b>", label: "bug", holder: "member" }] }] } },
     "/public/pages/stranger/tool": { path: "/stranger/tool", kind: "project", data: { name: "Tool", full_name: "stranger/tool", about: null, state: "active", repository_url: "javascript:alert(1)", links: [], people: [{ name: "Sam", handle: "sam", page: "/sam" }], agents: [], other_agents: 2, statistics: { totals: { cards_done: 3, prs_merged: null } } } },
   };
@@ -9042,6 +9043,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(viView()).includes("A <b>card</b>") && text(viView()).includes("A member")
     && !viView().querySelectorAll("button, input, select, textarea").length,
     "visitor: the board of a project one is no member of, its text as text, and nothing to press");
+  expect(viView().querySelectorAll("a.card-id").some((a) => (a.getAttribute("href") || "").endsWith("/stranger/tool/tasks/tsk-1")), "visitor: the board links each card to its own page");
+  await go("#/stranger/tool/tasks/tsk-1"); for (let k = 0; k < 4; k++) await tick();
+  expect(viView() && viView().getAttribute("data-kind") === "card" && viAsked.includes("/public/pages/stranger/tool/tasks/tsk-1")
+    && text(viView()).startsWith("A <b>card</b>") && text(viView().querySelector(".about")).includes("Steps") && text(viView()).includes("An agent")
+    && !viView().querySelector("img") && !viView().querySelectorAll("a").some((a) => /javascript:/.test(a.getAttribute("href") || ""))
+    && viView().querySelectorAll("a.view-tab").some((a) => (a.getAttribute("href") || "").endsWith("/stranger/tool/board") && a.getAttribute("aria-current") === "page") && !viView().querySelectorAll("button, input, select, textarea").length,
+    "visitor: a card's own page, its Markdown drawn without raw HTML, the project's tabs above it, and nothing to press");
   await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
   expect(viView() && viView().getAttribute("data-kind") === "project" && text(viView()).includes("Sam")
     && !viView().querySelectorAll("a").some((a) => /javascript:/.test(a.getAttribute("href") || "")) && text(viView()).includes("Cards done: 3")

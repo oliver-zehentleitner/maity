@@ -218,21 +218,33 @@ def _statistics_html(stats: dict[str, Any]) -> str:
 
 def pages_of_member(conn: Connection, human_id: str) -> list[tuple[str, str]]:
     """The public project pages that show the person: a member, or the owner of an agent that
-    is one (a person's profile turning private or public changes them, §16.9)."""
+    is one (a person's profile turning private or public changes them, §16.9), and the card
+    pages whose holder is one of those memberships, which name the holder as the Board does."""
+    from maity_hub import public_cards
+
     m = t.membership.c
     agents = select(t.agent_profile.c.id).where(t.agent_profile.c.owner_id == human_id)
+    theirs = (
+        m.active.is_(True),
+        (m.human_id == human_id) | m.agent_id.in_(agents),
+    )
     ids = conn.execute(
         select(t.project.c.id)
         .join(t.membership, m.project_id == t.project.c.id)
-        .where(
-            t.project.c.public_page == "on",
-            m.active.is_(True),
-            (m.human_id == human_id) | m.agent_id.in_(agents),
-        )
+        .where(t.project.c.public_page == "on", *theirs)
         .distinct()
         .order_by(t.project.c.id)
     ).scalars()
-    return [(kind, project_id) for project_id in ids for kind in (KIND, VIEWS)]
+    cards = conn.execute(
+        select(t.card.c.id)
+        .join(t.membership, m.id == t.card.c.claim_holder)
+        .join(t.project, t.project.c.id == t.card.c.project_id)
+        .where(t.project.c.public_page == "on", *theirs)
+        .order_by(t.card.c.id)
+    ).scalars()
+    return [(kind, project_id) for project_id in ids for kind in (KIND, VIEWS)] + [
+        (public_cards.KIND, card) for card in cards
+    ]
 
 
 def render_project(conn: Connection, hub: Settings, project_id: str) -> list[public_pages.Page]:
@@ -388,7 +400,7 @@ def dependents(conn: Connection, project_id: str) -> list[tuple[str, str]]:
     page: served, named and shown alike), its agents' pages, and the person pages that list it
     or its agents: its human members' and the owners' of its agent members, who need not be
     members themselves (§16.9)."""
-    from maity_hub import public_agents
+    from maity_hub import public_agents, public_cards
 
     m = t.membership.c
     members = conn.execute(
@@ -402,6 +414,7 @@ def dependents(conn: Connection, project_id: str) -> list[tuple[str, str]]:
     ).scalar()
     return [
         (VIEWS, project_id),
+        *[(public_cards.KIND, card) for card in public_cards.of_project(conn, project_id)],
         *([("organisation", org)] if org else []),
         *public_agents.pages_of_project(conn, project_id),
         *[("person", person) for person in people],
