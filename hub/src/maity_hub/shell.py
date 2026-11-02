@@ -71,6 +71,9 @@ _PAGE = re.compile(
 _SHELL_TITLE = re.compile(rb"<title>.*?</title>", re.DOTALL)
 _SHELL_DESCRIPTION = re.compile(rb'<meta name="description"[^>]*>')
 _SHELL_MAIN = re.compile(rb'<main id="main">.*?</main>', re.DOTALL)
+_SHELL_OG_TITLE = re.compile(rb'<meta property="og:title"[^>]*>')
+_SHELL_OG_DESCRIPTION = re.compile(rb'<meta property="og:description"[^>]*>')
+_CONTENT = re.compile(r'content="([^"]*)"')
 
 
 def page_in_shell(shell: bytes, body: str) -> bytes | None:
@@ -84,10 +87,16 @@ def page_in_shell(shell: bytes, body: str) -> bytes | None:
     head = found["canonical"].encode()
     described = found["meta"].encode() if found["meta"] else b""
     done = _SHELL_DESCRIPTION.sub(lambda _: described, shell, count=1)
+    # A shared link shows the page's name and text, already escaped in the stored document.
+    og_title = f'<meta property="og:title" content="{found["title"]}">'.encode()
+    done = _SHELL_OG_TITLE.sub(lambda _: og_title, done, count=1)
+    words = _CONTENT.search(found["meta"] or "")
+    og_text = f'<meta property="og:description" content="{words[1]}">'.encode() if words else b""
+    done = _SHELL_OG_DESCRIPTION.sub(lambda _: og_text, done, count=1)
     done = _SHELL_TITLE.sub(lambda _: title + head, done, count=1)
     inner = found["main"].encode()
     return _SHELL_MAIN.sub(
-        lambda _: b'<main id="main" data-public-page>' + inner + b"</main>", done
+        lambda _: b'<main id="main" data-public-page>' + inner + b"</main>", done, count=1
     )
 
 

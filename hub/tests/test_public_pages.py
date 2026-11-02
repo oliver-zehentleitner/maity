@@ -255,6 +255,14 @@ def test_a_page_comes_inside_the_shell_for_a_crawler_and_the_dashboard() -> None
     assert b'<link rel="canonical" href="https://hub.example/a">' in made
     assert b'<main id="main" data-public-page><h1>Text</h1></main>' in made
     assert b'src="js/app.js"' in made and b'content="x"' not in made
+    social = shell_module.page_in_shell(
+        b'<html><title>M</title><meta property="og:title" content="Maity">'
+        b'<meta property="og:description" content="Old"><main id="main"></main></html>',
+        page,
+    )
+    assert social is not None
+    assert b'property="og:title" content="A &amp; B"' in social and b'"Maity"' not in social
+    assert b'content="Old"' not in social
     assert shell_module.page_in_shell(b"<html></html>", page) is None
     assert shell_module.page_in_shell(shell, "<html></html>") is None
 
@@ -274,6 +282,7 @@ def test_a_visitor_gets_the_shell_with_the_page_and_as_public_the_bare_page(
         "x-robots-tag" not in got.headers and got.headers["cache-control"] == "public, max-age=60"
     )
     assert client.get("/oz-team", headers={"If-None-Match": got.headers["etag"]}).status_code == 304
+    assert got.headers["content-security-policy"] == "default-src 'self'"
     bare = client.get("/oz-team?as=public")
     assert (
         "js/app.js" not in bare.text
