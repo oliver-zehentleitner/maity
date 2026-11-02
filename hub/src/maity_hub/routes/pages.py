@@ -240,10 +240,7 @@ def _legal_route(page: str, address: str) -> None:
         f"/{address}", methods=["GET", "HEAD"], include_in_schema=False, name=f"legal_{page}"
     )
     def current(request: Request, lang: str | None = None) -> Response:
-        refused = maintenance.running_page(engine_of(request))
-        if refused is not None:
-            return refused  # type: ignore[no-any-return]
-        with engine_of(request).begin() as conn:
+        with engine_of(request).begin() as conn:  # readable during a window (§16.12)
             body = legal_html(conn, request, page, None, lang)
         return _answer(body)
 
@@ -254,10 +251,7 @@ def _legal_route(page: str, address: str) -> None:
         name=f"legal_{page}_old",
     )
     def earlier(version: str, request: Request, lang: str | None = None) -> Response:
-        refused = maintenance.running_page(engine_of(request))
-        if refused is not None:
-            return refused  # type: ignore[no-any-return]
-        with engine_of(request).begin() as conn:
+        with engine_of(request).begin() as conn:  # readable during a window (§16.12)
             body = legal_html(conn, request, page, version, lang)
         return _answer(body)
 

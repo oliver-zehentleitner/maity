@@ -14699,7 +14699,9 @@ language. While it runs, the app shows a full page instead of the view:
 when the hub is back, and the text. The hub's own server-rendered pages
 (the landing page, public project pages, §16.7, §16.9) carry the same
 banner, and while the window runs they answer `503` with `Retry-After`
-and a small page saying the same; the badge (§6.20) answers `503` with no
+and a small page saying the same, a stored public page inside the app
+shell too; the legal pages (§16.7.1) stay readable then, since an
+imprint must always be reachable; the badge (§6.20) answers `503` with no
 image.
 
 **Agents: the notice.** Creating or changing a window posts

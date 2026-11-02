@@ -71,3 +71,33 @@ create, change, cancel and early end with who and when, read through `GET /admin
 - Waiting for the audit log: maintenance is wanted before the launch.
 - Keeping only `by` and `updated_at` on the window, as other admin settings do: a cancelled window would
   leave no trace.
+
+## Each replica trusts its last read of the window for 5 seconds; only the deadline sweeps wait
+
+**Id:** b0bbdd1f-8166-44e4-905f-94f5e415081b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** PR #1204 (card tsk-12hwmpykz2ht) and its reviews of 2026-11-02; docs/api.md §16.12
+**Revisit when:** a sweep acts on a deadline within seconds of it passing, or the hub keeps the window in a shared cache
+
+The middleware asks for the window on every request, so each replica keeps its last read for 5 seconds
+(`maintenance.CACHE_SECONDS`) instead of a query per request. A replica that has not read the window yet may
+serve, or let a sweep act, for up to those 5 seconds into a running window. That is accepted: the sweeps run
+once a minute or rarer, and no deadline is decided to the second. Past `until` the cache is not trusted: the
+window is read again, which settles the deadlines first, so no sweep meets one that has not moved.
+
+Only the sweeps that act on a deadline to someone's disadvantage wait during a window: availability, the
+Keep the Why confirmation, the jour fixe, not listening and its hourly digest, organisation invitations,
+registrations awaiting approval, and takeovers. The others keep running, since they decide nothing against
+a person who could not act: the mail outbox and mailer, attachment and image clean-up, the forge probe, the
+public pages renderer and the abuse report purge.
+
+The legal pages stay readable during a window, with the banner, unlike the landing page and the public
+project pages: an imprint and a privacy notice must be reachable at all times, and they change nothing.
+
+**Rejected alternatives:**
+- Reading the window from the database on every request: one more query on every call for a state that
+  changes a few times a year.
+- Pausing every background worker: mail and clean-up would pile up for the whole window for no one's benefit.
+- Answering 503 on the legal pages too: the hub would be without an imprint for the length of the window.

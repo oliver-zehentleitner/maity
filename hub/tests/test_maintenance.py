@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -723,6 +724,44 @@ def test_a_stored_public_page_answers_the_503_page_to_a_visitor(
     assert client.get(PATH).status_code == 200
     put(admin)
     running(now)
-    page = client.get(PATH)
-    assert page.status_code == 503 and "Maintenance" in page.text
-    assert page.headers["Retry-After"] == str(25 * 60)
+    for query in ("", "?as=public"):  # inside the shell, and bare
+        page = client.get(PATH + query)
+        assert page.status_code == 503 and "Maintenance" in page.text
+        assert page.headers["Retry-After"] == str(25 * 60)
+
+
+@pytest.fixture
+def real_shell(web_dir: Path) -> Path:
+    """A shell with `<main id="main">`, as web/index.html has it: a stored page then comes
+    inside the shell for a visitor (§16.9)."""
+    (web_dir / "index.html").write_text(
+        '<!doctype html><html><head><meta charset="utf-8"><title>dashboard</title></head>'
+        '<body><main id="main"></main><script src="js/app.js"></script></body></html>'
+    )
+    return web_dir
+
+
+def test_a_public_page_inside_the_shell_is_refused_too(
+    real_shell: Path, make_client: ClientFactory, migrated: Engine, admin: flow.Human, now: Clock
+) -> None:
+    from tests.test_public_pages import PATH, store
+
+    client = make_client(public_pages=True)
+    store(migrated)
+    before = client.get(PATH)
+    assert before.status_code == 200 and 'id="main"' in before.text  # inside the shell
+    put(admin)
+    running(now)
+    assert client.get(PATH).status_code == 503
+
+
+def test_the_legal_pages_stay_readable_during_a_window(
+    make_client: ClientFactory, migrated: Engine, admin: flow.Human, now: Clock
+) -> None:
+    from tests.test_legal import EN
+    from tests.test_legal import PATH as LEGAL
+
+    assert admin.patch(LEGAL, {"imprint": EN}).status_code == 200
+    put(admin)
+    running(now)
+    assert make_client().get("/impressum").status_code == 200
