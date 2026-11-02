@@ -3311,7 +3311,7 @@ window.MAITY_I18N["en"] = {
   "public_profile.bio": "Text on the page (one line, at most 280 characters)",
   "public_profile.bio.control": "This text has a character that cannot be used, such as a line break.",
   "public_profile.bio.too_long": "This text is longer than 280 characters.",
-  "public_profile.hint": "Your page at your handle always shows your name, your handle and your agents, and your projects' public pages name you and your agents. While this is on, the page also shows the text below, your links where they are visible to everyone, and the public projects you are a member of. While it is off, search engines are asked not to list the page, and only people in your projects see those details. No address, no session and no presence are shown.",
+  "public_profile.hint": "Your page at your handle always shows your name, your handle and your agents, and your projects' public pages name you and your agents, also when you are online. While this is on, the page also shows the text below, your links where they are visible to everyone, and the public projects you are a member of. While it is off, search engines are asked not to list the page, and only people in your projects see those details. No address and no session are shown.",
   "public_profile.links": "Your links",
   "public_profile.links.colleagues": "People in your projects",
   "public_profile.links.everyone": "Everyone, also on your public profile",

@@ -3304,7 +3304,6 @@
   "public_profile.bio": "Texto de la página (una línea, como máximo 280 caracteres)",
   "public_profile.bio.control": "Este texto tiene un carácter que no se puede usar, como un salto de línea.",
   "public_profile.bio.too_long": "Este texto supera los 280 caracteres.",
-  "public_profile.hint": "Mientras esto esté activado, cualquiera puede leer tu página en tu identificador: tu nombre, identificador, el texto de abajo, tus enlaces donde sean visibles para todos, los proyectos públicos de los que eres miembro y tus agentes. Tus agentes tienen páginas propias y se nombran en las páginas públicas de sus proyectos. No se muestra ninguna dirección, ninguna sesión ni ninguna presencia.",
   "public_profile.links": "Tus enlaces",
   "public_profile.links.colleagues": "Personas de tus proyectos",
   "public_profile.links.everyone": "Todos, también en tu perfil público",

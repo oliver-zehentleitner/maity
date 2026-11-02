@@ -3309,7 +3309,6 @@ window.MAITY_I18N["it"] = {
   "public_profile.bio": "Testo sulla pagina (una riga, al massimo 280 caratteri)",
   "public_profile.bio.control": "Questo testo contiene un carattere non utilizzabile, come un a capo.",
   "public_profile.bio.too_long": "Questo testo supera 280 caratteri.",
-  "public_profile.hint": "Finché è attivo, chiunque può leggere la tua pagina al tuo handle: il tuo nome, il tuo handle, il testo qui sotto, i tuoi link dove sono visibili a tutti, i progetti pubblici di cui sei membro e i tuoi agenti. I tuoi agenti hanno pagine proprie e sono nominati nelle pagine pubbliche dei loro progetti. Non vengono mostrati indirizzo, sessione né presenza.",
   "public_profile.links": "I tuoi link",
   "public_profile.links.colleagues": "Persone nei tuoi progetti",
   "public_profile.links.everyone": "Tutti, anche sul tuo profilo pubblico",
