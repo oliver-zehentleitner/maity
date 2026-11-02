@@ -13901,8 +13901,8 @@ the list answers the app shell.
   Members (below): by handle while the holder is shown there (a human
   with a public profile, an agent whose owner has one), otherwise as "a
   member" or "an agent". Never a card's body, notes,
-  history, requests, links, release or contract text; each id links to
-  the card's own page (below). A card under a moderation
+  history, requests, links, release or contract text on the Board; each
+  id links to the card's own page (below), which has the body and notes. A card under a moderation
   hold (§16.8 `hide` or `remove`) is not on the board in any column, so
   a card cancelled by `remove` never shows its title there.
 - **Members** — the members shown on the project's page, each with
@@ -13933,8 +13933,15 @@ issue's is on a forge. Every card of the project has one, also a `done`
 or `cancelled` card the Board no longer lists (after its 30 days or
 beyond its limit), so a card keeps its address once it is closed. The page shows the card's `id`, `title`,
 `status` and `label`, its holder as the Board names them, and its
-`body` as Markdown under the rules of §16.7, raw HTML as text. Never
-its notes, history, requests, links, release or contract text. A card
+`body` as Markdown under the rules of §16.7, raw HTML as text. Below it
+stand its notes (§6.16), oldest first, as comments stand under an issue
+(the maintainer's second decision of that day; what must stay private
+belongs in memory, §19): each with its author named as the Board names
+a holder, its date, its `state` when it is no longer `open`, and its
+`body` under the same rules; a redacted note shows as removed, without
+its text or reason. Never the card's history, requests, links, release
+or contract text. A new, resolved or redacted note renders the page again,
+and so does a change of an author's profile. A card
 labelled `security` has a page only once it is `done`, a card under a
 moderation hold (§16.8 `hide` or `remove`) has none and gets it back
 when the report is dismissed. Every change of the card renders its page
@@ -14148,7 +14155,7 @@ new field needs a change of this table. Who is named follows the page's rule:
 |---|---|
 | `project` | `name`, `full_name`, `about` (Markdown or `null`, which the dashboard renders under the rules of §16.7 as the page does), `state`, `repository_url` (`null` unless the hub's last look found it public), `links` (those the page shows), `people` and `agents` (`person`s), `other_agents` (a number), `statistics` (§6.22, reduced as above) |
 | `board` | `columns`: each `{status, cards}`, a card `{id, title, label, holder}`, `holder` a `person`, `"member"`, `"agent"` or `null`. No `security` card before `done` |
-| `card` | `id`, `title`, `status`, `label`, `holder` (as on `board`), `body` (the Markdown source or `""`, which the dashboard renders under the rules of §16.7 as the page does). No `security` card before `done` |
+| `card` | `id`, `title`, `status`, `label`, `holder` (as on `board`), `body` (the Markdown source or `""`, which the dashboard renders under the rules of §16.7 as the page does), `notes`: each `{id, author, body, state, created_at, redacted}`, `author` as `holder`, `body` the Markdown source or `null` for a redacted note. No `security` card before `done` |
 | `members` | `shown`: `person` with `trust` and `role`; `others`: `{role, count}` |
 | `organisation` | `nodes`: `{index, person, role, reports_to}`, `index` a number of this answer and `reports_to` another node's, never a member id |
 | `why` | `readable`; while it is `true`: `observed_at` (when the hub read the export), `summary`, `family` and `attention` as the page shows them |

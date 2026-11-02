@@ -569,7 +569,7 @@ owner has its page turned off rather than appearing under the new one unasked.
 
 **Rejected:** a list of the organisation's members with public profiles: §16.9 says who belongs to it is not public.
 
-## A card has its own page at its dashboard address, with its text and without its notes
+## A card has its own page at its dashboard address, with its text
 
 **Id:** e3bcdf82-e7f1-447d-becd-43171c8cd513
 **Type:** decision
@@ -577,14 +577,15 @@ owner has its page turned off rather than appearing under the new one unasked.
 **Evidence:** confirmed
 **Source:** the maintainer's answer to req-0qvbrqwddkc6 of 2026-11-02 (a card's text public, as an issue on a forge); the plan the lead approved on tsk-1g5f436h6ez1
 **See:** public-pages.md#a-visitor-gets-the-stored-page-inside-the-app-shell-and-aspublic-the-bare-page — 70c80e4f-bf45-430d-beb2-7abbab2c8e4c — as of 2026-11-02
-**Revisit when:** the maintainer decides on notes, or card writes grow slow enough that a render per write shows
+**Revisit when:** card writes grow slow enough that a render per write shows
 
 A card of a project with a public page is a third kind of page, `card`, at `/{owner}/{slug}/tasks/{id}`, the address
 a member opens, and the Board links each id to it. It carries the title, status, label, the holder as the Board
 names them, and the body as Markdown without raw HTML (`ugc`, as the project's About). A `security` card has a page
 only once it is `done`, a held card none; the moderation paths and every card event call `touch` for it, as they do
-for the Board, so the page follows the card in the same transaction. Notes, history, requests and links stay out:
-whether notes are public is the maintainer's open question, and leaving them out is the side that can be widened.
+for the Board, so the page follows the card in the same transaction. History, requests and links stay out. The notes
+were left out at first, as the side that could be widened while the maintainer had not decided; they followed the
+same day (see the next entry).
 Every card of the project has a page, also a closed one older than the Board's 30 days or beyond its limit: an
 issue stays at its address after it is closed, and a link from a mail or a commit must not break when the card
 leaves the Board.
@@ -595,3 +596,25 @@ leaves the Board.
 - Pages only for the cards the Board lists: a card would lose its address 30 days after it closed.
 - A separate public address such as `/{owner}/{slug}/cards/{id}`: two addresses for one card, against the rule
   that a public page has the address a member opens (§16.11).
+
+## A card's notes are public on its page, as comments under an issue
+
+**Id:** 9e1bb9f3-01aa-4629-82ff-74d340febbd7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-02 on tsk-1g5f436h6ez1 (notes in open projects are public; memory stays private and holds what is sensitive); the plan the lead put on tsk-3w6mf8v40jeh
+**See:** public-pages.md#a-card-has-its-own-page-at-its-dashboard-address-with-its-text — e3bcdf82-e7f1-447d-becd-43171c8cd513 — as of 2026-11-02
+**Revisit when:** a card's notes grow long enough that its page needs paging
+
+The card's page lists its notes oldest first, each with its author named as the Board names a holder, its date, its
+state once resolved, and its body as Markdown without raw HTML. A redacted note keeps its place and shows as removed;
+neither its text nor the redaction's reason is published, since a reason may repeat what was removed. A note's own
+events (`note_added`, `note_resolved`) and its redaction call `touch` for the card, and an author's profile change
+reaches the page through the person's dependents, as a holder's does. Notes have no moderation target of their own:
+they follow the card's hold and the `security` rule with it.
+
+**Rejected:**
+- Only open notes: an incorporated or dismissed note is part of the discussion an issue keeps, and the page would
+  change meaning when a note is resolved.
+- Showing a redacted note's reason: it is written for the members and may name what was removed.
