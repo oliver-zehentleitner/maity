@@ -16326,8 +16326,8 @@ device; the browser's own permission is per browser and is not stored.
   password. For a human without a password the guard is an age gate
   plus good standing: only a session in good standing and at least 24
   hours old approves the change, so a session obtained a moment ago
-  cannot, and one that waits a day still cannot while its own sign-in
-  alert is unread (#169 §2.6.5); nor can it reject or replace a change
+  cannot, and one that waits a day still cannot while its sign-in is
+  not confirmed, read or not (#169 §2.6.5); nor can it reject or replace a change
   the human filed. `address_status`:
   `none`, `pending` (an address, never verified), `verified`,
   `disabled` (§18.7). Setting the address again, also the same one,
