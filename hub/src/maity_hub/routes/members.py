@@ -25,6 +25,7 @@ from maity_hub import (
     foreign_agent,
     group_chats,
     idempotency,
+    instance_counts,
     instances,
     isolation,
     line,
@@ -292,6 +293,10 @@ def list_members(slug: str, request: Request, caller: AnyCaller) -> JSONResponse
             details=lambda r: admin or r.agent_id in owned,
             links=person_links.Reader(mine.row.human_id if mine.kind == "human" else None),
         )
+        by_id = {r.id: v for r, v in zip(rows, views, strict=True)}
+        counted = instance_counts.manages(rows, by_id, by_id)
+        for member_id, view in by_id.items():
+            view["manages"] = counted[member_id]
         views.sort(key=lambda v: (v["kind"] != "human", v["handle"]))
         return JSONResponse({"items": views, "next_cursor": None})
 
@@ -326,15 +331,15 @@ def get_member(slug: str, member_id: str, request: Request, caller: AnyCaller) -
         own = row.id == mine.id
         admin = mine.may("members:admin")
         details = admin or row.agent_id in _owned_agents(conn, mine)
-        return JSONResponse(
-            member_view(
-                conn,
-                row,
-                briefing=own or admin,
-                details=details,
-                links=person_links.Reader(mine.row.human_id if mine.kind == "human" else None),
-            )
+        view = member_view(
+            conn,
+            row,
+            briefing=own or admin,
+            details=details,
+            links=person_links.Reader(mine.row.human_id if mine.kind == "human" else None),
         )
+        view["manages"] = instance_counts.for_member(conn, row)
+        return JSONResponse(view)
 
 
 def _owned_agents(conn: Connection, mine: Any) -> set[str]:

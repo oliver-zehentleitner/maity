@@ -1,0 +1,21 @@
+{
+  "about": "The requests whose answers the fixtures must shape like the hub's (tools/check.py, hub/tests/test_web_shapes.py). {placeholders} are filled by each side with its own ids.",
+  "fixture_ids": {"project": "maintainer/maity", "agent": "agt-a", "group": "cnv-0007", "task": "tsk-0001", "runner": "rnr-0002"},
+  "maps": [".settings.ticker.contract_implementers"],
+  "requests": [
+    {"method": "GET", "path": "/auth/session"},
+    {"method": "GET", "path": "/me"},
+    {"method": "GET", "path": "/projects/{project}"},
+    {"method": "GET", "path": "/projects/{project}/members"},
+    {"method": "GET", "path": "/projects/{project}/conversations?observed=true"},
+    {"method": "GET", "path": "/me/conversations?observed=true"},
+    {"method": "GET", "path": "/projects/{project}/conversations/{group}"},
+    {"method": "GET", "path": "/projects/{project}/conversations/{group}/messages?before=9007199254740991&limit=50"},
+    {"method": "GET", "path": "/projects/{project}/conversations/{agent}/messages?before=9007199254740991&limit=50"},
+    {"method": "GET", "path": "/projects/{project}/tasks"},
+    {"method": "GET", "path": "/projects/{project}/tasks/{task}"},
+    {"method": "GET", "path": "/runners"},
+    {"method": "GET", "path": "/runners/{runner}"},
+    {"method": "DELETE", "path": "/runners/{runner}"}
+  ]
+}

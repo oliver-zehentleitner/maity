@@ -909,6 +909,115 @@ def check_whitespace():
                     finding(path, lineno, "tab")
 
 
+# ---- the fixtures' shapes against the hub's ------------------------------------
+
+# What the fixture hub answers must have the shape of what the hub answers (context/
+# fixtures.md): hub/tests/test_web_shapes.py records the hub's shapes for the requests of
+# tools/shape-requests.json, tools/fixture_answers.js gives the fixture hub's answers, and
+# a difference not in the baseline is a finding. The baseline only shrinks.
+SHAPES = os.path.join(ROOT, "tools", "hub-shapes.json")
+SHAPES_BASELINE = os.path.join(ROOT, "tools", "fixture-shapes-baseline.json")
+
+
+def shape_of(value, maps=frozenset(), at=""):
+    """As shape() in hub/tests/test_web_shapes.py, which writes the other side."""
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, (int, float)):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    if value is None:
+        return "null"
+    merged = None
+    if isinstance(value, list):
+        for item in value:
+            merged = merge_shapes(merged, shape_of(item, maps, at + "[]"))
+        return {"array": merged}
+    if at in maps:
+        for item in value.values():
+            merged = merge_shapes(merged, shape_of(item, maps, at + "{}"))
+        return {"map": merged}
+    return {"object": {k: shape_of(v, maps, "%s.%s" % (at, k)) for k, v in sorted(value.items())}}
+
+
+def merge_shapes(a, b):
+    if a is None or (a == "null" and b is not None):
+        return b
+    if b is None or b == "null" or a == b:
+        return a
+    if isinstance(a, dict) and isinstance(b, dict) and a.keys() == b.keys():
+        (kind,) = a.keys()
+        if kind == "object":
+            keys = a["object"].keys() | b["object"].keys()
+            return {"object": {k: merge_shapes(a["object"].get(k), b["object"].get(k)) for k in sorted(keys)}}
+        if kind != "any":
+            return {kind: merge_shapes(a[kind], b[kind])}
+    return {"any": sorted({json.dumps(a, sort_keys=True), json.dumps(b, sort_keys=True)})}
+
+
+def shape_differences(fixture, hub, at=""):
+    """What the fixture's form says that the hub's does not: a key the hub never sends, a
+    key the hub sends that the fixture leaves out, another type. A null or an empty list
+    on either side says nothing about the type."""
+    if fixture in (None, "null") or hub in (None, "null"):
+        return []
+    if any(isinstance(x, dict) and "any" in x for x in (fixture, hub)):
+        return []
+    kind = lambda x: x if isinstance(x, str) else next(iter(x))  # noqa: E731
+    if kind(fixture) != kind(hub):
+        return ["%s: %s where the hub sends %s" % (at or "the answer", kind(fixture), kind(hub))]
+    if kind(fixture) in ("array", "map"):
+        return shape_differences(fixture[kind(fixture)], hub[kind(hub)], at + ("[]" if kind(fixture) == "array" else "{}"))
+    if kind(fixture) != "object":
+        return []
+    out = []
+    for k, v in fixture["object"].items():
+        if k not in hub["object"]:
+            out.append("%s.%s: the hub sends no such key" % (at, k))
+        else:
+            out.extend(shape_differences(v, hub["object"][k], "%s.%s" % (at, k)))
+    out.extend("%s.%s: the fixture leaves it out" % (at, k) for k in hub["object"] if k not in fixture["object"])
+    return out
+
+
+def check_fixture_shapes(node, write, notes):
+    if not node:
+        notes.append("node not on PATH: the fixtures' shapes are not compared with the hub's")
+        return
+    hub = json.loads(read(SHAPES))
+    maps = frozenset(json.loads(read(os.path.join(ROOT, "tools", "shape-requests.json")))["maps"])
+    r = subprocess.run([node, os.path.join(ROOT, "tools", "fixture_answers.js")], capture_output=True, text=True)
+    if r.returncode != 0:
+        finding(os.path.join(ROOT, "tools", "fixture_answers.js"), 1, "failed: " + " | ".join(r.stderr.strip().splitlines()[:4]))
+        return
+    baseline = json.loads(read(SHAPES_BASELINE)) if os.path.exists(SHAPES_BASELINE) else {}
+    kept = {}
+    for answer in json.loads(r.stdout):
+        key = "%s %s" % (answer["method"], answer["path"])
+        if key not in hub:
+            finding(SHAPES, 1, "no recorded shape for %s: run `make shapes`" % key)
+            continue
+        if "error" in answer:
+            finding(SHAPES_BASELINE, 1, "the fixture hub refuses %s: %s" % (key, answer["error"]))
+            continue
+        known = set(baseline.get(key, []))
+        now = shape_differences(shape_of(answer["answer"], maps), hub[key])
+        for d in now:
+            if d not in known:
+                finding(SHAPES_BASELINE, 1, "fixture answer to %s: %s" % (key, d))
+        gone = sorted(known - set(now))
+        if gone and not write:
+            notes.append("%s: %d baseline entr%s no longer differ; `python3 tools/check.py --write` drops them"
+                         % (key, len(gone), "y" if len(gone) == 1 else "ies"))
+        still = sorted(known & set(now))
+        if still:
+            kept[key] = still
+    if write:
+        with open(SHAPES_BASELINE, "w") as f:
+            f.write(json.dumps(kept, indent=1, sort_keys=True) + "\n")
+
+
 def main(argv):
     if "--missing" in argv:
         at = argv.index("--missing") + 1
@@ -928,6 +1037,7 @@ def main(argv):
     node = shutil.which("node")
     check_js(node)
     check_landing_js(node)
+    check_fixture_shapes(node, write, notes)
     check_css()
     check_whitespace()
     for f in findings:

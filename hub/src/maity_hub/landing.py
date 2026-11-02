@@ -52,7 +52,16 @@ CAMPAIGNS_MAX = 200
 VARIANT_SLUG = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?")  # 1–40, no `-` at either end
 CAMPAIGN_CODE = re.compile(r"[a-z0-9-]{1,40}")
 DEFAULT_VARIANT = "default"  # the main page's name in the counts, never a slug
-STATS = ("people", "agents", "public_projects", "cards_done_week", "people_online", "agents_online")
+STATS = (
+    "people",
+    "agents",
+    "public_projects",
+    "cards_done_week",
+    "people_online",
+    "agents_online",
+    "instances",
+    "instances_online",
+)
 DEMO_KINDS = ("cmd", "out", "note")  # the lines of the demo's terminal (§16.7)
 HANDLE = re.compile(r"[a-z0-9][a-z0-9-]{1,62}")
 FULL_NAME = re.compile(r"[a-z0-9][a-z0-9-]{1,30}/[a-z0-9][a-z0-9-]{1,62}")

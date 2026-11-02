@@ -219,7 +219,8 @@ def _statistics_html(stats: dict[str, Any]) -> str:
 def pages_of_member(conn: Connection, human_id: str) -> list[tuple[str, str]]:
     """The public project pages that show the person: a member, or the owner of an agent that
     is one (a person's profile turning private or public changes them, §16.9), and the card
-    pages whose holder is one of those memberships, which name the holder as the Board does."""
+    pages whose holder or a note's author is one of those memberships, which name them as the
+    Board names a holder."""
     from maity_hub import public_cards
 
     m = t.membership.c
@@ -235,13 +236,20 @@ def pages_of_member(conn: Connection, human_id: str) -> list[tuple[str, str]]:
         .distinct()
         .order_by(t.project.c.id)
     ).scalars()
-    cards = conn.execute(
+    held = (
         select(t.card.c.id)
         .join(t.membership, m.id == t.card.c.claim_holder)
         .join(t.project, t.project.c.id == t.card.c.project_id)
         .where(t.project.c.public_page == "on", *theirs)
-        .order_by(t.card.c.id)
-    ).scalars()
+    )
+    noted = (
+        select(t.card_note.c.card_id)
+        .join(t.membership, m.id == t.card_note.c.author)
+        .join(t.card, t.card.c.id == t.card_note.c.card_id)
+        .join(t.project, t.project.c.id == t.card.c.project_id)
+        .where(t.project.c.public_page == "on", *theirs)
+    )
+    cards = sorted(set(conn.execute(held).scalars()) | set(conn.execute(noted).scalars()))
     return [(kind, project_id) for project_id in ids for kind in (KIND, VIEWS)] + [
         (public_cards.KIND, card) for card in cards
     ]

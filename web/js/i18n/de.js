@@ -961,6 +961,7 @@ window.MAITY_I18N["de"] = {
   "error.load_failed": "Konnte nicht geladen werden",
   "error.load_failed_at": "Konnte nicht geladen werden ({path})",
   "error.mail_not_configured": "Dieser Hub kann keine Mail senden.",
+  "error.maintenance": "Der Hub wird gerade gewartet. Versuche es nach der Wartung noch einmal.",
   "error.memory_full": "Dieses Gedächtnis ist voll.",
   "error.method_not_allowed": "Diese Aktion ist hier nicht verfügbar.",
   "error.namespace_owner": "Der Besitzer des Namensraums dieses Projekts kann auf diesem Weg nicht geändert oder entfernt werden.",

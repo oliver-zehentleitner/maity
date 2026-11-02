@@ -43,7 +43,7 @@ def test_a_card_has_a_page_with_its_text_at_the_dashboard_address(world: World) 
     got = data(world, card_id)
     assert got.status_code == 200, got.text
     assert got.json()["kind"] == "card"
-    assert set(got.json()["data"]) == {"id", "title", "status", "label", "holder", "body"}
+    assert set(got.json()["data"]) == {"id", "title", "status", "label", "holder", "body", "notes"}
     assert got.json()["data"]["body"] == "## Steps\n\n- one\n- two"
     sitemap = world.anyone.get("/sitemap.xml").text
     assert f"https://hub.example{BASE}/tasks/{card_id}" in sitemap
@@ -65,15 +65,54 @@ def test_the_board_links_each_card_to_its_page(world: World) -> None:
     assert f'href="{BASE}/tasks/{card_id}"' in board
 
 
-def test_a_note_never_reaches_the_page(world: World) -> None:
-    card_id = world.owner.post(TASKS, {"title": "With a note", "body": "public words"}).json()["id"]
-    noted = world.owner.post(f"{TASKS}/{card_id}/notes", {"body": "canary-note-words"})
-    assert noted.status_code == 201, noted.text
-    edited = world.owner.patch(f"{TASKS}/{card_id}", {"body": "public words, edited"})
-    assert edited.status_code == 200, edited.text
+def test_the_notes_are_on_the_page_with_their_authors_named_as_the_holder(world: World) -> None:
+    card_id = world.owner.post(TASKS, {"title": "With notes", "body": "public words"}).json()["id"]
+    first = world.owner.post(f"{TASKS}/{card_id}/notes", {"body": "A *finding* <script>x</script>"})
+    assert first.status_code == 201, first.text
+    second = world.anna.post(f"{TASKS}/{card_id}/notes", {"body": "anna-note-words"})
+    assert second.status_code == 201, second.text
     text = page(world, card_id) or ""
-    assert "public words, edited" in text and "canary-note-words" not in text
-    assert "canary-note-words" not in data(world, card_id).text
+    assert "<h2>Notes</h2>" in text and "<em>finding</em>" in text
+    assert "<script>x" not in text and "anna-note-words" in text
+    assert "Human anna (anna)" not in text and "a member" in text
+    notes = data(world, card_id).json()["data"]["notes"]
+    assert [n["body"] for n in notes] == ["A *finding* <script>x</script>", "anna-note-words"]
+    assert set(notes[0]) == {"id", "author", "body", "state", "created_at", "redacted"}
+    assert notes[1]["author"] == "member" and notes[1]["state"] == "open"
+    resolved = world.owner.post(
+        f"{TASKS}/{card_id}/notes/{second.json()['id']}/resolve", {"state": "dismissed"}
+    )
+    assert resolved.status_code == 200, resolved.text
+    assert data(world, card_id).json()["data"]["notes"][1]["state"] == "dismissed"
+    assert "dismissed" in (page(world, card_id) or "")
+
+
+def test_a_note_author_follows_their_profile(world: World) -> None:
+    card_id = world.owner.post(TASKS, {"title": "Noted by anna"}).json()["id"]
+    world.anna.post(f"{TASKS}/{card_id}/notes", {"body": "from anna"})
+    world.anna.patch("/me", {"public_profile": True})
+    assert data(world, card_id).json()["data"]["notes"][0]["author"]["handle"] == "anna"
+    assert "Human anna (anna)" in (page(world, card_id) or "")
+    world.anna.patch("/me", {"public_profile": False})
+    assert data(world, card_id).json()["data"]["notes"][0]["author"] == "member"
+    assert "(anna)" not in (page(world, card_id) or "")
+
+
+def test_a_redacted_note_shows_as_removed_without_its_text_or_reason(world: World) -> None:
+    card_id = world.owner.post(TASKS, {"title": "Leaky"}).json()["id"]
+    note = world.owner.post(f"{TASKS}/{card_id}/notes", {"body": "canary-secret-words"}).json()
+    assert "canary-secret-words" in (page(world, card_id) or "")
+    redacted = world.owner.post(
+        f"{TASKS}/{card_id}/notes/{note['id']}/redact", {"reason": "canary-reason-words"}
+    )
+    assert redacted.status_code == 200, redacted.text
+    text = page(world, card_id) or ""
+    assert "canary-secret-words" not in text and "canary-reason-words" not in text
+    assert "Removed." in text
+    got = data(world, card_id)
+    assert "canary-secret-words" not in got.text and "canary-reason-words" not in got.text
+    assert got.json()["data"]["notes"][0]["redacted"] is True
+    assert got.json()["data"]["notes"][0]["body"] is None
 
 
 def test_a_security_card_has_a_page_only_once_it_is_done(world: World) -> None:
