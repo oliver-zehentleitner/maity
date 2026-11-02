@@ -331,6 +331,10 @@ def move(conn: Connection, project: Any, owner_id: str, slug: str) -> None:
         .where(t.project.c.id == project.id)
         .values(**owner_values(owner_id), slug=slug)
     )
+    if project.owner_org_id is not None:  # its page no longer lists the project under this name
+        from maity_hub import public_pages
+
+        public_pages.touch(conn, "organisation", project.owner_org_id)
 
 
 def namespace_owner_of(conn: Connection, human_id: str, project_ids: Iterable[str]) -> None:

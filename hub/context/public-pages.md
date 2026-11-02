@@ -489,6 +489,10 @@ renderer puts it there.
 - A second renderer querying per request: the same output at the cost of a query for every anonymous call.
 - Parsing the stored HTML in the browser: a page's markup would become an interface.
 
+`refresh` compares `view` and `data` as well as `inputs`, since a change may reach `data` without touching the
+HTML. Such a change keeps the row's `lastmod`, because the sitemap's date says what a crawler can read. Rejected:
+`data` in the digest, which would move that date.
+
 ## A visitor on the way to a public page never ends at the login
 
 **Id:** 439a36e9-c05c-4c87-a3d3-1cd2ff5061d7
