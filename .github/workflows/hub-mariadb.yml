@@ -22,7 +22,7 @@ on:
         required: false
         type: string
       trigger:
-        description: "hand (the default) or ci; ci is for the call from ci.yml: the head of main, counted as an automatic run"
+        description: "hand (the default) or ci; ci is for the call from ci.yml and counts only on main (the head of main, an automatic run); on another ref it is a hand start"
         required: false
         default: hand
         type: choice
@@ -30,7 +30,7 @@ on:
 
 # What the run list shows, and what decide reads to tell a start from ci (automatic) from a hand start: both are a
 # workflow_dispatch event, the title is the only difference the run list carries.
-run-name: hub-mariadb ${{ github.event_name == 'workflow_dispatch' && (inputs.trigger == 'ci' && 'ci' || 'hand') || github.event_name }}
+run-name: hub-mariadb ${{ github.event_name == 'workflow_dispatch' && ((inputs.trigger == 'ci' && github.ref == 'refs/heads/main') && 'ci' || 'hand') || github.event_name }}
 
 permissions:
   contents: read
@@ -41,7 +41,7 @@ permissions:
 # by a newer one, so a hand start for a deploy candidate has its own group: the next automatic run would otherwise
 # displace it while it waits behind a running one.
 concurrency:
-  group: hub-mariadb-${{ github.event_name == 'workflow_dispatch' && inputs.trigger != 'ci' && 'hand' || 'automatic' }}
+  group: hub-mariadb-${{ github.event_name == 'workflow_dispatch' && !(inputs.trigger == 'ci' && github.ref == 'refs/heads/main') && 'hand' || 'automatic' }}
   cancel-in-progress: false
 
 defaults:
@@ -72,14 +72,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ (inputs.trigger != 'ci' && inputs.sha) || github.sha }}
+          ref: ${{ (!(inputs.trigger == 'ci' && github.ref == 'refs/heads/main') && inputs.sha) || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - id: d
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          HAND: ${{ github.event_name == 'workflow_dispatch' && inputs.trigger != 'ci' }}
+          HAND: ${{ github.event_name == 'workflow_dispatch' && !(inputs.trigger == 'ci' && github.ref == 'refs/heads/main') }}
         run: |
           sha="$(git rev-parse HEAD)"
           base="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow hub-mariadb.yml --branch main --status success --json headSha,event,displayTitle --jq '[.[]|select(.event!="workflow_dispatch" or .displayTitle=="hub-mariadb ci")][0].headSha // ""')"
@@ -168,7 +168,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RESULT: ${{ needs.hub-mariadb.result }}
-          HAND: ${{ github.event_name == 'workflow_dispatch' && inputs.trigger != 'ci' }}
+          HAND: ${{ github.event_name == 'workflow_dispatch' && !(inputs.trigger == 'ci' && github.ref == 'refs/heads/main') }}
           SHA: ${{ needs.decide.outputs.sha }}
           BASE: ${{ needs.decide.outputs.base }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

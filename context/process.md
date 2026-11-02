@@ -1005,14 +1005,14 @@ for the newest run to finish.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's decision, 2026-10-31 (left to the coordinator), on card tsk-p7dfb6e9p5wz, after the database jobs had grown to 60 to 90 minutes a run
-**Revisit when:** MariaDB breaks on main often enough that the hourly clock finds it too late, or the suite gets fast enough to be a gate again
+**Revisit when:** MariaDB breaks on main often enough that the checks after each push and the hourly clock find it too late, or the suite gets fast enough to be a gate again
 
 The hub's test suite against MariaDB left `ci.yml` and `ci-ok`. `.github/workflows/hub-mariadb.yml` runs it on main after
 every finished `ci` run and at the latest once an hour, and only when files under `hub/` (or the join page doc, or the workflow itself) changed since the
 last green automatic run; a quiet hour is skipped. `hub-postgresql` (what production runs) and `hub-sqlite` stay per
 pull request and in `ci-ok`.
 
-**The clock is not enough (2026-11-01):** (Source: the coordinator's finding, 2026-11-01, that scheduled runs were skipped, visible in the run history of the workflow; the choice of `workflow_run` is the author's proposal in the pull request that added it, evidence inferred, not a maintainer decision.) GitHub starts scheduled workflows on a best-effort basis; in the first nine hours
+**The clock is not enough (2026-11-01):** (Source: the coordinator's finding, 2026-11-01, that scheduled runs were skipped, visible in the run history of the workflow; the start from the last job of `ci.yml` was decided by the coordinator on 2026-11-02 in the review of the pull request that added it, after the first version with `workflow_run` was found to break the runner rule.) GitHub starts scheduled workflows on a best-effort basis; in the first nine hours
 after the merge only one scheduled run happened (and not at the minute asked for). Every push to main therefore also
 starts the workflow, from the last job of `ci.yml` (`gh workflow run` with `trigger=ci`, a `workflow_dispatch` with the workflow's own token), with the same checks: one running, one waiting, skipped when nothing relevant changed. The
 clock stays as the fallback for quiet days. "Automatic run" below means the clock or a start from `ci`; a hand start is not one. Both a start from `ci` and a hand start are a `workflow_dispatch`, so the run title (`hub-mariadb ci` or `hub-mariadb hand`) tells them apart where the run list is read.
