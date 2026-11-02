@@ -291,7 +291,6 @@ def _answer_readers(conn: Connection, round_row: Any, row: Any) -> list[str]:
             )
         ).scalars()
     )
-
     tokens = [f"member:{round_row.moderator['member_id']}", *(f"member:{h}" for h in humans)]
     if not row.anonymous and row.author is not None:
         author = conn.execute(select(t.membership).where(t.membership.c.id == row.author)).one()
