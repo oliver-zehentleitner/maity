@@ -3137,6 +3137,13 @@ window.Maity = window.Maity || {};
       fixtures()["landing.json"] = JSON.parse(JSON.stringify(v));
       return v;
     }],
+    ["GET", /^\/auth\/pages\/([^/?]+)/, (m, body, path) => {
+      const langs = fixtureAuthPages.pages[m[1]];
+      if (!langs) fail(404, "not_found", "no such page", path);
+      const asked = new URLSearchParams(path.split("?")[1] || "").get("lang");
+      const language = asked && langs[asked] ? asked : fixtureAuthPages.default_language;
+      return { language, texts: langs[language] || {} };
+    }],
     ["GET", /^\/admin\/settings\/auth-pages$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
       return fixtureAuthPages;
@@ -4666,7 +4673,7 @@ window.Maity = window.Maity || {};
   // visitor by design; every other /auth/* call is the session's own.
   // The path carries its query (the device-login wait, ?wait=0): a public
   // route ends at the path, whatever query follows.
-  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code)|legal|openapi\.json|invitations\/[^/?]+)(\?|$)/;
+  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code)|auth\/pages\/[^/?]+|legal|openapi\.json|invitations\/[^/?]+)(\?|$)/;
 
   // Every page of a list, following next_cursor (docs/api.md §1.4).
   async function getAll(path) {
