@@ -948,7 +948,14 @@ enum value is not, so a raw state still counts. A fixture's text also counts in 
 code span or a mention, raw with their stops, so `Keep it;` is data and the button `Keep it` is not. Dates, commits,
 handles with instances, device codes, mail addresses, domains and media types are no words.
 
+Two fixture names are also catalog texts, `Reviewer` (`role.reviewer`) and `OZ Team` (`orgs.new.name_placeholder`).
+Taking the catalog out would drop them from the data, and every page showing those agents would be reported, so
+`FIXTURE_NAMES` in `tools/pseudo_run.py` puts them back (a workaround). The price: a view that writes `Reviewer` itself
+instead of `role.reviewer` is not reported on any page.
+
 **Rejected alternatives:**
+- Renaming the two fixtures so that no name is a catalog word: `tools/smoke.js` matches `Reviewer` exactly some thirty
+  times (member rows, conversation order, notices), a change out of proportion to one exception.
 - An allowlist of the texts the run should accept: it would grow with every fixture and hide a real finding in it.
 - Any two words inside a fixture's prose as data: 18 catalog texts such as `in progress` and `not valid` occur in some
   fixture sentence and would never be reported.

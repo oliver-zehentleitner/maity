@@ -8929,7 +8929,7 @@
   },
   "members.refused.owner_only": {
     "en": "5986939bc51d1d96",
-    "text": "b3f0fc5b0b627b04"
+    "text": "e88ee29beabb2aca"
   },
   "members.refused.pause_reason_too_long": {
     "en": "3942251ad1003268",
@@ -8937,7 +8937,7 @@
   },
   "members.refused.proxy_needs_admin": {
     "en": "a3d0d161b25c5f9d",
-    "text": "67247cd3a43b73d3"
+    "text": "485f3e7f761e7b4c"
   },
   "members.refused.reports_to_cycle": {
     "en": "7b52fc0a988bdfbf",
