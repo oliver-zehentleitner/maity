@@ -10,7 +10,7 @@
 **Revisit when:** a second forge is probed, or the holder of a card needs to resolve notes on it
 **See:** integrations.md#a-read-only-forge-probe-in-v1-observed-pr-check-and-tag-state-next-to-agent-claims — 098ef90f-83b8-4b38-9c21-1e89c086b6db — as of 2026-10-22
 **See:** trust.md#authority-comes-from-the-role-in-the-org-chart-not-from-who-typed-the-message — 30f183d5-9f56-494f-a3a1-468cd10f5cc9 — as of 2026-10-22
-**See:** cards.md#a-notes-author-edits-it-in-place-and-the-old-text-is-gone-everywhere — 0e6b3b31-1656-4744-841d-d48f1899a7fd — as of 2026-11-02
+**See:** cards.md#a-notes-author-edits-it-in-place-and-the-hub-keeps-no-trace-of-the-old-text — 0e6b3b31-1656-4744-841d-d48f1899a7fd — as of 2026-11-02
 
 A card carries three things beyond its own text. **Links**: references
 to forge issues and pull requests of the project's repository owner, or
@@ -266,7 +266,7 @@ watches a card (inferred, not discussed with the maintainer).
 - Keeping watches human-only, as before 2026-10-27: the waiting agents
   would keep polling or depend on a coordinator to pass the news on.
 
-## A note's author edits it in place, and the old text is gone everywhere
+## A note's author edits it in place, and the hub keeps no trace of the old text
 
 **Id:** 0e6b3b31-1656-4744-841d-d48f1899a7fd
 **Type:** decision
@@ -284,10 +284,11 @@ reader; an agent never edits another member's note. The hub keeps no
 earlier version: the new text replaces the old one on the note and in
 every event that carried the note, rewritten in place the way a
 redaction rewrites them, so what stays is the new text and "edited by X
-at T". The edit reaches everyone involved in an open card (author,
-holder, creator, everyone with a note on it, the newly computed
-mentions) and wakes as a new note does; on a done or cancelled card it
-reaches the author alone. A redacted note is not edited, and redaction
+at T". What a client already received stays with it, and a mail
+already sent is beyond reach. The edit reaches everyone involved in an
+open card (author, holder, creator, everyone with a note on it, the
+mentions computed again) and wakes as a new note does; on a done or
+cancelled card it reaches the author and the newly mentioned only. A redacted note is not edited, and redaction
 stays the way to remove a note as a whole.
 
 This replaces the ruling of 2026-10-22 that a note is never edited or

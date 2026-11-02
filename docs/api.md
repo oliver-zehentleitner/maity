@@ -6900,12 +6900,16 @@ gone everywhere.
   the API, not in an event's payload, not in an export (§2.9),
   not on a stored public page (rendered again in the same transaction,
   §16.9). The purpose is removing what should not have been written,
-  sensitive data included. A mail already sent is beyond reach, as for
-  a redaction (§18.5).
-- **Mentions** are computed again from the new `body` (§8.6). A member
-  mentioned in the new text and not in the old one is reached by the
-  edit as by a mention; one no longer mentioned keeps nothing of the
-  old text, since no event holds it any more.
+  sensitive data included. The hub rewrites what it stores and serves:
+  an event already delivered stays with the client as it was delivered
+  (what `maity wait` printed, a dashboard's or a bridge's copy), and a
+  mail already sent is beyond reach, as for a redaction (§18.5).
+- **Mentions** are computed again from the new `body` (§8.6). On an
+  open card everyone the new text mentions is among those involved and
+  gets the edit (below); on a `done` or `cancelled` card only a member
+  mentioned in the new text and not in the old one does, as by a
+  mention. One no longer mentioned keeps nothing of the old text in the
+  hub, since no event holds it any more.
 - **Limits.** The `body` rules of a new note apply (4 KiB, credential
   check, `ambiguous_mention`), and an edit counts toward the 20 notes
   per membership in 10 minutes. A redacted note is not edited
@@ -6951,7 +6955,8 @@ gone everywhere.
   the card, and the members the new `body` mentions (`member:<id>`,
   `instance:<member>#<id>` for an instance mention); it wakes as
   `note_added` does (§8.2). On a `done` or `cancelled` card it goes to
-  the note's author alone, and wakes nobody. Where a card's page shows
+  the note's author and to the members the new `body` mentions who were
+  not mentioned in the old one, and wakes the same way. Where a card's page shows
   its notes (§16.9), the edit renders the page again in the same
   transaction, with the edit mark and the reason.
 - A note is information, not an instruction. What a card asks for is
@@ -9190,7 +9195,7 @@ learns its content.
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (`instance:<member>#<id>` for an instance mention) (§8.6; a note's mentions travel in `note_added` and `note_edited`) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
 | `task_created`, `task_updated` | creator, assignee, area owner, holder, `contract.watchers`, and the human owner of an agent that holds the card or is its assignee; a `task_updated` whose `fields` include `status` also `watchers:<task id>` (§6.4); a `task_updated` from a removal that reset the card's arbiter also `member:<id>` of every human owner and admin (§6.2) | `fields` (the names of the changed fields), their new values except `body`, `history` (the entry ids, §6.15), `project_state`, `reason?`, `signature?` (`{slot, revision}`, only with a newly set signature, on a report too) |
 | `note_added` | the card's holder and creator, `member:<id>` of every member the note's `body` mentions, `instance:<member>#<id>` for an instance mention (§8.6) | the note (§6.16), `task: {id, title, status}` |
-| `note_edited` | while the card is not `done` or `cancelled`: the note's author, the card's holder and creator, `member:<id>` of every member with a note on the card and of every member the new `body` mentions, `instance:<member>#<id>` for an instance mention (§8.6); on a `done` or `cancelled` card the note's author alone, never waking | the note as it is now, with `edited` (§6.16), `task: {id, title, status}`; never the earlier text, and rewritten with the note by a later edit or a redaction |
+| `note_edited` | while the card is not `done` or `cancelled`: the note's author, the card's holder and creator, `member:<id>` of every member with a note on the card and of every member the new `body` mentions, `instance:<member>#<id>` for an instance mention (§8.6); on a `done` or `cancelled` card the note's author and the members newly mentioned (not in the old `body`) | the note as it is now, with `edited` (§6.16), `task: {id, title, status}`; never the earlier text, and rewritten with the note by a later edit or a redaction |
 | `note_resolved` | the note's author, the card's holder and creator | `note_id`, `task_id`, `state`, `resolution` |
 | `link_observed` | **all**, plus the card's holder when the observed `state` changed | `task_id`, `link_id`, `forge_url`, `old`, `new` (`{found, title, state}`), `public` (whether the same read reported the repository public, §11.4; `false` when it did not say), `read_via` (the source that read it, §11.4: `instance`, `app`, `owner_token`, or `null`) |
 | `task_claimed`, `task_released`, `task_assigned` | creator, holder (old and new), assignee (old and new), and the human owner of an agent among holder (old and new) and assignee — never a human's watch | `holder`, `instance`, `lease_until`, `project_state`, `reason?`; `takeover_id` and `from` when a takeover moved it, `replaces` when a replacing instance inherited it |
