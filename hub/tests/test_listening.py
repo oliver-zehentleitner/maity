@@ -153,3 +153,72 @@ def test_a_failing_heartbeat_waits_its_interval_instead_of_spinning(
     writer.join(timeout=5)
     assert not writer.is_alive()
     assert 2 <= len(beats) <= 7  # one per interval, not thousands
+
+
+# --- a writer that never ran or is gone (tsk-xz3bxa5cwv4v) ----------------------------------
+
+
+class _PgLike:
+    """Enough of an engine for `start` to take the PostgreSQL path; writes are stubbed."""
+
+    class dialect:  # noqa: N801
+        name = "postgresql"
+
+    def begin(self) -> None:
+        raise RuntimeError("no database here")
+
+
+def _broken(engine: object) -> None:
+    raise RuntimeError("the database went away")
+
+
+def test_a_start_whose_heartbeat_fails_leaves_no_registry_behind(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Way C: the first heartbeat fails; nothing stays started, so nothing waits for a writer."""
+    monkeypatch.setattr(listening, "_heartbeat", _broken)
+    with pytest.raises(RuntimeError):
+        listening.start(_PgLike())  # type: ignore[arg-type]
+    assert listening._engine[0] is None and listening._starts[0] == 0
+    listening.stop(every=True)
+    assert listening._writes.empty() and listening._writes.unfinished_tasks == 0
+
+
+def test_the_next_writer_runs_after_a_failed_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Way D: a stop while no writer ran (a failed start, a writer that died) left the
+    sentinel, which ended the next writer at once; `reset` then waited for ever. The next
+    writer now runs and handles the queue."""
+    listening._engine[0] = _PgLike()  # type: ignore[call-overload]
+    listening._thread[0] = None
+    listening.stop(every=True)
+    assert listening._writes.empty()
+    handled: list[str] = []
+    monkeypatch.setattr(listening, "_heartbeat", lambda engine: None)
+    monkeypatch.setattr(
+        listening, "_apply", lambda engine, kind, wait_id, key: handled.append(kind)
+    )
+    listening.start(_PgLike())  # type: ignore[arg-type]
+    try:
+        wait = listening.opened("ses-next")
+        listening.closed("ses-next", wait)
+        listening._drained(5)
+        assert handled == ["open", "close"]
+        assert listening._thread[0] is not None and listening._thread[0].is_alive()
+    finally:
+        listening.stop(every=True)
+
+
+def test_a_wait_for_a_gone_writer_fails_instead_of_hanging(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Way E (a writer that died): the wait for the queue ends with an error, not never."""
+    monkeypatch.setattr(listening, "_engine", [_PgLike()])
+    monkeypatch.setattr(listening, "_thread", [None])
+    listening.opened("ses-gone")
+    try:
+        with pytest.raises(TimeoutError, match="1 write"):
+            listening._drained(0.2)
+    finally:
+        listening._discard_queued()
+        listening._open.clear()
+        listening._rows.clear()

@@ -18,6 +18,7 @@ import queue
 import secrets
 import socket
 import threading
+import time
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -119,10 +120,39 @@ def reset() -> None:
     engine = _engine[0]
     if engine is None:
         return
-    _writes.join()
+    _drained()
     with engine.begin() as conn:
         write_guard.exempt(conn)
         conn.execute(delete(t.long_poll).where(t.long_poll.c.pod == POD))
+
+
+DRAIN_SECONDS = 30.0  # how long `reset` waits for the writer before it fails instead of hanging
+
+
+def _drained(seconds: float | None = None) -> None:
+    """Return once the writer has handled everything queued; raise `TimeoutError` after
+    `DRAIN_SECONDS` instead of waiting for ever when no writer runs (tsk-xz3bxa5cwv4v)."""
+    deadline = time.monotonic() + (DRAIN_SECONDS if seconds is None else seconds)
+    with _writes.all_tasks_done:
+        while _writes.unfinished_tasks:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                alive = _thread[0] is not None and _thread[0].is_alive()
+                raise TimeoutError(
+                    f"the listening writer left {_writes.unfinished_tasks} write(s) undone"
+                    f" (writer alive: {alive})"
+                )
+            _writes.all_tasks_done.wait(left)
+
+
+def _discard_queued() -> None:
+    """Drop what no writer will handle, so a later wait for the queue does not hang."""
+    while True:
+        try:
+            _writes.get_nowait()
+        except queue.Empty:
+            return
+        _writes.task_done()
 
 
 # --- the writer and the heartbeat (PostgreSQL) ----------------------------------------------
@@ -139,7 +169,17 @@ def start(engine: Engine) -> None:
         if _engine[0] is not None:
             return
         _engine[0] = engine
-    _heartbeat(engine)
+    try:
+        _heartbeat(engine)
+    except BaseException:
+        # No writer will run: the registry is left as if never started, or a later
+        # `reset` would wait for writes nobody makes (tsk-xz3bxa5cwv4v).
+        with _lock:
+            _engine[0] = None
+            _starts[0] = max(0, _starts[0] - 1)
+            _rows.clear()
+        _discard_queued()
+        raise
     thread = threading.Thread(target=_write, args=(engine,), name="maity-listening", daemon=True)
     _thread[0] = thread
     thread.start()
@@ -155,9 +195,13 @@ def stop(*, every: bool = False) -> None:
     engine, thread = _engine[0], _thread[0]
     if engine is None:
         return
-    _writes.put(None)
-    if thread is not None:
+    # The sentinel only for a writer that reads it: left in the queue, it would end the
+    # next app's writer at once (tsk-xz3bxa5cwv4v).
+    if thread is not None and thread.is_alive():
+        _writes.put(None)
         thread.join(timeout=5)
+    else:
+        _discard_queued()
     _engine[0], _thread[0] = None, None
     with _lock:
         _rows.clear()
