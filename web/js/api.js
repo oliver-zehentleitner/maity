@@ -116,7 +116,7 @@ window.Maity = window.Maity || {};
   // Fixture mode keeps a project in fixtures/<slug>/; its full name is the
   // project view's, else its owner's handle as the fixtures name it.
   const FIXTURE_OWNERS = { guestlab: "guest" };
-  const FIXTURE_LANGUAGES = [["aa", "Afaraf"], ["ar", "العربية"], ["de", "Deutsch"], ["en", "English"], ["fr", "français"], ["ja", "日本語"], ["zh-Hans", "简体中文"]].map(([tag, name]) => ({ tag, name }));
+  const FIXTURE_LANGUAGES = [["aa", "Afaraf"], ["ar", "العربية"], ["de", "Deutsch"], ["en", "English"], ["fr", "français"], ["ja", "日本語"], ["zh-Hans", "简体中文"]].map(([tag, name]) => ({ tag, name, common: tag !== "aa", interface: ["de", "en", "fr", "ja", "zh-Hans"].includes(tag) }));
   const fixtureSlug = (full) => String(full).split("/").pop();
   function fullOf(slug) {
     const view = fixtures()[slug + "/project.json"];
@@ -1810,7 +1810,15 @@ window.Maity = window.Maity || {};
         if ("social" in body) mm.social = body.social === null ? {} : merged;
         if ("links_visible" in body) mm.links_visible = body.links_visible;
       }
-      const profileFields = ["public_profile", "public_bio", "website", "social", "links_visible", "handle"];
+      if ("interface_language" in body) {
+        const chosen = body.interface_language;
+        if (chosen !== null && !FIXTURE_LANGUAGES.some((l) => l.tag === chosen && l.interface)) {
+          fail(400, "invalid", "the request does not validate", path, { fields: { interface_language: "unknown_language" } });
+        }
+        mm.interface_language = chosen;
+        fixtures()["auth-session.json"].member.interface_language = chosen;
+      }
+      const profileFields = ["public_profile", "public_bio", "website", "social", "links_visible", "handle", "interface_language"];
       if (Object.keys(body).length && Object.keys(body).every((k) => profileFields.includes(k))) return meView();
       const fields = {};
       const MEAT = ["meat_proxy", "meat_proxy_lead", "meat_proxy_hands"];
@@ -4631,7 +4639,10 @@ window.Maity = window.Maity || {};
         sessionCsrf = s.csrf_token || null;
         lastSession = s;
         sessionBlocked = false;
-        return s;
+        return M.i18n.follow(s.member && s.member.interface_language).then(() => s);
+      }, (err) => {
+        if (err && err.status === 401) return M.i18n.follow(null).then(() => { throw err; });
+        throw err;
       });
     }
     // A 401 on a call that needs the session: it ended (expired, revoked,
