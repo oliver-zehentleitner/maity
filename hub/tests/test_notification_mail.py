@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, insert, select, update
 
-from maity_hub import clock
+from maity_hub import catalog, clock
 from maity_hub import tables as t
 from maity_hub.notifications import mailer
 from tests import factory, flow
@@ -87,8 +87,10 @@ def test_a_language_the_hub_has_no_words_in_gets_the_english_mail(
     make_client: ClientFactory, migrated: Engine, at: Any
 ) -> None:
     owner, agent = setup(make_client, migrated)
+    # A listed language outside the ten the portal is translated into: the hub has no words in it.
+    assert not catalog.speaks("mail", "fi")
     assert (
-        owner.patch("/me/notification-settings", {"email": {"language": "ja"}}).status_code == 200
+        owner.patch("/me/notification-settings", {"email": {"language": "fi"}}).status_code == 200
     )
     ask(agent)
     at(minutes=3)
