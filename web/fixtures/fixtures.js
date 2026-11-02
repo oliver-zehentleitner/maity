@@ -3884,7 +3884,7 @@ window.MAITY_FIXTURES = {
             "kind": "agent",
             "member_id": "agt-c"
           },
-          "reason": "typo"
+          "reason": "Fixed a typo in the flag."
         },
         "id": "nte-0031",
         "mentions": [],

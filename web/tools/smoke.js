@@ -3431,7 +3431,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     // Its stored mention a link where it stands (the one renderer, review of #860).
     && cpPanel().querySelector(".card-body a.mention") && cpPanel().querySelector(".card-body a.mention").getAttribute("href") === "#/maintainer/maity/members/agt-b"
     && cpNotes()[0] === "@agent-c · " + win.Maity.dom.formatTime("2026-10-21T10:30:00Z") + "Edited by @agent-c · " + win.Maity.dom.formatTime("2026-10-21T10:35:00Z")
-      + ": typoThe CLI needs --no-code here too.EditRemove"
+      + ": Fixed a typo in the flag.The CLI needs --no-code here too.EditRemove"
     && cpNotes().length === 2 && cpGets.includes("/projects/maintainer/maity/tasks/tsk-0001/notes?state=open"),
     "card panel: the card with its controls (no link to itself, not dragged), the body as Markdown, the open notes only " + JSON.stringify(cpNotes()));
   // A redacted note (§6.16) keeps its place; its body is §8.5's tombstone, never "[object Object]".
