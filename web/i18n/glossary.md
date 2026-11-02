@@ -15,7 +15,7 @@ raised on the card, not replaced in one place. Translations carry no note saying
   same length as English where the layout is tight.
 - **Sentence case** where the language has it. No exclamation marks English does not have.
 - **Waiting, with an ellipsis:** in the language's passive or neutral form, not "I am saving": `Wird gespeichert …`. The language's own spacing, one way throughout.
-- **Names of levels and roles** are labels: the word in the table stays even where a language has a neutral form, so the same trust level reads the same everywhere. Role words such as `coder` and `reviewer` stay English.
+- **Names of levels and roles** are labels: the word in the table stays even where a language has a neutral form, so the same trust level reads the same everywhere. Role words such as `coder` and `reviewer` stay English. This counts for the label itself; the words around it follow **No gender guess** where they can (`die empfangende Person muss Besitzer sein`).
 - **Plural forms:** those `PLURALS` in `web/tools/check.py` names for the language, each with its placeholder.
 - **No gender guess:** a person or an agent is addressed or named without assuming a gender, using the
   language's neutral form where it has one that reads naturally.
@@ -63,7 +63,8 @@ raised on the card, not replaced in one place. Translations carry no note saying
 | briefing | Briefing | briefing | briefing | briefing | briefing | briefing | ブリーフィング | 브리핑 | 简报 |
 | soul | Seele | âme | alma | anima | alma | ziel | ソウル | 소울 | 灵魂 |
 | memory | Gedächtnis | mémoire | memoria | memoria | memória | geheugen | メモリ | 메모리 | 记忆 |
-| report | Bericht | rapport | informe | rapporto | relatório | rapport | レポート | 보고서 | 报告 |
+| report (of abuse) | Meldung | signalement | denuncia | segnalazione | denúncia | melding | 通報 | 신고 | 举报 |
+| report (an agent's) | Bericht | rapport | informe | rapporto | relatório | rapport | レポート | 보고서 | 报告 |
 | jour fixe | Jour fixe | point régulier | reunión fija | riunione fissa | reunião fixa | vast overleg | 定例会 | 정기 회의 | 例会 |
 | session | Sitzung | session | sesión | sessione | sessão | sessie | セッション | 세션 | 会话 |
 | sign in | anmelden | se connecter | iniciar sesión | accedi | entrar | inloggen | サインイン | 로그인 | 登录 |
@@ -77,9 +78,10 @@ raised on the card, not replaced in one place. Translations carry no note saying
 | dashboard | Dashboard | tableau de bord | panel | dashboard | painel | dashboard | ダッシュボード | 대시보드 | 控制台 |
 | claim (a card) | Übernahme, übernehmen | prise en charge, prendre | toma, tomar | presa in carico, prendere | assunção, assumir | claim, claimen | 担当, 担当する | 담당, 담당하기 | 认领 |
 | takeover (another's card, with a right to object) | Ablösung | reprise | relevo | subentro | substituição | overname | 引き継ぎ | 인계 | 接管 |
+| release (a claim) | zurückgeben, aufheben | libérer | liberar | rilasciare | liberar | teruggeven | 解放する | 해제 | 释放 |
 | lease | Reservierung | réservation | reserva | prenotazione | reserva | reservering | 予約 | 예약 | 占用期 |
 | go (a human's approval) | Freigabe | feu vert | luz verde | via libera | sinal verde | akkoord | 承認 | 승인 | 批准 |
-| user, one | Mensch, Person | utilisateur | usuario | utente | usuário | gebruiker | ユーザー | 사용자 | 用户 |
+| user, one (`Person` in a sentence, `Mensch` as a menu word beside `Agent`) | Mensch, Person | utilisateur | usuario | utente | usuário | gebruiker | ユーザー | 사용자 | 用户 |
 | users, several | Nutzende | utilisateurs | usuarios | utenti | usuários | gebruikers | ユーザー | 사용자 | 用户 |
 | lead | Lead | responsable | responsable | responsabile | responsável | lead | リード | 리드 | 负责人 |
 | arbiter (a role, whoever holds it) | Schiedsinstanz | arbitre | árbitro | arbitro | árbitro | arbiter | 調停者 | 중재자 | 仲裁者 |

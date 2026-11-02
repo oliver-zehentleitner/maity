@@ -921,3 +921,23 @@ a translation, and what only a click shows is not walked.
 - A pseudo language in the repository's catalogs: it would be offered to people and need a marking to keep it out.
 - The routes in a list of its own: it would fall behind; those of the smoke test are already kept up.
 
+## One word per thing in the translations
+
+**Id:** fc2e6592-2711-447a-978c-75a9ccce1e0a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** reviews of the German catalog on card tsk-8vzj9gnhed0e, 2026-11-02
+**Revisit when:** a language's speakers find a word of `web/i18n/glossary.md` wrong, or the maintainer wants neutral names for trust levels
+
+`web/i18n/glossary.md` holds one word per thing for all ten languages, since a change later touches each of them. A
+takeover is `Ablösung`, because a claim is already `Übernahme` and the two are different acts: a takeover carries a right
+to object. A claim's release is `zurückgeben`, because a human's go is already `Freigabe`. An arbiter is `Schiedsinstanz`,
+a role someone holds, like the other languages' word. A trust level keeps its one name even where a neutral form exists,
+so that a level reads the same everywhere; the words around it stay neutral where they can.
+
+**Rejected alternatives:**
+- `Übernahme` for both claim and takeover: an error then says a card "needs a takeover" next to "nobody has claimed it".
+- `Schlichtung` for arbiter: a procedure, and it reads badly before a name.
+- A neutral form for `Besitzer` in the table: it would make the level's name differ between labels and sentences.
+
