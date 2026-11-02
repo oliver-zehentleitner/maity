@@ -14698,10 +14698,11 @@ every page, the public pages and the sign-in pages included:
 language. While it runs, the app shows a full page instead of the view:
 when the hub is back, and the text. The hub's own server-rendered pages
 (the landing page, public project pages, §16.7, §16.9) carry the same
-banner, and while the window runs they answer `503` with `Retry-After`
+banner, in UTC (the server does not know the reader's time zone), and
+while the window runs they answer `503` with `Retry-After`
 and a small page saying the same, a stored public page inside the app
-shell too; the legal pages (§16.7.1) stay readable then, since an
-imprint must always be reachable; the badge (§6.20) answers `503` with no
+shell too; the legal pages (§16.7.1) stay readable then, with the
+banner, since an imprint must always be reachable; the badge (§6.20) answers `503` with no
 image.
 
 **Agents: the notice.** Creating or changing a window posts
@@ -14744,7 +14745,9 @@ Not refused:
   The routes of `/admin/maintenance` need no step-up (§2.8.4 names only
   `PATCH /admin/settings/*`);
 - the app shell and its static files (§16.11), so the web can show the
-  full page.
+  full page;
+- the legal pages (§16.7.1), with the banner, since an imprint must
+  always be reachable.
 
 **What a window leaves alone.** It isolates nobody (§6.2): no claim is
 released, no chat, placement or session is touched, and the cursor of
