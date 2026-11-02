@@ -628,15 +628,18 @@ window.Maity = window.Maity || {};
   const landingHref = (t) => typeof t === "string" && ((/^\/(?!\/)[A-Za-z0-9._~%\/?=&-]*$/.test(t)) || /^https:\/\/[^\s/@]+(\/[^\s]*)?$/.test(t));
   // `manages` (§6.2) as the hub counts it (instance_counts): the members reporting to each
   // member and its whole branch, with their instances not revoked; an instance is online while
-  // its presence is online or it is dormant, and dormant is a part of online.
+  // its presence is online or, not paused, it is dormant, and dormant is a part of online. A
+  // paused, suspended (presence paused) or isolated member has no instance online.
   function fixtureManages(items) {
     const below = {};
     items.forEach((x) => { if (x.reports_to) (below[x.reports_to] = below[x.reports_to] || []).push(x); });
+    const held = (x) => x.presence === "paused" || x.paused || x.isolated;
+    const online = (i) => i.presence !== "paused" && (i.presence === "online" || !!i.dormant);
     const count = (members) => {
       const live = members.flatMap((x) => (x.instances || []).filter((i) => !i.revoked_at));
-      return { members: members.length, instances: live.length,
-        online: live.filter((i) => i.presence === "online" || i.dormant).length,
-        dormant: live.filter((i) => i.dormant).length };
+      const awake = members.filter((x) => !held(x)).flatMap((x) => (x.instances || []).filter((i) => !i.revoked_at && online(i)));
+      return { members: members.length, instances: live.length, online: awake.length,
+        dormant: awake.filter((i) => i.dormant).length };
     };
     const branch = (id) => {
       const found = [], seen = new Set([id]), queue = (below[id] || []).slice();
@@ -4723,6 +4726,8 @@ window.Maity = window.Maity || {};
     isPublicPath: (path) => PUBLIC_PATH.test(path),
     // The hub's time as best known: this clock corrected by the last answer's.
     now: () => Date.now() + skew,
+    // The fixture hub's `manages` count (§6.2), for the smoke test of its rule.
+    fixtureManages,
     source,
     ApiError,
     get: (path, opts) => request("GET", path, undefined, undefined, opts && opts.signal),

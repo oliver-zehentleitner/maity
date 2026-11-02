@@ -1915,6 +1915,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(orgAsleep.length === 2 && !orgAsleep[0].querySelector(".member-dormant") && orgAsleep[1].querySelector(".member-dormant"),
       "org: only the dormant instance says it is dormant");
     expect(t && t.querySelectorAll(".org-node").filter((n) => n.querySelector(".org-instances")).length === 1, "org: a human lists no instances");
+    // The fixture hub counts `manages` by the hub's rule: a paused instance is not online even
+    // while dormant, and a paused or isolated member has no instance online (instance_counts).
+    const fm = win.Maity.api.fixtureManages;
+    const lead = { id: "L" };
+    const under = (id, extra, instances) => Object.assign({ id, reports_to: "L", presence: "online", instances }, extra);
+    const fmDirect = fm ? fm([lead,
+      under("live", {}, [{ id: "a", presence: "online" }, { id: "b", presence: "paused", dormant: { since: "x" } }, { id: "c", presence: "offline", dormant: { since: "x" } }]),
+      under("iso", { presence: "offline", isolated: { since: "x" } }, [{ id: "d", presence: "online" }]),
+      under("pau", { presence: "paused", paused: { since: "x" } }, [{ id: "e", presence: "paused", dormant: { since: "x" } }])]).L.direct : null;
+    expect(fmDirect && JSON.stringify(fmDirect) === JSON.stringify({ members: 3, instances: 5, online: 2, dormant: 1 }),
+      "fixture manages: paused instances and held members count, none of them online " + JSON.stringify(fmDirect));
     const orgManages = t ? t.querySelectorAll(".org-manages") : [];
     expect(orgManages.length === 1 && text(orgManages[0]) === "leads 1 member · 2 instances (2 online, 1 dormant)"
       && orgManages[0].getAttribute("title") === "whole branch: leads 3 members · 4 instances (3 online, 1 dormant)",
@@ -8896,7 +8907,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!mpBox().querySelector(".member-manages"), "member page: no manages line for a member nobody reports to");
   await go("#/maintainer/maity/members/hum-maintainer"); for (let k = 0; k < 6; k++) await tick();
   const mpManages = mpBox() ? mpBox().querySelectorAll(".member-manages").map((x) => text(x)) : [];
-  expect(JSON.stringify(mpManages) === JSON.stringify(["leads 1 member", "whole branch: leads 4 members · 2 instances (1 online)"]),
+  // agt-c's instance is online, but agt-c is paused in the fixture: none online (instance_counts).
+  expect(JSON.stringify(mpManages) === JSON.stringify(["leads 1 member", "whole branch: leads 4 members · 2 instances (0 online)"]),
     "member page: the direct reports, then the whole branch with its instances " + JSON.stringify(mpManages));
   await go("#/maintainer/maity/members/agt-b"); for (let k = 0; k < 6; k++) await tick();
   const mpMenu = mpBox().querySelector(".member-actions-menu button");
