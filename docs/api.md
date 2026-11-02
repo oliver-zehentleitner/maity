@@ -11817,6 +11817,7 @@ contract; until then nothing else in this section changes.
 | GET, PATCH | `/admin/settings/limits` | instance admin | 16.5 |
 | GET | `/admin/statistics` | instance admin | 16.6 |
 | GET | `/landing` | — | 16.7 |
+| GET | `/site/chrome` | — | 16.7.5 |
 | GET | `/maintenance` | — | 16.12 |
 | GET, PUT, DELETE | `/admin/maintenance` | instance admin, human only | 16.12 |
 | POST | `/admin/maintenance/end` | instance admin, human only | 16.12 |
@@ -13631,7 +13632,8 @@ with no field of its own: Platform (the header's links), Open source (the
 `opensource` section's `links`), Legal (the legal pages) and Follow
 (`footer.social`, without a link a column above already has), and below
 them the operator line and the languages; a column with no link is left
-out.
+out. The legal pages and the dashboard's `/login` and `/register` show the
+same header and footer (§16.7.5).
 
 ```json
 { "enabled": true, "default_language": "en",
@@ -13862,7 +13864,9 @@ served.
   Each page shows its version ("as of …") and no public page lists or
   links earlier versions; while the page is set, an earlier version says
   that it is one and where the current page is. `/impressum/<version>` answers `404` for
-  every version, the current one included. `GET /admin/settings/legal`
+  every version, the current one included. Each page has the landing
+  page's header and full footer (§16.7.5), with a list of the three
+  pages (those that are set) above its text. `GET /admin/settings/legal`
   names every page's kept versions in `versions`. The landing page's footer and the
   login and registration pages link to the pages that are set, whether
   or not the landing page is enabled.
@@ -14137,7 +14141,10 @@ left out, never taken from `default_language`. `note` is the Markdown as
 stored. `Cache-Control: public, max-age=60`, `ETag`, `Vary: Accept-Language`.
 
 **The dashboard** asks this once when it draws one of the two pages, passing
-as `lang` the language it draws in. These words carry their own `lang` when
+as `lang` the language it draws in. It draws both pages without a session
+between the landing page's header and footer, read from `GET /site/chrome`
+(§16.7.5) in the same language; a failed read draws the page without them,
+as sign-in never depends on that call either. These words carry their own `lang` when
 `language` differs from it. A key left out takes the catalogue's text; a failed
 read draws the page from the catalogue with no message, as sign-in never depends
 on this call. The links of
@@ -14147,6 +14154,92 @@ language they were served in as `?lang=<tag>`.
 **In the site file** (`maity-site/1`, `web/README.md`) the parts `sign_in` and
 `sign_up` hold `{<language>: {<key>: text}}`, and a part left out stays as it
 is. `registration`, the settings of §16.4, stays a part of its own.
+
+### 16.7.5 The frame of the public pages
+
+The maintainer's decision of 2026-11-02 (`context/scope.md`): every page
+a visitor sees without a session has one header and one footer, the
+landing page's, from one source. That is the landing page, the legal
+pages (§16.7.1) and the dashboard's `/login` and `/register` (§16.7.4).
+The hub renders the first two itself; the dashboard draws the other two
+in the app shell. So the hub computes the frame once, as a model: it
+renders its own pages from that model, and hands the same model to the
+dashboard. The rules stay in one place: which sections are a link, which
+legal pages exist, which social link a column above already has.
+
+```
+GET /site/chrome?lang=<tag>
+```
+
+No session; on the public host only, as `GET /landing` (the join host
+never routes it, §1.1: `not_found`). It answers `200` with the model in
+one language, chosen as the landing page's is: `lang` if the landing page
+has it, else the best match of `Accept-Language` among the landing page's
+languages, else its `default_language`. While the landing page is
+disabled, the choice is among §16.7's languages, and `en` last. An
+unknown `lang` is no error. A label from the operator's page is in that
+page's language; every other word (sign in, register, the column titles,
+the legal pages' names) comes from the hub's catalogue in `language`.
+
+```json
+{ "language": "de",
+  "landing": true,
+  "header": { "nav": [ { "label": "So geht's", "href": "/?lang=de#s2" } ],
+              "sign_in": { "label": "Anmelden", "href": "/login?lang=de" },
+              "cta": { "label": "Konto anlegen", "href": "/register?lang=de" } },
+  "footer": { "columns": [
+                { "key": "platform", "title": "Plattform", "links": [
+                  { "label": "So geht's", "href": "/?lang=de#s2", "rel": null },
+                  { "label": "Anmelden", "href": "/login?lang=de", "rel": null },
+                  { "label": "Registrieren", "href": "/register?lang=de", "rel": null } ] },
+                { "key": "legal", "title": "Rechtliches", "links": [
+                  { "label": "Impressum", "href": "/impressum?lang=de", "rel": null } ] },
+                { "key": "follow", "title": "Folgen", "links": [
+                  { "label": "Mastodon", "href": "https://social.example/@example", "rel": "me" } ] } ],
+              "operator": "…, Austria",
+              "languages": [ { "tag": "de", "name": "Deutsch" }, { "tag": "en", "name": "English" } ] } }
+```
+
+- **Only what the landing page shows.** The model holds what the public
+  landing page and the legal pages already show to every visitor, and
+  nothing more: the header's links, the call to action, the legal pages
+  that are set, the social links and the operator line. It holds no
+  member, project, counter or setting beyond those, and no field of the
+  stored setting that the page does not show (`updated_by`, `variants`,
+  `campaigns`).
+- **The header.** `nav` holds the links of §16.7, the enabled sections of
+  the main page (never a variant's) that draw something and carry a
+  `nav_label`, in their order. Each link points at the section on the
+  landing page: `/?lang=<language>#s<index>`. `sign_in` is always there.
+  `cta` is the `hero`'s `cta_primary`, or `null` without a hero.
+- **The footer.** `columns` are §16.7's, in that order: `platform` (the
+  header's links, sign in, register), `open_source` (the `opensource`
+  sections' `links`), `legal` (the legal pages that are set, in the order
+  imprint, privacy, terms) and `follow` (`footer.social`, without a GitHub
+  link `open_source` already has). A column with no link is left out.
+  `rel` is `"me"` for a Mastodon link, as on the landing page, else `null`.
+  `operator` is `footer.operator`, or `null`. `languages` are the landing
+  page's, default first and then alphabetically (§16.7), each with its
+  name in its own language. A page links each language to itself with
+  `?lang=<tag>`. A page with languages of its own, a legal page, lists
+  those instead.
+- **`/login`, `/register` and the legal pages** carry
+  `?lang=<language>` in every link of the model, as §16.7.4 says for the
+  landing page's links. A `href` the operator wrote (a call to action, an
+  `opensource` link, a social link) is as stored, except that a path
+  `/login` or `/register` gets the language as well.
+- **Landing page disabled.** `landing` is `false`, `nav` is `[]` and `cta`
+  is `null`: there is no page to link into. The footer keeps the columns
+  that remain: `platform` with sign in and register, `legal`, `follow`
+  and the operator line, which are fields of the setting whether or not
+  the page is enabled (§16.7.1 links the legal pages either way).
+  `languages` is `[]`.
+- **Caching.** As `GET /landing`: `Cache-Control: public, max-age=60` and
+  an `ETag` over the body, `304` for a matching `If-None-Match`, and
+  `Vary: Accept-Language`. The answer depends on the chosen language and
+  on the stored landing and legal settings; an edit is visible within 60 s.
+- **Errors.** None for a visitor on the public host: an unknown `lang` is
+  no error. On the join host the route does not exist (`not_found`).
 
 ### 16.8 Abuse reports
 
