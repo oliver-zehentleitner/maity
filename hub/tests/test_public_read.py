@@ -194,9 +194,12 @@ def test_a_card_under_no_row_change_refreshes_the_data_without_new_inputs(
     world.touch()
     assert "columns" in read(world, f"{BASE}/board")["data"]
     with migrated.connect() as conn:  # nothing a crawler reads changed
-        assert before == conn.execute(
-            select(t.public_page.c.lastmod).where(t.public_page.c.path == f"/{BASE}/board")
-        ).scalar_one()
+        assert (
+            before
+            == conn.execute(
+                select(t.public_page.c.lastmod).where(t.public_page.c.path == f"/{BASE}/board")
+            ).scalar_one()
+        )
 
 
 def test_off_answers_not_found_for_every_path(make_client: ClientFactory) -> None:
