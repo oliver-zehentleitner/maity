@@ -184,3 +184,43 @@ def test_the_join_host_never_serves_it(owner: flow.Human, make_client: ClientFac
     answer = join_client(make_client).get(CHROME, follow_redirects=False)
     assert answer.status_code in (302, 404)
     assert "Maity, Austria" not in answer.text
+
+
+def test_a_legal_page_has_the_landing_pages_header_and_footer(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    """§16.7.5: the legal pages draw the frame's model, in gj6k's design (`public-pages.css`)."""
+    publish(owner)
+    owner.patch(LEGAL, {"imprint": IMPRINT})
+    owner.patch(LEGAL, {"privacy": {**IMPRINT, "de": {"title": "Datenschutz", "markdown": "x"}}})
+    page = make_client().get("/privacy", params={"lang": "en"}).text
+    assert '<header class="site-header dz">' in page and 'class="theme-toggle"' not in page
+    # The header links lead to the landing page's sections, not to the legal page's.
+    assert 'href="/?lang=en#s0">Start</a>' in page and 'href="#s0"' not in page
+    assert 'class="signin" href="/login?lang=en"' in page
+    assert 'href="/register?ref=hero&amp;lang=en">Create your account</a>' in page
+    # The legal pages that are set, this one marked.
+    assert '<nav class="legal-toc"' in page
+    assert '<a href="/impressum?lang=en">Imprint</a>' in page
+    assert '<a href="/privacy?lang=en" aria-current="page">Privacy</a>' in page
+    # The landing page's full footer, with the legal page's own languages.
+    assert '<footer class="site-footer">' in page and 'rel="noopener me"' in page
+    assert "Maity, Austria" in page
+    assert '<a href="?lang=de" lang="de">Deutsch</a>' in page
+    assert (
+        "/assets/landing/landing.css?v=" in page and "/assets/landing/public-pages.css?v=" in page
+    )
+    assert "<script" not in page
+    css = make_client().get("/assets/landing/public-pages.css")
+    assert css.status_code == 200 and ".legal-page" in css.text
+
+
+def test_a_legal_page_without_a_landing_page_keeps_its_frame_small(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    publish(owner, enabled=False)
+    owner.patch(LEGAL, {"imprint": IMPRINT})
+    page = make_client().get("/impressum").text
+    assert '<nav class="site-nav"></nav>' in page and "btn-primary" not in page
+    # A legal page is set, so Follow and the operator are there (§16.7.5).
+    assert "Maity, Austria" in page and "Mastodon" in page

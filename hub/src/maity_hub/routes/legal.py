@@ -9,7 +9,7 @@ from fastapi import APIRouter, Body, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from sqlalchemy import Connection
 
-from maity_hub import clock, landing, legal, previews, render
+from maity_hub import clock, landing, landing_stats, legal, previews, render
 from maity_hub.admin import instance_admin_id
 from maity_hub.auth import second_factor
 from maity_hub.deps import HumanCaller, engine_of, settings_of
@@ -109,6 +109,7 @@ def show_legal_preview(
             legal=legal.public(setting),
             setting=landing.stored(conn),
             public_url=settings_of(request).public_url,
+            stats=landing_stats.for_frame(conn, landing.stored(conn)),
         )
     return HTMLResponse(
         body,

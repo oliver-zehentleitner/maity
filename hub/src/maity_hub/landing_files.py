@@ -88,6 +88,10 @@ def _assets() -> dict[str, Asset]:
             return f"fonts/{found_font.group(1)}" + (f"?v={asset.digest}" if asset else "")
 
         add("landing.css", FONT.sub(font_url, sheet.read_text(encoding="utf-8")).encode())
+    # The pages without a session beside the landing page, on top of its stylesheet (§16.7.5).
+    pages = ROOT / "public-pages.css"
+    if pages.is_file():
+        add("public-pages.css", pages.read_bytes())
     return found
 
 

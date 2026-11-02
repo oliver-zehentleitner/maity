@@ -336,7 +336,8 @@ def test_a_legal_page_is_static_html_with_its_version_and_its_own_policy(
     answer = make_client().get("/impressum")
     assert answer.status_code == 200
     assert (
-        answer.headers["content-security-policy"] == "default-src 'none'; style-src 'unsafe-inline'"
+        answer.headers["content-security-policy"]
+        == "default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'"
     )
     assert answer.headers["cache-control"] == "public, max-age=60"
     assert answer.headers["vary"] == "Cookie, Accept-Language"  # as the page's (§16.7)
@@ -406,7 +407,7 @@ def test_the_footer_links_the_legal_pages_that_are_set(
     assert 'href="/impressum?lang=en">Imprint</a>' in page
     assert 'href="/privacy?lang=en">Privacy</a>' in page
     assert "/terms" not in page
-    assert 'href="/impressum">Imprint</a>' in make_client().get("/privacy").text
+    assert 'href="/impressum?lang=en">Imprint</a>' in make_client().get("/privacy").text
 
 
 def test_the_join_host_serves_neither_the_root_nor_a_legal_page(
