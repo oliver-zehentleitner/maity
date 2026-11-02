@@ -132,7 +132,9 @@ def list_changes(
 def _own_agents(conn: Connection, human_id: str) -> list[str]:
     return list(
         conn.execute(
-            select(t.agent_profile.c.id).where(t.agent_profile.c.owner_id == human_id)
+            select(t.agent_profile.c.id).where(
+                t.agent_profile.c.owner_id == human_id, t.agent_profile.c.deleted_at.is_(None)
+            )
         ).scalars()
     )
 

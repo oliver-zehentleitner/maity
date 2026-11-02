@@ -15,6 +15,7 @@ from maity_hub import tables as t
 from maity_hub.notifications.preferences import HELD_FOR
 from tests import factory, flow
 from tests.conftest import ClientFactory
+from tests.test_landing import HERO
 
 START = datetime(2026, 11, 2, 12, 0, tzinfo=UTC)
 FROM = START + timedelta(hours=1)
@@ -212,6 +213,22 @@ def test_a_running_window_refuses_the_api_with_retry_after(
     assert admin.get("/projects").status_code == 200
 
 
+def test_the_root_is_the_shell_for_a_signed_in_reader_and_the_503_page_for_a_visitor(
+    make_client: ClientFactory, admin: flow.Human, now: Clock
+) -> None:
+    page_body = {"title": "Maity", "description": "A hub", "sections": [HERO]}
+    landing = admin.patch("/admin/settings/landing", {"enabled": True, "pages": {"en": page_body}})
+    put(admin)
+    running(now)
+    shell = admin.client.get("/")
+    assert shell.status_code == 200, shell.text  # the app shows the full page and End now
+    assert "js/app.js" in shell.text  # the app shell
+    assert landing.status_code == 200, landing.text
+    page = make_client().get("/")  # a visitor: the landing page, refused
+    assert page.status_code == 503 and "Maintenance" in page.text
+    assert page.headers["Retry-After"] == str(25 * 60)
+
+
 def test_a_window_does_not_refuse_once_it_is_over_inside_the_cache(
     admin: flow.Human, now: Clock
 ) -> None:
@@ -398,6 +415,7 @@ def test_every_listed_deadline_moves_and_closed_ones_do_not(
     project_id = flow.project(admin, "maity")["id"]
     bot = factory.agent(migrated, project_id, admin.id)
     other = factory.agent(migrated, project_id, admin.id, instance="b2c3")
+    confirmed = factory.agent(migrated, project_id, admin.id, instance="c3d4")
     card = factory.card(migrated, project_id, bot.membership_id)
     pending = later_human(migrated, now, "pending")
     active = later_human(migrated, now, "active")
@@ -411,9 +429,9 @@ def test_every_listed_deadline_moves_and_closed_ones_do_not(
             .values(ktw_acknowledge_by=inside)
         )
         conn.execute(
-            update(t.membership)
-            .where(t.membership.c.id == bot.membership_id)
-            .values(outage_since=inside)
+            update(t.credential)
+            .where(t.credential.c.id == confirmed.credential_id)
+            .values(ktw_acknowledge_by=inside, ktw_acknowledged_at=START)
         )
         for status, takeover_id in (("open", "tko-open"), ("released", "tko-closed")):
             conn.execute(
@@ -492,7 +510,10 @@ def test_every_listed_deadline_moves_and_closed_ones_do_not(
         assert one(t.credential.c.ktw_acknowledge_by, t.credential.c.id == bot.credential_id) == (
             later
         )
-        assert one(t.membership.c.outage_since, t.membership.c.id == bot.membership_id) == later
+        confirmed_by = one(
+            t.credential.c.ktw_acknowledge_by, t.credential.c.id == confirmed.credential_id
+        )
+        assert confirmed_by == inside  # confirmed already: nothing to move
         assert one(t.takeover.c.window_ends_at, t.takeover.c.id == "tko-open") == later
         assert one(t.takeover.c.window_ends_at, t.takeover.c.id == "tko-closed") == inside
         assert one(t.invitation.c.expires_at, t.invitation.c.id == "inv-open") == later
@@ -511,18 +532,148 @@ def test_every_listed_deadline_moves_and_closed_ones_do_not(
 
 
 def test_a_round_s_step_deadlines_move() -> None:
-    steps = [
-        {"name": "answers", "closes_at": rfc(FROM + timedelta(minutes=1))},
-        {"name": "report", "closes_at": rfc(UNTIL + timedelta(minutes=2))},
+    steps: list[dict[str, Any]] = [
+        {"name": "answers", "closes_at": rfc(FROM + timedelta(minutes=1)), "closed_at": None},
+        {"name": "report", "closes_at": rfc(UNTIL + timedelta(minutes=2)), "closed_at": None},
         {"name": "open"},
+        # closed before the window: its deadline is history, not moved
+        {"name": "done", "closes_at": rfc(FROM + timedelta(minutes=2)), "closed_at": rfc(FROM)},
     ]
     moved = maintenance._shifted_steps(steps, FROM, UNTIL, LENGTH)
     assert moved == [
-        {"name": "answers", "closes_at": rfc(FROM + timedelta(minutes=1) + LENGTH)},
+        {**steps[0], "closes_at": rfc(FROM + timedelta(minutes=1) + LENGTH)},
         steps[1],
         steps[2],
+        steps[3],
     ]
     assert maintenance._shifted_steps(steps[1:], FROM, UNTIL, LENGTH) is None
+
+
+def test_only_an_open_round_s_deadlines_move(
+    make_client: ClientFactory, migrated: Engine, admin: flow.Human, now: Clock
+) -> None:
+    project_id = flow.project(admin, "maity")["id"]
+    inside = FROM + timedelta(minutes=10)
+    with migrated.begin() as conn:
+        for round_id, status in (
+            ("jfr-answering", "answering"),
+            ("jfr-reporting", "reporting"),
+            ("jfr-reported", "reported"),
+        ):
+            conn.execute(
+                insert(t.jour_fixe_round).values(
+                    id=round_id,
+                    project_id=project_id,
+                    status=status,
+                    trigger="manual",
+                    scheduled_for=START,
+                    answers_close_at=inside,
+                    report_due_at=inside,
+                    steps=[],
+                    invited=[],
+                    absent=[],
+                    answers_received=0,
+                    posts=[],
+                    created_at=START,
+                )
+            )
+    assert put(admin).status_code == 200
+    now.set(UNTIL + timedelta(minutes=5))
+    admin.get("/maintenance")
+    rounds = t.jour_fixe_round.c
+    with migrated.begin() as conn:
+        found = {
+            r.id: (r.answers_close_at.astimezone(UTC), r.report_due_at.astimezone(UTC))
+            for r in conn.execute(select(rounds.id, rounds.answers_close_at, rounds.report_due_at))
+        }
+    later = inside + LENGTH
+    assert found == {
+        "jfr-answering": (later, inside),  # answering: its answers' close, not the report yet
+        "jfr-reporting": (inside, later),
+        "jfr-reported": (inside, inside),
+    }
+
+
+def test_a_substitution_s_grace_moves_by_where_it_ends(
+    make_client: ClientFactory, migrated: Engine, admin: flow.Human, now: Clock
+) -> None:
+    """The grace (15 minutes by default) runs from the outage's start: what counts is where it
+    ends, not where the outage began."""
+    project_id = flow.project(admin, "maity")["id"]
+    starts = {
+        "before": FROM - timedelta(minutes=5),  # grace ends inside: moves
+        "late": UNTIL - timedelta(minutes=1),  # began inside, grace ends 14 min after: stays
+        "covered": FROM - timedelta(minutes=5),  # the policy acted already: stays
+    }
+    bots = {name: factory.agent(migrated, project_id, admin.id) for name in starts}
+    with migrated.begin() as conn:
+        for name, at in starts.items():
+            conn.execute(
+                update(t.membership)
+                .where(t.membership.c.id == bots[name].membership_id)
+                .values(outage_since=at, cover_state="covered" if name == "covered" else None)
+            )
+    assert put(admin).status_code == 200
+    now.set(UNTIL + timedelta(minutes=5))
+    admin.get("/maintenance")
+    with migrated.begin() as conn:
+        found = {
+            name: conn.execute(
+                select(t.membership.c.outage_since).where(t.membership.c.id == bot.membership_id)
+            )
+            .scalar_one()
+            .astimezone(UTC)
+            for name, bot in bots.items()
+        }
+    assert found == {
+        "before": starts["before"] + LENGTH,
+        "late": starts["late"],
+        "covered": starts["covered"],
+    }
+
+
+@pytest.mark.parametrize(
+    "module",
+    [
+        "availability",
+        "commitment",
+        "jourfixe.worker",
+        "not_listening",
+        "not_listening_digest",
+        "org_invitations",
+        "registration_accounts",
+        "takeovers",
+    ],
+)
+def test_every_deadline_sweep_waits_while_a_window_runs(
+    module: str, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import importlib
+
+    from maity_hub import worker_runs
+
+    found = importlib.import_module(f"maity_hub.{module}")
+    args = (migrated, None) if module == "registration_accounts" else (migrated,)
+    worker = found.Worker(*args, interval=0)
+    if hasattr(worker, "_due"):
+        worker._due = clock.now() - timedelta(hours=1)  # the digest's hour has come
+    asked: list[bool] = []
+    swept: list[bool] = []
+
+    def running(engine: Engine) -> bool:
+        asked.append(True)
+        worker._stop.set()  # one pass only
+        return True
+
+    def claimed(*args: Any, **kwargs: Any) -> Any:
+        swept.append(True)  # the worker catches what is raised here: say it and stop
+        worker._stop.set()
+        raise RuntimeError("swept during a window")
+
+    monkeypatch.setattr(maintenance, "running_now", running)
+    monkeypatch.setattr(worker_runs, "claim", claimed)
+    worker._run()
+    assert asked == [True] and swept == []
 
 
 # --- `/me` and the resume packet ---------------------------------------------------------
@@ -560,3 +711,18 @@ def test_the_export_carries_the_broadcast_choice(
         "mode": "accept_only",
         "agents": [agent_id],
     }
+
+
+def test_a_stored_public_page_answers_the_503_page_to_a_visitor(
+    make_client: ClientFactory, migrated: Engine, admin: flow.Human, now: Clock
+) -> None:
+    from tests.test_public_pages import PATH, store
+
+    client = make_client(public_pages=True)
+    store(migrated)
+    assert client.get(PATH).status_code == 200
+    put(admin)
+    running(now)
+    page = client.get(PATH)
+    assert page.status_code == 503 and "Maintenance" in page.text
+    assert page.headers["Retry-After"] == str(25 * 60)

@@ -103,16 +103,12 @@ MAINTENANCE_OPEN = re.compile(
 # Read only: the web learns from `GET /me` who signed in, so the instance admin finds the
 # full page's End button (§16.12).
 MAINTENANCE_READ = re.compile(r"/api/v1/me")
-# The hub's own server-rendered pages, which answer a small 503 page during a window; every
-# other address outside the API is the app shell or a static file, and the app shows the full
-# page itself.
-MAINTENANCE_PAGES = re.compile(r"/|/explore|/for/[^/]+|/join/[^/]+|/r/[^/]+|/mail/.+")
-MAINTENANCE_HTML = (
-    '<!doctype html><html lang="en"><head><meta charset="utf-8">'
-    '<meta name="viewport" content="width=device-width"><meta name="robots" '
-    'content="noindex"><title>Maintenance</title></head><body><main><h1>Maintenance</h1>'
-    "<p>Back at {until} UTC.</p><p>{text}</p></main></body></html>"
-)
+# The hub's own server-rendered pages that every caller gets, which answer a small 503 page
+# during a window. `/` and a stored public page are the landing or public page for a visitor
+# only and the app shell for a signed-in reader, so their routes decide (`running_page`);
+# every other address outside the API is the app shell or a static file, and the app shows the
+# full page itself.
+MAINTENANCE_PAGES = re.compile(r"/explore|/for/[^/]+|/join/[^/]+|/r/[^/]+|/mail/.+")
 
 
 class HubMiddleware:
@@ -275,18 +271,12 @@ class HubMiddleware:
             response: Any = error_response(
                 503, "maintenance", "the hub is in a maintenance window", details, headers
             )
+        elif badge:
+            from starlette.responses import Response
+
+            response = Response(status_code=503, headers=headers)
         else:
-            from html import escape
-
-            from starlette.responses import HTMLResponse, Response
-
-            if badge:
-                response = Response(status_code=503, headers=headers)
-            else:
-                page = MAINTENANCE_HTML.format(
-                    until=escape(found["until"]), text=escape(found["text"])
-                )
-                response = HTMLResponse(page, status_code=503, headers=headers)
+            response = maintenance.refusal_page(found)
         await response(scope, receive, send)
         _access(scope, 503)
         return True

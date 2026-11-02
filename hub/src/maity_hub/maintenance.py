@@ -113,6 +113,32 @@ def running_now(engine: Engine) -> bool:
     return found is not None and found["state"] == "running"
 
 
+PAGE = (
+    '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+    '<meta name="viewport" content="width=device-width"><meta name="robots" '
+    'content="noindex"><title>Maintenance</title></head><body><main><h1>Maintenance</h1>'
+    "<p>Back at {until} UTC.</p><p>{text}</p></main></body></html>"
+)
+
+
+def refusal_page(found: dict[str, Any]) -> Any:
+    """The small `503` page of the hub's own pages while a window runs (§16.12)."""
+    from html import escape
+
+    from starlette.responses import HTMLResponse
+
+    page = PAGE.format(until=escape(found["until"]), text=escape(found["text"]))
+    return HTMLResponse(page, status_code=503, headers={"Retry-After": str(retry_after(found))})
+
+
+def running_page(engine: Engine) -> Any | None:
+    """`refusal_page` while a window runs, else None: for the routes that serve a page of the
+    hub's own only to some callers (the landing page and a stored public page go to a visitor;
+    a signed-in reader gets the app shell there, which shows the full page itself)."""
+    found = window_now(engine)
+    return refusal_page(found) if found is not None and found["state"] == "running" else None
+
+
 def retry_after(found: dict[str, Any]) -> int:
     """Seconds until the window's `until`, at least 1."""
     left = (_parse(found["until"]) - clock.now()).total_seconds()
@@ -255,9 +281,9 @@ def _inside(column: Any, starts_at: datetime, ends_at: datetime) -> Any:
 def shift(conn: Connection, starts_at: datetime, ends_at: datetime) -> None:
     """Every deadline the hub acts on by itself, to someone's disadvantage, that fell into the
     window or the minute after it, `(starts_at, ends_at + 1 min]`, moves by the window's length
-    (§16.12): a claim's lease, a jour fixe round's answers and report and each of its steps'
-    `closes_at`, an outage's start (the grace of a substitution counts from it), an instance's
-    KTW `acknowledge_by`, an open takeover's objection window, open project and organisation
+    (§16.12): a claim's lease, an open jour fixe round's answers, report and steps'
+    `closes_at`, a substitution's grace (by the outage's start), an unconfirmed KTW
+    `acknowledge_by`, an open takeover's objection window, open project and organisation
     invitations, accounts waiting for approval, and a held address change. Sessions, tokens,
     codes and sign-in links keep their expiry, and so do limits and absences a person set."""
     length = ends_at - starts_at
@@ -277,8 +303,13 @@ def shift(conn: Connection, starts_at: datetime, ends_at: datetime) -> None:
             )
 
     move(t.card, t.card.c.lease_until)
-    move(t.membership, t.membership.c.outage_since)
-    move(t.credential, t.credential.c.ktw_acknowledge_by, t.credential.c.revoked_at.is_(None))
+    credential = t.credential.c
+    move(
+        t.credential,
+        credential.ktw_acknowledge_by,
+        credential.revoked_at.is_(None),
+        credential.ktw_acknowledged_at.is_(None),
+    )
     move(t.takeover, t.takeover.c.window_ends_at, t.takeover.c.status == "open")
     invitation = t.invitation.c
     move(
@@ -295,8 +326,8 @@ def shift(conn: Connection, starts_at: datetime, ends_at: datetime) -> None:
         t.account_registration.c.status == "pending",
     )
     rounds = t.jour_fixe_round.c
-    move(t.jour_fixe_round, rounds.answers_close_at)
-    move(t.jour_fixe_round, rounds.report_due_at)
+    move(t.jour_fixe_round, rounds.answers_close_at, rounds.status == "answering")
+    move(t.jour_fixe_round, rounds.report_due_at, rounds.status == "reporting")
     open_rounds = conn.execute(
         select(rounds.id, rounds.steps).where(
             rounds.reported_at.is_(None), rounds.steps.is_not(None)
@@ -307,6 +338,31 @@ def shift(conn: Connection, starts_at: datetime, ends_at: datetime) -> None:
         if steps is not None:
             conn.execute(update(t.jour_fixe_round).where(rounds.id == found.id).values(steps=steps))
     _shift_held_changes(conn, starts_at, ends_at, length)
+    _shift_outages(conn, starts_at, ends_at, length)
+
+
+def _shift_outages(
+    conn: Connection, starts_at: datetime, ends_at: datetime, length: timedelta
+) -> None:
+    """A substitution's grace runs from the start of an outage (§6.12); when its end falls into
+    the window and the policy has not acted yet, the outage's start moves, so the grace ends
+    that much later."""
+    from maity_hub.availability import policy_of
+
+    member = t.membership.c
+    found = conn.execute(
+        select(t.membership).where(
+            member.active.is_(True), member.outage_since.is_not(None), member.cover_state.is_(None)
+        )
+    ).all()
+    for row in found:
+        due = row.outage_since + timedelta(minutes=policy_of(row)["grace_minutes"])
+        if starts_at < due <= ends_at + MARGIN:
+            conn.execute(
+                update(t.membership)
+                .where(member.id == row.id)
+                .values(outage_since=row.outage_since + length)
+            )
 
 
 def _shift_held_changes(
@@ -345,7 +401,8 @@ def _shifted_steps(
     moved = False
     out: list[Any] = []
     for step in steps:
-        closes = step.get("closes_at") if isinstance(step, dict) else None
+        live = isinstance(step, dict) and step.get("closed_at") is None
+        closes = step.get("closes_at") if live else None
         if isinstance(closes, str):
             at = _parse(closes)
             if starts_at < at <= ends_at + MARGIN:
