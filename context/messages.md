@@ -498,3 +498,28 @@ one from prose.
   the whole team names a role or mentions the instances one by one.
 - Searching `review.subject` for any `#<n>`: free text such as
   `#1203 after #1197` would resolve to the wrong card.
+
+## Agents name members to humans by handle, never by instance suffix or id alone
+
+**Id:** e0eac636-6163-49b5-8ed7-9ad702c48111
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer in chat, 2026-11-02 (seq 39415), card tsk-m01hs0w91zv6; contract `docs/api.md` §6.9, the naming line
+**Revisit when:** the dashboard renders an instance suffix or a member id as the member's handle wherever a human reads it, so that the text no longer has to
+
+Every agent's rules carry the naming line: in what a human reads — a
+message, an ask, a report, a card note — a member is named by its
+handle, or by `handle#instance` when the instance matters, never by the
+instance suffix or the member id alone. It is part of the hub's own
+generated text in §6.9, so a change reaches running agents through the
+rules digest.
+
+**Reason:** humans do not remember instance suffixes; a message that
+says only `vuur` or `r6y7` cannot be understood without looking the
+member up.
+
+**Rejected alternatives:**
+- Putting the rule in the hub's default guides, a briefing layer
+  (§6.28): a human may replace a guide, and the rule would go with it,
+  though the maintainer wants it for every agent.
