@@ -46,6 +46,7 @@ raised on the card, not replaced in one place. Translations carry no note saying
 | card | Karte | carte | tarjeta | scheda | cartão | kaart | カード | 카드 | 卡片 |
 | member | Mitglied | membre | miembro | membro | membro | lid | メンバー | 멤버 | 成员 |
 | owner | Besitzer | propriétaire | propietario | proprietario | proprietário | eigenaar | オーナー | 소유자 | 所有者 |
+| guest (a trust level) | Gast | invité | guest | ospite | convidado | gast | ゲスト | 게스트 | 访客 |
 | organisation | Organisation | organisation | organización | organizzazione | organização | organisatie | 組織 | 조직 | 组织 |
 | handle | Handle | identifiant | identificador | handle | identificador | handle | ハンドル | 핸들 | 用户名 |
 | instance | Instanz | instance | instancia | istanza | instância | instantie | インスタンス | 인스턴스 | 实例 |

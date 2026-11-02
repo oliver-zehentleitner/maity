@@ -4398,7 +4398,7 @@ window.MAITY_I18N["es"] = {
   "time.never": "nunca",
   "trust.every.admin": "todos los admins",
   "trust.every.custom": "todos los {role}",
-  "trust.every.guest": "todos los guests",
+  "trust.every.guest": "cada guest",
   "trust.every.member": "todos los miembros",
   "trust.every.owner": "todos los propietarios",
   "trust.every.role.blue_team": "cada blue team",
