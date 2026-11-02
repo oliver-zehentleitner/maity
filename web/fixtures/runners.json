@@ -261,17 +261,7 @@
   ],
   "still_running": {
     "rnr-0002": [
-      {
-        "id": "plc-0003",
-        "agent": {
-          "id": "agt-b",
-          "handle": "agent-b",
-          "display_name": "Agent B"
-        },
-        "reported": {
-          "state": "running"
-        }
-      }
+      "plc-0003"
     ]
   },
   "active_placements": {

@@ -387,9 +387,13 @@ window.Maity = window.Maity || {};
       cancelled: () => M.t("board.status.cancelled"),
     },
     contract: { proposed: () => M.t("board.contract.state.proposed"), final: () => M.t("board.contract.state.final") },
+    project: {
+      plan: () => M.t("state.plan"), build: () => M.t("state.build"), review: () => M.t("state.review"),
+      launch: () => M.t("state.launch"), archived: () => M.t("state.archived"),
+    },
     pr: { open: () => M.t("board.pr.state.open"), merged: () => M.t("board.pr.state.merged"), closed: () => M.t("board.pr.state.closed") },
   };
-  const word = (set, value) => (Object.hasOwn(WORDS[set], value) ? WORDS[set][value]() : value);
+  const word = (set, value) => (WORDS[set] && Object.hasOwn(WORDS[set], value) ? WORDS[set][value]() : value);
 
   M.dom = { word, handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, memberRef, instanceHref, memberChip, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, get SEND_KEYS() { return sendKeys(); }, sendKeysFor, showSendKeys, sendOnCtrlEnter };
 })(window.Maity);

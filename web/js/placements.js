@@ -227,5 +227,5 @@ window.Maity = window.Maity || {};
     return box;
   }
 
-  M.placements = { stateWords, section };
+  M.placements = { section };
 })(window.Maity);

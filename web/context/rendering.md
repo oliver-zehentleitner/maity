@@ -731,7 +731,12 @@ article ("you are an owner"); a value the hub adds later reads as a
 neutral sentence ("you have the role {role}"). Rejected: choosing "a"
 or "an" in code, which only English has. In "X of Y" the plural form
 follows the total, Y ("1 of 3 instances active"), as English writes it.
-Rejected: the form of X, which read "1 of 3 instance active". Facts
+Rejected: the form of X, which read "1 of 3 instance active". A word of
+the contract that more than one page shows (a card's label, status,
+contract state, a pull request's state, a project's state) has one set
+in `M.dom.word(set, value)` in `dom.js`; a value the hub adds later reads
+as it comes. Rejected: a map per file, which drifted (the board said a
+pull request's state with the release editor's keys). Facts
 put side by side with a middle dot between them are allowed where each
 is a whole text of its own ("3 waiting for approval · 1 registered in
 the last hour"); what stays rejected is a sentence made of pieces. A language offered for choice
