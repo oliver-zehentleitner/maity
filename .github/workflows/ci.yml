@@ -38,7 +38,7 @@ defaults:
 # parallel, so that a queue of pull requests for one runner per job type cannot hold up the checks
 # people wait for. Unset or empty, they run on GitHub-hosted runners; unsetting the variable is the
 # whole fallback. Setup: deploy/runner/README.md.
-# The MariaDB suite is not here: it runs hourly on main, outside the pull request gate and ci-ok
+# The MariaDB suite is not here: it runs on main after every push (the last job below starts it) and at the latest hourly, outside the pull request gate and ci-ok
 # (hub-mariadb.yml, and the entry on it in context/process.md).
 jobs:
   # Which parts a pull request touches, from its merge commit against the base it
@@ -391,3 +391,23 @@ jobs:
               *) exit 1 ;;
             esac
           done
+
+  # Starts the MariaDB run (hub-mariadb.yml) for a push to main, after the jobs above, whatever their result: a red ci
+  # is no reason to leave MariaDB unchecked. Only a push to this repository's main gets here (not a pull request), and
+  # a workflow_dispatch with the workflow's own token is allowed; a workflow_run trigger is not, see deploy/runner/README.md.
+  # A run that GitHub cancelled while it waited never gets here; the newer run covers it.
+  mariadb:
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [ci-ok]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run hub-mariadb.yml --repo "$GITHUB_REPOSITORY" --ref main -f trigger=ci
