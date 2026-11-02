@@ -5289,31 +5289,31 @@
   },
   "jf.day.fri": {
     "en": "53b487dd0f6d2137",
-    "text": "e13b58e51576fce4"
+    "text": "4cd50b352a19e399"
   },
   "jf.day.mon": {
     "en": "d9d1db896a843912",
-    "text": "bdc088da1aea19bd"
+    "text": "368b0f27939071c0"
   },
   "jf.day.sat": {
     "en": "24ff9ac02cd8543c",
-    "text": "4dbbe8fbf4255942"
+    "text": "ae12d6256cf4d802"
   },
   "jf.day.sun": {
     "en": "2290e166c43ffeb9",
-    "text": "1681cd7f7d7df970"
+    "text": "dd49ee26fe2c8036"
   },
   "jf.day.thu": {
     "en": "06fb20d3c30fc5dc",
-    "text": "c6938d24b7d4cf24"
+    "text": "9a7e00ec4a5e8687"
   },
   "jf.day.tue": {
     "en": "e1bc06db3604ce3a",
-    "text": "87ad5291287da7fe"
+    "text": "4f788f339d0a97fb"
   },
   "jf.day.wed": {
     "en": "069f5bef5755c804",
-    "text": "5e12629fac622377"
+    "text": "f830402422da0b06"
   },
   "jf.decision.adopt": {
     "en": "4112840076875e5c",
@@ -10063,22 +10063,6 @@
     "en": "4470ee918e861af5",
     "text": "5948fa9386bedd1a"
   },
-  "notify.content.chat": {
-    "en": "9869dc4dc6c8c4c8",
-    "text": "3aeebae3c852fd87"
-  },
-  "notify.content.hint": {
-    "en": "af72e0a633a8bec4",
-    "text": "c5d9638b98c0a7db"
-  },
-  "notify.content.legend": {
-    "en": "9e9dda645641944f",
-    "text": "2c97c0b5e2f26c8e"
-  },
-  "notify.content.mention": {
-    "en": "909c94c2eb0b9444",
-    "text": "54fe3919fc5f13b9"
-  },
   "notify.kind.chat": {
     "en": "70132db1e9c6612a",
     "text": "725ff528fbea0a34"
@@ -12917,7 +12901,7 @@
   },
   "reports.snapshot.redacted": {
     "en": "7e1ff3a84ee50aee",
-    "text": "54b098a95c0918fd"
+    "text": "2ff87acb19b3eeb4"
   },
   "reports.state.expired": {
     "en": "fc5c400e20ea240f",
@@ -14649,7 +14633,7 @@
   },
   "settings.signing.hint": {
     "en": "3de03dcdd1543faf",
-    "text": "9d3f5afc595f6da3"
+    "text": "3018970d2f637d03"
   },
   "settings.signing.label": {
     "en": "a9b5fa0c441ab839",

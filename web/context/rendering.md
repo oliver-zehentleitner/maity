@@ -943,7 +943,7 @@ so that a level reads the same everywhere; the words around it stay neutral wher
 A report of abuse is resolved with `erledigen` on every key of its page, because `bearbeiten` is already the word for Edit and
 reads as editing.
 A release keeps its own word apart from a version where a language has both: `A release with this version already exists`
-names the two together, and legal pages and older frames already use `version` for a saved text. German has one gender for it.
+names the two together, and legal pages and older frames already use `version` for a saved text. The German row fixes `das Release`, though both genders are in use.
 
 **Rejected alternatives:**
 - `Übernahme` for both claim and takeover: an error then says a card "needs a takeover" next to "nobody has claimed it".

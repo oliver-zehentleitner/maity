@@ -112,8 +112,14 @@ def table(*rows):
 
 
 duplicates = check.glossary_duplicates
-expect(duplicates(table(("sign in", "entrar"), ("join", "entrar"))) != [], "glossary: one word for two things")
-expect(all(d[0] != "pt" for d in duplicates(table(("user, one", "x"), ("users, several", "x")))), "glossary: one thing's two forms")
+def pt_words(*rows):
+    return [word for language, word, _ in duplicates(table(*rows)) if language == "pt"]
+
+
+expect(pt_words(("sign in", "entrar"), ("join", "entrar")) == ["entrar"], "glossary: one word for two things")
+expect(pt_words(("user, one", "x"), ("users, several", "x")) == [], "glossary: one thing's two forms")
+expect(pt_words(("release (a version)", "x"), ("release (a claim)", "x")) == ["x"], "glossary: one English word, two things")
+expect(pt_words(("claim", "assumir, tomar"), ("take", "tomar")) == ["tomar"], "glossary: a form in a list of forms")
 
 # The hub's words: a translation and what it follows, in a stand-in of the repository.
 import json  # noqa: E402
