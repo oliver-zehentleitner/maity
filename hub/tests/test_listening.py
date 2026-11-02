@@ -211,13 +211,17 @@ def test_the_next_writer_runs_after_a_failed_start(monkeypatch: pytest.MonkeyPat
 def test_a_wait_for_a_gone_writer_fails_instead_of_hanging(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Way E (a writer that died): the wait for the queue ends with an error, not never."""
+    """Way E (a writer that died): the wait for the queue ends with an error, not never;
+    the same for `written()`, which tests call after `closed`."""
     monkeypatch.setattr(listening, "_engine", [_PgLike()])
     monkeypatch.setattr(listening, "_thread", [None])
+    monkeypatch.setattr(listening, "DRAIN_SECONDS", 0.2)
     listening.opened("ses-gone")
     try:
         with pytest.raises(TimeoutError, match="1 write"):
-            listening._drained(0.2)
+            listening._drained()
+        with pytest.raises(TimeoutError, match="writer alive: False"):
+            listening.written()
     finally:
         listening._discard_queued()
         listening._open.clear()

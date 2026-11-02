@@ -112,10 +112,12 @@ def closed(key: str, wait_id: str) -> None:
 
 
 def written() -> None:
-    """Return once every open and close queued so far is in the database (PostgreSQL): a
-    read of the registry right after `closed` may otherwise still find the wait's row."""
+    """For tests: return once the writer has handled every open and close queued so far
+    (PostgreSQL), so a read of the registry right after `closed` does not still find the
+    wait's row. A write that failed is handled too (logged); with no writer, `TimeoutError`
+    after `DRAIN_SECONDS` instead of a hang."""
     if _engine[0] is not None:
-        _writes.join()
+        _drained()
 
 
 def reset() -> None:
