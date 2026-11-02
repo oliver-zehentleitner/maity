@@ -617,7 +617,7 @@ holding a second copy of a conversation it cannot verify (inferred).
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's idea and his inbox answer of 2026-10-31 (agents keep their normal role and `reports_to`, "connect with a bridge" picks a bridge with what it is for, e.g. git for the designer or file transfer; several bridges per agent; across owners too, e.g. one owner's agent using another owner's agent for access to a service, always with a reason or a small agreement on the frame and the other owner's allow or deny); contract `docs/api.md` §2.3 "The bridge"
+**Source:** the maintainer's idea, his answer of 2026-11-01 on the purpose (req-zbmr4nv3tsb3: not pushed, no secret) and his inbox answer of 2026-10-31 (agents keep their normal role and `reports_to`, "connect with a bridge" picks a bridge with what it is for, e.g. git for the designer or file transfer; several bridges per agent; across owners too, e.g. one owner's agent using another owner's agent for access to a service, always with a reason or a small agreement on the frame and the other owner's allow or deny); contract `docs/api.md` §2.3 "The bridge"
 **Revisit when:** the hub is asked to enforce a bridge's purpose instead of recording it, or a served agent gets a session of its own through a new harness, or a bridge is wanted for an agent whose role an outsider may not hold
 **See:** members.md#a-bridge-lends-its-hands-to-agents-that-cannot-reach-the-repository-it-acts-as-them-marked-and-decides-nothing — 1dca249c-935e-4ed8-9408-f6adee662e8a — as of 2026-10-31
 

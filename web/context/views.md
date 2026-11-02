@@ -255,14 +255,14 @@ messages — a long pause would hide that the agent came back later.
 **Id:** 1cf107b2-991d-42e4-aa35-9dd8f84216eb
 **Type:** decision
 **Type:** constraint
-**Status:** needs-review
+**Status:** active
 **Evidence:** inferred
 **Source:** docs/api.md §15.3 and §15.4; the review of web PR #96, 2026-10-22; the dashboard's implementation, 2026-10-22
-**Revisit when:** humans other than the owner can join a project (then a runner's owner may not be its admin), or the hub sends events for runners' presence or placements
+**Revisit when:** a runner's owner who is no admin asks to detach from the dashboard, or the hub sends events for runners' presence or placements
 
 The tab is offered to owner and admin only (`members:admin`), although
-the hub also lets a runner's owner detach it. In V1 the only human is
-the owner, so nobody is left out yet. Allowing is the hub's grant; the
+the hub also lets a runner's owner detach it. A runner's owner who is no
+admin of the project is left out of this tab. Allowing is the hub's grant; the
 runner checks its own `[limits] projects` again. A runner the hub allows
 but whose configuration does not list the project is therefore warned
 about: it starts nothing here.

@@ -419,10 +419,10 @@ needs; the backlog does not.
 
 **Id:** 671a0ee8-e764-4a0e-9f80-f7ae3e6af861
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's go of 2026-10-30 (point 4 of the coordinator's list, card tsk-22kjdwfv19xh) after two reviews that day named code that was not in the diff; contract `docs/api.md` §8.4
-**Revisit when:** the hub reads repositories itself and could check a cite, or reviews move to the forge's own review API
+**Revisit when:** the hub is to check a cite through its forge read, which it can do and has not been asked to, or reviews move to the forge's own review API
 
 A `review_result` message carries `review`: the subject, the full head
 commit it reviewed, a verdict (`approve`, `changes`, `comment`) and
