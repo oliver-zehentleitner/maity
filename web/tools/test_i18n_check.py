@@ -106,6 +106,43 @@ for text, before in [
 ]:
     expect(not prose(text, before), "code: %r after %r" % (text, before))
 
+# The hub's words: a translation and what it follows, in a stand-in of the repository.
+import json  # noqa: E402
+import os  # noqa: E402
+import tempfile  # noqa: E402
+
+
+def hub_words_findings(words_files, meta_names, write=False, release=False):
+    with tempfile.TemporaryDirectory() as tree:
+        words = Path(tree, "hub", "src", "maity_hub", "words")
+        metas = Path(tree, "hub", "words-meta")
+        words.mkdir(parents=True)
+        for name, data in words_files.items():
+            (words / name).write_text(json.dumps(data), encoding="utf-8")
+        check.ROOT = str(Path(tree, "web"))
+        check.check_hub_words(True, False, [])
+        for name in meta_names:
+            (metas / name).parent.mkdir(exist_ok=True)
+            (metas / name).write_text("{}\n", encoding="utf-8")
+        check.findings.clear()
+        notes = []
+        check.check_hub_words(write, release, notes)
+        return list(check.findings), notes
+
+
+root = check.ROOT
+words_en = {"mail.subject": "Hello"}
+found, notes = hub_words_findings({"en.json": words_en, "de.json": {"mail.subject": "Hallo"}}, [])
+expect(found == [] and notes == [], "hub words: a complete translation with its meta file")
+found, notes = hub_words_findings({"en.json": words_en, "de.json": {}}, [])
+expect(found == [] and any("1 key(s) missing" in n for n in notes), "hub words: a missing key is a note")
+found, _ = hub_words_findings({"en.json": words_en, "de.json": {}}, [], release=True)
+expect(any("1 key(s) missing" in f for f in found), "hub words: at a release it is a finding")
+found, _ = hub_words_findings({"en.json": words_en}, ["fr.json"])
+expect(any("fr.json" in f and "delete" in f for f in found), "hub words: a meta file without a translation")
+check.ROOT = root
+check.findings.clear()
+
 # The pseudo run's own judgement; the walk itself needs a browser.
 import pseudo_run  # noqa: E402
 

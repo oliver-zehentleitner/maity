@@ -64,6 +64,7 @@ raised on the card, not replaced in one place. Translations carry no note saying
 | soul | Seele | âme | alma | anima | alma | ziel | ソウル | 소울 | 灵魂 |
 | memory | Gedächtnis | mémoire | memoria | memoria | memória | geheugen | メモリ | 메모리 | 记忆 |
 | report (of abuse) | Meldung | signalement | denuncia | segnalazione | denúncia | melding | 通報 | 신고 | 举报 |
+| resolve (a report of abuse) | erledigen | traiter | resolver | gestire | resolver | afhandelen | 対応する | 처리 | 处理 |
 | report (an agent's) | Bericht | rapport | informe | rapporto | relatório | rapport | レポート | 보고서 | 报告 |
 | jour fixe | Jour fixe | point régulier | reunión fija | riunione fissa | reunião fixa | vast overleg | 定例会 | 정기 회의 | 例会 |
 | session | Sitzung | session | sesión | sessione | sessão | sessie | セッション | 세션 | 会话 |
@@ -78,6 +79,7 @@ raised on the card, not replaced in one place. Translations carry no note saying
 | dashboard | Dashboard | tableau de bord | panel | dashboard | painel | dashboard | ダッシュボード | 대시보드 | 控制台 |
 | claim (a card) | Übernahme, übernehmen | prise en charge, prendre | toma, tomar | presa in carico, prendere | assunção, assumir | claim, claimen | 担当, 担当する | 담당, 담당하기 | 认领 |
 | takeover (another's card, with a right to object) | Ablösung | reprise | relevo | subentro | substituição | overname | 引き継ぎ | 인계 | 接管 |
+| release (a version) | Release (das) | version | versión | release | versão | release | リリース | 릴리스 | 发布版本 |
 | release (a claim) | zurückgeben, aufheben | libérer | liberar | rilasciare | liberar | teruggeven | 解放する | 해제 | 释放 |
 | lease | Reservierung | réservation | reserva | prenotazione | reserva | reservering | 予約 | 예약 | 占用期 |
 | go (a human's approval) | Freigabe | feu vert | luz verde | via libera | sinal verde | akkoord | 承認 | 승인 | 批准 |
