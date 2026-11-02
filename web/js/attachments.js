@@ -32,9 +32,9 @@ window.Maity = window.Maity || {};
 
   function sizeOf(n) {
     if (n === null || n === undefined) return "";
-    if (n < 1024) return n + " B";
-    if (n < 1024 * 1024) return (n / 1024).toFixed(n < 10240 ? 1 : 0) + " KB";
-    return (n / 1024 / 1024).toFixed(1) + " MB";
+    if (n < 1024) return M.t("attachments.size.b", { n: String(n) });
+    if (n < 1024 * 1024) return M.t("attachments.size.kb", { n: (n / 1024).toFixed(n < 10240 ? 1 : 0) });
+    return M.t("attachments.size.mb", { n: (n / 1024 / 1024).toFixed(1) });
   }
 
   // The hub's refusals of an upload, in words.
