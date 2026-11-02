@@ -521,7 +521,7 @@ after a session expired, instead of going on after the sign-in.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's words of 2026-11-01 on the card tsk-jj1tfre7n6zb (logged out sees what logged in sees, read-only); the plan the lead approved
-**See:** 1e42dae2-4d67-4f1d-80b7-b2bb4aecfc3b
+**See:** public-pages.md#a-public-page-is-a-row-of-public_page-served-by-the-app-shells-route — 1e42dae2-4d67-4f1d-80b7-b2bb4aecfc3b — as of 2026-11-02
 **Revisit when:** the shell's scripts grow slow enough that the page's text is what most visitors read
 
 A public address now serves the shell with the row's title, description, share tags, canonical link and text
