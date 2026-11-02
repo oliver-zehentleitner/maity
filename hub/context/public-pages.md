@@ -123,8 +123,8 @@ existing account on. `public_people.served` no longer reads it: every active acc
 or deleted and whose profile is under no hold of moderation has its page at `/{handle}` and is named on the
 pages of its open projects, by handle, on the Overview, Board, Members, Organisation, a card's page and the
 snapshot alike, who is online included (on `main` before, an online member with the profile off was only
-counted); a setting to keep one's online status off the public pages follows on its own card, and this change
-goes to production only together with it; `public_projects.team` counts nobody it does not name, so "and N more agents" is gone. The
+counted); the setting to keep one's online status off the public pages came on its own card (54823a3a), and
+this change goes to production only together with it; `public_projects.team` counts nobody it does not name, so "and N more agents" is gone. The
 switch decides what the page shows: on, the bio, the links under `everyone` and the public projects; off,
 only the name, the handle and the agents, with `noindex` in the page and its headers (`public_page.indexed`,
 which the sitemap also skips). With the profile off, the bio, the links and the list of projects are for the
