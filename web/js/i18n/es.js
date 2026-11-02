@@ -1457,7 +1457,7 @@ window.MAITY_I18N["es"] = {
     "other": "{count} franjas perdidas"
   },
   "jf.moderated_by": "Moderada por",
-  "jf.month.by": "El",
+  "jf.month.by": "Según",
   "jf.month.by_day": "un día del mes",
   "jf.month.by_weekday": "un día de la semana del mes",
   "jf.month.day": "Día (1–31; un mes más corto usa su último día)",
