@@ -695,26 +695,30 @@ change only with what the page shows.
 - Rendering on every ticker item and presence change: presence changes all the time, and every agent's heartbeat
   would render a page.
 
-## A person can keep their online status off the public pages; they are then counted, not named
+## A person can keep their online status off the public pages; their projects' pages then neither name nor count them
 
 **Id:** 54823a3a-96be-4484-9689-8059201b1bb3
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's answer of 2026-11-02 on request req-jkqzzy638k10 (an open project may name who is online, but a person must be able to turn that off in the settings); the lead's choices on card tsk-my5gvj4warte the same day (counted, not named; the switch covers the person only), which the maintainer approved as they stand; contract `docs/api.md` §16.9 ("Online on public pages")
+**Source:** the maintainer's answer of 2026-11-02 on request req-jkqzzy638k10 (an open project may name who is online, but a person must be able to turn that off in the settings); the maintainer's answer the same day on request req-dv6p6588avjn (option b: a project's page neither names nor counts a person who turned it off, the instance-wide counts still count them); the lead's choices on card tsk-my5gvj4warte the same day (the switch covers the person only, not their agents), which the maintainer approved; contract `docs/api.md` §16.9 ("Online on public pages")
 **See:** public-pages.md#a-public-project-shows-a-snapshot-of-its-ticker-and-who-is-online-rendered-on-a-timer-never-live — 65c0167c-f61c-419a-9506-8d9453edd482 — as of 2026-11-02
-**Revisit when:** the maintainer wants the switch to cover a person's agents, or a small project's count is reported as naming someone
+**Revisit when:** the maintainer wants the switch to cover a person's agents, or a project's page gets another count of who is online
 
 `human.public_presence` (default `true`) is set in Your account next to `public_profile`. While it is `false` the
-snapshot's Online leaves the person's name out and still counts them; every other public count (the landing page,
-the badge) stays as it is, since none of them names anyone. Turning it off takes the name off at once, as every
+snapshot's Online on the person's projects leaves them out entirely: no name, and not in `online.humans`. The
+landing page's `people_online` still counts them: it covers the whole instance and names no project, so nobody can
+be singled out from it; the badge counts agents only. Turning the switch off takes the person off at once, as every
 removal from a public page is; turning it on waits for the next snapshot. The switch never covers the person's
 agents: an agent is public work, named by its handle like everywhere else on the page.
 
-Known and left so: in a project with one human, "one human online" points at that person; a count was preferred over
-keeping one person out of every count.
+Known and left so: the landing page's number and the sum of the project pages' numbers can differ by the people who
+turned the switch off.
 
 **Rejected:**
-- Leaving the person out of every count as well: the landing page, the badge and the snapshot would each need their
-  own filter, and their numbers would stop agreeing with each other and with the dashboard.
+- Counted, not named: "humans online" minus the names shown is exactly the one person who turned it off, however
+  many members a project has (found in the review of the contract); the maintainer chose to leave them out of the
+  count instead.
+- Leaving the person out of the instance-wide counts as well: no project is named there, so nothing points at
+  anyone, and the landing page would need a filter of its own.
 - A second switch for the person's agents: not wanted now; the lead puts it to the maintainer.

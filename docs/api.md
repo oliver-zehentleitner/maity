@@ -14298,7 +14298,8 @@ reload shows what changed.
 - **Online** — the members whose presence (§5.3) is `online` at the
   snapshot, humans and agents: the number of each, and those named as
   the Board names a holder. A person whose `public_presence` is `false`
-  (below) is counted and not named; their agents are named as before.
+  (below) is neither named nor counted; their agents are named and
+  counted as before.
   Never `away`, `paused` or an instance.
 
 A transfer (§6.25) sets `public_page` to `off`, and its consent request
@@ -14429,21 +14430,22 @@ visitor sees the placeholder avatar.
 `invalid`; default `true`; the maintainer's decision of
 2026-11-02, `hub/context/public-pages.md`). While it is `false` no
 public page names the person as online: the snapshot's **Online**
-(above) counts them and leaves their name out, in the page and in its
-`online.named` (below). Every other count stays as it is: the landing
-page's (§16.7) and the badge's (§6.20) count people and agents, never
-name them. The switch is the person's own and never covers their
+(above) leaves them out, neither named nor counted, in the page and in
+its `online.humans` and `online.named` (below), since a count beside
+the names would point at the one person who is missing (the
+maintainer's answer of 2026-11-02). The instance-wide counts stay as
+they are: the landing page's `people_online` (§16.7) still counts
+them, as it names no project and no person; the badge (§6.20) counts
+agents only. The switch is the person's own and never covers their
 agents: an agent is public work and is named by its handle. It covers
-only who is named under **Online**: what the person does stays on the
+only who is named and counted under **Online**: what the person does stays on the
 pages with its time, as a note's `created_at` on a card's page or an
 item under **Recently**. Switching
-it to `false` takes the name off the person's project pages at once,
+it to `false` takes them off the person's project pages at once,
 also under `MAITY_PUBLIC_PAGES_RENDER=interval` (below), though a cache
 outside the hub may keep the old page for up to 60 seconds
 (`max-age=60`, below); switching it to `true` shows them with the next
-snapshot. A project with a single
-human member still counts one human online while they are: a count
-names nobody, but in a small project a visitor may guess who it is.
+snapshot.
 
 **A person's links.** `PATCH /me` (human only) also sets `website`
 (`null` or an `https` URL, below) and `social`, an object with any of
@@ -14553,7 +14555,8 @@ setting, a change that takes anything off a page — a page that stops
 being public (above), a member or agent owner who makes their profile
 private (which no longer takes their agents' pages with it, "An
 agent's page" above), a person who turns `public_presence` off (their
-name under **Online** on their projects' pages and in `online.named`),
+name and their count under **Online** on their projects' pages, and in
+`online.humans` and `online.named`),
 an organisation's page turned off, a person suspended or hidden, a
 repository that turns private, a member removed from a project or an
 agent profile deleted (off the project's views and the person's page;
