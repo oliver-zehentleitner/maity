@@ -1454,7 +1454,8 @@ window.Maity = window.Maity || {};
       if (self.handle === name) {
         const own = me().projects.map((x) => ({ full_name: x.full_name, name: x.name, shared: true }));
         return Object.assign({ kind: "human", handle: self.handle, display_name: self.display_name, avatar_url: self.avatar_url || null,
-          page_served: !!self.public_profile, public_bio: self.public_bio || null,
+          // Every active account has its page (§16.9), whatever public_profile says; the fixture's caller is active.
+          page_served: true, public_bio: self.public_bio || null,
           website: self.website || null, social: self.social || {} }, listed(own));
       }
       const org = orgsData().items.find((o) => o.handle === name || (o.aliases || []).includes(name));

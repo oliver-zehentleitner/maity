@@ -87,7 +87,7 @@ window.Maity = window.Maity || {};
     if (ctx.me.kind !== "human") return null;
     const status = M.statusLine();
     const box = h("input", { type: "checkbox", id: "public-profile" });
-    // Named as online on the projects' public pages; off, counted and not named (§16.9).
+    // Named and counted as online on the projects' public pages; off, neither (§16.9).
     const presence = h("input", { type: "checkbox", id: "public-presence" });
     // One line: the hub refuses every line break in this text.
     const bio = profileField("public-bio", M.t("public_profile.bio"), { maxlength: "280" });
