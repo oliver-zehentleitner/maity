@@ -344,3 +344,77 @@ def test_an_isolated_author_or_lead_is_left_out(
     answer = post(reviewer, "#9")
     assert answer.status_code == 400, answer.text
     assert answer.json()["error"]["details"]["fields"] == {"to": "required"}
+
+
+def test_another_instance_of_the_author_in_to_does_not_stand_in_for_the_holder(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    author = flow.agent(make_client, owner)
+    team = owner.patch(
+        f"/projects/maintainer/maity/members/{author.id}", {"team": {"max_instances": 2}}
+    )
+    assert team.status_code == 200, team.text
+    sibling = flow.agent(make_client, owner, agent={"id": author.id}, new_instance=True)
+    for agent in (author, sibling):
+        assert agent.resume().status_code == 200
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    card = task(owner)
+    held(migrated, card, author, author.instance)
+    got = sent(migrated, post(reviewer, task_id=card["id"], to=f"{author.id}#{sibling.instance}"))
+    assert got == [
+        f"instance:{author.id}#{sibling.instance}",
+        f"member:{reviewer.id}",
+        f"instance:{author.id}#{author.instance}",
+    ]
+
+
+def test_a_number_in_prose_names_no_pull_request(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    author = flow.agent(make_client, owner)
+    author.resume()
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    reported(migrated, task(owner), author, 7)
+    got = sent(migrated, post(reviewer, "Fix for #7", to=owner.id))
+    assert got == [f"member:{owner.id}", f"member:{reviewer.id}"]
+
+
+def test_a_lead_reached_by_its_role_is_not_added(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    author = flow.agent(make_client, owner)
+    author.resume()
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    lead = flow.agent(make_client, owner, role="manager")
+    reports_to(migrated, author, lead)
+    card = task(owner)
+    held(migrated, card, author, author.instance)
+    got = sent(migrated, post(reviewer, task_id=card["id"], to="role:manager"))
+    assert f"member:{lead.id}" not in got
+    assert f"instance:{author.id}#{author.instance}" in got
+
+
+def test_an_unheld_cards_reporter_who_left_or_never_had_the_instance(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    author = flow.agent(make_client, owner)
+    author.resume()
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    card = task(owner)
+    reported(migrated, card, author, 7)
+    # An instance the member never had: the team is the author.
+    with migrated.begin() as conn:
+        report = conn.execute(select(t.card.c.report).where(t.card.c.id == card["id"])).scalar_one()
+        conn.execute(
+            update(t.card)
+            .where(t.card.c.id == card["id"])
+            .values(report={**report, "reported_instance": "zz99"})
+        )
+    assert f"member:{author.id}" in sent(migrated, post(reviewer, "#7"))
+    # A reporter who has left the project: nobody, so a result without `to` is invalid.
+    row = membership_id(migrated, author.id)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.id == row).values(removed_at=clock.now())
+        )
+    assert post(reviewer, "#7").status_code == 400
