@@ -6085,14 +6085,17 @@ down (on GitHub, `GET …/git/trees/{commit}:{dir}`, never the recursive
 tree, which GitHub truncates for a large repository). Every segment
 must be listed under exactly its name, byte for byte as Git compares
 (only the extension above is compared in any case): each directory with
-mode `040000`, the file itself with `100644` or `100755`. A segment its
-directory's tree does not list means the file is not there at the
-commit: `not_found` with `details.fields["settings.contract_path"]:
-"not_found_on_forge"`, as above, since the file may appear later. A
-symlink (`120000`), a submodule (`160000`) or any other mode, and a tree
-answered with `truncated: true`, are `invalid` with
-`details.fields["settings.contract_path"]: "not_markdown"`: the check
-fails closed, and nothing is shown, never the target's text. A commit's
+mode `040000`, the file itself with `100644` or `100755`. A directory's
+tree answered with `truncated: true` is `invalid` with
+`details.fields["settings.contract_path"]: "not_markdown"` before any
+segment is looked up in it, since a cut tree cannot tell a missing entry
+from one cut off. A segment that a complete tree does not list means the
+file is not there at the commit: `not_found` with
+`details.fields["settings.contract_path"]: "not_found_on_forge"`, as
+above, since the file may appear later. A symlink (`120000`), a
+submodule (`160000`) or any other mode is `invalid` with `not_markdown`
+too: the check fails closed, and nothing is shown, never the target's
+text. A commit's
 tree never changes, so the hub may cache each directory's tree per
 commit SHA and directory: the extra reads come once per commit, not per
 reader. Without the

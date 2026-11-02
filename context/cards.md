@@ -258,10 +258,11 @@ keeps it from exposing arbitrary repository files to every
 the name says nothing about the file it points to: the hub reads the
 non-recursive tree of each directory on the path at the commit, every
 segment must be listed under exactly its name as a directory (`040000`)
-or, last, a regular file (`100644`, `100755`); a missing segment is
-`not_found_on_forge`, as for any file not there at the commit, and
-anything else, a truncated tree included, is `not_markdown`: the check
-fails closed. The
+or, last, a regular file (`100644`, `100755`); a tree answered with
+`truncated: true` is `not_markdown` before any segment is looked up in
+it, a segment missing from a complete tree is `not_found_on_forge`, as
+for any file not there at the commit, and any other mode is
+`not_markdown`: the check fails closed. The
 tree of a commit never changes, so it is cached per commit SHA and
 directory. The file cap for this read and for a card's section is
 4 MiB instead of 1 MiB; a larger file is refused, never cut.
@@ -302,10 +303,10 @@ reading up to 4 MiB again; after a `304` the view keeps the `ref`,
   mode states directly.
 - One read of the recursive tree, a missing entry taken as no symlink:
   GitHub truncates that tree for a large repository (torvalds/linux
-  lists nothing under `scripts/`), so a symlink there would pass; the
-  directory's own tree is never truncated, and a missing entry fails
+  lists nothing under `scripts/`), so a symlink there would pass; each
+  directory's own tree is read instead, and one answered truncated fails
   closed.
-- A missing segment as `not_markdown`: a directory's own tree lists
+- A missing segment as `not_markdown`: a complete directory tree lists
   every entry, so a missing one means the file is not there, which the
   read already answers with `not_found_on_forge`; two codes for one case
   would depend on the order of the reads, and the file may appear later,
