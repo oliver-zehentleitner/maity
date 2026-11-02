@@ -378,5 +378,18 @@ window.Maity = window.Maity || {};
   const dormantOf = (m) => ((m && m.instances) || []).filter((i) => !i.revoked_at && i.dormant);
   const dormantNote = (ctx, m, inst) => M.t("instance.dormant", { address: "@" + (handleOf(ctx, m) || m.handle || m.id) + "#" + inst.id });
 
-  M.dom = { handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, memberRef, instanceHref, memberChip, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, get SEND_KEYS() { return sendKeys(); }, sendKeysFor, showSendKeys, sendOnCtrlEnter };
+  // Words of the contract that more than one page shows; a value the hub adds later reads as it comes.
+  const WORDS = {
+    label: { fix: () => M.t("cards.label.fix"), feature: () => M.t("cards.label.feature"), chore: () => M.t("cards.label.chore") },
+    status: {
+      proposed: () => M.t("board.status.proposed"), open: () => M.t("board.status.open"), in_progress: () => M.t("board.status.in_progress"),
+      blocked: () => M.t("board.status.blocked"), review: () => M.t("board.status.review"), done: () => M.t("board.status.done"),
+      cancelled: () => M.t("board.status.cancelled"),
+    },
+    contract: { proposed: () => M.t("board.contract.state.proposed"), final: () => M.t("board.contract.state.final") },
+    pr: { open: () => M.t("board.pr.state.open"), merged: () => M.t("board.pr.state.merged"), closed: () => M.t("board.pr.state.closed") },
+  };
+  const word = (set, value) => (Object.hasOwn(WORDS[set], value) ? WORDS[set][value]() : value);
+
+  M.dom = { word, handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, memberRef, instanceHref, memberChip, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, get SEND_KEYS() { return sendKeys(); }, sendKeysFor, showSendKeys, sendOnCtrlEnter };
 })(window.Maity);

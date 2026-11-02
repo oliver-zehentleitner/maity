@@ -16,6 +16,10 @@ window.Maity = window.Maity || {};
     { path: "/organisation", get label() { return M.t("nav.organisation"); } },
     { path: "/why", get label() { return M.t("nav.why"); } },
   ];
+  const PROJECT_STATES = {
+    plan: () => M.t("state.plan"), build: () => M.t("state.build"), review: () => M.t("state.review"),
+    launch: () => M.t("state.launch"), archived: () => M.t("state.archived"),
+  };
   const PROJECT_KINDS = ["project", "board", "members", "organisation", "why"];
   const COUNTERS = {
     get cards_done() { return M.t("visitor.stat.cards_done"); },
@@ -59,7 +63,7 @@ window.Maity = window.Maity || {};
   const draw = {
     project(d) {
       return [
-        h("p", { class: "muted" }, d.state),
+        h("p", { class: "muted" }, Object.hasOwn(PROJECT_STATES, d.state) ? PROJECT_STATES[d.state]() : d.state),
         d.about ? h("div", { class: "about" }, M.markdown(d.about)) : null,
         d.repository_url ? h("p", null, external(d.repository_url)) : null,
         d.links.map((url) => h("p", null, external(url))),
@@ -73,7 +77,7 @@ window.Maity = window.Maity || {};
       return h("div", { class: "columns" }, d.columns.map((col) => h("section", { class: "column", "data-status": col.status, "aria-label": COLUMNS[col.status] || col.status },
         h("h2", null, (COLUMNS[col.status] || col.status) + " (" + col.cards.length + ")"),
         col.cards.map((c) => h("article", { class: "card", "data-card": c.id, "aria-label": c.title },
-          h("header", null, h("span", { class: "card-id" }, c.id), c.label ? h("span", { class: "label-tag" }, c.label) : null),
+          h("header", null, h("span", { class: "card-id" }, c.id), c.label ? h("span", { class: "label-tag" }, M.dom.word("label", c.label)) : null),
           h("h3", null, c.title),
           holderLabel(c.holder))))));
     },
@@ -100,7 +104,7 @@ window.Maity = window.Maity || {};
         d.family.length ? [h("h2", null, M.t("visitor.why.family")),
           h("ul", null, d.family.map((m) => h("li", null, external(m.dashboard_url, m.name || m.path) || (m.name || m.path))))] : null,
         d.attention.length ? [h("h2", null, M.t("visitor.why.attention")),
-          h("ul", null, d.attention.map((a) => h("li", null, external(a.link, a.title) || a.title, " ", h("span", { class: "label-tag" }, a.status))))] : null,
+          h("ul", null, d.attention.map((a) => h("li", null, external(a.link, a.title) || a.title, " ", h("span", { class: "label-tag" }, M.why.statusWord(a.status)))))] : null,
       ];
     },
     person(d) {
