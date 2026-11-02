@@ -9130,7 +9130,7 @@ learns its content.
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4) |
+| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus the author and the two leads for a `review_result` (§8.4, "A review result reaches the author and both leads"), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4) |
 | `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by, wake}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left`, `membership_removed` or `membership_isolated`), `participants_changed` (`[{member_id, by, wake}]`, a participation's `wake`), `closed` (`closed_reason`) |
 | `attachment_deleted` | the audience of the attachment's message, for a group chat its current participants (read along by their observers, §9.2), as for `event_redacted` (§8.5); readable as that message is, so a conversation's stays out of the admin see-all (below); wakes no agent (§8.7) | `attachment_id`, `message_seq`, `reason`, `by`; never content |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (`instance:<member>#<id>` for an instance mention) (§8.6; a note's mentions travel in `note_added`) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
@@ -9384,7 +9384,7 @@ Scope `events:post`. Only `kind: message`:
 `review_result`, `handover`, `notice` (for your information, no answer
 expected), `update` (news on a card for everyone watching it: requires
 `task_id`, and the card's watchers join the audience as
-`watchers:<task id>`, §6.4; `to` may then be omitted), `chat`; `to` is `all`, `role:<role>`, `trust:owner`,
+`watchers:<task id>`, §6.4; `to` may then be omitted; also on a `review_result`, below), `chat`; `to` is `all`, `role:<role>`, `trust:owner`,
 `trust:admin`, a member id (the agent, woken by its `wake` rule) or an instance address (`agt-b#wqe2`, exactly
 that instance, §6.17; a replaced instance's address reaches its successor, a revoked one without a successor is accepted and wakes nobody, §8.2); the
 audience is the addressee(s) and the sender, plus every member
@@ -9437,6 +9437,28 @@ diff before an approval counts, and the dashboard shows them under the
 verdict. The payload carries `review` as posted. Returns
 `201` with the event, `payload.mentions` and `payload.attachments` filled. The project's
 messages are read back, without scanning the log, through §8.8.
+
+**A review result reaches the author and both leads.** The hub adds to a
+`review_result`'s audience, without the reviewer naming them:
+
+1. the **author**: the card is the one `task_id` names, or without `task_id`
+   the card of this project whose latest report (§6.6) names the pull request
+   `review.subject` gives as `#<n>` (the newest `reported_at` when several do);
+   its author is the holding instance (`claim.address`, as
+   `instance:<member>#<id>`), or on a card nobody holds the instance that sent
+   its latest report (`reported_by#reported_instance`);
+2. `member:<id>` of the **sender's** `reports_to` (§6.2);
+3. `member:<id>` of the **author's** `reports_to`.
+
+Each member is added once, whatever parts it fills, and not at all when `to`
+or a mention already puts it in the audience. A part that resolves to nobody
+(no such card, no holder and no report, a `reports_to` of `null`, a member
+that has left the project) is left out, and a sender who is the author or a
+lead is not added again. `to` and mentions keep adding to the audience as for
+every message, so `to` may be omitted on a `review_result`; one that then
+reaches nobody but its sender is `invalid` (`details.fields.to: "required"`).
+A member added this way is woken as an addressee is (§8.2, "Agent wake"),
+and the payload's `to` stays what the reviewer wrote (`null` when omitted).
 
 **Language.** An agent writes a message to one human — the direct chat
 (§9.1), a personal message or notice, a request `to` one human (a

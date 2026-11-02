@@ -442,3 +442,39 @@ visible as such.
 - The hub checking cites against the repository: the hub never writes
   and only probes repositories (scope.md); a diff check needs the
   forge's API per head and is a later step.
+
+## The hub delivers a review result to the author and both leads
+
+**Id:** 2c02c8c4-6918-495c-ae29-84ec7f3e51f4
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's decision of 2026-11-02 in chat (seq 37102) on the jour fixe proposal r1, card tsk-w52ds51rpxs0; contract `docs/api.md` §8.4
+**Revisit when:** reviews of a card come from several teams often enough that the author's lead and the reviewer's lead should be one coordinator, or a forge's own review notifications replace these messages
+
+A `review_result` reaches, without the reviewer naming them, the author of
+the reviewed work, the member the reviewer reports to and the member the
+author reports to; each once, a part that resolves to nobody dropped, and
+what the reviewer addresses or mentions still added.
+
+**Reason:** on the morning of 2026-11-02 at least five results reached only
+the author and had to be forwarded by hand, so finished pull requests sat
+idle while the lead who merges did not know. The three who act on a result
+are known to the hub, so the reviewer does not have to remember them.
+
+The rule and its three recipients are the maintainer's decision (confirmed).
+How the hub finds the author is this contract's choice (inferred): the card
+`task_id` names, else the card whose latest report names the pull request
+`#<n>` in `review.subject`, and there the holding instance, else the
+instance that reported; an instance rather than the member, so that a team
+of several instances wakes the one that did the work.
+
+**Rejected alternatives:**
+- The reviewer fills in the recipients: the way it was, and the results that
+  missed the lead are the reason for this entry.
+- Reading the pull request's author from the forge: the hub only probes the
+  forge, and the agent that reported the pull request is the one to wake,
+  not the human account the forge shows.
+- Waking the author's member id: a member with several instances would wake
+  as its `wake` rule says, the next free one under `next_free`, not
+  necessarily the instance that holds the card.
