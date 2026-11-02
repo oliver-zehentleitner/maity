@@ -2363,7 +2363,8 @@ secret_key_missing`.
   QR in §2.6.7); the secret is also shown as text for manual entry.
 - **Told.** Every change writes the account record
   `second_factor_changed` `{change, by}` (§18.1, a `security`
-  notification) and sends the security mail of §18.5. `change` is
+  notification) and sends the security mail of §18.5, at once whatever
+  `email.kinds.security.mode` says (§18.4). `change` is
   `enrolled`, `disabled`, `recovery_codes`, `recovery_code_used`,
   `reset` or `instance_off`; `by` is the human's own handle for the
   first four, the admin's handle for a reset through the API,
@@ -2411,7 +2412,8 @@ included:
 - Wrong: `code_invalid`. The fifth wrong code ends the second-factor
   session (the first factor must be done again) and writes the account
   record `second_factor_failed` `{method, ip, browser, os}`, a
-  `security` notification with a security mail: someone held the
+  `security` notification with a security mail, sent at once whatever
+  the mode (§18.4): someone held the
   password, the mailbox or a device code, but not the app. At step-up
   (§2.8.4) the tenth wrong code in the window of §2.8.6, from whichever
   session, writes it too, with `method: step_up`.
@@ -15845,8 +15847,9 @@ device; the browser's own permission is per browser and is not stored.
   the address is removed, the old address gets one security mail saying
   the address was changed (the new one masked to its first character
   and its domain), when, and from which browser, operating system and
-  IP address — whatever `email.kinds.security.mode` says, since `off`
-  silences only alerts of new sign-ins — and the hub writes the account
+  IP address — whatever `email.kinds.security.mode` says, since that
+  mode governs only alerts of new sign-ins ("At once, whatever the
+  mode", below) — and the hub writes the account
   record `email_address_changed` (a `security` notification, §18.1).
   With the sign-in contract (#169, §2.6.3) the verified address is a
   sign-in factor. What this rule guarantees: neither a session obtained
@@ -15882,15 +15885,35 @@ device; the browser's own permission is per browser and is not stored.
   mailboxes filled by mention mails: `inbox` and `security`
   `immediate`; `mention`, `chat` and every kind added later `daily`.
   The `inbox` mode never covers a `registration_pending` or
-  `mail_disabled` item: neither is mailed (§18.1). An `immediate`
-  `security` item is not held by quiet hours; one the human put in a
-  digest goes out with that digest. The notice to the old address after
-  an address change (above) goes out at once whatever the mode.
+  `mail_disabled` item: neither is mailed (§18.1). What the `security`
+  mode governs is the alert of a new sign-in (`session_created`,
+  §2.6.5): an `immediate` one is not held by quiet hours, one the human
+  put in a digest goes out with that digest, `off` sends none. The
+  other `security` items are dashboard-only (`forge_access_changed`,
+  `email_address_changed`) or go out at once (below).
+- **At once, whatever the mode.** These mails warn of a takeover under
+  way or answer something the human did, so no mode, digest, quiet
+  hours or `off` holds them: the notice to the old address after an
+  address change (above); the mail of `second_factor_changed`
+  (disabled, reset or changed, §2.8) and of `second_factor_failed`
+  (§2.8); the confirmation of an account deletion (§2.9); the mail
+  after a registration decision (§2.7.5). They are security mail
+  (§16.2, own budget).
 - **Defaults and what was saved.** The hub stores only what the human
   set; a kind whose `mode` the human never set follows the default as
   it is when the mail is built, so a changed default reaches every such
   kind of every account. A mode the human set — by `PATCH` or by an
-  unsubscribe link (§18.6) — stays as set.
+  unsubscribe link (§18.6) — stays as set. The `GET` shows the merged
+  values, so a client sends in `email.kinds` only the kinds the human
+  changed; a kind sent back unchanged counts as set.
+- **Changing a mode.** Items already waiting are mailed by the mode in
+  force when a pass builds the mail: switched to `immediate` they go
+  with the next pass, switched to `off` they are not mailed while it
+  is `off` (the bell keeps them), switched to another digest they wait for its moment. A
+  digest's moment is the latest `daily_at` (on `weekly_on`, for
+  `weekly`) not after the pass, so a changed `weekly_on` or `daily_at`
+  takes effect at the next such moment, and a moment the hub missed
+  (it was down) is sent at its next pass.
 - **`weekly_on`** (default `mon`): the day of a `weekly` digest, one of
   `mon`, `tue`, `wed`, `thu`, `fri`, `sat`, `sun`; anything else is
   `invalid` at `email.weekly_on`. A `weekly` digest holds every item of

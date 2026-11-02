@@ -308,10 +308,13 @@ Mail per kind keeps one setting, the mode, which is also the interval:
 default, at `daily_at`) or `off`. The defaults are `immediate` for the
 inbox and security notices and `daily` for mentions, chat and any kind
 added later. Every kind takes every mode, security included: the human
-may put sign-in alerts in a digest. The old-address notice after an
-address change and the transactional mails (sign-in link and code,
-second factor, password reset, address verification) are no
-notifications and follow no mode. The hub stores only what the human
+may put sign-in alerts in a digest or turn them off. What warns of a
+takeover under way or answers the human's own step goes out at once
+whatever the mode: the old-address notice after an address change, the
+mails of a second factor changed or failed, the confirmation of an
+account deletion, the mail after a registration decision, and the
+transactional mails (sign-in link and code, second-factor code,
+password reset, address verification). The hub stores only what the human
 set, so the new defaults reach every kind nobody chose, and a choice
 someone made stays.
 
@@ -322,12 +325,17 @@ for existing accounts is that whoever saved something keeps it. Letting
 security go into a digest replaces the earlier rule "a delayed alert is
 no alert" by the human's own choice; the notice that the address
 itself changed still cannot be delayed, since it warns the one mailbox
-an attacker no longer controls.
+an attacker no longer controls; nor can the second factor's warnings,
+for the same reason.
 
 **Rejected alternatives:**
 - Mentions and chat off by default: a human would never learn they
   were asked for something unless they opened the dashboard.
 - One digest interval for all kinds: the inbox and security would
   have to share the mentions' delay, or the mentions the inbox's speed.
+- Every security mail following the mode, as the first draft had it: an
+  attacker who turns off the second factor would be reported a week
+  later in a weekly digest (review of the contract, decided by the
+  coordinator the same day).
 - Resetting stored modes to the new defaults: it overrides choices
   people made, against the maintainer's rule.
