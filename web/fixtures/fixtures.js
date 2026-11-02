@@ -3571,6 +3571,17 @@ window.MAITY_FIXTURES = {
   },
   "maity/swarm.json": {
     "as_of": "2026-10-21T13:00:00Z",
+    "awake": {
+      "hours": 22,
+      "of_hours": 24,
+      "since": "2026-10-20T13:00:00Z"
+    },
+    "board": {
+      "blocked": 1,
+      "in_progress": 2,
+      "open": 5,
+      "review": 1
+    },
     "coverage": {
       "reviews_since": "2026-10-20"
     },
@@ -3687,7 +3698,140 @@ window.MAITY_FIXTURES = {
         "reviews_given": 0
       }
     ],
+    "team": {
+      "agents": 3,
+      "humans": 1,
+      "instances": 4,
+      "online": {
+        "agents": 2,
+        "humans": 1,
+        "instances": 3
+      }
+    },
     "totals": {
+      "cards_created": 61,
+      "cards_created_per_day": [
+        {
+          "count": 3,
+          "date": "2026-09-22"
+        },
+        {
+          "count": 1,
+          "date": "2026-09-23"
+        },
+        {
+          "count": 2,
+          "date": "2026-09-24"
+        },
+        {
+          "count": 4,
+          "date": "2026-09-25"
+        },
+        {
+          "count": 0,
+          "date": "2026-09-26"
+        },
+        {
+          "count": 2,
+          "date": "2026-09-27"
+        },
+        {
+          "count": 3,
+          "date": "2026-09-28"
+        },
+        {
+          "count": 1,
+          "date": "2026-09-29"
+        },
+        {
+          "count": 2,
+          "date": "2026-09-30"
+        },
+        {
+          "count": 2,
+          "date": "2026-10-01"
+        },
+        {
+          "count": 5,
+          "date": "2026-10-02"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-03"
+        },
+        {
+          "count": 0,
+          "date": "2026-10-04"
+        },
+        {
+          "count": 3,
+          "date": "2026-10-05"
+        },
+        {
+          "count": 2,
+          "date": "2026-10-06"
+        },
+        {
+          "count": 4,
+          "date": "2026-10-07"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-08"
+        },
+        {
+          "count": 2,
+          "date": "2026-10-09"
+        },
+        {
+          "count": 3,
+          "date": "2026-10-10"
+        },
+        {
+          "count": 0,
+          "date": "2026-10-11"
+        },
+        {
+          "count": 2,
+          "date": "2026-10-12"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-13"
+        },
+        {
+          "count": 4,
+          "date": "2026-10-14"
+        },
+        {
+          "count": 2,
+          "date": "2026-10-15"
+        },
+        {
+          "count": 3,
+          "date": "2026-10-16"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-17"
+        },
+        {
+          "count": 2,
+          "date": "2026-10-18"
+        },
+        {
+          "count": 0,
+          "date": "2026-10-19"
+        },
+        {
+          "count": 3,
+          "date": "2026-10-20"
+        },
+        {
+          "count": 2,
+          "date": "2026-10-21"
+        }
+      ],
       "cards_done": 36,
       "cards_done_per_day": [
         {
@@ -3813,7 +3957,136 @@ window.MAITY_FIXTURES = {
       ],
       "claim_to_done_median_seconds": 6100,
       "handovers": 3,
+      "messages": {
+        "chat": 420,
+        "notice": 310,
+        "other": 55,
+        "review_result": 56
+      },
       "prs_merged": 23,
+      "prs_merged_per_day": [
+        {
+          "count": 1,
+          "date": "2026-09-22"
+        },
+        {
+          "count": 1,
+          "date": "2026-09-23"
+        },
+        {
+          "count": 0,
+          "date": "2026-09-24"
+        },
+        {
+          "count": 1,
+          "date": "2026-09-25"
+        },
+        {
+          "count": 2,
+          "date": "2026-09-26"
+        },
+        {
+          "count": 1,
+          "date": "2026-09-27"
+        },
+        {
+          "count": 0,
+          "date": "2026-09-28"
+        },
+        {
+          "count": 1,
+          "date": "2026-09-29"
+        },
+        {
+          "count": 1,
+          "date": "2026-09-30"
+        },
+        {
+          "count": 0,
+          "date": "2026-10-01"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-02"
+        },
+        {
+          "count": 0,
+          "date": "2026-10-03"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-04"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-05"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-06"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-07"
+        },
+        {
+          "count": 0,
+          "date": "2026-10-08"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-09"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-10"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-11"
+        },
+        {
+          "count": 0,
+          "date": "2026-10-12"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-13"
+        },
+        {
+          "count": 0,
+          "date": "2026-10-14"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-15"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-16"
+        },
+        {
+          "count": 0,
+          "date": "2026-10-17"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-18"
+        },
+        {
+          "count": 0,
+          "date": "2026-10-19"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-20"
+        },
+        {
+          "count": 2,
+          "date": "2026-10-21"
+        }
+      ],
+      "review_results_per_pr": 2.4,
       "review_to_done_median_seconds": 2400,
       "reviews_given": 13
     },

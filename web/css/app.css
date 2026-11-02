@@ -1237,6 +1237,13 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* A section of the Overview (a grid item) never grows past its column:
    the table scrolls sideways in its own box on a phone. */
 .swarm-body { min-width: 0; }
+/* The swarm as a whole (§6.22): the team and the board now, as small figures. */
+.swarm-figures { display: inline-block; vertical-align: top; margin: 0 24px 8px 0; }
+.swarm-figures h5 { margin: 0 0 4px; font-size: 0.85rem; }
+.swarm-figures dl { display: grid; grid-template-columns: auto auto; gap: 2px 12px; margin: 0; }
+.swarm-figures dt { color: var(--muted); }
+.swarm-figures dd { margin: 0; font-variant-numeric: tabular-nums; }
+.swarm-awake, .swarm-messages, .swarm-reviews-per-pr { margin: 4px 0; }
 .swarm-body .table-scroll { overflow-x: auto; max-width: 100%; }
 .swarm-table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .swarm-table th, .swarm-table td { text-align: right; padding: 4px 10px 4px 0; border-bottom: 1px solid var(--border); white-space: nowrap; }
