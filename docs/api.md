@@ -2070,7 +2070,10 @@ transport, `Sec-Fetch-Site` and `next`.
    fields: the **password chosen at registration**, the **handle**, the
    **display name** — under it the note "Your name and handle are
    publicly visible. The name can be anything; it does not have to be
-   your real one.", since every account has a public page (§16.9) — and — when the instance has terms — "I accept the
+   your real one. Your profile is public by default, with your public
+   projects and the text and links you choose to show there; you can
+   turn it off in your account.", since every account has a public page
+   and `public_profile` starts `true` (§16.9) — and — when the instance has terms — "I accept the
    terms (<url>, version <version>)", unchecked, for the instance's
    current version. The form carries that version in a hidden field the
    hub signs together with the registration token (HMAC under
