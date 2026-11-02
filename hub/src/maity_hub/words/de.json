@@ -54,7 +54,7 @@
   "mail_links.delete_title": "Mein Konto löschen",
   "mail_links.last_instance_admin": "Nichts wurde gelöscht: du bist der letzte Admin der Instanz. Dieser Link funktioniert, bis er abläuft.",
   "mail_links.namespace_owner": "Nichts wurde gelöscht: ein Projekt in deinem Namensraum ist nicht archiviert. Übertrage oder archiviere es zuerst; dieser Link funktioniert, bis er abläuft.",
-  "mail_links.org_last_owner": "Nichts wurde gelöscht: du bist der letzte Owner einer Organisation. Mach zuerst jemand anderen zum Owner oder lösche die Organisation; dieser Link funktioniert, bis er abläuft.",
+  "mail_links.org_last_owner": "Nichts wurde gelöscht: du bist der letzte Besitzer einer Organisation. Mach zuerst jemand anderen zum Owner oder lösche die Organisation; dieser Link funktioniert, bis er abläuft.",
   "mail_links.reset_button": "Meine Zwei-Faktor-Anmeldung zurücksetzen",
   "mail_links.reset_done": "Deine Zwei-Faktor-Anmeldung wurde zurückgesetzt, und alle Sitzungen sind beendet. Melde dich neu an und richte sie noch einmal ein.",
   "mail_links.reset_reason": "Die angegebene Begründung:",

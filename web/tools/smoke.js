@@ -3147,6 +3147,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The reader's language (§6.2): the account's, else ?lang= or the choice, then the browser's, then en.
   {
     const i18n = win.Maity.i18n;
+    // These cases set the list themselves, whichever catalogs the site has.
+    expect(i18n.available.includes("en") && i18n.available.includes("de"), "language: the site offers what is in i18n/");
+    i18n.available.length = 0;
+    i18n.available.push("en");
     expect(JSON.stringify([...i18n.available]) === '["en"]' && win.Maity.interfacePicker("x", "en", false) === null,
       "language: only languages with a catalog are offered, and with one there is no choice to make");
     const oldNavigator = win.navigator, oldStorage = win.localStorage, oldSearch = win.location.search;
