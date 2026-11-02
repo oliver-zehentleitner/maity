@@ -184,3 +184,41 @@ def test_a_new_state_dir_is_exactly_0700_whatever_the_umask(tmp_path: Path) -> N
     finally:
         os.umask(before)
     assert mode(tmp_path / "s") == 0o700
+
+
+@posix
+@pytest.mark.parametrize("loose", [False, True])
+def test_another_users_file_names_the_way_out_and_who_else_reaches_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, loose: bool
+) -> None:
+    """No chmod to offer for someone else's file, but the revoke hint, the owner and,
+    when the mode lets them in, group and others."""
+    directory = tmp_path / "s"
+    state.write_credential(directory, state.Secret("tok"))
+    if loose:
+        directory.chmod(0o750)
+    me = os.getuid()
+    monkeypatch.setattr(os, "getuid", lambda: me + 1)
+    with pytest.raises(state.StateError) as raised:
+        state.check_private(directory, revoke="revoke it there")
+    text = str(raised.value)
+    assert f"belongs to another user (uid {me})" in text
+    assert text.endswith("; revoke it there")
+    assert ("group or others (mode 0750)" in text) is loose
+    assert "chmod" not in text
+
+
+@posix
+def test_another_users_state_dir_by_default_names_a_directory_of_ones_own(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Revoking alone leaves a `sudo maity join`'s directory where it was: the way on is an own
+    directory and a new join."""
+    directory = tmp_path / "s"
+    state.write_credential(directory, state.Secret("tok"))
+    me = os.getuid()
+    monkeypatch.setattr(os, "getuid", lambda: me + 1)
+    with pytest.raises(state.StateError) as raised:
+        state.read_credential(directory)
+    assert str(raised.value).endswith(f"; {state.REVOKE_SESSION_FOREIGN}")
+    assert "MAITY_STATE_DIR" in state.REVOKE_SESSION_FOREIGN
