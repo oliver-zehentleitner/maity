@@ -4642,5 +4642,9 @@ window.MAITY_I18N["de"] = {
     "one": "{count} Eintrag ohne ID wurde übersprungen.",
     "other": "{count} Einträge ohne ID wurden übersprungen."
   },
-  "why.title": "Why"
+  "why.title": "Why",
+  "why.type.constraint": "Randbedingung",
+  "why.type.decision": "Entscheidung",
+  "why.type.incident": "Vorfall",
+  "why.type.workaround": "Workaround"
 };

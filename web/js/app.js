@@ -2034,7 +2034,7 @@ window.Maity = window.Maity || {};
       mark("maity-mark-small.svg", "brand-light"), mark("maity-mark-small-dark.svg", "brand-dark"),
       h("h2", { class: "page-failed-title" }, title),
       h("p", { class: "muted" }, advice),
-      h("details", null, h("summary", null, M.t("page.failed.details")), h("p", { class: "page-failed-reason" },
+      h("details", null, h("summary", null, M.t("page.failed.details")), h("p", { class: "page-failed-reason", translate: "no" },
         [err.status ? "HTTP " + err.status + (err.code ? " " + err.code : "") : M.t("page.failed.no_answer"), err.message, err.path || null].filter(Boolean).join(" · "))),
       h("div", { class: "page-failed-actions" }, signIn, again));
   }

@@ -4637,5 +4637,9 @@
     "one": "Se omitió {count} entrada sin id.",
     "other": "Se omitieron {count} entradas sin id."
   },
-  "why.title": "Why"
+  "why.title": "Why",
+  "why.type.decision": "decisión",
+  "why.type.workaround": "solución provisional",
+  "why.type.incident": "incidente",
+  "why.type.constraint": "restricción"
 }

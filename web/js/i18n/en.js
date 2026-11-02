@@ -4642,5 +4642,9 @@ window.MAITY_I18N["en"] = {
     "one": "{count} entry without an id was skipped.",
     "other": "{count} entries without an id were skipped."
   },
-  "why.title": "Why"
+  "why.title": "Why",
+  "why.type.constraint": "constraint",
+  "why.type.decision": "decision",
+  "why.type.incident": "incident",
+  "why.type.workaround": "workaround"
 };

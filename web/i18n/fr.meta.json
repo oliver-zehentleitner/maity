@@ -17078,5 +17078,21 @@
   "why.title": {
     "en": "3b27804ac2ee6218",
     "text": "3b27804ac2ee6218"
+  },
+  "why.type.constraint": {
+    "en": "de0740072b4b7e32",
+    "text": "8923882e776b8b9c"
+  },
+  "why.type.decision": {
+    "en": "0807ce842aee5194",
+    "text": "4fb85dc8d53db5f6"
+  },
+  "why.type.incident": {
+    "en": "eca7e46dba9d5a4d",
+    "text": "eca7e46dba9d5a4d"
+  },
+  "why.type.workaround": {
+    "en": "9ca98a86c44a2b28",
+    "text": "9c2ac244955bfe9c"
   }
 }

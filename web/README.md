@@ -1446,12 +1446,13 @@ request.
 `make pseudo` (`tools/pseudo_run.py`, Playwright, no hub) opens every route `tools/smoke.js` visits, in the fixtures,
 with a pseudo catalog made from `i18n/en.json`: each text marked `⟦…⟧` and accented, placeholders kept. The site is
 copied for the run, so the pseudo language is never in the repository. What carries no mark is listed by the file that
-holds its words; data of the fixtures, dates, handles and addresses are left out. `--report FILE` writes it as JSON,
-`--strict` (`make pseudo STRICT=1`) fails on any.
+holds its words; data of the fixtures, dates, handles and addresses are left out, and so is what sits under
+`translate="no"` (an example, a language's own name, a technical reason: give it that attribute when a page shows it as
+it is on purpose) or `aria-hidden="true"`. `--report FILE` writes it as JSON, `--strict` (`make pseudo STRICT=1`) fails
+on any.
 
 It sees a page as it opens: what only a click shows, and what the fixtures do not reach, stays with the reviewer.
-CI runs it in `web-e2e` as a report (`pseudo-report.json` among the screenshots) and turns strict with the last
-language's pull request.
+CI runs it strict in `web-e2e`, with `pseudo-report.json` among the screenshots.
 
 ## Browser end-to-end test
 

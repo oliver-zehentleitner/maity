@@ -4642,5 +4642,9 @@ window.MAITY_I18N["fr"] = {
     "one": "{count} entrée sans identifiant a été ignorée.",
     "other": "{count} entrées sans identifiant ont été ignorées."
   },
-  "why.title": "Why"
+  "why.title": "Why",
+  "why.type.constraint": "contrainte",
+  "why.type.decision": "décision",
+  "why.type.incident": "incident",
+  "why.type.workaround": "contournement"
 };

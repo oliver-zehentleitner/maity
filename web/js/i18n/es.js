@@ -4642,5 +4642,9 @@ window.MAITY_I18N["es"] = {
     "one": "Se omitió {count} entrada sin id.",
     "other": "Se omitieron {count} entradas sin id."
   },
-  "why.title": "Why"
+  "why.title": "Why",
+  "why.type.constraint": "restricción",
+  "why.type.decision": "decisión",
+  "why.type.incident": "incidente",
+  "why.type.workaround": "solución provisional"
 };
