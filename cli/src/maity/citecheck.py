@@ -25,6 +25,7 @@ _LINE_BREAK = re.compile("[\r\n\u0085\u2028\u2029]")
 class Result:
     bad: list[str]  # one line per cite that does not stand at the commit
     unchecked: str | None = None  # why nothing could be checked
+    top: Path | None = None  # the top of the clone that has the commit, for the text check
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -109,5 +110,6 @@ def check(cwd: Path, review: Any) -> Result:
         return Result(
             bad,
             f"{named}: a shallow clone can't show what was removed; `git fetch --unshallow` can",
+            cwd,
         )
-    return Result(bad)
+    return Result(bad, None, cwd)

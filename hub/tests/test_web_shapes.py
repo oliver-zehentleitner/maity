@@ -12,6 +12,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -164,6 +165,18 @@ def _seed(make_client: ClientFactory, migrated: Any) -> tuple[flow.Human, dict[s
     _ok(agent.post(f"{base}/requests", {"class": "decision", "title": "Ship?", "options": options}))
     _personal_from_elsewhere(make_client, migrated, owner)
     runner = paired(make_client, owner)
+    # `maintenance` in `GET /me` is an object only while a window is announced (§16.12).
+    starts = datetime.now(UTC).replace(microsecond=0) + timedelta(days=1)
+    window = {
+        "from": starts.isoformat().replace("+00:00", "Z"),
+        "until": (starts + timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+        "text": "Upgrade",
+    }
+    _ok(
+        owner.client.put(
+            "/api/v1/admin/maintenance", json=window, headers={"X-CSRF-Token": owner.csrf}
+        )
+    )
     ids = {
         "project": "maintainer/maity",
         "agent": agent.id,
