@@ -127,7 +127,7 @@ window.Maity = window.Maity || {};
   // The head of /login or /register: the heading at once in the catalogue's words, the pitch
   // when the hub has answered. The sign-in never waits for it, and a failed read leaves the heading.
   function pitch(page, fallback) {
-    const title = h("h2", null, fallback);
+    const title = h("h2", { class: "door-title" }, fallback);
     const rest = h("div", { class: "door-pitch" });
     const el = h("div", { class: "door-head" }, title, rest);
     M.api.get("/auth/pages/" + page + "?lang=" + encodeURIComponent(M.i18n.language)).then((answer) => {

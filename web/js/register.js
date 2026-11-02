@@ -50,7 +50,8 @@ window.Maity = window.Maity || {};
       return;
     }
     const allowed = (methods && methods.registration) || (invitation && invitation.registration === "sign_in_or_register");
-    append(box, allowed ? M.authPages.pitch("sign_up", "Create an account") : h("h2", null, "Create an account"));
+    const heading = "Create an account";
+    append(box, allowed ? M.authPages.pitch("sign_up", heading) : h("h2", null, heading));
     if (!allowed) {
       append(box, h("p", null, "This hub does not create new accounts on request."),
         h("p", null, "If you have an account, ", h("a", { href: signIn }, "sign in"), "."));
