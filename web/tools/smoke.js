@@ -1725,7 +1725,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.getAll = rAll1;
   await fireIntervals(); await tick(); await tick();
   btn(card("home-laptop"), "Remove").click(); await tick(); await tick(); await tick();
-  expect(!card("home-laptop") && text(main).includes("home-laptop was removed.") && text(main).includes("Agent B · running")
+  expect(!card("home-laptop") && text(main).includes("home-laptop was removed.") && text(main).includes("plc-0003")
     && text(main).includes("maity runner stop-all"), "runners: removed, with the agents still running that are now the operator's to end");
   win.Maity.api.post = rPost; win.Maity.api.patch = rPatch; win.Maity.api.del = rDel;
   const realAll2 = win.Maity.api.getAll;

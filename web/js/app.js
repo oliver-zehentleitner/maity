@@ -61,13 +61,6 @@ window.Maity = window.Maity || {};
 
   // docs/api.md §6.1; moving to launch is the owner's go.
   const STATES = ["plan", "build", "review", "launch", "archived"];
-  const STATE_LABELS = {
-    get plan() { return M.t("state.plan"); },
-    get build() { return M.t("state.build"); },
-    get review() { return M.t("state.review"); },
-    get launch() { return M.t("state.launch"); },
-    get archived() { return M.t("state.archived"); },
-  };
 
   M.views = M.views || {};
 
@@ -210,7 +203,7 @@ window.Maity = window.Maity || {};
   M.THEME_WORDS = THEME_WORDS;
 
   function stateBadge(state, note) {
-    return h("span", { class: "state state-" + state, title: note || "" }, STATE_LABELS[state] || state);
+    return h("span", { class: "state state-" + state, title: note || "" }, M.dom.word("project", state));
   }
 
   // The released mark (docs/api.md §6.1): set once with the first release
@@ -699,7 +692,7 @@ window.Maity = window.Maity || {};
           selected: s === ctx.project.state,
           // Only the owner moves the project to launch; an admin may leave it.
           disabled: s === "launch" && !ctx.isOwner && ctx.project.state !== "launch",
-        }, STATE_LABELS[s])));
+        }, M.dom.word("project", s))));
       const note = h("input", { id: "state-note", value: ctx.project.state_note || "", placeholder: M.t("settings.state.note_placeholder") });
       const reason = h("input", { id: "state-reason", required: true, placeholder: M.t("settings.reason_placeholder") });
       append(panel, h("form", {
@@ -1279,7 +1272,7 @@ window.Maity = window.Maity || {};
       },
       projectMark(p.full_name, p.name, (ctx.projectViews || {})[p.full_name], "small"),
       p.name,
-      h("span", { class: "dot state-dot-" + p.state, title: STATE_LABELS[p.state] || p.state, "aria-label": STATE_LABELS[p.state] || p.state }),
+      h("span", { class: "dot state-dot-" + p.state, title: M.dom.word("project", p.state), "aria-label": M.dom.word("project", p.state) }),
       pill(p))),
     // Runners belong to the person, not to a project (the maintainer's
     // wish, tsk-cb6myw32def0): they are in the gear menu, not this row.
@@ -1582,7 +1575,7 @@ window.Maity = window.Maity || {};
       serverTime: me.server_time,
       scope: where.scope,
       projectLink,
-      stateLabel: (state) => STATE_LABELS[state] || state,
+      stateLabel: (state) => M.dom.word("project", state),
       stateBadge,
       releasedMark,
       ownLinks,
@@ -2041,7 +2034,6 @@ window.Maity = window.Maity || {};
   M.logout = logout;
   M.brandTitle = brandTitle;
   M.statusLine = statusLine;
-  M.STATE_LABELS = STATE_LABELS;
 
   // Back, forward, a link of the dashboard, M.route.go: the view follows.
   M.route.listen(render);
