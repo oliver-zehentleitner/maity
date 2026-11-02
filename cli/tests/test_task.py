@@ -315,3 +315,40 @@ def test_a_parent_with_open_children_names_them(
     assert cli.main(["task", "edit", "tsk-1", "--no-parent"]) == cli.EXIT_ERROR
     err = capsys.readouterr().err
     assert "dependencies_open" in err and "children are done or cancelled: tsk-3" in err
+
+
+# --- needs ------------------------------------------------------------------------------
+
+
+def test_create_sends_needs_and_show_prints_it(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("POST", TASKS)] = lambda seen: (201, card("tsk-0009"))
+    assert cli.main(["task", "create", "A check", "--needs", "tester"]) == cli.EXIT_OK
+    assert fake.signed()[-1].json() == {"title": "A check", "needs": "tester"}
+    capsys.readouterr()
+    fake.routes[("GET", f"{TASKS}/tsk-0009")] = lambda seen: (200, card("tsk-0009", needs="tester"))
+    fake.routes[("GET", TASKS)] = lambda seen: (200, {"items": [], "next_cursor": None})
+    assert cli.main(["task", "show", "tsk-0009"]) == cli.EXIT_OK
+    assert "  needs: tester\n" in capsys.readouterr().out
+
+
+def test_create_leaves_needs_out_without_the_flag_and_show_stays_silent(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("POST", TASKS)] = lambda seen: (201, card("tsk-0009"))
+    assert cli.main(["task", "create", "A check"]) == cli.EXIT_OK
+    assert "needs" not in fake.signed()[-1].json()
+    capsys.readouterr()
+    fake.routes[("GET", f"{TASKS}/tsk-0009")] = lambda seen: (200, card("tsk-0009", needs=None))
+    fake.routes[("GET", TASKS)] = lambda seen: (200, {"items": [], "next_cursor": None})
+    assert cli.main(["task", "show", "tsk-0009"]) == cli.EXIT_OK
+    assert "needs:" not in capsys.readouterr().out
+
+
+def test_an_unknown_role_shows_the_hubs_refusal(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("POST", TASKS)] = lambda seen: invalid("needs", "unknown")
+    assert cli.main(["task", "create", "A check", "--needs", "juggler"]) == cli.EXIT_ERROR
+    assert "needs" in capsys.readouterr().err

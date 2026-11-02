@@ -97,6 +97,8 @@ def test_while_suspended_the_organisation_takes_nothing_new(
     held(boss.post("/projects", {"slug": "again", "name": "Again", "owner": "oz-team"}))
     held(boss.post("/orgs/oz-team/members/invitations", {"handle": "pat", "role": "member"}))
     held(boss.patch("/orgs/oz-team", {"public_page": "on"}))
+    held(boss.patch("/orgs/oz-team", {"handle": "oz"}))
+    assert boss.patch("/orgs/oz-team", {"handle": "oz-team"}).status_code == 200  # a no-op
     # what stays allowed: its settings, its members and roles, its deletion
     assert boss.patch("/orgs/oz-team", {"display_name": "OZ Team II"}).status_code == 200
     assert boss.patch("/orgs/oz-team", {"public_page": "off"}).status_code == 200

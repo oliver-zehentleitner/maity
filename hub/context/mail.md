@@ -43,7 +43,7 @@ admin's `tls: none` meet a later environment host and send in clear
 **Id:** 30b4ad58-6913-49fd-b6a4-ed0a20bbee4e
 **Type:** decision
 **Type:** constraint
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** docs/api.md §16.2, §16.3, §18.4; the implementation of tsk-gwft8fzazd6w, 2026-10-23
 **Revisit when:** `/me/notification-settings` stores a verified address (§18.4), so that `to` may default to the admin's own

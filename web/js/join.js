@@ -165,6 +165,16 @@ window.Maity = window.Maity || {};
     // The fields a member's join leaves out.
     const membershipFields = [];
     const membershipField = (el) => { membershipFields.push(el); return el; };
+    // One click to what the form cannot change (tsk-svqsdp6qf0f3): the chosen agent's profile
+    // and, where it is a member here, the rulebook with its instance limit.
+    const profileLinks = h("p", { class: "hint join-profile-links" });
+    function profileLinksFor(id, member) {
+      clear(profileLinks);
+      profileLinks.hidden = !id;
+      if (!id) return;
+      append(profileLinks, h("a", { href: "/agents/" + encodeURIComponent(id) }, M.t("join.profile_link")),
+        member ? [" · ", h("a", { href: ctx.link("agents", id, "rulebook") }, M.t("join.rulebook_link"))] : null);
+    }
     // The choice starts from its default for each agent shown as a member.
     let shownFor = "";
     function showAgent() {
@@ -175,6 +185,7 @@ window.Maity = window.Maity || {};
       instanceBox.hidden = !m;
       membershipFields.forEach((f) => { f.hidden = !!m; });
       takeOverOptions();
+      profileLinksFor(agentSelect.value, m);
       if (!m) return;
       const active = activeOf(m);
       const kept = replaced.value;
@@ -198,7 +209,7 @@ window.Maity = window.Maity || {};
     // An agent never holds trust owner; admin and the role proxy only from an
     // owner, proxy only with trust admin (§3.1, owner_only §2.3).
     const trusts = own ? M.trust.MEMBER_TRUSTS : ctx.isOwner ? ["member", "guest", "admin"] : ["member", "guest"];
-    const trust = h("select", { id: "join-trust" }, trusts.map((r) => h("option", { value: r }, r)));
+    const trust = h("select", { id: "join-trust" }, trusts.map((r) => h("option", { value: r }, M.trust.trustWord(r))));
     trust.value = "member";
     const role = h("select", { id: "join-role" });
     const fillRoles = () => {
@@ -262,13 +273,49 @@ window.Maity = window.Maity || {};
         h("p", null, M.t("join.state_dir.no_resume")));
     }
 
+    // §3.1: all lines come in the one answer, as the code appears nowhere else. The browser's
+    // system is only a first guess, since the agent may run elsewhere; the choice is remembered
+    // per browser. Which shell runs a line is the agent's business, so there is no choice of shell.
+    const PLATFORM_KEY = "maity.join.platform";
+    function initialPlatform(lines) {
+      try {
+        const kept = window.localStorage.getItem(PLATFORM_KEY);
+        if (kept && lines[kept]) return kept;
+      } catch (err) { /* this browser keeps nothing */ }
+      if (!/^win/i.test(navigator.platform || "")) return "posix";
+      // windows is null where the instance's install line cannot run in PowerShell (§3.2).
+      return lines.windows ? "windows" : "join";
+    }
+
     function showLine(j, member) {
-      const line = h("code", { class: "paste-line" }, j.paste_line);
+      const lines = j.paste_lines;
+      let platform = initialPlatform(lines);
+      const line = h("code", { class: "paste-line" }, lines[platform]);
+      const offer = (value, label) => {
+        if (!lines[value]) return null;
+        const id = "join-line-" + value;
+        const radio = h("input", {
+          type: "radio", name: "join-line", id, value,
+          onchange: () => {
+            platform = value;
+            line.textContent = lines[value];
+            copy.textContent = M.t("join.copy.label");
+            try { window.localStorage.setItem(PLATFORM_KEY, value); } catch (err) { /* as above */ }
+          },
+        });
+        radio.checked = value === platform;
+        return h("div", { class: "join-offer" }, radio, " ", h("label", { for: id }, label));
+      };
+      const offers = h("fieldset", { class: "join-offers" },
+        h("legend", null, M.t("join.platform.label")),
+        offer("join", M.t("join.platform.join")),
+        offer("posix", M.t("join.platform.posix")),
+        offer("windows", M.t("join.platform.windows")));
       const copy = h("button", {
         type: "button",
         onclick: async () => {
           try {
-            await navigator.clipboard.writeText(j.paste_line);
+            await navigator.clipboard.writeText(j.paste_lines[platform]);
             copy.textContent = M.t("join.copy.done");
           } catch (err) {
             copy.textContent = M.t("join.copy.failed");
@@ -279,6 +326,7 @@ window.Maity = window.Maity || {};
       append(clear(body), h("div", { class: "join-result" },
         h("p", null, h("strong", null, M.t("join.line.paste", { time: formatTime(j.expires_at) }))),
         member ? instanceNote(member) : null,
+        offers,
         h("div", { class: "paste-row" }, line, copy),
         h("p", { class: "first-hint" }, M.t("join.line.hint")),
         h("div", { class: "actions" }, again, h("button", { type: "button", class: "primary", onclick: () => close(true) }, M.t("join.line.done")))));
@@ -408,7 +456,7 @@ window.Maity = window.Maity || {};
     },
     h("div", { class: "join-columns" },
       h("div", { class: "join-fields" },
-        h("div", { class: "field wide" }, h("label", { for: "join-agent" }, M.t("join.field.agent")), agentSelect),
+        h("div", { class: "field wide" }, h("label", { for: "join-agent" }, M.t("join.field.agent")), agentSelect, profileLinks),
         newFields,
         instanceBox,
         membershipField(h("div", { class: "field" }, h("label", { for: "join-trust" }, M.t("join.field.trust")), trust)),
@@ -549,7 +597,9 @@ window.Maity = window.Maity || {};
     // The members changed under an open panel (a rulebook saved on Agents):
     // the choice drawn again from them, the chosen agent and instance kept.
     const refresh = () => { if (!panel.hidden) showAgent(); };
-    return { open, close, seats, earlier, openCount, openAgents, reread, refresh };
+    // A profile made beside the panel (the Agents view's Add an agent): offered from now on.
+    const reprofile = async () => { profiles = await readProfiles(ctx); profileOptions(); };
+    return { open, close, seats, earlier, openCount, openAgents, reread, refresh, reprofile };
   }
 
   // On a page the router has not attached yet (a direct /<owner>/<slug>/agents/join), the
@@ -632,6 +682,7 @@ window.Maity = window.Maity || {};
       // A failed first read keeps its Try again.
       reread: () => (impl ? impl.reread() : Promise.resolve()),
       refresh: () => { if (impl) impl.refresh(); },
+      reprofile: () => (impl ? impl.reprofile() : Promise.resolve()),
       // An open panel holds a form being filled in or a line shown once: a
       // redraw of the view would lose either.
       busy: () => !panel.hidden,

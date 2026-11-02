@@ -64,7 +64,7 @@ window.Maity = window.Maity || {};
       ? h("ul", { class: "org-list" }, items.map((o) => h("li", { class: "org-item" },
         M.avatar(o, 32),
         h("a", { href: orgLink(o.handle) }, o.display_name),
-        h("span", { class: "muted" }, " @" + o.handle + " · " + o.my_role))))
+        h("span", { class: "muted" }, " @" + o.handle + " · " + M.trust.trustWord(o.my_role)))))
       : h("p", { class: "muted" }, M.t("orgs.none")));
     append(root, createForm());
   }
@@ -105,18 +105,18 @@ window.Maity = window.Maity || {};
     const mayChange = mine === "owner" || (mine === "admin" && m.role !== "owner");
     const mayRemove = self || mayChange;
     const lastOwner = m.role === "owner" && owners === 1;
-    let control = h("span", { class: "org-role" }, m.role);
+    let control = h("span", { class: "org-role" }, M.trust.trustWord(m.role));
     if (mayChange) {
       const id = "org-role-" + m.id;
       const pick = h("select", { id, "aria-label": M.t("orgs.member.role_label", { handle: m.handle }) },
-        ROLES.filter((r) => mine === "owner" || r !== "owner").map((r) => h("option", { value: r }, r)));
+        ROLES.filter((r) => mine === "owner" || r !== "owner").map((r) => h("option", { value: r }, M.trust.trustWord(r))));
       pick.value = m.role;
       pick.addEventListener("change", async () => {
         pick.disabled = true;
         status.busy(M.t("orgs.member.changing"));
         try {
           await M.api.patch(orgPath(org.handle) + "/members/" + encodeURIComponent(m.id), { role: pick.value });
-          redraw(M.t("orgs.member.changed", { handle: m.handle, role: pick.value }));
+          redraw(M.t("orgs.member.changed", { handle: m.handle, role: M.trust.trustWord(pick.value) }));
         } catch (err) {
           pick.value = m.role;
           pick.disabled = false;
@@ -152,7 +152,7 @@ window.Maity = window.Maity || {};
     const status = M.statusLine();
     const handle = h("input", { id: "org-invite-handle", required: true, autocomplete: "off", spellcheck: "false", placeholder: "@handle" });
     const role = h("select", { id: "org-invite-role" },
-      ROLES.filter((r) => org.my_role === "owner" || r !== "owner").map((r) => h("option", { value: r }, r)));
+      ROLES.filter((r) => org.my_role === "owner" || r !== "owner").map((r) => h("option", { value: r }, M.trust.trustWord(r))));
     role.value = "member";
     const go = h("button", { type: "submit" }, M.t("orgs.invite.submit"));
     const form = h("form", {
@@ -163,7 +163,7 @@ window.Maity = window.Maity || {};
         status.busy(M.t("orgs.invite.busy"));
         try {
           const item = await M.api.post(orgPath(org.handle) + "/members/invitations", { handle: handle.value.trim().replace(/^@/, ""), role: role.value });
-          redraw(M.t("orgs.invite.done", { handle: item.handle, role: item.role }));
+          redraw(M.t("orgs.invite.done", { handle: item.handle, role: M.trust.trustWord(item.role) }));
         } catch (err) {
           go.disabled = false;
           status.fail(M.t("orgs.invite.failed"), said(err));
@@ -190,7 +190,7 @@ window.Maity = window.Maity || {};
         },
       }, M.t("orgs.invite.withdraw"));
       return h("li", { class: "org-invitation" },
-        h("span", null, M.t("orgs.invite.item", { handle: x.handle, role: x.role })),
+        h("span", null, M.t("orgs.invite.item", { handle: x.handle, role: M.trust.trustWord(x.role) })),
         h("span", { class: "muted" }, " · " + M.t("orgs.invite.by", { handle: x.invited_by.handle, time: formatTime(x.expires_at) })),
         withdraw, line.el);
     });
@@ -313,8 +313,8 @@ window.Maity = window.Maity || {};
         h("div", { class: "org-head" }, M.avatar(org, 48),
           h("h2", { id: "org-heading", tabindex: "-1" }, org.display_name),
           h("p", { class: "muted" }, (org.aliases || []).length
-            ? M.t("orgs.head.aliases", { handle: org.handle, role: org.my_role, aliases: names(org.aliases.map((a) => "@" + a)) })
-            : M.t("orgs.head", { handle: org.handle, role: org.my_role }))),
+            ? M.t("orgs.head.aliases", { handle: org.handle, role: M.trust.trustWord(org.my_role), aliases: names(org.aliases.map((a) => "@" + a)) })
+            : M.t("orgs.head", { handle: org.handle, role: M.trust.trustWord(org.my_role) }))),
         words ? h("p", { class: "ok", role: "status" }, words) : null,
         org.moderation ? h("p", { class: "flag", role: "status" }, M.t("orgs.suspended", { time: formatTime(org.moderation.at) })) : null,
         h("section", { class: "org-members", "aria-labelledby": "org-members-heading" },

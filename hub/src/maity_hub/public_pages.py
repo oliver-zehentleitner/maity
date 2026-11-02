@@ -11,6 +11,7 @@ in the transaction that changed the input. The app shell's route asks `answer` f
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import threading
 from collections.abc import Callable
@@ -19,21 +20,22 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import Request, Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import Connection, Engine, delete, insert, select
 
-from maity_hub import clock
+from maity_hub import clock, worker_runs
 from maity_hub import tables as t
 from maity_hub.auth import caller as auth_caller
 from maity_hub.config import Settings
 from maity_hub.deps import engine_of, origin_of, settings_of
-from maity_hub.errors import rate_limited
+from maity_hub.errors import not_found, rate_limited
 from maity_hub.ratelimit import Limiter
 
 log = logging.getLogger(__name__)
 
 CSP = "default-src 'none'; style-src 'unsafe-inline'"
 CACHE = "public, max-age=60"
+READ_CACHE = "public, max-age=60"
 # The rate limit of the badge, for the static page only (§16.9, §6.20): its own budget per
 # source address, since a page is as cheap to serve as a badge.
 BY_ADDRESS = Limiter(60, 60, name="public_pages.BY_ADDRESS")
@@ -52,6 +54,8 @@ def put(
     body: str,
     inputs: str,
     lastmod: datetime,
+    view: str,
+    data: dict[str, Any],
 ) -> None:
     """Store the page of `path`, replacing the one there."""
     conn.execute(delete(t.public_page).where(t.public_page.c.path == path))
@@ -65,6 +69,8 @@ def put(
             inputs=inputs,
             lastmod=lastmod,
             rendered_at=clock.now(),
+            view=view,
+            data=data,
         )
     )
 
@@ -88,22 +94,55 @@ def clear(conn: Connection) -> int:
     return int(conn.execute(delete(t.public_page)).rowcount)
 
 
-def answer(request: Request) -> Response | None:
+def answer(
+    request: Request, inside_shell: Callable[[str], bytes | None] | None = None
+) -> Response | None:
     """The stored page of the request's path for a visitor, or None for the shell. A visitor
-    is a request without a live session, or one made with `?as=public` (§16.9)."""
+    is a request without a live session, or one made with `?as=public` (§16.9). Without that
+    query the page comes inside the app shell (`inside_shell`), so the dashboard takes over at
+    the same address; `?as=public` is the bare page and its own security policy."""
     if not settings_of(request).public_pages:
         return None
+    path = request.url.path
     with engine_of(request).begin() as conn:
-        page = get(conn, request.url.path)
-        if page is None:
+        page = get(conn, path)
+        # The same address with a slash at the end, as a hand or a mail client may write it.
+        bare = path.rstrip("/") if page is None and path.endswith("/") else ""
+        if bare and get(conn, bare) is None:
+            return None
+        if page is None and not bare:
             return None
         if request.query_params.get("as") != "public" and auth_caller.has_live_session(
             conn, request.cookies
         ):
             return None
+    if bare:
+        query = f"?{request.url.query}" if request.url.query else ""
+        return RedirectResponse(f"{bare}{query}", status_code=308)
+    assert page is not None
+    # A visitor gets the small 503 page while a window runs, bare or inside the shell (§16.12):
+    # a crawler reads the status, not what the app would draw.
+    from maity_hub import maintenance
+
+    refused = maintenance.running_page(engine_of(request))
+    if refused is not None:
+        return refused  # type: ignore[no-any-return]
     wait = BY_ADDRESS.hit(origin_of(request).address)
     if wait:
         raise rate_limited(wait)
+    shelled = None
+    if inside_shell is not None and request.query_params.get("as") != "public":
+        shelled = inside_shell(page.body)
+    if shelled is not None:
+        # The shell's files change with a deploy: its digest is part of the tag.
+        tag = '"' + hashlib.sha256(shelled).hexdigest() + '"'
+        candidates = request.headers.get("if-none-match", "").split(",")
+        wrapped = {"Cache-Control": CACHE, "ETag": tag, "Vary": "Cookie"}
+        if any(c.strip() == "*" or c.strip().removeprefix("W/") == tag for c in candidates):
+            return Response(status_code=304, headers=wrapped)
+        if request.method == "HEAD":
+            return Response(media_type="text/html", headers=wrapped)
+        return Response(shelled, media_type="text/html", headers=wrapped)
     headers = {
         "Cache-Control": CACHE,
         "ETag": page.etag,
@@ -119,18 +158,51 @@ def answer(request: Request) -> Response | None:
     return HTMLResponse(page.body, headers=headers)
 
 
+def read(request: Request, path: str) -> Response:
+    """`GET /public/pages/{path}`: the `data` stored with the page, the same for everyone. The
+    session and the credentials of the request are never looked at (§16.9)."""
+    if not settings_of(request).public_pages:
+        raise not_found()
+    wait = BY_ADDRESS.hit(origin_of(request).address)
+    if wait:
+        raise rate_limited(wait)
+    with engine_of(request).begin() as conn:
+        page = get(conn, f"/{path}")
+    if page is None or page.view is None:
+        raise not_found()
+    payload = json.dumps(
+        {"path": page.path, "kind": page.view, "data": page.data},
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    tag = etag_of(payload)
+    headers = {
+        "Cache-Control": READ_CACHE,
+        "ETag": tag,
+        "X-Content-Type-Options": "nosniff",
+    }
+    candidates = request.headers.get("if-none-match", "").split(",")
+    if any(c.strip() == "*" or c.strip().removeprefix("W/") == tag for c in candidates):
+        return Response(status_code=304, headers=headers)
+    return Response(payload, media_type="application/json", headers=headers)
+
+
 # --- the engine: rendering again and taking off --------------------------------------------
 
 
 @dataclass(frozen=True)
 class Page:
-    """One rendered address: the HTML, a digest of the inputs it was made from, and when
-    those inputs last changed (the `lastmod` of the sitemap, not the time of a render)."""
+    """One rendered address: the HTML, a digest of the inputs it was made from, when those
+    inputs last changed (the `lastmod` of the sitemap, not the time of a render), and what a
+    visitor's dashboard reads of it: `view`, the `kind` of the answer, and `data` (§16.9)."""
 
     path: str
     body: str
     inputs: str
     lastmod: datetime
+    view: str
+    data: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -144,6 +216,9 @@ class Kind:
     # The pages of other kinds that show this target (a person on the pages of their
     # projects): `touch` renders them again with it, `(kind, target_id)` each.
     dependents: Callable[[Connection, str], list[tuple[str, str]]] | None = None
+    # What the worker fetches before its renders, outside any transaction: a render itself
+    # never touches the network.
+    prepare: Callable[[Engine, Settings], None] | None = None
 
 
 KINDS: dict[str, Kind] = {}
@@ -168,11 +243,15 @@ def refresh(conn: Connection, hub: Settings, kind: str, target_id: str) -> None:
     changed is replaced; one that is no longer rendered is deleted. A render that fails takes
     the target's pages off: nothing stale is served for the sake of a bug."""
     existing = {
-        row.path: row.inputs
+        row.path: row
         for row in conn.execute(
-            select(t.public_page.c.path, t.public_page.c.inputs).where(
-                t.public_page.c.kind == kind, t.public_page.c.target_id == target_id
-            )
+            select(
+                t.public_page.c.path,
+                t.public_page.c.inputs,
+                t.public_page.c.view,
+                t.public_page.c.data,
+                t.public_page.c.lastmod,
+            ).where(t.public_page.c.kind == kind, t.public_page.c.target_id == target_id)
         )
     }
     try:
@@ -183,7 +262,13 @@ def refresh(conn: Connection, hub: Settings, kind: str, target_id: str) -> None:
         remove(conn, kind, target_id)
         return
     for page in rendered:
-        if existing.get(page.path) != page.inputs:
+        stored = existing.get(page.path)
+        same_inputs = stored is not None and stored.inputs == page.inputs
+        if (
+            stored is None
+            or not same_inputs
+            or (stored.view, stored.data) != (page.view, page.data)
+        ):
             put(
                 conn,
                 path=page.path,
@@ -191,7 +276,10 @@ def refresh(conn: Connection, hub: Settings, kind: str, target_id: str) -> None:
                 target_id=target_id,
                 body=page.body,
                 inputs=page.inputs,
-                lastmod=page.lastmod,
+                # `data` alone changing is nothing a crawler reads: the sitemap's date stays.
+                lastmod=stored.lastmod if stored is not None and same_inputs else page.lastmod,
+                view=page.view,
+                data=page.data,
             )
     gone = existing.keys() - {page.path for page in rendered}
     if gone:
@@ -214,13 +302,15 @@ def touch(conn: Connection, kind: str, target_id: str, *, removal: bool = True) 
             refresh(conn, hub, other, other_id)
 
 
-def render_all(engine: Engine, hub: Settings) -> None:
+def render_all(engine: Engine, hub: Settings, stop: worker_runs.Stopping | None = None) -> None:
     """Every page of every kind from the inputs as they are now: the targets that exist are
     rendered again, the pages of targets that no longer exist are deleted."""
     for kind in KINDS.values():
         with engine.begin() as conn:
             ids = kind.targets(conn)
         for target_id in ids:
+            if stop is not None and stop.is_set():
+                return
             with engine.begin() as conn:
                 refresh(conn, hub, kind.name, target_id)
         with engine.begin() as conn:
@@ -266,9 +356,32 @@ class Worker:
         if self._thread is not None:
             self._thread.join(timeout=5)
 
+    def _prepare(self) -> list[Kind]:
+        kinds = [kind for kind in KINDS.values() if kind.prepare is not None]
+        for kind in kinds:
+            assert kind.prepare is not None
+            kind.prepare(self.engine, self.hub)
+        return kinds
+
     def _run(self) -> None:
+        # What a kind prepares lives in this process's memory, and the start cleared its pages:
+        # every process reads once, outside the pass that only one replica of them claims.
+        try:
+            for kind in self._prepare():
+                with self.engine.connect() as conn:
+                    ids = kind.targets(conn)
+                for target_id in ids:
+                    with self.engine.begin() as conn:
+                        refresh(conn, self.hub, kind.name, target_id)
+        except Exception:
+            log.exception("preparing the public pages failed")
         while not self._stop.wait(self.interval):
             try:
-                render_all(self.engine, self.hub)
+                with worker_runs.claim(
+                    self.engine, "public-pages", self.interval, self._stop
+                ) as held:
+                    if held is not None:
+                        self._prepare()
+                        render_all(self.engine, self.hub, held)
             except Exception:
                 log.exception("rendering the public pages again failed")

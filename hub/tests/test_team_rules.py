@@ -494,15 +494,31 @@ def test_round_robin_takes_turns_when_two_instances_share_a_moment(
     assert turns[0] != turns[1] and turns[1] != turns[2]
 
 
-def test_an_instance_under_free_is_refused(owner: flow.Human, make_client: ClientFactory) -> None:
-    first, _ = _pair(make_client, owner)
+def test_an_instance_named_under_free_holds_the_card_for_it(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    """Cards crossed between the instances of a team: naming one is the coordinator's way out."""
+    first, second = _pair(make_client, owner)
     card = owner.post("/projects/maintainer/maity/tasks", {"title": "A card"}).json()
-    response = owner.post(
-        f"/projects/maintainer/maity/tasks/{card['id']}/assign",
-        {"assignee": first.id, "instance": first.instance},
-    )
-    assert response.status_code == 400
-    assert response.json()["error"]["details"]["fields"] == {"instance": "distribution_free"}
+    path = f"/projects/maintainer/maity/tasks/{card['id']}"
+    response = owner.post(f"{path}/assign", {"assignee": first.id, "instance": first.instance})
+    assert response.status_code == 200 and response.json()["assigned_instance"] == first.instance
+    refused = second.post(f"{path}/claim", {})
+    assert refused.status_code == 409
+    assert refused.json()["error"]["code"] == "instance_assigned"
+    assert refused.json()["error"]["details"]["assigned_instance"] == first.instance
+    assert first.post(f"{path}/claim", {}).status_code == 200
+
+
+def test_under_free_without_a_named_instance_any_instance_claims(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    first, second = _pair(make_client, owner)
+    card = owner.post("/projects/maintainer/maity/tasks", {"title": "A card"}).json()
+    path = f"/projects/maintainer/maity/tasks/{card['id']}"
+    assigned = owner.post(f"{path}/assign", {"assignee": first.id}).json()
+    assert assigned["assigned_instance"] is None
+    assert second.post(f"{path}/claim", {}).status_code == 200
 
 
 def test_reporting_again_does_not_clear_another_instances_work(

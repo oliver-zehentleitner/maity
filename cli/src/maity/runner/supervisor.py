@@ -630,14 +630,8 @@ class Supervisor:
         as_user = target.as_user
         agent = p.get("agent") or {}
         try:
-            place = workspace.find(
-                self.cfg.state_dir,
-                target.workspaces,
-                p["project_id"],
-                [p["project"], *p.get("project_aliases", [])],
-                p["workspace"]["clone"],
-                {v for v in (agent.get("id"), agent.get("handle")) if isinstance(v, str)},
-                target.host,
+            place = workspace.locate(
+                target.workspaces, p["project_id"], p["workspace"]["clone"], target.host
             )
         except workspace.Refused as refused_:
             rec.enter(now, "failed", refused_.reason, detail=refused_.detail)

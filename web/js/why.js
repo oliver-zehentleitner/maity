@@ -18,6 +18,13 @@ window.Maity = window.Maity || {};
     superseded: () => M.t("why.status.superseded"), other: () => M.t("why.status.other"),
   };
   const statusWord = (s) => (Object.hasOwn(STATUS_WORDS, s) ? STATUS_WORDS[s]() : s);
+  // An entry's Type in a Keep the Why export: the four values in words; `undefined — <reason>`
+  // and a value from a later version stay as the export writes them.
+  const TYPE_WORDS = {
+    decision: () => M.t("why.type.decision"), workaround: () => M.t("why.type.workaround"),
+    incident: () => M.t("why.type.incident"), constraint: () => M.t("why.type.constraint"),
+  };
+  const typeWord = (t) => (Object.hasOwn(TYPE_WORDS, t) ? TYPE_WORDS[t]() : t);
 
   // A member's failure (§11.3), in words.
   const REASONS = {
@@ -122,7 +129,7 @@ window.Maity = window.Maity || {};
       h("ul", { class: "why-entries" }, byMember[m.path].map((a) => h("li", null,
         h("span", { class: "badge why-" + a.status }, statusWord(a.status)),
         " ", entryLink(a, m, a.title),
-        h("span", { class: "muted" }, " · " + [a.topic || a.file, M.fmt.list(a.type || [])].filter(Boolean).join(" · "))))))),
+        h("span", { class: "muted" }, " · " + [a.topic || a.file, M.fmt.list((a.type || []).map(typeWord))].filter(Boolean).join(" · "))))))),
     answer.truncated ? h("p", { class: "muted" }, M.t("why.attention.truncated", { count: 200 })) : null];
   }
 
@@ -145,6 +152,17 @@ window.Maity = window.Maity || {};
       membersTable(answer));
   }
 
+  // What a read of the root said: the last good answer if any, and the note saying so.
+  function unavailable(err) {
+    const last = err.details && err.details.last;
+    const why = err.details && err.details.reason;
+    const reason = reasonWord(ROOT_REASONS, why) || reasonWord(REASONS, why) || why || M.t("why.reason.unavailable");
+    const note = h("p", { class: "flag" }, last
+      ? M.t("why.root_unreadable_last", { reason, ago: formatAgo(last.observed_at) })
+      : M.t("why.root_unreadable", { reason }));
+    return { last, note };
+  }
+
   async function load(root, ctx, fresh) {
     try {
       const answer = await M.api.get(ctx.base + "/keep-the-why" + (fresh ? "?max_age=0" : ""));
@@ -158,12 +176,7 @@ window.Maity = window.Maity || {};
         return;
       }
       if (err.code === "ktw_unavailable") {
-        const last = err.details && err.details.last;
-        const why = err.details && err.details.reason;
-        const reason = reasonWord(ROOT_REASONS, why) || reasonWord(REASONS, why) || why || M.t("why.reason.unavailable");
-        const note = h("p", { class: "flag" }, last
-          ? M.t("why.root_unreadable_last", { reason, ago: formatAgo(last.observed_at) })
-          : M.t("why.root_unreadable", { reason }));
+        const { last, note } = unavailable(err);
         if (last) { render(root, last, ctx, note); return; }
         append(root, toolbar(root, ctx), note);
         return;
@@ -171,6 +184,8 @@ window.Maity = window.Maity || {};
       append(root, toolbar(root, ctx), M.errorBox(err));
     }
   }
+
+  M.why = { statusWord, summaryBox, attentionList, unavailable };
 
   M.views.why = async function (ctx, root) {
     await load(root, ctx, false);

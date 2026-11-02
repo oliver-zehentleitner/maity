@@ -33,13 +33,16 @@ def test_the_defaults_and_who_reads_them(make_client: ClientFactory, migrated: E
     assert got["browser"] == {
         "enabled": False,
         "kinds": {"inbox": True, "chat": True, "mention": True, "security": True},
-        "content": {"chat": False, "mention": False},
     }
     email = got["email"]
     assert email["address"] is None and email["address_status"] == "none"
-    assert email["kinds"]["chat"] == {"mode": "hourly", "content": False}
+    # Mentions and chat as a daily digest, inbox and security at once (§18.4).
+    assert email["kinds"]["chat"] == {"mode": "daily", "content": False}
+    assert email["kinds"]["mention"] == {"mode": "daily", "content": False}
+    assert email["kinds"]["inbox"] == {"mode": "immediate"}
     assert email["kinds"]["security"] == {"mode": "immediate"}
     assert (email["language"], email["timezone"], email["daily_at"]) == ("en", "UTC", "08:00")
+    assert email["weekly_on"] == "mon"
     assert email["quiet_hours"] is None and email["sign_in_link"] is True
     flow.project(owner)
     agent = flow.agent(make_client, owner)
@@ -55,9 +58,10 @@ def test_the_defaults_and_who_reads_them(make_client: ClientFactory, migrated: E
         ({"kinds": []}, {"kinds": "read_only"}),
         ({"email": {"address_status": "verified"}}, {"email.address_status": "read_only"}),
         (
-            {"email": {"kinds": {"security": {"mode": "daily"}}}},
+            {"email": {"kinds": {"security": {"mode": "fortnightly"}}}},
             {"email.kinds.security": "invalid"},
         ),
+        ({"email": {"weekly_on": "monday"}}, {"email.weekly_on": "invalid"}),
         ({"email": {"kinds": {"inbox": {"content": True}}}}, {"email.kinds.inbox": "invalid"}),
         ({"email": {"kinds": {"security": {"mode": None}}}}, {"email.kinds.security": "invalid"}),
         ({"email": {"kinds": {"chat": {"mode": None}}}}, {"email.kinds.chat": "invalid"}),
@@ -65,9 +69,9 @@ def test_the_defaults_and_who_reads_them(make_client: ClientFactory, migrated: E
         ({"email": {"timezone": "Mars/Base"}}, {"email.timezone": "invalid"}),
         ({"email": {"daily_at": "25:00"}}, {"email.daily_at": "invalid"}),
         ({"email": {"quiet_hours": {"from": "22:00"}}}, {"email.quiet_hours": "invalid"}),
-        ({"email": {"language": "fr"}}, {"email.language": "invalid"}),
+        ({"email": {"language": "xx"}}, {"email.language": "invalid"}),
         ({"browser": {"kinds": {"inbox": "yes"}}}, {"browser.kinds.inbox": "invalid"}),
-        ({"browser": {"content": {"inbox": True}}}, {"browser.content": "invalid"}),
+        ({"browser": {"content": {"chat": True}}}, {"browser.content": "invalid"}),
         ({"browser": {"kinds": {"card": True}}}, {"browser.kinds.card": "unknown"}),
         ({"browser": {"kinds": {"nope": True}}}, {"browser.kinds.nope": "unknown"}),
         ({"email": {"kinds": {"ticker": {"mode": "off"}}}}, {"email.kinds.ticker": "unknown"}),
@@ -91,7 +95,7 @@ def test_preferences_change_key_by_key(make_client: ClientFactory, migrated: Eng
     got = owner.patch(
         S,
         {
-            "browser": {"enabled": True, "kinds": {"chat": False}, "content": {"chat": True}},
+            "browser": {"enabled": True, "kinds": {"chat": False}},
             "email": {
                 "kinds": {"chat": {"mode": "off"}},
                 "timezone": "Europe/Vienna",
@@ -107,9 +111,9 @@ def test_preferences_change_key_by_key(make_client: ClientFactory, migrated: Eng
         "mention": True,
         "security": True,
     }
-    assert got["browser"]["enabled"] is True and got["browser"]["content"]["chat"] is True
+    assert got["browser"]["enabled"] is True
     assert got["email"]["kinds"]["chat"] == {"mode": "off", "content": False}
-    assert got["email"]["kinds"]["mention"] == {"mode": "immediate", "content": False}
+    assert got["email"]["kinds"]["mention"] == {"mode": "daily", "content": False}  # not set
     assert got["email"]["timezone"] == "Europe/Vienna" and got["email"]["language"] == "de"
     assert got["email"]["quiet_hours"] == {"from": "22:00", "to": "07:00"}
     assert got["email"]["sign_in_link"] is False
@@ -148,12 +152,12 @@ def test_mail_available_follows_the_instance_settings(
     assert owner.get(S).json()["mail_available"] is True
 
 
-def test_a_stored_content_of_another_kind_is_not_read() -> None:
+def test_a_stored_browser_content_is_not_read() -> None:
     from maity_hub.notifications import preferences
 
-    merged = preferences._merged({"browser": {"content": {"chat": True, "inbox": True}}})
-    assert "inbox" not in merged["browser"]["content"]
-    assert merged["browser"]["content"]["chat"] is True
+    merged = preferences._merged({"browser": {"enabled": True, "content": {"chat": True}}})
+    assert merged["browser"]["enabled"] is True
+    assert "content" not in merged["browser"]
 
 
 def test_a_patch_hit_by_a_deadlock_runs_again(
@@ -194,3 +198,27 @@ def test_a_stored_key_the_hub_does_not_know_is_ignored() -> None:
     assert "card" not in merged["browser"]["kinds"] and merged["browser"]["kinds"]["chat"] is False
     assert "card" not in merged["email"]["kinds"]
     assert merged["email"]["kinds"]["inbox"]["mode"] == "daily"
+
+
+def test_every_kind_takes_every_mode_and_a_set_mode_stays(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = signed_in(make_client, migrated)
+    got = owner.patch(
+        S,
+        {
+            "email": {
+                "kinds": {"security": {"mode": "weekly"}, "mention": {"mode": "immediate"}},
+                "weekly_on": "fri",
+            }
+        },
+    )
+    assert got.status_code == 200, got.text
+    email = got.json()["email"]
+    assert email["kinds"]["security"] == {"mode": "weekly"}
+    assert email["kinds"]["mention"] == {"mode": "immediate", "content": False}
+    assert email["weekly_on"] == "fri"
+    with migrated.connect() as conn:  # only what the human set is stored (§18.4)
+        stored = conn.execute(select(t.notification_settings.c.preferences)).scalar_one()
+    assert set(stored["email"]["kinds"]) == {"security", "mention"}
+    assert "chat" not in stored["email"]["kinds"]

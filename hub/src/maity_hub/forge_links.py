@@ -18,7 +18,7 @@ from typing import Any
 
 from sqlalchemy import Connection, delete, insert, select, update
 
-from maity_hub import clock, forge, github_app
+from maity_hub import clock, forge, github_app, wakeups
 from maity_hub import tables as t
 from maity_hub.github_app import GitHubApp
 from maity_hub.ids import new_id
@@ -145,7 +145,7 @@ def unlink(conn: Connection, app: GitHubApp | None, human_id: str, link_id: str)
     conn.execute(delete(t.forge_link).where(t.forge_link.c.id == link_id))
     records.forge_access_changed(conn, human_id, "app", "unlinked", row.account_login)
     if app is not None:
-        github_app.forget_token(app, row.installation_id)
+        wakeups.forget_token_everywhere(conn, app, row.installation_id)
     return True
 
 
@@ -165,12 +165,16 @@ def rows(conn: Connection, human_id: str) -> list[Any]:
 
 def shown(app: GitHubApp | None, row: Any) -> tuple[list[str], str | None]:
     """The repositories the installation covers, read with its token when the list is
-    asked for, and the status a refused mint found (`suspended`, `removed`), if any.
+    asked for, and the status this read found, if any: `suspended` or `removed` from a refused
+    mint, `active` from one that succeeded on a link that was not.
     Makes forge reads: no connection is held."""
     if app is None or row.status == "removed":
         return [], None
+    if row.status != "active":  # only a new mint says it is back, not a token held from before
+        github_app.forget_token(app.app_id, row.installation_id)
     try:
-        return app.repositories(row.installation_id, REPOSITORIES_SHOWN), None
+        repositories = app.repositories(row.installation_id, REPOSITORIES_SHOWN)
+        return repositories, ("active" if row.status != "active" else None)
     except github_app.InstallationGoneError as gone:
         return [], gone.state
     except forge.ForgeUnavailableError:
@@ -183,8 +187,8 @@ def set_status(conn: Connection, link_id: str, status: str) -> None:
     row = conn.execute(
         select(t.forge_link).where(t.forge_link.c.id == link_id).with_for_update()
     ).first()
-    if row is None:
-        return
+    if row is None or row.status == "removed":
+        return  # final: a listing that minted before the removal does not undo it
     conn.execute(
         update(t.forge_link)
         .where(t.forge_link.c.id == link_id)

@@ -105,8 +105,8 @@ asking instance"; the event table in §8.2 still named the member.
 **Id:** e42155de-c20d-43cc-a042-4151f860e25d
 **Type:** decision
 **Status:** active
-**Evidence:** unknown
-**Source:** the maintainer's decisions of 2026-10-22, in his inbox; contract in `docs/api.md` §6.18
+**Evidence:** confirmed
+**Source:** the maintainer's decisions of 2026-10-22, in his inbox, and his answer of 2026-11-01 on why review within a team is off (req-gyxggpyykqfp); contract in `docs/api.md` §6.18
 **Revisit when:** a team needs a distribution or wake rule the three values do not cover, or review between instances proves independent enough to allow by default
 **See:** instances.md#several-agents-may-work-under-one-handle-as-instances-of-one-membership-each-individually-identifiable — 98151697-d9dc-4491-8719-2d3e5064f01f — as of 2026-10-22
 **See:** process.md#reviewer-independence-assumes-separate-environments-two-identities-in-one-workspace-mixed-up-credentials — 5380a247-324f-4ab8-92c6-37350e02b0cb — as of 2026-10-22
@@ -124,11 +124,11 @@ maintainer's "in a human's hands").
 
 **Reason:** a team under one handle needs its own answer to how work
 reaches its instances and how many of them a message wakes, and the
-maintainer decided it per team and in a human's hands (confirmed). Why
-review within a team is off by default was not stated with the
-decision (unknown, hence the entry's grade); the related constraint is that an independent review needs a
-separate environment (the process entry linked above), which instances
-of one team do not guarantee.
+maintainer decided it per team and in a human's hands. Review within a
+team is off by default because a coder and a reviewer on one machine in one
+agent influence each other, and they were meant to stay apart (the
+maintainer's answer of 2026-11-01); the process entry linked above has the
+related constraint.
 
 **Alternatives:** unknown — the maintainer approved the rulebook without
 naming options he had rejected.
@@ -175,3 +175,26 @@ spends which subscription is the owner's choice, hence humans only.
   not one instance's.
 - `team.wake: lead` as a stopgap: it is the whole team's rule, set by
   the owner only, and broadcasts still wake every listening instance.
+
+## The instances of one membership are called an agent, not a team
+
+**Id:** cb126aae-c66a-4e79-b1f5-7c1adba4b922
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-02 on card tsk-k0k3jzrkpza2, relayed by the lead; contract in `docs/api.md` §5.2, §6.18, §19
+**See:** instances.md#each-team-has-a-rulebook-set-by-a-human-size-work-distribution-who-a-team-message-wakes-review-within-the-team — e42155de-c20d-43cc-a042-4151f860e25d — as of 2026-11-02
+
+Everything that called the instances of one membership a "team" says
+"agent" now: the rulebook `agent` (with `review_within_agent`), agent
+memory (`store: "agent"`), "Agent wake", and the packet's list of the
+other instances, `instances`. The project team, the admin team and the
+security teams keep their names, and `team` stays a reserved role name.
+
+**Reason:** "team" already meant the people and agents of a project;
+the same word for one agent's instances made the contract ambiguous.
+The project is in alpha, so the rename takes no compatibility layer.
+
+**Rejected alternatives:** keeping the old field names next to the new
+ones — no clients outside the project depend on them yet.
+

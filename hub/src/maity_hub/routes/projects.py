@@ -26,6 +26,7 @@ from maity_hub import (
     idempotency,
     images,
     ktw,
+    languages,
     moderation,
     namespace,
     onboarding,
@@ -41,6 +42,7 @@ from maity_hub import (
     rules,
     setup_cards,
     ticker,
+    wakeups,
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
@@ -141,8 +143,8 @@ class SettingsIn(Strict):
     @field_validator("language", mode="before")
     @classmethod
     def known_language(cls, value: Any) -> Any:
-        if value is not None and value not in ("en", "de"):
-            raise PydanticCustomError("unknown_language", "choose en or de")
+        if value is not None and not languages.known(value):
+            raise PydanticCustomError("unknown_language", "not in GET /languages")
         return value
 
 
@@ -307,6 +309,8 @@ def _apply_policy(
         # A preset refills every field but those it must not loosen or reset (§6.1).
         kept = {name: current[name] for name in policy.KEPT_ON_PRESET}
         proposed = {**policy.filled(change.preset, owner_id), **kept}
+        if current["done_authority"] in policy.DONE_KEPT_ON_PRESET:
+            proposed["done_authority"] = current["done_authority"]
     errors: dict[str, str] = {}
     for name, choices in policy.CHOICES.items():
         value = getattr(change, name)
@@ -508,7 +512,7 @@ def _creation_owner(
         select(t.org.c.id)
         .join(t.org_member, t.org_member.c.org_id == t.org.c.id)
         .where(
-            t.org.c.handle == owner,
+            t.org.c.id == handles.org_id_of(conn, owner),
             t.org.c.deleted_at.is_(None),
             t.org_member.c.human_id == caller.human_id,
         )
@@ -838,7 +842,7 @@ def patch_project(
                 # Nor are the forge's images and the Keep the Why export: the new
                 # repository's are read afresh.
                 images.forget_forge(conn, project.id)
-                ktw.CACHE.forget(project.id)
+                wakeups.forget_repository_everywhere(conn, project.id)
             # whether the probe can observe it changed
             releases.recheck(conn, project.id, reader_of(request))
         if state_changes:
@@ -873,7 +877,6 @@ def patch_project(
             if (
                 fresh.repository_url is not None
                 and fresh.state != "archived"
-                and isinstance(fresh.setup, dict)
                 and fresh.setup.get("cards") is None
             ):
                 setup_cards.create(

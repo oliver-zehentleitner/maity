@@ -66,3 +66,54 @@ entry's design — the case above. A development flag the hub never serves
 (a dotfile, a header) — workable, but `file://` already covers
 development, and every extra switch is one more thing to keep out of
 production.
+
+## The fixtures' shapes are compared with recorded hub answers, not with response models
+
+**Id:** a1733a10-7836-48d8-930e-ba4a85aa72ed
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-eqgmjm5vcwam and the lead's approval of its plan, 2026-11-02
+**Revisit when:** the hub declares response models on its routes — then the check can read the models' schema instead of a recorded file
+
+`hub/tests/test_web_shapes.py` seeds a project, sends the requests listed
+in `web/tools/shape-requests.json` and records the form of each answer
+(keys and types, items of lists merged, `maps` for objects whose keys are
+data) in `web/tools/hub-shapes.json`; the test fails when the hub's
+answers no longer match that file, and `make -C web shapes` records it
+again. `tools/check.py` sends the same requests to the fixture hub
+(`tools/fixture_answers.js`, which runs `js/api.js` on the fixtures) and
+reports every difference that is not in
+`tools/fixture-shapes-baseline.json`: a key the fixture has and the hub
+does not, a key the hub has and the fixture lacks, another type. The
+baseline holds today's differences and only shrinks (`make fixtures`
+drops what no longer differs). It started with about ten routes; more
+come one at a time, and a test keeps the two copies of the form functions
+(the hub test's and `check.py`'s, which uses the standard library only)
+equal.
+
+**Reason:** the hub declares no `response_model`; its answers are dicts
+built by view functions. A check against models would first need models
+for about 200 routes, a hub-wide change for a web check. And the fixture
+answers are not only the JSON files: `js/api.js` computes them in about
+220 handlers, so comparing JSON files with a schema would miss most of
+what the dashboard reads in fixture mode. Recording keeps the hub
+unchanged and compares what each side actually answers.
+
+**Rejected alternative:** response models on every hub route — the cost
+above. Comparing the fixture JSON files with `docs/api.md` — the
+contract is prose, and the files are not the answers. Treating every
+missing key as a finding at once — about 80 today; the baseline lets the
+check land and the fixtures catch up route by route.
+
+**Consequence:** a key the hub sends only in some states is missing
+from the record when the seed lacks that state, and an empty list says
+nothing about its items. So the seed fills what is cheap: settings,
+mentions, a note, a link, a dependency, a request. `banner.etag` and
+`logo.etag` (only with an image) stay in the baseline as keys "the hub
+sends no such key"; a personal request from a project the reader is no
+member of is seeded because only its notification carries
+`project.member`; without that state the record reads as if the hub never
+sent the key, and a fixture "fixed" to match would be wrong.
+Lists the seed
+leaves empty (attachments, aliases, a runner's projects) are not compared.

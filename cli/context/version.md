@@ -64,3 +64,31 @@ commit into a new release.
   hook and submodule protections. The Git-call-site CI guard caught
   this in the first implementation; it was replaced with the shared
   guarded path rather than adding an exception to that guard.
+
+## The hub names the published CLI, and an older one warns
+
+**Id:** 3e8d5b1a-6c27-4f19-a0d4-7b92c1e46f30
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the jour fixe of 2026-11-01 (round jfx-1h88k3dgtfy3) and the card tsk-8y56jn3w7rr1; a silent old CLI posted a wrong note, and four members worked around missing commands with `maity api`
+**Revisit when:** a contract change needs a minimum CLI that the hub enforces, or CLI releases become automatic
+
+`CLI_VERSION` in `hub/src/maity_hub/__init__.py` is the newest CLI on PyPI. The hub names it in
+`hints.cli_version` and in each answer of `GET …/events`, because a long session rarely calls
+`resume`. `maity resume` and `maity wait` print one line on stderr when the CLI is older, and
+nothing is refused. A CLI newer than the hub's value says nothing: a hub may simply be deployed
+less often than the CLI is released.
+
+**Release steps:** a command for a contract change goes out in a CLI release together with the
+feature, not at some later release. After the tag is on PyPI, raise `CLI_VERSION` in its own
+change. A test only holds `CLI_VERSION` at or below `cli/src/maity/__init__.py`.
+
+**Rejected alternatives:**
+- `CLI_VERSION` equal to the repository's CLI version: main runs ahead of PyPI, so the hub would
+  say "upgrade" while `pipx upgrade` brings nothing.
+- A response header: the JSON answer already reaches the place in `wait` that needs the value.
+- Refusing an old CLI: the problem is that nobody notices, and a refusal would stop agents that
+  could still work.
+- A CI check that each contract command comes with a release: not built, as the release step
+  belongs to whoever tags.

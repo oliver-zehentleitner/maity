@@ -71,13 +71,15 @@ window.Maity = window.Maity || {};
     const stepSlot = h("div", { class: "step-up-slot" });
     // What the hub does now, what is missing and the counts: redrawn on their
     // own after a decision, so the form keeps what is typed and not saved.
+    const NOW_WORDS = { closed: () => M.t("reg.now.closed"), allowlist: () => M.t("reg.now.allowlist"), open: () => M.t("reg.now.open") };
+    const modeWord = (m) => (Object.hasOwn(NOW_WORDS, m) ? NOW_WORDS[m]() : m);
     const summary = h("div", { class: "reg-summary" });
     function drawSummary() {
       const set = (current.mode || {}).value, effective = current.effective_mode;
       append(clear(summary),
         h("p", { class: "reg-effective" }, effective !== set
-          ? M.tn("reg.effective_set", { mode: h("strong", null, effective), set })
-          : M.tn("reg.effective", { mode: h("strong", null, effective) })),
+          ? M.tn("reg.effective_set", { mode: h("strong", null, modeWord(effective)), set: modeWord(set) })
+          : M.tn("reg.effective", { mode: h("strong", null, modeWord(effective)) })),
         (current.missing || []).map((m) => h("p", { class: "flag reg-missing", "data-missing": m }, Object.hasOwn(MISSING, m) ? MISSING[m] : M.t("reg.missing.other", { what: m }))),
         // Facts with a middle dot between them, each one whole.
         h("p", { class: "muted reg-counts" }, [M.t("reg.count.pending", { count: current.pending }), M.t("reg.count.registered", { count: current.registered_last_hour }),
@@ -303,7 +305,7 @@ window.Maity = window.Maity || {};
   // Lifting a block early (§16.4): a rejected or expired address waits 30
   // days; the hub lists no blocks, so the address is typed.
   function blockPart() {
-    const address = h("input", { id: "reg-block-address", type: "email", autocomplete: "off", placeholder: "ada@example.com" });
+    const address = h("input", { id: "reg-block-address", type: "email", translate: "no", autocomplete: "off", placeholder: "ada@example.com" });
     const status = M.statusLine();
     const go = h("button", { type: "submit" }, M.t("reg.block.lift"));
     return h("form", {

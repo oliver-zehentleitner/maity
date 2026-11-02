@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import logging
 from collections.abc import Callable
@@ -69,6 +70,23 @@ class NeedsInSessionIn(Strict):
     session_id: str | None = None
 
 
+ACTION_METHODS = ("POST", "PUT", "PATCH", "DELETE")
+ACTION_CLASSES = ("decision", "consent")
+# Below the 64 KiB of the whole request (§1.7): the title and the JSON around the body need room,
+# and a body over this gets a name instead of the bare `payload_too_large`.
+ACTION_BODY_MAX = 48 * 1024
+
+
+class ActionIn(Strict):
+    """The full call a proxy asks the owner's go for (§2.3, §7); `body` is checked by hand
+    for its own error names."""
+
+    method: str
+    path: str = Field(max_length=2048)
+    query: str | None = Field(default=None, max_length=8192)
+    body: str | None = None
+
+
 class RequestCreate(Written):
     class_: str = Field(alias="class")
     title: str = title()
@@ -83,6 +101,7 @@ class RequestCreate(Written):
     on_behalf_of: str | None = None
     ktw_ref: str | None = Field(default=None, max_length=255)
     humans_only: bool = False
+    action: ActionIn | None = None
 
 
 class ForwardIn(Strict):
@@ -91,6 +110,7 @@ class ForwardIn(Strict):
 
 
 class AnswerIn(Written):
+    on_behalf_of: str | None = None  # the owner whose answer a proxy records (§2.3)
     reply_id: str | None = Field(default=None, max_length=64)
     text: str | None = markdown(default=None, min_length=1)
     talk: Literal[True] | None = None
@@ -200,6 +220,16 @@ def _task(conn: Connection, task_id: str | None) -> dict[str, Any] | None:
     return {"id": card.id, "title": card.title, "status": card.status}
 
 
+def _action_view(row: Any) -> dict[str, Any] | None:
+    if row.action is None:
+        return None
+    return {
+        **row.action,
+        "used_at": ts(row.action_used_at) if row.action_used_at is not None else None,
+        "used_seq": row.action_used_seq,
+    }
+
+
 def request_view(conn: Connection, row: Any, *, with_proposal: bool = False) -> dict[str, Any]:
     """A request as §7 shows it; also the payload of its events (a personal request's
     events excepted: `_payload`). `with_proposal` adds the fields a proposal's kind shows
@@ -216,7 +246,7 @@ def request_view(conn: Connection, row: Any, *, with_proposal: bool = False) -> 
         "tried": row.tried,
         "mentions": row.mentions or [],
         "options": row.options,
-        "replies": replies(klass(row), row.options),
+        "replies": replies(klass(row), row.options, action=row.action is not None),
         "priority": row.priority,
         "to": inbox.addressee_of(row).text(conn),
         "asked_by": _asker(conn, row),
@@ -239,6 +269,7 @@ def request_view(conn: Connection, row: Any, *, with_proposal: bool = False) -> 
         "humans_only": inbox.humans_only(row),
         "takeover_id": row.takeover_id,  # set by the hub only (§6.19)
         "cover": cover.view(row.cover),  # a substitute answers it as the addressee (§6.12)
+        "action": _action_view(row),
     }
     shown = proposals.view(conn, row) if with_proposal else {}
     if shown.keys() & view.keys():  # a kind adds its own fields, it never replaces one
@@ -286,6 +317,8 @@ def _project_request(conn: Connection, mine: Membership, request_id: str) -> Any
     ).first()
     if row is None:
         raise not_found()
+    if inbox.owners_alone(conn, [row]) and not inbox.may_read(conn, row, mine):
+        raise not_found()  # the project route never tells anyone else it exists (§20.7)
     return row
 
 
@@ -393,8 +426,54 @@ def _validate(body: RequestCreate, mine: Membership) -> None:
     ids = [o.id for o in body.options]
     if len(set(ids)) != len(ids):
         errors["options"] = "duplicate_id"
+    if body.action is not None:
+        errors |= _action_errors(body, mine)
     if errors:
         raise invalid(errors)
+
+
+def _action_errors(body: RequestCreate, mine: Membership) -> dict[str, str]:
+    """Who may ask for a go, on what, and whether the call is one (§7)."""
+    action = body.action
+    assert action is not None
+    errors: dict[str, str] = {}
+    if mine.role_base != "proxy":
+        errors["action"] = "proxy_only"
+    elif body.class_ not in ACTION_CLASSES:
+        errors["action"] = "class"
+    elif body.to != "owner":
+        errors["action"] = "to"
+    elif body.options:
+        errors["action"] = "options"
+    if action.method not in ACTION_METHODS:
+        errors["action.method"] = "unknown"
+    if not action.path.startswith("/") or "?" in action.path or "#" in action.path:
+        errors["action.path"] = "not_a_path"
+    if action.body is not None:
+        if len(action.body.encode("utf-8")) > ACTION_BODY_MAX:
+            errors["action.body"] = "too_large"
+        else:
+            try:
+                json.loads(action.body)
+            except ValueError:
+                errors["action.body"] = "not_json"
+    return errors
+
+
+def _action_stored(action: ActionIn | None) -> dict[str, Any] | None:
+    if action is None:
+        return None
+    return {
+        "method": action.method,
+        "path": action.path,
+        "query": action.query,
+        "body": action.body,
+        "body_sha256": (
+            hashlib.sha256(action.body.encode("utf-8")).hexdigest()
+            if action.body is not None
+            else None
+        ),
+    }
 
 
 @router.post("/projects/{owner}/{slug}/requests")
@@ -459,6 +538,7 @@ def create_request(
                     "needs_in_session": _needs_in_session(conn, mine, body.needs_in_session),
                     "ktw_ref": body.ktw_ref,
                     "humans_only": body.humans_only,
+                    "action": _action_stored(body.action),
                     "status": "open",
                     "changed_by_credential": caller.credential_id,
                     "changed_via": caller.via,
@@ -467,6 +547,7 @@ def create_request(
             )
         )
         holder = card.claim_holder if card is not None else None
+        blocked: str | None = None
         if (
             card is not None
             and body.while_open == "wait"
@@ -485,6 +566,7 @@ def create_request(
                     updated_at=now,
                 )
             )
+            blocked = card.id
         view = request_view(conn, _row(conn, request_id))
         emit(
             conn,
@@ -495,6 +577,7 @@ def create_request(
             actor=caller.actor(mine.id),
             subject=("request", request_id),
         )
+        _status_moved(conn, blocked, caller.actor(mine.id))
         return idempotency.Outcome(201, "request", request_id, view)
 
     return idempotency.run(engine_of(request), request, caller, action)
@@ -640,7 +723,8 @@ def _filtered(
         return [r for r in rows if inbox.addressed_to(conn, r, mine)]
     if to == "all":
         if mine.may("requests:answer"):
-            return list(rows)
+            alone = inbox.owners_alone(conn, rows)
+            return [r for r in rows if r.id not in alone or inbox.may_read(conn, r, mine)]
         return [r for r in rows if inbox.is_asker(r, mine) or inbox.addressed_to(conn, r, mine)]
     target = _parse_to(conn, mine, to)
     # A member id alone also names the instance addresses of its team: the team reads them.
@@ -892,15 +976,34 @@ def get_request(slug: str, request_id: str, request: Request, caller: AnyCaller)
 # --- answering and withdrawing --------------------------------------------------------------
 
 
-def _unblock(conn: Connection, row: Any) -> None:
+def _status_moved(conn: Connection, card_id: str | None, actor: Any) -> None:
+    """The status change a request caused, told after the request's own event: what happened
+    first, then what followed from it (§6.4)."""
+    if card_id is None:
+        return
+    from maity_hub.routes.tasks import status_moved  # tasks reads requests
+
+    card = conn.execute(select(t.card).where(t.card.c.id == card_id)).one()
+    state = conn.execute(
+        select(t.project.c.state).where(t.project.c.id == card.project_id)
+    ).scalar_one()
+    status_moved(conn, card, state, actor)
+    if card.status == "review":
+        from maity_hub import merged
+
+        merged.returned_to_review(conn, card.id)  # a merge remembered is told now (§6.6)
+
+
+def _unblock(conn: Connection, row: Any) -> str | None:
     """After `row` was answered or withdrawn: the card stays blocked while any other
     waiting request of its holder on it is open, naming the oldest; when none is
-    left, the remembered status comes back (§7)."""
+    left, the remembered status comes back (§7). Returns the card whose status moved, for
+    `_status_moved` after the caller's event."""
     if row.task_id is None:
-        return
+        return None
     card = conn.execute(select(t.card).where(t.card.c.id == row.task_id)).one()
     if card.status != "blocked":
-        return
+        return None
     holder = card.claim_holder
     still_waiting = conn.execute(
         select(t.request.c.id)
@@ -925,10 +1028,7 @@ def _unblock(conn: Connection, row: Any) -> None:
     conn.execute(
         update(t.card).where(t.card.c.id == card.id).values(**values, updated_at=clock.now())
     )
-    if values.get("status") == "review":
-        from maity_hub import merged
-
-        merged.returned_to_review(conn, card.id)  # a merge remembered is told now (§6.6)
+    return card.id if "status" in values else None
 
 
 def _self_answer() -> ApiError:
@@ -943,7 +1043,7 @@ def _check_answer(row: Any, body: AnswerIn) -> None:
     given = {k for k in ("reply_id", "text", "talk") if getattr(body, k) is not None}
     if not given or {"talk", "reply_id"} <= given:
         raise invalid({"answer": "reply_id_or_text_or_talk"})
-    reply_ids = {r["id"] for r in replies(klass(row), row.options)}
+    reply_ids = {r["id"] for r in replies(klass(row), row.options, action=row.action is not None)}
     if body.reply_id is not None and body.reply_id not in reply_ids:
         raise invalid({"reply_id": "not_a_reply"})
     rule = proposals.answerer(row)
@@ -954,6 +1054,29 @@ def _check_answer(row: Any, body: AnswerIn) -> None:
         raise invalid({"markdown": "not_a_preference_proposal"})
     if edits and (body.reply_id != "go" or body.markdown is None or body.base_version is None):
         raise invalid({"markdown": "go_with_markdown_and_base_version"})
+
+
+def _relayed_owner(conn: Connection, mine: Membership, body: AnswerIn) -> str | None:
+    """The owner a proxy records the answer of (§2.3): it answers nothing in its own right,
+    and nobody else names one."""
+    if mine.role_base != "proxy":
+        if body.on_behalf_of is not None:
+            raise invalid({"on_behalf_of": "proxy_only"})
+        return None
+    if body.on_behalf_of is None:
+        raise ApiError(
+            403,
+            "forbidden",
+            "a proxy records its owner's answer, with on_behalf_of",
+            {"reason": "proxy_relays_only"},
+        )
+    try:
+        owner = member_row(conn, mine.project.id, body.on_behalf_of)
+    except ApiError:
+        raise invalid({"on_behalf_of": "not_a_member"}) from None
+    if owner.trust != "owner":
+        raise invalid({"on_behalf_of": "not_an_owner"})
+    return body.on_behalf_of
 
 
 def _refuse_by_kind(conn: Connection, row: Any, who: Any) -> None:
@@ -1004,6 +1127,14 @@ def answer(
             raise not_found()
         _refuse_unless_open(row)
         proposals.require_known(row)
+        if inbox.needs_the_owner(row, mine):
+            raise ApiError(
+                403,
+                "forbidden",
+                "only a human with trust owner answers a proxy's call, directly",
+                {"reason": "action_needs_owner"},
+            )
+        relayed = _relayed_owner(conn, mine, body)
         refusal = inbox.needs_a_human(row, mine)
         if refusal is not None:
             raise humans_only(refusal)
@@ -1022,7 +1153,9 @@ def answer(
         addressee = inbox.addressee_of(row)
         in_own_right = inbox.answered_in_own_right(conn, row, mine)
         on_behalf = None
-        if inbox.forwarded(row):  # answered for the one it was addressed to (§7)
+        if relayed is not None:
+            on_behalf = relayed
+        elif inbox.forwarded(row):  # answered for the one it was addressed to (§7)
             on_behalf = addressee.text(conn)
         elif not in_own_right and inbox.covers(row, mine):
             on_behalf = row.cover["for"]  # the covered addressee (§6.12)
@@ -1059,7 +1192,7 @@ def answer(
         ).rowcount
         if done != 1:
             _refuse_unless_open(_row(conn, row.id))
-        _unblock(conn, row)
+        moved = _unblock(conn, row)
         # A consent for a placement: `go` approves, any other answer refuses (§15.6).
         outcome = "go" if body.reply_id == "go" else "no"
         placements.settle(conn, row, outcome, caller.actor(mine.id), mine.principal_id)
@@ -1081,6 +1214,7 @@ def answer(
             subject=("request", row.id),
         )
         ticker.on_request_answered(conn, mine.project, _row(conn, row.id), caller.actor(mine.id))
+        _status_moved(conn, moved, caller.actor(mine.id))
         return idempotency.Outcome(200, "request", row.id, view)
 
     try:
@@ -1210,7 +1344,12 @@ def forward(
         if not _holds(conn, row, mine):
             raise _not_holder()
         values: dict[str, Any]
+        alone = bool(inbox.owners_alone(conn, [row]))
         if body.to == "trust:admin":
+            if row.action is not None:  # no admin may answer it: it would strand there (§2.3)
+                raise invalid({"to": "action_needs_owner"})
+            if alone:  # the whole pool would read an owner's round (§20.7)
+                raise invalid({"to": "owners_round"}, "this goes to one human, not to the admins")
             target_id = None
             values = {"holder_member": None, "holder_pool": True}
         else:
@@ -1225,6 +1364,8 @@ def forward(
                 row.on_behalf_of,
             ):
                 raise invalid({"to": "self"}, "nobody holds a request it asked or holds already")
+            if row.action is not None and (target.agent_id is not None or target.trust != "owner"):
+                raise invalid({"to": "action_needs_owner"})
             original = _originally_for(row, target)
             if (
                 "trust:admin" not in tokens_of(target.trust, target.role, target.role_base)
@@ -1233,6 +1374,8 @@ def forward(
                 raise invalid({"to": "not_admin"}, "a member holding admin, or the addressee")
             if target.agent_id is not None and inbox.humans_only(row):
                 raise humans_only("a humans_only request goes to a human or to the admins")
+            if target.agent_id is not None and alone:
+                raise invalid({"to": "owners_round"}, "this goes to one human, the owner's choice")
             # Nor to someone the proposal's kind would not let answer it (§6.19).
             _refuse_by_kind(conn, row, target)
             target_id = target.id
@@ -1382,7 +1525,7 @@ def withdraw(
                 changed_via=caller.via,
             )
         )
-        _unblock(conn, row)
+        moved = _unblock(conn, row)
         placements.settle(conn, row, "withdrawn", caller.actor(mine.id), mine.principal_id)
         proposals.settle(conn, row, "withdrawn", None, caller.actor(mine.id))
         view = request_view(conn, _row(conn, row.id))
@@ -1395,26 +1538,38 @@ def withdraw(
             actor=caller.actor(mine.id),
             subject=("request", row.id),
         )
+        _status_moved(conn, moved, caller.actor(mine.id))
         return idempotency.Outcome(200, "request", row.id, view)
 
     return idempotency.run(engine_of(request), request, caller, action)
 
 
-def return_to_pool(conn: Connection, request_id: str, by: str, reason: str) -> None:
+def return_held(conn: Connection, request_id: str, by: str, reason: str) -> None:
     """Give an open `decision` request its holder can no longer hold back to the admins
     (`holder: trust:admin`, §7), from inside the hub: a step `opened` in `forwarding` and
-    `request_forwarded`, as a forward to the pool would write, with the hub as actor."""
+    `request_forwarded`, as a forward to the pool would write, with the hub as actor. One
+    of an owner's round never reaches that pool (§20.7): it goes back to its addressee, a
+    step `forwarded`, or is withdrawn when that member has left too. Nor does a proxy's call,
+    which no admin may answer (§2.3): it goes back to the owner."""
     row = _row(conn, request_id)
     if row.status != "open" or row.holder_member is None:
         return
     project = lock_project(conn, row.project_id)
-    steps = _step(conn, row, "opened", "trust:admin", by, reason)
+    alone = bool(inbox.owners_alone(conn, [row]))
+    if alone and (row.holder_member == row.to_member or not _addressee_active(conn, row)):
+        close_request(conn, row.id, "withdrawn", None, reason=reason)
+        return
+    to_addressee = alone or row.action is not None
+    if to_addressee:
+        steps = _step(conn, row, "forwarded", inbox.addressee_of(row).text(conn), by, reason)
+    else:
+        steps = _step(conn, row, "opened", "trust:admin", by, reason)
     conn.execute(
         update(t.request)
         .where(t.request.c.id == row.id)
         .values(
             holder_member=None,
-            holder_pool=True,
+            holder_pool=None if to_addressee else True,
             forwarding=steps,
             changed_by_credential=None,
             changed_via=None,
@@ -1431,6 +1586,42 @@ def return_to_pool(conn: Connection, request_id: str, by: str, reason: str) -> N
         {**view, "step": steps[-1]},
         subject=("request", row.id),
     )
+
+
+def _addressee_active(conn: Connection, row: Any) -> bool:
+    return bool(
+        conn.execute(
+            select(t.membership.c.active).where(t.membership.c.id == row.to_member)
+        ).scalar()
+    )
+
+
+def return_held_by(conn: Connection, member_id: int, by: str) -> None:
+    """A member leaves the project (§6.2): what it holds would lie with nobody to answer."""
+    rows = conn.execute(
+        select(t.request.c.id)
+        .where(t.request.c.holder_member == member_id, t.request.c.status == "open")
+        .order_by(t.request.c.created_at, t.request.c.id)
+    ).scalars()
+    for request_id in rows.all():
+        return_held(conn, request_id, by, "the holder left the project")
+
+
+def withdraw_owners_round(conn: Connection, member_id: int, actor: Actor | None) -> None:
+    """The addressee of a request of an owner's round leaves (§6.2, §20.7): nobody else may
+    read it, so it would lie open with nobody to answer it. One it forwarded stays with its
+    holder, until `return_held_by` when that holder leaves too."""
+    rows = conn.execute(
+        select(t.request)
+        .where(
+            t.request.c.to_member == member_id,
+            t.request.c.status == "open",
+            or_(t.request.c.holder_member.is_(None), t.request.c.holder_member == member_id),
+        )
+        .order_by(t.request.c.created_at, t.request.c.id)
+    ).all()
+    for request_id in sorted(inbox.owners_alone(conn, rows)):
+        close_request(conn, request_id, "withdrawn", actor, reason="the addressee left the project")
 
 
 def close_request(
@@ -1501,7 +1692,7 @@ def close_request(
             )
         )
         kind, extra = "request_answered", {}
-    _unblock(conn, row)
+    moved = _unblock(conn, row)
     if not unknown:
         proposals.settle(
             conn,
@@ -1528,6 +1719,7 @@ def close_request(
     if kind == "request_answered":
         project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
         ticker.on_request_answered(conn, project, _row(conn, row.id), actor)
+    _status_moved(conn, moved, actor)
 
 
 def file_consent(
@@ -1982,6 +2174,8 @@ def answer_personal(
     request_id: str, body: AnswerIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     _human(caller)
+    if body.on_behalf_of is not None:  # only a proxy names one (§2.3), and none answers here
+        raise invalid({"on_behalf_of": "proxy_only"})
 
     def action(conn: Connection) -> idempotency.Outcome:
         row = _locked_personal(conn, caller, request_id)
@@ -2022,7 +2216,7 @@ def answer_personal(
         ).rowcount
         if done != 1:
             _refuse_unless_open(_row(conn, row.id))
-        _unblock(conn, row)
+        moved = _unblock(conn, row)
         actor = caller.actor(member.id) if member is not None else None
         outcome = "go" if body.reply_id == "go" else "no"
         proposals.settle(
@@ -2041,6 +2235,7 @@ def answer_personal(
                 actor=caller.actor(member.id) if member is not None else None,
                 subject=("request", row.id),
             )
+            _status_moved(conn, moved, caller.actor(member.id) if member is not None else None)
         return idempotency.Outcome(200, "request", row.id, view)
 
     try:
@@ -2077,7 +2272,7 @@ def withdraw_personal(
         ).rowcount
         if done != 1:
             _refuse_unless_open(_row(conn, row.id))
-        _unblock(conn, row)
+        moved = _unblock(conn, row)
         # A proposal is settled wherever its request closes (`proposals`): the invited
         # human's own withdrawal of an organisation's invitation counts as their no.
         if row.proposal is not None:
@@ -2102,6 +2297,7 @@ def withdraw_personal(
                 actor=caller.actor(member.id) if member is not None else None,
                 subject=("request", row.id),
             )
+            _status_moved(conn, moved, caller.actor(member.id) if member is not None else None)
         return idempotency.Outcome(200, "request", row.id, view)
 
     return idempotency.run(engine_of(request), request, caller, action)

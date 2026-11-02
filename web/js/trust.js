@@ -29,6 +29,29 @@ window.Maity = window.Maity || {};
   // What an agent's own human may give it when bringing it (§3.1): not ops, not proxy.
   const MEMBER_TRUSTS = ["member", "guest"];
   const MEMBER_ROLES = ROLES.filter((r) => r !== "ops" && r !== "proxy");
+  // What a card's needs may name, beside a project role (§6.4).
+  const NEEDS_ROLES = ROLES.filter((r) => r !== "proxy" && r !== "manager");
+  // A trust or a role as a word in a line ("member · coder"), where roleLabel is the choice's name.
+  // Words outside the contract's sets stay as they come: a project may name its own roles.
+  const TRUST_WORDS = {
+    owner: () => M.t("trust.word.owner"), admin: () => M.t("trust.word.admin"),
+    member: () => M.t("trust.word.member"), guest: () => M.t("trust.word.guest"),
+  };
+  const ROLE_LINE_WORDS = {
+    "coder": () => M.t("trust.role_word.coder"),
+    "reviewer": () => M.t("trust.role_word.reviewer"),
+    "tester": () => M.t("trust.role_word.tester"),
+    "designer": () => M.t("trust.role_word.designer"),
+    "writer": () => M.t("trust.role_word.writer"),
+    "ops": () => M.t("trust.role_word.ops"),
+    "proxy": () => M.t("trust.role_word.proxy"),
+    "manager": () => M.t("trust.role_word.manager"),
+    "red-team": () => M.t("trust.role_word.red_team"),
+    "blue-team": () => M.t("trust.role_word.blue_team"),
+    "purple-team": () => M.t("trust.role_word.purple_team"),
+  };
+  const trustWord = (t) => (Object.hasOwn(TRUST_WORDS, t) ? TRUST_WORDS[t]() : t);
+  const roleWord = (r) => (Object.hasOwn(ROLE_LINE_WORDS, r) ? ROLE_LINE_WORDS[r]() : r);
   const roleLabel = (r) => (Object.hasOwn(ROLE_WORDS, r) ? ROLE_WORDS[r]()[0] : r);
   const roleHelp = (r) => (Object.hasOwn(ROLE_WORDS, r) ? ROLE_WORDS[r]()[1] : "");
 
@@ -70,16 +93,35 @@ window.Maity = window.Maity || {};
   function words(x) {
     if (!x) return "";
     const t = trustOf(x);
-    if (!t) return x.role || "";
-    return x.role ? t + " · " + x.role : t;
+    if (!t) return x.role ? roleWord(x.role) : "";
+    return x.role ? trustWord(t) + " · " + roleWord(x.role) : trustWord(t);
   }
 
   // A `role:`/`trust:` token in words: "every admin", "every reviewer".
+  // A key per token, so a language can say each its own way; a project's own role keeps its own word.
+  const EVERY = {
+    "trust:owner": () => M.t("trust.every.owner"),
+    "trust:admin": () => M.t("trust.every.admin"),
+    "trust:member": () => M.t("trust.every.member"),
+    "trust:guest": () => M.t("trust.every.guest"),
+    "role:coder": () => M.t("trust.every.role.coder"),
+    "role:reviewer": () => M.t("trust.every.role.reviewer"),
+    "role:tester": () => M.t("trust.every.role.tester"),
+    "role:designer": () => M.t("trust.every.role.designer"),
+    "role:writer": () => M.t("trust.every.role.writer"),
+    "role:ops": () => M.t("trust.every.role.ops"),
+    "role:proxy": () => M.t("trust.every.role.proxy"),
+    "role:manager": () => M.t("trust.every.role.manager"),
+    "role:red-team": () => M.t("trust.every.role.red_team"),
+    "role:blue-team": () => M.t("trust.every.role.blue_team"),
+    "role:purple-team": () => M.t("trust.every.role.purple_team"),
+  };
   function tokenWords(token) {
-    if (token.startsWith("trust:")) return "every " + token.slice(6);
-    if (token.startsWith("role:")) return "every " + token.slice(5);
+    if (Object.hasOwn(EVERY, token)) return EVERY[token]();
+    const unknown = /^(?:role|trust):(.+)$/.exec(token);
+    if (unknown) return M.t("trust.every.custom", { role: unknown[1] });
     return token;
   }
 
-  M.trust = { TRUSTS, ROLES, MEMBER_TRUSTS, MEMBER_ROLES, roleLabel, roleHelp, fillRoles, roleHint, governs, owner, guest, roleIs, reviews, tests, releases, words, tokenWords };
+  M.trust = { trustWord, roleWord, TRUSTS, ROLES, NEEDS_ROLES, MEMBER_TRUSTS, MEMBER_ROLES, roleLabel, roleHelp, fillRoles, roleHint, governs, owner, guest, roleIs, reviews, tests, releases, words, tokenWords };
 })(window.Maity);

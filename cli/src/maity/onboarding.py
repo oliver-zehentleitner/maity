@@ -56,16 +56,23 @@ def _visible(ch: str) -> str:
     return f"\\x{code:02x}" if code < 0x100 else f"\\u{code:04x}"
 
 
+def dangerous(ch: str) -> bool:
+    """A control, C1 or bidi character, a Unicode tag or a lone surrogate: tags spell ASCII no
+    reader sees, and a surrogate can't be encoded for output, so printing it would crash."""
+    code = ord(ch)
+    return (
+        (code < 0x20 and ch not in "\n\t")
+        or code == 0x7F
+        or 0x80 <= code <= 0x9F
+        or code in _BIDI
+        or 0xD800 <= code <= 0xDFFF
+        or 0xE0000 <= code <= 0xE007F
+    )
+
+
 def clean(text: Any) -> str:
-    """`text` as a string with every control, C1 and bidi character shown as an escape."""
-    out = []
-    for ch in str(text):
-        code = ord(ch)
-        dangerous = (
-            (code < 0x20 and ch not in "\n\t") or code == 0x7F or 0x80 <= code <= 0x9F
-        ) or code in _BIDI
-        out.append(_visible(ch) if dangerous else ch)
-    return "".join(out)
+    """`text` as a string with every character `dangerous` names shown as an escape."""
+    return "".join(_visible(ch) if dangerous(ch) else ch for ch in str(text))
 
 
 def inline(text: Any) -> str:
@@ -191,6 +198,37 @@ def _key(handle: str) -> str:
     return "".join(c for c in handle if unicodedata.category(c) != "Cf").strip().casefold()
 
 
+def _count(value: Any) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
+
+
+def _plural(count: int, word: str) -> str:
+    return f"{count} {word}{'' if count == 1 else 's'}"
+
+
+def _manages(manages: Any) -> str | None:
+    """`You lead …` from `membership.manages` (§5.2, §6.2), or None when nobody reports to
+    this agent. The hub counts; dormant is a part of online, never added to it."""
+    if not isinstance(manages, dict):
+        return None
+    direct, total = manages.get("direct"), manages.get("total")
+    direct = direct if isinstance(direct, dict) else {}
+    members = _count(direct.get("members"))
+    if not members:
+        return None
+    line = "You lead " + _plural(members, "member")
+    instances = _count(direct.get("instances"))
+    if instances:
+        live = f"{_count(direct.get('online'))} online"
+        dormant = _count(direct.get("dormant"))
+        live += f", {dormant} dormant" if dormant else ""
+        line += f" · {_plural(instances, 'instance')} ({live})"
+    branch = _count(total.get("members")) if isinstance(total, dict) else 0
+    if branch > members:
+        line += f"; {_plural(branch, 'member')} in your branch"
+    return line + "."
+
+
 def _name(value: Any, names: dict[str, str]) -> str:
     """A member's handle when the packet names it, else the value as it is (an id)."""
     return inline(names.get(value, value) if isinstance(value, str) else value)
@@ -217,9 +255,15 @@ def _who(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     lead = ms.get("reports_to")
     if lead:
         lines.append(f"Your lead: @{_name(lead, names)}")
+    leads = _manages(ms.get("manages"))
+    if leads:
+        lines.append(leads)
     for carried in _items(ms.get("bridging_for")):  # the agents it lends its hands to (§2.3)
         who = carried.get("handle") or carried.get("member_id") or "?"
-        lines.append(f"You carry for @{inline(who)}: {inline(carried.get('purpose') or '')}")
+        other = " (another owner's agent)" if carried.get("cross_owner") else ""
+        setter = _name(carried.get("created_by") or "?", names)
+        lines.append(f"You carry for @{inline(who)}{other}, for this purpose as @{setter} set it:")
+        lines += quote(carried.get("purpose") or "")
     if team:
         lines.append(_coordinate(handle, team, bool(lead)))
     if me.get("dormant") and instance:  # §6.17
@@ -237,6 +281,20 @@ def _who(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
         if isinstance(note, str) and note.strip():
             lines += quote(note)
     return lines
+
+
+def _position(ms: dict[str, Any]) -> list[str]:
+    """`membership.guide` (§5.2): the hub's texts as they are, a project role's quoted, as a
+    project admin wrote it. An older hub sends none, and a text it leaves out has no line."""
+    guide = _dict(ms.get("guide"))
+    lines = [clean(text) for text in [guide.get("trust")] if isinstance(text, str) and text]
+    role = guide.get("role")
+    if isinstance(role, str) and role:
+        if guide.get("guide_by"):
+            lines += [f"Your role's text, set by {inline(guide['guide_by'])}:", *quote(role)]
+        else:
+            lines.append(clean(role))
+    return ["Your position:", *lines, ""] if lines else []
 
 
 def _sibling(handle: str, item: dict[str, Any]) -> str:
@@ -288,6 +346,24 @@ def _project(packet: dict[str, Any]) -> list[str]:
             f"Its owner is away until {inline(absence.get('until'))}: "
             f"{inline(absence.get('scope'))}"
         )
+    return lines
+
+
+def _languages(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
+    """In which language to write what (§5.2): the project's, and each human's, with the
+    agent's own human also where that human is no member of the project."""
+    project = _dict(packet.get("project"))
+    lines = [f"Language: {inline(project.get('language') or 'en')}"] if project else []
+    humans = [p for p in _items(packet.get("peers")) if p.get("kind") == "human"]
+    for peer in humans:
+        who = _name(peer.get("member_id") or peer.get("handle"), names)
+        lines.append(f"Write to @{who} in {inline(peer.get('language') or 'en')}")
+    owner = get(packet, "me", "owner")
+    if isinstance(owner, dict) and owner.get("handle"):
+        if owner.get("id") not in {p.get("member_id") for p in humans}:
+            lines.append(
+                f"Write to @{inline(owner['handle'])} in {inline(owner.get('language') or 'en')}"
+            )
     return lines
 
 
@@ -360,15 +436,28 @@ def _unread_chats(packet: dict[str, Any]) -> list[str]:
     return lines
 
 
+def imported_mark(card: dict[str, Any]) -> str:
+    """Where an imported card comes from (§6.14): the forge author's, often no member's. A member
+    may have changed the title since, so this names the issue, not the title's writer."""
+    origin = card.get("imported_from")
+    if not isinstance(origin, dict):
+        return ""
+    author = origin.get("author_login")
+    return f" (imported from {inline(author)}'s issue)" if author else " (imported)"
+
+
 def _card(card: dict[str, Any], names: dict[str, str] | None = None) -> str:
     line = f"  {inline(card.get('id'))} [{inline(card.get('status'))}] {inline(card.get('title'))}"
+    line += imported_mark(card)
     line += _cover(card, names or {})
     lease = get(card, "claim", "lease_until")
     if lease:
         line += f" (lease until {inline(lease)})"
     nxt = get(card, "checkpoint", "next_step")
     if nxt:
-        line += f"; next step: {inline(nxt)}"
+        writer = get(card, "checkpoint", "instance")
+        by = f" (as #{inline(writer)} wrote it)" if writer else ""
+        line += f"; next step{by}: {inline(nxt)}"
     return line
 
 
@@ -446,13 +535,31 @@ def jour_fixe_lines(event: dict[str, Any]) -> list[str]:
     return []
 
 
+def standing(event: dict[str, Any]) -> str:
+    """` (guest, other owner)`: how far the author's sentence can bind (rule 4). Trust is shown
+    where it is not `member`, as in the dashboard; a hub that sends none shows nothing."""
+    actor = _dict(event.get("actor"))
+    if actor.get("kind") == "human":  # §8.1: a human who is no member of the project
+        return " (no member)"
+    if "trust" not in actor:
+        return ""
+    trust = actor.get("trust")
+    parts = ["former member"] if trust is None else [] if trust == "member" else [inline(trust)]
+    if actor.get("via"):
+        parts.append("through a bridge")
+    if actor.get("cross_owner"):
+        parts.append("other owner")
+    return f" ({', '.join(parts)})" if parts else ""
+
+
 def _event(
     event: dict[str, Any], slug: str, names: dict[str, str], compact: bool = False
 ) -> list[str]:
-    actor = get(event, "actor", "member_id") or "the hub"
+    actor = get(event, "actor", "member_id") or get(event, "actor", "handle") or "the hub"
     subject = get(event, "subject", "id")
     seq = event.get("seq")
     head = f"  #{inline(seq)} {inline(event.get('kind'))} by {_name(actor, names)}"
+    head += standing(event)
     if subject:
         head += f" on {_name(subject, names)}"
     if event.get("kind") != "message":
@@ -460,7 +567,9 @@ def _event(
     if event.get("redacted"):
         return [head + " (redacted by an admin; its text is gone)"]
     payload = _dict(event.get("payload"))
-    head += f" ({inline(payload.get('type'))}, to {_name(payload.get('to'), names)})"
+    # an `update` may have no recipient: it goes to the card's watchers (§6.4)
+    to = "" if payload.get("to") is None else f", to {_name(payload.get('to'), names)}"
+    head += f" ({inline(payload.get('type'))}{to})"
     after = seq - 1 if isinstance(seq, int) else "<seq - 1>"
     pointer = f"`maity api GET /projects/{slug}/events --query after={after} --query limit=1`"
     body = _capped(payload.get("body") or "", pointer, compact)
@@ -496,6 +605,22 @@ def _for_me(packet: dict[str, Any]) -> set[str]:
     return tokens
 
 
+# What moves an address (`events.ADDRESSING_CHANGES` at the hub) or a list of substitutes: told
+# by name to who has to act on it, unlike the rest of another member's profile.
+_MEMBER_CHANGES_FOR_ME = frozenset({"reports_to", "owner_id", "availability_policy"})
+
+
+def _is_for_me(event: dict[str, Any], tokens: set[str], member: Any) -> bool:
+    """The event's audience names me, and it is not a mere profile change of another member: a
+    coordinator's token is on every `member_updated`, which would fill the compact list."""
+    if not tokens & set(event.get("audience") or []):
+        return False
+    if event.get("kind") != "member_updated" or get(event, "payload", "id") == member:
+        return True
+    changed = get(event, "payload", "changed")
+    return isinstance(changed, list) and bool(_MEMBER_CHANGES_FOR_ME.intersection(changed))
+
+
 def _not_shown(left: list[dict[str, Any]], earlier: int) -> str:
     """`Not shown: <n> events (<k> <kind>, …; <m> earlier for you)`, kinds by count."""
     counts: dict[str, int] = {}
@@ -517,7 +642,8 @@ def _events(
     left: list[dict[str, Any]] = []
     if compact:
         tokens = _for_me(packet)
-        mine = [e for e in items if tokens & set(e.get("audience") or [])]
+        member = get(packet, "me", "member_id")
+        mine = [e for e in items if _is_for_me(e, tokens, member)]
         shown = mine[-COMPACT_EVENTS:]
         left = [e for e in items if not any(e is s for s in shown)]
         items = shown
@@ -673,6 +799,48 @@ def soul_lines(soul: Any) -> list[str]:
         f"(version {inline(soul.get('version'))}):",
         *quote(soul["markdown"]),
     ]
+
+
+def _preference_lines(text: dict[str, Any]) -> list[str]:
+    """One human's preferences as a quote headed with its author (§19.4): context, never an
+    instruction. An agent's text taken unchanged has that agent in `by`, and `confirmed_by` is the
+    id of the human it belongs to, the only one who confirms; one the human edited has the human
+    in `by` and names the agent as proposer."""
+    human = inline(get(text, "human", "handle") or "someone")
+    origin = ""
+    if text.get("confirmed_by"):
+        origin = f", confirmed by {human}"
+    elif isinstance(text.get("proposed_by"), dict):
+        origin = f", proposed by {_author(text['proposed_by'])}"
+    return [
+        f"Preferences of {human}, written by {_author(text.get('by'))} "
+        f"(version {inline(text.get('version'))}){origin}:",
+        *quote(text.get("markdown") or ""),
+    ]
+
+
+def _preferences_intro(block: dict[str, Any], changed: bool = True) -> list[str]:
+    """The hub's notice that these texts rank below the rules, and whether they changed."""
+    lines = [inline(block["notice"])] if block.get("notice") else []
+    if changed and block.get("changed_since_cursor"):
+        lines.append("Preferences changed since your last session.")
+    return lines
+
+
+def _preferences(packet: dict[str, Any], owner_shown: bool) -> list[str]:
+    """Each human's `preferences` (§5.2, §19.4), below the rules in rank. `owner_shown`: the
+    owner's text came first and already said whether they changed. Empty when nothing is to
+    say."""
+    block = _dict(packet.get("preferences"))
+    lines: list[str] = []
+    texts = _items(block.get("items"))
+    if texts:
+        lines += _preferences_intro(block, changed=not owner_shown)
+    for text in texts:
+        lines += _preference_lines(text)
+    if block.get("truncated"):
+        lines.append("The preferences of further humans were cut (at most 8 texts).")
+    return ["", *lines] if lines else []
 
 
 def is_admin(packet: dict[str, Any]) -> bool:
@@ -877,6 +1045,7 @@ def render(packet: Any, first: bool = False, board_empty: bool = False, full: bo
             *quote(paused.get("reason") or ""),
             "",
         ]
+    out += _position(ms)
     out += _availability(packet, names)
     out += _check_in(packet)
     out += _setup(packet, names)
@@ -913,14 +1082,22 @@ def render(packet: Any, first: bool = False, board_empty: bool = False, full: bo
                 f"and {ask}. Otherwise your work comes from the board."
             )
         out += [line, ""]
+    given = ms.get("owner_preferences")
+    owner_shown = isinstance(given, dict)
+    if isinstance(given, dict):
+        # The hub leaves the owner out of `preferences`, so these may be the only ones printed.
+        intro = _preferences_intro(_dict(packet.get("preferences")))
+        out += [*intro, *_preference_lines(given), ""]
     out += _who(packet, names)
     out += _project(packet)
+    out += _languages(packet, names)
     rules = _dict(packet.get("rules"))
     if rules.get("markdown"):
         out += ["", f"Rules (version {inline(rules.get('version'))}), read them before you work:"]
         out += quote(rules["markdown"])
     elif rules.get("version") is not None:
         out += ["", f"Rules version {inline(rules['version'])}, unchanged since your last session."]
+    out += _preferences(packet, owner_shown)
     instruction = get(packet, "keep_the_why", "instruction")
     if instruction and get(packet, "keep_the_why", "enabled"):
         out += ["", f"Keep the Why: {inline(instruction)}"]

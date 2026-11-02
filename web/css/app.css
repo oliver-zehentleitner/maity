@@ -209,7 +209,7 @@ main:has(> .page-loading, > .page-failed) { flex: 1; display: flex; flex-directi
 .me { margin-inline-start: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 0.88rem; }
 .project { color: var(--muted); }
 
-.state, .source, .badge, .prio, .kind, .presence, .count {
+.state, .source, .badge, .card-watching, .prio, .kind, .presence, .count {
   display: inline-block;
   border-radius: 999px;
   padding: 1px 8px;
@@ -364,6 +364,9 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .kind { color: var(--muted); font-weight: 400; }
 
 .entry-body { padding: 0 12px 12px; border-top: 1px solid var(--border); }
+.request-action code { overflow-wrap: anywhere; }
+.request-action mark.hidden-char { background: var(--surface-2); color: var(--bad); border: 1px solid currentColor; border-radius: 3px; padding: 0 2px; }
+.request-action-body { max-height: 24rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-2); padding: 8px; border-radius: 4px; font-family: var(--mono); font-size: 0.85rem; }
 .summary { margin: 8px 0; }
 .options { margin: 0; padding-left: 20px; }
 .answered { color: var(--ok); }
@@ -432,6 +435,7 @@ a.id-ref:hover, a.id-ref:focus-visible { text-decoration: underline; }
 .badge.maintenance_round { color: var(--muted); }
 .expired { color: var(--bad); }
 .checkpoint, .report { margin-top: 6px; font-size: 0.88rem; }
+.card-approvals { margin: 6px 0 0; padding: 0; list-style: none; font-size: 0.88rem; }
 .checkpoint p, .report p { margin: 2px 0; }
 .report.mismatch { border-left: 3px solid var(--bad); padding-left: 6px; }
 .checklist { list-style: none; margin: 6px 0 0; padding: 0; font-size: 0.88rem; }
@@ -653,15 +657,10 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
   .members thead { display: none; }
   .members tr.member { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; padding: 4px 0; }
   .members tr.member > * { border-bottom: none; padding: 3px 10px; }
-  /* The hierarchy's levels on a phone (review of #949): the padding above wins over the name cell's indent, so the card itself moves in. */
-  .members tr.member-level-1 { margin-inline-start: 16px; }
-  .members tr.member-level-2 { margin-inline-start: 32px; }
-  .members tr.member-level-3 { margin-inline-start: 48px; }
   .members tr.member > td::before { content: attr(data-label) ": "; color: var(--muted); }
   .members .member-actions { text-align: left; }
   .members .member-actions::before { content: none; }
-  /* Block margins only: the level class beside it gives the open card its member's indent. */
-  .members tr.member-manage { margin-block: -8px 8px; }
+  .members tr.member-manage { margin: -8px 0 8px; }
   .member-manage .member-remove { justify-content: stretch; }
   .member-manage button { flex: 1 1 100%; }
 }
@@ -684,13 +683,9 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 /* ---- organisation --------------------------------------------------- */
 
 .org-tree, .org-tree ul { list-style: none; margin: 0; padding-left: 0; }
-/* Members as the project's hierarchy by trust: owner, admin, member, guest, each a level deeper;
-   with all four held, a guest is level 3. */
-tr.member-level-1 > th { padding-inline-start: 28px; }
-tr.member-level-2 > th { padding-inline-start: 56px; }
-tr.member-level-3 > th { padding-inline-start: 84px; }
 .org-tree ul { padding-left: 20px; border-left: 1px solid var(--border); margin-left: 4px; }
 .org-node { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; }
+.org-instances { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; }
 .role { color: var(--muted); }
 
 /* ---- chat ----------------------------------------------------------- */
@@ -746,6 +741,8 @@ tr.member-level-3 > th { padding-inline-start: 84px; }
 .chat-layout.open .chat-list-pane { max-height: var(--chat-h); overflow-y: auto; }
 .chat-back { display: none; }
 .chat-none { margin-top: 3rem; text-align: center; }
+/* The pane being left, until the next one is drawn. */
+.chat-layout > [aria-busy="true"] { opacity: 0.55; }
 @media (max-width: 720px) {
   .chat-layout { grid-template-columns: minmax(0, 1fr); }
   .chat-layout.open .chat-list-pane, .chat-none { display: none; }
@@ -859,6 +856,9 @@ tr.member-level-3 > th { padding-inline-start: 84px; }
    invitation as one centred card. */
 .door { max-width: 28rem; margin: 10vh auto; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; display: grid; gap: 12px; box-sizing: border-box; }
 .door h2 { margin: 0; }
+.door-subline { margin: 6px 0 0; }
+.door-points { margin: 8px 0 0; padding-left: 1.2rem; }
+.door-note { margin-top: 8px; font-size: 0.88rem; color: var(--muted); }
 .door .door-action { width: 100%; justify-content: center; text-align: center; box-sizing: border-box; }
 .door-alt { text-align: center; margin: 0; }
 .door-mark { font-size: 2rem; color: var(--muted); }
@@ -1145,7 +1145,9 @@ a.bell:hover, .menu-button.bell:hover { border-color: var(--accent); }
 .ticker-sub, .ticker-post-box { margin-top: 16px; }
 
 /* Joining in Agents (js/join.js): the panel under the title, open joins as seats in the grid. */
-.agents-head .join-open { margin-inline-start: auto; min-height: 40px; }
+/* + Add an agent and Join an agent, the same at the head of /agents and of a project's Agents. */
+.agents-head-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-inline-start: auto; }
+.agents-head-actions button { min-height: 40px; }
 button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .agents-count { margin: -6px 0 12px; }
 .join-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
@@ -1155,9 +1157,11 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 .join-head .join-close { margin-inline-start: auto; font-size: 1.2rem; }
 .join-columns { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 8px; }
 .join-fields { flex: 1 1 320px; min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; align-content: start; }
-.join-fields .field { display: grid; gap: 4px; min-width: 0; }
+/* One column that a wide select cannot stretch, and rows at their own height: a taller neighbour in the row must not stretch the label and the control. */
+.join-fields .field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; min-width: 0; align-content: start; }
+.join-fields .field > select, .join-fields .field > input, .join-fields .new-agent input { width: 100%; min-width: 0; box-sizing: border-box; }
 .join-fields .wide, .join-fields .new-agent { grid-column: 1 / -1; }
-.join-fields .new-agent:not([hidden]) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; }
+.join-fields .new-agent:not([hidden]) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; align-items: center; }
 .join-fields .new-agent .hint, .join-fields .new-agent .handle-state { grid-column: 1 / -1; }
 .join-fields [hidden], .join-briefing[hidden] { display: none; }
 .join-instance { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; display: grid; gap: 6px; min-width: 0; }
@@ -1233,6 +1237,13 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* A section of the Overview (a grid item) never grows past its column:
    the table scrolls sideways in its own box on a phone. */
 .swarm-body { min-width: 0; }
+/* The swarm as a whole (§6.22): the team and the board now, as small figures. */
+.swarm-figures { display: inline-block; vertical-align: top; margin: 0 24px 8px 0; }
+.swarm-figures h5 { margin: 0 0 4px; font-size: 0.85rem; }
+.swarm-figures dl { display: grid; grid-template-columns: auto auto; gap: 2px 12px; margin: 0; }
+.swarm-figures dt { color: var(--muted); }
+.swarm-figures dd { margin: 0; font-variant-numeric: tabular-nums; }
+.swarm-awake, .swarm-messages, .swarm-reviews-per-pr { margin: 4px 0; }
 .swarm-body .table-scroll { overflow-x: auto; max-width: 100%; }
 .swarm-table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .swarm-table th, .swarm-table td { text-align: right; padding: 4px 10px 4px 0; border-bottom: 1px solid var(--border); white-space: nowrap; }
@@ -1260,7 +1271,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* The admin area's sections, one at a time (the designer's pass part 3). */
 .admin-nav { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 12px; }
 .admin-nav button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
-.admin-section[hidden] { display: none; }
+.admin-section[hidden], .admin-subsection[hidden] { display: none; }
+.admin-pages-file { margin-bottom: 12px; }
+.lp-json > summary, .json-io > summary, .admin-pages-file > summary { min-height: 24px; cursor: pointer; }
 /* At most 16rem, so a long section never pushes the card's action row off
    screen (the designer's pass part 3). A shadow at the bottom says there
    is more, only while there is: a cover scrolling with the content
@@ -1290,6 +1303,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .sparkline { display: block; color: var(--accent); }
 .sparkline .spark-line { stroke: currentColor; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .sparkline .spark-dot { fill: currentColor; }
+.sparkline .spark-unknown { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 3; }
 .stat-days .table-scroll { overflow-x: auto; }
 .stat-days table { border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
 .stat-days th, .stat-days td { padding: 2px 8px 2px 0; text-align: right; white-space: nowrap; }
@@ -1353,6 +1367,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .device-stage { max-width: 36rem; }
 .device-code-text { font-family: var(--mono); font-size: 2rem; font-weight: 700; letter-spacing: 0.08em; margin: 8px 0; }
 /* Dark on light in either theme: that is what scanners read. */
+.security-setup { display: grid; gap: 8px; justify-items: start; max-width: 28rem; }
+.security-key { overflow-wrap: anywhere; }
+.security-code-list { list-style: none; margin: 8px 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: 4px 16px; }
 .qr-box { display: inline-block; background: #ffffff; padding: 8px; border-radius: 8px; line-height: 0; }
 .qr .qr-light { fill: #ffffff; }
 .qr .qr-dark { fill: #000000; }
@@ -1362,6 +1379,10 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .match-choice { font-size: 1.5rem; font-weight: 700; min-width: 4.5rem; min-height: 3rem; }
 .device-approval .actions, .device-code .actions { display: flex; justify-content: flex-end; gap: 8px; }
 .user-agent { display: block; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.85rem; }
+
+/* The join dialog's three lines (js/join.js): one row each, so each reads as its own offer. */
+.join-offers { border: 0; padding: 0; margin: 8px 0; }
+.join-offer { min-height: 28px; display: flex; align-items: center; gap: 6px; }
 
 /* The theme in Your account (js/account.js): three radios in a row. */
 .theme-choice { border: 0; padding: 0; margin: 4px 0 12px; display: flex; flex-wrap: wrap; gap: 4px 16px; }
@@ -1391,6 +1412,7 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* Wide: a fixed side panel, the columns keep their width and scroll beside it. */
 @media (min-width: 1100px) { .card-panel { flex-basis: min(32rem, 40vw); } }
 .card-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.card-panel-actions { display: flex; align-items: center; gap: 8px; }
 .card-panel .panel-title { margin: 6px 0 0; font-size: 1.15rem; }
 /* The panel is the card: no frame inside the frame, no second id, no second title. */
 .card-panel .card { margin: 4px 0 8px; border: none; padding: 0; background: none; }
@@ -1443,6 +1465,8 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .lp-sections, .lp-items { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
 .lp-section, .lp-item { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; overflow-wrap: anywhere; }
 .lp-section.kept { opacity: 0.8; }
+.lp-campaign-param { font-family: var(--mono); }
+.lp-variant-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
 .lp-section-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
 .lp-section-title { margin: 0; flex: 1 1 auto; }
 .lp-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -1477,6 +1501,17 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .not-listening-settings { display: grid; gap: 6px; max-width: 32rem; margin: 16px 0; }
 .not-listening-settings h3 { margin: 0; }
 .not-listening-settings button { justify-self: start; }
+.mail-address { margin: 16px 0; max-width: 32rem; }
+.mail-address h3 { margin: 0 0 6px; }
+.mail-address-state { margin: 0 0 6px; }
+.mail-address-form { display: grid; gap: 6px; }
+.mail-address-form .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.mail-modes { margin: 16px 0; max-width: 32rem; }
+.mail-modes h3 { margin: 0 0 6px; }
+.mail-modes-form { display: grid; gap: 6px; }
+.mail-kinds, .mail-quiet { display: grid; gap: 6px; }
+.mail-modes-form .mail-kind { display: grid; gap: 4px; }
+.mail-modes-form button[type=submit] { justify-self: start; margin-top: 6px; }
 /* My settings: each choice a row of at least 28 px, so the radios are targets of their own. */
 .my-nl { display: grid; gap: 6px; }
 .my-nl .check { display: flex; align-items: center; gap: 8px; min-height: 28px; }
@@ -1559,3 +1594,20 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .meat-chat-icon { display: inline-block; width: 20px; height: 20px; background-color: currentColor;
   -webkit-mask: url("../brand/meat-proxy-off.svg") center / contain no-repeat; mask: url("../brand/meat-proxy-off.svg") center / contain no-repeat; }
 .meat-chat-toggle[aria-pressed="true"] .meat-chat-icon { -webkit-mask-image: url("../brand/meat-proxy.svg"); mask-image: url("../brand/meat-proxy.svg"); }
+
+/* Admin → Users: reset two-factor sign-in (§2.8.7). */
+.user-reset { margin-top: 16px; max-width: 42rem; }
+.user-reset label { display: block; margin-bottom: 4px; }
+.user-reset textarea { width: 100%; box-sizing: border-box; }
+
+/* Memory (§19). */
+.memory-filter { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: end; margin-bottom: 8px; }
+.memory-entries .field, .memory-souls .field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; margin: 8px 0; }
+.memory-entries .field[hidden] { display: none; }
+.memory-add, .memory-souls { margin-top: 24px; max-width: 42rem; }
+.memory-add textarea, .soul-form textarea { width: 100%; box-sizing: border-box; }
+.memory-list { list-style: none; padding: 0; }
+.memory-list li { border-top: 1px solid var(--border); padding: 8px 0; }
+.memory-text { white-space: pre-wrap; margin: 0 0 4px; }
+.soul { border-top: 1px solid var(--border); padding: 8px 0; }
+.soul-versions { list-style: none; padding: 0; }

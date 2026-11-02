@@ -26,7 +26,21 @@ window.Maity = window.Maity || {};
     get setup() { return M.t("board.kind.setup"); },
   };
 
-  const status = (s) => s.replace("_", " ");
+  // A pull request's checks as the forge reports them (§6.11), in words.
+  const CHECK_WORDS = {
+    success: () => M.t("board.checks.success"), failure: () => M.t("board.checks.failure"), pending: () => M.t("board.checks.pending"),
+    none: () => M.t("board.checks.none"), unknown: () => M.t("board.checks.unknown"),
+  };
+  const VERIFICATION_WORDS = { signed: () => M.t("board.verification.signed"), bearer: () => M.t("board.verification.bearer") };
+  const word = (words, value) => (Object.hasOwn(words, value) ? words[value]() : value);
+  // A card's status inside a sentence, lowercase; a status the hub adds later reads as its own word.
+  const statusWord = (s) => M.dom.word("status", s).replace("_", " ");
+
+  const PRESENCE_WORDS = {
+    online: () => M.t("chat.presence.online"), away: () => M.t("chat.presence.away"),
+    offline: () => M.t("chat.presence.offline"), paused: () => M.t("chat.presence.paused"),
+  };
+  const presenceWord = (p) => (!p ? M.t("chat.presence.unknown") : Object.hasOwn(PRESENCE_WORDS, p) ? PRESENCE_WORDS[p]() : p);
 
   // The hub's reasons (docs/api.md §6.7), in words; any other reason is
   // shown as it comes, with its details.
@@ -60,7 +74,7 @@ window.Maity = window.Maity || {};
     const member = (ctx.memberById || {})[holder];
     return h("span", { class: "holder-presence", "data-holder": holder }, member
       ? [" · ", h("span", { class: "dot " + (member.presence || "offline"), "aria-hidden": "true" }),
-        " " + (member.presence || "unknown"), M.dom.isSilentAgent(member) ? [" · ", M.dom.silentSince(member, ctx.canAdmin)] : null]
+        " " + presenceWord(member.presence), M.dom.isSilentAgent(member) ? [" · ", M.dom.silentSince(member, ctx.canAdmin)] : null]
       : " · " + M.t("board.presence_unknown"));
   }
 
@@ -98,7 +112,7 @@ window.Maity = window.Maity || {};
         const dep = byId[id];
         const closed = dep && (dep.status === "done" || dep.status === "cancelled");
         return h("li", { class: dep ? (closed ? "met" : "unmet") : "" },
-          id + (dep ? " — " + dep.title + " (" + status(dep.status) + ")" : ""));
+          id + (dep ? " — " + dep.title + " (" + statusWord(dep.status) + ")" : ""));
       })));
   }
 
@@ -110,7 +124,7 @@ window.Maity = window.Maity || {};
   const cardLink = (ctx, id, words) => h("a", { class: "card-ref", href: ctx.link("tasks", id) }, words || id);
   function childRow(ctx, t) {
     return h("li", { class: "subtask" + (t.status === "done" || t.status === "cancelled" ? " met" : ""), "data-card": t.id },
-      h("span", { class: "subtask-status" }, status(t.status)), " ", cardLink(ctx, t.id), " ", cardLink(ctx, t.id, t.title));
+      h("span", { class: "subtask-status" }, statusWord(t.status)), " ", cardLink(ctx, t.id), " ", cardLink(ctx, t.id, t.title));
   }
   function subtasks(ctx, c, byId, inPanel) {
     const counts = c.children || { open: 0, total: 0 };
@@ -169,7 +183,7 @@ window.Maity = window.Maity || {};
       const hasKids = !!(c.children && c.children.total);
       // A parent: no release, not a subtask itself, not closed (unless it is the current one).
       const parentSel = c.kind === "release" || hasKids ? null
-        : h("select", { id: "card-parent-" + c.id, "data-focus": "parent:" + c.id }, h("option", { value: "" }, "none"),
+        : h("select", { id: "card-parent-" + c.id, "data-focus": "parent:" + c.id }, h("option", { value: "" }, M.t("board.family.no_parent")),
           others.filter((t) => t.kind !== "release" && !t.parent && (t.id === c.parent || !closed(t))).map((t) => h("option", { value: t.id }, t.id + " · " + t.title)));
       // A parent or related card the board did not load (closed before its
       // window) stays chosen as it is: a save never drops what it cannot show.
@@ -179,6 +193,7 @@ window.Maity = window.Maity || {};
       const relatedSel = h("select", { id: "card-related-" + c.id, multiple: true, size: "4" },
         others.map((t) => { const o = h("option", { value: t.id }, t.id + " · " + t.title); o.selected = (c.related || []).includes(t.id); return o; }),
         (c.related || []).filter((id) => !others.some((t) => t.id === id)).map((id) => { const o = notLoaded(id); o.selected = true; return o; }));
+      const needsSel = M.boardEdit.needsSelect(ctx, "card-needs-" + c.id, c.needs);
       const save = h("button", { type: "submit", "data-focus": "family:" + c.id }, M.t("board.save"));
       parts.push(h("form", {
         class: "card-family-form",
@@ -186,6 +201,7 @@ window.Maity = window.Maity || {};
           e.preventDefault();
           const body = {};
           if (parentSel && parentSel.value !== (c.parent || "")) body.parent = parentSel.value || null;
+          if (needsSel.value !== (c.needs || "")) body.needs = needsSel.value || null;
           const chosen = Array.from(relatedSel.querySelectorAll("option")).filter((o) => o.selected).map((o) => o.getAttribute("value"));
           if (chosen.slice().sort().join() !== (c.related || []).slice().sort().join()) body.related = chosen;
           if (!Object.keys(body).length) return;
@@ -205,6 +221,7 @@ window.Maity = window.Maity || {};
       parentSel ? [h("label", { for: parentSel.id }, M.t("board.family.parent")), parentSel]
         : h("p", { class: "hint" }, hasKids ? M.t("board.family.has_kids") : M.t("board.family.release")),
       h("label", { for: relatedSel.id }, M.t("board.family.related")), relatedSel,
+      h("label", { for: needsSel.id }, M.t("cards.new.field.needs")), needsSel,
       save, said.el));
     }
     // A subtask under it: not under a subtask, a release or a closed card (§6.4).
@@ -236,9 +253,19 @@ window.Maity = window.Maity || {};
     // Two lines at most on the card; the whole text as its tooltip.
     const said = M.t("board.checkpoint.text", { done: cp.last_step, next: cp.next_step });
     return h("div", { class: "checkpoint" },
-      h("span", { class: "label" }, M.t("board.checkpoint.label", { ago: formatAgo(cp.updated_at), verification: cp.verification })),
+      h("span", { class: "label" }, M.t("board.checkpoint.label", { ago: formatAgo(cp.updated_at), verification: word(VERIFICATION_WORDS, cp.verification) })),
       h("p", { class: "pre clamp", title: said }, M.ids.link(said, M.ids.where(ctx))),
       cp.branch ? h("p", { class: "muted" }, cp.branch + (cp.head ? " @ " + cp.head : "")) : null);
+  }
+
+  // The two signatures under reviewer_and_tester (§6.4), while the card waits for them.
+  function approvals(ctx, c) {
+    if (c.status !== "review" || (ctx.project.policy || {}).done_authority !== "reviewer_and_tester") return null;
+    const a = c.approvals || {};
+    const signed = (m) => ({ name: ctx.nameOf(m.by), ago: formatAgo(m.at), revision: m.revision });
+    return h("ul", { class: "card-approvals" },
+      h("li", null, a.review ? M.t("board.approvals.review.signed", signed(a.review)) : M.t("board.approvals.review.none")),
+      h("li", null, a.test ? M.t("board.approvals.test.signed", signed(a.test)) : M.t("board.approvals.test.none")));
   }
 
   function report(ctx, c) {
@@ -246,10 +273,10 @@ window.Maity = window.Maity || {};
     if (!r) return null;
     const pr = r.pr ? M.t("board.report.pr", { number: "#" + r.pr.number }) : (r.pr_status === "none" ? M.t("board.report.no_pr") : M.t("board.report.pr_unknown", { reason: r.pr_unknown_reason || "—" }));
     const observed = r.observed
-      ? M.t("board.report.observed", { state: r.observed.pr_state, checks: r.observed.checks, ago: formatAgo(r.observed.observed_at) })
+      ? M.t("board.report.observed", { state: M.dom.word("pr", r.observed.pr_state), checks: word(CHECK_WORDS, r.observed.checks), ago: formatAgo(r.observed.observed_at) })
       : M.t("board.report.not_observed");
     return h("div", { class: "report" + (r.mismatch ? " mismatch" : "") },
-      h("span", { class: "label" }, M.t("board.report.label", { ago: formatAgo(r.reported_at), verification: r.verification })),
+      h("span", { class: "label" }, M.t("board.report.label", { ago: formatAgo(r.reported_at), verification: word(VERIFICATION_WORDS, r.verification) })),
       h("div", { class: "md report-summary" }, M.markdown(r.summary, M.ids.where(ctx), { mentions: r.mentions, field: "summary", hrefOf: (id) => ctx.link("members", id), ctx })),
       h("p", { class: "muted" }, pr + " · " + observed),
       r.mismatch ? h("p", { class: "flag" }, M.t("board.report.mismatch")) : null,
@@ -282,9 +309,9 @@ window.Maity = window.Maity || {};
     if (pr.found === false) return h("td", { class: "pr-missing" }, M.t("board.pr.not_found"));
     if (!pr.observed_at) {
       return h("td", { class: "pr-unverified" }, M.t("board.pr.unverified"),
-        pr.state ? h("span", { class: "muted" }, " · ", M.t("board.pr.claimed_state", { source: pr.source, state: pr.state })) : null);
+        pr.state ? h("span", { class: "muted" }, " · ", M.t("board.pr.claimed_state", { source: pr.source, state: M.dom.word("pr", pr.state) })) : null);
     }
-    return h("td", { class: "pr-" + pr.state }, pr.state || "—");
+    return h("td", { class: "pr-" + pr.state }, pr.state ? M.dom.word("pr", pr.state) : "—");
   }
 
   function pullRequests(rel) {
@@ -299,7 +326,7 @@ window.Maity = window.Maity || {};
         h("td", null, safeUrl(pr.url) ? h("a", { href: safeUrl(pr.url), rel: "noopener noreferrer" }, "#" + pr.number) : "#" + pr.number,
           " " + (pr.title || ""), h("span", { class: "muted" }, " · " + (pr.task_id ? M.t("board.prs.source_by", { source: pr.source, card: pr.task_id }) : pr.source))),
         prState(pr),
-        h("td", { class: "checks-" + pr.checks }, pr.observed_at && pr.checks ? pr.checks : "—"),
+        h("td", { class: "checks-" + pr.checks }, pr.observed_at && pr.checks ? word(CHECK_WORDS, pr.checks) : "—"),
         h("td", null, pr.observed_at ? formatAgo(pr.observed_at) + (pr.head_sha ? " @ " + pr.head_sha : "") : M.t("board.pr.never"))))));
   }
 
@@ -317,10 +344,10 @@ window.Maity = window.Maity || {};
       .filter((b) => b.reason === "group_incomplete").map((b) => (b.tasks || []).join(" ")));
     const shipped = new Set(c.depends_on || []);
     const member = (id) => id
-      + (shipped.has(id) ? "" : " (not in this release)")
-      + (!closed && byId[id] ? " (" + status(byId[id].status) + ")" : "");
+      + (shipped.has(id) ? "" : " " + M.t("board.group.not_in_release"))
+      + (!closed && byId[id] ? " (" + statusWord(byId[id].status) + ")" : "");
     return h("div", { class: "deps groups" },
-      h("span", { class: "label" }, "Ship together"),
+      h("span", { class: "label" }, M.t("board.group.ship_together")),
       h("ul", null, groups.map((g) => h("li", {
         class: r.ready ? "met" : (incomplete.has(g.join(" ")) ? "unmet" : "unknown"),
       }, g.map(member).join(" + ")))));
@@ -328,10 +355,10 @@ window.Maity = window.Maity || {};
 
   function tagLine(rel) {
     const name = rel.tag ? rel.tag.name : "v" + rel.version;
-    if (!rel.tag || !rel.tag.observed_at) return h("p", { class: "muted" }, "Tag " + name + ": not observed");
-    return h("p", { class: "muted" }, "Tag " + name + ": "
-      + (rel.tag.found ? "on the forge" + (rel.tag.sha ? " @ " + rel.tag.sha : "") : "not on the forge")
-      + " · " + formatAgo(rel.tag.observed_at));
+    if (!rel.tag || !rel.tag.observed_at) return h("p", { class: "muted" }, M.t("board.tag.not_observed", { name }));
+    const ago = formatAgo(rel.tag.observed_at);
+    if (!rel.tag.found) return h("p", { class: "muted" }, M.t("board.tag.not_found", { name, ago }));
+    return h("p", { class: "muted" }, rel.tag.sha ? M.t("board.tag.found_at", { name, sha: rel.tag.sha, ago }) : M.t("board.tag.found", { name, ago }));
   }
 
   function checklistView(ctx, rel) {
@@ -346,13 +373,13 @@ window.Maity = window.Maity || {};
 
   // The hub's refusals of a release edit (docs/api.md §6.7), in words.
   function editError(err) {
-    if (err.code === "invalid_transition") return { message: "this release is closed; its record does not change" };
+    if (err.code === "invalid_transition") return { message: M.t("board.release.closed_record") };
     const fields = err.code === "invalid" && err.details && err.details.fields;
     if (fields) {
       return { message: Object.keys(fields).map((k) => {
         const why = String(fields[k]);
-        if (why.startsWith("unknown_item:")) return "the checklist changed meanwhile (" + why.slice(13) + " is gone); reload";
-        if (why === "duplicate_id") return "an item is listed twice";
+        if (why.startsWith("unknown_item:")) return M.t("board.release.checklist_changed", { item: why.slice(13) });
+        if (why === "duplicate_id") return M.t("board.release.item_twice");
         return k + ": " + why;
       }).join("; ") };
     }
@@ -368,12 +395,12 @@ window.Maity = window.Maity || {};
     const rel = c.release;
     const path = ctx.base + "/tasks/" + encodeURIComponent(c.id);
     const status = M.statusLine();
-    const patch = async (release, what, focusId) => {
-      status.busy("Saving " + what + "…");
+    const patch = async (release, busy, focusId) => {
+      status.busy(busy);
       try {
         redraw(await M.api.patch(path, { release }), focusId);
       } catch (err) {
-        status.fail("Not saved: ", editError(err));
+        status.fail(M.t("board.not_saved"), editError(err));
       }
     };
 
@@ -385,24 +412,24 @@ window.Maity = window.Maity || {};
         box.checked = !!item.done;
         box.addEventListener("change", async () => {
           box.disabled = true;
-          status.busy(box.checked ? "Ticking…" : "Unticking…");
+          status.busy(box.checked ? M.t("board.release.ticking") : M.t("board.release.unticking"));
           try {
             redraw(await M.api.post(path + "/checklist/" + encodeURIComponent(item.id), { done: box.checked }), id);
           } catch (err) {
             box.checked = !box.checked;
             box.disabled = false;
-            status.fail("Not saved: ", err.status === 404
-              ? { message: "this item is gone (removed meanwhile); reload the board" } : editError(err));
+            status.fail(M.t("board.not_saved"), err.status === 404
+              ? { message: M.t("board.release.item_gone") } : editError(err));
           }
         });
         return h("li", { class: item.done ? "met" : "unmet" }, box, h("label", { for: id }, " " + item.text), tickedBy(ctx, item));
       }));
       const box = h("div", { class: "release-edit" });
       append(box,
-        items.length ? list : h("p", { class: "muted" }, "No checklist items."),
+        items.length ? list : h("p", { class: "muted" }, M.t("board.release.no_items")),
         h("div", { class: "row" },
-          h("button", { type: "button", class: "small", id: idp + "edit-checklist-" + c.id, onclick: () => editChecklist(box) }, "Edit checklist"),
-          h("button", { type: "button", class: "small", id: idp + "edit-typed-" + c.id, onclick: () => editTyped(box) }, "Typed pull requests")),
+          h("button", { type: "button", class: "small", id: idp + "edit-checklist-" + c.id, onclick: () => editChecklist(box) }, M.t("board.release.edit_checklist")),
+          h("button", { type: "button", class: "small", id: idp + "edit-typed-" + c.id, onclick: () => editTyped(box) }, M.t("board.release.typed"))),
         status.el);
       return box;
     }
@@ -410,13 +437,13 @@ window.Maity = window.Maity || {};
     // A list editor: rows of inputs, add and remove, Save sends the list.
     // Each row's controls are labelled with their row number; after Save or
     // Cancel the focus goes back to the button that opened the editor.
-    function rowsEditor(box, title, rows, makeRow, toBody, what, opener) {
+    function rowsEditor(box, title, rows, makeRow, toBody, busy, opener) {
       const list = h("ol", { class: "edit-rows" });
       let n = 0;
       const add = (row) => {
         n += 1;
         const li = h("li", null, makeRow(row, n),
-          h("button", { type: "button", class: "small", "aria-label": "Remove row " + n, onclick: () => li.remove() }, "Remove"));
+          h("button", { type: "button", class: "small", "aria-label": M.t("board.rows.remove_row", { row: String(n) }), onclick: () => li.remove() }, M.t("board.rows.remove")));
         append(list, li);
         return li;
       };
@@ -426,7 +453,7 @@ window.Maity = window.Maity || {};
         onsubmit: (e) => {
           e.preventDefault();
           const body = toBody(list);
-          if (body) patch(body, what, opener);
+          if (body) patch(body, busy, opener);
         },
       },
       h("h4", null, title), list,
@@ -435,9 +462,9 @@ window.Maity = window.Maity || {};
           const li = add(null);
           const first = li.querySelector("input");
           if (first) first.focus();
-        } }, "Add"),
-        h("button", { type: "button", onclick: () => redraw(c, opener) }, "Cancel"),
-        h("button", { type: "submit" }, "Save")),
+        } }, M.t("board.rows.add")),
+        h("button", { type: "button", onclick: () => redraw(c, opener) }, M.t("board.rows.cancel")),
+        h("button", { type: "submit" }, M.t("board.save"))),
       status.el);
       M.dom.clear(box);
       append(box, form);
@@ -446,8 +473,8 @@ window.Maity = window.Maity || {};
     }
 
     function editChecklist(box) {
-      rowsEditor(box, "Checklist", rel.checklist || [], (item, n) => {
-        const input = h("input", { class: "item-text", maxlength: "200", "aria-label": "Checklist item " + n });
+      rowsEditor(box, M.t("board.release.checklist"), rel.checklist || [], (item, n) => {
+        const input = h("input", { class: "item-text", maxlength: "200", "aria-label": M.t("board.release.checklist_item", { row: String(n) }) });
         input.value = item ? item.text : "";
         if (item) input.setAttribute("data-id", item.id);
         return input;
@@ -456,15 +483,15 @@ window.Maity = window.Maity || {};
           .filter((i) => i.text);
         // An item keeps its tick by its id; a new one gets the next id from the hub.
         return { checklist: items.map((i) => (i.id ? { id: i.id, text: i.text } : { text: i.text })) };
-      }, "the checklist", idp + "edit-checklist-" + c.id);
+      }, M.t("board.release.saving_checklist"), idp + "edit-checklist-" + c.id);
     }
 
     function editTyped(box) {
-      rowsEditor(box, "Typed pull requests", rel.pull_requests_typed || [], (pr, n) => {
-        const number = h("input", { class: "pr-number", type: "number", min: "1", max: String(PR_MAX), "aria-label": "Pull request number, row " + n });
+      rowsEditor(box, M.t("board.release.typed"), rel.pull_requests_typed || [], (pr, n) => {
+        const number = h("input", { class: "pr-number", type: "number", min: "1", max: String(PR_MAX), "aria-label": M.t("board.release.typed.number", { row: String(n) }) });
         number.value = pr ? String(pr.number) : "";
-        const state = h("select", { class: "pr-claim", "aria-label": "State you attest, row " + n },
-          [["", "no state"], ["open", "open"], ["merged", "merged"], ["closed", "closed"]].map(([v, l]) => h("option", { value: v }, l)));
+        const state = h("select", { class: "pr-claim", "aria-label": M.t("board.release.typed.state", { row: String(n) }) },
+          [["", M.t("board.release.typed.no_state")], ["open", M.t("board.release.typed.open")], ["merged", M.t("board.release.typed.merged")], ["closed", M.t("board.release.typed.closed")]].map(([v, l]) => h("option", { value: v }, l)));
         state.value = pr && pr.state ? pr.state : "";
         return h("span", { class: "row" }, "#", number, state);
       }, (list) => {
@@ -476,17 +503,19 @@ window.Maity = window.Maity || {};
         })).filter((r) => r.raw || r.state);
         const bad = rows.find((r) => !/^[0-9]+$/.test(r.raw) || Number(r.raw) < 1 || Number(r.raw) > PR_MAX);
         if (bad) {
-          status.fail("Not saved: ", { message: "a pull request number is a whole number from 1 to " + PR_MAX + (bad.raw ? " (not " + bad.raw + ")" : "") });
+          status.fail(M.t("board.not_saved"), { message: bad.raw
+            ? M.t("board.release.typed.bad_number_was", { max: String(PR_MAX), raw: bad.raw })
+            : M.t("board.release.typed.bad_number", { max: String(PR_MAX) }) });
           return null;
         }
         const seen = new Set();
         const twice = rows.find((r) => seen.has(Number(r.raw)) || !seen.add(Number(r.raw)));
         if (twice) {
-          status.fail("Not saved: ", { message: "#" + Number(twice.raw) + " is listed twice" });
+          status.fail(M.t("board.not_saved"), { message: M.t("board.release.typed.twice", { pr: "#" + Number(twice.raw) }) });
           return null;
         }
         return { pull_requests_typed: rows.map((r) => ({ number: Number(r.raw), state: r.state })) };
-      }, "the typed pull requests", idp + "edit-typed-" + c.id);
+      }, M.t("board.release.saving_typed"), idp + "edit-typed-" + c.id);
     }
 
     return { checklist };
@@ -498,8 +527,7 @@ window.Maity = window.Maity || {};
     const r = rel.readiness || { ready: false, blocking: [] };
     const noProbe = r.blocking.some((b) => b.reason === "probe_not_configured");
     return [
-      closed ? h("p", { class: "muted" }, "Closed: its pull requests, groups and readiness are the record frozen when it closed; "
-        + "later changes do not alter them.") : null,
+      closed ? h("p", { class: "muted" }, M.t("board.release.frozen")) : null,
       pullRequests(rel),
       shipGroups(c, byId, closed),
       editor ? null : checklistView(ctx, rel),
@@ -507,22 +535,23 @@ window.Maity = window.Maity || {};
       r.ready
         ? h("div", { class: "readiness ready" },
           c.status === "done"
-            ? h("strong", null, "Shipped: it was ready when it closed.")
-            : [h("strong", null, "Ready to tag"),
-              h("span", null, " — every shipped card is done, every pull request observed merged, every group complete and the checklist done.")])
-        : h("div", { class: "readiness not-ready" }, h("strong", null, "Not ready: "),
+            ? h("strong", null, M.t("board.release.shipped"))
+            : M.tn("board.release.ready", { ready: h("strong", null, M.t("board.release.ready_words")) }))
+        : h("div", { class: "readiness not-ready" }, h("strong", null, M.t("board.release.not_ready")),
           h("ul", null, r.blocking.map((b) => h("li", null, blockingText(b, byId))))),
       noProbe && !closed
-        ? h("p", { class: "flag" }, "Without a forge probe the hub cannot see this project's pull requests or tag, "
-          + "so it never calls the release ready, and it can be cancelled but not marked done. The probe needs "
-          + "the project's repository on a forge the hub has a token for.")
+        ? h("p", { class: "flag" }, M.t("board.release.no_probe"))
         : null,
       tagLine(rel),
     ];
   }
 
   // A contract's arbiter may be a token ("trust:admin", "role:reviewer"): named in words.
-  const arbiterName = (ctx, a) => (/^(role|trust):/.test(a || "") ? "the " + a.replace(/^(role|trust):/, "") + "s" : M.dom.memberRef(ctx, a));
+  const arbiterName = (ctx, a) => {
+    if (a === "trust:admin") return M.t("board.contract.arbiter_admins");
+    if (/^role:/.test(a || "")) return M.t("board.contract.arbiter_role", { role: M.trust.roleLabel(a.slice(5)) });
+    return M.dom.memberRef(ctx, a);
+  };
 
   // manage: { move, assign, place, columnOf, drag } from the board, or null (read only).
   function actions(...controls) {
@@ -566,30 +595,36 @@ window.Maity = window.Maity || {};
         KIND_LABELS[c.kind]
           ? h("span", { class: "badge " + c.kind }, KIND_LABELS[c.kind] + (c.kind === "release" ? " " + c.release.version : ""))
           : null,
-        c._searchClosed ? h("span", { class: "badge" }, "Closed · outside board window") : null,
+        c._searchClosed ? h("span", { class: "badge" }, M.t("board.search.closed_outside")) : null,
+        c.watching ? h("span", { class: "card-watching" }, M.t("cards.watching")) : null,
         Array.isArray(c.match) && c.match.length
-          ? h("span", { class: "label-tag" }, "Matched: " + c.match.join(", ")) : null,
-        c.label ? h("span", { class: "label-tag" }, c.label) : null,
+          ? h("span", { class: "label-tag" }, M.t("board.search.matched", { fields: M.fmt.list(c.match) })) : null,
+        c.label ? h("span", { class: "label-tag" }, M.dom.word("label", c.label)) : null,
+        c.needs ? h("span", { class: "label-tag card-needs" }, M.t("cards.needs.tag", { role: M.trust.roleLabel(c.needs) })) : null,
         c.area ? h("span", { class: "area" }, c.area) : null,
         assignee(ctx, c)),
       // The title opens the card; ids in it are links in the panel's text.
       h("h3", null, inPanel ? M.ids.link(c.title, M.ids.where(ctx))
         : h("a", { class: "card-open", href: ctx.link("tasks", c.id), onclick: manage && manage.remember ? () => manage.remember(c.id) : null }, c.title)),
       claimLine(ctx, c),
+      approvals(ctx, c),
       // In the panel the row of controls comes right under the claim (the
       // designer's pass part 2): on a phone it was far down.
       inPanel ? controls : null,
       family(ctx, c, inPanel),
-      edges(c.kind === "release" ? "Ships" : "Depends on", c.depends_on, byId, frozen),
-      edges("Ships with", c.ships_with, byId),
+      edges(c.kind === "release" ? M.t("board.edges.ships") : M.t("board.edges.depends_on"), c.depends_on, byId, frozen),
+      edges(M.t("board.edges.ships_with"), c.ships_with, byId),
       c.blocked_by_request
-        ? h("p", { class: "flag" }, "Waits for ", h("a", { href: ctx.link("inbox") }, "an answer"), " (",
-          h("span", { class: "request-id" }, c.blocked_by_request), ")")
+        ? h("p", { class: "flag" }, M.tn("board.waits", {
+          answer: h("a", { href: ctx.link("inbox") }, M.t("board.waits.answer")),
+          request: h("span", { class: "request-id" }, c.blocked_by_request),
+        }))
         : null,
       c.contract
-        ? h("p", { class: "muted" }, "Contract " + c.contract.state + " · arbiter ", arbiterName(ctx, c.contract.arbiter),
-          (c.contract.watchers || []).length
-            ? [" · watched by ", c.contract.watchers.map((w, i) => [i ? ", " : null, M.dom.memberRef(ctx, w)])] : null)
+        ? h("p", { class: "muted" }, (c.contract.watchers || []).length
+          ? M.tn("board.contract.line_watched", { state: M.dom.word("contract", c.contract.state), arbiter: arbiterName(ctx, c.contract.arbiter),
+            watchers: c.contract.watchers.map((w, i) => [i ? ", " : null, M.dom.memberRef(ctx, w)]) })
+          : M.tn("board.contract.line", { state: M.dom.word("contract", c.contract.state), arbiter: arbiterName(ctx, c.contract.arbiter) }))
         : null,
       // Its section from the repository (§6.8).
       c.contract && M.contractPanel ? M.contractPanel.panel(ctx, c, redraw) : null,
@@ -632,7 +667,7 @@ window.Maity = window.Maity || {};
     let searchVersion = 0;
     let hubResults = false;
     const normalize = (value) => String(value || "").normalize("NFKC").toLowerCase();
-    const searchInput = h("input", { id: "board-search", type: "search", placeholder: "Search cards" });
+    const searchInput = h("input", { id: "board-search", type: "search", placeholder: M.t("board.search.placeholder") });
     const searchStatus = h("p", { class: "muted", role: "status", "aria-live": "polite" });
     const status = M.statusLine();
     status.el.setAttribute("tabindex", "-1");
@@ -643,15 +678,15 @@ window.Maity = window.Maity || {};
     // The column filter (the maintainer's request): one column, or the
     // closed ones together; remembered per viewer and project in this
     // browser. A card asked for by the URL is shown whatever it says.
-    const COLUMN_GROUPS = [["", "every column"], ["proposed", "Proposed"], ["open", "Open"], ["in_progress", "In progress"],
-      ["blocked", "Blocked"], ["review", "Review"], ["closed", "Closed (done and cancelled)"]];
+    const COLUMN_GROUPS = [["", M.t("board.filter.every_column")], ["proposed", M.t("cards.column.proposed")], ["open", M.t("cards.column.open")], ["in_progress", M.t("cards.column.in_progress")],
+      ["blocked", M.t("cards.column.blocked")], ["review", M.t("cards.column.review")], ["closed", M.t("board.filter.closed")]];
     const inGroup = (group, status) => !group || (group === "closed" ? status === "done" || status === "cancelled" : status === group);
     const columnKey = "maity.board.column." + ctx.slug;
     let rememberedColumn = "";
     try { rememberedColumn = window.localStorage.getItem(columnKey) || ""; } catch (err) { rememberedColumn = ""; }
     if (!COLUMN_GROUPS.some(([v]) => v === rememberedColumn)) rememberedColumn = "";
-    const filter = kept ? { member: kept.member, area: kept.area, silent: kept.silent, column: kept.column }
-      : { member: "", area: "", silent: false, column: marked ? "" : rememberedColumn };
+    const filter = kept ? { member: kept.member, area: kept.area, needs: kept.needs, silent: kept.silent, column: kept.column }
+      : { member: "", area: "", needs: "", silent: false, column: marked ? "" : rememberedColumn };
 
     // Focus survives a redraw by key (data-focus), as on the Members view.
     // A card that left the view (closed and moved out, or filtered away)
@@ -689,26 +724,29 @@ window.Maity = window.Maity || {};
     // stale(err), where given, tells a refusal that only a fresh read can
     // settle (a neighbour that moved meanwhile): the board is read again, and
     // what it returns is called with the fresh cards for the words to say.
-    async function write(label, done, call, focusKey, stale) {
+    // words: what the status line says while it runs and when it fails.
+    async function write(words, done, call, focusKey, stale) {
       const fromPanel = !!(panel && panel.el.contains(document.activeElement));
-      status.busy(label + "…");
+      let answer;
+      status.busy(words.busy);
       try {
-        await call();
+        answer = await call();
       } catch (err) {
-        const words = stale && stale(err);
-        if (words) {
+        const said = stale && stale(err);
+        if (said) {
           try { await reload(focusKey, fromPanel); } catch (ignored) { /* the refusal below is what matters */ }
-          status.fail(label + " failed: ", { message: words(items) });
+          status.fail(words.failed, { message: said(items) });
           return false;
         }
-        status.fail(label + " failed: ", E.said(err));
+        status.fail(words.failed, E.said(err));
         return false;
       }
       // Said once the board shows it: the words and the board never disagree.
+      if (typeof done === "function") done = done(answer);
       try {
         await reload(focusKey, fromPanel);
       } catch (err) {
-        status.fail(done + " Could not refresh: ", err);
+        status.fail(M.t("board.could_not_refresh", { done }), err);
         return true;
       }
       status.done();
@@ -717,19 +755,31 @@ window.Maity = window.Maity || {};
     }
 
     const cardPath = (c) => ctx.base + "/tasks/" + encodeURIComponent(c.id);
-    const move = (c, to, focusKey) => write("Moving", c.id + " is now " + to.replace("_", " ") + ".",
-      () => M.api.patch(cardPath(c), { status: to }), focusKey || "move:" + c.id);
+    const move = (c, to, focusKey, slot) => {
+      // Under two signatures (§6.4) done is a signature, and the card may stay in review.
+      const approve = slot || (to === "done" && E.signSlots(ctx, c)[0]);
+      if (approve) {
+        return write({ busy: M.t("board.sign.busy"), failed: M.t("board.sign.failed") },
+          (card) => (card && card.status === "done" ? M.t("board.move.done", { id: c.id, status: statusWord("done") }) : M.t("board.sign.saved", { id: c.id })),
+          () => M.api.patch(cardPath(c), { status: "done", approve }), focusKey || "move:" + c.id);
+      }
+      return write({ busy: M.t("board.move.busy"), failed: M.t("board.move.failed") }, M.t("board.move.done", { id: c.id, status: statusWord(to) }),
+        () => M.api.patch(cardPath(c), { status: to }), focusKey || "move:" + c.id);
+    };
     // Within a column (§6.4): the order changes once the hub has answered,
     // never before; a neighbour gone or moved to another column meanwhile
     // re-reads the board.
-    const PLACED = { before: "above", after: "below" };
-    const place = (c, how, focusKey) => write("Reordering",
-      c.id + (how.to ? " is now at the " + how.to : " is now " + PLACED[Object.keys(how)[0]] + " " + Object.values(how)[0]) + ".",
+    const placed = (id, how) => {
+      if (how.before) return M.t("board.place.above", { id, other: how.before });
+      if (how.after) return M.t("board.place.below", { id, other: how.after });
+      return how.to === "top" ? M.t("board.place.top", { id }) : M.t("board.place.bottom", { id });
+    };
+    const place = (c, how, focusKey) => write({ busy: M.t("board.place.busy"), failed: M.t("board.place.failed") }, placed(c.id, how),
       () => M.api.post(cardPath(c) + "/move", how), focusKey || "order:" + c.id,
       (err) => (err.code === "not_found" || err.code === "invalid"
-        ? () => "the card next to it moved or changed meanwhile; the board shows the order as it is now."
+        ? () => M.t("board.place.stale")
         : null));
-    const assign = (c, who, focusKey) => write("Assigning", c.id + " is assigned to " + ctx.nameOf(who) + ".",
+    const assign = (c, who, focusKey) => write({ busy: M.t("board.assign.busy"), failed: M.t("board.assign.failed") }, M.t("board.assign.done", { id: c.id, name: ctx.nameOf(who) }),
       () => M.api.post(cardPath(c) + "/assign", { assignee: who }), focusKey);
 
     // Dragging: the columns the card may go to are marked, the others refused.
@@ -771,7 +821,7 @@ window.Maity = window.Maity || {};
       end() {
         const c = dragging;
         if (c && !dropped && over && over.s !== c.status && !E.targets(ctx, c).includes(over.s)) {
-          status.fail("Not moved: ", { message: c.id + " cannot go to " + over.label + "." });
+          status.fail(M.t("board.move.not_moved"), { message: M.t("board.move.refused", { id: c.id, column: over.label }) });
         }
         dragging = null;
         over = null;
@@ -787,7 +837,7 @@ window.Maity = window.Maity || {};
     let columns = {};
     const columnOf = (c) => columns[c.status] || [];
     // What the board is showing, read when the next board view asks.
-    const snapshot = () => ({ column: filter.column, member: filter.member, area: filter.area, silent: filter.silent,
+    const snapshot = () => ({ column: filter.column, member: filter.member, area: filter.area, needs: filter.needs, silent: filter.silent,
       search: searchInput.value, hub: hubResults, scroll: window.scrollY || 0 });
     const remember = (id) => { lastBoard = { slug: ctx.slug, id, fromTitle: true, snapshot }; };
     const manage = { move, assign, place, columnOf, drag, remember, reload: (key) => reload(key, true) };
@@ -831,10 +881,18 @@ window.Maity = window.Maity || {};
     let byId = {};
     // The opened card's panel (js/card-panel.js), beside or above the columns.
     let panel = null;
+    // The opened card as read: one closed outside the board's window is in no list.
+    let panelCard = null;
     const boardBody = h("div", { class: "board-body" }, columnsBox);
     function openPanel(c) {
       lastBoard = { slug: ctx.slug, id: c.id, fromTitle: false, snapshot };
-      panel = M.cardPanel.render(ctx, c, card(ctx, c, byId, manage, true), () => M.route.go(ctx.link("board"), { replace: true }));
+      panelCard = c;
+      panel = M.cardPanel.render(ctx, c, card(ctx, c, byId, manage, true), () => M.route.go(ctx.link("board"), { replace: true }),
+        (updated) => {
+          // The list a search replaced comes back when it ends, so it learns this too.
+          [panelCard, byId[updated.id], boardItems.find((t) => t.id === updated.id)].forEach((t) => { if (t) Object.assign(t, updated); });
+          draw();
+        });
       boardBody.className = "board-body has-panel";
       append(boardBody, panel.el);
       window.setTimeout(() => panel.focus(), 0);
@@ -844,6 +902,7 @@ window.Maity = window.Maity || {};
       if (!inGroup(filter.column, c.status)) return false;
       if (filter.member && !(c.assigned_to === filter.member || (c.claim && c.claim.holder === filter.member))) return false;
       if (filter.area && c.area !== filter.area) return false;
+      if (filter.needs && c.needs !== filter.needs) return false;
       if (filter.silent && !(c.claim && M.dom.isSilentAgent(ctx.memberById[c.claim.holder]))) return false;
       if (searchInput.value && !hubResults) {
         const query = normalize(searchInput.value);
@@ -854,6 +913,7 @@ window.Maity = window.Maity || {};
 
     function draw() {
       areaOptions();
+      needsOptions();
       byId = {};
       items.forEach((t) => { byId[t.id] = t; });
       const known = new Set(COLUMNS.map(([s]) => s));
@@ -866,19 +926,18 @@ window.Maity = window.Maity || {};
       COLUMNS.forEach(([s]) => { columns[s] = standing.filter((t) => t.status === s).sort(E.byOrder); });
       clear(intro);
       if (!items.length && !searchInput.value) {
-        append(intro, h("p", { class: "first-hint" }, "No cards yet. Your agents put the work here: they propose cards in their "
-          + "areas, claim them and report when they are done. Ask an agent in its chat to propose what it will work on, or write one yourself."));
+        append(intro, h("p", { class: "first-hint" }, M.t("board.empty")));
       } else if (!visible.length) {
-        append(intro, h("p", { class: "muted" }, "No card matches the filter."));
+        append(intro, h("p", { class: "muted" }, M.t("board.no_match")));
       }
       append(clear(columnsBox),
         COLUMNS.filter(([s]) => inGroup(filter.column, s)).map(([s, label]) => column(s, label, columns[s])),
         other.length && !filter.column
-          ? h("section", { class: "column", "aria-label": "Other" },
-            h("h3", { class: "column-head" }, "Unknown status"),
+          ? h("section", { class: "column", "aria-label": M.t("board.column.other") },
+            h("h3", { class: "column-head" }, M.t("board.column.unknown")),
             other.map((c) => card(ctx, c, byId, manage)))
           : null);
-      if (panel && byId[panel.id]) panel.update(card(ctx, byId[panel.id], byId, manage, true));
+      if (panel) panel.update(card(ctx, byId[panel.id] || panelCard, byId, manage, true));
       if (marked) {
         let el = Array.from(columnsBox.querySelectorAll("article.card")).find((a) => a.getAttribute("data-card") === marked);
         // A folded child: its parent unfolds, and the child's row is marked.
@@ -903,7 +962,7 @@ window.Maity = window.Maity || {};
       items = boardItems;
       hubResults = false;
       searchStatus.textContent = searchInput.value
-        ? "Filtering loaded cards. Press Enter to search all cards, including notes and reports." : "";
+        ? M.t("board.search.filtering") : "";
       draw();
     }
 
@@ -912,13 +971,13 @@ window.Maity = window.Maity || {};
       if (!query) { localSearch(); return; }
       const version = ++searchVersion;
       if ([...query].length > 200) {
-        searchStatus.textContent = "Search must be at most 200 characters.";
+        searchStatus.textContent = M.t("board.search.too_long", { max: 200 });
         return;
       }
       items = boardItems;
       hubResults = false;
       draw();
-      searchStatus.textContent = "Searching all cards…";
+      searchStatus.textContent = M.t("board.search.searching");
       try {
         const result = await M.api.getAll(ctx.base + "/tasks?status=all&q=" + encodeURIComponent(query));
         if (version !== searchVersion) return;
@@ -926,11 +985,11 @@ window.Maity = window.Maity || {};
         items = result.items.map((c) => ({ ...c,
           _searchClosed: !loaded.has(c.id) && ["done", "cancelled"].includes(c.status) }));
         hubResults = true;
-        searchStatus.textContent = "Found " + items.length + " cards across all dates.";
+        searchStatus.textContent = M.t("board.search.found", { count: items.length });
         draw();
       } catch (err) {
         if (version !== searchVersion) return;
-        searchStatus.textContent = "Search failed: " + (err.message || String(err)) + ". Showing loaded cards only.";
+        searchStatus.textContent = M.t("board.search.failed", { error: err.message || String(err) });
       }
     }
     searchInput.addEventListener("input", localSearch);
@@ -938,10 +997,10 @@ window.Maity = window.Maity || {};
       searchInput.value = "";
       localSearch();
       searchInput.focus();
-    } }, "Clear search");
+    } }, M.t("board.search.clear"));
 
     // Filters, from what is on the board.
-    const memberSel = h("select", { id: "board-member" }, h("option", { value: "" }, "everyone"),
+    const memberSel = h("select", { id: "board-member" }, h("option", { value: "" }, M.t("board.filter.everyone")),
       ctx.members.map((m) => h("option", { value: m.id }, m.display_name)));
     memberSel.value = filter.member;
     const areaSel = h("select", { id: "board-area" });
@@ -949,8 +1008,16 @@ window.Maity = window.Maity || {};
     function areaOptions() {
       const areas = new Set(items.map((t) => t.area).filter(Boolean));
       if (filter.area) areas.add(filter.area);
-      append(clear(areaSel), h("option", { value: "" }, "every area"), [...areas].sort().map((a) => h("option", { value: a }, a)));
+      append(clear(areaSel), h("option", { value: "" }, M.t("board.filter.every_area")), [...areas].sort().map((a) => h("option", { value: a }, a)));
       areaSel.value = filter.area;
+    }
+    const needsFilter = h("select", { id: "board-needs" });
+    // As with the areas: the roles the board's cards name now.
+    function needsOptions() {
+      const roles = new Set(items.map((t) => t.needs).filter(Boolean));
+      if (filter.needs) roles.add(filter.needs);
+      append(clear(needsFilter), h("option", { value: "" }, M.t("board.filter.every_role")), [...roles].sort().map((r) => h("option", { value: r }, M.trust.roleLabel(r))));
+      needsFilter.value = filter.needs;
     }
     const columnSel = h("select", { id: "board-column" }, COLUMN_GROUPS.map(([v, l]) => h("option", { value: v, selected: v === filter.column }, l)));
     columnSel.value = filter.column;
@@ -961,6 +1028,7 @@ window.Maity = window.Maity || {};
     });
     memberSel.addEventListener("change", () => { filter.member = memberSel.value; draw(); });
     areaSel.addEventListener("change", () => { filter.area = areaSel.value; draw(); });
+    needsFilter.addEventListener("change", () => { filter.needs = needsFilter.value; draw(); });
 
     const silentOnly = ctx.canAdmin ? h("input", { id: "board-silent", type: "checkbox" }) : null;
     if (silentOnly) {
@@ -968,7 +1036,7 @@ window.Maity = window.Maity || {};
       silentOnly.addEventListener("change", () => { filter.silent = silentOnly.checked; draw(); });
     }
 
-    const newButton = h("button", { type: "button", "aria-expanded": "false", "aria-controls": "new-card-box" }, "New card");
+    const newButton = h("button", { type: "button", "aria-expanded": "false", "aria-controls": "new-card-box" }, M.t("board.new_card"));
     formBox.id = "new-card-box";
     const closeForm = () => { clear(formBox); newButton.setAttribute("aria-expanded", "false"); newButton.focus(); };
     newButton.addEventListener("click", () => {
@@ -978,13 +1046,13 @@ window.Maity = window.Maity || {};
         // Created: the form is done, whatever the re-read says.
         clear(formBox);
         newButton.setAttribute("aria-expanded", "false");
-        const done = created.id + " created in " + created.status.replace("_", " ") + ".";
+        const done = M.t("board.created", { id: created.id, status: statusWord(created.status) });
         status.done();
         append(status.el, h("span", { class: "ok" }, done));
         try {
           await reload("move:" + created.id);
         } catch (err) {
-          status.fail(done + " Could not refresh: ", err);
+          status.fail(M.t("board.could_not_refresh", { done }), err);
         }
       }, closeForm);
       append(clear(formBox), f.form);
@@ -993,15 +1061,16 @@ window.Maity = window.Maity || {};
     });
 
     append(root,
-      h("div", { class: "toolbar" }, h("h2", null, "Board"), newButton),
-      h("p", { class: "muted" }, "Every open card, and the done and cancelled ones of the last " + CLOSED_WINDOW_DAYS + " days."),
+      h("div", { class: "toolbar" }, h("h2", null, M.t("board.title")), newButton),
+      h("p", { class: "muted" }, M.t("board.intro", { days: CLOSED_WINDOW_DAYS })),
       h("form", { class: "board-filter", role: "search", onsubmit: (e) => { e.preventDefault(); search(); } },
-        h("label", { for: "board-search" }, "Search"), searchInput,
-        h("button", { type: "submit" }, "Search all cards"), clearSearch,
-        h("label", { for: "board-column" }, "Column"), columnSel,
-        h("label", { for: "board-member" }, "Member (assigned or holding)"), memberSel,
-        h("label", { for: "board-area" }, "Area"), areaSel,
-        silentOnly ? h("label", { class: "check", for: "board-silent" }, silentOnly, " Held by a silent agent") : null),
+        h("label", { for: "board-search" }, M.t("board.search")), searchInput,
+        h("button", { type: "submit" }, M.t("board.search.all")), clearSearch,
+        h("label", { for: "board-column" }, M.t("board.filter.column")), columnSel,
+        h("label", { for: "board-member" }, M.t("board.filter.member")), memberSel,
+        h("label", { for: "board-area" }, M.t("board.filter.area")), areaSel,
+        h("label", { for: "board-needs" }, M.t("cards.new.field.needs")), needsFilter,
+        silentOnly ? h("label", { class: "check", for: "board-silent" }, silentOnly, " ", M.t("board.filter.silent")) : null),
       searchStatus, formBox, status.el, intro, wantedNote, boardBody);
     let markedCard = draw();
     // The board as it was left: its search too, the hub's one asked again.
@@ -1018,8 +1087,7 @@ window.Maity = window.Maity || {};
       window.setTimeout(() => (title || markedCard).focus(), 0);
     } else if (markedCard) window.setTimeout(() => markedCard.focus(), 0);
     else if (wanted) {
-      wantedNote.textContent = "No card " + wanted + " on the board: it is neither open nor closed within the last "
-        + CLOSED_WINDOW_DAYS + " days, or there is no such card. Search all cards finds a closed one.";
+      wantedNote.textContent = M.t("board.wanted_missing", { id: wanted, days: CLOSED_WINDOW_DAYS });
     }
     ctx.every(30000, async () => {
       try {
@@ -1029,7 +1097,7 @@ window.Maity = window.Maity || {};
         else columnsBox.querySelectorAll(".holder-presence").forEach((node) => {
           node.parentNode.replaceChild(holderPresence(ctx, node.getAttribute("data-holder")), node);
         });
-      } catch (err) { status.fail("Could not refresh holder presence: ", err); }
+      } catch (err) { status.fail(M.t("board.presence_failed"), err); }
     });
   };
 })(window.Maity);

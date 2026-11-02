@@ -1,0 +1,166 @@
+{
+ "DELETE /runners/{runner}": [
+  ".on_runner_revoke: the fixture leaves it out"
+ ],
+ "GET /agents": [
+  ".items[].aliases: the fixture leaves it out",
+  ".items[].allowed_projects: the fixture leaves it out",
+  ".items[].avatar_source: the fixture leaves it out",
+  ".items[].avatar_url: the fixture leaves it out",
+  ".items[].deleted_at: the fixture leaves it out"
+ ],
+ "GET /auth/session": [
+  ".member.avatar_url: the fixture leaves it out",
+  ".member.interface_language: the fixture leaves it out"
+ ],
+ "GET /me": [
+  ".maintenance: the fixture leaves it out",
+  ".member.account_status: the fixture leaves it out",
+  ".member.avatar_source: the fixture leaves it out",
+  ".member.avatar_url: the fixture leaves it out",
+  ".member.interface_language: the fixture leaves it out",
+  ".member.limit: the fixture leaves it out",
+  ".member.links_visible: the fixture leaves it out",
+  ".member.public_bio: the fixture leaves it out",
+  ".member.public_profile: the fixture leaves it out",
+  ".member.social: the fixture leaves it out",
+  ".member.terms: the fixture leaves it out",
+  ".member.website: the fixture leaves it out"
+ ],
+ "GET /me/conversations?observed=true": [
+  ".items[].participants[].name: the fixture leaves it out"
+ ],
+ "GET /projects/{project}": [
+  ".attachments: the fixture leaves it out",
+  ".banner.etag: the hub sends no such key",
+  ".logo.etag: the hub sends no such key",
+  ".policy.coordinator: the fixture leaves it out",
+  ".policy.coordinator_substitute: the fixture leaves it out",
+  ".policy.max_placements: the fixture leaves it out",
+  ".policy.merged_closes: the fixture leaves it out",
+  ".policy.on_runner_revoke: the fixture leaves it out",
+  ".policy.spawn_consent_by: the fixture leaves it out",
+  ".policy.spawn_requests: the fixture leaves it out",
+  ".policy.subtasks: the fixture leaves it out",
+  ".policy.takeover_window_minutes: the fixture leaves it out",
+  ".public_about: the fixture leaves it out",
+  ".public_page: the fixture leaves it out",
+  ".settings.language: the fixture leaves it out"
+ ],
+ "GET /projects/{project}/conversations/{agent}/messages?before=9007199254740991&limit=50": [
+  ".items[].attachments: the fixture leaves it out",
+  ".items[].from_instance: the fixture leaves it out",
+  ".items[].mentions: the fixture leaves it out",
+  ".items[].to_instance: the fixture leaves it out"
+ ],
+ "GET /projects/{project}/conversations/{group}": [
+  ".participants[].name: the fixture leaves it out",
+  ".pinned: the fixture leaves it out"
+ ],
+ "GET /projects/{project}/conversations/{group}/messages?before=9007199254740991&limit=50": [
+  ".items[].attachments: the fixture leaves it out",
+  ".items[].from_instance: the fixture leaves it out",
+  ".items[].mentions[].instance: the fixture leaves it out",
+  ".items[].mentions[].name: the fixture leaves it out",
+  ".items[].to_instance: the fixture leaves it out"
+ ],
+ "GET /projects/{project}/conversations?observed=true": [
+  ".items[].participants[].name: the fixture leaves it out"
+ ],
+ "GET /projects/{project}/members": [
+  ".items[].aliases: the fixture leaves it out",
+  ".items[].availability: the fixture leaves it out",
+  ".items[].availability_policy: the fixture leaves it out",
+  ".items[].avatar_url: the fixture leaves it out",
+  ".items[].briefing_by: the fixture leaves it out",
+  ".items[].briefing_updated_at: the fixture leaves it out",
+  ".items[].briefing_version: the fixture leaves it out",
+  ".items[].covered_by: the fixture leaves it out",
+  ".items[].covering: the fixture leaves it out",
+  ".items[].cross_owner: the fixture leaves it out",
+  ".items[].instances[].credential_id: the fixture leaves it out",
+  ".items[].instances[].session: the fixture leaves it out",
+  ".items[].instances[].shared_environment: the fixture leaves it out",
+  ".items[].isolated: the fixture leaves it out",
+  ".items[].isolation_windows: the fixture leaves it out",
+  ".items[].language: the fixture leaves it out",
+  ".items[].line_consent: the fixture leaves it out",
+  ".items[].org_owner: the fixture leaves it out",
+  ".items[].owner.avatar_url: the fixture leaves it out",
+  ".items[].placement: the fixture leaves it out",
+  ".items[].role_base: the fixture leaves it out",
+  ".items[].shared_environment: the fixture leaves it out",
+  ".items[].social: the fixture leaves it out",
+  ".items[].team.updated_at: the fixture leaves it out",
+  ".items[].team.updated_by: the fixture leaves it out",
+  ".items[].website: the fixture leaves it out"
+ ],
+ "GET /projects/{project}/members/{agent}/credentials": [
+  ".items[].instance: the fixture leaves it out",
+  ".items[].replaces: the fixture leaves it out"
+ ],
+ "GET /projects/{project}/requests?status=all": [
+  ".items[].action: the fixture leaves it out",
+  ".items[].asked_by.avatar_url: the fixture leaves it out",
+  ".items[].asked_by.instance: the fixture leaves it out",
+  ".items[].cover: the fixture leaves it out",
+  ".items[].forwarding: the fixture leaves it out",
+  ".items[].holder: the fixture leaves it out",
+  ".items[].humans_only: the fixture leaves it out",
+  ".items[].jour_fixe: the fixture leaves it out",
+  ".items[].personal: the fixture leaves it out",
+  ".items[].placement: the fixture leaves it out",
+  ".items[].takeover_id: the fixture leaves it out"
+ ],
+ "GET /projects/{project}/tasks": [
+  ".items[].approvals: the fixture leaves it out",
+  ".items[].assigned_instance: the fixture leaves it out",
+  ".items[].cover: the fixture leaves it out",
+  ".items[].imported_from: the fixture leaves it out",
+  ".items[].jour_fixe: the fixture leaves it out",
+  ".items[].links: the fixture leaves it out",
+  ".items[].mentions[].instance: the fixture leaves it out",
+  ".items[].mentions[].name: the fixture leaves it out",
+  ".items[].needs: the fixture leaves it out",
+  ".items[].notes: the fixture leaves it out"
+ ],
+ "GET /projects/{project}/tasks/{task}": [
+  ".approvals: the fixture leaves it out",
+  ".assigned_instance: the fixture leaves it out",
+  ".children: the fixture leaves it out",
+  ".cover: the fixture leaves it out",
+  ".imported_from: the fixture leaves it out",
+  ".jour_fixe: the fixture leaves it out",
+  ".links: the fixture leaves it out",
+  ".mentions[].instance: the fixture leaves it out",
+  ".mentions[].name: the fixture leaves it out",
+  ".needs: the fixture leaves it out",
+  ".notes: the fixture leaves it out",
+  ".rank: the fixture leaves it out"
+ ],
+ "GET /projects/{project}/tasks?status=all": [
+  ".items[].approvals: the fixture leaves it out",
+  ".items[].assigned_instance: the fixture leaves it out",
+  ".items[].cover: the fixture leaves it out",
+  ".items[].imported_from: the fixture leaves it out",
+  ".items[].jour_fixe: the fixture leaves it out",
+  ".items[].links: the fixture leaves it out",
+  ".items[].mentions[].instance: the fixture leaves it out",
+  ".items[].mentions[].name: the fixture leaves it out",
+  ".items[].needs: the fixture leaves it out",
+  ".items[].notes: the fixture leaves it out"
+ ],
+ "GET /requests": [
+  ".items[].action: the fixture leaves it out",
+  ".items[].asked_by.avatar_url: the fixture leaves it out",
+  ".items[].asked_by.instance: the fixture leaves it out",
+  ".items[].cover: the fixture leaves it out",
+  ".items[].forwarding: the fixture leaves it out",
+  ".items[].holder: the fixture leaves it out",
+  ".items[].humans_only: the fixture leaves it out",
+  ".items[].jour_fixe: the fixture leaves it out",
+  ".items[].org: the fixture leaves it out",
+  ".items[].placement: the fixture leaves it out",
+  ".items[].takeover_id: the fixture leaves it out"
+ ]
+}

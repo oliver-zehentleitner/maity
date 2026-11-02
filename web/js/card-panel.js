@@ -2,7 +2,8 @@
 // wide screen and above it, full width, on a phone. It holds the card as
 // the board draws it, controls included, and what the board leaves out:
 // the body (Markdown), the links (§6.13), the open notes with a form to add
-// one (§6.16) and the history (§6.15). Close, Escape and Back go to the
+// one (§6.16), the updates the reader's watch brings and the history (§6.15),
+// and the reader's own watch (§6.4). Close, Escape and Back go to the
 // board, which marks the card and gives its title the focus.
 "use strict";
 
@@ -20,6 +21,7 @@ window.Maity = window.Maity || {};
     "contract.state": () => M.t("cardpanel.field.contract_state"), "contract.path": () => M.t("cardpanel.field.contract_path"),
     "contract.section": () => M.t("cardpanel.field.contract_section"),
   };
+  const UPDATES_PAGE = 100;
   const fieldWord = (f) => (Object.hasOwn(FIELD_WORDS, f) ? FIELD_WORDS[f]() : f);
 
   // A value of the history as a short text; a body or title as its diff.
@@ -30,10 +32,28 @@ window.Maity = window.Maity || {};
     return String(v);
   }
 
+  // A label or a status is a word of the contract; the other fields are what was written.
+  const VALUE_WORDS = { label: "label", status: "status", "contract.state": "contract" };
+  function fieldValue(field, v) {
+    const said = Object.hasOwn(VALUE_WORDS, field) && typeof v === "string" && v ? M.dom.word(VALUE_WORDS[field], v) : v;
+    return said === v ? shortValue(v) : said;
+  }
+
   // Who changed or wrote it, as @handle, an agent with its instance
   // (§6.17) where the hub names one.
   const byline = (ctx, who) => (who && (who.member_id || who.handle)
     ? M.dom.memberRef(ctx, who, { text: "handle", instance: who.instance }) : "@?");
+
+  // A redacted note keeps its place; its body is §8.5's tombstone, {redacted, reason,
+  // by, at}, never Markdown (§6.16).
+  const removedNote = (n) => !!n.body && typeof n.body === "object";
+  function noteTombstone(ctx, t) {
+    const reason = t.reason || "";
+    const said = t.by
+      ? M.tn("cardpanel.notes.removed_by", { who: M.dom.memberRef(ctx, t.by), reason })
+      : M.t("cardpanel.notes.removed", { reason });
+    return h("p", { class: "muted msg-redacted card-note-removed" }, said, t.at ? " · " + formatTime(t.at) : "");
+  }
 
   function historyLine(ctx, e) {
     const who = h("span", null, byline(ctx, e.actor));
@@ -46,7 +66,7 @@ window.Maity = window.Maity || {};
         h("details", null, h("summary", null, M.t("cardpanel.history.what_changed")), h("pre", { class: "history-diff" }, e.diff)));
     }
     return h("li", null, M.tn("cardpanel.history.changed_value", { who, field,
-      before: h("span", { class: "history-before" }, shortValue(e.before)), after: h("span", { class: "history-after" }, shortValue(e.after)) }), when);
+      before: h("span", { class: "history-before" }, fieldValue(e.field, e.before)), after: h("span", { class: "history-after" }, fieldValue(e.field, e.after)) }), when);
   }
 
   // A pull request or an issue: its reference, with the title and state the hub observed.
@@ -54,7 +74,7 @@ window.Maity = window.Maity || {};
     const ref = l.repository ? l.repository + "#" + l.number : String(url);
     let words = l.kind === "pr" ? M.t("cardpanel.link.pr", { ref }) : M.t("cardpanel.link.issue", { ref });
     if (l.observed && l.observed.title) words = M.t("cardpanel.link.titled", { link: words, title: l.observed.title });
-    if (l.observed && l.observed.state) words = M.t("cardpanel.link.state", { link: words, state: l.observed.state });
+    if (l.observed && l.observed.state) words = M.t("cardpanel.link.state", { link: words, state: M.dom.word("pr", l.observed.state) });
     return words;
   }
 
@@ -66,8 +86,9 @@ window.Maity = window.Maity || {};
   }
 
   // ctx, the card, its board element (js/board.js card(), the title not a
-  // link), and close(): what Close and Escape do.
-  function render(ctx, c, cardEl, close) {
+  // link), close(): what Close and Escape do, and changed(card): the hub's
+  // answer about this card, for the board to draw.
+  function render(ctx, c, cardEl, close, changed) {
     const where = M.ids.where(ctx);
     const base = ctx.base + "/tasks/" + encodeURIComponent(c.id);
     // The panel is the card (the designer's pass part 2): its id in the
@@ -76,11 +97,25 @@ window.Maity = window.Maity || {};
     const cardSlot = h("div", { class: "card-panel-card" }, cardEl);
     const notesBox = h("div", { class: "card-notes" });
     const historyBox = h("div", { class: "card-history" });
+    const updatesBox = h("div", { class: "card-updates" });
+    // Only the hub knows whether a card of the reader's depends on this one:
+    // an implied watch shows as any other, and taking it away is refused.
+    let watching = c.watching === true;
+    let updatesRun = 0;
+    const watchStatus = M.statusLine();
+    const watchButton = h("button", { type: "button", class: "small card-watch", onclick: () => toggleWatch() });
+    const drawWatch = () => {
+      watchButton.setAttribute("aria-pressed", watching ? "true" : "false");
+      append(clear(watchButton), watching ? M.t("cardpanel.watch.on") : M.t("cardpanel.watch.off"));
+    };
+    drawWatch();
     // The note field as last drawn: it gets the focus back after a post.
     let noteField = null;
     const box = h("aside", { class: "card-panel", "aria-labelledby": "card-panel-title" },
       h("div", { class: "card-panel-head" }, h("span", { class: "card-id" }, c.id),
-        h("button", { type: "button", class: "small card-panel-close", onclick: () => close() }, M.t("cardpanel.close"))),
+        h("span", { class: "card-panel-actions" }, watchButton,
+          h("button", { type: "button", class: "small card-panel-close", onclick: () => close() }, M.t("cardpanel.close")))),
+      watchStatus.el,
       heading,
       cardSlot,
       h("h3", null, M.t("cardpanel.description")),
@@ -88,6 +123,7 @@ window.Maity = window.Maity || {};
         : h("p", { class: "muted" }, M.t("cardpanel.description.none")),
       (c.links || []).length ? [h("h3", null, M.t("cardpanel.links")), h("ul", { class: "card-links" }, c.links.map(linkItem))] : null,
       h("h3", null, M.t("cardpanel.notes")), notesBox,
+      updatesBox,
       h("h3", null, M.t("cardpanel.history")), historyBox);
     box.addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.defaultPrevented) close(); });
 
@@ -103,7 +139,8 @@ window.Maity = window.Maity || {};
       append(notesBox, list.length
         ? h("ul", { class: "card-note-list" }, list.map((n) => h("li", null,
           h("p", { class: "muted" }, byline(ctx, n.author), " · " + formatTime(n.created_at)),
-          h("div", { class: "md" }, M.markdown(n.body, where, { mentions: n.mentions, hrefOf: (id) => ctx.link("members", id), ctx })))))
+          removedNote(n) ? noteTombstone(ctx, n.body)
+            : h("div", { class: "md" }, M.markdown(n.body, where, { mentions: n.mentions, hrefOf: (id) => ctx.link("members", id), ctx })))))
         : h("p", { class: "muted" }, M.t("cardpanel.notes.none")));
       const closed = ctx.project && ctx.project.state === "archived";
       if (closed) return;
@@ -134,9 +171,52 @@ window.Maity = window.Maity || {};
           if (noteField) noteField.focus();
         },
       },
-      h("label", { for: "card-note-body" }, M.t("cardpanel.notes.add")), text,
+      h("label", { for: "card-note-body" }, M.t("cardpanel.notes.add")), text, M.projectMentionPicker(ctx, text),
       h("p", { class: "hint" }, M.t("cardpanel.notes.hint")),
       submit, status.el));
+    }
+
+    async function toggleWatch() {
+      if (watchButton.disabled) return;
+      watchButton.disabled = true;
+      watchStatus.busy(M.t("cardpanel.watch.saving"));
+      try {
+        const answer = watching ? await M.api.del(base + "/watch") : await M.api.put(base + "/watch");
+        watching = answer.watching === true;
+        drawWatch();
+        watchStatus.done();
+        if (changed) changed(answer);
+        updates();
+      } catch (err) {
+        const implied = err.code === "invalid" && err.details && err.details.reason === "implied";
+        if (implied) watchStatus.fail("", { message: M.t("cardpanel.watch.implied") });
+        else watchStatus.fail(M.t("cardpanel.watch.not_saved"), err);
+      } finally {
+        watchButton.disabled = false;
+      }
+    }
+
+    // A watcher's news on the card (§6.4). The status changes it also brings
+    // are in the history below. The hub's listing has no card filter: the
+    // newest page of updates, this card's among them (context/views.md).
+    async function updates() {
+      const run = ++updatesRun; // a read still on its way when the watch changes draws nothing
+      clear(updatesBox);
+      if (!watching) return;
+      try {
+        const page = await M.api.get(ctx.base + "/messages?type=update&limit=" + UPDATES_PAGE);
+        if (run !== updatesRun) return;
+        const items = page.items.filter((m) => m.task_id === c.id);
+        append(updatesBox, h("h3", null, M.t("cardpanel.updates")), items.length
+          ? h("ul", { class: "card-update-list" }, items.map((m) => h("li", null,
+            h("p", { class: "muted" }, byline(ctx, { member_id: m.from, instance: m.from_instance }), " · " + formatTime(m.sent_at)),
+            h("div", { class: "md" }, M.markdown(m.body || "", where, { mentions: m.mentions, hrefOf: (id) => ctx.link("members", id), ctx })))))
+          : h("p", { class: "muted" }, page.next_cursor === null ? M.t("cardpanel.updates.none") : M.t("cardpanel.updates.none_latest")));
+      } catch (err) {
+        if (run !== updatesRun) return;
+        append(updatesBox, h("h3", null, M.t("cardpanel.updates")),
+          h("p", { class: "send-status failed" }, M.t("cardpanel.updates.read_failed", { reason: err.message })));
+      }
     }
 
     async function history() {
@@ -152,6 +232,7 @@ window.Maity = window.Maity || {};
     }
 
     notes();
+    updates();
     history();
 
     return {

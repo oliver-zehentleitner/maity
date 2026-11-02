@@ -1,10 +1,11 @@
 // Your agents (/agents, docs/api.md §6.3, §16.11): every agent profile of the
 // human, across projects, from the header's "+" → Agent and the gear menu.
-// Join an agent at the top (a project's join panel, js/join.js); then the
-// profiles as a list like Members, each with Manage: its memberships (project,
-// trust and role, the instances against the team's limit), Add to a project,
-// its name, git identity and handle, its deletion, and per membership its
-// instances with their credentials; a new profile below the list.
+// Add an agent and Join an agent at the head, each opening its form (a new
+// profile; a project's join panel, js/join.js); then the profiles as a list
+// like Members, each with Manage: its memberships (project, trust and role,
+// the instances against the team's limit), Add to a project, its name, git
+// identity and handle, its deletion, and per membership its instances with
+// their credentials.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -38,7 +39,7 @@ window.Maity = window.Maity || {};
   // the join panel there says the rest.
   const mayBring = (p) => ["owner", "admin", "member"].includes(p.trust);
 
-  function newProfile(done) {
+  function newProfile(done, cancel) {
     const status = M.statusLine();
     const handle = h("input", { id: "agent-new-handle", required: true, autocomplete: "off", spellcheck: "false", pattern: HANDLE.pattern, maxlength: "31" });
     const name = h("input", { id: "agent-new-name", required: true, maxlength: "100", autocomplete: "off" });
@@ -61,19 +62,52 @@ window.Maity = window.Maity || {};
     h("h3", null, M.t("agents.new.title")),
     h("label", { for: "agent-new-handle" }, M.t("agents.handle")), handle, h("p", { class: "hint" }, HANDLE.text),
     h("label", { for: "agent-new-name" }, M.t("agents.display_name")), name,
-    go, status.el);
+    h("div", { class: "actions" }, h("button", { type: "button", onclick: cancel }, M.t("agents.new.cancel")), go), status.el);
+  }
+
+  // + Add an agent at the head of /agents and of a project's Agents: the
+  // button opens the new profile's form, one at a time with the join panel.
+  // hooks: {made(profile, said), opening()}.
+  function addPart(hooks) {
+    const button = h("button", { type: "button", class: "agent-add-open" }, M.t("agents.add.open"));
+    const slot = h("div", { class: "agent-add-slot" });
+    function close(refocus) {
+      clear(slot);
+      button.hidden = false;
+      if (refocus) button.focus();
+    }
+    button.addEventListener("click", () => {
+      hooks.opening();
+      button.hidden = true;
+      append(clear(slot), newProfile((made, said) => { close(false); return hooks.made(made, said); }, () => close(true)));
+      slot.querySelector("input").focus();
+    });
+    return { button, slot, close };
   }
 
   // A membership's line: the project, trust and role, the instances against
   // the team's limit as that project's member view has them.
+  // A link in a membership's line only where its target opens for this human: their own agent can
+  // be in a project they are not in (reviews of #1020). The policy is known only on the project's
+  // own page; from elsewhere the link may lead there, and that page says why no panel opens.
+  const ownProject = (ctx, m) => (ctx.projects || []).find((p) => p.full_name === m.project) || null;
+  const bringsHere = (ctx, a, m) => {
+    const p = ownProject(ctx, m);
+    if (!p || !mayBring(p) || p.state === "archived") return false;
+    if (a.allowed_projects && !a.allowed_projects.includes(p.full_name) && !(p.aliases || []).some((x) => a.allowed_projects.includes(x))) return false;
+    const here = ctx.project && ctx.project.full_name === p.full_name ? ctx.project : null;
+    return !(here && !M.trust.governs(p) && (here.policy || {}).member_agents === "off");
+  };
   function membershipLine(ctx, a, m, view) {
     const active = view ? (view.instances || []).filter((i) => !i.revoked_at).length : null;
     const max = view && view.team ? view.team.max_instances : null;
     return h("li", { class: "agent-membership" },
-      h("a", { href: "/" + M.api.projectPath(m.project) + "/agents/" + encodeURIComponent(a.id) }, m.project),
+      ownProject(ctx, m) ? h("a", { href: "/" + M.api.projectPath(m.project) + "/agents/" + encodeURIComponent(a.id) }, m.project) : m.project,
       h("span", { class: "muted" }, " · " + M.trust.words(m)),
       active === null ? null : h("span", { class: "muted" }, " · " + (max ? M.t("agents.instances_max", { active, count: max }) : M.t("agents.instances", { count: active }))),
-      " ", h("a", { class: "small", href: "/" + M.api.projectPath(m.project) + "/agents/" + encodeURIComponent(a.id) + "/rulebook" }, M.t("agents.rulebook")));
+      // Only where the panel opens: a guest and an archived project have none (review of #1020).
+      bringsHere(ctx, a, m) ? [" ", h("a", { class: "small", href: "/" + M.api.projectPath(m.project) + "/agents/join?agent=" + encodeURIComponent(a.id) }, M.t("agents.join_link"))] : null,
+      ownProject(ctx, m) ? [" ", h("a", { class: "small", href: "/" + M.api.projectPath(m.project) + "/agents/" + encodeURIComponent(a.id) + "/rulebook" }, M.t("agents.rulebook"))] : null);
   }
 
   function addToProject(ctx, a) {
@@ -163,7 +197,7 @@ window.Maity = window.Maity || {};
     };
     // Before a list exists, the agent's current projects stand ticked (§6.3).
     names.forEach((full) => row(full, stored === null ? mine.includes(full) : stored.includes(full)));
-    const added = h("input", { id: key("add"), autocomplete: "off", spellcheck: "false", placeholder: "owner/project" });
+    const added = h("input", { id: key("add"), autocomplete: "off", spellcheck: "false", translate: "no", placeholder: "owner/project" });
     const addError = h("p", { class: "field-error", role: "alert" });
     const add = h("button", {
       type: "button",
@@ -254,26 +288,35 @@ window.Maity = window.Maity || {};
   }
 
   // Joining an agent from here (§3.1, js/join.js): the project chosen
-  // (?project=<owner>/<slug>, as Members' Join agent links it), then that
+  // (?project=<owner>/<slug>, a link's way to open it at once), then that
   // project's join panel. Owners and admins join for the project; a member
   // brings their own agent within its limits, which the hub checks.
-  function joinPart(ctx, onJoined) {
+  function joinPart(ctx, onJoined, opening, agentId) {
+    let chosen = agentId || null; // the agent the panel opens on, kept across another project
     const able = ctx.projects.filter((p) => p.state !== "archived" && p.trust !== "guest");
-    const box = h("section", { class: "agents-join", "aria-labelledby": "agents-join-heading" },
-      h("h3", { id: "agents-join-heading" }, M.t("agents.join.title")));
-    if (!able.length) { append(box, h("p", { class: "muted" }, M.t("agents.join.none"))); return box; }
+    const button = h("button", { type: "button", class: "primary join-open" }, M.t("agents.join.open"));
+    const box = h("section", { class: "agents-join", "aria-label": M.t("agents.join.open") });
+    box.hidden = true;
+    if (!able.length) {
+      button.disabled = true;
+      button.setAttribute("aria-describedby", "agents-join-none");
+      box.hidden = false;
+      append(box, h("p", { class: "muted", id: "agents-join-none" }, M.t("agents.join.none")));
+      return { button, box, close: () => {} };
+    }
     const asked = M.route.current().query.get("project");
     const pick = h("select", { id: "agents-join-project" }, able.map((p) => h("option", { value: p.full_name }, p.name || p.full_name)));
     pick.value = able.some((p) => p.full_name === asked) ? asked : able[0].full_name;
-    const open = h("button", { type: "button", class: "primary agents-join-open" }, M.t("agents.join.open"));
     const slot = h("div", { class: "join-panel-slot" });
     const status = M.statusLine();
     let mounted = null, mountedFor = null, seq = 0;
-    async function mount(andOpen) {
+    async function mount() {
       const full = pick.value;
-      if (mounted && mountedFor === full) { if (andOpen) mounted.open(open); return; }
+      opening();
+      box.hidden = false;
+      if (mounted && mountedFor === full) { mounted.open(button, chosen); return; }
       const mine = ++seq;
-      open.disabled = true;
+      button.disabled = true;
       status.busy(M.t("agents.join.reading"));
       try {
         const pctx = await M.projectContext(ctx, full, (slug, id) => "/chats/" + M.api.projectPath(slug) + (id ? "/" + encodeURIComponent(id) : ""));
@@ -281,32 +324,37 @@ window.Maity = window.Maity || {};
         const J = await M.join.mount(pctx, {
           member: !M.trust.governs(p),
           changed: () => onJoined(),
-          opened: (yes) => { open.hidden = yes; if (!yes) open.focus(); },
+          opened: (yes) => {
+            button.hidden = yes;
+            box.hidden = !yes;
+            if (!yes) button.focus();
+          },
         });
         if (mine !== seq) return;
         mounted = J; mountedFor = full;
         append(clear(slot), J.panel, J.listStatus.el);
         status.done();
-        if (andOpen) J.open(open);
+        J.open(button, chosen);
       } catch (err) {
         if (mine === seq) status.fail(M.t("agents.join.failed"), err);
       } finally {
-        if (mine === seq) open.disabled = false;
+        if (mine === seq) button.disabled = false;
       }
     }
-    // Another project chosen: a mount still reading for the old one is dropped.
-    pick.addEventListener("change", () => { seq += 1; mounted = null; mountedFor = null; clear(slot); open.hidden = false; open.disabled = false; status.done(); });
-    open.addEventListener("click", () => mount(true));
-    append(box, h("div", { class: "inline-form" }, h("label", { for: "agents-join-project" }, M.t("agents.join.project")), pick, open), status.el, slot);
+    // Another project chosen: a mount still reading for the old one is dropped, the new one's panel opens.
+    pick.addEventListener("change", () => { const was = slot.querySelector("select#join-agent"); if (was && was.value) chosen = was.value; seq += 1; mounted = null; mountedFor = null; clear(slot); status.done(); mount(); });
+    button.addEventListener("click", mount);
+    append(box, h("div", { class: "inline-form" }, h("label", { for: "agents-join-project" }, M.t("agents.join.project")), pick), status.el, slot);
     // Asked for from Members' Join agent: the panel open at once.
-    if (asked) mount(true);
-    return box;
+    if (asked) mount();
+    // Closed while it still reads: that mount is dropped, or it would open beside the other form.
+    return { button, box, close: () => { seq += 1; status.done(); button.disabled = false; if (mounted) mounted.close(false); box.hidden = true; button.hidden = false; } };
   }
 
-  // Your agents (/agents, the maintainer's card tsk-05meme59sq1x): Join an
-  // agent at the top, then one's own agents as a list like Members, each
-  // with Manage, which opens under its row what the profile card holds and
-  // the instances of each membership; a new profile under the list.
+  // Your agents (/agents, the maintainer's card tsk-05meme59sq1x): Add an agent
+  // and Join an agent at the head, as on a project's Agents, then one's own
+  // agents as a list like Members, each with Manage, which opens under its
+  // row what the profile card holds and the instances of each membership.
   M.views.agentsPage = async function (ctx, root, args) {
     if (ctx.me.kind !== "human") {
       append(root, h("h2", null, M.t("agents.title")), h("p", null, M.t("agents.humans_only")));
@@ -389,13 +437,17 @@ window.Maity = window.Maity || {};
                 h("th", { scope: "col" }, M.t("agents.list.instances")), h("th", { scope: "col" }, M.t("agents.list.presence")),
                 h("th", { scope: "col" }, M.t("agents.list.actions")))),
               h("tbody", null, rows.flat())))
-          : h("p", { class: "muted" }, M.t("agents.none")),
-        // A profile just made opens its row: its card is where it is named and placed.
-        newProfile((made, said) => { if (made && made.id) opened.add(made.id); return redraw(made, said); }));
+          : h("p", { class: "muted" }, M.t("agents.none")));
     }
     let titled = false;
-    append(root, heading, h("p", { class: "hint" }, M.t("agents.intro")),
-      M.join ? joinPart(ctx, () => { if (redrawing) redrawing(); }) : null, note, body);
+    // A profile just made opens its row: its card is where it is named and placed.
+    const add = addPart({
+      made: (made, said) => { if (made && made.id) opened.add(made.id); return redraw(made, said); },
+      opening: () => { if (join) join.close(); },
+    });
+    const join = M.join ? joinPart(ctx, () => { if (redrawing) redrawing(); }, () => add.close(false), wanted) : null;
+    append(root, h("div", { class: "toolbar agents-head" }, heading, h("div", { class: "agents-head-actions" }, add.button, join ? join.button : null)),
+      h("p", { class: "hint" }, M.t("agents.intro")), add.slot, join ? join.box : null, note, body);
     await draw();
     // /agents/<id> (a link to one profile): its card's title focused, once.
     const title = wanted && !titled ? Array.from(body.querySelectorAll("li.agent-card.wanted .agent-card-title"))[0] : null;
@@ -407,8 +459,8 @@ window.Maity = window.Maity || {};
   // what belongs to its membership here under it (js/members.js's parts):
   // the team's rulebook, the instances and their credentials, whether it gets
   // the owner's preferences, and with members:admin its pause and removal.
-  // Add an agent is the join panel (js/join.js); the open joins stand under
-  // the cards, where the agents run (js/placements.js) after them.
+  // Add an agent is a new profile, Join an agent the join panel (js/join.js),
+  // as on /agents; the open joins stand under the cards, where the agents run (js/placements.js) after them.
   // args: ["join"] (the panel open, ?agent=<id> choosing the profile), [<id>]
   // (that card marked), [<id>, "rulebook"] (at its rulebook, a join's quota refusal).
   M.views.projectAgents = async function (ctx, root, args) {
@@ -473,6 +525,8 @@ window.Maity = window.Maity || {};
         P.reportsToPart(m, memberPath),
         P.teamForm(m, memberPath),
         P.credentialsPart(m),
+        // Its owner puts an instance to rest or wakes it (§6.17).
+        P.dormantPart(m, memberPath),
         // Its bridges (§2.3): connected here by its owner.
         P.bridgesPart(m, memberPath),
         // The pause and the removal need members:admin (§6.2).
@@ -518,11 +572,11 @@ window.Maity = window.Maity || {};
       drawJoins();
     }
 
-    // Joining (docs/api.md §3.1, js/join.js), for whom may create joins: Add
+    // Joining (docs/api.md §3.1, js/join.js), for whom may create joins: Join
     // opens the panel at the head; the open joins stand as seats under the
     // cards, the others folded at the end. The panel, its form and a line
     // shown once live outside the redrawn cards, so a redraw loses neither.
-    const addButton = h("button", { type: "button", class: "primary join-open" }, !ctx.canAdmin ? M.t("agents.project.add_mine") : M.t("agents.project.add"));
+    const addButton = h("button", { type: "button", class: "primary join-open" }, M.t("agents.join.open"));
     const seatsBox = h("div", { class: "profiles join-seats" });
     const earlierBox = h("div", { class: "earlier-box" });
     let J = null;
@@ -569,13 +623,25 @@ window.Maity = window.Maity || {};
 
     const panelSlot = h("div", { class: "join-panel-slot" });
     addButton.hidden = true;
+    // A profile made here is in no project yet: the join panel opens with it chosen.
+    const addProfile = addPart({
+      made: async (made, said) => {
+        if (!J) return changed(made, said);
+        await changed(made, M.t("agents.new.done_here", { handle: made.handle }));
+        try { await J.reprofile(); } catch (err) { status.fail(M.t("agents.project.reread_failed"), err); return undefined; }
+        J.open(addButton, made.id);
+        return undefined;
+      },
+      opening: () => { if (J) J.close(false); },
+    });
     const placementsSlot = h("div", { class: "placements-slot" });
-    append(root, h("div", { class: "toolbar agents-head" }, h("h2", { id: "project-agents-heading" }, M.t("agents.project.title")), memberAdds ? limitNote : null, mayAdd ? addButton : null),
+    append(root, h("div", { class: "toolbar agents-head" }, h("h2", { id: "project-agents-heading" }, M.t("agents.project.title")), memberAdds ? limitNote : null,
+      h("div", { class: "agents-head-actions" }, addProfile.button, mayAdd ? addButton : null)),
       h("p", { class: "hint" }, (() => {
         const values = { name: ctx.project.name || ctx.slug, link: h("a", { href: "/agents" }, M.t("agents.title")) };
         return ctx.canAdmin ? M.tn("agents.project.hint_admin", values) : M.tn("agents.project.hint", values);
       })()),
-      countLine, status.el, panelSlot, note, cards, seatsBox, placementsSlot, earlierBox);
+      countLine, status.el, addProfile.slot, panelSlot, note, cards, seatsBox, placementsSlot, earlierBox);
     try {
       await readProfiles();
     } catch (err) {
@@ -587,11 +653,14 @@ window.Maity = window.Maity || {};
         member: memberAdds,
         full: () => memberAdds && ownCount() >= maxOwn,
         changed: drawJoins,
-        opened: (yes) => { addButton.hidden = yes; if (!yes) addButton.focus(); },
+        opened: (yes) => {
+          addButton.hidden = yes;
+          if (yes) addProfile.close(false); else addButton.focus();
+        },
       }).then((mounted) => {
         J = mounted;
         addButton.hidden = false;
-        addButton.addEventListener("click", () => { if (!addButton.disabled) J.open(addButton); });
+        addButton.addEventListener("click", () => { if (!addButton.disabled) J.open(addButton, wanted); });
         append(panelSlot, J.panel, J.listStatus.el);
         drawJoins();
         // Asked for, or no agent of one's own here yet: the panel is the way
@@ -616,6 +685,7 @@ window.Maity = window.Maity || {};
     }
     // A card asked for by the URL: its title, or its rulebook, takes the
     // focus; a profile of the caller's that is not here is said.
+    if (joinAsked && !mayAdd) append(status.el, h("span", { class: "join-not-here" }, M.t("agents.project.join_off")));
     if (wanted) {
       const at = rulebookAsked ? focusables.get("team-max:" + wanted) : Array.from(cards.querySelectorAll("li.agent-card.wanted .agent-card-title"))[0];
       if (at) window.setTimeout(() => at.focus(), 0);

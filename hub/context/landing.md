@@ -44,8 +44,9 @@ one rule an editor can predict, and the contract gives no merge for lists of sec
 `legal_version` holds every text a page ever had, keyed by the hub's time of the change in whole
 seconds (the version), unique per page; `legal_page.current` says which version is served and is
 null for a page that is not set; `instance_legal` is the setting's one row (default language, who
-edited last). A `PATCH` appends a version and moves the pointer; `{"imprint": null}` moves the
+edited last). A `PATCH` appends a version and moves the pointer; `{"terms": null}` moves the
 pointer to null and deletes nothing, so a version a person accepted stays readable at its address.
+The imprint's versions are kept too but not served (fb324f60).
 Two changes inside one second get versions a second apart. The daily limit counts the versions a
 page got in the last 24 hours, so unsetting costs nothing and a replacement costs one.
 
@@ -58,6 +59,55 @@ immutable. Counting the versions needs no counter row that could drift from them
   person accepted would be a copy that can differ from what the page said.
 - A `deleted` flag on the version row for an unset page: the question "which version is served" would
   then need the newest row without a flag, and an unset page set again would reuse a flagged row.
+
+## No public legal page lists earlier versions; the imprint serves none, the privacy notice and the terms stay readable by address
+
+**Id:** fb324f60-d0ee-47e1-aa33-fd624e0ecb2e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's direction, 2026-11-01 (tsk-rpc893kx92tw); contract `docs/api.md` §16.7.1
+**Revisit when:** a law or an operator needs an earlier imprint to be readable by visitors
+
+No public legal page lists earlier versions. `/privacy/<version>` and `/terms/<version>` still answer;
+`/impressum/<version>` answers `404` for every version. The rows stay in `legal_version` for every
+page, `GET /admin/settings/legal` names them, and the dashboard links those of the privacy notice and
+the terms for the operator.
+
+**Reason:** the maintainer wants the list gone from all three pages. A person may have accepted a
+version of the terms or relied on one of the privacy notice, so those stay readable for whoever holds
+the address (c321fdcc-6917-4363-97f2-4d3858ea33ec); the imprint only says who runs the instance now.
+That the addresses stay, and the `404` for the imprint's, were decided in the implementation.
+
+**Rejected alternatives:**
+- Leaving the imprint's old addresses readable too: an address somebody kept would go on showing an
+  outdated imprint, with no acceptance to justify it.
+- Ending the addresses of the terms and the privacy notice as well: a version a person may have
+  accepted could then no longer be read.
+- Deleting the imprint's old rows: not asked for, and every page's versions are immutable by design.
+
+## The sign-in and sign-up words are one row of `instance_setting`, with no fallback between languages
+
+**Id:** 30e0bd22-31e5-4f8d-b2bb-54975d7939ff
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** contract `docs/api.md` §16.7.4; the hub's side agreed on tsk-fct4awzw3k30, 2026-11-01
+**Revisit when:** these words need earlier versions, or variants as the landing page has
+
+The setting `auth_pages.setting` holds `default_language` and `pages`, and a `PATCH` replaces it as a
+whole. A visitor gets only the keys of the chosen language; `render.best_language` tells "no match"
+from a match, so a page without text in `default_language` answers it with `texts: {}` and not with
+another language, which is where `choose_language` differs for the landing page.
+
+**Reason:** the landing and legal tables exist for variants and versions, which these words do not
+have; `site_values` already keeps a whole value in `instance_setting`, with no migration and with
+`updated_by` covered by the account deletion. Keys taken from another language would be marked up as
+the chosen one, and the dashboard's catalogue is translated anyway.
+
+**Rejected alternatives:**
+- A table of its own: a migration and a deletion rule for one row with nothing to track.
+- Keys falling back to `default_language`: found in review of the contract, wrong `lang` on the text.
 
 ## Migration 0090 makes a `hero` only when the old landing had both a title and a call to action
 
@@ -391,3 +441,50 @@ address in the page; a fixed list also keeps the marks' terms in one reviewable 
   responsibility with no record of their terms.
 - Redrawing or recoloring the files: the designer's source keeps them byte for byte so a removal or replacement is file by file.
 - The list in the stylesheet or script: the band would then depend on the script, and validation could not know the names.
+
+## An eyebrow is offered on the titled content sections, and the open-source links are text links
+
+**Id:** ca3ca30f-ea8a-4a10-8053-7d08da43b8c8
+**Type:** decision
+**Status:** active
+**Evidence:** unknown
+**Source:** the card tsk-pb6574gqyhy0 for what was chosen; why the excluded types have none could not be established
+**Revisit when:** the designer reworks the sections
+
+`docs/api.md` §16.7 lists the types with an optional `eyebrow`; `cta_band`, `explore`, `activity` and
+`collab` have none. The `opensource` section's links are text links, not buttons. Why these four types go
+without is unknown. Alternatives: unknown.
+
+## A page's languages and a person's languages are two lists
+
+**Id:** d324cd3d-2cfb-4ded-9c32-12d6d6d494a0
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** #1048 and #1056; the review of #1056
+**Revisit when:** a page's frame words come from something other than `render.WORDS`
+
+`landing.LANGUAGES` holds the languages a page may be written in; `maity_hub.languages` (§6.2) those a
+human or a project may name. A page needs frame words translated by us and a name in the language bar;
+a setting needs only a valid tag. A test that needs an invalid page language takes a §6.2 tag outside the
+page list, so it checks the split too.
+
+**Rejected alternative:** one list: every ISO language would be a valid page with no words to show it in.
+
+## The link preview takes a whole address from `MAITY_PUBLIC_URL`
+
+**Id:** 5442e131-a473-48cd-9755-f7c2869fcec1
+**Type:** decision
+**Status:** open
+**Evidence:** inferred
+**Source:** the card tsk-wzbzs0hgrfvc; #1064 and its review
+**Revisit when:** another instance than ours goes public
+
+The landing page names `og-image-team.png`, and `shell_document` writes the hub's address into the shell's
+`content="brand/…"`, since a crawler reads no `<base>`. maity.dev has its own image in `docs/index.html`.
+A hub without a dashboard names no image, having no `/assets/`.
+
+**Rejected alternative:** the `Host` header: a client can forge it, and the landing page is cached publicly.
+
+**Open:** the team image carries the address `maity.team`, so a self-hosted hub's previews show it too.
+Whether it gets a neutral image is undecided.

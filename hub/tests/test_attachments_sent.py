@@ -90,6 +90,22 @@ def events_of(engine: Engine, kind: str) -> list[Any]:
         return list(conn.execute(select(t.event).where(t.event.c.kind == kind)))
 
 
+def test_a_chat_read_again_says_its_deleted_file_is_gone(
+    stored: ClientFactory, owner: flow.Human
+) -> None:
+    agent = flow.agent(stored, owner)
+    kept, deleted = upload(owner, "kept.txt", b"kept"), upload(owner, "log.txt", b"the log")
+    path = f"{BASE}/{agent.id}/messages"
+    assert owner.post(path, {"body": "", "attachments": [kept, deleted]}).status_code == 201
+    gone = drop(owner, deleted)
+    assert gone.status_code == 200, gone.text
+    [message] = owner.get(path).json()["items"]
+    by_id = {a["id"]: a for a in message["attachments"]}
+    assert by_id[deleted]["deleted_at"] == gone.json()["deleted_at"]
+    assert by_id[deleted]["name"] == "log.txt"
+    assert "deleted_at" not in by_id[kept]
+
+
 def test_the_sender_deletes_what_it_sent_and_the_row_stays_as_a_tombstone(
     stored: ClientFactory, owner: flow.Human, blobs: Path, migrated: Engine
 ) -> None:
@@ -105,6 +121,11 @@ def test_the_sender_deletes_what_it_sent_and_the_row_stays_as_a_tombstone(
     path = f"/projects/maintainer/maity/attachments/{named}"
     assert reader.get(path).json()["deleted_reason"] == "deleted"  # readers see the tombstone
     assert reader.get(f"{path}/content").status_code == 404
+    # Read again, the message says so: its payload is as written, the tombstone from the row.
+    messages = owner.get("/projects/maintainer/maity/messages").json()
+    [read] = [m for m in messages["items"] if m["seq"] == sent["seq"]]
+    assert read["attachments"][0]["deleted_at"] == body["deleted_at"]
+    assert read["attachments"][0]["name"] == "log.txt"
     [notice] = events_of(migrated, "attachment_deleted")
     assert notice.payload == {
         "attachment_id": named,
@@ -116,6 +137,40 @@ def test_the_sender_deletes_what_it_sent_and_the_row_stays_as_a_tombstone(
     again = drop(agent, named)  # deleting a deleted one answers with the tombstone (§1.5)
     assert again.status_code == 200 and again.json()["deleted_at"] == body["deleted_at"]
     assert len(events_of(migrated, "attachment_deleted")) == 1
+
+
+def test_a_deleted_file_is_readable_as_the_update_it_was_on(
+    stored: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    """§8.7: by the watchers that message reached, not by today's (§6.4)."""
+    sender, watcher = flow.agent(stored, owner), flow.agent(stored, owner)
+    other = flow.agent(stored, owner)
+    tasks = "/projects/maintainer/maity/tasks"
+    card = owner.post(tasks, {"title": "Watched"}).json()
+    watch = f"/api/v1{tasks}/{card['id']}/watch"
+    assert watcher.client.put(watch, headers=watcher.auth).status_code == 200
+    named = upload(sender, "log.txt")
+    posted = sender.post(
+        "/projects/maintainer/maity/events",
+        {
+            "kind": "message",
+            "type": "update",
+            "body": "see",
+            "task_id": card["id"],
+            "attachments": [named],
+        },
+    )
+    assert posted.status_code in (200, 201), posted.text
+    assert watcher.client.delete(watch, headers=watcher.auth).status_code == 200
+    assert drop(sender, named).status_code == 200
+    [notice] = events_of(migrated, "attachment_deleted")
+    assert f"watchers:{card['id']}" in notice.audience
+
+    def seqs(reader: flow.Agent) -> set[int]:
+        got = reader.get("/projects/maintainer/maity/events", params={"after": 0, "limit": 200})
+        return {e["seq"] for e in got.json()["items"]}
+
+    assert notice.seq in seqs(watcher) and notice.seq not in seqs(other)
 
 
 def test_an_admin_human_deletes_a_project_messages_file_and_an_agent_never_another_s(

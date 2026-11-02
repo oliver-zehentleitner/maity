@@ -7,14 +7,16 @@
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's decision on the design synthesis, 2026-10-21
-**Revisit when:** a feature needs a database-specific capability (LISTEN/NOTIFY, JSON indexing) that cannot stay behind the abstraction
+**Revisit when:** a feature needs a database-specific capability even with one replica, so that it cannot stay behind the abstraction
 
 The hub stores its state through a database abstraction (SQLAlchemy Core
 with Alembic migrations, or an equivalent that keeps the SQL portable) and
 is tested against PostgreSQL, SQLite and MySQL/MariaDB. PostgreSQL is the
-production database; SQLite is for local runs and tests. Anything that
-needs a notifier — the long-poll wake for agents — runs in-process and
-never relies on a database-specific mechanism.
+production database; SQLite is for local runs and tests. The long-poll
+wake for agents runs in-process and works on all three. Several replicas
+are the one case beyond that: they exist only on PostgreSQL and cross pods
+through `LISTEN`/`NOTIFY` (`hub/context/replicas.md`, 387c2409), so one
+replica still needs no database-specific mechanism.
 
 **Reason:** the hub will run next to the maintainer's existing
 infrastructure (PostgreSQL on Kubernetes) and must also start on a laptop

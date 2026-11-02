@@ -20,13 +20,27 @@ from urllib.parse import urlsplit
 from sqlalchemy import Connection, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock
+from maity_hub import clock, site_values
 from maity_hub import tables as t
 from maity_hub.errors import invalid
 from maity_hub.views import ts
 
 ROW = "landing"  # the one row of `instance_landing`
-LANGUAGES = ("en", "de")  # the languages of §6.2
+# The languages a page may be written in (§16.7), each by the name it calls itself; not the
+# list of §6.2.
+LANGUAGE_NAMES = {
+    "en": "English",
+    "de": "Deutsch",
+    "fr": "Français",
+    "es": "Español",
+    "pt": "Português",
+    "it": "Italiano",
+    "nl": "Nederlands",
+    "ja": "日本語",
+    "ko": "한국어",
+    "zh-Hans": "简体中文",
+}
+LANGUAGES = tuple(LANGUAGE_NAMES)
 SECTION_MAX = 20
 STORED_MAX = 256 * 1024  # bytes of UTF-8 (§16.7)
 FIELDS = ("enabled", "default_language", "pages", "footer")
@@ -38,7 +52,16 @@ CAMPAIGNS_MAX = 200
 VARIANT_SLUG = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?")  # 1–40, no `-` at either end
 CAMPAIGN_CODE = re.compile(r"[a-z0-9-]{1,40}")
 DEFAULT_VARIANT = "default"  # the main page's name in the counts, never a slug
-STATS = ("people", "agents", "public_projects", "cards_done_week", "people_online", "agents_online")
+STATS = (
+    "people",
+    "agents",
+    "public_projects",
+    "cards_done_week",
+    "people_online",
+    "agents_online",
+    "instances",
+    "instances_online",
+)
 DEMO_KINDS = ("cmd", "out", "note")  # the lines of the demo's terminal (§16.7)
 HANDLE = re.compile(r"[a-z0-9][a-z0-9-]{1,62}")
 FULL_NAME = re.compile(r"[a-z0-9][a-z0-9-]{1,30}/[a-z0-9][a-z0-9-]{1,62}")
@@ -140,6 +163,7 @@ def _points() -> Spec:
 
 # The text of a header link, on any section: the header shows only the sections that have one.
 NAV_LABEL: Spec = ("text", 24, False)
+EYEBROW: Spec = ("text", 40, False)
 
 # The marks that are a shape on transparency (Simple Icons' `pi`); every other file is a white
 # mark on an opaque black tile and is read by its luminance, which drops the tile (§16.7).
@@ -182,6 +206,7 @@ SECTIONS: dict[str, dict[str, Spec]] = {
     },
     "stats": {"items": ("choice", STATS, 1, len(STATS), True)},
     "steps": {
+        "eyebrow": EYEBROW,
         "title": ("text", 120, True),
         "items": (
             "list",
@@ -200,6 +225,7 @@ SECTIONS: dict[str, dict[str, Spec]] = {
         ),
     },
     "scales": {
+        "eyebrow": EYEBROW,
         "title": ("text", 120, True),
         "items": (
             "list",
@@ -219,6 +245,7 @@ SECTIONS: dict[str, dict[str, Spec]] = {
         ),
     },
     "faq": {
+        "eyebrow": EYEBROW,
         "title": ("text", 120, True),
         "items": (
             "list",
@@ -229,6 +256,7 @@ SECTIONS: dict[str, dict[str, Spec]] = {
         ),
     },
     "demo": {
+        "eyebrow": EYEBROW,
         "title": ("text", 120, True),
         "subline": ("text", 300, False),
         "terminal_lines": (
@@ -260,11 +288,20 @@ SECTIONS: dict[str, dict[str, Spec]] = {
         ),
     },
     "opensource": {
+        "eyebrow": EYEBROW,
         "title": ("text", 120, True),
         "markdown": ("md", 600, False),
         "tiles": (
             "list",
-            ("object", {"title": ("text", 80, True), "text": ("text", 300, True)}, True),
+            (
+                "object",
+                {
+                    "label": ("text", 40, False),
+                    "title": ("text", 80, True),
+                    "text": ("text", 300, True),
+                },
+                True,
+            ),
             1,
             3,
             True,
@@ -281,9 +318,14 @@ SECTIONS: dict[str, dict[str, Spec]] = {
         "items": ("agents", len(AGENTS), True),
         "more": ("text", 60, False),
     },
-    "text": {"title": ("text", 120, False), "markdown": ("md", 16 * 1024, True)},
+    "text": {
+        "eyebrow": EYEBROW,
+        "title": ("text", 120, False),
+        "markdown": ("md", 16 * 1024, True),
+    },
     "activity": {"title": ("text", 120, False), "count": ("int", 1, 20, True)},
     "profiles": {
+        "eyebrow": EYEBROW,
         "title": ("text", 120, True),
         "markdown": ("md", 2000, False),
         "handles": ("names", HANDLE, 2, True),
@@ -664,6 +706,8 @@ def check(body: object, current: dict[str, Any]) -> dict[str, Any]:
         > STORED_MAX
     ):
         found.add("pages", "too_large")
+    written = {name: value for name, value in body.items() if name in ADMIN_FIELDS}
+    site_values.refuse_placeholders(written, "", found.add)
     if found:
         raise invalid(found.fields)
     return after

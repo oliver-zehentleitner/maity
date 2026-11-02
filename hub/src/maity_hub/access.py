@@ -12,7 +12,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select
 
-from maity_hub import namespace
+from maity_hub import namespace, proxy_go
 from maity_hub import tables as t
 from maity_hub.auth.caller import Caller
 from maity_hub.errors import ApiError, forbidden, not_found
@@ -31,6 +31,7 @@ class Membership:
     kind: str  # human, agent
     instance: str | None = None  # the calling agent instance (§6.17); None for a human
     bridged: bool = False  # a bridge calls as this agent, with `Maity-For` (§2.3)
+    go: proxy_go.ProxyGo | None = None  # a proxy's call: the owner's go for it (§2.3)
 
     @property
     def id(self) -> int:
@@ -65,7 +66,16 @@ class Membership:
     def may(self, scope: str) -> bool:
         if self.bridged and scope in BRIDGE_WITHHELD:
             return False
+        if self._needs_go(scope):
+            return self.go is not None and self.go.spend()
         return has_scope(self.trust, self.role_base, self.kind, scope)
+
+    def _needs_go(self, scope: str) -> bool:
+        return (
+            self.role_base == "proxy"
+            and self.trust in ("owner", "admin")
+            and proxy_go.gated(scope, self.kind)
+        )
 
     def require(self, scope: str) -> None:
         if self.bridged and scope in BRIDGE_WITHHELD:
@@ -75,8 +85,20 @@ class Membership:
                 "a bridge calls under no governance scope and no line:lead",
                 {"scope": scope, "reason": "bridge_no_governance"},
             )
-        if not self.may(scope):
-            raise forbidden(scope)
+        if self.may(scope):
+            return
+        if self._needs_go(scope):
+            raise ApiError(
+                403,
+                "forbidden",
+                "a proxy's governance call needs the owner's go for exactly this call",
+                {
+                    "scope": scope,
+                    "reason": "proxy_needs_decision",
+                    "on_request": self.go.reason if self.go is not None else "missing",
+                },
+            )
+        raise forbidden(scope)
 
 
 def membership(conn: Connection, caller: Caller, slug: str) -> Membership:
@@ -101,7 +123,12 @@ def membership(conn: Connection, caller: Caller, slug: str) -> Membership:
     ).first()
     if row is None:
         raise not_found()
-    return Membership(project, row, caller.kind, caller.instance, caller.bridge is not None)
+    go = (
+        proxy_go.ProxyGo(conn, project.id, row.id, caller.on_request, caller.actor(row.id))
+        if row.role_base == "proxy"
+        else None
+    )
+    return Membership(project, row, caller.kind, caller.instance, caller.bridge is not None, go)
 
 
 def member_row_or_removed(conn: Connection, project_id: str, principal_id: str) -> Any:

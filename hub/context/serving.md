@@ -45,7 +45,7 @@ reported where it was made instead of as a 404 on `/` later.
 
 **Id:** 2b3a388d-15e6-4b30-a566-aad5e5116838
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** implementation session, 2026-10-21
 **Revisit when:** the hub authenticates every endpoint and serves TLS, or sits behind a documented reverse proxy
@@ -64,6 +64,28 @@ variable.
 development servers do so that a VM or a second machine reaches them
 without configuration. Convenient for exactly that case, at the price of
 exposing an unauthenticated hub on every network the machine is on.
+
+## A proxy's action body is capped at 48 KiB, below its request's 64 KiB
+
+**Id:** 4a2abcdf-296e-4a93-b449-cf41196365fa
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-1pg4p7eh6qww and the review of #1096, 2026-11-01; docs/api.md §2.3, §7
+**Revisit when:** a proxy needs a call whose body is between 48 and 64 KiB, or a body within the limit is refused with 413 through the CLI
+
+`ACTION_BODY_MAX` was 64 KiB, the cap of the whole request, so the field's own `too_large` could
+never trigger. It is now 48 KiB, and 16 KiB stay for the title and the JSON around it. The number
+is a choice, nothing else sets it. It counts the text, not its escaped form, so a hand-written
+request can still get the bare 413; the CLI measures the escaped form too and says so.
+
+**Reason:** the landing page below raised its route's cap because a page near its limit is normal
+use. No call a proxy asks for is known to come near 48 KiB, so the smaller limit costs little: a
+proxy cannot ask for a call of 48 to 64 KiB. That is a judgement, not a measurement.
+
+**Rejected alternatives:**
+- A larger cap for `POST /requests` in `middleware._body_cap`, the way of the landing PATCH: every
+  request would buffer more for one rare field.
 
 ## No Swagger UI: `/help` describes the API, `openapi.json` stays
 
@@ -154,6 +176,9 @@ keeps a request from buffering without bound. The rest of the API keeps 64 KiB.
 - Raising the cap to 384 KiB for control characters' sixfold escaping: no
   page needs them, and accepting them would only grow the cap.
 
+Checked on 2026-11-01 when a proxy's action body reached this cap: that field went the other way
+(see "A proxy's action body is capped at 48 KiB"), and this decision stands for the landing page.
+
 The fields refuse C0 control characters other than tab, newline and carriage
 return (`control_character`). Without them a valid page escapes to at most
 three times its size (`\u00e9` for a two-byte character, two `\uXXXX` for a
@@ -236,7 +261,7 @@ without a restart.
 
 **Id:** 261f1ce2-819b-4aac-ae4a-387bb83d0907
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** `docs/api.md` §16.11 and the maintainer's decision of 2026-10-29 behind it (the contract owner's `context/routing.md`, root context); the way to serve it is the implementer's
 **Revisit when:** the hub renders a dashboard page itself beyond the public pages, a handle may legitimately be a first segment the hub uses, or the dashboard gets a build step that changes which files it ships, or public pages (§16.9) arrive at `/<owner>/<slug>` and `/<handle>`: the shell sends `noindex` on every path of its own, and those pages are listed in the sitemap, so the shell must not claim them
@@ -315,3 +340,76 @@ route's own declared text.
 - The number of callers waiting for a pool connection: SQLAlchemy's `QueuePool` does not expose it,
   so the line shows open and checked-out connections and the ceiling, from which a full pool reads.
 
+## Latency per route is one `stats_route` line for each route with a slow request
+
+**Id:** bb287697-1669-4573-8217-ecc3d4bfe228
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-tmsc64zq3vt1, 2026-11-01: Ops could not tell which route makes the tail of 1 to 3 s from Traefik's log, which has no path
+**Revisit when:** the cluster gets a metrics stack, or `slow_routes` often exceeds `ROUTE_LINES`, or a question about the fast majority of requests cannot be answered from the request log
+
+After the `stats` line, which now also says `slow_routes=<n>`, each pod logs up to ten
+`stats_route window=60s method=<m> route=<pattern> requests=<n> over_1s=<n> over_3s=<n>
+total_ms=<n> max_ms=<n>` lines a minute, for the routes with a request of 1 s or more in that
+window, those with the most such requests first. A window without one logs no such line.
+
+A long-poll (`wait > 0`, marked by `deps.wait_of`) stays out of these counts and in the totals of
+the `stats` line. Its length is how long nothing happened, and `GET …/events` would lead the list
+every minute; `max_ms` of the `stats` line therefore still holds it. The cost is that a slow read
+behind a long-poll is not seen here; its `ms=` line is in the request log with the wait inside it.
+
+**Reason:** the volume stays bounded and small: at most 11 lines a minute per pod, about 2.4 MB a
+day at most at about 150 bytes a line, and no route line when nothing is slow. The window holds one
+entry per method and declared pattern, so its size is bounded by the code (289 declared handlers),
+never by the traffic. A method outside the standard ones counts as `OTHER`: the server passes any
+token on, so a client could otherwise grow the window and write into the log. The pattern holds
+nothing from the request, for the reasons of the entry above.
+
+**Rejected alternatives:**
+- One line per route that had a request: most lines would say nothing about the tail, for a
+  volume that grows with the number of routes in use.
+- All routes in one line: a long line, harder to `grep` and to sum per route.
+- Percentiles per route: a histogram per route for numbers that `over_1s` and `over_3s` already
+  answer; the request log's `ms=` gives exact values where needed.
+- Summing the request log with `kubectl logs`: it works for what the log still holds, and needs no
+  code, but the time it reaches back shrinks as traffic grows.
+
+## The `stats` line says how late the event loop runs and how many worker threads are busy, from a tick on the loop
+
+**Id:** 68487d41-14dd-4fd0-8f7e-91a0a85316ff
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-0wm9q2vxjqg3, 2026-11-01: Ops saw `GET /health` at p50 141–224 ms and p90 408–657 ms whatever the load, with at most 8 of 32 pool connections out, and could see neither the thread pool nor the event loop
+**Revisit when:** the cluster gets a metrics stack, or a stall shorter than a tick has to be seen, or the hub leaves anyio's default limiter
+
+The `stats` line ends in `loop_late_avg_ms=<n> loop_late_max_ms=<n> threads_busy_avg=<x>
+threads_busy_max=<n> threads_waiting_max=<n> threads_limit=<n>`. A task on the server's event loop
+(`request_stats.watch_load`) wakes ten times a second, notes how much later than asked it ran, and
+reads the default thread limiter: threads taken, callers waiting, and the limit. The fields come
+after the pool's, so a `grep` for those keeps working.
+
+**Reason:** a `def` endpoint runs on a worker thread of that limiter, so a request can wait in
+two places before its code runs: for the loop, and for a thread. A full pool does not explain
+either, which is why these two were the missing numbers. The limiter belongs to the loop and can
+only be asked from it, so the tick is a task there and not the reporter's thread; that thread
+stays as the one that writes the line, so a stuck loop can still be reported. For that, the tick
+overdue at that moment counts towards `loop_late_max_ms`: a loop stuck for the whole minute has
+no tick left to say so. Ten looks a second cost next to nothing against the probes and requests,
+and a stall under 100 ms can hide between two; those are not what is being looked for.
+`threads_waiting_max` above zero says the threads ran out, which `threads_busy_max` at the limit
+only suggests.
+
+A stall across the end of a window counts in both: the line reports it as overdue, and the tick
+that finally runs reports its whole length in the next window. Without a tick in a window
+`loop_late_avg_ms` stays 0, so `loop_late_max_ms` is the field to alarm on.
+
+**Rejected alternatives:**
+- Timing how long each request waits for a thread: it would wrap every endpoint's hop to the
+  thread, for a number the callers waiting already show.
+- Percentiles of the lateness: a histogram for what average and maximum answer; the two apart say
+  whether the loop is slow all the time or stalls now and then.
+- The process's thread count: it holds the hub's background workers too and never shrinks with
+  the load, so it does not say how many requests hold a thread.
+- A `/metrics` endpoint: the reasons of the first entry above still hold.

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -29,6 +31,7 @@ from maity_hub import (
     images,
     join_line,
     landing_files,
+    languages,
     listening,
     longpoll,  # noqa: F401  (subscribes the long-poll to new events)
     namespace,
@@ -37,20 +40,25 @@ from maity_hub import (
     org_invitations,
     probe,
     public_agents,  # noqa: F401  (registers the kind of page)
+    public_cards,  # noqa: F401  (registers the kind of page)
+    public_orgs,  # noqa: F401  (registers the kind of page)
     public_pages,
     public_people,  # noqa: F401  (registers the kind of page)
     public_project_views,  # noqa: F401  (registers the kind of page)
     public_projects,  # noqa: F401  (registers the kind of page)
+    public_snapshot,
     registration_accounts,
     reports,
     request_stats,
     rules,
+    shared_budget,
     shared_counts,
     takeovers,
     wakeups,
     write_guard,
 )
 from maity_hub.auth import device_codes as codes
+from maity_hub.auth import mail_factor
 from maity_hub.auth import sign_in_settings as sign_in
 from maity_hub.config import ConfigError, Settings
 from maity_hub.db import (
@@ -75,6 +83,7 @@ from maity_hub.routes import (
     badges,
     board,
     bridges,
+    briefing_view,
     contract_text,
     conversations,
     device_codes,
@@ -115,6 +124,7 @@ from maity_hub.routes import (
     attachments as attachment_routes,
 )
 from maity_hub.routes import auth as auth_routes
+from maity_hub.routes import auth_pages as auth_pages_routes
 from maity_hub.routes import events as events_routes
 from maity_hub.routes import invitations as invitation_routes
 from maity_hub.routes import landing as landing_routes
@@ -122,6 +132,7 @@ from maity_hub.routes import legal as legal_routes
 from maity_hub.routes import (
     limits as limits_routes,
 )
+from maity_hub.routes import maintenance as maintenance_routes
 from maity_hub.routes import me as me_routes
 from maity_hub.routes import orgs as orgs_routes
 from maity_hub.routes import people as people_routes
@@ -129,6 +140,7 @@ from maity_hub.routes import probe as probe_routes
 from maity_hub.routes import registration as registration_routes
 from maity_hub.routes import reports as report_routes
 from maity_hub.routes import second_factor as second_factor_routes
+from maity_hub.routes import site_values as site_values_routes
 from maity_hub.routes import takeovers as takeover_routes
 from maity_hub.shell import AssetFiles, ShellRoute
 
@@ -160,6 +172,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     health_engine = make_health_engine(engine)  # the probe's own connection, outside the pool
     write_guard.install(engine)  # no write of a deleted account commits (§2.9)
     shared_counts.configure(engine)  # the limits count across replicas on PostgreSQL
+    shared_budget.configure(engine)  # and so does the forge's budget
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -172,6 +185,14 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
                 mail.check_at_startup(conn, settings.mail, settings.secret_key)
             except MailConfigError as error:
                 raise ConfigError(str(error)) from None
+            # The environment's `email` takes effect at once, so it may not lock out every
+            # human without TOTP at the start (§2.8.8).
+            if settings.sign_in_second_factor == "email" and not mail_factor.mail_ready(
+                conn, settings
+            ):
+                raise ConfigError(
+                    "MAITY_SIGN_IN_SECOND_FACTOR=email needs complete, enabled mail settings"
+                )
         check_secrets(engine, settings.secret_key)
         with transaction(engine) as conn:  # an event wakes the long-polls once it commits
             # The hub's own generated text is a rules input: a start with other text bumps
@@ -243,8 +264,11 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         notify_worker.start()
         stats_reporter = request_stats.Reporter(engine)
         stats_reporter.start()
+        load_watch = asyncio.create_task(request_stats.watch_load(request_stats.LOAD))
         pages_worker = public_pages.Worker(engine, settings)
         pages_worker.start()
+        snapshot_worker = public_snapshot.Worker(engine, settings)  # §16.9, no live connection
+        snapshot_worker.start()
         # A long-poll wakes when another replica writes (hub/context/replicas.md 387c2409).
         listener = None
         if engine.dialect.name == "postgresql":
@@ -259,6 +283,10 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         if listener is not None:
             listener.stop()
         pages_worker.stop()
+        snapshot_worker.stop()
+        load_watch.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await load_watch
         stats_reporter.stop()
         notify_worker.stop()
         if sweeper is not None:
@@ -292,6 +320,8 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.engine = engine
     app.state.health_engine = health_engine or engine
+    # Read once: it loads every migration file, and the files do not change under a running hub.
+    app.state.schema_head = head_revision(engine)
     app.state.forge_access = forge_access.ForgeAccess(
         engine, settings.github_app, settings.secret_key
     )
@@ -299,6 +329,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     errors.install(app)
     prefix = f"/api/{API_VERSION}"
     app.include_router(_api_router(), prefix=prefix)
+    app.include_router(pages.router, prefix=prefix)
     app.include_router(auth_routes.router, prefix=prefix)
     app.include_router(device_codes.router, prefix=prefix)
     app.include_router(second_factor_routes.router, prefix=prefix)
@@ -307,6 +338,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(forge_links.router, prefix=prefix)
     app.include_router(notification_settings.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
+    app.include_router(maintenance_routes.router, prefix=prefix)
     app.include_router(report_routes.router, prefix=prefix)
     app.include_router(registration_routes.router, prefix=prefix)
     app.include_router(invitation_routes.router, prefix=prefix)
@@ -317,8 +349,11 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(mail_settings.router, prefix=prefix)
     app.include_router(sign_in_settings.router, prefix=prefix)
     app.include_router(me_session.router, prefix=prefix)
+    app.include_router(briefing_view.router, prefix=prefix)
     app.include_router(limit.router, prefix=prefix)
     app.include_router(limits_routes.router, prefix=prefix)
+    app.include_router(site_values_routes.router, prefix=prefix)
+    app.include_router(auth_pages_routes.router, prefix=prefix)
     app.include_router(projects.router, prefix=prefix)
     app.include_router(project_images.router, prefix=prefix)
     app.include_router(keep_the_why.router, prefix=prefix)
@@ -393,13 +428,26 @@ def render_help(settings: Settings) -> str:
         hub_version=__version__,
         public_url=settings.public_url,
         cli_install=settings.cli_install,
-        join_line=join_line.command(settings.cli_install, "<url>", "<code>"),
+        join_line=join_line.posix(settings.cli_install, "<url>", "<code>"),
         ensurepath=join_line.ENSUREPATH,
     )
 
 
 def _api_router() -> APIRouter:
     router = APIRouter()
+
+    @router.get("/languages")
+    def language_list() -> JSONResponse:
+        items = [
+            {
+                "tag": tag,
+                "name": name,
+                "common": tag in languages.COMMON,
+                "interface": tag in languages.INTERFACE,
+            }
+            for tag, name in languages.NAMES.items()
+        ]
+        return JSONResponse({"items": items})
 
     @router.get("/health")
     def health(request: Request) -> JSONResponse:
@@ -409,7 +457,7 @@ def _api_router() -> APIRouter:
         except SQLAlchemyError:
             log.exception("health: database unreachable")
             return error_response(503, "database_unavailable", "the database is unreachable")
-        head = head_revision(engine)
+        head = request.app.state.schema_head
         if current != head:
             return error_response(
                 503,
@@ -438,7 +486,7 @@ def _mount_web(app: FastAPI, settings: Settings) -> None:
     if web_dir is not None and web_dir.is_dir():
         # Mounted last: the API routes above take precedence over files.
         app.router.routes.append(Mount("/assets", app=AssetFiles(directory=web_dir), name="assets"))
-        app.router.routes.append(ShellRoute(web_dir))
+        app.router.routes.append(ShellRoute(web_dir, settings.public_url))
     elif settings.web_dir_required:
         raise ConfigError(f"MAITY_WEB_DIR {web_dir} is not a directory")
     elif web_dir is None:

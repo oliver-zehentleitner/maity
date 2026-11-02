@@ -18,7 +18,7 @@ from typing import Any
 
 from sqlalchemy import Connection, func, select
 
-from maity_hub import clock, shared_counts
+from maity_hub import clock, shared_counts, site_values
 from maity_hub import instance_settings as store
 from maity_hub import tables as t
 from maity_hub.errors import invalid
@@ -320,6 +320,7 @@ def patch(
                 errors[name if index is None else f"{name}.{index}"] = "invalid"
             else:
                 errors[name] = "invalid"
+    site_values.refuse_placeholders(body, "", errors.setdefault)
     if errors:
         raise invalid(errors)
     mode = changes.get("mode")

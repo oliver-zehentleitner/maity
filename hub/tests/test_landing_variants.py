@@ -3,11 +3,16 @@ as a visitor reaches them, and as the admin sees them before saving."""
 
 from __future__ import annotations
 
-from typing import Any
+from dataclasses import replace
+from typing import Any, cast
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 
+from maity_hub import render
+from maity_hub.app import create_app
+from maity_hub.config import Settings
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_landing import GOOD, HERO, text
@@ -185,6 +190,41 @@ def test_variants_and_campaigns_are_the_admin_s_alone(
     assert make_client().get(f"/api/v1{ADMIN}").status_code in (401, 403)
 
 
+def test_a_hub_without_a_dashboard_names_no_social_image(owner: flow.Human) -> None:
+    setting = owner.get("/admin/settings/landing").json()
+    setting["pages"] = {"en": {"title": "T", "sections": []}}
+    legal: dict[str, Any] = {"pages": {}}
+    kept = render.landing_document(
+        setting, "en", public_url="https://hub.example", legal=legal, stats=None, social_image=False
+    )
+    assert "og:image" not in kept and 'name="twitter:card" content="summary"' in kept
+
+
+def test_the_served_landing_page_names_the_image_only_with_a_dashboard(
+    owner: flow.Human, database_url: str, migrated: Engine
+) -> None:
+    assert publish(owner).status_code == 200
+    env = {"MAITY_DATABASE_URL": database_url, "MAITY_PUBLIC_URL": "https://hub.example"}
+    served = Settings.from_env(env)
+    assert served.web_dir is not None
+    with TestClient(create_app(served, migrated)) as client:
+        assert "og:image" in client.get("/").text
+    with TestClient(create_app(replace(served, web_dir=None), migrated)) as client:
+        assert "og:image" not in client.get("/").text
+
+
+def test_the_preview_names_the_image_only_with_a_dashboard(
+    owner: flow.Human, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    draft = owner.post(PREVIEW, {"default_language": "en", "pages": main_page()})
+    assert draft.status_code == 201, draft.text
+    state = cast(Any, owner.client.app).state
+    assert state.settings.web_dir is not None
+    assert "og:image" in owner.client.get(draft.json()["url"]).text
+    monkeypatch.setattr(state, "settings", replace(state.settings, web_dir=None))
+    assert "og:image" not in owner.client.get(draft.json()["url"]).text
+
+
 def test_a_variant_is_served_at_its_address_to_every_visitor(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
@@ -194,6 +234,10 @@ def test_a_variant_is_served_at_its_address_to_every_visitor(
     assert got.status_code == 200
     assert "<title>For maintainers</title>" in got.text and "The main page" not in got.text
     assert '<link rel="canonical" href="https://hub.example/">' in got.text
+    assert (
+        '<meta property="og:image" content="https://hub.example/assets/brand/og-image-team.png">'
+        in got.text
+    )
     assert '<meta name="robots" content="noindex">' in got.text
     assert got.headers["content-type"].startswith("text/html")
     assert got.headers["cache-control"] == "private, max-age=60"
@@ -259,14 +303,14 @@ def test_a_campaign_link_carries_the_origin_to_every_register_link(
     )
     visitor = make_client()
     on_variant = visitor.get("/for/maintainers?c=x-h1-w1").text
-    assert 'href="/register?v=maintainers&amp;c=x-h1-w1"' in on_variant
+    assert 'href="/register?lang=en&amp;v=maintainers&amp;c=x-h1-w1"' in on_variant
     assert 'href="/register"' not in on_variant
     on_main = visitor.get("/?c=x-h1-w1").text
-    assert 'href="/register?v=default&amp;c=x-h1-w1"' in on_main
+    assert 'href="/register?lang=en&amp;v=default&amp;c=x-h1-w1"' in on_main
     # the language switch keeps the campaign
     assert "?lang=" not in on_main or "&amp;c=x-h1-w1" in on_main
     # no campaign: `v` alone
-    assert 'href="/register?v=maintainers"' in visitor.get("/for/maintainers").text
+    assert 'href="/register?lang=en&amp;v=maintainers"' in visitor.get("/for/maintainers").text
 
 
 def test_an_absolute_link_to_register_on_this_host_carries_the_origin_too(
@@ -308,7 +352,7 @@ def test_the_language_switch_keeps_the_campaign_but_the_alternate_links_do_not(
         },
     )
     got = make_client().get("/?c=k").text
-    assert '<a href="?lang=de&amp;c=k">' in got
+    assert '<a href="?lang=de&amp;c=k" lang="de">' in got
     assert '<link rel="alternate" hreflang="de" href="?lang=de">' in got  # for search engines
     assert 'hreflang="de" href="?lang=de&amp;c=k"' not in got
 
@@ -324,7 +368,7 @@ def test_an_unknown_or_malformed_code_is_treated_as_none_and_not_echoed(
         assert answer.status_code == 200
         assert answer.text == plain
         assert code not in answer.text
-    assert 'href="/register?v=default"' in plain
+    assert 'href="/register?lang=en&amp;v=default"' in plain
 
 
 def test_nothing_changes_while_neither_is_configured(
@@ -333,7 +377,7 @@ def test_nothing_changes_while_neither_is_configured(
     publish(owner)
     visitor = make_client()
     got = visitor.get("/?c=anything")
-    assert 'href="/register"' in got.text and "v=default" not in got.text
+    assert 'href="/register?lang=en"' in got.text and "v=default" not in got.text
     assert got.headers["cache-control"] == "public, max-age=60"
     publish(owner, campaigns=[{"code": "k", "label": "K"}])
     assert visitor.get("/").headers["cache-control"] == "private, max-age=60"

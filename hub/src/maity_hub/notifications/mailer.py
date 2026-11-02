@@ -4,10 +4,12 @@ of its own for a new sign-in.
 
 Per kind the human chose `immediate` (within about two minutes, every item that fell due
 in that window in one mail, at most ten such mails an hour), `hourly` (at the full hour),
-`daily` (at `daily_at` in their time zone) or `off`. Nothing but security mail is sent in
-the human's quiet hours; what fell due goes out when they end. Every item is checked
-against what the human may read when the mail is built, not when it happened, and an
-item goes out once. A new sign-in is a security mail of its own, immediate or off.
+`daily` (at `daily_at` in their time zone), `weekly` (at `daily_at` on `weekly_on`) or
+`off`. Nothing but immediate security mail is sent in the human's quiet hours; what fell
+due goes out when they end. Every item is checked against what the human may read when
+the mail is built, not when it happened, and an item goes out once. A new sign-in is a
+security mail of its own when `security` is immediate, and an item of a digest when the
+human put security in one (context/notifications.md da12f2b5).
 
 A mail carries only the hub's own links. Every text the hub did not write is quoted as
 plain text, an agent's marked as such, and anything a mail client could turn into a
@@ -20,14 +22,14 @@ import json
 import logging
 import re
 import threading
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, tzinfo
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import Connection, Engine, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock
+from maity_hub import catalog, clock, worker_runs
 from maity_hub import tables as t
 from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail_settings
@@ -46,52 +48,13 @@ CONTENT_MAX = 500
 MAILED_KINDS = ("inbox", "chat", "mention")
 # An open matter the dashboard shows and no mail carries (§18.5).
 NEVER_MAILED = ("registration_pending", "mail_disabled")
-# Each of these is a security mail of its own: never batched, never held (§18.5, §2.6.5).
-SECURITY_MAIL = ("session_created", "second_factor_changed", "second_factor_failed")
+# The alert of a new sign-in: a security mail of its own while `security` is immediate, an
+# item of the digest the human put security in, none when off (§18.4, §2.6.5).
+SIGN_IN_ALERT = "session_created"
+# A takeover under way: a security mail of its own at once, whatever the mode, never held
+# by quiet hours, with no unsubscribe link (§18.4 "At once, whatever the mode", §2.8).
+AT_ONCE = ("second_factor_changed", "second_factor_failed")
 
-_WORDS = {
-    "en": {
-        "updates": "{n} updates",
-        "more": "and {n} more: {url}",
-        "stop": "Stop these mails ({kind}): {url}",
-        "settings": "Settings: {url}",
-        "wrote": "wrote",
-        "only": (
-            "Maity only links to {url}; a link anywhere else in this mail was not sent by Maity."
-        ),
-        "sign_in": "New sign-in to your Maity account",
-        "sign_in_body": (
-            "A new session signed in to your account at {url}.\n\n"
-            "Time: {time}\nMethod: {method}\nBrowser: {browser}\nSystem: {os}\n"
-            "Address: {ip}\n\nIf this was not you, end it here: {sessions}\n"
-        ),
-        "two_factor_body": (
-            "{title}.\n\nTime: {time}\n\n"
-            "If this was not you, sign in and check your account here: {security}\n"
-        ),
-    },
-    "de": {
-        "updates": "{n} Neuigkeiten",
-        "more": "und {n} weitere: {url}",
-        "stop": "Diese Mails abbestellen ({kind}): {url}",
-        "settings": "Einstellungen: {url}",
-        "wrote": "schrieb",
-        "only": (
-            "Maity verlinkt nur auf {url}; ein Link anderswo in dieser Mail kommt nicht "
-            "von Maity."
-        ),
-        "sign_in": "Neue Anmeldung bei deinem Maity-Konto",
-        "sign_in_body": (
-            "Eine neue Sitzung hat sich bei deinem Konto auf {url} angemeldet.\n\n"
-            "Zeit: {time}\nMethode: {method}\nBrowser: {browser}\nSystem: {os}\n"
-            "Adresse: {ip}\n\nWarst du das nicht? Hier beenden: {sessions}\n"
-        ),
-        "two_factor_body": (
-            "{title}.\n\nZeit: {time}\n\n"
-            "Warst du das nicht? Melde dich an und prüfe dein Konto hier: {security}\n"
-        ),
-    },
-}
 
 _SCHEME = re.compile(r"\b([A-Za-z][A-Za-z0-9+.-]*):(?=//)")
 _DOT = re.compile(r"(?<=[A-Za-z0-9-])\.(?=[A-Za-z])")
@@ -115,7 +78,13 @@ def key(item: Item) -> str:
 # --- the pass ------------------------------------------------------------------------
 
 
-def run(engine: Engine, env: MailEnvironment, secret_key: bytes | None, public_url: str) -> int:
+def run(
+    engine: Engine,
+    env: MailEnvironment,
+    secret_key: bytes | None,
+    public_url: str,
+    stop: worker_runs.Stopping | None = None,
+) -> int:
     """One pass over every human with a verified address; returns mails queued."""
     with engine.begin() as conn:
         resolved = mail_settings.resolve(conn, env, secret_key)
@@ -131,6 +100,8 @@ def run(engine: Engine, env: MailEnvironment, secret_key: bytes | None, public_u
     budget = int(resolved.value("max_per_hour"))
     queued = 0
     for human_id in humans:
+        if stop is not None and stop.is_set():
+            break
         try:
             with engine.begin() as conn:
                 queued += for_human(conn, human_id, env.signing_key, public_url, budget)
@@ -153,7 +124,9 @@ def for_human(
     if row.address_status != "verified" or row.address is None:
         return 0
     state = _state(conn, human_id)
-    prefs = preferences.preferences(conn, human_id)["email"]
+    # The settings, with the language this mail is in (§6.2).
+    email = preferences.preferences(conn, human_id)["email"]
+    prefs = {**email, "language": preferences.text_language(conn, human_id)}
     # What the bell's long-poll compares before it derives again, and the human's settings
     # with it: unchanged since the last pass, and nothing left waiting for its hour, means
     # there is nothing to mail, and the pass costs a few aggregates, not 30 days of the
@@ -183,16 +156,23 @@ def for_human(
     ]
     modes = {kind: (prefs["kinds"].get(kind) or {}).get("mode", "off") for kind in prefs["kinds"]}
     queued = 0
-    # A new sign-in is a security mail of its own; quiet hours do not hold it (§2.6.5).
+    # Security mails of their own; quiet hours do not hold them (§2.6.5, §18.4).
     for item in pending:
-        if item.record_type in SECURITY_MAIL and modes.get("security") == "immediate":
-            if item.record_type == "session_created":
-                _sign_in_mail(conn, row, item, prefs, signing_key, public_url, local)
-            else:
-                _two_factor_mail(conn, row, item, prefs, signing_key, public_url, local)
-            _mark(conn, human_id, [item])
-            queued += 1
-    mailable = [i for i in pending if i.kind in MAILED_KINDS]
+        if item.record_type in AT_ONCE:
+            _two_factor_mail(conn, row, item, prefs, public_url, local)
+        elif item.record_type == SIGN_IN_ALERT and modes.get("security") == "immediate":
+            _sign_in_mail(conn, row, item, prefs, signing_key, public_url, local)
+        else:
+            continue
+        _mark(conn, human_id, [item])
+        queued += 1
+    # Security in a digest travels with it like any kind (§18.4).
+    digested_security = modes.get("security") in preferences.DIGESTS
+    mailable = [
+        i
+        for i in pending
+        if i.kind in MAILED_KINDS or (digested_security and i.record_type == SIGN_IN_ALERT)
+    ]
     if _quiet(prefs.get("quiet_hours"), local):
         _set_state(conn, human_id, stamp=moved, waiting=_waiting(mailable, modes))
         return queued
@@ -201,8 +181,8 @@ def for_human(
     due: list[Item] = []
     clocks: dict[str, datetime | None] = {}
     if state.held_since is not None:
-        due = [i for i in mailable if _mode(i, modes) in ("immediate", "hourly", "daily")]
-        clocks = {"hourly_at": now, "daily_at": now}
+        due = [i for i in mailable if _mode(i, modes) != "off"]
+        clocks = {"hourly_at": now, "daily_at": now, "weekly_at": now}
     else:
         immediate = [i for i in mailable if _mode(i, modes) == "immediate"]
         capped = _immediate_this_hour(conn, human_id, now) >= IMMEDIATE_PER_HOUR
@@ -222,6 +202,12 @@ def for_human(
         elif local >= today and state.daily_at < today:
             due += [i for i in mailable if _mode(i, modes) == "daily"]
             clocks["daily_at"] = now
+        week = _last_weekly(local, prefs["daily_at"], prefs["weekly_on"], zone)
+        if state.weekly_at is None:
+            clocks["weekly_at"] = now
+        elif state.weekly_at < week:
+            due += [i for i in mailable if _mode(i, modes) == "weekly"]
+            clocks["weekly_at"] = now
     if due:
         if _instance_full(conn, budget):
             # Over the instance's budget nothing waits in a queue of its own: the
@@ -243,6 +229,16 @@ def for_human(
     # What is left waits for its hour or day: the next pass must derive again.
     _set_state(conn, human_id, stamp=moved, waiting=_waiting(mailable, modes), **clocks)
     return queued
+
+
+def _last_weekly(local: datetime, daily_at: str, weekly_on: str, zone: tzinfo) -> datetime:
+    """The latest `weekly_on` at `daily_at` not after `local`: a pass that missed the
+    moment (the hub was down) still sends the week's digest at its next pass."""
+    back = (local.weekday() - preferences.WEEKDAYS.index(weekly_on)) % 7
+    at = datetime.combine(
+        local.date() - timedelta(days=back), time.fromisoformat(daily_at), tzinfo=zone
+    )
+    return at if at <= local else at - timedelta(days=7)
 
 
 def _mode(item: Item, modes: dict[str, str]) -> str:
@@ -347,7 +343,7 @@ def _send(
     zone: ZoneInfo,
 ) -> int:
     chosen = sorted(chosen, key=lambda i: i.order)
-    words = _WORDS[prefs["language"]]
+    words = catalog.section("mail", prefs["language"])
     subject, body, kinds = compose(conn, chosen, prefs, public_url, zone)
     tokens = {
         kind: preferences.unsubscribe_token(signing_key, row.human_id, kind, row.epoch)
@@ -377,7 +373,7 @@ def compose(
     conn: Connection, chosen: list[Item], prefs: dict[str, Any], public_url: str, zone: ZoneInfo
 ) -> tuple[str, str, list[str]]:
     """(subject, body without the closing lines, the kinds in the mail, in order)."""
-    words = _WORDS[prefs["language"]]
+    words = catalog.section("mail", prefs["language"])
     projects = _project_names(conn, chosen)
     if len(chosen) == 1:
         only = chosen[0]
@@ -441,7 +437,7 @@ def _sign_in_mail(
 ) -> None:
     """Time, method, browser, system and address of the new session, and where to end
     it; never a session id, a code or a link that signs anyone in (§2.6.5)."""
-    words = _WORDS[prefs["language"]]
+    words = catalog.section("mail", prefs["language"])
     record = conn.execute(select(t.account_record).where(t.account_record.c.n == item.record)).one()
     data = record.data or {}
     token = preferences.unsubscribe_token(signing_key, row.human_id, "security", row.epoch)
@@ -476,22 +472,20 @@ def _two_factor_mail(
     row: Any,
     item: Item,
     prefs: dict[str, Any],
-    signing_key: bytes,
     public_url: str,
     local: datetime,
 ) -> None:
     """A change of the second factor, or wrong codes after a sign-in (§2.8.1): what happened
-    and when, and where to look; never a code, a secret or a link that changes anything."""
-    words = _WORDS[prefs["language"]]
+    and when, and where to look; never a code, a secret or a link that changes anything. No
+    mode turns it off, so it carries no unsubscribe link (§18.4)."""
+    words = catalog.section("mail", prefs["language"])
     record = conn.execute(select(t.account_record).where(t.account_record.c.n == item.record)).one()
-    token = preferences.unsubscribe_token(signing_key, row.human_id, "security", row.epoch)
-    stop = f"{public_url}/mail/unsubscribe/{token}"
     body = words["two_factor_body"].format(
         title=item.title,
         time=record.at.astimezone(local.tzinfo).strftime("%Y-%m-%d %H:%M %Z"),
         security=f"{public_url}/account/security",
     )
-    body += "\n" + words["stop"].format(kind="security", url=stop)
+    body += "\n" + words["settings"].format(url=f"{public_url}/account/notifications")
     body += "\n\n" + words["only"].format(url=public_url) + "\n"
     outbox.enqueue(
         conn,
@@ -500,10 +494,6 @@ def _two_factor_mail(
         to=row.address,
         subject=f"[Maity] {item.title}",
         body=body,
-        extra_headers={
-            "List-Unsubscribe": f"<{stop}>",
-            "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-        },
     )
 
 
@@ -535,6 +525,10 @@ class Worker:
     def _run(self) -> None:
         while not self._stop.wait(self.interval):
             try:
-                run(self.engine, self.env, self.secret_key, self.public_url)
+                with worker_runs.claim(
+                    self.engine, "notification-mail", self.interval, self._stop
+                ) as held:
+                    if held is not None:
+                        run(self.engine, self.env, self.secret_key, self.public_url, held)
             except Exception:
                 log.exception("notification mail: a pass failed")

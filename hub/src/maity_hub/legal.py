@@ -2,8 +2,10 @@
 use, written by the instance admin and kept in the database, every version of them.
 
 A `PATCH` replaces one page's languages as a whole and gives the page a new version, the hub's
-time of the change; the earlier versions stay readable at their addresses, since a person may
-have accepted one. A page is unset with `null`: it is not served, its versions stay.
+time of the change. The earlier versions of the privacy notice and the terms stay readable at
+their addresses, since a person may have accepted one; the imprint only says who runs the
+instance now, so its earlier versions are kept but not served. A page is unset with `null`: it
+is not served, its versions stay.
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ from typing import Any
 from sqlalchemy import Connection, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock
+from maity_hub import clock, site_values
 from maity_hub import tables as t
 from maity_hub.errors import invalid, rate_limited
 from maity_hub.landing import CONTROL, LANGUAGES, Problems, markdown_problem
@@ -23,9 +25,10 @@ from maity_hub.views import ts
 ROW = "legal"  # the one row of `instance_legal`
 PAGES = ("imprint", "privacy", "terms")
 ADDRESS = {"imprint": "impressum", "privacy": "privacy", "terms": "terms"}  # §16.11
+EARLIER_SERVED = ("privacy", "terms")  # §16.7.1
 MAX_TITLE = 120
 MAX_MARKDOWN = 64 * 1024  # bytes of UTF-8 (§16.7.1)
-MAX_LANGUAGES = 8
+MAX_LANGUAGES = len(LANGUAGES)
 CHANGES_PER_DAY = 20
 
 
@@ -70,6 +73,7 @@ def _languages(value: Any, page: str, found: Problems) -> dict[str, dict[str, st
                 found.add(f"{here}.markdown", problem)
         if f"{here}.title" not in found.fields and f"{here}.markdown" not in found.fields:
             out[tag] = {"title": str(title), "markdown": str(markdown)}
+    site_values.refuse_placeholders(value, page, found.add)
     return out if len(found.fields) == before else None
 
 

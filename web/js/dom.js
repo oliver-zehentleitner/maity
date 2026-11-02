@@ -71,7 +71,7 @@ window.Maity = window.Maity || {};
   // another origin.
   function isOwnImage(value) {
     if (typeof value !== "string") return false;
-    if (/^\/api\/v1\/projects\/[a-z0-9][a-z0-9-]{1,30}\/[a-z0-9][a-z0-9-]{1,62}\/(logo|banner)\?v=[A-Za-z0-9%._-]*$/.test(value)) return true;
+    if (/^\/api\/v1\/projects\/[a-z0-9][a-z0-9-]{1,30}\/[a-z0-9][a-z0-9-]{1,62}\/(logo|banner)(\?v=[A-Za-z0-9%._-]*)?$/.test(value)) return true;
     if (/^\/api\/v1\/avatars\/[A-Za-z0-9_-]{1,64}\?v=[A-Za-z0-9%._-]*$/.test(value)) return true;
     // A project's README badge, served by the hub at its root (§6.20).
     if (/^\/badge\/[a-z0-9][a-z0-9-]{1,30}\/[a-z0-9][a-z0-9-]{1,62}\.svg(\?v=[A-Za-z0-9%._-]*)?$/.test(value)) return true;
@@ -85,6 +85,8 @@ window.Maity = window.Maity || {};
   function isOwnFile(value) {
     if (typeof value !== "string") return false;
     if (/^\/api\/v1\/projects\/[a-z0-9][a-z0-9-]{1,30}\/[a-z0-9][a-z0-9-]{1,62}\/attachments\/[A-Za-z0-9_-]{1,64}\/content(\?download=1)?$/.test(value)) return true;
+    // The campaign counts as a download (§16.7.2), which fixtures have no address for: smoke tests it here.
+    if (/^\/api\/v1\/admin\/statistics\/campaigns\?days=[0-9]{1,3}&format=csv$/.test(value)) return true;
     return window.location.protocol === "file:" && /^blob:null\/[0-9a-f-]+$/.test(value);
   }
 
@@ -203,8 +205,11 @@ window.Maity = window.Maity || {};
   const nav = window.navigator || {};
   // dom.js also loads where there is no document (web/tools/starter-configs.js).
   const root = typeof document !== "undefined" ? document.documentElement : null;
-  const pageLang = (root && root.getAttribute && root.getAttribute("lang")) || "";
-  const SEND_KEYS = sendKeysFor(/^de\b/i.test(pageLang) ? pageLang : nav.language, nav.platform, nav.userAgent);
+  // Read when shown: the page's language can come after this file has loaded (js/i18n.js).
+  function sendKeys() {
+    const pageLang = (root && root.getAttribute && root.getAttribute("lang")) || "";
+    return sendKeysFor(/^de\b/i.test(pageLang) ? pageLang : nav.language, nav.platform, nav.userAgent);
+  }
   // A device with no keyboard to press them on: touch alone, no hover.
   const touchOnly = () => !!(window.matchMedia && window.matchMedia("(hover: none) and (pointer: coarse)").matches);
   function formOf(el) {
@@ -219,13 +224,13 @@ window.Maity = window.Maity || {};
   // device. The designer's pass on #431: the hint reads as Send's label.
   function showSendKeys(button) {
     if (!button || button.getAttribute("data-send-keys") || touchOnly() || !button.parentNode) return;
-    button.setAttribute("data-send-keys", SEND_KEYS);
+    button.setAttribute("data-send-keys", sendKeys());
     button.setAttribute("aria-keyshortcuts", "Control+Enter Meta+Enter");
     const said = button.getAttribute("title");
-    button.setAttribute("title", (said ? said + " " : (button.textContent || "").trim() + " ") + "(" + SEND_KEYS + ")");
+    button.setAttribute("title", (said ? said + " " : (button.textContent || "").trim() + " ") + "(" + sendKeys() + ")");
     const group = h("span", { class: "send-with-keys" });
     button.parentNode.insertBefore(group, button);
-    append(group, h("span", { class: "send-keys muted", "aria-hidden": "true" }, SEND_KEYS), button);
+    append(group, h("span", { class: "send-keys muted", "aria-hidden": "true" }, sendKeys()), button);
   }
   function sendOnCtrlEnter(field, act, button) {
     field.addEventListener("keydown", (e) => {
@@ -333,13 +338,17 @@ window.Maity = window.Maity || {};
   // rounded square for an agent, a presence dot on it, then @handle; the
   // full name, trust and role, kind and presence in its tooltip and accessible name.
   // A member the project does not list is the same chip without a link.
-  const PRESENCE_WORDS = { online: "online", away: "away", offline: "offline", paused: "paused", revoked: "revoked" };
+  const PRESENCE_WORDS = {
+    online: () => M.t("chat.presence.online"), away: () => M.t("chat.presence.away"), offline: () => M.t("chat.presence.offline"),
+    paused: () => M.t("chat.presence.paused"), revoked: () => M.t("chat.presence.revoked"),
+  };
+  const KIND_WORDS = { agent: () => M.t("chat.who.agent"), human: () => M.t("chat.who.human") };
   function memberChip(ctx, who) {
     const id = typeof who === "string" ? who : who && (who.member_id || who.id);
     const m = (id && ctx.memberById && ctx.memberById[id]) || (typeof who === "object" ? who : null) || { id };
     const handle = handleOf(ctx, m) || m.handle || id;
     const presence = m.presence || "offline";
-    const said = [m.display_name || handle, M.trust ? M.trust.words(m) : m.role, m.kind, PRESENCE_WORDS[presence] || presence].filter(Boolean).join(" · ");
+    const said = [m.display_name || handle, M.trust ? M.trust.words(m) : m.role, Object.hasOwn(KIND_WORDS, m.kind) ? KIND_WORDS[m.kind]() : m.kind, Object.hasOwn(PRESENCE_WORDS, presence) ? PRESENCE_WORDS[presence]() : presence].filter(Boolean).join(" · ");
     const face = [
       h("span", { class: "chip-avatar " + (m.kind === "agent" ? "agent" : "human") }, M.avatar ? M.avatar(m, 22) : null,
         h("span", { class: "chip-dot presence-" + presence, "aria-hidden": "true" })),
@@ -364,5 +373,37 @@ window.Maity = window.Maity || {};
       title: known ? M.t("member.last_call", { time: formatTime(member.last_seen_at) }) : M.t("member.no_last_call") }, text);
   }
 
-  M.dom = { handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, memberRef, instanceHref, memberChip, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, SEND_KEYS, sendKeysFor, showSendKeys, sendOnCtrlEnter };
+  // A dormant instance (§6.17): kept with its session, woken only by its own
+  // address, so it is always said with that address.
+  const dormantOf = (m) => ((m && m.instances) || []).filter((i) => !i.revoked_at && i.dormant);
+  const dormantNote = (ctx, m, inst) => M.t("instance.dormant", { address: "@" + (handleOf(ctx, m) || m.handle || m.id) + "#" + inst.id });
+
+  // Words of the contract that more than one page shows; a value the hub adds later reads as it comes.
+  const WORDS = {
+    label: { fix: () => M.t("cards.label.fix"), feature: () => M.t("cards.label.feature"), chore: () => M.t("cards.label.chore") },
+    status: {
+      proposed: () => M.t("board.status.proposed"), open: () => M.t("board.status.open"), in_progress: () => M.t("board.status.in_progress"),
+      blocked: () => M.t("board.status.blocked"), review: () => M.t("board.status.review"), done: () => M.t("board.status.done"),
+      cancelled: () => M.t("board.status.cancelled"),
+    },
+    contract: { proposed: () => M.t("board.contract.state.proposed"), final: () => M.t("board.contract.state.final") },
+    project: {
+      plan: () => M.t("state.plan"), build: () => M.t("state.build"), review: () => M.t("state.review"),
+      launch: () => M.t("state.launch"), archived: () => M.t("state.archived"),
+    },
+    pr: { open: () => M.t("board.pr.state.open"), merged: () => M.t("board.pr.state.merged"), closed: () => M.t("board.pr.state.closed") },
+  };
+  const word = (set, value) => (WORDS[set] && Object.hasOwn(WORDS[set], value) ? WORDS[set][value]() : value);
+
+  // `manages` of a member (§6.2), one of its halves (`direct` or `total`) as one line:
+  // "leads 4 members · 9 instances (6 online, 1 dormant)". Dormant is a part of online,
+  // never added to it; null when nobody is below.
+  const managesText = (manages, half) => {
+    const c = manages && manages[half];
+    if (!c || !c.members) return null;
+    const live = [M.t("manages.online", { count: c.online }), c.dormant ? M.t("manages.dormant", { count: c.dormant }) : null].filter(Boolean).join(", ");
+    return [M.t("manages.members", { count: c.members }), c.instances ? M.t("manages.instances", { count: c.instances }) + " (" + live + ")" : null].filter(Boolean).join(" · ");
+  };
+
+  M.dom = { word, isOwnImage, handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, managesText, memberRef, instanceHref, memberChip, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, get SEND_KEYS() { return sendKeys(); }, sendKeysFor, showSendKeys, sendOnCtrlEnter };
 })(window.Maity);

@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import Engine, func, select
 
+from maity_hub import CLI_VERSION, guide
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -33,6 +34,7 @@ PACKET = {
     "preferences",  # §19.4
     "operations",
     "team",
+    "maintenance",  # §16.12
 }
 
 
@@ -60,14 +62,28 @@ def test_the_packet_has_every_part_of_the_contract(
     assert set(packet) == PACKET
     assert packet["api_version"] == "v1"
     assert set(packet["session"]) == {"id", "started_at", "harness", "model", "client"}
-    assert packet["hints"] == {"duty": "self", "wait_timeout": 540}  # Claude Code
-    assert packet["me"]["owner"] == {"id": owner.id, "handle": "maintainer", "meat_proxy": False}
+    assert packet["hints"] == {
+        "duty": "self",
+        "wait_timeout": 540,  # Claude Code
+        "cli_version": CLI_VERSION,
+    }
+    assert packet["me"]["owner"] == {
+        "id": owner.id,
+        "handle": "maintainer",
+        "language": "en",
+        "meat_proxy": False,
+    }
     assert packet["membership"] == {
         "trust": "member",
         "role": "coder",
         "reports_to": owner.id,
         "areas": ["hub/"],
         "capabilities": [],
+        "guide": {
+            "trust": guide.TRUST["member"],
+            "role": guide.ROLE["coder"],
+            "guide_by": None,
+        },
         "scopes": ["project:read", "tasks:write", "requests:ask", "events:post"],
         "paused": None,
         "isolated": None,  # §6.2
@@ -90,6 +106,11 @@ def test_the_packet_has_every_part_of_the_contract(
         "owner_preferences": None,  # §19.4: not given
         "availability_policy": {"on_unavailable": "wait", "substitutes": [], "grace_minutes": 15},
         "covering": [],
+        # Nobody reports to it: zero counts, and `maity resume` prints no lead line (§5.2).
+        "manages": {
+            "direct": {"members": 0, "instances": 0, "online": 0, "dormant": 0},
+            "total": {"members": 0, "instances": 0, "online": 0, "dormant": 0},
+        },
         "placement": None,
     }
     assert packet["me"]["instance"] == agent.instance

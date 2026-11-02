@@ -39,16 +39,16 @@ def parse(raw: Any) -> list[str] | None:
 
 
 def _handles_of(conn: Connection, human_id: str | None, org_id: str | None) -> set[str]:
-    """The handles a namespace owner answers to: an organisation's, or a human's current one and
-    their aliases (§6.24)."""
-    if human_id is not None:
-        found = set(handles.aliases(conn, [human_id])[human_id])
-        current = conn.execute(select(t.human.c.handle).where(t.human.c.id == human_id)).scalar()
-        if current is not None:
-            found.add(str(current))
-        return found
-    current = conn.execute(select(t.org.c.handle).where(t.org.c.id == org_id)).scalar()
-    return set() if current is None else {str(current)}
+    """The handles a namespace owner answers to: a human's or an organisation's current one
+    and their aliases (§6.24)."""
+    owner_id = human_id if human_id is not None else org_id
+    assert owner_id is not None
+    table, key = (t.human, t.human.c.id) if human_id is not None else (t.org, t.org.c.id)
+    found = set(handles.aliases(conn, [owner_id])[owner_id])
+    current = conn.execute(select(table.c.handle).where(key == owner_id)).scalar()
+    if current is not None:
+        found.add(str(current))
+    return found
 
 
 def names_of(conn: Connection, project: Any) -> set[str]:

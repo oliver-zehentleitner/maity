@@ -64,7 +64,19 @@ window.Maity = window.Maity || {};
     if (a === "holder") return holds(ctx, c);
     if (a === "reviewer") return M.trust.reviews(ctx);
     if (a === "tester") return M.trust.tests(ctx);
+    if (a === "reviewer_and_tester") return M.trust.reviews(ctx) || M.trust.tests(ctx);
     return isAdmin(ctx);
+  }
+
+  const twoSignatures = (ctx) => (ctx.project.policy || {}).done_authority === "reviewer_and_tester";
+
+  // The signatures (§6.4) this human may still give on a card in review: none
+  // once they signed either, since one member never fills both.
+  function signSlots(ctx, c) {
+    if (c.status !== "review" || !twoSignatures(ctx)) return [];
+    const a = c.approvals || {};
+    if ([a.review, a.test].some((m) => m && m.by === ctx.me.id)) return [];
+    return [["review", M.trust.reviews(ctx)], ["test", M.trust.tests(ctx)]].filter(([slot, may]) => may && !a[slot]).map(([slot]) => slot);
   }
 
   // The statuses this human may move the card to, as the hub would allow.
@@ -75,7 +87,9 @@ window.Maity = window.Maity || {};
     const out = [];
     if (editor && s === "proposed") out.push("open");
     if (editor && s === "open") out.push("proposed");
-    if (s === "review" && doneAuthority(ctx, c)) out.push("done", "in_progress");
+    // Under two signatures Done is a column only with one signature left to
+    // give: holding both, the caller has to say which, so only the menu offers it.
+    if (s === "review" && doneAuthority(ctx, c)) out.push(...(!twoSignatures(ctx) || signSlots(ctx, c).length === 1 ? ["done"] : []), "in_progress");
     if (s === "in_progress" && (ctx.project.policy || {}).done_authority === "holder" && holds(ctx, c)) out.push("done");
     if (isAdmin(ctx) || (s === "open" && c.created_by === ctx.me.id)) out.push("cancelled");
     return out;
@@ -167,12 +181,14 @@ window.Maity = window.Maity || {};
   // The status menu: the card's column, and the columns this human may move
   // it to; picking one moves it at once.
   function moveControl(ctx, c, move) {
-    const allowed = targets(ctx, c);
-    if (!allowed.length) return null;
+    const slots = signSlots(ctx, c);
+    const allowed = targets(ctx, c).filter((s) => !(s === "done" && slots.length));
+    if (!allowed.length && !slots.length) return null;
     const menu = M.menuButton({
       label: M.t("cards.move.label", { id: c.id, column: columnName(c.status) }),
       face: [columnName(c.status), h("span", { "aria-hidden": "true" }, " ▾")],
-      items: () => allowed.map((s) => ({ label: M.t("cards.move.to", { column: columnName(s) }), onSelect: () => move(c, s, "move:" + c.id) })),
+      items: () => slots.map((slot) => ({ label: slot === "review" ? M.t("cards.sign.review") : M.t("cards.sign.test"), onSelect: () => move(c, "done", "move:" + c.id, slot) }))
+        .concat(allowed.map((s) => ({ label: M.t("cards.move.to", { column: columnName(s) }), onSelect: () => move(c, s, "move:" + c.id) }))),
     });
     menu.button.setAttribute("data-focus", "move:" + c.id);
     menu.el.className = "menu-box card-move";
@@ -202,12 +218,27 @@ window.Maity = window.Maity || {};
   // The new card (POST /tasks). assigned_to needs tasks:admin; a project in
   // plan or review needs a reason (docs/api.md §6.1).
   // parent: the card a new subtask goes under, or none.
+  // Which role a card is for (§6.4), the built-in ones and then the project's
+  // own, added when they arrive so that a choice made meanwhile stays. A role
+  // the list does not offer stays chosen: a save never drops what it cannot show.
+  function needsSelect(ctx, id, current) {
+    const option = (r) => h("option", { value: r }, M.trust.roleLabel(r));
+    const offered = M.trust.NEEDS_ROLES.slice();
+    const select = h("select", { id }, h("option", { value: "" }, M.t("cards.needs.none")), offered.map(option));
+    const add = (r) => { if (!offered.includes(r)) { offered.push(r); select.appendChild(option(r)); } };
+    if (current) add(current);
+    select.value = current || "";
+    M.api.get(ctx.base + "/roles").then((r) => { ((r && r.custom) || []).forEach((x) => add(x.name)); }).catch(() => {});
+    return select;
+  }
+
   function newCardForm(ctx, cards, create, onCancel, parent) {
     const id = (f) => (parent ? "new-subtask-" : "new-card-") + f;
     const title = h("input", { id: id("title"), required: true, maxlength: "200", autocomplete: "off" });
     const body = M.dom.sendOnCtrlEnter(h("textarea", { id: id("body"), rows: "4", placeholder: M.t("cards.new.body.placeholder") }));
     const label = h("select", { id: id("label") }, LABELS.map(([v, l]) => h("option", { value: v }, l())));
     label.value = "";
+    const needs = needsSelect(ctx, id("needs"), null);
     const kind = h("select", { id: id("kind") }, KINDS.map(([v, l]) => h("option", { value: v }, l())));
     kind.value = "task";
     const areas = [...new Set(ctx.members.flatMap((m) => m.areas || []))].sort();
@@ -248,6 +279,7 @@ window.Maity = window.Maity || {};
         const card = { title: title.value.trim(), kind: kind.value, status: locked ? "proposed" : status.value };
         if (body.value.trim()) card.body = body.value;
         if (label.value) card.label = label.value;
+        if (needs.value) card.needs = needs.value;
         if (area.value.trim()) card.area = area.value.trim();
         if (assignee && assignee.value) card.assigned_to = assignee.value;
         const d = chosen(deps);
@@ -270,9 +302,10 @@ window.Maity = window.Maity || {};
     h("h3", null, parent ? M.t("cards.new.subtask_title") : M.t("cards.new.title")),
     parent ? h("p", { class: "muted new-card-parent" }, M.t("cards.new.subtask_of", { id: parent.id }), " · " + parent.title) : null,
     h("label", { for: id("title") }, M.t("cards.new.field.title")), title,
-    h("label", { for: id("body") }, M.t("cards.new.field.body", { keys: M.dom.SEND_KEYS })), body,
+    h("label", { for: id("body") }, M.t("cards.new.field.body", { keys: M.dom.SEND_KEYS })), body, M.projectMentionPicker(ctx, body),
     h("label", { for: id("kind") }, M.t("cards.new.field.kind")), kind,
     h("label", { for: id("label") }, M.t("cards.new.field.label")), label,
+    h("label", { for: id("needs") }, M.t("cards.new.field.needs")), needs,
     h("label", { for: id("area") }, M.t("cards.new.field.area")), area, areaList,
     h("label", { for: id("status") }, M.t("cards.new.field.status")), status,
     locked ? h("p", { class: "hint" }, M.t("cards.new.proposed_hint")) : null,
@@ -285,5 +318,5 @@ window.Maity = window.Maity || {};
     return { form, focus: () => title.focus(), body };
   }
 
-  M.boardEdit = { editable, childProposed, targets, moveControl, assignControl, orderControl, orderable, byOrder, newCardForm, said, COLUMNS, columnName };
+  M.boardEdit = { editable, childProposed, targets, moveControl, assignControl, orderControl, orderable, byOrder, newCardForm, needsSelect, signSlots, said, COLUMNS, columnName };
 })(window.Maity);

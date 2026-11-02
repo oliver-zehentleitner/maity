@@ -79,11 +79,11 @@ one, and a project made after the migration has no old address.
 
 **Id:** 3de94ffb-3359-4af4-b0f7-0f6ffba9d903
 **Type:** constraint
-**Status:** needs-review
+**Status:** superseded
+**Superseded by:** 0f3b8a52-6c1e-4d7a-9b24-7e1c5d90a3f6
 **Evidence:** confirmed
 **Source:** the coordinator's ruling of 2026-10-27: this change lands before the hub cards for trust × role (`tsk-tryqzr76gh9q`) and for handle aliases (`tsk-xsqc4whfqj4h`), with the hooks named so that they are found
-**Revisit when:** either card lands; then this entry is superseded by what it built
-**Verification:** contradicted — the alias card landed: `resolve_owner` resolves aliases through `handles.human_id_of` (handles.md); the `action` half is still open
+**Verification:** corroborated — both hooks are used: `resolve_owner` resolves aliases through `handles.human_id_of` (handles.md); the migration adding `action` starts with no rows to rewrite, and paths are stored as sent, in the `<owner>/<slug>` form of the call (trust.md)
 
 The hub had neither handle aliases nor a trust column, nor a request
 `action`, when the namespace came. Two places stand in for them:
@@ -190,7 +190,7 @@ counting from it needs no migration.
 
 **Id:** 40bb824a-6d56-405e-bca1-5bae5600ecdc
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** review of the rename and transfer pull request (a create racing a rename); `docs/api.md` §6.25 "a full name belongs to one project, for good"
 **Revisit when:** names and aliases move into one table with one unique index, or projects get an owner other than a human
@@ -265,7 +265,7 @@ otherwise complete a transfer that the sender's own session could not even file.
 
 **Id:** 035104e6-f041-4d9e-9813-163671458358
 **Type:** constraint
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** `hub/src/maity_hub/routes/members.py` (demotion and removal); review of the rename and transfer pull request
 **Revisit when:** a route deletes a human account or ends a human's membership in another way

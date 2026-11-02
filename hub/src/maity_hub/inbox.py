@@ -5,6 +5,7 @@ Pure decisions over rows; `routes/requests.py` applies them in a transaction.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -111,13 +112,36 @@ def is_asker(request: Any, mine: Membership) -> bool:
     return mine.id in (request.asked_by, request.on_behalf_of)
 
 
+def owners_alone(conn: Connection, requests: Iterable[Any]) -> set[str]:
+    """The ids among `requests` filed from an owner's round (§20.6, §20.7): `requests:answer`
+    opens none of them, only its asker and its addressee see it. The round is judged by the
+    `config` it opened with, so this holds after its series is gone."""
+    rounds: dict[str, list[str]] = {}
+    for request in requests:
+        round_id = (getattr(request, "jour_fixe", None) or {}).get("round_id")
+        if round_id:
+            rounds.setdefault(round_id, []).append(request.id)
+    if not rounds:
+        return set()
+    found: set[str] = set()
+    for round_id, config in conn.execute(
+        select(t.jour_fixe_round.c.id, t.jour_fixe_round.c.config).where(
+            t.jour_fixe_round.c.id.in_(rounds)
+        )
+    ):
+        if (config or {}).get("circle") == "owner":
+            found.update(rounds[round_id])
+    return found
+
+
 def may_read(conn: Connection, request: Any, mine: Membership) -> bool:
-    return (
+    if (
         is_asker(request, mine)
         or addressed_to(conn, request, mine)
         or originally_addressed(conn, request, mine)  # it follows what it passed on
-        or mine.may("requests:answer")
-    )
+    ):
+        return True
+    return mine.may("requests:answer") and not owners_alone(conn, [request])
 
 
 def needs_a_human(request: Any, mine: Membership) -> str | None:
@@ -133,6 +157,12 @@ def needs_a_human(request: Any, mine: Membership) -> str | None:
         return "under spawn_consent_by: human only a human answers this"
     rule = proposals.answerer(request)
     return rule.refusal if rule is not None and rule.humans_only else None
+
+
+def needs_the_owner(request: Any, mine: Membership) -> bool:
+    """A proxy's call waits for a human with trust `owner`, directly: nobody else answers it,
+    in any capacity (§2.3, §7)."""
+    return request.action is not None and (mine.kind != "human" or mine.trust != "owner")
 
 
 def answer_scope(request: Any) -> str:
@@ -151,12 +181,14 @@ def may_answer(conn: Connection, request: Any, mine: Membership) -> bool:
         return False
     if mine.trust == "guest":  # answers none, whatever reaches it (§2.3 "Guest")
         return False
-    if needs_a_human(request, mine) is not None:
+    if needs_the_owner(request, mine) or needs_a_human(request, mine) is not None:
         return False
     if proposals.refusal(conn, request, mine) is not None:  # the kind's own rule
         return False
     if forwarded(request):  # once forwarded, only its holder answers (§7)
         return bool(request.holder_member == mine.id)
+    if owners_alone(conn, [request]):  # a scope opens nothing here (§20.7)
+        return addressed_to(conn, request, mine)
     if proposals.of(request) is not None:
         return mine.may(answer_scope(request))
     if mine.may("requests:answer"):

@@ -4,7 +4,7 @@
 
 **Id:** 901a3806-5444-47a1-bb5b-961de130a604
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's decisions, 2026-10-22; contract change in `docs/api.md` §6.10
 **Revisit when:** the accounts design brings forge linking or instance-admin moderation
@@ -125,7 +125,7 @@ stays, and needs no role.
 
 **Id:** 5fc7eb2e-cc21-46ab-be5c-f5d0963297b1
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** the maintainer's request, 2026-10-22; contract-owner ruling on the review, 2026-10-22; contract change in `docs/api.md` §6.3
 **Revisit when:** profiles gain an export or a hard purge (data protection), or the event log stops carrying member views
@@ -617,7 +617,7 @@ holding a second copy of a conversation it cannot verify (inferred).
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's idea and his inbox answer of 2026-10-31 (agents keep their normal role and `reports_to`, "connect with a bridge" picks a bridge with what it is for, e.g. git for the designer or file transfer; several bridges per agent; across owners too, e.g. one owner's agent using another owner's agent for access to a service, always with a reason or a small agreement on the frame and the other owner's allow or deny); contract `docs/api.md` §2.3 "The bridge"
+**Source:** the maintainer's idea, his answer of 2026-11-01 on the purpose (req-zbmr4nv3tsb3: not pushed, no secret) and his inbox answer of 2026-10-31 (agents keep their normal role and `reports_to`, "connect with a bridge" picks a bridge with what it is for, e.g. git for the designer or file transfer; several bridges per agent; across owners too, e.g. one owner's agent using another owner's agent for access to a service, always with a reason or a small agreement on the frame and the other owner's allow or deny); contract `docs/api.md` §2.3 "The bridge"
 **Revisit when:** the hub is asked to enforce a bridge's purpose instead of recording it, or a served agent gets a session of its own through a new harness, or a bridge is wanted for an agent whose role an outsider may not hold
 **See:** members.md#a-bridge-lends-its-hands-to-agents-that-cannot-reach-the-repository-it-acts-as-them-marked-and-decides-nothing — 1dca249c-935e-4ed8-9408-f6adee662e8a — as of 2026-10-31
 
@@ -676,3 +676,6 @@ hub: the served agent's own scopes are the limit the hub can check
   served agent's scopes and either owner's power to end the connection
   are the limits (this contract's reading).
 
+The hub filters nothing on a bridge's purpose, and the dashboard does not
+push it to third parties. The maintainer's answer of 2026-11-01: not pushed,
+but no secret. So leaving it out of a view is no access boundary.

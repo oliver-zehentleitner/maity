@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
 from sqlalchemy import Engine
 
-from maity_hub import clock
+from maity_hub import CLI_VERSION, clock
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_claims import _claim
@@ -38,7 +40,7 @@ def test_a_read_returns_the_readable_events_and_a_cursor(
     say(owner, agent.id, "for you")
     say(owner, "trust:admin", "not for you")
     body = agent.get("/projects/maintainer/maity/events?after=0").json()
-    assert set(body) == {"items", "cursor", "server_time", "superseded"}
+    assert set(body) == {"items", "cursor", "server_time", "superseded", "cli_version"}
     kinds = [(e["kind"], e["payload"].get("body")) for e in body["items"]]
     assert ("message", "for you") in kinds and ("message", "not for you") not in kinds
     # With items, the cursor is the last item's seq (§8.3) ...
@@ -247,3 +249,29 @@ def test_an_after_out_of_range_is_invalid(owner: flow.Human, after: str) -> None
         owner.get(f"/projects/maintainer/maity/events?after={after}").headers["Maity-Error"]
         == "invalid"
     )
+
+
+def test_every_answer_names_the_published_cli(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    assert agent.get("/projects/maintainer/maity/events").json()["cli_version"] == CLI_VERSION
+    cursor = agent.get("/projects/maintainer/maity/events?after=latest").json()
+    assert cursor["cli_version"] == CLI_VERSION
+    assert agent.resume().json()["hints"]["cli_version"] == CLI_VERSION
+
+
+def _release_key(version: str) -> tuple[int, ...]:
+    found = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:(a|b|rc)(\d+))?", version)
+    assert found is not None, version
+    major, minor, patch, stage, number = found.groups()
+    stages = {"a": 0, "b": 1, "rc": 2, None: 3}
+    return (int(major), int(minor), int(patch), stages[stage], int(number or 0))
+
+
+def test_the_named_cli_is_not_ahead_of_the_repository() -> None:
+    """Published, so never newer than main's CLI; equal only right after a release (§5.2)."""
+    source = Path(__file__).parents[2] / "cli/src/maity/__init__.py"
+    found = re.search(r'__version__ = "([^"]+)"', source.read_text(encoding="utf-8"))
+    assert found is not None
+    assert _release_key(CLI_VERSION) <= _release_key(found.group(1))

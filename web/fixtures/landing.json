@@ -32,6 +32,7 @@
         },
         {
           "type": "faq",
+          "eyebrow": "Questions",
           "enabled": false,
           "title": "Questions",
           "items": [
@@ -49,10 +50,12 @@
     "social": [
       {
         "label": "Mastodon",
-        "href": "https://mastodon.social/@maityteam"
+        "href": "https://social.example/@example"
       }
     ]
   },
+  "variants": {},
+  "campaigns": [],
   "updated_at": "2026-10-29T09:00:00Z",
   "updated_by": "hum-maintainer"
 }

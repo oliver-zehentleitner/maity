@@ -27,6 +27,7 @@ from maity_hub import tables as t
 from maity_hub.config import Settings
 from maity_hub.cover import still_with as cover_still_with
 from maity_hub.cover import view as cover_view
+from maity_hub.languages import known as known_language
 
 ONLINE = timedelta(seconds=120)
 AWAY = timedelta(hours=2)
@@ -214,7 +215,9 @@ def repository(
 ) -> dict[str, Any] | None:
     if project.repository_url is None:
         return None
-    via = forge_access.probe_via(project.id, project.repository_url, settings.forge_github_token)
+    via = forge_access.probe_via(
+        project.id, project.repository_url, project.probe_via, settings.forge_github_token
+    )
     return {
         "url": project.repository_url,
         "default_branch": project.repository_default_branch,
@@ -241,7 +244,8 @@ NO_IMAGE = {"available": False, "source": None}
 
 def project_language(project: Any) -> str:
     """The working language of a new or existing project (§6.1)."""
-    return "de" if (project.settings or {}).get("language") == "de" else "en"
+    language = (project.settings or {}).get("language")
+    return language if known_language(language) else "en"
 
 
 def memory_of(project: Any) -> dict[str, str]:
@@ -532,7 +536,7 @@ def _owners_of(conn: Connection, membership_ids: set[int]) -> dict[int, str]:
 
 
 def human_languages(conn: Connection, human_ids: set[str]) -> dict[str, str]:
-    """Each human's language (`en` or `de`) from their notification settings (§6.2,
+    """Each human's language, a tag of §6.2's list, from their notification settings (§6.2,
     §18.4); a human who never set it reads as `en`."""
     if not human_ids:
         return {}
@@ -544,7 +548,7 @@ def human_languages(conn: Connection, human_ids: set[str]) -> dict[str, str]:
     found = {}
     for human_id, stored in rows:
         language = ((stored or {}).get("email") or {}).get("language")
-        found[human_id] = language if language in ("en", "de") else "en"
+        found[human_id] = language if known_language(language) else "en"
     return found
 
 
@@ -1022,7 +1026,7 @@ def task_views(
 ) -> list[dict[str, Any]]:
     """`task_view` for several cards: one query for the edges, one for the members. With
     `viewer` (the reader's membership) each card carries `watching`, the reader's own
-    watch (§6.4): false for an agent, and never anyone else's."""
+    watch or the one a dependency brings (§6.4), never anyone else's."""
     if not rows:
         return []
     views = _task_views(conn, rows, fg)
@@ -1040,16 +1044,17 @@ def task_views(
 
 
 def watching(conn: Connection, card_ids: Sequence[str], viewer: Any) -> set[str]:
-    """The cards among `card_ids` the viewer watches; none for an agent."""
-    if getattr(viewer, "kind", None) != "human" or not card_ids:
-        return set()
-    return set(
-        conn.execute(
-            select(t.card_watch.c.card_id).where(
-                t.card_watch.c.membership_id == viewer.id, t.card_watch.c.card_id.in_(card_ids)
-            )
-        ).scalars()
-    )
+    """The cards among `card_ids` the viewer watches, by its own watch or a dependency (§6.4)."""
+    from maity_hub import card_watches
+
+    return card_watches.watching(conn, card_ids, viewer.id)
+
+
+def _approvals(row: Any, signing: set[str]) -> dict[str, Any] | None:
+    """The two signatures while the card is in `review` under `reviewer_and_tester` (§6.4)."""
+    if row.project_id not in signing or row.status != "review":
+        return None
+    return row.approvals or {"review": None, "test": None}
 
 
 def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[dict[str, Any]]:
@@ -1070,6 +1075,14 @@ def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[
         children[child.parent]["open"] += child.status not in ("done", "cancelled")
     members = principal_ids(
         conn, (m for r in rows for m in (r.claim_holder, r.created_by, r.assigned_to))
+    )
+    signing = set(
+        conn.execute(
+            select(t.project.c.id).where(
+                t.project.c.id.in_({r.project_id for r in rows}),
+                t.project.c.done_authority == "reviewer_and_tester",
+            )
+        ).scalars()
     )
     from maity_hub.board import links, notes  # board reads views for member ids
     from maity_hub.instances import address
@@ -1101,6 +1114,7 @@ def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[
                 "body": row.body,
                 "mentions": row.mentions or [],
                 "label": row.label,
+                "needs": row.needs,
                 "status": row.status,
                 "rank": row.rank,
                 "area": row.area,
@@ -1118,6 +1132,7 @@ def _task_views(conn: Connection, rows: Sequence[Any], fg: forge.Forge) -> list[
                 "ktw_ref": row.ktw_ref,
                 "jour_fixe": row.jour_fixe,
                 "report": row.report,
+                "approvals": _approvals(row, signing),
                 "release": _release(conn, row, fg, release_tags),
                 "contract": row.contract,
                 "imported_from": row.imported_from,
@@ -1158,6 +1173,15 @@ def _without_reason(row: Any, reader: Any, group_readers: set[str] | None = None
     notice and the tombstone it leaves) is null for everyone it is not for (§8.5).
     Every other event's `reason` is untouched."""
     payload = row.payload
+    if row.kind in ("note_added", "note_edited") and isinstance(payload, dict) and not row.redacted:
+        # A redacted note's tombstone sits inside the event that carried it (§6.16).
+        note = payload.get("note")
+        body = note.get("body") if isinstance(note, dict) else None
+        if isinstance(note, dict) and isinstance(body, dict) and body.get("redacted"):
+            from maity_hub.board import notes
+
+            return {**payload, "note": {**note, "body": notes.tombstone_for(body, reader)}}
+        return payload
     redaction = row.kind == "event_redacted" or row.redacted
     if not redaction or not isinstance(payload, dict):
         return payload
@@ -1169,6 +1193,54 @@ def _without_reason(row: Any, reader: Any, group_readers: set[str] | None = None
     if reader is not None and row.redacted and payload.get("by") == reader.principal_id:
         return payload  # the redactor's own tombstone
     return {**payload, "reason": None}  # no reader known: hidden, never shown by default
+
+
+def _standing_of(conn: Connection, events: Sequence[Any], reader: Any) -> dict[int, dict[str, Any]]:
+    """Per event `seq`, what a sentence of its actor can bind this reader to (docs/agents.md
+    rule 4, §8.1): `trust` and `role` today, null once it left, and whether it answers to another
+    owner than the reader. Only for a member, who reads all of it in the member list anyway. A
+    bridge's call counts as the hub ran it (§2.3): its trust capped as in `Membership.trust`, and
+    the bridge's owner counts too, since the text is the bridge's."""
+    wanted = {e.actor_membership for e in events if e.actor_membership is not None}
+    if getattr(reader, "trust", None) is None or not wanted:  # nobody, or an `Outsider` (§9.2)
+        return {}
+    m = t.membership.c
+    rows = conn.execute(
+        select(m.id, m.agent_id, m.human_id, m.trust, m.role, m.active, t.agent_profile.c.owner_id)
+        .select_from(t.membership.outerjoin(t.agent_profile, t.agent_profile.c.id == m.agent_id))
+        .where(m.id.in_({*wanted, reader.id}))
+    ).all()
+    members = {r.id: r for r in rows}
+    owners = {r.id: r.owner_id if r.agent_id is not None else r.human_id for r in rows}
+    mine = owners.get(reader.id)
+    bridges = {e.actor_bridge["member_id"] for e in events if e.actor_bridge}
+    bridge_owners: dict[str, str] = (
+        dict(
+            conn.execute(
+                select(t.agent_profile.c.id, t.agent_profile.c.owner_id).where(
+                    t.agent_profile.c.id.in_(bridges)
+                )
+            ).all()
+        )
+        if bridges
+        else {}
+    )
+    found: dict[int, dict[str, Any]] = {}
+    for event in events:
+        row = members.get(event.actor_membership)
+        if row is None:
+            continue
+        trust = row.trust if row.active else None
+        cross = owners[row.id] != mine
+        if event.actor_bridge:
+            trust = "member" if trust in ("owner", "admin") else trust
+            cross = cross or bridge_owners.get(event.actor_bridge["member_id"]) != mine
+        found[event.seq] = {
+            "trust": trust,
+            "role": row.role if row.active else None,
+            "cross_owner": cross,
+        }
+    return found
 
 
 def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> list[dict[str, Any]]:
@@ -1216,6 +1288,7 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
     )
     decided = ticker_read.details(conn, rows)
     notices = ticker_read.ticker_subjects(conn, rows)
+    standing = _standing_of(conn, rows, reader)
     views = []
     for row in rows:
         actor: dict[str, Any] | None = None
@@ -1233,6 +1306,7 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
             }
             if row.actor_bridge:  # made by a bridge for the member (§2.3)
                 actor["via"] = row.actor_bridge
+            actor.update(standing.get(row.seq, {}))
         elif row.actor_human_id is not None:  # §8.1
             who = human_rows.get(row.actor_human_id)
             actor = {
@@ -1276,7 +1350,7 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
                     {"type": row.subject_type, "id": row.subject_id} if row.subject_type else None
                 ),
                 "audience": audience,
-                **_wakes(row),
+                **_wakes(row, reader),
                 "payload": payload,
                 "redacted": row.redacted,
             }
@@ -1298,11 +1372,18 @@ def event_views(conn: Connection, rows: Sequence[Any], reader: Any = None) -> li
     return views
 
 
-def _wakes(row: Any) -> dict[str, Any]:
+def _wakes(row: Any, reader: Any = None) -> dict[str, Any]:
     """The instances a team's wake rule chose, as addresses; absent when no team's rule
-    narrowed the event (§8.2)."""
+    narrowed the event (§8.2). Where the audience holds a watch's token only the reader's own
+    entries: the others would tell who watches the card (§6.4)."""
     if row.wakes is None:
         return {}
-    return {
-        "wakes": [f"{member}#{instance}" for member, ids in row.wakes.items() for instance in ids]
-    }
+    chosen = row.wakes
+    if any(
+        isinstance(token, str) and token.startswith("watchers:") for token in row.audience or []
+    ):
+        own = getattr(reader, "principal_id", None)
+        chosen = {member: ids for member, ids in chosen.items() if member == own}
+        if not chosen:
+            return {}
+    return {"wakes": [f"{member}#{instance}" for member, ids in chosen.items() for instance in ids]}

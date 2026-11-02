@@ -113,10 +113,13 @@ window.Maity = window.Maity || {};
 
   function presenceNodes(m, warn, ctx) {
     const known = Object.prototype.hasOwnProperty.call(PRESENCE_LABELS, m.presence);
+    const asleep = M.dom.dormantOf(m);
     return [known ? h("span", { class: "dot " + m.presence, "aria-hidden": "true" }) : null, known ? " " : null,
       known ? PRESENCE_LABELS[m.presence]() : String(m.presence || M.t("members.presence.unknown")),
       M.dom.isSilentAgent(m) ? [" · ", M.dom.silentSince(m, warn)]
         : m.last_seen_at && m.presence !== "online" ? h("span", { class: "muted" }, " · ", M.t("members.seen", { ago: formatAgo(m.last_seen_at) })) : null,
+      // Each dormant instance with the address that reaches it (§6.17); every one at rest is the team's limit (§6.12), said below.
+      asleep.map((i) => h("span", { class: "member-dormant" }, " · ", M.dom.dormantNote(ctx, m, i))),
       ctx ? availabilityNodes(ctx, m) : null];
   }
 
@@ -267,9 +270,10 @@ window.Maity = window.Maity || {};
       };
       const distribution = pick("distribution", DISTRIBUTION, t.distribution);
       const wake = pick("wake", WAKE, t.wake);
-      // A lead revoked since stays chosen, marked, so saving another field does not clear it.
+      // A dormant instance is not offered: the hub refuses it as a lead (§6.17). A lead revoked since
+      // stays chosen, marked, so saving another field does not clear it.
       const gone = t.lead_instance && !active.some((i) => i.id === t.lead_instance) ? [[t.lead_instance, M.t("team.lead.revoked", { id: t.lead_instance })]] : [];
-      const lead = pick("lead", [["", M.t("team.lead.none")]].concat(active.map((i) => [i.id, i.label ? M.t("team.lead.labelled", { label: i.label, id: i.id }) : "#" + i.id]), gone), t.lead_instance || "");
+      const lead = pick("lead", [["", M.t("team.lead.none")]].concat(active.filter((i) => !i.dormant || i.id === t.lead_instance).map((i) => [i.id, i.label ? M.t("team.lead.labelled", { label: i.label, id: i.id }) : "#" + i.id]), gone), t.lead_instance || "");
       const review = h("input", { id: id("review"), type: "checkbox" });
       review.checked = !!t.review_within_team;
       const error = h("p", { class: "field-error", id: id("error"), role: "alert" });
@@ -333,6 +337,29 @@ window.Maity = window.Maity || {};
         }, h("label", { for: reasonId }, M.t("members.pause.label")), reason,
         h("button", { type: "submit" }, M.t("members.pause.submit")),
         h("p", { class: "hint" }, words.effect));
+    }
+
+    // Put an instance to rest or wake it (§6.17): its owner, or a human with
+    // members:admin, whose change to another owner's agent waits for that
+    // owner's consent. The lead instance is not offered: the hub refuses it.
+    function dormantPart(m, memberPath) {
+      if (m.kind !== "agent" || ctx.me.kind !== "human" || !(ownAgent(m) || ctx.canAdmin)) return null;
+      const active = (m.instances || []).filter((i) => !i.revoked_at);
+      if (!active.length) return null;
+      const lead = (m.team || {}).lead_instance;
+      const address = (i) => "@" + (M.dom.handleOf(ctx, m) || m.handle) + "#" + i.id;
+      return h("div", { class: "member-dormant-part" },
+        h("h4", null, M.t("instance.rest.title")),
+        h("p", { class: "hint" }, M.t("instance.rest.hint")),
+        h("ul", { class: "member-dormant-list" }, active.map((i) => h("li", null,
+          h("span", { class: "mono" }, address(i)), " ",
+          i.dormant ? h("span", { class: "muted" }, M.dom.dormantNote(ctx, m, i)) : null, " ",
+          i.dormant
+            ? keyed("dormant:" + m.id + ":" + i.id, h("button", { type: "button", onclick: () => act(M.t("instance.wake.busy"), M.t("instance.wake.done", { address: address(i) }),
+              () => M.api.patch(memberPath, { dormant: false, instance: i.id }), "dormant:" + m.id + ":" + i.id) }, M.t("instance.wake", { address: address(i) })))
+            : i.id === lead ? h("span", { class: "muted" }, M.t("instance.rest.lead"))
+              : keyed("dormant:" + m.id + ":" + i.id, h("button", { type: "button", onclick: () => act(M.t("instance.rest.busy"), M.t("instance.rest.done", { address: address(i) }),
+                () => M.api.patch(memberPath, { dormant: true, instance: i.id }), "dormant:" + m.id + ":" + i.id) }, M.t("instance.rest", { address: address(i) })))))));
     }
 
     // Lifting (§6.2): the events of the isolation stay readable unless the
@@ -542,7 +569,7 @@ window.Maity = window.Maity || {};
         : h("span", { class: "ok" }, done));
     }
 
-    return { pausedText, act, ownAgent, credentialsPart, picturePart, teamForm, pausePart, isolatePart, removePart, reportsToPart, bridgesPart };
+    return { pausedText, act, ownAgent, credentialsPart, picturePart, teamForm, pausePart, dormantPart, isolatePart, removePart, reportsToPart, bridgesPart };
   }
   M.memberParts = memberParts;
   M.presenceNodes = presenceNodes;
@@ -603,28 +630,27 @@ window.Maity = window.Maity || {};
       M.withMembers(ctx, items);
     }
 
-    // level: the member's row's, so the open card keeps its indent on a phone.
-    function manage(m, rowId, level) {
+    function manage(m, rowId) {
       const memberPath = ctx.base + "/members/" + encodeURIComponent(m.id);
       const self = m.id === ctx.me.id;
       // Without members:admin, one's own agent's row holds what its owner
       // sets (§2.3, §6.18, §19.4): whom it reports to, its rulebook, its
       // preferences switch.
       if (!ctx.canAdmin) {
-        return h("tr", { class: "member-manage member-level-" + level, id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" },
+        return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" },
           P.reportsToPart(m, memberPath),
           M.preferences && "owner_preferences" in m ? M.preferences.ownerToggle(ctx, m) : null,
-          P.teamForm(m, memberPath), P.bridgesPart(m, memberPath)));
+          P.teamForm(m, memberPath), P.dormantPart(m, memberPath), P.bridgesPart(m, memberPath)));
       }
       const parts = [editForm(m, memberPath, self)];
       if (m.kind === "agent") {
         // The briefing (§6.2), edited here; an admin is sent every member's.
         if (M.agentParts) parts.push(M.agentParts.briefingControl(ctx, m));
         if (ownAgent(m) && M.preferences && "owner_preferences" in m) parts.push(M.preferences.ownerToggle(ctx, m));
-        parts.push(P.picturePart(m), P.teamForm(m, memberPath), P.credentialsPart(m), P.bridgesPart(m, memberPath), P.pausePart(m, memberPath), P.isolatePart(m, memberPath));
+        parts.push(P.picturePart(m), P.teamForm(m, memberPath), P.credentialsPart(m), P.bridgesPart(m, memberPath), P.pausePart(m, memberPath), P.dormantPart(m, memberPath), P.isolatePart(m, memberPath));
       }
       parts.push(P.removePart(m, memberPath, self, () => { if (self) M.route.go("/all"); }));
-      return h("tr", { class: "member-manage member-level-" + level, id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" }, parts));
+      return h("tr", { class: "member-manage", id: rowId, role: "row" }, h("td", { colspan: "99", role: "cell" }, parts));
     }
 
     // Would m reporting to boss close a circle? Follow boss's chain upwards.
@@ -653,7 +679,7 @@ window.Maity = window.Maity || {};
       const trustOffered = (ctx.isOwner ? M.trust.TRUSTS : M.trust.owner(m) ? ["owner"] : ["member", "guest"])
         .filter((t) => t !== "owner" || m.kind === "human");
       if (m.trust && !trustOffered.includes(m.trust)) trustOffered.push(m.trust);
-      const trust = keyed("trust:" + m.id, h("select", { id: id("trust") }, trustOffered.map((t) => h("option", { value: t }, t))));
+      const trust = keyed("trust:" + m.id, h("select", { id: id("trust") }, trustOffered.map((t) => h("option", { value: t }, M.trust.trustWord(t)))));
       trust.value = draft.trust !== undefined ? draft.trust : m.trust;
       const role = keyed("role:" + m.id, h("select", { id: id("role") }));
       // The role proxy goes with trust admin only (proxy_needs_admin): with any
@@ -758,11 +784,17 @@ window.Maity = window.Maity || {};
       return href ? h("a", { class: "button-link member-chat", href, "aria-label": M.t("members.chat.label", { name: m.display_name }) }, M.t("members.chat")) : null;
     }
 
+    function languageLine(tag) {
+      const line = h("p", { class: "muted member-language" });
+      M.writeLanguageName(tag, (name) => { line.textContent = M.t("members.language", { language: name }); });
+      return line;
+    }
+
     function nameCell(m) {
       return h("th", { scope: "row", role: "rowheader", "data-label": M.t("members.col.name"), tabindex: m.id === wanted ? "-1" : null },
         h("span", { class: "member-name" }, M.dom.memberRef(ctx, m.id, { avatar: 20 })), h("span", { class: "muted" }, " @" + M.dom.handleOf(ctx, m)),
         m.kind === "human" && !m.removed_at && m.language
-          ? h("p", { class: "muted member-language" }, M.t("members.language", { language: m.language === "de" ? "Deutsch" : "English" })) : null,
+          ? languageLine(m.language) : null,
         ownerOutside(ctx, m) ? h("span", { class: "badge member-owner-outside", title: M.t("members.owner_outside.title") }, M.t("members.owner_outside.badge")) : null,
         m.kind === "agent" && m.isolated
           ? h("span", { class: "badge member-isolated", title: M.t("members.isolated.title", { reason: m.isolated.reason }) }, M.t("members.isolated.badge")) : null,
@@ -780,17 +812,9 @@ window.Maity = window.Maity || {};
           ? h("span", { class: "badge briefing-override", title: M.t("members.own_briefing.title") }, M.t("members.own_briefing")) : null);
     }
 
-    // The project's hierarchy follows trust (the maintainer, 2026-10-31): owner,
-    // admin, member, guest, each a level deeper; a level nobody holds leaves no
-    // empty step, the next moves up. `tiers`: the levels the list shows now.
-    // A trust the dashboard does not know counts as member.
-    const trustOf = (m) => (M.trust.TRUSTS.includes(m.trust) ? m.trust : "member");
-    let tiers = M.trust.TRUSTS;
-    const levelOf = (m) => Math.max(0, tiers.indexOf(trustOf(m)));
-
     function table(kind, list, columns) {
       const headingId = "members-" + kind;
-      return [h("h3", { id: headingId }, M.t("members.all", { count: list.length })),
+      return [h("h3", { id: headingId }, kind === "human" ? M.t("members.humans", { count: list.length }) : M.t("members.agents", { count: list.length })),
         h("div", { class: "table-wrap", tabindex: "0", role: "region", "aria-labelledby": headingId },
           h("table", { class: "members", role: "table", "aria-labelledby": headingId },
             h("thead", { role: "rowgroup" }, h("tr", { role: "row" },
@@ -800,8 +824,7 @@ window.Maity = window.Maity || {};
             h("tbody", { role: "rowgroup" }, list.map((m) => {
               const expanded = open.has(m.id);
               const rowId = "member-manage-" + m.id;
-              const row = h("tr", { class: "member member-" + m.kind + " member-level-" + levelOf(m) + (m.paused ? " paused" : "") + (m.id === wanted ? " wanted" : ""),
-                role: "row", "data-member": m.id, "data-level": String(levelOf(m)) },
+              const row = h("tr", { class: "member" + (m.paused ? " paused" : "") + (m.id === wanted ? " wanted" : ""), role: "row", "data-member": m.id },
                 nameCell(m),
                 columns.map((c) => {
                   const td = h("td", { "data-label": c.title, role: "cell" }, c.cell(m));
@@ -820,7 +843,7 @@ window.Maity = window.Maity || {};
                       if (open.has(m.id)) { open.delete(m.id); edits.delete(m.id); redraw("manage:" + m.id); } else { open.add(m.id); redraw((ctx.canAdmin ? "role:" : "owner-reports:") + m.id); }
                     },
                   }, expanded ? M.t("members.manage.done") : M.t("members.manage")))));
-              return expanded ? [row, manage(m, rowId, levelOf(m))] : row;
+              return expanded ? [row, manage(m, rowId)] : row;
             }))))];
     }
 
@@ -846,36 +869,31 @@ window.Maity = window.Maity || {};
     function draw() {
       presenceCells.clear();
       focusables.clear();
-      // One list, the project's hierarchy (the maintainer, 2026-10-31): by trust,
-      // owners at the top, then admins, members and guests, each a level deeper;
-      // within a level the hub's order. Only my agents keeps one's own agents.
-      const shown = items.filter((m) => (mineOnly ? m.kind === "agent" && ownAgent(m) : true));
-      tiers = M.trust.TRUSTS.filter((t) => shown.some((m) => trustOf(m) === t));
-      const list = shown.map((m, i) => ({ m, i })).sort((a, b) => levelOf(a.m) - levelOf(b.m) || a.i - b.i).map((x) => x.m);
-      const agents = shown.filter((m) => m.kind === "agent");
+      // Two tables, humans and agents, in the hub's order; the levels by trust are the
+      // Organisation tree's only (the maintainer, 2026-11-01). Only my agents keeps one's own agents.
+      const humans = mineOnly ? [] : items.filter((m) => m.kind === "human");
+      const agents = items.filter((m) => m.kind === "agent" && (!mineOnly || ownAgent(m)));
       const role = { title: M.t("members.col.role"), cell: (m) => M.trust.words(m) };
       const presence = { title: M.t("members.col.presence"), presence: true, cell: (m) => presenceNodes(m, ctx.canAdmin, ctx) };
       const joined = { title: M.t("members.col.joined"), cell: (m) => formatTime(m.joined_at) };
-      // An agent's own columns; a human's read "—".
-      const agentOnly = (cell) => (m) => (m.kind === "agent" ? cell(m) : "—");
-      const owner = { title: M.t("members.col.owner"), cell: agentOnly((m) => M.dom.memberRef(ctx, m.owner ? Object.assign({ member_id: m.owner_id }, m.owner) : m.owner_id)) };
-      const paused = { title: M.t("members.col.paused"), cell: agentOnly((m) => pausedText(m) || "—") };
-      const ktw = { title: M.t("members.col.ktw"), cell: agentOnly(ktwCell) };
+      const owner = { title: M.t("members.col.owner"), cell: (m) => M.dom.memberRef(ctx, m.owner ? Object.assign({ member_id: m.owner_id }, m.owner) : m.owner_id) };
+      const paused = { title: M.t("members.col.paused"), cell: (m) => pausedText(m) || "—" };
+      const ktw = { title: M.t("members.col.ktw"), cell: ktwCell };
       const hasKtw = agents.some((m) => "keep_the_why_unconfirmed" in m);
-      append(clear(box), mineFilter(), h("div", { class: "members-list" }, list.length
-        ? table("all", list, [role, owner, presence, joined, paused].concat(hasKtw ? [ktw] : []))
-        : [h("h3", { id: "members-all" }, M.t("members.all", { count: 0 })), h("p", { class: "muted" }, mineOnly ? M.t("members.filter.mine_none") : M.t("members.agents.none"))]));
+      append(clear(box), mineFilter(), mineOnly ? null : table("human", humans, [role, presence, joined]),
+        h("div", { class: "members-agents" }, agents.length ? table("agent", agents, [role, owner, presence, joined, paused].concat(hasKtw ? [ktw] : []))
+          : [h("h3", { id: "members-agent" }, M.t("members.agents", { count: 0 })), h("p", { class: "muted" }, mineOnly ? M.t("members.filter.mine_none") : M.t("members.agents.none"))]));
     }
 
     // The Chat button may start a group chat with anyone (§9.2).
     const groupsServed = !!M.groupChat;
     const ownHere = ctx.me.kind === "human" && items.some(ownAgent);
-    // Bringing someone in (the maintainer, 2026-10-31): a person on the invitations
-    // page, an agent on Your agents' Join an agent, each with this project chosen. A guest brings no agent (§3.1).
+    // Bringing someone in (the maintainer, 2026-10-31): a person on the invitations page with this project
+    // chosen, an agent on this project's Agents with the join panel open (2026-11-01). A guest brings no agent (§3.1).
     const inviteUser = ctx.canAdmin && ctx.me.kind === "human"
       ? h("a", { class: "button primary members-invite-user", href: "/invite?project=" + encodeURIComponent(ctx.slug) }, M.t("members.invite_user")) : null;
     const joinAgent = ctx.me.kind === "human" && !M.trust.guest(ctx)
-      ? h("a", { class: "button primary members-join-agent", href: "/agents?project=" + encodeURIComponent(ctx.slug) }, M.t("members.join_agent")) : null;
+      ? h("a", { class: "button primary members-join-agent", href: "/" + M.api.projectPath(ctx.slug) + "/agents/join" }, M.t("members.join_agent")) : null;
     append(root, M.teamTabs(ctx, "members"), h("h2", null, M.t("members.title")),
       inviteUser || joinAgent ? h("div", { class: "actions members-add" }, inviteUser, joinAgent) : null,
       h("p", { class: "muted" }, M.t("members.hint", { project: ctx.project.name || ctx.slug }),

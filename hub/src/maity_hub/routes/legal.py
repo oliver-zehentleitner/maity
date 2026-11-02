@@ -104,7 +104,6 @@ def show_legal_preview(
             title=texts[chosen]["title"],
             source=texts[chosen]["markdown"],
             version=None,
-            earlier=[],
             current=None,
             languages=list(texts),
             legal=legal.public(setting),

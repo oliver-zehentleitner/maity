@@ -20,6 +20,7 @@ a database connection held.
 from __future__ import annotations
 
 import hashlib
+import logging
 import threading
 import time
 from collections import OrderedDict
@@ -28,10 +29,21 @@ from typing import Any
 
 from sqlalchemy import Engine, select, update
 
-from maity_hub import bounded, clock, forge, forge_links, github_app, secretbox
+from maity_hub import (
+    bounded,
+    clock,
+    forge,
+    forge_links,
+    github_app,
+    secretbox,
+    wakeups,
+    write_guard,
+)
 from maity_hub import tables as t
 from maity_hub.github_app import GitHubApp
 from maity_hub.notifications import records
+
+log = logging.getLogger(__name__)
 
 KEEP_SECONDS = forge.PUBLIC_SECONDS
 
@@ -79,12 +91,32 @@ class ForgeAccess:
             return forge.Forge(None, project_id=project_id)
         with self._lock:
             bounded.put(self._chosen, project_id, (time.monotonic(), key, chosen), CHOSEN_KEPT)
-        _note_via(project_id, chosen.via)
+        self._note_via(project_id, chosen.via)
         return chosen
+
+    def _note_via(self, project_id: str, via: str | None) -> None:
+        """What the choice found, here and for the other replicas (83da2bfa). The row of a project
+        may be locked by the very request that reads: then it is skipped, not waited for, and the
+        next choice writes it. A value shown is not worth a request."""
+        _note_via(project_id, via)
+        if self.engine is None or self.engine.dialect.name != "postgresql":
+            return
+        p, stored = t.project.c, via or NO_SOURCE
+        try:
+            with self.engine.begin() as conn:
+                write_guard.exempt(conn)
+                free = (
+                    select(p.id)
+                    .where(p.id == project_id, p.probe_via.is_distinct_from(stored))
+                    .with_for_update(skip_locked=True)
+                )
+                conn.execute(update(t.project).where(p.id.in_(free)).values(probe_via=stored))
+        except Exception:
+            log.warning("the probe's source could not be stored", exc_info=True)
 
     def not_covered(self, project_id: str) -> None:
         """The operator's token found the repository not public: nothing reads it now."""
-        _note_via(project_id, None)
+        self._note_via(project_id, None)
 
     def refused(self, reader: forge.Forge, error: forge.ForgeUnavailableError | None) -> None:
         """A read with an owner's grant was refused: choose again on the next read."""
@@ -167,11 +199,14 @@ class ForgeAccess:
         link_id, _, status = mine[0]
         if status == "removed":
             return None, "installation_removed"
+        if status != "active":  # only a new mint says it is back, not a token held from before
+            github_app.forget_token(self.app.app_id, installation_id)
         try:
             token = self.app.token(installation_id)
         except github_app.InstallationGoneError as gone:
             with self.engine.begin() as conn:
                 forge_links.set_status(conn, link_id, gone.state)
+                wakeups.forget_token_everywhere(conn, self.app, installation_id)
             return None, f"installation_{gone.state}"
         if status != "active":
             with self.engine.begin() as conn:
@@ -253,8 +288,11 @@ def _digest(sealed: bytes) -> str:
     return hashlib.sha256(sealed).hexdigest()
 
 
-# project id -> the source the last choice found (§6.1 `probe_via`); a view reads it
-# without asking the forge
+# `project.probe_via` when the last choice found no source; NULL there: no choice yet
+NO_SOURCE = "none"
+# project id -> the source the last choice found (§6.1 `probe_via`). The one process there is on
+# SQLite and MariaDB reads it here, as replicas read `project.probe_via`; on PostgreSQL this
+# stands in until that is written.
 _last_via: OrderedDict[str, str | None] = OrderedDict()
 _via_lock = threading.Lock()
 # Projects whose source is known. One dropped shows the default below until its next
@@ -268,10 +306,14 @@ def _note_via(project_id: str, via: str | None) -> None:
         bounded.put(_last_via, project_id, via, VIA_KEPT)
 
 
-def probe_via(project_id: str, url: str | None, instance_token: str | None) -> str | None:
+def probe_via(
+    project_id: str, url: str | None, stored: str | None, instance_token: str | None
+) -> str | None:
     """`repository.probe_via` (§6.1): the source the project's last choice found; before
-    any, the operator's token when the hub holds one. Asks neither the forge nor the
-    database, so a view can show it."""
+    any, the operator's token when the hub holds one. `stored` is the project's `probe_via`, so
+    this asks neither the forge nor the database, and a view can show it."""
     if forge.kind_of(url) != "github":
         return None
+    if stored is not None:
+        return None if stored == NO_SOURCE else stored
     return _last_via.get(project_id, "instance" if instance_token is not None else None)

@@ -4,7 +4,7 @@
 
 **Id:** a753a0f6-a606-43dd-86db-3431a1679721
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** docs/api.md §7 ("Personal requests"); the hub owner's review of the schema plan, 2026-10-23 (no classification without a CHECK, `project_id` written down, `to_human` as a snapshot); implementation session, 2026-10-23
 **Revisit when:** a personal request is filed that belongs to no project, profiles change hands while requests are open (§6.19 takeovers of a profile), or human notifications (§18) need their own record of it

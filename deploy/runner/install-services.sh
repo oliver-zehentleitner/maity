@@ -1,6 +1,6 @@
 #!/bin/bash
 # Run as ROOT on the runner machine. Installs one runner service per database job type (sqlite, pg, maria): its own
-# directory /opt/actions-runner-<type>, its own registration (name maity-vm-<type>, label <prefix>-<type>), and the
+# directory /opt/actions-runner-<type>, its own registration (name <RUNNER_NAME_PREFIX>-<type>, default maity-vm-<type>; label <prefix>-<type>), and the
 # unit instance maity-runner@<type>. Needs: the runner user with rootless Docker, the hook in /opt/maity-runner-hooks,
 # the runner package as a tarball, and a registration token from GitHub (Settings → Actions → Runners → New
 # self-hosted runner; the token is valid for an hour and is not printed here).

@@ -65,6 +65,28 @@ window.Maity = window.Maity || {};
     return { roots, children, parentOf };
   }
 
+  // An agent's live instances, each a link to its Sessions on the member's page, as an
+  // instance is everywhere else (the maintainer, 2026-11-01). A dormant one answers only
+  // its own address (§6.17), and says so beside its link.
+  function instances(ctx, m) {
+    const live = (m.instances || []).filter((i) => !i.revoked_at);
+    if (m.kind !== "agent" || !live.length) return null;
+    const handle = M.dom.handleOf(ctx, m) || m.handle || m.id;
+    return h("span", { class: "org-instances" }, live.map((i) => h("span", { class: "org-instance" },
+      h("a", { class: "member-instance", href: M.dom.instanceHref(ctx, m.id, i.id),
+        "aria-label": M.t("org.instance.label", { address: "@" + handle + "#" + i.id }) }, "#" + i.id),
+      i.dormant ? h("span", { class: "muted member-dormant" }, " " + M.dom.dormantNote(ctx, m, i)) : null)));
+  }
+
+  // Who is below a lead, from the hub's `manages` (§6.2), never counted here: the direct
+  // reports with their instances, and the whole branch on hover when it is larger.
+  function manages(m) {
+    const direct = M.dom.managesText(m.manages, "direct");
+    if (!direct) return null;
+    const total = m.manages.total.members > m.manages.direct.members ? M.dom.managesText(m.manages, "total") : null;
+    return h("span", { class: "muted org-manages", title: total ? M.t("manages.total", { text: total }) : null }, direct);
+  }
+
   function node(ctx, m, tree) {
     const kids = tree.children[m.id] || [];
     const link = tree.parentOf[m.id];
@@ -75,7 +97,9 @@ window.Maity = window.Maity || {};
         h("strong", null, M.dom.memberRef(ctx, m.id)),
         h("span", { class: "role" }, M.trust.words(m)),
         m.areas.length ? h("span", { class: "area" }, m.areas.join(", ")) : null,
-        link && link.via === "area" ? h("span", { class: "muted" }, M.t("org.by_area")) : null),
+        link && link.via === "area" ? h("span", { class: "muted" }, M.t("org.by_area")) : null,
+        instances(ctx, m),
+        manages(m)),
       kids.length ? h("ul", null, kids.map((k) => node(ctx, k, tree))) : null);
   }
 

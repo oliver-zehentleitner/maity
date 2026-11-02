@@ -67,7 +67,8 @@ def test_the_choice_is_shown_in_the_chat_and_only_the_human_itself_reads_it(
     mine = entry(owner.get(f"{BASE}/{chat}").json(), owner.id)
     assert (mine["meat_proxy"], mine["meat_proxy_chat"]) == (True, True)
     assert "Lead me step by step" in mine["meat_proxy_note"]
-    assert "hands" in mine["meat_proxy_note"]  # both parts
+    assert "hands" not in mine["meat_proxy_note"]  # the chat decides the lead part only
+    assert (mine["meat_proxy_lead"], mine["meat_proxy_hands"]) == (True, False)
     theirs = entry(guest.get(f"{BASE}/{chat}").json(), owner.id)
     assert (theirs["meat_proxy"], theirs["meat_proxy_chat"]) == (True, None)
     assert "meat_proxy" not in entry(owner.get(f"{BASE}/{chat}").json(), agent.id)  # no agent
@@ -94,6 +95,43 @@ def test_the_chat_beats_the_profile_and_a_profile_that_is_on_keeps_its_parts(
     assert (off["meat_proxy"], off["meat_proxy_chat"]) == (False, False)
     assert "meat_proxy_note" not in off
     assert owner.get(ME).json()["member"]["meat_proxy"] is True  # the profile is untouched
+
+
+def test_only_the_hands_part_on_reads_as_hands_and_the_chat_decides_the_lead_part_only(
+    owner: flow.Human, agent: flow.Agent, make_client: ClientFactory, migrated: Engine
+) -> None:
+    guest = other_human(make_client, migrated, "guest")
+    chat = chat_of(owner, agent, guest)
+    assert owner.patch(ME, {"meat_proxy_hands": True}).status_code == 200
+
+    def mine() -> dict[str, Any]:
+        return entry(owner.get(f"{BASE}/{chat}").json(), owner.id)
+
+    follows = mine()
+    assert (follows["meat_proxy"], follows["meat_proxy_lead"], follows["meat_proxy_hands"]) == (
+        True,
+        False,
+        True,
+    )
+    assert "hands" in follows["meat_proxy_note"]
+    assert "Lead me step by step" not in follows["meat_proxy_note"]
+    assert put(owner, chat, True).status_code == 204  # adds the lead part
+    led = mine()
+    assert (led["meat_proxy_lead"], led["meat_proxy_hands"]) == (True, True)
+    assert "Lead me step by step" in led["meat_proxy_note"] and "hands" in led["meat_proxy_note"]
+    assert put(owner, chat, False).status_code == 204  # the hands part stays, agents still read it
+    off = mine()
+    assert (off["meat_proxy"], off["meat_proxy_lead"], off["meat_proxy_hands"]) == (
+        True,
+        False,
+        True,
+    )
+    assert off["meat_proxy_chat"] is False
+    assert "hands" in off["meat_proxy_note"]
+    [named] = {c["id"]: c for c in agent.resume().json()["conversations"]}[chat]["meat_proxy"]
+    assert "hands" in named["meat_proxy_note"]
+    listed = [i for i in owner.get(BASE).json()["items"] if i["id"] == chat][0]
+    assert entry(listed, owner.id)["meat_proxy_hands"] is True
 
 
 def test_a_direct_chat_has_it_too_and_the_agent_reads_it_in_its_packet(

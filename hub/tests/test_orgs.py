@@ -8,9 +8,9 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, insert, select, update
+from sqlalchemy import Engine, delete, insert, select, update
 
-from maity_hub import clock, handle_register, orgs, paths, registration_accounts
+from maity_hub import allowed_projects, clock, handle_register, orgs, paths, registration_accounts
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -169,7 +169,7 @@ def test_the_count_of_organisations_is_atomic_per_human(
 # --- changing --------------------------------------------------------------------------------
 
 
-def test_only_an_owner_changes_the_settings_and_a_handle_cannot_yet(
+def test_only_an_owner_changes_the_settings(
     make_client: ClientFactory, migrated: Engine, owner: flow.Human
 ) -> None:
     org, people = team(make_client, migrated, owner)
@@ -191,7 +191,7 @@ def test_only_an_owner_changes_the_settings_and_a_handle_cannot_yet(
     assert changed.json()["public_page"] == "on"
     assert changed.json()["my_role"] == "owner"
     assert people["member"].get("/orgs/oz-team").json()["my_role"] == "member"
-    for body in ({"public_page": "maybe"}, {"display_name": ""}, {"handle": "renamed"}):
+    for body in ({"public_page": "maybe"}, {"display_name": ""}, {"handle": "NOT A HANDLE"}):
         refused = owner.patch("/orgs/oz-team", body)
         assert refused.status_code == 400, body
     assert owner.get("/orgs/oz-team").json()["handle"] == org["handle"]
@@ -372,3 +372,188 @@ def test_a_role_lost_while_waiting_for_the_lock_is_the_roles_at_the_lock(
     else:
         assert answer.json()["error"]["details"] == {"reason": "org_role"}
         assert owner.get("/orgs/oz-team").json()["display_name"] == "OZ Team"
+
+
+# --- rename (§6.24, §6.26) ------------------------------------------------------------
+
+
+def _rename(who: flow.Human, handle: str, to: str) -> Any:
+    return who.patch(f"/orgs/{handle}", {"handle": to})
+
+
+def _register_of(engine: Engine, org_id: str) -> str:
+    with engine.connect() as conn:
+        handle: str = conn.execute(
+            select(t.handle_register.c.handle).where(t.handle_register.c.owner_id == org_id)
+        ).scalar_one()
+    return handle
+
+
+def test_a_rename_keeps_the_old_handle_as_an_alias_that_still_finds_the_organisation(
+    migrated: Engine, owner: flow.Human
+) -> None:
+    org = make_org(owner)
+    renamed = _rename(owner, "oz-team", "oz")
+    assert renamed.status_code == 200, renamed.text
+    assert (renamed.json()["handle"], renamed.json()["aliases"]) == ("oz", ["oz-team"])
+    assert _register_of(migrated, org["id"]) == "oz"  # the row moved in the same transaction
+    assert owner.get("/orgs/oz-team").json()["id"] == org["id"]  # {org} takes an alias
+    project = owner.post(
+        "/projects", {"slug": "shop", "name": "Shop", "owner": "oz-team"}  # so does `owner`
+    )
+    assert project.status_code == 201, project.text
+    assert project.json()["full_name"] == "oz/shop"
+    assert owner.get("/projects/oz-team/shop").json()["full_name"] == "oz/shop"
+    assert owner.get("/people/oz-team").json()["handle"] == "oz"  # names the current handle
+
+
+def test_a_rename_alone_or_with_other_fields_and_by_an_owner_only(
+    make_client: ClientFactory, migrated: Engine, owner: flow.Human
+) -> None:
+    _, people = team(make_client, migrated, owner)
+    for role in ("admin", "member"):
+        denied = _rename(people[role], "oz-team", "theirs")
+        assert (denied.status_code, denied.json()["error"]["details"]) == (
+            403,
+            {"reason": "org_role"},
+        )
+    both = owner.patch("/orgs/oz-team", {"handle": "oz", "display_name": "OZ"})
+    assert both.status_code == 200, both.text
+    assert (both.json()["handle"], both.json()["display_name"]) == ("oz", "OZ")
+
+
+def test_a_taken_handle_or_alias_and_a_reserved_word_are_refused(
+    make_client: ClientFactory, migrated: Engine, owner: flow.Human
+) -> None:
+    make_org(owner)
+    make_org(owner, "other-org", "Other")
+    assert _rename(owner, "other-org", "other-two").status_code == 200
+    someone = flow.human(make_client, migrated, "someone")
+    assert someone.patch("/me", {"handle": "someone-new"}).status_code == 200
+    reserved = next(iter(sorted(paths.RESERVED_FIRST)))
+    for word, why in (
+        ("maintainer", "taken"),  # a human's handle
+        ("other-two", "taken"),  # another organisation's
+        ("other-org", "taken"),  # another organisation's alias
+        ("someone", "taken"),  # a human's alias
+        (reserved, "reserved"),
+        ("No", "format"),
+    ):
+        refused = _rename(owner, "oz-team", word)
+        assert (refused.status_code, refused.json()["error"]["details"]["fields"]) == (
+            400,
+            {"handle": why},
+        ), word
+    assert owner.post("/orgs", {"handle": "oz-team-2", "display_name": "x"}).status_code == 201
+    taken = owner.post("/orgs", {"handle": "other-org", "display_name": "x"})  # an alias stays
+    assert taken.status_code == 400
+
+
+def test_the_own_handle_is_a_noop_and_an_alias_comes_back(
+    migrated: Engine, owner: flow.Human
+) -> None:
+    make_org(owner)
+    noop = _rename(owner, "oz-team", "oz-team")
+    assert (noop.status_code, noop.json()["aliases"]) == (200, [])
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.handle_change)).first() is None  # it does not count
+    assert _rename(owner, "oz-team", "oz").json()["aliases"] == ["oz-team"]
+    back = _rename(owner, "oz", "oz-team")
+    assert (back.json()["handle"], back.json()["aliases"]) == ("oz-team", ["oz"])
+
+
+def test_three_renames_a_day_and_at_most_eight_aliases(migrated: Engine, owner: flow.Human) -> None:
+    org = make_org(owner)
+    for handle, to in (("oz-team", "oz-1"), ("oz-1", "oz-2"), ("oz-2", "oz-3")):
+        assert _rename(owner, handle, to).status_code == 200
+    limited = _rename(owner, "oz-3", "oz-4")
+    assert limited.status_code == 429
+    assert "Retry-After" in limited.headers
+    with migrated.begin() as conn:
+        conn.execute(delete(t.handle_change))  # the window has passed
+        for n in range(5):
+            conn.execute(
+                insert(t.handle_alias).values(
+                    org_id=org["id"],
+                    scope="human",
+                    handle=f"old-{n}",
+                    created_at=clock.now(),
+                )
+            )
+    full = _rename(owner, "oz-3", "oz-4")
+    assert (full.status_code, full.json()["error"]["code"]) == (409, "alias_limit")
+    assert full.json()["error"]["details"]["limit"] == 8
+    assert _rename(owner, "oz-3", "oz-1").status_code == 200  # taking one back stays possible
+
+
+def test_each_project_says_so_in_its_log_and_on_its_ticker(
+    migrated: Engine, owner: flow.Human
+) -> None:
+    make_org(owner)
+    project = owner.post("/projects", {"slug": "shop", "name": "Shop", "owner": "oz-team"})
+    assert project.status_code == 201, project.text
+    assert _rename(owner, "oz-team", "oz").status_code == 200
+    with migrated.connect() as conn:
+        updated = conn.execute(
+            select(t.event)
+            .where(t.event.c.kind == "project_updated")
+            .order_by(t.event.c.seq.desc())
+        ).first()
+    assert updated is not None
+    assert updated.payload["fields"]["full_name"] == "oz/shop"
+    assert updated.payload["fields"]["owner"]["handle"] == "oz"
+    ticker = owner.get("/projects/oz/shop/ticker").json()["items"]
+    assert any(item["text"] == "oz-team/shop is now oz/shop" for item in ticker)
+
+
+def test_a_credential_limited_to_the_old_name_keeps_its_project(
+    migrated: Engine, owner: flow.Human
+) -> None:
+    make_org(owner)
+    assert (
+        owner.post("/projects", {"slug": "shop", "name": "Shop", "owner": "oz-team"}).status_code
+        == 201
+    )
+    assert _rename(owner, "oz-team", "oz").status_code == 200
+    with migrated.connect() as conn:
+        project = conn.execute(select(t.project).where(t.project.c.slug == "shop")).one()
+        assert allowed_projects.names_of(conn, project) == {"oz/shop", "oz-team/shop"}
+        assert allowed_projects.admits(conn, ["oz-team/shop"], project)
+
+
+def test_a_rename_withdraws_an_open_transfer_of_each_project(
+    make_client: ClientFactory, migrated: Engine, owner: flow.Human
+) -> None:
+    """§6.25: every change of the project's full name; else its `go` would only be stale."""
+    make_org(owner)
+    assert (
+        owner.post("/projects", {"slug": "shop", "name": "Shop", "owner": "oz-team"}).status_code
+        == 201
+    )
+    stranger = flow.human(make_client, migrated, "stranger")
+    other = make_org(stranger, "other-team", "Other")
+    add_member(migrated, other["id"], owner.id, "admin")
+    filed = owner.post("/projects/oz-team/shop/transfer", {"to": other["id"]})
+    assert filed.status_code == 202, filed.text
+    assert _rename(owner, "oz-team", "oz").status_code == 200
+    with migrated.connect() as conn:
+        row = conn.execute(select(t.request).where(t.request.c.id == filed.json()["id"])).one()
+    assert (row.status, row.withdraw_reason) == ("withdrawn", "the organisation was renamed")
+
+
+def test_a_rename_moves_each_public_page(make_client: ClientFactory, migrated: Engine) -> None:
+    boss = flow.human(lambda **kw: make_client(public_pages=True, **kw), migrated)
+    make_org(boss)
+    assert (
+        boss.post("/projects", {"slug": "shop", "name": "Shop", "owner": "oz-team"}).status_code
+        == 201
+    )
+    assert boss.patch("/projects/oz-team/shop", {"public_page": "on"}).status_code == 200
+    assert _rename(boss, "oz-team", "oz").status_code == 200
+    with migrated.connect() as conn:
+        paths_now = set(
+            conn.execute(
+                select(t.public_page.c.path).where(t.public_page.c.kind == "project")
+            ).scalars()
+        )
+    assert "/oz/shop" in paths_now and "/oz-team/shop" not in paths_now

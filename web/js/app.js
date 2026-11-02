@@ -46,6 +46,8 @@ window.Maity = window.Maity || {};
     { route: "runners", view: "projectRunners", get label() { return M.t("nav.runners"); }, tab: false, current: "settings", section: "runners", admin: true, watch: /^runner_/, get changed() { return M.t("nav.runners.changed"); } },
     // Where the hub knows the Keep the Why export (docs/api.md §6.1, §11.3).
     { route: "why", get label() { return M.t("nav.why"); } },
+    // What the agents and members have written down (js/memory.js, §19, tsk-6tqytgmcp17p).
+    { route: "memory", get label() { return M.t("nav.memory"); } },
     // The jour fixe (js/jour-fixe.js, §20): its rounds, one round at jour-fixe/<id>;
     // between Why and Settings (the maintainer, 2026-10-31).
     { route: "jour-fixe", view: "jourFixe", get label() { return M.t("nav.jour_fixe"); } },
@@ -59,13 +61,6 @@ window.Maity = window.Maity || {};
 
   // docs/api.md §6.1; moving to launch is the owner's go.
   const STATES = ["plan", "build", "review", "launch", "archived"];
-  const STATE_LABELS = {
-    get plan() { return M.t("state.plan"); },
-    get build() { return M.t("state.build"); },
-    get review() { return M.t("state.review"); },
-    get launch() { return M.t("state.launch"); },
-    get archived() { return M.t("state.archived"); },
-  };
 
   M.views = M.views || {};
 
@@ -115,6 +110,8 @@ window.Maity = window.Maity || {};
     if (parts[0] === "chats") return { scope: "chats", args: parts.slice(1) };
     // The login page, always reachable (docs/api.md §16.7); signed in, the root.
     if (parts[0] === "login") return { scope: "login" };
+    if (parts[0] === "all" && parts[1] === "jour-fixe") return { scope: "all-jour-fixe" };
+    if (parts[0] === "all" && parts[1] === "why") return { scope: "all-why" };
     if (parts[0] === "all") return { scope: "all" };
     if (parts[0] === "new") return { scope: "new" };
     // /account/orgs[/<handle>]: organisations (§6.26), under the account (views.md).
@@ -128,8 +125,9 @@ window.Maity = window.Maity || {};
     if (parts[0] === "observe" && parts[2]) return { scope: "observe", slug: parts[1] + "/" + parts[2], args: parts.slice(3) };
     if (parts[0] === "admin" && !parts[1]) return { scope: "instance-admin" };
     // The two sections a notification links into (§18.2): Registration, and Reports with one report opened;
-    // and Import or export everything, at /admin/site (tsk-xw8a2hd84x3a).
-    if (parts[0] === "admin" && ((parts[1] === "registration" || parts[1] === "site") && !parts[2] || parts[1] === "reports" && !parts[3])) {
+    // and Pages with a part of it (tsk-fct4awzw3k30).
+    if (parts[0] === "admin" && (parts[1] === "registration" && !parts[2] || parts[1] === "reports" && !parts[3]
+      || parts[1] === "pages" && !parts[3] && (!parts[2] || ["landing", "legal", "sign-in", "sign-up", "site"].includes(parts[2])))) {
       return { scope: "instance-admin", section: parts[1], args: parts.slice(2) };
     }
     if (parts[1] && !OWN_WORDS.includes(parts[0])) {
@@ -141,10 +139,9 @@ window.Maity = window.Maity || {};
   }
 
   function errorBox(err) {
-    const where = err.path ? " (" + err.path + ")" : "";
     const status = err.status ? "HTTP " + err.status + (err.code ? " " + err.code : "") + ": " : "";
     return h("div", { class: "error", role: "alert" },
-      h("strong", null, "Could not load" + where),
+      h("strong", null, err.path ? M.t("error.load_failed_at", { path: err.path }) : M.t("error.load_failed")),
       h("p", null, status + err.message));
   }
 
@@ -167,7 +164,7 @@ window.Maity = window.Maity || {};
   // page (/); the link carries the name, the pictures none of their own.
   function brandTitle(signedIn) {
     const home = signedIn === undefined ? !!M.api.session() : signedIn;
-    const label = home ? "Maity: everything waiting for you" : "Maity: home";
+    const label = home ? M.t("header.brand.signed_in") : M.t("header.brand.signed_out");
     return h("h1", { class: "brand" },
       h("a", { class: "brand-home", href: home ? "/all" : "/", "aria-label": label, title: label },
         h("img", { class: "brand-lockup brand-light", src: "brand/maity-lockup.svg", alt: "", width: "94", height: "28" }),
@@ -177,12 +174,15 @@ window.Maity = window.Maity || {};
   // Light, dark, or as the system has it; per browser (js/theme.js). The
   // header's menu is for pages without a session (the maintainer's
   // instruction): signed in, the theme is chosen in Your account.
-  const THEME_WORDS = { system: "System", light: "Light", dark: "Dark" };
+  const THEME_WORDS = {
+    get system() { return M.t("theme.system"); }, get light() { return M.t("theme.light"); }, get dark() { return M.t("theme.dark"); },
+  };
+  const themeLabel = (t) => M.t("theme.label", { theme: THEME_WORDS[t] });
   function themeMenu() {
     if (!M.theme) return null;
     const theme = M.menuButton({
-      label: "Theme: " + THEME_WORDS[M.theme.get()],
-      listLabel: "Theme",
+      label: themeLabel(M.theme.get()),
+      listLabel: M.t("theme.title"),
       class: "theme-menu",
       face: M.icons.theme(M.theme.get(), 18),
       items: () => M.theme.THEMES.map((t) => ({
@@ -192,8 +192,8 @@ window.Maity = window.Maity || {};
           M.theme.set(t);
           clear(theme.button);
           append(theme.button, M.icons.theme(t, 18));
-          theme.button.setAttribute("aria-label", "Theme: " + THEME_WORDS[t]);
-          theme.button.setAttribute("title", "Theme: " + THEME_WORDS[t]);
+          theme.button.setAttribute("aria-label", themeLabel(t));
+          theme.button.setAttribute("title", themeLabel(t));
         },
       })),
     });
@@ -203,13 +203,11 @@ window.Maity = window.Maity || {};
   M.THEME_WORDS = THEME_WORDS;
 
   function stateBadge(state, note) {
-    return h("span", { class: "state state-" + state, title: note || "" }, STATE_LABELS[state] || state);
+    return h("span", { class: "state state-" + state, title: note || "" }, M.dom.word("project", state));
   }
 
   // The released mark (docs/api.md §6.1): set once with the first release
   // tag, never cleared; shown beside the state wherever the state is.
-  const RELEASED_RULES = "interfaces change only with versioning and a stated transition period, "
-    + "migrations stay backward compatible, and the release checklist is required";
   function releasedDay(project) {
     const d = new Date(project.released_at);
     return Number.isNaN(d.getTime()) ? project.released_at
@@ -239,6 +237,11 @@ window.Maity = window.Maity || {};
   // The links that are set, as plain https only: what the header and the overview show.
   const ownLinks = (project) => OWN_LINKS.map(([key, label, d]) => ({ key, label: label(), d, url: M.dom.safeUrl(((project && project.links) || {})[key]) }))
     .filter((x) => x.url);
+  // Where a forge lists its pull requests. No hub field: the repository's own URL and forge
+  // say it, and a forge not in this table gets no button.
+  const PULL_PATHS = { github: "/pulls", gitea: "/pulls", gitlab: "/-/merge_requests", bitbucket: "/pull-requests" };
+  const PULLS_MARK = "M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z";
+  const pullsUrl = (repo, forge) => (repo && Object.hasOwn(PULL_PATHS, forge) ? repo.replace(/\/+$/, "").replace(/\.git$/, "") + PULL_PATHS[forge] : null);
   function mark(d) {
     const svg = document.createElementNS(SVG, "svg");
     [["viewBox", "0 0 16 16"], ["width", "16"], ["height", "16"], ["aria-hidden", "true"], ["focusable", "false"], ["class", "header-link-mark"]]
@@ -258,22 +261,23 @@ window.Maity = window.Maity || {};
     // "Repository" whatever the forge (the maintainer, 11b7e786): its mark says which forge,
     // and the project's own links stand beside it.
     const name = M.t("project.link.repository");
+    const pulls = pullsUrl(repo, forge);
     return [
       repo ? h("a", { class: "header-link", href: repo, target: "_blank", rel: "noopener noreferrer",
         "aria-label": M.t("project.link.opens", { what: FORGES[forge] ? M.t("project.link.repository_on", { forge: FORGES[forge] }) : name }), title: repo },
       mark(FORGE_MARKS[forge] || FORGE_MARKS.other), h("span", { class: "header-link-text" }, name)) : null,
-      ownLinks(project).map((x) => h("a", { class: "header-link", href: x.url, target: "_blank", rel: "noopener noreferrer",
+      [pulls ? { label: M.t("project.link.pull_requests"), d: PULLS_MARK, url: pulls } : null, ...ownLinks(project)].filter(Boolean).map((x) => h("a", { class: "header-link", href: x.url, target: "_blank", rel: "noopener noreferrer",
         "aria-label": M.t("project.link.opens", { what: x.label }), title: x.url },
       mark(x.d), h("span", { class: "header-link-text" }, x.label))),
       why ? h("a", { class: "header-link", href: why, target: "_blank", rel: "noopener noreferrer",
-        "aria-label": "Keep the Why dashboard (opens in a new tab)", title: why },
-      mark(BOOK), h("span", { class: "header-link-text" }, "Why")) : null,
+        "aria-label": M.t("project.link.opens", { what: M.t("project.link.ktw_dashboard") }), title: why },
+      mark(BOOK), h("span", { class: "header-link-text" }, M.t("project.link.why"))) : null,
     ];
   }
 
   function releasedMark(project) {
     if (!project || !project.released_at) return null;
-    return h("span", { class: "state released", title: "Released since " + releasedDay(project) + ": " + RELEASED_RULES + "." }, "Released");
+    return h("span", { class: "state released", title: M.t("project.released.since", { day: releasedDay(project) }) }, M.t("project.released"));
   }
 
   // ---- sign-in ------------------------------------------------------------
@@ -303,6 +307,11 @@ window.Maity = window.Maity || {};
   // The session ended while the page was signed in (a 401 on a call that
   // needs it, js/api.js): everything in the background stops, and the
   // sign-in page comes with a note; nothing more is asked until a sign-in.
+  // A view left open when the hub requires the factor: drawn again, it becomes the setup. While
+  // the setup is on the page a late refusal leaves it alone, so a secret being typed stays;
+  // any other drawing ends that, so a later refusal in this tab draws it again.
+  let enrolling = false;
+  M.onEnrolmentRequired = () => { if (!enrolling) { enrolling = true; render(); } };
   // Signing in again returns to the same route.
   let sessionEnded = false;
   M.onSessionEnded = (path, epoch) => {
@@ -316,23 +325,33 @@ window.Maity = window.Maity || {};
     // As a sign-out does: the next human in this tab starts with their own settings.
     M.notify.stopBrowser();
     M.notify.state.settings = null;
-    renderLogin(document.getElementById("main"), "Your session has ended. Sign in again to go on where you were.");
+    renderLogin(document.getElementById("main"), M.t("login.session_ended"));
   };
 
+  let keptHandle = "";
   function renderLogin(main, note) {
-    document.title = "Sign in · Maity";
+    document.title = M.t("login.page_title");
     append(clear(document.getElementById("header")), h("div", { class: "bar" },
       brandTitle(false),
-      M.api.source === "fixtures" ? h("span", { class: "source" }, "Fixtures") : null,
+      M.api.source === "fixtures" ? h("span", { class: "source" }, M.t("login.fixtures")) : null,
       themeMenu()));
     const handle = h("input", { id: "login-handle", name: "handle", autocomplete: "username", required: true });
+    handle.value = keptHandle;
+    keptHandle = "";
+    // The page's language (§6.2), as on /register: the form is drawn again in it, the handle kept, the password not.
+    const site = M.interfacePicker ? M.interfacePicker("login-interface", M.i18n.language, false) : null;
+    if (site) site.addEventListener("change", async () => {
+      keptHandle = handle.value;
+      await M.i18n.choose(site.value);
+      renderLogin(main, note);
+    });
     const password = h("input", { id: "login-password", name: "password", type: "password", autocomplete: "current-password", required: true });
     const status = statusLine();
     const form = h("form", {
       class: "login door",
       onsubmit: async (e) => {
         e.preventDefault();
-        status.busy("Signing in…");
+        status.busy(M.t("login.busy"));
         try {
           const next = routeNext();
           const answer = await M.api.post("/auth/login", Object.assign({ handle: handle.value.trim(), password: password.value }, next ? { next } : {}));
@@ -340,18 +359,30 @@ window.Maity = window.Maity || {};
           goNext(answer && answer.next);
         } catch (err) {
           password.value = "";
-          status.fail("Not signed in: ", err);
+          status.fail(M.t("login.failed"), err);
         }
       },
     },
-    h("h2", null, "Sign in"),
-    h("label", { for: "login-handle" }, "Handle"), handle,
-    h("label", { for: "login-password" }, "Password"), password,
-    h("button", { type: "submit" }, "Sign in"),
+    M.authPages.pitch("sign_in", M.t("login.title")),
+    h("label", { for: "login-handle" }, M.t("login.handle")), handle,
+    h("label", { for: "login-password" }, M.t("login.password")), password,
+    site ? h("label", { for: "login-interface" }, M.t("language.interface.label")) : null, site,
+    h("button", { type: "submit" }, M.t("login.title")),
     status.el);
     // A code from another device or a link by mail, as the hub offers them
     // (js/device-sign-in.js), on this page's own timers.
-    append(clear(main), note ? h("p", { class: "flag session-ended", role: "status" }, note) : null, form,
+    // A dashboard address of a project with a public page (§16.11): that page is one link away.
+    const publicLink = h("p", { class: "public-page-link", hidden: true });
+    const parts = M.route.current().path.split("/").filter(Boolean);
+    if (M.api.source !== "fixtures" && window.fetch && parts.length >= 2 && !OWN_WORDS.includes(parts[0])) {
+      const address = "/" + parts.slice(0, 2).join("/");
+      window.fetch(address + "?as=public", { method: "HEAD", credentials: "omit", headers: { Accept: "text/html" } })
+        .then((r) => {
+          // A public page is the hub's own, with its own security policy; the shell has none like it.
+          if (r.ok && r.headers.get("etag")) { append(publicLink, h("a", { href: address }, M.t("login.public_page"))); publicLink.hidden = false; }
+        }).catch(() => {});
+    }
+    append(clear(main), note ? h("p", { class: "flag session-ended", role: "status" }, note) : null, form, publicLink,
       M.deviceSignIn ? M.deviceSignIn.loginOptions((ms, fn) => { timers.push(window.setInterval(fn, ms)); }, () => render()) : null,
       M.legal ? M.legal.links() : null);
   }
@@ -369,6 +400,12 @@ window.Maity = window.Maity || {};
     };
     M.secondFactor.page(main, session, done, logout);
   }
+  function renderEnrolment(main) {
+    append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(false), themeMenu()));
+    // Drawn again, not routed: the address stays what was asked for, often "/" already.
+    enrolling = true;
+    M.security.enrolPage(main, render, logout);
+  }
   function renderStepElsewhere(main, signedIn) {
     append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(false), themeMenu()));
     M.secondFactor.elsewhere(main, signedIn);
@@ -376,12 +413,12 @@ window.Maity = window.Maity || {};
 
   // The one page of a pending account (§2.7.5): it may sign out, nothing else.
   function renderPending(main) {
-    document.title = "Waiting for approval · Maity";
+    document.title = M.t("pending.page_title");
     append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(false), themeMenu()));
     append(clear(main), h("section", { class: "pending-account" },
-      h("h2", null, "Your account waits for the operator's approval"),
-      h("p", null, "Once it is approved you get a mail, and this page becomes your dashboard. An invitation you followed waits for you meanwhile."),
-      h("button", { type: "button", onclick: logout }, "Sign out")));
+      h("h2", null, M.t("pending.title")),
+      h("p", null, M.t("pending.text")),
+      h("button", { type: "button", onclick: logout }, M.t("pending.sign_out"))));
   }
 
   // back: a dashboard path (checked as a sign-in's next is) to
@@ -412,8 +449,8 @@ window.Maity = window.Maity || {};
   // State (owner and admin, with a reason) and absence (owner only), as
   // PATCH /projects/{owner}/{slug}.
   // The hub's rule for a repository URL (§6.1), as the create view says it too.
-  const FORGE_RULE = "Must be https://<forge host>/<owner>/<name> on a forge this hub is configured for.";
-  M.FORGE_RULE = FORGE_RULE;
+  const forgeRule = () => M.t("settings.repo.forge_rule");
+  Object.defineProperty(M, "FORGE_RULE", { get: forgeRule, configurable: true });
 
   // The repository (§6.1, project:admin, humans only): where the probe, the
   // Keep the Why dashboard and the runners' clones look. https only here;
@@ -434,28 +471,28 @@ window.Maity = window.Maity || {};
         error.textContent = "";
         input.removeAttribute("aria-invalid");
         const url = input.value.trim().replace(/\/+$/, "");
-        if (url === (current || "")) { status.done(); append(status.el, h("span", { class: "ok" }, "Nothing changed.")); return; }
-        if (url && !/^https:\/\/[^\s/]+\/[^\s/]+\/[^\s/]+$/.test(url)) { fail(FORGE_RULE); return; }
+        if (url === (current || "")) { status.done(); append(status.el, h("span", { class: "ok" }, M.t("settings.repo.unchanged"))); return; }
+        if (url && !/^https:\/\/[^\s/]+\/[^\s/]+\/[^\s/]+$/.test(url)) { fail(forgeRule()); return; }
         if (current && !window.confirm(url
-          ? "Change the repository to " + url + "? The probe, the Keep the Why dashboard and new clones of runners follow it."
-          : "Remove the repository? The probe and the Keep the Why dashboard stop, and runners cannot clone for this project.")) return;
-        status.busy("Saving…");
+          ? M.t("settings.repo.confirm_change", { url })
+          : M.t("settings.repo.confirm_remove"))) return;
+        status.busy(M.t("settings.saving"));
         try {
           await M.api.patch(ctx.base, { repository: url ? { url } : null });
           render();
         } catch (err) {
           const fields = err.code === "invalid" && err.details && err.details.fields;
           const why = fields && (fields["repository.url"] || fields.repository);
-          if (why) { status.done(); fail(why === "not_a_configured_forge" ? FORGE_RULE : String(why)); }
-          else status.fail("Repository not saved: ", err);
+          if (why) { status.done(); fail(why === "not_a_configured_forge" ? forgeRule() : String(why)); }
+          else status.fail(M.t("settings.repo.not_saved"), err);
         }
       },
     },
-    h("h2", { class: "panel-title", id: "repo-heading" }, "Repository"),
-    h("label", { for: "repo-url" }, "URL"), input,
-    h("p", { class: "hint", id: "repo-url-hint" }, "Leave it empty to remove it. The hub reads the forge's state and the Keep the Why dashboard from it."),
+    h("h2", { class: "panel-title", id: "repo-heading" }, M.t("settings.repo.title")),
+    h("label", { for: "repo-url" }, M.t("settings.repo.url")), input,
+    h("p", { class: "hint", id: "repo-url-hint" }, M.t("settings.repo.hint")),
     error,
-    h("button", { type: "submit" }, "Save repository"),
+    h("button", { type: "submit" }, M.t("settings.repo.save")),
     status.el);
   }
 
@@ -518,17 +555,17 @@ window.Maity = window.Maity || {};
   function blindRemoveForm(ctx) {
     const status = statusLine();
     const seq = h("input", { id: "remove-seq", inputmode: "numeric", autocomplete: "off", "aria-describedby": "remove-seq-hint" });
-    const reason = h("input", { id: "remove-reason", autocomplete: "off", placeholder: "What was reported" });
+    const reason = h("input", { id: "remove-reason", autocomplete: "off", placeholder: M.t("settings.remove.reason_placeholder") });
     return h("form", {
       class: "inline-form remove-reported",
       novalidate: true,
       onsubmit: async (e) => {
         e.preventDefault();
         const n = seq.value.trim();
-        if (!/^\d+$/.test(n)) { status.fail("Not removed: ", { message: "the message number is a whole number" }); seq.focus(); return; }
-        if (!reason.value.trim()) { status.fail("Not removed: ", { message: "a reason is needed" }); reason.focus(); return; }
-        if (!window.confirm("Remove the closed group chat's message with number " + n + " for everyone who can read it? Its text is replaced by a note.")) return;
-        status.busy("Removing…");
+        if (!/^\d+$/.test(n)) { status.fail(M.t("settings.remove.not_removed"), { message: M.t("settings.remove.bad_number") }); seq.focus(); return; }
+        if (!reason.value.trim()) { status.fail(M.t("settings.remove.not_removed"), { message: M.t("settings.remove.reason_needed") }); reason.focus(); return; }
+        if (!window.confirm(M.t("settings.remove.confirm", { n }))) return;
+        status.busy(M.t("settings.remove.busy"));
         try {
           // expect: the hub removes only a message of a closed group chat, so
           // a mistyped number never takes out another event (§8.5, #206).
@@ -536,86 +573,98 @@ window.Maity = window.Maity || {};
           seq.value = "";
           reason.value = "";
           status.done();
-          append(status.el, h("span", { class: "ok" }, "Message " + n + " is removed."));
+          append(status.el, h("span", { class: "ok" }, M.t("settings.remove.done", { n })));
         } catch (err) {
           const mismatch = err.code === "invalid" && err.details && err.details.fields && err.details.fields.expect === "mismatch";
-          status.fail("Not removed: ", mismatch || err.code === "not_found"
-            ? { message: "number " + n + " is no message of a closed group chat in this project; nothing was removed" } : err);
+          status.fail(M.t("settings.remove.not_removed"), mismatch || err.code === "not_found"
+            ? { message: M.t("settings.remove.no_message", { n }) } : err);
         }
       },
     },
-    h("h2", { class: "panel-title" }, "Remove a reported message"),
-    h("label", { for: "remove-seq" }, "Message number"), seq,
-    h("label", { for: "remove-reason" }, "Reason"), reason,
-    h("button", { type: "submit" }, "Remove"),
-    h("p", { class: "hint", id: "remove-seq-hint" }, "For a message of a closed group chat, which no human is in any more: "
-      + "you remove it by its number without reading it. The chat's former participants see your reason."),
+    h("h2", { class: "panel-title" }, M.t("settings.remove.title")),
+    h("label", { for: "remove-seq" }, M.t("settings.remove.number")), seq,
+    h("label", { for: "remove-reason" }, M.t("settings.reason")), reason,
+    h("button", { type: "submit" }, M.t("settings.remove.button")),
+    h("p", { class: "hint", id: "remove-seq-hint" }, M.t("settings.remove.hint")),
     status.el);
   }
 
+  // One sentence per role the hub defines (web/context/rendering.md); a later one reads neutrally.
+  const ONBOARDING_ROLES = {
+    "coder": () => M.t("settings.onboarding.role.coder"),
+    "reviewer": () => M.t("settings.onboarding.role.reviewer"),
+    "tester": () => M.t("settings.onboarding.role.tester"),
+    "designer": () => M.t("settings.onboarding.role.designer"),
+    "writer": () => M.t("settings.onboarding.role.writer"),
+    "ops": () => M.t("settings.onboarding.role.ops"),
+    "proxy": () => M.t("settings.onboarding.role.proxy"),
+    "manager": () => M.t("settings.onboarding.role.manager"),
+    "red-team": () => M.t("settings.onboarding.role.red_team"),
+    "blue-team": () => M.t("settings.onboarding.role.blue_team"),
+    "purple-team": () => M.t("settings.onboarding.role.purple_team"),
+  };
   function onboardingForm(ctx) {
     const current = ctx.project.settings.onboarding || { check_in_with: "coordinator" };
     const status = statusLine();
     const briefing = h("textarea", { id: "onboarding-briefing", rows: "6", "aria-describedby": "onboarding-hint" }, current.briefing || "");
-    const choices = [{ value: "", label: "No check-in" }, { value: "coordinator", label: "Coordinator" }]
+    const choices = [{ value: "", label: M.t("settings.onboarding.no_check_in") }, { value: "coordinator", label: M.t("settings.onboarding.coordinator") }]
       // §6.1: trust:owner, trust:admin or a role; never a guest (§2.3).
-      .concat(["owner", "admin"].map((trust) => ({ value: "trust:" + trust, label: "Trust: every " + trust })))
-      .concat(M.trust.ROLES.map((role) => ({ value: "role:" + role, label: "Role: every " + M.trust.roleLabel(role).toLowerCase() })))
-      .concat(ctx.members.filter((m) => !m.removed_at && !M.trust.guest(m)).map((m) => ({ value: m.id, label: "Member: @" + M.dom.handleOf(ctx, m) + " (" + m.kind + ")" })));
+      .concat([{ value: "trust:owner", label: M.t("settings.onboarding.trust_owner") }, { value: "trust:admin", label: M.t("settings.onboarding.trust_admin") }])
+      .concat(M.trust.ROLES.map((role) => ({ value: "role:" + role, label: Object.hasOwn(ONBOARDING_ROLES, role) ? ONBOARDING_ROLES[role]() : M.t("settings.onboarding.role", { role: M.trust.roleLabel(role) }) })))
+      .concat(ctx.members.filter((m) => !m.removed_at && !M.trust.guest(m)).map((m) => ({ value: m.id, label: m.kind === "human" ? M.t("settings.onboarding.member_human", { handle: M.dom.handleOf(ctx, m) }) : M.t("settings.onboarding.member_agent", { handle: M.dom.handleOf(ctx, m) }) })));
     if (current.check_in_with && !choices.some((c) => c.value === current.check_in_with)) {
-      choices.push({ value: current.check_in_with, label: "Unavailable member: " + current.check_in_with });
+      choices.push({ value: current.check_in_with, label: M.t("settings.onboarding.unavailable", { id: current.check_in_with }) });
     }
     const target = h("select", { id: "onboarding-target" }, choices.map((c) => h("option", {
       value: c.value, selected: c.value === (current.check_in_with || ""),
     }, c.label)));
-    const button = h("button", { type: "submit" }, "Save onboarding");
-    const metadata = h("p", { class: "muted onboarding-metadata" },
-      current.version != null ? "Version " + current.version : "Project default",
-      current.by ? [" · set by ", M.dom.memberRef(ctx, current.by, { text: "handle" })] : null,
-      current.updated_at ? " · updated " + formatTime(current.updated_at) : null);
+    const button = h("button", { type: "submit" }, M.t("settings.onboarding.save"));
+    const facts = (value) => [value && value.version != null ? M.t("settings.onboarding.version", { version: String(value.version) }) : M.t("settings.onboarding.default"),
+      value && value.by ? [" · ", M.tn("settings.onboarding.set_by", { who: M.dom.memberRef(ctx, value.by, { text: "handle" }) })] : null,
+      value && value.updated_at ? " · " + M.t("settings.onboarding.updated", { time: formatTime(value.updated_at) }) : null];
+    const metadata = h("p", { class: "muted onboarding-metadata" }, facts(current));
     return h("form", { class: "inline-form project-onboarding", onsubmit: async (e) => {
       e.preventDefault();
       if ([...briefing.value].length > 16 * 1024) {
-        status.fail("Not saved: ", { message: "The briefing may contain at most 16,384 characters." }); briefing.focus(); return;
+        status.fail(M.t("settings.not_saved_plain"), { message: M.t("settings.onboarding.too_long") }); briefing.focus(); return;
       }
       const onboarding = {};
       if (briefing.value) onboarding.briefing = briefing.value;
       if (target.value) onboarding.check_in_with = target.value;
-      button.disabled = true; status.busy("Saving…");
+      button.disabled = true; status.busy(M.t("settings.saving"));
       try {
         const saved = await M.api.patch(ctx.base, { settings: { onboarding } });
         ctx.project = saved;
         const value = saved.settings && saved.settings.onboarding;
         clear(metadata);
-        append(metadata, value && value.version != null ? "Version " + value.version : "Project default",
-          value && value.by ? [" · set by ", M.dom.memberRef(ctx, value.by, { text: "handle" })] : null,
-          value && value.updated_at ? " · updated " + formatTime(value.updated_at) : null);
-        status.done(); append(status.el, h("span", { class: "ok" }, "Onboarding saved."));
-      } catch (err) { status.fail("Onboarding not saved: ", err); }
+        append(metadata, facts(value));
+        status.done(); append(status.el, h("span", { class: "ok" }, M.t("settings.onboarding.saved")));
+      } catch (err) { status.fail(M.t("settings.onboarding.not_saved"), err); }
       finally { button.disabled = false; }
     } },
-    h("h2", { class: "panel-title" }, "Onboarding"), metadata,
-    h("label", { for: "onboarding-briefing" }, "Default briefing (Markdown)"), briefing,
-    h("p", { class: "hint", id: "onboarding-hint" }, "Up to 16,384 characters. Agents with their own briefing keep it; others receive this text on their next resume. Leave empty to remove the default text."),
-    h("label", { for: "onboarding-target" }, "Check in with"), target,
-    h("p", { class: "hint" }, "The coordinator or role is resolved when the agent resumes. No check-in disables the hint."), button, status.el);
+    h("h2", { class: "panel-title" }, M.t("settings.onboarding.title")), metadata,
+    h("label", { for: "onboarding-briefing" }, M.t("settings.onboarding.briefing")), briefing,
+    h("p", { class: "hint", id: "onboarding-hint" }, M.t("settings.onboarding.hint")),
+    h("label", { for: "onboarding-target" }, M.t("settings.onboarding.target")), target,
+    h("p", { class: "hint" }, M.t("settings.onboarding.target_hint")), button, status.el);
   }
 
   function projectPanel(ctx) {
     const status = statusLine();
     // atFields: a form's own handler of the hub's field refusals; when it says
     // them at its fields, the status line only says that nothing was saved.
-    const save = async (body, label, atFields) => {
-      status.busy("Saving…");
+    // words: the whole sentences of this save, { saved, notSaved }.
+    const save = async (body, words, atFields) => {
+      status.busy(M.t("settings.saving"));
       try {
         await M.api.patch(ctx.base, body);
-        settingsSaved = label + " saved.";
+        settingsSaved = words.saved;
         render();
       } catch (err) {
         // true: said at the fields; a text: what the status line says besides them.
         const atField = atFields && atFields(err);
-        if (atField) { status.fail(label + " not saved: ", { message: atField === true ? M.t("settings.see_fields") : atField }); return; }
-        status.fail(label + " not saved: ", err);
+        if (atField) { status.fail(words.notSaved, { message: atField === true ? M.t("settings.see_fields") : atField }); return; }
+        status.fail(words.notSaved, err);
       }
     };
 
@@ -623,16 +672,17 @@ window.Maity = window.Maity || {};
     const language = (ctx.project.settings || {}).language || "en";
     const humanAdmin = ctx.me.kind === "human" && ctx.canAdmin;
     if (humanAdmin) {
-      const select = h("select", { id: "project-language" },
-        h("option", { value: "en" }, "English"), h("option", { value: "de" }, "Deutsch"));
-      select.value = language;
+      const picker = M.languagePicker("project-language", language);
+      const select = picker.select;
       append(panel, h("form", { class: "inline-form project-language", onsubmit: (e) => {
-        e.preventDefault(); save({ settings: { language: select.value } }, "Language");
-      } }, h("h2", { class: "panel-title" }, "Project language"),
-      h("label", { for: "project-language" }, "Language"), select,
-      h("button", { type: "submit" }, "Save language")));
+        e.preventDefault(); save({ settings: { language: select.value } }, { saved: M.t("settings.language.saved"), notSaved: M.t("settings.language.not_saved") });
+      } }, h("h2", { class: "panel-title" }, M.t("settings.language.title")),
+      h("label", { for: "project-language" }, M.t("settings.language.label")), picker.search, select,
+      h("button", { type: "submit" }, M.t("settings.language.save"))));
     } else {
-      append(panel, h("p", { class: "project-language" }, "Project language: " + (language === "de" ? "Deutsch" : "English")));
+      const shown = h("p", { class: "project-language" });
+      M.writeLanguageName(language, (name) => { shown.textContent = M.t("settings.language.shown", { name }); });
+      append(panel, shown);
     }
 
     if (ctx.canAdmin) {
@@ -642,25 +692,25 @@ window.Maity = window.Maity || {};
           selected: s === ctx.project.state,
           // Only the owner moves the project to launch; an admin may leave it.
           disabled: s === "launch" && !ctx.isOwner && ctx.project.state !== "launch",
-        }, STATE_LABELS[s])));
-      const note = h("input", { id: "state-note", value: ctx.project.state_note || "", placeholder: "What this state means right now" });
-      const reason = h("input", { id: "state-reason", required: true, placeholder: "Why it changes (logged)" });
+        }, M.dom.word("project", s))));
+      const note = h("input", { id: "state-note", value: ctx.project.state_note || "", placeholder: M.t("settings.state.note_placeholder") });
+      const reason = h("input", { id: "state-reason", required: true, placeholder: M.t("settings.reason_placeholder") });
       append(panel, h("form", {
         class: "inline-form",
         onsubmit: (e) => {
           e.preventDefault();
           if (!reason.value.trim()) { reason.focus(); return; }
-          save({ state: state.value, state_note: note.value.trim() || null, reason: reason.value.trim() }, "State");
+          save({ state: state.value, state_note: note.value.trim() || null, reason: reason.value.trim() }, { saved: M.t("settings.state.saved"), notSaved: M.t("settings.state.not_saved") });
         },
       },
-      h("h2", { class: "panel-title" }, "Project state"),
+      h("h2", { class: "panel-title" }, M.t("settings.state.title")),
       ctx.project.released_at
-        ? h("p", { class: "released-note" }, "Released since " + releasedDay(ctx.project) + ", for good: " + RELEASED_RULES + ".")
+        ? h("p", { class: "released-note" }, M.t("settings.state.released", { day: releasedDay(ctx.project) }))
         : null,
-      h("label", { for: "state-select" }, "State"), state,
-      h("label", { for: "state-note" }, "Note"), note,
-      h("label", { for: "state-reason" }, "Reason"), reason,
-      h("button", { type: "submit" }, "Change state")));
+      h("label", { for: "state-select" }, M.t("settings.state.label")), state,
+      h("label", { for: "state-note" }, M.t("settings.state.note")), note,
+      h("label", { for: "state-reason" }, M.t("settings.reason")), reason,
+      h("button", { type: "submit" }, M.t("settings.state.change"))));
     }
     if (ctx.canAdmin) append(panel, onboardingForm(ctx), repositoryForm(ctx), M.forge ? M.forge.repositoryPart(ctx) : null, linksForm(ctx));
     // Its name: rename and transfer, for a human owner (§6.25).
@@ -668,6 +718,8 @@ window.Maity = window.Maity || {};
     if (names) append(panel, names);
     if (M.projectSetup) append(panel, memoryPanel(ctx, save, humanAdmin));
     // Humans only, as every policy field (§2.3 ʰ); the commitment above the badge (the maintainer, 2026-11-01).
+    // The public page: the namespace owner's alone, however high the trust (§16.9).
+    if (M.publicPage) append(panel, M.publicPage.projectPart(ctx, save));
     if (humanAdmin) append(panel, keepTheWhyForm(ctx, save), keepTheWhyDefaultsForm(ctx, save), badgeForm(ctx, save));
     // The jour fixe's series and their moderators (§20.1, §20.2), kept by humans.
     if (humanAdmin && M.jourFixeSeries) append(panel, M.jourFixeSeries.settingsPart(ctx));
@@ -678,7 +730,7 @@ window.Maity = window.Maity || {};
       if (humanAdmin) append(panel, h("div", { class: "webhook-slot" }, M.tickerSettings.webhookPanel(ctx)));
     }
     if (humanAdmin) {
-      append(panel, memberAgentsForm(ctx, save), h("div", { class: "agent-owners-slot" }, agentOwnersForm(ctx, save)));
+      append(panel, doneAuthorityForm(ctx, save), memberAgentsForm(ctx, save), h("div", { class: "agent-owners-slot" }, agentOwnersForm(ctx, save)));
     }
     if (ctx.canAdmin && M.groupChat) append(panel, h("div", { class: "remove-reported-slot" }, blindRemoveForm(ctx)));
     // §8.7: everyone's pending uploads, for freeing the quota.
@@ -688,7 +740,7 @@ window.Maity = window.Maity || {};
     if (ctx.isOwner) {
       const a = ctx.project.absence;
       const until = h("input", { id: "absence-until", type: "datetime-local", required: true });
-      const scope = h("input", { id: "absence-scope", required: true, placeholder: "What the admin roles may decide meanwhile", value: a ? a.scope : "" });
+      const scope = h("input", { id: "absence-scope", required: true, placeholder: M.t("settings.absence.scope_placeholder"), value: a ? a.scope : "" });
       append(panel, h("form", {
         class: "inline-form",
         onsubmit: (e) => {
@@ -696,15 +748,15 @@ window.Maity = window.Maity || {};
           const when = new Date(until.value);
           if (!until.value || Number.isNaN(when.getTime())) { until.focus(); return; }
           if (!scope.value.trim()) { scope.focus(); return; }
-          save({ absence: { until: when.toISOString().replace(/\.\d{3}Z$/, "Z"), scope: scope.value.trim() } }, "Absence");
+          save({ absence: { until: when.toISOString().replace(/\.\d{3}Z$/, "Z"), scope: scope.value.trim() } }, { saved: M.t("settings.absence.saved"), notSaved: M.t("settings.absence.not_saved") });
         },
       },
-      h("h2", { class: "panel-title" }, "Your absence"),
-      h("label", { for: "absence-until" }, "Away until"), until,
-      h("label", { for: "absence-scope" }, "Meanwhile"), scope,
+      h("h2", { class: "panel-title" }, M.t("settings.absence.title")),
+      h("label", { for: "absence-until" }, M.t("settings.absence.until")), until,
+      h("label", { for: "absence-scope" }, M.t("settings.absence.scope")), scope,
       h("div", { class: "actions" },
-        a ? h("button", { type: "button", onclick: () => save({ absence: null }, "Absence") }, "I am back") : null,
-        h("button", { type: "submit" }, a ? "Update absence" : "Set absence"))));
+        a ? h("button", { type: "button", onclick: () => save({ absence: null }, { saved: M.t("settings.absence.saved"), notSaved: M.t("settings.absence.not_saved") }) }, M.t("settings.absence.back")) : null,
+        h("button", { type: "submit" }, a ? M.t("settings.absence.update") : M.t("settings.absence.set")))));
     }
     append(panel, status.el);
     return panel;
@@ -715,10 +767,15 @@ window.Maity = window.Maity || {};
   // upload (the forge's image then applies again). The type is read from the
   // file's first bytes, as the hub reads it; at most 1 MiB.
   const { sniffImage, IMAGE_MAX } = M.dom;
-  const SOURCES = { uploaded: "uploaded here", forge: "from the repository's forge" };
+  const SOURCES = { uploaded: () => M.t("settings.images.uploaded_here"), forge: () => M.t("settings.images.from_forge") };
   const IMAGE_REASONS = {
-    unsupported_type: "not a PNG, JPEG or WebP image",
-    too_large: "larger than 1 MiB",
+    unsupported_type: () => M.t("settings.images.bad_type"),
+    too_large: () => M.t("settings.images.too_large"),
+  };
+  // Whole sentences per image: its name does not bend the same way in every language.
+  const IMAGE_WORDS = {
+    logo: { label: () => M.t("settings.images.logo.label"), hint: () => M.t("settings.images.logo.hint"), not_uploaded: () => M.t("settings.images.logo.not_uploaded"), uploading: () => M.t("settings.images.logo.uploading"), uploaded: () => M.t("settings.images.logo.uploaded"), not_removed: () => M.t("settings.images.logo.not_removed"), alt: () => M.t("settings.images.logo.alt"), none: () => M.t("settings.images.logo.none"), upload: () => M.t("settings.images.logo.upload"), removing: () => M.t("settings.images.logo.removing"), removed: () => M.t("settings.images.logo.removed"), remove: () => M.t("settings.images.logo.remove") },
+    banner: { label: () => M.t("settings.images.banner.label"), hint: () => M.t("settings.images.banner.hint"), not_uploaded: () => M.t("settings.images.banner.not_uploaded"), uploading: () => M.t("settings.images.banner.uploading"), uploaded: () => M.t("settings.images.banner.uploaded"), not_removed: () => M.t("settings.images.banner.not_removed"), alt: () => M.t("settings.images.banner.alt"), none: () => M.t("settings.images.banner.none"), upload: () => M.t("settings.images.banner.upload"), removing: () => M.t("settings.images.banner.removing"), removed: () => M.t("settings.images.banner.removed"), remove: () => M.t("settings.images.banner.remove") },
   };
 
   // Set by an upload or a removal; the next header opens the panel with it.
@@ -730,9 +787,9 @@ window.Maity = window.Maity || {};
       append(status.el, h("span", { class: "ok" }, imagesNote));
       imagesNote = null;
     }
-    const box = h("div", { class: "images" }, h("h2", { class: "panel-title" }, "Logo and banner"));
-    [["logo", "Logo", "Square; shown next to the project's name everywhere."],
-      ["banner", "Banner", "2:1, like a forge's social preview (ideally 1280×640); shown at the top of the project's inbox."]].forEach(([kind, label, hint]) => {
+    const box = h("div", { class: "images" }, h("h2", { class: "panel-title" }, M.t("settings.images.title")));
+    ["logo", "banner"].forEach((kind) => {
+      const words = IMAGE_WORDS[kind];
       const view = ctx.project[kind] || { available: false, source: null };
       const url = M.api.imageUrl(ctx.slug, kind, view);
       const id = "upload-" + kind;
@@ -740,42 +797,42 @@ window.Maity = window.Maity || {};
       input.addEventListener("change", async () => {
         const file = input.files && input.files[0];
         if (!file) return;
-        if (file.size > IMAGE_MAX) { status.fail(label + " not uploaded: ", { message: "larger than 1 MiB" }); input.value = ""; return; }
+        if (file.size > IMAGE_MAX) { status.fail(words.not_uploaded(), { message: IMAGE_REASONS.too_large() }); input.value = ""; return; }
         const type = await sniffImage(file);
-        if (!type) { status.fail(label + " not uploaded: ", { message: "not a PNG, JPEG or WebP image" }); input.value = ""; return; }
-        status.busy("Uploading the " + kind + "…");
+        if (!type) { status.fail(words.not_uploaded(), { message: IMAGE_REASONS.unsupported_type() }); input.value = ""; return; }
+        status.busy(words.uploading());
         try {
           await M.api.putImage(ctx.base + "/" + kind, file, type);
-          imagesNote = label + " uploaded.";
+          imagesNote = words.uploaded();
           render();
         } catch (err) {
           const why = err.code === "invalid" && err.details && err.details.fields && err.details.fields.body;
-          status.fail(label + " not uploaded: ", why ? { message: IMAGE_REASONS[why] || why } : err);
+          status.fail(words.not_uploaded(), why ? { message: Object.hasOwn(IMAGE_REASONS, why) ? IMAGE_REASONS[why]() : why } : err);
           input.value = "";
         }
       });
       append(box, h("div", { class: "image-row" },
-        h("h3", { class: "panel-sub" }, label),
+        h("h3", { class: "panel-sub" }, words.label()),
         url
-          ? h("img", { class: "image-preview image-preview-" + kind, src: url, alt: "The project's current " + kind })
-          : h("p", { class: "muted" }, kind === "logo" ? "None: a monogram is shown." : "None."),
-        view.source ? h("p", { class: "muted" }, SOURCES[view.source] || view.source) : null,
-        h("label", { for: id }, "Upload a " + kind + " (PNG, JPEG or WebP, at most 1 MiB)"), input,
-        h("p", { class: "hint" }, hint),
+          ? h("img", { class: "image-preview image-preview-" + kind, src: url, alt: words.alt() })
+          : h("p", { class: "muted" }, words.none()),
+        view.source ? h("p", { class: "muted" }, Object.hasOwn(SOURCES, view.source) ? SOURCES[view.source]() : view.source) : null,
+        h("label", { for: id }, words.upload()), input,
+        h("p", { class: "hint" }, words.hint()),
         view.source === "uploaded"
           ? h("button", {
             type: "button",
             onclick: async () => {
-              status.busy("Removing the " + kind + "…");
+              status.busy(words.removing());
               try {
                 await M.api.del(ctx.base + "/" + kind);
-                imagesNote = "Uploaded " + kind + " removed" + (kind === "logo" ? "; the forge's logo, or a monogram, shows again." : ".");
+                imagesNote = words.removed();
                 render();
               } catch (err) {
-                status.fail(label + " not removed: ", err);
+                status.fail(words.not_removed(), err);
               }
             },
-          }, "Remove the uploaded " + kind)
+          }, words.remove())
           : null));
     });
     append(box, status.el);
@@ -789,10 +846,10 @@ window.Maity = window.Maity || {};
   function signingForm(ctx, save) {
     const current = ctx.project.policy.signing;
     const select = h("select", { id: "signing-select" },
-      [["optional", "Optional: bearer or signed"], ["required", "Required: signed calls only"]].map(([v, l]) =>
+      [["optional", M.t("settings.signing.optional")], ["required", M.t("settings.signing.required")]].map(([v, l]) =>
         h("option", { value: v, selected: v === current }, l)));
     select.value = current;
-    const reason = h("input", { id: "signing-reason", required: true, placeholder: "Why it changes (logged)" });
+    const reason = h("input", { id: "signing-reason", required: true, placeholder: M.t("settings.reason_placeholder") });
     const impact = h("div", { class: "signing-impact", "aria-live": "polite" });
     const confirmBox = h("input", { id: "signing-confirm", type: "checkbox" });
     let needsConfirm = false;
@@ -803,7 +860,7 @@ window.Maity = window.Maity || {};
       clear(impact);
       needsConfirm = false;
       if (select.value !== "required" || current === "required") return;
-      append(impact, h("p", { class: "muted" }, "Checking which agents still call with a bearer token…"));
+      append(impact, h("p", { class: "muted" }, M.t("settings.signing.checking")));
       const agents = ctx.members.filter((m) => m.kind === "agent");
       let rows;
       try {
@@ -816,8 +873,8 @@ window.Maity = window.Maity || {};
         clear(impact);
         needsConfirm = true;
         append(impact, M.errorBox(err),
-          h("p", { class: "flag" }, "Which agents would be cut off could not be read."),
-          h("label", { class: "check", for: "signing-confirm" }, confirmBox, " Require signing anyway"));
+          h("p", { class: "flag" }, M.t("settings.signing.unreadable")),
+          h("label", { class: "check", for: "signing-confirm" }, confirmBox, " ", M.t("settings.signing.anyway")));
         return;
       }
       if (seq !== check) return;
@@ -829,20 +886,18 @@ window.Maity = window.Maity || {};
         else if (!c.last_used_via) unused.push({ m, c });
       }));
       if (!bearer.length) {
-        append(impact, h("p", { class: "muted" }, "No agent's credential was last used as a bearer token; none is cut off."));
+        append(impact, h("p", { class: "muted" }, M.t("settings.signing.none_cut")));
       } else {
         needsConfirm = true;
         append(impact, h("div", { class: "flag" },
-          h("p", null, bearer.length === 1 ? "This agent calls with a bearer token and would be refused (signature_required) until it signs:"
-            : "These agents call with a bearer token and would be refused (signature_required) until they sign:"),
+          h("p", null, M.t("settings.signing.bearer", { count: bearer.length })),
           h("ul", null, bearer.map(({ m, c }) => h("li", null, M.dom.memberRef(ctx, m.id), " · ",
-            h("code", null, c.id), " · last used " + formatAgo(c.last_used_at) + " as a bearer token"))),
-          h("p", null, "Signing is what the maity CLI does; an agent without it installs it and runs maity resume."),
-          h("label", { class: "check", for: "signing-confirm" }, confirmBox, " Cut them off until they sign")));
+            h("code", null, c.id), " · " + M.t("settings.signing.last_used", { ago: formatAgo(c.last_used_at) })))),
+          h("p", null, M.t("settings.signing.cli")),
+          h("label", { class: "check", for: "signing-confirm" }, confirmBox, " ", M.t("settings.signing.cut_off"))));
       }
       if (unused.length) {
-        append(impact, h("p", { class: "muted" }, unused.length + " credential" + (unused.length === 1 ? " has" : "s have")
-          + " not been used yet (" + unused.map(({ m }) => m.display_name).join(", ") + "); from the switch on, it must sign from its first call."));
+        append(impact, h("p", { class: "muted" }, M.t("settings.signing.unused", { count: unused.length, names: M.fmt.list(unused.map(({ m }) => m.display_name)) })));
       }
     }
     select.addEventListener("change", showImpact);
@@ -854,16 +909,15 @@ window.Maity = window.Maity || {};
         if (select.value === current) return;
         if (!reason.value.trim()) { reason.focus(); return; }
         if (select.value === "required" && needsConfirm && !confirmBox.checked) { confirmBox.focus(); return; }
-        save({ policy: { signing: select.value }, reason: reason.value.trim() }, "Signing");
+        save({ policy: { signing: select.value }, reason: reason.value.trim() }, { saved: M.t("settings.signing.saved"), notSaved: M.t("settings.signing.not_saved") });
       },
     },
-    h("h2", { class: "panel-title" }, "Agent signing"),
-    h("p", { class: "hint" }, "Required refuses every agent call made with the bare bearer credential (curl, the join page's plain path); "
-      + "the maity CLI signs its calls. Humans in the dashboard are not affected."),
-    h("label", { for: "signing-select" }, "Signing"), select,
+    h("h2", { class: "panel-title" }, M.t("settings.signing.title")),
+    h("p", { class: "hint" }, M.t("settings.signing.hint")),
+    h("label", { for: "signing-select" }, M.t("settings.signing.label")), select,
     impact,
-    h("label", { for: "signing-reason" }, "Reason"), reason,
-    h("button", { type: "submit" }, "Change signing"));
+    h("label", { for: "signing-reason" }, M.t("settings.reason")), reason,
+    h("button", { type: "submit" }, M.t("settings.signing.change")));
     return form;
   }
 
@@ -877,11 +931,10 @@ window.Maity = window.Maity || {};
     const s = ctx.project.setup;
     const named = (PROVIDERS.find(([v]) => v === provider) || [provider, provider])[1];
     // The dashboard's option names its path (§6.1 setup.dashboard_path).
-    const chosen = s ? OPTIONS.filter(([k]) => s[k]).map(([k, title]) => (k === "keep_the_why_dashboard" && s.dashboard_path
-      ? M.t("memory.setup.dashboard_under", { title, path: s.dashboard_path }) : title)) : [];
+    const chosen = OPTIONS.filter(([k]) => s[k]).map(([k, title]) => (k === "keep_the_why_dashboard" && s.dashboard_path
+      ? M.t("memory.setup.dashboard_under", { title, path: s.dashboard_path }) : title));
     let setup;
-    if (!s) setup = h("p", { class: "muted" }, M.t("memory.setup.predates"));
-    else if (Array.isArray(s.cards) && s.cards.length) {
+    if (Array.isArray(s.cards) && s.cards.length) {
       setup = [h("p", null, M.tn("memory.setup.cards", { cards: s.cards.map((id, i) => [i ? ", " : null, h("a", { class: "id-ref", href: ctx.link("tasks", id) }, id)]) })),
         s.keep_the_why_dashboard && s.dashboard_path ? h("p", { class: "muted" }, M.t("memory.setup.published", { path: s.dashboard_path })) : null];
     } else if (!chosen.length || Array.isArray(s.cards)) setup = h("p", { class: "muted" }, M.t("memory.setup.none"));
@@ -904,7 +957,7 @@ window.Maity = window.Maity || {};
         e.preventDefault();
         if (select.value === provider) return;
         if (!reason.value.trim()) { reason.focus(); return; }
-        save({ memory: { provider: select.value }, reason: reason.value.trim() }, M.t("memory.saved_label"));
+        save({ memory: { provider: select.value }, reason: reason.value.trim() }, { saved: M.t("memory.saved"), notSaved: M.t("memory.not_saved") });
       },
     },
     h("h2", { class: "panel-title", id: "memory-heading" }, M.t("memory.title")), shown,
@@ -918,8 +971,8 @@ window.Maity = window.Maity || {};
   // policy.badge (docs/api.md §6.20): off unless an admin switches it on, a
   // policy change with its reason. The README snippet and, while it is on,
   // the badge as the hub serves it.
-  const BADGES = [["off", "Off: no badge is served"], ["members", "Members: how many humans and agents"],
-    ["agents_online", "Agents online: how many agents are online now"]];
+  const BADGES = () => [["off", M.t("settings.badge.off")], ["members", M.t("settings.badge.members")],
+    ["agents_online", M.t("settings.badge.agents_online")]];
   // The Keep the Why commitment (docs/api.md §6.23): required, the hub
   // makes every agent confirm it and every code report name its why;
   // optional, nobody is held to it. Without the memory provider it can
@@ -929,27 +982,26 @@ window.Maity = window.Maity || {};
     const provider = ctx.project.memory && ctx.project.memory.provider;
     const off = provider === "none";
     const select = h("select", { id: "ktw-policy-select", disabled: off ? true : null },
-      [["required", "Required: every agent confirms it, every code report names its why"], ["optional", "Optional: nobody is reminded"]]
+      [["required", M.t("settings.ktw.required")], ["optional", M.t("settings.ktw.optional")]]
         .map(([v, l]) => h("option", { value: v, selected: v === current }, l)));
     select.value = current;
-    const reason = h("input", { id: "ktw-policy-reason", required: true, placeholder: "Why it changes (logged)", disabled: off ? true : null });
+    const reason = h("input", { id: "ktw-policy-reason", required: true, placeholder: M.t("settings.reason_placeholder"), disabled: off ? true : null });
     return h("form", {
       class: "inline-form ktw-policy-form",
       onsubmit: (e) => {
         e.preventDefault();
         if (off || select.value === current) return;
         if (!reason.value.trim()) { reason.focus(); return; }
-        save({ policy: { keep_the_why: select.value }, reason: reason.value.trim() }, "Keep the Why commitment");
+        save({ policy: { keep_the_why: select.value }, reason: reason.value.trim() }, { saved: M.t("settings.ktw.saved"), notSaved: M.t("settings.ktw.not_saved") });
       },
     },
-    h("h2", { class: "panel-title" }, "Keep the Why commitment"),
+    h("h2", { class: "panel-title" }, M.t("settings.ktw.title")),
     h("p", { class: "hint" }, off
-      ? "This project has no memory provider, so Keep the Why stays optional. Choose Keep the Why as the memory to require it."
-      : "Required: each agent instance confirms at its resume that it uses Keep the Why, is reminded once after 30 minutes, "
-        + "and its owner is told 30 minutes later; a code report names the entry that keeps its why, or says why there is none."),
-    h("label", { for: "ktw-policy-select" }, "Keep the Why"), select,
-    h("label", { for: "ktw-policy-reason" }, "Reason"), reason,
-    h("button", { type: "submit", disabled: off ? true : null }, "Change"));
+      ? M.t("settings.ktw.off")
+      : M.t("settings.ktw.hint")),
+    h("label", { for: "ktw-policy-select" }, M.t("settings.ktw.label")), select,
+    h("label", { for: "ktw-policy-reason" }, M.t("settings.reason")), reason,
+    h("button", { type: "submit", disabled: off ? true : null }, M.t("settings.ktw.change")));
   }
 
   // §6.1 agent_owners and outside_roles, §6.2 "An agent whose owner is no
@@ -1000,7 +1052,7 @@ window.Maity = window.Maity || {};
         if (roles.length !== current.length || roles.some((r) => !current.includes(r))) policy.outside_roles = roles;
         if (!Object.keys(policy).length) return;
         if (!reason.value.trim()) { reason.focus(); return; }
-        save({ policy, reason: reason.value.trim() }, M.t("settings.agent_owners.title"), (err) => {
+        save({ policy, reason: reason.value.trim() }, { saved: M.t("settings.agent_owners.saved"), notSaved: M.t("settings.agent_owners.not_saved") }, (err) => {
           if (((err.details || {}).fields || {}).outside_roles !== "outside_owner") return false;
           error.textContent = M.t("settings.agent_owners.role_in_use");
           return true;
@@ -1019,39 +1071,64 @@ window.Maity = window.Maity || {};
     h("button", { type: "submit" }, M.t("settings.agent_owners.save")));
   }
 
+  // Who moves a card from review to done (§6.1). A human changes it with a reason,
+  // as every policy field; cards in review keep their state and read the new rule.
+  const DONE_AUTHORITIES = () => [
+    ["holder", M.t("settings.done_authority.holder")], ["reviewer", M.t("settings.done_authority.reviewer")], ["tester", M.t("settings.done_authority.tester")],
+    ["reviewer_and_tester", M.t("settings.done_authority.reviewer_and_tester")], ["admin", M.t("settings.done_authority.admin")]];
+  function doneAuthorityForm(ctx, save) {
+    const current = ctx.project.policy.done_authority;
+    const select = h("select", { id: "done-authority-select" }, DONE_AUTHORITIES().map(([v, l]) => h("option", { value: v }, l)));
+    select.value = current;
+    const reason = h("input", { id: "done-authority-reason", required: true, placeholder: M.t("settings.done_authority.reason_placeholder") });
+    return h("form", {
+      class: "inline-form done-authority-form",
+      onsubmit: (e) => {
+        e.preventDefault();
+        if (select.value === current) return;
+        if (!reason.value.trim()) { reason.focus(); return; }
+        save({ policy: { done_authority: select.value }, reason: reason.value.trim() }, { saved: M.t("settings.done_authority.saved"), notSaved: M.t("settings.done_authority.not_saved") });
+      },
+    },
+    h("h2", { class: "panel-title" }, M.t("settings.done_authority.title")),
+    h("p", { class: "hint" }, M.t("settings.done_authority.hint")),
+    h("label", { for: "done-authority-select" }, M.t("settings.done_authority.label")), select,
+    h("label", { for: "done-authority-reason" }, M.t("settings.done_authority.reason")), reason,
+    h("button", { type: "submit" }, M.t("board.save")));
+  }
+
   // §3.1 "Bringing your own agent", §6.1: whether members add agents of
   // their own, and how many each may hold here; a human with project:admin,
   // with a reason, as every policy field.
   function memberAgentsForm(ctx, save) {
     const pol = ctx.project.policy;
-    const on = h("select", { id: "member-agents-select" }, [["on", "On: members add agents of their own"], ["off", "Off: only admins add agents"]]
+    const on = h("select", { id: "member-agents-select" }, [["on", M.t("settings.member_agents.on")], ["off", M.t("settings.member_agents.off")]]
       .map(([v, l]) => h("option", { value: v }, l)));
     on.value = pol.member_agents || "on";
     const max = h("input", { id: "member-agents-max", type: "number", min: "0", max: "20", step: "1" });
     max.value = String(pol.member_agents_max === undefined ? 3 : pol.member_agents_max);
-    const reason = h("input", { id: "member-agents-reason", required: true, placeholder: "Why it changes (logged)" });
+    const reason = h("input", { id: "member-agents-reason", required: true, placeholder: M.t("settings.reason_placeholder") });
     const error = h("p", { class: "field-error", id: "member-agents-error", role: "alert" });
     return h("form", {
       class: "inline-form member-agents-form",
       onsubmit: (e) => {
         e.preventDefault();
         const n = Number(max.value);
-        if (!Number.isInteger(n) || n < 0 || n > 20) { error.textContent = "Agents per member: a whole number from 0 to 20."; max.focus(); return; }
+        if (!Number.isInteger(n) || n < 0 || n > 20) { error.textContent = M.t("settings.member_agents.bad_max"); max.focus(); return; }
         const policy = {};
         if (on.value !== (pol.member_agents || "on")) policy.member_agents = on.value;
         if (n !== (pol.member_agents_max === undefined ? 3 : pol.member_agents_max)) policy.member_agents_max = n;
         if (!Object.keys(policy).length) return;
         if (!reason.value.trim()) { reason.focus(); return; }
-        save({ policy, reason: reason.value.trim() }, "Members' own agents");
+        save({ policy, reason: reason.value.trim() }, { saved: M.t("settings.member_agents.saved"), notSaved: M.t("settings.member_agents.not_saved") });
       },
     },
-    h("h2", { class: "panel-title" }, "Members' own agents"),
-    h("p", { class: "hint" }, "A member may add agents of their own: as member or guest, in every role but ops and proxy, reporting to them. "
-      + "Turning it off stops new ones; joins already handed out stay usable."),
-    h("label", { for: "member-agents-select" }, "Members add agents"), on,
-    h("label", { for: "member-agents-max" }, "Agents per member (active and open joins)"), max, error,
-    h("label", { for: "member-agents-reason" }, "Reason"), reason,
-    h("button", { type: "submit" }, "Save"));
+    h("h2", { class: "panel-title" }, M.t("settings.member_agents.title")),
+    h("p", { class: "hint" }, M.t("settings.member_agents.hint")),
+    h("label", { for: "member-agents-select" }, M.t("settings.member_agents.label")), on,
+    h("label", { for: "member-agents-max" }, M.t("settings.member_agents.max")), max, error,
+    h("label", { for: "member-agents-reason" }, M.t("settings.reason")), reason,
+    h("button", { type: "submit" }, M.t("board.save")));
   }
 
   // Where a joining agent's personal Keep the Why settings come from (§6.23). The values stay
@@ -1070,7 +1147,7 @@ window.Maity = window.Maity || {};
         e.preventDefault();
         if (select.value === current) return;
         if (!reason.value.trim()) { reason.focus(); return; }
-        save({ policy: { keep_the_why_defaults: select.value }, reason: reason.value.trim() }, M.t("settings.ktw_defaults.title"));
+        save({ policy: { keep_the_why_defaults: select.value }, reason: reason.value.trim() }, { saved: M.t("settings.ktw_defaults.saved"), notSaved: M.t("settings.ktw_defaults.not_saved") });
       },
     },
     h("h2", { class: "panel-title" }, M.t("settings.ktw_defaults.title")),
@@ -1082,7 +1159,7 @@ window.Maity = window.Maity || {};
 
   function badgeForm(ctx, save) {
     const current = ctx.project.policy.badge;
-    const select = h("select", { id: "badge-select" }, BADGES.map(([v, l]) => h("option", { value: v, selected: v === current }, l)));
+    const select = h("select", { id: "badge-select" }, BADGES().map(([v, l]) => h("option", { value: v, selected: v === current }, l)));
     select.value = current;
     // As reached in this tab; a file:// page has no origin to name.
     const raw = window.location && window.location.origin;
@@ -1094,34 +1171,33 @@ window.Maity = window.Maity || {};
       onclick: async () => {
         try {
           await navigator.clipboard.writeText(snippet);
-          copy.textContent = "Copied";
+          copy.textContent = M.t("settings.badge.copied");
         } catch (err) {
-          copy.textContent = "Copy failed — select the line";
+          copy.textContent = M.t("settings.badge.copy_failed");
         }
       },
-    }, "Copy");
+    }, M.t("settings.badge.copy"));
     return h("form", {
       class: "inline-form badge-form",
       onsubmit: (e) => {
         e.preventDefault();
         if (select.value === current) return;
         // The badge alone needs no reason (docs/api.md §6.20).
-        save({ policy: { badge: select.value } }, "Badge");
+        save({ policy: { badge: select.value } }, { saved: M.t("settings.badge.saved"), notSaved: M.t("settings.badge.not_saved") });
       },
     },
-    h("h2", { class: "panel-title" }, "README badge"),
-    h("p", { class: "hint" }, "Public: anyone with the address sees the count, never a name. The hub serves it while the badge is on. "
-      + "The address is this hub's as reached in this tab."),
-    h("label", { for: "badge-select" }, "Badge"), select,
+    h("h2", { class: "panel-title" }, M.t("settings.badge.title")),
+    h("p", { class: "hint" }, M.t("settings.badge.hint")),
+    h("label", { for: "badge-select" }, M.t("settings.badge.label")), select,
     // Shown from the hub itself; fixture mode has no hub to serve it.
     current !== "off" && M.api.source === "api"
       // Versioned by the rules: a policy change bumps it, so a cached
       // badge of the old variant is not shown (§6.20: max-age=60).
       ? h("img", { class: "badge-preview", src: "/badge/" + M.api.projectPath(ctx.slug) + ".svg?v=" + encodeURIComponent(ctx.project.rules_version || 0),
-        alt: "The project's badge as the hub serves it" }) : null,
+        alt: M.t("settings.badge.alt") }) : null,
     h("div", { class: "paste-row" }, h("code", { class: "paste-line" }, snippet), copy),
-    current === "off" ? h("p", { class: "muted" }, "While the badge is off, its address answers not found.") : null,
-    h("button", { type: "submit" }, "Change badge"));
+    current === "off" ? h("p", { class: "muted" }, M.t("settings.badge.off_note")) : null,
+    h("button", { type: "submit" }, M.t("settings.badge.change")));
   }
 
   // ---- project logo -------------------------------------------------------
@@ -1181,26 +1257,26 @@ window.Maity = window.Maity || {};
     // What asks for the human, requests, unread chats and mentions
     // (docs/api.md §18.2); until the counts are read, the open requests.
     const total = N.counts ? N.counts.total : ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0);
-    const count = (n) => (n ? h("span", { class: "count", "aria-label": n + " open" }, String(n)) : null);
+    const count = (n) => (n ? h("span", { class: "count", "aria-label": M.t("header.count.open", { count: n }) }, String(n)) : null);
     // The same words on every pill: what the number is made of.
-    const counted = (c) => (c.total ? h("span", { class: "count", "aria-label": [c.requests ? c.requests + " open" : null,
-      c.chat ? c.chat + " unread in chats" : null, c.mention ? c.mention + (c.mention === 1 ? " mention" : " mentions") : null].filter(Boolean).join(", ") },
+    const counted = (c) => (c.total ? h("span", { class: "count", "aria-label": M.fmt.list([c.requests ? M.t("header.count.open", { count: c.requests }) : null,
+      c.chat ? M.t("header.count.unread_chats", { count: c.chat }) : null, c.mention ? M.t("header.count.mentions", { count: c.mention }) : null].filter(Boolean)) },
     String(c.total)) : null);
     const pill = (p) => (N.counts ? counted(M.notify.projectCount(p)) : count(p.open_requests));
     const all = N.counts ? counted({ requests: N.counts.inbox, chat: N.counts.chat, mention: N.counts.mention, total }) : count(total);
-    return h("nav", { class: "switcher", "aria-label": "Projects" },
-      h("a", { href: "/all", "aria-current": ctx.scope === "all" || ctx.scope === "chats" ? "page" : null }, "All projects", all),
+    return h("nav", { class: "switcher", "aria-label": M.t("header.projects") },
+      h("a", { href: "/all", "aria-current": ALL_PAGES.some((page) => page.scope === ctx.scope) ? "page" : null }, M.t("header.all_projects"), all),
       ctx.projects.map((p) => h("a", {
         href: projectLink(p.full_name, "inbox"),
         "aria-current": ctx.scope === "project" && p.full_name === ctx.slug ? "page" : null,
       },
       projectMark(p.full_name, p.name, (ctx.projectViews || {})[p.full_name], "small"),
       p.name,
-      h("span", { class: "dot state-dot-" + p.state, title: STATE_LABELS[p.state] || p.state, "aria-label": STATE_LABELS[p.state] || p.state }),
+      h("span", { class: "dot state-dot-" + p.state, title: M.dom.word("project", p.state), "aria-label": M.dom.word("project", p.state) }),
       pill(p))),
     // Runners belong to the person, not to a project (the maintainer's
     // wish, tsk-cb6myw32def0): they are in the gear menu, not this row.
-    h("a", { href: "/new", class: "new-project", "aria-current": ctx.scope === "new" ? "page" : null }, "+ New project"));
+    h("a", { href: "/new", class: "new-project", "aria-current": ctx.scope === "new" ? "page" : null }, M.t("header.new_project")));
   }
 
   // A row that scrolls shows it: a fade on the side with more entries. Set
@@ -1232,7 +1308,7 @@ window.Maity = window.Maity || {};
     if (!M.notify.state.counts || (route !== "inbox" && route !== "chat")) return null;
     const c = M.notify.projectCount(ctx.projects.find((p) => p.full_name === ctx.slug) || { full_name: ctx.slug });
     const n = route === "inbox" ? c.requests : c.chat;
-    return n ? h("span", { class: "count", "aria-label": n + (route === "inbox" ? " open" : " unread") }, String(n)) : null;
+    return n ? h("span", { class: "count", "aria-label": route === "inbox" ? M.t("header.count.open", { count: n }) : M.t("header.count.unread", { count: n }) }, String(n)) : null;
   }
 
   // All projects has two pages (the maintainer, tsk-gw59z3w3fenf): the
@@ -1243,6 +1319,10 @@ window.Maity = window.Maity || {};
       count: (c) => c.inbox || 0, said: (count) => M.t("all.page.inbox.count", { count }) },
     { scope: "chats", href: "/chats", label: () => M.t("all.page.chats"),
       count: (c) => c.chat || 0, said: (count) => M.t("all.page.chats.count", { count }) },
+    // One's own agent profiles (/agents): a human's page, and nothing counted on it.
+    { scope: "agents", href: "/agents", label: () => M.t("all.page.agents"), when: (ctx) => ctx.me.kind === "human", count: () => 0 },
+    { scope: "all-jour-fixe", href: "/all/jour-fixe", label: () => M.t("all.page.jour_fixe"), count: () => 0 },
+    { scope: "all-why", href: "/all/why", label: () => M.t("all.page.why"), count: () => 0 },
   ];
   function allCount(page) {
     const n = M.notify.state.counts ? page.count(M.notify.state.counts) : 0;
@@ -1301,14 +1381,14 @@ window.Maity = window.Maity || {};
     if (focused) fresh.focus();
   }
 
-  // The Lead button beside Chat, once whom it reaches is known
-  // (js/lead-chat.js); none where it reaches no one.
+  // The Lead button left of Chat (the maintainer's order, tsk-td5c6z21xg5s), once whom it
+  // reaches is known (js/lead-chat.js); none where it reaches no one.
   function renderLead(ctx) {
     const me = document.getElementById("header").querySelector(".me");
     const chat = me && me.querySelector("a.chat-button");
     if (!chat || !ctx.chatFound || !M.leadChat) return;
     const lead = M.leadChat.leadControl(ctx, ctx.chatFound);
-    if (lead) me.insertBefore(lead, chat.nextSibling);
+    if (lead) me.insertBefore(lead, chat);
   }
 
   // The counts changed: only the switcher is replaced, so an open State &
@@ -1367,6 +1447,7 @@ window.Maity = window.Maity || {};
         { label: M.t("menu.picture"), href: "/account/picture" },
         { label: M.t("menu.preferences"), href: "/account/preferences" },
         { label: M.t("menu.theme"), href: "/account/theme" },
+        ctx.me.kind === "human" ? { label: M.t("menu.security"), href: "/account/security" } : null,
         ctx.me.kind === "human" ? { label: M.t("menu.orgs"), href: "/account/orgs", current: ctx.scope === "orgs" } : null,
         { label: M.t("menu.sign_in_device"), href: "/account/sign-in-device" },
         { label: M.t("menu.change_password"), href: "/account" },
@@ -1385,8 +1466,8 @@ window.Maity = window.Maity || {};
         M.api.source === "fixtures"
           ? h("span", { class: "source", title: M.t("header.fixtures.title") }, M.t("header.fixtures"))
           : null,
-        // Chat, (Lead,) "+", the gear, Notifications, the profile: in one row on a phone too.
-        // The Lead button goes in right after Chat once known (renderLead), so "+" stays to its right.
+        // (Lead,) Chat, "+", the gear, Notifications, the profile: in one row on a phone too.
+        // The Lead button goes in right before Chat once known (renderLead).
         h("span", { class: "me" }, M.notify.chatButton(ctx), add ? add.el : null, settings.el, M.notify.bell(ctx, () => ctx.refreshCounts()), profile.el)),
       // The projects, and at their right, apart, this project's state and
       // the owner's absence with the settings that change them.
@@ -1394,10 +1475,10 @@ window.Maity = window.Maity || {};
         switcher(ctx),
         ctx.scope === "project"
           ? h("div", { class: "project-state", role: "group", "aria-label": M.t("header.state_group") },
+            projectLinks(ctx.project),
             stateBadge(ctx.project.state, ctx.project.state_note),
             releasedMark(ctx.project),
-            absence ? h("span", { class: "state away", title: absence.scope }, M.t("header.away_until", { time: formatTime(absence.until) })) : null,
-            projectLinks(ctx.project))
+            absence ? h("span", { class: "state away", title: absence.scope }, M.t("header.away_until", { time: formatTime(absence.until) })) : null)
           : null),
       ctx.scope === "project" && ctx.project.state_note ? h("p", { class: "state-note" }, ctx.project.state_note) : null,
       // The time is in the block above; what holds meanwhile, here.
@@ -1410,9 +1491,9 @@ window.Maity = window.Maity || {};
             href: projectLink(ctx.slug, item.route),
             "aria-current": item.route === current ? "page" : null,
           }, item.label, tabCount(ctx, item.route))))
-        : ctx.scope === "all" || ctx.scope === "chats"
+        : ALL_PAGES.some((page) => page.scope === ctx.scope)
           ? h("nav", { class: "views", "aria-label": M.t("all.pages") },
-            ALL_PAGES.map((page) => h("a", { href: page.href, "aria-current": ctx.scope === page.scope ? "page" : null }, page.label(), allCount(page))))
+            ALL_PAGES.filter((page) => !page.when || page.when(ctx)).map((page) => h("a", { href: page.href, "aria-current": ctx.scope === page.scope ? "page" : null }, page.label(), allCount(page))))
           : null);
     header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
     // Whom the Lead button reaches: known at once in a project, read for every project outside one.
@@ -1438,14 +1519,14 @@ window.Maity = window.Maity || {};
     const mine = (args || [])[0] === "mine";
     const human = ctx.me.kind === "human";
     if (!mine && !ctx.canAdmin) { M.route.go(projectLink(ctx.slug, "settings", "mine"), { replace: true }); return; }
-    const tabs = [ctx.canAdmin ? ["Project", projectLink(ctx.slug, "settings"), !mine] : null,
-      human ? ["Mine", projectLink(ctx.slug, "settings", "mine"), mine] : null].filter(Boolean);
-    append(root, h("h2", null, "Settings"),
-      tabs.length > 1 ? h("nav", { class: "settings-tabs", "aria-label": "Settings" },
+    const tabs = [ctx.canAdmin ? [M.t("settings.tab.project"), projectLink(ctx.slug, "settings"), !mine] : null,
+      human ? [M.t("settings.tab.mine"), projectLink(ctx.slug, "settings", "mine"), mine] : null].filter(Boolean);
+    append(root, h("h2", null, M.t("settings.title")),
+      tabs.length > 1 ? h("nav", { class: "settings-tabs", "aria-label": M.t("settings.title") },
         tabs.map(([label, href, on]) => h("a", { href, "aria-current": on ? "page" : null }, label))) : null);
     if (mine) { await M.mySettings(ctx, root); return; }
     append(root,
-      h("p", { class: "muted" }, "This project's settings. Yours for this project are under Mine; the hub's are in the gear menu."),
+      h("p", { class: "muted" }, M.t("settings.intro")),
       // The project's runners, no tab of their own any more.
       h("p", { class: "settings-runners" }, h("a", { href: projectLink(ctx.slug, "runners") }, M.t("settings.runners_link"))),
       settingsSaved ? h("p", { class: "ok", role: "status" }, settingsSaved) : null,
@@ -1490,11 +1571,13 @@ window.Maity = window.Maity || {};
   async function loadContext(where, me) {
     const ctx = {
       me: me.member,
+      // A deletion waiting for its mail (§2.9) stands beside the member in GET /me.
+      deletion: me.deletion || null,
       projects: me.projects,
       serverTime: me.server_time,
       scope: where.scope,
       projectLink,
-      stateLabel: (state) => STATE_LABELS[state] || state,
+      stateLabel: (state) => M.dom.word("project", state),
       stateBadge,
       releasedMark,
       ownLinks,
@@ -1526,7 +1609,7 @@ window.Maity = window.Maity || {};
     if (where.scope !== "project") return ctx;
     const mine = me.projects.find((p) => p.full_name === where.slug);
     if (!mine) {
-      throw new M.api.ApiError("You are not a member of the project " + where.slug, 404, "/me", "not_found");
+      throw new M.api.ApiError(M.t("error.not_member", { slug: where.slug }), 404, "/me", "not_found");
     }
     ctx.slug = where.slug;
     // Trust × role (docs/api.md §2.3): owner and admin hold project:admin and
@@ -1556,7 +1639,7 @@ window.Maity = window.Maity || {};
   M.withMembers = (ctx, members) => withMembers(ctx, members);
   M.projectContext = async (ctx, slug, chatLink) => {
     const mine = ctx.projects.find((p) => p.full_name === slug);
-    if (!mine) throw new M.api.ApiError("You are not a member of the project " + slug, 404, "/me", "not_found");
+    if (!mine) throw new M.api.ApiError(M.t("error.not_member", { slug }), 404, "/me", "not_found");
     const pctx = Object.assign({}, ctx, {
       slug, trust: mine.trust, role: mine.role, canAdmin: M.trust.governs(mine), isOwner: M.trust.owner(mine),
       base: "/projects/" + M.api.projectPath(slug), listeners: [], outsider: false,
@@ -1571,7 +1654,10 @@ window.Maity = window.Maity || {};
   // Timers belong to one render; the next render stops them.
   let timers = [];
   let disposers = [];
+  // A view that follows a change of the address itself (js/chats.js) until the next render.
+  let followingRoute = null;
   function stopTimers() {
+    followingRoute = null;
     disposers.forEach((fn) => fn());
     disposers = [];
     timers.forEach((t) => window.clearInterval(t));
@@ -1605,7 +1691,7 @@ window.Maity = window.Maity || {};
       append(countLine, h("p", { class: "muted" }, quietNote));
       quietNote = null;
     }
-    const reload = h("button", { type: "button", class: "small", onclick: () => render() }, "Reload");
+    const reload = h("button", { type: "button", class: "small", onclick: () => render() }, M.t("watch.reload"));
     const changed = new Set();
 
     async function counts() {
@@ -1620,16 +1706,16 @@ window.Maity = window.Maity || {};
         const busy = header.querySelector(".panel") || (document.activeElement && header.contains(document.activeElement));
         if (ctx.quietReload && ctx.quietReload() && !busy) {
           const n = now - seen;
-          quietNote = n > 0 ? n + (n === 1 ? " new request." : " new requests.") : "The list was updated (" + now + " open).";
+          quietNote = n > 0 ? M.t("watch.new_requests", { count: n }) : M.t("watch.list_updated", { count: now });
           render();
           return;
         }
-        append(countLine, h("p", { class: "flag" }, "What waits for you changed (" + now + " open). ",
-          h("button", { type: "button", class: "small", onclick: () => render() }, "Reload the list")));
+        append(countLine, h("p", { class: "flag" }, M.t("watch.changed", { count: now }) + " ",
+          h("button", { type: "button", class: "small", onclick: () => render() }, M.t("watch.reload_list"))));
       }
     }
-    const failed = (err) => append(clear(failLine), h("p", { class: "send-status failed" }, "Could not refresh: " + err.message));
-    if (notifyError) { append(failLine, h("p", { class: "send-status failed" }, "Could not read your notifications: " + notifyError.message)); notifyError = null; }
+    const failed = (err) => append(clear(failLine), h("p", { class: "send-status failed" }, M.t("watch.refresh_failed", { message: err.message })));
+    if (notifyError) { append(failLine, h("p", { class: "send-status failed" }, M.t("watch.notifications_failed", { message: notifyError.message }))); notifyError = null; }
     // A hidden tab asks nothing; shown again, it reads what it missed.
     let missed = false;
     const poll = () => { missed = false; return counts().then(() => clear(failLine), failed); };
@@ -1643,7 +1729,7 @@ window.Maity = window.Maity || {};
     ctx.onEvents((events) => {
       const theirs = events.filter((e) => !(e.actor && e.actor.member_id === ctx.me.id));
       const texts = [];
-      if (theirs.some((e) => PROJECT_KINDS.test(e.kind))) texts.push("The project changed.");
+      if (theirs.some((e) => PROJECT_KINDS.test(e.kind))) texts.push(M.t("watch.project_changed"));
       if (item && item.watch && theirs.some((e) => item.watch.test(e.kind))) texts.push(item.changed);
       texts.forEach((t) => changed.add(t));
       if (texts.length) append(clear(changeLine), h("p", { class: "flag" }, Array.from(changed).join(" ") + " ", reload));
@@ -1719,15 +1805,21 @@ window.Maity = window.Maity || {};
 
   async function render() {
     const seq = ++renderSeq;
+    enrolling = false;
     stopTimers();
     const main = document.getElementById("main");
     // The view being left stays on screen until the next one is drawn, but
     // takes no click or key any more: an action there (a Revoke) would be
     // answered into a view that is gone, while the new one shows what it read
     // before. Every way out of render() replaces main or renders again.
-    Array.from(main.childNodes).forEach((n) => { if (n.setAttribute) n.setAttribute("inert", ""); });
+    // The hub's own page in <main> (§16.9) counts for this first drawing only, and stays usable
+    // meanwhile: it is what stands if its data cannot be read.
+    const hubPage = !!(main.hasAttribute && main.hasAttribute("data-public-page"));
+    if (hubPage) main.removeAttribute("data-public-page");
+    else Array.from(main.childNodes).forEach((n) => { if (n.setAttribute) n.setAttribute("inert", ""); });
     let where = { scope: "unknown" };
     let ctx;
+    await M.i18n.ready;
     try {
       where = parseRoute();
       if (where.scope === "invite" && M.invite) { await M.invite.page(main, document.getElementById("header"), where.token); return; }
@@ -1740,7 +1832,13 @@ window.Maity = window.Maity || {};
         if (err.status === 401 && M.secondFactor && M.secondFactor.isMailLink()) { renderStepElsewhere(main, false); return; }
         // Without a session the login page; the landing page at the root
         // is the hub's own static page (§16.7), never drawn here.
-        if (err.status === 401) { renderLogin(main); return; }
+        if (err.status === 401) {
+          // A public page of this address, read-only (§16.9); otherwise the login.
+          if (M.visitor && await M.visitor.page(main, document.getElementById("header"), where, M.route.current().path, { signedIn: false, brand: brandTitle(false), tools: themeMenu(), live: () => seq === renderSeq })) return;
+          // The hub's own page in <main> stands when its data could not be read.
+          if (seq === renderSeq && !hubPage) renderLogin(main);
+          return;
+        }
         throw err;
       }
       // A new session after a sign-out or an ended one: what the old one still gets back (a late
@@ -1748,6 +1846,8 @@ window.Maity = window.Maity || {};
       if (sessionEnded) { sessionEnded = false; M.sessionEpoch = (M.sessionEpoch || 0) + 1; }
       // A session that owes the second factor reaches nothing else (§2.8.2): its step.
       if (session && session.second_factor === "required" && M.secondFactor) { renderStep(main, session); return; }
+      // So does one that must set the factor up first (§2.8.5): the setup is its page.
+      if (session && session.second_factor === "enrolment_required" && M.security) { if (seq === renderSeq) renderEnrolment(main); return; }
       // The link opened where the sign-in is already complete: nothing to post here.
       if (M.secondFactor && M.secondFactor.isMailLink()) { renderStepElsewhere(main, true); return; }
       // The step's own address (where a sign-in link's 303 lands) with the sign-in complete: the start.
@@ -1768,6 +1868,17 @@ window.Maity = window.Maity || {};
         M.route.go(next || (me.projects.length === 1 ? projectLink(me.projects[0].full_name, "inbox") : "/all"), { replace: true });
         return;
       }
+      // Someone else's project may have a public page (§16.9): the reader sees it, read-only,
+      // under their own header. Asked first: a stranger's address touches no member route.
+      if (where.scope === "project" && !me.projects.some((p) => p.full_name === where.slug) && M.visitor) {
+        const head = async () => {
+          const own = await loadContext({ scope: "all" }, me);
+          own.projectViews = await projectViews(me);
+          if (seq === renderSeq) renderHeader(own, null);
+        };
+        if (await M.visitor.page(main, null, where, M.route.current().path, { signedIn: true, head, live: () => seq === renderSeq })) return;
+        if (seq !== renderSeq) return;
+      }
       // An earlier address of a project (a rename, a transfer) leads to its current one.
       const moved = await movedTo(where, me);
       if (seq !== renderSeq) return;
@@ -1778,6 +1889,7 @@ window.Maity = window.Maity || {};
         M.notify.read().catch((err) => { notifyError = err; })]);
       ctx = loaded;
       ctx.projectViews = views;
+      ctx.followRoute = (fn) => { if (seq === renderSeq) followingRoute = fn; };
       if (seq !== renderSeq) return;
     } catch (err) {
       if (seq !== renderSeq) return;
@@ -1791,10 +1903,10 @@ window.Maity = window.Maity || {};
     const item = where.scope === "project" ? NAV.find((n) => n.route === where.route) : null;
     renderHeader(ctx, (item && item.current) || where.route);
     const empty = where.scope === "all" && !ctx.projects.length;
-    const known = ["all", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person"].includes(where.scope)
+    const known = ["all", "all-jour-fixe", "all-why", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person"].includes(where.scope)
       || (item && own(M.views, item.view || item.route) && offered(ctx, item));
     let viewName = "unknown";
-    if (["all", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person", "invitations"].includes(where.scope)) viewName = where.scope;
+    if (["all", "all-jour-fixe", "all-why", "new", "account", "orgs", "agents", "runners", "instance-admin", "observe", "notifications", "chats", "person", "invitations"].includes(where.scope)) viewName = where.scope;
     // `section`: a view whose tab stands for another (`current`) keeps its own name here.
     else if (known) viewName = (item && (item.section || item.current)) || where.route;
     const root = h("section", { class: "view view-" + viewName });
@@ -1820,6 +1932,10 @@ window.Maity = window.Maity || {};
         await M.waiting.full(ctx, root);
       } else if (where.scope === "chats") {
         await M.views.chats(ctx, root, where.args || []);
+      } else if (where.scope === "all-jour-fixe") {
+        await M.views.allJourFixe(ctx, root);
+      } else if (where.scope === "all-why") {
+        await M.views.allWhy(ctx, root);
       } else if (where.scope === "observe") {
         await M.views.observe(ctx, root, where);
       } else if (where.scope === "new") {
@@ -1841,7 +1957,7 @@ window.Maity = window.Maity || {};
       } else if (known) {
         await M.views[item.view || item.route](ctx, root, where.args);
       } else {
-        append(root, h("p", null, "No such view. ", h("a", { href: "/all" }, "Go to everything waiting for you.")));
+        append(root, h("p", null, M.tn("view.none_link", { link: h("a", { href: "/all" }, M.t("view.none_go")) })));
       }
     } catch (err) {
       if (seq !== renderSeq) return;
@@ -1851,20 +1967,22 @@ window.Maity = window.Maity || {};
     append(clear(main), root);
     renderBanner(ctx);
     watch(ctx, where, known ? item : null, main);
-    let label = "No such view";
-    if (empty) label = "No projects yet";
-    else if (where.scope === "all") label = "All projects";
-    else if (where.scope === "notifications") label = "Notifications";
-    else if (where.scope === "chats") label = "Chats";
-    else if (where.scope === "new") label = "New project";
-    else if (where.scope === "account") label = "Your account";
-    else if (where.scope === "orgs") label = where.args && where.args[0] ? "@" + M.orgs.handleOf(where.args[0]) + " · Organisations" : "Organisations";
-    else if (where.scope === "runners") label = "Runners";
+    let label = M.t("view.none");
+    if (empty) label = M.t("view.no_projects");
+    else if (where.scope === "all") label = M.t("header.all_projects");
+    else if (where.scope === "notifications") label = M.t("view.notifications");
+    else if (where.scope === "chats") label = M.t("view.chats");
+    else if (where.scope === "all-jour-fixe") label = M.t("all.page.jour_fixe");
+    else if (where.scope === "all-why") label = M.t("all.page.why");
+    else if (where.scope === "new") label = M.t("view.new_project");
+    else if (where.scope === "account") label = M.t("view.account");
+    else if (where.scope === "orgs") label = where.args && where.args[0] ? M.t("view.org", { handle: M.orgs.handleOf(where.args[0]) }) : M.t("view.orgs");
+    else if (where.scope === "runners") label = M.t("view.runners");
     else if (where.scope === "invitations") label = M.t("header.invitations");
-    else if (where.scope === "agents") label = "Your agents";
+    else if (where.scope === "agents") label = M.t("view.agents");
     else if (where.scope === "person") label = "@" + where.handle;
-    else if (where.scope === "instance-admin") label = "Instance administration";
-    else if (where.scope === "observe") label = "Read along · " + where.slug;
+    else if (where.scope === "instance-admin") label = M.t("view.instance_admin");
+    else if (where.scope === "observe") label = M.t("view.read_along", { slug: where.slug });
     else if (known) label = item.label + " · " + ctx.project.name;
     baseTitle = label + " · Maity";
     document.title = M.notify.title(baseTitle);
@@ -1879,7 +1997,7 @@ window.Maity = window.Maity || {};
     svg.setAttribute("class", "maity-loader");
     svg.setAttribute("viewBox", "0 0 64 64");
     svg.setAttribute("role", "img");
-    svg.setAttribute("aria-label", "Loading");
+    svg.setAttribute("aria-label", M.t("page.loading"));
     const seats = [[32, 10], [51, 21], [51, 43], [32, 54], [13, 43], [13, 21]];
     seats.forEach(([cx, cy]) => {
       const c = document.createElementNS(SVG, "circle");
@@ -1893,7 +2011,7 @@ window.Maity = window.Maity || {};
       r.setAttribute("width", "12"); r.setAttribute("height", "12"); r.setAttribute("rx", "3");
       svg.appendChild(r);
     });
-    return h("p", { class: "page-loading", role: "status" }, svg, " Loading Maity…");
+    return h("p", { class: "page-loading", role: "status" }, svg, " ", M.t("page.loading_maity"));
   }
 
   // A page that could not load, in plain words for the person (the
@@ -1903,33 +2021,37 @@ window.Maity = window.Maity || {};
   function pageFailed(err) {
     const fixtures = M.api.source === "fixtures";
     const unreachable = !err.status;
-    const title = fixtures ? "The sample data didn't load"
-      : unreachable ? "Maity can't reach its hub" : "Maity couldn't load this page";
-    const advice = fixtures ? "Reload the page. If it keeps happening, the fixtures are missing from this copy."
-      : unreachable ? "Check your connection, then try again. If it keeps happening, the hub may be down."
-        : "Try again. If it keeps happening, the hub may have a problem; the details say which.";
-    const again = h("button", { type: "button", class: "primary", onclick: () => { append(clear(document.getElementById("main")), loading()); render(); } }, "Try again");
+    const title = fixtures ? M.t("page.failed.fixtures")
+      : unreachable ? M.t("page.failed.unreachable") : M.t("page.failed.other");
+    const advice = fixtures ? M.t("page.failed.fixtures_advice")
+      : unreachable ? M.t("page.failed.unreachable_advice")
+        : M.t("page.failed.other_advice");
+    const again = h("button", { type: "button", class: "primary", onclick: () => { append(clear(document.getElementById("main")), loading()); render(); } }, M.t("page.failed.again"));
     const signIn = err.status === 401
-      ? h("button", { type: "button", onclick: () => { M.route.go("/login"); } }, "Sign in again") : null;
+      ? h("button", { type: "button", onclick: () => { M.route.go("/login"); } }, M.t("page.failed.sign_in")) : null;
     const mark = (file, theme) => h("img", { class: "page-failed-mark brand-mark " + theme, src: "brand/" + file, alt: "", width: "40", height: "40" });
+    const technical = (text) => h("span", { translate: "no" }, text);
     return h("div", { class: "page-failed", role: "alert" },
       mark("maity-mark-small.svg", "brand-light"), mark("maity-mark-small-dark.svg", "brand-dark"),
       h("h2", { class: "page-failed-title" }, title),
       h("p", { class: "muted" }, advice),
-      h("details", null, h("summary", null, "Details"), h("p", { class: "page-failed-reason" },
-        [err.status ? "HTTP " + err.status + (err.code ? " " + err.code : "") : "No answer", err.message, err.path || null].filter(Boolean).join(" · "))),
+      // What the browser or the hub said stays as it is; the catalog's sentence is translated.
+      h("details", null, h("summary", null, M.t("page.failed.details")), h("p", { class: "page-failed-reason" },
+        [err.status ? technical("HTTP " + err.status + (err.code ? " " + err.code : "")) : M.t("page.failed.no_answer"),
+          err.message ? technical(err.message) : null, err.path ? technical(err.path) : null]
+          .filter(Boolean).flatMap((part, i) => (i ? [" · ", part] : [part])))),
       h("div", { class: "page-failed-actions" }, signIn, again));
   }
 
+  M.redraw = render;
   M.errorBox = errorBox;
   M.withMembers = withMembers;
   M.logout = logout;
   M.brandTitle = brandTitle;
   M.statusLine = statusLine;
-  M.STATE_LABELS = STATE_LABELS;
 
   // Back, forward, a link of the dashboard, M.route.go: the view follows.
-  M.route.listen(render);
+  M.route.listen(() => { if (!followingRoute || !followingRoute(parseRoute())) render(); });
   window.addEventListener("resize", () => {
     document.getElementById("header").querySelectorAll("nav").forEach(updateCue);
   });

@@ -40,8 +40,18 @@ def refusal(row: Any) -> ApiError:
     )
 
 
-def release_claims(conn: Connection, membership_id: int) -> None:
-    """Every open card the member holds goes back to the board (§6.5)."""
+def release_claims(conn: Connection, membership_id: int) -> list[str]:
+    """Every open card the member holds goes back to the board (§6.5). Returns the cards that
+    left `in_progress`, for `tell_released` after the caller's own event."""
+    moved = (
+        conn.execute(
+            select(t.card.c.id).where(
+                t.card.c.claim_holder == membership_id, t.card.c.status == "in_progress"
+            )
+        )
+        .scalars()
+        .all()
+    )
     conn.execute(
         update(t.card)
         .where(t.card.c.claim_holder == membership_id, t.card.c.status.notin_(CLOSED))
@@ -55,6 +65,20 @@ def release_claims(conn: Connection, membership_id: int) -> None:
             updated_at=clock.now(),
         )
     )
+    return list(moved)
+
+
+def tell_released(conn: Connection, moved: list[str], actor: Actor | None) -> None:
+    """The status change of cards `release_claims` gave back, for their watchers (§6.4)."""
+    if not moved:
+        return
+    from maity_hub.routes.tasks import status_moved  # tasks reads availability, and this
+
+    for card in conn.execute(select(t.card).where(t.card.c.id.in_(moved))).all():
+        state = conn.execute(
+            select(t.project.c.state).where(t.project.c.id == card.project_id)
+        ).scalar_one()
+        status_moved(conn, card, state, actor)
 
 
 def _announce(conn: Connection, project: Any, target: Any, actor: Actor) -> None:
@@ -113,10 +137,11 @@ def isolate(
             isolated_from_seq=_head(conn, project.id) + 1,
         )
     )
-    release_claims(conn, target.id)
+    released = release_claims(conn, target.id)
     group_chats.membership_removed(conn, target, actor, human_id, REASON)
     placements.membership_isolated(conn, target.id, actor, human_id)
     _announce(conn, project, target, actor)
+    tell_released(conn, released, actor)
     _tell_owner(
         conn,
         project,

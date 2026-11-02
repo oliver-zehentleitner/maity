@@ -97,11 +97,11 @@ def parse(raw: Any) -> list[dict[str, Any]]:
 
 def uses(conn: Connection, project: Any, name: str) -> list[str]:
     """What still names the project role `name` (§2.3 `role_in_use`): a membership, an
-    open join or invitation, an open request's `to`, a placement that has not made its
-    membership yet, the onboarding's `check_in_with`, an entry in a `substitutes` list,
-    live role memory, or the outside-agent policy. A card's `needs` is not in the hub yet;
-    its pull request adds it here."""
+    open join or invitation, an open card's `needs`, an open request's `to`, a placement
+    that has not made its membership yet, the onboarding's `check_in_with`, an entry in a
+    `substitutes` list, live role memory, or the outside-agent policy."""
     from maity_hub import clock
+    from maity_hub.cards import CLOSED
 
     found: list[str] = []
     now = clock.now()
@@ -135,6 +135,14 @@ def uses(conn: Connection, project: Any, name: str) -> list[str]:
         )
     ).first():
         found.append("invitation")
+    if conn.execute(
+        select(t.card.c.id).where(
+            t.card.c.project_id == project.id,
+            t.card.c.needs == name,
+            t.card.c.status.not_in(CLOSED),
+        )
+    ).first():
+        found.append("card")
     if conn.execute(
         select(t.request.c.id).where(
             t.request.c.project_id == project.id,

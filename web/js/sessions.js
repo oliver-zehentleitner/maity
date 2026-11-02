@@ -1,6 +1,7 @@
 // Sessions (docs/api.md §2.6.5, §2.6.7; /account/sessions): where the
 // human is signed in, with "This was me" for a sign-in alert, End per
-// session and End all other sessions, the ended ones of the last 30 days,
+// session and End all other sessions, which passed the second factor (§2.8.7),
+// the ended ones of the last 30 days,
 // and a held address change (§2.6.3) to approve or reject. What this
 // session may do follows the hub's rules, said before it is tried: one not
 // in good standing ends no session in good standing, and while under an
@@ -15,6 +16,7 @@ window.Maity = window.Maity || {};
   const { h, append, clear, formatTime, formatAgo } = M.dom;
 
   const HOUR = 3600 * 1000;
+  const OK_BADGE = "badge ok";
   // How a session signed in, and how it ended, in words from the catalog when drawn.
   const METHOD_WORDS = {
     password: () => M.t("sessions.method.password"), device_code: () => M.t("sessions.method.device_code"),
@@ -24,6 +26,7 @@ window.Maity = window.Maity || {};
     logout: (o) => M.t("sessions.ended.logout", o), revoked: (o) => M.t("sessions.ended.revoked", o),
     end_others: (o) => M.t("sessions.ended.end_others", o), expired: (o) => M.t("sessions.ended.expired", o),
     password_change: (o) => M.t("sessions.ended.password_change", o),
+    second_factor_reset: (o) => M.t("sessions.ended.second_factor_reset", o),
   };
   const methodOf = (s) => (Object.hasOwn(METHOD_WORDS, s.method) ? METHOD_WORDS[s.method]() : s.method);
   // A session's line: how and when it signed in, last seen, and who approved it, as one sentence.
@@ -169,7 +172,8 @@ window.Maity = window.Maity || {};
         return h("li", { class: "session" + (s.current ? " current" : ""), "data-session": s.id },
           h("div", { class: "session-head" },
             h("strong", null, device(s)), s.current ? h("span", { class: "badge" }, M.t("sessions.this_browser")) : null,
-            h("span", { class: s.good_standing ? "badge ok" : "badge warn" }, s.good_standing ? M.t("sessions.confirmed_badge") : M.t("sessions.unconfirmed_badge"))),
+            h("span", { class: s.good_standing ? OK_BADGE : "badge warn" }, s.good_standing ? M.t("sessions.confirmed_badge") : M.t("sessions.unconfirmed_badge")),
+            s.second_factor ? h("span", { class: OK_BADGE }, M.t("sessions.second_factor_badge")) : null),
           h("p", { class: "muted" }, lineOf(s, sessions)),
           alert ? h("p", { class: "flag" }, M.t("sessions.alert_open")) : null,
           s.current ? null : h("div", { class: "actions" },

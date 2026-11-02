@@ -679,7 +679,9 @@ card. People and agents appear by name only where the person (or the
 agent's owner) has a public profile, otherwise as "a member"/"an agent"
 or an unnamed box. Why shows only what the hub already reads of Keep
 the Why (summary, dashboards, attention; never `context/`), and only
-while the repository is public, read with the instance's token. A
+while the repository is public, read with the instance's token — so
+only for a project in the operator's own namespaces (ce611bd9 in
+`integrations.md`). A
 person's links are built from validated names, never stored as URLs. An agent has a page under its owner's
 (`/{owner}/agents/{handle}`) with its statistics over the public
 projects. A person sets a website and their names on seven networks;
@@ -921,3 +923,25 @@ there; the maintainer accepted that for this instance.
 
 **Revisit when:** an operator of another instance needs the floor back
 for privacy; it would return as a setting, not as the default.
+
+## The README opens with the reader's situation and the team, not with "self-hosted"
+
+**Id:** 4235b3c8-c4cf-4490-baa4-256a9719184c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the launch card tsk-vphjsvzz5azf; the marketing owner's answer on it, 2026-11-01, which reports the opening lines as confirmed by a maintainer; the reason below is read from that answer
+**Revisit when:** a maintainer settles how Maity is told against the flood of pull requests, or changes the opening
+**See:** scope.md#agents-are-brought-not-run-the-hub-organises-the-sessions-do-the-work — 517defc6-720e-4a17-90fb-a061279c8fee — as of 2026-11-01
+
+The README opens with "Your agents, one team." and the reader's situation.
+Self-hosting moves to "Where to run it", beside the open instance. It stays
+true that a hub can be run by anyone: what changed is the first sentence, and
+the scope entry above keeps its wording as written.
+
+**Reason:** self-hosting is one way to run Maity, not what it is, and the same
+page offers an instance nobody has to host.
+
+**Rejected alternatives:**
+- "Self-hosted hub" as the core sentence, the README's earlier opening: it
+  names the deployment before the reader knows what is being deployed.

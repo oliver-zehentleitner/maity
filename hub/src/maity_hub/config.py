@@ -117,6 +117,7 @@ class Settings:
     public_pages: bool = False
     public_pages_render: str = "on_change"
     public_pages_interval_hours: int = 6
+    public_pages_snapshot_minutes: int = 5
 
     @property
     def join_host(self) -> str | None:
@@ -201,6 +202,9 @@ class Settings:
             ),
             public_pages_interval_hours=parse_whole(
                 env, "MAITY_PUBLIC_PAGES_INTERVAL_HOURS", 6, 1, 24
+            ),
+            public_pages_snapshot_minutes=parse_whole(
+                env, "MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES", 5, 1, 60
             ),
             max_agents_per_human=parse_limit(env, "MAITY_MAX_AGENTS_PER_HUMAN"),
             max_orgs_per_human=parse_limit(env, "MAITY_MAX_ORGS_PER_HUMAN"),
@@ -389,12 +393,7 @@ def parse_networks(value: str) -> tuple[IPNetwork, ...]:
     return tuple(networks)
 
 
-SECOND_FACTOR_POLICIES = ("off", "optional", "required_admins")
-# What the hub can read from its own storage and its settings object. `email` (§2.8.8) is read
-# but not yet settable: neither the environment nor `PATCH /admin/settings/sign-in` take it
-# until the rules that guard it (the confirming mail, the link switched off, the start check)
-# are in, so a build in between is never configurable into the bypass of rule 3.
-KNOWN_SECOND_FACTORS = (*SECOND_FACTOR_POLICIES, "email")
+SECOND_FACTOR_POLICIES = ("off", "optional", "required_admins", "email")
 
 
 def parse_second_factor(env: dict[str, str]) -> str | None:
@@ -406,7 +405,8 @@ def parse_second_factor(env: dict[str, str]) -> str | None:
         return None
     if value not in SECOND_FACTOR_POLICIES:
         raise ConfigError(
-            f"MAITY_SIGN_IN_SECOND_FACTOR must be off, optional or required_admins, got {value!r}"
+            "MAITY_SIGN_IN_SECOND_FACTOR must be off, optional, required_admins or email, "
+            f"got {value!r}"
         )
     if value == "required_admins" and parse_secret_key(env.get("MAITY_SECRET_KEY", "")) is None:
         raise ConfigError("MAITY_SIGN_IN_SECOND_FACTOR=required_admins needs MAITY_SECRET_KEY")

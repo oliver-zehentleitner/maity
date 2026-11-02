@@ -96,7 +96,10 @@ configured one (`<name>_gw0`, …), created through
 user). Inside it a test that needs the schema (`migrated`, `client`) finds it
 at head from the test before and only has its rows deleted (`TRUNCATE`); a
 test that needs no schema gets it downgraded, and the session leaves the
-database empty. The
+database empty. Every such downgrade deletes the rows first: the test before
+leaves its rows at head, some of them a migration refuses to downgrade (a
+project an organisation owns, 0089), and which test ran before is up to the
+workers. The
 hub-wheel job runs only the tests marked `wheel` (package data, the entry
 point, the migrations the wheel carries); the whole suite already runs in
 hub-sqlite.

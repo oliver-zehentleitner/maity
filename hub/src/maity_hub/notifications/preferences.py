@@ -25,7 +25,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 from sqlalchemy import Connection, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock
+from maity_hub import clock, languages
 from maity_hub import tables as t
 from maity_hub.auth import passwords, sessions
 from maity_hub.errors import ApiError, invalid, rate_limited
@@ -34,7 +34,9 @@ from maity_hub.mail import outbox
 from maity_hub.notifications import records, tokens
 
 KINDS = ("inbox", "chat", "mention", "security")
-MODES = ("immediate", "hourly", "daily", "off")
+MODES = ("immediate", "hourly", "daily", "weekly", "off")
+DIGESTS = ("hourly", "daily", "weekly")
+WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 CONTENT_KINDS = ("chat", "mention")
 VERIFY_FOR = timedelta(hours=24)
 APPROVER_AGE = timedelta(hours=24)
@@ -54,19 +56,22 @@ DEFAULTS: dict[str, Any] = {
     "browser": {
         "enabled": False,
         "kinds": {"inbox": True, "chat": True, "mention": True, "security": True},
-        "content": {"chat": False, "mention": False},
     },
     "email": {
         "language": "en",
         "timezone": "UTC",
         "kinds": {
             "inbox": {"mode": "immediate"},
-            "chat": {"mode": "hourly", "content": False},
-            "mention": {"mode": "immediate", "content": False},
+            # A digest by default against filled mailboxes; the inbox and security at once
+            # (context/notifications.md da12f2b5). Only what the human set is stored, so a
+            # kind nobody chose follows these as they are now.
+            "chat": {"mode": "daily", "content": False},
+            "mention": {"mode": "daily", "content": False},
             "security": {"mode": "immediate"},
         },
         "sign_in_link": True,
         "daily_at": "08:00",
+        "weekly_on": "mon",
         "quiet_hours": None,
     },
     # How the human hears of their agent instances that are not listening (§5.3, §18.4);
@@ -86,7 +91,6 @@ def _merged(stored: dict[str, Any] | None) -> dict[str, Any]:
             "kinds": {k: dict(v) for k, v in DEFAULTS["email"]["kinds"].items()},
         },
     }
-    result["browser"]["content"] = dict(DEFAULTS["browser"]["content"])
     result["not_listening"] = {
         **DEFAULTS["not_listening"],
         **{
@@ -106,10 +110,8 @@ def _merged(stored: dict[str, Any] | None) -> dict[str, Any]:
                         result[side]["kinds"][kind].update(setting)
                     else:
                         result[side]["kinds"][kind] = setting
-            elif key == "content" and isinstance(value, dict):
-                result[side]["content"].update(
-                    {k: v for k, v in value.items() if k in CONTENT_KINDS}
-                )
+            elif side == "browser" and key not in DEFAULTS["browser"]:
+                continue  # a key this hub does not know is not read, not an error
             else:
                 result[side][key] = value
     return result
@@ -155,6 +157,26 @@ _NONE = SimpleNamespace(
 
 def preferences(conn: Connection, human_id: str) -> dict[str, Any]:
     return _merged(row_of(conn, human_id).preferences)
+
+
+def text_language(conn: Connection, human_id: str) -> str:
+    """The language of what the hub itself composes for this human (§6.2)."""
+    chosen = conn.execute(
+        select(t.human.c.interface_language).where(t.human.c.id == human_id)
+    ).scalar_one_or_none()
+    return languages.of_interface(chosen, preferences(conn, human_id)["email"]["language"])
+
+
+def set_language(conn: Connection, human_id: str, language: str) -> None:
+    """What agents write in, chosen at registration (§2.7.1): no account has projects yet, so
+    this tells nobody."""
+    stored = dict(row_of(conn, human_id, lock=True).preferences or {})
+    stored["email"] = {**(stored.get("email") or {}), "language": language}
+    conn.execute(
+        update(t.notification_settings)
+        .where(t.notification_settings.c.human_id == human_id)
+        .values(preferences=stored, updated_at=clock.now())
+    )
 
 
 def view(conn: Connection, human_id: str, mail_available: bool) -> dict[str, Any]:
@@ -217,11 +239,6 @@ def _check_browser(given: Any, errors: dict[str, str]) -> dict[str, Any]:
                     for kind, setting in value.items():
                         if not isinstance(setting, bool):
                             errors[f"browser.kinds.{kind}"] = "invalid"
-        elif key == "content" and isinstance(value, dict) and set(value) <= set(CONTENT_KINDS):
-            if all(isinstance(v, bool) for v in value.values()):
-                out[key] = value
-            else:
-                errors["browser.content"] = "invalid"
         else:
             errors[f"browser.{key}"] = "invalid"
     return out
@@ -242,7 +259,7 @@ def _check_email(given: Any, errors: dict[str, str]) -> dict[str, Any]:
             else:
                 out[key] = value
         elif key == "language":
-            if value in ("en", "de"):
+            if languages.known(value):
                 out[key] = value
             else:
                 errors[name] = "invalid"
@@ -257,6 +274,11 @@ def _check_email(given: Any, errors: dict[str, str]) -> dict[str, Any]:
                 out[key] = kinds
         elif key == "daily_at":
             if isinstance(value, str) and _HHMM.fullmatch(value):
+                out[key] = value
+            else:
+                errors[name] = "invalid"
+        elif key == "weekly_on":
+            if value in WEEKDAYS:
                 out[key] = value
             else:
                 errors[name] = "invalid"
@@ -292,10 +314,8 @@ def _check_modes(value: Any, errors: dict[str, str]) -> dict[str, Any] | None:
             return None
         # A missing `mode` is a partial change; one that is present must be a mode, `null`
         # included (§18.4).
-        if "mode" in setting and setting["mode"] not in (
-            ("immediate", "off") if kind == "security" else MODES
-        ):
-            errors[f"email.kinds.{kind}"] = "invalid"  # a delayed alert is no alert (§18.4)
+        if "mode" in setting and setting["mode"] not in MODES:
+            errors[f"email.kinds.{kind}"] = "invalid"  # every kind takes every mode (§18.4)
             return None
         if "content" in setting and (
             kind not in CONTENT_KINDS or not isinstance(setting["content"], bool)
@@ -347,6 +367,7 @@ def patch(
     wrong_password: Any,
     password_blocked: Any,
     step_up: Callable[[], None],
+    keeps_factor: Callable[[], None],
 ) -> int:
     """Apply a `PATCH`; returns 200, or 202 when an address change is held for approval.
     `wrong_password` counts a mismatched `current_password` against the login limits,
@@ -382,6 +403,7 @@ def patch(
             wrong_password=wrong_password,
             password_blocked=password_blocked,
             step_up=step_up,
+            keeps_factor=keeps_factor,
         )
         row = row_of(conn, human.id, lock=True)
     stored = dict(row.preferences or {})
@@ -389,7 +411,7 @@ def patch(
         if given:
             merged = dict(stored.get(side) or {})
             for key, value in given.items():
-                if key in ("kinds", "content") and isinstance(value, dict):
+                if key == "kinds" and isinstance(value, dict):
                     inner = dict(merged.get(key) or {})
                     for kind, setting in value.items():
                         if isinstance(setting, dict):
@@ -476,6 +498,7 @@ def _change_address(
     wrong_password: Any,
     password_blocked: Any,
     step_up: Callable[[], None],
+    keeps_factor: Callable[[], None],
 ) -> int:
     if wanted is not None and not mail_ready:
         raise ApiError(409, "mail_not_configured", "the instance cannot send mail")
@@ -483,6 +506,8 @@ def _change_address(
     moves = verified and wanted != row.address
     if moves:
         step_up()  # changing or removing the verified address is a sensitive call (§2.8.4)
+        if wanted is None and row.address_status == "verified":
+            keeps_factor()  # under `email` it may be the account's second factor (§2.8.8)
         if human.password_hash is not None:
             if not isinstance(given_password, str) or not given_password:
                 raise invalid({"current_password": "required"})
@@ -739,6 +764,7 @@ def decide_held(
     signing_key: bytes | None,
     public_url: str,
     step_up: Callable[[], None],
+    keeps_factor: Callable[[], None],
 ) -> None:
     """Approve or reject a held address change (§18.4); approving is a sensitive call, so
     `step_up` raises when the session owes the second factor (§2.8.4)."""
@@ -757,6 +783,8 @@ def decide_held(
         )
         return
     step_up()
+    if held["address"] is None and row.address_status == "verified":
+        keeps_factor()  # the policy may have come to `email` since it was held (§2.8.8)
     if clock.now() - session.created_at < APPROVER_AGE:
         raise _session_forbidden("session_too_new")
     apply_address(

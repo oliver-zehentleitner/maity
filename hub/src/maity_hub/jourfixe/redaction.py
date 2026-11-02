@@ -159,7 +159,7 @@ def _redact_card(
             rewritten.add(entry.event_seq)
     for seq in sorted(rewritten):
         _announce(conn, seq, redaction, actor)
-    for event in _events_of(conn, ("task", card.id), ("mentioned", "note_added")):
+    for event in _events_of(conn, ("task", card.id), ("mentioned", "note_added", "note_edited")):
         task = (event.payload or {}).get("task") or {}
         if not event.redacted and task.get("title") == title:
             payload = {**event.payload, "task": {**task, "title": tombstone}}
@@ -275,7 +275,8 @@ def statement_redacted(
 def _answer_readers(conn: Connection, round_row: Any, row: Any) -> list[str]:
     """§20.3's readers by `member:`: the moderator, the humans of the admin team (no proxy), or
     an owner's series' `circle_owner`, and a named answer's author; never the author of an
-    anonymous one."""
+    anonymous one. The project admin-team selection follows `scopes.in_admin_team`:
+    owner/admin trust, no proxy."""
     owner = circle.owner_of(round_row)
     humans = (
         [owner]

@@ -62,6 +62,10 @@ primitive needed: `pg_notify` delivered on commit, compare-and-set updates, upse
 - **Replicas on every supported database:** MariaDB has no `LISTEN`/`NOTIFY`; the wake-up would
   have to poll, which is the load this design removes.
 
+`tests/test_two_processes.py` starts two real hub processes on one PostgreSQL and checks the
+wake-up, the supersede rule, a shared rate limit, the nonce window and the worker claim across
+them; the unit tests of each piece stand in for the other process.
+
 ## Wake-ups cross pods through NOTIFY sent in the writing transaction, one LISTEN connection per pod
 
 **Id:** 387c2409-1c68-4bf8-a9a0-8a56a4002545
@@ -338,9 +342,9 @@ is the standard trade-off and errs by at most the previous window's share.
 
 **Id:** 24489a9c-6035-41d0-9236-9eb0e04fc902
 **Type:** decision
-**Status:** open
+**Status:** active
 **Evidence:** inferred
-**Source:** the fifteen `Worker` classes started in `app.py` (attachments, availability, commitment, images, jour fixe, mail outbox, notification mailer, not-listening and its digest, organisation invitations, probe, registrations, reports, request stats, takeovers) and how each picks its rows; `not_listening_digest.reconcile` (reads `latest()` before the human's lock); `jourfixe` `record_presence` (insert into `presence_minute` without a lock); `probe.Worker` (forge calls every 120 s and 300 s)
+**Source:** the sixteen `Worker` classes started in `app.py` (attachments, availability, commitment, images, jour fixe, mail outbox, notification mailer, not-listening and its digest, organisation invitations, probe, registrations, public pages, the public snapshot, reports, takeovers) and how each picks its rows; `not_listening_digest.reconcile` (reads `latest()` before the human's lock); `jourfixe` `record_presence` (insert into `presence_minute` without a lock); `probe.Worker` (forge calls every 120 s and 300 s)
 **Revisit when:** one worker's pass takes longer than its interval on the one pod that holds it, so that it has to be split across pods
 
 Every worker keeps running in every pod, so any pod can take over at once, but a pass starts only
@@ -386,15 +390,29 @@ of any connection and of any pod, and it carries the "last ran" time that the in
   that connection drops while the pass goes on through the pool, needs a direct connection past
   PgBouncer, and still lacks the "last ran" time.
 
+Built (`worker_runs.claim`): the claim is an `UPDATE`, then an `INSERT … ON CONFLICT DO NOTHING` for a
+worker's first pass, on the database's clock. Only PostgreSQL writes the row; on the other
+databases every pass runs, as they run one replica. A finished or failed pass releases its lease,
+since a lease of five minutes would otherwise decide the next pass of a worker with a shorter
+interval. `Claim.is_set` is what a pass asks between two transactions: stopping, or another pod
+has it, and asking renews the lease once a minute. The passes that loop over many transactions
+ask it (probe, images, mail, notification mail, public pages, attachments, digest); the others are
+short, and one that outlives its lease costs a second run, not a wrong result. The hourly digest
+claims with half an hour, not an hour: pods look at the clock at different seconds, and with the
+full hour a pass that began at 10:00:30 would refuse the pod that looks at 11:00:05. On a restart
+within the interval the probe's first sweep is refused like any other. The digest's lock before
+`latest()` was already in place when this was built (`reconcile` takes it); only the presence
+insert changed.
+
 ## The forge budget is shared; forge caches stay per pod
 
 **Id:** 83da2bfa-ee4b-4f35-bfe7-d12d7780f575
 **Type:** decision
-**Status:** open
+**Status:** active
 **Evidence:** inferred
 **Source:** `forge.py:125-126` (`_budgets`: `remaining`, `in_flight`, `until` per token, `LOW` reserve of 5 %), `forge.py:246-250` (`_visible`, `_public`), `github_app.py:182` (`_tokens`), `forge_access.py:62` (`_chosen`), `forge_access.py:258-277` (`_last_via`, `probe_via`, read in `views.py:185` and `releases.py:190`), `forge_links.forget_token`, `ktw.CACHE` and its `forget` at `routes/projects.py:743`, `contract_text`
 **See:** keep-the-why.md — f5af1bd9-bb11-4310-b751-334de2668dfe — as of 2026-10-30
-**Revisit when:** forge reads per hour approach the token's limit with the probe on one pod, or a cache's staleness across pods is seen by a user
+**Revisit when:** forge reads per hour approach the token's limit with the probe on one pod, or a cache's staleness across pods is seen by a user, or the forge answers 403 or 429 while the shared row shows the reserve intact, or the budget's two statements show as pool waits in the load test
 
 The budget per token (`remaining`, the reset time) moves to a small shared row updated from each
 response's headers, so every pod sees what the others spent and the 5 % reserve holds; `in_flight`
@@ -411,6 +429,45 @@ interval (entry 24489a9c), the others never learn it. The source the last choice
 therefore written beside the project's other probe facts when it changes (one small column or
 row per project, written only on a change), and views read it from there.
 
+Built so far: the budget (`shared_budget`, table `forge_budget`). Each answer merges into the row by
+the rules a process already had (the lowest `remaining` within a window, a later reset replaces
+it, the later hold counts), and each read and `retry_at` merge the row into what the process
+knows. A database that does not answer costs the sharing, never a forge read: the budget guards
+the forge, and a read refused because the database is down would turn one outage into two.
+
+Two limits of that. `in_flight` stays with the process, so the reserve can be overrun by the reads
+the other pods have under way before their answers reach the row; with GitHub's 5000 an hour and a
+reserve of 250 that takes more parallel reads than a hub has. And each forge read costs one read of
+the row before and one upsert after, each on a second connection, often from a request that holds
+one already: with a full pool a forge read waits up to `pool_timeout`, then goes on unshared, the
+same pattern as the shared limits (entry on limits above).
+
+The notice on `maity_forget` (`wakeups.forget_token_everywhere`, `forget_repository_everywhere`)
+carries only ids, in the writing transaction. This process forgets at once, as before, not at
+commit: a token being removed is not read with again from here on, even if the removal rolls back,
+which costs one more mint. A listener whose connection dropped forgets every token and every Keep
+the Why read when it is back: a lost notice could otherwise leave a removed token in use for up to
+an hour, and asking the forge again costs a read.
+
+A dropped connection forgets at once as well, since no notice arrives until it is back, and that
+includes a first attempt that fails. A first connection that succeeds does not forget: nothing was
+cached yet beyond the moments of its start, and clearing there would empty what a starting process
+has just read. A link not `active` never
+trusts a token held from before: only a mint that succeeds may turn it `active` again, or a replica
+that missed the notice would undo what another one found. `removed` is final in `set_status`: a
+listing that minted before the removal overwrites it neither with `active` nor with `suspended`,
+which would also write the account's record in the wrong order. Listing a link mints like any other
+read, so a mint that succeeds there turns it `active` as well; otherwise a link nobody reads through
+would stay `suspended` beside its repositories and mint on every listing.
+
+The stored source is a column of `project` (`none` when a choice found none, NULL before any), read
+with the row every view has already, so no list reads it per project. A forge read often runs inside
+a request that holds that project's row, and a second connection waiting for it would wait forever,
+out of the database's sight. So the write takes the row `FOR UPDATE SKIP LOCKED` and leaves it to
+the next choice when it is taken: the value is only shown. That holds for the pod that chose as
+well: `probe_via` reads the column first, so its newer `_last_via` counts only when the next choice
+has written. `_last_via` before the column would let a pod's old memory hide a fresher column.
+
 **Reason:** with the probe and the image refresh on one pod (entry 24489a9c), the remaining
 forge reads come from requests and are bounded by them; sharing every cache would put a database
 read in front of each forge read for little gain. The budget is the one value whose divergence
@@ -419,6 +476,10 @@ causes errors (403 or 429 from the forge for everyone).
 **Rejected alternatives:**
 - **Share the caches too:** fewer forge reads, more database reads, and cache invalidation across
   pods for data that expires in minutes anyway.
+- **The first connection of a process forgets too:** only the start window gains, and it would empty
+  what a starting process has just read.
+- **A held token may turn a link that is not `active` back to `active`:** a replica that missed the
+  notice would undo what another one found.
 
 ## Attachments move to S3-compatible object storage
 
@@ -554,12 +615,61 @@ land on another pod.
 **Type:** decision
 **Status:** open
 **Evidence:** inferred
-**Source:** the card (k6 or locust, target numbers), the maintainer's internal deployment planning (2026-10-30) (a staging address, 1, 2 and 4 pods; the run sets node pool, HPA target, database size and pool size), `hub/tests/test_load.py` (statement-count load tests of the bell), the request signature (HMAC-SHA256 over a canonical string, `auth/credentials.py:101`)
+**Source:** the card (k6 or locust, target numbers), the maintainer's internal deployment planning (2026-10-30) (a staging address, 1, 2 and 4 pods; the run sets node pool, HPA target, database size and pool size), `hub/tests/test_load.py` (statement-count load tests of the bell), the request signature (HMAC-SHA256 over a canonical string, `auth/credentials.py:101`); the maintainer's answers to req-6cw5xwfpyeva (production, throwaway accounts) and req-gjzkcdtbg7t2 (a second confirmation for production), and req-3efa9j1v8ez2 (purge deletes every row), and req-zx1nhgy5r6ab (a second balancer for the run)
 **Revisit when:** the maintainer gives a concurrency or traffic figure that replaces the assumptions below
 
 **Tool: k6.** It holds tens of thousands of concurrent long-polls per load generator cheaply,
 signs requests with `k6/crypto` HMAC-SHA256, and reports percentiles and thresholds that fail
-the run. A seeding script creates projects, humans and agent credentials through the API first.
+the run. A seeding script (`hub/loadtest/seed.py`) creates projects, humans and agent credentials directly
+in the test system's database first: the API's limits on logins and on agents per human are what
+the run measures, and seeding through it would have to lift them. It refuses every database not
+named by host, port and database, SQLite too: a hub may run on SQLite in earnest, and a host called
+`db` says nothing. It takes one plain URL and refuses a query, several hosts and a missing host: the
+driver takes the target from all of them and they win over the part a reader looks at. "Plain" covers the database name too: libpq reads a name containing
+`=` as a connection string, and the URL's path is decoded into it, so it is one plain name. A list of
+those cases was rejected, as reviews kept finding another; so was a list of production names alone,
+as a database host is rarely named after the product.
+
+Changed on 2026-11-02: the maintainer decided that the run goes against production while there is
+no test system, with throwaway accounts there (req-6cw5xwfpyeva), and that the scripts stay closed
+to `maity.team` unless `LOADTEST_CONFIRMED_PRODUCTION` names the host, then only through its
+balancer (req-gjzkcdtbg7t2). The seed became `maity-hub loadtest seed`, in the hub's package: it
+runs where the hub runs, on the hub's own database, since nobody connects to production's database
+from outside, and a checkout's `tests/factory.py` is not in the image. That made the database URL
+rules above moot: the name checked is the host of the hub's own `MAITY_PUBLIC_URL`, never a guessed
+one. Accounts are `lt-<n>`, without a mail address or a password, so that nothing the run does
+sends a mail; they are found by the prefix together with the password marker, not by the prefix
+alone (see the purge paragraph below).
+
+Changed on 2026-11-02, again: `maity-hub loadtest purge` deletes the accounts afterwards, every row
+in every table (req-3efa9j1v8ez2, the maintainer chose this). The account deletion of §2.9 was the
+other option and lost: it revokes every key but keeps the account as a tombstone with its handle
+taken, needs the projects archived first and keeps them with their events, since the hub has no way
+to delete a project. `purge` follows the foreign keys from the humans, projects, agents and
+memberships until nothing new turns up, adds the few tables that name an account without one, and
+is refused when an account shares a project or a row with anyone else. It takes only humans with
+both the name and the seed's password marker: `lt-<n>` is not a reserved handle, and a real person
+who signed up as `lt-7` with a project of their own would otherwise pass every refusal and be
+deleted (found in the review of the purge). Reserving the prefix was the other option; it changes
+the contract's reserved words and was left for its own change, and the marker is needed even then,
+for an account made before the reservation. Its test reads every table
+after a purge for the accounts' ids, keys and handles, so a new table that keeps one fails there.
+
+Changed on 2026-11-02, the third time: production may be reached through more than one name. One
+balancer in front of production carries fewer held connections than the half of the plan, and the
+maintainer added a second one for the run, reached under a name of its own (req-zx1nhgy5r6ab);
+the full plan stays off production. `LOADTEST_CONFIRMED_PRODUCTION` became a list, and `run.js`
+takes exactly one target for each name in it, production never beside another system and no
+target twice. The rule it replaces, one production target, kept k6 off the pods one by one; a
+name cannot tell a balancer from a pod, so the names the operator confirms are what is allowed,
+and a name confirmed but not targeted is refused as well, as a sign the two lists were not set
+together. Connecting to both balancers under the one production name, through k6's `hosts`
+option, was the other way; k6 maps a name to one address, so it would not have spread the load
+(inferred, not tried). The seed reads the same variables as lists too, so that one setting serves
+both, and takes the host as `run.js` does: a trailing dot is refused, since `maity.team.` is
+production and would otherwise have passed as a test system's name (found in the review). Twice
+means the same host and port as reached (`https://a` and `https://a:443`); another port on one
+host stays another target, as a test system's pods may be port-forwards on one machine.
 The 60 000 held connections are spread over several generator pods with their own source
 addresses: one source address has about 64 000 ephemeral ports, and the run must measure the
 hub, not the generator's port exhaustion.
@@ -638,3 +748,21 @@ pods, as the race tests of `hub/tests` already do with two connections.
 safe before them, and each is small enough to review alone.
 
 **Alternatives:** none in contention.
+
+## The newer start decides which wait of a key stays, inside a process too
+
+**Id:** 7c2e91d4-5b0f-4a63-8e17-2f6ad0c4b915
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-yze5b0bvbewn; `test_a_superseded_wait_reads_nothing_and_keeps_the_cursor` failed on `hub-postgresql` once (PR #1018)
+
+`Registry.enter` compares the waits' starts on the database clock, as `wakeups.supersede` does, and an older wait that arrives
+after a newer one ends itself. A wait takes its start in `wakeups.opened` and reaches `enter` only after that, so two requests
+can arrive in the opposite order. When arrival decided in the process and the clock across replicas, each wait ended the other,
+and both answered `superseded` with no items. No event was lost; it cost one more wait. At the same start, or without a clock on
+SQLite, the later arrival still takes over.
+
+**Rejected alternatives:**
+- Entering before the announcement, so that arrival and start share an order: the start comes from the database, and the wait
+  would have to hold a key it has no start for.

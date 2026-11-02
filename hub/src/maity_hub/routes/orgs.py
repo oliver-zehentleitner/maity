@@ -27,6 +27,7 @@ class CreateOrg(BaseModel):
 
 class ChangeOrg(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    handle: str | None = None  # checked by handles.rename: format, taken, aliases
     display_name: str | None = None
     members_create_projects: StrictBool | None = None
     public_page: str | None = None
@@ -118,7 +119,7 @@ def patch_org(request: Request, caller: AnyCaller, org: str, body: ChangeOrg) ->
         locked, role = _locked_actor(conn, row.id, human_id)
         if role != "owner":
             raise orgs.org_role()
-        changed = orgs.change_settings(conn, locked, body.model_dump(exclude_unset=True))
+        changed = orgs.change_settings(conn, locked, body.model_dump(exclude_unset=True), caller)
         return JSONResponse(orgs.view(conn, changed, role))
 
 

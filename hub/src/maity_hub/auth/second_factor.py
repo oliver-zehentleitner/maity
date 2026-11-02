@@ -238,6 +238,9 @@ def session_view(conn: Connection, hub: Settings, row: Any) -> dict[str, Any] | 
         shown["via"] = via(conn, hub, row.human_id)
         if shown["via"] == mail_factor.VIA:
             shown.update(mail_factor.state_of(row))
+            hint = mail_factor.address_hint(conn, row.human_id)
+            if hint is not None:
+                shown["address_hint"] = hint
     return shown
 
 
@@ -447,6 +450,20 @@ def _refuse_off(conn: Connection, hub: Settings) -> None:
 
 def refused(reason: str, message: str) -> ApiError:
     return ApiError(403, "forbidden", message, {"reason": reason})
+
+
+def _totp_is_the_only_way_in(conn: Connection, hub: Settings, human_id: str) -> bool:
+    """Under `email` without a verified address, TOTP off would stop the human at the second step
+    or send them back to enrolment (§2.8.8)."""
+    return policy(conn, hub) == "email" and mail_factor.address_of(conn, human_id) is None
+
+
+def refuse_losing_the_address(conn: Connection, hub: Settings, human_id: str) -> None:
+    """Removing the verified address under `email` would lock out a human without TOTP (§2.8.8)."""
+    if policy(conn, hub) == "email" and via(conn, hub, human_id) == mail_factor.VIA:
+        raise refused(
+            "second_factor_required", "the verified address is this account's second factor"
+        )
 
 
 def _count_wrong(id_hash: str) -> int:
@@ -707,6 +724,8 @@ def disable(conn: Connection, hub: Settings, caller: Caller) -> None:
         admin.is_instance_admin(conn, human_id) or owns_a_project(conn, human_id)
     ):
         raise refused("second_factor_required", "the instance requires your second factor")
+    if _totp_is_the_only_way_in(conn, hub, human_id):
+        raise refused("second_factor_required", "without a verified address it is your only one")
     remove(conn, human_id)
     sessions.end_where(
         conn,
@@ -754,7 +773,8 @@ def view(conn: Connection, hub: Settings, human_id: str) -> dict[str, Any]:
             on
             and policy(conn, hub) == "required_admins"
             and (admin.is_instance_admin(conn, human_id) or owns_a_project(conn, human_id))
-        ),
+        )
+        or (on and _totp_is_the_only_way_in(conn, hub, human_id)),
     }
 
 

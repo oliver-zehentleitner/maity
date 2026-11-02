@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy import Engine, select
 
 from maity_hub import clock, public_pages, render
+from maity_hub import shell as shell_module
 from maity_hub import tables as t
 from maity_hub.config import ConfigError, Settings
 from tests import flow
@@ -33,6 +34,8 @@ def store(engine: Engine, path: str = PATH, body: str | None = None) -> None:
             body=page,
             inputs="x",
             lastmod=clock.now(),
+            view="organisation_page",
+            data={},
         )
 
 
@@ -191,6 +194,13 @@ def test_the_switches_are_read_from_the_environment() -> None:
     defaults = Settings.from_env(base)
     assert (defaults.public_pages, defaults.public_pages_render) == (False, "on_change")
     assert defaults.public_pages_interval_hours == 6
+    assert defaults.public_pages_snapshot_minutes == 5
+    assert (
+        Settings.from_env(
+            {**base, "MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES": "60"}
+        ).public_pages_snapshot_minutes
+        == 60
+    )
     on = Settings.from_env(
         {
             **base,
@@ -210,6 +220,8 @@ def test_the_switches_are_read_from_the_environment() -> None:
         ("MAITY_PUBLIC_PAGES_INTERVAL_HOURS", "0"),
         ("MAITY_PUBLIC_PAGES_INTERVAL_HOURS", "25"),
         ("MAITY_PUBLIC_PAGES_INTERVAL_HOURS", "1.5"),
+        ("MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES", "0"),
+        ("MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES", "61"),
     ):
         with pytest.raises(ConfigError):
             Settings.from_env({**base, name: value})
@@ -225,3 +237,77 @@ def test_the_join_host_never_answers_a_page(make_client: ClientFactory, migrated
     got = client.get(PATH, follow_redirects=False)
     assert got.status_code == 302 and got.headers["location"] == "https://hub.example/"
     assert "OZ Team" not in got.text
+
+
+def test_a_slash_at_the_end_leads_a_visitor_to_the_page(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client = visitor(make_client)
+    store(migrated)
+    got = client.get(f"{PATH}/?as=public", follow_redirects=False)
+    assert (got.status_code, got.headers["location"]) == (308, f"{PATH}?as=public")
+    assert client.get(f"{PATH}/", follow_redirects=True).status_code == 200
+    assert client.get("/nobody/here/", follow_redirects=False).status_code != 308
+
+
+def test_a_page_comes_inside_the_shell_for_a_crawler_and_the_dashboard() -> None:
+    shell = (
+        b'<html><head><title>Maity</title><meta name="description" content="x"></head><body>'
+        b'<script src="js/app.js"></script><main id="main"><p>Loading</p></main></body></html>'
+    )
+    page = render.page_document(
+        lang="en", title="A & B", canonical="https://hub.example/a", content="<h1>Text</h1>"
+    )
+    made = shell_module.page_in_shell(shell, page)
+    assert made is not None
+    assert b"<title>A &amp; B</title>" in made and b"Loading" not in made
+    assert b'<link rel="canonical" href="https://hub.example/a">' in made
+    assert b'<main id="main" data-public-page><h1>Text</h1></main>' in made
+    assert b'src="js/app.js"' in made and b'content="x"' not in made
+    social = shell_module.page_in_shell(
+        b'<html><title>M</title><meta property="og:title" content="Maity">'
+        b'<meta property="og:description" content="Old"><main id="main"></main></html>',
+        page,
+    )
+    assert social is not None
+    assert b'property="og:title" content="A &amp; B"' in social and b'"Maity"' not in social
+    assert b'content="Old"' not in social
+    quoted = render.page_document(
+        lang="en",
+        title='x" onmouseover="y',
+        canonical="https://hub.example/a",
+        content='<h1>a" b</h1>',
+    )
+    escaped = shell_module.page_in_shell(
+        b'<html><title>M</title><meta property="og:title" content="Maity">'
+        b'<meta property="og:description" content="Old"><main id="main"></main></html>',
+        quoted,
+    )
+    assert escaped is not None
+    assert b'property="og:title" content="x&quot; onmouseover=&quot;y"' in escaped
+    assert b'property="og:description" content="a&quot; b"' in escaped
+    assert shell_module.page_in_shell(b"<html></html>", page) is None
+    assert shell_module.page_in_shell(shell, "<html></html>") is None
+
+
+def test_a_visitor_gets_the_shell_with_the_page_and_as_public_the_bare_page(
+    make_client: ClientFactory, migrated: Engine, web_dir: Any
+) -> None:
+    (web_dir / "index.html").write_text(
+        '<html><head><title>Maity</title></head><body><script src="js/app.js"></script>'
+        '<main id="main"><p>Loading</p></main></body></html>'
+    )
+    client = visitor(make_client)
+    store(migrated)
+    got = client.get("/oz-team")
+    assert got.status_code == 200 and "<h1>OZ Team</h1>" in got.text and "js/app.js" in got.text
+    assert (
+        "x-robots-tag" not in got.headers and got.headers["cache-control"] == "public, max-age=60"
+    )
+    assert client.get("/oz-team", headers={"If-None-Match": got.headers["etag"]}).status_code == 304
+    assert got.headers["content-security-policy"] == "default-src 'self'"
+    bare = client.get("/oz-team?as=public")
+    assert (
+        "js/app.js" not in bare.text
+        and "default-src 'none'" in bare.headers["content-security-policy"]
+    )

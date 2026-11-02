@@ -11,21 +11,25 @@ from sqlalchemy import Connection, func, insert, literal, select, update
 
 from maity_hub import (
     API_VERSION,
+    CLI_VERSION,
     __version__,
     availability,
     avatars,
     bridges,
-    briefings,
     clock,
     commitment,
     environment,
     events,
     group_chats,
+    guide,
     handles,
     handover,
     idempotency,
+    instance_counts,
     instances,
     ktw_skill,
+    languages,
+    maintenance,
     memory,
     mentions,
     moderation,
@@ -53,6 +57,7 @@ from maity_hub.models import Strict
 from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.policy import of as policy_of
+from maity_hub.routes import briefing_view
 from maity_hub.routes.conversations import conversation_packet
 from maity_hub.routes.me import human_body
 from maity_hub.routes.members import PausedIn, change_of, load_member, set_paused
@@ -63,6 +68,7 @@ from maity_hub.views import (
     confirmed_by_of,
     event_views,
     git_identity,
+    human_languages,
     isolated,
     meat_proxy_view,
     member_views,
@@ -177,6 +183,7 @@ class MePatch(Strict):
     website: str | None = None
     social: Any = None  # an object, checked with the other fields: `social: "format"`
     links_visible: str | None = None
+    interface_language: str | None = None  # §6.2; null clears it
 
 
 LINKS = ("website", "social", "links_visible")
@@ -189,6 +196,7 @@ HUMAN_FIELDS = (
     "website",
     "social",
     "links_visible",
+    "interface_language",
 )
 
 
@@ -553,7 +561,6 @@ def _packet(
     scopes = listed_scopes(mine.trust, mine.role_base, "agent")
     # Below the rules, never a permission (§19.4); the owner's text once, here or there.
     preferences_block, owner_preferences = preferences.packet(conn, mine, cursor)
-    written = briefings.writers(conn, {mine.row.briefing_by} if mine.row.briefing_by else set())
     return {
         "server_time": clock.rfc3339(clock.now()),
         "api_version": API_VERSION,
@@ -568,9 +575,13 @@ def _packet(
         "session": session,
         # Supervised: the runner starts a run on each event, so no wait to time (§15.11).
         "hints": (
-            {"duty": "supervised"}
+            {"duty": "supervised", "cli_version": CLI_VERSION}
             if body.supervisor is not None
-            else {"duty": "self", "wait_timeout": wait_timeout(session["harness"])}
+            else {
+                "duty": "self",
+                "wait_timeout": wait_timeout(session["harness"]),
+                "cli_version": CLI_VERSION,
+            }
         ),
         "me": {
             "member_id": agent.id,
@@ -586,6 +597,8 @@ def _packet(
                 "id": owner.id,
                 "handle": owner.handle,
                 **meat_proxy_view(owner.meat_proxy_lead, owner.meat_proxy_hands),
+                # Its own human, also where that human is no member of the project (§6.2).
+                "language": human_languages(conn, {owner.id}).get(owner.id, "en"),
             },
             "git_identity": git_identity(agent),
         },
@@ -599,7 +612,8 @@ def _packet(
             # Its own pause, the team's or this instance's, so the agent knows to rest.
             "paused": paused(mine.row) or instances.paused_view(_credential(conn, caller)),
             "isolated": isolated(mine.row),  # why every other call is refused (§6.2)
-            **_briefing(project, mine.row, written),
+            "guide": guide.of(project, mine.trust, mine.role, bridging=bool(bridging_for)),
+            **briefing_view.briefing_block(conn, project, mine.row),
             # The dashboard address of its direct conversation with its owner, on the public
             # URL, never the join host (§5.2, §16.11): how the human gets into Maity.
             "chat_url": "/".join(
@@ -614,6 +628,8 @@ def _packet(
             "owner_preferences": owner_preferences,
             "availability_policy": availability.policy_of(mine.row),  # §6.12
             "covering": own_view["covering"],  # whom it covers (§6.12)
+            # Who stands below it, as the member answers count it (§6.2): what a lead resumes to.
+            "manages": instance_counts.for_member(conn, mine.row),
             "placement": _placement_block(conn, mine.id),
         },
         "team": siblings,
@@ -636,6 +652,8 @@ def _packet(
             "rules_version": project.rules_version,
         },
         "rules": rules_block,
+        # The hub's maintenance window while upcoming or running, for every agent (§16.12).
+        "maintenance": maintenance.view(maintenance.current(conn)),
         "preferences": preferences_block,
         "areas": areas,
         **_setup_block(conn, project),
@@ -649,8 +667,8 @@ def _packet(
             ),
             "instruction": KEEP_THE_WHY_INSTRUCTION if project.keep_the_why else None,
         },
-        "claims": task_views(conn, held, fg),
-        "assigned": task_views(conn, assigned, fg),
+        "claims": task_views(conn, held, fg, mine),
+        "assigned": task_views(conn, assigned, fg, mine),
         "requests": _requests_block(conn, mine, cursor),
         "ticker": ticker.packet(conn, mine, cursor),
         "events": {
@@ -666,19 +684,6 @@ def _packet(
             project, mine.trust, mine.role_base, namespace.full_name(conn, project)
         ),
     }
-
-
-def _briefing(project: Any, membership: Any, written: dict[str, Any]) -> dict[str, Any]:
-    """`membership.briefing` and whose it is (§5.2): the membership's own, with who wrote
-    it and its version (§6.2), else the project default with the setting's author and
-    version, else none."""
-    block = onboarding.briefing(project, membership)
-    if block["briefing_source"] == "membership":
-        block["briefing_by"] = (
-            written.get(membership.briefing_by) if membership.briefing_by else None
-        )
-        block["briefing_version"] = membership.briefing_version
-    return block
 
 
 def _placement_block(conn: Connection, membership_id: int) -> dict[str, Any] | None:
@@ -847,6 +852,7 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             and all(v is None for v in parts.values())
             and not (public or links)
             and body.handle is None
+            and "interface_language" not in given
         ):
             raise invalid({"handle": "required", "meat_proxy": "required"}, "nothing to change")
         if body.meat_proxy is False and any(parts.values()):
@@ -881,6 +887,11 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             if problem is not None:
                 raise invalid({"public_bio": problem})
             values["public_bio"] = body.public_bio or None  # an empty text clears it
+        if "interface_language" in given:
+            chosen = body.interface_language
+            if chosen is not None and chosen not in languages.INTERFACE:
+                raise invalid({"interface_language": "unknown_language"})
+            values["interface_language"] = chosen
         links_given = {"website", "social", "links_visible"} & given
         changed = False
         if links_given:

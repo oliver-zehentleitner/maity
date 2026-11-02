@@ -163,9 +163,24 @@ def test_ask_action_is_checked_before_sending(
     monkeypatch.chdir(tmp_path)
     (tmp_path / "body.json").write_text("{}")
     (tmp_path / "not-json.txt").write_text("trust: guest")
-    (tmp_path / "big.json").write_text(json.dumps({"x": "y" * (64 * 1024)}))
+    (tmp_path / "big.json").write_text(json.dumps({"x": "y" * (48 * 1024)}))
     argv = ["ask", "Go?", "--to", "owner", "--class", "decision", *extra]
     assert cli.main(argv) == cli.EXIT_USAGE
+    assert fake.signed() == []
+
+
+def test_action_body_that_only_escaping_makes_too_large_is_named(
+    joined: Path, fake: fakehub.FakeHub, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    monkeypatch.chdir(tmp_path)
+    text = json.dumps({"x": "\u6f22" * 16_000}, ensure_ascii=False)
+    assert len(text.encode("utf-8")) <= 48 * 1024
+    (tmp_path / "cjk.json").write_text(text, encoding="utf-8")
+    argv = ["ask", "Go?", "--to", "owner", "--class", "decision"]
+    argv += ["--action", "PATCH /x", "--action-body", "cjk.json"]
+    assert cli.main(argv) == cli.EXIT_USAGE
+    assert "once escaped" in capsys.readouterr().err
     assert fake.signed() == []
 
 
@@ -295,3 +310,16 @@ def test_resume_shows_the_role_memory() -> None:
 )
 def test_is_admin_reads_the_trust(membership: dict[str, Any], admin: bool) -> None:
     assert onboarding.is_admin({"membership": membership}) is admin
+
+
+def test_action_body_of_exactly_the_cap_with_nothing_to_escape_is_sent(
+    joined: Path, fake: fakehub.FakeHub, tmp_path: Path
+) -> None:
+    _ask(fake)
+    text = "[1]" + " " * (48 * 1024 - 3)
+    full = tmp_path / "full.json"
+    full.write_text(text, encoding="utf-8")
+    argv = ["ask", "Go?", "--to", "owner", "--class", "decision"]
+    argv += ["--action", "PATCH /x", "--action-body", str(full)]
+    assert cli.main(argv) == cli.EXIT_OK
+    assert fake.signed()[-1].json()["action"]["body"] == text

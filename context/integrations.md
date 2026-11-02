@@ -4,7 +4,7 @@
 
 **Id:** 098ef90f-83b8-4b38-9c21-1e89c086b6db
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's decision on the design synthesis, 2026-10-21
 **Revisit when:** a second forge (GitLab) is needed, or the probe's token handling has to change
@@ -29,7 +29,7 @@ descriptions repeats the incident it is meant to prevent.
 
 **Id:** 4e15dcbb-9bb4-4c14-9193-9aa2b2d3f0f3
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's decision in the project chat, 2026-10-28, on the coordinator's answer about the forge token; contract `docs/api.md` §11.4
 **Revisit when:** a second forge kind comes, organisations become namespace owners (§6.25), or the App's own webhook replaces the per-project one
@@ -78,3 +78,29 @@ instance grows.
   repositories, and `repo` can write.
 - Using any project member's grant: a member could make the hub read a
   repository with someone else's access by naming it in a project.
+
+## The instance token serves only the operator's own namespaces; every other project connects its repository itself
+
+**Id:** ce611bd9-ef89-43e2-8895-2340f87f6c6e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer to req-d8n8j0t2gv9j, 2026-11-02 ("ich will das projekte ihre projekt selber mit github verschränken. unsere key heben wir für usnere projekte auf."); card tsk-frfcjf7q1mja; contract `docs/api.md` §11.4
+**Revisit when:** the operator wants to offer forge reads to other projects again, or a second forge kind comes
+
+The instance token (`MAITY_FORGE_GITHUB_TOKEN`) reads only for projects
+in the namespaces the operator lists (`MAITY_FORGE_INSTANCE_NAMESPACES`),
+and there still only public repositories. Every other project is read
+only through its namespace owner's App installation or own token, after
+the owner confirmed the repository; without one it has no forge access
+at all, not even the visibility check, and the dashboard asks the owner
+to connect. Unset, the token serves no project. This narrows the third
+source of the entry above (4e15dcbb), which stands otherwise.
+
+**Reason:** the maintainer wants projects to connect their repository
+to the forge themselves and keeps the instance's token for the
+operator's own projects.
+
+**Rejected alternatives:**
+- The instance token for every public repository, as since 2026-10-28:
+  what the maintainer turned away from. Other alternatives: unknown.

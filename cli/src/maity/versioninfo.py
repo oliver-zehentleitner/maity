@@ -28,6 +28,25 @@ class Stamp:
     dirty: bool
 
 
+_RELEASE = re.compile(r"(\d+)\.(\d+)\.(\d+)(?:(a|b|rc)(\d+))?\Z")
+_STAGES = {"a": 0, "b": 1, "rc": 2, None: 3}  # a final release comes after its pre-releases
+
+
+def _release_key(version: object) -> tuple[int, ...] | None:
+    found = _RELEASE.match(version) if isinstance(version, str) else None
+    if found is None:
+        return None
+    major, minor, patch, stage, number = found.groups()
+    return (int(major), int(minor), int(patch), _STAGES[stage], int(number or 0))
+
+
+def older(version: str, than: object) -> bool:
+    """Is `version` older than `than`? False for anything that isn't a release number, such as
+    a value from a newer hub this CLI can't read."""
+    mine, other = _release_key(version), _release_key(than)
+    return mine is not None and other is not None and mine < other
+
+
 def read_stamp(path: Path) -> Stamp | None:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))

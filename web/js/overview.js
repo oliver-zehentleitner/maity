@@ -177,7 +177,7 @@ window.Maity = window.Maity || {};
       list.length
         // By trust (§2.3); each chip names its role on hover.
         ? h("div", { class: "overview-roles" }, M.trust.TRUSTS.filter((t) => list.some((m) => m.trust === t)).map((t) =>
-          h("div", { class: "overview-role" }, h("span", { class: "overview-role-name muted" }, t),
+          h("div", { class: "overview-role" }, h("span", { class: "overview-role-name muted" }, M.trust.trustWord(t)),
             h("div", { class: "overview-chips" }, list.filter((m) => m.trust === t).map((m) => M.dom.memberChip(ctx, m))))))
         : h("p", { class: "muted" }, M.t("overview.team.none")));
   }

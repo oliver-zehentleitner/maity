@@ -25,6 +25,7 @@ from maity_hub import (
     foreign_agent,
     group_chats,
     idempotency,
+    instance_counts,
     instances,
     isolation,
     line,
@@ -292,6 +293,10 @@ def list_members(slug: str, request: Request, caller: AnyCaller) -> JSONResponse
             details=lambda r: admin or r.agent_id in owned,
             links=person_links.Reader(mine.row.human_id if mine.kind == "human" else None),
         )
+        by_id = {r.id: v for r, v in zip(rows, views, strict=True)}
+        counted = instance_counts.manages(rows, by_id, by_id)
+        for member_id, view in by_id.items():
+            view["manages"] = counted[member_id]
         views.sort(key=lambda v: (v["kind"] != "human", v["handle"]))
         return JSONResponse({"items": views, "next_cursor": None})
 
@@ -326,15 +331,15 @@ def get_member(slug: str, member_id: str, request: Request, caller: AnyCaller) -
         own = row.id == mine.id
         admin = mine.may("members:admin")
         details = admin or row.agent_id in _owned_agents(conn, mine)
-        return JSONResponse(
-            member_view(
-                conn,
-                row,
-                briefing=own or admin,
-                details=details,
-                links=person_links.Reader(mine.row.human_id if mine.kind == "human" else None),
-            )
+        view = member_view(
+            conn,
+            row,
+            briefing=own or admin,
+            details=details,
+            links=person_links.Reader(mine.row.human_id if mine.kind == "human" else None),
         )
+        view["manages"] = instance_counts.for_member(conn, row)
+        return JSONResponse(view)
 
 
 def _owned_agents(conn: Connection, mine: Any) -> set[str]:
@@ -412,10 +417,9 @@ def apply_patch(
             briefings.record(conn, target.id, changed["briefing"], change.by, clock.now())
         row = conn.execute(select(t.membership).where(t.membership.c.id == target.id)).one()
         view = member_view(conn, row)  # to everyone: never the briefing
-        if "availability_policy" in changed:
-            view["changed"] = sorted(changed)
+        view["changed"] = sorted(changed)  # names only: `wakes` reads it (§8.2)
         if "briefing" in changed:
-            view |= {"changed": sorted(changed), "briefing_version": row.briefing_version}
+            view["briefing_version"] = row.briefing_version
         if {"trust", "role", "areas"} & changed.keys():
             # The member's role brief is part of the rules: a bump (§6.9).
             rules.bump(
@@ -874,12 +878,15 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
     """Remove a membership (§6.2): its credentials revoked on the approver's authority,
     its claims released, every `reports_to` that names it cleared."""
     from maity_hub import onboarding
+    from maity_hub.routes.requests import return_held_by, withdraw_owners_round
 
     onboarding.member_removed(
         conn, change.project.id, target.agent_id or target.human_id, change.actor
     )
     foreign_agent.withdraw_open(conn, target.id, change.actor, "member_removed")
     cross_owner.withdraw_for_member(conn, target.id, change.actor)  # §6.2 "Pending"
+    withdraw_owners_round(conn, target.id, change.actor)  # §20.7
+    return_held_by(conn, target.id, change.by)  # §7
     bridges.end_for_member(conn, target.id, change.actor, "member_removed")  # §2.3
     now = clock.now()
     credentials = (
@@ -895,7 +902,7 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
         revoke(conn, credential_id, "member_removed", by=change.approver)
     placements.membership_removed(conn, target.id, change.actor, change.approver)
     takeovers.membership_removed(conn, target.id, change.actor)
-    isolation.release_claims(conn, target.id)
+    released = isolation.release_claims(conn, target.id)
     conn.execute(
         update(t.membership)
         .where(t.membership.c.id == target.id)
@@ -912,6 +919,7 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
         actor=change.actor,
         subject=("member", view["id"]),
     )
+    isolation.tell_released(conn, released, change.actor)
     # The chain never names a former member: nor does a join still to be used.
     reported = conn.execute(
         select(t.membership.c.id).where(
@@ -937,7 +945,7 @@ def apply_remove(conn: Connection, change: Change, target: Any) -> None:
             change.project.id,
             "member_updated",
             ["all"],
-            report,
+            {**report, "changed": ["reports_to"]},
             actor=change.actor,
             subject=("member", report["id"]),
         )

@@ -198,3 +198,145 @@ def test_a_disconnect_before_the_deadline_still_warns(
     _events_calls(monkeypatch, answer)
     assert cli.main(["wait", "--timeout", "60"]) == cli.EXIT_TIMEOUT
     assert capsys.readouterr().err.count("hub connection lost, retrying until the timeout") == 1
+
+
+@pytest.mark.parametrize(("named", "warned"), [("99.0.0", True), ("0.0.1", False), (None, False)])
+def test_wait_warns_once_when_the_hub_names_a_newer_cli(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    named: str | None,
+    warned: bool,
+) -> None:
+    page = {
+        "items": [{"seq": 5, "kind": "ticker", "payload": {}}],
+        "cursor": 5,
+        "cli_version": named,
+    }
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/events")] = lambda seen: (200, page)
+    assert cli.main(["wait"]) == cli.EXIT_OK
+    err = capsys.readouterr().err
+    assert ("pipx upgrade maity" in err) is warned
+    assert err.count("pipx upgrade maity") == int(warned)
+
+
+def test_wait_escapes_what_can_hide_text_and_keeps_other_languages(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    body = "für 日本語 a\u202eb\u2028c\u0085d\U000e0041e"
+    event = {"seq": 18, "kind": "message", "payload": {"body": body}}
+    answer = {"items": [event], "cursor": 18}
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/events")] = lambda s: (200, answer)
+    assert cli.main(["wait", "--timeout", "60"]) == cli.EXIT_OK
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)[0]["payload"]["body"] == body
+    assert "für 日本語" in captured.out
+    assert not any(c in captured.out for c in "\u202e\u2028\u0085\U000e0041")
+    assert cli.DATA_NOTE in captured.err
+
+
+def test_wait_says_nothing_about_data_without_a_message(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    answer = {"items": [{"seq": 18, "kind": "task_updated"}], "cursor": 18}
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/events")] = lambda s: (200, answer)
+    assert cli.main(["wait", "--timeout", "60"]) == cli.EXIT_OK
+    assert cli.DATA_NOTE not in capsys.readouterr().err
+
+
+WINDOW = {
+    "error": {
+        "code": "maintenance",
+        "message": "the hub is in a maintenance window",
+        "details": {"from": "2026-11-02T13:00:00Z", "until": "2026-11-02T13:30:00Z", "text": "DB"},
+    }
+}
+
+
+def test_wait_sleeps_a_maintenance_window_out_and_reads_on(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    clock: Clock,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("random.random", lambda: 0.25)
+    state.save_state(joined, {**state.load_state(joined), "cursor": 17})
+    calls: list[str] = []
+
+    def response(seen: fakehub.Seen) -> tuple[Any, ...]:
+        calls.append(seen.query)
+        if len(calls) <= 2:
+            return 503, WINDOW, {"Retry-After": "120"}
+        return 200, {"items": [{"seq": 18, "kind": "message"}], "cursor": 18}
+
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/events")] = response
+    assert cli.main(["wait", "--timeout", "600"]) == cli.EXIT_OK
+    captured = capsys.readouterr()
+    assert [e["seq"] for e in json.loads(captured.out)] == [18]
+    assert captured.err.count("Maintenance until 2026-11-02 13:30 UTC: DB") == 1  # once
+    assert clock.sleeps == [120 + 15, 120 + 15]  # Retry-After plus 0.25 × 60
+    assert all("after=17&" in query for query in calls)
+
+
+def test_wait_never_sleeps_a_window_past_its_timeout(
+    joined: Path, fake: fakehub.FakeHub, clock: Clock, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/events")] = lambda seen: (
+        503,
+        WINDOW,
+        {"Retry-After": "1800"},
+    )
+    assert cli.main(["wait", "--timeout", "60"]) == cli.EXIT_TIMEOUT  # never 7
+    assert clock.now <= 60
+    assert "Maintenance until 2026-11-02 13:30 UTC" in capsys.readouterr().err
+
+
+def test_other_commands_exit_7_in_a_window(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("POST", "/api/v1/me/resume")] = lambda seen: (
+        503,
+        WINDOW,
+        {"Retry-After": "1800"},
+    )
+    assert cli.main(["resume"]) == cli.EXIT_MAINTENANCE == 7
+    err = capsys.readouterr().err
+    assert "Maintenance until 2026-11-02 13:30 UTC, try again then" in err
+
+
+def test_an_end_that_is_no_timestamp_is_not_echoed() -> None:
+    error = hub.HubError("x", code="maintenance", status=503)
+    error.details = {"until": "\x1b[2Jsoon"}
+    assert hub.maintenance_until(error) == "its end"
+    assert hub.maintenance_until(hub.HubError("x", code="internal", status=503)) is None
+
+
+def test_wait_for_a_handle_sleeps_a_window_out_while_resolving_it(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    clock: Clock,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`--for <handle>` looks the handle up with a call of its own; a window answering that
+    call is slept out like one answering the poll, never exit 7 (§13)."""
+    from test_bridge_for import SERVED
+
+    monkeypatch.setattr("random.random", lambda: 0.0)
+    lookups: list[str] = []
+
+    def members(seen: fakehub.Seen) -> tuple[Any, ...]:
+        lookups.append(seen.path)
+        if len(lookups) == 1:
+            return 503, WINDOW, {"Retry-After": "120"}
+        return 200, {"items": [*fakehub.MEMBERS, SERVED], "next_cursor": None}
+
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/members")] = members
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/events")] = lambda seen: (
+        200,
+        {"items": [{"seq": 4, "kind": "message"}], "cursor": 4},
+    )
+    assert cli.main(["--for", "designer", "wait", "--timeout", "600"]) == cli.EXIT_OK
+    assert len(lookups) == 2 and clock.sleeps == [120]
+    assert "Maintenance until 2026-11-02 13:30 UTC" in capsys.readouterr().err

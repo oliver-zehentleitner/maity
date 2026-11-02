@@ -396,7 +396,7 @@ def manager_lost(conn: Connection, change: Any, boss: Any) -> None:
             change.project.id,
             "member_updated",
             ["all"],
-            view,
+            {**view, "changed": ["line_consent"]},
             actor=change.actor,
             subject=("member", view["id"]),
         )

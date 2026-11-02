@@ -45,6 +45,22 @@ def settings(project: Any) -> dict[str, Any]:
     }
 
 
+def _forge_quoted(title: str) -> str:
+    """A title from the forge, often no member's text, in quotes it can't end: `"` and `\\`
+    escaped. Who wrote it goes after it without an `@`, as it is no mention."""
+    escaped = title.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def _card_title(card: Any) -> str:
+    """A card's title in a ticker text: an imported one (§6.14) as the forge's, quoted."""
+    origin = card.imported_from
+    if not isinstance(origin, dict):
+        return str(card.title)
+    login = origin.get("author_login")
+    return f"{_forge_quoted(card.title)} ({login}'s issue)" if login else _forge_quoted(card.title)
+
+
 def cut(text: str) -> str:
     """At most 280 code points, a composed text cut with `…` (§17.2)."""
     points = list(text)
@@ -129,6 +145,15 @@ class Entry:
     why: list[str] = field(default_factory=list)
     wake: bool = True
     muted: bool = False
+    holding: set[str] = field(default_factory=set)  # the instances holding its cards
+
+
+def _holding_instances(entry: Entry) -> dict[str, list[str]]:
+    """`instances` when the member is here only for cards it holds: the card's instance is
+    the one to wake (§17.3); any other reason is the member's, and wakes it by its rule."""
+    if entry.holding and all(why.startswith("card_holder:") for why in entry.why):
+        return {"instances": sorted(entry.holding)}
+    return {}
 
 
 class Audience:
@@ -301,6 +326,7 @@ def write(
                 "why": entry.why,
                 "wake": entry.wake and principal != actor_principal,
                 "muted": entry.muted,
+                **_holding_instances(entry),
             }
             for principal, entry in audience.entries.items()
         ],
@@ -343,6 +369,10 @@ def on_request_answered(
         return
     if answer.get("talk") or not (answer.get("reply_id") or answer.get("text")):
         return
+    from maity_hub import inbox
+
+    if inbox.owners_alone(conn, [request]):  # no item of an owner's round (§20.7, §20.9)
+        return
     people = members(conn, project.id)
     readable = [m for m in people if may_read_request(request, m)]
     may = {m.principal for m in readable}
@@ -379,7 +409,7 @@ def on_request_answered(
         may_read=lambda m: m.principal in may,
     )
     text = (
-        f"Decided: {card.id} {card.title} ({request.id})"
+        f"Decided: {card.id} {_card_title(card)} ({request.id})"
         if card is not None
         else f"Decided: {request.id}"
     )
@@ -797,6 +827,8 @@ class Merge:
     paths_truncated: bool
     # contract file → its sections, or None when they could not be told
     contract: dict[str, set[str] | None] = field(default_factory=dict)
+    # Whether the read found the repository public, whichever source read it (§11.4).
+    public: bool = False
 
 
 def write_merge(
@@ -825,6 +857,8 @@ def write_merge(
         assignee = _principal_of(conn, card.assigned_to)
         if holder:
             audience.add(holder, f"card_holder:{card.id}")
+            if card.claim_instance:
+                audience.entries[holder].holding.add(card.claim_instance)
         elif assignee:
             audience.add(assignee, f"card_assignee:{card.id}")
     contract = None
@@ -853,7 +887,9 @@ def write_merge(
         conn, people, audience, "merge", contract is not None, [*merge.paths, *areas]
     )
     touches = ", ".join(areas) or "no area"
-    text = f"#{merge.number} {merge.title} — merged into {merge.base}; touches {touches}"
+    title = _forge_quoted(merge.title)
+    by = f" by {merge.author}" if merge.author else ""
+    text = f"#{merge.number} {title}{by} — merged into {merge.base}; touches {touches}"
     for f in touched:
         secs = merge.contract[f]
         text += (
@@ -884,6 +920,7 @@ def write_merge(
                 "base": merge.base,
                 "merged_at": merge.merged_at,
                 "author": merge.author,
+                "public": merge.public,
             },
             "paths": merge.paths[:50],
             "paths_total": len(merge.paths),

@@ -15,12 +15,12 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, delete, insert, select
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import clock, longpoll, namespace, wakeups
+from maity_hub import card_watches, clock, longpoll, namespace, wakeups
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth.caller import Caller, session_alive
 from maity_hub.deps import AnyCaller, engine_of, reader_of, settings_of, wait_of
-from maity_hub.errors import forbidden, humans_only, invalid, not_found, unauthenticated
+from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found, unauthenticated
 from maity_hub.namespace import ProjectRoute
 from maity_hub.notifications import items, listing, positions
 from maity_hub.notifications.items import KINDS, Item, Scope
@@ -351,10 +351,9 @@ def unwatch(slug: str, task_id: str, request: Request, caller: AnyCaller) -> JSO
 
 
 def _watch(request: Request, caller: Caller, slug: str, task_id: str, *, on: bool) -> JSONResponse:
-    """Idempotent; no event. A watch is the human's own mark on the card, shown as
-    `watching`, and notifies nothing since cards make no notification (§6.4, §18.1)."""
-    if caller.kind == "agent":
-        raise humans_only("watching is for the notifications of humans")
+    """Idempotent; no event. A watch is the member's own, shown as `watching`; it notifies a
+    human of nothing, since cards make no notification (§6.4, §18.1). One that comes with a
+    dependency cannot be ended here."""
     with engine_of(request).begin() as conn:
         mine = membership(conn, caller, slug)
         card = conn.execute(
@@ -362,6 +361,13 @@ def _watch(request: Request, caller: Caller, slug: str, task_id: str, *, on: boo
         ).first()
         if card is None:
             raise not_found()
+        if not on and card.id in card_watches.implied(conn, [card.id], mine.id):
+            raise ApiError(
+                400,
+                "invalid",
+                "the watch comes with a card that depends on this one",
+                {"reason": "implied"},
+            )
         conn.execute(
             delete(t.card_watch).where(
                 t.card_watch.c.card_id == card.id, t.card_watch.c.membership_id == mine.id

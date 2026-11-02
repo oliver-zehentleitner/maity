@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -149,6 +150,63 @@ def test_a_report_after_a_merged_closed_or_the_same_pull_request_goes_through(
     _card(fake, report=before)
     assert _report() == cli.EXIT_OK
     assert _sent(fake)
+
+
+def _gh_view(bin_dir: Path, head: str, state: str | None) -> None:
+    """A gh that lists this checkout's PR #799; `pr view` answers `state`, or fails on None."""
+    if sys.platform == "win32":
+        pytest.skip("Windows starts only an .exe by a bare name, and this gh is a shell script")
+    row = {"number": 799, "headRefOid": head, "state": "OPEN", "url": f"{REPO}/pull/799"}
+    view = f"printf '%s\\n' '{json.dumps({'state': state})}'" if state else "exit 1"
+    script = bin_dir / "gh"
+    script.write_text(
+        f'#!/bin/sh\nif [ "$2" = view ]; then {view}; exit 0; fi\n'
+        f"printf '%s\\n' '{json.dumps([row])}'\n"
+    )
+    script.chmod(0o755)
+
+
+@pytest.mark.parametrize("state", ["CLOSED", "MERGED"])
+def test_a_pull_request_the_hub_still_shows_open_but_the_forge_does_not_is_no_refusal(
+    joined: Path, fake: fakehub.FakeHub, bin_dir: Path, state: str
+) -> None:
+    _gh_view(bin_dir, _head(joined), state)
+    _card(fake, report=_before(780, "open", observed="open"))
+    assert _report() == cli.EXIT_OK
+    assert _sent(fake)
+
+
+def test_a_pull_request_the_forge_confirms_open_is_refused(
+    joined: Path, fake: fakehub.FakeHub, bin_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _gh_view(bin_dir, _head(joined), "OPEN")
+    _card(fake, report=_before(780, "open", observed="open"))
+    assert _report() == cli.EXIT_REFUSED
+    err = capsys.readouterr().err
+    assert "#780, still open; this checkout" in err
+    assert not _sent(fake)
+
+
+def test_a_forge_that_can_not_be_asked_keeps_the_refusal_and_says_so(
+    joined: Path, fake: fakehub.FakeHub, bin_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _gh_view(bin_dir, _head(joined), None)
+    _card(fake, report=_before(780, "open", observed="open"))
+    assert _report() == cli.EXIT_REFUSED
+    assert "gh could not check it" in capsys.readouterr().err
+    assert not _sent(fake)
+
+
+def test_a_url_naming_another_number_is_not_asked_about_the_reported_one(
+    joined: Path, fake: fakehub.FakeHub, bin_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _gh_view(bin_dir, _head(joined), "MERGED")  # what #781 would say, of no use for #780
+    before = _before(780, "open", observed="open")
+    before["pr"]["url"] = f"{REPO}/pull/781"
+    _card(fake, report=before)
+    assert _report() == cli.EXIT_REFUSED
+    assert "#780, still open (the hub's last observation" in capsys.readouterr().err
+    assert not _sent(fake)
 
 
 def test_no_code_reads_no_card(

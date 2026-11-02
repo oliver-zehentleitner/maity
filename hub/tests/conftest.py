@@ -94,12 +94,17 @@ def _leave_the_server_database_empty(_server_database_url: str | None) -> Iterat
     yield
     if _server_database_url:
         engine = make_engine(_server_database_url)
-        if current_revision(engine) is not None:
-            # The rows first: a downgrade refuses what the last test left behind, such as a
-            # project an organisation owns (below 0089).
-            _empty_the_tables(engine)
-        downgrade(engine)
+        _downgrade_emptied(engine)
         engine.dispose()
+
+
+def _downgrade_emptied(engine: Engine) -> None:
+    """Down to no schema on a server database. The rows first: a downgrade refuses what the
+    last test left behind, such as a project an organisation owns (below 0089), and which test
+    ran last on a worker is chance."""
+    if current_revision(engine) is not None:
+        _empty_the_tables(engine)
+    downgrade(engine)
 
 
 def _empty_the_tables(engine: Engine) -> None:
@@ -138,16 +143,18 @@ def engine(database_url: str, request: pytest.FixtureRequest) -> Iterator[Engine
         if current_revision(engine) == head_revision(engine):
             _empty_the_tables(engine)
         else:
-            downgrade(engine)  # a shared server database may hold a previous run's schema
+            _downgrade_emptied(engine)  # a shared server database may hold a previous run's schema
             migrate(engine)
             # The same rows as after any other test: the migration's nonce epoch is now, and a
             # request signed a few seconds back would fall before it (auth.nonces).
             _empty_the_tables(engine)
+    elif on_server:
+        _downgrade_emptied(engine)
     else:
         downgrade(engine)
     yield engine
     if on_server and not keeps_schema:
-        downgrade(engine)
+        _downgrade_emptied(engine)
     engine.dispose()
 
 
@@ -239,6 +246,7 @@ def _fresh_process_state() -> Iterator[None]:
         mentions,
         not_listening,
         public_pages,
+        shared_budget,
         shared_counts,
     )
     from maity_hub.auth import caller
@@ -249,6 +257,7 @@ def _fresh_process_state() -> Iterator[None]:
     # The counts in the database belong to the previous test's app and engine; the tables
     # are emptied between tests anyway, and the next app configures its own.
     shared_counts.configure(None)
+    shared_budget.configure(None)
     listening.stop(every=True)  # a test's apps left on PostgreSQL share nothing with the next
     listening.reset()
     badges.BY_ADDRESS.reset()
@@ -288,6 +297,9 @@ def _fresh_process_state() -> Iterator[None]:
     forge._budgets.clear()
     images.reset()
     ktw.CACHE.clear()
+    from maity_hub import maintenance
+
+    maintenance.forget()  # one test's window must not refuse the next test's requests
     yield
     clock.reset()
     from maity_hub import longpoll

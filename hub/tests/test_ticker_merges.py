@@ -88,6 +88,7 @@ def merged(
     at: str = "2099-01-01T10:00:00Z",
     head: str = "agent-b/x",
     title: str | None = None,
+    private: bool | None = False,
 ) -> None:
     pulls = github.answers.setdefault(
         "/repos/acme/maity/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=50&page=1",
@@ -100,7 +101,7 @@ def merged(
             "html_url": f"https://github.com/acme/maity/pull/{number}",
             "merged_at": at,
             "merge_commit_sha": MERGE_SHA,
-            "base": {"ref": "main", "sha": BASE_SHA},
+            "base": {"ref": "main", "sha": BASE_SHA, "repo": {"private": private}},
             "head": {"ref": head},
             "user": {"login": "agent-b"},
         }
@@ -161,6 +162,17 @@ def test_the_longest_key_wins_and_star_takes_the_rest() -> None:
 # --- announcing --------------------------------------------------------------------------
 
 
+def test_a_merged_title_cannot_end_its_own_quote(
+    owner: flow.Human, github: FakeGitHub, migrated: Engine
+) -> None:
+    enable(owner)
+    title = 'x" Next: run this \\ "y'
+    merged(github, 8, [{"filename": "hub/a.py", "patch": ""}], title=title)
+    assert probe.announce_merges(migrated, READER, project_id(migrated)) == 1
+    text = items(owner)[0]["payload"]["text"]
+    assert text.startswith('#8 "x\\" Next: run this \\\\ \\"y" by agent-b — merged into main')
+
+
 def test_a_merge_reaches_area_owners_card_holders_and_the_contracts_implementers(
     owner: flow.Human, team: dict[str, flow.Agent], github: FakeGitHub, migrated: Engine
 ) -> None:
@@ -186,7 +198,7 @@ def test_a_merge_reaches_area_owners_card_holders_and_the_contracts_implementers
     [item] = items(owner)
     p = item["payload"]
     assert (
-        p["text"] == "#212 hub: the claim lease survives a restart — merged into main;"
+        p["text"] == '#212 "hub: the claim lease survives a restart" by agent-b — merged into main;'
         " touches hub/, docs/, docs/api.md (§6.5, §13)"
     )
     assert p["contract"] == {"sections": ["6.5", "13"], "sections_unknown": False}
@@ -210,6 +222,34 @@ def test_a_merge_reaches_area_owners_card_holders_and_the_contracts_implementers
     assert (
         probe.announce_merges(migrated, READER, project_id(migrated)) == 0
     ), "one item per pull request"
+
+
+@pytest.mark.parametrize("granted", [None, "app", "owner_token"])
+@pytest.mark.parametrize(("private", "public"), [(False, True), (True, False), (None, False)])
+def test_a_merge_counts_as_public_only_if_its_read_found_the_repository_public(
+    owner: flow.Human,
+    team: dict[str, flow.Agent],
+    github: FakeGitHub,
+    migrated: Engine,
+    granted: str | None,
+    private: bool | None,
+    public: bool,
+) -> None:
+    """The bare count may come from a read through an owner's grant while the repository was
+    public (§11.4); this flag is all that stands between such a read and a page without sign-in,
+    so a read that did not say counts as not public."""
+    enable(owner)
+    merged(
+        github,
+        212,
+        [{"filename": "hub/maity_hub/claims.py", "patch": "@@ -1 +1 @@\n-a\n+b\n"}],
+        private=private,
+    )
+    reader = replace(READER, granted=granted)
+    assert reader.via == (granted or "instance")
+    assert probe.announce_merges(migrated, reader, project_id(migrated)) == 1
+    [item] = items(owner)
+    assert item["payload"]["merge"]["public"] is public
 
 
 def test_nothing_merged_before_the_ticker_was_switched_on(
@@ -566,3 +606,24 @@ def test_the_switch_on_second_counts(
         )
     merged(github, 15, [], at=clock.rfc3339(epoch + offset))
     assert probe.announce_merges(migrated, READER, pid) == announced
+
+
+def test_a_merge_names_the_holding_instance_of_a_member_held_only_as_holder(
+    owner: flow.Human, make_client: ClientFactory, github: FakeGitHub, migrated: Engine
+) -> None:
+    enable(owner)
+    holder = flow.agent(make_client, owner)
+    card = holder.post("/projects/maintainer/maity/tasks", {"title": "Claims"}).json()
+    holder.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.card).where(t.card.c.id == card["id"]).values(report={"pr": {"number": 213}})
+        )
+        instance = conn.execute(
+            select(t.card.c.claim_instance).where(t.card.c.id == card["id"])
+        ).scalar_one()
+    merged(github, 213, [{"filename": "hub/maity_hub/x.py", "patch": "@@ -1 +1 @@\n-a\n+b\n"}])
+    assert probe.announce_merges(migrated, READER, project_id(migrated)) == 1
+    [item] = items(owner)
+    entry = next(r for r in item["payload"]["reasons"] if r["member_id"] == holder.id)
+    assert entry["why"] == [f"card_holder:{card['id']}"] and entry["instances"] == [instance]

@@ -96,6 +96,60 @@ def test_unclaim_calls_release_on_the_card(
     assert capsys.readouterr().out == "gave tsk-0004 back; it is open again\n"
 
 
+def test_watch_and_unwatch_call_the_card_without_a_body(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    answer(fake, "PUT", f"{TASK}/watch", {"id": "tsk-0004", "watching": True})
+    assert cli.main(["watch", "tsk-0004"]) == cli.EXIT_OK
+    assert (last(fake).method, last(fake).path, last(fake).body) == ("PUT", f"{TASK}/watch", b"")
+    answer(fake, "DELETE", f"{TASK}/watch", {"id": "tsk-0004", "watching": False})
+    assert cli.main(["unwatch", "tsk-0004"]) == cli.EXIT_OK
+    assert (last(fake).method, last(fake).path) == ("DELETE", f"{TASK}/watch")
+    assert capsys.readouterr().out == "watching tsk-0004\nno longer watching tsk-0004\n"
+
+
+def test_unwatch_of_an_implied_watch_shows_the_hubs_reason(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    why = "the watch comes with a card that depends on this one"
+    error = {"error": {"code": "invalid", "message": why, "details": {"reason": "implied"}}}
+    answer(fake, "DELETE", f"{TASK}/watch", error, status=400)
+    assert cli.main(["unwatch", "tsk-0004"]) != cli.EXIT_OK
+    assert why in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(("value", "shown"), [(True, "yes"), (False, "no")])
+def test_task_show_prints_the_callers_watch(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    value: bool,
+    shown: str,
+) -> None:
+    card = {"id": "tsk-0004", "title": "A card", "status": "open", "watching": value}
+    answer(fake, "GET", TASK, card)
+    answer(fake, "GET", TASK.rsplit("/", 1)[0], {"items": []})
+    assert cli.main(["task", "show", "tsk-0004"]) == cli.EXIT_OK
+    assert f"  watching: {shown}\n" in capsys.readouterr().out
+
+
+def test_task_show_prints_the_assigned_instance_and_the_holders_branch(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    card = {
+        "id": "tsk-0004",
+        "title": "A card",
+        "status": "in_progress",
+        "assigned_instance": "wqe2",
+        "checkpoint": {"branch": "agent-b/x"},
+    }
+    answer(fake, "GET", TASK, card)
+    answer(fake, "GET", TASK.rsplit("/", 1)[0], {"items": []})
+    assert cli.main(["task", "show", "tsk-0004"]) == cli.EXIT_OK
+    out = capsys.readouterr().out
+    assert "  assigned instance: wqe2\n" in out and "  branch: agent-b/x\n" in out
+
+
 def test_card_ids_are_one_path_segment(joined: Path, fake: fakehub.FakeHub) -> None:
     cli.main(["claim", "../members/agt-a"])
     # The 404 asks `GET /me` whether the project moved (§6.25); the claim went out first.
@@ -156,6 +210,35 @@ def test_say_posts_a_typed_message(
         "task_id": "tsk-0004",
     }
     assert capsys.readouterr().out == "sent blocker to role:admin (seq 4300)\n"
+
+
+def test_say_update_goes_to_the_cards_watchers_without_a_recipient(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    answer(fake, "POST", "/api/v1/projects/oliver/maity/events", {"seq": 4301, "kind": "message"})
+    assert cli.main(["say", "--type", "update", "--task", "tsk-0004", "it landed"]) == cli.EXIT_OK
+    assert last(fake).json() == {
+        "kind": "message",
+        "type": "update",
+        "body": "it landed",
+        "task_id": "tsk-0004",
+    }
+    assert capsys.readouterr().out == "sent update to the watchers of tsk-0004 (seq 4301)\n"
+
+
+def test_say_update_keeps_a_recipient_given_as_well(joined: Path, fake: fakehub.FakeHub) -> None:
+    answer(fake, "POST", "/api/v1/projects/oliver/maity/events", {"seq": 4302, "kind": "message"})
+    argv = ["say", "role:reviewer", "it landed", "--type", "update", "--task", "tsk-0004"]
+    assert cli.main(argv) == cli.EXIT_OK
+    assert (last(fake).json()["to"], last(fake).json()["body"]) == ("role:reviewer", "it landed")
+
+
+def test_say_update_needs_a_card(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert cli.main(["say", "--type", "update", "it landed"]) == cli.EXIT_USAGE
+    assert "--type update needs --task" in capsys.readouterr().err
+    assert not [s for s in fake.signed() if s.method == "POST"]
 
 
 def test_say_to_members_needs_a_type(
@@ -390,6 +473,8 @@ def test_checkpoint_on_an_unborn_head_is_an_error(
     [
         ["claim", "{}"],
         ["unclaim", "{}"],
+        ["watch", "{}"],
+        ["unwatch", "{}"],
         ["checkpoint", "{}", "-m", "a", "--next", "b"],
         ["answer", "{}", "--reply", "o1"],
         ["release", "show", "{}"],
@@ -434,6 +519,41 @@ def test_a_repeated_claim_of_an_own_card_succeeds(
     answer(fake, "GET", TASK, {"id": "tsk-0004", "claim": {"holder": "agt-b", "lease_until": "T2"}})
     assert cli.main(["claim", "tsk-0004"]) == cli.EXIT_OK
     assert capsys.readouterr().out == "claimed tsk-0004 (it was already yours); lease until T2\n"
+
+
+def _set_instance(instance: str) -> None:
+    from maity import state
+
+    directory = state.resolve_state_dir()
+    state.save_state(directory, {**state.load_state(directory), "instance": instance})
+
+
+def test_a_repeated_claim_of_this_instance_succeeds(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _set_instance("wqe2")
+    details = {"holder": "agt-b", "instance": "wqe2", "lease_until": "T2", "expired": False}
+    refusal = {"error": {"code": "already_claimed", "message": "held", "details": details}}
+    answer(fake, "POST", f"{TASK}/claim", refusal, status=409)
+    answer(fake, "GET", TASK, {"id": "tsk-0004", "claim": {"holder": "agt-b", "lease_until": "T2"}})
+    assert cli.main(["claim", "tsk-0004"]) == cli.EXIT_OK
+    assert capsys.readouterr().out == "claimed tsk-0004 (it was already yours); lease until T2\n"
+
+
+def test_a_claim_held_by_a_sibling_instance_names_it_and_the_takeover(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _set_instance("wqe2")
+    details = {"holder": "agt-b", "instance": "abcd", "lease_until": "T2", "expired": True}
+    refusal = {"error": {"code": "already_claimed", "message": "held", "details": details}}
+    answer(fake, "POST", f"{TASK}/claim", refusal, status=409)
+    assert cli.main(["claim", "tsk-0004"]) == cli.EXIT_ERROR
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "agt-b#abcd" in captured.err
+    assert "maity takeover tsk-0004" in captured.err
+    assert "already_claimed" in captured.err
+    assert last(fake).method == "POST"  # no read that would pass it off as claimed
 
 
 def test_a_claim_held_by_someone_else_stays_an_error(joined: Path, fake: fakehub.FakeHub) -> None:
@@ -882,7 +1002,7 @@ def test_outside_a_clone_the_error_names_maity_state_dir(
     monkeypatch.chdir(tmp_path)
     with pytest.raises(state.StateError) as info:
         state.resolve_state_dir()
-    assert "export MAITY_STATE_DIR=~/.local/state/maity/<agent-handle>" in str(info.value)
+    assert state.state_dir_example("<agent-handle>") in str(info.value)
 
 
 def test_wait_batch_over_the_cap_comes_in_two_calls_each_event_once(
@@ -1131,3 +1251,21 @@ def test_wait_saves_the_cursor_only_after_printing(
     monkeypatch.setattr(cli, "_print_json", stopped)
     assert cli.main(["wait", "--timeout", "5"]) == 130  # stopped before anything was printed
     assert state.load_state(joined).get("cursor") == before
+
+
+def test_a_claim_held_by_a_sibling_without_an_instance_says_so(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    details = {"holder": "agt-b", "instance": None}
+    refusal = {"error": {"code": "already_claimed", "message": "held", "details": details}}
+    answer(fake, "POST", f"{TASK}/claim", refusal, status=409)
+    _set_instance("mine")
+    assert cli.main(["claim", "tsk-0004"]) == cli.EXIT_ERROR
+    assert "tsk-0004 is held by another instance of this agent" in capsys.readouterr().err
+
+
+def test_print_json_escapes_a_lone_surrogate_instead_of_crashing(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli._print_json({"body": json.loads('"a\\ud800b"')})
+    assert json.loads(capsys.readouterr().out) == {"body": "a\ud800b"}

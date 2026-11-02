@@ -112,7 +112,6 @@ def full(
         "status": round_row.status,
         **series_fields(round_row),
         "trigger": round_row.trigger,
-        "mode": round_row.mode,
         "reason": round_row.reason,
         "skip_reason": round_row.skip_reason,
         "missed_slots": round_row.missed_slots,

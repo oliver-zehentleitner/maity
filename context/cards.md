@@ -7,9 +7,10 @@
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's decision, 2026-10-22, with the contract owner's rulings of 2026-10-22 and the contract owner's confirmation, the same day, of the remaining decisions and of the reason for ruling 2; contract in `docs/api.md` (card links, import, edit history, notes)
-**Revisit when:** a second forge is probed, a note needs to be edited or withdrawn by its author, or the holder of a card needs to resolve notes on it
+**Revisit when:** a second forge is probed, or the holder of a card needs to resolve notes on it
 **See:** integrations.md#a-read-only-forge-probe-in-v1-observed-pr-check-and-tag-state-next-to-agent-claims — 098ef90f-83b8-4b38-9c21-1e89c086b6db — as of 2026-10-22
 **See:** trust.md#authority-comes-from-the-role-in-the-org-chart-not-from-who-typed-the-message — 30f183d5-9f56-494f-a3a1-468cd10f5cc9 — as of 2026-10-22
+**See:** cards.md#a-notes-author-edits-it-in-place-and-the-hub-keeps-no-trace-of-the-old-text — 0e6b3b31-1656-4744-841d-d48f1899a7fd — as of 2026-11-02
 
 A card carries three things beyond its own text. **Links**: references
 to forge issues and pull requests of the project's repository owner, or
@@ -28,7 +29,8 @@ they hold `tasks:admin`.
 
 The contract owner's rulings settled the points the decision left open:
 the card's creator may resolve notes, its holder may not; a note is
-never edited or withdrawn, a wrong one is dismissed; forge links stay at
+never edited or withdrawn, a wrong one is dismissed (replaced on
+2026-11-02: its author edits it, entry 0e6b3b31); forge links stay at
 the project repository's host and owner, and an item the hub cannot read
 shows as not found; CLI commands for notes and links come as a
 follow-up, `maity api` reaches them until then.
@@ -263,3 +265,90 @@ watches a card (inferred, not discussed with the maintainer).
   project-wide change feed and wakes nobody for a single card.
 - Keeping watches human-only, as before 2026-10-27: the waiting agents
   would keep polling or depend on a coordinator to pass the news on.
+
+## A note's author edits it in place, and the hub keeps no trace of the old text
+
+**Id:** 0e6b3b31-1656-4744-841d-d48f1899a7fd
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's decision of 2026-11-02 on the card for editing a note (five points: who, no history, reason, updates, redaction stays); the coordinator's rulings the same day on the creator in the audience, closed cards, redacted notes and the reason's readers; contract in `docs/api.md` §6.16, §8, §8.6
+**Revisit when:** someone needs to see what a note said before an edit, or agents need to correct other members' notes
+**See:** cards.md#cards-carry-links-an-edit-history-and-notes-a-note-never-changes-the-card — 4e1208f1-4ca9-45ad-9005-3327b2638a0c — as of 2026-11-02
+**See:** cards.md#a-cards-edit-history-can-be-redacted-by-a-human — b780ee68-6e79-4b1f-b26a-67e7bb190989 — as of 2026-11-02
+
+A note is edited in place (`PATCH …/notes/{note_id}`). Its author edits
+their own, human or agent; a human with `events:admin` edits any note of
+the project, and must give a reason, shown with the edit mark to every
+reader; an agent never edits another member's note. The hub keeps no
+earlier version: the new text replaces the old one on the note and in
+every event that carried the note, rewritten in place the way a
+redaction rewrites them, so what stays is the new text and "edited by X
+at T". What a client already received stays with it, and a mail
+already sent is beyond reach. The edit reaches everyone involved in an
+open card (author, holder, creator, everyone with a note on it, the
+mentions computed again) and wakes as a new note does; on a done or
+cancelled card it reaches the author and the newly mentioned only. A redacted note is not edited, and redaction
+stays the way to remove a note as a whole.
+
+This replaces the ruling of 2026-10-22 that a note is never edited or
+withdrawn and a wrong one is dismissed (entry 4e1208f1).
+
+**Reason:** in the maintainer's framing, the point of the feature is to
+remove what should not have been written, sensitive data included; a
+kept version would keep exactly that. Dismissing a wrong note leaves its
+text readable, and redaction needs a human with `events:admin`, so an
+agent or a member could not correct a typo or a pasted secret in their
+own note. Keeping the author as the one who edits, and agents away from
+others' notes, follows the rule that a remark gives its author no
+authority over anyone else's words (`trust.md`). An edit on an open card reaches
+everyone it mentions, not only the newly mentioned as a card body does
+(§8.6): the maintainer listed the mentioned among those involved, and a
+correction of a remark changes what each of them was told, while a card
+body's mention is a call to act that a re-save should not repeat
+(inferred from the two rules side by side; the decision itself and
+the purpose above are confirmed). A redaction drops the edit
+mark with the text, since an edit's reason speaks of the old text.
+
+**Rejected alternatives:**
+- Keeping a version history of a note, readable by admins or by
+  everyone: the old text, a secret included, would stay readable, which
+  is what the edit is for removing; the card history keeps before and
+  after because a card is an instruction others work from, a note is
+  not.
+- Redacting and posting a new note: it needs `events:admin`, loses the
+  note's place and state, and leaves a tombstone where a correction was
+  meant.
+- Waking only the newly mentioned on an open card, as for a card body:
+  those mentioned before would keep a stale picture of a remark that
+  was addressed to them.
+- Letting agents with `tasks:admin` edit any note: an agent could
+  rewrite a human's or another agent's remark; a correction of someone
+  else's words stays with a human who answers for it with a reason.
+
+## A redacted note's reason reaches only the owners, the admins and the redactor
+
+**Id:** 09c47db5-75b7-4636-8c49-0cc46c8c9d46
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's ruling as contract arbiter, 2026-11-02, on a question two members raised while building the dashboard's tombstone, confirmed by the maintainer the same day ("nicht jedem anzeigen"); contract in `docs/api.md` §6.16, §8.5
+**Revisit when:** a project wants the readers of a card to learn why a note was removed
+**See:** cards.md#a-notes-author-edits-it-in-place-and-the-hub-keeps-no-trace-of-the-old-text — 0e6b3b31-1656-4744-841d-d48f1899a7fd — as of 2026-11-02
+
+A redacted note follows the event rule of §8.5: the reason of the
+redaction reaches the human owners and admins and the one who redacted;
+every other reader, agents included, sees the tombstone with who and
+when and `reason: null`. That holds for the note in the API and for the
+note inside the `note_added` and `note_edited` events that carried it,
+which the hub shapes per reader when it serves them. The public card
+page already shows a redacted note as removed, without a reason.
+
+**Reason:** a reason often names exactly what was sensitive ("contained
+a password"), and notes of a public project are public; one rule for
+every redaction is easier to keep right than a second, looser one.
+
+**Rejected alternatives:**
+- The reason visible to every reader of the note: it would publish the
+  description of what was removed, and set notes apart from every other
+  redaction (§8.5).

@@ -18,7 +18,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select, true, update
 
-from maity_hub import clock
+from maity_hub import catalog, clock
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from maity_hub.errors import ApiError, rate_limited
@@ -99,49 +99,21 @@ def _body(
     spaced = f"{code[:3]} {code[3:]}"
     where = ip or "?"
     claimed = f"{browser or '?'} / {system or '?'}"
-    if language == "de":
-        how = (
-            "Jemand hat sich mit deinem Passwort angemeldet"
-            if method == "password"
-            else "Eine Anmeldung wurde von einer deiner Sitzungen aus freigegeben"
-        )
-        advice = (
-            "Hast du das nicht getan, hat jemand dein Passwort: ändere es jetzt."
-            if method == "password"
-            else "Hast du das nicht getan, beende die Sitzungen, die du nicht kennst."
-        )
-        opening = f"Hallo {name},\n\n{how}. Zum Abschließen brauchst du den zweiten Faktor.\n\n"
-        use_link = (
-            "Öffne diesen Link in dem Browser, in dem du dich angemeldet hast:\n"
-            f"{link}\n\nOder gib "
-            if link
-            else "Gib "
-        )
-        return (
-            f"{opening}{use_link}diesen Code dort ein: {spaced}\n\n"
-            f"Gesehen am {when} von {where}; der Browser gibt an: {claimed}.\n\n"
-            f"Gib diesen Code niemals weiter: Maity fragt nie danach.\n{advice}\n"
-        )
-    how = (
-        "Someone signed in with your password"
-        if method == "password"
-        else "A sign-in was approved from one of your sessions"
-    )
-    advice = (
-        "If this was not you, someone has your password: change it now."
-        if method == "password"
-        else "If this was not you, end the sessions you do not know."
-    )
-    use_link = (
-        f"Open this link in the browser where you signed in:\n{link}\n\nOr enter "
+    words = catalog.section("factor", language)
+    by_password = method == "password"
+    use = (
+        words["with_link"].format(link=link, code=spaced)
         if link
-        else "Enter "
+        else words["without_link"].format(code=spaced)
     )
-    return (
-        f"Hello {name},\n\n{how}. To finish, the second factor is needed.\n\n"
-        f"{use_link}this code there: {spaced}\n\n"
-        f"Seen at {when} from {where}; the browser claims: {claimed}.\n\n"
-        f"Never give this code to anyone: Maity never asks for it.\n{advice}\n"
+    return words["mail"].format(
+        name=name,
+        how=words["how_password" if by_password else "how_session"],
+        use=use,
+        when=when,
+        where=where,
+        claimed=claimed,
+        advice=words["advice_password" if by_password else "advice_session"],
     )
 
 
@@ -168,7 +140,7 @@ def send(
     left = max(int((row.created_at + LIFETIME - now).total_seconds()), 1)
     if row.state == "second_factor" and row.mail_sent >= PER_SESSION:
         raise rate_limited(left)
-    wait = BY_HUMAN.hit(row.human_id)  # the human's ten an hour; a step-up counts here only
+    wait = BY_HUMAN.blocked(row.human_id)  # the human's ten an hour; a step-up counts here only
     if wait:
         raise rate_limited(wait)
     token = secrets.token_urlsafe(32)
@@ -190,8 +162,9 @@ def send(
     )
     if stored.rowcount != 1:
         raise rate_limited(left)
+    BY_HUMAN.hit(row.human_id)  # after the update: the loser of a race has sent nothing
     human = conn.execute(select(t.human).where(t.human.c.id == row.human_id)).one()
-    language = preferences.preferences(conn, row.human_id)["email"]["language"]
+    language = preferences.text_language(conn, row.human_id)
     link = (
         f"{hub.public_url.rstrip('/')}/sign-in/second-factor/email#{token}" if with_link else None
     )
@@ -211,7 +184,7 @@ def send(
         kind="sign_in",  # a late code is useless: over its budget it is dropped, not held
         to=address.address,
         human_id=row.human_id,
-        subject="[Maity] Zweiter Faktor" if language == "de" else "[Maity] Second factor",
+        subject=catalog.section("factor", language)["subject"],
         body=body,
     )
     return "sent"
@@ -239,12 +212,80 @@ def check(
         match = column.mail_token_mac == _token_mac(key, row.id_hash, token)
     else:
         return False
+    return _use(conn, row, match)
+
+
+def _use(conn: Connection, row: Any, match: Any) -> bool:
+    column = t.human_session.c
     used = conn.execute(
         update(t.human_session)
         .where(column.id_hash == row.id_hash, column.ended_at.is_(None), match)
         .values(mail_token_mac=None, mail_code_mac=None)
     )
     return used.rowcount == 1
+
+
+# --- the admin's confirmation of turning it on -----------------------------------------
+
+
+def _confirm_mac(key: bytes, id_hash: str, nonce: str, code: str) -> str:
+    """Its own domain, so a step-up's code never turns the setting on, nor the other way round;
+    the nonce is the open confirmation's, so a newer `PATCH` by any admin voids this one."""
+    return hmac.new(
+        key, f"mail-factor-confirm:{id_hash}:{nonce}:{code}".encode(), hashlib.sha256
+    ).hexdigest()
+
+
+def send_confirmation(conn: Connection, hub: Settings, row: Any, nonce: str) -> None:
+    """Mail the admin in session `row` the code that turns `email` on (§2.8.8, "Turning it on"):
+    proof that a mail of this hub arrived, not just that the server took it."""
+    key = _key(hub)
+    address = address_of(conn, row.human_id)
+    if key is None or address is None:  # the caller refused both before it came here
+        raise ApiError(409, "mail_not_configured", "the instance's mail settings are not complete")
+    wait = BY_HUMAN.hit(row.human_id)
+    if wait:
+        raise rate_limited(wait)
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    conn.execute(
+        update(t.human_session)
+        .where(t.human_session.c.id_hash == row.id_hash)
+        .values(
+            mail_token_mac=None,
+            mail_code_mac=_confirm_mac(key, row.id_hash, nonce, code),
+            mail_sent_at=clock.now(),
+        )
+    )
+    words = catalog.section("factor", preferences.text_language(conn, row.human_id))
+    spaced = f"{code[:3]} {code[3:]}"
+    outbox.enqueue(
+        conn,
+        kind="sign_in",
+        to=address.address,
+        human_id=row.human_id,
+        subject=words["confirm_subject"],
+        body=words["confirm_mail"].format(code=spaced),
+    )
+
+
+def check_confirmation(conn: Connection, hub: Settings, row: Any, nonce: str, code: str) -> bool:
+    key, text = _key(hub), normalise_code(code)
+    if key is None or text is None:
+        return False
+    if row.mail_sent_at is None or clock.now() - row.mail_sent_at >= LIFETIME:
+        return False
+    match = t.human_session.c.mail_code_mac == _confirm_mac(key, row.id_hash, nonce, text)
+    return _use(conn, row, match)
+
+
+def address_hint(conn: Connection, human_id: str) -> str | None:
+    """The verified address as the second step may show it: its first character and its domain
+    (§2.8.7). None without one."""
+    row = address_of(conn, human_id)
+    if row is None:
+        return None
+    local, _, domain = str(row.address).rpartition("@")
+    return f"{local[:1]}***@{domain}"
 
 
 def state_of(row: Any) -> dict[str, Any]:

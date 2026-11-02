@@ -16,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from starlette.concurrency import run_in_threadpool
 
 from maity_hub import (
+    CLI_VERSION,
     attachment_store,
     attachments,
     clock,
@@ -28,6 +29,7 @@ from maity_hub import (
     namespace,
     not_listening,
     project_roles,
+    review_delivery,
     reviews,
     wakeups,
 )
@@ -52,6 +54,7 @@ MESSAGE_TYPES = (
     "review_result",
     "handover",
     "notice",
+    "update",
     "chat",
 )
 
@@ -222,7 +225,11 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
         bridge_membership_id=reader.bridge.membership_id if reader.bridge else None,
     )
     closed = await wakeups.opened(
-        engine, "events", waiter.key, lambda: longpoll.registry.supersede(waiter)
+        engine,
+        "events",
+        waiter.key,
+        lambda: longpoll.registry.supersede(waiter),
+        waiter.started_at,
     )
     longpoll.registry.enter(waiter)
     try:
@@ -304,6 +311,7 @@ def answer(items: list[dict[str, Any]], cursor: int, superseded: bool) -> JSONRe
             "cursor": cursor,
             "server_time": clock.rfc3339(clock.now()),
             "superseded": superseded,
+            "cli_version": CLI_VERSION,
         }
     )
 
@@ -351,6 +359,8 @@ def post_message(
     are bound to it in the same transaction (§8.7)."""
     if body.type not in MESSAGE_TYPES:
         raise invalid({"type": "unknown"})
+    if body.type == "update" and body.task_id is None:
+        raise invalid({"task_id": "required_for_update"}, "an update is news on a card")
     me = mine.principal_id
     group: Any = None
     review: dict[str, Any] | None = None
@@ -413,10 +423,14 @@ def post_message(
     else:
         if body.conversation_id is not None:
             raise invalid({"conversation_id": "chat_only"})
-        if body.to is None:
+        if body.to is None and body.type not in ("update", "review_result"):
             raise invalid({"to": "required"})
         to = body.to
-        if to == "all":
+        if to is None:
+            # An update reaches the card's watchers, which `emit` adds (§6.4); a review result
+            # its author and both leads, added below (§8.4).
+            target = f"member:{me}"
+        elif to == "all":
             target = "all"
         elif to.startswith(("role:", "trust:")):
             from maity_hub.scopes import token_known
@@ -495,6 +509,8 @@ def post_message(
                 pinged[token] = m["member_id"]
         mentions.charge(conn, mine.id, len({m for m in pinged.values() if m != me}))
         audience = list(dict.fromkeys([*audience, *pinged]))
+    if review is not None:
+        audience = _deliver_review(conn, mine, body.task_id, review, audience)
     named = attachments.bind(conn, mine, body.attachments, settings)
     payload = {
         "type": body.type,
@@ -524,7 +540,53 @@ def post_message(
     attachments.attach(conn, named, seq)
     if group is not None:  # whoever speaks has read up to there (§9.2)
         remember_read(conn, mine.id, group.id, seq)
-    return load_event(conn, str(seq))
+    return load_event(conn, str(seq), mine)
+
+
+def _deliver_review(
+    conn: Connection,
+    mine: Membership,
+    task_id: str | None,
+    review: dict[str, Any],
+    audience: list[str],
+) -> list[str]:
+    """A review result's author and both leads (§8.4). The author's instance takes the place
+    of the author's `member:` token that `to` or a mention put in the audience, and is added
+    unless the audience holds that same instance token. A member token (a lead, or an author whose
+    card was claimed for the team) is added unless `to` or a mention reaches the member
+    already: one of its role or trust tokens, or a token of its own. `all` counts for
+    neither: it does not wake a supervised member, and beside it an added token wakes
+    only such a one. One that then reaches nobody but its sender is `invalid`."""
+    sender = conn.execute(select(t.membership).where(t.membership.c.id == mine.id)).one()
+    found = review_delivery.recipients(conn, mine.project.id, sender, task_id, review)
+    for r in found:
+        if r.token.startswith("instance:"):
+            # The reviewer means the author: the member id would wake other instances by the
+            # agent's `wake` rule (§6.18). The payload's `to` stays as written.
+            member = f"member:{r.member_id}"
+            audience = [r.token if token == member else token for token in audience]
+    roles = _roles(conn, mine.project.id, [r.member_id for r in found])
+    reached_members = {
+        token.split(":", 1)[1].split("#", 1)[0]
+        for token in audience
+        if token.startswith(("member:", "instance:"))
+    }
+    added = [
+        r.token
+        for r in found
+        if (
+            r.token not in audience
+            if r.token.startswith("instance:")
+            else not (
+                r.member_id in reached_members
+                or bool(roles.get(r.member_id, set()) & set(audience))
+            )
+        )
+    ]
+    audience = list(dict.fromkeys([*audience, *added]))
+    if set(audience) <= {f"member:{mine.principal_id}"}:
+        raise invalid({"to": "required"}, "a review result that reaches nobody but its sender")
+    return audience
 
 
 def _group_for_posting(conn: Connection, mine: Membership, conversation_id: str) -> Any:

@@ -134,6 +134,8 @@ def may_take_request(project: Any, request: Any, covered: Any, sub: Any) -> bool
 
     if sub.id in (request.asked_by, request.on_behalf_of):
         return False  # never its own question
+    if request.action is not None and (sub.agent_id or sub.trust != "owner"):
+        return False  # a proxy's call: a substitute could not answer it (§2.3)
     klass = getattr(request, "class")
     # Every request to the project's owner — `owner`, `trust:owner` or their member id —
     # is an owner decision and moves only to a human (§6.12).
@@ -161,6 +163,8 @@ def may_take_request(project: Any, request: Any, covered: Any, sub: Any) -> bool
 
 
 def _cover_set(conn: Connection, project: Any, row: Any) -> tuple[list[Any], list[Any]]:
+    from maity_hub import inbox
+
     cards = conn.execute(
         select(t.card)
         .where(
@@ -197,7 +201,9 @@ def _cover_set(conn: Connection, project: Any, row: Any) -> tuple[list[Any], lis
         )
         .order_by(t.request.c.created_at, t.request.c.id)
     ).all()
-    return list(cards), list(requests)
+    # A substitute would read it: what an owner's round filed stays with that owner (§20.7).
+    alone = inbox.owners_alone(conn, requests)
+    return list(cards), [r for r in requests if r.id not in alone]
 
 
 def _instance(conn: Connection, sub: Any) -> str | None:

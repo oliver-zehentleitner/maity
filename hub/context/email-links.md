@@ -41,6 +41,7 @@ contract requirements, not new policy introduced by this implementation.
 **Status:** active
 **Evidence:** confirmed
 **Source:** docs/api.md §2.6 and §2.8; coordinator review of the predecessor entry, 2026-10-28
+**Revisit when:** mail sign-in should be offered with only part of its path, or the conditions for advertising it in §2.6 change
 
 The instance advertises mail sign-in only when the method, SMTP and signing
 key are available. Both redemption paths use the same second-factor entry

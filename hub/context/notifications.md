@@ -3,6 +3,36 @@
 How the hub derives a human's notifications. What they are and why they exist in three
 stages is in the root `context/notifications.md`.
 
+## The hub's own words live in one catalog per language, read through one rule
+
+**Id:** 5fa1d7c2-8e34-4b6a-9c07-1d3e8f20ab46
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-ya56x9gx986r, 2026-11-02; docs/api.md §6.2; review of #1111
+**Revisit when:** a language needs plural forms in a hub text, or a translation changes a placeholder
+
+`preferences.text_language` picks the language (chosen interface language, else `language` when it is one
+of the ten, else `en`); `catalog.section` reads `words/<lang>.json`, English under any key without a
+translation. Mails, link pages, bell titles and the public pages' frame all go this way, so adding a
+language touches no module. Sentences are whole keys with placeholders; none is built from pieces, which
+is why the second-factor mail has one key with its link and one without.
+
+`language_of` passes over a language without words for its section yet (`catalog.speaks`): a person who
+accepts `fr, de` reads German rather than English until the French arrives.
+
+What each translation follows lies in `hub/words-meta/`, beside the package and not in it, and is written by
+`make -C web fixtures` as for the dashboard's catalogs (`web/tools/check.py`): a changed English marks its
+translations out of date, a note until `make release-check` makes it a finding. A separate tool for the hub
+would repeat the same rule; a hub test would stop every change of an English word.
+After a change of these words run `make -C web fixtures`, or the web job is red on the stale meta file.
+
+**Rejected alternatives:**
+- Keeping a dict per module: eight places to translate, with the fallback repeated in each.
+- Reading `interface_language` at each call site: the fallback would be repeated a dozen times.
+- `language` as the unconditional fallback: it reads `en` for everyone who never set it.
+- Translating the API's messages too: §6.2 keeps them English, a client goes by `code`.
+
 ## Items are derived on every read from 30 days of the human's projects, with the relations as they are now
 
 **Id:** e29065f2-c5d3-43dd-9209-f7f30b67269a
@@ -328,12 +358,15 @@ If it equals the stamp of the last pass, no item was left waiting for its hour o
 (`notification_mail_state.waiting`) and the human is not held over the budget, the pass
 ends there. Otherwise it derives the unread items as the bell does and keeps those not yet
 in `mail_item_sent` and not older than the address's `verified_at`; the open matters
-`registration_pending` and `mail_disabled` are never mailed (§18.5). A new sign-in goes out
-at once as a security mail. Outside quiet hours, `immediate` items go out together once the
+`registration_pending` and `mail_disabled` are never mailed (§18.5). A changed or failed
+second factor goes out at once as a security mail without an unsubscribe link, whatever the
+mode; a new sign-in does so while `security` is `immediate` and joins the digest the human put
+security in otherwise (context/notifications.md da12f2b5). Outside quiet hours, `immediate` items go out together once the
 oldest is two minutes old, unless ten notification mails left in the past hour; then they
-join the hour's digest. `hourly` and `daily` digests go out when the full hour or `daily_at`
-(in the human's time zone) has passed since the last one, recorded in
-`notification_mail_state`. A human's first pass only starts those two clocks. When the
+join the hour's digest. `hourly`, `daily` and `weekly` digests go out when the full hour,
+`daily_at` or the latest `weekly_on` at `daily_at` (in the human's time zone) has passed since
+the last one, recorded in `notification_mail_state`; a moment missed while the hub was down
+goes out at the next pass. A human's first pass only starts those clocks. When the
 notification mail of the past hour, sent or waiting, reaches the instance's `max_per_hour`,
 nothing is queued for the human; their items stay pending and the first pass with room again
 sends everything due in one mail (§18.5, "merged into each human's next mail"). A kind set

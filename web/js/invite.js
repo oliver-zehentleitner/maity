@@ -19,10 +19,11 @@ window.Maity = window.Maity || {};
 
   // The project's logo only from this hub's own path (the hub names it with its public URL).
   function ownLogo(url) {
-    if (typeof url !== "string") return false;
+    if (typeof url !== "string") return null;
     const origin = window.location && window.location.origin && window.location.origin !== "null" ? window.location.origin : "";
     const path = origin && url.startsWith(origin + "/") ? url.slice(origin.length) : url;
-    return /^\/api\/v1\/projects\/[^/?#]+\/logo(\?[^#]*)?$/.test(path);
+    // The same rule as h()'s, so an address it would refuse leaves the mark instead of breaking the page.
+    return /\/logo(\?|$)/.test(path) && M.dom.isOwnImage(path) ? path : null;
   }
 
   async function signedIn() {
@@ -55,7 +56,7 @@ window.Maity = window.Maity || {};
     document.title = M.t("invite.join_title", { project: inv.project.name }) + " · Maity";
     append(box,
       h("div", { class: "invite-project" },
-        ownLogo(inv.project.logo_url) ? h("img", { class: "invite-logo", src: inv.project.logo_url, alt: "", width: "48", height: "48" })
+        ownLogo(inv.project.logo_url) ? h("img", { class: "invite-logo", src: ownLogo(inv.project.logo_url), alt: "", width: "48", height: "48" })
           : M.projectMark ? M.projectMark(inv.project.full_name || inv.project.name, inv.project.name, null, "invite-logo") : null,
         h("h2", null, M.tn("invite.join_heading", { project: h("span", { class: "invite-name" }, inv.project.name) }))),
       h("p", { class: "invite-lead" }, M.tn("invite.lead", { who: inv.invited_by.display_name, project: inv.project.name, role: h("strong", null, role) })),
@@ -147,7 +148,7 @@ window.Maity = window.Maity || {};
     // Trust owner or admin, and the role proxy, only from an owner (owner_only, §2.3);
     // proxy only with trust admin (§3.4).
     const trusts = ctx.isOwner ? M.trust.TRUSTS : ["member", "guest"];
-    const trust = h("select", { id: "invite-trust" }, trusts.map((r) => h("option", { value: r }, r)));
+    const trust = h("select", { id: "invite-trust" }, trusts.map((r) => h("option", { value: r }, M.trust.trustWord(r))));
     trust.value = "member";
     const role = h("select", { id: "invite-role" });
     const roles = () => {

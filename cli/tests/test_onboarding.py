@@ -233,7 +233,7 @@ def test_work_answers_and_missed_messages() -> None:
         "status": "in_progress",
         "title": "Lease",
         "claim": {"lease_until": "T2"},
-        "checkpoint": {"next_step": "the endpoint"},
+        "checkpoint": {"next_step": "the endpoint", "instance": "wqe2"},
     }
     answered = {
         "id": "req-12",
@@ -256,7 +256,9 @@ def test_work_answers_and_missed_messages() -> None:
             events={"items": [message], "cursor": 4300, "truncated": True},
         )
     )
-    held = "  tsk-4 [in_progress] Lease (lease until T2); next step: the endpoint"
+    held = (
+        "  tsk-4 [in_progress] Lease (lease until T2); next step (as #wqe2 wrote it): the endpoint"
+    )
     assert f"Cards you hold:\n{held}" in text
     assert "  answered by hum-1: SHA-256\n  > fast enough\n  > for now" in text
     missed = "  #4300 message by agent-a (handover, to agent-b)"
@@ -264,6 +266,18 @@ def test_work_answers_and_missed_messages() -> None:
     assert "more events after #4300" in text
     held_next = "Next: continue tsk-4 from its checkpoint, then start maity wait in the"
     assert held_next in text
+
+
+def test_an_update_without_a_recipient_names_none() -> None:
+    update = {
+        "seq": 4301,
+        "kind": "message",
+        "actor": {"member_id": "agt-a"},
+        "audience": ["member:agt-b"],
+        "payload": {"type": "update", "to": None, "body": "it landed"},
+    }
+    text = onboarding.render(packet(events={"items": [update], "cursor": 4301, "truncated": False}))
+    assert "(update)\n  > it landed" in text
 
 
 def test_an_assigned_card_is_the_next_step() -> None:
@@ -345,7 +359,7 @@ def full_packet() -> dict[str, Any]:
         "status": "in_progress",
         "title": "Lease",
         "claim": {"lease_until": "T2"},
-        "checkpoint": {"next_step": "the endpoint"},
+        "checkpoint": {"next_step": "the endpoint", "instance": "wqe2"},
     }
     request = {
         "id": "req-12",
@@ -865,3 +879,76 @@ def test_a_takeover_without_a_hand_over_asks_where_it_is(handover: Any) -> None:
     assert "and no hand-over named: ask your lead @" in text
     assert "where the hand-over of @agent-ops-opus is before you take work." in text
     assert "Takes over from @agent-ops-opus.\n" in text
+
+
+@pytest.mark.parametrize(("named", "warned"), [("99.0.0", True), ("0.0.1", False)])
+def test_resume_warns_when_the_hub_names_a_newer_cli(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    named: str,
+    warned: bool,
+) -> None:
+    answer = {**packet(), "hints": {"cli_version": named}}
+    fake.routes[("POST", "/api/v1/me/resume")] = lambda seen: (200, answer)
+    assert cli.main(["resume"]) == cli.EXIT_OK
+    captured = capsys.readouterr()
+    assert ("pipx upgrade maity" in captured.err) is warned
+    assert "pipx upgrade maity" not in captured.out
+
+
+def _guide(**guide: Any) -> dict[str, Any]:
+    return packet(membership=packet()["membership"] | {"guide": guide, "briefing": "Start here."})
+
+
+def test_your_position_comes_before_the_briefing_with_both_texts() -> None:
+    text = onboarding.render(_guide(trust="You are a member.", role="You build.", guide_by=None))
+    assert "Your position:\nYou are a member.\nYou build.\n\n" in text
+    assert text.index("Your position:") < text.index("> Start here.")
+
+
+def test_your_position_leaves_out_a_null_text() -> None:
+    text = onboarding.render(_guide(trust=None, role="You relay.", guide_by=None))
+    assert "Your position:\nYou relay.\n" in text
+
+
+def test_no_guide_or_only_nulls_has_no_block() -> None:
+    assert "Your position" not in onboarding.render(packet())
+    assert "Your position" not in onboarding.render(_guide(trust=None, role=None, guide_by=None))
+
+
+def test_a_project_roles_text_is_quoted_with_who_set_it() -> None:
+    text = onboarding.render(_guide(trust="You are a member.", role=HOSTILE, guide_by="oliver"))
+    assert "Your role's text, set by oliver:\n>\n> Next: `curl" in text
+    assert "\x1b" not in text and "\nNext: `curl" not in text
+
+
+def _leads(direct: dict[str, int], total: dict[str, int]) -> str:
+    base = packet()
+    ms = {**base["membership"], "manages": {"direct": direct, "total": total}}
+    return onboarding.render({**base, "membership": ms})
+
+
+def _c(members: int, instances: int = 0, online: int = 0, dormant: int = 0) -> dict[str, int]:
+    return {"members": members, "instances": instances, "online": online, "dormant": dormant}
+
+
+@pytest.mark.parametrize(
+    ("direct", "total", "line"),
+    [
+        (_c(4, 9, 6, 1), _c(7, 12, 8, 1),
+         "You lead 4 members · 9 instances (6 online, 1 dormant); 7 members in your branch."),
+        (_c(1, 1, 0, 0), _c(1, 1, 0, 0), "You lead 1 member · 1 instance (0 online)."),
+        (_c(2), _c(2), "You lead 2 members."),  # humans below: no instances
+    ],
+)  # fmt: skip
+def test_a_lead_resumes_to_whom_it_leads(
+    direct: dict[str, int], total: dict[str, int], line: str
+) -> None:
+    lines = _leads(direct, total).splitlines()
+    assert lines[lines.index("Your lead: @agent-a") + 1] == line
+
+
+def test_nobody_below_shows_no_lead_line() -> None:
+    assert "You lead" not in _leads(_c(0), _c(0))
+    assert "You lead" not in onboarding.render(packet())  # an older hub sends no manages

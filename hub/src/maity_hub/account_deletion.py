@@ -30,12 +30,12 @@ from sqlalchemy import Connection, delete, func, insert, select, update
 
 from maity_hub import (
     clock,
-    github_app,
     invitations,
     namespace,
     orgs,
     placements,
     public_pages,
+    wakeups,
     write_guard,
 )
 from maity_hub import tables as t
@@ -453,8 +453,9 @@ def _withdraw_personal(conn: Connection, human_id: str) -> None:
 
 def _return_held(conn: Connection, human_id: str) -> None:
     """A `decision` request one of its memberships, or one of its agents', holds after a
-    forward or a claim goes back to the admins (`holder: trust:admin`, §7)."""
-    from maity_hub.routes.requests import return_to_pool
+    forward or a claim goes back to the admins (`holder: trust:admin`, §7), or to its
+    addressee if an owner's round filed it (§20.7)."""
+    from maity_hub.routes.requests import return_held
 
     agents = select(t.agent_profile.c.id).where(t.agent_profile.c.owner_id == human_id)
     mine = select(t.membership.c.id).where(
@@ -466,7 +467,7 @@ def _return_held(conn: Connection, human_id: str) -> None:
         .where(t.request.c.holder_member.in_(mine), t.request.c.status == "open")
         .order_by(t.request.c.created_at, t.request.c.id),
     ):
-        return_to_pool(conn, request_id, human_id, "the holder's account was deleted")
+        return_held(conn, request_id, human_id, "the holder's account was deleted")
 
 
 def _leave_projects(conn: Connection, human_id: str) -> None:
@@ -522,7 +523,7 @@ def _end_access(conn: Connection, hub: Settings, human_id: str) -> None:
     conn.execute(delete(t.forge_link).where(t.forge_link.c.human_id == human_id))
     if hub.github_app is not None:  # an installation's cached token, as an unlink drops it
         for installation_id in installations:
-            github_app.forget_token(hub.github_app, installation_id)
+            wakeups.forget_token_everywhere(conn, hub.github_app, installation_id)
     conn.execute(delete(t.email_sign_in).where(t.email_sign_in.c.human_id == human_id))
     conn.execute(delete(t.email_sign_in_day).where(t.email_sign_in_day.c.human_id == human_id))
     conn.execute(
@@ -605,6 +606,8 @@ def _remove_person(conn: Connection, human_id: str, secret_key: bytes | None) ->
             limit_show_reason_in=None,
             public_profile=False,  # the profile and its page are deleted with the person (§2.9)
             public_bio=None,
+            interface_language=None,
+            broadcasts=None,  # the owner's choice of hub broadcasts (§16.12)
             deleted_at=clock.now(),
         )
     )

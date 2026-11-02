@@ -88,13 +88,18 @@ def test_the_resume_names_each_agent_it_carries_for() -> None:
             "membership": {
                 "bridging_for": [
                     {"id": "brg-1", "member_id": "agt-s", "handle": "designer",
-                     "purpose": "git for the designer's files", "cross_owner": False},
+                     "purpose": "git for the designer's files", "cross_owner": True,
+                     "created_by": "hum-o"},
                 ]
             },
         },
         {},
     )  # fmt: skip
-    assert "You carry for @designer: git for the designer's files" in lines
+    assert (
+        "You carry for @designer (another owner's agent), for this purpose as @hum-o set it:"
+        in lines
+    )
+    assert "> git for the designer's files" in lines
 
 
 @pytest.mark.parametrize(

@@ -127,7 +127,7 @@ def owner_handle() -> Any:
 
 def resolve_owner(conn: Connection, handle: str) -> str | None:
     """The id a namespace owner's handle names (§6.25): a human's or an organisation's
-    (§6.26), by the current handle or, for a human, an alias (§6.24), so that `<old
+    (§6.26), by the current handle or an alias (§6.24), so that `<old
     handle>/<slug>` keeps reaching the project after a rename; a deleted one's still names
     its archived projects."""
     from maity_hub import handles
@@ -135,8 +135,7 @@ def resolve_owner(conn: Connection, handle: str) -> str | None:
     human = handles.human_id_of(conn, handle)
     if human is not None:
         return human
-    org = conn.execute(select(t.org.c.id).where(t.org.c.handle == handle)).scalar()
-    return None if org is None else str(org)
+    return handles.org_id_of(conn, handle)
 
 
 def resolve(conn: Connection, full_name: str) -> Any | None:
@@ -332,6 +331,10 @@ def move(conn: Connection, project: Any, owner_id: str, slug: str) -> None:
         .where(t.project.c.id == project.id)
         .values(**owner_values(owner_id), slug=slug)
     )
+    if project.owner_org_id is not None:  # its page no longer lists the project under this name
+        from maity_hub import public_pages
+
+        public_pages.touch(conn, "organisation", project.owner_org_id)
 
 
 def namespace_owner_of(conn: Connection, human_id: str, project_ids: Iterable[str]) -> None:

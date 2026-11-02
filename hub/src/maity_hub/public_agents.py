@@ -74,6 +74,7 @@ def statistics(conn: Connection, found: list[tuple[Any, int]]) -> dict[str, Any]
             {membership_id: {}},
             days=public_projects.STAT_DAYS,
             include=lambda member, mine=membership_id: member == mine,
+            public_only=True,
         )
         row = folded["members"][0] if folded["members"] else {}
         for key in ("cards_done", "reviews_given", "prs_merged", "handovers"):
@@ -83,7 +84,7 @@ def statistics(conn: Connection, found: list[tuple[Any, int]]) -> dict[str, Any]
         claim += [s for m, s, d in window.claim_to_done if m == membership_id and d >= cut]
         if window.reviews_since is not None:
             review += [s for m, s, d in window.review_to_done if m == membership_id and d >= cut]
-    for key in ("cards_done", "prs_merged", "handovers"):
+    for key in ("cards_done", "handovers"):
         totals[key] = totals[key] or 0
     totals["claim_to_done_median_seconds"] = swarm.median_of(claim)
     totals["review_to_done_median_seconds"] = swarm.median_of(review)
@@ -110,7 +111,7 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
         f"<h2>Statistics, last {public_projects.STAT_DAYS} days</h2><ul>"
         + "".join(
             f"<li>{escape(label)}: {escape(public_projects.stat_value(key, totals[key]))}</li>"
-            for key, label in public_projects.STAT_LABELS
+            for key, label in public_projects.stat_labels(totals)
         )
         + "</ul>"
     )
@@ -128,7 +129,26 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
         content=content,
     )
     digest = hashlib.sha256("\x00".join((path, agent.display_name, content)).encode())
-    return [public_pages.Page(path=path, body=body, inputs=digest.hexdigest(), lastmod=clock.now())]
+    data = {
+        "name": agent.display_name,
+        "handle": agent.handle,
+        "owner": {"name": owner.display_name, "handle": owner.handle, "page": f"/{owner.handle}"},
+        "projects": sorted(
+            ({"name": p.name, "full_name": namespace.full_name(conn, p)} for p, _ in found),
+            key=lambda project: project["full_name"],
+        ),
+        "statistics": totals,
+    }
+    return [
+        public_pages.Page(
+            path=path,
+            body=body,
+            inputs=digest.hexdigest(),
+            lastmod=clock.now(),
+            view="agent",
+            data=data,
+        )
+    ]
 
 
 def targets(conn: Connection) -> list[str]:

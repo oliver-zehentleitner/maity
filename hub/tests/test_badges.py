@@ -165,7 +165,9 @@ def test_online_uses_canonical_presence(
     wait = listening.opened(recent.session_id or "")
     try:
         response = public.get("/badge/maintainer/maity.svg")
-        assert value(response) == "1 agent online" and 'fill="#1a7f37"' in response.text
+        assert (
+            value(response) == "1 agent · 1 instance online" and 'fill="#1a7f37"' in response.text
+        )
         assert "<style" in response.text and "<script" not in response.text
         assert response.headers["etag"] != offline_etag
         animated_etag = response.headers["etag"]
@@ -313,7 +315,8 @@ def test_online_team_is_one_member(
             )
         )
     enable(owner, "agents_online")
-    assert value(public.get("/badge/maintainer/maity.svg")) == "1 agent online"
+    # One agent, however many instances: the instances are named beside it (§6.20).
+    assert value(public.get("/badge/maintainer/maity.svg")) == "1 agent · 2 instances online"
 
 
 @pytest.mark.parametrize(

@@ -1209,6 +1209,7 @@ window.MAITY_FIXTURES = {
         "note": "You review the web side; D will brief you.",
         "project": {
           "full_name": "maintainer/maity",
+          "logo_url": "/api/v1/projects/maintainer/maity/logo",
           "name": "Maity",
           "slug": "maity"
         },
@@ -1293,13 +1294,14 @@ window.MAITY_FIXTURES = {
     }
   },
   "landing.json": {
+    "campaigns": [],
     "default_language": "en",
     "enabled": false,
     "footer": {
       "operator": "Maintainer, Austria",
       "social": [
         {
-          "href": "https://mastodon.social/@maityteam",
+          "href": "https://social.example/@example",
           "label": "Mastodon"
         }
       ]
@@ -1334,6 +1336,7 @@ window.MAITY_FIXTURES = {
           },
           {
             "enabled": false,
+            "eyebrow": "Questions",
             "items": [
               {
                 "a": "No. Agents are brought, not run: the hub never starts or owns an agent process.",
@@ -1348,7 +1351,8 @@ window.MAITY_FIXTURES = {
       }
     },
     "updated_at": "2026-10-29T09:00:00Z",
-    "updated_by": "hum-maintainer"
+    "updated_by": "hum-maintainer",
+    "variants": {}
   },
   "legal.json": {
     "default_language": "en",
@@ -2025,7 +2029,6 @@ window.MAITY_FIXTURES = {
         "circle": "all",
         "id": "jfx-0002",
         "missed_slots": 0,
-        "mode": "message",
         "opened_at": null,
         "project": "maintainer/maity",
         "scheduled_for": "2026-10-30T09:00:00Z",
@@ -2075,7 +2078,6 @@ window.MAITY_FIXTURES = {
             "member_id": "hum-maintainer"
           }
         ],
-        "mode": "message",
         "moderator": {
           "instance": "k7mq",
           "member_id": "agt-a"
@@ -2246,7 +2248,6 @@ window.MAITY_FIXTURES = {
         "circle": "owner",
         "id": "jfx-0003",
         "missed_slots": 0,
-        "mode": "message",
         "opened_at": null,
         "project": "maintainer/maity",
         "scheduled_for": "2026-10-23T13:00:00Z",
@@ -2543,6 +2544,7 @@ window.MAITY_FIXTURES = {
             "address": "agt-b#wle2",
             "claims": 1,
             "created_at": "2026-10-21T10:12:03Z",
+            "dormant": null,
             "harness": "Claude Code",
             "id": "wle2",
             "keep_the_why_acknowledge_by": "2026-10-21T10:42:00Z",
@@ -2603,6 +2605,7 @@ window.MAITY_FIXTURES = {
             "address": "agt-c#k3pa",
             "claims": 0,
             "created_at": "2026-10-21T09:40:00Z",
+            "dormant": null,
             "harness": "Codex",
             "id": "k3pa",
             "keep_the_why_acknowledge_by": null,
@@ -3151,7 +3154,15 @@ window.MAITY_FIXTURES = {
         "enabled": true
       }
     },
-    "setup": null,
+    "setup": {
+      "cards": [],
+      "dashboard_path": null,
+      "keep_the_why_badge": false,
+      "keep_the_why_ci": false,
+      "keep_the_why_dashboard": false,
+      "keep_the_why_init": false,
+      "maity_badge": false
+    },
     "slug": "maity",
     "state": "build",
     "state_changed_at": "2026-10-21T09:00:00Z",
@@ -3560,6 +3571,17 @@ window.MAITY_FIXTURES = {
   },
   "maity/swarm.json": {
     "as_of": "2026-10-21T13:00:00Z",
+    "awake": {
+      "hours": 22,
+      "of_hours": 24,
+      "since": "2026-10-20T13:00:00Z"
+    },
+    "board": {
+      "blocked": 1,
+      "in_progress": 2,
+      "open": 5,
+      "review": 1
+    },
     "coverage": {
       "reviews_since": "2026-10-20"
     },
@@ -3676,7 +3698,140 @@ window.MAITY_FIXTURES = {
         "reviews_given": 0
       }
     ],
+    "team": {
+      "agents": 3,
+      "humans": 1,
+      "instances": 4,
+      "online": {
+        "agents": 2,
+        "humans": 1,
+        "instances": 3
+      }
+    },
     "totals": {
+      "cards_created": 61,
+      "cards_created_per_day": [
+        {
+          "count": 3,
+          "date": "2026-09-22"
+        },
+        {
+          "count": 1,
+          "date": "2026-09-23"
+        },
+        {
+          "count": 2,
+          "date": "2026-09-24"
+        },
+        {
+          "count": 4,
+          "date": "2026-09-25"
+        },
+        {
+          "count": 0,
+          "date": "2026-09-26"
+        },
+        {
+          "count": 2,
+          "date": "2026-09-27"
+        },
+        {
+          "count": 3,
+          "date": "2026-09-28"
+        },
+        {
+          "count": 1,
+          "date": "2026-09-29"
+        },
+        {
+          "count": 2,
+          "date": "2026-09-30"
+        },
+        {
+          "count": 2,
+          "date": "2026-10-01"
+        },
+        {
+          "count": 5,
+          "date": "2026-10-02"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-03"
+        },
+        {
+          "count": 0,
+          "date": "2026-10-04"
+        },
+        {
+          "count": 3,
+          "date": "2026-10-05"
+        },
+        {
+          "count": 2,
+          "date": "2026-10-06"
+        },
+        {
+          "count": 4,
+          "date": "2026-10-07"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-08"
+        },
+        {
+          "count": 2,
+          "date": "2026-10-09"
+        },
+        {
+          "count": 3,
+          "date": "2026-10-10"
+        },
+        {
+          "count": 0,
+          "date": "2026-10-11"
+        },
+        {
+          "count": 2,
+          "date": "2026-10-12"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-13"
+        },
+        {
+          "count": 4,
+          "date": "2026-10-14"
+        },
+        {
+          "count": 2,
+          "date": "2026-10-15"
+        },
+        {
+          "count": 3,
+          "date": "2026-10-16"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-17"
+        },
+        {
+          "count": 2,
+          "date": "2026-10-18"
+        },
+        {
+          "count": 0,
+          "date": "2026-10-19"
+        },
+        {
+          "count": 3,
+          "date": "2026-10-20"
+        },
+        {
+          "count": 2,
+          "date": "2026-10-21"
+        }
+      ],
       "cards_done": 36,
       "cards_done_per_day": [
         {
@@ -3802,7 +3957,136 @@ window.MAITY_FIXTURES = {
       ],
       "claim_to_done_median_seconds": 6100,
       "handovers": 3,
+      "messages": {
+        "chat": 420,
+        "notice": 310,
+        "other": 55,
+        "review_result": 56
+      },
       "prs_merged": 23,
+      "prs_merged_per_day": [
+        {
+          "count": 1,
+          "date": "2026-09-22"
+        },
+        {
+          "count": 1,
+          "date": "2026-09-23"
+        },
+        {
+          "count": 0,
+          "date": "2026-09-24"
+        },
+        {
+          "count": 1,
+          "date": "2026-09-25"
+        },
+        {
+          "count": 2,
+          "date": "2026-09-26"
+        },
+        {
+          "count": 1,
+          "date": "2026-09-27"
+        },
+        {
+          "count": 0,
+          "date": "2026-09-28"
+        },
+        {
+          "count": 1,
+          "date": "2026-09-29"
+        },
+        {
+          "count": 1,
+          "date": "2026-09-30"
+        },
+        {
+          "count": 0,
+          "date": "2026-10-01"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-02"
+        },
+        {
+          "count": 0,
+          "date": "2026-10-03"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-04"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-05"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-06"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-07"
+        },
+        {
+          "count": 0,
+          "date": "2026-10-08"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-09"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-10"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-11"
+        },
+        {
+          "count": 0,
+          "date": "2026-10-12"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-13"
+        },
+        {
+          "count": 0,
+          "date": "2026-10-14"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-15"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-16"
+        },
+        {
+          "count": 0,
+          "date": "2026-10-17"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-18"
+        },
+        {
+          "count": 0,
+          "date": "2026-10-19"
+        },
+        {
+          "count": 1,
+          "date": "2026-10-20"
+        },
+        {
+          "count": 2,
+          "date": "2026-10-21"
+        }
+      ],
+      "review_results_per_pr": 2.4,
       "review_to_done_median_seconds": 2400,
       "reviews_given": 13
     },
@@ -3866,6 +4150,7 @@ window.MAITY_FIXTURES = {
         },
         "body": "The CLI needs `--no-code` here too.",
         "created_at": "2026-10-21T10:30:00Z",
+        "edited": null,
         "id": "nte-0031",
         "mentions": [],
         "resolution": null,
@@ -3880,6 +4165,7 @@ window.MAITY_FIXTURES = {
         },
         "body": "Already in §6.4.",
         "created_at": "2026-10-21T10:40:00Z",
+        "edited": null,
         "id": "nte-0032",
         "mentions": [],
         "resolution": {
@@ -3888,6 +4174,26 @@ window.MAITY_FIXTURES = {
           "reason": "covered"
         },
         "state": "dismissed",
+        "task_id": "tsk-0001"
+      },
+      {
+        "author": {
+          "handle": "agent-b",
+          "kind": "agent",
+          "member_id": "agt-b"
+        },
+        "body": {
+          "at": "2026-10-21T12:00:00Z",
+          "by": "hum-maintainer",
+          "reason": "held a token",
+          "redacted": true
+        },
+        "created_at": "2026-10-21T11:30:00Z",
+        "edited": null,
+        "id": "nte-0033",
+        "mentions": [],
+        "resolution": null,
+        "state": "open",
         "task_id": "tsk-0001"
       }
     ]
@@ -3932,7 +4238,8 @@ window.MAITY_FIXTURES = {
         "ships_with": [],
         "status": "in_progress",
         "title": "API contract: docs/api.md",
-        "updated_at": "2026-10-21T13:00:00Z"
+        "updated_at": "2026-10-21T13:00:00Z",
+        "watching": false
       },
       {
         "area": "hub/",
@@ -3972,7 +4279,8 @@ window.MAITY_FIXTURES = {
         "ships_with": [],
         "status": "blocked",
         "title": "Hub: credential exchange and storage",
-        "updated_at": "2026-10-21T13:00:00Z"
+        "updated_at": "2026-10-21T13:00:00Z",
+        "watching": false
       },
       {
         "area": "hub/",
@@ -4040,7 +4348,8 @@ window.MAITY_FIXTURES = {
         ],
         "status": "review",
         "title": "Hub: skeleton with health endpoint",
-        "updated_at": "2026-10-21T13:00:00Z"
+        "updated_at": "2026-10-21T13:00:00Z",
+        "watching": false
       },
       {
         "area": "cli/",
@@ -4072,7 +4381,8 @@ window.MAITY_FIXTURES = {
         ],
         "status": "open",
         "title": "CLI: join and wait",
-        "updated_at": "2026-10-21T13:00:00Z"
+        "updated_at": "2026-10-21T13:00:00Z",
+        "watching": false
       },
       {
         "area": "web/",
@@ -4103,7 +4413,8 @@ window.MAITY_FIXTURES = {
         "ships_with": [],
         "status": "in_progress",
         "title": "Dashboard skeleton against fixtures",
-        "updated_at": "2026-10-21T13:00:00Z"
+        "updated_at": "2026-10-21T13:00:00Z",
+        "watching": false
       },
       {
         "area": "context/",
@@ -4128,7 +4439,8 @@ window.MAITY_FIXTURES = {
         "ships_with": [],
         "status": "proposed",
         "title": "Context round after the skeletons",
-        "updated_at": "2026-10-21T13:00:00Z"
+        "updated_at": "2026-10-21T13:00:00Z",
+        "watching": false
       },
       {
         "area": "docs/",
@@ -4170,7 +4482,8 @@ window.MAITY_FIXTURES = {
         "ships_with": [],
         "status": "in_progress",
         "title": "Contract: event kinds for chat",
-        "updated_at": "2026-10-21T13:00:00Z"
+        "updated_at": "2026-10-21T13:00:00Z",
+        "watching": false
       },
       {
         "area": "/",
@@ -4201,7 +4514,8 @@ window.MAITY_FIXTURES = {
         "ships_with": [],
         "status": "done",
         "title": "Repository scaffold",
-        "updated_at": "2026-10-21T13:00:00Z"
+        "updated_at": "2026-10-21T13:00:00Z",
+        "watching": false
       },
       {
         "area": "docs/",
@@ -4226,7 +4540,8 @@ window.MAITY_FIXTURES = {
         "ships_with": [],
         "status": "cancelled",
         "title": "Second site placeholder",
-        "updated_at": "2026-10-21T13:00:00Z"
+        "updated_at": "2026-10-21T13:00:00Z",
+        "watching": false
       },
       {
         "area": "/",
@@ -4448,7 +4763,8 @@ window.MAITY_FIXTURES = {
         "ships_with": [],
         "status": "review",
         "title": "Board: subtasks",
-        "updated_at": "2026-10-21T12:00:00Z"
+        "updated_at": "2026-10-21T12:00:00Z",
+        "watching": false
       },
       {
         "area": "web/",
@@ -4477,7 +4793,8 @@ window.MAITY_FIXTURES = {
         "ships_with": [],
         "status": "open",
         "title": "Subtasks: the collapsed row",
-        "updated_at": "2026-10-21T12:00:00Z"
+        "updated_at": "2026-10-21T12:00:00Z",
+        "watching": false
       },
       {
         "area": "web/",
@@ -4506,7 +4823,8 @@ window.MAITY_FIXTURES = {
         "ships_with": [],
         "status": "done",
         "title": "Subtasks: the counts",
-        "updated_at": "2026-10-21T12:00:00Z"
+        "updated_at": "2026-10-21T12:00:00Z",
+        "watching": false
       },
       {
         "area": "web/",
@@ -4535,7 +4853,8 @@ window.MAITY_FIXTURES = {
         "ships_with": [],
         "status": "cancelled",
         "title": "Old plan for the board",
-        "updated_at": "2026-10-21T12:00:00Z"
+        "updated_at": "2026-10-21T12:00:00Z",
+        "watching": false
       },
       {
         "area": "web/",
@@ -4564,7 +4883,8 @@ window.MAITY_FIXTURES = {
         "ships_with": [],
         "status": "open",
         "title": "A step of the old plan, still open",
-        "updated_at": "2026-10-21T12:00:00Z"
+        "updated_at": "2026-10-21T12:00:00Z",
+        "watching": false
       }
     ],
     "next_cursor": null
@@ -4979,9 +5299,9 @@ window.MAITY_FIXTURES = {
     }
   },
   "me.json": {
+    "deletion": null,
     "member": {
       "aliases": [],
-      "deletion": null,
       "display_name": "Maintainer",
       "handle": "maintainer",
       "id": "hum-maintainer",
@@ -5074,7 +5394,6 @@ window.MAITY_FIXTURES = {
         "url": "https://maity.team/maintainer/maity/board?task=tsk-0004"
       },
       {
-        "_text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
         "actor": {
           "avatar_url": null,
           "display_name": "Agent A",
@@ -5150,10 +5469,6 @@ window.MAITY_FIXTURES = {
     ],
     "settings": {
       "browser": {
-        "content": {
-          "chat": false,
-          "mention": false
-        },
         "enabled": false,
         "kinds": {
           "chat": true,
@@ -5171,9 +5486,32 @@ window.MAITY_FIXTURES = {
           "session_id": "hss-41d2"
         },
         "address_status": "verified",
+        "daily_at": "08:00",
+        "disabled_at": null,
+        "hard_failures": 0,
+        "kinds": {
+          "chat": {
+            "content": false,
+            "mode": "daily"
+          },
+          "inbox": {
+            "mode": "immediate"
+          },
+          "mention": {
+            "content": false,
+            "mode": "daily"
+          },
+          "security": {
+            "mode": "immediate"
+          }
+        },
         "language": "en",
         "pending_address": null,
-        "verified_at": "2026-10-01T09:12:00Z"
+        "quiet_hours": null,
+        "sign_in_link": true,
+        "timezone": "Europe/Vienna",
+        "verified_at": "2026-10-01T09:12:00Z",
+        "weekly_on": "mon"
       },
       "kinds": [
         "inbox",
@@ -5181,7 +5519,7 @@ window.MAITY_FIXTURES = {
         "mention",
         "security"
       ],
-      "mail_available": false,
+      "mail_available": true,
       "not_listening": {
         "minutes": 60,
         "mode": "inbox"
@@ -5766,17 +6104,7 @@ window.MAITY_FIXTURES = {
     ],
     "still_running": {
       "rnr-0002": [
-        {
-          "agent": {
-            "display_name": "Agent B",
-            "handle": "agent-b",
-            "id": "agt-b"
-          },
-          "id": "plc-0003",
-          "reported": {
-            "state": "running"
-          }
-        }
+        "plc-0003"
       ]
     }
   },
@@ -5855,7 +6183,6 @@ window.MAITY_FIXTURES = {
             "member_id": "agt-s1"
           }
         ],
-        "mode": "message",
         "moderator": {
           "instance": null,
           "member_id": "hum-maintainer"
@@ -5933,7 +6260,6 @@ window.MAITY_FIXTURES = {
             "member_id": "agt-s1"
           }
         ],
-        "mode": "message",
         "moderator": {
           "instance": "s1aa",
           "member_id": "agt-s1"
@@ -6029,7 +6355,6 @@ window.MAITY_FIXTURES = {
             "member_id": "hum-maintainer"
           }
         ],
-        "mode": "message",
         "moderator": {
           "instance": null,
           "member_id": "hum-maintainer"
@@ -6094,7 +6419,6 @@ window.MAITY_FIXTURES = {
         "circle": "owner",
         "id": "jfx-s4",
         "missed_slots": 0,
-        "mode": "message",
         "opened_at": null,
         "project": "maintainer/sample",
         "scheduled_for": "2026-10-24T09:00:00Z",
@@ -6419,7 +6743,8 @@ window.MAITY_FIXTURES = {
         ],
         "status": "review",
         "title": "Checkout rounding",
-        "updated_at": "2026-10-21T13:00:00Z"
+        "updated_at": "2026-10-21T13:00:00Z",
+        "watching": false
       },
       {
         "area": "src/",
@@ -6442,7 +6767,8 @@ window.MAITY_FIXTURES = {
         ],
         "status": "done",
         "title": "Checkout totals in the receipt",
-        "updated_at": "2026-10-21T13:00:00Z"
+        "updated_at": "2026-10-21T13:00:00Z",
+        "watching": false
       },
       {
         "area": "src/",
@@ -6567,7 +6893,8 @@ window.MAITY_FIXTURES = {
         "ip": "198.51.100.7",
         "last_seen_at": "2026-10-22T14:01:30Z",
         "method": "password",
-        "os": "Linux"
+        "os": "Linux",
+        "second_factor": true
       },
       {
         "approved_by": "hss-41c0",
@@ -6587,7 +6914,8 @@ window.MAITY_FIXTURES = {
         "ip": "203.0.113.24",
         "last_seen_at": "2026-10-22T13:40:00Z",
         "method": "device_code",
-        "os": "iOS"
+        "os": "iOS",
+        "second_factor": false
       },
       {
         "approved_by": null,
@@ -6607,7 +6935,8 @@ window.MAITY_FIXTURES = {
         "ip": "192.0.2.80",
         "last_seen_at": "2026-10-22T13:19:10Z",
         "method": "email_link",
-        "os": "Linux"
+        "os": "Linux",
+        "second_factor": false
       },
       {
         "approved_by": null,
@@ -6627,7 +6956,8 @@ window.MAITY_FIXTURES = {
         "ip": "198.51.100.40",
         "last_seen_at": "2026-10-15T18:20:00Z",
         "method": "password",
-        "os": "Windows"
+        "os": "Windows",
+        "second_factor": false
       }
     ]
   }

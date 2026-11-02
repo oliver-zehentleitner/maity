@@ -301,6 +301,7 @@ it by right alike (`403` as well, so nobody approves what cannot start), the pic
 (`409 pickup_not_allowed`, `why: project_not_allowed`, a rejoin included) and the exchange (`not_found`, as for any join that no
 longer holds). `GET /agents?allowed_in=` filters with the same function, by the name as written when the project does not exist yet.
 Nothing ends a membership: the list is read only where something new would start.
+The column is added nullable without a backfill: null means "any project", so existing profiles and memberships keep working.
 
 **Reason:** the answer depends on names that change (a project's slug, its owner's handle), so five places each comparing strings
 would drift apart; one function that expands the project to all its names cannot. Asking at the pickup as well as at the exchange
@@ -310,6 +311,7 @@ means a runner never picks up a code that can only fail later.
 - Resolving the listed names to projects once, when the list is written: a name may be allowed before the project exists, and a
   rename or a project created later would never match.
 - Checking at the exchange alone: the runner would pick up codes that fail without a reason until its pickups run out.
+- A default `[]`: it would shut every agent out of new instances at once.
 - Ending the memberships a changed list no longer names: an owner can already remove an agent; the list is the say before it joins.
 
 ## A join's `takes_over` and `handover` are copied to the membership at the exchange as a snapshot and a pointer, never as text, and the packet drops them once the member has checked in

@@ -103,7 +103,7 @@ def withdraw_started_by(conn: Connection, human_id: str, reason: str) -> None:
         close_request(conn, row.id, "withdrawn", None, reason=reason)
 
 
-def _announce(
+def announce(
     conn: Connection,
     project_id: str,
     old: str,
@@ -147,7 +147,7 @@ def rename(
     old = namespace.full_name(conn, project)
     withdraw_open(conn, project.id, actor, "the project was renamed")
     namespace.move(conn, project, project.owner_id, slug)
-    _announce(conn, project.id, old, {"slug": slug}, actor, mine.principal_id)
+    announce(conn, project.id, old, {"slug": slug}, actor, mine.principal_id)
     return True
 
 
@@ -319,7 +319,7 @@ def move_to(conn: Connection, project: Any, to: str, actor: Actor | None, by: st
         conn, moved, sending, moved.owner_org_id, to if to.startswith("hum-") else None
     )
     owner = namespace.owner_of(conn, moved)
-    _announce(conn, project.id, old_full, {"owner": owner}, actor, by)
+    announce(conn, project.id, old_full, {"owner": owner}, actor, by)
     public_pages.touch(conn, "project", project.id)  # the page is off under the new name (§6.25)
     agent_owners.reconcile(conn, project.id, actor)  # unset `agent_owners` now reads `members`
 

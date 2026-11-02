@@ -245,7 +245,8 @@ def test_a_band_without_text_is_a_title_and_a_button(
     bare = {k: v for k, v in BAND.items() if k != "text"}
     html = page(owner, make_client, bare)
     assert re.search(
-        r'<h2>Start</h2><a class="btn btn-primary" href="/register">Go</a></div></div></section>',
+        r'<h2>Start</h2><a class="btn btn-primary" href="/register\?lang=en">Go</a>'
+        r"</div></div></section>",
         html,
     )
     assert "<p>Now.</p>" not in page(owner, make_client, bare)
@@ -316,8 +317,8 @@ def test_the_footer_has_the_designers_columns_the_operator_line_and_the_language
     assert 'rel="noopener me">Mastodon</a>' in footer.group(1)
     assert '<p class="operator">Maity, Austria</p>' in footer.group(1)
     assert (
-        '<p class="langs"><a href="?lang=en">en</a> <a href="?lang=de">de</a></p>'
-        in footer.group(1)
+        '<p class="langs"><a href="?lang=en" lang="en">English</a> '
+        '<a href="?lang=de" lang="de">Deutsch</a></p>' in footer.group(1)
     )
 
 
@@ -378,7 +379,10 @@ def test_the_languages_are_listed_default_first_then_alphabetically(owner: flow.
     html = render.landing_document(
         setting, "en", public_url="https://hub.example", legal={"pages": {}}, stats=None
     )
-    assert '<p class="langs"><a href="?lang=en">en</a> <a href="?lang=de">de</a> ' in html
+    assert (
+        '<p class="langs"><a href="?lang=en" lang="en">English</a> '
+        '<a href="?lang=de" lang="de">Deutsch</a> ' in html
+    )
     assert re.findall(r'<link rel="alternate" hreflang="([a-z-]+)"', html) == ["en", "de", "fr"]
 
 

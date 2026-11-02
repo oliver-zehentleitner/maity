@@ -137,7 +137,7 @@ night's merges deployed before the maintainer is back was stated.
 **Id:** 8ba32bfa-41ff-4351-8884-4ac5ee08bae5
 **Type:** decision
 **Type:** incident
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the coordinator's rule, 2026-10-22, set when the reviewer came back from a usage limit
 **Revisit when:** a second reviewer joins, or reviews are reassigned in a way the board can show without a list from the coordinator
@@ -201,7 +201,7 @@ run names.
 
 **Id:** e534e9f3-a419-4a09-8054-117150592490
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's rule and reason, 2026-10-25, relayed by the coordinator
 **Revisit when:** the hub enforces the why reference on code reports — then this team rule gives way to the hub's policy
@@ -802,10 +802,30 @@ a job to whichever runner with that label is free, so two MariaDB jobs run at on
 **Reason:** a machine runs one job of a type at a time because the service containers bind the host ports 5432 and 3306; more concurrent jobs of a type need more machines.
 The name of a runner must be unique in the repository (the first registration of the same name failed on the old workstation runners), the label is meant to be shared.
 
+**Order:** the registrations of the old workstation runners with the default names (`maity-vm-<type>`) must be removed in the repository settings before a machine registers a name that collides; `config.sh` fails on a taken name and does not replace it. The default prefix stays `maity-vm`, so the first machine needs no new variable.
+
 **Rejected alternatives:**
 - A runner per job type on each machine, with the types spread over the machines (the first plan): it does not shorten the queue of the one slow job.
 - Two services of one type on one machine: both bind 3306; random host ports would need the connection URLs to follow, a change in the shared workflow.
 - A label per machine: the workflow would have to know the machines, and a job could not take whichever is free.
+
+## The bootstrap's self-test reads the machine's own addresses without failing when one is missing
+
+**Id:** fdcbc28e-c9ea-49ef-aa1b-c734e93c202a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the bootstrap of the second runner machine, which stopped at the start of its self-test on a machine without IPv6 (2026-10-29, #648); the review of that change
+**See:** process.md#a-second-rented-machine-serves-the-same-job-type-under-the-same-label-and-its-own-name — 2020c6e7-f289-4d55-858a-5438c8bba239 — as of 2026-10-29
+**Revisit when:** the bootstrap also has to run on machines with IPv6 off in the kernel, where `ip6tables` in the firewall unit is the next thing to fail
+
+`ip -6 route get` exits 2 ("Network is unreachable") where a machine has no IPv6 route. Under `set -euo pipefail` the failing command substitution ended the whole bootstrap at the start of its self-test, after everything was built and before it was tested, with neither a `FAIL` line nor a message, only the missing `ok:`. Both lookups of the machine's own addresses now end in `|| own=` / `|| own6=`: an empty value keeps the script going, and every later use already skips an empty address.
+
+**Reason:** the self-test is the last line of the bootstrap and a missing address is a normal case, not a failure of what was built. The earlier review of the IPv6 probe had named the case, but it had not been tried on a machine without IPv6; the second one was the first.
+
+**Rejected alternatives:**
+- Dropping `pipefail` for the script: it guards every other step.
+- Checking for IPv6 first and skipping the lookup: a second test of the same condition, which can disagree with `ip route`.
 
 
 ## Bugs are GitHub issues with a form; feature requests and contributions are directed to the project on Maity
@@ -1033,3 +1053,48 @@ fault close to the change that caused it without making every author wait for it
   would run it on the self-hosted machine without the approval of outside collaborators; only commits of main are accepted.
 - Notify agents directly from the workflow: that needs a Maity credential in the repository's secrets; the issue is the
   channel the workflow can use without one.
+
+## Before the launch the contract says what runs, and nothing is built only to fulfil it
+
+**Id:** 55dd3656-2dbe-4c9b-bca6-5b3505545b92
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's decisions on the contract follow-ups, 2026-11-01; the follow-up list of #1094
+**Revisit when:** the launch is out
+
+Where the contract promised what the hub does not do, the passage stays as the
+agreed design and is marked "not built", as for the objection hold (§6.19) and
+a participant's `wake` (§9.2). Exceptions the hub already has, such as the
+`204` answers, are listed instead of changed.
+
+**Rejected:** building the missing routes now, which adds risk right before the
+launch for features nobody has asked for yet; deleting the passages, which would
+lose agreed designs.
+
+## The docs pages on maity.dev are rendered at deploy from `docs/`, and `docs/nav.yml` is the only list of pages and the navigation
+
+**Id:** 3b470500-85e0-4261-996e-425290e5d97b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's request for a docs page on maity.dev; the joint proposal of the designer and the docs author on the card tsk-92pgshcs2a8c, 2026-11-01. The reasons are theirs, not stated by the maintainer.
+**Revisit when:** the docs become multilingual, or need pages without a Markdown source
+**See:** process.md — 7e78b0e4-e8b4-4ce2-9a83-f9457153cd5b — as of 2026-11-01
+
+`tools/site_docs.py` renders every page `docs/nav.yml` lists when the site
+deploys, with GitHub's anchors, so links from the repository and from the
+site are the same. A section `hide` names on a split page gets no page, and
+`docs/architecture.md` stays out of the list until it is rewritten, as it
+still describes the first design of 2026-10-21 (the lead's call on #1095).
+
+**Reason:** the repository and the site would otherwise drift apart, and
+each command is checked only once.
+
+**Rejected:**
+
+- Pages written by hand in HTML: a second source.
+- A static site generator with Node or a framework: more tooling than about
+  ten pages need.
+- Linking only to the Markdown on GitHub: no navigation of its own, and
+  `docs/api.md` as one page of 17,000 lines.

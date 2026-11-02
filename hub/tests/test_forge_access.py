@@ -8,6 +8,8 @@ for real.
 from __future__ import annotations
 
 import base64
+import threading
+import time
 from collections import OrderedDict
 from dataclasses import replace
 from typing import Any
@@ -226,7 +228,7 @@ def test_a_repository_that_turns_private_falls_back_and_is_no_longer_read(
         _reader(migrated).branch(REPO, "main")
     assert raised.value.reason == "private_without_grant"
     assert fake.sent[reads_before:] == [(OPERATOR, f"/repos/{REPO}")]  # the check, no read
-    assert forge_access.probe_via(_project_id(migrated), URL, OPERATOR) is None
+    assert forge_access.probe_via(_project_id(migrated), URL, None, OPERATOR) is None
 
 
 def test_a_rejected_owner_token_falls_back_to_the_operators_token(
@@ -357,6 +359,23 @@ def test_a_gone_installation_falls_back_with_its_reason(
         assert conn.execute(select(t.forge_link.c.status)).scalar_one() == state
 
 
+def test_a_suspended_link_asks_for_a_new_mint_not_for_a_token_held_from_before(
+    owner: flow.Human, migrated: Engine, fake: FakeForge, settings: Settings
+) -> None:
+    """Another replica found it suspended; a token held here must not turn it `active` again:
+    only a mint that succeeds says the installation is back."""
+    assert settings.github_app is not None
+    held = (settings.github_app.app_id, 7)
+    _link(migrated, owner.id, status="suspended")
+    _confirm(owner)
+    github_app._tokens[held] = ("from before", time.time() + 3000)
+    try:
+        _reader(migrated).branch(REPO, "main")
+        assert held not in github_app._tokens  # the fake mints without storing
+    finally:
+        github_app._tokens.clear()
+
+
 def test_a_new_url_takes_the_grant_away_at_once(
     owner: flow.Human, migrated: Engine, fake: FakeForge
 ) -> None:
@@ -386,3 +405,69 @@ def test_the_probe_names_the_reason_to_an_admin(
     assert answer.status_code == 200, answer.text
     repository = owner.get("/projects/maintainer/maity").json()["repository"]
     assert (repository["probe_via"], repository["probe_configured"]) == ("app", True)
+
+
+def _stored(engine: Engine) -> str | None:
+    with engine.connect() as conn:
+        stored: str | None = conn.execute(select(t.project.c.probe_via)).scalar_one()
+        return stored
+
+
+def _on_postgresql(engine: Engine) -> None:
+    if engine.dialect.name != "postgresql":
+        pytest.skip("only PostgreSQL runs replicas")
+
+
+def test_another_replica_shows_the_source_this_one_found(
+    owner: flow.Human, migrated: Engine, fake: FakeForge
+) -> None:
+    """The probe runs on one replica per interval (24489a9c): the others never choose."""
+    _on_postgresql(migrated)
+    _link(migrated, owner.id)
+    _confirm(owner)
+    _reader(migrated).branch(REPO, "main")
+    assert _stored(migrated) == "app"
+    forge_access._last_via.clear()  # what another replica knows
+    assert owner.get("/projects/maintainer/maity").json()["repository"]["probe_via"] == "app"
+
+
+def test_no_source_found_is_stored_and_differs_from_no_choice_yet(
+    owner: flow.Human, migrated: Engine, fake: FakeForge
+) -> None:
+    _on_postgresql(migrated)
+    assert forge_access.probe_via("p", URL, None, OPERATOR) == "instance"  # no choice yet
+    with pytest.raises(forge.NotCoveredError):
+        _reader(migrated).branch(REPO, "main")
+    assert _stored(migrated) == forge_access.NO_SOURCE
+    assert forge_access.probe_via("p", URL, _stored(migrated), OPERATOR) is None
+
+
+def test_a_project_locked_by_the_request_that_reads_is_skipped_not_waited_for(
+    owner: flow.Human, migrated: Engine, fake: FakeForge
+) -> None:
+    _on_postgresql(migrated)
+    project_id = _project_id(migrated)
+    access = forge_access.ForgeAccess(migrated, None, None)
+    with migrated.begin() as held:
+        held.execute(select(t.project.c.id).with_for_update())
+        writer = threading.Thread(target=access._note_via, args=(project_id, "app"), daemon=True)
+        writer.start()
+        writer.join(10)
+        waited = writer.is_alive()
+    writer.join(10)
+    assert not waited
+    assert _stored(migrated) is None
+    access._note_via(project_id, "app")  # the next choice writes it
+    assert _stored(migrated) == "app"
+
+
+def test_every_other_database_writes_nothing_and_shows_what_it_knows(
+    owner: flow.Human, migrated: Engine, fake: FakeForge
+) -> None:
+    if migrated.dialect.name == "postgresql":
+        pytest.skip("PostgreSQL stores it")
+    _link(migrated, owner.id)
+    _confirm(owner)
+    _reader(migrated).branch(REPO, "main")
+    assert _stored(migrated) is None
+    assert owner.get("/projects/maintainer/maity").json()["repository"]["probe_via"] == "app"

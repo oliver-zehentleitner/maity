@@ -73,7 +73,7 @@ uses, and an allowlist of one cannot miss a scheme.
 
 **Id:** f6560be2-4153-4d19-adc7-6fdc8589991f
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's request for a picture that differs per member, relayed by the coordinator, 2026-10-22; web PR #128, 2026-10-22
 **Revisit when:** avatars can be uploaded (docs/api.md #136) and an upload should replace the generated one everywhere, or a design asks for another pattern
@@ -274,7 +274,7 @@ back to following the system once a choice was made.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's ask that an id in a request's text, or anywhere text is shown, be a link (tsk-dcj6qwjxc9cq), 2026-10-25; hub/src/maity_hub/ids.py (a prefix and 12 Crockford base32 characters); docs/api.md §6.13 (GitHub the one forge, the project repository's host); the dashboard's implementation, 2026-10-25
+**Source:** the maintainer's ask that an id in a request's text, or anywhere text is shown, be a link (tsk-dcj6qwjxc9cq), 2026-10-25; hub/src/maity_hub/ids.py (a prefix and 12 Crockford base32 characters); docs/api.md §6.13 (GitHub the one forge, the project repository's host); the dashboard's implementation, 2026-10-25; tsk-8nbw39n0snsd for a reference after a slash
 **Revisit when:** the hub gives another forge, another id shape, a page of its own to one card, or the designer reworks the inbox entry
 
 `js/ids.js` turns `tsk-`, `req-`, `agt-` and `hum-` ids of the hub's
@@ -305,7 +305,10 @@ URL fits both without knowing which it is.
 the card asks for the id as the text, and the reads would multiply with
 the text. Linking any `prefix-something`: fixture-like and typed ids
 such as tsk-1 would become dead links. Moving the title out of the
-button: it is the entry's name for the keyboard and for the list.
+button: it is the entry's name for the keyboard and for the list. Keeping
+`/` in the lookbehind: `#909/#911` would link only the first. A lookbehind
+for `/` after a reference: it matches `issues/#5/#6`'s `#6` too, since it
+cannot know whether `#5` was itself accepted, so the check sits in the loop.
 
 ## Nested lists nest by indentation: further in than the item before opens a list inside it
 
@@ -576,6 +579,108 @@ stop under reduced motion by the stylesheet itself. The file under
 `web/landing/`: a hub serving only the landing page, without the
 dashboard's files, would have no script.
 
+## English is always loaded; the reader's language comes as its own script, chosen by one rule in one place
+
+**Id:** 7e1c4f02-6a3b-4d55-9b1e-2f0c8d7a41b6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-ya56x9gx986r, 2026-11-01; docs/api.md §6.2; `en.json` holds 3326 keys, 208 KB, 54 KB compressed
+**Revisit when:** a language's file grows so that its load shows on the first paint, or a catalog is complete enough that English need not come with it
+
+`js/i18n/en.js` stays in `index.html`, since a key without a translation reads in English. Another
+language is one script more, loaded before the first view (`M.i18n.ready`), only if
+`js/i18n/languages.js` names it, so no value from an address ever becomes a script's path.
+`M.api` hands every answer of `GET /auth/session` to `M.i18n.follow`, and a 401 hands it null, so
+every view, the invitation's and the registration's among them, gets the same rule without asking.
+Plural forms follow the catalog's language, not the locale of the numbers: a German browser reading
+the English catalog needs English forms.
+
+The registration sends `interface_language` only for an explicit choice (the picker on `/register`,
+`?lang=`, or the one kept in the browser). Without one it leaves the field out, so the account keeps
+`null` and goes on following the browser.
+
+**Reason:** the visible language must be known before a view draws its words, and several views read
+the session themselves. A catalog per language keeps nine languages off every page load.
+
+**Rejected alternatives:**
+- Always sending the page's language at registration: every account would get `en` while it is the
+  only catalog, which later could not be told apart from a real choice, and the hub's mails would then
+  ignore `language` (§6.2).
+- All ten in `index.html`: about 2 MB of script before anything is drawn, for one language used.
+- Asking in `render()` after its session read: `invite.js` and `register.js` draw before that line.
+- Picking the language in the hub before sign-in: an explicit choice is kept in the browser, where
+  the hub does not see it, so the dashboard chooses and passes `lang` to the page texts (§16.7.4).
+
+## A missing translation is a note until the release; a wrong one fails at once
+
+**Id:** 3d9a6c17-52e8-4b0f-a7c4-91e6f2b08d35
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-ya56x9gx986r, 2026-11-01; docs/api.md §6.2 (a key without a translation reads in English)
+**Revisit when:** the release workflow of the hub runs `make release-check` itself, or a language with other plural rules joins the ten
+
+Placeholders that differ, a key English lacks and impossible plural forms fail `make check`, since
+they break a sentence on screen. A missing or out-of-date key fails only `make release-check`: every
+English text a PR adds would otherwise have to arrive in ten languages in that PR. Which English a
+translation follows is kept per key as two hashes in `i18n/<lang>.meta.json`, its own text beside the
+English: when the translation's text changes it follows today's English, with no step to remember.
+
+**Rejected alternatives:**
+- Finding out-of-date keys from `git log`: shallow CI clones have no history, and a reformat of the
+  file would read as new translations.
+- A command that marks a language as translated: one run after any edit would mark every key current.
+
+## What counts as prose: sentences by shape wherever they stand, a lone word only by where it stands
+
+**Id:** c14e7b90-3a6d-4f28-8e15-7d2a60b9f3c1
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** review findings on card tsk-ya56x9gx986r, 2026-11-02: `"Pick a conversation."` and `" reads what you write here…"` were not counted, so a baseline of zero would have proved nothing
+**Revisit when:** the baseline reaches zero, or a false positive cannot be worded around
+
+`prose()` in `tools/check.py` counts a literal of three words or more that starts with a capital or ends
+like a sentence wherever it stands; no context hides one. Other literals are excluded by shape (class
+lists, paths, selectors) and by the code before them (`class:`, `===`, `querySelector(`). A lone lowercase
+word counts only as a piece of a sentence (`"to "`) or where a person reads it (`textContent =`, the content
+of `h()`, `title:`). Others stay with the reviewer: `"online"` beside a variable cannot be told from a key.
+A `#` comment with words in it counts whatever the line is, since a person reads it in the generated file.
+
+`prose()` stays an approximation on purpose: a lone word in an `h()` call over several lines is not seen,
+because `before` holds one line. The ratchet shows the direction. The proof that nothing is left untranslated
+is the run with a pseudo catalog, so further single cases are not chased here.
+
+**Rejected alternatives:**
+- Counting every lone word: thousands of keys and values, and the ratchet would mean nothing.
+- Shape alone: `"Text (Markdown)"` and `", in "` read like code to it, `"reply primary"` like words.
+- A browser run that collects what is on screen: it sees only the views a run opens.
+
+## A refusal is translated by code in `ApiError`; in English the hub's message stays
+
+**Id:** 8b52e0d4-1f7a-4c69-b3d8-60a7c9e1f24d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-ya56x9gx986r, 2026-11-01; docs/api.md §6.2 (the API stays in English, a client translates by `code` and `details`); about 795 places in the hub raise an error, with views showing `err.message` in about 50 lines
+**Revisit when:** a language's readers report refusals too vague to act on, or the hub's messages move to a catalog of their own
+
+`ApiError` asks `M.errorWords` once, so no view changes. The catalog has one sentence per code of §1.3
+and a few for `details.reason`: it says the kind of refusal. The hub's message says the case, naming a
+card or a limit, and a translation loses that. So English readers keep the hub's message, and only a
+translated language gets the kind. A `details.reason` the catalog knows comes before the code, since
+under `forbidden` it says more. Each code is written out as `M.tOwn("error.<code>")`, because
+`tools/check.py` reads keys only as literals.
+
+**Rejected alternatives:**
+- Translating the roughly 795 messages: a sentence per place in the hub, in ten languages, with values
+  inside them; the contract already says a client goes by `code`.
+- Using the catalog's sentence in English too: every English reader would lose the specifics for the
+  sake of one rule.
+- A map in every view: 50 places to keep in step.
+- One computed key per code: the key check could not see it, and every `error.*` key would read as unused.
+
 ## Words come from a catalog per language, one key per sentence; new text in the views is held back by a ratchet
 
 **Id:** adaebd69-6541-4f4c-81ce-8c38f1fb70aa
@@ -626,7 +731,12 @@ article ("you are an owner"); a value the hub adds later reads as a
 neutral sentence ("you have the role {role}"). Rejected: choosing "a"
 or "an" in code, which only English has. In "X of Y" the plural form
 follows the total, Y ("1 of 3 instances active"), as English writes it.
-Rejected: the form of X, which read "1 of 3 instance active". Facts
+Rejected: the form of X, which read "1 of 3 instance active". A word of
+the contract that more than one page shows (a card's label, status,
+contract state, a pull request's state, a project's state) has one set
+in `M.dom.word(set, value)` in `dom.js`; a value the hub adds later reads
+as it comes. Rejected: a map per file, which drifted (the board said a
+pull request's state with the release editor's keys). Facts
 put side by side with a middle dot between them are allowed where each
 is a whole text of its own ("3 waiting for approval · 1 registered in
 the last hour"); what stays rejected is a sentence made of pieces. A language offered for choice
@@ -771,3 +881,166 @@ context (a descendant selector counts only under its ancestor) and leaves
 out rules inside `@media` and CSS comments: a layout that holds at some
 widths only is no layout for the label.
 
+## A size is handed to the catalog as a finished string; each role and trust token has its own sentence
+
+**Id:** 3ffde266-1d35-4e6a-8ce3-516e13c620e7
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the reviews of #1144, which moved `attachments.js` and `trust.js` into the catalog, 2026-11-02
+**Revisit when:** a second language is added, or a token's sentence needs a role's label rather than its slug
+
+A file size in `attachments.js` passes `M.t` a string that `M.fmt.number`
+has already formatted, without grouping and with the digits the size
+calls for. `trust.js` has a key per `role:` or `trust:` token
+(`trust.every.<trust>`, `trust.every.role.<role>`); a token the web does
+not know, such as a project's own role, falls back to the neutral
+`trust.every.custom`, with its slug as the value.
+
+**Reason:** `M.t` would format a number itself, with grouping, and
+`1023 B` would become `1,023 B`. "Every admin" may need a different form
+of "every" or of the noun in another language, so each token gets a whole
+sentence of its own.
+
+**Rejected alternative:** `toFixed`, which writes the digits but not the
+reader's decimal separator. One sentence `every {who}` with the word put in,
+which is a sentence from pieces.
+
+## The proof that the texts are in the catalog
+
+**Id:** ce9ba9bb-087c-44bd-b1af-3a697a7727d3
+**Type:** decision
+**Status:** superseded
+**Superseded by:** 8d1bbe07-94c0-4071-99d5-3d8f342a07a2
+**Evidence:** inferred
+**Source:** agreement with the lead on card tsk-ya56x9gx986r, 2026-11-02
+**Revisit when:** the report is empty and `--strict` is on, or a page's texts come only after a click often enough to hide many
+
+`tools/pseudo_run.py` walks the routes of `tools/smoke.js` in a real browser over the fixtures, with a pseudo catalog,
+and reports what carries no mark. `prose()` estimates from the source; this shows what a person actually sees. It runs
+as a report while the texts move to the catalog and turns strict with the last language. It does not replace reviewing
+a translation, and what only a click shows is not walked.
+
+**Rejected alternatives:**
+- The run inside `tools/e2e.py` against a hub: its steps look for English words, so a pseudo language fails them all,
+  and it reaches far fewer pages than the fixtures do.
+- A pseudo language in the repository's catalogs: it would be offered to people and need a marking to keep it out.
+- The routes in a list of its own: it would fall behind; those of the smoke test are already kept up.
+
+## The pseudo run is strict; `translate="no"` marks what stays as it is
+
+**Id:** 8d1bbe07-94c0-4071-99d5-3d8f342a07a2
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-33ze4aznv5qj from the lead, 2026-11-02
+**Revisit when:** a page's texts come only after a click often enough to hide many, or fixtures grow so that judging data by their strings lets catalog wording through
+
+`tools/pseudo_run.py --strict` runs in CI's `web-e2e` now, not only with the last language: today's findings were
+cleared, and each language's pull request and each new view would otherwise bring new ones back unseen. What a page
+shows on purpose as it is (an example address, a language's own name on its tab, a technical reason from the browser)
+carries `translate="no"`, which the run skips together with `aria-hidden` decoration. The attribute is HTML's own word
+for it, and browsers' page translation leaves those parts alone too.
+
+What the fixtures say is data: their JSON and the answers `js/api.js` writes itself, minus any literal a view writes as
+well and minus the catalog's texts. Prose under an enum's key (a decision's reason, a release's scope) is data, a bare
+enum value is not, so a raw state still counts. A fixture's text also counts in the pieces a page splits it into at a
+code span or a mention, raw with their stops, so `Keep it;` is data and the button `Keep it` is not. Dates, commits,
+handles with instances, device codes, mail addresses, domains and media types are no words.
+
+Two fixture names are also catalog texts, `Reviewer` (`role.reviewer`) and `OZ Team` (`orgs.new.name_placeholder`).
+Taking the catalog out would drop them from the data, and every page showing those agents would be reported, so
+`FIXTURE_NAMES` in `tools/pseudo_run.py` puts them back (a workaround). The price: a view that writes `Reviewer` itself
+instead of `role.reviewer` is not reported on any page.
+
+**Rejected alternatives:**
+- Renaming the two fixtures so that no name is a catalog word: `tools/smoke.js` matches `Reviewer` exactly some thirty
+  times (member rows, conversation order, notices), a change out of proportion to one exception.
+- An allowlist of the texts the run should accept: it would grow with every fixture and hide a real finding in it.
+- Any two words inside a fixture's prose as data: 18 catalog texts such as `in progress` and `not valid` occur in some
+  fixture sentence and would never be reported.
+- A class of our own for "stays as it is": `translate="no"` already means that, also to a browser's translator.
+
+## One word per thing in the translations
+
+**Id:** fc2e6592-2711-447a-978c-75a9ccce1e0a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** reviews of the German catalog on card tsk-8vzj9gnhed0e, 2026-11-02
+**Revisit when:** a language's speakers find a word of `web/i18n/glossary.md` wrong, or the maintainer wants neutral names for trust levels
+
+`web/i18n/glossary.md` holds one word per thing for all ten languages, since a change later touches each of them. A
+takeover is `Ablösung`, because a claim is already `Übernahme` and the two are different acts: a takeover carries a right
+to object. A claim's release is `zurückgeben`, because a human's go is already `Freigabe`. An arbiter is `Schiedsinstanz`,
+a role someone holds, like the other languages' word. A trust level keeps its one name even where a neutral form exists,
+so that a level reads the same everywhere; the words around it stay neutral where they can.
+A report of abuse is resolved with `erledigen` on every key of its page, because `bearbeiten` is already the word for Edit and
+reads as editing.
+A release keeps its own word apart from a version where a language has both: `A release with this version already exists`
+names the two together, and legal pages and older frames already use `version` for a saved text. The German row fixes one gender, `das Release`, because a half-changed catalog had `ein anderer Release` next to
+`ein Release`; why the neuter won over `der Release` is not recorded.
+Words outside the table follow the same aim. In Spanish, redacting is `suprimir`, deleting is `eliminar` and the button
+Remove is `Quitar`: three acts with three words, so a deletion text cannot be read as hiding or as removing from a list.
+"Reports to" is `informa a` on every key; the anglicism `reporta a` appeared on half of them. A waiting text whose verb is
+reflexive takes the noun, `Incorporación en curso…` for Joining, because a Spanish reflexive gerund needs a person.
+A pull request is masculine in Spanish on every key, its states too, since they are put into sentences about it. The duplicate check in `web/tools/check.py` treats a comma list in a cell as forms of one
+word, and `GLOSSARY_FORMS_OF_ONE` names rows that are one thing: `user` and `users`, a person and a human, `join` as
+noun and verb.
+In Portuguese, a join is `ingresso` (its states masculine to match), signing in is `acesso` as a noun and `entrar` as a
+verb, two-factor sign-in included, and `entrada` keeps its own senses, an entry (of memory, of Keep the Why) and the
+inbox (`caixa de entrada`), so a join or a sign-in never shares its word. A custom role is `todos com a função {role}`,
+because a role's name cannot be put in the plural and the role may be an agent's. A project's launch is `estreia`, since
+`lançamento` is its release. Step-up subjects are infinitives, as in Spanish, because `stepup.*.hint` puts them first in
+a sentence (`{what} exige …`). Legal pages are `páginas jurídicas`: `legal` in Brazilian Portuguese also means "cool".
+In Dutch, taking a member out of a project or an organisation is `weghalen` on every key, because `verwijderen` is
+deleting and an agent that is taken out is not deleted; buttons that take a value, a link or a picture out of a list
+keep the usual `Verwijderen`. An entry (of memory, of Keep the Why) is `item`, a join `deelname`, a sign-in `inloggen`
+(two-factor sign-in `inloggen met tweede factor`), three words for three things. Step-up subjects are infinitives
+(`De landingspagina opslaan`), not `Het opslaan van …`, so that every one reads alike before `stepup.*.hint`.
+
+**Rejected alternatives:**
+- `Übernahme` for both claim and takeover: an error then says a card "needs a takeover" next to "nobody has claimed it".
+- `Schlichtung` for arbiter: a procedure, and it reads badly before a name.
+- `version`, `versión`, `versão` for a release: one word for two things in `error.version_exists`.
+- `bearbeiten` for resolving a report: a half-changed page showed `Erledigen` next to `Wird bearbeitet …`.
+- `der Release`: in use as well; one gender was the point.
+- `eliminar` for redacting in Spanish: it is already the word for deleting an account or a project.
+- `Uniéndote…` and `Uniéndose…` for Joining: one addresses the reader, the other reads as the formal address; the glossary wants a neutral waiting text.
+- `entrada` for a join or a sign-in in Portuguese: it is already an entry and the inbox, and reads as a door, not an act.
+- A neutral form for `Besitzer` in the table: it would make the level's name differ between labels and sentences.
+
+
+## Where the glossary contradicted itself or the catalogs
+
+**Id:** f09998b6-128b-4430-b8d0-fd793d674b4e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** jour fixe proposal t4.s4 of 2026-11-02, adopted as card tsk-jasa8bynb8x3; findings of the reviews of #1156, #1167, #1169 and #1174
+**Revisit when:** a language's speakers find `le fil` or `puesta en marcha` wrong, or a role in `role.*` is renamed to a position's word
+
+Reviewers and translators guessed anew at each language where the glossary disagreed with itself or with the catalogs.
+Each case is settled once:
+
+- **Role words and positions.** The rule said role words stay English while the table translates `lead` and `arbiter`.
+  Role words are the names in `role.*` (`coder`, `reviewer`, `ops`, …), labels a person picks from a list; a position in
+  a team or a contract (`lead`, `arbiter`, `owner`) is said in a sentence and takes its row.
+- **Launch and release.** `state.launch` was `Lanzamiento` in Spanish, the table's word for a release, so the board
+  named two states alike. A row for the project's state: Spanish `puesta en marcha`, Portuguese `estreia` (its release
+  is already `lançamento`); the other languages had distinct words already. The duplicate check of
+  `web/tools/check.py` now guards the pair.
+- **Ticker and feed in French.** `le fil` stood for the ticker and, in `projectmessage.intro`, for the project's message
+  feed. The ticker keeps `fil d'actualité`, `le fil` in a sentence once it is named; the feed is `flux`, with a row of
+  its own.
+- **Trust in Spanish** read `Confianza` in labels and `nivel de confianza` in sentences; now the row's word everywhere,
+  as in German and French.
+- **Operator in German** read `Betrieb` twice beside `Betreiber`; now `Betreiber`.
+
+**Rejected alternatives:**
+- Translating role words like positions: they are picked from a list and appear in commands such as `role:coder`, where
+  a translated label would not match what an agent types.
+- Spanish `lanzamiento` for launch and another word for release: the release row was settled in #1167 and eight
+  catalogs build on it.
+- French `fil d'actualité` in full in every sentence: nine sentences grow long for no gain once `le fil` means the
+  ticker alone.

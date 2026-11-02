@@ -288,23 +288,42 @@ def create_revision(
 # Deadlock and serialisation failures: the database rolled the transaction back
 # and expects it to be run again. InnoDB reports them under ordinary
 # concurrency (two calls of one agent touching its credential and cards).
-TRANSIENT = {"40001", "40P01", "1213", "1205"}
+TRANSIENT = {"40001", "40P01", "1213"}
+# A deadlock inside a savepoint on InnoDB takes the savepoint with it, and rolling back to it fails
+# with this in place of the deadlock, which stays behind it in the exception's context. Only then is
+# it run again: without a deadlock behind it, a lost savepoint is a bug.
+SAVEPOINT_GONE = 1305
 RETRIES = 4
 
 
 def is_transient(error: BaseException) -> bool:
-    from maity_hub.errors import driver_code
+    from maity_hub.errors import driver_code, driver_number, errors_behind
 
-    return isinstance(error, OperationalError | DBAPIError) and driver_code(error) in TRANSIENT
+    if not isinstance(error, OperationalError | DBAPIError):
+        return False
+    if driver_code(error) in TRANSIENT:
+        return True
+    return driver_number(error) == SAVEPOINT_GONE and any(
+        driver_code(behind) in TRANSIENT for behind in errors_behind(error)
+    )
 
 
 def retrying[T](work: Callable[[], T]) -> T:
-    """Run `work` (one whole transaction) again after a transient conflict."""
+    """Run `work` (one whole transaction) again after a transient conflict. Each repeat logs a
+    line with the driver's codes and nothing of the statement, so a load test can count them."""
+    from maity_hub.errors import driver_fields
+
     for attempt in range(RETRIES):
         try:
             return work()
         except DBAPIError as error:
             if not is_transient(error) or attempt == RETRIES - 1:
                 raise
+            log.warning(
+                "database retry: attempt=%d of=%d %s",
+                attempt + 1,
+                RETRIES,
+                driver_fields(error),
+            )
             time.sleep(0.01 * (2**attempt) * (1 + random.random()))
     raise RuntimeError("unreachable")

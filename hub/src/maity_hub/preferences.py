@@ -260,10 +260,8 @@ def item(conn: Connection, human_id: str) -> dict[str, Any] | None:
     }
 
 
-def packet(
-    conn: Connection, mine: Any, cursor: int
-) -> tuple[dict[str, Any], dict[str, Any] | None]:
-    """The packet's `preferences` and `membership.owner_preferences` (§19.4): at most 8
+def texts(conn: Connection, mine: Any) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """The `preferences` a packet carries and `membership.owner_preferences` (§19.4): at most 8
     texts in all, the agent's own owner first and never cut, then by handle and id."""
     owner = _owner_of(conn, mine.row.agent_id)
     humans = conn.execute(
@@ -291,6 +289,14 @@ def packet(
             truncated = True
             break
         items.append(found)
+    return {"notice": NOTICE, "items": items, "truncated": truncated}, given
+
+
+def packet(
+    conn: Connection, mine: Any, cursor: int
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """`texts`, and whether any changed after the resume's cursor."""
+    block, given = texts(conn, mine)
     changed = (
         conn.execute(
             select(func.count())
@@ -303,13 +309,7 @@ def packet(
         ).scalar_one()
         > 0
     )
-    block = {
-        "notice": NOTICE,
-        "items": items,
-        "truncated": truncated,
-        "changed_since_cursor": changed,
-    }
-    return block, given
+    return {**block, "changed_since_cursor": changed}, given
 
 
 # --- the basis of a decision in the owner's stead (§19.4, §20.6) ----------------------------

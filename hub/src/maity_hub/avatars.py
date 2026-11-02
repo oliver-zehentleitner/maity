@@ -195,8 +195,13 @@ def current(conn: Connection, owner_id: str) -> tuple[bytes, str] | None:
 
 def lock_owner(conn: Connection, owner_id: str) -> None:
     """Serialise changes of one picture: two uploads must not both find no row and
-    both insert one."""
-    table = t.agent_profile if owner_id.startswith("agt-") else t.human
+    both insert one. An organisation's is the row its deletion locks too (§6.26), so a picture
+    is not stored after the deletion removed the old one."""
+    table = (
+        t.org
+        if owner_id.startswith("org-")
+        else t.agent_profile if owner_id.startswith("agt-") else t.human
+    )
     conn.execute(select(table.c.id).where(table.c.id == owner_id).with_for_update()).first()
 
 

@@ -1,6 +1,7 @@
 """The pages the hub renders itself, outside the API (docs/api.md §16.7, §16.7.1): the
 landing page at `/` for a visitor without a session while it is enabled, and the legal pages
-at `/impressum`, `/privacy` and `/terms` with their earlier versions at `/<page>/<version>`.
+at `/impressum`, `/privacy` and `/terms`, the last two with their earlier versions readable at
+`/<page>/<version>`, linked from no public page.
 
 The landing page loads the hub's own first-party files (`landing_files`, §16.7) and answers
 with a Content-Security-Policy that allows exactly those; the legal pages carry no script.
@@ -15,14 +16,24 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, Response
 from sqlalchemy import Connection, select
 
-from maity_hub import campaigns, landing, landing_stats, legal, render
+from maity_hub import (
+    campaigns,
+    landing,
+    landing_stats,
+    legal,
+    maintenance,
+    public_pages,
+    public_projects,
+    render,
+)
 from maity_hub import tables as t
 from maity_hub.auth import caller as auth_caller
-from maity_hub.deps import engine_of, settings_of
-from maity_hub.errors import not_found
+from maity_hub.deps import engine_of, origin_of, settings_of
+from maity_hub.errors import not_found, rate_limited
 from maity_hub.shell import shell_response
 
 page_router = APIRouter()
+router = APIRouter()  # under the API prefix
 
 LANDING_CSP = (
     "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; "
@@ -61,6 +72,7 @@ def landing_html(
         legal=legal.public(legal.stored(conn)),
         stats=stats,
         variant=variant,
+        social_image=settings_of(request).web_dir is not None,
     )
     if landing.configured(setting):
         html = render.carry_origin(
@@ -116,10 +128,14 @@ def root(
     """The landing page for a visitor without a valid session, or for anyone who asks to see
     it as one (`?as=public`), while it is enabled; the app shell otherwise (§16.7)."""
     settings = settings_of(request)
+    # Read before the transaction below: the window has a connection of its own.
+    refused = maintenance.running_page(engine_of(request))
     with engine_of(request).begin() as conn:
         setting = landing.stored(conn)
         visitor = as_ == "public" or not auth_caller.has_live_session(conn, request.cookies)
         if setting["enabled"] and visitor:
+            if refused is not None:
+                return refused  # type: ignore[no-any-return]
             campaign = known_campaign(setting, c)
             body = landing_html(conn, request, setting, lang=lang, campaign=campaign)
             _count_view(conn, request, setting, landing.DEFAULT_VARIANT, campaign, as_)
@@ -130,7 +146,36 @@ def root(
 def _shell(settings: Any) -> Response:
     if settings.web_dir is None or not (settings.web_dir / "index.html").is_file():
         raise not_found()  # a hub without a dashboard serves the API alone
-    return shell_response(settings.web_dir)
+    return shell_response(settings.web_dir, settings.public_url)
+
+
+@router.get("/public/pages/{path:path}")
+def read_public_page(path: str, request: Request) -> Response:
+    """What a visitor's dashboard reads (§16.9): no caller, the same answer for everyone."""
+    return public_pages.read(request, path)
+
+
+@page_router.api_route("/explore", methods=["GET", "HEAD"], include_in_schema=False)
+def explore(request: Request) -> Response:
+    """The public projects (§16.9), for every visitor, with or without a session; the shell
+    while the instance serves no public pages, as for any address it does not have."""
+    settings = settings_of(request)
+    if not settings.public_pages:
+        return _shell(settings)
+    wait = public_pages.BY_ADDRESS.hit(origin_of(request).address)
+    if wait:
+        raise rate_limited(wait)
+    with engine_of(request).begin() as conn:
+        body = public_projects.explore_html(conn, settings)
+    return HTMLResponse(
+        body,
+        headers={
+            "Cache-Control": public_pages.CACHE,
+            "Vary": "Cookie",
+            "Content-Security-Policy": public_pages.CSP,
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @page_router.api_route("/for/{slug}", methods=["GET", "HEAD"], include_in_schema=False)
@@ -155,7 +200,10 @@ def legal_html(
     version: str | None,
     lang: str | None,
 ) -> str:
-    """One legal page: the served version, or an earlier one by its version."""
+    """One legal page: the served version, or an earlier one by its version where the page
+    serves those."""
+    if version is not None and page not in legal.EARLIER_SERVED:
+        raise not_found()
     setting = legal.stored(conn)
     served = setting["pages"][page]
     if version is None:
@@ -173,22 +221,12 @@ def legal_html(
     chosen = render.choose_language(
         list(texts), setting["default_language"], lang, request.headers.get("accept-language")
     )
-    versions = [
-        v
-        for v in conn.execute(
-            select(t.legal_version.c.version)
-            .where(t.legal_version.c.page == page)
-            .order_by(t.legal_version.c.version.desc())
-        ).scalars()
-        if v != version
-    ]
     return render.legal_document(
         page=page,
         lang=chosen,
         title=texts[chosen]["title"],
         source=texts[chosen]["markdown"],
         version=version,
-        earlier=versions,
         current=served["version"] if served else None,
         languages=list(texts),
         legal=legal.public(setting),
@@ -202,7 +240,7 @@ def _legal_route(page: str, address: str) -> None:
         f"/{address}", methods=["GET", "HEAD"], include_in_schema=False, name=f"legal_{page}"
     )
     def current(request: Request, lang: str | None = None) -> Response:
-        with engine_of(request).begin() as conn:
+        with engine_of(request).begin() as conn:  # readable during a window (§16.12)
             body = legal_html(conn, request, page, None, lang)
         return _answer(body)
 
@@ -213,7 +251,7 @@ def _legal_route(page: str, address: str) -> None:
         name=f"legal_{page}_old",
     )
     def earlier(version: str, request: Request, lang: str | None = None) -> Response:
-        with engine_of(request).begin() as conn:
+        with engine_of(request).begin() as conn:  # readable during a window (§16.12)
             body = legal_html(conn, request, page, version, lang)
         return _answer(body)
 

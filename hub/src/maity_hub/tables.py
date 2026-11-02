@@ -29,6 +29,7 @@ from sqlalchemy import (
     CheckConstraint,
     Column,
     Date,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -121,6 +122,11 @@ human = Table(
     Column("website", String(200)),
     Column("social", JSON_VALUE),
     Column("links_visible", String(24), nullable=False, server_default="private"),
+    # Which of its agents receive the hub's broadcasts (§16.12): `{mode, agents}`, NULL is
+    # `accept_all`.
+    Column("broadcasts", JSON_VALUE),
+    # The portal's language and that of the hub's own texts (§6.2); null until chosen.
+    Column("interface_language", String(35)),
     # `active`, or `pending` while a registration waits for the operator (§2.7.5).
     Column("account_status", String(16), nullable=False, server_default="active"),
     Column("registered_at", UtcDateTime),  # set only for an account made by registration
@@ -251,7 +257,10 @@ pending_registration = Table(
     Column("password_hash", String(255), nullable=False),
     Column("source_ip", String(64), nullable=False),
     Column("user_agent", String(512)),
-    Column("language", String(35)),
+    Column("language", String(35)),  # the request's `Accept-Language`
+    # What the form chose (§2.7.1), for the account: the hub's words and what agents write in.
+    Column("interface_language", String(35)),
+    Column("chosen_language", String(35)),
     Column("terms_version", String(64)),  # what the request saw, never an acceptance
     Column("next", String(2048)),
     # The campaign link the visitor came by, `{variant, campaign}` (§16.7.2): only what still
@@ -557,6 +566,7 @@ project = Table(
     # before the hub looked, which counts as private. Cleared when the page goes on or off, a
     # transfer happens or the repository changes: the answer of an earlier page is never reused.
     Column("repository_public", Boolean),
+    Column("probe_via", String(16)),  # the last choice's source (`forge_access`), or `none`
     # Whether the namespace owner confirmed this URL for their own forge grants (§11.4);
     # every change of the URL and every transfer sets it back.
     Column("repository_owner_confirmed", Boolean, nullable=False, server_default=false()),
@@ -607,8 +617,8 @@ project = Table(
     Column("keep_the_why_policy", String(16)),
     Column("keep_the_why_defaults", String(8), nullable=False, server_default="adopt"),
     # The setup options chosen at creation and the ids of the cards made for them
-    # (§6.21); NULL for a project that predates the field.
-    Column("setup", JSON_VALUE),
+    # (§6.21).
+    Column("setup", JSON_VALUE, nullable=False),
     Column("absence_until", UtcDateTime),
     Column("absence_scope", MARKDOWN_TEXT),
     Column("settings", JSON_VALUE, nullable=False),
@@ -643,12 +653,18 @@ handle_alias = Table(
     Column("id", Integer, primary_key=True, autoincrement=True),
     _ref("human_id", "human.id"),
     _ref("agent_id", "agent_profile.id"),
+    _ref("org_id", "org.id"),
     Column("scope", String(ID), nullable=False),
     Column("handle", String(HANDLE), nullable=False),
     Column("created_at", UtcDateTime, nullable=False),
     Column("live", Boolean, server_default=true()),
     UniqueConstraint("scope", "handle", "live", name="uq_handle_alias_scope_handle"),
-    CheckConstraint("(human_id IS NULL) <> (agent_id IS NULL)", name="one_id"),
+    CheckConstraint(
+        "(human_id IS NOT NULL AND agent_id IS NULL AND org_id IS NULL)"
+        " OR (human_id IS NULL AND agent_id IS NOT NULL AND org_id IS NULL)"
+        " OR (human_id IS NULL AND agent_id IS NULL AND org_id IS NOT NULL)",
+        name="one_id",
+    ),
     CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
     **MYSQL_TABLE,
 )
@@ -1024,6 +1040,28 @@ hub_pod = Table(
     **MYSQL_TABLE,
 )
 
+worker_run = Table(
+    "worker_run",  # who runs a worker's pass, and since when (`worker_runs`)
+    metadata,
+    Column("name", String(64), primary_key=True),
+    Column("started_at", UtcDateTime, nullable=False),
+    Column("pod", String(64), nullable=False),
+    Column("lease_until", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+forge_budget = Table(
+    "forge_budget",  # what the forge said is left, per source (`shared_budget`)
+    metadata,
+    Column("source", String(64), primary_key=True),
+    Column("limit", Integer),
+    Column("remaining", Integer),
+    Column("reset", Float),
+    Column("until", Float, nullable=False),
+    Column("seen_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
 long_poll = Table(
     "long_poll",
     metadata,
@@ -1331,7 +1369,10 @@ card = Table(
     Column("body", MARKDOWN_TEXT),
     Column("mentions", JSON_VALUE),  # resolved from `body` at write time (§8.6)
     Column("label", String(16)),
+    Column("needs", String(24)),  # the role the card is for (§6.4); routes nothing
     Column("status", String(16), nullable=False),
+    # The two signatures under `reviewer_and_tester` (§6.4), set by the hub only.
+    Column("approvals", JSON_VALUE),
     _ref("parent", "card.id", index=True),
     # The card's place in its status column (§6.4): set by the hub only, compared
     # bytewise in Python (`ranks`), null until the card is first placed.
@@ -1463,6 +1504,7 @@ card_note = Table(
     Column("event_seq", BIG_ID),  # its `note_added`, redacted with it
     Column("redacted", Boolean, nullable=False),
     Column("redaction", JSON_VALUE),
+    Column("edited", JSON_VALUE),  # {by, at, reason} of the latest edit; no earlier text is kept
     Index("ix_card_note_card_created", "card_id", "created_at", "id"),
     Index("ix_card_note_author_created", "author", "created_at"),
     **MYSQL_TABLE,
@@ -1515,6 +1557,11 @@ request = Table(
     _ref("takeover_id", "takeover.id", index=True),
     # A decision the hub filed for a jour fixe proposal: `{round_id, proposal_id}` (§20.6).
     Column("jour_fixe", JSON_VALUE),
+    # A proxy's call waiting for the owner's go: `{method, path, query, body, body_sha256}`;
+    # the columns below record the call that spent it (§2.3, §7).
+    Column("action", JSON_VALUE),
+    Column("action_used_at", UtcDateTime()),
+    Column("action_used_seq", BigInteger),
     Column("while_open", String(32), nullable=False),
     Column("needs_in_session", JSON_VALUE),
     Column("cover", JSON_VALUE),  # `{for, by, since}` while a substitute covers it (§6.12)
@@ -1639,7 +1686,6 @@ jour_fixe_round = Table(
     _ref("series_id", "jour_fixe_series.id", index=True),
     Column("status", String(16), nullable=False),
     Column("trigger", String(16), nullable=False),  # schedule, manual
-    Column("mode", String(16), nullable=False),  # message, chat
     Column("reason", MARKDOWN_TEXT),  # a manual start's
     Column("skip_reason", String(32)),
     Column("missed_slots", Integer),
@@ -1797,6 +1843,17 @@ message_delivery = Table(
     metadata,
     Column("seq", BIG_ID, ForeignKey("event.seq"), primary_key=True),
     Column("delivered_at", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+# Who an event reached through a watch (§6.4): fixed when the event is written, kept apart from
+# it because it is never served.
+event_watcher = Table(
+    "event_watcher",
+    metadata,
+    Column("seq", BIG_ID, ForeignKey("event.seq"), nullable=False),
+    _membership_ref("membership_id", nullable=False),
+    PrimaryKeyConstraint("seq", "membership_id"),
     **MYSQL_TABLE,
 )
 
@@ -2153,6 +2210,41 @@ instance_setting = Table(
     **MYSQL_TABLE,
 )
 
+# A maintenance window (§16.12): at most one active or upcoming. A cancelled one keeps its row;
+# `settled_at` is when the deadlines that fell into it were moved, once, after its end.
+maintenance_window = Table(
+    "maintenance_window",
+    metadata,
+    Column("id", String(ID), primary_key=True),
+    Column("starts_at", UtcDateTime, nullable=False),
+    Column("ends_at", UtcDateTime, nullable=False),
+    Column("text", Text, nullable=False),
+    _ref("created_by", "human.id", nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    _ref("updated_by", "human.id", nullable=False),
+    Column("updated_at", UtcDateTime, nullable=False),
+    Column("cancelled_at", UtcDateTime),
+    Column("settled_at", UtcDateTime),
+    Index("ix_maintenance_window_ends_at", "ends_at"),
+    **MYSQL_TABLE,
+)
+
+# Every change of a window, kept for good: the trail until the instance audit log exists.
+maintenance_change = Table(
+    "maintenance_change",
+    metadata,
+    Column("id", String(ID), primary_key=True),
+    _ref("window_id", "maintenance_window.id", nullable=False),
+    Column("action", String(16), nullable=False),  # created, changed, cancelled, ended
+    Column("starts_at", UtcDateTime, nullable=False),
+    Column("ends_at", UtcDateTime, nullable=False),
+    Column("text", Text, nullable=False),
+    _ref("by", "human.id", nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    Index("ix_maintenance_change_at", "at"),
+    **MYSQL_TABLE,
+)
+
 instance_secret = Table(
     "instance_secret",
     metadata,
@@ -2276,6 +2368,7 @@ notification_mail_state = Table(
     _ref("human_id", "human.id", primary_key=True),
     Column("hourly_at", UtcDateTime),
     Column("daily_at", UtcDateTime),
+    Column("weekly_at", UtcDateTime),
     Column("held_since", UtcDateTime),  # held over the instance budget (§18.5)
     Column("stamp", Text),
     Column("waiting", Boolean, nullable=False, server_default=false()),
@@ -2328,7 +2421,7 @@ notification_position = Table(
     **MYSQL_TABLE,
 )
 
-# A human's own watch on a card (§6.4), by membership, so it ends with the membership;
+# A member's own watch on a card (§6.4), by membership, so it ends with the membership;
 # never written into an event's audience.
 card_watch = Table(
     "card_watch",
@@ -2447,6 +2540,8 @@ public_page = Table(
     Column("inputs", String(64), nullable=False),
     Column("lastmod", UtcDateTime, nullable=False),
     Column("rendered_at", UtcDateTime, nullable=False),
+    Column("view", String(20)),  # the `kind` of `GET /public/pages/{path}` (§16.9)
+    Column("data", JSON_VALUE),  # its `data`, from the render that made `body`
     Index("ix_public_page_target", "kind", "target_id"),
     **MYSQL_TABLE,
 )

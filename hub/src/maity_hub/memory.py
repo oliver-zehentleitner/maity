@@ -568,10 +568,26 @@ def _compact(conn: Connection, where: Any) -> dict[str, Any]:
     return {"items": items, "total": total, "truncated": len(items) < total}
 
 
-def packet_block(conn: Connection, mine: Membership, agent_id: str, cursor: int) -> dict[str, Any]:
-    """`memory` of the resume packet: the whole soul, the compact stores, and whether any
-    of them changed after the resume's cursor."""
+def compact_block(conn: Connection, mine: Membership, agent_id: str) -> dict[str, Any]:
+    """The packet's memory as it stands: the whole soul and the compact stores (§19.3)."""
     c = t.memory_entry.c
+    return {
+        "notice": NOTICE,
+        "soul": soul_view(conn, agent_id),
+        "team": _compact(conn, and_(c.project_id == mine.project.id, c.team_membership == mine.id)),
+        "role": {
+            "role": mine.role,
+            **_compact(
+                conn, and_(c.project_id == mine.project.id, c.store == "role", c.role == mine.role)
+            ),
+        },
+        "community": _compact(conn, and_(c.project_id == mine.project.id, c.store == "community")),
+    }
+
+
+def packet_block(conn: Connection, mine: Membership, agent_id: str, cursor: int) -> dict[str, Any]:
+    """`memory` of the resume packet: `compact_block`, and whether any of it changed after the
+    resume's cursor."""
     changed = conn.execute(
         select(t.event.c.kind, t.event.c.payload).where(
             t.event.c.project_id == mine.project.id,
@@ -586,16 +602,4 @@ def packet_block(conn: Connection, mine: Membership, agent_id: str, cursor: int)
         or (e.kind == "soul_changed" and (e.payload or {}).get("agent_id") == agent_id)
         for e in changed
     )
-    return {
-        "notice": NOTICE,
-        "soul": soul_view(conn, agent_id),
-        "team": _compact(conn, and_(c.project_id == mine.project.id, c.team_membership == mine.id)),
-        "role": {
-            "role": mine.role,
-            **_compact(
-                conn, and_(c.project_id == mine.project.id, c.store == "role", c.role == mine.role)
-            ),
-        },
-        "community": _compact(conn, and_(c.project_id == mine.project.id, c.store == "community")),
-        "changed_since_cursor": mine_changed,
-    }
+    return {**compact_block(conn, mine, agent_id), "changed_since_cursor": mine_changed}

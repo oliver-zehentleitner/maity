@@ -331,6 +331,7 @@ def test_the_registration_and_landing_settings_need_a_recent_factor(
         ("/admin/settings/registration", {"mode": "closed"}),
         ("/admin/settings/landing", {"headline": "Hello"}),
         ("/admin/settings/legal", {"imprint": None}),
+        ("/admin/settings/site-values", {"values": {}}),
     ):
         refused = admin.patch(path, body)
         assert refused.status_code == 403, path

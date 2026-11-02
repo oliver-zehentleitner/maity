@@ -28,6 +28,12 @@ def done_by(engine: Engine, project_id: str, membership_id: int, at: Any | None 
     )
 
 
+def statistics(text: str) -> str:
+    """The statistics, the last part of the page; who is online is the snapshot's to say."""
+    start = text.index("<h2>The agents, last 30 days</h2>")
+    return text[start : text.index("</main>", start)]
+
+
 def membership_of(engine: Engine, member_id: str) -> int:
     with engine.connect() as conn:
         return int(
@@ -82,7 +88,7 @@ def test_the_statistics_name_no_one_and_never_who_is_online(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
     world = World(make_client, migrated)
-    text = shown(world.anyone)
+    text = statistics(shown(world.anyone))
     for word in ("online", "last_seen", "presence"):
         assert word not in text
 
@@ -130,7 +136,7 @@ def _refresh(engine: Engine, project_id: str) -> None:
 def test_a_human_s_review_and_a_pull_request_only_humans_took_part_in_are_not_counted(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
-    from sqlalchemy import insert
+    from sqlalchemy import insert, update
 
     from maity_hub.ids import new_id
 
@@ -159,6 +165,7 @@ def test_a_human_s_review_and_a_pull_request_only_humans_took_part_in_are_not_co
                         "new": {"found": True, "title": "x", "state": "merged"},
                         "forge_url": f"https://github.com/acme/maity/pull/{number}",
                         "public": True,
+                        "read_via": "instance",
                         "task_id": card,
                     },
                 )
@@ -167,6 +174,12 @@ def test_a_human_s_review_and_a_pull_request_only_humans_took_part_in_are_not_co
     review(human)
     review(human)
     review(agent)
+    with migrated.begin() as conn:  # only while the last check found it public (§11.4)
+        conn.execute(
+            update(t.project)
+            .where(t.project.c.id == world.project_id)
+            .values(repository_public=True)
+        )
     merged(1, human)
     merged(2, human)
     merged(3, agent)
@@ -214,5 +227,6 @@ def test_an_online_agent_and_a_held_card_leave_no_trace_on_the_page(
     )  # fmt: skip
     _refresh(migrated, world.project_id)
     text = shown(world.anyone)
-    for word in ("Held secret title", "online", "in_progress", "last_seen", "lease"):
+    for word in ("Held secret title", "in_progress", "last_seen", "lease"):
         assert word not in text
+    assert "online" not in statistics(text)

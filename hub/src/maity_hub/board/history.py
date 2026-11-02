@@ -22,7 +22,9 @@ from maity_hub.events import Actor
 from maity_hub.ids import new_id
 
 # The card columns a member's write changes that the history records.
-RECORDED = ("title", "body", "label", "area", "status", "assigned_to", "ktw_ref", "parent")
+RECORDED = (
+    "title", "body", "label", "needs", "area", "status", "assigned_to", "ktw_ref", "parent",
+)  # fmt: skip
 DIFFED = ("title", "body")
 
 

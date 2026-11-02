@@ -29,6 +29,8 @@ from maity_hub import tables as t
 CACHE_SECONDS = 3600  # the window part, per project (§6.22)
 MAX_DAYS = 90  # every page is cut from this one window
 MIN_SAMPLES = 3  # a median needs at least three durations
+AWAKE_HOURS = 24  # `awake` looks back this far: presence minutes are kept for 25 hours
+CHAT_TYPES = ("chat", "notice", "review_result")  # counted on their own; the rest is `other`
 REVIEWED = ("done", "in_progress")  # a status entry out of `review` into these is a review
 PULL = re.compile(r"https?://([^/]+)/([^/]+)/([^/]+)/pulls?/(\d+)", re.IGNORECASE)
 
@@ -46,9 +48,16 @@ class Window:
     done: list[tuple[int | None, date]] = field(default_factory=list)  # (holder, day)
     reviews: list[tuple[int, date]] = field(default_factory=list)  # (reviewer or -1, day)
     prs: list[tuple[set[int], date]] = field(default_factory=list)  # (its members, day)
+    # The same, for a page without sign-in: only what a read found public (§11.4).
+    public_prs: list[tuple[set[int], date]] = field(default_factory=list)
     handovers: list[tuple[int, date]] = field(default_factory=list)  # (moved from, day)
     claim_to_done: list[tuple[int | None, int, date]] = field(default_factory=list)
     review_to_done: list[tuple[int | None, int, date]] = field(default_factory=list)
+    # The swarm as a whole, for members only (§6.22): never folded for a public page.
+    created: list[date] = field(default_factory=list)  # a card's day of creation
+    messages: list[tuple[str, date]] = field(default_factory=list)  # (message type, day)
+    awake_hours: int = 0  # of the last 24 full hours, those with an agent online
+    awake_since: datetime | None = None
 
 
 def utc_day(value: datetime) -> date:
@@ -101,7 +110,48 @@ def window(conn: Connection, project_id: str) -> Window:
     _reviews(conn, project_id, since, member, found)
     _prs(conn, project_id, since, member, found)
     _durations(conn, project_id, closed, holder_of, found)
+    _whole(conn, project_id, since, found)
     return found
+
+
+def _whole(conn: Connection, project_id: str, since: datetime, found: Window) -> None:
+    """The swarm as a whole: cards created, messages by type (the log is append-only, so the
+    count is complete), and the hours of the last 24 with an agent online. Presence minutes
+    are kept for 25 hours only, so `awake` covers no more than that; a sum over the
+    project's agents, never one member's (§20.2)."""
+    found.created = [
+        utc_day(at)
+        for at in conn.execute(
+            select(t.card.c.created_at).where(
+                t.card.c.project_id == project_id, t.card.c.created_at >= since
+            )
+        ).scalars()
+    ]
+    # `type` is in the JSON payload: read here, as `_reviews` does, not in SQL.
+    for at, payload in conn.execute(
+        select(t.event.c.at, t.event.c.payload)
+        .where(
+            t.event.c.project_id == project_id,
+            t.event.c.kind == "message",
+            t.event.c.at >= since,
+        )
+        .execution_options(yield_per=500)
+    ):
+        found.messages.append((str((payload or {}).get("type") or ""), utc_day(at)))
+    end = found.as_of.replace(minute=0, second=0, microsecond=0)
+    start = end - timedelta(hours=AWAKE_HOURS)
+    agents = select(t.membership.c.id).where(
+        t.membership.c.project_id == project_id, t.membership.c.agent_id.isnot(None)
+    )
+    minutes = conn.execute(
+        select(t.presence_minute.c.minute).where(
+            t.presence_minute.c.membership_id.in_(agents),
+            t.presence_minute.c.minute >= start,
+            t.presence_minute.c.minute < end,
+        )
+    ).scalars()
+    found.awake_hours = len({m.astimezone(UTC).replace(minute=0) for m in minutes})
+    found.awake_since = start
 
 
 def _reviews(
@@ -141,26 +191,46 @@ def pull_key(url: Any) -> str:
 
 
 def _prs(conn: Connection, project_id: str, since: datetime, member: Any, found: Window) -> None:
-    """Pull requests by their first retained `link_observed` to `merged` (§6.13), deduplicated
-    by repository and number across links and cards; a merge seen before the hub kept those
-    events is not counted. Each member holding a card that links it gets it once."""
+    """Pull requests by their first retained merge: a ticker item (§17.2), which a report's pull
+    request gets, or a `link_observed` to `merged` (§6.13), deduplicated by repository and
+    number. Each member holding a card that names it gets it once. `public_prs` keeps what may
+    reach a page without sign-in (§11.4): an event that says so, only while the repository's last
+    check found it public."""
+    open_repository = (
+        conn.execute(
+            select(t.project.c.repository_public).where(t.project.c.id == project_id)
+        ).scalar()
+        is True
+    )
     first: dict[str, datetime] = {}
+    first_public: dict[str, datetime] = {}
     cards: dict[str, set[str]] = {}
-    for at, payload in conn.execute(
-        select(t.event.c.at, t.event.c.payload)
-        .where(t.event.c.project_id == project_id, t.event.c.kind == "link_observed")
+    for at, kind, payload in conn.execute(
+        select(t.event.c.at, t.event.c.kind, t.event.c.payload)
+        .where(
+            t.event.c.project_id == project_id,
+            (t.event.c.kind == "link_observed")
+            | ((t.event.c.kind == "ticker") & (t.event.c.subject_type == "pull_request")),
+        )
         .order_by(t.event.c.seq)
     ):
         payload = payload or {}
-        # Only what a read found public reaches this page without sign-in (§11.4); an
-        # event from before the field was written counts as not public.
-        if payload.get("public") is not True:
-            continue
-        if (payload.get("new") or {}).get("state") != "merged":
-            continue
-        key = pull_key(payload.get("forge_url"))
+        if kind == "ticker":
+            merge = payload.get("merge")
+            if payload.get("type") != "merge" or not merge:
+                continue
+            url, tasks = payload.get("url"), payload.get("tasks") or []
+            public = merge.get("public") is True
+        else:
+            if (payload.get("new") or {}).get("state") != "merged":
+                continue
+            url, tasks = payload.get("forge_url"), [payload.get("task_id")]
+            public = payload.get("public") is True
+        key = pull_key(url)
         first.setdefault(key, at)
-        cards.setdefault(key, set()).add(str(payload.get("task_id")))
+        if public and open_repository:
+            first_public.setdefault(key, at)
+        cards.setdefault(key, set()).update(str(task) for task in tasks)
     holders = (
         dict(
             conn.execute(
@@ -172,10 +242,11 @@ def _prs(conn: Connection, project_id: str, since: datetime, member: Any, found:
         if cards
         else {}
     )
-    for key, at in first.items():
-        if at >= since:
-            members = {m for m in (member(holders.get(c)) for c in cards[key]) if m}
-            found.prs.append((members, utc_day(at)))
+    for times, into in ((first, found.prs), (first_public, found.public_prs)):
+        for key, at in times.items():
+            if at >= since:
+                members = {m for m in (member(holders.get(c)) for c in cards[key]) if m}
+                into.append((members, utc_day(at)))
 
 
 def _durations(
@@ -238,18 +309,26 @@ def median_of(values: list[int]) -> int | None:
 
 
 def fold(
-    found: Window, members: dict[int, dict[str, Any]], *, days: int, include: Any
+    found: Window,
+    members: dict[int, dict[str, Any]],
+    *,
+    days: int,
+    include: Any,
+    public_only: bool = False,
 ) -> dict[str, Any]:
     """`members` and `totals` over the last `days` days of the window and the memberships
     `include` admits; a contribution without a member (no holder, a holder gone) counts in
-    the totals only when `include` admits `None`."""
+    the totals only when `include` admits `None`. `public_only` is the page without sign-in
+    (§11.4): only merges read as public, and `prs_merged` is None when there is none, since a
+    0 would claim that nothing was merged."""
     today = utc_day(found.as_of)
     shown = [today - timedelta(days=n) for n in range(days - 1, -1, -1)]
     cut = shown[0]
     reviews_known = found.reviews_since is not None
     done = [(m, d) for m, d in found.done if d >= cut]
     reviews = [(None if m == -1 else m) for m, d in found.reviews if d >= cut]
-    prs = [ms for ms, d in found.prs if d >= cut]
+    prs = [ms for ms, d in (found.public_prs if public_only else found.prs) if d >= cut]
+    prs_known = bool(prs) or not public_only
     handovers = [m for m, d in found.handovers if d >= cut]
     claim = [(m, s) for m, s, d in found.claim_to_done if d >= cut]
     review = [(m, s) for m, s, d in found.review_to_done if d >= cut]
@@ -261,8 +340,10 @@ def fold(
         return {
             "cards_done": sum(1 for m, _ in done if mine(m)),
             "reviews_given": sum(1 for m in reviews if mine(m)) if reviews_known else None,
-            "prs_merged": sum(
-                1 for ms in prs if (of in ms if of is not None else _any(ms, include))
+            "prs_merged": (
+                sum(1 for ms in prs if (of in ms if of is not None else _any(ms, include)))
+                if prs_known
+                else None
             ),
             "handovers": sum(1 for m in handovers if mine(m)),
             "claim_to_done_median_seconds": median_of([s for m, s in claim if mine(m)]),
@@ -290,6 +371,42 @@ def fold(
         "coverage": {
             "reviews_since": found.reviews_since.isoformat() if found.reviews_since else None
         },
+    }
+
+
+def whole(found: Window, folded: dict[str, Any], days: int) -> dict[str, Any]:
+    """The members' page only (§6.22): the swarm as a whole over the last `days` days,
+    beside `fold`'s totals; a public page never gets it."""
+    today = utc_day(found.as_of)
+    shown = [today - timedelta(days=n) for n in range(days - 1, -1, -1)]
+    cut = shown[0]
+
+    def per_day(days_of: list[date]) -> list[dict[str, Any]]:
+        counted = {d: 0 for d in shown}
+        for day in days_of:
+            if day >= cut:
+                counted[day] += 1
+        return [{"date": d.isoformat(), "count": n} for d, n in counted.items()]
+
+    messages = dict.fromkeys((*CHAT_TYPES, "other"), 0)
+    for kind, day in found.messages:
+        if day >= cut:
+            messages[kind if kind in CHAT_TYPES else "other"] += 1
+    merged = folded["totals"]["prs_merged"]
+    return {
+        "cards_created": sum(1 for d in found.created if d >= cut),
+        "cards_created_per_day": per_day(found.created),
+        "prs_merged_per_day": per_day([d for _members, d in found.prs]),
+        "messages": messages,
+        "review_results_per_pr": (round(messages["review_result"] / merged, 1) if merged else None),
+    }
+
+
+def awake(found: Window) -> dict[str, Any]:
+    return {
+        "hours": found.awake_hours,
+        "of_hours": AWAKE_HOURS,
+        "since": clock.rfc3339(found.awake_since) if found.awake_since else None,
     }
 
 

@@ -6,7 +6,8 @@ How the hub stores and serves the pages a search engine can read (`docs/api.md` 
 
 **Id:** 1e42dae2-4d67-4f1d-80b7-b2bb4aecfc3b
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 70c80e4f-bf45-430d-beb2-7abbab2c8e4c
 **Evidence:** confirmed
 **Source:** `docs/api.md` §16.9 and §16.11; the coordinator's answer of 2026-10-30 on the cards tsk-w89mspg3gwx1 and tsk-xr6fqx8e0vw5 (the stored page is a row in the database)
 **Revisit when:** the pages grow so large or so many that a row per page is the wrong place, or a page has to be served from the join host
@@ -21,8 +22,7 @@ public, max-age=60`, its ETag (`304` on a match), the CSP of the static pages an
 a cookie; the shell of the same addresses carries `Vary: Cookie` too. The middleware lets a non-hub path
 choose public caching while pages are on, and only the page's answer asks for it (the shell stays
 `no-cache`). The page's rate limit is its own budget per source address, of the badge's size, taken
-only when a page is served. The join host sends a page's address to the public root as every address
-there that is not the join.
+only when a page is served. The join host sends a page's address on to the same path on the public host.
 
 **Reason:** one row per page makes taking a page off one `DELETE` in the same transaction, and every
 replica of the hub serves the same page; the route that already answers every other address is the one
@@ -79,7 +79,7 @@ can give; a registry keeps each kind's rendering next to its inputs and gives th
 
 **Id:** 833b0f1f-5dad-43c8-b7e6-a22cdaa26c9f
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** `docs/api.md` §16.9 ("A person's page", "What is never served"); the review of the engine step (#723) on a process without the app
 **Revisit when:** a person can be shown on the page of a project they are a member of (step 4), a second place sets `public_profile`, or a handle can be renamed (#523): the rename is one more path that must `touch` the person, or the page stays under the old handle
@@ -135,7 +135,7 @@ passing them through twenty calls was the alternative that cost more than one li
 
 **Id:** 4e888b31-6cfd-4bde-b3dc-dd78f210a556
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** `docs/api.md` §16.9 ("A project's page"), §6.25, §16.8; the plan of 2026-10-30 on the cards tsk-w89mspg3gwx1 and tsk-xr6fqx8e0vw5
 **Revisit when:** step 4c shows members and agents on the page, or the page's text may be written by someone other than the namespace owner
@@ -201,7 +201,7 @@ and the reader-dependent visibility cannot go into an event that goes to all.
 
 **Id:** 4423561d-6f8e-4ad5-8729-0b896fb37e3c
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** `docs/api.md` §6.27 (contract #738), §6.10 ("Who may read an image"), §6.26; implementation of `GET /people/{handle}` (tsk-4ar8vw61fvj0), 2026-10-30
 **See:** public-pages.md — 833b0f1f-5dad-43c8-b7e6-a22cdaa26c9f — as of 2026-10-30
@@ -386,6 +386,8 @@ and the people of the overview.
 
 `public_agents` renders `/{owner}/agents/{handle}` while the owner's profile is public, no hold of moderation stands on the agent's profile and the agent is an active, not isolated member of at least one project whose page is served. Two things keep the page true. The kind `project` names the agent pages of its agents and the person pages that list it or them (its human members' and the owners' of its agent members, who need not be members: `touch` goes one level deep) as dependents, so a project's page going on or off, its name, a member joining, leaving or being isolated renders them at once, and the last public project going takes the agent's page with it. The kind `person` names the agent pages of the person's agents: the page's address contains the owner's handle and its existence follows the owner's profile. The person's page lists the public projects they are a member of and their agents that have a page, from the same `served` rules. The statistics are the agent's own counters summed over its public projects and its two medians over the pooled samples of all of them (`swarm` windows read per project), because a median of medians is no median; a project that is not public contributes nothing. The Members view of a project links a named agent to this page, since the agent is named exactly when the page exists.
 
+Contract changed, code follows: since #1176 (2026-11-02) an agent's page no longer depends on its owner's `public_profile`; it stands while the agent is in a public project and names its owner by handle and name. Until the implementation follows, the hub still renders the page only while the owner's profile is public. Whether Board and Members then always name an agent, and what the owner's page shows with `public_profile` off, is the profile contract's (tsk-my5gvj4warte).
+
 **Reason:** an agent belongs to several projects and the page speaks for all the public ones; a page that is stored and taken off in the changing transaction needs every input to name the pages that show it.
 
 **Rejected alternatives:**
@@ -467,3 +469,192 @@ write lock; storing the first answer avoids a window in which a page of a public
 - Look inside the transaction: a slow or down forge would hold the project's rows, and the call still has to answer.
 - Treat an unreadable repository as public: the contract says no answer counts as private (§16.9), and the unreadable
   case is exactly the private one without a grant.
+
+## Visitors read the app from one route over stored rows, and the member routes stay closed
+
+**Id:** eb7fd1c7-d4f1-478f-b77f-bb6878cd515a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's words of 2026-11-01 on the card tsk-jj1tfre7n6zb (logged out sees what logged in sees, read-only, nothing private, "as on GitHub"); the lead's approval of the plan; `docs/api.md` §16.9
+**See:** public-pages.md#a-public-page-is-a-row-of-public_page-served-by-the-app-shells-route — 1e42dae2-4d67-4f1d-80b7-b2bb4aecfc3b — as of 2026-11-01
+**Revisit when:** visitors need a read a stored row cannot answer, such as search or paging through a whole board
+
+`GET /public/pages/{path}` answers the `data` the page's render stored beside its HTML. A visitor's read costs
+one row, every removal rule of the pages holds without being written twice, and a field is public only if the
+renderer puts it there.
+
+**Rejected:**
+
+- A visitor caller in the member routes, with their fields filtered: the routes return members' data by
+  default, so a field added later would be public unless someone remembered to exclude it, and every route would
+  need its own review. Here the default is that nothing is public.
+- A second renderer querying per request: the same output at the cost of a query for every anonymous call.
+- Parsing the stored HTML in the browser: a page's markup would become an interface.
+
+`refresh` compares `view` and `data` as well as `inputs`, since a change may reach `data` without touching the
+HTML. Such a change keeps the row's `lastmod`, because the sitemap's date says what a crawler can read. Rejected:
+`data` in the digest, which would move that date.
+
+## A visitor on the way to a public page never ends at the login
+
+**Id:** 439a36e9-c05c-4c87-a3d3-1cd2ff5061d7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's report of 2026-11-01 on the card tsk-jj1tfre7n6zb (public projects and the profile "always login"); reproduced in a browser without a session; `docs/api.md` §1.1, §16.9, §16.11
+**Revisit when:** visitors get the app itself, read-only (the plan on the same card)
+
+The pages themselves worked; the shell around them does not know visitors and shows the login. So `/explore`,
+which the landing page's button named and nothing served, is now a page for everyone, a slash at the end of a
+page's address leads to the page, and the join host keeps `/<owner>/<slug>…`. A dashboard address under a
+public project stays the login and links the page, and a signed-in non-member goes to `?as=public`. `/explore`
+is rendered per request behind the public cache: it shows only what the pages show, and a stored row would
+need a new input for every project. The board leaves out a `security` card until it is done, as the model
+of public projects (projects.md, 038e685e) said and the code did not.
+
+**Rejected:** redirecting a dashboard address to the public page: a card's link from a mail would end there
+after a session expired, instead of going on after the sign-in.
+
+## A visitor gets the stored page inside the app shell, and `?as=public` the bare page
+
+**Id:** 70c80e4f-bf45-430d-beb2-7abbab2c8e4c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's words of 2026-11-01 on the card tsk-jj1tfre7n6zb (logged out sees what logged in sees, read-only); the plan the lead approved
+**See:** public-pages.md#a-public-page-is-a-row-of-public_page-served-by-the-app-shells-route — 1e42dae2-4d67-4f1d-80b7-b2bb4aecfc3b — as of 2026-11-02
+**Revisit when:** the shell's scripts grow slow enough that the page's text is what most visitors read
+
+A public address now serves the shell with the row's title, description, share tags, canonical link and text
+placed in it, so a crawler and a reader without scripts still read the page and the dashboard takes over at the same address.
+The row, its removal and the sitemap stay as they were; a page is still a row, and the decision between page and
+shell still falls in the shell's route. A failed read of `data` leaves the page's text standing instead of the login.
+The marker on the shell counts for the first drawing only; a later visit to the login inside the same load is the
+login, not this page.
+
+**Rejected:** a separate address for the app view (two addresses for one thing, as a forge has one); a script tag in
+the stored page alone (the bare page's policy allows no script, and the row would hold the shell's file names).
+
+## The public Why is a stored row, an exception to "the export stays in memory"
+
+**Id:** aed779e9-be9c-40d2-a7ea-217cee06e470
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's decision of 2026-11-02 on the card tsk-jj1tfre7n6zb
+**Revisit when:** the export's read must reach every replica at once, which a read per process does not do
+
+The view keeps counts, the family's links and attention titles of a public repository in `public_page`, beside
+the other views. Its export is read ahead of the interval render with the instance's token alone, in a cache of
+its own, because the members' cache may have read with an owner's grant. A render stays off the network, as it
+runs in a transaction. The price is a view up to one interval old; a repository turning private empties it with
+the look that finds it. Each replica holds its own read and only one renders a pass, so a render with no read, or
+an older one by `observed_at`, keeps the stored view instead of emptying it, and every process reads once at start.
+A failed read keeps it too, as a failure says nothing about the export; a read that finds the repository names no
+export any more empties it.
+
+**Rejected:** answering `why` at request time from the memory cache: §11.3 would stay untouched, but the route
+would need a rule for the one kind without a row, and search engines would lose the page.
+
+## An organisation's page reads none of its members
+
+**Id:** 3f7a9d24-6c1e-4b58-9e02-7d41c8a5b6f3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §16.9; the build on the card tsk-jj1tfre7n6zb
+
+`render_org` does not query `org_member`, so a mistake there cannot name one. An organisation without a page has no
+row, which makes a private organisation and an unknown handle the same `not_found`. A project moved to another
+owner has its page turned off rather than appearing under the new one unasked.
+
+**Rejected:** a list of the organisation's members with public profiles: §16.9 says who belongs to it is not public.
+
+## A card has its own page at its dashboard address, with its text
+
+**Id:** e3bcdf82-e7f1-447d-becd-43171c8cd513
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer to req-0qvbrqwddkc6 of 2026-11-02 (a card's text public, as an issue on a forge); the plan the lead approved on tsk-1g5f436h6ez1
+**See:** public-pages.md#a-visitor-gets-the-stored-page-inside-the-app-shell-and-aspublic-the-bare-page — 70c80e4f-bf45-430d-beb2-7abbab2c8e4c — as of 2026-11-02
+**Revisit when:** card writes grow slow enough that a render per write shows
+
+A card of a project with a public page is a third kind of page, `card`, at `/{owner}/{slug}/tasks/{id}`, the address
+a member opens, and the Board links each id to it. It carries the title, status, label, the holder as the Board
+names them, and the body as Markdown without raw HTML (`ugc`, as the project's About). A `security` card has a page
+only once it is `done`, a held card none; the moderation paths and every card event call `touch` for it, as they do
+for the Board, so the page follows the card in the same transaction. History, requests and links stay out. The notes
+were left out at first, as the side that could be widened while the maintainer had not decided; they followed the
+same day (see the next entry). Naming the holder as the Board does ties the page to the holder's profile: a person's
+change renders the card pages held by them or their agents (`pages_of_member`), and an agent's name or a membership
+change renders the project, whose dependents are all its cards.
+Every card of the project has a page, also a closed one older than the Board's 30 days or beyond its limit: an
+issue stays at its address after it is closed, and a link from a mail or a commit must not break when the card
+leaves the Board.
+
+**Rejected:**
+- The text on the Board itself: the Board would carry up to 200 bodies per column, and a card would have no address
+  to link from a mail or a commit.
+- Rendering every card of the person's projects on a profile change, as a project's `touch` would: most of those
+  cards do not name the person.
+- Pages only for the cards the Board lists: a card would lose its address 30 days after it closed.
+- A separate public address such as `/{owner}/{slug}/cards/{id}`: two addresses for one card, against the rule
+  that a public page has the address a member opens (§16.11).
+
+## A card's notes are public on its page, as comments under an issue
+
+**Id:** 9e1bb9f3-01aa-4629-82ff-74d340febbd7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-02 on tsk-1g5f436h6ez1 (notes in open projects are public; memory stays private and holds what is sensitive); the plan the lead put on tsk-3w6mf8v40jeh
+**See:** public-pages.md#a-card-has-its-own-page-at-its-dashboard-address-with-its-text — e3bcdf82-e7f1-447d-becd-43171c8cd513 — as of 2026-11-02
+**Revisit when:** a card's notes grow long enough that its page needs paging
+
+The card's page lists its notes oldest first, each with its author named as the Board names a holder, its date, its
+state once resolved, and its body as Markdown without raw HTML. A redacted note keeps its place and shows as removed;
+neither its text nor the redaction's reason is published, since a reason may repeat what was removed. A resolved
+note shows its state but not its `resolution` (who, when, why): the reason is written to the note's author and
+the card's people, as a redaction's is, and the state alone says what became of the note. A note's own
+events (`note_added`, `note_resolved`, `note_edited`) and its redaction call `touch` for the card, and an author's profile change
+reaches the page through the person's dependents, as a holder's does. Notes have no moderation target of their own:
+they follow the card's hold and the `security` rule with it.
+An edited note shows its new text with "edited by", the editor named as an author is, the date and the edit's reason;
+the old text is gone with the render in the same transaction (`context/cards.md` 0e6b3b31). Unlike a redaction's
+reason, an edit's reason is published: the maintainer decided it is shown with the edit mark to every reader, and its
+writer knows that, while a redaction's reason is written for the members (2026-11-02, tsk-bj9yb4d8f2cg).
+
+**Rejected:**
+- Only open notes: an incorporated or dismissed note is part of the discussion an issue keeps, and the page would
+  change meaning when a note is resolved.
+- Showing a redacted note's reason: it is written for the members and may name what was removed.
+
+## A public project shows a snapshot of its ticker and who is online, rendered on a timer, never live
+
+**Id:** 65c0167c-f61c-419a-9506-8d9453edd482
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-02 on tsk-hsq3ns8ryd7d (visitors see what is happening as a snapshot, no live connection; humans shown online too); the plan the lead approved on that card
+**See:** public-pages.md#a-card-has-its-own-page-at-its-dashboard-address-with-its-text — e3bcdf82-e7f1-447d-becd-43171c8cd513 — as of 2026-11-02
+**Revisit when:** the load test of the live ticker for visitors has run
+
+The project's page carries the newest ticker items a visitor may read and who is online, decided in the hub per
+item by the card page's rule: a merge only from a repository last seen public and only when every linked card has a
+page; a decision only on such a card; deploys, releases, notes, renames and jour fixe reports never, since their
+text names what the card rule does not cover. `public_snapshot.Worker` renders every public project page again every
+`MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES` under one `worker_runs` claim; presence is read at that moment. A card change
+that may take a ticker item off renders the project page at once, so a removal never waits for the timer.
+
+The load grows with the page cache, not with connections: a visitor reads a stored row behind the public cache and
+reloads to see more, and the hub's cost is one render per project per interval, whatever the number of visitors.
+`data.online.as_of` changes with every render and is stored with it, while the HTML, its ETag and the sitemap's date
+change only with what the page shows.
+
+**Rejected:**
+- A live connection for visitors (a stream or polling the ticker): its load grows with every open tab, and it waits
+  for a load test.
+- Rendering on every ticker item and presence change: presence changes all the time, and every agent's heartbeat
+  would render a page.

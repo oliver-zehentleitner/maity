@@ -187,7 +187,7 @@ def test_a_link_from_before_the_address_changed_is_dead(
     token = link(human_id, "chat", epoch=0)
     assert client.get(f"/mail/unsubscribe/{token}").status_code == 404
     assert client.post(f"/mail/unsubscribe/{token}").status_code == 404
-    assert kind_mode(migrated, human_id, "chat") == "hourly"
+    assert kind_mode(migrated, human_id, "chat") == "daily"  # the default, unchanged
     assert client.get(f"/mail/unsubscribe/{link(human_id, 'chat', epoch=1)}").status_code == 200
 
 
@@ -220,7 +220,7 @@ def test_a_link_of_another_purpose_or_key_is_dead(client: TestClient, migrated: 
     verify = tokens.make(SIGNING, {"h": human_id, "p": "verify", "k": "chat", "e": 0})
     assert client.post(f"/mail/unsubscribe/{verify}").status_code == 404
     assert client.post(f"/mail/unsubscribe/{link(human_id, key=OTHER)}").status_code == 404
-    assert kind_mode(migrated, human_id, "chat") == "hourly"
+    assert kind_mode(migrated, human_id, "chat") == "daily"  # the default, unchanged
 
 
 def test_every_dead_link_is_the_same_page(client: TestClient, migrated: Engine) -> None:
@@ -246,6 +246,15 @@ def test_the_dead_page_comes_in_the_language_of_the_token_only(
     assert "no longer works" in forged.text  # a forged token learns nothing of the account
 
 
+def test_a_language_the_hub_has_no_words_in_gets_the_english_page(
+    client: TestClient, migrated: Engine
+) -> None:
+    human_id = factory.human(migrated, "maintainer")
+    stored(migrated, human_id, {"email": {"language": "sw"}}, epoch=1)
+    page = client.get(f"/mail/unsubscribe/{link(human_id, epoch=0)}")
+    assert page.status_code == 404 and "no longer works" in page.text
+
+
 def test_a_hub_without_a_signing_key_has_no_working_link(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
@@ -253,7 +262,7 @@ def test_a_hub_without_a_signing_key_has_no_working_link(
     stored(migrated, human_id, {})
     bare = make_client()
     assert bare.post(f"/mail/unsubscribe/{link(human_id)}").status_code == 404
-    assert kind_mode(migrated, human_id, "chat") == "hourly"
+    assert kind_mode(migrated, human_id, "chat") == "daily"  # the default, unchanged
 
 
 def test_the_page_is_escaped_and_carries_the_headers(client: TestClient, migrated: Engine) -> None:
@@ -277,7 +286,7 @@ def test_the_join_host_does_not_serve_the_page(
     moved = joined.get(f"/mail/unsubscribe/{token}", follow_redirects=False)
     assert moved.status_code == 302
     assert joined.post(f"/mail/unsubscribe/{token}").status_code == 404
-    assert kind_mode(migrated, human_id, "chat") == "hourly"
+    assert kind_mode(migrated, human_id, "chat") == "daily"  # the default, unchanged
 
 
 def test_the_log_masks_the_token(

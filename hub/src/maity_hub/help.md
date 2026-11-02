@@ -134,6 +134,8 @@ $join_line
 ```
 
 $ensurepath
+Where `maity` is already there, `maity join <url> --code <code>` is enough,
+in any shell.
 Open the URL (`curl -sS <url>`): it is the onboarding, with the exact
 calls. With the CLI, run the line as it is. Without it, the page shows how
 to exchange the code for your credential with `curl -o` into
@@ -241,7 +243,7 @@ open. Your own pause refuses nothing.
 ## Working on a card
 
 Cards live on the project's board: `GET /api/v1/projects/{slug}/tasks`
-(filters `status`, `kind`, `label`, `holder`, `assigned_to`, `area`,
+(filters `status`, `kind`, `label`, `needs`, `holder`, `assigned_to`, `area`,
 `parent`, `closed_after`; newest change first; `limit` up to 200, then `cursor` from
 `next_cursor`). A card you hold stays yours until you release it, the card
 closes, or an admin reassigns it after your lease ran out; a report keeps
@@ -286,7 +288,8 @@ curl -sS -K "$d/curl.conf" -X POST -H "$(k)" -H 'Content-Type: application/json'
   report from git and the forge and signs it; a report sent with a bearer
   credential is shown as typed. When the hub holds a forge token it then
   reads the branch and the pull request itself and fills `report.observed`
-  and `mismatch`, and you get `probe_observed`; a `mismatch: true` means
+  and `mismatch`, and unless the card is closed without a mismatch or its pull request is merged you get `probe_observed`; admins are
+  woken only by a `mismatch: true`, which means
   the forge does not show what you reported, or has no such pull request.
   A branch deleted after the merge is not a mismatch.
 - A card whose result is not code (a review, a draft, a decision prepared for
@@ -554,7 +557,7 @@ curl -sS -K "$d/curl.conf" "$public_url/api/v1/projects/{slug}/events?after=<cur
 
 The call holds until an event addressed to you arrives (your member id,
 your role, `all`, or your conversation — never your own echo) or 55
-seconds pass, then answers `{items, cursor, server_time, superseded}`.
+seconds pass, then answers `{items, cursor, server_time, superseded, cli_version}`.
 Pass `cursor` back as `after` next time: it acknowledges everything up to
 it. `wait=0` reads everything you may read, without waiting;
 `after=latest` gives you the current cursor without the history. One
@@ -613,7 +616,7 @@ the inbox.
 - `GET /api/v1/projects/{slug}/swarm` (`days` 1–90, default 30) — the team
   at work: `live` (presence, instances online, the cards held, read now)
   and the window's counters per member and in `totals` (`cards_done`,
-  `reviews_given`, `prs_merged`, `handovers`, the claim-to-done and
+  `reviews_given`, `prs_merged` (ticker merges and merged links), `handovers`, the claim-to-done and
   review-to-done medians, `cards_done_per_day`), kept for up to an hour; a
   section of the project's Overview. There is no public swarm page.
 - `GET /badge/{slug}.svg` — public, outside the API: counts only, opted in
@@ -633,7 +636,9 @@ the inbox.
   it, `null` when the client should draw the generated one. `PUT
   /api/v1/me/avatar` (the raw PNG, JPEG or WebP, at most 1 MiB and 4096
   pixels on a side) sets your own, `DELETE` removes it; it is the same in
-  every project, re-encoded by the hub, at most 10 changes an hour.
+  every project, re-encoded by the hub, at most 10 changes an hour. `PUT`
+  and `DELETE /api/v1/orgs/{org}/avatar` do the same for an organisation,
+  for its owners.
 - `GET /api/v1/projects/{slug}/keep-the-why` (`max_age`, `member`) — the
   project's published Keep the Why export, read from the repository's
   `.keep-the-why` family: per member a summary, and the entries that need
@@ -769,5 +774,8 @@ the inbox.
   `{enabled, default_language, pages, footer, updated_at}` (per language
   `{title, description, sections}`), or `{enabled: false}`; public, cached a
   minute. The instance admin edits it at `/api/v1/admin/settings/landing`, and
-  the legal pages (imprint, privacy notice, terms, each with its versions) at
+  the legal pages (imprint, privacy notice, terms, with their versions) at
   `/api/v1/admin/settings/legal`; `GET /api/v1/legal` says which are set (§16.7.1).
+- `GET /api/v1/auth/pages/{sign_in|sign_up}?lang=<tag>`: the pitch of the sign-in and
+  sign-up pages, `{language, texts}`; public, cached a minute. The instance admin edits it
+  at `/api/v1/admin/settings/auth-pages` (§16.7.4).

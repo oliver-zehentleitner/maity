@@ -8,7 +8,7 @@ contributors and for the agents that work on or with the hub.
 Status: design, 2026-10-21. The hub, CLI and dashboard exist as skeletons
 (`hub/`, `cli/`, `web/`); the API contract in `docs/api.md` is the
 binding shape of every field and endpoint named here. A separate
-security document is planned (`TASKS.md`) and does not exist yet; until
+security document is planned and does not exist yet; until
 it does, the security design is §4 and §5 here, the wire rules are
 `docs/api.md` §1.5 and §2, and the recorded rationale is
 `context/security.md`. Where a decision is recorded
@@ -412,7 +412,9 @@ see and do.
 
 The probe needs the token in the clear, so it is not a database row: it
 comes from the hub's environment (`MAITY_FORGE_GITHUB_TOKEN`) and is
-scoped read-only to the repositories the hub probes. The forge API host
+scoped read-only to the repositories the hub probes, and it serves only
+the projects in the operator's own namespaces
+(`MAITY_FORGE_INSTANCE_NAMESPACES`, API §11.4). The forge API host
 is fixed per forge kind in the hub's configuration, never derived from a
 project's repository URL, and a project's URL must be on a configured
 host — nothing a member sets can make the hub send its token elsewhere.
@@ -669,7 +671,8 @@ One codebase, three shapes, all documented in `docs/` and all exercised
 
 Common to all: settings come from the environment (`MAITY_DATABASE_URL`,
 `MAITY_BIND`, `MAITY_PUBLIC_URL`, `MAITY_WEB_DIR`, `MAITY_TRUSTED_PROXIES`,
-`MAITY_ALLOW_PLAIN_HTTP`, `MAITY_FORGE_GITHUB_TOKEN`); the hub binds
+`MAITY_ALLOW_PLAIN_HTTP`, `MAITY_FORGE_GITHUB_TOKEN`,
+`MAITY_FORGE_INSTANCE_NAMESPACES`); the hub binds
 loopback by default and opening it is one variable
 (`hub/context/serving.md`); TLS is the operator's reverse proxy or
 ingress, and the hub takes scheme and client address from forwarded
@@ -754,9 +757,6 @@ maintainer's next real build. Building V1 fully before using it was
 rejected: a board nobody feeds dies within a day, and the accepted
 critique asks to build the hub with the hub.
 
-Until the API exists, `TASKS.md` is the board, by hand, with the known
-failure mode.
-
 ## 12. Reconciliation with the dashboard's endpoint proposal
 
 The dashboard skeleton (`web/`) proposes endpoints through its fixtures,
@@ -766,7 +766,7 @@ only states what was decided at the architecture level. Kept: every
 path, the error envelope with `csrf_mismatch`, the inline `asked_by` and
 `on_behalf_of` objects on requests, `open_requests` per membership on
 `/me` and the cross-project `GET /requests` (the switcher and the landing
-page need them, TASKS.md asks for them), the project-level `absence`,
+page need them), the project-level `absence`,
 the member read model, credentials as id and dates, the claim shape and
 the observed pull request list. Changed: `kind` → `class` with the four
 classes and `info` meaning a question for a fact; `scopes` → `areas`;

@@ -298,7 +298,11 @@ async def runner_events(request: Request, caller: RunnerCaller) -> JSONResponse:
         return answer(items, cursor, superseded=False)
 
     closed = await wakeups.opened(
-        engine, "events", waiter.key, lambda: longpoll.registry.supersede(waiter)
+        engine,
+        "events",
+        waiter.key,
+        lambda: longpoll.registry.supersede(waiter),
+        waiter.started_at,
     )
     longpoll.registry.enter(waiter)
     try:

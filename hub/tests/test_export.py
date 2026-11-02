@@ -90,6 +90,7 @@ def test_one_document_to_save(owner: flow.Human) -> None:
         "answers_given",
         "cards_created",
         "card_reports",
+        "card_approvals",
         "card_notes",
         "jour_fixe_answers",
         "pinned_conversations",
@@ -387,3 +388,9 @@ def test_the_campaign_origin_is_in_the_export_while_the_hub_keeps_it(
         "campaign": "x-h1-w1",
         "registered_on": clock.now().date().isoformat(),
     }
+
+
+def test_the_interface_language_is_in_the_export(owner: flow.Human) -> None:
+    assert export(owner).json()["account"]["interface_language"] is None
+    assert owner.patch("/me", {"interface_language": "de"}).status_code == 200
+    assert export(owner).json()["account"]["interface_language"] == "de"

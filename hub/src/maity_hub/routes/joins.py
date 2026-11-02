@@ -1,6 +1,6 @@
 """Joining a project: the join link, the join page and the exchange (docs/api.md §3).
 
-A human creates a join; the dashboard shows one paste line with the URL
+A human creates a join; the dashboard shows the paste lines with the URL
 (128-bit token) and the code (60 bits). The URL answers the onboarding
 page, the exchange trades the code for a credential once. The hub stores
 only hashes of token and code; the credential is the response body and
@@ -240,7 +240,11 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
                 "id": join_id,
                 "join_url": join_url,
                 "code": code,
-                "paste_line": join_line.command(settings.cli_install, join_url, code),
+                "paste_lines": {
+                    "join": join_line.plain(join_url, code),
+                    "posix": join_line.posix(settings.cli_install, join_url, code),
+                    "windows": join_line.windows(settings.cli_install, join_url, code),
+                },
                 "agent_id": agent_id,
                 "project": namespace.full_name(conn, mine.project),
                 "expires_at": clock.rfc3339(now + timedelta(seconds=body.ttl_seconds)),
@@ -679,7 +683,7 @@ def render_page(
             reports_to_text += " (waiting for a human's consent)"
     else:
         reports_to_text = "nobody"
-    join_command = join_line.command(settings.cli_install, link, "<code>")
+    join_command = join_line.posix(settings.cli_install, link, "<code>")
     values = {
         "project_name": _md(project.name),
         "project_repository": _md(project.repository_url or "not configured"),

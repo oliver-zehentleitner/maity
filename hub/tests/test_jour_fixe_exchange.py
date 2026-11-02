@@ -127,7 +127,7 @@ def test_the_round_runs_in_its_own_thread_that_wakes_nobody(round_: Round) -> No
         round_.member.id,
         round_.owner.id,
     }
-    assert round_.get()["mode"] == "chat"
+    assert "mode" not in round_.get()
     direct = round_.owner.post(
         f"/projects/maintainer/maity/conversations/{round_.thread}/messages", {"body": "hi"}
     )

@@ -17,7 +17,11 @@ thread sweeps every five minutes: reports without an observation on open
 cards of any age and on cards closed within a day, the open release of
 every observable project, then the 15 reports with the oldest observation
 whose pull request was last seen open. A round ends at the first read the
-forge does not answer, and between two reads when the hub stops. Forge reads
+forge does not answer, and between two reads when the hub stops. A project
+no source covers (`NotCoveredError`) is no such read: only its own work is
+left out, it logs its id, and its reports don't count against the 15. Ending
+the round there stopped every round from reaching the re-reads, in production
+for as long as one project lacked a grant. Forge reads
 happen with no database connection held; each result is written in a short
 transaction of its own under the project lock. The thread starts only when
 `MAITY_FORGE_GITHUB_TOKEN` is set.
@@ -28,6 +32,8 @@ probe free of a new dependency and of the event loop: a slow forge cannot
 delay a long-poll's wake-up, and it fits the single replica V1 runs.
 
 **Rejected alternatives:**
+- Ending the round at a project no source covers, like at any forge failure: one such project stopped every round before the re-reads.
+- Counting its report against the 15 re-reads: it stays the oldest, so such projects could use up all 15. The refusal itself is cached for 600 seconds per token and repository (§11.4), so a project left out costs at most one read of the repository in that time.
 - FastAPI background tasks after the response: tied to the request, so
   nothing would run the interval sweep, and a retry after a failed read
   would need a second mechanism anyway.
@@ -35,6 +41,24 @@ delay a long-poll's wake-up, and it fits the single replica V1 runs.
   database access would have to leave the loop again.
 - A separate probe process or cron job: one more thing to deploy and
   supervise for work that takes milliseconds every few minutes.
+
+## A report's observation wakes an admin only on a mismatch, and a closed card wakes nobody once merged
+
+**Id:** 75682de7-9b2e-415b-acf9-8339bc157231
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-cq0mzfrbswb7, observed on production on 2026-11-01 after #1083 reached old cards; `events.wakes`, `readable_by`, docs/api.md §8.2
+**Revisit when:** an admin has to act on an observation without a mismatch
+
+The sweep of old cards after #1083 woke every admin about every 2 seconds, one event per card. Each event was a real change (`open` to `merged`), so comparing with the last reading did not help, and the same audience also woke the admins on every report and every change of `checks`. `probe_observed` now names `trust:admin` only with `mismatch: true`. A closed card names nobody without a mismatch or with its pull request merged: the same sweep showed `mismatch: true` on a done card whose head moved after its last report and was merged, which nobody has to act on. It stays readable on the card's report. A closed card whose pull request is missing or closed unmerged still wakes. An event can have no audience at all. The observation of the open release keeps its audience: it is few events, and a release waits on them.
+
+**Reason:** owners and admins read every event without being named, and being named is what wakes them, so the dashboard and the event list lose nothing. A merge already reaches who must act as `task_merged`.
+
+**Rejected alternatives:**
+- Not emitting the event for a merged or done card: the dashboard re-reads on it, and the record of the observation would be gone.
+- A new entry in `NON_WAKING`: it is per kind, and a mismatch has to wake.
+- Rate limiting the sweep's events: fewer wake-ups, but each still costs every admin a run for nothing to do.
 
 ## A sweep reads a report again while its pull request was last seen open
 
@@ -142,7 +166,7 @@ would leak into the card view.
 
 **Id:** d4a944d2-5e48-45e4-a93b-f528f43705ed
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the card tsk-wq0mhep8mzec from the coordinator, 2026-10-28, after the live forge reads ran into GitHub's limit; the contract text in PR #500 (§11.4 "Rate limits": one budget per source, `probe_unavailable` with `details.retry_at` until the reset)
 **Revisit when:** the hub reads with more than one source per owner (a GitHub App installation, owner tokens), or GitHub changes its rate limit headers
@@ -240,7 +264,7 @@ stored. The step-up has to be in place before those grants land.
 
 **Id:** a91a5a3d-a29a-4c9e-9721-d01d89aeacd2
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** implementation session, 2026-10-28 (card tsk-dtpr7zqxhxc2, part 1)
 **Revisit when:** the owner's grants (§11.4: App installation, owner token) land and a read picks its source before it is made
@@ -299,7 +323,7 @@ stored hash does not already make, and the hub would need a key for it.
 
 **Id:** a5b07f08-306e-4f33-8643-8b59af50dd71
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** implementation session, 2026-10-28 (card tsk-dtpr7zqxhxc2, part 5a)
 **Revisit when:** organisations become namespace owners (§6.25), or one repository serves projects of several owners with different grants and that needs one shared read
@@ -335,24 +359,71 @@ prevent.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** docs/api.md §11.4 ("What a private repository's data may reach") and the event table, §8.2; the lead's decision on card tsk-dtpr7zqxhxc2, part 5b
+**Source:** docs/api.md §11.4 ("What a private repository's data may reach") and the event table, §8.2; the lead's decision on card tsk-dtpr7zqxhxc2, part 5b; the maintainer's answer to req-ds8mk5vdtkxx (old merges count); the maintainer's answer to req-tqf82hvzmnw3 ("ausnahme", the bare count may come from a grant's read)
 **Revisit when:** another page without sign-in shows data the probe read, or the forge stops reporting visibility in the GraphQL read
 
-`link_observed` carries `public`: whether the same GraphQL read reported
-the repository public (`isPrivate: false`), `false` when it did not say.
-The swarm page counts merged pull requests only from events with
-`public: true`. Events written before the field existed do not count.
+`link_observed` carries `public`: whether the same GraphQL read reported the
+repository public (`isPrivate: false`), `false` when it did not say; and
+`read_via`: the source that read it. A page without sign-in counts merged pull
+requests only from events with `public: true`, whichever source read them, and
+only while the repository's last check found it public. Events without the field
+do not count.
 
-**Reason:** the flag follows what the read itself saw, not which token
-made it. With the token as the test, a public repository read with an
-App or owner token would never count, and a repository that turned
-private between two reads would still count. The old events go
+Changed on 2026-11-01: the count read only `link_observed`, which only a
+card's forge link produces, while nearly all pull requests of a project
+working with `maity report` are on reports: 4 of 712 cards had links, and a
+public page showed 0 with over a thousand merges. It now also reads the ticker's
+merge items, which carry `merge.public` (read with the instance's token, per
+§11.4 no owner's grant), and only while the last check found the repository
+public. Members' Overview counts every merge. Old items carry no flag and stay
+uncounted on public pages; setting the flag on them is a data change that needs
+no code, should the maintainer allow it. With nothing flagged the page has no
+line: a 0 there says nothing was merged.
+
+Changed on 2026-11-02: until then a link event read through a grant counted when the read found
+the repository public, and the link events skipped the last check. Both went against §11.4. Events
+already written with `public: true` can't be told apart by token, so they stopped counting at once
+rather than running out of the 30-day window; that takes no data change, and few merges come from
+links. A public project read only through an App or an owner's token has no line.
+
+The ticker's `merge.public` is tested at the probe, since that flag is the only thing between a
+read and a page without sign-in: a scan writes `true` only when its read reported the repository
+public (`base.repo.private: false`), and `false` when it reported it private or did not say.
+
+Changed on 2026-11-02, again: the maintainer decided that the old merges of named projects count
+on public pages (req-ds8mk5vdtkxx). A one-time script, `hub/scripts/backfill_public_merges.py`,
+sets `merge.public` on their ticker items and stamps each with `public_backfill`, so `--undo`
+takes back exactly those. It is a script rather than a migration: the decision is about named
+projects on one instance, a migration would run on every self-hosted one, and the project ids
+don't belong in the repository. It refuses a project unless its id, name and repository address
+all match and the last check found the repository public; it changes nothing without `--apply`.
+The maintainer's §11.4 exception for the bare count (req-tqf82hvzmnw3) follows on its own card.
+
+Changed on 2026-11-02, the third time: the maintainer made an exception in §11.4
+(req-tqf82hvzmnw3). The bare number of merged pull requests may come from a read through the App
+or an owner's token, as long as that read found the repository public; nothing else from such a
+read reaches a page without sign-in, no title, no name, no link. The count no longer asks
+`read_via`, and the ticker's scan sets `merge.public` from its own read's answer instead of from
+the token; §17.2 of `docs/api.md` defines the field that way. A public project read only through an App or an owner's token gets its line again, and
+link events read through a grant while public count again; those were written with the read's
+answer all along.
+
+**Reason:** §11.4 says data read through an owner's grant never appears
+there, and the contract stands above this entry; privacy goes before the
+statistic. Its one exception is the bare count read while the repository was
+public, the maintainer's decision; inferred, not stated with it: a number of
+merges in a repository anyone can read shows nothing that isn't public already. The read's own answer stays part of
+the rule, or a repository that turned private between two reads would still
+count. The old events go
 uncounted on purpose: before the instance token was limited to public
 repositories, it could read private ones too, so those events cannot
 prove they were public. Privacy goes before the statistic.
 
 **Rejected alternatives:**
-- `public` from the source (`via == "instance"`): it leaves out public
-  repositories read with an owner's grant.
+- Counting only what the instance's token read (the rule on 2026-11-02 until the
+  exception): a public project read only through an App or an owner's token had
+  no line at all; the maintainer chose the exception.
+- Letting more of a grant's read through while the repository is public, titles
+  or links: §11.4 allows the bare number only.
 - Counting events without the field: it may count merges of private
   repositories read before the instance token was limited.

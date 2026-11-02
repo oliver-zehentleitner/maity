@@ -29,7 +29,7 @@ that has not yet added the volume.
 
 **Id:** 7dcd4850-9dc4-4b4a-9148-e156c8e11718
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** implementation session, 2026-10-27 (`docs/api.md` §8.7 fixes "the blob first, the metadata after"; the way to undo it is the implementer's)
 **Revisit when:** the sweep (removing blobs without a row) lands, or an `s3` store is built
@@ -55,7 +55,7 @@ without bytes, impossible; the leftover blob is the harmless one.
 
 **Id:** d079ff73-8c38-435c-9881-522363f62400
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** implementation session, 2026-10-27 (`docs/api.md` §8.7: the read rule, "30 uploads and 100 MiB per membership in 10 minutes", a replay counts against nothing)
 **Revisit when:** a message can name attachments (the read rule then follows the message), or the limiter can count bytes directly
@@ -107,7 +107,7 @@ which the contract asks for, and a bound attachment always has its message.
 
 **Id:** 588c979f-8c75-4ad4-ab2d-cd19a1921738
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** implementation session, 2026-10-27 (`docs/api.md` §8.7, Retention)
 **Revisit when:** the sweep lands and can take over removing the bytes

@@ -106,6 +106,18 @@ def _pull_request(cwd: Path, branch: str) -> PullRequest | None:
         raise FactsError(f"gh returned something unexpected: {exc}") from exc
 
 
+def pull_request_state(cwd: Path, url: str) -> str | None:
+    """`open`, `closed` or `merged` as the forge has it now; None when it can't be asked."""
+    try:
+        result = _run(["gh", "pr", "view", url, "--json", "state"], cwd)
+        if result.returncode != 0:
+            return None
+        state = json.loads(result.stdout)["state"]
+    except (FactsError, ValueError, KeyError, TypeError):
+        return None
+    return state.lower() if isinstance(state, str) else None
+
+
 def remote_host(url: str) -> str | None:
     """The host of a Git remote URL (https, ssh, or scp-like `git@host:path`); None for a path."""
     if "://" in url:

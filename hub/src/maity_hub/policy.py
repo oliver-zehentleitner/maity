@@ -30,7 +30,7 @@ _FILLINGS = {
 }
 CHOICES = {
     "claim_policy": ("self-claim", "assign-only"),
-    "done_authority": ("holder", "reviewer", "admin"),
+    "done_authority": ("holder", "reviewer", "tester", "reviewer_and_tester", "admin"),
     "tag_authority": ("human", "capability"),
     "steward_writes": ("cards_only", "self"),
     "signing": ("optional", "required"),
@@ -85,6 +85,8 @@ KEPT_ON_PRESET = (
     "agent_owners",
     "outside_roles",
 )
+# A project that requires a test keeps requiring it (§6.1): no preset names these.
+DONE_KEPT_ON_PRESET = ("tester", "reviewer_and_tester")
 
 # What an owner from outside may let an agent do (§6.1 `outside_roles`, §6.2): the built-in
 # roles that work, and project roles on them. Whatever else a list names is `invalid`.

@@ -325,40 +325,36 @@ what arrived.
   on a mismatch: for a moment the wrong bytes sit under the real name,
   and with `--force` the old file is gone before the check.
 
-## `maity takeover` checks the objection hold and the holder before it sends
+## `maity takeover` checks the holder before it answers
 
 **Id:** b6e5cc6a-59a8-4556-8e74-547b23ac8af4
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
 **Source:** `docs/api.md` §6.19 (the objection hold, `respond` only by the holding instance or its owner), §13 (`maity takeover`); the coordinator's card for the CLI side, 2026-10-23
-**Revisit when:** the hub's refusals carry enough in `details` to explain themselves, or a takeover needs to be opened on a card the CLI cannot read first
+**Revisit when:** the hub's refusals carry enough in `details` to explain themselves, or the objection hold of §6.19 is built (tsk-4xqfxezvz0dh)
 
-Before `maity takeover <card>` posts, it reads the card and refuses
-locally when `objection_hold` is set. Before `takeover accept` or
-`object`, it reads the takeover and refuses when `from.member_id` is not
-this agent, or while a human's objection stands (`objected` or
-`escalated`; a retract reopens the takeover, and the holder answers
-again). Once the hub sends `me.instance` on resume (§5.2), the CLI stores
-it and also refuses a takeover held by another instance of its team;
-until then the instance is left to the hub. A
-`forbidden` answer with `objection_open` on any takeover call is shown
-with what is still open: only a human lifts the hold, the requester may
-escalate, and the holder keeps working.
+Before `takeover accept` or `object`, the CLI reads the takeover and
+refuses when `from.member_id` is not this agent. Once the hub sends
+`me.instance` on resume (§5.2), the CLI stores it and also refuses a
+takeover held by another instance of its team; until then the instance
+is left to the hub.
 
-**Reason:** the hub refuses all of these. But a bare `forbidden` teaches
-an agent nothing, and the contract's point is that an agent never tries
-to move a held card. One extra `GET` per takeover call is cheap;
-takeovers are rare. These refusals exit 4 (refused locally, nothing
-sent), like `report`'s, so a caller can tell them from a hub error.
+**Reason:** the hub refuses these too, but a bare `forbidden` teaches an
+agent nothing. One extra `GET` per answer is cheap; takeovers are rare.
+These refusals exit 4 (refused locally, nothing sent), like `report`'s,
+so a caller can tell them from a hub error.
 
 **Rejected alternatives:**
 - Sending and relying on the hub's refusal alone: correct, but the agent
   gets an error code where it needs the rule.
-- Checking every move command (`unclaim`, `release`) for a hold as well:
-  the holder's own `release` under a hold is the one move it might try.
-  The hub refuses it with `objection_open`, and the skill's rule 11 says
-  so. A `GET` before every `unclaim` costs more than it explains.
+- Keeping the checks for the objection hold (`objection_hold` on the card,
+  `objection_open`, a human's objection) until the hold is built: the hub
+  sends none of them and no human can object, so the lines could never
+  run, and they told agents about a rule that does not hold. Opening a
+  takeover also lost its `GET`, which only served that check. Building the
+  hold brings back the checks in `_takeover_call`, `_check_holder` and
+  `_takeover_lines`, and the hold's sentence in rule 11 of the skill.
 
 ## A 404 asks the hub's openapi.json whether the route exists at all
 
@@ -717,7 +713,7 @@ answer, so the CLI never builds the name itself.
 
 **Id:** f502c036-d109-46e5-a25a-ffc793bc08bd
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Revisit when:** the hub keeps an alias for the old full name (#523) that makes the old path answer, or an agent's credential is no longer bound to one project
 
@@ -808,6 +804,96 @@ cannot both come from standard input, which is read once (1be5edbf).
 - Checking §8.4 in the CLI as well: a second copy of the rules that can only drift from the
   hub's.
 
+## `say --review-file` reads the cites at the head before sending
+
+**Id:** 7f3c1e52-8a46-4d0b-9b57-2e6a1c94d3f8
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-nbt2kam9raxz; reviews on #975, #1001 and #1010 carried cites that do not stand at the head
+**Revisit when:** a valid cite is refused in practice, or an invented quote passes because the text once stood in the file's history
+
+The card asks for a refusal when a quote is not on the named line or not in the file, and for a
+plain statement when no clone or commit is available. So a bad cite sends nothing and exits 1,
+while a missing clone or commit sends with a note on stderr: the second case says nothing about
+the quotes. There is no flag to send anyway: the way out of a refusal is a corrected cite.
+
+§8.4 lets a cite without a line quote what the change removed, so such a quote also passes when
+`git log -S` finds it left or entered the file in the history of the head. That is looser than
+the change itself, which would need its base: the CLI does not know it, and a stacked pull
+request has no fixed one. An invented quote still fails, an old real one does not.
+
+A shallow clone can't show that: `git log -S` stops at its depth, so a real removed quote would
+be refused. There such a cite is sent, with a note on stderr saying it wasn't checked, as with a
+missing commit.
+
+**Rejected alternatives:**
+- Refusing when the commit is missing: the card separates this case from a bad quote.
+- Taking the base from `origin/main` for removed quotes: wrong for a stacked pull request.
+
+## `proc.run` reads git and gh as UTF-8, whatever the machine's locale
+
+**Id:** 32eaf285-a878-4717-8fc1-34b73027d5c7
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** #1015 and #1059, tsk-xsc3sevtajz0
+**Revisit when:** a repository's files that reviews cite aren't UTF-8
+
+What a file holds doesn't depend on the machine's locale, and under `LC_ALL=C` a quote with `ü`
+would otherwise never match. A bad byte becomes a replacement character, as an exception there
+would fail every git call over one file.
+
+**Rejected alternatives:**
+- `text=True`, used before: it decodes by the locale.
+
+## `wait` escapes what can hide text, and `join` warns about another hub without refusing
+
+**Id:** c35ac717-bde6-4422-a913-90dfd1d86559
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the audit tsk-w51sz6sj5vnd, findings F2 and F6; the card tsk-p7mt2e4t5xdz
+**Revisit when:** an agent is seen joining a hub because of a message, or a reader needs other invisible characters escaped
+
+`_print_json`, the only JSON printer since #1063's follow-up, escapes every character `onboarding.clean` shows as an escape, and Unicode tags join
+that set, as they spell ASCII no reader sees, and so do lone surrogates, which would crash the print. A `wait` that returns a message says on stderr that a
+body is data. Before the exchange, `join` prints one line when the state home holds an identity
+on another host, also one directly under `maity/` as `join` recommends. Identities in a clone or in any other directory aren't seen, and the join host
+and public host of one hub count as two, so the line can be absent or needless: it is a prompt
+to check, and the rule in `docs/agents.md` carries the weight.
+
+**Rejected alternatives:**
+- `ensure_ascii=True` for `wait`, as the card proposed: projects now write in any language, and
+  a Cyrillic or Chinese body would come out as `\uXXXX` throughout, unreadable and several times
+  as long. Escaping only the dangerous characters gives the same safety. `chats`, `task`, `memory`
+  and others were all ASCII until they moved to this printer, so invisible characters that are not
+  dangerous (`U+200B`, `U+FEFF`, `U+00AD`) now come out raw there too.
+- Refusing the join: a person may belong to several hubs, and the join line must work when pasted.
+
+## Text from the forge and one-line fields name who wrote them
+
+**Id:** 802fa999-a539-48e1-a814-eb2bd71e8b7d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the audit tsk-w51sz6sj5vnd, findings F3, F4, F5 and F7; the card tsk-r9pdhvjbakj2
+
+A merged pull request's title in the ticker stands in `"` with the forge login after it, and so
+does an imported card's title in a `decision` line, as it reaches the ticker there too. A release
+card can't be imported, so its line stays as it is. A card line says `imported` and whose issue
+it came from, not who wrote the title, as a member may have changed it since. A bridge's purpose is quoted below who set it. A next
+step names the instance that wrote it. The rule on team memory is in `docs/agents.md`, as a saved
+request would read as the agent's own next session.
+
+The optional `source` on a memory entry wasn't built: the audit proposed it only as an option, and
+an agent persuaded to save a line could also leave it out.
+
+**Rejected alternatives:**
+- `@` before the login: it reads as a member's handle, and a forge login may match one by chance.
+- Quoting every card title: all of them are people's text, and the board would lose its form; only
+  an imported one comes from outside the project.
+
 ## An isolation refusal exits 5, and `wait` does not retry it
 
 **Id:** c5c3fa28-87ae-4bff-a1f3-0a159e685722
@@ -887,7 +973,7 @@ repeats some at worst.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the card tsk-j1ra9ykxwwxb, approved by the maintainer after a rejoin printed about 56 KB (2026-10-31); the coordinator's decisions on it the same day: a stored packet instead of a second resume, events chosen by `audience`; docs/api.md §13
+**Source:** the cards tsk-j1ra9ykxwwxb, approved by the maintainer after a rejoin printed about 56 KB (2026-10-31), and tsk-b2r9q0bd4ksh for what another member's `member_updated` counts as; the coordinator's decisions on it the same day: a stored packet instead of a second resume, events chosen by `audience`; docs/api.md §13
 **See:** commands.md — 4ee796bf-86fb-4ed4-af7f-301ce4ce9db3 — as of 2026-10-31
 **Revisit when:** the hub sends a packet trimmed to what the text shows, or agents often need `--full` right after every resume
 
@@ -907,7 +993,12 @@ wait.
 since #1, about 56 KB of an agent's context, and it grew every day; an
 agent needs what is open and what was meant for it, not the history.
 Events are chosen by `audience`, of any kind, because an assignment or a
-request for this member matters more than a broadcast message. The caps
+request for this member matters more than a broadcast message; only another
+member's `member_updated` is left out, as a coordinator's token is on each of
+them and they would fill the ten places. One that changes `reports_to` or
+`owner_id` stays, as it moves an address, and one that changes
+`availability_policy` stays, as `drop_substitute` tells it by name to the humans
+who decide and the audience can't tell them from a coordinator. The caps
 come from the 8 KB budget measured in `tests/test_compact.py`: the
 rules, identity, members and the join notes take about 3 KB, which leaves
 about 240 bytes per answer or event. The `Next:` line names the
@@ -1370,3 +1461,47 @@ that would be lost.
   answer none of them through the CLI.
 - A `--round` flag: §13 does not have one; a contract change for the
   team lead, not this package.
+
+## `say --type update` without a recipient, and `unwatch` left to the hub
+
+**Id:** ccaeb0d5-5bcd-4ffe-8e5b-24dc0c6d2979
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.4, §8.4 and §13 (contract #458); the card tsk-gt8awv808fkc; the command's form is the contract's, how it is parsed is this entry's reading
+**Revisit when:** another message type may go without a recipient
+
+`maity say --type update --task CARD "…"` reaches the card's watchers, so
+its one positional is the message: `_say_update_text` moves it before the
+texts are read, and `-` and the warnings work as for any message. With two
+positionals the order stays `<to> <body>`. `maity unwatch` does not check
+whether the watch comes with a dependent card: the hub answers `invalid`
+(`reason: implied`) and the CLI prints that.
+
+**Reason:** §13 fixes this form, and `update` is a type of §8.4's messages,
+so it keeps what `say` offers: stdin, a file, attachments. Only the hub
+knows the card's dependencies when the call arrives; a `GET` first would
+cost a call and could still be out of date.
+
+**Rejected alternatives:**
+- An empty or dummy `<to>`: §13's form has none, and the hub takes the
+  message without one.
+- Checking the implied watch in the CLI: above.
+
+**Known limit:** `maity say --type update --task X human` sends the word
+`human` as the text.
+
+## `report` asks the forge before it refuses over a pull request the hub calls open
+
+**Id:** e44fcb30-5ba5-4e52-a801-c4763312826b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-rcn2xspk7e0h; PR #846 was closed on the forge on 2026-10-31 while its card's `report.observed.pr_state` stayed `open`, which stopped reports until the lead closed the card by hand
+**Revisit when:** the hub's observation is known to follow a closed pull request within seconds, or `report` must work without `gh`
+
+`report.observed` is the hub's last look, so it can be old. `_card_pr_mismatch` only refuses over it after `gh pr view` also says `open`. When `gh` can't answer, the refusal stays and says the state is unchecked. The call happens only on the way to a refusal, so an ordinary report costs no extra request. A link of kind `pr` on the card still refuses without asking: it is a statement about the card, not an observation.
+
+**Rejected alternatives:**
+- Letting the hub look again during the report: it needs a contract change and a forge read in the request, and the hub's observation is the part that was out of date. The hub's re-reading stays a question of its own on the card.
+- Reporting anyway when `gh` can't answer: the refusal protects the card from a report of the wrong pull request, and a failing `gh` proves nothing about the state.

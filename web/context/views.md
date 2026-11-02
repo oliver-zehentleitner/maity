@@ -46,7 +46,9 @@ The organisation view builds an indented tree in the browser from the
 members the API returns: each member sits under the member it reports
 to; a member without `reports_to` sits under the owner of the narrowest
 scope that contains its own; the rest are roots. Nothing chart-shaped is
-fetched or kept.
+fetched or kept. Each agent's node lists its live instances as links to
+their Sessions on the member's page, the target an instance has everywhere
+else; a dormant one says so beside its link.
 
 **Reason:** set by the brief; the reason is inferred: a stored chart is a
 second copy of the memberships and drifts from them the first time a role
@@ -256,11 +258,11 @@ messages — a long pause would hide that the agent came back later.
 **Status:** active
 **Evidence:** inferred
 **Source:** docs/api.md §15.3 and §15.4; the review of web PR #96, 2026-10-22; the dashboard's implementation, 2026-10-22
-**Revisit when:** humans other than the owner can join a project (then a runner's owner may not be its admin), or the hub sends events for runners' presence or placements
+**Revisit when:** a runner's owner who is no admin asks to detach from the dashboard, or the hub sends events for runners' presence or placements
 
 The tab is offered to owner and admin only (`members:admin`), although
-the hub also lets a runner's owner detach it. In V1 the only human is
-the owner, so nobody is left out yet. Allowing is the hub's grant; the
+the hub also lets a runner's owner detach it. A runner's owner who is no
+admin of the project is left out of this tab. Allowing is the hub's grant; the
 runner checks its own `[limits] projects` again. A runner the hub allows
 but whose configuration does not list the project is therefore warned
 about: it starts nothing here.
@@ -300,7 +302,10 @@ optional grouping by project (sections in the switcher's order, each a
 heading with its own list) sit in the toolbar; both are kept only for
 this tab's session and apply to `/all` only, never to a project's own
 inbox. The entry opened first and the one opened after an answer follow
-the order on screen, filter and grouping included.
+the order on screen, filter and grouping included. The filter stays over
+a reload of the list and says what it hides, with one click to lift it;
+resetting it at each reload was rejected, as it would undo a choice the
+person just made.
 
 **Reason:** a link may not sit inside a button, and the head is a button
 (it opens the entry); so the badge stands beside it. A screen reader
@@ -426,7 +431,7 @@ open that chat.
 
 **Id:** 8e483bb1-53be-4ce2-a139-561989db21af
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** docs/api.md §8.3 (events), §8.4 (message types), §8.5, §8.7 and §8.8 (the listing, in the contract since #215, not in the hub yet); the coordinator's card for the project messages view (tsk-3s4an5p22v4j), 2026-10-23; the dashboard's implementation, 2026-10-23
 **Revisit when:** the hub implements `GET /projects/{slug}/messages` (§8.8), or projects outgrow a window of 5000 events
@@ -464,7 +469,7 @@ redaction: a contract change that §8.8 already makes unnecessary.
 
 **Id:** 561b77f6-2a12-4352-aa50-36a8aa773fbe
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** docs/api.md §2.6.5 (good standing, who may end which, the banner), §2.6.3 (a held address change), §2.6.7 (the dashboard's part) and §18.3; the coordinator's card for the sessions view (tsk-s5yq94v758g4), 2026-10-23; the dashboard's implementation, 2026-10-23
 **Revisit when:** the hub serves the session list (the view is built against the mock), or the session view gains a field that says what a session may do
@@ -507,7 +512,7 @@ shows.
 
 **Id:** 6c688878-105b-4162-b0ad-5e1302df921c
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** docs/api.md §17.5 (shaped per reader), §17.6 (manual post), §17.8 (subscriptions) and §17.9 (listing and the dashboard's part); the coordinator's card for the Ticker view (tsk-sbx670wtr5qb), 2026-10-23; the dashboard's implementation against the mock, 2026-10-23
 **Revisit when:** the hub serves `/ticker`, or the listing gains a field the view now derives
@@ -1071,7 +1076,7 @@ the fixture hub with it: it refuses the field as the hub does.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the card tsk-73gz17sbq1k4 and docs/api.md §16.6 (per-day series, counts only, no chart library beyond the dashboard's); the dashboard's implementation, 2026-10-25; the designer was not asked yet
+**Source:** the cards tsk-73gz17sbq1k4 and tsk-h8805v7phn9b and docs/api.md §16.6 (per-day series, counts only, no chart library beyond the dashboard's); the dashboard's implementation, 2026-10-25; the designer was not asked yet
 **Revisit when:** the hub answers distinct active people per window, or the designer reworks the tiles
 
 Each day series is one row: the window's figure, today's value and a
@@ -1080,14 +1085,21 @@ reviews the figure is the sum of the days; for humans and agent
 instances active it is the highest day ("up to N a day"). The days are
 also a folded table, which is what a screen reader reads; the lines are
 inline SVG drawn by the page.
+Days the hub cannot know (reviews before it kept card history) are a dashed
+line at the foot of the row, so every row spans the same width without
+drawing an unknown day as a solid zero.
 
 **Reason:** the hub counts a person active once per day, so adding the
 days would count the same person thirty times and look like growth that
 is not there; a distinct count per window is not in the answer, and the
 page invents no number. One line per series keeps every chart to one
-scale and one colour, so none needs a legend.
+scale and one colour, so none needs a legend. Every row spans the same
+width so the rows can be read against each other by day, and an unknown
+number is never shown as a 0.
 
 **Rejected alternative:** a sum for every series: wrong for people.
+A gap for the unknown days: the line starts in the middle of its row. A
+solid line at zero: it invents a number.
 One chart with all series: eight scales in one axis, and colours that
 would need a legend. A chart library: the contract and the CSP keep the
 page to its own code.
@@ -1247,7 +1259,7 @@ same as the panel, on a desktop it hides the board the card belongs to.
 **Source:** the maintainer's card tsk-05meme59sq1x, 2026-10-31 (bell between the gear and the profile, a bold "+" right of the Lead button with Agent and User, `/invite` for invitations, Invite user and Join agent on Members, the old invitation form on Members gone) and his word the same day to take the Runners tab out of the project tabs, linked from Project settings instead; docs/api.md §16.11 (`/invite`, contract #919); the dashboard's implementation, 2026-10-31
 **Revisit when:** the agents page gets its join at the top (the same card's next part), a project gets more ways to bring someone in, or an endpoint gives the invitations of all one's projects at once (then `/invite` no longer reads them one project at a time)
 
-The signed-in header reads Chat, Lead, "+", the gear, the bell, the
+The signed-in header reads Lead, Chat (the maintainer's order, tsk-td5c6z21xg5s, 2026-11-01), "+", the gear, the bell, the
 profile. "+" is a menu like the gear's with Agent (the agents page) and
 User (`/invite`), for humans only. `/invite` lists the projects where the
 human adds members. The one chosen (`?project=`, as Members' Invite user
@@ -1814,6 +1826,47 @@ sections a notification names need a link. The older Users page at `/admin/users
 before launch with the other compatibility routes, so that address is
 now no view at all.
 
+## A dormant instance is said with its address wherever the instance is shown, and put to rest where an agent is managed
+
+**Id:** b4065586-3275-4bfe-a3a0-c5b45d720d61
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's card tsk-p6edzbw9gwjp, 2026-10-31; docs/api.md §6.17 ("A dormant instance", contract #817), §6.12 (`source: dormant`), §6.2 ("Another owner's agent"); the maintainer's ruling that each action has one place (#643)
+**See:** https://github.com/oliver-zehentleitner/maity — 9d2cc07a-0158-4042-ad71-eb9801ceaf77 — as of 2026-10-31
+**Revisit when:** the hub lets an agent put a sibling to rest, or a dormant instance gets a reason or an end of its own
+
+A dormant instance reads "dormant — ask @<handle>#<id> directly" in
+every place that shows the instance:
+- the presence cell on Members;
+- the member's Sessions tab;
+- the organisation tree;
+- the chat's instance picker.
+
+When every instance is at rest, the member's row also says that only an
+instance address reaches it (`availability` `limited`, `source:
+dormant`). Putting an instance to rest and waking it is a list of the
+instances, one button each, in the agent's Manage row on Members and on
+its owner's card on Agents. It is offered to the profile's owner and to
+a human with `members:admin`. An admin's change to another owner's agent
+comes back as that owner's consent request, said as "not changed yet".
+The team's lead instance gets no button, because the hub refuses it.
+
+**Reason:** the instance is kept so that someone can still ask it, and
+that only works if the address that wakes it is in view wherever
+someone looks for the agent. The setting goes where the pause and the
+rulebook already are, one place per action (#643). The member page
+stays for reading.
+
+**Rejected alternatives:**
+- A "dormant" pill without the address: the reader would still have
+  to work out how to reach the instance.
+- The buttons on the member page: it only leads to Members and Agents
+  (dda6f237).
+- Offering the lead and showing the hub's refusal: a button that
+  always fails teaches nothing. The hint says to choose another lead
+  first.
+
 ## An invitation's link via the join host is offered only where the hub names one
 
 **Id:** 35607b9c-4a72-4936-bcf8-63a429436ab9
@@ -1927,7 +1980,7 @@ panel above the columns, as before: the length of the page.
 **Id:** fcc59a72-46a0-4741-9d6f-abada05edab6
 **Type:** decision
 **Type:** constraint
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's report that chats grow slower and slower (tsk-r1adgwp0a5dr), 2026-10-27, and the rule from the incident of 2026-10-26: no request whose cost grows with history; docs/api.md §9.1 and §9.2 (`before` marks nothing read, `after` marks and delivers, a group chat's window); measured in web/tools/smoke.js on a 2000-message chat: 10 requests and 2000 messages drawn before, 2 and 50 after
 **Revisit when:** the hub can read the newest page and mark it read in one request, or serves the project messages listing (§8.8) the Messages view should page through
@@ -2046,7 +2099,7 @@ to open: their credentials and the preferences switch were theirs on the
 Agents page. Loading every agent's credentials with the list: a call per
 agent on every visit, for rows mostly never opened.
 
-## The lead is reached by a Lead button beside Chat, not by Chat itself or a strip
+## The lead is reached by a Lead button left of Chat, not by Chat itself or a strip
 
 **Id:** 0ff66bde-7c26-412a-a856-069b52764910
 **Type:** decision
@@ -2056,7 +2109,7 @@ agent on every visit, for rows mostly never opened.
 **Revisit when:** the Team page (req-2mwv85k5e1s6) gives the leads a place of their own, or a project names more than one lead by policy
 
 Chat in the header is a button like the bell and always opens every chat.
-The Lead button beside it reaches whom `M.leadChat.targets` names (the
+The Lead button left of it (first right of Chat; the maintainer swapped them on 2026-11-01, tsk-td5c6z21xg5s) reaches whom `M.leadChat.targets` names (the
 policy's lead now, one's own proxy; without a lead the admin agents and
 one's own proxy; until 2026-10-30 on an older hub only one's own admin
 and proxy agents, e1699490), across every project outside one: one is opened at once,
@@ -2096,7 +2149,7 @@ project's.
 
 **Id:** 242091d4-23c3-446e-ae63-6bb67057640e
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** docs/api.md §6.25 (projects in their owner's namespace; a client keeps `full_name` or the pair, never the slug alone), the card tsk-dbbcw9ccabfk and the hub's PR #483, 2026-10-27
 **Revisit when:** organisations become namespace owners, or the hub serves the one-segment routes again
@@ -2216,7 +2269,7 @@ would have two places. Alternatives to the row's placement: unknown.
 
 **Id:** 9cf859f1-d5e0-420c-9ea3-d633cea94e33
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** docs/api.md §6.25 (rename by a human owner, transfer by the namespace owner as a consent request, aliases, card references outside a project); the card tsk-cns4d1d7ht4j from the maintainer's chat; the hub's PR #487, 2026-10-28
 **Revisit when:** the dashboard gets a second-factor prompt (the transfer's step-up), or organisations become namespace owners
@@ -2266,10 +2319,11 @@ The account keeps the human's own picture and points to this page; an
 agent's picture stays settable on its card on a project's Agents and in
 its Manage row on Members as well.
 
-Since 2026-10-31 the page opens with **Join an agent**: a project chosen
+Since 2026-10-31 the page has **Join an agent**: a project chosen
 (`?project=<owner>/<slug>`, which also opens the panel at once) and that
 project's join panel, the same component mounted with the project's
-context. The profiles below are a list like Members (picture, name and
+context; since 2026-11-01 it stays closed until asked for (1ac94340).
+The profiles below are a list like Members (picture, name and
 global handle, projects, active instances, presence). **Manage** opens
 under a row what the card held, and per membership the instances with
 their credentials and revocation, the part Members' Manage uses, read in
@@ -2290,11 +2344,25 @@ repeat the project's join rules (§3.1's member limits, the team's
 instance limit) apart from the panel and drift from it. Keeping the
 agents in no project on the account: two places for the same profile.
 
+## Members is two tables without levels; only the organisation tree follows trust
+
+**Id:** f4ec0c89-33e8-4f62-b192-371a23b91581
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer on tsk-xxewyredc97a, 2026-11-01: the indent was agreed for the organisation chart only, and the two tables of humans and agents were good
+**See:** views.md#the-organisation-tree-is-computed-from-reports_to-and-scope-ownership-never-stored — 5fd2c906-3178-4b74-a1da-82a613302536 — as of 2026-11-01
+
+Members shows a table of humans and one of agents, each in the hub's order, with no indent and no level by trust; the columns are again each table's own. In the Organisation tree, a member with no parent by `reports_to` or area stands at its trust's level, owners at the top, then admins, members and guests, each a level deeper; a level nobody holds leaves no step. Such a member is not put under one owner's node: with several owners that would draw a line to one of them that the project does not have.
+
+**Rejected alternatives:** one list with levels (#949): a misunderstanding of the wish, which was about the chart only. Two tables each indented by trust: the same indent nobody asked for on the list.
+
 ## Members and the organisation tree follow trust: owners at the top, then admins, members and guests
 
 **Id:** 9333bd7a-dbda-4c4f-88d8-fa08124ef06d
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** f4ec0c89-33e8-4f62-b192-371a23b91581
 **Evidence:** inferred
 **Source:** the maintainer's wishes on the card tsk-05meme59sq1x, 2026-10-31, given in three steps: only owners at the top and everyone else indented; the order owners, members, guests; then the levels follow trust, owner, admin, member, guest, each a level deeper, and a level nobody holds leaves no empty step; for both the Organisation tree and the Members list, which becomes one list
 **Revisit when:** a project needs a level the trust does not express, or the Team page shows reports_to in Members too
@@ -2356,7 +2424,7 @@ a join makes one, and where they run is managed by their owner or the
 runner's; a list everybody reads is no place for either. In the row
 Agents stands right after Members, and Jour fixe between Why and
 Settings: Inbox, Overview, Board, Members, Agents, Chat, Messages,
-Ticker, Why, Jour fixe, Settings (an agent sees no Agents tab).
+Ticker, Why, Memory, Jour fixe, Settings (an agent sees no Agents tab).
 
 **Reason:** Members is where one sees who is in the project and talks
 to them; managing one's own agents is a different job, the same one as
@@ -2523,7 +2591,7 @@ the picture's place: the layout would jump from one person to the next.
 **Type:** workaround
 **Status:** active
 **Evidence:** confirmed
-**Source:** the delta review of #748 (the fixture's `/people` route), 2026-10-30; `hub/routes/people.py` (`page_served` read from the store)
+**Source:** the delta review of #748 (the fixture's `/people` route), 2026-10-30; `hub/src/maity_hub/routes/people.py` (`page_served` read from the store)
 **See:** https://github.com/oliver-zehentleitner/maity — 4423561d-6f8e-4ad5-8729-0b896fb37e3c — as of 2026-10-31
 **Revisit when:** the hub renders an organisation's page kind
 
@@ -2794,11 +2862,11 @@ slot in place keeps the focus and the context where the human was.
 
 **Id:** 4fdf4cc1-e916-44d7-9064-5b07989b0d06
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** docs/api.md §2.8.2 (the second-factor session reaches only `GET /auth/session`, the verify, the mail's resend and the logout), §2.8.7 and §2.8.8 after the contract #925 and the hub's first part #943 (`via: email`, `mail`, the link `/sign-in/second-factor/email#<token>` bound to the signing-in browser, the step-up by a mailed code); the coordinator's card tsk-ekpb0pvgw4bh and the lead's answers of 2026-11-01 (the step for both ways in this change, TOTP enrolment and the security page on tsk-94jtz06aps4b; `address_hint` to come with the hub's second part, "your address" until then; Admin → Sign-in in a second web change); the page's shape is the implementer's, 2026-11-01
 **See:** views.md#a-sensitive-call-asks-for-the-password-or-a-code-where-it-stands-then-is-made-again — bddf61cb-f6a0-4290-891f-2f3b3006946d — as of 2026-11-01
-**Revisit when:** the hub sends `address_hint` (drop "your address"), Admin → Sign-in can switch the mail factor on, TOTP enrolment gets its page (tsk-94jtz06aps4b), or the e2e gets a hub with a secret key and a mail catcher
+**Revisit when:** the hub sends `address_hint` (drop "your address"), TOTP enrolment gets its page (tsk-94jtz06aps4b), or the e2e gets a hub with a secret key and a mail catcher
 
 A session that owes the second factor (`GET /auth/session` answers
 `second_factor: "required"`) gets one page and nothing else
@@ -2817,6 +2885,13 @@ link instead. The step-up asks `GET /auth/second-factor` when the hub
 wants the factor: a human whose `via` there is `email` is mailed
 a code as the question opens, with Send again, and types it
 (`email_code`); everyone else keeps the app's code.
+The fixture's verify takes `email_token` at a step-up too, as it cannot
+tell the step from the step-up; harmless while the step-up sends only
+`email_code` (the hub never takes the token there, §2.8.8). A session
+state in the fixture was rejected for that one case.
+The e2e's second hub covers the TOTP step and the step-up (#1003), and a
+hub of its own the mail: the admin's switch, the link, the code and the
+step-up by mail.
 
 **Reason:** the dashboard had no second step at all, for TOTP neither;
 both ways run in the same second-factor session, so one page serves
@@ -2890,7 +2965,7 @@ the view already says the organisation is suspended.
 
 **Id:** c3e2532b-f64a-4ade-b834-853ad4b1160f
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** docs/api.md §6.24 (handles are lowercase; `{org}` resolves a handle or an alias); the review of the organisations page (#584), 2026-10-29
 **Revisit when:** the dashboard moves to real paths (the routing card after #601), where the route parser may normalise once for every handle
@@ -3046,7 +3121,7 @@ up the state, so the mark belongs there as well as in the header.
 
 **Id:** 4c3f8949-c8df-4c99-bb0c-08dc47205eed
 **Type:** workaround
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** docs/api.md §8.3 (an event's `seq` counts across the whole hub; a feed is read forward with `after=` only, without a filter by actor); the coordinator's review of #687, 2026-10-30 (the window `after = head − 200` counted the hub's events, not the project's); the rule from the incident of 2026-10-26: no request whose cost grows with history
 **Revisit when:** §8.3 takes `actor=`, or the hub serves the project messages listing (§8.8)
@@ -3280,14 +3355,17 @@ In a direct or group chat a human participant finds the meat-proxy
 switch in the composer's row, between **Attach files** and **Send**
 (`js/meat-proxy.js`, one part for both composers through
 `M.chatParts.actionRow`). It is drawn from one's own entry in the chat's
-participants: pressed while `meat_proxy` holds in this chat, its tooltip
-saying whether that is the profile's value or this chat's own. A click
+participants: pressed while `meat_proxy_lead` holds in this chat, never
+for the hands part alone, which is the profile's in every chat (the
+owner's word on tsk-rznymp9hb1qm: the mode in a chat means being told what
+to do); its tooltip says whether that is the profile's value or this
+chat's own. A click
 sends the opposite as this chat's value; **Follow my profile**, shown
 only while the chat has a value of its own, sends `null`. An agent, an
 observer (no entry of its own) and a hub whose entries carry no
-`meat_proxy` get no switch. Since the hub emits no event for the change,
+`meat_proxy_lead` get no switch. Since the hub emits no event for the change,
 the switch takes the hub's `204` as the new state and works out what
-holds itself (`null` follows the profile's value from `/me`); the chat's
+holds itself (`null` follows the profile's lead part from `/me`); the chat's
 value is read again from the participants the next time the chat opens.
 The icons are the designer's two SVGs in `web/brand/`, drawn as a CSS
 mask so that they take the button's colour (muted off, the accent on).
@@ -3538,15 +3616,141 @@ new section type. Drawing inside try/catch and restoring the draft
 afterwards: it would hide real drawing bugs and leave a half-built
 editor behind.
 
+## Landing variants are edited one at a time in the landing editor; campaigns sit beside the privacy hint, their counts in Statistics
+
+**Id:** 43d9837f-64fd-44d8-9527-1e590092ad38
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's card tsk-ets3x0c4ethg with the maintainer's request for A/B testing before the launch, 2026-10-31; docs/api.md §16.7.2 (contract #823)
+**See:** https://github.com/oliver-zehentleitner/maity — b9dc57f9-7581-47ef-acc8-00b679f7aa1e — as of 2026-10-31
+**Revisit when:** the hub serves more than five variants, or a variant gets a header or footer of its own
+
+The landing editor edits one page at a time: the main page or one
+variant, picked in a row of buttons above the languages, with the same
+page editor. Only the path prefix of the hub's refusals differs
+(`variants.<slug>.pages`). A variant starts with an empty page in the
+default language, the one the hub requires. A language it lacks shows
+its own default page, which the editor says. **Campaigns** are a list of
+code and label next to the privacy hint the contract asks the dashboard
+to show. Both travel with the setting in one `PATCH`, in the preview
+and in the JSON import and export. **Statistics** shows the campaign
+counts for the same window as the instance's figures and links the
+hub's CSV. The fixture hub serves no file, so there is no link there.
+The registration page sends `v` and `c` from its address as `origin`,
+dropping a malformed part; the hub decides the rest.
+
+**Reason:** a variant is a page like the main one, so the editor the
+admin already knows serves it. Two editors would drift. The counts
+belong with the other counts. The CSV is the hub's own, so the columns
+cannot differ from what the contract names.
+
+**Rejected alternatives:**
+- A separate Variants section in the admin area: the same page editor
+  twice, and header and footer, which variants share, would look
+  editable twice.
+- Building the CSV in the browser from the JSON: it works in fixtures
+  too, but copies the hub's columns and quoting by hand.
+- Sending `v` and `c` unchecked: the hub drops them silently anyway, but
+  a malformed value would then sit in the request for nothing.
+
+## A site file's placeholders are filled by the dashboard, and the hub refuses any left over
+
+**Id:** 7c1e4a52-9d3b-4f06-8a27-5e0b6c9f1d34
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-yjbzd8wvwz4n (the maintainer's request: values kept in the backend, `{{name}}`, the finished text stored, no way past the check); which texts the hub's rule leaves alone is this entry's reading
+**Revisit when:** a public page has to quote a `{{name}}` literally, or a value has to differ by language
+
+`{{name}}` in a site file takes its value from
+`/admin/settings/site-values` in the dashboard, before the file is checked.
+The hub stores finished text and never replaces anything; it refuses a text
+still holding a placeholder on the landing page, legal and registration
+writes, so a section's own import or a direct call cannot publish one either.
+
+**Reason:** the template is in a public repository and the operator's details
+are not, so they live in the instance. Stored text keeps what a visitor reads
+fixed until the next import, as the request asks. `[Name]` collided with
+Markdown links. The hub's rule also catches a slip such as `{{ Name }}`, which
+would otherwise reach the page; it leaves `{{ .Values.x }}` and `{{#if x}}`,
+which a page about a template language may quote and no site file's
+placeholder can be. The rule catches a slip, not intent: `{\{name}}`, a
+Markdown escape, passes and shows as `{{name}}`.
+
+**Known limit:** a value goes in as written, so Markdown in it (`*`, backticks,
+a link) takes effect where the placeholder sits in Markdown. HTML cannot get in:
+the finished text passes the hub's Markdown check and the renderer escapes.
+Values are one line, so none can start a block of its own.
+
+**Rejected alternative:** the hub replacing on every read: a later value change
+would rewrite published legal text with no new version. A check in the
+dashboard alone: the request names other ways round it. Refusing every `{{`:
+it would hit legitimate quoted text. A value per language: not asked for, and
+a name per language does the same (`{{country_de}}`).
+
+## The public pages are in ten languages, each translated and checked as a whole
+
+**Id:** 4b8e2d71-6a0c-4e39-9f15-c27d3a6e8b02
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's list `en de fr es pt it nl ja ko zh-Hans`, passed on in the message on the card tsk-q5f23gacz1mp (seq 30343), and on the same card that the legal pages are translated too; how the list is carried and checked is this entry's reading
+**Revisit when:** a language writes right to left, or a legal text has been reviewed by a lawyer
+
+`landing.LANGUAGE_NAMES` carries the list and each language's own name, which
+the language bar shows, since ten bare tags read as a code list. The page's
+frame words are in `render.WORDS`. The instance's own site file holds every
+text in all ten; a command line in the demo, an agent's handle and a cookie's
+name stay as they are. `hub/tests/test_site_values.py` and the e2e step import
+a neutral file with the same shape (`web/tools/site-fixture.json`), filled with
+made-up values, and read every language; **Check the file** covers a real file
+when it is imported.
+
+**Reason:** the operator asked that the import works for certain. A wrong
+placeholder in one language would otherwise show only on the live page.
+
+**Rejected alternative:** Right-to-left support: no listed language needs it,
+and it touches the stylesheet's every side. Traditional Chinese answered with
+Simplified: `Accept-Language: zh-TW` goes on to the reader's next language.
+
+The translated legal texts are machine translations, reviewed by nobody with
+legal training. The English and German are not changed by them.
+
+## An instance's site file is not in the public repository
+
+**Id:** 68502afd-2713-4ea1-b341-73a6efb50537
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's instruction on the card tsk-pfn7yg91d1y7, 2026-11-01, and the coordinator's word on the same card that **Check the file** is enough for the real file; the maintainer named no reason for the move
+**Revisit when:** a public template for operators is wanted again
+**See:** views.md#the-whole-site-is-one-json-maity-site1-checked-part-by-part-and-saved-in-turn-by-the-dashboard — 3b7c4d67-90b2-497a-9dd7-1f7a7ddfb7bd — as of 2026-11-01
+
+The site file of the instance the project runs is kept outside this
+repository, and an operator writes their own. Tests, smoke and e2e read
+`web/tools/site-fixture.json`: every section type, all ten languages for the
+landing and legal parts and two for sign-in and sign-up, with
+placeholder text and the seven placeholders, none of an instance's words. Git
+history keeps the old versions, and nobody rewrites it.
+
+**Rejected alternative:** Tests skipped when no file is there: CI would no
+longer cover an import in every language. A public copy of the instance's
+texts kept as a template: that is what the instruction ends.
+
 ## The whole site is one JSON, maity-site/1, checked part by part and saved in turn by the dashboard
 
 **Id:** 3b7c4d67-90b2-497a-9dd7-1f7a7ddfb7bd
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decisions req-0cv1n7eaegay (o1: one JSON for landing, legal and registration, dashboard only, no hub endpoint) and req-39vmjgrq5s32 (o1: a template in the repository, the imprint with placeholders only, landing-v3-complete.json dropped for one source), relayed by the coordinator on the card tsk-xw8a2hd84x3a, 2026-10-31; the coordinator's word that placeholders go in square brackets; the coordinator's decision on the review of #961, 2026-10-31 (an unknown key anywhere refuses the whole file; variants and campaigns stay out); the coordinator's decision on #961, 2026-10-31 (the template carries no registration; registration is the instance's own); docs/api.md §2.8.4 (a step-up holds 10 minutes); the dashboard's implementation, 2026-10-31
+**Source:** the maintainer's decisions req-0cv1n7eaegay (o1: one JSON for landing, legal and registration, dashboard only, no hub endpoint) and req-39vmjgrq5s32 (o1: a template in the repository, the imprint with placeholders only, landing-v3-complete.json dropped for one source; the template in the repository ended with 68502afd-2713-4ea1-b341-73a6efb50537, 2026-11-01), relayed by the coordinator on the card tsk-xw8a2hd84x3a, 2026-10-31; the coordinator's word that placeholders go in square brackets; the coordinator's decision on the review of #961, 2026-10-31 (an unknown key anywhere refuses the whole file; variants and campaigns stayed out while the editor's import did not know them, until the coordinator's decision on tsk-ets3x0c4ethg, 2026-11-01, took them in); the coordinator's decision on #961, 2026-10-31 (the template carries no registration; registration is the instance's own); docs/api.md §2.8.4 (a step-up holds 10 minutes); the dashboard's implementation, 2026-10-31
 **Revisit when:** the hub offers one call that saves several settings in a transaction, or a fourth setting joins the site file
 **See:** views.md#the-legal-pages-and-registration-import-and-export-json-too-text-not-loaded-stops-a-preview — 951ed7bf-6f23-4279-a4c6-f2c03c7c31ea — as of 2026-10-31
+
+Since tsk-fct4awzw3k30 it stands folded at the top of the admin's **Pages**
+tab, over the sub-tabs, as it spans them; `/admin/site` is gone without a
+redirect (alpha), and `/admin/pages/site` opens it.
 
 The instance admin has **Import or export everything** for the landing
 page, the legal pages and registration as one file, `maity-site/1`,
@@ -3560,19 +3764,23 @@ the landing page). The second factor is asked for once, since a step-up
 holds for 10 minutes; each call still goes through the step-up helper, so
 an expired window asks again rather than fails. A save that stops says
 what is saved and what is not and goes no further, with no rollback. The
-template `web/tools/maity-site.json` replaces `landing-v3-complete.json`.
-It carries no registration: registration is the instance's own, and a
-template imported whole would otherwise close an open registration
-without a word.
-Its placeholders are in square brackets: the hub's Markdown rules read
-`<Operator>` as an HTML tag and refuse the text.
+template that replaced `landing-v3-complete.json` has since left the
+repository (views.md#an-instances-site-file-is-not-in-the-public-repository).
+A site file need carry no registration: registration is the instance's own,
+and a file imported whole would otherwise close an open registration without
+a word.
+Placeholders were first in square brackets, since the hub's Markdown rules
+read `<Operator>` as an HTML tag and refuse the text; they are `{{name}}` now
+(`docs/api.md` §16.7.3).
 
 An unknown key anywhere in the file refuses the whole file, named by its
 path, down to each part and legal page (deeper, in a page's languages or
 the landing page's pages, the hub's preview refuses the part with its own
-field names); a landing value of the wrong kind refuses its part; `variants` and `campaigns` are not in `maity-site/1` while the
-landing editor's import does not know them, and are refused the same
-way. Export and Download read the three settings again first: the admin
+field names); a landing value of the wrong kind refuses its part. `variants` and
+`campaigns` are in the landing part, as in the landing editor's import
+(views.md#landing-variants-are-edited-one-at-a-time-in-the-landing-editor-campaigns-sit-beside-the-privacy-hint-their-counts-in-statistics);
+the format's name stays `maity-site/1`, since a file without them still
+means what it did and nothing has to read an older one. Export and Download read the three settings again first: the admin
 page builds every section when it opens, so a file exported from that
 first read would carry the state from before an edit in another section,
 and importing it again would revert that edit.
@@ -3708,6 +3916,8 @@ The **jour fixe tab** shows one block per series the reader may see: the topic a
 
 **Not covered, known:** a project owner who is the `circle_owner` of a series but no project admin cannot open Project settings, so the series section is not reachable for them from the dashboard. The contract has no call for a keeper to add other members to the report list, so the list is changed per member for itself or its own agent only. Likewise, §20.2 lets an agent's owner who is no keeper, and a human with `members:admin`, grant the moderator right, but the grant form is in Project settings (`project:admin`), so an agent's owner who is no admin cannot start a grant for their agent from the dashboard, and the fixture hub refuses it from anyone who is neither a keeper nor the agent's owner.
 
+The fixture hub's start of a round by hand refuses in the hub's order (routes/jour_fixe.py `start`, then `rounds.prepare`): `circle_owner_gone`, `rate_limited`, `project_closed`, `jour_fixe_open`, `no_moderator`, `too_few`, so that a test sees the same first error as against the hub where two overlap. A moderator who opted out does not moderate, as `rounds.prepare` drops those members before it looks for one. `too_few` counts the circle without those who opted out, plus the moderator, also outside the circle; presence is not modelled, every member counts as present. Rejected: checking in the order the view needs them, which would let a test pass against the fixture and fail against the hub where two refusals overlap.
+
 ## All projects has two pages, Inbox and Chats, as a project has its views
 
 **Id:** c72e8c45-838f-4304-bf9f-9e1d3a7693a7
@@ -3794,9 +4004,16 @@ so it was dropped.
 **See:** https://github.com/oliver-zehentleitner/maity — 11b7e786-ecf7-4971-ae04-48760fd1fd41 — as of 2026-10-31
 **Revisit when:** a fifth kind of link is added, or the header row has no room for the buttons on a phone
 
-The header's row beside the state shows the repository, then the
+The header's row shows the repository, then Pull Requests, then the
 project's own links that are set (issues, wiki, discussions, chat, each
-with its mark), then the Keep the Why dashboard. Each is plain https
+with its mark), then the
+Keep the Why dashboard, and after them, at the right end, the state: the
+maintainer asked for the state on that side and for the Pull Requests
+button (tsk-hf70q6maf8cv, 2026-11-01; no reason was recorded). Unlike the
+own links, Pull Requests is derived in the browser from the repository's
+URL and forge, and a forge outside the table gets no button; the hub knows
+only GitHub today, so the other three targets wait for it (tsk-sqpcbndm0tvd).
+Each link is plain https
 only and opens in a tab of its own with `rel="noopener noreferrer"`. The
 repository's button reads "Repository" for every forge. Its mark and
 its name for a screen reader ("Repository on GitHub") still say which
@@ -3833,6 +4050,43 @@ The form shows an unset `agent_owners` as "Not set, follows the public page (now
 
 **Rejected alternative:** a new hub field for the effective value: a change of contract for one sentence. The page reads a hide by moderation from the project view's `moderation`, present only while a hold stands (§16.8), and then says `members`. The cost that remains: the page does not know a suspension or deletion of the namespace owner, in which the hub reads `members` while the sentence says `anyone`.
 
+## Two-factor sign-in sits on the account; a session that must enrol gets the setup as its one page
+
+**Id:** ed407146-2c2b-4686-87ef-a5d8e6d020e2
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.8.1, §2.8.5, §2.8.7; the card tsk-94jtz06aps4b; #1004
+**Revisit when:** mail as a factor gets a section of its own
+
+A session in `enrolment_required` gets the setup drawn by `render()` like the second-factor step, not routed, so the address asked for stays, often `/`. The secret and the recovery codes live only in the DOM of the step that shows them and go with it; the codes leave the page only by the human's **Download**. Setup, new codes and **Turn off** go through `M.stepUp.run`, as the hub asks for the password or the factor and the page repeats the call.
+
+**Rejected alternative:** a route of its own for the setup: a session in enrolment reaches nothing else, so the page must be the same either way. Keeping the codes until the next visit: §2.8.1 shows them once.
+
+## The enrolment page is guarded only while it is on the page
+
+**Id:** 056d57c5-e0d5-4fc1-83d1-d4042c55dab8
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.8.5; review of #1004; tsk-xtnxws153a7x
+
+A refusal `second_factor_enrolment_required` draws the setup through `render()`; a flag stops a late refusal from drawing it over itself, which would throw away the secret being typed. `render()` clears the flag and only `renderEnrolment` sets it for good, so it says "the setup is on the page". The first form, cleared only when the setup succeeded, left a tab that signed out, or whose hub let go of the requirement, deaf to the next refusal.
+
+**Rejected alternative:** tying the flag to the session epoch: a hub that releases the same session keeps the epoch, and the tab stays deaf.
+
+## The reset form stays open and names no enrolment state
+
+**Id:** a5c7675b-8785-4a40-b088-b0a0022818c5
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.8.3, §2.8.7; tsk-xtnxws153a7x
+
+Admin → Users offers **Reset two-factor sign-in** on every row but one's own, and the hub's `409 conflict` says when the person has no factor: `GET /admin/users` does not carry whether someone enrolled, and the list stays counts and times. The form is one under the list, not one per row, and stays through a search, so the warning to confirm by another channel is read beside the reason, not skimmed in a table cell.
+
+**Rejected alternative:** a confirm dialog: it has no room for the reason and the warning, and a modal is the wrong place for a text someone has to think about.
+
 ## Availability and cover hang under the presence as one note
 
 **Id:** a242b4f7-0f84-459e-bb59-84934ed93cd3
@@ -3864,3 +4118,368 @@ The join panel asks `GET /agents` and `GET /agents?allowed_in=` and offers the s
 **Rejected alternative:** only `?allowed_in=` as the contract's sentence reads: the check would then call the handle of a profile not offered free, and the hub would refuse it after the form was filled in.
 
 **Add to a project** on Your agents compares the list in the page, with a project's full name and its aliases: the page does not know the owner's old handles, so a project allowed under one is missing there and stays offered in that project's own join panel. An `?allowed_in=` read per project was rejected: one request per project for a rare case, on a page that lists them all.
+
+## Add and Join are two buttons, the same on a project's Agents and on /agents, each opening its form
+
+**Id:** 1ac94340-cc4e-4d87-9ec0-c26fbdf57e96
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer on the card tsk-mzaf9w83emn6, 2026-11-01; the split of the two words proposed on the card and accepted by the coordinator
+**Revisit when:** a member's limit needs its own wording on the button, or profiles and joins merge into one form
+**See:** views.md#ones-agents-have-a-page-of-their-own-in-the-gear-menu-adding-one-to-a-project-is-that-projects-join-panel — 1031c11b-7642-4ed9-87ce-de504b2044fc — as of 2026-11-01
+
+Both pages have **+ Add an agent** and **Join an agent** at their head, and
+a click opens the matching form, one at a time. Add makes a new profile. Join
+is the join panel, for this project on a project's Agents, with a project to
+choose on `/agents`. The section that stood open on `/agents` and the form
+under its list are gone. This narrows the earlier use of "add" for the join
+flow (1031c11b): on these two buttons add means a profile. A profile made on
+a project's Agents goes straight on to the join panel, chosen there, since
+it is in no project yet and would not show in that project's list.
+
+The join panel still opens at once in three cases: `/<owner>/<slug>/agents/join`,
+`/agents?project=`, and a project without an agent of one's own. A member
+without `members:admin` sees the same **Join an agent** instead of **+ Add my
+agent**; the limit beside it is unchanged.
+
+Members' **Join an agent** leads to the project's Agents with the panel open,
+no longer to `/agents`, and **All projects** has an **Agents** tab to `/agents`
+(tsk-8sdgr8fbrn5v), which keeps its tabs on that page.
+
+**Reason:** the maintainer wants the two pages as alike as possible, with the
+forms folded until asked for. Add already opened the join panel on the
+project's page, so a separate Join there needed Add to mean something else.
+
+**Rejected alternatives:**
+- Two buttons that both open the join panel on the project's page: the same
+  action twice.
+- Leaving the join section open on `/agents`: the maintainer asked for the form
+  to open on the click.
+
+## A watch in the opened card: the toggle, and the updates read from one page
+
+**Id:** 7a86a9ca-fd3b-472f-b54d-486f5a82a70f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.4 and §8.8 (contract #458); the card tsk-hvgggzkf08rj; how the dashboard shows it is this entry's reading
+**Revisit when:** `GET …/messages` gets a card filter, or a watcher misses an update older than the newest page
+
+The opened card has a Watch button for every member. The answer to `PUT`
+or `DELETE …/watch` is the card, which the board draws with a Watching
+mark. `invalid` with `reason: implied` keeps the watch and says why. While
+the reader watches, the panel lists the card's `update` messages from the
+newest 100 of `GET …/messages?type=update`, filtered by `task_id`, and an
+empty list says "among the latest messages" while the page has a
+`next_cursor`. The status changes a watch brings are in the history already.
+
+**Reason:** only the hub knows a card's dependents for this reader, and
+the view has one `watching`, so the implied case shows when it is refused.
+§8.8 has no card filter, and one page bounds the read. The page has a
+second limit: the hub examines at most `SCAN_BUDGET` events (2000) for it,
+so a sparse filter can end a page early with a cursor. An older update of
+a busy project can be missing from the list; the event reached the watcher
+when it was written.
+
+**Rejected alternatives:**
+- Paging through every update for each opened card: the hub scans a
+  project's messages for it, for each card opened.
+- A card filter on `GET …/messages`: a contract change, not part of this
+  card.
+- Merging updates and status changes into one list: the history has its
+  own shape and pages, and already holds the status changes.
+
+## A membership's links stand only where they open
+
+**Id:** b805d135-78b3-47b7-b293-1d42fe4fc04c
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** tsk-svqsdp6qf0f3; reviews of #1020
+
+On a profile, the project and rulebook links stand only where the human is a member, and Join link also needs a project that takes the agent. `member_agents` is not in `GET /me`, so a member can still follow Join link into a project with it `off`; the project's page then says there is no form.
+
+**Rejected alternatives:** always linking, which ends on a 404 or in silence; reading the policy per project on `/agents`, too many reads for one link.
+
+**Known limit:** a click on Join link at the same address does nothing, as `M.route.go` ignores that.
+
+## Jour fixe and Why across projects: one read per project
+
+**Id:** c095fb26-7aa5-4529-a42a-08896de2d032
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's cards tsk-qnsmjbpdkm1t and tsk-jpe6vzyq39mg, which name reading per project as the way without a read across projects and forbid widening who sees what; the coordinator's agreement, 2026-11-01; docs/api.md §11.3, §20.9
+**Revisit when:** the hub gets a read across projects for either, a reader's projects make the reads slow, or the contract lists rounds for an agent's owner outside the project
+
+`/all/jour-fixe` and `/all/why` read `GET …/jour-fixe` and
+`GET …/keep-the-why` once for each project in the reader's list. Each
+section fills when its own answer comes, and a failure stays in its section.
+The Why page never sends `max_age=0`: it takes the hub's cache. Both paths
+are under `/all`, a word already reserved (§16.11).
+
+**Reason:** the hub filters each answer by that project's rules, so nothing
+becomes visible that the project page does not show. Two limits are known:
+N requests per view, and an owner outside a project whose agent takes part in
+a round (§20.7) sees that round nowhere here, since no listing is open to them.
+
+A series without a topic, an owner's series an admin may not read (§20.1), is
+"A private series." here, never its ID. The project page also names the owner;
+this page reads no member list, so `handle` would print the raw member ID.
+
+**Rejected alternatives:**
+- Falling back to the series ID, or naming the owner by that raw member ID: an
+  ID is no name.
+- A new `GET /me/jour-fixe` or a read across projects for Why: a contract
+  change the current number of projects does not need.
+- First-level `/jour-fixe` and `/why`: each would reserve another word that
+  handles may no longer take.
+- Waiting for every project before drawing: the slowest export would hold up
+  the page.
+
+
+## Memory is a view of its own, and holds the role memory
+
+**Id:** 476c7232-ef6b-431b-8d28-7726d5860a64
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §16.11, §19; the maintainer's chat seq 6883; tsk-6tqytgmcp17p; supersedes the section on Settings → Mine of #1026
+
+`/<owner>/<slug>/memory` is one tab for team, role and community memory, and the role memory moved there from Settings → Mine within the day it landed, so that there is one place. A slug `memory` is now reserved as every view's name is. Souls stand on the same page, for their owner only, read when opened; delete offers a reason in the row, not a browser dialog, because the reason is shown afterwards.
+
+The tab row's room on a phone, the argument of f9ef2098, was outweighed by one place for one store; a tab was accepted at that price.
+
+**Rejected alternatives:** keeping the role section on Mine beside the view: two places for one store. Three separate views: the reader asks what was written, not in which store.
+
+## The landing editor keeps its own copy of the hub's list of agents, and smoke compares the two
+
+**Id:** dc4639b9-91bf-464e-8592-4009f935e46d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §16.7 (the agents a `works_with` section names are a fixed list in the hub's code); the card tsk-6wch92201m39; why a copy over a call is this entry's reading
+**Revisit when:** the hub serves the list, or a second place in the dashboard needs it
+
+The editor offers the agents of a **Works with** section from a list in
+`js/landing.js`, the slugs and names of `AGENTS` in
+`hub/src/maity_hub/landing.py`, in the same order. The check before a save
+has the slugs as `LANDING_AGENTS` in `js/api.js`. `tools/smoke.js` reads the
+hub's file and fails when either copy differs from it.
+
+**Reason:** the contract serves no such list, and adding an agent is a change
+in the code anyway, so a comparison catches a drift when it is made.
+
+**Rejected alternatives:**
+- An endpoint for the list: a contract change for one picker.
+- A free text field for the slugs: every typing mistake would come back as the hub's refusal.
+
+## A card's needs is a tag, a field in the two card forms and a filter over what the board has loaded
+
+**Id:** 053b2259-181f-4545-a58c-fe2cb27ed5a9
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.4 ("shown on the card and filtered on"); the hub's #1025; tsk-10ptyz8kf63p
+
+The card shows `Needs: <role>` beside its label. It is set in the new-card form and, for whoever may edit the card, in the opened card's form with parent and related cards. The board's filter offers the roles its cards name now and works on the loaded cards, as Area does; it does not call `needs=`.
+
+**Reason:** the filter sits with Member and Area, which read the same loaded list, so one rule says what the filters see. A list of every role would offer choices that match nothing.
+
+**Rejected alternatives:** a server filter with `needs=`: a board redraw would have to merge a second list for one of its filters. A form of its own for needs in the opened card: the card has one edit form, and two would each need a Save.
+
+## Under two signatures the board's Done is a signature, and only the menu can say which one
+
+**Id:** 2668871f-769c-445b-94e1-f8802fa8e57e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.1, §6.4 (`approvals`, `approve`); the hub's #1028; tsk-tx9qcehevfnk
+
+A card in review under `done_authority: reviewer_and_tester` lists both places, signed or not. The Move menu offers the signatures the caller may still give, named as signatures rather than "Move to Done". A caller with one signature left may also drop the card on Done, which sends that signature. A caller holding both, such as an owner, cannot drop it there. Someone who has signed one place is offered neither, and rework still is.
+
+**Reason:** the hub refuses a call holding both scopes without `approve`, and a drop cannot ask. "Move to Done" would also be untrue, because the first signature leaves the card in review, so the status line says the signature was saved and the card waits for the other one.
+
+A place another member filled is not offered, though the hub would answer `200` with the signatures unchanged: a menu item that does nothing would mislead.
+
+The project's Settings offer every `done_authority` of §6.1 to a human admin, with a reason as for every policy field, so the rule can be set where it is read.
+
+**Rejected alternatives:** a dialog on drop that asks which signature: a second way to do what the menu does. A separate Sign button on every card: the card already has one menu for what can be done with it. Settings only through a preset: the rule would not be settable where it is read.
+
+## The public page's form appears for the namespace owner, and its link cannot know the instance's switch
+
+**Id:** 7e873b54-6e5d-45de-b8e3-4db3621e7588
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §16.9, §6.26; tsk-0vccw54gj8e6
+**Revisit when:** the project view carries `page_served`, as `GET /people/{handle}` does
+
+The project's Settings show **Public page** only to the human who owns the namespace, or to an owner of the organisation that does (`GET /orgs/{handle}`, `my_role`); a slot fills when that answer comes. The account page shows **Public profile** to every human. Both say what becomes public before the switch. The project's **View public page** link shows while `public_page` is `on`, the project is not archived and it has no hold, with a note that the hub's operator must have public pages on. The profile's link follows the hub's `page_served`.
+
+**Reason:** a project admin who is not the namespace owner would only get a refusal from the hub, because the page is published under the owner's name. The project view has no `page_served` and `MAITY_PUBLIC_PAGES` is not readable from it, so the page cannot tell whether the instance serves pages; the note says so instead of implying more.
+
+**Rejected alternatives:** a hub field `page_served` on the project in this PR: a launch blocker should not wait for a contract change, and the card asks for the web. Fetching `?as=public` and telling the stored page from the app shell: guessing from HTML.
+
+The profile links' form is `novalidate`: a browser's bubble on one bad address would stop the whole save, and the hub's refusals are said in words at their fields.
+
+## A proxy's action request shows the body twice: pretty-printed, and exactly as sent
+
+**Id:** 77f97db2-6696-4d9f-8c74-8e65065f7fdb
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.3 ("rendered on the request"), §7 `action`; the hub's #1030; tsk-tx9qcehevfnk
+
+The inbox entry lists the method, path and query and the pretty-printed body, and under **Exactly as sent** the stored text with its SHA-256. Inside a project someone who is not the owner sees the call and no buttons, with a sentence saying who answers. Across projects the trust is not known, so the buttons stay and the hub's `action_needs_owner` is what they hear.
+
+**Reason:** the owner is approving the exact bytes the hub later compares. `JSON.parse` keeps only the last of a repeated key and rounds large numbers, so a pretty-printed body alone could show something other than what the go allows; a proxy is the one writing that text.
+
+A body whose parsed form differs from its text (compared without the white space between tokens) opens **Exactly as sent** and says so; an escape or a moved key counts too, so a harmless difference can warn. A C0 character written as a JSON escape raises only that difference, not the warning about hidden characters, as the pretty-printed text writes it back as an escape; a literal `[U+202E]` in the text differs from the mark only by the mark's formatting. Control, format and separator characters, the default-ignorable ones and the blank braille cell (bidi overrides, zero-width characters, no-break spaces, fillers among them) appear as a marked `[U+XXXX]` in the method, path, query and both bodies, with a sentence above them, also when the body carries them as a JSON escape. Not `\uXXXX`: a body can hold those six plain characters, with another SHA-256. Someone who is not the owner keeps **Later**, which touches nothing at the hub, and loses **Talk**, which the hub refuses them too. Look-alike letters are not marked: they are visible characters.
+
+**Rejected alternatives:** the raw text only: hard to read, and the contract asks for pretty-printing. A sentence only under Exactly as sent, closed by default: the owner reads the open form first. An allow-list of printable ASCII for what counts as visible: a path or a body may carry real non-ASCII text the owner must read as it is. Refusing to show a body whose parsed form differs: the hub stores it as valid JSON, and the owner can say No.
+
+## Role memory is a part of Mine, not a view
+
+**Id:** f9ef2098-cadd-452c-ac4e-5945baa145d4
+**Type:** decision
+**Status:** superseded
+**Superseded by:** 476c7232-ef6b-431b-8d28-7726d5860a64
+**Evidence:** inferred
+**Source:** docs/api.md §16.11, §19.2; tsk-hx8cbm2eqg45
+
+The role memory is a section on Settings → Mine, the one page every human member reaches in a project, with a role picker for trust owner and admin. No new address: §16.11 names Settings as one view with two tabs, and a view of its own would be a contract change for a list of a few entries.
+
+**Rejected alternative:** a third Settings tab or a project tab: both need §16.11 changed, and a tab row is already short of room on a phone.
+
+## Admin → Sign-in keeps the question for the mailed code open, and names no value it cannot take
+
+**Id:** 7c2e5a14-9b3d-4f60-8a71-2d6e0b94c3f8
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.6.6, §2.8.7, §2.8.8; `hub/src/maity_hub/auth/sign_in_settings.py`; PR #996's second part
+
+The section (`js/admin-sign-in.js`) lists the sign-in methods with each value's source. **Mail for everyone** is in the list only while `missing` names neither `mail` nor `signing_key`, or while it is the current value, as the list would otherwise lie. Choosing it says that a code is mailed first and advises the admins to set up an authenticator app. The `PATCH` answers 202 and has changed that value only after the code: the form gives way to one question for the code with **Send again** (a new `PATCH`, which replaces the open confirmation) and **Leave it as it is**, which sends nothing, as nothing has changed and the code runs out. Other values changed in the same form are saved with the 202.
+
+**Reason:** the contract makes the code the proof that a mail of this hub arrived, so the page must not read as saved before it. The refusals `mail_not_ready` and `no_verified_address` can still come, as the state may change after the page was read; they are said at the field.
+
+**Rejected alternatives:** offering the value always and relying on the refusal: the contract says it is offered only while mail is ready. A cancelling `PATCH` on leaving: it would need a value to write back and a step-up for a change that never happened. Reading the settings again before showing the question: if that read failed, the mailed code would have no field.
+
+## The words of sign-in and sign-up are instance content; the forms stay the dashboard's
+
+**Id:** 133731df-a4ac-453d-923a-5df0878e69f0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish on tsk-fct4awzw3k30 and decision req-885kx86hhab4 on tsk-ya56x9gx986r, 2026-11-01; the plan the coordinator approved; docs/api.md §16.7.4
+
+The site file gives `/login` and `/register` their pitch per language: title, subline, three points and a note. Every word of the forms comes from the dashboard's catalogue, which is translated with the rest of the portal, and the catalogue also supplies a key left out or a failed read. The hub chooses the file's language as for the landing page.
+
+**Reason:** `next`, the device code's polling, the second factor and a session that ends under a page all live in the dashboard, so a second renderer would be a second sign-in path. No sign-in may depend on reading words.
+
+**Rejected alternatives:** the dashboard taking its own language from `GET /auth/pages`: that answer picks among the languages the file has, so a form could change language with the instance's content; the dashboard draws in its own language and passes it as `lang`. A missing key filled from `default_language`: the answer would mix two languages under one `language`; the catalogue fills it, in the language the dashboard draws in. Form labels and buttons in the file too, with the file winning over the catalogue: two sources for one text, and an imported file would pin a form's words against later catalogue changes. The hub rendering the two pages as it does the landing page: a second path, above. Free HTML or sections from the file: the forms are a security surface. A format `maity-site/2`: it would invalidate files in use, and a part left out already stays as it is. Words in the `registration` part: those are settings, with their own environment rules. A table of its own with versions: unlike legal texts nothing needs to be proven later, so one setting row is enough.
+
+## The sign-in and sign-up sub-tabs share one editor, and Save sends both pages
+
+**Id:** 42fcba86-1e4e-43dd-b028-62de42cd1258
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** PR #1136 (tsk-fct4awzw3k30); docs/api.md §16.7.4: a `PATCH` of `/admin/settings/auth-pages` replaces the setting as a whole
+
+`js/auth-pages.js` reads the setting once per admin page and both sub-tabs draw from one draft, so Save in either sends both pages. An empty field and a language without text are left out. JSON for one page is checked with `/check` (no second factor) before it reaches the editor, and only Save stores it. In the site file the two parts become one `PATCH`, at the first changed part; a part the file leaves out is sent as saved.
+
+**Reason:** the hub has one row and no partial update. Two editors, each with its own read, would let a save in one tab overwrite what the other just saved.
+
+**Rejected alternatives:** a `PATCH` per page: the contract has none, and the second would overwrite the first. Sending empty strings: the hub refuses them as `invalid`.
+
+**Known limit:** like the landing editor, the draft is read when the Pages tab opens. After importing the whole site file in the same view, reload before saving in a sub-tab.
+
+## Going from chat to chat in the global chat changes the pane alone
+
+**Id:** ced4e992-460a-4cde-844f-4f558c832ae7
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** a tester's report that switching chats is painfully slow (tsk-cdc3m5g1ew81), measured in Chromium against a local hub, 2026-11-02
+**Revisit when:** a project's own Chat tab gets the same treatment, or the hub offers one read for a chat's head and newest page
+
+A click on a chat in `/chats` no longer runs the page's `render()`. The
+view registers `ctx.followRoute`, and the pane is drawn into a detached
+holder and put in place once it is ready. Meanwhile the list already
+marks the new chat and the pane being left stands dimmed and inert. Direct chats take
+their unread count, newest message and one's own participant entry from the list as last read; what
+came since is the forward read's, and a chat left before that read is not marked read by it. The list is read again after the pane
+is drawn, and nothing waits for it. A project or chat not in the list as last read,
+or a failed read, still draws the page anew, which reads it or says what is wrong.
+A chat's timers and listeners are the pane's own, ended when it is left.
+
+**Reason:** every click cost 16 requests, 13 of them in 10 steps one after
+the other before the messages were drawn, with the old chat frozen and no sign of loading: 1.8 s at
+150 ms of latency, against 0.33 s at none, with no long task in drawing. So the waits in sequence
+were the cost, not the hub or the drawing. The pane alone takes three
+steps: about 0.55 s at the same latency.
+
+**Rejected alternatives:** making the steps of `render()` parallel: session
+and `/me` decide what may be drawn, so the steps stay, and the frozen view with them.
+A loading line in place of the pane being left: at these times it only flickers, and on a phone
+the list stays until the chat can replace it.
+
+**Known limit:** member lists are read every 30 seconds rather than on each click, so a
+new member's name can lag that long. A project's own Chat tab still draws the whole page.
+
+## The mail address asks for the password beside it, optional, and the hub decides
+
+**Id:** 1f725886-4f1f-47a3-b1cd-a74bf82aedb2
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §18.4 "Changing a verified address" and §2.6.3, the web mail section of tsk-x9g29m2rcx72, 2026-11-02
+**Revisit when:** the session or `GET /me` says whether the human has a password
+
+The mail address sits on `/account/notifications`, only where `mail_available` is true;
+the personal language above it stays either way. Changing or removing a confirmed address
+shows a password field marked "if you have one", and `current_password` is sent only when
+something was typed. The hub's `current_password: "required"` or `"mismatch"` is said at
+that field. A change the hub holds (`202`, `address_change` naming the address just sent)
+is said as waiting, with a link to the sessions on the same page, where it is approved or
+rejected; an older held change shown there is not taken for this one.
+
+**Reason:** the dashboard cannot tell whether a human has a password: neither the session
+nor `/me` says so, and §18.4 treats the two cases differently (password in the request, or
+the age of the session). An optional field covers both, and the hub's answer tells which
+case it was.
+
+**Rejected alternatives:** a field in `/auth/session` saying whether a password is set: a
+contract change for one hint, and it would tell any script in the page something about the
+account's sign-in. Asking for the password always: a human who never set one could not
+change the address at all. Never asking and waiting for the refusal: one failed request
+on every change of a confirmed address.
+
+## When mail goes out: the page sends only what changed, the browser's zone only offered
+
+**Id:** 444115c8-aaaf-408e-a16c-571aa48f69cf
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §18.4 "Defaults and what was saved", the web mail section of tsk-x9g29m2rcx72 (#1223), 2026-11-02
+**Revisit when:** the hub can reset a kind to its default
+
+The modes and times on `/account/notifications` are compared with the hub's merged answer, and
+the `PATCH` names only what differs: in `email.kinds` only the kinds that changed, each with only
+its changed part (`mode` or `content`). The time zone is the account's. When the browser reports
+another one, a button offers it, but the page never sets it unasked.
+
+**Reason:** the hub stores only what the human set, and a kind it was sent counts as set even if
+the value is unchanged. Sending the whole form would pin every kind at today's default, and a
+later change of the default (as the digest defaults of 2026-11-02) would no longer reach them. The
+zone decides when digests and quiet hours fall; a browser on a trip should not move them.
+
+**Rejected alternatives:** sending the whole `email` object on each save: it pins every default.
+Setting the browser's zone when the account still has `UTC`: a person who chose UTC on purpose
+would see it changed.
+
+**Known limit:** a mode changed and later set back to the default stays set; the contract has no
+reset.

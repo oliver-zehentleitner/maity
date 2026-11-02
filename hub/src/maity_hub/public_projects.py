@@ -159,7 +159,7 @@ def agent_statistics(
     }
     found = swarm.CACHE.get(conn, project_id)
     folded: dict[str, Any] = swarm.fold(
-        found, people, days=STAT_DAYS, include=lambda member: member in agents
+        found, people, days=STAT_DAYS, include=lambda member: member in agents, public_only=True
     )
     return {"totals": folded["totals"], "members": folded["members"]}
 
@@ -169,6 +169,13 @@ def _duration(seconds: int | None) -> str:
         return "-"
     hours, rest = divmod(seconds, 3600)
     return f"{hours} h {rest // 60} min" if hours else f"{rest // 60} min"
+
+
+def stat_labels(totals: dict[str, Any]) -> list[tuple[str, str]]:
+    """The counters a page shows: no line for merges it may not count (`swarm.fold`)."""
+    return [
+        (key, label) for key, label in STAT_LABELS if key != "prs_merged" or totals[key] is not None
+    ]
 
 
 def stat_value(key: str, value: Any) -> str:
@@ -191,17 +198,17 @@ def _per_day_html(series: list[dict[str, Any]]) -> str:
 
 def _statistics_html(stats: dict[str, Any]) -> str:
     totals = stats["totals"]
+    labels = stat_labels(totals)
     items = "".join(
-        f"<li>{escape(label)}: {escape(stat_value(key, totals[key]))}</li>"
-        for key, label in STAT_LABELS
+        f"<li>{escape(label)}: {escape(stat_value(key, totals[key]))}</li>" for key, label in labels
     )
     html = f"<h2>The agents, last {STAT_DAYS} days</h2><ul>{items}</ul>"
     html += f"<h3>Cards done per day</h3>{_per_day_html(totals['cards_done_per_day'])}"
     if stats["members"]:
-        head = "".join(f"<th>{escape(label)}</th>" for _, label in STAT_LABELS)
+        head = "".join(f"<th>{escape(label)}</th>" for _, label in labels)
         body = "".join(
             f"<tr><td>{escape(row['display_name'])} ({escape(row['handle'])})</td>"
-            + "".join(f"<td>{escape(stat_value(key, row[key]))}</td>" for key, _ in STAT_LABELS)
+            + "".join(f"<td>{escape(stat_value(key, row[key]))}</td>" for key, _ in labels)
             + "</tr>"
             for row in stats["members"]
         )
@@ -211,21 +218,59 @@ def _statistics_html(stats: dict[str, Any]) -> str:
 
 def pages_of_member(conn: Connection, human_id: str) -> list[tuple[str, str]]:
     """The public project pages that show the person: a member, or the owner of an agent that
-    is one (a person's profile turning private or public changes them, §16.9)."""
+    is one (a person's profile turning private or public changes them, §16.9), and the card
+    pages whose holder, a note's author or a note's latest editor is one of those memberships,
+    which name them as the Board names a holder."""
+    from maity_hub import public_cards
+
     m = t.membership.c
     agents = select(t.agent_profile.c.id).where(t.agent_profile.c.owner_id == human_id)
+    theirs = (
+        m.active.is_(True),
+        (m.human_id == human_id) | m.agent_id.in_(agents),
+    )
     ids = conn.execute(
         select(t.project.c.id)
         .join(t.membership, m.project_id == t.project.c.id)
-        .where(
-            t.project.c.public_page == "on",
-            m.active.is_(True),
-            (m.human_id == human_id) | m.agent_id.in_(agents),
-        )
+        .where(t.project.c.public_page == "on", *theirs)
         .distinct()
         .order_by(t.project.c.id)
     ).scalars()
-    return [(kind, project_id) for project_id in ids for kind in (KIND, VIEWS)]
+    held = (
+        select(t.card.c.id)
+        .join(t.membership, m.id == t.card.c.claim_holder)
+        .join(t.project, t.project.c.id == t.card.c.project_id)
+        .where(t.project.c.public_page == "on", *theirs)
+    )
+    noted = (
+        select(t.card_note.c.card_id)
+        .join(t.membership, m.id == t.card_note.c.author)
+        .join(t.card, t.card.c.id == t.card_note.c.card_id)
+        .join(t.project, t.project.c.id == t.card.c.project_id)
+        .where(t.project.c.public_page == "on", *theirs)
+    )
+    # The latest editor of a note is named on the page too; `edited` keeps their membership in
+    # JSON, so the few edited notes of the person's projects are matched here.
+    mine = set(
+        conn.execute(
+            select(m.id)
+            .join(t.project, t.project.c.id == m.project_id)
+            .where(t.project.c.public_page == "on", *theirs)
+        ).scalars()
+    )
+    edited = conn.execute(
+        select(t.card_note.c.card_id, t.card_note.c.edited)
+        .join(t.card, t.card.c.id == t.card_note.c.card_id)
+        .where(
+            t.card_note.c.edited.is_not(None),
+            t.card.c.project_id.in_(select(m.project_id).where(m.id.in_(mine))),
+        )
+    )
+    by_them = {row.card_id for row in edited if row.edited["by"] in mine}
+    cards = sorted(set(conn.execute(held).scalars()) | set(conn.execute(noted).scalars()) | by_them)
+    return [(kind, project_id) for project_id in ids for kind in (KIND, VIEWS)] + [
+        (public_cards.KIND, card) for card in cards
+    ]
 
 
 def render_project(conn: Connection, hub: Settings, project_id: str) -> list[public_pages.Page]:
@@ -265,11 +310,17 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
     team_html = (f"<h2>People</h2><ul>{people}</ul>" if people else "") + (
         f"<h2>Agents</h2><ul>{bots}</ul>{more}" if bots else more
     )
-    statistics_html = _statistics_html(agent_statistics(conn, project.id, agents))
+    statistics = agent_statistics(conn, project.id, agents)
+    statistics_html = _statistics_html(statistics)
+    from maity_hub import public_snapshot
+
+    entries = public_snapshot.ticker(conn, project)
+    up = public_snapshot.online(conn, project.id)
+    snapshot_html = public_snapshot.html(entries, up)
     content = (
         f'<p class="eyebrow">{escape(full)}</p><h1>{escape(project.name)}</h1>'
         f'<p class="tag">{escape(project.state)}</p>{about}{repository}{links_html}'
-        f"{team_html}{statistics_html}"
+        f"{team_html}{snapshot_html}{statistics_html}"
     )
     path = f"/{full}"
     body = render.page_document(
@@ -288,11 +339,53 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
                 shown_url or "",
                 "\x00".join(shown_links),
                 team_html,
+                snapshot_html,
                 statistics_html,
             )
         ).encode()
     )
-    return [public_pages.Page(path=path, body=body, inputs=digest.hexdigest(), lastmod=clock.now())]
+    owners = dict(
+        conn.execute(
+            select(t.human.c.id, t.human.c.handle).where(
+                t.human.c.id.in_({a.owner_id for a in agents})
+            )
+        ).all()
+    )
+    data = {
+        "name": project.name,
+        "full_name": full,
+        "about": project.public_about,
+        "state": project.state,
+        "repository_url": shown_url if shown_url and landing.safe_target(shown_url) else None,
+        "links": [u for u in shown_links if landing.safe_target(u)],
+        "people": [
+            {"name": h.display_name, "handle": h.handle, "page": f"/{h.handle}"} for h in humans
+        ],
+        "agents": [
+            {
+                "name": a.display_name,
+                "handle": a.handle,
+                "page": f"/{owners[a.owner_id]}/agents/{a.handle}",
+            }
+            for a in agents
+        ],
+        "other_agents": others,
+        "statistics": statistics,
+        "ticker": entries,
+        # The snapshot's time: `data` is stored on every render, the HTML and the sitemap's
+        # date only change with what the page shows.
+        "online": {**up, "as_of": clock.rfc3339(clock.now())},
+    }
+    return [
+        public_pages.Page(
+            path=path,
+            body=body,
+            inputs=digest.hexdigest(),
+            lastmod=clock.now(),
+            view="project",
+            data=data,
+        )
+    ]
 
 
 def targets(conn: Connection) -> list[str]:
@@ -327,7 +420,9 @@ def touch_owned(conn: Connection, human_id: str, *, removal: bool = True) -> Non
 
 
 def touch_of_org(conn: Connection, org_id: str, *, removal: bool = True) -> None:
-    """The pages of every project the organisation owns: it was suspended or deleted."""
+    """The organisation's page and those of every project it owns: it was suspended, deleted
+    or renamed."""
+    public_pages.touch(conn, "organisation", org_id, removal=removal)
     for project_id in conn.execute(
         select(t.project.c.id).where(
             t.project.c.owner_org_id == org_id, t.project.c.public_page == "on"
@@ -341,7 +436,7 @@ def dependents(conn: Connection, project_id: str) -> list[tuple[str, str]]:
     page: served, named and shown alike), its agents' pages, and the person pages that list it
     or its agents: its human members' and the owners' of its agent members, who need not be
     members themselves (§16.9)."""
-    from maity_hub import public_agents
+    from maity_hub import public_agents, public_cards
 
     m = t.membership.c
     members = conn.execute(
@@ -350,11 +445,44 @@ def dependents(conn: Connection, project_id: str) -> list[tuple[str, str]]:
         .where(m.project_id == project_id)
     ).all()
     people = sorted({h for h, _ in members if h} | {o for _, o in members if o})
+    org = conn.execute(
+        select(t.project.c.owner_org_id).where(t.project.c.id == project_id)
+    ).scalar()
     return [
         (VIEWS, project_id),
+        *[(public_cards.KIND, card) for card in public_cards.of_project(conn, project_id)],
+        *([("organisation", org)] if org else []),
         *public_agents.pages_of_project(conn, project_id),
         *[("person", person) for person in people],
     ]
+
+
+def explore_html(conn: Connection, hub: Settings) -> str:
+    """The page of `/explore`: every project that has a page now, by name. It shows only what
+    those pages already show, and is rendered per request, behind the public cache."""
+    shown = sorted(
+        (
+            (namespace.full_name(conn, project), project.name)
+            for project in conn.execute(
+                select(t.project).where(
+                    t.project.c.public_page == "on", t.project.c.state != "archived"
+                )
+            )
+            if served(conn, project)
+        ),
+        key=lambda item: (item[1].casefold(), item[0]),
+    )
+    items = "".join(
+        f'<li><a href="/{escape(full, quote=True)}">{escape(name)}</a> ({escape(full)})</li>'
+        for full, name in shown
+    )
+    listed = f"<ul>{items}</ul>" if items else "<p>No project has a public page yet.</p>"
+    return render.page_document(
+        lang="en",
+        title="Public projects on Maity",
+        canonical=f"{hub.public_url.rstrip('/')}/explore",
+        content=f"<h1>Public projects</h1>{listed}",
+    )
 
 
 public_pages.register(public_pages.Kind(KIND, render_project, targets, dependents))

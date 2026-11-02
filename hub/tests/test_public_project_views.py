@@ -70,7 +70,7 @@ def test_the_views_are_served_exactly_while_the_page_is(world: World) -> None:
         text = view(world.anyone, name)
         assert text is not None and "<script" not in text
         assert f'<link rel="canonical" href="https://hub.example{BASE}/{name}">' in text
-    assert view(world.anyone, "why") is None and view(world.anyone, "inbox") is None
+    assert view(world.anyone, "inbox") is None
     world.owner.patch("/projects/maintainer/maity", {"public_page": "off"})
     assert [view(world.anyone, n) for n in ("board", "members", "organisation")] == [None] * 3
 
@@ -83,7 +83,8 @@ def test_the_board_shows_id_title_status_and_label_and_never_a_body(world: World
     text = view(world.anyone, "board") or ""
     assert "Shipped" in text and "Next up" in text and "Maybe" in text and done in text
     assert "secret body" not in text and "bug" in text
-    assert "<a href" not in text.split("<h1>")[1]  # the ids are text, not links
+    after = text.split("<h1>")[1]  # each id links its card's page, nothing else links
+    assert after.count("<a ") == 3 and f'href="{BASE}/tasks/{done}"' in after
     assert text.index("proposed") < text.index("open") < text.index("done")
 
 
@@ -288,3 +289,11 @@ def test_the_limit_of_a_column_counts_the_cards_the_hold_leaves(
     # the newest card is held: the three shown are the next three, not two
     assert "card 4" not in text and all(f"card {n}<" in text for n in (3, 2, 1))
     assert "open (3)" in text
+
+
+def test_a_security_card_stays_off_the_board_until_it_is_done(world: World) -> None:
+    world.card(title="Secret hole", label="Security")
+    world.card(title="Fixed hole", label="security", status="done", closed_at=clock.now())
+    world.touch()
+    board = view(world.anyone, "board")
+    assert board is not None and "Secret hole" not in board and "Fixed hole" in board

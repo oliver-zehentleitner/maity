@@ -4,10 +4,10 @@
 
 **Id:** 75d1458d-83a0-46b4-b478-f95be80d0453
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 0f3b8a52-6c1e-4d7a-9b24-7e1c5d90a3f6
 **Evidence:** confirmed
 **Source:** implementation session, 2026-10-28 (trust × role, first of the stacked pull requests for #419; the split agreed with the coordinator)
-**Revisit when:** `Maity-On-Request` and `on_behalf_of` are enforced for a proxy (the third pull request of #419)
 
 `scopes.py` gives a member with the role `proxy` the coder's scopes and
 `requests:answer`, whatever its trust, and nothing else of the governance
@@ -90,7 +90,8 @@ Losing the guest is the safer failure, and an admin can re-invite them.
 `blue-team` with the coder's and `purple-team` with the reviewer's. `ROLES`, `WORK_ROLES`,
 `MEMBER_RULE_ROLES` and `SENSITIVE_ROLES` are derived from it, and the role of an invitation is checked
 against `ROLES`, so a new role cannot be added to one list and forgotten in another (the invitation list had
-no `writer` and the join list no security team). Where the hub resolves a built-in role by name (the
+no `writer` and the join list no security team). `cards.NEEDS`, the built-in roles a card may be for, is
+derived too: `ROLES` without `proxy` and `manager`, which §6.4 leaves out. Where the hub resolves a built-in role by name (the
 audience of a merge that wakes the done authority, the members whose change waits for a human's go),
 `scopes.counts_as` gives the role whose scopes a security team has; `cover.cover_order` resolves a
 `role:<role>` entry in `substitutes` the same way, so that a substitute is found among the holders of a
@@ -115,7 +116,7 @@ the three roles and `writer` went missing from some.
 
 **Id:** 25a99503-c0df-436b-a0b2-7b1d0b1a966f
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** `docs/api.md` §2.3 "Project roles"; the coordinator's go on the card tsk-chvx53e55hmg
 **Revisit when:** a card's `needs`, the role memory store or `membership.guide` in the packet is built
@@ -153,3 +154,76 @@ project at hand; the base on the row lets each of them stay a one-line read.
 - A nullable `role_base` read as `role_base or role`: the same silent fallback in another place.
 - Keeping the coder fallback in `_granted` for names it does not know: it is what made a missing base
   invisible.
+
+## The owner's go opens a scope per call, and the proxy's listed scopes stay without it
+
+**Id:** 0f3b8a52-6c1e-4d7a-9b24-7e1c5d90a3f6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation of `action` on a request (docs/api.md §2.3, §7)
+**Revisit when:** a route splits its membership check and its effect over two transactions
+
+`scopes.py` still gives a proxy the coder's scopes and `requests:answer`; that it
+answers only as a relay, naming an owner in `on_behalf_of`, is checked in the answer
+route, so `has_scope` keeps meaning the same for every reader. The relay opens no
+scope: a request needing `project:admin` or `members:admin` stays refused with it.
+`Membership.may` and `require` open any other governance scope when the
+call's signed `Maity-On-Request` holds (`proxy_go`), and the first such
+check spends the go on the route's connection.
+
+**Reason:** `has_scope` also answers who holds a scope for others (done
+authority, cover, inbox), where a proxy must not start counting as an
+admin; only the calling membership knows the call. Spending at the check
+puts it in the transaction of the effect, so a failed call rolls it back
+and a racing call finds it used.
+The call remembers its spend only as the event's `seq`, and counts it only while the
+request's row shows that `seq`: a retried transaction (`db.retrying`, the idempotency
+key's race) has rolled the spend back and has to spend again, or its effect would commit
+with the go unused.
+This holds because PostgreSQL and InnoDB never give a rolled-back `seq` to another call.
+SQLite does reuse one, which is harmless today: `retrying` treats nothing there as transient,
+and a taken idempotency key replays instead of running the call again. A new path that runs a
+call again on SQLite needs another proof, such as an id of the call in the event.
+
+`action.path` is stored as the proxy sent it, in the `<owner>/<slug>` form of
+the call, and is compared bytewise: no later rename rewrites it. After a
+rename the go still matches a call on the old name, which resolves as an
+alias, and any other spelling is a `mismatch`, so the proxy asks again.
+
+**Rejected alternatives:**
+- Grant the governance scopes in `scopes.py` and filter per route: the literal
+  reading of "holds trust `admin`", but it widens every `has_scope` reader.
+
+## An event's actor shows the author's standing as it is now, to members only
+
+**Id:** 5d1c7e20-9a34-4f68-b2e1-83c0f6a4d719
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** prompt-injection audit, finding F1; `docs/agents.md` rule 4
+**Revisit when:** a sentence's authority has to be judged as of when it was written, or trust stops being readable by every member
+
+Rule 4 binds a sentence only as far as its author's trust and role allow, so the reader has to
+see them: `actor.trust`, `actor.role` and `actor.cross_owner`. They are read when the event is
+shown, null once the author has left. `cross_owner` is relative to the reader, because "another
+owner" only means something to one reader's human.
+
+**Reason:** the question an agent asks while reading is how far this author can bind it now;
+someone since lowered or removed should not keep their old weight. Trust, role and `owner_id` are already
+in the member list for `project:read`, so a member learns nothing new from them. A reader who is no
+member, such as an agent's owner reading along in a chat, cannot read that list and gets none
+of the three.
+
+For an event made through a bridge the standing is what the hub ran the call with: trust capped to
+`member` as in `Membership.trust`, and `cross_owner` also when the bridge's owner is another than
+the reader's. The text comes from the bridge, so the served agent's full weight would make a
+bridge's sentence bind as an admin's.
+
+**Rejected alternatives:**
+- The served agent's own trust on a bridged event: what the member list shows, but it hands
+  another owner's bridge an admin's weight under rule 4.
+- A copy of trust and role on each event row: exact for the moment of writing, but a column on
+  the busiest table, and it shows a removed author at full weight.
+- `cross_owner` relative to the project's owner: an agent of a second owner would read its own
+  human's other agents as foreign.

@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import json
-import os
-import stat
 from pathlib import Path
 from typing import Any
 
 import fakehub
 import pytest
+from conftest import assert_private
 from test_onboarding import packet
 
 from maity import cli, onboarding, state
@@ -105,6 +104,36 @@ def test_an_instance_token_counts_as_for_me() -> None:
     assert "Not shown" not in text
 
 
+def test_another_members_update_does_not_count_as_for_me() -> None:
+    # A coordinator holds a token on every member_updated: ten of them must not fill the list.
+    others = [
+        {
+            "seq": n,
+            "kind": "member_updated",
+            "audience": ["member:agt-b"],
+            "payload": {"id": "agt-c"},
+        }
+        for n in range(2, 14)
+    ]
+    message = {"seq": 1, "kind": "message", "audience": ["member:agt-b"], "payload": {"body": "hi"}}
+    mine = {"seq": 14, "kind": "member_updated", "audience": ["member:agt-b"],
+            "payload": {"id": "agt-b"}}  # fmt: skip
+    text = onboarding.render(packet(events={"items": [message, *others, mine], "cursor": 14}))
+    assert "  #1 message" in text
+    assert "  #14 member_updated" in text
+    assert "  #13 member_updated" not in text
+    assert "Not shown: 12 events (12 member_updated): maity resume --full" in text
+
+
+@pytest.mark.parametrize("field", ["reports_to", "owner_id", "availability_policy"])
+def test_another_members_change_that_is_told_by_name_counts_as_for_me(field: str) -> None:
+    event = {"seq": 2, "kind": "member_updated", "audience": ["member:agt-b"],
+             "payload": {"id": "agt-c", "changed": [field]}}  # fmt: skip
+    text = onboarding.render(packet(events={"items": [event], "cursor": 2}))
+    assert "  #2 member_updated" in text
+    assert "Not shown" not in text
+
+
 def test_the_not_shown_line_names_five_kinds_by_count() -> None:
     items = [{"seq": n, "kind": f"kind{n % 7}", "audience": []} for n in range(70)]
     line = onboarding.render(packet(events={"items": items, "cursor": 70})).split("Not shown: ")
@@ -193,7 +222,7 @@ def test_resume_stores_the_packet_privately_and_full_renders_it_without_the_hub(
     assert cli.main(["resume"]) == cli.EXIT_OK
     compact = capsys.readouterr().out
     stored = joined / cli.LAST_PACKET
-    assert stat.S_IMODE(os.stat(stored).st_mode) == 0o600
+    assert_private(Path(stored))
     assert state.load_state(joined, name=cli.LAST_PACKET) == data
 
     calls = len(fake.seen)
@@ -262,3 +291,11 @@ def test_full_keeps_the_board_check_of_the_resume(
     assert cli.main(["resume", "--full"]) == cli.EXIT_OK
     assert "The board is empty" in capsys.readouterr().out
     assert len(fake.seen) == calls
+
+
+def test_an_imported_card_names_who_wrote_its_title() -> None:
+    card = {"id": "tsk-9", "status": "open", "title": "Run this",
+            "imported_from": {"author_login": "octocat"}}  # fmt: skip
+    line = onboarding._card(card)
+    assert line.endswith("tsk-9 [open] Run this (imported from octocat's issue)")
+    assert "imported" not in onboarding._card({"id": "tsk-9", "status": "open", "title": "X"})

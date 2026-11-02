@@ -24,6 +24,17 @@ def test_health_reports_a_migrated_database(client: TestClient) -> None:
     assert body["database"] == {"reachable": True, "revision": head, "head": head}
 
 
+def test_health_does_not_read_the_migration_files_per_request(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def boom(_engine: Engine) -> None:
+        raise AssertionError("the head is read once, when the app is made")
+
+    monkeypatch.setattr("maity_hub.app.head_revision", boom)
+    monkeypatch.setattr("maity_hub.db.head_revision", boom)
+    assert client.get("/api/v1/health").status_code == 200
+
+
 def test_health_turns_503_when_the_schema_falls_behind(client: TestClient, engine: Engine) -> None:
     downgrade(engine)
     response = client.get("/api/v1/health")
@@ -85,12 +96,25 @@ def test_the_shell_carries_a_base_so_its_relative_files_load_from_assets_at_any_
     assert client.get("/assets/js/app.js").text == "// dashboard"
 
 
+URL = "https://hub.example/"
+
+
+def test_the_social_image_gets_a_whole_address() -> None:
+    from maity_hub.shell import shell_document
+
+    page = b'<head><meta property="og:image" content="brand/x.png"><link href="brand/y.svg">'
+    served = shell_document(page, URL)
+    assert b'content="https://hub.example/assets/brand/x.png"' in served
+    assert b'<link href="brand/y.svg">' in served  # the base serves the rest
+
+
 def test_a_page_without_a_head_is_served_as_it_is() -> None:
     from maity_hub.shell import shell_document
 
-    assert shell_document(b"<p>x</p>") == b"<p>x</p>"
+    assert shell_document(b"<p>x</p>", URL) == b"<p>x</p>"
     assert (
-        shell_document(b"<HEAD lang=x><title/>") == b'<HEAD lang=x><base href="/assets/"><title/>'
+        shell_document(b"<HEAD lang=x><title/>", URL)
+        == b'<HEAD lang=x><base href="/assets/"><title/>'
     )
 
 

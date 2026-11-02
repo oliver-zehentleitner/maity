@@ -89,10 +89,11 @@ def canonical_string(
     nonce: str,
     body: bytes,
     for_member: str | None = None,
+    on_request: str | None = None,
 ) -> str:
-    """The string a request signs (§2.2). `Maity-For` adds its line, `for:` and the value,
-    before the body hash; without the header there is no line, so a request signs as it did
-    before the header existed."""
+    """The string a request signs (§2.2). `Maity-On-Request` adds its line, the bare request
+    id, then `Maity-For` its own, `for:` and the value, before the body hash; without a header
+    there is no line, so a request signs as it did before the header existed."""
     return "\n".join(
         [
             "MAITY-HMAC-V1",
@@ -101,6 +102,7 @@ def canonical_string(
             canonical_query(raw_query),
             timestamp,
             nonce,
+            *([on_request] if on_request is not None else []),
             *([f"for:{for_member}"] if for_member is not None else []),
             hashlib.sha256(body).hexdigest(),
         ]
@@ -124,17 +126,20 @@ class NonceWindow:
 
     def __init__(self, seconds: int = NONCE_WINDOW_SECONDS) -> None:
         self._seconds = seconds
-        self._seen: dict[tuple[str, str], float] = {}
+        self._seen: dict[tuple[str, str], tuple[float, object]] = {}
         self._lock = threading.Lock()
 
-    def first_use(self, credential_id: str, nonce: str) -> bool:
+    def first_use(self, credential_id: str, nonce: str, spender: object) -> bool:
+        """Spend the nonce; False when another `spender` did within the window. A transaction
+        that is run again does not take this window back, so its request, the same `spender`,
+        still counts as the first."""
         now = time.monotonic()
         with self._lock:
             if len(self._seen) > 10_000:
-                self._seen = {k: t for k, t in self._seen.items() if t > now}
+                self._seen = {k: seen for k, seen in self._seen.items() if seen[0] > now}
             key = (credential_id, nonce)
-            expires = self._seen.get(key)
-            if expires is not None and expires > now:
-                return False
-            self._seen[key] = now + self._seconds
+            seen = self._seen.get(key)
+            if seen is not None and seen[0] > now:
+                return seen[1] is spender
+            self._seen[key] = (now + self._seconds, spender)
             return True

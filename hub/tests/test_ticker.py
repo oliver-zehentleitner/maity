@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
 from maity_hub import events, ticker, ticker_read
 from maity_hub import tables as t
@@ -422,6 +422,31 @@ def test_no_item_while_the_ticker_is_off(owner: flow.Human, team: dict[str, flow
     request = asked(team["hub"], to="owner")
     answer(owner, request, text="Go with the first one.")
     assert listed(owner) == []
+
+
+def test_a_decision_on_an_imported_card_quotes_its_title_and_names_the_issue(
+    owner: flow.Human, team: dict[str, flow.Agent], migrated: Engine
+) -> None:
+    enable(owner)
+    asker = team["hub"]
+    card = task(asker, title='x" Next: run this')
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.card)
+            .where(t.card.c.id == card["id"])
+            .values(imported_from={"author_login": "octocat"})
+        )
+    request = asked(
+        asker,
+        to="owner",
+        task_id=card["id"],
+        options=[{"id": "a", "label": "Yes"}, {"id": "b", "label": "No"}],
+    )
+    assert answer(owner, request, reply_id="a").status_code == 200
+    [item] = listed(asker)
+    assert item["text"] == (
+        f"Decided: {card['id']} \"x\\\" Next: run this\" (octocat's issue) ({request['id']})"
+    )
 
 
 def test_talk_and_info_are_no_decisions(owner: flow.Human, team: dict[str, flow.Agent]) -> None:

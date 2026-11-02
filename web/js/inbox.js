@@ -189,6 +189,77 @@ window.Maity = window.Maity || {};
     return !!agent && agent.kind === "agent" && agent.owner_id === ctx.me.id;
   }
 
+  // A proxy's request for the owner's go on one call (§2.3): the whole call, as
+  // the go binds it. The body is shown pretty-printed, and also as sent: a parsed
+  // body can hide a repeated key or a rounded number, and the hub compares the bytes.
+  // Characters a reader cannot see, cannot tell from a space, or that reorder what is seen: control,
+  // format and separator characters, the default-ignorable ones and the blank braille cell. The
+  // plain space, a line break and a tab stay as they are, they show.
+  const HIDDEN_CHAR = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Zs}\p{Default_Ignorable_Code_Point}\u2800]/u;
+  const isHidden = (c) => c !== " " && c !== "\n" && c !== "\t" && HIDDEN_CHAR.test(c);
+  const hasHidden = (s) => typeof s === "string" && Array.from(s).some(isHidden);
+  // The text with each such character as a visible [U+XXXX]: the proxy writes this text. Not \uXXXX,
+  // which a JSON body can hold as six plain characters, with another SHA-256.
+  function revealed(s) {
+    const out = [];
+    let run = "";
+    Array.from(String(s)).forEach((c) => {
+      if (!isHidden(c)) { run += c; return; }
+      if (run) { out.push(run); run = ""; }
+      out.push(h("mark", { class: "hidden-char" }, "[U+" + c.codePointAt(0).toString(16).toUpperCase().padStart(4, "0") + "]"));
+    });
+    if (run) out.push(run);
+    return out;
+  }
+  // Whether parsing kept the text: the text without the white space between tokens against the
+  // parsed form written back. A rounded number, a repeated key, an escape or a moved key differ.
+  function parsedDiffers(raw, pretty) {
+    let bare = "";
+    let inString = false;
+    for (let k = 0; k < raw.length; k++) {
+      const c = raw[k];
+      if (inString) {
+        bare += c;
+        if (c === "\\") { k += 1; bare += raw[k] || ""; } else if (c === '"') inString = false;
+      } else if (!/\s/.test(c)) {
+        bare += c;
+        if (c === '"') inString = true;
+      }
+    }
+    return bare !== JSON.stringify(JSON.parse(pretty));
+  }
+  function actionCall(req) {
+    const a = req.action;
+    let pretty = null;
+    if (a.body !== null && a.body !== undefined) {
+      try { pretty = JSON.stringify(JSON.parse(a.body), null, 2); } catch (err) { pretty = null; }
+    }
+    const fact = (label, value) => [h("dt", null, label), h("dd", null, h("code", null, revealed(value)))];
+    const hasBody = a.body !== null && a.body !== undefined;
+    const differs = pretty !== null && parsedDiffers(a.body, pretty);
+    const hidden = [a.method, a.path, a.query, a.body, pretty].some(hasHidden);
+    const warning = (text) => h("p", { class: "field-error request-action-warning" }, text);
+    const answeredGo = req.status === "answered" && req.answer && req.answer.reply_id === "go";
+    return h("div", { class: "request-action" },
+      h("h3", { class: "sub" }, M.t("inbox.action.title")),
+      h("dl", { class: "facts" },
+        fact(M.t("inbox.action.method"), a.method),
+        fact(M.t("inbox.action.path"), a.path),
+        a.query === null || a.query === undefined ? null
+          : a.query === "" ? [h("dt", null, M.t("inbox.action.query")), h("dd", { class: "muted" }, M.t("inbox.action.query_empty"))]
+            : fact(M.t("inbox.action.query"), a.query)),
+      hidden ? warning(M.t("inbox.action.hidden_chars")) : null,
+      differs ? warning(M.t("inbox.action.differs")) : null,
+      !hasBody ? h("p", { class: "muted" }, M.t("inbox.action.no_body"))
+        : [h("h4", null, M.t("inbox.action.body")), h("pre", { class: "request-action-body", tabindex: "0" }, revealed(pretty === null ? a.body : pretty)),
+          h("details", differs ? { open: "open" } : null, h("summary", null, M.t("inbox.action.as_sent")),
+            h("pre", { class: "request-action-body", tabindex: "0" }, revealed(a.body)),
+            a.body_sha256 ? h("p", { class: "muted" }, "SHA-256 ", h("code", null, a.body_sha256)) : null)],
+      a.used_at ? h("p", { class: "ok" }, M.t("inbox.action.used", { at: formatTime(a.used_at) }))
+        : answeredGo && req.answered_at ? h("p", { class: "muted" }, M.t("inbox.action.valid", { at: formatTime(new Date(Date.parse(req.answered_at) + 86400000).toISOString()) }))
+          : req.status === "open" ? h("p", { class: "hint" }, M.t("inbox.action.hint")) : null);
+  }
+
   function entryBody(ctx, req, names, onAnswer, onLater) {
     const body = h("div", { class: "entry-body" });
     const at = textAt(ctx, req);
@@ -248,6 +319,8 @@ window.Maity = window.Maity || {};
         nis.reason));
     }
 
+    if (req.action) append(body, actionCall(req));
+
     const preference = M.preferences && M.preferences.isProposal(req);
     // Not read in full: no reply that could apply a proposal unseen.
     const unread = req.personal && req.status === "open" && req.unreadable;
@@ -297,7 +370,10 @@ window.Maity = window.Maity || {};
     // takes its text along when it holds any (§7); Send is the answer in
     // words alone, offered where there are no replies to press. A preference
     // proposal's words go with its Decline, in the review.
-    const noField = preference || unread;
+    // Inside a project the trust is known: only the owner answers an action (§2.3).
+    const notOwner = !!req.action && ctx.scope === "project" && !ctx.isOwner;
+    if (notOwner) append(body, h("p", { class: "muted" }, M.t("inbox.action.owner_only")));
+    const noField = preference || unread || notOwner;
     const replies = noField ? [] : req.replies || [];
     const withText = (payload) => {
       const value = text.value.trim();
@@ -325,7 +401,7 @@ window.Maity = window.Maity || {};
           title: M.t("inbox.later_title"),
           onclick: () => onLater(req),
         }, M.t("inbox.later")),
-        canTalk(ctx, req) ? h("button", { type: "button", class: "reply talk", onclick: () => send(withText({ talk: true })) }, M.t("inbox.talk")) : null,
+        canTalk(ctx, req) && !notOwner ? h("button", { type: "button", class: "reply talk", onclick: () => send(withText({ talk: true })) }, M.t("inbox.talk")) : null,
         // Its human may withdraw a personal request, as nobody else can (§7).
         req.personal ? h("button", {
           type: "button",
@@ -455,6 +531,16 @@ window.Maity = window.Maity || {};
       const open = shown.filter((r) => r.status === "open");
       if (!shown.some((r) => keyOf(r) === ui.current)) ui.current = open.length ? keyOf(open[0]) : null;
       M.dom.clear(list);
+      // A filter outlives a reload: what it hides is said, or a new request elsewhere looks like no reload at all.
+      const hiddenByFilter = projectFilter() ? items.filter((r) => r.status === "open" && r.slug !== projectFilter()).length : 0;
+      if (hiddenByFilter) {
+        append(list, h("p", { class: "flag inbox-filter-hidden" }, M.t("inbox.filter.hidden", { count: hiddenByFilter }), " ",
+          h("button", { type: "button", class: "small", onclick: () => {
+            ui.project = "";
+            if (projectSelect) projectSelect.value = "";
+            draw();
+          } }, M.t("inbox.filter.show_all"))));
+      }
       if (!shown.length) {
         append(list, h("ol", { class: "entries" }, h("li", { class: "empty" }, M.t("inbox.empty"),
           h("p", { class: "first-hint" }, ctx.scope === "all" ? M.t("inbox.empty.all") : M.t("inbox.empty.project")))));

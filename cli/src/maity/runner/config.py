@@ -10,7 +10,6 @@ file, and the hub cannot widen it. Every default is listed by `maity runner chec
 from __future__ import annotations
 
 import os
-import pwd
 import re
 import tomllib
 import urllib.parse
@@ -450,6 +449,8 @@ def _absolute(value: Any) -> str | None:
 def home_of(user: str) -> Path:
     """A user's home directory; `/home/<user>` when this host does not know the user (the
     check reports that separately)."""
+    import pwd  # POSIX only, and every maity command imports this module
+
     try:
         return Path(pwd.getpwnam(user).pw_dir)
     except KeyError:

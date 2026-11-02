@@ -19,10 +19,12 @@ from typing import Any
 from starlette.responses import RedirectResponse, Response
 from starlette.types import Scope
 
+from maity_hub import paths
 from maity_hub.config import Settings
 from maity_hub.errors import error_response
 
 # One segment in the join token's alphabet and length (`secrets.token_urlsafe(16)`, §3.1).
+PLAIN_PATH = re.compile(r"[/A-Za-z0-9._~-]+")
 TOKEN_PATH = re.compile(r"^/([A-Za-z0-9_-]{22})\Z")
 # The same shape after `/i/`: a person's invitation (§3.4), whose token looks like a join's.
 INVITE_PATH = re.compile(r"^/i/([A-Za-z0-9_-]{22})\Z")
@@ -78,5 +80,13 @@ def route(scope: Scope, settings: Settings) -> Response | None:
     if method == "GET" and SEO_FILES.fullmatch(scope.get("path", "")):
         return error_response(404, "not_found", "no such resource")  # §16.7
     if method == "GET":
+        # `/<owner>/<slug>…` cannot be a token: it goes on to the same address on the public host.
+        parts = scope.get("path", "").strip("/").split("/")
+        if (
+            len(parts) >= 2
+            and parts[0].lower() not in paths.RESERVED_FIRST | {"i", "r"}
+            and PLAIN_PATH.fullmatch(scope.get("path", ""))
+        ):
+            return RedirectResponse(f"{settings.public_url}{scope['path']}", status_code=302)
         return RedirectResponse(f"{settings.public_url}/", status_code=302)
     return error_response(404, "not_found", "no such resource")

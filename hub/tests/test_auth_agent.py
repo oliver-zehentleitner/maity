@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 from sqlalchemy import Engine, select, update
+from sqlalchemy.exc import OperationalError
 
 from maity_hub import clock
 from maity_hub import tables as t
@@ -229,6 +230,35 @@ def test_a_nonce_is_used_once(make_client: ClientFactory, agent: factory.Agent) 
     headers = signed(agent, "GET", "/api/v1/me")
     client = make_client()
     assert client.get("/api/v1/me", headers=headers).status_code == 200
+    again = client.get("/api/v1/me", headers=headers)
+    assert again.status_code == 401
+    assert again.headers["Maity-Error"] == "nonce_reused"
+
+
+def test_an_authentication_run_again_keeps_its_nonce_and_a_replay_does_not(
+    make_client: ClientFactory, agent: factory.Agent, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A deadlock after the nonce is spent: the repeat is the same request. In the process's window
+    (SQLite, MariaDB) nothing rolls the nonce back; on PostgreSQL the transaction does."""
+    from maity_hub.auth import caller
+
+    class Deadlock(Exception):
+        sqlstate = "40001"
+
+    real, calls = caller._agent, []
+
+    def once(*args: Any, **kwargs: Any) -> Any:
+        calls.append(1)
+        if len(calls) == 1:
+            raise OperationalError("stmt", {}, Deadlock())
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(caller, "_agent", once)
+    headers = signed(agent, "GET", "/api/v1/me")
+    client = make_client()
+    response = client.get("/api/v1/me", headers=headers)
+    assert response.status_code == 200, response.text
+    assert len(calls) == 2
     again = client.get("/api/v1/me", headers=headers)
     assert again.status_code == 401
     assert again.headers["Maity-Error"] == "nonce_reused"

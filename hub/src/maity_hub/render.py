@@ -19,8 +19,14 @@ from html import escape, unescape
 from typing import Any
 from urllib.parse import urlsplit
 
-from maity_hub import landing_files
-from maity_hub.landing import AGENTS, ALPHA_MARKS, FENCE, safe_target
+from maity_hub import catalog, landing_files
+from maity_hub.landing import (
+    AGENTS,
+    ALPHA_MARKS,
+    FENCE,
+    LANGUAGE_NAMES,
+    safe_target,
+)
 
 # --- the visitor's language (§16.7) ----------------------------------------------------------
 
@@ -33,11 +39,32 @@ def ordered_languages(pages: Iterable[str], default: str) -> list[str]:
     return sorted(pages, key=lambda tag: (tag != default, tag))
 
 
+def offered_match(tag: str, offered: list[str]) -> str | None:
+    """The offered language a lowercase `Accept-Language` tag asks for: itself, or one with its
+    primary subtag (`zh-CN` reads `zh-Hans`). Traditional Chinese is not served Simplified: such a
+    reader goes on to the next language asked for."""
+    if tag.startswith(("zh-hant", "zh-tw", "zh-hk", "zh-mo")):
+        return None
+    primary = tag.split("-")[0]
+    for one in offered:
+        if one.lower() == tag or one.lower().split("-")[0] == primary:
+            return one
+    return None
+
+
 def choose_language(
     offered: list[str], default: str, query: str | None, accept_language: str | None
 ) -> str:
     """`?lang=` if offered, else the best match of `Accept-Language` among the offered
     languages, else the default language; the default itself only when it is offered."""
+    best = best_language(offered, query, accept_language)
+    if best is not None:
+        return best
+    return default if default in offered else (offered[0] if offered else default)
+
+
+def best_language(offered: list[str], query: str | None, accept_language: str | None) -> str | None:
+    """`?lang=` if offered, else the best match of `Accept-Language`, else nothing."""
     if query in offered:
         return str(query)
     ranked: list[tuple[float, int, str]] = []
@@ -49,12 +76,10 @@ def choose_language(
                 weight = float(rest.strip()[2:])
             except ValueError:
                 weight = 0.0
-        primary = tag.strip().lower().split("-")[0]
-        if primary in offered and weight > 0:
-            ranked.append((-weight, position, primary))
-    if ranked:
-        return sorted(ranked)[0][2]
-    return default if default in offered else (offered[0] if offered else default)
+        match = offered_match(tag.strip().lower(), offered)
+        if match is not None and weight > 0:
+            ranked.append((-weight, position, match))
+    return sorted(ranked)[0][2] if ranked else None
 
 
 # --- Markdown ----------------------------------------------------------------------------------
@@ -171,66 +196,6 @@ def markdown(source: str, *, ugc: bool = False) -> str:
 
 # --- the words of the pages' own frame ------------------------------------------------------------
 
-WORDS: dict[str, dict[str, str]] = {
-    "en": {
-        "sign_in": "Sign in",
-        "register": "Create your account",
-        "legal": "Legal",
-        "as_of": "As of {version}",
-        "draft": "Draft",
-        "earlier": "Earlier versions",
-        "older": "This is an earlier version, as of {version}. The current one is at {current}.",
-        "language": "Language",
-        "people": "People",
-        "agents": "Agents",
-        "public_projects": "Public projects",
-        "cards_done_week": "Cards done this week",
-        "people_online": "People online",
-        "agents_online": "Agents online",
-        "imprint": "Imprint",
-        "privacy": "Privacy",
-        "terms": "Terms",
-        "preview": "Preview of an unsaved draft",
-        "theme": "Switch between the light and the dark theme",
-        "rings": "People and agents in three rings: you, your team, the community",
-        "you": "you",
-        "yes": "Yes",
-        "no": "No",
-        "reply": "Reply",
-        "platform": "Platform",
-        "open_source": "Open source",
-        "follow": "Follow",
-    },
-    "de": {
-        "sign_in": "Anmelden",
-        "register": "Konto anlegen",
-        "legal": "Rechtliches",
-        "as_of": "Stand {version}",
-        "draft": "Entwurf",
-        "earlier": "Frühere Fassungen",
-        "older": "Dies ist eine frühere Fassung, Stand {version}. Die aktuelle steht unter {current}.",
-        "language": "Sprache",
-        "people": "Menschen",
-        "agents": "Agents",
-        "public_projects": "Öffentliche Projekte",
-        "cards_done_week": "Karten diese Woche erledigt",
-        "people_online": "Menschen online",
-        "agents_online": "Agents online",
-        "imprint": "Impressum",
-        "privacy": "Datenschutz",
-        "terms": "Nutzungsbedingungen",
-        "preview": "Vorschau eines ungespeicherten Entwurfs",
-        "theme": "Zwischen hellem und dunklem Farbschema wechseln",
-        "rings": "Menschen und Agents in drei Ringen: du, dein Team, die Community",
-        "you": "du",
-        "yes": "Ja",
-        "no": "Nein",
-        "reply": "Antworten",
-        "platform": "Plattform",
-        "open_source": "Open Source",
-        "follow": "Folgen",
-    },
-}
 LEGAL_ADDRESS = {"imprint": "impressum", "privacy": "privacy", "terms": "terms"}
 
 STYLE = """
@@ -249,7 +214,7 @@ nav a{margin-right:1rem;text-decoration:none;color:var(--muted)}
 border:1px solid var(--accent);color:var(--accent);font-weight:600}
 .btn.primary{background:var(--accent);color:var(--accent-fg)}
 section{padding:2.5rem 0}section+section{border-top:1px solid var(--line)}
-h1{font-size:2.4rem;line-height:1.15;margin:.3rem 0 1rem}h2{font-size:1.5rem;margin:0 0 1rem}
+h1{font-size:2.4rem;line-height:1.15;margin:.3rem 0 1rem;overflow-wrap:break-word}@media (max-width:480px){h1{hyphens:auto}}h2{font-size:1.5rem;margin:0 0 1rem}
 .eyebrow{color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-size:.8rem;margin:0}
 .sub{font-size:1.2rem;color:var(--muted);max-width:42rem}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:1rem;padding:0;
@@ -267,6 +232,24 @@ footer{border-top:1px solid var(--line);padding:1.5rem 0 3rem;color:var(--muted)
 footer a{color:var(--muted);margin-right:1rem}.note{background:var(--card);padding:.6rem .9rem;
 border-radius:.5rem;border:1px solid var(--line)}
 """
+
+
+_SIGN_IN_LINK = re.compile(r'href="(/login|/register)((?:\?[^"#]*)?)((?:#[^"]*)?)"')
+
+
+def _carry_language(body: str, lang: str) -> str:
+    """The links to `/login` and `/register` say the language the page was served in (§16.7.4)."""
+
+    def carry(found: re.Match[str]) -> str:
+        query = found.group(2)
+        if re.search(r"[?;&]lang=", query):
+            return found.group(0)
+        joined = "&amp;" if query else "?"
+        return (
+            f'href="{found.group(1)}{query}{joined}lang={escape(lang, quote=True)}{found.group(3)}"'
+        )
+
+    return _SIGN_IN_LINK.sub(carry, body)
 
 
 def _document(
@@ -289,8 +272,13 @@ def _document(
         f'<!doctype html><html lang="{escape(lang)}"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f"<title>{escape(title)}</title>{meta if description else ''}{head}{alternates}"
-        f"{f'<style>{style}</style>' if style else ''}</head><body>{body}</body></html>"
+        f"{f'<style>{style}</style>' if style else ''}</head><body>{_carry_language(body, lang)}</body></html>"
     )
+
+
+def _language_link(tag: str) -> str:
+    name = LANGUAGE_NAMES.get(tag, tag)
+    return f'<a href="?lang={escape(tag)}" lang="{escape(tag)}">{escape(name)}</a>'
 
 
 def _counter(stats: dict[str, Any] | None, key: str, words: dict[str, str]) -> str | None:
@@ -302,7 +290,7 @@ def _counter(stats: dict[str, Any] | None, key: str, words: dict[str, str]) -> s
         return None  # not computed: the counter is left out
     dot = (
         '<span class="dot pulse" aria-hidden="true"></span>'
-        if key in ("people_online", "agents_online")
+        if key in ("people_online", "agents_online", "instances_online")
         else ""
     )  # the board has a live dot before an online number
     return f'<div class="stat"><b>{dot}<span data-lp-count>{int(value)}</span></b>{label}</div>'
@@ -318,6 +306,10 @@ def _wrap(index: int, classes: str, inner: str, extra: str = "") -> str:
     return (
         f'<section id="s{index}" class="{classes}"{extra}><div class="wrap">{inner}</div></section>'
     )
+
+
+def _eyebrow(section: dict[str, Any]) -> str:
+    return f'<p class="eyebrow">{escape(section["eyebrow"])}</p>' if section.get("eyebrow") else ""
 
 
 def _demo(index: int, section: dict[str, Any], words: dict[str, str]) -> str:
@@ -351,7 +343,7 @@ def _demo(index: int, section: dict[str, Any], words: dict[str, str]) -> str:
     )
     lead = f'<p class="lead">{escape(section["subline"])}</p>' if section.get("subline") else ""
     inner = (
-        f'<h2>{escape(section["title"])}</h2>{lead}<div class="demo-grid"><div>'
+        f'{_eyebrow(section)}<h2>{escape(section["title"])}</h2>{lead}<div class="demo-grid"><div>'
         f'<ol class="term" data-lp-terminal>{"".join(rows)}</ol>{inbox}</div>'
         f'<ol class="steps3">{steps}</ol></div>'
     )
@@ -361,7 +353,7 @@ def _demo(index: int, section: dict[str, Any], words: dict[str, str]) -> str:
 def _section(index: int, section: dict[str, Any], words: dict[str, str], stats: Any) -> str:
     kind = section["type"]
     title = section.get("title")
-    heading = f"<h2>{escape(title)}</h2>" if title else ""
+    heading = _eyebrow(section) + (f"<h2>{escape(title)}</h2>" if title else "")
     if kind == "hero":
         return ""  # drawn with the header, in the dark zone
     if kind == "stats":
@@ -409,18 +401,27 @@ def _section(index: int, section: dict[str, Any], words: dict[str, str], stats: 
             else ""
         )
         tiles = "".join(
-            f'<div class="tile card"><h3>{escape(tile["title"])}</h3><p>{escape(tile["text"])}</p></div>'
+            '<div class="tile card">{}<h3>{}</h3><p>{}</p></div>'.format(
+                (
+                    f'<span class="tile-label">{escape(tile["label"])}</span>'
+                    if tile.get("label")
+                    else ""
+                ),
+                escape(tile["title"]),
+                escape(tile["text"]),
+            )
             for tile in section["tiles"]
         )
         links = "".join(
-            f'<a class="btn btn-secondary" href="{escape(link["href"], quote=True)}">{escape(link["label"])}</a>'
+            f'<a class="text-link" href="{escape(link["href"], quote=True)}">{escape(link["label"])}</a>'
             for link in section.get("links", [])
         )
+        link_row = f'<div class="links">{links}</div>' if links else ""
         return _wrap(
             index,
-            "section section-alt",
-            f'{heading}{lead}<div class="tiles">{tiles}</div>'
-            + (f'<div class="links">{links}</div>' if links else ""),
+            "section section-alt opensource",
+            f'<div class="opensource-body"><div>{heading}{lead}{link_row}</div>'
+            f'<div class="tiles">{tiles}</div></div>',
         )
     if kind == "faq":
         rows = "".join(
@@ -438,7 +439,7 @@ def _section(index: int, section: dict[str, Any], words: dict[str, str], stats: 
     if kind == "works_with":
         return _works_with(index, section)
     if kind == "text":
-        return _wrap(index, "section", f'{heading}{markdown(section["markdown"])}')
+        return _wrap(index, "section section-text", f'{heading}{markdown(section["markdown"])}')
     return ""  # activity, profiles, explore, collab: nothing to show in this version
 
 
@@ -479,7 +480,7 @@ def _online(stats: dict[str, Any] | None, words: dict[str, str]) -> str:
     """The hero's line of who is online, from the shared stats; a counter that
     no enabled `stats` section names is left out, and the line with it when none is left."""
     cells = []
-    for key in ("people_online", "agents_online"):
+    for key in ("people_online", "agents_online", "instances_online"):
         value = (stats or {}).get(key)
         if value is not None:
             cells.append(
@@ -520,6 +521,9 @@ def _hero(index: int, section: dict[str, Any], words: dict[str, str], stats: Any
 _SWITCH = re.compile(r'(<a href=")(\?lang=[A-Za-z-]+)(")')
 
 
+SOCIAL_IMAGE = "/assets/brand/og-image-team.png"
+
+
 def carry_origin(html: str, variant: str, campaign: str | None, public_url: str) -> str:
     """Every link to `/register` on this host, a path or this hub's own address, carries the
     visitor's origin, `v` and (for a known campaign) `c`, so the registration knows where they
@@ -551,6 +555,7 @@ def landing_document(
     stats: dict[str, Any] | None,
     preview: bool = False,
     variant: str | None = None,
+    social_image: bool = True,
 ) -> str:
     """The landing page in `lang` (a missing field falls back to the default language's page).
 
@@ -564,7 +569,7 @@ def landing_document(
     tags = ordered_languages(pages, setting["default_language"])
     default = pages.get(setting["default_language"]) or pages[tags[0]]
     page = pages.get(lang) or default
-    words = WORDS.get(lang, WORDS["en"])
+    words = catalog.section("frame", lang)
     sections = [(i, s) for i, s in enumerate(page["sections"]) if s["enabled"]]
     # The hero's online numbers follow the rule of `GET /landing`: only a counter that an enabled
     # `stats` section of this page names is shown, so one the operator left off is published
@@ -604,7 +609,10 @@ def landing_document(
     ]
     footer = _landing_footer(setting, words, legal, lang, tags, links, open_source)
     sheet, script = landing_files.url("landing.css"), landing_files.url("landing.js")
-    head = f'<link rel="canonical" href="{escape(public_url.rstrip("/"), quote=True)}/">'
+    origin = escape(public_url.rstrip("/"), quote=True)
+    head = f'<link rel="canonical" href="{origin}/">' + _social_tags(
+        page["title"], page.get("description") or "", origin, social_image
+    )
     if variant:  # a variant is for a link; search engines index the main page only (§16.7.2)
         head += '<meta name="robots" content="noindex">'
     if sheet:
@@ -619,6 +627,26 @@ def landing_document(
         body=banner + header + f"<main>{body}</main>" + footer,
         languages=tags,
         style="" if sheet else STYLE,
+    )
+
+
+def _social_tags(title: str, description: str, origin: str, image: bool) -> str:
+    """What a link preview shows of the landing page; the image's address must be whole, and
+    a hub without a dashboard has no `/assets/` to serve it from."""
+    said = (
+        f'<meta property="og:description" content="{escape(description, quote=True)}">'
+        if description
+        else ""
+    )
+    return (
+        '<meta property="og:type" content="website">'
+        f'<meta property="og:title" content="{escape(title, quote=True)}">{said}'
+        + (
+            f'<meta property="og:image" content="{origin}{SOCIAL_IMAGE}">'
+            '<meta name="twitter:card" content="summary_large_image">'
+            if image
+            else '<meta name="twitter:card" content="summary">'
+        )
     )
 
 
@@ -678,9 +706,7 @@ def _landing_footer(
         f'<p class="operator">{escape(footer["operator"])}</p>' if footer.get("operator") else ""
     )
     switch = (
-        '<p class="langs">'
-        + " ".join(f'<a href="?lang={escape(tag)}">{escape(tag)}</a>' for tag in tags)
-        + "</p>"
+        '<p class="langs">' + " ".join(_language_link(tag) for tag in tags) + "</p>"
         if len(tags) > 1
         else ""
     )
@@ -714,15 +740,14 @@ def _footer(
         + " "
         for item in footer.get("social", [])
     )
-    switch = (
-        " ".join(f'<a href="?lang={escape(tag)}">{escape(tag)}</a>' for tag in tags)
-        if len(tags) > 1
-        else ""
-    )
-    row = (
-        "".join(links)
-        + f'<a href="/login">{escape(words["sign_in"])}</a>'
-        + (f'<a href="/register">{escape(words["register"])}</a>')
+    switch = " ".join(_language_link(tag) for tag in tags) if len(tags) > 1 else ""
+    # With a space between them the links can wrap on a phone.
+    row = " ".join(
+        [
+            *links,
+            f'<a href="/login">{escape(words["sign_in"])}</a>',
+            f'<a href="/register">{escape(words["register"])}</a>',
+        ]
     )
     return (
         f'<footer><div class="wrap"><p>{row}</p>{"".join(parts)}'
@@ -737,16 +762,15 @@ def legal_document(
     title: str,
     source: str,
     version: str | None,
-    earlier: list[str],
     current: str | None,
     languages: list[str],
     legal: dict[str, Any],
     setting: dict[str, Any],
     public_url: str,
 ) -> str:
-    """One legal page in one language: its text, its version and the earlier versions.
+    """One legal page in one language: its text and its version; no list of earlier versions.
     `version` is `None` for a draft; `current` is the served version when this is an earlier one."""
-    words = WORDS.get(lang, WORDS["en"])
+    words = catalog.section("frame", lang)
     stamp = words["draft"] if version is None else words["as_of"].format(version=version)
     address = f"/{LEGAL_ADDRESS[page]}"
     older = (
@@ -754,12 +778,6 @@ def legal_document(
         if current is not None and version is not None and version != current
         else ""
     )
-    history = ""
-    if earlier:
-        items = "".join(
-            f'<li><a href="{address}/{escape(v, quote=True)}">{escape(v)}</a></li>' for v in earlier
-        )
-        history = f'<h2>{escape(words["earlier"])}</h2><ul>{items}</ul>'
     header = (
         '<header class="top"><div class="wrap"><a class="mark" href="/">Maity</a>'
         f'<a href="/login">{escape(words["sign_in"])}</a></div></header>'
@@ -767,7 +785,7 @@ def legal_document(
     banner = f'<p class="note">{escape(words["preview"])}</p>' if version is None else ""
     body = (
         f'{header}<main><section><div class="wrap">{banner}<h1>{escape(title)}</h1>'
-        f'<p class="eyebrow">{escape(stamp)}</p>{older}{markdown(source)}{history}</div></section></main>'
+        f'<p class="eyebrow">{escape(stamp)}</p>{older}{markdown(source)}</div></section></main>'
         + _footer(setting, words, legal, lang, languages)
     )
     return _document(

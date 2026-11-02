@@ -326,8 +326,7 @@ window.Maity = window.Maity || {};
         h("p", null, h("strong", null, M.t("runners.removed.title", { name: answer.name }))),
         still.length
           ? [h("p", null, M.tn("runners.removed.still", { command: h("code", null, "maity runner stop-all") })),
-          h("ul", null, still.map((p) => h("li", null, (p.agent && (p.agent.display_name || p.agent.handle)) || p.id,
-            p.reported ? " · " + p.reported.state : "")))]
+          h("ul", null, still.map((id) => h("li", null, h("code", null, id))))]
           : h("p", null, M.t("runners.removed.nothing")),
         h("div", { class: "actions" }, h("button", { type: "button", onclick: () => clear(panel) }, M.t("runners.hide")))));
     }

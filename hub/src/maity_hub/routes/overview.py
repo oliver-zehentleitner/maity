@@ -76,6 +76,14 @@ def _reporters(conn: Connection, member_ids: set[str]) -> dict[str, dict[str, An
     }
 
 
+def _reporter(people: dict[str, dict[str, Any]], report: dict[str, Any]) -> dict[str, Any] | None:
+    """Who reported, with the instance that did for an agent (§6.17); null for a human's."""
+    person = people.get(report.get("reported_by") or "")
+    if not person or person.get("deleted"):  # a deleted account shows nothing more (§2.9)
+        return person
+    return {**person, "instance": report.get("reported_instance")}
+
+
 def latest_reports(conn: Connection, project_id: str, limit: int) -> list[dict[str, Any]]:
     """The latest report of up to `limit` cards, newest `reported_at` first, from the
     cards' `report` field (§6.6); earlier reports live only in limited events."""
@@ -113,7 +121,7 @@ def latest_reports(conn: Connection, project_id: str, limit: int) -> list[dict[s
                     "kind": row.kind,
                     "label": row.label,
                 },
-                "reported_by": people.get(report.get("reported_by")),
+                "reported_by": _reporter(people, report),
                 "reported_at": report.get("reported_at"),
                 "code": report.get("code") is not False,
                 "verification": report.get("verification"),

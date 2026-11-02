@@ -20,7 +20,7 @@ from urllib.parse import quote
 
 from sqlalchemy import Connection, Engine, delete, func, select, update
 
-from maity_hub import attachment_store, clock, events
+from maity_hub import attachment_store, clock, events, worker_runs
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.config import Settings
@@ -273,6 +273,33 @@ def view(conn: Connection, rows: list[Any], *, whole: bool = True) -> list[dict[
 MESSAGE_MAX = 10  # attachments one message may name (§1.7)
 
 
+def with_tombstones(conn: Connection, payloads: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Messages as read: a deleted attachment carries `deleted_at` (§8.7). The stored payload
+    stays as written, the log is append-only, so the tombstone comes from its row."""
+    ids = {a["id"] for p in payloads for a in p.get("attachments") or []}
+    if not ids:
+        return payloads
+    gone = dict(
+        conn.execute(
+            select(t.attachment.c.id, t.attachment.c.deleted_at).where(
+                t.attachment.c.id.in_(ids), t.attachment.c.deleted_at.is_not(None)
+            )
+        ).all()
+    )
+    if not gone:
+        return payloads
+    return [
+        {
+            **p,
+            "attachments": [
+                {**a, "deleted_at": clock.rfc3339(gone[a["id"]])} if a["id"] in gone else a
+                for a in p.get("attachments") or []
+            ],
+        }
+        for p in payloads
+    ]
+
+
 def meta(row: Any) -> dict[str, Any]:
     """What a message carries of an attachment: metadata only, never content or a URL."""
     return {
@@ -442,7 +469,9 @@ def remove_stray(engine: Engine, store: attachment_store.LocalStore, key: str) -
     return True
 
 
-def sweep(engine: Engine, store: attachment_store.LocalStore) -> dict[str, int]:
+def sweep(
+    engine: Engine, store: attachment_store.LocalStore, stop: worker_runs.Stopping | None = None
+) -> dict[str, int]:
     """One pass: pending uploads past 24 hours go with their bytes, the bytes of a
     tombstoned row go if they are still there, and a blob no row names goes once it is
     older than a transaction can be. Returns what it removed, by kind."""
@@ -463,12 +492,16 @@ def sweep(engine: Engine, store: attachment_store.LocalStore) -> dict[str, int]:
         ).all()
     done["expired"] = expire(engine, store, candidates, cutoff)
     for row in tombstoned:  # a tombstone never comes back: its bytes can go without a lock
+        if stop is not None and stop.is_set():
+            return done
         key = attachment_store.key_of(row.project_id, row.id)
         if store.age(key, time.time()) is not None:
             store.delete(key)
             done["tombstoned"] += 1
     for project in store.projects():
         for key in store.keys(project):
+            if stop is not None and stop.is_set():
+                return done
             if remove_stray(engine, store, key):
                 done["orphans"] += 1
     return done
@@ -495,6 +528,8 @@ class Worker:
     def _run(self) -> None:
         while not self._stop.wait(SWEEP_EVERY):
             try:
-                sweep(self.engine, self.store)
+                with worker_runs.claim(self.engine, "attachments", SWEEP_EVERY, self._stop) as held:
+                    if held is not None:
+                        sweep(self.engine, self.store, held)
             except Exception:
                 log.exception("the attachment sweep failed")

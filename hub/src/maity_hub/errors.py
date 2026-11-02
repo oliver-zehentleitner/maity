@@ -8,12 +8,13 @@ body.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from sqlalchemy.exc import InterfaceError, OperationalError
+from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 ERROR_HEADER = "Maity-Error"
@@ -105,6 +106,32 @@ def driver_code(error: Exception) -> str:
     return str(args[0]) if args and isinstance(args[0], int) else ""
 
 
+def driver_number(error: Exception) -> int | None:
+    """The driver's numeric code, also where it has a SQLSTATE; that alone can hide the cause."""
+    args = getattr(getattr(error, "orig", None), "args", ())
+    return args[0] if args and isinstance(args[0], int) else None
+
+
+def errors_behind(error: BaseException) -> Iterator[Exception]:
+    """The database errors this one replaced: a failed rollback hides the failure that caused it."""
+    earlier = error.__context__
+    while earlier is not None:
+        if isinstance(earlier, DBAPIError):
+            yield earlier
+        earlier = earlier.__context__
+
+
+def driver_fields(error: Exception) -> str:
+    """What the log says of a database error: codes and numbers, never the driver's text. On
+    PostgreSQL only `code` is set."""
+    behind = ",".join(
+        str(driver_number(earlier) or driver_code(earlier) or "?")
+        for earlier in errors_behind(error)
+    )
+    number = driver_number(error) or "-"
+    return f"code={driver_code(error) or '-'} number={number} behind={behind or '-'}"
+
+
 # What a connection failure can be, found by phrases the drivers use. Nothing of the driver's text
 # is kept: the category is chosen from this list and only its name is logged, so a password, a
 # user, a host or a connection string in the text cannot reach the log, whatever escaping it uses.
@@ -176,7 +203,7 @@ def install(app: FastAPI) -> None:
         log.error(
             "database unavailable: %s %s %s",
             type(error).__name__,
-            driver_code(error),
+            driver_fields(error),
             driver_reason(error),
         )
         return error_response(503, "database_unavailable", "the database is unreachable")

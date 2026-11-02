@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import Connection, select
+from sqlalchemy import Connection, func, select
 
 from maity_hub import clock, swarm
 from maity_hub import tables as t
@@ -20,6 +20,7 @@ from maity_hub.views import member_views
 router = APIRouter(route_class=ProjectRoute)
 DAYS = Query(default=30, ge=1, le=90)
 HELD = ("done", "cancelled")  # a card in neither, with a holder, is held
+BOARD = ("open", "in_progress", "review", "blocked")  # `board`: the statuses before closing
 
 
 def _active(conn: Connection, project_id: str) -> list[Any]:
@@ -32,9 +33,12 @@ def _active(conn: Connection, project_id: str) -> list[Any]:
     )
 
 
-def _live(conn: Connection, project_id: str, rows: list[Any]) -> list[dict[str, Any]]:
+def _live(
+    conn: Connection, project_id: str, rows: list[Any]
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """Every active member at the moment of the call (§2.4): presence, the instances
-    online, the cards its instances hold, the latest call."""
+    online, the cards its instances hold, the latest call; and each agent's active
+    instances, which `team` counts."""
     held: dict[int, list[dict[str, Any]]] = {r.id: [] for r in rows}
     for card in conn.execute(
         select(t.card.c.id, t.card.c.title, t.card.c.claim_holder, t.card.c.claim_since)
@@ -54,8 +58,11 @@ def _live(conn: Connection, project_id: str, rows: list[Any]) -> list[dict[str, 
                 }
             )
     found = []
+    instances_of: dict[str, int] = {}
     for row, view in zip(rows, member_views(conn, rows), strict=True):
         instances = view.get("instances")
+        if instances is not None:
+            instances_of[view["id"]] = len(instances)
         online = view["presence"] == "online"
         found.append(
             {
@@ -75,6 +82,35 @@ def _live(conn: Connection, project_id: str, rows: list[Any]) -> list[dict[str, 
                 "last_seen_at": view["last_seen_at"],
             }
         )
+    return found, instances_of
+
+
+def _team(live: list[dict[str, Any]], instances_of: dict[str, int]) -> dict[str, Any]:
+    """The team at the moment of the call: members by kind, the agents' instances, and how
+    many of each are online (§2.4), as `live` shows them."""
+    agents = [m for m in live if m["kind"] == "agent"]
+    humans = [m for m in live if m["kind"] == "human"]
+    return {
+        "agents": len(agents),
+        "humans": len(humans),
+        "instances": sum(instances_of.get(m["member_id"], 0) for m in agents),
+        "online": {
+            "agents": sum(1 for m in agents if m["online"]),
+            "humans": sum(1 for m in humans if m["online"]),
+            "instances": sum(m["instances_online"] for m in agents),
+        },
+    }
+
+
+def _board(conn: Connection, project_id: str) -> dict[str, int]:
+    """The project's cards by status now, the four a card passes before it closes."""
+    found = dict.fromkeys(BOARD, 0)
+    for status, count in conn.execute(
+        select(t.card.c.status, func.count())
+        .where(t.card.c.project_id == project_id, t.card.c.status.in_(BOARD))
+        .group_by(t.card.c.status)
+    ):
+        found[status] = count
     return found
 
 
@@ -96,17 +132,21 @@ def project_swarm(slug: str, request: Request, caller: AnyCaller, days: int = DA
         mine = membership(conn, caller, slug)
         mine.require("project:read")
         rows = _active(conn, mine.project.id)
-        live = _live(conn, mine.project.id, rows)
+        live, instances_of = _live(conn, mine.project.id, rows)
         found = swarm.CACHE.get(conn, mine.project.id)
         folded = swarm.fold(found, _who(rows, live), days=days, include=lambda _m: True)
+        totals = {**folded["totals"], **swarm.whole(found, folded, days)}
         return JSONResponse(
             {
                 "as_of": folded["as_of"],
                 "window_days": folded["window_days"],
                 "live_at": clock.rfc3339(clock.now()),
                 "live": live,
+                "team": _team(live, instances_of),
+                "board": _board(conn, mine.project.id),
+                "awake": swarm.awake(found),
                 "members": folded["members"],
-                "totals": folded["totals"],
+                "totals": totals,
                 "coverage": folded["coverage"],
             }
         )

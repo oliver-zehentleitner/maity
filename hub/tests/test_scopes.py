@@ -48,9 +48,9 @@ def test_scopes_are_trust_times_role(trust: str, role: str, kind: str) -> None:
     assert set(scopes_for(trust, role, kind)) == expected
 
 
-def test_a_proxy_relays_answers_and_holds_no_other_governance_scope_yet() -> None:
-    """Until the owner's go per call (`Maity-On-Request`) lands, a proxy keeps what the
-    single role gave it: the coder's scopes and `requests:answer`."""
+def test_a_proxy_relays_answers_and_holds_no_other_governance_scope_of_its_own() -> None:
+    """The coder's scopes and `requests:answer`; the owner's go opens another scope for one
+    call (`Maity-On-Request`, tests/test_proxy_go.py), never in this list."""
     assert set(scopes_for("admin", "proxy", "agent")) == CODER | {"requests:answer"}
 
 

@@ -64,7 +64,7 @@ replaces the placeholder.
 
 **Id:** 3d679346-7e9d-45be-a4f7-f1137a2a274e
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** `docs/api.md` §6.26 "One organisation, one lock"; the implementation of tsk-whe4wv1jpsae (PR 1)
 **Revisit when:** a project can be owned by an organisation (the project locks and the order organisation row, then project then come in), or a change of an organisation's members is made outside `orgs`
@@ -405,3 +405,19 @@ confirm without an extra role.
   deletion would have to search the events, and the view needs the answer on every read.
 - Keeping the confirmation when its owner leaves, and reading with the grants that remain: the
   contract ends the grants at once, and a stale confirmation is the one thing the flag exists to stop.
+
+## An organisation's picture locks the organisation's row
+
+**Id:** 7bb0ac1e-8d8e-400c-b408-ac0bbcaba9df
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the review of #1080, read from the code; no concurrency test reproduced it
+
+`avatars.lock_owner` takes the `org` row for an `org-…` id, and the route's check locks it before it reads the role. Before any picture exists there is no `avatar_image` row to lock, and the lock on `human` found nothing for such an id: two first uploads could both insert, one failing on the primary key, and an upload alongside `DELETE /orgs/{org}` could leave a picture of the deleted organisation behind, as that deletion removes the picture under the same row's lock.
+
+An organisation's picture sends no `avatar_changed`: that event goes to the projects where the member holds a membership (§8.2), and an organisation is no member. A project of the organisation shows the new picture on the next load.
+
+**Rejected alternatives:**
+- A lock on `avatar_image`: there is no row before the first upload.
+- `INSERT … ON CONFLICT` alone: it answers the two uploads, not the deletion.

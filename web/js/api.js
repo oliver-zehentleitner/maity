@@ -16,7 +16,7 @@ window.Maity = window.Maity || {};
 
   class ApiError extends Error {
     constructor(message, status, path, code, details) {
-      super(message);
+      super(M.errorWords(code, details, message));  // the reader's language, the hub's English else
       this.name = "ApiError";
       this.status = status;
       this.path = path;
@@ -35,6 +35,17 @@ window.Maity = window.Maity || {};
   let deviceSim = null;
   let deviceSerial = 0;
   let mailPending = false;
+  // §19, this tab's: an agent's team entry and a role's, for the Memory view.
+  const mockMemory = [
+    { id: "mem-1", store: "team", member_id: "agt-b", text: "The probe needs the PR head, not the branch head.", tags: ["probe"],
+      by: { kind: "agent", member_id: "agt-b", instance: "wqe2", handle: "agent-b" }, confirmed_by: null, request_id: null, created_at: "2026-10-22T13:10:00Z", deleted: null },
+    { id: "mem-2", store: "role", member_id: null, role: "coder", text: "Rebase before the review.", tags: ["git"],
+      by: { kind: "agent", member_id: "agt-a", instance: "a1b2", handle: "agent-a" }, confirmed_by: null, request_id: null, created_at: "2026-10-23T09:00:00Z", deleted: null },
+  ];
+  const mockSouls = {};
+  const mockSoulVersions = {};
+  const mockSoul = (id) => mockSouls[id] || { agent_id: id, markdown: "", version: 0, by: null, confirmed_by: null, updated_at: null };
+  let mockFactorOn = true; // §2.8.1: enrolled with TOTP until the page turns it off
   let mailNext = "/";
   function deviceOf(id, path) {
     if (!deviceSim || deviceSim.id !== id) fail(404, "not_found", "Not found", path);
@@ -105,6 +116,7 @@ window.Maity = window.Maity || {};
   // Fixture mode keeps a project in fixtures/<slug>/; its full name is the
   // project view's, else its owner's handle as the fixtures name it.
   const FIXTURE_OWNERS = { guestlab: "guest" };
+  const FIXTURE_LANGUAGES = [["aa", "Afaraf"], ["ar", "العربية"], ["de", "Deutsch"], ["en", "English"], ["fr", "français"], ["ja", "日本語"], ["zh-Hans", "简体中文"]].map(([tag, name]) => ({ tag, name, common: tag !== "aa", interface: ["de", "en", "fr", "ja", "zh-Hans"].includes(tag) }));
   const fixtureSlug = (full) => String(full).split("/").pop();
   function fullOf(slug) {
     const view = fixtures()[slug + "/project.json"];
@@ -303,6 +315,9 @@ window.Maity = window.Maity || {};
   // tasks:review: a reviewer or the purple team (§2.3), or the governance scopes.
   const tasksReview = (slug) => tasksAdmin(slug) || (mineIn(slug).trust !== "guest" && ["reviewer", "purple-team"].includes(mineIn(slug).role));
 
+  // tasks:test: a tester or the red team (§2.3), or the governance scopes.
+  const tasksTest = (slug) => tasksAdmin(slug) || (mineIn(slug).trust !== "guest" && ["tester", "red-team"].includes(mineIn(slug).role));
+
   // A card's PATCH as the hub checks it (hub cards.check_transition).
   // Subtasks and related cards (§6.4), checked on the card as it would be
   // after the write: two levels, no closed parent, no release, no cycle with
@@ -366,9 +381,11 @@ window.Maity = window.Maity || {};
     const meId = me().member.id;
     const holds = !!(card.claim && card.claim.holder === meId);
     const keys = Object.keys(body);
-    const reviewMove = keys.length === 1 && keys[0] === "status" && card.status === "review" && ["done", "in_progress"].includes(body.status);
+    const reviewMove = keys.filter((k) => k !== "approve").length === 1 && keys.includes("status") && card.status === "review" && ["done", "in_progress"].includes(body.status);
     const authority = project(slug, path).policy.done_authority;
-    const hasAuthority = authority === "holder" ? holds : authority === "reviewer" ? tasksReview(slug) : tasksAdmin(slug);
+    if ("approve" in body && !(authority === "reviewer_and_tester" && card.status === "review" && body.status === "done")) fail(400, "invalid", "the request does not validate", path, { fields: { approve: "not_applicable" } });
+    const hasAuthority = authority === "holder" ? holds : authority === "reviewer" ? tasksReview(slug) : authority === "tester" ? tasksTest(slug)
+      : authority === "reviewer_and_tester" ? tasksReview(slug) || tasksTest(slug) : tasksAdmin(slug);
     const editor = holds || card.created_by === meId || tasksAdmin(slug);
     if (!editor && !(reviewMove && hasAuthority)) fail(403, "forbidden", "only the holder, the creator or an admin edits a card", path, { scope: "tasks:admin" });
     if ("parent" in body || "related" in body || ("status" in body && card.parent)) {
@@ -387,6 +404,22 @@ window.Maity = window.Maity || {};
       } else if (!(from === "in_progress" && to === "done" && authority === "holder" && holds)) {
         fail(409, "invalid_transition", "not a transition the hub allows", path, { from, to });
       }
+      // §6.4: a signature, and the card stays in review until both are there; a rework clears them.
+      if (authority === "reviewer_and_tester" && from === "review" && to === "in_progress") card.approvals = null;
+      if (authority === "reviewer_and_tester" && from === "review" && to === "done") {
+        const held = [["review", tasksReview(slug)], ["test", tasksTest(slug)]].filter(([, may]) => may).map(([slot]) => slot);
+        const slot = body.approve || (held.length === 1 ? held[0] : null);
+        if (!slot) fail(400, "invalid", "say which signature", path, { fields: { approve: "required" } });
+        if (!held.includes(slot)) fail(403, "forbidden", "this signature needs another scope", path, { scope: slot === "review" ? "tasks:review" : "tasks:test" });
+        const a = card.approvals || { review: null, test: null };
+        const other = a[slot === "review" ? "test" : "review"];
+        if (other && other.by === meId) fail(400, "invalid", "one member never fills both", path, { fields: { approve: "same_member" } });
+        if (!a[slot]) a[slot] = { by: meId, at: nowIso(), revision: card.report ? card.report.revision : null };
+        card.approvals = a;
+        const revision = card.report ? card.report.revision : null;
+        if (!(a.review && a.test && a.review.revision === revision && a.test.revision === revision)) { card.updated_at = nowIso(); return card; }
+        card.approvals = null;
+      }
       if (to === "done") {
         const open = (card.depends_on || []).filter((d) => { const o = list.find((t) => t.id === d); return o && !closed.includes(o.status); });
         // A parent waits for its children (§6.4).
@@ -404,7 +437,7 @@ window.Maity = window.Maity || {};
     }
     // A child's closing changes its parent's counts.
     if (card.parent) { const p = list.find((t) => t.id === card.parent); if (p) p.children = childrenOf(list, p.id); }
-    ["title", "body", "label", "area"].forEach((f) => { if (f in body) card[f] = body[f]; });
+    ["title", "body", "label", "needs", "area"].forEach((f) => { if (f in body) card[f] = body[f]; });
     // §6.8: a contract card's file and section, checked as the hub checks them.
     if (body.contract) {
       if (card.kind !== "contract") fail(400, "invalid", "contracts only", path, { fields: { contract: "contracts_only" } });
@@ -576,12 +609,13 @@ window.Maity = window.Maity || {};
       if (c.line !== undefined && c.line !== null && (typeof c.line !== "number" || !Number.isInteger(c.line) || c.line < 1)) add(at + ".line", "format");
     });
   }
+  const LANDING_AGENTS = ["claude-code", "codex", "opencode", "gemini", "antigravity", "copilot", "cursor", "pi", "goose", "cline", "roo", "kilo", "amp", "droid", "windsurf", "zed", "kiro-cli", "trae", "openclaw"];
   const LANDING_TYPES = {
-    hero: ["eyebrow", "title", "subline", "cta_primary", "cta_secondary", "note"], stats: ["items"], steps: ["title", "items"],
-    scales: ["title", "items"], faq: ["title", "items"], cta_band: ["title", "text", "cta"], text: ["title", "markdown"],
-    activity: ["title", "count"], profiles: ["title", "markdown", "handles"], explore: ["title", "projects"],
-    collab: ["title", "text", "items", "footnote"],
-    demo: ["title", "subline", "terminal_lines", "inbox", "steps"], opensource: ["title", "markdown", "tiles", "links"],
+    hero: ["eyebrow", "title", "subline", "cta_primary", "cta_secondary", "note"], stats: ["items"], steps: ["eyebrow", "title", "items"],
+    scales: ["eyebrow", "title", "items"], faq: ["eyebrow", "title", "items"], cta_band: ["title", "text", "cta"], text: ["eyebrow", "title", "markdown"],
+    activity: ["title", "count"], profiles: ["eyebrow", "title", "markdown", "handles"], explore: ["title", "projects"],
+    collab: ["title", "text", "items", "footnote"], works_with: ["label", "items", "more"],
+    demo: ["eyebrow", "title", "subline", "terminal_lines", "inbox", "steps"], opensource: ["eyebrow", "title", "markdown", "tiles", "links"],
   };
   // A list of a section with its bounds, as the hub's landing._list: a
   // missing one is required unless optional (`required` false), one outside
@@ -592,6 +626,33 @@ window.Maity = window.Maity || {};
     list.forEach((x, k) => each(x || {}, path + "." + k));
   }
   const landingHref = (t) => typeof t === "string" && ((/^\/(?!\/)[A-Za-z0-9._~%\/?=&-]*$/.test(t)) || /^https:\/\/[^\s/@]+(\/[^\s]*)?$/.test(t));
+  // `manages` (§6.2) as the hub counts it (instance_counts): the members reporting to each
+  // member and its whole branch, with their instances not revoked; an instance is online while
+  // its presence is online or, not paused, it is dormant, and dormant is a part of online. A
+  // paused, suspended (presence paused) or isolated member has no instance online.
+  function fixtureManages(items) {
+    const below = {};
+    items.forEach((x) => { if (x.reports_to) (below[x.reports_to] = below[x.reports_to] || []).push(x); });
+    const held = (x) => x.presence === "paused" || x.paused || x.isolated;
+    const online = (i) => i.presence !== "paused" && (i.presence === "online" || !!i.dormant);
+    const count = (members) => {
+      const live = members.flatMap((x) => (x.instances || []).filter((i) => !i.revoked_at));
+      const awake = members.filter((x) => !held(x)).flatMap((x) => (x.instances || []).filter((i) => !i.revoked_at && online(i)));
+      return { members: members.length, instances: live.length, online: awake.length,
+        dormant: awake.filter((i) => i.dormant).length };
+    };
+    const branch = (id) => {
+      const found = [], seen = new Set([id]), queue = (below[id] || []).slice();
+      while (queue.length) {
+        const x = queue.pop();
+        if (seen.has(x.id)) continue;
+        seen.add(x.id); found.push(x); queue.push(...(below[x.id] || []));
+      }
+      return found;
+    };
+    return Object.fromEntries(items.map((x) => [x.id, { direct: count(below[x.id] || []), total: count(branch(x.id)) }]));
+  }
+
   function landingText(x, path, max, required, errors) {
     if (x === undefined || x === null || x === "") { if (required) errors[path] = "required"; return; }
     if (typeof x !== "string") errors[path] = "invalid";
@@ -616,6 +677,24 @@ window.Maity = window.Maity || {};
     landingText(x.label, path + ".label", 40, true, errors);
     if (!landingHref(x.href)) errors[path + ".href"] = "invalid_href";
   }
+  // §16.7.3: a text still holding a placeholder, by its path, as the hub refuses it.
+  function landingPlaceholders(v, at, errors) {
+    if (typeof v === "string") { if (/\{\{\s*[A-Za-z][A-Za-z0-9_-]*\s*\}\}/.test(v) && !errors[at]) errors[at] = "unresolved_placeholder"; return; }
+    if (v && typeof v === "object") Object.entries(v).forEach(([k, x]) => landingPlaceholders(x, at ? at + "." + k : k, errors));
+  }
+  let fixtureAuthPages = { default_language: "en", pages: { sign_in: {}, sign_up: {} }, updated_at: null, updated_by: null };
+  // §16.7.4: the refusals the admin's editor shows.
+  function authPagesCheck(body, path) {
+    const errors = {};
+    Object.entries(body.pages || {}).forEach(([page, langs]) => Object.entries(langs).forEach(([lang, texts]) => Object.entries(texts).forEach(([key, text]) => {
+      const at = "pages." + page + "." + lang + "." + key;
+      if (!["title", "subline", "point_1", "point_2", "point_3", "note"].includes(key)) errors[at] = "extra_forbidden";
+      else if (/\{\{/.test(text)) errors[at] = "unresolved_placeholder";
+      else if (key !== "note" && (text.length > 500 || /[\r\n]/.test(text))) errors[at] = "invalid";
+    })));
+    if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+  }
+  let fixtureSiteValues = {};
   function landingPage(pg, at, errors) {
     if (!pg || typeof pg !== "object") { errors[at] = "invalid"; return; }
     landingText(pg.title, at + ".title", 120, true, errors);
@@ -634,13 +713,14 @@ window.Maity = window.Maity || {};
       Object.keys(s).forEach((k) => { if (k !== "type" && k !== "enabled" && k !== "nav_label" && !known.includes(k)) errors[sp + "." + k] = "extra_forbidden"; });
       // A header link's label (§16.7, #909): trimmed, 1–24 characters, optional on every type.
       if (s.nav_label !== undefined && s.nav_label !== null) landingText(typeof s.nav_label === "string" ? s.nav_label.trim() : s.nav_label, sp + ".nav_label", 24, false, errors);
+      if (s.type !== "hero" && known.includes("eyebrow")) landingText(s.eyebrow, sp + ".eyebrow", 40, false, errors);
       const items = s.items || [];
       if (s.type === "hero") {
         landingText(s.eyebrow, sp + ".eyebrow", 40, false, errors); landingText(s.title, sp + ".title", 120, true, errors);
         landingText(s.subline, sp + ".subline", 300, false, errors); landingCta(s.cta_primary, sp + ".cta_primary", true, errors);
         landingCta(s.cta_secondary, sp + ".cta_secondary", false, errors); landingMarkdown(s.note, sp + ".note", 500, false, errors);
       } else if (s.type === "stats") {
-        const ok = ["people", "agents", "public_projects", "cards_done_week", "people_online", "agents_online"];
+        const ok = ["people", "agents", "public_projects", "cards_done_week", "people_online", "agents_online", "instances", "instances_online"];
         if (!Array.isArray(s.items) || s.items.some((x) => !ok.includes(x))) errors[sp + ".items"] = "invalid";
       } else if (s.type === "steps" || s.type === "scales" || s.type === "faq") {
         landingText(s.title, sp + ".title", 120, true, errors);
@@ -659,6 +739,13 @@ window.Maity = window.Maity || {};
         });
       } else if (s.type === "cta_band") {
         landingText(s.title, sp + ".title", 120, true, errors); landingText(s.text, sp + ".text", 300, false, errors); landingCta(s.cta, sp + ".cta", true, errors);
+      } else if (s.type === "works_with") {
+        landingText(s.label, sp + ".label", 40, true, errors); landingText(s.more, sp + ".more", 60, false, errors);
+        if (!Array.isArray(s.items) || !s.items.length || s.items.length > LANDING_AGENTS.length) errors[sp + ".items"] = "invalid";
+        else s.items.forEach((slug, k) => {
+          if (!LANDING_AGENTS.includes(slug)) errors[sp + ".items." + k] = "unknown_agent";
+          else if (s.items.indexOf(slug) !== k) errors[sp + ".items." + k] = "duplicate";
+        });
       } else if (s.type === "text") {
         landingText(s.title, sp + ".title", 120, false, errors); landingMarkdown(s.markdown, sp + ".markdown", 16384, true, errors);
       } else if (s.type === "profiles") {
@@ -681,9 +768,32 @@ window.Maity = window.Maity || {};
         landingList(s.steps, sp + ".steps", 3, 3, errors, (x, ip) => { landingText(x.title, ip + ".title", 80, true, errors); landingText(x.text, ip + ".text", 300, true, errors); });
       } else if (s.type === "opensource") {
         landingText(s.title, sp + ".title", 120, true, errors); landingMarkdown(s.markdown, sp + ".markdown", 600, false, errors);
-        landingList(s.tiles, sp + ".tiles", 1, 3, errors, (x, ip) => { landingText(x.title, ip + ".title", 80, true, errors); landingText(x.text, ip + ".text", 300, true, errors); });
+        landingList(s.tiles, sp + ".tiles", 1, 3, errors, (x, ip) => { landingText(x.label, ip + ".label", 40, false, errors); landingText(x.title, ip + ".title", 80, true, errors); landingText(x.text, ip + ".text", 300, true, errors); });
         landingList(s.links, sp + ".links", 0, 4, errors, (x, ip) => landingCta(x, ip, true, errors), false);
       }
+    });
+  }
+  // §16.7.2: at most 5 variants by slug, each {pages} as the main page's;
+  // at most 200 campaigns {code, label}, codes unique.
+  function landingVariants(vs, errors) {
+    if (!vs || typeof vs !== "object" || Array.isArray(vs) || Object.keys(vs).length > 5) { errors.variants = "invalid"; return; }
+    const slugs = Object.keys(vs);
+    slugs.forEach((slug) => {
+      if (!/^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/.test(slug) || slug === "default") { errors["variants." + slug] = "invalid"; return; }
+      const x = vs[slug];
+      if (!x || typeof x !== "object" || !x.pages || typeof x.pages !== "object") { errors["variants." + slug + ".pages"] = "invalid"; return; }
+      Object.entries(x.pages).forEach(([lang, pg]) => landingPage(pg, "variants." + slug + ".pages." + lang, errors));
+    });
+  }
+  function landingCampaigns(cs, errors) {
+    if (!Array.isArray(cs) || cs.length > 200) { errors.campaigns = "invalid"; return; }
+    const seen = new Set();
+    cs.forEach((c, k) => {
+      const code = c && c.code;
+      if (typeof code !== "string" || !/^[a-z0-9-]{1,40}$/.test(code)) errors["campaigns." + k + ".code"] = "invalid";
+      else if (seen.has(code)) errors["campaigns." + k + ".code"] = "duplicate";
+      seen.add(code);
+      landingText(c && c.label, "campaigns." + k + ".label", 120, true, errors);
     });
   }
   // §20.1: the series of a project as the hub shows them to the caller. An owner's series
@@ -789,6 +899,30 @@ window.Maity = window.Maity || {};
     const label = "[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?";
     if (host.length > 253 || !new RegExp("^" + label + "(?:\\." + label + ")+$").test(host) || /^\d+$/.test(host.split(".").pop())) return "format";
     return null;
+  }
+  // As hub/person_links: the name on each network, with the host parts lower-cased first.
+  const PERSON_LABEL = "[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?";
+  const PERSON_HOST = PERSON_LABEL + "(?:\\." + PERSON_LABEL + ")+";
+  const PERSON_NETWORK_FORMS = {
+    github: /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/,
+    gitlab: /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}$/,
+    x: /^[A-Za-z0-9_]{1,15}$/,
+    mastodon: new RegExp("^@[A-Za-z0-9_]{1,30}@" + PERSON_HOST + "$"),
+    bluesky: new RegExp("^(?:" + PERSON_HOST + "|did:plc:[a-z2-7]{24})$"),
+    linkedin: /^[A-Za-z0-9-]{3,100}$/,
+    discord: /^[a-z0-9_.]{2,32}$/,
+  };
+  function personNetworkName(network, name) {
+    let value = String(name);
+    if (network === "mastodon") { const at = value.lastIndexOf("@"); value = value.slice(0, at + 1) + value.slice(at + 1).toLowerCase(); }
+    if (network === "bluesky") value = value.toLowerCase();
+    if (network === "gitlab" && /\.(git|atom)$/i.test(value)) return null;
+    if (!PERSON_NETWORK_FORMS[network].test(value)) return null;
+    if (network === "mastodon" || (network === "bluesky" && !value.startsWith("did:"))) {
+      const host = value.slice(value.lastIndexOf("@") + 1);
+      if (host.length > 253 || /^\d+$/.test(host.split(".").pop())) return null;
+    }
+    return value;
   }
   function landingFooter(ft, errors) {
     // As the hub (§16.7): an absent or null operator is none; an empty one is invalid.
@@ -997,6 +1131,11 @@ window.Maity = window.Maity || {};
   }
   // A message item as §9 shows it (#206): redacted and redaction always there.
   const messageView = (x) => Object.assign({ redacted: false, redaction: null }, x);
+  // Read again, a deleted file says so (§8.7): the message as written, the tombstone from the file.
+  const withTombstones = (slug, x) => (x.attachments && x.attachments.length ? Object.assign({}, x, { attachments: x.attachments.map((f) => {
+    const a = attachmentsOf(slug).find((y) => y.id === f.id);
+    return a && a.deleted_at ? Object.assign({}, f, { deleted_at: a.deleted_at }) : f;
+  }) }) : x);
   // §9.2 group chats in fixture mode: fixtures/<slug>/group-chats.json,
   // each { view, items, read }; joined_seq is where a participant's window begins.
   function groupChats(slug) {
@@ -1031,19 +1170,20 @@ window.Maity = window.Maity || {};
   const meatNote = (lead, hands) => ["This person says: I am a meat proxy."]
     .concat(lead ? ["Lead me step by step rather than expecting me to explain."] : [])
     .concat(hands ? ["When you need a human's hands, come to me first."] : []).join(" ");
-  // A human entry in one chat (§9.3): the value that holds there, one's own
-  // choice for oneself only (null for others), and the note while it holds.
+  // A human entry in one chat (§9.3): the parts that hold there, one's own
+  // choice for oneself only (null for others), and the note while one holds.
   function withMeat(slug, convId, x, path) {
     if (x.kind !== "human") return x;
     const mine = x.member_id === me().member.id;
     const key = slug + "/" + convId;
     const chosen = mine && Object.hasOwn(meatChats(), key) ? meatChats()[key] : null;
     const profile = mine ? me().member : (file(slug, "members.json", path).items.find((y) => y.id === x.member_id) || {});
-    const holds = chosen === null ? !!profile.meat_proxy : chosen;
-    // On in the chat while the profile is off: both parts (§9.3); else the profile's.
-    const note = !holds ? null : chosen === true && !profile.meat_proxy ? meatNote(true, true)
-      : profile.meat_proxy_note || meatNote(profile.meat_proxy_lead !== false, profile.meat_proxy_hands !== false);
-    return Object.assign({}, x, { meat_proxy: holds, meat_proxy_chat: chosen }, note ? { meat_proxy_note: note } : {});
+    const on = !!profile.meat_proxy;
+    // The chat decides the lead part, hands stay the profile's (§9.3).
+    const lead = chosen === null ? (on && profile.meat_proxy_lead !== false) : chosen;
+    const hands = on && profile.meat_proxy_hands !== false;
+    const holds = lead || hands;
+    return Object.assign({}, x, { meat_proxy: holds, meat_proxy_lead: lead, meat_proxy_hands: hands, meat_proxy_chat: chosen }, holds ? { meat_proxy_note: meatNote(lead, hands) } : {});
   }
   // Four bands, each by activity: pinned with unread, unpinned with unread,
   // quiet pinned, the rest (an observer's null unread is none).
@@ -1085,7 +1225,9 @@ window.Maity = window.Maity || {};
         const last = win.length ? win[win.length - 1] : null;
         const readTo = c.read[me().member.id] || 0;
         const theirs = win.filter((x) => x.from !== me().member.id && x.seq > readTo);
-        return Object.assign({}, g, {
+        // The list's item is not the chat's view: no creator, no reason it closed (as the hub).
+        const { created_by: _by, closed_reason: _why, ...item } = g;
+        return Object.assign(item, {
           participants: g.participants.map((x) => withMeat(m[1], g.id, { member_id: x.member_id, kind: x.kind, handle: x.handle }, path)),
           last_message_at: last ? last.sent_at : null, last_message: preview(last),
           unread: g.access === "observer" ? null : theirs.length,
@@ -1252,6 +1394,29 @@ window.Maity = window.Maity || {};
     token: { configured: false, login: null, status: null, checked_at: null },
   };
   // §16.5: the limits per human as the fixture hub holds them.
+  // §2.6.6 the sign-in methods. `email` waits for the code mailed to the admin (§2.8.8);
+  // the fixture's code is 123456.
+  const signInSetting = {
+    password: { value: true, source: "fixed" },
+    device_code: { value: true, source: "default" },
+    email_link: { value: true, source: "default" },
+    second_factor: { value: "optional", source: "default" },
+    secret_key: true,
+    signing_key: true,
+    pending: false,
+  };
+  const signInMailReady = () => { const mail = fixtures()["admin-mail.json"]; return !!(mail.complete && mail.enabled); };
+  function signInView() {
+    const missing = [];
+    if (!signInSetting.email_link.value) missing.push("switched_off");
+    if (signInSetting.second_factor.value === "email") missing.push("second_factor_email");
+    if (!signInMailReady()) missing.push("mail");
+    if (!signInSetting.signing_key) missing.push("signing_key");
+    const available = !missing.length;
+    if (!signInSetting.secret_key) missing.push("secret_key");
+    const { password, device_code, email_link, second_factor } = signInSetting;
+    return JSON.parse(JSON.stringify({ password, device_code, email_link, second_factor, email_link_available: available, missing }));
+  }
   const limitsSetting = {
     max_agents_per_human: { value: 100, source: "default" }, humans_at_limit: 0,
     max_orgs_per_human: { value: 5, source: "env" }, humans_at_org_limit: 1,
@@ -1313,7 +1478,7 @@ window.Maity = window.Maity || {};
     }],
     // §2.6.1–2.6.3 in one tab: this tab makes the code, and a simulated
     // phone has entered it by the second read, so the approval can be seen.
-    ["GET", /^\/auth\/methods$/, () => ({ password: true, device_code: true, email_link: true, registration: false, terms: null })],
+    ["GET", /^\/auth\/methods$/, () => ({ password: true, device_code: signInSetting.device_code.value, email_link: signInView().email_link_available, registration: false, terms: null })],
     // §3.4: the invitation page and accepting, signed out and in; per token
     // fixtures/invitations.json says what the page shows or how accept refuses.
     ["GET", /^\/invitations\/([^/]+)$/, (m, body, path) => {
@@ -1432,9 +1597,46 @@ window.Maity = window.Maity || {};
       fixtureSignedIn = true;
       return { member: me().member, next: mailNext };
     }],
+    // §19.2: an entry belongs to its store; a deleted one keeps its row without the text.
+    ["GET", /^\/projects\/([^/]+)\/memory$/, (m, body, path, query) => {
+      const q = (query.get("q") || "").toLowerCase();
+      const items = mockMemory.filter((e) => (!query.get("store") || e.store === query.get("store"))
+        && (!query.get("member_id") || e.member_id === query.get("member_id"))
+        && (!query.get("role") || e.role === query.get("role"))
+        && (!q || (e.text || "").toLowerCase().includes(q) || e.tags.includes(q))
+        && (query.get("deleted") === "true" || !e.deleted)).slice().reverse();
+      const limit = Number(query.get("limit") || 50);
+      const start = Number(query.get("cursor") || 0);
+      return { items: items.slice(start, start + limit), next_cursor: start + limit < items.length ? String(start + limit) : null };
+    }],
+    ["POST", /^\/projects\/([^/]+)\/memory$/, (m, body, path) => {
+      if (!body.text || !body.text.trim()) fail(400, "invalid", "an entry needs text", path, { fields: { text: "blank" } });
+      // Without `role`, the caller's own (§19.2).
+      const mineIn = (slug) => { const p = (me().projects || []).find((x) => x.slug === slug || x.full_name === slug || x.full_name.endsWith("/" + slug)); return p ? p.role : null; };
+      const entry = { id: "mem-" + (mockMemory.length + 1), store: body.store, member_id: null, role: body.store === "role" ? body.role || mineIn(decodeURIComponent(m[1])) : undefined, text: body.text, tags: body.tags || [],
+        by: { kind: "human", member_id: me().member.id, handle: me().member.handle }, confirmed_by: null, request_id: null, created_at: nowIso(), deleted: null };
+      mockMemory.push(entry);
+      return entry;
+    }],
+    ["DELETE", /^\/projects\/([^/]+)\/memory\/([^/]+)$/, (m, body, path) => {
+      const entry = mockMemory.find((e) => e.id === m[2]);
+      if (!entry) fail(404, "not_found", "no such entry", path);
+      Object.assign(entry, { text: null, deleted: { by: { handle: me().member.handle }, reason: (body && body.reason) || null, at: nowIso() } });
+      return entry;
+    }],
+    // §19.1: a soul, its owner's.
+    ["GET", /^\/agents\/([^/]+)\/soul$/, (m) => mockSoul(m[1])],
+    ["GET", /^\/agents\/([^/]+)\/soul\/versions$/, (m) => ({ items: mockSoulVersions[m[1]] || [] })],
+    ["PUT", /^\/agents\/([^/]+)\/soul$/, (m, body) => {
+      const soul = { agent_id: m[1], markdown: body.markdown, version: mockSoul(m[1]).version + 1, by: { kind: "human", id: me().member.id, handle: me().member.handle }, confirmed_by: null, updated_at: nowIso() };
+      (mockSoulVersions[m[1]] = mockSoulVersions[m[1]] || []).unshift({ version: soul.version, markdown: soul.markdown, by: soul.by, confirmed_by: null, at: soul.updated_at });
+      mockSouls[m[1]] = soul;
+      return soul;
+    }],
     ["GET", /^\/auth\/session$/, (m, body, path) => {
       if (!fixtureSignedIn) fail(401, "unauthenticated", "Not signed in", path);
-      return Object.assign({ session_id: fixtures()["sessions.json"].current }, fixtures()["auth-session.json"]);
+      return Object.assign({ session_id: fixtures()["sessions.json"].current }, fixtures()["auth-session.json"],
+        window.MAITY_FIXTURE_ENROLMENT ? { second_factor: "enrolment_required" } : null);
     }],
     // §2.6.5: the human's sessions, newest first; ended ones of 30 days on ask.
     ["GET", /^\/auth\/sessions$/, (m, body, path, query) => {
@@ -1519,13 +1721,9 @@ window.Maity = window.Maity || {};
         if (!KINDS.includes(k)) fail(400, "invalid", "the request does not validate", path, { fields: { kind: "unknown" } });
       });
       const projects = query.get("project") ? query.get("project").split(",") : null;
-      const allowed = n.settings.browser.content || {};
-      // content only on chat and mention, and only when the settings allow it (§18.2).
       const view = (x) => {
         const out = Object.assign({}, x);
-        delete out._text;
         delete out.open_matter;
-        if (x._text && allowed[x.kind]) out.content = x._text.replace(/\s+/g, " ").slice(0, 120);
         return out;
       };
       const items = n.items.filter((x) => (query.get("unread") !== "true" || !x.read)
@@ -1615,6 +1813,43 @@ window.Maity = window.Maity || {};
         renameSelf(mm, body.handle, path);
         if (Object.keys(body).length === 1) return meView();
       }
+      // The person's public page (§16.9): at most 280 characters, no control character.
+      if ("public_bio" in body && body.public_bio) {
+        const bio = String(body.public_bio);
+        if (bio.length > 280) fail(400, "invalid", "the request does not validate", path, { fields: { public_bio: "too_long" } });
+        // eslint-disable-next-line no-control-regex
+        if (/[\x00-\x1f\u202a-\u202e\u2066-\u2069]/.test(bio)) fail(400, "invalid", "the request does not validate", path, { fields: { public_bio: "control_character" } });
+      }
+      if ("public_profile" in body) mm.public_profile = !!body.public_profile;
+      if ("public_bio" in body) mm.public_bio = body.public_bio || null;
+      // A person's links (§16.9), as hub/person_links.checked: every failing field is named, nothing is stored.
+      if ("website" in body || "social" in body || "links_visible" in body) {
+        const errors = {};
+        if (body.website) { const problem = websiteProblem(body.website, 200); if (problem) errors.website = problem; }
+        if ("links_visible" in body && !["private", "friends", "colleagues", "friends_and_colleagues", "everyone"].includes(body.links_visible)) errors.links_visible = "unknown";
+        const merged = Object.assign({}, mm.social || {});
+        const isObject = body.social && typeof body.social === "object" && !Array.isArray(body.social);
+        if (body.social !== undefined && body.social !== null && !isObject) errors.social = "format";
+        Object.entries(isObject ? body.social : {}).forEach(([network, name]) => {
+          if (!(network in PERSON_NETWORK_FORMS)) errors["social." + network] = "unknown";
+          else if (!name) delete merged[network];
+          else { const fixed = personNetworkName(network, name); if (fixed === null) errors["social." + network] = "format"; else merged[network] = fixed; }
+        });
+        if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+        if ("website" in body) mm.website = body.website || null;
+        if ("social" in body) mm.social = body.social === null ? {} : merged;
+        if ("links_visible" in body) mm.links_visible = body.links_visible;
+      }
+      if ("interface_language" in body) {
+        const chosen = body.interface_language;
+        if (chosen !== null && !FIXTURE_LANGUAGES.some((l) => l.tag === chosen && l.interface)) {
+          fail(400, "invalid", "the request does not validate", path, { fields: { interface_language: "unknown_language" } });
+        }
+        mm.interface_language = chosen;
+        fixtures()["auth-session.json"].member.interface_language = chosen;
+      }
+      const profileFields = ["public_profile", "public_bio", "website", "social", "links_visible", "handle", "interface_language"];
+      if (Object.keys(body).length && Object.keys(body).every((k) => profileFields.includes(k))) return meView();
       const fields = {};
       const MEAT = ["meat_proxy", "meat_proxy_lead", "meat_proxy_hands"];
       if (!MEAT.some((k) => k in body && body[k] !== null)) fields.meat_proxy = "required";
@@ -1774,12 +2009,12 @@ window.Maity = window.Maity || {};
       if (me().member.kind !== "human") fail(403, "forbidden", "a human's own account", path, { reason: "humans_only" });
       if (body.confirm !== me().member.handle) fail(400, "invalid", "the request does not validate", path, { fields: { confirm: "mismatch" } });
       const at = new Date();
-      me().member.deletion = { requested_at: at.toISOString().replace(/\.\d{3}Z$/, "Z"),
+      me().deletion = { requested_at: at.toISOString().replace(/\.\d{3}Z$/, "Z"),
         expires_at: new Date(at.getTime() + 86400000).toISOString().replace(/\.\d{3}Z$/, "Z") };
-      return { deletion: me().member.deletion };
+      return { deletion: me().deletion };
     }],
     ["DELETE", /^\/me\/deletion$/, () => {
-      me().member.deletion = null;
+      me().deletion = null;
       return { deletion: null };
     }],
     ["POST", /^\/auth\/reauthenticate$/, (m, body, path) => {
@@ -1787,8 +2022,18 @@ window.Maity = window.Maity || {};
       return { valid_until: new Date(Date.now() + 600000).toISOString().replace(/\.\d{3}Z$/, "Z") };
     }],
     // §2.8.1: enrolled with TOTP, so a step-up asks for the app's code.
-    ["GET", /^\/auth\/second-factor$/, () => ({ enrolled: true, enrolled_at: "2026-10-20T09:00:00Z", recovery_codes_left: 8,
-      last_used_at: "2026-10-21T13:00:00Z", required: false, via: "totp" })],
+    ["GET", /^\/auth\/second-factor$/, () => (mockFactorOn ? { enrolled: true, enrolled_at: "2026-10-20T09:00:00Z", recovery_codes_left: 8,
+      last_used_at: "2026-10-21T13:00:00Z", required: false, via: "totp" }
+      : { enrolled: false, enrolled_at: null, recovery_codes_left: 0, last_used_at: null, required: false, via: null })],
+    ["POST", /^\/auth\/second-factor\/totp$/, () => ({ secret: "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
+      otpauth_uri: "otpauth://totp/Maity:maintainer?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=Maity&digits=6&period=30", expires_in: 600 })],
+    ["POST", /^\/auth\/second-factor\/totp\/confirm$/, (m, body, path) => {
+      if (body.code !== "123456") fail(403, "code_invalid", "the code is wrong or was used", path);
+      mockFactorOn = true;
+      return { recovery_codes: Array.from({ length: 10 }, (_, i) => "abcde-fghi" + i) };
+    }],
+    ["POST", /^\/auth\/second-factor\/recovery-codes$/, () => ({ recovery_codes: Array.from({ length: 10 }, (_, i) => "klmno-pqrs" + i) })],
+    ["DELETE", /^\/auth\/second-factor$/, () => { mockFactorOn = false; return { enrolled: false, enrolled_at: null, recovery_codes_left: 0, last_used_at: null, required: false, via: null }; }],
     // §2.8.8: the mail factor's code ("654321") or link ("mailtoken") besides the app's code and a recovery code.
     // The hub answers a step-up with valid_until and a sign-in's step with {member, next}, next "/"
     // without a stored one (§2.8.2); the mock cannot tell the two apart and answers both.
@@ -1799,10 +2044,44 @@ window.Maity = window.Maity || {};
       return { valid_until: new Date(Date.now() + 600000).toISOString().replace(/\.\d{3}Z$/, "Z"), member: me().member, next: "/" };
     }],
     ["POST", /^\/auth\/second-factor\/email$/, () => ({ mail: "sent" })],
+    ["GET", /^\/languages$/, () => ({ items: FIXTURE_LANGUAGES })],
     ["PATCH", /^\/me\/notification-settings$/, (m, body, path) => {
       const set = fixtures()["notifications.json"].settings;
+      // §18.4: a new address waits for its link; a confirmed one changes or goes only with the
+      // password (any password until one is set here, as at /auth/login).
+      if (body.email && "address" in body.email) {
+        const address = body.email.address, email = set.email;
+        if (!set.mail_available) fail(409, "mail_not_configured", "this instance sends no mail", path);
+        if (address !== null && !/^[\x21-\x7e]{1,64}@[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(String(address))) fail(400, "invalid", "the request does not validate", path, { fields: { "email.address": "invalid" } });
+        if (email.address && email.verified_at) {
+          if (!body.current_password) fail(400, "invalid", "the request does not validate", path, { fields: { current_password: "required" } });
+          if (fixturePassword !== null && body.current_password !== fixturePassword) fail(400, "invalid", "the request does not validate", path, { fields: { current_password: "mismatch" } });
+        }
+        if (address === null) Object.assign(email, { address: null, address_status: "none", verified_at: null, pending_address: null, disabled_at: null });
+        else Object.assign(email, { pending_address: address, address_status: email.address && email.verified_at ? email.address_status : "pending" });
+      }
+      // §18.4: the modes per kind, the digests' time and day, the zone, quiet hours, the sign-in link;
+      // each checked at its path, nothing stored if one fails.
+      if (body.email) {
+        const e = body.email, fields = {}, hhmm = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+        const modes = ["immediate", "hourly", "daily", "weekly", "off"];
+        Object.entries(e.kinds || {}).forEach(([k, v]) => {
+          if (!(k in set.email.kinds)) fields["email.kinds." + k] = "unknown";
+          else if (!v || typeof v !== "object" || Object.keys(v).some((x) => x !== "mode" && x !== "content")
+            || ("mode" in v && !modes.includes(v.mode))
+            || ("content" in v && (typeof v.content !== "boolean" || !["chat", "mention"].includes(k)))) fields["email.kinds." + k] = "invalid";
+        });
+        if ("daily_at" in e && !hhmm.test(String(e.daily_at))) fields["email.daily_at"] = "invalid";
+        if ("weekly_on" in e && !["mon", "tue", "wed", "thu", "fri", "sat", "sun"].includes(e.weekly_on)) fields["email.weekly_on"] = "invalid";
+        if ("timezone" in e && !/^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+)*$/.test(String(e.timezone))) fields["email.timezone"] = "invalid";
+        if ("quiet_hours" in e && e.quiet_hours !== null && !(e.quiet_hours && hhmm.test(String(e.quiet_hours.from)) && hhmm.test(String(e.quiet_hours.to)))) fields["email.quiet_hours"] = "invalid";
+        if ("sign_in_link" in e && typeof e.sign_in_link !== "boolean") fields["email.sign_in_link"] = "invalid";
+        if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+        Object.entries(e.kinds || {}).forEach(([k, v]) => { set.email.kinds[k] = Object.assign({}, set.email.kinds[k], v); });
+        ["daily_at", "weekly_on", "timezone", "quiet_hours", "sign_in_link"].forEach((key) => { if (key in e) set.email[key] = e[key]; });
+      }
       if (body.email && "language" in body.email) {
-        if (!["en", "de"].includes(body.email.language)) fail(400, "invalid", "unknown language", path);
+        if (!FIXTURE_LANGUAGES.some((l) => l.tag === body.email.language)) fail(400, "invalid", "unknown language", path);
         set.email.language = body.email.language;
       }
       // §18.4: not_listening's mode and its minutes, each checked at its path.
@@ -1819,10 +2098,6 @@ window.Maity = window.Maity || {};
       Object.entries(b.kinds || {}).forEach(([k, v]) => {
         if (!(k in set.browser.kinds)) fail(400, "invalid", "unknown kind", path, { fields: { ["browser.kinds." + k]: "unknown" } });
         set.browser.kinds[k] = !!v;
-      });
-      Object.entries(b.content || {}).forEach(([k, v]) => {
-        if (!(k in set.browser.content)) fail(400, "invalid", "no content for this kind", path, { fields: { ["browser.content." + k]: "unknown" } });
-        set.browser.content[k] = !!v;
       });
       return set;
     }],
@@ -1953,6 +2228,43 @@ window.Maity = window.Maity || {};
       });
       return JSON.parse(JSON.stringify(limitsSetting));
     }],
+    // §2.6.6, §2.8.8 the sign-in methods, refused as the hub refuses them.
+    ["GET", /^\/admin\/settings\/sign-in$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      return signInView();
+    }],
+    ["PATCH", /^\/admin\/settings\/sign-in$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      const fields = {};
+      Object.entries(body).forEach(([k, v]) => {
+        if (k === "password") fields[k] = "fixed";
+        else if (!["device_code", "email_link", "second_factor"].includes(k)) fields[k] = "extra_forbidden";
+        else if (signInSetting[k].source === "env") fields[k] = "set_by_environment";
+        else if (k === "second_factor") {
+          if (v !== null && !["off", "optional", "required_admins", "email"].includes(v)) fields[k] = "invalid";
+          else if (v === "required_admins" && !signInSetting.secret_key) fields[k] = "secret_key_missing";
+          else if (v === "email" && !(signInMailReady() && signInSetting.signing_key)) fields[k] = "mail_not_ready";
+          else if (v === "email" && fixtures()["notifications.json"].settings.email.address_status !== "verified") fields[k] = "no_verified_address";
+        } else if (v !== null && typeof v !== "boolean") fields[k] = "invalid";
+      });
+      if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+      const defaults = { device_code: true, email_link: true, second_factor: "optional" };
+      const waits = body.second_factor === "email";
+      Object.entries(body).forEach(([k, v]) => {
+        if (k === "second_factor" && waits) return;
+        signInSetting[k] = v === null ? { value: defaults[k], source: "default" } : { value: v, source: "admin" };
+      });
+      if ("second_factor" in body) signInSetting.pending = waits; // a new PATCH replaces an open confirmation
+      return waits ? { expires_in: 900 } : signInView();
+    }],
+    ["POST", /^\/admin\/settings\/sign-in\/second-factor-email\/confirm$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      if (signInSetting.second_factor.source === "env") fail(400, "invalid", "the request does not validate", path, { fields: { second_factor: "set_by_environment" } });
+      if (!signInSetting.pending || body.code !== "123456") fail(403, "code_invalid", "the code is wrong or was used", path);
+      signInSetting.second_factor = { value: "email", source: "admin" };
+      signInSetting.pending = false;
+      return signInView();
+    }],
     // §16.4 Registration: the settings with their sources, what is missing, the
     // accounts that wait and lifting a block, for the instance admin.
     ["GET", /^\/admin\/settings\/registration$/, (m, body, path) => {
@@ -2025,6 +2337,14 @@ window.Maity = window.Maity || {};
       value.last_test = { ok: true, stage: null, smtp_code: 250, detail: null, at: nowIso() }; return value.last_test;
     }],
     // §16.1: the instance admin's list, by handle, filtered and paged.
+    // §2.8.3: a mail with a link; nothing changes here. The refusals the page words are the smoke's stubs.
+    ["POST", /^\/admin\/users\/([^/]+)\/second-factor\/reset$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      if (decodeURIComponent(m[1]) === me().member.id) fail(403, "forbidden", "use a recovery code", path, { reason: "own_account" });
+      if (!fixtures()["admin-users.json"].items.some((u) => u.id === decodeURIComponent(m[1]))) fail(404, "not_found", "no such human", path);
+      if (!body.reason || !body.reason.trim()) fail(400, "invalid", "reason", path, { fields: { reason: "invalid" } });
+      return { expires_at: new Date(Date.now() + 24 * 3600 * 1000).toISOString().replace(/\.\d{3}Z$/, "Z") };
+    }],
     ["GET", /^\/admin\/users$/, (m, body, path, query) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
       const q = query.get("q");
@@ -2363,7 +2683,7 @@ window.Maity = window.Maity || {};
       if ("absence" in body) p.absence = body.absence;
       if (body.settings && "language" in body.settings) {
         if (me().member.kind !== "human" || !["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "human project:admin needed", path);
-        if (!["en", "de"].includes(body.settings.language)) fail(400, "invalid", "unknown language", path);
+        if (!FIXTURE_LANGUAGES.some((l) => l.tag === body.settings.language)) fail(400, "invalid", "unknown language", path);
         p.settings = Object.assign({}, p.settings, { language: body.settings.language });
       }
 
@@ -2430,7 +2750,7 @@ window.Maity = window.Maity || {};
             : { url, default_branch: "main", forge: "github", probe_configured: false, probe_via: null, owner_confirmed: false, confirmed_by: null }) : null;
         if (!same && "keep_the_why_export" in p) p.keep_the_why_export = back ? back.export : null;
         // The repository first set: the setup cards chosen at creation (§6.21).
-        if (url && p.setup && p.setup.cards === null && p.state !== "archived") makeSetupCards(m[1], p.setup, me().member.id, url);
+        if (url && p.setup.cards === null && p.state !== "archived") makeSetupCards(m[1], p.setup, me().member.id, url);
       }
       // memory.provider by PATCH (§6.1, §6.21): rules_version moves, no setup card is
       // made or cancelled. The commitment reads optional under none, and required
@@ -2443,6 +2763,19 @@ window.Maity = window.Maity || {};
           p.rules_version = (p.rules_version || 1) + 1;
           p.policy = Object.assign({}, p.policy, { keep_the_why: provider === "none" ? "optional" : ktwSet.get(p) || "required" });
         }
+      }
+      if ("policy" in body && "done_authority" in body.policy && !["holder", "reviewer", "tester", "reviewer_and_tester", "admin"].includes(body.policy.done_authority)) {
+        fail(400, "invalid", "unknown done_authority", path, { fields: { "policy.done_authority": "unknown" } });
+      }
+      // The public page (§16.9): the fixture's signed-in human owns its namespaces.
+      if ("public_page" in body) {
+        if (!["on", "off"].includes(body.public_page)) fail(400, "invalid", "the request does not validate", path, { fields: { public_page: "required" } });
+        p.public_page = body.public_page;
+      }
+      if ("public_about" in body) {
+        // Bytes, as the hub counts them.
+        if (body.public_about && encodeURIComponent(body.public_about).replace(/%../g, "x").length > 4096) fail(400, "invalid", "the request does not validate", path, { fields: { public_about: "too_long" } });
+        p.public_about = body.public_about || null;
       }
       if ("policy" in body) {
         // A policy change needs a reason, except `badge` alone (§6.20); fields merge into the
@@ -2491,7 +2824,7 @@ window.Maity = window.Maity || {};
         if (!view) return null;
         // The rounds of a series are shown to its readers only (§20.7).
         const rounds = jfReads(m[1], s) ? jf.rounds.filter((r) => r.series_id === s.id) : [];
-        return Object.assign(view, { next_at: s.enabled && jfReads(m[1], s) ? s.next_at || null : null,
+        return Object.assign(view, { next_at: s.enabled ? s.next_at || null : null,
           current_round: rounds.find((r) => JF_OPEN.includes(r.status)) || null, last_round: rounds.find((r) => r.status === "reported") || null });
       }).filter(Boolean) };
     }],
@@ -2713,29 +3046,35 @@ window.Maity = window.Maity || {};
       }
       if (!body.reason) fail(400, "invalid", "the request does not validate", path, { fields: { reason: "required" } });
       const jf = file(m[1], "jour-fixe.json", path);
-      const open = jf.rounds.find((r) => r.series_id === s.id && JF_OPEN.includes(r.status));
-      if (open) fail(409, "jour_fixe_open", "an earlier round is not yet final", path, { round: open.id });
-      if (p.state === "archived") fail(409, "project_closed", "the project is archived", path);
       const people = file(m[1], "members.json", path).items.filter((x) => !x.removed_at);
+      // The hub's order (routes/jour_fixe.py `start`, then `rounds.prepare`), so that a test sees the same
+      // first refusal against the fixture as against the hub where two overlap.
       // An owner who left stops the series' rounds, by schedule and by hand (§20.1).
       if (s.circle === "owner" && !people.some((x) => x.id === s.circle_owner)) fail(409, "jour_fixe_state", "the circle owner is gone", path, { reason: "circle_owner_gone" });
-      if (!s.moderators.length) fail(409, "no_moderator", "nobody to moderate is present", path);
-      // The circle: the owner and their agents, the humans, or everyone (§20.2); two are needed to talk.
-      const circle = s.circle === "owner" ? people.filter((x) => x.id === s.circle_owner || x.owner_id === s.circle_owner)
-        : s.circle === "humans" ? people.filter((x) => x.kind === "human") : people;
-      if (circle.length < 2) fail(409, "too_few", "fewer than two members are in the circle", path);
       const day = Date.now() - 24 * 3600000;
       if (jf.rounds.filter((r) => r.series_id === s.id && r.trigger === "manual" && Date.parse(r.opened_at) > day).length >= 2) {
         fail(429, "rate_limited", "at most 2 rounds started by hand per series in 24 hours", path);
       }
+      if (p.state === "archived") fail(409, "project_closed", "the project is archived", path);
+      const open = jf.rounds.find((r) => r.series_id === s.id && JF_OPEN.includes(r.status));
+      if (open) fail(409, "jour_fixe_open", "an earlier round is not yet final", path, { round: open.id });
+      // Who opted out takes no part at all, so a moderator who did moderates nothing either. The circle
+      // without them, and the moderator, who counts also outside the circle (§20.1, §20.2); two are needed
+      // to talk. Presence is not modelled: every member counts as present.
+      const out = s.opted_out_members || [];
+      const moderator = s.moderators.find((x) => !out.includes(x.member_id));
+      if (!moderator) fail(409, "no_moderator", "nobody to moderate is present", path);
+      const circle = (s.circle === "owner" ? people.filter((x) => x.id === s.circle_owner || x.owner_id === s.circle_owner)
+        : s.circle === "humans" ? people.filter((x) => x.kind === "human") : people).map((x) => x.id).filter((id) => !out.includes(id));
+      if (new Set(circle.concat([moderator.member_id])).size < 2) fail(409, "too_few", "fewer than two members take part", path);
       const now = nowIso();
       const self = { member_id: me().member.id, kind: me().member.kind, handle: me().member.handle };
       const config = Object.assign({}, s, { moderators: undefined, pending_moderators: undefined, next_at: undefined });
       const round = { id: "jfx-f" + String(jf.rounds.length + 1).padStart(3, "0"), project: fullOf(m[1]), status: "answering", series_id: s.id, topic: s.topic, circle: s.circle,
-        trigger: "manual", mode: "message", scheduled_for: now,
+        trigger: "manual", scheduled_for: now,
         opened_at: now, answers_close_at: new Date(Date.now() + s.answer_window_minutes * 60000).toISOString().replace(/\.\d{3}Z$/, "Z"),
         steps: [], exchange_closed_at: null, report_due_at: null, reported_at: null, config,
-        moderator: { member_id: s.moderators[0].member_id, instance: null },
+        moderator: { member_id: moderator.member_id, instance: null },
         invited: [self], participants: [self], absent: [], answers_received: 0, conversation_id: null, statement: null, posts: [], report: null };
       jf.rounds.unshift(round);
       return round;
@@ -2797,6 +3136,23 @@ window.Maity = window.Maity || {};
     // §16.6: the instance's counts — a seeded month, or ?stats=empty a fresh
     // instance; a window beyond the fixture's days reads zero days, with
     // reviews unknown before the hub kept history, as the hub answers.
+    // §16.7.2: the campaign counts per UTC day, variant and campaign; views approximate.
+    ["GET", /^\/admin\/statistics\/campaigns$/, (m, body, path, query) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      const n = Number(query.get("days") || 30);
+      if (!Number.isInteger(n) || n < 1 || n > 400) fail(400, "invalid", "the request does not validate", path, { fields: { days: "invalid" } });
+      const land = fixtures()["landing.json"] || {};
+      const configured = (land.campaigns || []).map((c) => ({ code: c.code, label: c.label, removed: false }));
+      const rows = [
+        { date: "2026-10-31", variant: "default", campaign: null, views: 140, registrations: 3, activations: 1 },
+        { date: "2026-10-31", variant: "maintainers", campaign: "x-h1-w1", views: 212, registrations: 9, activations: 4 },
+        { date: "2026-10-30", variant: "maintainers", campaign: "old-mail", views: 31, registrations: 1, activations: 0 },
+      ];
+      const known = new Set(configured.map((c) => c.code));
+      const campaigns = configured.concat([...new Set(rows.map((r) => r.campaign).filter((c) => c && !known.has(c)))].map((code) => ({ code, label: null, removed: true })));
+      return { as_of: "2026-10-31T10:00:00Z", window_days: n, views_approximate: true,
+        variants: ["default"].concat(Object.keys(land.variants || {})), campaigns, rows };
+    }],
     ["GET", /^\/admin\/statistics$/, (m, body, path, query) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
       const n = Number(query.get("days") || 30);
@@ -2821,16 +3177,64 @@ window.Maity = window.Maity || {};
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
       const v = Object.assign({}, fixtures()["landing.json"]);
       const errors = {};
-      Object.keys(body).forEach((k) => { if (!["enabled", "default_language", "pages", "footer"].includes(k)) errors[k] = "extra_forbidden"; });
+      const KEYS = ["enabled", "default_language", "pages", "footer", "variants", "campaigns"];
+      Object.keys(body).forEach((k) => { if (!KEYS.includes(k)) errors[k] = "extra_forbidden"; });
       if ("enabled" in body && typeof body.enabled !== "boolean") errors.enabled = "invalid";
       if ("pages" in body) Object.entries(body.pages || {}).forEach(([lang, pg]) => landingPage(pg, "pages." + lang, errors));
       if ("footer" in body) landingFooter(body.footer || {}, errors);
-      ["enabled", "default_language", "pages", "footer"].forEach((k) => { if (k in body) v[k] = body[k]; });
+      if ("variants" in body) landingVariants(body.variants, errors);
+      if ("campaigns" in body) landingCampaigns(body.campaigns, errors);
+      KEYS.forEach((k) => { if (k in body) v[k] = body[k]; });
       if (!Object.keys(errors).length && v.enabled && !(v.pages || {})[v.default_language]) errors.default_language = "default_language_missing";
+      // A variant's page in the default language is required while the page is on (§16.7.2).
+      if (!Object.keys(errors).length && v.enabled) {
+        Object.entries(v.variants || {}).forEach(([slug, x]) => { if (!(x.pages || {})[v.default_language]) errors["variants." + slug + ".pages." + v.default_language] = "required"; });
+      }
+      landingPlaceholders(body, "", errors);
       if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
       v.updated_at = nowIso(); v.updated_by = me().member.id;
       fixtures()["landing.json"] = JSON.parse(JSON.stringify(v));
       return v;
+    }],
+    ["GET", /^\/auth\/pages\/([^/?]+)/, (m, body, path) => {
+      const langs = fixtureAuthPages.pages[m[1]];
+      if (!langs) fail(404, "not_found", "no such page", path);
+      const asked = new URLSearchParams(path.split("?")[1] || "").get("lang");
+      const language = asked && langs[asked] ? asked : fixtureAuthPages.default_language;
+      return { language, texts: langs[language] || {} };
+    }],
+    ["GET", /^\/admin\/settings\/auth-pages$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      return fixtureAuthPages;
+    }],
+    ["POST", /^\/admin\/settings\/auth-pages\/check$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      authPagesCheck(body, path);
+      return null;
+    }],
+    ["PATCH", /^\/admin\/settings\/auth-pages$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      authPagesCheck(body, path);
+      fixtureAuthPages = { default_language: body.default_language, pages: { sign_in: {}, sign_up: {}, ...JSON.parse(JSON.stringify(body.pages)) }, updated_at: nowIso(), updated_by: me().member.id };
+      return fixtureAuthPages;
+    }],
+    ["GET", /^\/admin\/settings\/site-values$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      return { values: fixtureSiteValues };
+    }],
+    ["PATCH", /^\/admin\/settings\/site-values$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      const errors = {};
+      Object.keys(body).filter((k) => k !== "values").forEach((k) => { errors[k] = "extra_forbidden"; });
+      const values = body.values;
+      if (!values || typeof values !== "object" || Array.isArray(values) || Object.keys(values).length > 50) errors.values = "invalid";
+      else Object.entries(values).forEach(([name, v]) => {
+        if (!/^[a-z][a-z0-9_]{0,39}$/.test(name) || typeof v !== "string" || !v || v.length > 500 || v.trim() !== v || /[\x00-\x1f\x7f]/.test(v)) errors["values." + name] = "invalid";
+        else if (v.includes("{{")) errors["values." + name] = "unresolved_placeholder";
+      });
+      if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+      fixtureSiteValues = values;
+      return { values };
     }],
     ["GET", /^\/admin\/settings\/legal$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
@@ -2846,7 +3250,7 @@ window.Maity = window.Maity || {};
       named.forEach((page) => {
         if (body[page] === null) return;
         const langs = Object.entries(body[page] || {});
-        if (langs.length > 8) errors[page] = "too_many";
+        if (langs.length > 10) errors[page] = "too_many";
         langs.forEach(([lang, x]) => {
           const at = page + "." + lang;
           if (!/^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(lang)) errors[at] = "invalid";
@@ -2854,6 +3258,7 @@ window.Maity = window.Maity || {};
           landingMarkdown(x && x.markdown, at + ".markdown", 65536, true, errors);
         });
       });
+      landingPlaceholders(body, "", errors);
       if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
       if ("default_language" in body) v.default_language = body.default_language;
       named.forEach((page) => {
@@ -2872,6 +3277,9 @@ window.Maity = window.Maity || {};
       const errors = {};
       if ("pages" in body) Object.entries(body.pages || {}).forEach(([lang, pg]) => landingPage(pg, "pages." + lang, errors));
       if ("footer" in body) landingFooter(body.footer || {}, errors);
+      if ("variants" in body) landingVariants(body.variants, errors);
+      if ("campaigns" in body) landingCampaigns(body.campaigns, errors);
+      landingPlaceholders(body, "", errors);
       if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
       const id = localId("lpv");
       return { id, url: "/api/v1/admin/settings/landing/preview/" + id, expires_at: new Date(Date.now() + 600000).toISOString().replace(/\.\d{3}Z$/, "Z") };
@@ -2887,6 +3295,7 @@ window.Maity = window.Maity || {};
         landingText(x && x.title, page + "." + lang + ".title", 120, true, errors);
         landingMarkdown(x && x.markdown, page + "." + lang + ".markdown", 65536, true, errors);
       });
+      landingPlaceholders(body, page, errors);
       if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
       const id = localId("lgv");
       return { id, url: "/api/v1/admin/settings/legal/preview/" + id, expires_at: new Date(Date.now() + 600000).toISOString().replace(/\.\d{3}Z$/, "Z") };
@@ -2907,7 +3316,8 @@ window.Maity = window.Maity || {};
         claim_to_done_median_seconds: null, review_to_done_median_seconds: null, cards_done_per_day: [] }, coverage: { reviews_since: null } };
       return Object.assign({}, s, { window_days: n, live_at: nowIso(),
         // Oldest first, as swarm.py sends them: the window is the last n days.
-        totals: Object.assign({}, s.totals, { cards_done_per_day: (s.totals.cards_done_per_day || []).slice(-n) }) });
+        totals: Object.assign({}, s.totals, ["cards_done_per_day", "cards_created_per_day", "prs_merged_per_day"]
+          .reduce((cut, k) => (s.totals[k] ? Object.assign(cut, { [k]: s.totals[k].slice(-n) }) : cut), {})) });
     }],
     // §17.6: a manual post by an owner or admin.
     ["POST", /^\/projects\/([^/]+)\/ticker$/, (m, body, path) => {
@@ -3122,7 +3532,7 @@ window.Maity = window.Maity || {};
           const r = t.report;
           const code = r.code !== false;
           return { task: { id: t.id, title: t.title, status: t.status, kind: t.kind, label: t.label || null },
-            reported_by: who(r.reported_by), reported_at: r.reported_at, code, verification: r.verification || null,
+            reported_by: Object.assign(who(r.reported_by), { instance: r.reported_instance || null }), reported_at: r.reported_at, code, verification: r.verification || null,
             pr: code && r.pr_status === "found" && r.pr ? { number: r.pr.number, url: r.pr.url } : null,
             pr_state: r.observed ? r.observed.pr_state || null : null, observed_at: r.observed ? r.observed.observed_at || null : null,
             // null until the probe has looked (§6.6), never "no mismatch".
@@ -3185,6 +3595,20 @@ window.Maity = window.Maity || {};
       if (!file(m[1], "tasks.json", path).items.some((c) => c.id === m[2])) fail(404, "not_found", "Not found", path);
       return { items: (fixtures()[m[1] + "/task-history.json"] || {})[m[2]] || [], next_cursor: null };
     }],
+    // A watch (docs/api.md §6.4): the reader's own, on the card as the fixture has it.
+    ["PUT", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/watch$/, (m, body, path) => {
+      const card = file(m[1], "tasks.json", path).items.find((c) => c.id === m[2]);
+      if (!card) fail(404, "not_found", "Not found", path);
+      card.watching = true;
+      return card;
+    }],
+    ["DELETE", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/watch$/, (m, body, path) => {
+      const card = file(m[1], "tasks.json", path).items.find((c) => c.id === m[2]);
+      if (!card) fail(404, "not_found", "Not found", path);
+      card.watching = false;
+      return card;
+    }],
+    ["GET", /^\/projects\/([^/]+)\/messages$/, () => ({ items: [], next_cursor: null })],
     // Release edits (docs/api.md §6.7). Readiness stays as the fixture has
     // it: computing it is the hub's, never the page's.
     ["PATCH", /^\/projects\/([^/]+)\/tasks\/([^/]+)$/, (m, body, path) => {
@@ -3264,7 +3688,7 @@ window.Maity = window.Maity || {};
       taskSerial += 1;
       const at = nowIso();
       const card = { id: "tsk-f" + String(taskSerial).padStart(3, "0"), kind: body.kind || "task", title: body.title.trim(), body: body.body || "",
-        label: body.label || null, status: body.status || "open", area: body.area || null, created_by: me().member.id,
+        label: body.label || null, needs: body.needs || null, status: body.status || "open", area: body.area || null, created_by: me().member.id,
         assigned_to: body.assigned_to || null, claim: null, checkpoint: null, depends_on: body.depends_on || [], ships_with: body.ships_with || [],
         blocked_by_request: null, ktw_ref: null, report: null, release: null, contract: null, mentions: [], created_at: at, updated_at: at, closed_at: null,
         parent: body.parent || null, related: [], children: { open: 0, total: 0 } };
@@ -3349,7 +3773,9 @@ window.Maity = window.Maity || {};
       const admin = membersAdmin(m[1]);
       const creds = fixtures()[m[1] + "/credentials.json"] || {};
       const monthAgo = Date.now() - 30 * 86400000;
-      return { next_cursor: null, items: list.items.map((x) => {
+      const counted = fixtureManages(list.items);
+      return { next_cursor: null, items: list.items.map((x0) => {
+        const x = Object.assign({}, x0, { manages: counted[x0.id] });
         if (!admin && x.owner_id !== me().member.id) return x;
         if (x.kind !== "agent") return Object.assign({}, x, { owner: null, credentials: null });
         const all = (creds[x.id] || { items: [] }).items;
@@ -3376,6 +3802,30 @@ window.Maity = window.Maity || {};
         target.owner_preferences = body.owner_preferences;
         return target;
       }
+      // §6.17: an instance put to rest or woken, by a human only: the profile's
+      // owner, member or not, or members:admin, whose change to another
+      // owner's agent waits for that owner's consent (§6.2).
+      if ("dormant" in body) {
+        const target = member(m[1], m[2], path);
+        if (who.member.kind !== "human") fail(403, "forbidden", "a human puts an instance to rest", path, { reason: "humans_only" });
+        const own = target.kind === "agent" && target.owner_id === who.member.id;
+        if (!own && !who.admin) fail(403, "forbidden", "members:admin needed", path, { scope: "members:admin" });
+        const errors = {};
+        if (Object.keys(body).some((k) => k !== "dormant" && k !== "instance")) errors.dormant = "alone";
+        if (typeof body.dormant !== "boolean") errors.dormant = "not_a_boolean";
+        if (!body.instance) errors.instance = "required";
+        const inst = (target.instances || []).find((i) => i.id === body.instance && !i.revoked_at);
+        if (body.instance && !inst) errors.instance = "not_an_instance";
+        if (inst && body.dormant && (target.team || {}).lead_instance === inst.id) errors.dormant = "lead";
+        if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+        if (!own) return consentFor(who.member, (body.dormant ? "Put to rest " : "Wake ") + target.handle + "#" + inst.id);
+        inst.dormant = body.dormant ? { since: nowIso(), by: who.member.id } : null;
+        // Every active instance at rest: the team is limited (§6.12, source dormant, no until).
+        const active = target.instances.filter((i) => !i.revoked_at);
+        if (active.every((i) => i.dormant)) target.availability = { state: "limited", since: nowIso(), source: "dormant" };
+        else if (target.availability && target.availability.source === "dormant") target.availability = { state: "available", since: nowIso() };
+        return target;
+      }
       // §6.18: the team's rulebook, by the human who owns the agent profile only.
       if ("team" in body) {
         const target = member(m[1], m[2], path);
@@ -3388,6 +3838,7 @@ window.Maity = window.Maity || {};
         if (!["all", "lead", "next_free"].includes(next.wake)) errors["team.wake"] = "unknown";
         if ((next.distribution === "lead" || next.wake === "lead") && !next.lead_instance) errors["team.lead_instance"] = "required";
         if (next.lead_instance && !(target.instances || []).some((i) => i.id === next.lead_instance && !i.revoked_at)) errors["team.lead_instance"] = "not_an_instance";
+        else if (body.team.lead_instance && (target.instances || []).some((i) => i.id === body.team.lead_instance && i.dormant)) errors["team.lead_instance"] = "dormant";
         if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
         target.team = Object.assign(next, { updated_by: { kind: "human", id: who.member.id, handle: who.member.handle }, updated_at: nowIso() });
         return target;
@@ -3712,9 +4163,13 @@ window.Maity = window.Maity || {};
         new_instance: !!body.new_instance, replaces: body.replaces || null, instance: null,
         takes_over: body.takes_over || null, handover,
       });
-      // §3.2 "The install line": installs and joins in one command.
+      // §3.2 "The install line": only the join, or installs when missing and joins, per platform.
       return {
-        id, join_url: url, code: "FIXT-URE0-0000", paste_line: "pipx install maity && export PATH=\"$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}\" && maity join " + url + " --code FIXT-URE0-0000",
+        id, join_url: url, code: "FIXT-URE0-0000", paste_lines: {
+          join: "maity join " + url + " --code FIXT-URE0-0000",
+          posix: "export PATH=\"$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}\" && { command -v maity >/dev/null 2>&1 || { pipx install maity; }; } && maity join " + url + " --code FIXT-URE0-0000",
+          windows: "$env:Path += \";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR } else { \"$HOME\\.local\\bin\" })\"; if (-not (Get-Command maity -ErrorAction SilentlyContinue)) { pipx install maity }; if (Get-Command maity -ErrorAction SilentlyContinue) { maity join " + url + " --code FIXT-URE0-0000 }",
+        },
         agent_id: agentId, project: fullOf(m[1]), expires_at: expires,
       };
     }],
@@ -3996,7 +4451,7 @@ window.Maity = window.Maity || {};
       const earlier = first !== null && c.items.some((x) => x.seq < first) ? first : null;
       // An admin's reason is shown to it and the chat's former humans only (§8.5).
       const shown = (x) => {
-        const v = messageView(x);
+        const v = messageView(withTombstones(m[1], x));
         if (v.redaction && v.redaction.admin_reason) {
           const r = Object.assign({}, v.redaction);
           delete r.admin_reason;
@@ -4096,7 +4551,7 @@ window.Maity = window.Maity || {};
       const earlier = items.length && conv.items.some((x) => x.seq < items[0].seq) ? items[0].seq : null;
       return {
         items: items.map((x) => {
-          const copy = messageView(x);
+          const copy = messageView(withTombstones(m[1], x));
           delete copy.seen_by_human;
           return copy;
         }),
@@ -4144,6 +4599,8 @@ window.Maity = window.Maity || {};
       if (!fixtureSignedIn && !/^\/auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|device-codes(\/.*)?)$/.test(path) && path !== "/legal" && path !== "/openapi.json" && !path.startsWith("/invitations/")) {
         fail(401, "unauthenticated", "Not signed in", fullPath);
       }
+      // The fixture hub holds this session in enrolment (§2.8.5): outside /auth/* it refuses.
+      if (window.MAITY_FIXTURE_ENROLMENT && !path.startsWith("/auth/")) fail(403, "forbidden", "set up the second factor", fullPath, { reason: "second_factor_enrolment_required" });
       path = namespaced(path, fullPath);
       for (const [verb, pattern, handler] of routes) {
         if (verb !== method) continue;
@@ -4251,7 +4708,10 @@ window.Maity = window.Maity || {};
         sessionCsrf = s.csrf_token || null;
         lastSession = s;
         sessionBlocked = false;
-        return s;
+        return M.i18n.follow(s.member && s.member.interface_language).then(() => s);
+      }, (err) => {
+        if (err && err.status === 401) return M.i18n.follow(null).then(() => { throw err; });
+        throw err;
       });
     }
     // A 401 on a call that needs the session: it ended (expired, revoked,
@@ -4263,6 +4723,8 @@ window.Maity = window.Maity || {};
         return answer;
       }, (err) => {
         if (err && err.status === 401 && M.onSessionEnded) M.onSessionEnded(path, epoch);
+        // The hub moved a running session into enrolment (§2.8.5): the setup is all it reaches now.
+        if (err && err.status === 403 && err.details && err.details.reason === "second_factor_enrolment_required" && M.onEnrolmentRequired) M.onEnrolmentRequired();
         throw err;
       });
     }
@@ -4273,7 +4735,7 @@ window.Maity = window.Maity || {};
   // visitor by design; every other /auth/* call is the session's own.
   // The path carries its query (the device-login wait, ?wait=0): a public
   // route ends at the path, whatever query follows.
-  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code)|legal|openapi\.json|invitations\/[^/?]+)(\?|$)/;
+  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code)|auth\/pages\/[^/?]+|public\/pages\/[^?]+|legal|openapi\.json|invitations\/[^/?]+)(\?|$)/;
 
   // Every page of a list, following next_cursor (docs/api.md §1.4).
   async function getAll(path) {
@@ -4300,6 +4762,8 @@ window.Maity = window.Maity || {};
     isPublicPath: (path) => PUBLIC_PATH.test(path),
     // The hub's time as best known: this clock corrected by the last answer's.
     now: () => Date.now() + skew,
+    // The fixture hub's `manages` count (§6.2), for the smoke test of its rule.
+    fixtureManages,
     source,
     ApiError,
     get: (path, opts) => request("GET", path, undefined, undefined, opts && opts.signal),
@@ -4315,6 +4779,9 @@ window.Maity = window.Maity || {};
     // A project's path segments from its full name (§6.25): `<owner>/<slug>`,
     // each part encoded, the slash between them kept.
     projectPath,
+    // The campaign counts as the hub's CSV file (§16.7.2), for a download link: the hub
+    // names it and sends it as an attachment; the fixture hub serves no file, so none.
+    campaignsCsvUrl: (days) => (source === "fixtures" ? null : API_BASE + "/admin/statistics/campaigns?days=" + encodeURIComponent(days) + "&format=csv"),
     attachmentUrl: (full, id, download) => {
       if (source === "fixtures") return attachmentBlobs[fixtureSlug(full) + "/" + id] || null;
       return API_BASE + "/projects/" + projectPath(full) + "/attachments/" + encodeURIComponent(id) + "/content" + (download ? "?download=1" : "");

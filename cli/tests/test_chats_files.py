@@ -9,11 +9,13 @@ import io
 import json
 import os
 import stat
+import sys
 from pathlib import Path
 from typing import Any
 
 import fakehub
 import pytest
+from conftest import posix
 
 from maity import cli
 
@@ -440,6 +442,7 @@ def served(fake: fakehub.FakeHub) -> fakehub.FakeHub:
     return fake
 
 
+@posix
 def test_files_get_saves_into_maity_files_under_the_name_mode_0644(
     joined: Path, served: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -458,6 +461,7 @@ def test_files_get_saves_into_maity_files_under_the_name_mode_0644(
     assert [p.name for p in folder.iterdir() if p.name.endswith(".part")] == []
 
 
+@posix
 def test_files_get_keeps_an_existing_folder_and_refuses_a_link_in_its_place(
     joined: Path, served: fakehub.FakeHub, tmp_path: Path
 ) -> None:
@@ -600,7 +604,8 @@ def test_files_get_without_hard_links_still_never_overwrites(
     target = tmp_path / "out.txt"
     assert cli.main(["files", "get", "att-0042", "-o", str(target)]) == cli.EXIT_OK
     assert target.read_bytes() == b"hello"
-    assert stat.S_IMODE(target.stat().st_mode) == 0o644
+    if sys.platform != "win32":  # no such bits there
+        assert stat.S_IMODE(target.stat().st_mode) == 0o644
     assert cli.main(["files", "get", "att-0042", "-o", str(target)]) == cli.EXIT_ERROR
     assert not [p for p in tmp_path.iterdir() if p.name.endswith(".part")]
 

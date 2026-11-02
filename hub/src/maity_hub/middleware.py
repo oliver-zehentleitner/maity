@@ -23,7 +23,16 @@ from starlette.concurrency import run_in_threadpool
 from starlette.routing import Match
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from maity_hub import clock, events, forge_webhook, join_host, net, paths, request_stats
+from maity_hub import (
+    clock,
+    events,
+    forge_webhook,
+    join_host,
+    maintenance,
+    net,
+    paths,
+    request_stats,
+)
 from maity_hub.auth import credentials
 from maity_hub.auth.leaks import revoke_leaked
 from maity_hub.config import Settings
@@ -38,7 +47,7 @@ BODY_CAP = 64 * 1024
 # §6.10); past it the answer is `invalid` with `fields.body: too_large`, not 413.
 IMAGE_CAP = 1024 * 1024
 _IMAGE_UPLOAD = re.compile(
-    r"^/api/v1/(projects/[^/]+/[^/]+/(logo|banner)|me/avatar|agents/[^/]+/avatar)$"
+    r"^/api/v1/(projects/[^/]+/[^/]+/(logo|banner)|me/avatar|agents/[^/]+/avatar|orgs/[^/]+/avatar)$"
 )
 # The landing page and the legal pages may hold 256 KiB and 64 KiB-per-text of Markdown
 # (§16.7, §16.7.1); JSON escaping can grow it on the wire, so their PATCH alone takes a
@@ -48,9 +57,14 @@ LANDING_CAP = 512 * 1024
 # apply to it, the file cap does.
 ATTACHMENT_CAP = 10 * 1024 * 1024
 _ATTACHMENT_UPLOAD = re.compile(r"^/api/v1/projects/[^/]+/[^/]+/attachments$")
-_LANDING_SETTINGS = ("/api/v1/admin/settings/landing", "/api/v1/admin/settings/legal")
+_AUTH_PAGES = "/api/v1/admin/settings/auth-pages"  # §16.7.4
+_LANDING_SETTINGS = ("/api/v1/admin/settings/landing", "/api/v1/admin/settings/legal", _AUTH_PAGES)
 # The drafts a preview takes are as large as the setting they preview (§16.7, §16.7.1).
-_LANDING_PREVIEWS = tuple(f"{path}/preview" for path in _LANDING_SETTINGS)
+_LANDING_PREVIEWS = (
+    "/api/v1/admin/settings/landing/preview",
+    "/api/v1/admin/settings/legal/preview",
+    f"{_AUTH_PAGES}/check",
+)
 CSP = "default-src 'self'"
 # The private Cache-Control a route may set instead of no-store: the project images
 # (images.HEADERS) and the avatars, revalidated on every use (avatars.HEADERS); and a reader's
@@ -64,10 +78,11 @@ ROUTE_CACHE = frozenset(
         b"private, no-store",
     }
 )
-# The answers a visitor without a session may cache: the badge and the instance's landing
-# page (§16.7).
+# The answers a visitor without a session may cache: the badge, the instance's landing page
+# (§16.7), the sign-in pages and what a visitor's dashboard reads of a public page (§16.9).
 PUBLIC_PATHS = re.compile(
-    r"/badge/(?:[^/]+/)?[^/]+\.svg|/api/v1/landing|/api/v1/legal"
+    r"/badge/(?:[^/]+/)?[^/]+\.svg|/api/v1/landing|/api/v1/legal|/api/v1/auth/pages/[^/]+"
+    r"|/api/v1/public/pages/.+"
     r"|/|/(?:impressum|privacy|terms)(?:/[^/]+)?"
 )
 # The two plain files a crawler asks for (§16.7), cached for an hour.
@@ -76,6 +91,24 @@ SEO_PATHS = re.compile(r"/robots\.txt|/sitemap\.xml|/sitemap-\d+\.xml")
 # one asked for under another answers `no-cache` (in ROUTE_CACHE), so a stale link repairs itself.
 LANDING_FILES = re.compile(r"/assets/landing/.+")
 LANDING_FILES_CACHE = b"public, max-age=31536000, immutable"
+
+
+# Not refused during a maintenance window (§16.12): health, the window's own routes, and the
+# sign-in a signed-out admin needs to end it early. Registration is refused like the rest.
+MAINTENANCE_OPEN = re.compile(
+    r"/api/v1/(health|maintenance|admin/maintenance(/end|/changes)?"
+    r"|auth/(login|logout|session|email-link|email-code|second-factor/(verify|email)))"
+    r"|/mail/sign-in/[^/]+"
+)
+# Read only: the web learns from `GET /me` who signed in, so the instance admin finds the
+# full page's End button (§16.12).
+MAINTENANCE_READ = re.compile(r"/api/v1/me")
+# The hub's own server-rendered pages that every caller gets, which answer a small 503 page
+# during a window. `/` and a stored public page are the landing or public page for a visitor
+# only and the app shell for a signed-in reader, so their routes decide (`running_page`);
+# every other address outside the API is the app shell or a static file, and the app shows the
+# full page itself.
+MAINTENANCE_PAGES = re.compile(r"/explore|/for/[^/]+|/join/[^/]+|/r/[^/]+|/mail/.+")
 
 
 class HubMiddleware:
@@ -108,6 +141,9 @@ class HubMiddleware:
                 # app shell of the same address stays `no-cache` (§16.9).
                 public = b"public, max-age=60"
         send = _with_headers(send, public=public)
+
+        if await self._maintenance_refused(scope, receive, send, path):
+            return
 
         if not on_join_host and forge_webhook.matches(scope):
             # Signed, not authenticated, and limited before its body is read (§17.4).
@@ -211,6 +247,40 @@ class HubMiddleware:
         finally:
             _access(scope, status)
 
+    async def _maintenance_refused(
+        self, scope: Scope, receive: Receive, send: Send, path: str
+    ) -> bool:
+        """`503 maintenance` with `Retry-After` while a window runs (§16.12); True when sent."""
+        if MAINTENANCE_OPEN.fullmatch(path):
+            return False
+        if scope.get("method") in ("GET", "HEAD") and MAINTENANCE_READ.fullmatch(path):
+            return False
+        api = path.startswith("/api/")
+        badge = path.startswith("/badge/")
+        if not (api or badge or MAINTENANCE_PAGES.fullmatch(path)):
+            return False  # the app shell and its files: the app shows the full page
+        try:
+            found = await run_in_threadpool(maintenance.window_now, self.engine)
+        except (OperationalError, InterfaceError):
+            return False  # the database's own answer follows on the route
+        if found is None or found["state"] != "running":
+            return False
+        headers = {"Retry-After": str(maintenance.retry_after(found))}
+        if api:
+            details = {k: found[k] for k in ("from", "until", "text")}
+            response: Any = error_response(
+                503, "maintenance", "the hub is in a maintenance window", details, headers
+            )
+        elif badge:
+            from starlette.responses import Response
+
+            response = Response(status_code=503, headers=headers)
+        else:
+            response = maintenance.refusal_page(found)
+        await response(scope, receive, send)
+        _access(scope, 503)
+        return True
+
     def _revoke(self, found: list[credentials.Presented]) -> None:
         with events.transaction(self.engine) as conn:
             revoke_leaked(conn, found)
@@ -240,14 +310,16 @@ def _access(scope: Scope, status: int) -> None:
     from the middleware's first line to here) and the route's pattern (`route=`)."""
     began = scope.get("state", {}).get("began")
     ms = round((time.monotonic() - began) * 1000) if began is not None else 0
-    request_stats.WINDOW.record(status, ms)
+    route = request_stats.route_of(scope)
+    held = scope.get("state", {}).get("held", False)  # set by `deps.wait_of`
+    request_stats.WINDOW.record(status, ms, str(scope.get("method")), "" if held else route)
     access.info(
         "%s %s %s ms=%d route=%s",
         scope.get("method"),
         _logged_path(scope),
         status,
         ms,
-        request_stats.route_of(scope),
+        route,
     )
 
 

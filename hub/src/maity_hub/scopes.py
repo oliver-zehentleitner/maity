@@ -110,8 +110,8 @@ def _granted(trust: str, role: str) -> set[str]:
         return set(_GUEST)
     granted = set(_ROLE_SCOPES[role])
     if role == "proxy":
-        # Until the owner's go per call (`Maity-On-Request`) is in place, a proxy relays
-        # answers and holds no other governance scope, as under the single role.
+        # A proxy relays answers. It holds no other governance scope of its own: the owner's
+        # go opens one for one call (`Maity-On-Request`, `proxy_go`, `Membership.may`).
         return granted | {"requests:answer"}
     if trust in ("owner", "admin"):
         granted |= set(GOVERNANCE)

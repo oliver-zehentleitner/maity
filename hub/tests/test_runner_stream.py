@@ -327,7 +327,7 @@ def test_the_stream_reads_only_what_names_the_runner(
     flow.agent(make_client, owner)  # member_joined, to `all` in maity
     flow.agent(make_client, owner, "elsewhere")
     body = stream(client, runner, f"after={cursor}").json()
-    assert set(body) == {"items", "cursor", "server_time", "superseded"}
+    assert set(body) == {"items", "cursor", "server_time", "superseded", "cli_version"}
     assert [(e["kind"], e["payload"]["project"]) for e in body["items"]] == [
         ("runner_attached", "maintainer/sample")
     ]

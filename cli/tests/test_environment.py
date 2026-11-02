@@ -10,6 +10,7 @@ from typing import Any
 
 import fakehub
 import pytest
+from conftest import posix
 
 from maity import cli, environment, state
 
@@ -29,6 +30,7 @@ def test_ids_are_hashed_per_hub_and_stable(tmp_path: Path) -> None:
     )
 
 
+@posix
 def test_the_secrets_are_private(tmp_path: Path) -> None:
     environment.ids("https://maity.team", tmp_path / "st")
     for path in (environment.HOME_SECRET, tmp_path / "st" / environment.SECRET_FILE):
@@ -36,6 +38,7 @@ def test_the_secrets_are_private(tmp_path: Path) -> None:
         assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
 
 
+@posix
 def test_a_loose_secret_is_not_used(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     environment.ids("https://maity.team", tmp_path / "st")
     (tmp_path / "st" / environment.SECRET_FILE).chmod(0o644)

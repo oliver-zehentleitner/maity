@@ -106,12 +106,15 @@ def test_a_visitor_gets_the_page_with_its_headers_and_no_script(
     assert "<title>Maity</title>" in page and 'content="A hub"' in page
     assert '<link rel="canonical" href="https://hub.example/">' in page
     assert "<h1>Bring your agents</h1>" in page and "Share one project." in page
-    assert 'href="/register">Create your account</a>' in page
+    assert 'href="/register?lang=en">Create your account</a>' in page
     assert "<strong>bold</strong>" in page and "<code>maity join &lt;url&gt;</code>" in page
-    assert "<summary>Why?</summary>" in page and 'href="/login" rel="noopener">reasons</a>' in page
+    assert (
+        "<summary>Why?</summary>" in page
+        and 'href="/login?lang=en" rel="noopener">reasons</a>' in page
+    )
     assert "never shown" not in page  # a section that is not enabled
     assert "Maity, Austria" in page and 'rel="noopener me"' in page  # a Mastodon link
-    assert 'href="/login">Sign in</a>' in page
+    assert 'href="/login?lang=en">Sign in</a>' in page
 
 
 def test_the_operators_words_are_text(owner: flow.Human, make_client: ClientFactory) -> None:
@@ -359,14 +362,36 @@ def test_earlier_versions_stay_readable_also_after_the_page_is_unset(
     new = second["pages"]["terms"]["version"]
     visitor = make_client()
     current = visitor.get("/terms").text
-    assert "<h1>Terms 2</h1>" in current and f'<a href="/terms/{old}">{old}</a>' in current
+    assert "<h1>Terms 2</h1>" in current and old not in current  # no public page lists it
+    assert "Earlier versions" not in current
     earlier = visitor.get(f"/terms/{old}").text
     assert "<h1>Terms 1</h1>" in earlier and "This is an earlier version" in earlier
-    assert f'<a href="/terms/{new}">{new}</a>' in earlier
+    assert f'href="/terms/{new}"' not in earlier and "Earlier versions" not in earlier
     owner.patch(LEGAL, {"terms": None})
     assert visitor.get("/terms").status_code == 404
     assert "<h1>Terms 2</h1>" in visitor.get(f"/terms/{new}").text  # unset, still readable
     assert visitor.get("/terms/2020-01-01T00:00:00Z").status_code == 404
+
+
+def test_the_imprint_serves_no_earlier_versions(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    start = clock.now().replace(microsecond=0)
+    clock.set_source(lambda: start)
+    old = owner.patch(LEGAL, {"imprint": IMPRINT}).json()["pages"]["imprint"]["version"]
+    later = start + timedelta(minutes=1)
+    clock.set_source(lambda: later)
+    saved = owner.patch(LEGAL, {"imprint": {"en": {"title": "Now", "markdown": "two"}}}).json()
+    new = saved["pages"]["imprint"]["version"]
+    assert saved["pages"]["imprint"]["versions"] == [old]  # kept, the admin still sees that
+    visitor = make_client()
+    current = visitor.get("/impressum").text
+    assert "<h1>Now</h1>" in current and "Earlier versions" not in current and old not in current
+    for version in (old, new):
+        answer = visitor.get(f"/impressum/{version}")
+        assert answer.status_code == 404 and answer.json()["error"]["code"] == "not_found"
+    owner.patch(LEGAL, {"imprint": None})
+    assert visitor.get(f"/impressum/{new}").status_code == 404  # unset changes nothing here
 
 
 def test_the_footer_links_the_legal_pages_that_are_set(
@@ -444,3 +469,11 @@ def test_the_language_negotiation(
     offered: list[str], default: str, query: str | None, header: str | None, expected: str
 ) -> None:
     assert render.choose_language(offered, default, query, header) == expected
+
+
+def test_the_links_to_sign_in_and_registration_carry_the_language_served(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    owner.patch(LEGAL, {"imprint": IMPRINT})
+    german = make_client().get("/impressum?lang=de").text
+    assert 'href="/login?lang=de"' in german and 'href="/login"' not in german

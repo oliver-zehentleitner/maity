@@ -1,6 +1,8 @@
 // The swarm statistics (docs/api.md §6.22): the team at work, a section of
 // the project's Overview (§6.11) — who is online now and what each holds,
-// the window's counts per member and in all, the cards done per day — with
+// the team and the board as numbers, the hours agents were online, the
+// window's counts per member and in all, cards and merges per day, the
+// messages — with
 // a 7/30/90-day switch. Everything is derived by the hub; the section only
 // draws it. There is no Swarm tab and no public swarm page: a public
 // project's page carries its reduced numbers (§16.9).
@@ -17,6 +19,9 @@ window.Maity = window.Maity || {};
     ["cards_done", () => M.t("swarm.col.cards_done")], ["reviews_given", () => M.t("swarm.col.reviews_given")],
     ["prs_merged", () => M.t("swarm.col.prs_merged")], ["handovers", () => M.t("swarm.col.handovers")],
   ];
+  // The board's four statuses before a card closes, in the board's order.
+  const BOARD = [["open", () => M.t("board.status.open")], ["in_progress", () => M.t("board.status.in_progress")],
+    ["review", () => M.t("board.status.review")], ["blocked", () => M.t("board.status.blocked")]];
   const MEDIANS = [["claim_to_done_median_seconds", () => M.t("swarm.col.claim_to_done")], ["review_to_done_median_seconds", () => M.t("swarm.col.review_to_done")]];
 
   // A median as people read it; null (fewer than three samples) as –.
@@ -51,6 +56,39 @@ window.Maity = window.Maity || {};
     [["points", points], ["fill", "none"], ["class", "spark-line"]].forEach(([k, v]) => line.setAttribute(k, v));
     box.appendChild(line);
     return box;
+  }
+
+  // The swarm as a whole (§6.22, members only): the team and the board now,
+  // and how many of the last 24 hours had an agent online.
+  function figures(s) {
+    const team = s.team, board = s.board;
+    if (!team && !board) return null;
+    const pair = (label, value) => [h("dt", null, label), h("dd", null, value)];
+    const counted = (k) => M.t("swarm.team.value", { count: team[k], online: team.online[k] });
+    return [
+      team ? h("div", { class: "swarm-figures" }, h("h5", null, M.t("swarm.team.title")),
+        h("dl", null, pair(M.t("swarm.team.agents"), counted("agents")), pair(M.t("swarm.team.humans"), counted("humans")),
+          pair(M.t("swarm.team.instances"), counted("instances")))) : null,
+      board ? h("div", { class: "swarm-figures swarm-board" }, h("h5", null, M.t("swarm.board.title")),
+        h("dl", null, BOARD.map(([k, word]) => pair(word(), String(board[k] || 0))))) : null,
+      s.awake ? h("p", { class: "swarm-awake" }, M.t("swarm.awake", { count: s.awake.hours, of: s.awake.of_hours })) : null,
+    ];
+  }
+
+  // A count beside its line per day, as the cards done are drawn.
+  function perDay(className, said, days) {
+    return h("div", { class: "swarm-per-day " + className }, h("span", null, said), sparkline(days || []));
+  }
+
+  // What the swarm said in the window, and review results per merged PR.
+  function talk(t) {
+    if (!t.messages) return null;
+    const m = t.messages;
+    const per = t.review_results_per_pr;
+    return [
+      h("p", { class: "swarm-messages" }, M.t("swarm.messages", { chat: m.chat, notice: m.notice, review_result: m.review_result, other: m.other })),
+      h("p", { class: "swarm-reviews-per-pr" }, M.t("swarm.review_results_per_pr", { n: per == null ? "–" : M.fmt.number(per, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) })),
+    ];
   }
 
   function switcher(days, onPick) {
@@ -115,6 +153,7 @@ window.Maity = window.Maity || {};
       const t = s.totals || {};
       append(clear(body),
         h("p", { class: "muted" }, M.t("swarm.now", { now: formatTime(s.live_at) }), " · ", M.t("swarm.as_of", { count: s.window_days, as_of: formatTime(s.as_of) })),
+        figures(s),
         h("h4", null, M.t("swarm.live")),
         h("ul", { class: "swarm-live" }, (s.live || []).map((m) => h("li", { class: "swarm-member" + (m.online ? " online" : ""), "data-member": m.member_id },
           h("span", { class: "dot " + (m.online ? "online" : "offline"), "aria-hidden": "true" }),
@@ -127,7 +166,10 @@ window.Maity = window.Maity || {};
               h("a", { href: ctx.link("tasks", c.task_id) }, c.task_id), " " + c.title, h("span", { class: "muted" }, " · ", M.t("swarm.since", { ago: formatAgo(c.since, M.api.now()) })))))
             : null))),
         h("h4", null, M.t("swarm.window.title", { count: s.window_days })),
-        h("div", { class: "swarm-per-day" }, h("span", null, t.cards_done == null ? M.t("swarm.cards_done.unknown") : M.t("swarm.cards_done", { count: t.cards_done })), sparkline(t.cards_done_per_day || [])),
+        perDay("swarm-done", t.cards_done == null ? M.t("swarm.cards_done.unknown") : M.t("swarm.cards_done", { count: t.cards_done }), t.cards_done_per_day),
+        t.cards_created_per_day ? perDay("swarm-created", M.t("swarm.cards_created", { count: t.cards_created }), t.cards_created_per_day) : null,
+        t.prs_merged_per_day ? perDay("swarm-merged", M.t("swarm.prs_merged", { count: t.prs_merged }), t.prs_merged_per_day) : null,
+        talk(t),
         table(s.members || [], t, (r) => memberLink(r.member_id, "@" + (r.name || r.handle))),
         notes(s));
     }

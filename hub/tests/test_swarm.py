@@ -63,7 +63,13 @@ def done(engine: Engine, project_id: str, creator: int, holder: int | None, at: 
 
 
 def event(
-    engine: Engine, project_id: str, kind: str, at: datetime, task: str, payload: Any
+    engine: Engine,
+    project_id: str,
+    kind: str,
+    at: datetime,
+    task: str | None,
+    payload: Any,
+    subject_type: str = "task",
 ) -> None:
     with engine.begin() as conn:
         conn.execute(
@@ -71,7 +77,7 @@ def event(
                 project_id=project_id,
                 kind=kind,
                 at=at,
-                subject_type="task",
+                subject_type=subject_type,
                 subject_id=task,
                 audience=["all"],
                 payload=payload,
@@ -206,7 +212,7 @@ def test_a_merge_not_read_as_public_is_not_counted(
     public: bool | None,
 ) -> None:
     """§11.4: data read while the repository was private, or before the hub said, never
-    reaches the page without sign-in, not even as a count."""
+    reaches the page without sign-in, not even as a count; a member reads it."""
     a = flow.agent(make_client, owner)
     creator = membership_of(migrated, owner.id)
     task = card(migrated, project_id, creator, claim_holder=membership_of(migrated, a.id))
@@ -218,7 +224,114 @@ def test_a_merge_not_read_as_public_is_not_counted(
     if public is not None:
         payload["public"] = public
     event(migrated, project_id, "link_observed", NOW - timedelta(days=1), task, payload)
-    assert page(owner)["totals"]["prs_merged"] == 0
+    assert page(owner)["totals"]["prs_merged"] == 1
+    with migrated.connect() as conn:
+        window = swarm.CACHE.get(conn, project_id)
+    assert (
+        swarm.fold(window, {}, days=30, include=lambda _: True, public_only=True)["totals"][
+            "prs_merged"
+        ]
+        is None
+    )
+
+
+def ticker_merge(
+    engine: Engine, project_id: str, number: int, tasks: list[str], *, public: bool | None
+) -> None:
+    merge: dict[str, Any] = {"pr": number, "merged_at": "2026-10-20T00:00:00Z"}
+    if public is not None:
+        merge["public"] = public
+    url = f"https://github.com/oliver-zehentleitner/maity/pull/{number}"
+    event(
+        engine, project_id, "ticker", NOW - timedelta(days=1), None,
+        {"type": "merge", "merge": merge, "url": url, "tasks": tasks},
+        subject_type="pull_request",
+    )  # fmt: skip
+
+
+def public_prs(engine: Engine, project_id: str) -> Any:
+    swarm.CACHE.clear()
+    with engine.connect() as conn:
+        window = swarm.CACHE.get(conn, project_id)
+    return swarm.fold(window, {}, days=30, include=lambda _: True, public_only=True)["totals"][
+        "prs_merged"
+    ]
+
+
+def test_a_merge_on_a_report_counts_through_the_ticker_for_its_cards_holder(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, project_id: str
+) -> None:
+    """Most pull requests are on reports, not on links: the 0 of the public page."""
+    a = flow.agent(make_client, owner)
+    creator = membership_of(migrated, owner.id)
+    task = card(migrated, project_id, creator, claim_holder=membership_of(migrated, a.id))
+    ticker_merge(migrated, project_id, 12, [task], public=True)
+    ticker_merge(migrated, project_id, 13, [], public=None)  # from before the flag
+    found = page(owner)
+    assert found["totals"]["prs_merged"] == 2 and row(found, a.id)["prs_merged"] == 1
+
+
+def test_a_public_page_counts_a_link_event_only_while_the_repository_is_public(
+    owner: flow.Human, migrated: Engine, project_id: str
+) -> None:
+    """§11.4: only while the last check found it public, as for the ticker."""
+    task = card(migrated, project_id, membership_of(migrated, owner.id))
+    payload = {
+        "new": {"found": True, "title": "x", "state": "merged"},
+        "forge_url": "https://github.com/oliver-zehentleitner/maity/pull/12",
+        "task_id": task,
+        "public": True,
+        "read_via": "instance",
+    }
+    event(migrated, project_id, "link_observed", NOW - timedelta(days=1), task, payload)
+    assert public_prs(migrated, project_id) is None
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.project).where(t.project.c.id == project_id).values(repository_public=True)
+        )
+    assert public_prs(migrated, project_id) == 1
+
+
+@pytest.mark.parametrize("read_via", [None, "app", "owner_token"])
+def test_a_public_page_counts_a_link_event_the_read_found_public_whoever_read_it(
+    owner: flow.Human, migrated: Engine, project_id: str, read_via: str | None
+) -> None:
+    """§11.4: the bare count may come from a read through an owner's grant, as long as that read
+    found the repository public; only the number reaches the page."""
+    task = card(migrated, project_id, membership_of(migrated, owner.id))
+    payload: dict[str, Any] = {
+        "new": {"found": True, "title": "x", "state": "merged"},
+        "forge_url": "https://github.com/oliver-zehentleitner/maity/pull/12",
+        "task_id": task,
+        "public": True,
+    }
+    if read_via is not None:
+        payload["read_via"] = read_via
+    event(migrated, project_id, "link_observed", NOW - timedelta(days=1), task, payload)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.project).where(t.project.c.id == project_id).values(repository_public=True)
+        )
+    assert public_prs(migrated, project_id) == 1
+
+
+def test_a_public_page_counts_a_ticker_merge_only_if_flagged_and_the_repository_is_public(
+    owner: flow.Human, migrated: Engine, project_id: str
+) -> None:
+    ticker_merge(migrated, project_id, 13, [], public=None)
+    ticker_merge(migrated, project_id, 14, [], public=False)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.project).where(t.project.c.id == project_id).values(repository_public=True)
+        )
+    assert public_prs(migrated, project_id) is None  # a line with 0 would say nothing was merged
+    ticker_merge(migrated, project_id, 12, [], public=True)
+    assert public_prs(migrated, project_id) == 1
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.project).where(t.project.c.id == project_id).values(repository_public=False)
+        )
+    assert public_prs(migrated, project_id) is None
 
 
 def test_the_medians_pool_durations_and_need_three_samples(
@@ -349,3 +462,93 @@ def test_one_pull_request_is_one_key_however_its_url_is_written() -> None:
     a = swarm.pull_key("https://github.com/Oliver-Zehentleitner/Maity/pull/12")
     b = swarm.pull_key("https://github.com/oliver-zehentleitner/maity/pulls/12")
     assert a == b == "github.com/oliver-zehentleitner/maity#12"
+
+
+def presence(engine: Engine, membership_id: int, minute: datetime) -> None:
+    with engine.begin() as conn:
+        conn.execute(insert(t.presence_minute).values(membership_id=membership_id, minute=minute))
+
+
+def test_team_and_board_are_read_now(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, project_id: str
+) -> None:
+    agent = flow.agent(make_client, owner)
+    flow.agent(make_client, owner)
+    listening.opened(agent.resume().json()["session"]["id"])
+    creator = membership_of(migrated, owner.id)
+    for status in ("open", "open", "in_progress", "review", "blocked", "done", "cancelled"):
+        card(migrated, project_id, creator, status=status)
+    found = page(owner)
+    assert found["team"] == {
+        "agents": 2, "humans": 1, "instances": 2,
+        "online": {"agents": 1, "humans": found["team"]["online"]["humans"], "instances": 1},
+    }  # fmt: skip
+    assert found["board"] == {"open": 2, "in_progress": 1, "review": 1, "blocked": 1}
+    card(migrated, project_id, creator, status="review")
+    assert page(owner)["board"]["review"] == 2  # never cached
+
+
+def test_cards_created_and_merges_per_day_count_in_the_window(
+    owner: flow.Human, migrated: Engine, project_id: str
+) -> None:
+    creator = membership_of(migrated, owner.id)
+    card(migrated, project_id, creator, created_at=NOW - timedelta(days=1))
+    card(migrated, project_id, creator, created_at=NOW - timedelta(days=1), status="cancelled")
+    card(migrated, project_id, creator, created_at=NOW - timedelta(days=40))
+    pull = "https://github.com/maintainer/maity/pull/"
+    for number, days in ((1, 0), (2, 2), (3, 2)):
+        event(migrated, project_id, "ticker", NOW - timedelta(days=days), str(number), {
+            "type": "merge", "url": pull + str(number), "tasks": [],
+            "merge": {"pr": number},
+        }, subject_type="pull_request")  # fmt: skip
+    totals = page(owner, days=7)["totals"]
+    assert totals["cards_created"] == 2
+    per_day = {r["date"]: r["count"] for r in totals["cards_created_per_day"]}
+    assert len(per_day) == 7 and per_day["2026-10-24"] == 2 and sum(per_day.values()) == 2
+    merged = {r["date"]: r["count"] for r in totals["prs_merged_per_day"]}
+    assert merged["2026-10-25"] == 1 and merged["2026-10-23"] == 2 and sum(merged.values()) == 3
+
+
+def test_messages_count_by_type_and_review_results_per_merged_pr(
+    owner: flow.Human, migrated: Engine, project_id: str
+) -> None:
+    kinds = ["chat", "chat", "notice", "review_result", "review_result", "update", "blocker"]
+    for kind in kinds:
+        event(migrated, project_id, "message", NOW - timedelta(hours=1), None, {"type": kind})
+    event(migrated, project_id, "message", NOW - timedelta(days=40), None, {"type": "chat"})
+    totals = page(owner)["totals"]
+    assert totals["messages"] == {"chat": 2, "notice": 1, "review_result": 2, "other": 2}
+    assert totals["review_results_per_pr"] is None  # no merged pull request
+    event(migrated, project_id, "ticker", NOW, "1", {
+        "type": "merge", "url": "https://github.com/maintainer/maity/pull/1", "tasks": [],
+        "merge": {"pr": 1},
+    }, subject_type="pull_request")  # fmt: skip
+    swarm.CACHE.clear()
+    assert page(owner)["totals"]["review_results_per_pr"] == 2.0
+
+
+def test_awake_counts_the_last_24_full_hours_with_an_agent_online(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = membership_of(migrated, flow.agent(make_client, owner).id)
+    other = membership_of(migrated, flow.agent(make_client, owner).id)
+    human = membership_of(migrated, owner.id)
+    presence(migrated, agent, NOW - timedelta(hours=1, minutes=-5))  # 11:05, hour 11
+    presence(migrated, other, NOW - timedelta(minutes=50))  # 11:10, the same hour
+    presence(migrated, agent, NOW - timedelta(hours=5))  # 07:00
+    presence(migrated, agent, NOW - timedelta(hours=24))  # 12:00 yesterday, the first hour
+    presence(migrated, agent, NOW - timedelta(hours=25))  # before the 24 hours
+    presence(migrated, agent, NOW)  # the current hour has not run in full
+    presence(migrated, human, NOW - timedelta(hours=3))  # a human is no agent
+    assert page(owner)["awake"] == {
+        "hours": 3, "of_hours": 24, "since": "2026-10-24T12:00:00Z",
+    }  # fmt: skip
+
+
+def test_a_public_page_gets_none_of_the_swarm_as_a_whole(
+    owner: flow.Human, migrated: Engine, project_id: str
+) -> None:
+    found = swarm.CACHE.get(migrated.connect(), project_id)
+    folded = swarm.fold(found, {}, days=30, include=lambda _m: True, public_only=True)
+    assert not {"cards_created", "messages", "prs_merged_per_day"} & set(folded["totals"])
+    assert {"team", "board", "awake"}.isdisjoint(folded)

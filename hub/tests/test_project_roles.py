@@ -250,3 +250,15 @@ def test_the_onboardings_check_in_with_keeps_the_role_in_use(owner: flow.Human) 
     )
     assert response.status_code == 200, response.text
     assert put(owner, []).json()["error"]["details"]["uses"] == ["check_in_with"]
+
+
+def test_an_open_cards_needs_keeps_the_role_in_use(owner: flow.Human) -> None:
+    put(owner, [LEGAL])
+    made = owner.post(f"{BASE}/tasks", {"title": "Check it", "needs": "legal"})
+    assert made.status_code == 201, made.text
+    refused = put(owner, [])
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["error"]["details"]["uses"] == ["card"]
+    closed = owner.patch(f"{BASE}/tasks/{made.json()['id']}", {"status": "cancelled"})
+    assert closed.status_code == 200, closed.text
+    assert put(owner, []).status_code == 200

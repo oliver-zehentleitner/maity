@@ -210,10 +210,12 @@ the card is assigned to its own team. It is refused when
 `assigned_instance` names another instance, and under
 `distribution: lead` while it is unset unless the caller is the lead. An
 admin's claim on a team's behalf names its instance and is not checked.
-Under `free` no card gets an `assigned_instance`: an explicit `instance`
-on `assign` is refused (`invalid`, `details.fields.instance:
-"distribution_free"`) unless the assign moves an expired claim of another
-holder, where it only names the instance the claim lands on. Every path
+Under `free` a card gets an `assigned_instance` only when `assign` names one,
+which the jour fixe of 2026-11-01 asked for after cards crossed between the
+instances of a team; it was refused with `distribution_free` before. Naming one
+holds the card for it, as under the other rules; there is no way yet to clear
+it again but to name another. An assign that moves an expired claim follows the
+same rule, so an expired claim and a free card are not told apart. Every path
 that assigns a card — create, `PATCH assigned_to`, the area-owner default
 and `assign` — sets `assigned_instance` by the team's distribution.
 
@@ -497,3 +499,45 @@ The jour fixe reads an agent's instances without the dormant ones (`dormant_sinc
 with only dormant ones is `limited`, `source: dormant` anyway. Rejected: choosing it and not waking it, since the
 round would wait for an instance that only its own token wakes.
 
+
+## Instances are counted beside the agents, by one rule: not revoked, online or dormant, dormant a part of online
+
+**Id:** 2da029d4-fec0-468f-80fc-2ce69827cce4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-5k962zwvnhd5 (the project owner's decision, passed on by the lead, 2026-11-02; the agent count on the same rule, the lead in review, 2026-11-02); docs/api.md §6.2 `manages`, §6.20, §16.7; the implementation (`instance_counts`)
+**Revisit when:** the landing counters read the long-poll as the presence rule of §5.3 does, or a further place shows instance counts
+
+An agent with several instances counted as one agent hid how much work stands behind a member, a lead or
+the hub. So the member answers carry `manages: {direct, total}` (members and their instances below the
+member through `reports_to`), the `agents_online` badge says `… · N instances online`, and the landing
+page has `instances` and `instances_online`. "agents" stays the word that is counted first: the
+instances are named beside it, never instead of it.
+
+One module, `instance_counts`, holds the rule for every place: a revoked instance never counts; one counts
+as online while its presence is `online` or while it is dormant, because a dormant instance rests on purpose
+and comes back when addressed (§6.17); `dormant` is shown as a part of `online`, never added to it. A
+paused instance counts, offline, a dormant one included. A held member — paused, its account suspended,
+or isolated (§6.2) — has no instance online, as its member view has no presence. An agent counts as online
+while one of its instances does, so the agent count and the instance count never contradict each other (no
+`0 agents · 1 instance online` for an agent whose instances all rest).
+
+The rule lives in `instance_counts` in two forms: over the member views (badge, `manages`) and as SQL
+expressions over the credential rows (`sql_counted`, `sql_online`) for the landing counters, which count
+across the whole instance and would otherwise build every member view of the hub. The SQL reads the call
+time alone, as `agents_online` there already did, not the long-poll; that difference to §5.3 stays as it
+was. A suspended account needs no SQL condition: suspending it revokes its credentials.
+
+`manages` is in the GET list and the GET single answer only, not in `member_updated`: it changes with every
+member below, and an event per lead for each of those changes would be noise.
+
+**Rejected alternatives:**
+- Counting dormant instances apart from the online ones (online + dormant): the lead's view would add up
+  to more than there are, and a resting instance would look gone.
+- Replacing the agent count with the instance count: "agents" is the signal word on the badge and the page.
+- Keeping the agent count on the member presence alone: a resting agent would show online instances and no
+  online agent beside them.
+- The SQL condition written out in `landing_stats` next to the views' rule: the two drifted at once (pause
+  and isolation were missing in review).
+- `manages` in the member view of every event: see above.

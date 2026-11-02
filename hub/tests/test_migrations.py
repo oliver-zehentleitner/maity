@@ -665,6 +665,32 @@ def test_the_states_before_2026_10_27_are_mapped_once(engine: Engine) -> None:
     assert states()[ids["freeze"]] == "freeze" and states()[ids["accepted"]] == "archived"
 
 
+def test_the_org_alias_downgrade_drops_what_the_old_check_cannot_hold(engine: Engine) -> None:
+    from datetime import UTC, datetime
+
+    from sqlalchemy import insert, text
+
+    from maity_hub import tables as t
+
+    migrate(engine)
+    now = datetime(2026, 11, 1, tzinfo=UTC)
+    with engine.begin() as conn:
+        conn.execute(
+            insert(t.human).values(
+                id="hum-o", handle="o", display_name="O", password_hash="x", created_at=now
+            )
+        )
+        conn.execute(
+            insert(t.org).values(id="org-o", handle="new", display_name="O", created_at=now)
+        )
+        for values in ({"org_id": "org-o", "handle": "old"}, {"human_id": "hum-o", "handle": "p"}):
+            conn.execute(insert(t.handle_alias).values(**values, scope="human", created_at=now))
+    downgrade(engine, _before(engine, "20261101050000_org_alias"))
+    with engine.connect() as conn:
+        left = conn.execute(text("SELECT handle FROM handle_alias")).scalars().all()
+    assert left == ["p"]
+
+
 def test_a_project_with_a_found_release_tag_is_released_by_0097(engine: Engine) -> None:
     """0097 (§6.1): `released_at` from the earliest found tag of a release; a missing tag,
     a tag of no release and a project without either stay `null`."""
@@ -775,7 +801,7 @@ def test_an_older_setup_gets_the_ci_and_dashboard_options_as_not_chosen(engine: 
             update(t.project).where(t.project.c.id == without).values(setup={**old, "cards": None})
         )
         conn.execute(update(t.project).where(t.project.c.id == none).values(setup=None))
-    migrate(engine)
+    migrate(engine, "0107")
     added = {"keep_the_why_ci": False, "keep_the_why_dashboard": False, "dashboard_path": None}
     with engine.connect() as conn:
         found = dict(conn.execute(select(t.project.c.id, t.project.c.setup)).all())
@@ -787,6 +813,46 @@ def test_an_older_setup_gets_the_ci_and_dashboard_options_as_not_chosen(engine: 
         found = dict(conn.execute(select(t.project.c.id, t.project.c.setup)).all())
     assert found[with_cards] == {**old, "cards": ["tsk-1"]}
     assert found[none] is None
+
+
+def test_a_project_without_setup_gets_nothing_chosen_and_rounds_lose_their_mode(
+    engine: Engine,
+) -> None:
+    """20261101060000: a null `setup` becomes every option off and no cards, a chosen one
+    stays, the column refuses null; `mode` goes and the downgrade brings it back as `chat`."""
+    from sqlalchemy import inspect, select, update
+    from sqlalchemy.exc import IntegrityError
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    migrate(engine)
+    empty = factory.project(engine, "empty")
+    chosen = factory.project(engine, "chosen")
+    setup = {"keep_the_why_init": True, "cards": ["tsk-1"]}
+    migrate_to = _before(engine, "20261101060000_setup_round_mode")
+    downgrade(engine, migrate_to)
+    columns = {c["name"]: c for c in inspect(engine).get_columns("jour_fixe_round")}
+    assert columns["mode"]["nullable"] is False
+    with engine.begin() as conn:
+        conn.execute(update(t.project).where(t.project.c.id == empty).values(setup=None))
+        conn.execute(update(t.project).where(t.project.c.id == chosen).values(setup=setup))
+    migrate(engine)
+    with engine.connect() as conn:
+        found = dict(conn.execute(select(t.project.c.id, t.project.c.setup)).all())
+    assert found[empty] == {
+        "keep_the_why_init": False,
+        "keep_the_why_badge": False,
+        "keep_the_why_ci": False,
+        "keep_the_why_dashboard": False,
+        "dashboard_path": None,
+        "maity_badge": False,
+        "cards": [],
+    }
+    assert found[chosen] == setup
+    assert "mode" not in {c["name"] for c in inspect(engine).get_columns("jour_fixe_round")}
+    with pytest.raises(IntegrityError), engine.begin() as conn:
+        conn.execute(update(t.project).where(t.project.c.id == empty).values(setup=None))
 
 
 def test_project_roles_give_every_membership_its_base_and_go_back_to_it(engine: Engine) -> None:
@@ -923,9 +989,17 @@ def test_the_single_schedule_becomes_one_series_with_its_rounds_and_grants(
                 redacted=False,
             )
         )
+        # This revision still has `mode`, which the code's table no longer names.
+        # MariaDB reflects a JSON column as LONGTEXT, so the JSON type is named here.
+        rounds = sa.Table(
+            "jour_fixe_round",
+            sa.MetaData(),
+            *(sa.Column(name, JSON_VALUE) for name in ("steps", "invited", "absent", "posts")),
+            autoload_with=conn,
+        )
         for n, project_id in enumerate((scheduled, by_hand)):
             conn.execute(
-                t.jour_fixe_round.insert().values(
+                rounds.insert().values(
                     id=f"jfx-old{n}",
                     project_id=project_id,
                     status="reported",
@@ -1015,3 +1089,28 @@ def test_an_account_with_a_verified_or_disabled_address_counts_as_having_had_one
             )
         }
     assert flags == {"none": False, "pending": False, "verified": True, "disabled": True}
+
+
+def test_the_mail_factor_downgrade_refuses_while_email_is_stored(engine: Engine) -> None:
+    """Below this revision a stored `email` would silently fall to the environment's policy,
+    which §2.8.8's rule 5 forbids: the operator switches first."""
+    from maity_hub import clock
+    from maity_hub import tables as t
+
+    revision = "20261031191500_mail_factor"
+    migrate(engine)
+    with engine.begin() as conn:
+        conn.execute(
+            t.instance_setting.insert().values(
+                name="sign_in.second_factor", value="email", updated_at=clock.now()
+            )
+        )
+    with pytest.raises(RuntimeError, match="sign_in.second_factor is email"):
+        downgrade(engine, _before(engine, revision))
+    # PostgreSQL and SQLite roll the whole run back; MariaDB cannot roll DDL back, so it stays
+    # at the refusing revision, and the recorded revision has to name the schema it has.
+    stays_at = revision if engine.dialect.name in ("mariadb", "mysql") else head_revision(engine)
+    assert current_revision(engine) == stays_at
+    with engine.begin() as conn:
+        conn.execute(t.instance_setting.delete())
+    downgrade(engine, _before(engine, revision))
