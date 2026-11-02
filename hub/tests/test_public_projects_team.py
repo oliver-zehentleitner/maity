@@ -1,5 +1,5 @@
-"""docs/api.md §16.9, "A project's page": the human members whose own profile is public, the
-agents whose owner's is, and the number of the other agents; the page follows them."""
+"""docs/api.md §16.9, "A project's page": every human member and every agent, named by handle
+whatever their profile says, never only counted; the page follows them."""
 
 from __future__ import annotations
 
@@ -50,43 +50,35 @@ def world(make_client: ClientFactory, migrated: Engine) -> World:
     return World(make_client, migrated)
 
 
-def test_a_member_with_a_private_profile_is_not_on_the_page(world: World) -> None:
-    text = shown(world.anyone)
-    assert "Human anna" not in text and "Human ben" not in text and "Human maintainer" not in text
-    assert "<h2>People</h2>" not in text
-
-
-def test_a_member_appears_with_a_link_to_their_page_when_their_profile_is_public(
+def test_every_member_is_named_with_a_link_to_their_page_whatever_their_profile(
     world: World,
 ) -> None:
-    assert world.anna.patch("/me", {"public_profile": True}).status_code == 200
-    text = shown(world.anyone)
-    assert '<li><a href="/anna">Human anna</a></li>' in text
-    assert "Human ben" not in text
-    # and goes again the moment it turns private
     assert world.anna.patch("/me", {"public_profile": False}).status_code == 200
-    assert "Human anna" not in shown(world.anyone)
-
-
-def test_an_agent_is_shown_only_where_its_owner_s_profile_is_public(world: World) -> None:
     text = shown(world.anyone)
-    assert "<h2>Agents</h2>" not in text and "and 1 more agent</p>" in text
-    assert world.owner.patch("/me", {"public_profile": True}).status_code == 200
+    assert "<h2>People</h2>" in text
+    for handle in ("anna", "ben", "maintainer"):
+        assert f'<li><a href="/{handle}">Human {handle}</a></li>' in text
+
+
+def test_an_agent_is_named_whatever_its_owner_s_profile_says(world: World) -> None:
+    assert world.owner.patch("/me", {"public_profile": False}).status_code == 200
     text = shown(world.anyone)
     agent = world.bot.get("/me").json()["member"]
     assert f"<li>{agent['display_name']} ({agent['handle']})</li>" in text
     assert "more agent" not in text
-    assert world.owner.patch("/me", {"public_profile": False}).status_code == 200
-    again = shown(world.anyone)
-    assert agent["handle"] not in again and "and 1 more agent</p>" in again
 
 
-def test_the_count_of_the_others_is_plural_for_several(
+def test_several_agents_are_all_named_and_none_only_counted(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
     world = World(make_client, migrated)
-    flow.agent(pages(make_client), world.owner, "maity", role="reviewer")
-    assert "and 2 more agents</p>" in shown(world.anyone)
+    second = flow.agent(pages(make_client), world.owner, "maity", role="reviewer")
+    text = shown(world.anyone)
+    for client in (world.bot, second):
+        assert f"({client.get('/me').json()['member']['handle']})</li>" in text
+    assert "more agent" not in text
+    data = world.anyone.get(f"/api/v1/public/pages{PATH}").json()["data"]
+    assert "other_agents" not in data and len(data["agents"]) == 2
 
 
 def test_a_member_who_is_removed_is_off_the_page_at_once(world: World) -> None:
@@ -115,8 +107,6 @@ def test_under_interval_a_removal_is_at_once_and_a_new_entry_waits(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
     world = World(make_client, migrated, public_pages_render="interval")
-    world.anna.patch("/me", {"public_profile": True})
-    assert "Human anna" not in shown(world.anyone)  # a new entry waits for the run
     from maity_hub import public_pages
     from maity_hub.config import Settings
 
@@ -129,8 +119,15 @@ def test_under_interval_a_removal_is_at_once_and_a_new_entry_waits(
         }
     )
     public_pages.render_all(migrated, hub)
-    assert "Human anna" in shown(world.anyone)
-    world.anna.patch("/me", {"public_profile": False})
+    joined = flow.agent(
+        pages(make_client, public_pages_render="interval"), world.owner, "maity", role="reviewer"
+    )
+    handle = joined.get("/me").json()["member"]["handle"]
+    assert f"({handle})" not in shown(world.anyone)  # a new entry waits for the run
+    public_pages.render_all(migrated, hub)
+    assert f"({handle})" in shown(world.anyone) and "Human anna" in shown(world.anyone)
+    removed = world.owner.delete(f"/projects/maintainer/maity/members/{world.anna.id}")
+    assert removed.status_code in (200, 204), removed.text
     assert "Human anna" not in shown(world.anyone)  # taken off at once, whatever the mode
 
 
@@ -158,7 +155,7 @@ def test_an_agent_profile_under_a_hold_is_no_more_named_and_comes_back_with_the_
     path = f"/admin/reports/{made.json()['id']}/resolve"
     assert world.owner.post(path, {"action": "hide"}).status_code == 200
     text = shown(world.anyone)
-    assert f"({agent['handle']})" not in text and "and 1 more agent</p>" in text
+    assert f"({agent['handle']})" not in text and "more agent" not in text
     assert world.owner.post(path, {"action": "dismiss"}).status_code == 200
     assert f"({agent['handle']})" in shown(world.anyone)
 

@@ -637,7 +637,9 @@ must not publish its members by an update.
 
 **Rejected alternatives:**
 - Public by default with an opt-out: publishes people and projects who
-  never decided to be public.
+  never decided to be public. (Overturned by the maintainer: projects are
+  public by default since 2026-10-31 and profiles since 2026-11-02,
+  projects.md 038e685e.)
 - Rendering on every request: the same output at the cost of a render
   per crawler visit; a stored page is enough when it is rebuilt on change.
 - Only rendering on change, without a choice: the maintainer wanted the
@@ -660,6 +662,8 @@ must not publish its members by an update.
   their activity would be published by someone else's choice; they show
   only with their owner's public profile, the rest as a number (the
   separate `swarm_public` switch is gone, see projects.md bfe4c4a6).
+  (Overturned on 2026-11-02: an open project names every agent,
+  `hub/context/public-pages.md` 3da2d551.)
 
 ## A public project shows Overview, Board, Members, Organisation and Why; agents get pages under their owner; a person's links are theirs to show
 
@@ -675,9 +679,11 @@ page at the view's own address: Overview, Board, Members, Organisation
 and Why. Inbox, Chat, Messages and Ticker stay with the members, Runners
 and Settings with the owners. The Board shows each card's id, title,
 status and label, never its body, notes or history, and has no page per
-card. People and agents appear by name only where the person (or the
-agent's owner) has a public profile, otherwise as "a member"/"an agent"
-or an unnamed box. Why shows only what the hub already reads of Keep
+card. People and agents appeared by name only where the person (or the
+agent's owner) had a public profile, otherwise as "a member"/"an agent"
+or an unnamed box; since 2026-11-02 an open project names every member
+by handle and a card has its own page (`hub/context/public-pages.md`,
+3da2d551 and e3bcdf82). Why shows only what the hub already reads of Keep
 the Why (summary, dashboards, attention; never `context/`), and only
 while the repository is public, read with the instance's token — so
 only for a project in the operator's own namespaces (ce611bd9 in

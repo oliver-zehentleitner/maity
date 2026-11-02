@@ -164,10 +164,36 @@ def test_who_is_online_is_counted_and_named_as_the_board_names_them(world: World
     worker.run_once()
     up = snapshot(world)["online"]
     assert up["humans"] >= 1 and "as_of" in up
-    assert all(p["handle"] != "anna" for p in up["named"])  # her profile is not public
-    world.anna.patch("/me", {"public_profile": True})
+    assert any(p["handle"] == "anna" for p in up["named"])
+    world.anna.patch("/me", {"public_profile": False})  # off is not invisible (§16.9)
     worker.run_once()
     assert any(p["handle"] == "anna" for p in snapshot(world)["online"]["named"])
     seen(world, world.anna_member, clock.now() - timedelta(days=1))
     worker.run_once()
     assert all(p["handle"] != "anna" for p in snapshot(world)["online"]["named"])
+
+
+def test_an_away_or_paused_member_is_not_counted_online(world: World, hub: Any) -> None:
+    from maity_hub.views import ONLINE
+
+    worker = public_snapshot.Worker(world.migrated, hub)
+    seen(world, world.anna_member, clock.now())
+    worker.run_once()
+    before = snapshot(world)["online"]["humans"]
+    seen(world, world.anna_member, clock.now() - ONLINE - timedelta(seconds=5))  # away
+    worker.run_once()
+    assert snapshot(world)["online"]["humans"] == before - 1
+    seen(world, world.anna_member, clock.now())
+    with world.migrated.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == world.anna_member)
+            .values(paused_since=clock.now())
+        )
+    worker.run_once()
+    assert snapshot(world)["online"]["humans"] == before - 1
+
+
+def test_a_merge_url_that_is_not_https_is_left_out(world: World) -> None:
+    item(world, {**merge("a merge"), "url": "http://github.com/o/r/pull/1"})
+    assert [e["url"] for e in snapshot(world)["ticker"]] == [None]
