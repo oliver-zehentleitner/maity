@@ -72,8 +72,8 @@ state:
 
 exit codes:
   0 success, 1 error, 2 usage, 3 wait timed out, 4 refused locally, nothing sent,
-  6 wait superseded by another wait of this credential (do not start a second one),
-  130 interrupted (Ctrl-C)
+  5 isolated, 6 wait superseded by another wait of this credential (do not start a
+  second one), 7 the hub is in a maintenance window (never from wait), 130 interrupted
 
 plain HTTP:
   refused except to a hub on loopback; there is no flag to allow it
@@ -733,10 +733,11 @@ def cmd_wait(args: argparse.Namespace) -> int:
     # Every poll leaves the hub POLL_SLACK to answer, half of a short window.
     slack = min(POLL_SLACK, (deadline - time.monotonic()) / 2)
     asked = False
-    cursor = _wait_cursor(session)
     path = session.project_path("events")
-    # A bridge reads for the agent it serves with `for` (§2.3): what that agent's token sees.
-    served = [("for", session.for_member)] if session.for_member else []
+    # Both read inside the loop: under `--for <handle>` they resolve the handle with a call of
+    # its own, which a maintenance window or an outage answers like the poll (§13, §16.12).
+    cursor: Any = None
+    served: list[tuple[str, str]] = []
     backoff = 2.0
     warned = False
     skewed = False
@@ -759,6 +760,11 @@ def cmd_wait(args: argparse.Namespace) -> int:
         started = time.monotonic()
         asked = True
         try:
+            if cursor is None:
+                # A bridge reads for the agent it serves with `for` (§2.3): what that agent's
+                # token sees.
+                served = [("for", session.for_member)] if session.for_member else []
+                cursor = _wait_cursor(session)
             page = session.client.call(
                 "GET",
                 path,

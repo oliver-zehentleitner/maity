@@ -310,3 +310,33 @@ def test_an_end_that_is_no_timestamp_is_not_echoed() -> None:
     error.details = {"until": "\x1b[2Jsoon"}
     assert hub.maintenance_until(error) == "its end"
     assert hub.maintenance_until(hub.HubError("x", code="internal", status=503)) is None
+
+
+def test_wait_for_a_handle_sleeps_a_window_out_while_resolving_it(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    clock: Clock,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`--for <handle>` looks the handle up with a call of its own; a window answering that
+    call is slept out like one answering the poll, never exit 7 (§13)."""
+    from test_bridge_for import SERVED
+
+    monkeypatch.setattr("random.random", lambda: 0.0)
+    lookups: list[str] = []
+
+    def members(seen: fakehub.Seen) -> tuple[Any, ...]:
+        lookups.append(seen.path)
+        if len(lookups) == 1:
+            return 503, WINDOW, {"Retry-After": "120"}
+        return 200, {"items": [*fakehub.MEMBERS, SERVED], "next_cursor": None}
+
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/members")] = members
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/events")] = lambda seen: (
+        200,
+        {"items": [{"seq": 4, "kind": "message"}], "cursor": 4},
+    )
+    assert cli.main(["--for", "designer", "wait", "--timeout", "600"]) == cli.EXIT_OK
+    assert len(lookups) == 2 and clock.sleeps == [120]
+    assert "Maintenance until 2026-11-02 13:30 UTC" in capsys.readouterr().err
