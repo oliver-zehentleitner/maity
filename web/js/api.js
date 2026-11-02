@@ -1798,7 +1798,15 @@ window.Maity = window.Maity || {};
         if ("social" in body) mm.social = body.social === null ? {} : merged;
         if ("links_visible" in body) mm.links_visible = body.links_visible;
       }
-      const profileFields = ["public_profile", "public_bio", "website", "social", "links_visible", "handle"];
+      if ("interface_language" in body) {
+        const chosen = body.interface_language;
+        if (chosen !== null && !FIXTURE_LANGUAGES.some((l) => l.tag === chosen && l.interface)) {
+          fail(400, "invalid", "the request does not validate", path, { fields: { interface_language: "unknown_language" } });
+        }
+        mm.interface_language = chosen;
+        fixtures()["auth-session.json"].member.interface_language = chosen;
+      }
+      const profileFields = ["public_profile", "public_bio", "website", "social", "links_visible", "handle", "interface_language"];
       if (Object.keys(body).length && Object.keys(body).every((k) => profileFields.includes(k))) return meView();
       const fields = {};
       const MEAT = ["meat_proxy", "meat_proxy_lead", "meat_proxy_hands"];

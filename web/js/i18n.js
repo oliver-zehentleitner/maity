@@ -69,23 +69,28 @@ window.Maity = window.Maity || {};
     return "en";
   }
 
+  // One script per language, however many ask while it loads; a failed one may be tried again.
+  const loading = {};
   function load(tag) {
     if (catalogs[tag]) return Promise.resolve(true);
-    return new Promise((resolve) => {
-      const script = window.document.createElement("script");
-      script.src = new URL("i18n/" + tag + ".js", new URL(here, window.location.href)).href;
-      script.onload = () => resolve(!!catalogs[tag]);
-      script.onerror = () => resolve(false);
-      window.document.head.appendChild(script);
-    });
+    if (!Object.hasOwn(loading, tag)) {
+      loading[tag] = new Promise((resolve) => {
+        const script = window.document.createElement("script");
+        script.src = new URL("i18n/" + tag + ".js", new URL(here, window.document.baseURI)).href;
+        script.onload = () => { delete loading[tag]; resolve(!!catalogs[tag]); };
+        script.onerror = () => { delete loading[tag]; resolve(false); };
+        window.document.head.appendChild(script);
+      });
+    }
+    return loading[tag];
   }
 
   // Never rejects: a catalog that cannot be had leaves the page in the language it has.
   let asked = 0;
   async function use(tag) {
     const mine = ++asked;
-    if (tag !== i18n.language && !(await load(tag))) return;
-    if (mine !== asked) return;
+    const loaded = await load(tag);
+    if (!loaded || mine !== asked) return;  // the last one asked for wins
     i18n.language = tag;
     if (window.document && window.document.documentElement) window.document.documentElement.lang = tag;
   }

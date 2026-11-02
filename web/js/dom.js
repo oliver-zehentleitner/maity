@@ -205,8 +205,11 @@ window.Maity = window.Maity || {};
   const nav = window.navigator || {};
   // dom.js also loads where there is no document (web/tools/starter-configs.js).
   const root = typeof document !== "undefined" ? document.documentElement : null;
-  const pageLang = (root && root.getAttribute && root.getAttribute("lang")) || "";
-  const SEND_KEYS = sendKeysFor(/^de\b/i.test(pageLang) ? pageLang : nav.language, nav.platform, nav.userAgent);
+  // Read when shown: the page's language can come after this file has loaded (js/i18n.js).
+  function sendKeys() {
+    const pageLang = (root && root.getAttribute && root.getAttribute("lang")) || "";
+    return sendKeysFor(/^de\b/i.test(pageLang) ? pageLang : nav.language, nav.platform, nav.userAgent);
+  }
   // A device with no keyboard to press them on: touch alone, no hover.
   const touchOnly = () => !!(window.matchMedia && window.matchMedia("(hover: none) and (pointer: coarse)").matches);
   function formOf(el) {
@@ -221,13 +224,13 @@ window.Maity = window.Maity || {};
   // device. The designer's pass on #431: the hint reads as Send's label.
   function showSendKeys(button) {
     if (!button || button.getAttribute("data-send-keys") || touchOnly() || !button.parentNode) return;
-    button.setAttribute("data-send-keys", SEND_KEYS);
+    button.setAttribute("data-send-keys", sendKeys());
     button.setAttribute("aria-keyshortcuts", "Control+Enter Meta+Enter");
     const said = button.getAttribute("title");
-    button.setAttribute("title", (said ? said + " " : (button.textContent || "").trim() + " ") + "(" + SEND_KEYS + ")");
+    button.setAttribute("title", (said ? said + " " : (button.textContent || "").trim() + " ") + "(" + sendKeys() + ")");
     const group = h("span", { class: "send-with-keys" });
     button.parentNode.insertBefore(group, button);
-    append(group, h("span", { class: "send-keys muted", "aria-hidden": "true" }, SEND_KEYS), button);
+    append(group, h("span", { class: "send-keys muted", "aria-hidden": "true" }, sendKeys()), button);
   }
   function sendOnCtrlEnter(field, act, button) {
     field.addEventListener("keydown", (e) => {
@@ -371,5 +374,5 @@ window.Maity = window.Maity || {};
   const dormantOf = (m) => ((m && m.instances) || []).filter((i) => !i.revoked_at && i.dormant);
   const dormantNote = (ctx, m, inst) => M.t("instance.dormant", { address: "@" + (handleOf(ctx, m) || m.handle || m.id) + "#" + inst.id });
 
-  M.dom = { handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, memberRef, instanceHref, memberChip, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, SEND_KEYS, sendKeysFor, showSendKeys, sendOnCtrlEnter };
+  M.dom = { handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, memberRef, instanceHref, memberChip, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, get SEND_KEYS() { return sendKeys(); }, sendKeysFor, showSendKeys, sendOnCtrlEnter };
 })(window.Maity);

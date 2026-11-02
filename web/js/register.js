@@ -10,8 +10,9 @@ window.Maity = window.Maity || {};
 (function (M) {
   const { h, append, clear } = M.dom;
   const PASSWORD_MIN = 12;
-  // The address typed so far: choosing a language draws the form again in it.
-  let typedAddress = "";
+  // What was entered so far: choosing the page's language draws the form again in it.
+  // The passwords are not kept: the person types them again, nothing holds them outside the fields.
+  let kept = { address: "", language: null };
   // The bar of a page without a project: the lockup and the theme.
   function bar(header) {
     append(clear(header), h("div", { class: "bar" }, M.brandTitle ? M.brandTitle() : null,
@@ -56,19 +57,20 @@ window.Maity = window.Maity || {};
       return;
     }
     const address = h("input", { id: "register-address", type: "email", autocomplete: "email", required: true });
-    address.value = typedAddress;
-    typedAddress = "";
+    address.value = kept.address;
     // The two languages of §6.2: this page's, and the one agents write in, which starts as the
     // first of the browser's the hub offers.
+    // The agents' language stays what the person made it, whatever the page's becomes.
+    let pickedLanguage = !!kept.language;
+    const picker = M.languagePicker("register-language", kept.language || "en");
+    kept = { address: "", language: null };
+    picker.select.addEventListener("change", () => { pickedLanguage = true; });
     const site = M.interfacePicker("register-interface", M.i18n.language, false);
     if (site) site.addEventListener("change", async () => {
-      typedAddress = address.value;
+      kept = { address: address.value, language: pickedLanguage ? picker.select.value : null };
       await M.i18n.choose(site.value);
       M.redraw();
     });
-    const picker = M.languagePicker("register-language", M.i18n.language);
-    let pickedLanguage = false;
-    picker.select.addEventListener("change", () => { pickedLanguage = true; });
     M.languages().then((items) => {
       if (!items || pickedLanguage) return;
       const found = M.i18n.fromBrowser(items.filter((l) => l.common).map((l) => l.tag));
