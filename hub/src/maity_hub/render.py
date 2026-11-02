@@ -853,16 +853,20 @@ def text_of(html: str) -> str:
     return " ".join(unescape(_TAG.sub(" ", html)).split())
 
 
-def page_document(*, lang: str, title: str, canonical: str, content: str) -> str:
+def page_document(
+    *, lang: str, title: str, canonical: str, content: str, indexed: bool = True
+) -> str:
     """A public page: its own `<title>`, a `<meta name="description">` from the first 160
-    characters of its text (cut first, then escaped) and the absolute canonical link (§16.9).
-    `content` is the HTML of the page's body, already made of escaped text and elements."""
+    characters of its text (cut first, then escaped) and the absolute canonical link (§16.9);
+    `indexed=False` adds `noindex`. `content` is the HTML of the page's body, already made of
+    escaped text and elements."""
     description = text_of(content)[:DESCRIPTION_MAX]
+    robots = "" if indexed else '<meta name="robots" content="noindex">'
     return _document(
         lang=lang,
         title=title,
         description=description,
-        head=f'<link rel="canonical" href="{escape(canonical, quote=True)}">',
+        head=f'<link rel="canonical" href="{escape(canonical, quote=True)}">{robots}',
         body=f'<main class="wrap">{content}</main>',
         languages=[],
     )

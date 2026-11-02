@@ -105,7 +105,7 @@ MAINTENANCE_OPEN = re.compile(
 MAINTENANCE_READ = re.compile(r"/api/v1/me")
 # The hub's own server-rendered pages that every caller gets, which answer a small 503 page
 # during a window. `/` and a stored public page are the landing or public page for a visitor
-# only and the app shell for a signed-in reader, so their routes decide (`running_page`);
+# only and the app shell for a signed-in reader, so their routes decide (`refusal_page`);
 # every other address outside the API is the app shell or a static file, and the app shows the
 # full page itself.
 MAINTENANCE_PAGES = re.compile(r"/explore|/for/[^/]+|/join/[^/]+|/r/[^/]+|/mail/.+")

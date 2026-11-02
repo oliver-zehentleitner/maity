@@ -9,11 +9,13 @@ maintenance` (`refusal`), and the sweeps that decide on deadlines by themselves 
 
 from __future__ import annotations
 
+import hashlib
 import math
 import threading
 import time
 from collections.abc import Iterable
 from datetime import datetime, timedelta
+from html import escape
 from typing import Any
 
 from sqlalchemy import Connection, Engine, and_, select, update
@@ -131,18 +133,54 @@ def refusal_page(found: dict[str, Any]) -> Any:
     return HTMLResponse(page, status_code=503, headers={"Retry-After": str(retry_after(found))})
 
 
-def running_page(engine: Engine) -> Any | None:
-    """`refusal_page` while a window runs, else None: for the routes that serve a page of the
-    hub's own only to some callers (the landing page and a stored public page go to a visitor;
-    a signed-in reader gets the app shell there, which shows the full page itself)."""
-    found = window_now(engine)
-    return refusal_page(found) if found is not None and found["state"] == "running" else None
-
-
 def retry_after(found: dict[str, Any]) -> int:
     """Seconds until the window's `until`, at least 1."""
     left = (_parse(found["until"]) - clock.now()).total_seconds()
     return max(1, math.ceil(left))
+
+
+# --- the banner of the hub's own pages -----------------------------------------------------
+
+BANNER_STYLE = (
+    "margin:0;padding:.6em 1em;background:#fff4ce;color:#3d2e00;border-bottom:1px solid #e0c060;"
+    "font:15px/1.4 system-ui,sans-serif;text-align:center"
+)
+
+
+def _utc(stamp: str) -> str:
+    """`2026-11-02 13:30` from an RFC 3339 UTC timestamp."""
+    return _parse(stamp).strftime("%Y-%m-%d %H:%M")
+
+
+def banner(found: dict[str, Any] | None) -> str:
+    """The line the hub's own pages carry while a window exists (§16.12), in UTC: the server
+    does not know the reader's time zone. Empty without one. While it runs only the legal
+    pages are served with it; the other pages answer the small 503 page."""
+    if found is None:
+        return ""
+    line = f"Maintenance {_utc(found['from'])}–{_utc(found['until'])} UTC: {found['text']}"
+    return f'<p class="maintenance-banner" role="status" style="{BANNER_STYLE}">{escape(line)}</p>'
+
+
+def with_banner(html: str, found: dict[str, Any] | None) -> str:
+    """`html` with the banner as the first thing in its `<body>`; unchanged without one."""
+    line = banner(found)
+    if not line:
+        return html
+    start = html.find("<body")
+    end = html.find(">", start) if start >= 0 else -1
+    if end < 0:
+        return html
+    return html[: end + 1] + line + html[end + 1 :]
+
+
+def etag(tag: str, found: dict[str, Any] | None) -> str:
+    """A stored page's `ETag` with the banner it is served with: a reader whose cache holds
+    the page without the banner (or with an older window) gets the page again, not a 304."""
+    line = banner(found)
+    if not line:
+        return tag
+    return '"' + hashlib.sha256((tag + line).encode("utf-8")).hexdigest() + '"'
 
 
 # --- changes by the instance admin -------------------------------------------------------

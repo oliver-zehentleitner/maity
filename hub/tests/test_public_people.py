@@ -36,16 +36,17 @@ def shown(client: Any, handle: str = "maintainer") -> str | None:
     return None if "<title>dashboard</title>" in got.text else str(got.text)
 
 
-def test_a_person_is_private_until_they_choose(
+def test_a_new_profile_is_public_and_has_its_page(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
     who = flow.human(pages(make_client), migrated)
     own = who.get("/me").json()["member"]
-    assert (own["public_profile"], own["public_bio"]) == (False, None)
-    assert shown(visitor(make_client)) is None
+    assert (own["public_profile"], own["public_bio"]) == (True, None)
+    text = shown(visitor(make_client))
+    assert text is not None and 'name="robots"' not in text
 
 
-def test_turning_the_page_on_publishes_it_and_off_takes_it_away_at_once(
+def test_a_profile_turned_off_keeps_handle_and_name_out_of_search(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
     who = flow.human(pages(make_client), migrated)
@@ -59,9 +60,17 @@ def test_turning_the_page_on_publishes_it_and_off_takes_it_away_at_once(
     assert "<h1>" in text and "I build agents." in text and "maintainer" in text
     assert '<link rel="canonical" href="https://hub.example/maintainer">' in text
     assert "<title>" in text and "<script" not in text
-    # off: the page is gone in the same call
+    assert "<loc>https://hub.example/maintainer</loc>" in anyone.get("/sitemap.xml").text
+    # off: in the same call the page keeps handle and name only, and leaves search
     assert who.patch("/me", {"public_profile": False}).status_code == 200
-    assert shown(anyone) is None
+    off = shown(anyone)
+    assert off is not None and "maintainer" in off and "I build agents." not in off
+    assert '<meta name="robots" content="noindex">' in off
+    assert anyone.get("/maintainer").headers["x-robots-tag"] == "noindex"
+    assert anyone.get("/maintainer?as=public").headers["x-robots-tag"] == "noindex"
+    assert "<loc>https://hub.example/maintainer</loc>" not in anyone.get("/sitemap.xml").text
+    data = anyone.get("/api/v1/public/pages/maintainer").json()["data"]
+    assert data["bio"] is None and data["projects"] == [] and "website" not in data
     # and a stored bio stays the person's own
     assert who.get("/me").json()["member"]["public_bio"] == "I build agents."
 
@@ -161,13 +170,13 @@ def test_a_deleted_person_has_no_page(
     assert press(pat, token_of(migrated)).status_code == 200
     assert shown(anyone, "pat") is None
     with migrated.connect() as conn:
-        assert conn.execute(select(t.public_page)).all() == []
+        assert conn.execute(select(t.public_page).where(t.public_page.c.path == "/pat")).all() == []
         row = conn.execute(select(t.human).where(t.human.c.id == pat.id)).one()
         assert (row.public_profile, row.public_bio) == (
             False,
             None,
         )  # the text goes with the person
-        assert public_people.targets(conn) == []
+        assert pat.id not in public_people.targets(conn)
 
 
 def test_a_person_waiting_for_approval_has_no_page(
@@ -196,13 +205,15 @@ def test_the_sitemap_lists_the_page_and_the_instance_switch_hides_it(
     assert "dashboard" in make_client().get("/maintainer").text
 
 
-def test_only_people_who_chose_are_targets(migrated: Engine) -> None:
-    factory.human(migrated, "alice")
+def test_every_active_account_is_a_target_whatever_it_chose(migrated: Engine) -> None:
+    alice = factory.human(migrated, "alice")
     bob = factory.human(migrated, "bob")
+    gone = factory.human(migrated, "gone")
     with migrated.begin() as conn:
-        conn.execute(update(t.human).where(t.human.c.id == bob).values(public_profile=True))
+        conn.execute(update(t.human).where(t.human.c.id == bob).values(public_profile=False))
+        conn.execute(update(t.human).where(t.human.c.id == gone).values(deleted_at=clock.now()))
     with migrated.connect() as conn:
-        assert public_people.targets(conn) == [bob]
+        assert public_people.targets(conn) == sorted([alice, bob])
 
 
 def test_a_hidden_profile_cannot_be_made_public_again_until_the_hold_is_lifted(
