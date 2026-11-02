@@ -110,6 +110,7 @@
      "meat_proxy_lead": "boolean",
      "meat_proxy_note": "string",
      "public_bio": "null",
+     "public_presence": "boolean",
      "public_profile": "boolean",
      "social": {
       "object": {}

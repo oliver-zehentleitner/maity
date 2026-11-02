@@ -7736,6 +7736,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const refused = await win.Maity.api.patch("/me", { public_bio: "a\u0001b" }).catch((e) => e);
     await win.Maity.api.patch("/me", { public_profile: false, public_bio: null });
     expect(gone.member.public_profile === true && gone.member.public_bio === "Builds tools." && refused.details.fields.public_bio === "control_character", "public profile: the fixture takes both fields and refuses a control character");
+    const hidden = await win.Maity.api.patch("/me", { public_presence: false });
+    const shown = await win.Maity.api.patch("/me", { public_presence: true });
+    expect(hidden.member.public_presence === false && shown.member.public_presence === true, "online switch: the fixture stores public_presence and answers it");
   }
   expect(byId("ktw-defaults-select").value === "adopt" && text(kdForm()).includes(".keep-the-why"),
     "keep the why: the personal settings read adopt and name the repository's file");
