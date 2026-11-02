@@ -10022,6 +10022,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(/extra_forbidden/.test(text(apBox)) && byId("ap-sign_in-title").value === "Welcome", "auth pages: a key not listed is refused, the editor stays");
     apIo(JSON.stringify({ en: { title: "Loaded", note: "A note" } })); for (let k = 0; k < 6; k++) await tick();
     expect(byId("ap-sign_in-title").value === "Loaded" && byId("ap-sign_in-note").value === "A note", "auth pages: a checked file loads into the editor");
+    // The head of /login: the catalogue's heading at once, the pitch once read, and a failed read leaves the heading.
+    await win.Maity.api.patch("/admin/settings/auth-pages", { default_language: "en", pages: { sign_in: { en: { title: "Welcome", point_1: "One", note: "A **note**" } }, sign_up: {} } });
+    const apHead = win.Maity.authPages.pitch("sign_in", "Sign in");
+    expect(apHead.querySelector(".door-title").textContent === "Sign in", "pitch: the heading is there before the hub answers");
+    for (let k = 0; k < 4; k++) await tick();
+    expect(apHead.querySelector(".door-title").textContent === "Welcome" && apHead.querySelectorAll(".door-points li").length === 1 && !!apHead.querySelector(".door-note"),
+      "pitch: the hub's words replace the heading and add what is set");
+    const apGet = win.Maity.api.get;
+    win.Maity.api.get = () => Promise.reject(new Error("offline"));
+    const apFailed = win.Maity.authPages.pitch("sign_in", "Sign in");
+    for (let k = 0; k < 4; k++) await tick();
+    win.Maity.api.get = apGet;
+    expect(apFailed.querySelector(".door-title").textContent === "Sign in" && !apFailed.querySelector(".door-points"), "pitch: a failed read leaves the heading, with no message");
     btn(main.querySelector("nav.admin-subnav"), "Landing pages").click(); await tick();
     expect(JSON.stringify(subShown()) === JSON.stringify(["admin-landing-page"]), "pages: a sub-tab switches the part " + subShown());
     await go("#/admin/pages/site"); for (let k = 0; k < 6; k++) await tick();
