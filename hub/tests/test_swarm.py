@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 from sqlalchemy import Engine, insert, select, update
+from sqlalchemy import event as sql_event
 
 from maity_hub import clock, listening, swarm
 from maity_hub import tables as t
@@ -512,10 +513,11 @@ def test_cards_created_and_merges_per_day_count_in_the_window(
 def test_messages_count_by_type_and_review_results_per_merged_pr(
     owner: flow.Human, migrated: Engine, project_id: str
 ) -> None:
+    # In the order the hub writes them: `at` never runs backwards against `seq` (§18.2).
+    event(migrated, project_id, "message", NOW - timedelta(days=40), None, {"type": "chat"})
     kinds = ["chat", "chat", "notice", "review_result", "review_result", "update", "blocker"]
     for kind in kinds:
         event(migrated, project_id, "message", NOW - timedelta(hours=1), None, {"type": kind})
-    event(migrated, project_id, "message", NOW - timedelta(days=40), None, {"type": "chat"})
     totals = page(owner)["totals"]
     assert totals["messages"] == {"chat": 2, "notice": 1, "review_result": 2, "other": 2}
     assert totals["review_results_per_pr"] is None  # no merged pull request
@@ -552,3 +554,52 @@ def test_a_public_page_gets_none_of_the_swarm_as_a_whole(
     folded = swarm.fold(found, {}, days=30, include=lambda _m: True, public_only=True)
     assert not {"cards_created", "messages", "prs_merged_per_day"} & set(folded["totals"])
     assert {"team", "board", "awake"}.isdisjoint(folded)
+
+
+def test_a_fact_on_the_day_after_as_of_is_not_shown(
+    owner: flow.Human, migrated: Engine, project_id: str
+) -> None:
+    """`as_of` is taken before the reads: a card or a message written in between, across
+    UTC midnight, falls on the day after the last one shown. It counts tomorrow, and the
+    page does not fail."""
+    creator = membership_of(migrated, owner.id)
+    tomorrow = NOW + timedelta(days=1)
+    done(migrated, project_id, creator, creator, NOW)
+    done(migrated, project_id, creator, creator, tomorrow)
+    card(migrated, project_id, creator, created_at=tomorrow)
+    event(migrated, project_id, "message", tomorrow, None, {"type": "chat"})
+    totals = page(owner)["totals"]
+    assert totals["cards_done"] == 1
+    assert sum(r["count"] for r in totals["cards_done_per_day"]) == 1
+    assert totals["cards_created"] == 2  # the two done cards, created at NOW
+    assert sum(r["count"] for r in totals["cards_created_per_day"]) == 2
+    assert totals["messages"]["chat"] == 0
+    with migrated.connect() as conn:  # the public pages fold the same window (§16.9)
+        found = swarm.window(conn, project_id)
+    folded = swarm.fold(found, {}, days=30, include=lambda m: True, public_only=True)
+    assert folded["totals"]["cards_done"] == 1
+
+
+def test_the_messages_are_read_from_the_window_on_by_seq(
+    owner: flow.Human, migrated: Engine, project_id: str
+) -> None:
+    """No index holds `at`: the read of the messages is bounded by `seq`, after the last
+    message before the window, so it does not walk the project's whole log."""
+    event(migrated, project_id, "message", NOW - timedelta(days=200), None, {"type": "chat"})
+    event(migrated, project_id, "message", NOW - timedelta(days=95), None, {"type": "chat"})
+    event(migrated, project_id, "message", NOW - timedelta(days=2), None, {"type": "notice"})
+    read: list[str] = []
+
+    def seen(conn: Any, cursor: Any, statement: str, params: Any, *_: Any) -> None:
+        if "event.payload" in statement and "event.kind" in statement:
+            read.append(statement)
+
+    sql_event.listen(migrated, "before_cursor_execute", seen)
+    try:
+        with migrated.connect() as conn:
+            found = swarm.window(conn, project_id)
+    finally:
+        sql_event.remove(migrated, "before_cursor_execute", seen)
+    assert [kind for kind, _day in found.messages] == ["notice"]
+    reads = [q for q in read if "event.seq >" in q]
+    assert reads, read  # the messages' read carries the lower bound on seq

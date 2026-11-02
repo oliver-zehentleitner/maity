@@ -127,12 +127,27 @@ def _whole(conn: Connection, project_id: str, since: datetime, found: Window) ->
             )
         ).scalars()
     ]
+    # No index holds `at`; `seq` is in ix_event_project_kind_seq, and `at` never runs
+    # backwards against it within a project (§18.2). So the window starts after the last
+    # message before `since`, found reading back from the newest: only the window's
+    # messages are read, not the project's whole log.
+    before = conn.execute(
+        select(t.event.c.seq)
+        .where(
+            t.event.c.project_id == project_id,
+            t.event.c.kind == "message",
+            t.event.c.at < since,
+        )
+        .order_by(t.event.c.seq.desc())
+        .limit(1)
+    ).scalar()
     # `type` is in the JSON payload: read here, as `_reviews` does, not in SQL.
     for at, payload in conn.execute(
         select(t.event.c.at, t.event.c.payload)
         .where(
             t.event.c.project_id == project_id,
             t.event.c.kind == "message",
+            t.event.c.seq > (before or 0),
             t.event.c.at >= since,
         )
         .execution_options(yield_per=500)
@@ -324,14 +339,19 @@ def fold(
     today = utc_day(found.as_of)
     shown = [today - timedelta(days=n) for n in range(days - 1, -1, -1)]
     cut = shown[0]
+
+    def inside(day: date) -> bool:
+        # A fact written after `as_of` may fall on the next UTC day: it is not shown.
+        return cut <= day <= today
+
     reviews_known = found.reviews_since is not None
-    done = [(m, d) for m, d in found.done if d >= cut]
-    reviews = [(None if m == -1 else m) for m, d in found.reviews if d >= cut]
-    prs = [ms for ms, d in (found.public_prs if public_only else found.prs) if d >= cut]
+    done = [(m, d) for m, d in found.done if inside(d)]
+    reviews = [(None if m == -1 else m) for m, d in found.reviews if inside(d)]
+    prs = [ms for ms, d in (found.public_prs if public_only else found.prs) if inside(d)]
     prs_known = bool(prs) or not public_only
-    handovers = [m for m, d in found.handovers if d >= cut]
-    claim = [(m, s) for m, s, d in found.claim_to_done if d >= cut]
-    review = [(m, s) for m, s, d in found.review_to_done if d >= cut]
+    handovers = [m for m, d in found.handovers if inside(d)]
+    claim = [(m, s) for m, s, d in found.claim_to_done if inside(d)]
+    review = [(m, s) for m, s, d in found.review_to_done if inside(d)]
 
     def counts(of: int | None) -> dict[str, Any]:
         def mine(value: int | None) -> bool:
@@ -381,20 +401,24 @@ def whole(found: Window, folded: dict[str, Any], days: int) -> dict[str, Any]:
     shown = [today - timedelta(days=n) for n in range(days - 1, -1, -1)]
     cut = shown[0]
 
+    def inside(day: date) -> bool:
+        # A fact written after `as_of` may fall on the next UTC day: it is not shown.
+        return cut <= day <= today
+
     def per_day(days_of: list[date]) -> list[dict[str, Any]]:
         counted = {d: 0 for d in shown}
         for day in days_of:
-            if day >= cut:
+            if inside(day):
                 counted[day] += 1
         return [{"date": d.isoformat(), "count": n} for d, n in counted.items()]
 
     messages = dict.fromkeys((*CHAT_TYPES, "other"), 0)
     for kind, day in found.messages:
-        if day >= cut:
+        if inside(day):
             messages[kind if kind in CHAT_TYPES else "other"] += 1
     merged = folded["totals"]["prs_merged"]
     return {
-        "cards_created": sum(1 for d in found.created if d >= cut),
+        "cards_created": sum(1 for d in found.created if inside(d)),
         "cards_created_per_day": per_day(found.created),
         "prs_merged_per_day": per_day([d for _members, d in found.prs]),
         "messages": messages,
