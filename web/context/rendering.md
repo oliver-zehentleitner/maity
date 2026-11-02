@@ -910,7 +910,8 @@ which is a sentence from pieces.
 
 **Id:** ce9ba9bb-087c-44bd-b1af-3a697a7727d3
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 8d1bbe07-94c0-4071-99d5-3d8f342a07a2
 **Evidence:** inferred
 **Source:** agreement with the lead on card tsk-ya56x9gx986r, 2026-11-02
 **Revisit when:** the report is empty and `--strict` is on, or a page's texts come only after a click often enough to hide many
@@ -925,6 +926,33 @@ a translation, and what only a click shows is not walked.
   and it reaches far fewer pages than the fixtures do.
 - A pseudo language in the repository's catalogs: it would be offered to people and need a marking to keep it out.
 - The routes in a list of its own: it would fall behind; those of the smoke test are already kept up.
+
+## The pseudo run is strict; `translate="no"` marks what stays as it is
+
+**Id:** 8d1bbe07-94c0-4071-99d5-3d8f342a07a2
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-33ze4aznv5qj from the lead, 2026-11-02
+**Revisit when:** a page's texts come only after a click often enough to hide many, or fixtures grow so that judging data by their strings lets catalog wording through
+
+`tools/pseudo_run.py --strict` runs in CI's `web-e2e` now, not only with the last language: today's findings were
+cleared, and each language's pull request and each new view would otherwise bring new ones back unseen. What a page
+shows on purpose as it is (an example address, a language's own name on its tab, a technical reason from the browser)
+carries `translate="no"`, which the run skips together with `aria-hidden` decoration. The attribute is HTML's own word
+for it, and browsers' page translation leaves those parts alone too.
+
+What the fixtures say is data: their JSON and the answers `js/api.js` writes itself, minus any literal a view writes as
+well and minus the catalog's texts. Prose under an enum's key (a decision's reason, a release's scope) is data, a bare
+enum value is not, so a raw state still counts. A fixture's text also counts in the pieces a page splits it into at a
+code span or a mention, raw with their stops, so `Keep it;` is data and the button `Keep it` is not. Dates, commits,
+handles with instances, device codes, mail addresses, domains and media types are no words.
+
+**Rejected alternatives:**
+- An allowlist of the texts the run should accept: it would grow with every fixture and hide a real finding in it.
+- Any two words inside a fixture's prose as data: 18 catalog texts such as `in progress` and `not valid` occur in some
+  fixture sentence and would never be reported.
+- A class of our own for "stays as it is": `translate="no"` already means that, also to a browser's translator.
 
 ## One word per thing in the translations
 

@@ -63,10 +63,10 @@ window.Maity = window.Maity || {};
       function draw() {
         const texts = (draft.pages[page] || {})[lang] || {};
         const tabs = h("div", { class: "lp-tabs", role: "group", "aria-label": M.t("auth_pages.languages") }, LANGUAGES.map((l) => h("button", {
-          type: "button", "aria-pressed": String(l === lang), onclick: () => { lang = l; draw(); },
+          type: "button", translate: "no", "aria-pressed": String(l === lang), onclick: () => { lang = l; draw(); },
         }, l)));
         const language = h("select", { id: id("default"), onchange: (e) => { draft.default_language = e.target.value; redrawAll(); } },
-          LANGUAGES.map((l) => h("option", { value: l, selected: l === draft.default_language ? true : null }, l)));
+          LANGUAGES.map((l) => h("option", { value: l, translate: "no", selected: l === draft.default_language ? true : null }, l)));
         const edit = (key, value) => {
           draft.pages[page] = draft.pages[page] || {};
           draft.pages[page][lang] = draft.pages[page][lang] || {};

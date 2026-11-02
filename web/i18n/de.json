@@ -4638,5 +4638,9 @@
     "one": "{count} Eintrag ohne ID wurde übersprungen.",
     "other": "{count} Einträge ohne ID wurden übersprungen."
   },
-  "why.title": "Why"
+  "why.title": "Why",
+  "why.type.decision": "Entscheidung",
+  "why.type.workaround": "Workaround",
+  "why.type.incident": "Vorfall",
+  "why.type.constraint": "Randbedingung"
 }

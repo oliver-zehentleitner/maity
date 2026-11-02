@@ -17082,5 +17082,21 @@
   "why.title": {
     "en": "3b27804ac2ee6218",
     "text": "3b27804ac2ee6218"
+  },
+  "why.type.constraint": {
+    "en": "de0740072b4b7e32",
+    "text": "61feb5d4f9da2edd"
+  },
+  "why.type.decision": {
+    "en": "0807ce842aee5194",
+    "text": "da082d0b9ffa18d6"
+  },
+  "why.type.incident": {
+    "en": "eca7e46dba9d5a4d",
+    "text": "f8464870e62eb0a3"
+  },
+  "why.type.workaround": {
+    "en": "9ca98a86c44a2b28",
+    "text": "0f135bb6ab72585a"
   }
 }
