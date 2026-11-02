@@ -8728,6 +8728,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const maBefore = maPatches.length;
     main.querySelectorAll("button").find((b) => text(b) === "Remove the address").dispatch("click"); for (let k = 0; k < 4; k++) await tick();
     expect(maPatches.length === maBefore && maAsked.startsWith("Remove maintainer@example.org?"), "mail address: removing is asked first, declined nothing is sent");
+    // An address never confirmed: the question does not speak of signing in by mail.
+    const maGet0 = win.Maity.api.get;
+    win.Maity.api.get = (p) => (p === "/me/notification-settings" ? maGet0(p).then((x) => ({ ...x, email: { ...x.email, address: null,
+      address_status: "pending", verified_at: null, pending_address: "fresh@example.net", address_change: null } })) : maGet0(p));
+    await go("#/all"); await go("#/account/notifications"); for (let k = 0; k < 4; k++) await tick();
+    main.querySelectorAll("button").find((b) => text(b) === "Remove the address").dispatch("click"); for (let k = 0; k < 4; k++) await tick();
+    expect(maAsked === "Remove fresh@example.net? Its link stops working, and Maity sends you no mail." && maPatches.length === maBefore,
+      "mail address: removing an address never confirmed asks without speaking of signing in by mail");
+    win.Maity.api.get = maGet0;
+    await go("#/all"); await go("#/account/notifications"); for (let k = 0; k < 4; k++) await tick();
     win.confirm = maConfirm;
     // The removal answered here, so the fixture keeps its confirmed address for what follows.
     win.Maity.api.patch = (p, b) => {
@@ -8741,6 +8751,48 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && text(main.querySelector(".mail-address-state")) === "No mail address yet: Maity sends you no mail."
       && !byId("mail-address-password") && text(maBox()).includes("Address removed."),
       "mail address: removed with the password, then none and no password asked");
+    // When mail goes out (§18.4): a mode per kind, digests' time and day, zone, quiet hours, sign-in
+    // link; only what changed is sent, a kind with only its changed part.
+    win.Maity.api.patch = (p, b) => { maPatches.push([p, JSON.parse(JSON.stringify(b))]); return nlPatch(p, b); };
+    await go("#/all"); await go("#/account/notifications"); for (let k = 0; k < 4; k++) await tick();
+    const mmForm = () => main.querySelector("form.mail-modes-form");
+    const mmSubmit = async () => { mmForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick(); };
+    const mmLast = () => maPatches[maPatches.length - 1][1];
+    expect(mmForm() && ["inbox", "chat", "mention", "security"].map((k) => byId("mail-mode-" + k).value).join() === "immediate,daily,daily,immediate"
+      && byId("mail-mode-chat").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "immediate,hourly,daily,weekly,off"
+      && byId("mail-daily-at").value === "08:00" && byId("mail-weekly-on").value === "mon" && byId("mail-timezone").value === "Europe/Vienna"
+      && !byId("mail-quiet").checked && byId("mail-quiet-from").disabled && byId("mail-sign-in-link").checked
+      && !!byId("mail-content-chat") && !!byId("mail-content-mention") && !byId("mail-content-inbox") && !byId("mail-content-security"),
+      "mail modes: every kind with its mode, five modes each, the digests' time and day, the zone, quiet hours off, the text only for chat and mention");
+    const mmBefore = maPatches.length;
+    await mmSubmit();
+    expect(maPatches.length === mmBefore && text(main.querySelector("section.mail-modes")).includes("Nothing changed"),
+      "mail modes: nothing changed, nothing sent");
+    byId("mail-mode-chat").value = "weekly"; byId("mail-weekly-on").value = "fri"; byId("mail-content-mention").checked = true;
+    await mmSubmit();
+    expect(JSON.stringify(mmLast()) === JSON.stringify({ email: { kinds: { chat: { mode: "weekly" }, mention: { content: true } }, weekly_on: "fri" } })
+      && byId("mail-mode-chat").value === "weekly" && byId("mail-mode-inbox").value === "immediate"
+      && text(main.querySelector("section.mail-modes")).includes("Saved."),
+      "mail modes: only the changed kinds and only their changed parts are sent, the answer shown");
+    byId("mail-quiet").checked = true; byId("mail-quiet").dispatch("change"); byId("mail-quiet-from").value = "25:00";
+    const mmBad = maPatches.length;
+    await mmSubmit();
+    expect(maPatches.length === mmBad && text(byId("mail-quiet-error")) === "A time as HH:MM, from 00:00 to 23:59." && !byId("mail-quiet-from").disabled,
+      "mail modes: a time out of range is refused before sending");
+    byId("mail-quiet-from").value = "23:00"; byId("mail-quiet-to").value = "06:30"; byId("mail-sign-in-link").checked = false;
+    await mmSubmit();
+    expect(JSON.stringify(mmLast()) === JSON.stringify({ email: { quiet_hours: { from: "23:00", to: "06:30" }, sign_in_link: false } }),
+      "mail modes: quiet hours and the sign-in link as set");
+    byId("mail-quiet").checked = false; byId("mail-quiet").dispatch("change");
+    await mmSubmit();
+    expect(JSON.stringify(mmLast()) === JSON.stringify({ email: { quiet_hours: null } }), "mail modes: quiet hours turned off send null");
+    win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("x", 400, "/me/notification-settings", "invalid", { fields: { "email.timezone": "invalid" } }));
+    byId("mail-timezone").value = "Mars/Olympus";
+    await mmSubmit();
+    expect(text(byId("mail-timezone-error")).startsWith("The hub does not know this time zone") && byId("mail-timezone").getAttribute("aria-invalid") === "true",
+      "mail modes: the hub's refusal of the zone is said at the zone");
+    win.Maity.api.patch = (p, b) => { maPatches.push([p, JSON.parse(JSON.stringify(b))]); return nlPatch(p, b); };
+    await win.Maity.api.patch("/me/notification-settings", { email: { kinds: { chat: { mode: "daily" }, mention: { content: false } }, weekly_on: "mon", sign_in_link: true } });
     const maGet = win.Maity.api.get;
     win.Maity.api.get = (p) => (p === "/me/notification-settings" ? maGet(p).then((x) => ({ ...x, mail_available: false })) : maGet(p));
     await go("#/all"); await go("#/account/notifications"); for (let k = 0; k < 4; k++) await tick();

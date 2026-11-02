@@ -13,6 +13,35 @@ window.Maity = window.Maity || {};
 
   // Getters: the words are the catalog's when shown.
   const KINDS = ["inbox", "chat", "mention", "security"];
+  // §18.4: the mode of a kind is its interval; chat and mention may carry the message text.
+  const MAIL_MODES = ["immediate", "hourly", "daily", "weekly", "off"];
+  const MAIL_MODE_LABELS = {
+    get immediate() { return M.t("mail.mode.immediate"); },
+    get hourly() { return M.t("mail.mode.hourly"); },
+    get daily() { return M.t("mail.mode.daily"); },
+    get weekly() { return M.t("mail.mode.weekly"); },
+    get off() { return M.t("mail.mode.off"); },
+  };
+  const MAIL_KIND_LABELS = {
+    get inbox() { return M.t("mail.kind.inbox"); },
+    get chat() { return M.t("mail.kind.chat"); },
+    get mention() { return M.t("mail.kind.mention"); },
+    get security() { return M.t("mail.kind.security"); },
+  };
+  const WITH_CONTENT = ["chat", "mention"];
+  const WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+  const WEEKDAY_LABELS = {
+    get mon() { return M.t("mail.day.mon"); },
+    get tue() { return M.t("mail.day.tue"); },
+    get wed() { return M.t("mail.day.wed"); },
+    get thu() { return M.t("mail.day.thu"); },
+    get fri() { return M.t("mail.day.fri"); },
+    get sat() { return M.t("mail.day.sat"); },
+    get sun() { return M.t("mail.day.sun"); },
+  };
+  const HHMM = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+  // The browser's own zone, proposed where the account still has the hub's default.
+  const browserZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch { return null; } };
   const KIND_LABELS = {
     get inbox() { return M.t("notify.kind.inbox"); },
     get chat() { return M.t("notify.kind.chat"); },
@@ -144,16 +173,13 @@ window.Maity = window.Maity || {};
           if (fields && fields["email.address"]) fail("address", M.t("mail.address.invalid"));
           if (fields && fields.current_password === "required") fail("password", M.t("mail.address.password_required"));
           if (fields && fields.current_password === "mismatch") fail("password", M.t("mail.address.password_wrong"));
-          // A refusal of this session (§2.6.3) is said with its reason; the sessions decide a held change.
-          const reason = err.code === "forbidden" && err.details && err.details.reason;
-          const link = () => ({ link: h("a", { href: "/account/sessions" }, M.t("mail.address.held_link")) });
-          const why = {
-            not_in_good_standing: () => M.tn("mail.address.forbidden.not_in_good_standing", link()),
-            session_too_new: () => M.tn("mail.address.forbidden.session_too_new", link()),
-          }[reason];
-          if (why) {
+          // A session not in good standing may not replace a held change (§2.6.3): said with the
+          // way to the sessions, which decide it. A session too young gets no refusal from a PATCH,
+          // the hub holds its change instead, so that reason never comes here.
+          if (err.code === "forbidden" && err.details && err.details.reason === "not_in_good_standing") {
             status.fail(M.t("notify.not_saved"), { message: "" });
-            append(status.el, why());
+            append(status.el, M.tn("mail.address.forbidden.not_in_good_standing", {
+              link: h("a", { href: "/account/sessions" }, M.t("mail.address.held_link")) }));
           } else {
             status.fail(err.code === "mail_not_configured" ? M.t("mail.address.not_configured") : M.t("notify.not_saved"), err);
           }
@@ -167,7 +193,9 @@ window.Maity = window.Maity || {};
       const remove = email.address || email.pending_address
         ? h("button", { type: "button", class: "secondary danger", onclick: () => {
           // Removing it stops all mail and a sign-in by mail: asked first.
-          if (!window.confirm(M.t("mail.address.remove_confirm", { address: email.address || email.pending_address }))) return;
+          const ask = confirmed ? M.t("mail.address.remove_confirm", { address: email.address })
+            : M.t("mail.address.remove_confirm_pending", { address: email.pending_address || email.address });
+          if (!window.confirm(ask)) return;
           send(null, M.t("notify.saving"));
         } }, M.t("mail.address.remove"))
         : null;
@@ -207,6 +235,137 @@ window.Maity = window.Maity || {};
         ] : null,
         h("div", { class: "actions" }, save, again, remove)),
         status.el);
+    }
+    draw();
+    return box;
+  }
+
+  // When mail goes out (§18.4): a mode per kind, the text for chat and mention, the digests' time
+  // and day in the account's zone, quiet hours and the sign-in link. The page reads the merged
+  // values, so it sends only what was changed here: a kind sent back unchanged would count as
+  // set and no longer follow a changed default.
+  function mailModesForm(settings, saved) {
+    const box = h("section", { class: "mail-modes", "aria-labelledby": "mail-modes-title" });
+    const status = M.statusLine();
+    function draw() {
+      const email = settings.email;
+      const kinds = KINDS.filter((k) => (settings.kinds || []).includes(k) && email.kinds && email.kinds[k]);
+      const modes = {}, contents = {};
+      const rows = kinds.map((k) => {
+        const select = h("select", { id: "mail-mode-" + k, "aria-describedby": "mail-mode-" + k + "-error" },
+          MAIL_MODES.map((v) => h("option", { value: v }, MAIL_MODE_LABELS[v])));
+        select.value = email.kinds[k].mode;
+        modes[k] = select;
+        let content = null;
+        if (WITH_CONTENT.includes(k)) {
+          content = h("input", { type: "checkbox", id: "mail-content-" + k });
+          content.checked = !!email.kinds[k].content;
+          contents[k] = content;
+        }
+        return h("div", { class: "mail-kind" },
+          h("label", { for: select.id }, MAIL_KIND_LABELS[k]), select,
+          content ? h("label", { class: "check", for: content.id }, content, " " + M.t("mail.content")) : null,
+          h("p", { class: "field-error", id: "mail-mode-" + k + "-error", role: "alert" }));
+      });
+      const dailyAt = h("input", { id: "mail-daily-at", type: "time", required: true, "aria-describedby": "mail-daily-at-error" });
+      dailyAt.value = email.daily_at || "";
+      const weeklyOn = h("select", { id: "mail-weekly-on" }, WEEKDAYS.map((d) => h("option", { value: d }, WEEKDAY_LABELS[d])));
+      weeklyOn.value = email.weekly_on || "mon";
+      const zone = h("input", { id: "mail-timezone", type: "text", autocomplete: "off", spellcheck: "false",
+        "aria-describedby": "mail-timezone-hint mail-timezone-error" });
+      zone.value = email.timezone || "";
+      const own = browserZone();
+      const useOwn = own && own !== email.timezone
+        ? h("button", { type: "button", class: "small secondary", onclick: () => { zone.value = own; } }, M.t("mail.timezone.use", { zone: own }))
+        : null;
+      const quiet = h("input", { type: "checkbox", id: "mail-quiet" });
+      quiet.checked = !!email.quiet_hours;
+      const quietFrom = h("input", { id: "mail-quiet-from", type: "time", "aria-describedby": "mail-quiet-error" });
+      const quietTo = h("input", { id: "mail-quiet-to", type: "time", "aria-describedby": "mail-quiet-error" });
+      quietFrom.value = email.quiet_hours ? email.quiet_hours.from : "22:00";
+      quietTo.value = email.quiet_hours ? email.quiet_hours.to : "07:00";
+      const showQuiet = () => { quietFrom.disabled = !quiet.checked; quietTo.disabled = !quiet.checked; };
+      quiet.addEventListener("change", showQuiet);
+      showQuiet();
+      const signIn = h("input", { type: "checkbox", id: "mail-sign-in-link" });
+      signIn.checked = email.sign_in_link !== false;
+      const errors = {
+        daily_at: h("p", { class: "field-error", id: "mail-daily-at-error", role: "alert" }),
+        timezone: h("p", { class: "field-error", id: "mail-timezone-error", role: "alert" }),
+        quiet_hours: h("p", { class: "field-error", id: "mail-quiet-error", role: "alert" }),
+      };
+      const fieldOf = { daily_at: dailyAt, timezone: zone, quiet_hours: quietFrom };
+      const fail = (field, text) => { errors[field].textContent = text; fieldOf[field].setAttribute("aria-invalid", "true"); };
+      const button = h("button", { type: "submit" }, M.t("notify.save"));
+      const form = h("form", {
+        class: "mail-modes-form",
+        novalidate: true,
+        onsubmit: async (e) => {
+          e.preventDefault();
+          if (button.disabled) return;
+          Object.values(errors).forEach((x) => { x.textContent = ""; });
+          Object.values(fieldOf).forEach((x) => x.removeAttribute("aria-invalid"));
+          box.querySelectorAll(".mail-kind .field-error").forEach((x) => { x.textContent = ""; });
+          if (!HHMM.test(dailyAt.value)) { fail("daily_at", M.t("mail.time.invalid")); dailyAt.focus(); return; }
+          if (!zone.value.trim()) { fail("timezone", M.t("mail.timezone.empty")); zone.focus(); return; }
+          if (quiet.checked && !(HHMM.test(quietFrom.value) && HHMM.test(quietTo.value))) { fail("quiet_hours", M.t("mail.time.invalid")); quietFrom.focus(); return; }
+          // Only what differs from the hub's answer; a kind only with the parts that changed.
+          const patch = {};
+          const changedKinds = {};
+          kinds.forEach((k) => {
+            const was = email.kinds[k], part = {};
+            if (modes[k].value !== was.mode) part.mode = modes[k].value;
+            if (contents[k] && contents[k].checked !== !!was.content) part.content = contents[k].checked;
+            if (Object.keys(part).length) changedKinds[k] = part;
+          });
+          if (Object.keys(changedKinds).length) patch.kinds = changedKinds;
+          if (dailyAt.value !== email.daily_at) patch.daily_at = dailyAt.value;
+          if (weeklyOn.value !== email.weekly_on) patch.weekly_on = weeklyOn.value;
+          if (zone.value.trim() !== email.timezone) patch.timezone = zone.value.trim();
+          const hours = quiet.checked ? { from: quietFrom.value, to: quietTo.value } : null;
+          if (JSON.stringify(hours) !== JSON.stringify(email.quiet_hours || null)) patch.quiet_hours = hours;
+          if (signIn.checked !== (email.sign_in_link !== false)) patch.sign_in_link = signIn.checked;
+          if (!Object.keys(patch).length) { status.done(); append(status.el, h("span", { class: "ok" }, M.t("notify.unchanged"))); return; }
+          button.disabled = true;
+          status.busy(M.t("notify.saving"));
+          try {
+            settings = await M.api.patch("/me/notification-settings", { email: patch });
+            saved(settings);
+            draw();
+            status.done();
+            append(status.el, h("span", { class: "ok" }, M.t("notify.saved")));
+          } catch (err) {
+            const fields = (err.code === "invalid" && err.details && err.details.fields) || {};
+            Object.keys(fields).forEach((name) => {
+              const kind = /^email\.kinds\.(\w+)/.exec(name);
+              if (kind && byKind(kind[1])) byKind(kind[1]).textContent = M.t("mail.mode.unknown");
+              if (name === "email.daily_at") fail("daily_at", M.t("mail.time.invalid"));
+              if (name === "email.timezone") fail("timezone", M.t("mail.timezone.unknown"));
+              if (name === "email.quiet_hours") fail("quiet_hours", M.t("mail.time.invalid"));
+            });
+            status.fail(M.t("notify.not_saved"), err);
+            button.disabled = false;
+          }
+        },
+      },
+      h("fieldset", { class: "mail-kinds" }, h("legend", null, M.t("mail.kinds.legend")), rows),
+      h("p", { class: "hint" }, M.t("mail.kinds.hint")),
+      h("label", { for: "mail-daily-at" }, M.t("mail.daily_at")), dailyAt, errors.daily_at,
+      h("label", { for: "mail-weekly-on" }, M.t("mail.weekly_on")), weeklyOn,
+      h("label", { for: "mail-timezone" }, M.t("mail.timezone")), zone,
+      h("p", { class: "hint", id: "mail-timezone-hint" }, M.t("mail.timezone.hint"), useOwn ? " " : null, useOwn), errors.timezone,
+      h("fieldset", { class: "mail-quiet" }, h("legend", null, M.t("mail.quiet.legend")),
+        h("label", { class: "check", for: "mail-quiet" }, quiet, " " + M.t("mail.quiet.on")),
+        h("label", { for: "mail-quiet-from" }, M.t("mail.quiet.from")), quietFrom,
+        h("label", { for: "mail-quiet-to" }, M.t("mail.quiet.to")), quietTo, errors.quiet_hours),
+      h("label", { class: "check", for: "mail-sign-in-link" }, signIn, " " + M.t("mail.sign_in_link")),
+      h("p", { class: "hint" }, M.t("mail.sign_in_link.hint")),
+      button);
+      const byKind = (k) => form.querySelector("#mail-mode-" + k + "-error");
+      append(clear(box),
+        h("h3", { id: "mail-modes-title" }, M.t("mail.modes.title")),
+        email.address && email.verified_at ? null : h("p", { class: "hint mail-modes-unconfirmed" }, M.t("mail.modes.unconfirmed")),
+        form, status.el);
     }
     draw();
     return box;
@@ -275,7 +434,10 @@ window.Maity = window.Maity || {};
       button, languageStatus.el));
     }
     // Mail only where the instance sends it (`mail_available`); the language above stays without it.
-    if (settings.mail_available && settings.email) append(box, mailAddressForm(settings, (now) => { settings = now; }));
+    if (settings.mail_available && settings.email) {
+      append(box, mailAddressForm(settings, (now) => { settings = now; }));
+      append(box, mailModesForm(settings, (now) => { settings = now; }));
+    }
     // Agent instances that stop listening (§5.3, §18.4): how one hears of
     // them and after how long; a project may override the minutes (My settings).
     append(box, notListeningForm(settings, (now) => { settings = now; }));
