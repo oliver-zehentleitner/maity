@@ -15141,7 +15141,6 @@ no membership.
       "project": { "slug": "maity", "full_name": "oliver/maity", "name": "Maity" },
       "actor": { "member_id": "agt-a", "display_name": "Agent A", "avatar_url": "/api/v1/avatars/agt-a?v=1c2d" },
       "title": "Agent A in agent-a",
-      "content": "The exchange now refuses a second redemption; tests are green, can you",
       "target": { "type": "conversation", "id": "agt-a" },
       "url": "https://maity.team/oliver/maity/chat/agt-a",
       "read": false, "redacted": false },
@@ -15351,11 +15350,7 @@ rules that make a position safe to resume from:
   at most 200 characters, text
   only (rendered as text, `web/context/rendering.md`); it never carries
   a request's `summary`, a card's `body`, a report, a checkpoint or a
-  message body. `content` is the one exception, and only on `chat`
-  and `mention` items: the message text as plain text (Markdown not
-  rendered, line breaks folded into spaces), cut at 120 characters,
-  present only when the human's `browser.content` for that kind is
-  `true` (§18.4), else absent. Items carry no `reason`: it named a
+  message body. Items carry no `reason`: it named a
   card relation, and cards make no notification (§18.1). `target` is the object the
   item links to — `request`, `task` (a mention in a card's thread),
   `conversation`, `project` (a mention in a
@@ -15436,8 +15431,7 @@ device; the browser's own permission is per browser and is not stored.
   "not_listening": { "mode": "inbox", "minutes": 60 },
   "browser": {
     "enabled": true,
-    "kinds": { "inbox": true, "chat": true, "mention": true, "security": true },
-    "content": { "chat": false, "mention": false }
+    "kinds": { "inbox": true, "chat": true, "mention": true, "security": true }
   },
   "email": {
     "address": "maintainer@example.org",
@@ -15466,11 +15460,7 @@ device; the browser's own permission is per browser and is not stored.
   browser's permission once, when the human turns it on, and shows the
   browser's answer beside the switch. `kinds` per kind on or off, every
   kind on by default.
-  `content` (`chat`, `mention`; default `false`) makes the hub fill the
-  items' `content` field (§18.2, plain text, at most 120 characters),
-  which the dashboard puts into the browser notification and the
-  operating system may show on a locked screen; without it the item
-  has no `content` and the notification carries the title only.
+  A notification carries the title only, never a message's text.
   `security` here governs only the browser
   pop-up; the item is always in the bell (§18.1).
 - **The kinds.** `kinds` at the top, `browser.kinds` and `email.kinds`
@@ -15770,9 +15760,7 @@ mail.
     and appear as such.
   - **Conversations**: `chat` items as one row per conversation or
     group-chat thread, with its unread count and the newest item's
-    title (§18.1 composes titles; a message's text appears only where
-    the human enabled content for browser notifications, §18.4, and
-    never here otherwise).
+    title (§18.1 composes titles; a message's text never appears here).
   - **Mentions**, newest first.
   - **Account**: the `security` items.
 

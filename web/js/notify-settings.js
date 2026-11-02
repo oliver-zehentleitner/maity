@@ -203,18 +203,10 @@ window.Maity = window.Maity || {};
         box2.addEventListener("change", () => save({ kinds: { [k]: box2.checked } }, toggled(label, box2.checked)));
         return h("label", { class: "check", for: box2.id }, box2, " " + label);
       });
-      const texts = [["chat", M.t("notify.content.chat")], ["mention", M.t("notify.content.mention")]].map(([k, label]) => {
-        const box3 = h("input", { type: "checkbox", id: "notify-content-" + k, disabled: b.enabled ? null : true });
-        box3.checked = !!(b.content && b.content[k]);
-        box3.addEventListener("change", () => save({ content: { [k]: box3.checked } }, toggled(label, box3.checked)));
-        return h("label", { class: "check", for: box3.id }, box3, " " + label);
-      });
       append(clear(body),
         h("label", { class: "check", for: "notify-browser" }, on, " " + M.t("notify.browser.label")),
         h("p", { class: "muted notify-permission" }, Object.hasOwn(PERMISSION, permission) ? PERMISSION[permission] : permission),
         h("fieldset", { class: "notify-kinds" }, h("legend", null, M.t("notify.kinds.legend")), kinds),
-        h("fieldset", { class: "notify-kinds" }, h("legend", null, M.t("notify.content.legend")), texts,
-          h("p", { class: "hint" }, M.t("notify.content.hint"))),
         h("p", { class: "hint" }, M.t("notify.browser.hint")));
     }
     draw();
