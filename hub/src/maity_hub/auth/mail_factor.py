@@ -18,7 +18,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select, true, update
 
-from maity_hub import clock
+from maity_hub import catalog, clock
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from maity_hub.errors import ApiError, rate_limited
@@ -99,49 +99,21 @@ def _body(
     spaced = f"{code[:3]} {code[3:]}"
     where = ip or "?"
     claimed = f"{browser or '?'} / {system or '?'}"
-    if language == "de":
-        how = (
-            "Jemand hat sich mit deinem Passwort angemeldet"
-            if method == "password"
-            else "Eine Anmeldung wurde von einer deiner Sitzungen aus freigegeben"
-        )
-        advice = (
-            "Hast du das nicht getan, hat jemand dein Passwort: ändere es jetzt."
-            if method == "password"
-            else "Hast du das nicht getan, beende die Sitzungen, die du nicht kennst."
-        )
-        opening = f"Hallo {name},\n\n{how}. Zum Abschließen brauchst du den zweiten Faktor.\n\n"
-        use_link = (
-            "Öffne diesen Link in dem Browser, in dem du dich angemeldet hast:\n"
-            f"{link}\n\nOder gib "
-            if link
-            else "Gib "
-        )
-        return (
-            f"{opening}{use_link}diesen Code dort ein: {spaced}\n\n"
-            f"Gesehen am {when} von {where}; der Browser gibt an: {claimed}.\n\n"
-            f"Gib diesen Code niemals weiter: Maity fragt nie danach.\n{advice}\n"
-        )
-    how = (
-        "Someone signed in with your password"
-        if method == "password"
-        else "A sign-in was approved from one of your sessions"
-    )
-    advice = (
-        "If this was not you, someone has your password: change it now."
-        if method == "password"
-        else "If this was not you, end the sessions you do not know."
-    )
-    use_link = (
-        f"Open this link in the browser where you signed in:\n{link}\n\nOr enter "
+    words = catalog.section("factor", language)
+    by_password = method == "password"
+    use = (
+        words["with_link"].format(link=link, code=spaced)
         if link
-        else "Enter "
+        else words["without_link"].format(code=spaced)
     )
-    return (
-        f"Hello {name},\n\n{how}. To finish, the second factor is needed.\n\n"
-        f"{use_link}this code there: {spaced}\n\n"
-        f"Seen at {when} from {where}; the browser claims: {claimed}.\n\n"
-        f"Never give this code to anyone: Maity never asks for it.\n{advice}\n"
+    return words["mail"].format(
+        name=name,
+        how=words["how_password" if by_password else "how_session"],
+        use=use,
+        when=when,
+        where=where,
+        claimed=claimed,
+        advice=words["advice_password" if by_password else "advice_session"],
     )
 
 
@@ -212,7 +184,7 @@ def send(
         kind="sign_in",  # a late code is useless: over its budget it is dropped, not held
         to=address.address,
         human_id=row.human_id,
-        subject="[Maity] Zweiter Faktor" if language == "de" else "[Maity] Second factor",
+        subject=catalog.section("factor", language)["subject"],
         body=body,
     )
     return "sent"
@@ -284,23 +256,15 @@ def send_confirmation(conn: Connection, hub: Settings, row: Any, nonce: str) -> 
             mail_sent_at=clock.now(),
         )
     )
-    german = preferences.text_language(conn, row.human_id) == "de"
+    words = catalog.section("factor", preferences.text_language(conn, row.human_id))
     spaced = f"{code[:3]} {code[3:]}"
     outbox.enqueue(
         conn,
         kind="sign_in",
         to=address.address,
         human_id=row.human_id,
-        subject=(
-            "[Maity] Mail als zweiter Faktor" if german else "[Maity] Mail as the second factor"
-        ),
-        body=(
-            f"Mit diesem Code wird Mail für alle zum zweiten Faktor: {spaced}\n\n"
-            "Hast du das nicht angefordert, ändere nichts und prüfe deine Sitzungen.\n"
-            if german
-            else f"This code makes mail the second factor for everyone: {spaced}\n\n"
-            "If you did not ask for this, change nothing and check your sessions.\n"
-        ),
+        subject=words["confirm_subject"],
+        body=words["confirm_mail"].format(code=spaced),
     )
 
 
