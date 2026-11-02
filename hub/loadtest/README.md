@@ -2,17 +2,18 @@
 
 The plan, its assumptions and its targets are in `hub/context/replicas.md` cac80c88. These scripts
 are never pointed at production: both refuse a target that is not named as a test system, and
-`run.js` refuses the production hosts outright.
+`run.js` refuses `maity.team` and every name under it, so a test system needs a name of its own.
 
 **State:** `sign.js` and the seed are checked by `tests/test_loadtest.py`. `run.js` has passed a
 syntax check only: it has not run under k6 yet. Start with a small local run and expect to fix it.
 
 ## Run
 
-1. Seed, from `hub/`, on the test system's database. The output holds session cookies and signing
-   keys: keep it out of the repository.
+1. Seed from a checkout of `hub/` (it uses `tests/factory.py`) on the test system's database. The
+   output holds session cookies and signing keys: it is created new with mode 0600, never reused,
+   and stays out of the repository.
 
-       LOADTEST_CONFIRMED_TEST_SYSTEM=<database host> MAITY_DATABASE_URL=... \
+       LOADTEST_CONFIRMED_TEST_SYSTEM=<host>:<port>/<database> MAITY_DATABASE_URL=... \
          python loadtest/seed.py --humans 20000 --out /secure/accounts.json
 
 2. Run one scenario per generator. `LOADTEST_TARGETS` lists each pod's address when pods can be

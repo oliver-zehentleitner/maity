@@ -437,8 +437,9 @@ def test_a_mint_on_the_list_does_not_undo_a_removal_found_meanwhile(
     with migrated.begin() as conn:
         conn.execute(update(t.forge_link).values(status="removed"))
         link_id = conn.execute(select(t.forge_link.c.id)).scalar_one()
-        forge_links.set_status(conn, link_id, "active")
-        assert conn.execute(select(t.forge_link.c.status)).scalar_one() == "removed"
+        for late in ("active", "suspended"):
+            forge_links.set_status(conn, link_id, late)
+            assert conn.execute(select(t.forge_link.c.status)).scalar_one() == "removed"
 
 
 def test_without_an_app_nothing_is_linked(human: flow.Human, no_app: None) -> None:

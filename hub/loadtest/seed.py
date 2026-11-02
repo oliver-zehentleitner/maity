@@ -1,7 +1,7 @@
 """Seed the accounts of the load test (hub/context/replicas.md cac80c88) into a test system's
 database, and write what `run.js` needs. Run from `hub/`:
 
-    LOADTEST_CONFIRMED_TEST_SYSTEM=<database host> \
+    LOADTEST_CONFIRMED_TEST_SYSTEM=<host>:<port>/<database> \
     MAITY_DATABASE_URL=... python loadtest/seed.py --humans 20000 --out /secure/accounts.json
 
 The output holds session cookies and signing keys of the test system: keep it out of the repository.
@@ -33,15 +33,19 @@ SLUG = "load"
 
 
 def refusal(database_url: str, confirmed: str | None) -> str | None:
-    """Why this database is not seeded. A socket has no host in the URL's netloc, so a URL
-    without a host confirms by its text, which nobody types by accident."""
-    parts = urlsplit(database_url)
-    if parts.scheme.startswith("sqlite"):
-        return None
-    host = parts.hostname or database_url
-    if confirmed != host:
-        return f"LOADTEST_CONFIRMED_TEST_SYSTEM does not name {host}"
+    """Why this database is not seeded. Every database has to be named, SQLite too, since a hub
+    may run on it in earnest; and by host, port and name, since a host called `db` says nothing."""
+    identity = identity_of(database_url)
+    if confirmed != identity:
+        return f"LOADTEST_CONFIRMED_TEST_SYSTEM does not name {identity}"
     return None
+
+
+def identity_of(database_url: str) -> str:
+    parts = urlsplit(database_url)
+    if parts.hostname is None:
+        return parts.path + (f"?{parts.query}" if parts.query else "")  # a file or a socket
+    return f"{parts.hostname}:{parts.port or ''}{parts.path}"
 
 
 def seed_one(engine: Engine, n: int) -> dict[str, Any]:
@@ -72,7 +76,8 @@ def seed_one(engine: Engine, n: int) -> dict[str, Any]:
 def first_free(engine: Engine) -> int:
     with engine.connect() as conn:
         taken = conn.execute(select(t.human.c.handle).where(t.human.c.handle.like("load-%")))
-        return 1 + max((int(h.removeprefix("load-")) for (h,) in taken), default=-1)
+        numbers = (h.removeprefix("load-") for (h,) in taken)
+        return 1 + max((int(n) for n in numbers if n.isdigit()), default=-1)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -85,11 +90,21 @@ def main(argv: list[str] | None = None) -> int:
     if why is not None:
         print(f"refused: {why}", file=sys.stderr)
         return 2
+    # Created new and only for its owner before anything is seeded: it holds secrets.
+    try:
+        descriptor = os.open(args.out, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        print(f"refused: {args.out} exists", file=sys.stderr)
+        return 2
     engine = create_engine(url)
     start = first_free(engine)
-    humans = [seed_one(engine, start + n) for n in range(args.humans)]
-    args.out.touch(mode=0o600)
-    args.out.write_text(json.dumps(humans))
+    humans: list[dict[str, Any]] = []
+    try:
+        for n in range(args.humans):
+            humans.append(seed_one(engine, start + n))
+    finally:  # what an interrupted seed made is still usable, and still findable
+        with os.fdopen(descriptor, "w") as out:
+            json.dump(humans, out)
     print(f"seeded {len(humans)} humans into {args.out}")
     return 0
 

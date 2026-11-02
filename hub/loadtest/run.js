@@ -22,13 +22,14 @@ const WRITES_PER_SECOND = 670;
 const READS_PER_SECOND = (EVENT_WAITS + BELL_WAITS) / 60;
 const LOGIN_LIMIT = 10; // routes/auth.py, per address and per handle, per minute
 
-const hostOf = (url) => url.replace(/^https?:\/\//, "").split("/")[0].split(":")[0];
+const hostOf = (url) =>
+  url.replace(/^https?:\/\//i, "").split("/")[0].split("@").pop().split(":")[0].toLowerCase().replace(/\.$/, "");
 
 function refuseAnythingButATestSystem() {
   if (PODS.length === 0) throw new Error("LOADTEST_TARGETS names no address");
   for (const pod of PODS) {
     const host = hostOf(pod);
-    if (host === "join.maity.team" || host === "maity.team") throw new Error(`${host} is production`);
+    if (host === "maity.team" || host.endsWith(".maity.team")) throw new Error(`${host} may be production`);
     if (!CONFIRMED.includes(host)) throw new Error(`LOADTEST_CONFIRMED_TEST_SYSTEM does not name ${host}`);
   }
 }
@@ -71,7 +72,9 @@ function signed(account, method, pod, path, pairs, body, params = {}) {
 }
 
 const held = { timeout: `${WAIT + 30}s`, tags: { held: "yes" } };
-const human = () => seeded[(exec.vu.idInTest - 1) % seeded.length];
+// Two waits per human, each on the human's pod; the message goes to the second through the next pod.
+const humanIndex = () => Math.floor((exec.vu.idInTest - 1) / 2) % seeded.length;
+const human = () => seeded[humanIndex()];
 const eventsPath = (h) => `/api/v1/projects/${h.owner}/${h.slug}/events`;
 const pod = (n) => PODS[n % PODS.length];
 
@@ -82,8 +85,9 @@ function latestCursor(account, h, target) {
 
 export function eventWait() {
   const h = human();
-  const account = h.agents[exec.vu.iterationInScenario % 2];
-  const target = pod(exec.vu.idInTest);
+  const addressed = (exec.vu.idInTest - 1) % 2 === 1;
+  const account = h.agents[addressed ? 1 : 0];
+  const target = pod(humanIndex());
   let cursor = latestCursor(account, h, target);
   for (let i = 0; i < 1000; i++) {
     const answer = signed(account, "GET", target, eventsPath(h), [["after", String(cursor)], ["wait", String(WAIT)]], null, held).send();
@@ -95,16 +99,22 @@ export function eventWait() {
     cursor = answer.json("cursor");
     for (const item of answer.json("items") || []) {
       const sent = Number(String((item.payload || {}).body || "").split("sent:")[1]);
-      if (sent) wakeUp.add(Date.now() - sent);
+      if (sent && addressed) wakeUp.add(Date.now() - sent);
     }
   }
 }
 
 export function bellWait() {
   const h = human();
-  const target = pod(exec.vu.idInTest);
+  const target = pod(humanIndex());
   const params = { headers: { Cookie: `maity_session=${h.session}` } };
-  let after = http.get(`${target}/api/v1/me/notifications?limit=0`, params).json("next_after");
+  const first = http.get(`${target}/api/v1/me/notifications?limit=0`, params);
+  if (first.status !== 200) {
+    unexpected.add(1);
+    sleep(1);
+    return;
+  }
+  let after = first.json("next_after");
   for (let i = 0; i < 1000; i++) {
     const answer = http.get(`${target}/api/v1/me/notifications?limit=50&after=${encodeURIComponent(after)}&wait=${WAIT}`, { ...params, ...held });
     if (answer.status !== 200) {
@@ -116,11 +126,12 @@ export function bellWait() {
   }
 }
 
-// The writer's first agent, through the pod before the waiter's: a write and its wake-up on
+// The first agent writes through the pod after its human's, so a write and its wake-up are on
 // different pods as soon as there are two. Clocks: the waiter reads the time this generator wrote.
 export function write() {
-  const h = seeded[exec.scenario.iterationInTest % seeded.length];
-  const target = pod(exec.scenario.iterationInTest);
+  const index = exec.scenario.iterationInTest % seeded.length;
+  const h = seeded[index];
+  const target = pod(index + 1);
   const body = { kind: "message", type: "notice", to: h.agents[1].agent_id, body: `load sent:${Date.now()}` };
   const answer = signed(h.agents[0], "POST", target, eventsPath(h), [], body, { tags: { kind: "write" } }).send();
   if (answer.status !== 201) unexpected.add(1);

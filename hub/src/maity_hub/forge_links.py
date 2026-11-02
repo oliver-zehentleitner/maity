@@ -187,8 +187,8 @@ def set_status(conn: Connection, link_id: str, status: str) -> None:
     row = conn.execute(
         select(t.forge_link).where(t.forge_link.c.id == link_id).with_for_update()
     ).first()
-    if row is None or (status == "active" and row.status == "removed"):
-        return  # a listing that minted before the removal does not undo it
+    if row is None or row.status == "removed":
+        return  # final: a listing that minted before the removal does not undo it
     conn.execute(
         update(t.forge_link)
         .where(t.forge_link.c.id == link_id)

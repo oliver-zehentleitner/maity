@@ -75,8 +75,11 @@ def test_the_scripts_signature_is_the_one_the_hub_expects(
     [
         ("postgresql://u@db.example/maity", None, True),
         ("postgresql://u@db.example/maity", "other.example", True),
-        ("postgresql://u@db.example/maity", "db.example", False),
-        ("sqlite:///x.db", None, False),
+        ("postgresql://u@db.example/maity", "db.example", True),
+        ("postgresql://u@db.example:5433/maity", "db.example:5433/maity", False),
+        ("postgresql://u@db.example/maity", "db.example:/maity", False),
+        ("sqlite:///x.db", None, True),
+        ("sqlite:////tmp/x.db", "//tmp/x.db", False),
     ],
 )
 def test_the_seed_touches_only_a_database_named_as_a_test_system(
@@ -93,6 +96,22 @@ def test_the_seed_refuses_before_it_connects(
     out = tmp_path / "accounts.json"
     assert seed.main(["--humans", "1", "--out", str(out)]) == 2
     assert not out.exists()
+
+
+def test_the_seeds_secrets_go_to_a_new_file_only_its_owner_reads(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    database = tmp_path / "x.db"
+    monkeypatch.setenv("MAITY_DATABASE_URL", f"sqlite:///{database}")
+    monkeypatch.setenv("LOADTEST_CONFIRMED_TEST_SYSTEM", seed.identity_of(f"sqlite:///{database}"))
+    there = tmp_path / "there.json"
+    there.write_text("kept")
+    assert seed.main(["--humans", "0", "--out", str(there)]) == 2
+    assert there.read_text() == "kept"
+    new = tmp_path / "new.json"
+    monkeypatch.setattr(seed, "first_free", lambda engine: 0)
+    assert seed.main(["--humans", "0", "--out", str(new)]) == 0
+    assert new.stat().st_mode & 0o777 == 0o600
 
 
 def test_a_seeded_human_makes_the_calls_of_the_scripts(
