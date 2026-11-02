@@ -594,7 +594,7 @@ def load_catalog(path):
 NOT_PROSE = {"use strict", " · Maity", "Codex", "Hermes", "Kimi Code", "Cline", "Claude Code",
              "⌘+Enter", "Ctrl+Enter", "Strg+Enter", "Control+Enter Meta+Enter",
              "Maity", "GitHub", "GitLab", "Gitea", "HTTP ", "SHA-256 ", "[U+", "?c=", "XXXX-XXXX-XXXX", "de", "staging",
-             "badge ok", "reply primary"}
+             "badge ok", "reply primary", "nofollow ugc"}
 
 
 # What comes before a literal that is code whatever it reads like: a class, an

@@ -8984,6 +8984,41 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   }
   rlTo.push(await win.Maity.api.post("/projects/maintainer/maity/ticker", { type: "note", text: "for the red team", to: ["role:red-team"] }).then(() => "ok", (err) => err.code));
   expect(rlTo.every((x) => x === "ok"), "roles: a message to trust:admin or any role, and a ticker note to role:red-team, are taken " + JSON.stringify(rlTo));
+  // A project of someone else with a public page (§16.9): its views, read-only, from one route.
+  const viAsked = [];
+  const viGet = win.Maity.api.get;
+  const viPages = {
+    "/public/pages/stranger/tool/board": { path: "/stranger/tool/board", kind: "board", data: { columns: [{ status: "open", cards: [{ id: "tsk-1", title: "A <b>card</b>", label: "bug", holder: "member" }] }] } },
+    "/public/pages/stranger/tool": { path: "/stranger/tool", kind: "project", data: { name: "Tool", full_name: "stranger/tool", about: null, state: "active", repository_url: "javascript:alert(1)", links: [], people: [{ name: "Sam", handle: "sam", page: "/sam" }], agents: [], other_agents: 2, statistics: { totals: { cards_done: 3, prs_merged: null } } } },
+  };
+  const viAll = [];
+  win.Maity.api.get = (p) => {
+    viAll.push(p);
+    if (p.startsWith("/public/")) {
+      viAsked.push(p);
+      if (viPages[p]) return Promise.resolve(viPages[p]);
+      return Promise.reject(new win.Maity.api.ApiError("no page", 404, p, "not_found"));
+    }
+    return viGet(p);
+  };
+  const viView = () => main.querySelector("section.view-visitor");
+  await go("#/stranger/tool/board"); for (let k = 0; k < 4; k++) await tick();
+  expect(viView() && viView().getAttribute("data-kind") === "board" && viAsked[0] === "/public/pages/stranger/tool/board"
+    && text(viView()).includes("A <b>card</b>") && text(viView()).includes("A member")
+    && !viView().querySelectorAll("button, input, select, textarea").length,
+    "visitor: the board of a project one is no member of, its text as text, and nothing to press");
+  await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
+  expect(viView() && viView().getAttribute("data-kind") === "project" && text(viView()).includes("Sam")
+    && !viView().querySelectorAll("a").some((a) => /javascript:/.test(a.getAttribute("href") || "")) && text(viView()).includes("Cards done: 3")
+    && !text(viView()).includes("Pull requests merged"),
+    "visitor: the overview, no unsafe link and no counter the hub left empty");
+  expect(!viAll.some((p) => p.startsWith("/projects/stranger")), "visitor: a stranger's public project asks no member route");
+  expect(text(header).length && !header.querySelector(".visitor-sign-in"), "visitor: signed in, the reader's own header stays, with no sign-in link");
+  expect(win.Maity.api.isPublicPath("/public/pages/stranger/tool"), "visitor: the read works after the session ended here");
+  await go("#/stranger/none"); for (let k = 0; k < 4; k++) await tick();
+  expect(!viView() && text(main).includes("You are not a member"), "visitor: no public page: a non-member's error stays");
+  win.Maity.api.get = viGet;
+  await go("#/maintainer/maity/inbox");
   // /<handle> (§6.27, §16.11): the dashboard's own view of a person or an organisation, from GET /people/{handle}.
   const pvAsked = [];
   const pvGet = win.Maity.api.get;
