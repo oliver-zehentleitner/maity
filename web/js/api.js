@@ -1155,8 +1155,6 @@ window.Maity = window.Maity || {};
     const p = c.view.participants.find((x) => x.member_id === memberId);
     return c.items.filter((x) => x.seq > (p ? p.joined_seq : 0));
   }
-  // §9.3 for one project (m[1]: its fixture key), shared by the project's
-  // route and the list across projects.
   // §9.3 pins: the caller's own, "<slug>/<id>", at most 20 across projects.
   function pinsOf() {
     const all = fixtures();
@@ -1193,6 +1191,8 @@ window.Maity = window.Maity || {};
     const band = (c) => (c.unread ? (c.pinned ? 0 : 1) : (c.pinned ? 2 : 3));
     return items.sort((a, b) => band(a) - band(b) || (at(b) > at(a) ? 1 : at(b) < at(a) ? -1 : 0));
   }
+  // §9.3 for one project (m[1]: its fixture key), shared by the project's
+  // route and the list across projects.
   function conversationList(m, path, query) {
     const all = file(m[1], "conversations.json", path);
     const members = file(m[1], "members.json", path).items;

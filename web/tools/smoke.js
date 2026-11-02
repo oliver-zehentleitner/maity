@@ -4246,10 +4246,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(text(main).includes(says) && main.querySelector("form.join-form"), "join: a hand-over the hub refuses is said in words (" + typed + ")");
   }
   joinPosts.length = 0;
-  byId("join-handover").value = " 6001 ";
+  // Written as the page shows a message ("message #6001"), the leading # is no part of the seq.
+  byId("join-handover").value = " #6001 ";
   main.querySelector("form.join-form").dispatch("submit"); await tick(); await tick();
   expect(joinPosts.length === 1 && joinPosts[0][1].briefing === "You review hub/.", "the join sends the briefing, trimmed");
-  expect(joinPosts[0][1].takes_over === "agt-a" && joinPosts[0][1].handover === 6001, "join: takes_over and a message's seq as a number go with a first join");
+  expect(joinPosts[0][1].takes_over === "agt-a" && joinPosts[0][1].handover === 6001, "join: takes_over and a message's seq as a number go with a first join, a leading # dropped");
   win.Maity.api.post = realPost2;
   expect(text(main).includes("maity join https://maity.example/j/FIXTURE") && text(main).includes("shown once"), "paste line shown once");
   expect(text(main).includes("as a message in its clone of the repository") && text(main).includes("install the maity CLI first") && text(main).includes("follows the join page"), "the paste line says where it goes");
@@ -6501,14 +6502,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !main.querySelector(".earlier button"), "group chat: the earlier part is read on demand and put before");
   // Reading along as an agent's owner: no writing, no managing, no removing; the observers named.
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/conversations/cnv-0007"
-    ? gcGet(p).then((v) => Object.assign({}, v, { access: "observer", observers: ["hum-maintainer", "hum-outside"],
+    ? gcGet(p).then((v) => Object.assign({}, v, { access: "observer", observers: ["hum-maintainer", "hum-outside", "agt-unlisted"],
       participants: v.participants.filter((x) => x.member_id !== "hum-maintainer").concat([{ member_id: "hum-ops", kind: "human", handle: "ops", owner_id: null, joined_at: v.created_at }]) }))
     : gcGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/cnv-0007");
   expect(!byId("chat-text") && text(main).includes("You read along as the owner of an agent in this chat") && !main.querySelector(".group-manage")
     && !gcList().querySelectorAll("button").some((b) => b.textContent === "Remove" || b.textContent === "Quote")
-    && text(main.querySelector(".group-observers")).includes("Also read by: you (owner of Agent A, Agent B), an owner outside the project"),
-    "group chat: an owner reads along, writes and manages nothing, and is named as reading along");
+    && text(main.querySelector(".group-observers")).includes("Also read by: you (owner of Agent A, Agent B), an owner outside the project, an agent not listed for you. They read"),
+    "group chat: an owner reads along, writes and manages nothing, and is named as reading along; one owning no agent in it is named alone, an agent the list lacks neutrally "
+    + JSON.stringify(text(main.querySelector(".group-observers"))));
   // A closed chat stays readable and takes nothing.
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/conversations/cnv-0007" ? gcGet(p).then((v) => Object.assign({}, v, { closed_at: "2026-10-22T10:00:00Z", closed_reason: "no_human" })) : gcGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/cnv-0007");
@@ -9813,8 +9815,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && cpRows()[0] === "2026-10-31|main page|none|140|3|1" && cpRows()[1] === "2026-10-31|/for/maintainers|x-h1-w1 (removed)|212|9|4"
     && text(main).includes("Views are approximate") && !main.querySelectorAll("a").some((a) => a.textContent === "Download as CSV"),
     "statistics: the campaign table for the same window, views marked approximate, a code no longer configured marked removed; no CSV link in fixtures " + JSON.stringify(cpRows()));
-  // A fresh instance: zeros, nothing broken.
-  win.Maity.api.get = (p) => (p.startsWith("/admin/statistics")
+  // A fresh instance: zeros, nothing broken; a campaign's counts formatted for the locale as the tiles are.
+  win.Maity.api.get = (p) => (p.startsWith("/admin/statistics/campaigns")
+    ? Promise.resolve({ as_of: "2026-10-25T10:00:00Z", window_days: 7, views_approximate: false,
+      rows: [{ date: "2026-10-25", variant: "default", campaign: null, views: 12345, registrations: 0, activations: 0 }] })
+    : p.startsWith("/admin/statistics")
     ? Promise.resolve({ as_of: "2026-10-25T10:00:00Z", window_days: 7, totals: { humans: 1, humans_pending: 0, agents: 0, projects: 0, instances_online: 0, humans_with_an_agent: 0 },
       days: Array.from({ length: 7 }, (_, i) => ({ date: "2026-10-" + (25 - i), registrations: 0, new_instances: 0, humans_active: i ? 0 : 1, agents_active: 0,
         cards_created: 0, cards_claimed: 0, cards_done: 0, reviews: 0 })), returning: { after_7_days: 0, after_30_days: 0 }, coverage: { reviews_since: null } })
@@ -9822,6 +9827,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(stBox(), "7 days").click(); for (let k = 0; k < 4; k++) await tick();
   expect(stCells("cards_done")[1] === "0" && stCells("humans_active")[1] === "up to 1 a day" && !text(stBox()).includes("Reviews are counted from")
     && stTiles()[0] === "1Humans", "statistics: an empty instance reads zeros");
+  expect(cpRows()[0] === "2026-10-25|main page|none|12,345|0|0", "statistics: a campaign's counts are formatted for the locale " + JSON.stringify(cpRows()));
   win.Maity.api.get = (p) => (p.startsWith("/admin/statistics") ? Promise.reject(new win.Maity.api.ApiError("boom", 500, p, "internal")) : stGet(p));
   btn(stBox(), "30 days").click(); for (let k = 0; k < 4; k++) await tick();
   expect(!stBox().querySelector("li.stat-tile") && text(stBox()).includes("The statistics could not be read: boom"), "statistics: a failed read clears the old counts and says so");
