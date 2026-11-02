@@ -3586,7 +3586,7 @@ window.Maity = window.Maity || {};
       const list = data[key][m[2]] || (data[key][m[2]] = []);
       const who = me().member;
       const note = { id: "nte-f" + String(list.length + 1).padStart(3, "0"), task_id: m[2],
-        author: { member_id: who.id, handle: who.handle, kind: who.kind }, body: text, mentions: [], state: "open", resolution: null, created_at: nowIso() };
+        author: { member_id: who.id, handle: who.handle, kind: who.kind }, body: text, mentions: [], state: "open", resolution: null, edited: null, version: 1, created_at: nowIso() };
       list.push(note);
       card.notes = { open: list.filter((n) => n.state === "open").length, total: list.length };
       return note;

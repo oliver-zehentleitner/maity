@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
 from sqlalchemy import Engine, select
 
 from maity_hub import tables as t
@@ -18,6 +19,8 @@ OLD = "the token is hunter2-old-text"
 
 
 def edit(who: Any, card: dict[str, Any], posted: dict[str, Any], **body: Any) -> Any:
+    """An edit made on the note as `posted` shows it, unless `base_version` says otherwise."""
+    body.setdefault("base_version", posted["version"])
     return who.patch(f"/projects/maintainer/maity/tasks/{card['id']}/notes/{posted['id']}", body)
 
 
@@ -41,7 +44,7 @@ def test_the_author_edits_and_the_old_text_is_in_no_event(
     posted = note(writer, card, OLD).json()
     first = edit(writer, card, posted, body="corrected, see @maintainer")
     assert first.status_code == 200, first.text
-    again = edit(writer, card, posted, body="corrected twice, see @maintainer")
+    again = edit(writer, card, first.json(), body="corrected twice, see @maintainer")
     assert again.status_code == 200, again.text
     shown = again.json()
     assert shown["body"] == "corrected twice, see @maintainer"
@@ -114,14 +117,14 @@ def test_a_redacted_note_is_not_edited_and_a_redaction_reaches_the_edits(
     assert edit(owner, card, posted, body=OLD).status_code == 200
     redacted = owner.post(
         f"/projects/maintainer/maity/tasks/{card['id']}/notes/{posted['id']}/redact",
-        {"reason": "secret"},
+        {"reason": "secret", "base_version": 2},
     )
     assert redacted.status_code == 200, redacted.text
     assert redacted.json()["edited"] is None
     assert OLD not in everything_stored(migrated)
     assert events(migrated, "note_added")[-1].payload["note"]["edited"] is None
     assert events(migrated, "note_edited")[-1].payload["note"]["body"]["reason"] == "secret"
-    refused = edit(owner, card, posted, body="again")
+    refused = edit(owner, card, redacted.json(), body="again")
     assert refused.status_code == 400
     assert refused.json()["error"]["details"]["reason"] == "redacted"
 
@@ -141,7 +144,7 @@ def test_on_a_closed_card_the_edit_reaches_the_author_and_the_newly_mentioned(
     edited = events(migrated, "note_edited")[-1]
     assert edited.audience == [f"member:{writer.id}"]  # the owner was mentioned before
     assert edited.payload["task"]["status"] == "cancelled"
-    assert edit(writer, card, posted, body="see nobody").status_code == 200
+    assert edit(writer, card, done.json(), body="see nobody").status_code == 200
     assert events(migrated, "note_edited")[-1].audience == [f"member:{writer.id}"]
 
 
@@ -172,7 +175,8 @@ def test_a_redacted_notes_reason_reaches_only_owners_admins_and_the_redactor(
     card = task(owner)
     posted = note(agent, card, "contains hunter2 @maintainer").json()
     path = f"/projects/maintainer/maity/tasks/{card['id']}/notes"
-    assert owner.post(f"{path}/{posted['id']}/redact", {"reason": "a password"}).status_code == 200
+    redact = {"reason": "a password", "base_version": 1}
+    assert owner.post(f"{path}/{posted['id']}/redact", redact).status_code == 200
 
     def shown(who: Any) -> dict[str, Any]:
         items = who.get(f"{path}?state=all").json()["items"]
@@ -204,8 +208,10 @@ def test_the_reason_stays_hidden_in_an_edit_event_and_in_a_replay(
     posted = agent.client.post(f"/api/v1{path}", json=body, headers=keyed)
     assert posted.status_code == 201, posted.text
     note_id = posted.json()["id"]
-    assert agent.patch(f"{path}/{note_id}", {"body": "hunter2 by mistake"}).status_code == 200
-    assert owner.post(f"{path}/{note_id}/redact", {"reason": "a password"}).status_code == 200
+    mistake = {"body": "hunter2 by mistake", "base_version": 1}
+    assert agent.patch(f"{path}/{note_id}", mistake).status_code == 200
+    redact = {"reason": "a password", "base_version": 2}
+    assert owner.post(f"{path}/{note_id}/redact", redact).status_code == 200
     # The tombstone inside the edit event, as the agent and the owner read it (§6.16, §8.5).
     for who, seen in ((agent, None), (owner, "a password")):
         listed = who.get("/projects/maintainer/maity/events?after=0&limit=200").json()["items"]
@@ -216,3 +222,114 @@ def test_the_reason_stays_hidden_in_an_edit_event_and_in_a_replay(
     assert again.status_code == 201, again.text
     assert again.json()["body"]["redacted"] is True and again.json()["body"]["reason"] is None
     assert "a password" not in again.text
+
+
+# --- the precondition (§6.16, context/cards.md 23165436) -----------------------------------
+
+
+def test_a_note_counts_its_versions_and_an_edit_or_redaction_names_one(
+    owner: flow.Human, migrated: Engine  # noqa: F811
+) -> None:
+    card = task(owner)
+    posted = note(owner, card, "first").json()
+    assert posted["version"] == 1
+    assert fields_of(edit(owner, card, posted, body="x", base_version=None)) == {
+        "base_version": "required"
+    }
+    first = edit(owner, card, posted, body="second")
+    assert first.status_code == 200, first.text
+    assert first.json()["version"] == 2
+    assert events(migrated, "note_added")[-1].payload["note"]["version"] == 2
+    path = f"/projects/maintainer/maity/tasks/{card['id']}/notes/{posted['id']}/redact"
+    assert fields_of(owner.post(path, {"reason": "r"})) == {"base_version": "required"}
+    redacted = owner.post(path, {"reason": "r", "base_version": 2})
+    assert redacted.status_code == 200, redacted.text
+    assert redacted.json()["version"] == 3
+    assert events(migrated, "note_edited")[-1].payload["note"]["version"] == 3
+    # Repeated on the version it left, a redaction changes nothing and says nothing.
+    notices = len(events(migrated, "event_redacted"))
+    again = owner.post(path, {"reason": "r", "base_version": 3})
+    assert again.status_code == 200 and again.json()["version"] == 3
+    assert len(events(migrated, "event_redacted")) == notices
+
+
+def test_a_stale_edit_is_a_conflict_with_the_note_as_it_is_now(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine  # noqa: F811
+) -> None:
+    writer = flow.agent(make_client, owner)
+    card = task(owner)
+    posted = note(writer, card, OLD).json()
+    cleaned = edit(owner, card, posted, body="cleaned", reason="a secret in it")
+    assert cleaned.status_code == 200, cleaned.text
+    # The author saves the correction made on version 1: the admin's cleaning stays.
+    stale = edit(writer, card, posted, body=f"{OLD}, corrected")
+    assert stale.status_code == 409, stale.text
+    error = stale.json()["error"]
+    assert error["code"] == "conflict"
+    assert error["details"]["current_version"] == 2 and error["details"]["base_version"] == 1
+    assert error["details"]["note"]["body"] == "cleaned"
+    assert error["details"]["note"]["version"] == 2
+    assert len(events(migrated, "note_edited")) == 1
+    assert OLD not in everything_stored(migrated)
+    # The version comes before the rules of the body: a stale edit is told so first.
+    assert edit(writer, card, posted, body="x" * 4097).status_code == 409
+    assert edit(writer, card, cleaned.json(), body="corrected").status_code == 200
+
+
+def test_a_stale_redaction_is_a_conflict_and_redacts_nothing(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine  # noqa: F811
+) -> None:
+    writer = flow.agent(make_client, owner)
+    card = task(owner)
+    posted = note(writer, card, "first words").json()
+    assert edit(writer, card, posted, body="words the admin has not seen").status_code == 200
+    path = f"/projects/maintainer/maity/tasks/{card['id']}/notes/{posted['id']}/redact"
+    stale = owner.post(path, {"reason": "r", "base_version": 1})
+    assert stale.status_code == 409, stale.text
+    details = stale.json()["error"]["details"]
+    assert details["current_version"] == 2 and details["base_version"] == 1
+    assert details["note"]["body"] == "words the admin has not seen"
+    assert events(migrated, "event_redacted") == []
+
+
+def test_the_conflict_shows_a_redacted_note_as_the_caller_reads_it(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine  # noqa: F811
+) -> None:
+    writer = flow.agent(make_client, owner)
+    card = task(owner)
+    posted = note(writer, card, "contains hunter2").json()
+    path = f"/projects/maintainer/maity/tasks/{card['id']}/notes/{posted['id']}/redact"
+    assert owner.post(path, {"reason": "a password", "base_version": 1}).status_code == 200
+    # An edit of a redacted note is `redacted`, whatever its base_version.
+    for base in (1, 2, 7):
+        refused = edit(writer, card, posted, body="again", base_version=base)
+        assert refused.json()["error"]["details"]["reason"] == "redacted"
+    stale = owner.post(path, {"reason": "again", "base_version": 1})
+    assert stale.status_code == 409, stale.text
+    assert stale.json()["error"]["details"]["note"]["body"]["reason"] == "a password"
+
+
+def test_an_edit_that_loses_the_row_to_another_write_is_a_conflict(
+    owner: flow.Human, migrated: Engine, monkeypatch: pytest.MonkeyPatch  # noqa: F811
+) -> None:
+    """Two writes read the same version; the one that comes second to the conditional UPDATE
+    is refused, also when it passed the first check (the race, from inside)."""
+    from maity_hub.board import notes as domain
+
+    card = task(owner)
+    posted = note(owner, card, "first").json()
+    original = domain.edit
+
+    def raced(conn: Any, row: Any, *args: Any) -> bool:
+        conn.execute(
+            t.card_note.update()
+            .where(t.card_note.c.id == row.id)
+            .values(body="the other write", version=t.card_note.c.version + 1)
+        )
+        return original(conn, row, *args)
+
+    monkeypatch.setattr(domain, "edit", raced)
+    lost = edit(owner, card, posted, body="mine")
+    assert lost.status_code == 409, lost.text
+    assert lost.json()["error"]["details"]["current_version"] == 2
+    assert events(migrated, "note_edited") == []

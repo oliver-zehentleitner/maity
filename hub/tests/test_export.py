@@ -221,7 +221,7 @@ def test_redacted_stays_redacted(owner: flow.Human, colleague: flow.Human) -> No
     )
     assert redacted.status_code == 200, redacted.text
     path = f"{PROJECT}/tasks/{theirs['id']}/notes/{written['id']}/redact"
-    assert owner.post(path, {"reason": "the owner's reason"}).status_code == 200
+    assert owner.post(path, {"reason": "the owner's reason", "base_version": 1}).status_code == 200
 
     response = export(colleague)
     body = response.json()
