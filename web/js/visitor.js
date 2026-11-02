@@ -1,0 +1,159 @@
+// A public project as a reader who is no member sees it (docs/api.md §16.9, tsk-jj1tfre7n6zb):
+// the views a member has, read-only, drawn only from GET /public/pages/{path}. Nothing here
+// writes, polls or reads another route. A card here has no body and no actions, so it is drawn
+// from the board's classes and not with board.js, whose card needs a member's context.
+"use strict";
+
+window.Maity = window.Maity || {};
+
+(function (M) {
+  const { h, append, clear, safeUrl } = M.dom;
+
+  const VIEWS = [
+    { path: "", get label() { return M.t("nav.overview"); } },
+    { path: "/board", get label() { return M.t("nav.board"); } },
+    { path: "/members", get label() { return M.t("nav.members"); } },
+    { path: "/organisation", get label() { return M.t("nav.organisation"); } },
+    { path: "/why", get label() { return M.t("nav.why"); } },
+  ];
+  const PROJECT_KINDS = ["project", "board", "members", "organisation", "why"];
+  const COUNTERS = {
+    get cards_done() { return M.t("visitor.stat.cards_done"); },
+    get reviews_given() { return M.t("visitor.stat.reviews_given"); },
+    get prs_merged() { return M.t("visitor.stat.prs_merged"); },
+    get handovers() { return M.t("visitor.stat.handovers"); },
+  };
+  const COLUMNS = {
+    get proposed() { return M.t("cards.column.proposed"); },
+    get open() { return M.t("cards.column.open"); },
+    get in_progress() { return M.t("cards.column.in_progress"); },
+    get blocked() { return M.t("cards.column.blocked"); },
+    get review() { return M.t("cards.column.review"); },
+    get done() { return M.t("cards.column.done"); },
+    get cancelled() { return M.t("cards.column.cancelled"); },
+  };
+
+  // A person's name as a link to their page; the path comes from the hub, the check stays here.
+  function who(person) {
+    return M.route.isRoute(person.page) ? h("a", { href: person.page }, person.name) : h("span", null, person.name);
+  }
+  const external = (url, label) => {
+    const safe = safeUrl(url);
+    return safe ? h("a", { href: safe, rel: "nofollow ugc" }, label || url) : null;
+  };
+  const names = (people) => h("ul", null, people.map((p) => h("li", null, who(p), " (" + p.handle + ")")));
+  const projectList = (projects) => h("ul", null, projects.map((p) => h("li", null, h("a", { href: "/" + p.full_name }, p.name))));
+
+  function statistics(totals) {
+    return h("ul", { class: "visitor-stats" }, Object.keys(COUNTERS).filter((key) => totals[key] !== null && totals[key] !== undefined)
+      .map((key) => h("li", null, COUNTERS[key] + ": " + totals[key])));
+  }
+
+  function holderLabel(holder) {
+    if (!holder) return null;
+    if (holder === "member") return h("span", { class: "muted" }, M.t("visitor.holder.member"));
+    if (holder === "agent") return h("span", { class: "muted" }, M.t("visitor.holder.agent"));
+    return who(holder);
+  }
+
+  const draw = {
+    project(d) {
+      return [
+        h("p", { class: "muted" }, d.state),
+        d.about ? h("div", { class: "about" }, M.markdown(d.about)) : null,
+        d.repository_url ? h("p", null, external(d.repository_url)) : null,
+        d.links.map((url) => h("p", null, external(url))),
+        d.people.length ? [h("h2", null, M.t("visitor.people")), names(d.people)] : null,
+        d.agents.length ? [h("h2", null, M.t("visitor.agents")), names(d.agents)] : null,
+        d.other_agents ? h("p", { class: "muted" }, M.t("visitor.other_agents", { count: d.other_agents })) : null,
+        h("h2", null, M.t("visitor.statistics")), statistics(d.statistics.totals),
+      ];
+    },
+    board(d) {
+      return h("div", { class: "columns" }, d.columns.map((col) => h("section", { class: "column", "data-status": col.status, "aria-label": COLUMNS[col.status] || col.status },
+        h("h2", null, (COLUMNS[col.status] || col.status) + " (" + col.cards.length + ")"),
+        col.cards.map((c) => h("article", { class: "card", "data-card": c.id, "aria-label": c.title },
+          h("header", null, h("span", { class: "card-id" }, c.id), c.label ? h("span", { class: "label-tag" }, c.label) : null),
+          h("h3", null, c.title),
+          holderLabel(c.holder))))));
+    },
+    members(d) {
+      return [
+        h("ul", null, d.shown.map((p) => h("li", null, who(p), " (" + p.handle + ") ", h("span", { class: "muted" }, M.trust.roleLabel(p.role))))),
+        d.others.length ? [h("h2", null, M.t("visitor.others")),
+          h("ul", null, d.others.map((o) => h("li", null, o.count + " × " + M.trust.roleLabel(o.role))))] : null,
+      ];
+    },
+    organisation(d) {
+      const below = (index) => d.nodes.filter((n) => n.reports_to === index);
+      // A line back to a node already drawn is not followed: the answer is data, not a promise.
+      const node = (n, seen) => h("li", null, n.person ? who(n.person) : h("span", { class: "muted" }, M.trust.roleLabel(n.role)),
+        n.person ? h("span", { class: "muted" }, " " + M.trust.roleLabel(n.role)) : null,
+        branch(below(n.index).filter((c) => !seen.has(c.index)), new Set([...seen, n.index])));
+      const branch = (list, seen) => (list.length ? h("ul", null, list.map((n) => node(n, new Set([...seen, n.index])))) : null);
+      return h("div", { class: "org-box" }, branch(below(null), new Set()));
+    },
+    why(d) {
+      if (!d.readable) return h("p", { class: "muted" }, M.t("visitor.why.unread"));
+      return [
+        h("p", null, M.t("visitor.why.entries", { count: d.summary.entries })),
+        d.family.length ? [h("h2", null, M.t("visitor.why.family")),
+          h("ul", null, d.family.map((m) => h("li", null, external(m.dashboard_url, m.name || m.path) || (m.name || m.path))))] : null,
+        d.attention.length ? [h("h2", null, M.t("visitor.why.attention")),
+          h("ul", null, d.attention.map((a) => h("li", null, external(a.link, a.title) || a.title, " ", h("span", { class: "label-tag" }, a.status))))] : null,
+      ];
+    },
+    person(d) {
+      return [
+        d.bio ? h("p", null, d.bio) : null,
+        d.website ? h("p", null, external(d.website)) : null,
+        d.social ? h("ul", null, Object.keys(d.social).map((net) => h("li", null, net + ": " + d.social[net]))) : null,
+        d.projects.length ? [h("h2", null, M.t("visitor.projects")), projectList(d.projects)] : null,
+        d.agents.length ? [h("h2", null, M.t("visitor.agents")), names(d.agents)] : null,
+      ];
+    },
+    agent(d) {
+      return [
+        h("p", null, who(d.owner)),
+        h("h2", null, M.t("visitor.projects")), projectList(d.projects),
+        h("h2", null, M.t("visitor.statistics")), statistics(d.statistics),
+      ];
+    },
+    organisation_page(d) {
+      return d.projects.length ? [h("h2", null, M.t("visitor.projects")), projectList(d.projects)] : null;
+    },
+  };
+
+  // The project's address under which a view of it stands: `<owner>/<slug>`.
+  const projectBase = (path) => "/" + path.split("/").filter(Boolean).slice(0, 2).join("/");
+
+  // Draws the page of `path` when the hub stores one; false when it stores none, for the
+  // caller's own answer (the login, or not_found).
+  async function page(main, header, path, { signedIn, brand, live }) {
+    let answer;
+    try {
+      answer = await M.api.get("/public/pages/" + path.replace(/^\/+/, ""));
+    } catch (err) {
+      return false; // no page, or none to be had now: the caller's answer stands
+    }
+    if (!live()) return true;
+    const d = answer.data;
+    const inProject = PROJECT_KINDS.includes(answer.kind);
+    const base = inProject ? projectBase(answer.path) : answer.path;
+    const signIn = signedIn ? null : h("a", { class: "visitor-sign-in", href: "/login?next=" + encodeURIComponent(path) }, M.t("visitor.sign_in"));
+    append(clear(header), h("div", { class: "bar" }, brand, signIn));
+    const title = d.name || base.slice(1);
+    append(clear(main), h("section", { class: "view-visitor", "data-kind": answer.kind },
+      h("h1", null, title),
+      inProject ? h("nav", { class: "view-tabs", "aria-label": title }, VIEWS.map((v) => h("a", {
+        href: base + v.path,
+        class: "view-tab",
+        "aria-current": base + v.path === answer.path ? "page" : null,
+      }, v.label))) : null,
+      draw[answer.kind] ? draw[answer.kind](d) : null));
+    document.title = title;
+    return true;
+  }
+
+  M.visitor = { page };
+})(window.Maity);

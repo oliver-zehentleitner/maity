@@ -581,7 +581,7 @@ def load_catalog(path):
 
 
 # Literals that read as words but are code: the strict-mode directive.
-NOT_PROSE = {"use strict"}
+NOT_PROSE = {"use strict", "nofollow ugc"}
 
 
 def prose(text):
