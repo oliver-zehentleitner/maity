@@ -95,12 +95,17 @@ it inherits, which is why the list lives on the directory.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-dv24gngs9qaa, PRs #1089 and #1097, their reviews and the lead's ruling on stdin; `cli/src/maity/cli.py` `_utf8_streams`, `_stdin_text`
+**Source:** card tsk-dv24gngs9qaa, PRs #1089 and #1097, their reviews and the lead's ruling on stdin; card tsk-yetyn5sctbdc (the Windows 11 machine test); `cli/src/maity/cli.py` `_utf8_streams`, `_stdin_text`, `_read_text_file`
 **Revisit when:** the oldest supported Python has UTF-8 mode on by default (PEP 686, 3.15)
 
 On Windows `main` sets stdin, stdout and stderr to UTF-8 before anything is read
 or printed. Output uses `backslashreplace`, so a character can't stop a print.
 Stdin is strict: a text in another encoding is refused with a message.
+A leading byte order mark is dropped from stdin and from every text file, on
+every platform: it marks the encoding and is no part of the text, and
+PowerShell (`utf8BOM`, a UTF-8 `$OutputEncoding` with a mark) and Notepad write
+one. Refusing it would turn away text that is valid UTF-8; a mark inside the
+text stays.
 
 Three smaller Windows choices belong with it. The home's `env-secret` lies under
 `%LOCALAPPDATA%\maity`. `core.hooksPath` is `os.devnull`, because `/dev/null`

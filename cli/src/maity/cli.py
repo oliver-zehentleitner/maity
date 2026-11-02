@@ -404,8 +404,7 @@ def _join_line(args: argparse.Namespace) -> tuple[str, str]:
             if args.join_file == "-"
             else _read_text_file(args.join_file, "--join-file")
         )
-        # PowerShell and Notepad may start a file with a byte order mark, which `strip` keeps.
-        lines = [line.strip() for line in text.removeprefix("\ufeff").splitlines() if line.strip()]
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
         if len(lines) != 2:
             raise UsageError("--join-file holds two lines: the join URL, then the code")
         return lines[0], lines[1]
@@ -4944,9 +4943,15 @@ def _texts(args: argparse.Namespace) -> tuple[tuple[str, str, str, bool], ...]:
     return TEXT_ARGS.get(handler, ()) if handler is not None else ()
 
 
+# PowerShell (`Out-File -Encoding utf8BOM`, a UTF-8 `$OutputEncoding`) and Notepad may start
+# a text with a byte order mark. It marks the encoding, it is not part of the text, and
+# `strip` keeps it, so every text read from a file or stdin loses it here.
+_BOM = "\ufeff"
+
+
 def _read_text_file(path: str, flag: str) -> str:
     try:
-        return Path(path).read_text(encoding="utf-8")
+        return Path(path).read_text(encoding="utf-8").removeprefix(_BOM)
     except UnicodeDecodeError:  # PowerShell 5.1 writes UTF-16 with `>`
         raise UsageError(f"{flag}: {path} is not UTF-8; save it as UTF-8") from None
     except OSError as exc:
@@ -4954,9 +4959,10 @@ def _read_text_file(path: str, flag: str) -> str:
 
 
 def _stdin_text() -> str:
-    """Stdin, or a refusal: a text in another encoding never reaches the hub altered."""
+    """Stdin without a leading byte order mark, or a refusal: a text in another encoding
+    never reaches the hub altered."""
     try:
-        return sys.stdin.read()
+        return sys.stdin.read().removeprefix(_BOM)
     except UnicodeDecodeError:
         raise UsageError("stdin is not UTF-8; send UTF-8, or use a file saved as UTF-8") from None
 

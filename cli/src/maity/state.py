@@ -208,7 +208,7 @@ def check_private(path: Path, revoke: str = "revoke the session in the dashboard
     if sys.platform == "win32":
         reach = winacl.reach(path)
         if reach.foreign_owner:
-            raise StateError(f"{path} belongs to another user; refusing to use it")
+            raise StateError(_foreign(path, reach.foreign_owner, reach.others, revoke))
         if reach.others:
             raise StateError(
                 f"{path} is accessible by others ({', '.join(reach.others)}); run "
@@ -217,15 +217,24 @@ def check_private(path: Path, revoke: str = "revoke the session in the dashboard
             )
         return
     st = path.stat()
+    mode = stat.S_IMODE(st.st_mode)
+    loose = st.st_mode & (stat.S_IRWXG | stat.S_IRWXO)
     if st.st_uid != os.getuid():
-        raise StateError(f"{path} belongs to another user; refusing to use it")
-    if st.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
-        mode = stat.S_IMODE(st.st_mode)
+        others = (f"group or others (mode {mode:04o})",) if loose else ()
+        raise StateError(_foreign(path, f"uid {st.st_uid}", others, revoke))
+    if loose:
         fix = "700" if path.is_dir() else "600"
         raise StateError(
             f"{path} is accessible by group or others (mode {mode:04o}); "
             f"run `chmod {fix} {path}` if it is yours, or {revoke}"
         )
+
+
+def _foreign(path: Path, owner: str, others: tuple[str, ...], revoke: str) -> str:
+    """Another user's file: no fix command, since only its owner or an administrator can
+    change it, but the way out and whoever else the file lets in."""
+    also = f" and is accessible by {', '.join(others)}" if others else ""
+    return f"{path} belongs to another user ({owner}){also}; refusing to use it; {revoke}"
 
 
 def prepare_for_join(path: Path) -> str | None:

@@ -144,3 +144,34 @@ def test_inline_text_that_the_shell_ate_is_warned_about(
     assert cli.main(["say", "agt-a", text, "--type", "notice"]) == cli.EXIT_OK
     assert ("warning:" in capsys.readouterr().err) is warned
     assert fake.signed()[-1].json()["body"] == text
+
+
+BOM = "﻿"
+
+
+def test_say_drops_a_byte_order_mark_from_stdin(
+    joined: Path, fake: fakehub.FakeHub, events: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PowerShell pipes a mark first when `$OutputEncoding` is UTF-8 with one; it is not text."""
+    _stdin(monkeypatch, BOM + MARKDOWN)
+    assert cli.main(["say", "agt-a", "--type", "notice", "-"]) == cli.EXIT_OK
+    assert fake.signed()[-1].json()["body"] == MARKDOWN.rstrip("\n")
+
+
+def test_say_drops_a_byte_order_mark_from_a_file(
+    joined: Path, fake: fakehub.FakeHub, events: None, tmp_path: Path
+) -> None:
+    """`Out-File -Encoding utf8BOM` and Notepad start the file with one."""
+    (tmp_path / "m.md").write_bytes(b"\xef\xbb\xbf" + MARKDOWN.encode())
+    argv = ["say", "agt-a", "--type", "notice", "--body-file", str(tmp_path / "m.md")]
+    assert cli.main(argv) == cli.EXIT_OK
+    assert fake.signed()[-1].json()["body"] == MARKDOWN
+
+
+def test_only_a_leading_byte_order_mark_is_dropped(
+    joined: Path, fake: fakehub.FakeHub, events: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One inside the text is the writer's character, and stays."""
+    _stdin(monkeypatch, f"{BOM}a{BOM}b")
+    assert cli.main(["say", "agt-a", "--type", "notice", "-"]) == cli.EXIT_OK
+    assert fake.signed()[-1].json()["body"] == f"a{BOM}b"
