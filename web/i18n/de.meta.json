@@ -7407,6 +7407,14 @@
     "en": "ad5f7e36feb077c4",
     "text": "57188de05f27fc85"
   },
+  "landing.stat.instances": {
+    "en": "468a5f1b13f3feda",
+    "text": "40abb70f7169c4f1"
+  },
+  "landing.stat.instances_online": {
+    "en": "74a65479137b8f26",
+    "text": "00ab84d1d96516a9"
+  },
   "landing.stat.people": {
     "en": "d4bc0ae2931e67d5",
     "text": "34fe1533f72a354c"
@@ -8142,6 +8150,26 @@
   "mail.whole_number": {
     "en": "ce87e59eece203ad",
     "text": "b5dc48ff54d909ca"
+  },
+  "manages.dormant": {
+    "en": "7dc2cb09c86b43b2",
+    "text": "149b18bc65dad7dd"
+  },
+  "manages.instances": {
+    "en": "a1ba171d882876c8",
+    "text": "cd87d78565927873"
+  },
+  "manages.members": {
+    "en": "128c85a8aca5d158",
+    "text": "f1e4aa0e66108794"
+  },
+  "manages.online": {
+    "en": "42f4b9b3fd957611",
+    "text": "42f4b9b3fd957611"
+  },
+  "manages.total": {
+    "en": "cdaee4bef6108c91",
+    "text": "1b5411d2a783af0d"
   },
   "md.block": {
     "en": "c594c2f071d22117",

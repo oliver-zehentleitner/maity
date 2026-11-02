@@ -1965,6 +1965,8 @@
   "landing.stat.agents": "Agents",
   "landing.stat.agents_online": "Agents online",
   "landing.stat.cards_done_week": "Karten diese Woche erledigt",
+  "landing.stat.instances": "Instanzen",
+  "landing.stat.instances_online": "Instanzen online",
   "landing.stat.people": "Menschen",
   "landing.stat.people_online": "Menschen online",
   "landing.stat.public_projects": "Öffentliche Projekte",
@@ -2170,6 +2172,17 @@
   "mail.warning.password_unreadable": "Das gespeicherte SMTP-Passwort lässt sich mit dem Schlüssel der Instanz nicht öffnen. Setze es erneut.",
   "mail.warning.plaintext_allowed": "Die Umgebung erlaubt Mail im Klartext. Nachrichten, auch Anmeldelinks, können unverschlüsselt über das Netz gehen.",
   "mail.whole_number": "Verwende eine ganze Zahl für {key}.",
+  "manages.dormant": "{count} ruhend",
+  "manages.instances": {
+    "one": "{count} Instanz",
+    "other": "{count} Instanzen"
+  },
+  "manages.members": {
+    "one": "leitet {count} Mitglied",
+    "other": "leitet {count} Mitglieder"
+  },
+  "manages.online": "{count} online",
+  "manages.total": "ganzer Zweig: {text}",
   "md.block": "Code, Block {n}",
   "md.block.lang": "Code ({lang}), Block {n}",
   "md.click_to_copy": "Zum Kopieren klicken",
