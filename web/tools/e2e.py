@@ -3455,6 +3455,21 @@ def auth_pages_step(run: Run, page: Page) -> None:
     expect(section.locator(".send-status").last).to_contain_text("Saved.")
     answer = page.request.get(f"{run.base}/api/v1/auth/pages/sign_up?lang=fr").json()
     assert answer["language"] == "fr" and answer["texts"]["title"] == "Rejoindre", answer
+    # What a visitor sees, in a browser with no session; sign-in works whatever these words are.
+    page.locator("nav.admin-subnav").get_by_role("button", name="Sign in", exact=True).click()
+    page.locator("#ap-sign_in-title").fill("Welcome to the E2E hub")
+    page.locator("#ap-sign_in-point_1").fill("A first point")
+    run.a11y(page, "sign-in page's pitch")
+    page.locator("#admin-sign-in-page").get_by_role("button", name="Save the sign-in and sign-up pages", exact=True).click()
+    expect(page.locator("#admin-sign-in-page .send-status").last).to_contain_text("Saved.")
+    visitor = page.context.browser.new_context(viewport={"width": 1280, "height": 800}, locale="en-US")
+    seen = visitor.new_page()
+    seen.goto(f"{run.base}/login")
+    expect(seen.locator("form.login h2")).to_have_text("Welcome to the E2E hub")
+    expect(seen.locator(".door-points li")).to_have_text(["A first point"])
+    run.a11y(seen, "sign-in with the instance's pitch")
+    run.shot(seen, "login-pitch")
+    visitor.close()
     no_problems(run, "sign-up page")
 
 

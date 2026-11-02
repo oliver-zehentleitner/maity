@@ -1813,7 +1813,10 @@ The registration page sends the link's `v` and `c` as `origin`.
 `/login` and `/register` per language: title, subline, three points and a
 note. An empty field is left out; the form's own words are the catalogue's.
 Both sub-tabs edit one setting, so Save stores both; each has its own JSON
-import and export of its languages.
+import and export of its languages. `/login` and `/register` ask
+`GET /auth/pages/{page}` with the language they are drawn in and show these
+words at the head of the form; a key left out, or a failed read, leaves the
+catalogue's heading and nothing else, and no sign-in waits for the call.
 
 **Import or export everything** (`js/site-io.js`, tsk-xw8a2hd84x3a) takes
 these sections as one JSON, extended language by language and

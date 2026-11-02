@@ -335,6 +335,7 @@ window.Maity = window.Maity || {};
     renderLogin(document.getElementById("main"), "Your session has ended. Sign in again to go on where you were.");
   };
 
+  let keptHandle = "";
   function renderLogin(main, note) {
     document.title = "Sign in · Maity";
     append(clear(document.getElementById("header")), h("div", { class: "bar" },
@@ -342,6 +343,15 @@ window.Maity = window.Maity || {};
       M.api.source === "fixtures" ? h("span", { class: "source" }, "Fixtures") : null,
       themeMenu()));
     const handle = h("input", { id: "login-handle", name: "handle", autocomplete: "username", required: true });
+    handle.value = keptHandle;
+    keptHandle = "";
+    // The page's language (§6.2), as on /register: the form is drawn again in it, the handle kept, the password not.
+    const site = M.interfacePicker ? M.interfacePicker("login-interface", M.i18n.language, false) : null;
+    if (site) site.addEventListener("change", async () => {
+      keptHandle = handle.value;
+      await M.i18n.choose(site.value);
+      renderLogin(main, note);
+    });
     const password = h("input", { id: "login-password", name: "password", type: "password", autocomplete: "current-password", required: true });
     const status = statusLine();
     const form = h("form", {
@@ -360,9 +370,10 @@ window.Maity = window.Maity || {};
         }
       },
     },
-    h("h2", null, "Sign in"),
+    M.authPages.pitch("sign_in", "Sign in"),
     h("label", { for: "login-handle" }, "Handle"), handle,
     h("label", { for: "login-password" }, "Password"), password,
+    site ? h("label", { for: "login-interface" }, M.t("language.interface.label")) : null, site,
     h("button", { type: "submit" }, "Sign in"),
     status.el);
     // A code from another device or a link by mail, as the hub offers them
