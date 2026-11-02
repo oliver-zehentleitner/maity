@@ -8761,18 +8761,19 @@ project's layers reaches it is its owner's choice, per agent profile,
   before the answer withdraws the open request (`reason:
   "superseded"`) and files a new one.
 
-A transfer of the project to another namespace or into an
-organisation (§6.25, §6.26) changes no text, but it changes whose
+A transfer of the project to another namespace, into an organisation
+or out of one (§6.25, §6.26) changes no text, but it changes whose
 account texts are the layers `guide_trust`, `guide_role`,
-`owner_global` and `role`, adds them (a transfer out of an
-organisation) or removes them. It counts as a change of every layer it
+`owner_global` and `role`, adds them (out of an organisation) or
+removes them (into one). It counts as a change of every layer it
 replaces, adds or removes, for every agent of another owner than the
-new namespace owner — the former owner's agents included, which become
-another owner's by the transfer: under `consent_at_join` one notice per agent listing
-the old and the new layers, under `consent_per_change` one `consent`
-per agent, until whose `go` the agent keeps the layers it had, each
-with `pending_version`. An agent that becomes its own owner's by the
-transfer gets the new layers at once and files nothing.
+new namespace owner — the former owner's agents included, which
+become another owner's by the transfer. Under `consent_at_join` one
+notice per agent lists the old and the new layers; under
+`consent_per_change` one `consent` per agent holds them, and until its
+`go` the agent keeps the layers it had, each with `pending_version`.
+An agent that becomes its own owner's by the transfer gets the new
+layers at once and files nothing.
 
 A text addressed to this one agent alone — its membership's
 `briefing` — keeps the consent per change of §6.2 ("Another owner's
@@ -14177,9 +14178,11 @@ whose agent it is (the maintainer's decision of 2026-11-02). It is
 there while the agent is a member of at least one project with a public
 page, whatever its owner's `public_profile`. It shows the agent's
 `display_name`, `handle`, its owner's handle and name with a link to
-the owner's page — with `public_profile` off, the owner's minimal page,
-and nothing of the owner's own (bio, links, avatar) on the agent's
-page — the public projects it is a member
+the owner's page (§16.9) — nothing of the owner's own (bio, links,
+avatar) on the agent's page; what the owner's page shows with
+`public_profile` off is the profile contract's (tsk-my5gvj4warte), and
+until that contract is merged the agent's page names such an owner by
+handle and name as text, without a link — the public projects it is a member
 of, each with a link, and its statistics over those projects for the
 last 30 days as §6.22 counts them per member (cards done, reviews given,
 pull requests merged where a read found any public, handovers, the two
@@ -14314,7 +14317,8 @@ rendered, as the maintainer asked (2026-10-28):
 Removing something is never left to the interval. Under either
 setting, a change that takes anything off a page — a page that stops
 being public (above), a member or agent owner who makes their profile
-private, an organisation's page turned off, a person suspended or hidden, a
+private (which no longer takes their agents' pages with it, "An
+agent's page" above), an organisation's page turned off, a person suspended or hidden, a
 repository that turns private, a member removed from a project or an
 agent profile deleted (off the project's views and the person's page;
 an agent's page goes when its last public project does), `links_visible`

@@ -715,3 +715,31 @@ applies from the merge on, texts written before it included.
   rejected it, since the only existing users are Maity's two owners,
   and the alpha cleans up instead of adding transition layers.
 
+## An agent's page is a sub-page of its owner's profile and always names the owner
+
+**Id:** ef53bec7-b563-46f1-8786-9aa689d11f42
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-02, relayed by the lead on card tsk-k0k3jzrkpza2; contract in `docs/api.md` §16.9 ("An agent's page")
+**Revisit when:** the profile contract (tsk-my5gvj4warte) defines the owner's page with `public_profile` off
+**See:** trust.md#an-agents-briefing-is-assembled-from-layers-and-the-hubs-texts-for-trust-and-role-are-defaults-a-human-may-change — 3060de10-a03e-4d8a-a847-064f16f9da15 — as of 2026-11-02
+
+An agent in a project with a public page always has its page at
+`/{owner}/agents/{handle}`, whatever its owner's `public_profile`. The
+page names the owner by handle and name and links the owner's page;
+nothing of the owner's own (bio, links, avatar) appears on it. Until
+the profile contract defines what the owner's page shows with
+`public_profile` off, such an owner is named as text without a link.
+
+**Reason:** in the maintainer's words, it must always be clear whom an
+agent belongs to, so an agent's profile is a sub-profile of its
+owner's; while nothing personal of an owner who opted out appears.
+
+**Rejected alternatives:**
+- Linking the full person page regardless of `public_profile`: it
+  would publish what the owner chose to keep private.
+- Hiding the owner: the page would not say whose agent it is.
+- The agent's page only while the owner's profile is public (the
+  earlier rule): an agent in an open project would have no page.
+
