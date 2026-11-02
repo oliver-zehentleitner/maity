@@ -1614,10 +1614,6 @@ window.Maity = window.Maity || {};
     if (where.scope !== "project") return ctx;
     const mine = me.projects.find((p) => p.full_name === where.slug);
     if (!mine) {
-      // Someone else's project may have a public page (§16.9): the reader sees that. Without
-      // one the hub answers this same shell, and `as` keeps it from coming here again.
-      const here = new URLSearchParams(window.location.search);
-      if (M.api.source !== "fixtures" && !here.has("as")) { window.location.replace(M.route.current().path + "?as=public"); return new Promise(() => {}); }
       throw new M.api.ApiError(M.t("error.not_member", { slug: where.slug }), 404, "/me", "not_found");
     }
     ctx.slug = where.slug;
@@ -1834,7 +1830,12 @@ window.Maity = window.Maity || {};
         if (err.status === 401 && M.secondFactor && M.secondFactor.isMailLink()) { renderStepElsewhere(main, false); return; }
         // Without a session the login page; the landing page at the root
         // is the hub's own static page (§16.7), never drawn here.
-        if (err.status === 401) { renderLogin(main); return; }
+        if (err.status === 401) {
+          // A public page of this address, read-only (§16.9); otherwise the login.
+          if (M.visitor && await M.visitor.page(main, document.getElementById("header"), where, M.route.current().path, { signedIn: false, brand: brandTitle(false), tools: themeMenu(), live: () => seq === renderSeq })) return;
+          if (seq === renderSeq) renderLogin(main);
+          return;
+        }
         throw err;
       }
       // A new session after a sign-out or an ended one: what the old one still gets back (a late
@@ -1863,6 +1864,17 @@ window.Maity = window.Maity || {};
         const next = where.scope === "login" ? routeNext() : null;
         M.route.go(next || (me.projects.length === 1 ? projectLink(me.projects[0].full_name, "inbox") : "/all"), { replace: true });
         return;
+      }
+      // Someone else's project may have a public page (§16.9): the reader sees it, read-only,
+      // under their own header. Asked first: a stranger's address touches no member route.
+      if (where.scope === "project" && !me.projects.some((p) => p.full_name === where.slug) && M.visitor) {
+        const head = async () => {
+          const own = await loadContext({ scope: "all" }, me);
+          own.projectViews = await projectViews(me);
+          if (seq === renderSeq) renderHeader(own, null);
+        };
+        if (await M.visitor.page(main, null, where, M.route.current().path, { signedIn: true, head, live: () => seq === renderSeq })) return;
+        if (seq !== renderSeq) return;
       }
       // An earlier address of a project (a rename, a transfer) leads to its current one.
       const moved = await movedTo(where, me);

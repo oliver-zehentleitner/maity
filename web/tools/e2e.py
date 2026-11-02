@@ -2484,6 +2484,9 @@ def visitor_step(run: Run, page: Page) -> None:
     expect(guest.locator("#login-handle")).to_be_visible()
     guest.locator(".public-page-link a").click()
     expect(guest).to_have_url(f"{run.base}/owner/e2e-alpha")
+    # What the dashboard reads for someone who is no member: the same answer without a session.
+    read = guest.request.get(f"{run.base}/api/v1/public/pages/owner/e2e-alpha/board")
+    assert read.status == 200 and read.json()["kind"] == "board", read.status
     context.close()
     if not was_on:
         page.goto(f"{run.base}/owner/e2e-alpha/settings")

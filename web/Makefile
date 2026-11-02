@@ -1,7 +1,7 @@
 PYTHON ?= python3
 NODE ?= node
 
-.PHONY: check release-check fixtures smoke starter-configs e2e
+.PHONY: check release-check fixtures smoke starter-configs e2e pseudo
 
 # HTML, JavaScript, CSS and fixture checks, and the e2e harness's own
 # judgement of answers; Python standard library only.
@@ -28,6 +28,11 @@ smoke:
 # needs node, bash and maity (Python 3.11+) from cli/.
 starter-configs:
 	$(PYTHON) tools/starter_configs.py
+
+# Every route in headless Chromium with a pseudo catalog: what carries no mark is a text
+# outside the catalog. Needs Playwright, no hub. STRICT=1 fails on any.
+pseudo:
+	$(PYTHON) tools/pseudo_run.py $(if $(STRICT),--strict)
 
 # Headless Chromium against a real hub; needs maity-hub, maity and Playwright
 # for Python (README.md, "Browser end-to-end test").
