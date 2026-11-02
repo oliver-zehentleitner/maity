@@ -16,10 +16,10 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import config, forge, forge_access, handles, namespace, registration_accounts
+from maity_hub import clock, config, forge, forge_access, handles, namespace, registration_accounts
 from maity_hub import tables as t
 from maity_hub.config import Settings
-from tests import flow
+from tests import factory, flow
 from tests.conftest import ClientFactory
 
 OPERATOR = "operator-token"
@@ -311,3 +311,107 @@ def test_a_patch_by_someone_who_may_not_change_the_project_makes_no_look(
     refused = stranger.patch(f"/projects/maintainer/{slug}", {"repository": {"url": URL}})
     assert refused.status_code == 404, refused.text
     assert fake.sent == []
+
+
+def _transfer_to(engine: Engine, project_id: str, human_id: str) -> None:
+    """What an accepted transfer writes (§6.25): the new owner, the old name an alias."""
+    with engine.begin() as conn:
+        project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+        namespace.move(conn, project, human_id, project.slug)
+    factory.membership(engine, project_id, "owner", human_id=human_id)
+
+
+def test_a_patch_through_the_old_name_after_a_transfer_out_makes_no_look(
+    make_client: ClientFactory, migrated: Engine, fake: FakeForge
+) -> None:
+    """The path's owner is the old one, still listed; the project is no longer in the list."""
+    owner = flow.human(make_client, migrated)
+    flow.project(owner, "thing", public_page="on")
+    outsider = flow.human(make_client, migrated, "outsider")
+    _transfer_to(migrated, _project_id(migrated), outsider.id)
+    changed = outsider.patch("/projects/maintainer/thing", {"repository": {"url": URL}})
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["full_name"] == "outsider/thing"
+    assert changed.json()["public_page"] == "off"
+    assert fake.sent == []
+
+
+def test_a_patch_that_also_sets_the_page_by_a_co_admin_makes_no_look(
+    make_client: ClientFactory, migrated: Engine, fake: FakeForge
+) -> None:
+    """Only the namespace owner sets the page (§16.9): a co-admin is refused, without a look."""
+    owner = flow.human(make_client, migrated)
+    flow.project(owner, "thing", public_page="on")
+    anna = flow.human(make_client, migrated, "anna")
+    factory.membership(migrated, _project_id(migrated), "admin", human_id=anna.id)
+    refused = anna.patch(
+        "/projects/maintainer/thing", {"repository": {"url": URL}, "public_page": "on"}
+    )
+    assert refused.status_code == 403, refused.text
+    assert fake.sent == []
+
+
+def test_a_patch_that_leaves_the_page_off_makes_no_look(
+    make_client: ClientFactory, migrated: Engine, fake: FakeForge
+) -> None:
+    owner = flow.human(make_client, migrated)
+    flow.project(owner, "thing")  # private
+    changed = owner.patch("/projects/maintainer/thing", {"repository": {"url": URL}})
+    assert changed.status_code == 200, changed.text
+    assert fake.sent == []
+
+
+@pytest.mark.parametrize("role", ["admin", "member"])
+def test_a_project_an_organisation_admin_or_member_creates_starts_off_without_a_look(
+    make_client: ClientFactory, migrated: Engine, fake: FakeForge, role: str
+) -> None:
+    founder = flow.human(make_client, migrated)
+    made = founder.post("/orgs", {"handle": "free-org", "display_name": "Org"})
+    assert made.status_code == 201, made.text
+    org_id = made.json()["id"]
+
+    def listing_it(**overrides: Any) -> Any:  # a hub that lists the organisation
+        return make_client(forge_instance_namespaces=OWN | {"free-org"}, **overrides)
+
+    other = flow.human(listing_it, migrated, "other")
+    with migrated.begin() as conn:
+        conn.execute(
+            t.org_member.insert().values(
+                org_id=org_id, human_id=other.id, role=role, joined_at=clock.now()
+            )
+        )
+        conn.execute(
+            t.org.update().where(t.org.c.id == org_id).values(members_create_projects=True)
+        )
+    created = other.post(
+        "/projects",
+        {"slug": "thing", "name": "Thing", "owner": "free-org", "repository": {"url": URL}},
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["public_page"] == "off"
+    assert fake.sent == []
+
+
+def test_a_transfer_out_between_the_look_and_the_write_turns_the_page_off(
+    make_client: ClientFactory,
+    migrated: Engine,
+    fake: FakeForge,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The look ran while the project was listed; under the lock it no longer is."""
+    from maity_hub.routes import projects
+
+    owner = flow.human(make_client, migrated)
+    flow.project(owner, "thing", public_page="on")
+    outsider = flow.human(make_client, migrated, "outsider")
+    project_id = _project_id(migrated)
+
+    def look_then_transfer(*_: Any) -> bool:
+        _transfer_to(migrated, project_id, outsider.id)
+        return True
+
+    monkeypatch.setattr(projects, "_patch_served", look_then_transfer)
+    changed = owner.patch("/projects/maintainer/thing", {"repository": {"url": URL}})
+    assert changed.status_code == 200, changed.text
+    assert fake.sent == [(OPERATOR, f"/repos/{REPO}")]  # the look that raced
+    assert changed.json()["public_page"] == "off"

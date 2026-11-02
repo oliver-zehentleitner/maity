@@ -265,63 +265,75 @@ def _repository_columns(repository: RepositoryIn | None) -> dict[str, Any]:
     return {"repository_url": url, "repository_default_branch": repository.default_branch}
 
 
-def _looks_public(
-    request: Request, repository: RepositoryIn | None, owner: str | None, human_id: str | None
-) -> bool | None:
+def _looks_public(request: Request, repository: RepositoryIn | None, served: bool) -> bool | None:
     """The hub's first look at a repository: whether the forge reports it public. One it has not
     looked at, cannot read or finds private is not (§16.9, §11.4); None when there is none. The
-    look is the operator's token's, so only for a project in one of the operator's own
-    namespaces: `owner` names the namespace (any of its names; None: the creator `human_id`'s)."""
+    look is the operator's token's, so only where `served` says the token serves the project's
+    namespace and the caller's change could keep a page on (`_create_served`, `_patch_served`)."""
     if repository is None:
         return None
-    url = _repository_columns(repository)["repository_url"]
-    if not _instance_serves(request, owner, human_id):
+    if not served:
         return False  # nothing reads it before the owner confirms it (§11.4)
+    url = _repository_columns(repository)["repository_url"]
     return reader_of(request).repository_public(forge.repository_of(url))
 
 
-def _may_patch(request: Request, caller: Any, slug: str, body: Any, given: set[str]) -> bool:
-    """A cheap look, before the forge is asked, at whether the caller may make this change:
-    otherwise anyone signed in could make the operator's token read any URL by naming a project
-    in a listed namespace (§11.4). The transaction checks it again under its lock and answers
-    the refusal; a caller refused here gets that answer without the look."""
-    try:
-        with engine_of(request).connect() as conn:
-            mine = membership(conn, caller, slug)
-            _refuse_for_agents(mine, body, given)
-            _authorise_patch(mine, body, given)
-    except ApiError:
-        return False
-    return True
+def _listed(request: Request, conn: Connection, owner_id: str) -> bool:
+    """Whether the namespace of `owner_id`, by its current handle, is one of the operator's own
+    (§11.4)."""
+    names = settings_of(request).forge_instance_namespaces
+    return bool(names) and forge_access.serves(names, namespace.current_handle(conn, owner_id))
 
 
-def _instance_serves(request: Request, owner: str | None, human_id: str | None) -> bool:
-    """Whether the namespace `owner` names is one of the operator's own (§11.4). At a creation
-    (`human_id` the creator) only a namespace the creator may be in counts — their own, or an
-    organisation they are a member of — so that nobody makes the operator's token look at a URL
-    by naming a listed namespace they cannot create in; the transaction checks it again under
-    its lock."""
-    settings = settings_of(request)
-    if not settings.forge_instance_namespaces:
+def _create_served(request: Request, owner: str | None, human_id: str) -> bool:
+    """Whether a creation may look at its repository with the operator's token: only one whose
+    page can start `on` — in the creator's own namespace, or by an owner of an organisation that
+    is not suspended (§6.1, §6.26) — and in a listed namespace. Before the transaction, so that
+    nobody makes the token read a URL by naming a namespace they cannot publish in; the
+    transaction checks the creator's right again under its lock."""
+    if not settings_of(request).forge_instance_namespaces:
         return False
     with engine_of(request).connect() as conn:
         owner_id = human_id if owner is None else namespace.resolve_owner(conn, owner)
         if owner_id is None:
             return False
-        if human_id is not None and owner_id != human_id:
-            member = conn.execute(
-                select(t.org_member.c.role, t.org.c.members_create_projects)
+        if owner_id != human_id:
+            role = conn.execute(
+                select(t.org_member.c.role)
                 .join(t.org, t.org.c.id == t.org_member.c.org_id)
                 .where(
                     t.org_member.c.org_id == owner_id,
                     t.org_member.c.human_id == human_id,
                     t.org.c.deleted_at.is_(None),
                 )
-            ).first()
-            if member is None or (member.role == "member" and not member.members_create_projects):
+            ).scalar()
+            if role != "owner":  # anyone else's project starts `off`: nothing to look for
                 return False
-        handle = namespace.current_handle(conn, owner_id)
-    return forge_access.serves(settings.forge_instance_namespaces, handle)
+            held = moderation.hold(conn, "org", owner_id)
+            if held is not None and held.action == "suspend":  # no new project (§6.26)
+                return False
+        return _listed(request, conn, owner_id)
+
+
+def _patch_served(request: Request, caller: Any, slug: str, body: Any, given: set[str]) -> bool:
+    """Whether a `PATCH` naming a repository may look at it with the operator's token: a cheap
+    check first that the caller may make the whole change, with the transaction's own checks,
+    since otherwise anyone signed in could make the token read any URL by naming a project in a
+    listed namespace (§11.4); then only when the page would stay on, and only for the project's
+    namespace by its owner now — never by the path, which may be an alias the project kept
+    from a listed namespace it was transferred out of. The transaction checks again under its
+    lock."""
+    try:
+        with engine_of(request).connect() as conn:
+            mine = membership(conn, caller, slug)
+            _refuse_for_agents(mine, body, given)
+            _authorise_patch(mine, body, given)
+            if given & PUBLIC_FIELDS:
+                _namespace_owner_only(conn, mine)
+            page = body.public_page if "public_page" in given else mine.project.public_page
+            return page == "on" and _listed(request, conn, mine.project.owner_id)
+    except ApiError:
+        return False
 
 
 def _refuse_outside_roles(
@@ -592,7 +604,9 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
     assert caller.human_id is not None  # a human caller
     # Before the transaction, which waits for no forge: a page asked for `off` needs no look.
     seen_public = (
-        _looks_public(request, body.repository, body.owner, caller.human_id)
+        _looks_public(
+            request, body.repository, _create_served(request, body.owner, caller.human_id)
+        )
         if body.public_page != "off"
         else None
     )
@@ -725,10 +739,9 @@ def patch_project(
     words = namespace.app_words(request.app)
     # The look at a new repository is the hub's own call to the forge, made before the
     # transaction (§6.1): the page stays on only for one the hub sees public.
-    owner = slug.split("/", 1)[0]  # the full name (`ProjectRoute`): any of the owner's names
     seen_public = (
-        _looks_public(request, body.repository, owner, None)
-        if "repository" in given and _may_patch(request, caller, slug, body, given)
+        _looks_public(request, body.repository, _patch_served(request, caller, slug, body, given))
+        if "repository" in given
         else None
     )
 
@@ -787,10 +800,13 @@ def patch_project(
                 values["repository_owner_confirmed"] = False
                 values["repository_confirmed_by"] = None
                 values["repository_public"] = None  # the forge has not said anything of this one
+                # The look counts only while the project is still in a listed namespace: a
+                # transfer may have taken it out since (§11.4).
+                looked = bool(seen_public) and _listed(request, conn, project.owner_id)
                 if (
                     columns["repository_url"] is not None
                     and values.get("public_page", project.public_page) == "on"
-                    and not seen_public
+                    and not looked
                 ):
                     # A repository the hub finds private or cannot read turns the page off, and
                     # the namespace owner turns it on again if they want (§6.1, §16.9).

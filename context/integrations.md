@@ -103,14 +103,20 @@ rename or a transfer out of the list takes effect on the next read, not
 after the choice's ten minutes; caching those facts would reopen that
 gap, and tests for both guard it. The first look at a new project's
 repository runs before the creating transaction, so that no row lock is
-held while the forge answers; it is made only for a namespace the
-creator may create in (their own, or an organisation where their role
-allows it), so that naming a listed organisation one is not in cannot
-spend the operator's token.
+held while the forge answers; it is made only where the new page can
+start `on` (the creator's own namespace, or an owner of an organisation
+that is not suspended), so that naming a listed organisation one cannot
+publish in cannot spend the operator's token.
 The look on a `PATCH` that names a new repository likewise comes only
 after a cheap check that the caller may make the change, since otherwise
 any signed-in account could make the operator's token read any URL by
 naming a project in a listed namespace, even one that does not exist.
+That check includes the namespace owner's right to the page fields, the
+look is made only when the page would stay `on`, and the namespace is
+the project's owner now, never the path's: after a transfer the old full
+name stays the project's alias and still names the listed former owner.
+Under the lock the transaction asks again whether the project is still
+listed, since a transfer may come between the look and the write.
 Making the look inside the transaction was rejected: it would hold the
 project's row lock while the forge answers. The transaction still checks
 the right under its lock.
