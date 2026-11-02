@@ -528,6 +528,8 @@ its own, because the members' cache may have read with an owner's grant. A rende
 runs in a transaction. The price is a view up to one interval old; a repository turning private empties it with
 the look that finds it. Each replica holds its own read and only one renders a pass, so a render with no read, or
 an older one by `observed_at`, keeps the stored view instead of emptying it, and every process reads once at start.
+A failed read keeps it too, as a failure says nothing about the export; a read that finds the repository names no
+export any more empties it.
 
 **Rejected:** answering `why` at request time from the memory cache: §11.3 would stay untouched, but the route
 would need a rule for the one kind without a row, and search engines would lose the page.

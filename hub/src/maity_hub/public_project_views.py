@@ -326,15 +326,19 @@ def organisation_html(who: dict[int, Person]) -> str:
 def why_data(conn: Connection, project: Any, path: str) -> dict[str, Any]:
     """What the page shows of the Keep the Why export: the counts, the family's links and the
     attention entries, read beforehand. Nothing while the repository is not public. Each
-    process holds its own read: a render with none, or with one older than the stored view,
-    keeps that view (hub/context/public-pages.md)."""
+    process holds its own read: a render with none, with a failed one or with one older than
+    the stored view keeps that view (hub/context/public-pages.md)."""
     if project.repository_public is not True:
         return {"readable": False}
     row = public_pages.get(conn, path)
     stored = row.data if row is not None and row.view == "why" and row.data["readable"] else None
     entry = WHY_CACHE.cached(project.id)
-    snapshot = entry.snapshot if entry and entry.repository_url == project.repository_url else None
-    if snapshot is None or snapshot.error is not None:
+    if entry is None or entry.repository_url != project.repository_url:
+        return stored or {"readable": False}  # no read of this repository in this process
+    snapshot = entry.snapshot
+    if snapshot is None:  # read, and the repository names no export any more
+        return {"readable": False}
+    if snapshot.error is not None:  # a failed read says nothing about the export
         return stored or {"readable": False}
     if stored and stored["observed_at"] > snapshot.observed_at:
         return dict(stored)

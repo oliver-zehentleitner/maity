@@ -10697,8 +10697,9 @@ the Why stays external). It holds the export in memory only, never in
 its database, and keeps no copy of the entries beyond the cache below.
 One exception, and only this one: the stored public view of a project
 whose repository the hub last found public (§16.9, **Why**) holds the
-summary counts, the family's links and the attention entries' titles,
-statuses, topics and links, never anything else of an entry.
+summary counts, when the hub read them (`observed_at`), the family's links
+and the attention entries' family member, titles, statuses, topics and links,
+never anything else of an entry.
 
 **Where the URL comes from — the repository only.** The `dashboard-state:`
 line inside the `keep-the-why:config` block of the repository's root

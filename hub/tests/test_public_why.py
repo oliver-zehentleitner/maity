@@ -139,3 +139,17 @@ def test_a_replica_with_no_read_or_an_older_one_keeps_the_stored_view(
     empty.entries[world.project_id] = ktw._Entry(older, 0.0, URL)
     world.touch()
     assert world.anyone.get(READ).json()["data"] == stored
+
+
+def test_a_failed_read_keeps_the_view_and_a_removed_export_empties_it(
+    world: World,
+) -> None:
+    stored = world.anyone.get(READ).json()["data"]
+    failed = ktw.Snapshot("2026-12-01T00:00:00Z", [], False, {"reason": "forge_unavailable"})
+    cache = public_project_views.WHY_CACHE
+    cache.entries[world.project_id] = ktw._Entry(failed, 0.0, URL)
+    world.touch()
+    assert world.anyone.get(READ).json()["data"] == stored
+    cache.entries[world.project_id] = ktw._Entry(None, 0.0, URL)
+    world.touch()
+    assert world.anyone.get(READ).json()["data"] == {"readable": False}
