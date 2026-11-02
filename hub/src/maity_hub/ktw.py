@@ -579,6 +579,12 @@ class Cache:
             self.locks.clear()
             self.users.clear()
 
+    def forget_all(self) -> None:
+        """`forget` for every project; the locks stay, as requests may hold them."""
+        with self.guard:
+            self.entries.clear()
+            self.last_good.clear()
+
     def forget(self, project_id: str) -> None:
         """The repository changed: no answer of the old one may stand for the new one, so
         the answers and the last good reads go even while a request uses the project;

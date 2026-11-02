@@ -18,7 +18,7 @@ from typing import Any
 
 from sqlalchemy import Connection, delete, insert, select, update
 
-from maity_hub import clock, forge, github_app
+from maity_hub import clock, forge, github_app, wakeups
 from maity_hub import tables as t
 from maity_hub.github_app import GitHubApp
 from maity_hub.ids import new_id
@@ -145,7 +145,7 @@ def unlink(conn: Connection, app: GitHubApp | None, human_id: str, link_id: str)
     conn.execute(delete(t.forge_link).where(t.forge_link.c.id == link_id))
     records.forge_access_changed(conn, human_id, "app", "unlinked", row.account_login)
     if app is not None:
-        github_app.forget_token(app, row.installation_id)
+        wakeups.forget_token_everywhere(conn, app, row.installation_id)
     return True
 
 
@@ -169,6 +169,8 @@ def shown(app: GitHubApp | None, row: Any) -> tuple[list[str], str | None]:
     Makes forge reads: no connection is held."""
     if app is None or row.status == "removed":
         return [], None
+    if row.status != "active":  # only a new mint says it is back, not a token held from before
+        github_app.forget_token(app.app_id, row.installation_id)
     try:
         return app.repositories(row.installation_id, REPOSITORIES_SHOWN), None
     except github_app.InstallationGoneError as gone:

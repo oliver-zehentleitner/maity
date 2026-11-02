@@ -42,6 +42,7 @@ from maity_hub import (
     rules,
     setup_cards,
     ticker,
+    wakeups,
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
@@ -841,7 +842,7 @@ def patch_project(
                 # Nor are the forge's images and the Keep the Why export: the new
                 # repository's are read afresh.
                 images.forget_forge(conn, project.id)
-                ktw.CACHE.forget(project.id)
+                wakeups.forget_repository_everywhere(conn, project.id)
             # whether the probe can observe it changed
             releases.recheck(conn, project.id, reader_of(request))
         if state_changes:

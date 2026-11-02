@@ -6,7 +6,9 @@ PostgreSQL delivers it at commit. Each process holds one connection outside the 
 process does, so a long-poll on one replica wakes when another writes. The same connection
 listens on `maity_supersede`: a wait that opens announces itself there (`opened`), and a replica
 holding an older wait of the same key ends it as superseded (§8.3, point 3 of 387c2409).
-When that connection drops, every waiter reads once (spread over `RESPREAD_SECONDS`), since
+It also listens on `maity_forget`: a forge token that was removed and the reads of a repository
+that changed go from every replica's caches (83da2bfa). When that connection drops, every waiter
+reads once (spread over `RESPREAD_SECONDS`), since
 what was announced meanwhile is lost, and the listener connects again with a growing pause.
 The long-poll's 2-second fallback read stays as the safety net. SQLite and MariaDB run one
 replica and have no listener.
@@ -26,8 +28,9 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import Connection, Engine, func, select
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import events, longpoll
+from maity_hub import events, github_app, ktw, longpoll
 from maity_hub.db import make_listener_engine
+from maity_hub.github_app import GitHubApp
 
 log = logging.getLogger(__name__)
 
@@ -37,6 +40,7 @@ BACKOFF_FIRST, BACKOFF_MAX = 1.0, 30.0  # the pause before connecting again, dou
 SUPERSEDE = "maity_supersede"  # `<sha256 of kind:key>:<start in µs on the database clock>`
 # `<sha256 of kind:key>`: what a held bell or device-code wait shows changed (point 5).
 RINGS = {"bell": "maity_bell", "device": "maity_device"}
+FORGET = "maity_forget"  # `token:<app id>:<installation id>` or `repository:<project id>`
 FALLBACK_SECONDS = 2.0  # a rung wait looks again at the latest after this, as the events do
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
@@ -216,6 +220,48 @@ def handle(payload: str) -> None:
     events.notifier.notify_from_elsewhere(project_id, int(seq))
 
 
+# --- what no replica may keep using (hub/context/replicas.md 83da2bfa) ----------------------
+
+
+def announce_forget(conn: Connection, what: str) -> None:
+    """In the caller's transaction: on PostgreSQL, tell every replica at commit, this one too.
+    Elsewhere there is one replica, and its caller forgets by itself as well."""
+    if conn.dialect.name == "postgresql":
+        conn.execute(select(func.pg_notify(FORGET, what)))
+
+
+def forget_token_everywhere(conn: Connection, app: GitHubApp, installation_id: int) -> None:
+    """This process at once, as a token that was removed must not be read with from here on, and
+    the others at commit. Only ids go through the channel, never a token."""
+    github_app.forget_token(app.app_id, installation_id)
+    announce_forget(conn, f"token:{app.app_id}:{installation_id}")
+
+
+def forget_repository_everywhere(conn: Connection, project_id: str) -> None:
+    ktw.CACHE.forget(project_id)
+    announce_forget(conn, f"repository:{project_id}")
+
+
+def forgotten(payload: str) -> None:
+    """One notice on `FORGET`; anything else is ignored."""
+    kind, _, rest = payload.partition(":")
+    if kind == "repository" and rest:
+        ktw.CACHE.forget(rest)
+        return
+    app_id, _, installation = rest.rpartition(":")
+    if kind == "token" and app_id and installation.isdigit():
+        github_app.forget_token(app_id, int(installation))
+        return
+    log.warning("a notice to forget that names nothing known was ignored")
+
+
+def forget_all() -> None:
+    """What was announced while nobody listened is lost. Asking the forge again costs a read; a
+    token that stays could be used for up to an hour after it was removed."""
+    github_app.forget_all_tokens()
+    ktw.CACHE.forget_all()
+
+
 class Listener:
     def __init__(self, url: str) -> None:
         self._engine: Engine = make_listener_engine(url)
@@ -240,6 +286,7 @@ class Listener:
                 self._listen(catch_up=again)
             except Exception:
                 log.warning("the wake-up listener has no connection; connecting again")
+                forget_all()  # no notice reaches this process until it is back
             again = True
             if self.listening.is_set():  # it was up: the first try again comes soon
                 self.listening.clear()
@@ -258,16 +305,20 @@ class Listener:
             conn.execute(f"LISTEN {SUPERSEDE}")
             for channel in RINGS.values():
                 conn.execute(f"LISTEN {channel}")
+            conn.execute(f"LISTEN {FORGET}")
             self.listening.set()
             if catch_up:
                 # What was announced while nobody listened is lost: every waiter reads once.
                 longpoll.registry.wake_all(spread=RESPREAD_SECONDS)
+                forget_all()
             while not self._stop.is_set():
                 for note in conn.notifies(timeout=POLL_SECONDS):
                     if note.channel == SUPERSEDE:
                         supersede(note.payload)
                     elif note.channel in RINGS.values():
                         rung(note.payload)
+                    elif note.channel == FORGET:
+                        forgotten(note.payload)
                     else:
                         handle(note.payload)
         finally:

@@ -15,7 +15,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import Field
 
-from maity_hub import forge, forge_links, forge_tokens
+from maity_hub import forge, forge_links, forge_tokens, wakeups
 from maity_hub.auth import second_factor
 from maity_hub.auth.caller import Caller
 from maity_hub.deps import AnyCaller, engine_of, settings_of
@@ -124,9 +124,10 @@ def list_links(request: Request, caller: AnyCaller) -> JSONResponse:
     links: list[dict[str, Any]] = []
     for row in rows:
         repositories, gone = forge_links.shown(app, row)
-        if gone is not None and gone != row.status:
+        if app is not None and gone is not None and gone != row.status:
             with engine.begin() as conn:
                 forge_links.set_status(conn, row.id, gone)
+                wakeups.forget_token_everywhere(conn, app, row.installation_id)
         links.append(forge_links.view(row, repositories, gone or row.status))
     return JSONResponse(
         {

@@ -28,7 +28,7 @@ from typing import Any
 
 from sqlalchemy import Engine, select, update
 
-from maity_hub import bounded, clock, forge, forge_links, github_app, secretbox
+from maity_hub import bounded, clock, forge, forge_links, github_app, secretbox, wakeups
 from maity_hub import tables as t
 from maity_hub.github_app import GitHubApp
 from maity_hub.notifications import records
@@ -167,11 +167,14 @@ class ForgeAccess:
         link_id, _, status = mine[0]
         if status == "removed":
             return None, "installation_removed"
+        if status != "active":  # only a new mint says it is back, not a token held from before
+            github_app.forget_token(self.app.app_id, installation_id)
         try:
             token = self.app.token(installation_id)
         except github_app.InstallationGoneError as gone:
             with self.engine.begin() as conn:
                 forge_links.set_status(conn, link_id, gone.state)
+                wakeups.forget_token_everywhere(conn, self.app, installation_id)
             return None, f"installation_{gone.state}"
         if status != "active":
             with self.engine.begin() as conn:
