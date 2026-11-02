@@ -8,7 +8,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Engine, update
 
 from maity_hub import clock, public_pages, public_snapshot
 from maity_hub import tables as t
