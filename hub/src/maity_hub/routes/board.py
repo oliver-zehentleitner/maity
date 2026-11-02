@@ -341,16 +341,23 @@ def _precondition(conn: Connection, mine: Membership, row: Any, base_version: in
     if base_version is None:
         raise invalid({"base_version": "required"}, "name the note's version you read")
     if base_version != row.version:
-        raise ApiError(
-            409,
-            "conflict",
-            "the note changed since you read it; read it and decide again",
-            {
-                "current_version": row.version,
-                "base_version": base_version,
-                "note": load_note(conn, row.id, mine),
-            },
-        )
+        raise _conflict(conn, mine, row, base_version)
+
+
+def _conflict(conn: Connection, mine: Membership, row: Any, base_version: int) -> ApiError:
+    """`conflict` with the note as `mine` reads it now (§6.16). Also what a write gets that
+    passed the precondition and then lost the conditional UPDATE to another write on the
+    same version: always an error, never a silent success."""
+    return ApiError(
+        409,
+        "conflict",
+        "the note changed since you read it; read it and decide again",
+        {
+            "current_version": row.version,
+            "base_version": base_version,
+            "note": load_note(conn, row.id, mine),
+        },
+    )
 
 
 def _task_ref(card: Any) -> dict[str, Any]:
@@ -511,7 +518,7 @@ def edit_note(
                 raise ApiError(
                     400, "invalid", "a redacted note is not edited", {"reason": "redacted"}
                 )
-            _precondition(conn, mine, now, body.base_version)
+            raise _conflict(conn, mine, now, row.version)
         shown = load_note(conn, row.id)
         for event in notes.carriers(conn, mine.project.id, row):
             notes.rewrite(conn, event, shown)
@@ -612,9 +619,10 @@ def redact_note(
                 actor=caller.actor(mine.id),
                 subject=("task", card.id),
             )
-        elif not (now := _note(conn, card, note_id)).redacted:
-            # An edit won the row after it was read: the redactor has not seen this text.
-            _precondition(conn, mine, now, body.base_version)
+        elif not row.redacted:
+            # Another write won the row after it was read, an edit or a redaction: of two
+            # writes on one version one wins, the other gets `conflict` (§6.16).
+            raise _conflict(conn, mine, _note(conn, card, note_id), row.version)
         return idempotency.Outcome(200, "note", row.id, load_note(conn, row.id, mine))
 
     return idempotency.run(engine_of(request), request, caller, action)

@@ -333,3 +333,61 @@ def test_an_edit_that_loses_the_row_to_another_write_is_a_conflict(
     assert lost.status_code == 409, lost.text
     assert lost.json()["error"]["details"]["current_version"] == 2
     assert events(migrated, "note_edited") == []
+
+
+def test_the_right_to_the_note_comes_before_its_version(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine  # noqa: F811
+) -> None:
+    """A caller without the right learns nothing of the note's version: `forbidden`, never
+    `required` or `conflict` (§6.16, the order of the checks), also on a redacted note."""
+    writer = flow.agent(make_client, owner)
+    stranger = flow.agent(make_client, owner, role="admin")
+    card = task(owner)
+    posted = note(writer, card, "first").json()
+    for base in (None, 1, 7):
+        refused = edit(stranger, card, posted, body="x", reason="r", base_version=base)
+        assert refused.status_code == 403, refused.text
+        assert refused.json()["error"]["details"]["reason"] == "not_your_note"
+    path = f"/projects/maintainer/maity/tasks/{card['id']}/notes/{posted['id']}/redact"
+    for redact in ({"reason": "r"}, {"reason": "r", "base_version": 7}):
+        assert stranger.post(path, redact).status_code == 403
+    assert owner.post(path, {"reason": "r", "base_version": 1}).status_code == 200
+    refused = edit(stranger, card, posted, body="x", reason="r", base_version=7)
+    assert refused.json()["error"]["details"]["reason"] == "not_your_note"
+
+
+@pytest.mark.parametrize("other", ["edit", "redaction"])
+def test_a_redaction_that_loses_the_row_to_another_write_is_a_conflict(
+    other: str,
+    owner: flow.Human,  # noqa: F811
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Of two writes on one version one wins; a redaction that comes second to the
+    conditional UPDATE is refused, whether an edit or another redaction won."""
+    from maity_hub.board import notes as domain
+
+    card = task(owner)
+    posted = note(owner, card, "first").json()
+    original = domain.redact
+    tombstone = {"redacted": True, "reason": "first", "by": owner.id, "at": "2026-11-03T00:00:00Z"}
+    won: dict[str, Any] = (
+        {"body": "the other write"}
+        if other == "edit"
+        else {"body": None, "redacted": True, "redaction": tombstone}
+    )
+
+    def raced(conn: Any, project_id: str, row: Any, mark: Any) -> bool:
+        conn.execute(
+            t.card_note.update()
+            .where(t.card_note.c.id == row.id)
+            .values(**won, version=t.card_note.c.version + 1)
+        )
+        return original(conn, project_id, row, mark)
+
+    monkeypatch.setattr(domain, "redact", raced)
+    path = f"/projects/maintainer/maity/tasks/{card['id']}/notes/{posted['id']}/redact"
+    lost = owner.post(path, {"reason": "r", "base_version": 1})
+    assert lost.status_code == 409, lost.text
+    assert lost.json()["error"]["details"]["current_version"] == 2
+    assert events(migrated, "event_redacted") == []
