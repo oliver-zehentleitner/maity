@@ -187,6 +187,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.hub == 'true'
     runs-on: ${{ (vars.HUB_RUNNER_LABEL != '' && contains(format(' {0} ', vars.HUB_RUNNER_TYPES || 'sqlite pg maria'), ' sqlite ') && github.event_name == 'push') && fromJSON(format('["self-hosted","{0}-sqlite"]', vars.HUB_RUNNER_LABEL)) || 'ubuntu-latest' }}
+    # A hang fails after 90 minutes instead of GitHub's 6 hours (context/process.md, the entry on job timeouts).
+    timeout-minutes: 90
     steps:
       - run: echo "runner $RUNNER_NAME ($RUNNER_ENVIRONMENT, $RUNNER_OS $RUNNER_ARCH), $(nproc) cpus"  # hosted or the maintainer's machine (HUB_RUNNER_LABEL)
         working-directory: .  # before the checkout, `hub` does not exist yet
@@ -311,6 +313,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.hub == 'true'
     runs-on: ${{ (vars.HUB_RUNNER_LABEL != '' && contains(format(' {0} ', vars.HUB_RUNNER_TYPES || 'sqlite pg maria'), ' pg ') && github.event_name == 'push') && fromJSON(format('["self-hosted","{0}-pg"]', vars.HUB_RUNNER_LABEL)) || 'ubuntu-latest' }}
+    # A hang fails after 90 minutes instead of GitHub's 6 hours (context/process.md, the entry on job timeouts).
+    timeout-minutes: 90
     services:
       postgres:
         image: postgres:17@sha256:31ba9c94a03ada9988f2bb493a22a75eef3a185884533e5cdbcd498ea835b08f # pinned: a local tag cannot replace it

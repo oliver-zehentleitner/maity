@@ -117,6 +117,8 @@ jobs:
     needs: decide
     if: needs.decide.outputs.run == 'true'
     runs-on: ${{ (vars.HUB_RUNNER_LABEL != '' && contains(format(' {0} ', vars.HUB_RUNNER_TYPES || 'sqlite pg maria'), ' maria ')) && fromJSON(format('["self-hosted","{0}-maria"]', vars.HUB_RUNNER_LABEL)) || 'ubuntu-latest' }}
+    # A hang fails after 90 minutes instead of GitHub's 6 hours (context/process.md, the entry on job timeouts).
+    timeout-minutes: 90
     services:
       mariadb:
         image: mariadb:11.4@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620 # pinned: a local tag cannot replace it

@@ -1027,6 +1027,26 @@ for the newest run to finish.
   green run for as long as the streak lasts, and a deploy needs a green one.
 - A group per commit, as before: nothing is ever replaced, so a merge streak queues one run per merge.
 
+## The database jobs fail after 90 minutes; a hang no longer holds main's run for six hours
+
+**Id:** 97f338fd-9f05-4376-ac74-1649931c9945
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's decision, 2026-11-02, after main's ci run of `2246df68` hung in `hub-postgresql` at 99 % from 17:08 UTC until GitHub's six-hour limit cancelled it at 22:22 UTC (no ci run on main finished from 14:43 UTC on; the search for the hanging test is card tsk-xz3bxa5cwv4v); job durations read from the run history
+**Revisit when:** a green database job runs longer than about 70 minutes, or the jobs move to slower runners
+
+`hub-sqlite`, `hub-postgresql` (`ci.yml`) and `hub-mariadb` (`hub-mariadb.yml`) carry `timeout-minutes: 90`. Without it a job
+runs to GitHub's limit of six hours; while main's one running ci run hangs, every newer push only replaces the waiting run
+(the entry above), so nothing on main finishes and the MariaDB start from `ci` never comes. Green runs of the last day took up
+to 39 minutes (SQLite), 61 (PostgreSQL) and 29 (MariaDB); 90 leaves room for a slow runner and still fails a hang the same
+evening.
+
+**Rejected alternatives:**
+- A per-test timeout (`pytest-timeout`): names the hanging test, which the job timeout does not, but is a new dependency in the
+  locks and a choice of a limit per test; it belongs to the search for the hang, not to keeping the queue moving.
+- Cancelling a hung run by hand: needs someone to notice it, and here nobody did for five hours.
+
 ## MariaDB checks main after every ci run and every hour, not every pull request; PostgreSQL and SQLite stay in the gate
 
 **Id:** 75a2382c-6a3d-450d-873e-8aade80d6e3b
