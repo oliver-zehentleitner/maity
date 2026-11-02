@@ -242,7 +242,7 @@ through the probe gives that without a second source of truth.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's wish in the Maity chat, 2026-11-02, that the overview link the contract and better show it rendered inside Maity (card tsk-yhbmz7mjng7n); the coordinator's go the same day for the implementer to write the contract; the arbiter's ruling on #1235, 2026-11-02; the contract review of #1235 and the arbiter's ruling on its findings the same day (Markdown only, `private, no-cache`, the repository in the `ETag`), and the arbiter's rulings on the delta reviews the same day (a symlink refused, told by the tree's mode, each directory's tree read and the check failing closed); contract in `docs/api.md` §6.8, §6.1, §6.11, §16.11
+**Source:** the maintainer's wish in the Maity chat, 2026-11-02, that the overview link the contract and better show it rendered inside Maity (card tsk-yhbmz7mjng7n); the coordinator's go the same day for the implementer to write the contract; the arbiter's ruling on #1235, 2026-11-02; the contract review of #1235 and the arbiter's ruling on its findings the same day (Markdown only, `private, no-cache`, the repository in the `ETag`), and the arbiter's rulings on the delta reviews the same day (a symlink refused, told by the tree's mode, each directory's tree read and the check failing closed, a missing segment `not_found_on_forge`); contract in `docs/api.md` §6.8, §6.1, §6.11, §16.11
 **Revisit when:** a project's contract outgrows 4 MiB, or a project keeps its contract in more than one file
 **See:** cards.md#a-contracts-text-stays-in-the-repository-the-card-shows-the-section-read-from-it — f29e3cb3-12ab-4af6-83f1-9b04dbaeb578 — as of 2026-11-02
 
@@ -257,9 +257,11 @@ keeps it from exposing arbitrary repository files to every
 `project:read` holder, guests included; a symlink is refused too, since
 the name says nothing about the file it points to: the hub reads the
 non-recursive tree of each directory on the path at the commit, every
-segment must be listed as a directory (`040000`) or, last, a regular
-file (`100644`, `100755`), and anything else, a missing entry or a
-truncated tree included, is `not_markdown`: the check fails closed. The
+segment must be listed under exactly its name as a directory (`040000`)
+or, last, a regular file (`100644`, `100755`); a missing segment is
+`not_found_on_forge`, as for any file not there at the commit, and
+anything else, a truncated tree included, is `not_markdown`: the check
+fails closed. The
 tree of a commit never changes, so it is cached per commit SHA and
 directory. The file cap for this read and for a card's section is
 4 MiB instead of 1 MiB; a larger file is refused, never cut.
@@ -303,6 +305,11 @@ reading up to 4 MiB again; after a `304` the view keeps the `ref`,
   lists nothing under `scripts/`), so a symlink there would pass; the
   directory's own tree is never truncated, and a missing entry fails
   closed.
+- A missing segment as `not_markdown`: a directory's own tree lists
+  every entry, so a missing one means the file is not there, which the
+  read already answers with `not_found_on_forge`; two codes for one case
+  would depend on the order of the reads, and the file may appear later,
+  which that code says. Nothing is shown either way.
 - `no-store` like the other API answers: every tab and reload would
   read the whole file again, so the load would grow with tabs.
 
