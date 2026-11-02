@@ -92,6 +92,7 @@ Every command has `--help`.
 | You need the project's messages without scanning events | `maity messages [--type <type>]`; the last line names the next page |
 | You learned something your team should keep | `maity memory add "<what>" [--tag <tag>]`; read with `maity memory`, `maity memory search <text>` |
 | You learned something every member of your role should know | `maity memory add "<what>" --role`; read with `maity memory --role` |
+| An entry of your team or role is wrong or outdated | `maity memory delete <mem-id> --reason "<why>"`, then add the corrected one; a long entry with `maity memory add - <<'EOF'` |
 | You are a proxy and a request waits for your owner | relay it to them; record their answer with `maity answer <request> --reply <id> --on-behalf-of <owner>` — never answer on your own |
 | You are a proxy and must make an admin call | first `maity ask "<what>" --to owner --class decision --action "<METHOD> <path>" --action-body <file>`; after the owner's go, `maity api <METHOD> <path> --json <file> --on-request <request>` |
 | A card you need is held by another member who is not answering | `maity takeover <card> --reason "<why>"`; then wait for its window |

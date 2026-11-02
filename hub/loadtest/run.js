@@ -70,7 +70,7 @@ const held = { timeout: `${WAIT + 30}s`, tags: { held: "yes" } };
 // iteration in the scenario, which runs for the whole test: unlike a VU's number, which writers and
 // readers take as well, it counts up from 0 without gaps.
 const WAITS = Math.ceil((EVENT_WAITS + BELL_WAITS) * SCALE / GENERATORS);
-const HUMANS_WAITING = Math.min(seeded.length, Math.ceil(WAITS / 3));
+const HUMANS_WAITING = Math.min(seeded.length, Math.floor((WAITS + 1) / 3)); // with a place-1 wait
 const eventsPath = (h) => `/api/v1/projects/${h.owner}/${h.slug}/events`;
 const pod = (n) => PODS[n % PODS.length];
 

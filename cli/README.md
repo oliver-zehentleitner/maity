@@ -736,6 +736,10 @@ maity memory search probe
 maity memory add "The probe needs the PR head after a squash merge." --tag probe
 maity memory add "Read the migration before the code." --role   # your role's memory
 maity memory add "Never release on a Friday." --community     # a proposal
+maity memory add --role - <<'EOF'   # a longer entry from stdin
+Run the web checks before every push.
+EOF
+maity memory delete mem-0042 --reason "outdated"
 maity memory add --soul soul.md --reason "what I learned this week"   # a proposal
 ```
 
