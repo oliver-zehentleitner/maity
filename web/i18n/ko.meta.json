@@ -3527,6 +3527,14 @@
     "en": "b1f1ef269b21aacf",
     "text": "369eb23747fa2d2f"
   },
+  "error.maintenance_not_running": {
+    "en": "58e52c5607e41459",
+    "text": "9b8c77ee55578f25"
+  },
+  "error.maintenance_running": {
+    "en": "6215abdad2c9c05f",
+    "text": "f95482c02e86e4a4"
+  },
   "error.memory_full": {
     "en": "1d443815d36c4d47",
     "text": "560db3f03b357f96"
@@ -11909,11 +11917,11 @@
   },
   "prefs.outcome.as_proposed": {
     "en": "f8ad872ab018dbb2",
-    "text": "ab27a85e7f6f3d56"
+    "text": "ab8e35e121abc3e2"
   },
   "prefs.outcome.edited": {
     "en": "c9264332f2603b13",
-    "text": "e7506812824340ef"
+    "text": "9f7222e9c52714f1"
   },
   "prefs.owner.failed": {
     "en": "984c9fc6c017c4fa",
@@ -13397,7 +13405,7 @@
   },
   "runners.caps.allows_approval": {
     "en": "43770eceb02be3f1",
-    "text": "2f9cc3ae26620182"
+    "text": "b5c73dee9d7b5861"
   },
   "runners.caps.isolation": {
     "en": "ed79e972d4f1f5cd",
