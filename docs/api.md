@@ -4206,6 +4206,7 @@ around.
   "state_note": "MVP skeletons in progress.",
   "state_changed_at": "2026-10-21T09:00:00Z",
   "repository": { "url": "https://github.com/oliver-zehentleitner/maity", "default_branch": "main",
+                  "required_check": "ci-ok",
                   "forge": "github", "probe_configured": true, "probe_via": "app",
                     "owner_confirmed": true, "confirmed_by": { "id": "hum-mebxvnc20qeg", "handle": "oliver" } },
   "links": { "issues": "https://github.com/oliver-zehentleitner/maity/issues", "wiki": null, "discussions": null, "chat": null },
@@ -4283,6 +4284,21 @@ confirmed this URL for the owner's grants (§11.4), with `confirmed_by`
 the human who did (for a project of an organisation one of its owners,
 §6.26).
 One repository per project in V1.
+
+`required_check` names the one check that says a commit is good to
+merge or deploy (`ci-ok` in the example, as in Maity's own CI,
+`context/process.md`):
+`null` by default, a string of 1 to 200 characters otherwise, matched
+exactly and case-sensitively against the names of the check runs and the
+contexts of the commit statuses on a commit (§11). The hub builds no name
+in. With it set, every read of a commit's checks also reports
+`required_check` (§6.6, §6.13, §11); with `null` that field is `null`.
+It is part of the `repository` object a `PATCH` sends, beside `url` and
+`default_branch`: a `repository` without `required_check` keeps the
+current value, `null` clears it, and an empty or longer string is
+`invalid` (`details.fields["repository.required_check"]`). Changing it
+starts no read of its own; the next observation of each target reports
+the new name.
 
 **Logo** and **banner** say what the dashboard may ask for instead of
 drawing a monogram: `available` — `GET …/logo` (`…/banner`) has an
@@ -5651,10 +5667,36 @@ Stored on the card as `report`:
   "session_id": "ses-b-0003", "reported_at": "…",
   "mentions": [],
   "observed": { "pr_state": "open", "pr_head_sha": "d91e294c…", "checks": "success",
+                "required_check": { "name": "ci-ok", "status": "success" },
                 "branch_head_sha": "d91e294c…", "observed_at": "…" },
   "why": { "ref": "context/cards.md#2280ced7-c51f-48f5-aab7-3bdacc7de21e" },
   "revision": 2, "mismatch": false }
 ```
+
+`observed.pr_head_sha` is the head the probe watches, and
+`observed.required_check` is the project's required check (§6.1
+`repository.required_check`) on that head: `{name, status}`, or `null`
+when the project names none. It is taken from the checks the pull
+request read already returns (§11, `checks_detail`), so it costs no
+forge request of its own. `status` is one of:
+
+| `status` | Meaning |
+|---|---|
+| `success` | the check ran on this commit and passed |
+| `failure` | it ran and did not pass: `failure`, `timed_out`, `action_required`, `startup_failure`, `error`, and also `neutral` and `skipped`, since a check that did not pass is not green |
+| `cancelled` | its run was cancelled. On the default branch that means superseded by a newer merge, not red: a commit that merged while a run was waiting has its waiting run cancelled by GitHub (`context/process.md`); the dashboard says "superseded", never "failed" |
+| `pending` | queued, in progress, or `stale` |
+| `missing` | the checks were all read and none carries the name |
+| `unknown` | the checks could not all be read (more than the probe pages through, no permission for them) |
+
+When several runs or statuses on the commit carry the name, the worst
+counts, in the order `failure`, `pending`, `cancelled`, `success`. The
+summary `checks` stays as it is (a `cancelled` run still counts as
+`failure` there); `required_check` is the field that tells "superseded"
+from "red". The board and `maity task show` show the watched head
+beside it ("head `d91e294` · ci-ok success · 3 min ago"). A change of
+`required_check` alone is a change of the observation and emits
+`probe_observed` (§8.2); it never sets `mismatch`.
 
 `revision` is set by the hub: 1 for the card's first report, plus 1 for
 every report that replaces it, including a report on a `done` card
@@ -6606,7 +6648,8 @@ the CLI's; `--json` prints the packet unchanged.
 
 ### 6.13 Card links
 
-A card carries a list of references, `links`. Two kinds:
+A card carries a list of references, `links`. Two kinds, forge links
+(`issue`, `pr`, `commit`) and URL links:
 
 ```json
 "links": [
@@ -6616,19 +6659,32 @@ A card carries a list of references, `links`. Two kinds:
                   "observed_at": "2026-10-22T14:05:00Z" },
     "added_by": "hum-maintainer", "added_at": "2026-10-22T14:04:51Z" },
   { "id": "lnk-0008", "kind": "url", "url": "https://keepthewhy.com/linting/", "label": "ktw-lint docs",
-    "added_by": "agt-b", "added_at": "2026-10-22T14:06:10Z" }
+    "added_by": "agt-b", "added_at": "2026-10-22T14:06:10Z" },
+  { "id": "lnk-0009", "kind": "commit",
+    "forge_url": "https://github.com/oliver-zehentleitner/maity/commit/6e3eceee…40 hex",
+    "forge": "github", "repository": "oliver-zehentleitner/maity", "sha": "6e3eceee…40 hex",
+    "observed": { "found": true, "sha": "6e3eceee…40 hex", "checks": "success",
+                  "required_check": { "name": "ci-ok", "status": "success" },
+                  "branch_head_sha": "6e3eceee…40 hex", "ahead": false,
+                  "observed_at": "2026-11-02T13:10:00Z" },
+    "added_by": "agt-ops", "added_at": "2026-11-02T13:09:40Z" }
 ]
 ```
 
-**Forge links** (`kind: issue` or `pr`) name an issue or a pull (merge)
-request by its web URL. The client sends `{kind, forge_url}` and nothing
-else; the hub parses the URL and fills `forge`, `repository` and
-`number`. Accepted shapes, `https` only, no query, no fragment, no user
-info, an optional trailing `/`:
+**Forge links** (`kind: issue`, `pr` or `commit`) name an issue, a pull
+(merge) request or a commit by its web URL. The client sends `{kind,
+forge_url}` and nothing else; the hub parses the URL and fills `forge`,
+`repository` and `number` (for `commit`, `sha` instead of `number`).
+Accepted shapes, `https` only, no query, no fragment, no user info, an
+optional trailing `/`:
 
-| Forge | `issue` | `pr` |
-|---|---|---|
-| GitHub | `https://github.com/{owner}/{repo}/issues/{n}` | `https://github.com/{owner}/{repo}/pull/{n}` |
+| Forge | `issue` | `pr` | `commit` |
+|---|---|---|---|
+| GitHub | `https://github.com/{owner}/{repo}/issues/{n}` | `https://github.com/{owner}/{repo}/pull/{n}` | `https://github.com/{owner}/{repo}/commit/{sha}` |
+
+A commit's `{sha}` is the full 40 hex characters; the hub stores it in
+lower case. A shorter or longer sha is `not_a_forge_url`: heads are
+compared whole, never as a prefix (§6.6).
 
 GitHub is the one forge of V1 (§11); an issue or merge request on any
 other forge is linked as `kind: url`. The URL's host must be the host of
@@ -6649,7 +6705,8 @@ not closed, once more when it closes, and never after; the read follows
 §11.1 like every probe read (the forge's fixed API host, the operator's
 token). `state` is `open` or `closed` for an issue and `open`, `closed`
 or `merged` for a pull request; `title` is the forge's title, cut to the
-200-character title cap. `observed` is `null` before the first read and
+200-character title cap. A `commit` link has no `state` or `title`; its
+`observed` is described below. `observed` is `null` before the first read and
 stays `null` without a probe; the dashboard then shows the URL and "not
 observed". A forge that has no such item answers `{found: false,
 observed_at}` (an answer, as in §11); a read that fails keeps the last
@@ -6675,6 +6732,48 @@ A change of an observation's `state` or `title` emits `link_observed`
 (§8.2). The hub never writes to the forge: a link is not a GitHub
 "linked issue", and closing a card closes nothing on the forge.
 
+**Commit links** (`kind: commit`) are how a deploy is observed. A
+deploy is an ordinary `task` that links the commit it will deploy;
+there is no deploy card kind and no deploy field on a release card
+(§6.7). The hub observes the commit like any forge link (the project's
+repository only, while the card is not closed, through the source's
+budget, §11.4) and stores:
+
+```json
+"observed": { "found": true, "sha": "…40 hex", "checks": "success",
+              "required_check": { "name": "ci-ok", "status": "success" },
+              "branch_head_sha": "…40 hex", "ahead": false, "observed_at": "…" }
+```
+
+- `found` is whether the forge has the commit; a commit it does not
+  have, or the token cannot read, is `{found: false, observed_at}` and
+  nothing else.
+- `sha` is the commit's sha, the link's.
+- `checks` is the summary of §11 on that commit (`success`, `failure`,
+  `pending`, `none`, `unknown`), and `required_check` the project's
+  required check on it, as in §6.6 (`null` when the project names none).
+- `branch_head_sha` is the head of the repository's default branch
+  (`repository.default_branch`, §6.1) at the same read.
+- `ahead` is `true` when that head is not `sha`: the default branch has
+  moved past the commit the card will deploy (a merge after the freeze),
+  or the commit is not its head at all. `false` when the head is `sha`.
+  `null` when the branch could not be read.
+
+A read of a commit link costs at most one read of the commit, the reads
+of its check runs and statuses (§11) and one read of the default branch.
+The observation is one read or none: when a part cannot be read because
+the source's budget is spent (§11.4), the read is dropped as a whole and
+the last observation stays, with its `observed_at`. A part the forge
+refuses without the budget being spent reads as `unknown` (`checks`,
+`required_check.status`) or `null` (`branch_head_sha`, `ahead`), never
+as `success` or `false`. So `required_check.status: success` with
+`ahead: false` always comes from one complete read at `observed_at`.
+
+When `ahead` turns `true`, `link_observed` also wakes the card's holder
+(§8.2): whoever deploys learns before the deploy that the commit is no
+longer the branch's head. It wakes nobody else, and an `ahead` that
+stays `true` while the branch moves on does not wake again.
+
 **URL links** (`kind: url`) are `{kind, url, label?}`: `https` only, at
 most 2048 characters, no user info, a `label` of at most 200 characters
 (plain text, never scanned for mentions). The hub never fetches a URL
@@ -6695,7 +6794,7 @@ go with the `kind`. An issue or pull request number above 2147483647 is
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `POST /projects/{owner}/{slug}/tasks/{id}/links` | `tasks:write` | `{kind: issue\|pr, forge_url}` or `{kind: url, url, label?}`; `201` with the link; on any card the caller can read |
+| `POST /projects/{owner}/{slug}/tasks/{id}/links` | `tasks:write` | `{kind: issue\|pr\|commit, forge_url}` or `{kind: url, url, label?}`; `201` with the link; on any card the caller can read |
 | `DELETE /projects/{owner}/{slug}/tasks/{id}/links/{link_id}` | the link's adder, the card's holder or creator, `tasks:admin` | `200` with the removed link |
 
 `POST /projects/{owner}/{slug}/tasks` also takes `links` (the same request
@@ -9229,7 +9328,7 @@ learns its content.
 | `note_added` | the card's holder and creator, `member:<id>` of every member the note's `body` mentions, `instance:<member>#<id>` for an instance mention (§8.6) | the note (§6.16), `task: {id, title, status}` |
 | `note_edited` | while the card is not `done` or `cancelled`: the note's author, the card's holder and creator, `member:<id>` of every member with a note on the card and of every member the new `body` mentions, `instance:<member>#<id>` for an instance mention (§8.6); on a `done` or `cancelled` card the note's author and the members newly mentioned (not in the old `body`) | the note as it is now, with `edited` (§6.16), `task: {id, title, status}`; never the earlier text, and rewritten with the note by a later edit or a redaction |
 | `note_resolved` | the note's author, the card's holder and creator | `note_id`, `task_id`, `state`, `resolution` |
-| `link_observed` | **all**, plus the card's holder when the observed `state` changed | `task_id`, `link_id`, `forge_url`, `old`, `new` (`{found, title, state}`), `public` (whether the same read reported the repository public, §11.4; `false` when it did not say), `read_via` (the source that read it, §11.4: `instance`, `app`, `owner_token`, or `null`) |
+| `link_observed` | **all**, plus the card's holder when the observed `state` changed or, on a `commit` link, `ahead` turned `true` (§6.13) | `task_id`, `link_id`, `forge_url`, `old`, `new` (`{found, title, state}`; on a `commit` link `{found, sha, checks, required_check, branch_head_sha, ahead}`, §6.13), `public` (whether the same read reported the repository public, §11.4; `false` when it did not say), `read_via` (the source that read it, §11.4: `instance`, `app`, `owner_token`, or `null`) |
 | `task_claimed`, `task_released`, `task_assigned` | creator, holder (old and new), assignee (old and new), and the human owner of an agent among holder (old and new) and assignee — never a human's watch | `holder`, `instance`, `lease_until`, `project_state`, `reason?`; `takeover_id` and `from` when a takeover moved it, `replaces` when a replacing instance inherited it |
 | `task_checkpoint` | holder | the checkpoint |
 | `objection_hold_set`, `objection_hold_lifted` (not built, §6.19) | the task events' audience (§6.4), the holding instance, the requester, `to`; the objecting human as `member:` when a member | `{task_id, takeover_id, by, at}`; on lifting also `lifted_by` and `how` (§6.19). Ids only |
@@ -9265,7 +9364,7 @@ learns its content.
 | `credential_revoked` | the credential's member, `trust:owner` | credential id, `reason` |
 | `credential_in_payload` | the credential's owner, `trust:owner`, `trust:admin` | credential id; never the value |
 | `event_redacted` | the redacted event's own audience, never wider; for a conversation's message the conversation's audience instead: the two parties of a direct one, the current participants of a group chat, in a closed one also its former human participants and the redacting admin (§8.5) | `seq`, `reason`; `note_id` too when a note was redacted (§6.16); `history_id` and `task_id` instead of `seq` when a card history entry was (§6.15) |
-| `probe_observed` | on a report: the holder of the affected card, with `mismatch: true` also `trust:admin`; nobody on a `done` or `cancelled` card without a mismatch or with its pull request merged, and the report keeps `observed` and `mismatch` to read; on the open release: its card's holder, `trust:admin` | the observation |
+| `probe_observed` | on a report: the holder of the affected card, with `mismatch: true` also `trust:admin`; nobody on a `done` or `cancelled` card without a mismatch or with its pull request merged, and the report keeps `observed` and `mismatch` to read; on the open release: its card's holder, `trust:admin` | the observation: on a report `{task, observed, mismatch}`, `observed` being `{pr_state, pr_head_sha, checks, required_check, branch_head_sha, observed_at}` (§6.6); on the open release `{task, observations}` |
 | `task_merged` | the card's done authority as §6.6 resolves it, the holder, `trust:admin` | `{task, pr, merge_sha, done_authority, closed, blocked_by?}` (§6.6); wakes the done authority only, and nobody when `closed` is true |
 | `placement_created`, `placement_updated` | `runner:<id>` of the placement's runner once the placement is approved (a pending proposal never names the runner), the creator, the owner of the agent profile | `placement_id`, `generation`, `desired`, `harness`, `target`, `approval.status`, `closed_reason`; never `briefing`, `session_hint` or `logs_hint` (§15.10) |
 | `placement_reported` | the creator, the owner of the agent profile | `placement_id`, `state`, `reason`, `detail`, `exit_code`, `observed_generation`, `restarts`, `retry_at` |
@@ -9338,7 +9437,9 @@ else reads it in the stream.
 the broadcast set: it never wakes a long-poll; nor does `link_observed`
 through `all` — a linked issue that gets a new title is something the
 board shows — and it wakes the holder only, by `member:<id>`, when the
-issue or pull request opened, closed or merged. A new logo or banner is
+issue or pull request opened, closed or merged, or a linked commit's
+`ahead` turned `true` (§6.13). A commit link's other changes
+(`checks`, `required_check`) wake nobody. A new logo or banner is
 something the dashboard shows, not something an agent acts on, and under
 a supervised runner every wake is a model run. `avatar_changed` follows
 the same rule for the same reason (§6.10). `ticker` follows it for its
@@ -10875,6 +10976,7 @@ clone), each an instance, up to `agent.max_instances` (§6.18).
 GET /projects/{owner}/{slug}/probe?pr=3
 GET /projects/{owner}/{slug}/probe?branch=agent-b/credentials
 GET /projects/{owner}/{slug}/probe?tag=v0.1.0
+GET /projects/{owner}/{slug}/probe?commit=6e3eceee…40 hex
 GET /projects/{owner}/{slug}/probe?pr=3&max_age=0
 ```
 
@@ -10901,9 +11003,11 @@ to the forge.
   "pr": { "number": 3, "found": true, "url": "…", "title": "hub: skeleton", "state": "open", "draft": false,
           "head_sha": "…", "base": "main", "mergeable": "conflicting",
           "checks": "pending", "checks_detail": [ { "name": "ci / sqlite", "status": "success" } ],
+          "required_check": { "name": "ci-ok", "status": "pending" },
           "merged_at": null, "merge_sha": null },
   "branch": null,
-  "tag": null
+  "tag": null,
+  "commit": null
 }
 ```
 
@@ -10912,14 +11016,24 @@ to the forge.
 `mergeable: conflicting` with `checks: none`), `unknown`. A pull request
 the forge does not have is `{number, found: false}` and nothing else; it
 is an answer, not an error. For `branch`:
-`{name, head_sha, found}`, `head_sha` null when not found. For `tag`: `{name, sha, found, observed_at}`,
-the same shape as `release.tag`. Errors: `probe_not_configured`,
+`{name, head_sha, found, required_check}`, `head_sha` null when not
+found; `required_check` is the project's required check on `head_sha`
+(§6.6), `null` when the project names none or the branch is not found,
+and reading it costs the check reads of that commit. For `tag`: `{name, sha, found, observed_at}`,
+the same shape as `release.tag`. For `commit` (`?commit=` takes the full
+40 hex sha): `{sha, found, checks, checks_detail, required_check,
+branch_head_sha, ahead}`, the shape of a commit link's observation
+(§6.13); `{sha, found: false}` when the forge does not have it, and a
+sha that is not 40 hex is `invalid`. `required_check` on `pr` is read
+from its `checks_detail`, at no extra cost. Only the project's own
+repository is read, as everywhere here. Errors: `probe_not_configured`,
 `probe_unavailable` (with the last observation in `details.last` when one
 exists). The same reads feed `report.observed`,
 `release.pull_requests` and the forge links on cards (§6.13, read
 through the forge's issue endpoint for `kind: issue`), in the background after a report and on the
 hub's own interval; an observation that changes a card's state emits
-`probe_observed`. With the change ticker enabled the probe also reads
+`probe_observed`; one that changes a commit link emits `link_observed`
+(§6.13). With the change ticker enabled the probe also reads
 the merged pull requests of the default branch, their files and, for a
 contract file, its text at the merge and the base (§17.4); a forge
 webhook only makes it look sooner.
@@ -11532,6 +11646,17 @@ forge's reset time, with `details.retry_at`. Since one source serves all
 of an owner's projects, a forced fresh read (`max_age=0`, §11) is made
 at most once per 30 seconds per project and target; within that time
 the cached observation is answered with `fresh: false`.
+
+**A spent budget never reads as an answer.** The probe adds no budget
+of its own for `required_check` or commit links: they read through the
+same source and the same budget, and only for cards that are not closed
+(§6.13). While a source's budget is spent the probe reports at most
+`unknown`, never something it did not read: `GET …/probe` answers
+`probe_unavailable` with `details.last` as above, a background read
+keeps the last complete observation with its `observed_at`, and a
+`required_check` or an `ahead` is never derived from a partial read
+(§6.13). In particular a missing check read is never `missing`, and a
+missing branch read is never `ahead: false`.
 
 **Follow-up: organisations.** Maity's organisations (§6.26) and the
 forge's are not linked here. An installation of the App on a forge

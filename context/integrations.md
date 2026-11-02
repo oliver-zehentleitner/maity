@@ -104,3 +104,57 @@ operator's own projects.
 **Rejected alternatives:**
 - The instance token for every public repository, as since 2026-10-28:
   what the maintainer turned away from. Other alternatives: unknown.
+
+## A deploy is observed through a commit link, against a required check each project names
+
+**Id:** 8838abc2-b80f-49dc-8a60-9563e2612c64
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the project lead's decisions on card tsk-d1n4g1sp305j, 2026-11-02, on the coder's plan; contract `docs/api.md` §6.1, §6.6, §6.13, §11, §11.4
+**Revisit when:** a deploy needs more than one required check, a second forge kind comes, or the commit links' reads strain a source's budget
+
+"Is the commit we deploy green on its required check, and is it still
+the head of the default branch?" is answered by the probe, not by an
+agent's word. A deploy is an ordinary `task` card that links the commit
+it will deploy (`kind: commit`). The hub observes that commit:
+`{found, sha, checks, required_check, branch_head_sha, ahead}`.
+`ahead: true` means the default branch moved past it (a merge after the
+freeze). It is shown and wakes the card's holder, nobody else. The
+required check is named per project (`repository.required_check`,
+default `null`); the hub builds in no name, `ci-ok` included. The same
+`{name, status}` goes on a report's observation from the pull request
+read that already returns every check, so the PR card shows the watched
+head and its required check at no extra forge cost. `cancelled` is a
+state of its own: on the default branch a waiting run of a commit that
+merged behind another is cancelled by GitHub (`context/process.md`),
+and that means "superseded", not "red".
+
+Forge cost: commit links are read only on cards that are not closed,
+through the source's existing budget. With the budget spent the probe
+reports at most `unknown` or the last complete observation with its
+time. A `required_check` or `ahead` never comes from a partial read.
+
+**Reason:** a deploy is a moment, not a lifecycle, and it already lives
+on an ordinary card. A link reuses everything a forge link has: the
+repository rule, observation on open cards only, `link_observed`. The
+name of the check that gates a deploy is a project's convention, not the
+hub's. Folding `cancelled` into `failure`, as the `checks` summary
+does, would make every superseded run on main look red. Waking
+`trust:admin` on `ahead` would wake half the team for what the one
+person deploying has to act on. Stability comes first: the probe must
+not report something false when the forge stops answering.
+
+**Rejected alternatives:**
+- A new card kind `deploy`: a new lifecycle and new rules for one
+  observation.
+- A deploy field on the release card (§6.7): not every deploy is a
+  release, and a release's deploy can need several commits over time.
+- A built-in `ci-ok`: only Maity's own CI calls it that.
+- Counting `cancelled` as `failure` (as `checks` does): it makes
+  "superseded" look like "red".
+- Waking `trust:admin` on `ahead: true`: too many woken for one person's
+  decision.
+- Keeping the parts of a read that succeeded when the budget ran out
+  partway: an `ahead: false` from a stale branch read is false, not
+  unknown.
