@@ -204,18 +204,21 @@ run names.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the coordinator's request of 2026-11-02 (review lead's finding that #1235, a pull request changing only `docs/api.md`, left main red with 2 failed tests); `.github/workflows/ci.yml`
-**Revisit when:** a third test file reads `docs/api.md` or another file outside `hub/`, or the hub's database jobs get fast enough to take the contract path too
+**Revisit when:** a test opens `docs/api.md` in a way the grep does not find, or reads another file outside `hub/`, or the hub's database jobs get fast enough to take the contract path too
 
 `hub/tests/test_contract_routes.py` and `hub/tests/test_paths.py` read `docs/api.md`, but the `hub` part of the `changes` job
 did not list it, so a pull request that changed only the contract got a green `ci-ok` and main went red after the merge. A new
-part `contract` (`docs/api.md` and `hub/*`) starts the job `hub-contract`: `make install` and those two test files on
-SQLite, a few minutes. It is in `ci-ok`. A change under `hub/` starts it beside the hub jobs; a push to main and a change
+part `contract` (`docs/api.md` and `hub/*`) starts the job `hub-contract`: `make install` and every test file that builds
+the path `"docs" / "api.md"` (found by `grep` in the job, not listed; today `test_contract_routes`, `test_guide` and
+`test_paths`) on SQLite, a few minutes. It is in `ci-ok`. A change under `hub/` starts it beside the hub jobs; a push to main and a change
 to the workflow start it like every other part.
 
 **Rejected alternatives:**
 - `docs/api.md` in the `hub` part: every contract pull request would run the PostgreSQL and SQLite suites, about an
   hour, for two files that need neither a database server nor the rest of the suite.
-- Moving the two tests to the join-page gate or a script outside pytest: the tests stay where the hub's other tests are, and
+- A fixed list of the test files: the first version listed two and missed `test_guide.py`, found in review; the job now
+  selects them by the path they build.
+- Moving the tests to the join-page gate or a script outside pytest: the tests stay where the hub's other tests are, and
   CI only chooses when to run them.
 
 ## Every agent uses Keep the Why: implementers record each decision in the same pull request, reviewers gate on it
