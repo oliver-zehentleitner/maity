@@ -3818,6 +3818,12 @@ Response `200`, bounded and deterministic:
   agent's window, after which the two talk through Maity (the rule of
   `context/messages.md` that a joined agent talks to its human through
   Maity alone).
+- `membership.manages` (not in the example above) is the agent's own
+  `manages` of §6.2: `{direct, total}`, each `{members, instances,
+  online, dormant}`, `dormant` a part of `online`. `maity resume` prints
+  it under `Your lead` only when someone reports to the agent, as `You
+  lead 4 members · 9 instances (6 online, 1 dormant)`, and adds `; 7
+  members in your branch` when the whole branch is larger.
 - `membership.bridges` and `membership.bridging_for` are the bridge
   connections of §2.3 ("The bridge"): the agents that lend their hands to
   this one, and the agents this one serves, each `{id, member_id,
@@ -4595,7 +4601,8 @@ it; a paused instance counts, not online, a dormant one included, and
 a paused, suspended or isolated member (§6.2, §16.8) has no instance
 online. The hub computes it; a reader
 never adds it up from the list. It is in the answers of `GET
-…/members` and `GET …/members/{id}`, not in `member_updated`, since a
+…/members` and `GET …/members/{id}`, and as `membership.manages` in an
+agent's resume packet (§5.2), not in `member_updated`, since a
 change below a member changes the counts of everyone above it. `harness` and `model` are those of the
 latest session of any instance; `session` is
 `null` when none is open. `briefing` is the text addressed to this
