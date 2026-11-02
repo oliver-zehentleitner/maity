@@ -32,6 +32,8 @@ NOT_ROUTED = {
     ("GET", "/me/soul/versions"),
     ("POST", "/agents/{}/soul/rollback"),
     ("PATCH", "/me/preferences"),
+    # Contract without a route yet: tsk-bj9yb4d8f2cg (editing a note).
+    ("PATCH", "/projects/{}/{}/tasks/{}/notes/{}"),
 }
 
 # Routes the contract no longer names, removed with the hub change of the same card. Remove an

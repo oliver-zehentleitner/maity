@@ -9119,9 +9119,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const viAsked = [];
   const viGet = win.Maity.api.get;
   const viPages = {
-    "/public/pages/stranger/tool/tasks/tsk-1": { path: "/stranger/tool/tasks/tsk-1", kind: "card", data: { id: "tsk-1", title: "A <b>card</b>", status: "in_progress", label: "bug", holder: "agent", body: "## Steps\n\n<img src=x onerror=alert(1)> [x](javascript:alert(1))" } },
+    "/public/pages/stranger/tool/tasks/tsk-1": { path: "/stranger/tool/tasks/tsk-1", kind: "card", data: { id: "tsk-1", title: "A <b>card</b>", status: "in_progress", label: "bug", holder: "agent", body: "## Steps\n\n<img src=x onerror=alert(1)> [x](javascript:alert(1))",
+      notes: [{ id: "nte-1", author: "member", body: "A *note* <img src=y onerror=alert(2)>", state: "open", created_at: "2026-11-02T08:00:00Z", redacted: false },
+        { id: "nte-2", author: "agent", body: null, state: "dismissed", created_at: "2026-11-02T09:00:00Z", redacted: true }] } },
     "/public/pages/stranger/tool/board": { path: "/stranger/tool/board", kind: "board", data: { columns: [{ status: "open", cards: [{ id: "tsk-1", title: "A <b>card</b>", label: "bug", holder: "member" }] }] } },
-    "/public/pages/stranger/tool": { path: "/stranger/tool", kind: "project", data: { name: "Tool", full_name: "stranger/tool", about: null, state: "active", repository_url: "javascript:alert(1)", links: [], people: [{ name: "Sam", handle: "sam", page: "/sam" }], agents: [], other_agents: 2, statistics: { totals: { cards_done: 3, prs_merged: null } } } },
+    "/public/pages/stranger/tool": { path: "/stranger/tool", kind: "project", data: { name: "Tool", full_name: "stranger/tool", about: null, state: "active", repository_url: "javascript:alert(1)", links: [], people: [{ name: "Sam", handle: "sam", page: "/sam" }], agents: [], other_agents: 2, statistics: { totals: { cards_done: 3, prs_merged: null } },
+      ticker: [{ type: "merge", text: "#1 <b>merged</b>", url: "https://github.com/s/t/pull/1", at: "2026-11-02T08:00:00Z" }, { type: "decision", text: "Decided: tsk-1", url: null, at: "2026-11-02T07:00:00Z" }],
+      online: { humans: 1, agents: 2, named: [{ name: "Sam", handle: "sam", page: "/sam" }], as_of: "2026-11-02T08:05:00Z" } } },
   };
   const viAll = [];
   win.Maity.api.get = (p) => {
@@ -9146,11 +9150,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !viView().querySelector("img") && !viView().querySelectorAll("a").some((a) => /javascript:/.test(a.getAttribute("href") || ""))
     && viView().querySelectorAll("a.view-tab").some((a) => (a.getAttribute("href") || "").endsWith("/stranger/tool/board") && a.getAttribute("aria-current") === "page") && !viView().querySelectorAll("button, input, select, textarea").length,
     "visitor: a card's own page, its Markdown drawn without raw HTML, the project's tabs above it, and nothing to press");
+  const viNotes = viView().querySelectorAll("li").filter((li) => li.getAttribute("data-note"));
+  expect(viNotes.length === 2 && text(viNotes[0]).includes("A member") && text(viNotes[0]).includes("note") && !viNotes[0].querySelector("img")
+    && text(viNotes[1]).includes("Removed.") && text(viNotes[1]).includes("dismissed") && !text(viNotes[0]).includes("open"),
+    "visitor: a card's notes under it, their authors named as the holder, a redacted one as removed");
   await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
   expect(viView() && viView().getAttribute("data-kind") === "project" && text(viView()).includes("Sam")
     && !viView().querySelectorAll("a").some((a) => /javascript:/.test(a.getAttribute("href") || "")) && text(viView()).includes("Cards done: 3")
     && !text(viView()).includes("Pull requests merged"),
     "visitor: the overview, no unsafe link and no counter the hub left empty");
+  expect(text(viView()).includes("Recently") && text(viView()).includes("#1 <b>merged</b>") && text(viView()).includes("Decided: tsk-1")
+    && viView().querySelectorAll("a").some((a) => a.getAttribute("href") === "https://github.com/s/t/pull/1")
+    && text(viView()).includes("Humans online: 1") && text(viView()).includes("Agents online: 2") && !viView().querySelector("b"),
+    "visitor: the overview's snapshot, the ticker as text with a merge's link, and who is online");
   expect(!viAll.some((p) => p.startsWith("/projects/stranger")), "visitor: a stranger's public project asks no member route");
   expect(text(header).length && !header.querySelector(".visitor-sign-in"), "visitor: signed in, the reader's own header stays, with no sign-in link");
   expect(win.Maity.api.isPublicPath("/public/pages/stranger/tool"), "visitor: the read works after the session ended here");

@@ -1225,7 +1225,9 @@ window.Maity = window.Maity || {};
         const last = win.length ? win[win.length - 1] : null;
         const readTo = c.read[me().member.id] || 0;
         const theirs = win.filter((x) => x.from !== me().member.id && x.seq > readTo);
-        return Object.assign({}, g, {
+        // The list's item is not the chat's view: no creator, no reason it closed (as the hub).
+        const { created_by: _by, closed_reason: _why, ...item } = g;
+        return Object.assign(item, {
           participants: g.participants.map((x) => withMeat(m[1], g.id, { member_id: x.member_id, kind: x.kind, handle: x.handle }, path)),
           last_message_at: last ? last.sent_at : null, last_message: preview(last),
           unread: g.access === "observer" ? null : theirs.length,

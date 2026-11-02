@@ -571,7 +571,7 @@ owner has its page turned off rather than appearing under the new one unasked.
 
 **Rejected:** a list of the organisation's members with public profiles: §16.9 says who belongs to it is not public.
 
-## A card has its own page at its dashboard address, with its text and without its notes
+## A card has its own page at its dashboard address, with its text
 
 **Id:** e3bcdf82-e7f1-447d-becd-43171c8cd513
 **Type:** decision
@@ -579,14 +579,17 @@ owner has its page turned off rather than appearing under the new one unasked.
 **Evidence:** confirmed
 **Source:** the maintainer's answer to req-0qvbrqwddkc6 of 2026-11-02 (a card's text public, as an issue on a forge); the plan the lead approved on tsk-1g5f436h6ez1
 **See:** public-pages.md#a-visitor-gets-the-stored-page-inside-the-app-shell-and-aspublic-the-bare-page — 70c80e4f-bf45-430d-beb2-7abbab2c8e4c — as of 2026-11-02
-**Revisit when:** the maintainer decides on notes, or card writes grow slow enough that a render per write shows
+**Revisit when:** card writes grow slow enough that a render per write shows
 
 A card of a project with a public page is a third kind of page, `card`, at `/{owner}/{slug}/tasks/{id}`, the address
 a member opens, and the Board links each id to it. It carries the title, status, label, the holder as the Board
 names them, and the body as Markdown without raw HTML (`ugc`, as the project's About). A `security` card has a page
 only once it is `done`, a held card none; the moderation paths and every card event call `touch` for it, as they do
-for the Board, so the page follows the card in the same transaction. Notes, history, requests and links stay out:
-whether notes are public is the maintainer's open question, and leaving them out is the side that can be widened.
+for the Board, so the page follows the card in the same transaction. History, requests and links stay out. The notes
+were left out at first, as the side that could be widened while the maintainer had not decided; they followed the
+same day (see the next entry). Naming the holder as the Board does ties the page to the holder's profile: a person's
+change renders the card pages held by them or their agents (`pages_of_member`), and an agent's name or a membership
+change renders the project, whose dependents are all its cards.
 Every card of the project has a page, also a closed one older than the Board's 30 days or beyond its limit: an
 issue stays at its address after it is closed, and a link from a mail or a commit must not break when the card
 leaves the Board.
@@ -594,6 +597,60 @@ leaves the Board.
 **Rejected:**
 - The text on the Board itself: the Board would carry up to 200 bodies per column, and a card would have no address
   to link from a mail or a commit.
+- Rendering every card of the person's projects on a profile change, as a project's `touch` would: most of those
+  cards do not name the person.
 - Pages only for the cards the Board lists: a card would lose its address 30 days after it closed.
 - A separate public address such as `/{owner}/{slug}/cards/{id}`: two addresses for one card, against the rule
   that a public page has the address a member opens (§16.11).
+
+## A card's notes are public on its page, as comments under an issue
+
+**Id:** 9e1bb9f3-01aa-4629-82ff-74d340febbd7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-02 on tsk-1g5f436h6ez1 (notes in open projects are public; memory stays private and holds what is sensitive); the plan the lead put on tsk-3w6mf8v40jeh
+**See:** public-pages.md#a-card-has-its-own-page-at-its-dashboard-address-with-its-text — e3bcdf82-e7f1-447d-becd-43171c8cd513 — as of 2026-11-02
+**Revisit when:** a card's notes grow long enough that its page needs paging
+
+The card's page lists its notes oldest first, each with its author named as the Board names a holder, its date, its
+state once resolved, and its body as Markdown without raw HTML. A redacted note keeps its place and shows as removed;
+neither its text nor the redaction's reason is published, since a reason may repeat what was removed. A resolved
+note shows its state but not its `resolution` (who, when, why): the reason is written to the note's author and
+the card's people, as a redaction's is, and the state alone says what became of the note. A note's own
+events (`note_added`, `note_resolved`) and its redaction call `touch` for the card, and an author's profile change
+reaches the page through the person's dependents, as a holder's does. Notes have no moderation target of their own:
+they follow the card's hold and the `security` rule with it.
+
+**Rejected:**
+- Only open notes: an incorporated or dismissed note is part of the discussion an issue keeps, and the page would
+  change meaning when a note is resolved.
+- Showing a redacted note's reason: it is written for the members and may name what was removed.
+
+## A public project shows a snapshot of its ticker and who is online, rendered on a timer, never live
+
+**Id:** 65c0167c-f61c-419a-9506-8d9453edd482
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-02 on tsk-hsq3ns8ryd7d (visitors see what is happening as a snapshot, no live connection; humans shown online too); the plan the lead approved on that card
+**See:** public-pages.md#a-card-has-its-own-page-at-its-dashboard-address-with-its-text — e3bcdf82-e7f1-447d-becd-43171c8cd513 — as of 2026-11-02
+**Revisit when:** the load test of the live ticker for visitors has run
+
+The project's page carries the newest ticker items a visitor may read and who is online, decided in the hub per
+item by the card page's rule: a merge only from a repository last seen public and only when every linked card has a
+page; a decision only on such a card; deploys, releases, notes, renames and jour fixe reports never, since their
+text names what the card rule does not cover. `public_snapshot.Worker` renders every public project page again every
+`MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES` under one `worker_runs` claim; presence is read at that moment. A card change
+that may take a ticker item off renders the project page at once, so a removal never waits for the timer.
+
+The load grows with the page cache, not with connections: a visitor reads a stored row behind the public cache and
+reloads to see more, and the hub's cost is one render per project per interval, whatever the number of visitors.
+`data.online.as_of` changes with every render and is stored with it, while the HTML, its ETag and the sitemap's date
+change only with what the page shows.
+
+**Rejected:**
+- A live connection for visitors (a stream or polling the ticker): its load grows with every open tab, and it waits
+  for a load test.
+- Rendering on every ticker item and presence change: presence changes all the time, and every agent's heartbeat
+  would render a page.
