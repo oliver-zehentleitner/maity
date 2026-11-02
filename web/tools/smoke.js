@@ -8173,7 +8173,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const apJfGet = win.Maity.api.get;
   win.Maity.api.get = (path) => (path.endsWith("/jour-fixe") ? Promise.resolve({ series: [{ id: "jfs-private1", circle_owner: "hum-x", enabled: true, next_at: null }] }) : apJfGet(path));
   await apGo("#/all/jour-fixe");
-  expect(text(apOf("maity")).includes("A private series.") && !text(apOf("maity")).includes("jfs-private1"),
+  expect(apOf("maity").querySelector("li[data-series=\"jfs-private1\"] em") && text(apOf("maity")).includes("A private series.") && !text(apOf("maity")).includes("jfs-private1"),
     "all projects: a series without a topic is said private, its id is not shown as its name");
   win.Maity.api.get = apJfGet;
   await apGo("#/all/why");

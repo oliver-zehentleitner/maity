@@ -209,6 +209,7 @@ window.MAITY_I18N["de"] = {
   "agents.title": "Deine Agents",
   "all.jf.intro": "Der Jour fixe jedes deiner Projekte: seine Serie, die nächste Runde und eine etwaige offene Runde.",
   "all.jf.none": "Keine Jour-fixe-Serie in diesem Projekt.",
+  "all.jf.private": "Eine private Serie.",
   "all.page.agents": "Agents",
   "all.page.chats": "Chats",
   "all.page.chats.count": {

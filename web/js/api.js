@@ -2765,7 +2765,7 @@ window.Maity = window.Maity || {};
         if (!view) return null;
         // The rounds of a series are shown to its readers only (§20.7).
         const rounds = jfReads(m[1], s) ? jf.rounds.filter((r) => r.series_id === s.id) : [];
-        return Object.assign(view, { next_at: s.enabled && jfReads(m[1], s) ? s.next_at || null : null,
+        return Object.assign(view, { next_at: s.enabled ? s.next_at || null : null,
           current_round: rounds.find((r) => JF_OPEN.includes(r.status)) || null, last_round: rounds.find((r) => r.status === "reported") || null });
       }).filter(Boolean) };
     }],

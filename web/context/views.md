@@ -4224,7 +4224,13 @@ becomes visible that the project page does not show. Two limits are known:
 N requests per view, and an owner outside a project whose agent takes part in
 a round (§20.7) sees that round nowhere here, since no listing is open to them.
 
+A series without a topic, an owner's series an admin may not read (§20.1), is
+"A private series." here, never its ID. The project page also names the owner;
+this page reads no member list, so `handle` would print the raw member ID.
+
 **Rejected alternatives:**
+- Falling back to the series ID, or naming the owner by that raw member ID: an
+  ID is no name.
 - A new `GET /me/jour-fixe` or a read across projects for Why: a contract
   change the current number of projects does not need.
 - First-level `/jour-fixe` and `/why`: each would reserve another word that
