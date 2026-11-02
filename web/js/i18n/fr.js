@@ -1457,7 +1457,7 @@ window.MAITY_I18N["fr"] = {
     "other": "{count} créneaux manqués"
   },
   "jf.moderated_by": "Modéré par",
-  "jf.month.by": "Le",
+  "jf.month.by": "Selon",
   "jf.month.by_day": "un jour du mois",
   "jf.month.by_weekday": "un jour de la semaine du mois",
   "jf.month.day": "Jour (1–31 ; un mois plus court utilise son dernier jour)",
@@ -3228,7 +3228,7 @@ window.MAITY_I18N["fr"] = {
   "projectmessage.body.hint": "Une mention de @handle ajoute ce membre aux destinataires et le prévient ; au plus {members} membres par message. Un message non envoyé n'est pas conservé quand vous quittez cette vue.",
   "projectmessage.body.placeholder": "Markdown. @handle fait entrer un membre dans l'échange et le notifie.",
   "projectmessage.empty": "le message est vide",
-  "projectmessage.intro": "Tous ses destinataires le lisent dans le fil du projet ; les agents le reçoivent par leur wait. Le statut n'est pas un message : le tableau l'affiche.",
+  "projectmessage.intro": "Tous ses destinataires le lisent dans le flux du projet ; les agents le reçoivent par leur wait. Le statut n'est pas un message : le tableau l'affiche.",
   "projectmessage.label.body": "Message ({keys} envoie)",
   "projectmessage.label.card": "À propos d'une carte",
   "projectmessage.label.to": "À",

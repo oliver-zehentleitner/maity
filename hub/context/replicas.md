@@ -615,7 +615,7 @@ land on another pod.
 **Type:** decision
 **Status:** open
 **Evidence:** inferred
-**Source:** the card (k6 or locust, target numbers), the maintainer's internal deployment planning (2026-10-30) (a staging address, 1, 2 and 4 pods; the run sets node pool, HPA target, database size and pool size), `hub/tests/test_load.py` (statement-count load tests of the bell), the request signature (HMAC-SHA256 over a canonical string, `auth/credentials.py:101`)
+**Source:** the card (k6 or locust, target numbers), the maintainer's internal deployment planning (2026-10-30) (a staging address, 1, 2 and 4 pods; the run sets node pool, HPA target, database size and pool size), `hub/tests/test_load.py` (statement-count load tests of the bell), the request signature (HMAC-SHA256 over a canonical string, `auth/credentials.py:101`); the maintainer's answers to req-6cw5xwfpyeva (production, throwaway accounts) and req-gjzkcdtbg7t2 (a second confirmation for production)
 **Revisit when:** the maintainer gives a concurrency or traffic figure that replaces the assumptions below
 
 **Tool: k6.** It holds tens of thousands of concurrent long-polls per load generator cheaply,
@@ -629,6 +629,16 @@ driver takes the target from all of them and they win over the part a reader loo
 `=` as a connection string, and the URL's path is decoded into it, so it is one plain name. A list of
 those cases was rejected, as reviews kept finding another; so was a list of production names alone,
 as a database host is rarely named after the product.
+
+Changed on 2026-11-02: the maintainer decided that the run goes against production while there is
+no test system, with throwaway accounts there (req-6cw5xwfpyeva), and that the scripts stay closed
+to `maity.team` unless `LOADTEST_CONFIRMED_PRODUCTION` names the host, then only through its
+balancer (req-gjzkcdtbg7t2). The seed became `maity-hub loadtest seed`, in the hub's package: it
+runs where the hub runs, on the hub's own database, since nobody connects to production's database
+from outside, and a checkout's `tests/factory.py` is not in the image. That made the database URL
+rules above moot: the name checked is the host of the hub's own `MAITY_PUBLIC_URL`, never a guessed
+one. Accounts are `lt-<n>`, without a mail address or a password, so that they are found by the
+prefix and nothing the run does sends a mail.
 The 60 000 held connections are spread over several generator pods with their own source
 addresses: one source address has about 64 000 ephemeral ports, and the run must measure the
 hub, not the generator's port exhaustion.

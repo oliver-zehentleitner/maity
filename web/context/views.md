@@ -4396,3 +4396,36 @@ The site file gives `/login` and `/register` their pitch per language: title, su
 **Rejected alternatives:** a `PATCH` per page: the contract has none, and the second would overwrite the first. Sending empty strings: the hub refuses them as `invalid`.
 
 **Known limit:** like the landing editor, the draft is read when the Pages tab opens. After importing the whole site file in the same view, reload before saving in a sub-tab.
+
+## Going from chat to chat in the global chat changes the pane alone
+
+**Id:** ced4e992-460a-4cde-844f-4f558c832ae7
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** a tester's report that switching chats is painfully slow (tsk-cdc3m5g1ew81), measured in Chromium against a local hub, 2026-11-02
+**Revisit when:** a project's own Chat tab gets the same treatment, or the hub offers one read for a chat's head and newest page
+
+A click on a chat in `/chats` no longer runs the page's `render()`. The
+view registers `ctx.followRoute`, and the pane is drawn into a detached
+holder and put in place once it is ready. Meanwhile the list already
+marks the new chat and the pane being left stands dimmed and inert. Direct chats take
+their unread count, newest message and one's own participant entry from the list as last read; what
+came since is the forward read's, and a chat left before that read is not marked read by it. The list is read again after the pane
+is drawn, and nothing waits for it. A project or chat not in the list as last read,
+or a failed read, still draws the page anew, which reads it or says what is wrong.
+A chat's timers and listeners are the pane's own, ended when it is left.
+
+**Reason:** every click cost 16 requests, 13 of them in 10 steps one after
+the other before the messages were drawn, with the old chat frozen and no sign of loading: 1.8 s at
+150 ms of latency, against 0.33 s at none, with no long task in drawing. So the waits in sequence
+were the cost, not the hub or the drawing. The pane alone takes three
+steps: about 0.55 s at the same latency.
+
+**Rejected alternatives:** making the steps of `render()` parallel: session
+and `/me` decide what may be drawn, so the steps stay, and the frozen view with them.
+A loading line in place of the pane being left: at these times it only flickers, and on a phone
+the list stays until the chat can replace it.
+
+**Known limit:** member lists are read every 30 seconds rather than on each click, so a
+new member's name can lag that long. A project's own Chat tab still draws the whole page.

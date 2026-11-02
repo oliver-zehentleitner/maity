@@ -6,7 +6,7 @@ import { SharedArray } from "k6/data";
 import { Counter, Trend } from "k6/metrics";
 import { sleep } from "k6";
 import { canonicalQuery, signedHeaders } from "./sign.js";
-import { refusal } from "./target.js";
+import { hostOf, production, refusal } from "./target.js";
 
 const PODS = (__ENV.LOADTEST_TARGETS || "").split(",").filter(Boolean);
 const SCALE = Number(__ENV.LOADTEST_SCALE || "0.25");
@@ -24,8 +24,12 @@ const LOGIN_LIMIT = 10; // routes/auth.py, per address and per handle, per minut
 
 if (PODS.length === 0) throw new Error("LOADTEST_TARGETS names no address");
 for (const target of PODS) {
-  const why = refusal(target, __ENV.LOADTEST_CONFIRMED_TEST_SYSTEM || "");
+  const why = refusal(target, __ENV.LOADTEST_CONFIRMED_TEST_SYSTEM || "", __ENV.LOADTEST_CONFIRMED_PRODUCTION || "");
   if (why) throw new Error(why);
+}
+// Production only through its balancer: its one public address, never pods one by one.
+if (PODS.some((target) => production(hostOf(target))) && PODS.length !== 1) {
+  throw new Error("production takes one target, its public address");
 }
 
 const seeded = new SharedArray("humans", () => {
@@ -71,6 +75,7 @@ const held = { timeout: `${WAIT + 30}s`, tags: { held: "yes" } };
 // readers take as well, it counts up from 0 without gaps.
 const WAITS = Math.ceil((EVENT_WAITS + BELL_WAITS) * SCALE / GENERATORS);
 const HUMANS_WAITING = Math.min(seeded.length, Math.floor((WAITS + 1) / 3)); // with a place-1 wait
+if (HUMANS_WAITING === 0) throw new Error("no human waits: seed more accounts or raise LOADTEST_SCALE");
 const eventsPath = (h) => `/api/v1/projects/${h.owner}/${h.slug}/events`;
 const pod = (n) => PODS[n % PODS.length];
 
