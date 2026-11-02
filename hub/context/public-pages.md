@@ -531,3 +531,17 @@ an older one by `observed_at`, keeps the stored view instead of emptying it, and
 
 **Rejected:** answering `why` at request time from the memory cache: §11.3 would stay untouched, but the route
 would need a rule for the one kind without a row, and search engines would lose the page.
+
+## An organisation's page reads none of its members
+
+**Id:** 3f7a9d24-6c1e-4b58-9e02-7d41c8a5b6f3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §16.9; the build on the card tsk-jj1tfre7n6zb
+
+`render_org` does not query `org_member`, so a mistake there cannot name one. An organisation without a page has no
+row, which makes a private organisation and an unknown handle the same `not_found`. A project moved to another
+owner has its page turned off rather than appearing under the new one unasked.
+
+**Rejected:** a list of the organisation's members with public profiles: §16.9 says who belongs to it is not public.
