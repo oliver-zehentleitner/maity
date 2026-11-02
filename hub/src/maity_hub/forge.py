@@ -702,6 +702,9 @@ class Forge:
                         "head": (pr.get("head") or {}).get("ref"),
                         "merged_at": pr["merged_at"],
                         "author": (pr.get("user") or {}).get("login"),
+                        # Whether this read found the repository public (§11.4).
+                        "public": ((pr.get("base") or {}).get("repo") or {}).get("private")
+                        is False,
                     }
                 )
             if len(batch) < 50 or reached:

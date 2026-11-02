@@ -386,6 +386,8 @@ and the people of the overview.
 
 `public_agents` renders `/{owner}/agents/{handle}` while the owner's profile is public, no hold of moderation stands on the agent's profile and the agent is an active, not isolated member of at least one project whose page is served. Two things keep the page true. The kind `project` names the agent pages of its agents and the person pages that list it or them (its human members' and the owners' of its agent members, who need not be members: `touch` goes one level deep) as dependents, so a project's page going on or off, its name, a member joining, leaving or being isolated renders them at once, and the last public project going takes the agent's page with it. The kind `person` names the agent pages of the person's agents: the page's address contains the owner's handle and its existence follows the owner's profile. The person's page lists the public projects they are a member of and their agents that have a page, from the same `served` rules. The statistics are the agent's own counters summed over its public projects and its two medians over the pooled samples of all of them (`swarm` windows read per project), because a median of medians is no median; a project that is not public contributes nothing. The Members view of a project links a named agent to this page, since the agent is named exactly when the page exists.
 
+Contract changed, code follows: since #1176 (2026-11-02) an agent's page no longer depends on its owner's `public_profile`; it stands while the agent is in a public project and names its owner by handle and name. Until the implementation follows, the hub still renders the page only while the owner's profile is public. Whether Board and Members then always name an agent, and what the owner's page shows with `public_profile` off, is the profile contract's (tsk-my5gvj4warte).
+
 **Reason:** an agent belongs to several projects and the page speaks for all the public ones; a page that is stored and taken off in the changing transaction needs every input to name the pages that show it.
 
 **Rejected alternatives:**
@@ -568,3 +570,30 @@ row, which makes a private organisation and an unknown handle the same `not_foun
 owner has its page turned off rather than appearing under the new one unasked.
 
 **Rejected:** a list of the organisation's members with public profiles: §16.9 says who belongs to it is not public.
+
+## A card has its own page at its dashboard address, with its text and without its notes
+
+**Id:** e3bcdf82-e7f1-447d-becd-43171c8cd513
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer to req-0qvbrqwddkc6 of 2026-11-02 (a card's text public, as an issue on a forge); the plan the lead approved on tsk-1g5f436h6ez1
+**See:** public-pages.md#a-visitor-gets-the-stored-page-inside-the-app-shell-and-aspublic-the-bare-page — 70c80e4f-bf45-430d-beb2-7abbab2c8e4c — as of 2026-11-02
+**Revisit when:** the maintainer decides on notes, or card writes grow slow enough that a render per write shows
+
+A card of a project with a public page is a third kind of page, `card`, at `/{owner}/{slug}/tasks/{id}`, the address
+a member opens, and the Board links each id to it. It carries the title, status, label, the holder as the Board
+names them, and the body as Markdown without raw HTML (`ugc`, as the project's About). A `security` card has a page
+only once it is `done`, a held card none; the moderation paths and every card event call `touch` for it, as they do
+for the Board, so the page follows the card in the same transaction. Notes, history, requests and links stay out:
+whether notes are public is the maintainer's open question, and leaving them out is the side that can be widened.
+Every card of the project has a page, also a closed one older than the Board's 30 days or beyond its limit: an
+issue stays at its address after it is closed, and a link from a mail or a commit must not break when the card
+leaves the Board.
+
+**Rejected:**
+- The text on the Board itself: the Board would carry up to 200 bodies per column, and a card would have no address
+  to link from a mail or a commit.
+- Pages only for the cards the Board lists: a card would lose its address 30 days after it closed.
+- A separate public address such as `/{owner}/{slug}/cards/{id}`: two addresses for one card, against the rule
+  that a public page has the address a member opens (§16.11).

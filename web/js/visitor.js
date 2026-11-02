@@ -1,7 +1,8 @@
 // A public project as a reader who is no member sees it (docs/api.md §16.9, tsk-jj1tfre7n6zb):
 // the views a member has, read-only, drawn only from GET /public/pages/{path}. Nothing here
-// writes, polls or reads another route. A card here has no body and no actions, so it is drawn
-// from the board's classes and not with board.js, whose card needs a member's context.
+// writes, polls or reads another route. A card here has no notes and no actions, so it is drawn
+// from the board's classes and not with board.js, whose card needs a member's context; its id
+// links to its own page, `<owner>/<slug>/tasks/<id>`, where the hub stores the text.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -16,7 +17,7 @@ window.Maity = window.Maity || {};
     { path: "/organisation", get label() { return M.t("nav.organisation"); } },
     { path: "/why", get label() { return M.t("nav.why"); } },
   ];
-  const PROJECT_KINDS = ["project", "board", "members", "organisation", "why"];
+  const PROJECT_KINDS = ["project", "board", "members", "organisation", "why", "card"];
   const COUNTERS = {
     get cards_done() { return M.t("visitor.stat.cards_done"); },
     get reviews_given() { return M.t("visitor.stat.reviews_given"); },
@@ -69,13 +70,21 @@ window.Maity = window.Maity || {};
         h("h2", null, M.t("visitor.statistics")), statistics(d.statistics.totals),
       ];
     },
-    board(d) {
+    board(d, base) {
       return h("div", { class: "columns" }, d.columns.map((col) => h("section", { class: "column", "data-status": col.status, "aria-label": COLUMNS[col.status] || col.status },
         h("h2", null, (COLUMNS[col.status] || col.status) + " (" + col.cards.length + ")"),
         col.cards.map((c) => h("article", { class: "card", "data-card": c.id, "aria-label": c.title },
-          h("header", null, h("span", { class: "card-id" }, c.id), c.label ? h("span", { class: "label-tag" }, M.dom.word("label", c.label)) : null),
+          h("header", null, h("a", { class: "card-id", href: base + "/tasks/" + c.id }, c.id), c.label ? h("span", { class: "label-tag" }, M.dom.word("label", c.label)) : null),
           h("h3", null, c.title),
           holderLabel(c.holder))))));
+    },
+    card(d) {
+      return [
+        h("p", null, h("span", { class: "card-id" }, d.id), " ", h("span", { class: "label-tag" }, COLUMNS[d.status] || d.status),
+          d.label ? [" ", h("span", { class: "label-tag" }, M.dom.word("label", d.label))] : null,
+          d.holder ? [" ", holderLabel(d.holder)] : null),
+        d.body && d.body.trim() ? h("div", { class: "about" }, M.markdown(d.body)) : null,
+      ];
     },
     members(d) {
       return [
@@ -133,6 +142,7 @@ window.Maity = window.Maity || {};
     if (where.scope === "person") return parts.length === 1;
     if (where.scope !== "project") return false;
     if (parts[1] === "agents") return parts.length === 3;
+    if (parts[2] === "tasks") return parts.length === 4;
     return parts.length === 2 || (parts.length === 3 && ["board", "members", "organisation", "why"].includes(parts[2]));
   }
 
@@ -160,15 +170,16 @@ window.Maity = window.Maity || {};
       const signIn = h("a", { class: "visitor-sign-in", href: M.withNext("/login", path) }, M.t("visitor.sign_in"));
       append(clear(header), h("div", { class: "bar" }, brand, signIn, tools));
     }
-    const title = d.name || base.slice(1);
+    const title = answer.kind === "card" ? d.title : d.name || base.slice(1);
     append(clear(main), h("section", { class: "view-visitor", "data-kind": answer.kind },
       h("h1", null, title),
       inProject ? h("nav", { class: "view-tabs", "aria-label": title }, VIEWS.map((v) => h("a", {
         href: base + v.path,
         class: "view-tab",
-        "aria-current": base + v.path === answer.path ? "page" : null,
+        // A card's page belongs to the Board, the tab it is reached from.
+        "aria-current": base + v.path === answer.path || (answer.kind === "card" && v.path === "/board") ? "page" : null,
       }, v.label))) : null,
-      draw[answer.kind] ? draw[answer.kind](d) : null));
+      draw[answer.kind] ? draw[answer.kind](d, base) : null));
     document.title = title;
     return true;
   }

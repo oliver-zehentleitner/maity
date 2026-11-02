@@ -321,6 +321,10 @@ def emit(
         from maity_hub import public_pages
 
         public_pages.touch(conn, "project_views", project_id, removal=kind != "task_created")
+        # And so does the card's own page (§16.9, "Card").
+        card_id = subject[1] if subject and subject[0] == "task" else payload.get("id")
+        if isinstance(card_id, str):
+            public_pages.touch(conn, "card", card_id, removal=kind != "task_created")
     return seq
 
 
