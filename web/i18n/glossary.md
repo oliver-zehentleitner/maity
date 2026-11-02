@@ -15,7 +15,7 @@ raised on the card, not replaced in one place. Translations carry no note saying
   same length as English where the layout is tight.
 - **Sentence case** where the language has it. No exclamation marks English does not have.
 - **Waiting, with an ellipsis:** in the language's passive or neutral form, not "I am saving": `Wird gespeichert …`. The language's own spacing, one way throughout.
-- **Names of levels and roles** are labels: the word in the table stays even where a language has a neutral form, so the same trust level reads the same everywhere. Role words such as `coder` and `reviewer` stay English. This counts for the label itself; the words around it follow **No gender guess** where they can (`die empfangende Person muss Besitzer sein`).
+- **Names of levels and roles** are labels: the word in the table stays even where a language has a neutral form, so the same trust level reads the same everywhere. Role words, the names in `role.*` such as `coder` and `reviewer`, stay English; a position in a team or a contract (`lead`, `arbiter`, `owner`) takes its row below. This counts for the label itself; the words around it follow **No gender guess** where they can (`die empfangende Person muss Besitzer sein`).
 - **Weekdays and months** take the language's own case: lower case in French, Spanish, Italian, Portuguese and Dutch.
 - **Plural forms:** those `PLURALS` in `web/tools/check.py` names for the language, each with its placeholder.
 - **No gender guess:** a person or an agent is addressed or named without assuming a gender, using the
@@ -60,7 +60,8 @@ raised on the card, not replaced in one place. Translations carry no note saying
 | inbox | Eingang | boîte de réception | bandeja de entrada | posta in arrivo | caixa de entrada | inbox | 受信トレイ | 받은 편지함 | 收件箱 |
 | chat | Chat | discussion | chat | chat | chat | chat | チャット | 채팅 | 聊天 |
 | group chat | Gruppenchat | discussion de groupe | chat de grupo | chat di gruppo | chat em grupo | groepschat | グループチャット | 그룹 채팅 | 群聊 |
-| ticker | Ticker | fil d'actualité | ticker | ticker | ticker | ticker | ティッカー | 티커 | 动态 |
+| ticker | Ticker | fil d'actualité (`le fil` in a sentence) | ticker | ticker | ticker | ticker | ティッカー | 티커 | 动态 |
+| feed (a project's messages) | Feed | flux | feed | feed | feed | feed | フィード | 피드 | 消息流 |
 | briefing | Briefing | briefing | briefing | briefing | briefing | briefing | ブリーフィング | 브리핑 | 简报 |
 | soul | Seele | âme | alma | anima | alma | ziel | ソウル | 소울 | 灵魂 |
 | memory | Gedächtnis | mémoire | memoria | memoria | memória | geheugen | メモリ | 메모리 | 记忆 |
@@ -91,6 +92,7 @@ raised on the card, not replaced in one place. Translations carry no note saying
 | claim (a card) | Übernahme, übernehmen | prise en charge, prendre | toma, tomar | presa in carico, prendere | assunção, assumir | claim, claimen | 担当, 担当する | 담당, 담당하기 | 认领 |
 | takeover (another's card, with a right to object) | Ablösung | reprise | relevo | subentro | substituição | overname | 引き継ぎ | 인계 | 接管 |
 | release (a version) | Release (das) | release (la) | lanzamiento | release | lançamento | release | リリース | 릴리스 | 发布 |
+| launch (a project's state) | Start | lancement | puesta en marcha | lancio | estreia | lancering | ローンチ | 런칭 | 推出 |
 | release (a claim) | zurückgeben, aufheben | libérer | liberar | rilasciare | liberar | teruggeven | 解放する | 해제 | 释放 |
 | lease | Reservierung | réservation | reserva | prenotazione | reserva | reservering | 予約 | 예약 | 占用期 |
 | go (a human's approval) | Freigabe | feu vert | luz verde | via libera | sinal verde | akkoord | 承認 | 승인 | 批准 |
