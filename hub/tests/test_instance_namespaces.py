@@ -14,9 +14,9 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
-from maity_hub import config, forge, forge_access, handles, registration_accounts
+from maity_hub import config, forge, forge_access, handles, namespace, registration_accounts
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from tests import flow
@@ -231,3 +231,71 @@ def test_the_start_names_held_and_former_names(
     assert len(warned) == 2
     assert "'acme-org', which nobody has" in warned[0]
     assert "'maintainer', a former name" in warned[1]
+
+
+def test_a_transfer_out_of_the_list_takes_the_project_out_at_once(
+    make_client: ClientFactory, migrated: Engine, fake: FakeForge
+) -> None:
+    owner = flow.human(make_client, migrated)
+    flow.project(owner, "thing", repository={"url": URL})
+    outsider = flow.human(make_client, migrated, "outsider")
+    access = forge_access.ForgeAccess(migrated, None, None, OWN)
+    base = forge.Forge(OPERATOR, access=access)
+    assert base.for_project(_project_id(migrated)).via == "instance"
+    with migrated.begin() as conn:  # what an accepted transfer writes (§6.25)
+        conn.execute(update(t.project).values(**namespace.owner_values(outsider.id)))
+    assert base.for_project(_project_id(migrated)).refused == "no_grant"
+
+
+def test_a_new_repository_outside_the_list_is_not_looked_at(
+    make_client: ClientFactory, migrated: Engine, fake: FakeForge
+) -> None:
+    owner = flow.human(make_client, migrated, "outsider")
+    flow.project(owner, "thing", public_page="on")
+    changed = owner.patch("/projects/outsider/thing", {"repository": {"url": URL}})
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["public_page"] == "off"
+    assert fake.sent == []
+
+
+def test_a_new_repository_through_a_former_name_is_judged_by_the_current_one(
+    make_client: ClientFactory, migrated: Engine, fake: FakeForge
+) -> None:
+    """Renamed out of the list: the path's old name is an alias and does not count."""
+    owner = flow.human(make_client, migrated)
+    flow.project(owner, "thing", public_page="on")
+    assert owner.patch("/me", {"handle": "renamed"}).status_code == 200
+    changed = owner.patch("/projects/maintainer/thing", {"repository": {"url": URL}})
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["public_page"] == "off"
+    assert fake.sent == []
+
+
+def test_a_new_repository_in_the_list_is_looked_at(
+    make_client: ClientFactory, migrated: Engine, fake: FakeForge
+) -> None:
+    owner = flow.human(make_client, migrated)
+    flow.project(owner, "thing", public_page="on")
+    changed = owner.patch("/projects/maintainer/thing", {"repository": {"url": URL}})
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["public_page"] == "on"
+    assert fake.sent == [(OPERATOR, f"/repos/{REPO}")]
+
+
+def test_naming_a_listed_organisation_one_is_not_in_makes_no_look(
+    make_client: ClientFactory, migrated: Engine, fake: FakeForge
+) -> None:
+    founder = flow.human(make_client, migrated)
+    assert founder.post("/orgs", {"handle": "free-org", "display_name": "Org"}).status_code == 201
+
+    def listing_it(**overrides: Any) -> Any:  # a hub that lists the organisation
+        return make_client(forge_instance_namespaces=OWN | {"free-org"}, **overrides)
+
+    stranger = flow.human(listing_it, migrated, "stranger")
+    refused = stranger.post(
+        "/projects",
+        {"slug": "thing", "name": "Thing", "owner": "free-org", "repository": {"url": URL}},
+    )
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"owner": "unknown"}
+    assert fake.sent == []

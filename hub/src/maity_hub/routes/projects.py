@@ -281,13 +281,31 @@ def _looks_public(
 
 
 def _instance_serves(request: Request, owner: str | None, human_id: str | None) -> bool:
-    """Whether the namespace `owner` names is one of the operator's own (§11.4)."""
+    """Whether the namespace `owner` names is one of the operator's own (§11.4). At a creation
+    (`human_id` the creator) only a namespace the creator may be in counts — their own, or an
+    organisation they are a member of — so that nobody makes the operator's token look at a URL
+    by naming a listed namespace they cannot create in; the transaction checks it again under
+    its lock."""
     settings = settings_of(request)
     if not settings.forge_instance_namespaces:
         return False
     with engine_of(request).connect() as conn:
         owner_id = human_id if owner is None else namespace.resolve_owner(conn, owner)
-        handle = None if owner_id is None else namespace.current_handle(conn, owner_id)
+        if owner_id is None:
+            return False
+        if human_id is not None and owner_id != human_id:
+            member = conn.execute(
+                select(t.org_member.c.role, t.org.c.members_create_projects)
+                .join(t.org, t.org.c.id == t.org_member.c.org_id)
+                .where(
+                    t.org_member.c.org_id == owner_id,
+                    t.org_member.c.human_id == human_id,
+                    t.org.c.deleted_at.is_(None),
+                )
+            ).first()
+            if member is None or (member.role == "member" and not member.members_create_projects):
+                return False
+        handle = namespace.current_handle(conn, owner_id)
     return forge_access.serves(settings.forge_instance_namespaces, handle)
 
 

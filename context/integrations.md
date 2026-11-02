@@ -97,6 +97,17 @@ at all, not even the visibility check, and the dashboard asks the owner
 to connect. Unset, the token serves no project. This narrows the third
 source of the entry above (4e15dcbb), which stands otherwise.
 
+The namespace's current handle is part of what the choice of a
+project's source depends on and is read again on every read, so a
+rename or a transfer out of the list takes effect on the next read, not
+after the choice's ten minutes; caching those facts would reopen that
+gap, and tests for both guard it. The first look at a new project's
+repository runs before the creating transaction, so that no row lock is
+held while the forge answers; it is made only for a namespace the
+creator may create in (their own, or an organisation where their role
+allows it), so that naming a listed organisation one is not in cannot
+spend the operator's token.
+
 **Reason:** the maintainer wants projects to connect their repository
 to the forge themselves and keeps the instance's token for the
 operator's own projects.
