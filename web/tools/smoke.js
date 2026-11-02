@@ -2140,6 +2140,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(searchCalls[0].includes("status=all&q=note-only") && !searchCalls[0].includes("closed_after"), "board search: full history query");
   expect(visibleIds().includes("tsk-old") && text(main).includes("Matched: note")
     && text(main).includes("Closed · outside board window"), "board search: remote note match and old closed marker");
+  expect(text(main).includes("Found 1 card across all dates."), "board search: one card found, in the singular");
   searchInput.value = "delayed"; searchInput.dispatch("input");
   main.querySelector("form.board-filter").dispatch("submit"); await tick();
   btn(main, "Clear search").click();
