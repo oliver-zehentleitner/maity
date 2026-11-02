@@ -134,6 +134,35 @@ def test_an_edited_note_shows_its_mark_and_reason_never_the_old_text(world: Worl
     assert shown["edited"]["reason"] == "canary-reason-words" and shown["edited"]["at"]
 
 
+def test_an_edit_renders_the_page_at_once_also_under_interval(world: World, settings: Any) -> None:
+    card_id = world.owner.post(TASKS, {"title": "Edited on interval"}).json()["id"]
+    note = world.anna.post(f"{TASKS}/{card_id}/notes", {"body": "canary-old-words"}).json()
+    assert "canary-old-words" in (page(world, card_id) or "")
+    public_pages.configure(replace(settings, public_pages=True, public_pages_render="interval"))
+    edited = world.anna.patch(f"{TASKS}/{card_id}/notes/{note['id']}", {"body": "canary-new"})
+    assert edited.status_code == 200, edited.text
+    text = page(world, card_id) or ""
+    assert "canary-old-words" not in text and "canary-new" in text
+    assert "canary-old-words" not in data(world, card_id).text
+
+
+def test_the_editor_of_anothers_note_follows_their_profile(world: World) -> None:
+    card_id = world.owner.post(TASKS, {"title": "Edited by the owner"}).json()["id"]
+    note = world.anna.post(f"{TASKS}/{card_id}/notes", {"body": "from anna"}).json()
+    world.owner.patch("/me", {"public_profile": True})
+    edited = world.owner.patch(
+        f"{TASKS}/{card_id}/notes/{note['id']}", {"body": "from anna, cleaned", "reason": "typo"}
+    )
+    assert edited.status_code == 200, edited.text
+    handle = edited.json()["edited"]["by"]["handle"]
+    assert data(world, card_id).json()["data"]["notes"][0]["edited"]["by"]["handle"] == handle
+    assert f"({handle})" in (page(world, card_id) or "")
+    # The owner is neither the card's holder nor a note's author on it.
+    world.owner.patch("/me", {"public_profile": False})
+    assert data(world, card_id).json()["data"]["notes"][0]["edited"]["by"] == "member"
+    assert f"({handle})" not in (page(world, card_id) or "")
+
+
 def test_a_security_card_has_a_page_only_once_it_is_done(world: World) -> None:
     hidden = world.card(title="Secret hole", label="Security", body="the exploit")
     fixed = world.card(title="Fixed hole", label="security", status="done", closed_at=clock.now())
