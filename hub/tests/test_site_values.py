@@ -12,8 +12,9 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine
 
+from maity_hub import catalog
 from maity_hub.landing import LANGUAGES
-from maity_hub.render import WORDS, choose_language
+from maity_hub.render import choose_language
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_pages import ADMIN, hero
@@ -193,9 +194,10 @@ def test_every_language_of_the_site_file_has_the_same_placeholders() -> None:
 
 
 def test_every_language_has_every_word_of_the_frame() -> None:
-    assert set(WORDS) == set(LANGUAGES)
-    for tag, words in WORDS.items():
-        assert set(words) == set(WORDS["en"]), tag
+    english = catalog.section("frame", "en")
+    for tag in LANGUAGES:
+        assert catalog.speaks("frame", tag), tag
+        assert set(catalog.section("frame", tag)) == set(english), tag
 
 
 @pytest.mark.parametrize(

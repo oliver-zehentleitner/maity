@@ -506,6 +506,7 @@ def test_the_deletion_does_what_the_contract_lists(
     with migrated.connect() as conn:
         human = conn.execute(select(t.human).where(t.human.c.id == pat.id)).one()
         assert human.deleted_at is not None and human.display_name == "Deleted account"
+        assert human.interface_language is None
         assert human.handle == "pat"  # kept, so it stays taken
         sessions = (
             conn.execute(

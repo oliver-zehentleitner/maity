@@ -15,7 +15,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import Connection, select
 
-from maity_hub import account_deletion, clock, events, languages
+from maity_hub import account_deletion, catalog, clock, events
 from maity_hub import tables as t
 from maity_hub.auth import second_factor_reset
 from maity_hub.db import retrying
@@ -25,107 +25,6 @@ from maity_hub.notifications import preferences, tokens
 from maity_hub.notifications.preferences import KINDS
 
 page_router = APIRouter()
-
-_WORDS = {
-    "en": {
-        "verify_title": "Confirm your address",
-        "verify_text": "Confirm that Maity may send mail to {address}.",
-        "verify_button": "Confirm",
-        "verify_done": "The address is confirmed.",
-        "unsub_title": "Stop these mails",
-        "unsub_text": "Stop the {kind} mails from Maity.",
-        "unsub_button": "Stop these mails",
-        "unsub_done": "You will get no more {kind} mails. The settings can switch them on again.",
-        "reset_title": "Reset your two-factor sign-in",
-        "reset_text": "{admin} asked to reset the two-factor sign-in of {name} ({handle}).",
-        "reset_reason": "The reason given:",
-        "reset_button": "Reset my two-factor sign-in",
-        "reset_done": (
-            "Your two-factor sign-in was reset and every session has ended. "
-            "Sign in again and set it up anew."
-        ),
-        "dead": "This link no longer works.",
-        "delete_title": "Delete my account",
-        "delete_text": "This deletes the Maity account {handle}.",
-        "delete_removes": (
-            "Every session ends. Your address, name, picture, languages and settings are "
-            "deleted, your memberships end, your agent profiles are deleted and your "
-            "runners are removed."
-        ),
-        "delete_keeps": (
-            "What you wrote stays in its projects, shown as written by a deleted account. "
-            "Redact it first if you want it gone. Your handle is never given to anyone else."
-        ),
-        "delete_export": "Take your data with you first",
-        "delete_button": "Delete my account",
-        "delete_done": "Your account is deleted. Every session has ended.",
-        "namespace_owner": (
-            "Nothing was deleted: a project in your namespace is not archived. Transfer it "
-            "or archive it first; this link keeps working until it expires."
-        ),
-        "last_instance_admin": (
-            "Nothing was deleted: you are the instance's last admin. This link keeps "
-            "working until it expires."
-        ),
-        "org_last_owner": (
-            "Nothing was deleted: you are the last owner of an organisation. Make another "
-            "member an owner or delete the organisation first; this link keeps working "
-            "until it expires."
-        ),
-    },
-    "de": {
-        "verify_title": "Adresse bestätigen",
-        "verify_text": "Bestätige, dass Maity Mails an {address} schicken darf.",
-        "verify_button": "Bestätigen",
-        "verify_done": "Die Adresse ist bestätigt.",
-        "unsub_title": "Diese Mails abbestellen",
-        "unsub_text": "Die {kind}-Mails von Maity abbestellen.",
-        "unsub_button": "Diese Mails abbestellen",
-        "unsub_done": (
-            "Du bekommst keine {kind}-Mails mehr. "
-            "In den Einstellungen lassen sie sich wieder einschalten."
-        ),
-        "reset_title": "Zwei-Faktor-Anmeldung zurücksetzen",
-        "reset_text": (
-            "{admin} möchte die Zwei-Faktor-Anmeldung von {name} ({handle}) zurücksetzen."
-        ),
-        "reset_reason": "Die angegebene Begründung:",
-        "reset_button": "Meine Zwei-Faktor-Anmeldung zurücksetzen",
-        "reset_done": (
-            "Deine Zwei-Faktor-Anmeldung wurde zurückgesetzt, und alle Sitzungen sind "
-            "beendet. Melde dich neu an und richte sie noch einmal ein."
-        ),
-        "dead": "Dieser Link funktioniert nicht mehr.",
-        "delete_title": "Mein Konto löschen",
-        "delete_text": "Damit wird das Maity-Konto {handle} gelöscht.",
-        "delete_removes": (
-            "Jede Sitzung endet. Deine Adresse, dein Name, dein Bild, deine Sprachen und "
-            "Einstellungen werden gelöscht, deine Mitgliedschaften enden, deine "
-            "Agentenprofile werden gelöscht und deine Runner entfernt."
-        ),
-        "delete_keeps": (
-            "Was du geschrieben hast, bleibt in seinen Projekten, gezeigt als von einem "
-            "gelöschten Konto geschrieben. Schwärze es vorher, wenn es weg soll. Dein "
-            "Handle wird nie an jemand anderen vergeben."
-        ),
-        "delete_export": "Nimm vorher deine Daten mit",
-        "delete_button": "Mein Konto löschen",
-        "delete_done": "Dein Konto ist gelöscht. Jede Sitzung ist beendet.",
-        "namespace_owner": (
-            "Nichts wurde gelöscht: ein Projekt in deinem Namensraum ist nicht archiviert. "
-            "Übertrage oder archiviere es zuerst; dieser Link funktioniert, bis er abläuft."
-        ),
-        "last_instance_admin": (
-            "Nichts wurde gelöscht: du bist der letzte Admin der Instanz. Dieser Link "
-            "funktioniert, bis er abläuft."
-        ),
-        "org_last_owner": (
-            "Nichts wurde gelöscht: du bist der letzte Owner einer Organisation. Mach "
-            "zuerst jemand anderen zum Owner oder lösche die Organisation; dieser Link "
-            "funktioniert, bis er abläuft."
-        ),
-    },
-}
 
 
 def _page(
@@ -163,7 +62,7 @@ def _language(conn: Connection, request: Request, token: str) -> str:
     payload = tokens.read(settings_of(request).mail.signing_key, token)
     if payload is None:
         return "en"
-    return languages.own_text(preferences.text_language(conn, str(payload.get("h"))))
+    return preferences.text_language(conn, str(payload.get("h")))
 
 
 def _dead(words: dict[str, str]) -> HTMLResponse:
@@ -175,7 +74,7 @@ def _dead(words: dict[str, str]) -> HTMLResponse:
 def verify_page(token: str, request: Request) -> HTMLResponse:
     hub = settings_of(request)
     with engine_of(request).begin() as conn:
-        words = _WORDS[_language(conn, request, token)]
+        words = catalog.section("mail_links", _language(conn, request, token))
         payload = tokens.read(hub.mail.signing_key, token) or {}
         row = None
         if payload.get("p") == "verify":
@@ -202,7 +101,7 @@ def verify_confirm(token: str, request: Request) -> HTMLResponse:
     hub = settings_of(request)
     addresses.prepare(engine_of(request), hub.secret_key)  # before the lock's transaction
     with engine_of(request).begin() as conn:
-        words = _WORDS[_language(conn, request, token)]
+        words = catalog.section("mail_links", _language(conn, request, token))
         if not preferences.verify(
             conn, token, hub.mail.signing_key, hub.public_url, secret_key=hub.secret_key
         ):
@@ -214,7 +113,7 @@ def verify_confirm(token: str, request: Request) -> HTMLResponse:
 def unsubscribe_page(token: str, request: Request) -> HTMLResponse:
     hub = settings_of(request)
     with engine_of(request).begin() as conn:
-        words = _WORDS[_language(conn, request, token)]
+        words = catalog.section("mail_links", _language(conn, request, token))
         payload = tokens.read(hub.mail.signing_key, token)
         if payload is None or payload.get("p") != "unsubscribe":
             return _dead(words)
@@ -237,7 +136,7 @@ def unsubscribe_confirm(token: str, request: Request) -> HTMLResponse:
     alike; the body is not read."""
     hub = settings_of(request)
     with engine_of(request).begin() as conn:
-        words = _WORDS[_language(conn, request, token)]
+        words = catalog.section("mail_links", _language(conn, request, token))
         kind = preferences.unsubscribe(conn, token, hub.mail.signing_key)
         if kind is None:
             return _dead(words)
@@ -250,8 +149,8 @@ def reset_page(token: str, request: Request) -> HTMLResponse:
     with engine_of(request).begin() as conn:
         shown = second_factor_reset.page(conn, hub, token)
         if shown is None:
-            return _dead(_WORDS[_language(conn, request, token)])
-        words = _WORDS[shown["language"] if shown["language"] in _WORDS else "en"]
+            return _dead(catalog.section("mail_links", _language(conn, request, token)))
+        words = catalog.section("mail_links", shown["language"])
         text = words["reset_text"].format(
             admin=shown["admin"], name=shown["display_name"], handle=shown["handle"]
         )
@@ -267,7 +166,7 @@ def reset_page(token: str, request: Request) -> HTMLResponse:
 def reset_confirm(token: str, request: Request) -> HTMLResponse:
     hub = settings_of(request)
     with engine_of(request).begin() as conn:
-        words = _WORDS[_language(conn, request, token)]
+        words = catalog.section("mail_links", _language(conn, request, token))
         if not second_factor_reset.take_effect(conn, hub, token):
             return _dead(words)
         return _page(words["reset_title"], words["reset_done"])
@@ -279,7 +178,7 @@ def account_deletion_page(token: str, request: Request) -> HTMLResponse:
     on the dashboard's account page, and the button. Writes nothing."""
     hub = settings_of(request)
     with engine_of(request).begin() as conn:
-        words = _WORDS[_language(conn, request, token)]
+        words = catalog.section("mail_links", _language(conn, request, token))
         human = account_deletion.page(conn, hub.mail.signing_key, token)
         if human is None:
             return _dead(words)
@@ -298,7 +197,7 @@ def account_deletion_confirm(token: str, request: Request) -> HTMLResponse:
     hub = settings_of(request)
     with engine_of(request).begin() as conn:
         # Read before the deletion removes the human's settings, the language with them.
-        words = _WORDS[_language(conn, request, token)]
+        words = catalog.section("mail_links", _language(conn, request, token))
 
     def run() -> str | None:
         with events.transaction(engine_of(request)) as conn:

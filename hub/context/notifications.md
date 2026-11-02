@@ -3,6 +3,30 @@
 How the hub derives a human's notifications. What they are and why they exist in three
 stages is in the root `context/notifications.md`.
 
+## The hub's own words live in one catalog per language, read through one rule
+
+**Id:** 5fa1d7c2-8e34-4b6a-9c07-1d3e8f20ab46
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-ya56x9gx986r, 2026-11-02; docs/api.md §6.2; review of #1111
+**Revisit when:** a language needs plural forms in a hub text, or a translation changes a placeholder
+
+`preferences.text_language` picks the language (chosen interface language, else `language` when it is one
+of the ten, else `en`); `catalog.section` reads `words/<lang>.json`, English under any key without a
+translation. Mails, link pages, bell titles and the public pages' frame all go this way, so adding a
+language touches no module. Sentences are whole keys with placeholders; none is built from pieces, which
+is why the second-factor mail has one key with its link and one without.
+
+`language_of` passes over a language without words for its section yet (`catalog.speaks`): a person who
+accepts `fr, de` reads German rather than English until the French arrives.
+
+**Rejected alternatives:**
+- Keeping a dict per module: eight places to translate, with the fallback repeated in each.
+- Reading `interface_language` at each call site: the fallback would be repeated a dozen times.
+- `language` as the unconditional fallback: it reads `en` for everyone who never set it.
+- Translating the API's messages too: §6.2 keeps them English, a client goes by `code`.
+
 ## Items are derived on every read from 30 days of the human's projects, with the relations as they are now
 
 **Id:** e29065f2-c5d3-43dd-9209-f7f30b67269a

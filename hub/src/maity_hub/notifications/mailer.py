@@ -27,7 +27,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import Connection, Engine, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock, languages, worker_runs
+from maity_hub import catalog, clock, worker_runs
 from maity_hub import tables as t
 from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail_settings
@@ -49,49 +49,6 @@ NEVER_MAILED = ("registration_pending", "mail_disabled")
 # Each of these is a security mail of its own: never batched, never held (§18.5, §2.6.5).
 SECURITY_MAIL = ("session_created", "second_factor_changed", "second_factor_failed")
 
-_WORDS = {
-    "en": {
-        "updates": "{n} updates",
-        "more": "and {n} more: {url}",
-        "stop": "Stop these mails ({kind}): {url}",
-        "settings": "Settings: {url}",
-        "wrote": "wrote",
-        "only": (
-            "Maity only links to {url}; a link anywhere else in this mail was not sent by Maity."
-        ),
-        "sign_in": "New sign-in to your Maity account",
-        "sign_in_body": (
-            "A new session signed in to your account at {url}.\n\n"
-            "Time: {time}\nMethod: {method}\nBrowser: {browser}\nSystem: {os}\n"
-            "Address: {ip}\n\nIf this was not you, end it here: {sessions}\n"
-        ),
-        "two_factor_body": (
-            "{title}.\n\nTime: {time}\n\n"
-            "If this was not you, sign in and check your account here: {security}\n"
-        ),
-    },
-    "de": {
-        "updates": "{n} Neuigkeiten",
-        "more": "und {n} weitere: {url}",
-        "stop": "Diese Mails abbestellen ({kind}): {url}",
-        "settings": "Einstellungen: {url}",
-        "wrote": "schrieb",
-        "only": (
-            "Maity verlinkt nur auf {url}; ein Link anderswo in dieser Mail kommt nicht "
-            "von Maity."
-        ),
-        "sign_in": "Neue Anmeldung bei deinem Maity-Konto",
-        "sign_in_body": (
-            "Eine neue Sitzung hat sich bei deinem Konto auf {url} angemeldet.\n\n"
-            "Zeit: {time}\nMethode: {method}\nBrowser: {browser}\nSystem: {os}\n"
-            "Adresse: {ip}\n\nWarst du das nicht? Hier beenden: {sessions}\n"
-        ),
-        "two_factor_body": (
-            "{title}.\n\nZeit: {time}\n\n"
-            "Warst du das nicht? Melde dich an und prüfe dein Konto hier: {security}\n"
-        ),
-    },
-}
 
 _SCHEME = re.compile(r"\b([A-Za-z][A-Za-z0-9+.-]*):(?=//)")
 _DOT = re.compile(r"(?<=[A-Za-z0-9-])\.(?=[A-Za-z])")
@@ -357,7 +314,7 @@ def _send(
     zone: ZoneInfo,
 ) -> int:
     chosen = sorted(chosen, key=lambda i: i.order)
-    words = _WORDS[languages.own_text(prefs["language"])]
+    words = catalog.section("mail", prefs["language"])
     subject, body, kinds = compose(conn, chosen, prefs, public_url, zone)
     tokens = {
         kind: preferences.unsubscribe_token(signing_key, row.human_id, kind, row.epoch)
@@ -387,7 +344,7 @@ def compose(
     conn: Connection, chosen: list[Item], prefs: dict[str, Any], public_url: str, zone: ZoneInfo
 ) -> tuple[str, str, list[str]]:
     """(subject, body without the closing lines, the kinds in the mail, in order)."""
-    words = _WORDS[languages.own_text(prefs["language"])]
+    words = catalog.section("mail", prefs["language"])
     projects = _project_names(conn, chosen)
     if len(chosen) == 1:
         only = chosen[0]
@@ -451,7 +408,7 @@ def _sign_in_mail(
 ) -> None:
     """Time, method, browser, system and address of the new session, and where to end
     it; never a session id, a code or a link that signs anyone in (§2.6.5)."""
-    words = _WORDS[languages.own_text(prefs["language"])]
+    words = catalog.section("mail", prefs["language"])
     record = conn.execute(select(t.account_record).where(t.account_record.c.n == item.record)).one()
     data = record.data or {}
     token = preferences.unsubscribe_token(signing_key, row.human_id, "security", row.epoch)
@@ -492,7 +449,7 @@ def _two_factor_mail(
 ) -> None:
     """A change of the second factor, or wrong codes after a sign-in (§2.8.1): what happened
     and when, and where to look; never a code, a secret or a link that changes anything."""
-    words = _WORDS[languages.own_text(prefs["language"])]
+    words = catalog.section("mail", prefs["language"])
     record = conn.execute(select(t.account_record).where(t.account_record.c.n == item.record)).one()
     token = preferences.unsubscribe_token(signing_key, row.human_id, "security", row.epoch)
     stop = f"{public_url}/mail/unsubscribe/{token}"

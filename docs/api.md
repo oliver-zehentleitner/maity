@@ -4625,7 +4625,7 @@ then `en`, and passes it as `lang` to the page texts of §16.7.4. A key without 
 translation reads in English. The API stays in English in every language: a
 client translates by `code` and `details`, not by `message`. *Hub
 implementation:* `interface_language` comes with the hub's change for
-this section; until then the hub's own texts exist in `en` and `de`.
+this section. A word of the hub's own without a translation reads in English.
 
 **What an admin sees in addition.** For a caller with `members:admin`
 the member view — in the list and for one member — carries two more
