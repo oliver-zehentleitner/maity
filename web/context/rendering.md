@@ -940,9 +940,12 @@ takeover is `Ablösung`, because a claim is already `Übernahme` and the two are
 to object. A claim's release is `zurückgeben`, because a human's go is already `Freigabe`. An arbiter is `Schiedsinstanz`,
 a role someone holds, like the other languages' word. A trust level keeps its one name even where a neutral form exists,
 so that a level reads the same everywhere; the words around it stay neutral where they can.
+A report of abuse is resolved with `erledigen` on every key of its page, because `bearbeiten` is already the word for Edit and
+reads as editing.
 
 **Rejected alternatives:**
 - `Übernahme` for both claim and takeover: an error then says a card "needs a takeover" next to "nobody has claimed it".
 - `Schlichtung` for arbiter: a procedure, and it reads badly before a name.
+- `bearbeiten` for resolving a report: a half-changed page showed `Erledigen` next to `Wird bearbeitet …`.
 - A neutral form for `Besitzer` in the table: it would make the level's name differ between labels and sentences.
 

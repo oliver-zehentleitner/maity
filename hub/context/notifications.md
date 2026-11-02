@@ -25,6 +25,7 @@ What each translation follows lies in `hub/words-meta/`, beside the package and 
 `make -C web fixtures` as for the dashboard's catalogs (`web/tools/check.py`): a changed English marks its
 translations out of date, a note until `make release-check` makes it a finding. A separate tool for the hub
 would repeat the same rule; a hub test would stop every change of an English word.
+After a change of these words run `make -C web fixtures`, or the web job is red on the stale meta file.
 
 **Rejected alternatives:**
 - Keeping a dict per module: eight places to translate, with the fallback repeated in each.
