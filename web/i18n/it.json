@@ -956,6 +956,7 @@
   "error.load_failed": "Impossibile caricare",
   "error.load_failed_at": "Impossibile caricare ({path})",
   "error.mail_not_configured": "Questo hub non può inviare email.",
+  "error.maintenance": "L'hub è in manutenzione. Riprova al termine.",
   "error.memory_full": "Questa memoria è piena.",
   "error.method_not_allowed": "Questa azione non è disponibile qui.",
   "error.namespace_owner": "Il proprietario del namespace di questo progetto non può essere cambiato né rimosso in questo modo.",

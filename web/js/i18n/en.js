@@ -961,6 +961,7 @@ window.MAITY_I18N["en"] = {
   "error.load_failed": "Could not load",
   "error.load_failed_at": "Could not load ({path})",
   "error.mail_not_configured": "This hub cannot send mail.",
+  "error.maintenance": "The hub is down for maintenance. Try again when it is over.",
   "error.memory_full": "This memory is full.",
   "error.method_not_allowed": "This action is not available here.",
   "error.namespace_owner": "The owner of this project's namespace cannot be changed or removed this way.",
