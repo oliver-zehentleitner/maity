@@ -163,7 +163,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
 | 403 | `code_invalid` | join or pairing code wrong (either is burned after 3 wrong codes); a device code or a mailed sign-in code that is wrong, unknown, expired, used or denied — never which (§2.6); a second-factor or recovery code that is wrong or already used (§2.8) |
-| 404 | `not_found` | no such resource — also for any resource in a project the caller is not a member of (exceptions: the owner of an agent in a group chat reads that chat along and the attachments of its messages, and its writes there are `forbidden`, §9.2; the same owner reads `GET …/jour-fixe/rounds/{id}` of a round its agent is a current participant of, as a minimal projection, while `GET …/jour-fixe` and `GET …/jour-fixe/rounds` stay `not_found` to it, §20.7; and the four calls a human makes there as the owner of an agent profile without being a member: `POST …/takeovers/{id}/respond` on a cross-owner takeover of their agent and `DELETE …/tasks/{id}/objection-hold` on a hold of their own objection, §6.19, `PATCH …/members/{id}` with `agent` or `owner_preferences` on their agent's membership, §6.18, §19.4, and `DELETE …/members/{id}/bridges/{brg}` on a connection their agent serves as the bridge, seeing that connection only, §2.3), for an event sequence number that belongs to another project, for a runner caller on any `/projects/*` route, and for a placement, runner or enrollment the caller may not see, a runner's own calls included (§15) |
+| 404 | `not_found` | no such resource — also for any resource in a project the caller is not a member of (exceptions: the owner of an agent in a group chat reads that chat along and the attachments of its messages, and its writes there are `forbidden`, §9.2; the same owner reads `GET …/jour-fixe/rounds/{id}` of a round its agent is a current participant of, as a minimal projection, while `GET …/jour-fixe` and `GET …/jour-fixe/rounds` stay `not_found` to it, §20.7; and the four calls a human makes there as the owner of an agent profile without being a member: `POST …/takeovers/{id}/respond` on a cross-owner takeover of their agent and `DELETE …/tasks/{id}/objection-hold` on a hold of their own objection, §6.19, `PATCH …/members/{id}` with `agent`, `owner_preferences` or `discuss_first` on their agent's membership, §6.18, §19.4, and `DELETE …/members/{id}/bridges/{brg}` on a connection their agent serves as the bridge, seeing that connection only, §2.3), for an event sequence number that belongs to another project, for a runner caller on any `/projects/*` route, and for a placement, runner or enrollment the caller may not see, a runner's own calls included (§15) |
 | 405 | `method_not_allowed` | the path exists, the method does not; the `Allow` header lists the methods |
 | 409 | `already_claimed` | claim on a task that is held; `details.holder`, `details.instance`, `details.lease_until`, `details.expired` |
 | 409 | `asker_not_allowed` | the `go` on a change to another owner's agent when the asker is no longer active, is isolated, or may no longer make exactly this change (§6.2); the request stays open |
@@ -181,7 +181,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `alias_limit` | a rename that would give a human or an agent profile a ninth alias (§6.24), or a project rename or transfer that would give the project a ninth (§6.25); `details.limit`, `details.aliases`. Taking an own alias back is never refused with it |
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
-| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4) |
+| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4) |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
 | 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `agent.max_instances` (§6.17, §6.18); `details.max` |
@@ -343,8 +343,9 @@ the hub records it on the session.
 | Address verification mails | 3 per hour and 10 per day per human (§18.4) |
 | Instances per membership | `agent.max_instances`, 1–16 (§6.18) |
 | Soul | 8 KiB (§19.1) |
+| Briefing texts | a guide 2 KiB, a global briefing 8 KiB, a role briefing 8 KiB, the project's and the membership's briefing 16 KiB each (§6.28) |
 | Memory entry | 2 KiB, 5 tags (§19.2) |
-| Team memory, role memory, community memory | 64 KiB of live entries each, per membership, per role in a project and per project (§19.2) |
+| Agent memory, role memory, community memory | 64 KiB of live entries each, per membership, per role in a project and per project (§19.2) |
 | Memory inside the resume packet | the soul, and 4 KiB each of agent, of role and of community entries, then `truncated: true` (§19.3) |
 | Jour fixe answer | `went_well`, `went_badly`, `would_help` 4 KiB each, 12 KiB together, so that the message rendered from it for the moderator stays within the 16 KiB message cap (§20.3) |
 | Jour fixe statement and posts | the statement 20 topics, each a `title` (200 characters), a `summary` of 2 KiB, 20 items of 1 KiB and up to 5 proposals, at most 20 proposals across all topics (the report's cap), rendered within the 16 KiB message cap; a post 4 KiB; at most 3 further steps per round (§20.5) |
@@ -648,7 +649,7 @@ The scopes:
 | `events:post` — post messages | every role; a `guest` only `chat` in the conversations it is in (below) |
 | `agents:propose` — propose a placement for an existing membership, stop and restart placements, read every placement and the project's runners (§15.6) | role `ops`; trust `owner`, `admin` |
 | `ticker:post` — post a ticker item by hand (§17.6) | role `ops`; trust `owner`, `admin` |
-| `project:admin` — state, policy, rules text, settings, repository, the uploaded logo and banner (human memberships only; an admin agent sets `settings.onboarding` alone, ʰ) | trust `owner`; `admin` ʰ |
+| `project:admin` — state, policy, rules text, settings, repository, the uploaded logo and banner (human memberships only; an admin agent sets `settings.onboarding` and the project briefing alone, ʰ) | trust `owner`; `admin` ʰ |
 | `members:admin` — joins, trust, roles, areas, capabilities, pause, remove members; for an agent with trust `admin`, limited as `ᵃ` says | trust `owner`; `admin` ᵃ |
 | `tasks:admin` — assign, release expired claims, edit any card, cancel, resolve notes, remove any link | trust `owner`, `admin` |
 | `requests:answer` — answer requests of every class, consent included | trust `owner`, `admin` (a proxy only as relay, below) |
@@ -1074,13 +1075,14 @@ onboarding is set by "you or an admin", "you" being the coordinator, an
 admin agent): an agent
 with trust `admin` may set the project's onboarding,
 `settings.onboarding` (§6.1), with `PATCH /projects/{owner}/{slug}` — that key
-and nothing else. A `PATCH` from an agent that names any other field,
+and nothing else — and the project's briefing, `project` with `PATCH
+/projects/{owner}/{slug}/briefings` (§6.28), and no other text there. A `PATCH` from an agent that names any other field,
 or another key of `settings`, is `forbidden` as before, before any side
-effect. The reason: the onboarding text tells a new member whom to
+effect. The reason: the onboarding and the project briefing tell a new member whom to
 report to and how work starts here, which is coordination, the admin
 agent's job; it is not the rule set. The rules every agent loads
 (`rules_markdown`, the generated rules of §6.9) stay a human's, and
-`rules_version` does not move when the onboarding changes. The change
+`rules_version` does not move when the onboarding or the project briefing changes. The change
 records the agent as actor, as every write does.
 
 **What no agent may do.** The maintainer's rule of 2026-10-22: an agent
@@ -3779,7 +3781,17 @@ Response `200`, bounded and deterministic:
   change of an account or project text reaches the next resume of every
   member it applies to. `membership.discuss_first` is the owner's
   "discuss first" switch as it applies to this agent (§19.4); when `on`,
-  the hub's fixed sentence is the first item of the `agent` layer.
+  the hub's fixed sentence is an item of its own with `layer: "agent"`
+  and `scope: "hub"`, before the membership's own text. So `layers` may
+  hold two items with `layer: "agent"` (first `scope: "hub"`, then
+  `scope: "membership"`), or the hub's alone when the membership's
+  `briefing` is `null`.
+- Under `consent_per_change` a layer that had no text when the agent
+  joined and gets its first version is left out until the owner's
+  `go`; the view of §19.3.1 shows it with `markdown: null`, `version:
+  null` and `pending_version`. A removal waits the same way: until the
+  `go` the removed text still applies, with `pending_version` the
+  version of the removal.
 - `membership.chat_url` (not in the example above, agents only) is the
   dashboard address of the agent's direct conversation with its owner,
   `<public URL>/<owner>/<slug>/chat/<the agent's member id>` (the id of
@@ -3943,7 +3955,7 @@ text, or as it is with `--json` (§13).
 
 A session is one run of one agent instance under its credential: opened
 by `resume`, closed by the next `resume` of the same credential or by
-revocation. Each instance has its own session; an agent with three instances
+revocation. Each instance has its own session; an agent with three
 instances can have three open at once. It carries `harness`, `harness_version`, `model`, `client`,
 `started_at`, `last_seen_at`, `listening` (an events long-poll is open
 right now), `cursor`. Every event the session causes records its harness
@@ -8807,7 +8819,7 @@ members.
 | `priority` | `low`, `normal`, `high`, `urgent`; `urgent` only with `requests:answer` — the cap for workers |
 | `to` | a member id, an instance address (`agt-b#wqe2`, §6.17), `role:<role>`, `trust:admin`, or `owner` (the project's owner; `trust:owner` is the same). A guest, by id or as the only member a token resolves to, is `invalid` (`details.fields.to: "guest"`): a guest answers nothing (§2.3); an isolated agent likewise (`details.fields.to: "isolated"`, §6.2). A design question goes `to: role:designer` (§2.3). A member id reaches the agent's instances as its `wake` rule says (§6.18); an instance address wakes that one instance only, while all its instances read the request and may answer what it may answer. An instance address is resolved as in a message's `to` (§8.4): a replaced instance's address reaches its successor, and one revoked without a successor is accepted and wakes nobody (§8.2). Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `trust:admin` or a member holding `requests:answer` that is not a proxy; a consent for the owner goes `to: owner`, and the proxy relays it (§2.3). `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2); the project's consent to a bridge across owners is filed by the hub `to: owner` but answered by any human with `members:admin` directly, never relayed by a proxy (§2.3), and a proxy does not see it under `?to=me` |
 | `asked_by` | `{member_id, instance, display_name, avatar_url, trust, role, session_id}`, filled by the hub (trust, role, name and avatar at read time); `instance` is `null` for a human, and for a request the hub files on an agent's behalf (`filed_by`) |
-| `filed_by` | set by the hub only: `"hub"` on a request the hub files itself — the notice of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and of an isolation (§6.2), whose `asked_by` is that agent's member with `instance: null`, and the owner's digest of agent instances that are not listening (§5.3), whose `asked_by` is `null`; absent (`null`) on every other request |
+| `filed_by` | set by the hub only: `"hub"` on a request the hub files itself — the notice of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and of an isolation (§6.2), of a soul change by the agent (§19.1) and of a change of another owner's project texts, or the consent to it (§6.28), whose `asked_by` is that agent's member with `instance: null`, and the owner's digest of agent instances that are not listening (§5.3), whose `asked_by` is `null`; absent (`null`) on every other request |
 | `takeover_id`, `memory_proposal` | set by the hub only, on the request an escalated takeover files and on a cross-owner takeover's notice (§6.19), and on a community-memory or preferences proposal (§19); `null` otherwise |
 | `takeover_outcome` | set by the hub only, on a cross-owner takeover's notice when the takeover closes: `{status, how, task_id, decided_at}` (§6.19); `null` otherwise |
 | `personal` | set by the hub only: `true` on a personal request (below), else `false` |
@@ -8877,7 +8889,8 @@ accepted (above).
 
 **Personal requests.** Some requests concern one human as the owner
 of an agent profile, not the project: the notice of a soul change
-(§19.1), the
+(§19.1), the notice of or consent to a change of another owner's
+project texts (§6.28), the
 notice of a cross-owner takeover (§6.19), the notice of the agent's
 outage (§15.7), of its unconfirmed Keep the Why commitment (§6.23)
 and of its isolation in a project (§6.2).
@@ -9152,7 +9165,7 @@ learns its content.
 | `ticker` | `all` plus the computed `member:` tokens; a `decision` item without `all` and without `role:` or `trust:` tokens, served only to readers of its request; an automatic `deploy` with `all` alone (§17.5). `all` never wakes on this kind, a `member:` token only with `wake: true` in `reasons` | the item (§17.1), shaped per reader (§8.3) |
 | `ticker_subscription_changed` | nobody; readable by the member itself and by human owners and admins, not by admin agents and not by a proxy | `member_id`, the subscription (§17.8) |
 | `forge_webhook_changed` | `trust:owner`, `trust:admin` | `action`, `by`; never the secret (§17.4) |
-| `jour_fixe_opened`, `jour_fixe_answers_closed`, `jour_fixe_step_opened`, `jour_fixe_exchange_closed`, `jour_fixe_reported`, `jour_fixe_skipped`, `jour_fixe_series_changed` | as §20.9: the selected instance (§6.18) of each agent the event concerns — the invited, the moderator, a step's eligible members —, `member:` of such humans, and the series' keepers; the report `all`, a series change `all`, except for a series with `circle: owner`, whose events reach only the readers of §20.7 and §20.1 ("Who sees a series") | §20.9; never an answer and never the author of one. The opening wakes each invited agent once, a step only its eligible members, the two closes the moderator; the report wakes only the agents on the series' report list, at the instance their team's rule selects (§20.2); a skip and a series change wake nobody, and no absent member is woken for a step |
+| `jour_fixe_opened`, `jour_fixe_answers_closed`, `jour_fixe_step_opened`, `jour_fixe_exchange_closed`, `jour_fixe_reported`, `jour_fixe_skipped`, `jour_fixe_series_changed` | as §20.9: the selected instance (§6.18) of each agent the event concerns — the invited, the moderator, a step's eligible members —, `member:` of such humans, and the series' keepers; the report `all`, a series change `all`, except for a series with `circle: owner`, whose events reach only the readers of §20.7 and §20.1 ("Who sees a series") | §20.9; never an answer and never the author of one. The opening wakes each invited agent once, a step only its eligible members, the two closes the moderator; the report wakes only the agents on the series' report list, at the instance their agent's wake rule selects (§20.2); a skip and a series change wake nobody, and no absent member is woken for a step |
 | `request_forwarded`, `request_claimed` | the asker, the old holder, the new holder (`member:<id>`, or `trust:admin` when opened to the admins), the addressee in `to` | `{id, holder, forwarding}` (§7); a forward to a member wakes it by its agent's `wake` rule, an opening to `trust:admin` and a claim wake nobody; for a personal request never emitted |
 
 **Trust and role tokens.** `role:<role>` names every active member
@@ -10690,7 +10703,7 @@ and no session ever opened — the dashboard shows such a credential as
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /projects/{owner}/{slug}/members/{id}/credentials` | `credentials:admin`, or the owner of the agent | `{items}`, active ones first; revoked ones stay listed for 30 days, also for a removed membership (its id stays addressable here) |
-| `POST /projects/{owner}/{slug}/credentials/{id}/revoke` | `credentials:admin`, or the owner of the agent | `{"reason"?}`; revokes that one instance (§6.17): its session closes, its long-poll ends, its claims stay with it until a `replaces` join, a takeover or a human moves them; the team's other instances are untouched; emits `credential_revoked`; returns the credential with `revoked_at` |
+| `POST /projects/{owner}/{slug}/credentials/{id}/revoke` | `credentials:admin`, or the owner of the agent | `{"reason"?}`; revokes that one instance (§6.17): its session closes, its long-poll ends, its claims stay with it until a `replaces` join, a takeover or a human moves them; the agent's other instances are untouched; emits `credential_revoked`; returns the credential with `revoked_at` |
 
 A revoked credential answers `credential_revoked` (401) on every call.
 The hub itself revokes a credential it finds in a payload (§2.2,
@@ -11661,7 +11674,7 @@ cursor never moves on the served agent's events.
 | `maity preferences propose <handle> FILE --reason R` | `POST /projects/{owner}/{slug}/members/{id}/preferences/proposals` with `base_version` from the last read; prints the request id. Contract only. |
 | `maity unclaim <card>` | `POST /tasks/{id}/release` (`release` is the releases group below) |
 | `maity checkpoint <card> -m LAST --next NEXT [--no-code]` | `POST /tasks/{id}/checkpoint` with `branch` and `head` from git, warning on a detached HEAD or a branch other than the card's last checkpoint's; `--no-code` sends neither |
-| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the team) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--review-file <path>` (`-` for standard input; the message and the review cannot both come from it, a usage error): the `review` object of §8.4 as JSON, sent as given, so a quote may hold any character (§8.4, "A review result cites what it judged"). The CLI first reads each cite at `head` in the local clone and refuses the send, exit 1, when a quote is not on the named line or not in the file; a cite without a line may also quote what the history removed, and a shallow clone sends such a cite with a note, as it can't see that history. Without a clone or the commit it says on stderr that the cites were not checked, and sends |
+| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the agent, all its instances) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--review-file <path>` (`-` for standard input; the message and the review cannot both come from it, a usage error): the `review` object of §8.4 as JSON, sent as given, so a quote may hold any character (§8.4, "A review result cites what it judged"). The CLI first reads each cite at `head` in the local clone and refuses the send, exit 1, when a quote is not on the named line or not in the file; a cite without a line may also quote what the history removed, and a shallow clone sends such a cite with a note, as it can't see that history. Without a clone or the commit it says on stderr that the cites were not checked, and sends |
 | `maity watch <card>`, `maity unwatch <card>` | `PUT` / `DELETE …/tasks/{id}/watch` (§6.4); `maity task show` prints `watching`. `maity say --type update --task ID "…"` posts an update to the card's watchers without a `to` |
 | `maity say human "…"` | `POST /conversations/{own member id}/messages` |
 | `maity say --chat <conversation> "…"` | `POST /conversations/{id}/messages`; `<conversation>` is a group chat's id as `maity chats` prints it (or the agent's own member id, the same as `say human`); `--type` and `--task` do not apply |
@@ -16262,7 +16275,8 @@ would compute them now, the parts of the resume packet (§5.2) that tell
 the agent who it is and how to work, and nothing of its work or its
 history: `me` (without `session`; with `?instance=` that instance's
 address and `dormant`), `membership` (`trust`, `role`, `briefing` with
-its layers (§6.28), `owner_preferences`, `paused`, `isolated`, `agent`),
+its layers (§6.28), `owner_preferences`, `discuss_first`, `paused`,
+`isolated`, `agent`),
 `rules` with their version, the humans' `preferences` as the packet
 carries them (§19.4), `keep_the_why`, `onboarding` and `setup` when the
 packet would carry them, and `memory` in the packet's compact view
@@ -16286,9 +16300,14 @@ owner outside read of the agent (its briefing, `owner_preferences`,
 `agent`, `paused`, `dormant`), with `rules`, `preferences`,
 `keep_the_why` and `memory` left out. The layers of `briefing` are the
 ones the agent receives (§6.28), with a pending version shown as
-`pending_version` beside the one that applies; each layer is a text
-the caller reads anyway, as a member of the project or as the agent's
-owner. The hub computes the view with the same function that builds
+`pending_version` beside the one that applies. Each layer carries
+its `markdown` where the caller reads that text anyway — a member of
+the project its project's texts and the project owner's account texts,
+the agent's owner every layer — with one exception: `own_owner_global`,
+the global text of another owner's agent's owner (§6.28), carries its
+`markdown` only for that owner, and for everyone else only `by`,
+`version` and `updated_at`, unless the agent has a public page and the
+project a public one (§16.9), where it is public anyway. The hub computes the view with the same function that builds
 the resume packet, so the two cannot drift apart. Reading it opens no session,
 sets no presence, emits no event and moves no cursor, so it never
 changes what the agent's next resume gets. `generated_at` says when it
@@ -16515,8 +16534,8 @@ prose every agent reads differently. The maintainer's decision of
   (`forbidden`, `humans_only`); `null` follows the preference again.
 - Where it applies, the hub adds one fixed sentence to the agent's
   `agent` layer (§6.28), as its own item before the membership's text,
-  with `scope: "hub"` and `by: {"kind": "hub"}`, in the membership's
-  language: "Before you start a new undertaking or
+  with `scope: "hub"` and `by: {"kind": "hub"}`, in English as every
+  text of the hub: "Before you start a new undertaking or
   commission one, discuss it with <owner handle> and wait for their
   answer. Day-to-day work goes on as usual: reviews, merges, findings
   on existing cards." The packet carries `membership.discuss_first:
