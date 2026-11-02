@@ -5486,9 +5486,32 @@ window.MAITY_FIXTURES = {
           "session_id": "hss-41d2"
         },
         "address_status": "verified",
+        "daily_at": "08:00",
+        "disabled_at": null,
+        "hard_failures": 0,
+        "kinds": {
+          "chat": {
+            "content": false,
+            "mode": "daily"
+          },
+          "inbox": {
+            "mode": "immediate"
+          },
+          "mention": {
+            "content": false,
+            "mode": "daily"
+          },
+          "security": {
+            "mode": "immediate"
+          }
+        },
         "language": "en",
         "pending_address": null,
-        "verified_at": "2026-10-01T09:12:00Z"
+        "quiet_hours": null,
+        "sign_in_link": true,
+        "timezone": "Europe/Vienna",
+        "verified_at": "2026-10-01T09:12:00Z",
+        "weekly_on": "mon"
       },
       "kinds": [
         "inbox",
