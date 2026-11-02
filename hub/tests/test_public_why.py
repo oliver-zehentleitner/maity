@@ -59,7 +59,7 @@ def test_it_shows_counts_links_and_titles_and_no_entry_text(world: World) -> Non
     answer = world.anyone.get(READ).json()
     assert answer["kind"] == "why"
     data = answer["data"]
-    assert set(data) == {"readable", "summary", "family", "attention"} and data["readable"]
+    assert set(data) == {"readable", "observed_at", "summary", "family", "attention"} and data["readable"]
     assert data["attention"][0]["title"] == "Open question"
     assert data["family"][0]["dashboard_url"]
     page = world.anyone.get("/maintainer/maity/why").text
@@ -122,3 +122,17 @@ def test_a_repository_not_found_public_is_not_read(
         public_project_views.WHY_CACHE, "get", lambda *_: pytest.fail("read a private repository")
     )
     public_project_views.prepare_why(migrated, settings)
+
+
+def test_a_replica_with_no_read_or_an_older_one_keeps_the_stored_view(
+    world: World, monkeypatch: Any
+) -> None:
+    stored = world.anyone.get(READ).json()["data"]
+    empty = ktw.Cache()
+    monkeypatch.setattr(public_project_views, "WHY_CACHE", empty)
+    world.touch()
+    assert world.anyone.get(READ).json()["data"] == stored
+    older = ktw.Snapshot("2026-01-01T00:00:00Z", [], False)
+    empty.entries[world.project_id] = ktw._Entry(older, 0.0, URL)
+    world.touch()
+    assert world.anyone.get(READ).json()["data"] == stored

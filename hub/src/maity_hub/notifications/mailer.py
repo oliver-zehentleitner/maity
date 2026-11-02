@@ -27,7 +27,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import Connection, Engine, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock, languages
+from maity_hub import clock, languages, worker_runs
 from maity_hub import tables as t
 from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail_settings
@@ -115,7 +115,13 @@ def key(item: Item) -> str:
 # --- the pass ------------------------------------------------------------------------
 
 
-def run(engine: Engine, env: MailEnvironment, secret_key: bytes | None, public_url: str) -> int:
+def run(
+    engine: Engine,
+    env: MailEnvironment,
+    secret_key: bytes | None,
+    public_url: str,
+    stop: worker_runs.Stopping | None = None,
+) -> int:
     """One pass over every human with a verified address; returns mails queued."""
     with engine.begin() as conn:
         resolved = mail_settings.resolve(conn, env, secret_key)
@@ -131,6 +137,8 @@ def run(engine: Engine, env: MailEnvironment, secret_key: bytes | None, public_u
     budget = int(resolved.value("max_per_hour"))
     queued = 0
     for human_id in humans:
+        if stop is not None and stop.is_set():
+            break
         try:
             with engine.begin() as conn:
                 queued += for_human(conn, human_id, env.signing_key, public_url, budget)
@@ -153,7 +161,9 @@ def for_human(
     if row.address_status != "verified" or row.address is None:
         return 0
     state = _state(conn, human_id)
-    prefs = preferences.preferences(conn, human_id)["email"]
+    # The settings, with the language this mail is in (§6.2).
+    email = preferences.preferences(conn, human_id)["email"]
+    prefs = {**email, "language": preferences.text_language(conn, human_id)}
     # What the bell's long-poll compares before it derives again, and the human's settings
     # with it: unchanged since the last pass, and nothing left waiting for its hour, means
     # there is nothing to mail, and the pass costs a few aggregates, not 30 days of the
@@ -535,6 +545,10 @@ class Worker:
     def _run(self) -> None:
         while not self._stop.wait(self.interval):
             try:
-                run(self.engine, self.env, self.secret_key, self.public_url)
+                with worker_runs.claim(
+                    self.engine, "notification-mail", self.interval, self._stop
+                ) as held:
+                    if held is not None:
+                        run(self.engine, self.env, self.secret_key, self.public_url, held)
             except Exception:
                 log.exception("notification mail: a pass failed")

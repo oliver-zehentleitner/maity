@@ -323,22 +323,25 @@ def organisation_html(who: dict[int, Person]) -> str:
     return "<ul>" + "".join(node(p, frozenset({p.id})) for p in roots) + "</ul>" if roots else ""
 
 
-def why_data(project: Any) -> dict[str, Any]:
+def why_data(conn: Connection, project: Any, path: str) -> dict[str, Any]:
     """What the page shows of the Keep the Why export: the counts, the family's links and the
-    attention entries, read beforehand. Nothing while the repository is not public or unread."""
-    entry = WHY_CACHE.cached(project.id)
-    snapshot = entry.snapshot if entry else None
-    if (
-        project.repository_public is not True
-        or entry is None
-        or entry.repository_url != project.repository_url
-        or snapshot is None
-        or snapshot.error is not None
-    ):
+    attention entries, read beforehand. Nothing while the repository is not public. Each
+    process holds its own read: a render with none, or with one older than the stored view,
+    keeps that view (hub/context/public-pages.md)."""
+    if project.repository_public is not True:
         return {"readable": False}
+    row = public_pages.get(conn, path)
+    stored = row.data if row is not None and row.view == "why" and row.data["readable"] else None
+    entry = WHY_CACHE.cached(project.id)
+    snapshot = entry.snapshot if entry and entry.repository_url == project.repository_url else None
+    if snapshot is None or snapshot.error is not None:
+        return stored or {"readable": False}
+    if stored and stored["observed_at"] > snapshot.observed_at:
+        return dict(stored)
     answer = snapshot.answer()
     return {
         "readable": True,
+        "observed_at": snapshot.observed_at,
         "summary": answer["summary"],
         "family": [
             {"name": m["name"], "path": m["path"], "dashboard_url": m["dashboard_url"]}
@@ -401,7 +404,7 @@ def render_views(conn: Connection, hub: Settings, project_id: str) -> list[publi
     full = namespace.full_name(conn, project)
     who = members(conn, project_id)
     columns, gone = board_rows(conn, project_id, who)
-    why = why_data(project)
+    why = why_data(conn, project, f"/{full}/why")
     views = (
         ("board", "Board", board_html(columns, who, gone), board_data(columns, who, gone)),
         ("members", "Members", members_html(who), members_data(who)),

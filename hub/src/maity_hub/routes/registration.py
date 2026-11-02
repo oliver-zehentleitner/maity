@@ -15,7 +15,8 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, BackgroundTasks, Body, Query, Request
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic_core import PydanticCustomError
 from sqlalchemy import Connection, Engine, and_, delete, insert, or_, select, update
 from starlette.concurrency import run_in_threadpool
 
@@ -23,6 +24,7 @@ from maity_hub import (
     campaigns,
     clock,
     landing,
+    languages,
     paging,
     paths,
     registration,
@@ -70,6 +72,22 @@ class RegisterIn(BaseModel):
     password: str = Field(min_length=PASSWORD_MIN, max_length=1024)
     next: str | None = Field(default=None, max_length=2048)
     origin: OriginIn | None = None
+    interface_language: str | None = None
+    language: str | None = None
+
+    @field_validator("interface_language", mode="before")
+    @classmethod
+    def of_the_interface(cls, value: Any) -> Any:
+        if value is not None and value not in languages.INTERFACE:
+            raise PydanticCustomError("unknown_language", "not a language of the portal")
+        return value
+
+    @field_validator("language", mode="before")
+    @classmethod
+    def known_language(cls, value: Any) -> Any:
+        if value is not None and not languages.known(value):
+            raise PydanticCustomError("unknown_language", "not in GET /languages")
+        return value
 
 
 def _environment(request: Request) -> registration.RegistrationEnvironment:
@@ -151,6 +169,8 @@ async def register(request: Request, background: BackgroundTasks) -> JSONRespons
         request.headers.get("accept-language"),
         paths.safe_next(body.next),  # replaced by `/`, silently (§2.6.5)
         body.origin.model_dump() if body.origin is not None else None,
+        body.interface_language,
+        body.language,
     )
     return JSONResponse({"expires_in": int(registration.PENDING_FOR.total_seconds())}, 202)
 
@@ -165,6 +185,8 @@ def _store(
     language: str | None,
     next_path: str | None,
     origin: dict[str, Any] | None = None,
+    interface_language: str | None = None,
+    chosen_language: str | None = None,
 ) -> None:
     """§2.7.1 step 3, after the answer: drop, mail the account's owner, or make a pending
     registration and mail its link."""
@@ -193,7 +215,11 @@ def _store(
             return
         if _has_account(conn, normalized):
             registration_mail.send(
-                conn, kind="already_registered", to=given, language=language, hub=hub
+                conn,
+                kind="already_registered",
+                to=given,
+                language=interface_language or language,
+                hub=hub,
             )
             return
         lock_address(conn, hub.secret_key, normalized)
@@ -209,6 +235,8 @@ def _store(
                 source_ip=source[:64],
                 user_agent=(user_agent or "")[:512] or None,
                 language=(language or "")[:35] or None,
+                interface_language=interface_language,
+                chosen_language=chosen_language,
                 terms_version=terms["version"] if terms else None,
                 next=next_path,
                 # Kept only while it names a variant and a campaign that exist (§16.7.2).

@@ -30,7 +30,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, delete, insert, select, update
 
-from maity_hub import clock, forge, merged, public_pages, releases, rules, ticker
+from maity_hub import clock, forge, merged, public_pages, releases, rules, ticker, worker_runs
 from maity_hub import tables as t
 from maity_hub.cards import CLOSED
 from maity_hub.events import emit, lock_project, transaction
@@ -419,7 +419,7 @@ def observe_visibility(engine: Engine, fg: forge.Forge, project_id: str) -> None
         public_pages.touch(conn, "project", project_id, removal=not public)
 
 
-def sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = None) -> None:
+def sweep(engine: Engine, fg: forge.Forge, stop: worker_runs.Stopping | None = None) -> None:
     """One round: the visibility of every public page's repository, then every report
     without an observation on an open card or one closed within REPORT_WINDOW, then every
     open release and the links, then the REREAD_PER_ROUND reports of such cards with the oldest
@@ -647,7 +647,7 @@ def _contract_sections(
         return None
 
 
-def merge_sweep(engine: Engine, fg: forge.Forge, stop: threading.Event | None = None) -> None:
+def merge_sweep(engine: Engine, fg: forge.Forge, stop: worker_runs.Stopping | None = None) -> None:
     """Every project with the ticker on and an observable repository (§17.4)."""
     with engine.connect() as conn:
         rows = conn.execute(
@@ -755,6 +755,16 @@ class Worker:
         held = self.fg.retry_at()
         return max(due, held) if held is not None else due
 
+    def _claimed(self, name: str, interval: float, work: Callable[..., Any]) -> None:
+        """A sweep once per interval across the pods; the jobs below stay on the pod that took
+        the webhook, their writes are deduplicated already (`dedupe_key`)."""
+        try:
+            with worker_runs.claim(self.engine, name, interval, self.stopping) as held:
+                if held is not None:
+                    _guarded(work, self.engine, self.fg, held)
+        except Exception:
+            log.exception("probe: claiming %s failed", name)
+
     def _run(self) -> None:
         next_sweep = clock.now()
         next_merges = clock.now()
@@ -765,10 +775,10 @@ class Worker:
                 job = self.jobs.get(timeout=wait)
             except queue.Empty:
                 if clock.now() >= next_merges:
-                    _guarded(merge_sweep, self.engine, self.fg, self.stopping)
+                    self._claimed("probe-merges", MERGE_INTERVAL, merge_sweep)
                     next_merges = self._after(MERGE_INTERVAL)
                 if clock.now() >= next_sweep:
-                    _guarded(sweep, self.engine, self.fg, self.stopping)
+                    self._claimed("probe-sweep", self.interval, sweep)
                     next_sweep = self._after(self.interval)
                 continue
             if job is None:

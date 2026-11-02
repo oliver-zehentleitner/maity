@@ -163,9 +163,7 @@ def _language(conn: Connection, request: Request, token: str) -> str:
     payload = tokens.read(settings_of(request).mail.signing_key, token)
     if payload is None:
         return "en"
-    return languages.own_text(
-        preferences.preferences(conn, str(payload.get("h")))["email"]["language"]
-    )
+    return languages.own_text(preferences.text_language(conn, str(payload.get("h"))))
 
 
 def _dead(words: dict[str, str]) -> HTMLResponse:

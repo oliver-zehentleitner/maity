@@ -23,7 +23,7 @@ from fastapi import Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import Connection, Engine, delete, insert, select
 
-from maity_hub import clock
+from maity_hub import clock, worker_runs
 from maity_hub import tables as t
 from maity_hub.auth import caller as auth_caller
 from maity_hub.config import Settings
@@ -35,9 +35,9 @@ log = logging.getLogger(__name__)
 
 CSP = "default-src 'none'; style-src 'unsafe-inline'"
 CACHE = "public, max-age=60"
+READ_CACHE = "public, max-age=60"
 # The rate limit of the badge, for the static page only (§16.9, §6.20): its own budget per
 # source address, since a page is as cheap to serve as a badge.
-READ_CACHE = "public, max-age=60"
 BY_ADDRESS = Limiter(60, 60, name="public_pages.BY_ADDRESS")
 
 
@@ -219,13 +219,14 @@ def refresh(conn: Connection, hub: Settings, kind: str, target_id: str) -> None:
     changed is replaced; one that is no longer rendered is deleted. A render that fails takes
     the target's pages off: nothing stale is served for the sake of a bug."""
     existing = {
-        row.path: (row.inputs, row.view, row.data)
+        row.path: row
         for row in conn.execute(
             select(
                 t.public_page.c.path,
                 t.public_page.c.inputs,
                 t.public_page.c.view,
                 t.public_page.c.data,
+                t.public_page.c.lastmod,
             ).where(t.public_page.c.kind == kind, t.public_page.c.target_id == target_id)
         )
     }
@@ -237,7 +238,13 @@ def refresh(conn: Connection, hub: Settings, kind: str, target_id: str) -> None:
         remove(conn, kind, target_id)
         return
     for page in rendered:
-        if existing.get(page.path) != (page.inputs, page.view, page.data):
+        stored = existing.get(page.path)
+        same_inputs = stored is not None and stored.inputs == page.inputs
+        if (
+            stored is None
+            or not same_inputs
+            or (stored.view, stored.data) != (page.view, page.data)
+        ):
             put(
                 conn,
                 path=page.path,
@@ -245,7 +252,8 @@ def refresh(conn: Connection, hub: Settings, kind: str, target_id: str) -> None:
                 target_id=target_id,
                 body=page.body,
                 inputs=page.inputs,
-                lastmod=page.lastmod,
+                # `data` alone changing is nothing a crawler reads: the sitemap's date stays.
+                lastmod=stored.lastmod if stored is not None and same_inputs else page.lastmod,
                 view=page.view,
                 data=page.data,
             )
@@ -270,13 +278,15 @@ def touch(conn: Connection, kind: str, target_id: str, *, removal: bool = True) 
             refresh(conn, hub, other, other_id)
 
 
-def render_all(engine: Engine, hub: Settings) -> None:
+def render_all(engine: Engine, hub: Settings, stop: worker_runs.Stopping | None = None) -> None:
     """Every page of every kind from the inputs as they are now: the targets that exist are
     rendered again, the pages of targets that no longer exist are deleted."""
     for kind in KINDS.values():
         with engine.begin() as conn:
             ids = kind.targets(conn)
         for target_id in ids:
+            if stop is not None and stop.is_set():
+                return
             with engine.begin() as conn:
                 refresh(conn, hub, kind.name, target_id)
         with engine.begin() as conn:
@@ -322,14 +332,32 @@ class Worker:
         if self._thread is not None:
             self._thread.join(timeout=5)
 
+    def _prepare(self) -> list[Kind]:
+        kinds = [kind for kind in KINDS.values() if kind.prepare is not None]
+        for kind in kinds:
+            assert kind.prepare is not None
+            kind.prepare(self.engine, self.hub)
+        return kinds
+
     def _run(self) -> None:
-        while True:
+        # What a kind prepares lives in this process's memory, and the start cleared its pages:
+        # every process reads once, outside the pass that only one replica of them claims.
+        try:
+            for kind in self._prepare():
+                with self.engine.connect() as conn:
+                    ids = kind.targets(conn)
+                for target_id in ids:
+                    with self.engine.begin() as conn:
+                        refresh(conn, self.hub, kind.name, target_id)
+        except Exception:
+            log.exception("preparing the public pages failed")
+        while not self._stop.wait(self.interval):
             try:
-                for kind in KINDS.values():
-                    if kind.prepare is not None:
-                        kind.prepare(self.engine, self.hub)
-                render_all(self.engine, self.hub)
+                with worker_runs.claim(
+                    self.engine, "public-pages", self.interval, self._stop
+                ) as held:
+                    if held is not None:
+                        self._prepare()
+                        render_all(self.engine, self.hub, held)
             except Exception:
                 log.exception("rendering the public pages again failed")
-            if self._stop.wait(self.interval):
-                return

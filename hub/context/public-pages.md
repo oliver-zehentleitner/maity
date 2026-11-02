@@ -467,6 +467,32 @@ write lock; storing the first answer avoids a window in which a page of a public
 - Treat an unreadable repository as public: the contract says no answer counts as private (§16.9), and the unreadable
   case is exactly the private one without a grant.
 
+## Visitors read the app from one route over stored rows, and the member routes stay closed
+
+**Id:** eb7fd1c7-d4f1-478f-b77f-bb6878cd515a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's words of 2026-11-01 on the card tsk-jj1tfre7n6zb (logged out sees what logged in sees, read-only, nothing private, "as on GitHub"); the lead's approval of the plan; `docs/api.md` §16.9
+**See:** public-pages.md#a-public-page-is-a-row-of-public_page-served-by-the-app-shells-route — 1e42dae2-4d67-4f1d-80b7-b2bb4aecfc3b — as of 2026-11-01
+**Revisit when:** visitors need a read a stored row cannot answer, such as search or paging through a whole board
+
+`GET /public/pages/{path}` answers the `data` the page's render stored beside its HTML. A visitor's read costs
+one row, every removal rule of the pages holds without being written twice, and a field is public only if the
+renderer puts it there.
+
+**Rejected:**
+
+- A visitor caller in the member routes, with their fields filtered: the routes return members' data by
+  default, so a field added later would be public unless someone remembered to exclude it, and every route would
+  need its own review. Here the default is that nothing is public.
+- A second renderer querying per request: the same output at the cost of a query for every anonymous call.
+- Parsing the stored HTML in the browser: a page's markup would become an interface.
+
+`refresh` compares `view` and `data` as well as `inputs`, since a change may reach `data` without touching the
+HTML. Such a change keeps the row's `lastmod`, because the sitemap's date says what a crawler can read. Rejected:
+`data` in the digest, which would move that date.
+
 ## A visitor on the way to a public page never ends at the login
 
 **Id:** 439a36e9-c05c-4c87-a3d3-1cd2ff5061d7
@@ -494,13 +520,14 @@ after a session expired, instead of going on after the sign-in.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the lead's decision of 2026-11-02 on the card tsk-jj1tfre7n6zb
-**Revisit when:** the hub runs more than one process, since each holds its own cache and a render with an empty one would show "not read yet"
+**Revisit when:** the export's read must reach every replica at once, which a read per process does not do
 
 The view keeps counts, the family's links and attention titles of a public repository in `public_page`, beside
 the other views. Its export is read ahead of the interval render with the instance's token alone, in a cache of
 its own, because the members' cache may have read with an owner's grant. A render stays off the network, as it
 runs in a transaction. The price is a view up to one interval old; a repository turning private empties it with
-the look that finds it.
+the look that finds it. Each replica holds its own read and only one renders a pass, so a render with no read, or
+an older one by `observed_at`, keeps the stored view instead of emptying it, and every process reads once at start.
 
 **Rejected:** answering `why` at request time from the memory cache: §11.3 would stay untouched, but the route
 would need a rule for the one kind without a row, and search engines would lose the page.

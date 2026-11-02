@@ -153,11 +153,14 @@ window.Maity = window.Maity || {};
     }
   }
   // Pages: a tab with sub-tabs, one at a time, as the sections above it are. `open`: what the
-  // address names (/admin/pages/landing, /legal, /site); the whole site's file is folded by default.
+  // address names (/admin/pages/landing, /legal, /sign-in, /sign-up, /site); the whole site's file is folded by default.
   async function pagesSection(ctx, root, open) {
+    const auth = M.authPages.editor();
     const parts = [
       ["landing", "landing-page", M.t("admin.pages.landing"), (s) => M.landing.section(ctx, s)],
       ["legal", "legal-pages", M.t("admin.pages.legal"), (s) => M.legal.section(ctx, s)],
+      ["sign-in", "sign-in-page", M.t("admin.pages.sign_in"), (s) => auth.section("sign_in", s)],
+      ["sign-up", "sign-up-page", M.t("admin.pages.sign_up"), (s) => auth.section("sign_up", s)],
     ];
     const whole = h("section", { "aria-label": M.t("admin.section.site"), id: "admin-whole-site" });
     const fold = h("details", { class: "admin-pages-file" }, h("summary", null, M.t("admin.section.site")), whole);

@@ -5,4 +5,4 @@
 ### Changed
 
 - hub: a landing page, a legal page or a registration setting still holding a placeholder such as `{{name}}` is refused with `unresolved_placeholder`.
-- web: `web/tools/maity-site.json` writes its placeholders as `{{name}}` instead of `[Name]`.
+- web: the site file writes its placeholders as `{{name}}` instead of `[Name]`.

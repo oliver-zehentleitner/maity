@@ -86,7 +86,8 @@ def _clear_cookies(response: JSONResponse, request: Request) -> None:
 
 def member_of(conn: Connection, human_id: str) -> dict[str, Any]:
     row = conn.execute(select(t.human).where(t.human.c.id == human_id)).one()
-    return human_member(row, avatar_url=avatars.urls(conn, [row.id])[row.id])
+    own = {"interface_language": row.interface_language}  # the person's own, not the member view's
+    return own | human_member(row, avatar_url=avatars.urls(conn, [row.id])[row.id])
 
 
 @router.post("/login")

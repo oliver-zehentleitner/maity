@@ -44,8 +44,9 @@ one rule an editor can predict, and the contract gives no merge for lists of sec
 `legal_version` holds every text a page ever had, keyed by the hub's time of the change in whole
 seconds (the version), unique per page; `legal_page.current` says which version is served and is
 null for a page that is not set; `instance_legal` is the setting's one row (default language, who
-edited last). A `PATCH` appends a version and moves the pointer; `{"imprint": null}` moves the
+edited last). A `PATCH` appends a version and moves the pointer; `{"terms": null}` moves the
 pointer to null and deletes nothing, so a version a person accepted stays readable at its address.
+The imprint's versions are kept too but not served (fb324f60).
 Two changes inside one second get versions a second apart. The daily limit counts the versions a
 page got in the last 24 hours, so unsetting costs nothing and a replacement costs one.
 
@@ -84,6 +85,29 @@ That the addresses stay, and the `404` for the imprint's, were decided in the im
 - Ending the addresses of the terms and the privacy notice as well: a version a person may have
   accepted could then no longer be read.
 - Deleting the imprint's old rows: not asked for, and every page's versions are immutable by design.
+
+## The sign-in and sign-up words are one row of `instance_setting`, with no fallback between languages
+
+**Id:** 30e0bd22-31e5-4f8d-b2bb-54975d7939ff
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** contract `docs/api.md` §16.7.4; the hub's side agreed on tsk-fct4awzw3k30, 2026-11-01
+**Revisit when:** these words need earlier versions, or variants as the landing page has
+
+The setting `auth_pages.setting` holds `default_language` and `pages`, and a `PATCH` replaces it as a
+whole. A visitor gets only the keys of the chosen language; `render.best_language` tells "no match"
+from a match, so a page without text in `default_language` answers it with `texts: {}` and not with
+another language, which is where `choose_language` differs for the landing page.
+
+**Reason:** the landing and legal tables exist for variants and versions, which these words do not
+have; `site_values` already keeps a whole value in `instance_setting`, with no migration and with
+`updated_by` covered by the account deletion. Keys taken from another language would be marked up as
+the chosen one, and the dashboard's catalogue is translated anyway.
+
+**Rejected alternatives:**
+- A table of its own: a migration and a deletion rule for one row with nothing to track.
+- Keys falling back to `default_language`: found in review of the contract, wrong `lang` on the text.
 
 ## Migration 0090 makes a `hero` only when the old landing had both a title and a call to action
 

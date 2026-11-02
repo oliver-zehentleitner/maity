@@ -3,8 +3,8 @@
 When the probe first observes a report's pull request merged, with `mismatch` false,
 on a card in `review`, the hub emits `task_merged` once per report: it wakes the done
 authority, and under `merged_closes: auto` with `done_authority` `holder` or `admin`
-the hub moves the card to `done` itself, unless a dependency or child is open or an
-objection hold is on it. A merge observed while the card is elsewhere is remembered
+the hub moves the card to `done` itself, unless a dependency or child is open or a
+takeover of it is objected or escalated. A merge observed while the card is elsewhere is remembered
 with its report (`merge_report`) and told when the card returns to `review`, only if
 that report is still the card's current one.
 """
