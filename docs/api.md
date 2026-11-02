@@ -14716,7 +14716,12 @@ version>"}`), the renamed member for a rename (`{type: "member", id:
 | `note` | a manual post (§17.6) | as written |
 
 `merge.title` and `merge.author` are the forge's, as the probe reads
-them (§11); like every forge text they are data, rendered as text. The
+them (§11); like every forge text they are data, rendered as text.
+`merge.public` is `true` when the read that observed the merge found the
+repository public (the forge named its base repository not private), and
+`false` otherwise, also when the forge did not say; it is that read's
+answer, whichever source read it, and decides whether the merge counts
+on a page without sign-in (§6.22, §16.9; the one exception of §11.4). The
 `decision` text names the card and the request id and nothing of the
 request; its content is added per reader (§17.5). `request` is
 `{id, class, task_id}`, `release` is `{task_id, version}`, `deploy` is
