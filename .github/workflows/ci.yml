@@ -54,6 +54,7 @@ jobs:
       e2e: ${{ steps.paths.outputs.e2e }}
       cli: ${{ steps.paths.outputs.cli }}
       helm: ${{ steps.paths.outputs.helm }}
+      contract: ${{ steps.paths.outputs.contract }}
     defaults:
       run:
         working-directory: .
@@ -67,7 +68,7 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
         run: |
-          parts="hub image join web e2e cli helm"
+          parts="hub image join web e2e cli helm contract"
           if [ "$EVENT" != pull_request ]; then
             for part in $parts; do echo "$part=true" >> "$GITHUB_OUTPUT"; done
             exit 0
@@ -87,6 +88,7 @@ jobs:
                 e2e:web/*|e2e:hub/*|e2e:cli/*|e2e:docs/join-page.md) hit=true ;;
                 cli:cli/*) hit=true ;;
                 helm:deploy/*) hit=true ;;
+                contract:docs/api.md|contract:hub/*) hit=true ;;
               esac
             done <<< "$changed"
             echo "$part=$hit" >> "$GITHUB_OUTPUT"
@@ -196,6 +198,24 @@ jobs:
           python-version: "3.12"
       - run: make install
       - run: make check
+
+  # The contract tests: the two test files that read docs/api.md (the endpoint index against the
+  # routes, the reserved paths), on SQLite. A change of the contract alone does not start the
+  # hub jobs (`hub` does not list docs/api.md: the database jobs take about an hour); this part
+  # does, and a change under hub/ starts it too. It is in ci-ok.
+  hub-contract:
+    needs: changes
+    if: needs.changes.outputs.contract == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: make install
+      - run: python -m pytest tests/test_contract_routes.py tests/test_paths.py
 
   # What ships: the wheel, installed non-editable, so a file missing from it
   # (a migration, help.md) fails here. Python 3.13 backs "3.12 or newer". Only the
@@ -374,7 +394,7 @@ jobs:
   # needed (skipped by `changes`), red when one failed or was cancelled.
   ci-ok:
     if: always()
-    needs: [changes, changelog, web, web-e2e, hub-sqlite, hub-wheel, hub-lock, hub-image, helm, join-smoke, hub-postgresql, cli, cli-windows, join-windows]
+    needs: [changes, changelog, web, web-e2e, hub-sqlite, hub-contract, hub-wheel, hub-lock, hub-image, helm, join-smoke, hub-postgresql, cli, cli-windows, join-windows]
     runs-on: ubuntu-latest
     defaults:
       run:

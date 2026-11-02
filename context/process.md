@@ -197,6 +197,27 @@ run names.
 - Cancelling runs on main as well: each merge's own result is the
   record a deploy is decided on.
 
+## A change to the contract alone runs a light `hub-contract` part, not the database jobs
+
+**Id:** 5b0f7a42-3c1e-4d68-9a15-e2c7d4f1b903
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's request of 2026-11-02 (review lead's finding that #1235, a pull request changing only `docs/api.md`, left main red with 2 failed tests); `.github/workflows/ci.yml`
+**Revisit when:** a third test file reads `docs/api.md` or another file outside `hub/`, or the hub's database jobs get fast enough to take the contract path too
+
+`hub/tests/test_contract_routes.py` and `hub/tests/test_paths.py` read `docs/api.md`, but the `hub` part of the `changes` job
+did not list it, so a pull request that changed only the contract got a green `ci-ok` and main went red after the merge. A new
+part `contract` (`docs/api.md` and `hub/*`) starts the job `hub-contract`: `make install` and those two test files on
+SQLite, a few minutes. It is in `ci-ok`. A change under `hub/` starts it beside the hub jobs; a push to main and a change
+to the workflow start it like every other part.
+
+**Rejected alternatives:**
+- `docs/api.md` in the `hub` part: every contract pull request would run the PostgreSQL and SQLite suites, about an
+  hour, for two files that need neither a database server nor the rest of the suite.
+- Moving the two tests to the join-page gate or a script outside pytest: the tests stay where the hub's other tests are, and
+  CI only chooses when to run them.
+
 ## Every agent uses Keep the Why: implementers record each decision in the same pull request, reviewers gate on it
 
 **Id:** e534e9f3-a419-4a09-8054-117150592490
