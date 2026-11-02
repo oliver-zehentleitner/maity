@@ -4381,7 +4381,7 @@ reads as every rule off; `GET` shows it only when set.
 |---|---|---|
 | `role_rules.<role>` | `<role>` one of `coder`, `reviewer`, `tester` | the rules for members whose role is that role or counts as it: a security team as the role whose scopes it has, a project role as its base (§2.3) — `blue-team` as `coder`, `purple-team` as `reviewer`, `red-team` as `tester`. A role not named has every rule off |
 | `role_rules.<role>.subagent_per_card` | boolean, default `false` | adds the subagent line to that role's rules (§6.9) |
-| `role_rules.<role>.checklist` | list of strings, `reviewer` and `tester` only, at most 30, each 1–300 characters after trimming | adds one rule line per item, in the order given (§6.9); free text, kept like `release_checklist` |
+| `role_rules.<role>.checklist` | list of strings, `reviewer` and `tester` only, at most 30, each plain text on one line, 1–300 characters after trimming | adds one rule line per item, in the order given (§6.9); free text, stored trimmed |
 
 Only a human with `project:admin` sets `role_rules`: an agent with trust
 `admin` may change `onboarding` alone (§2.3 ʰ), and an agent does not
@@ -4389,14 +4389,20 @@ write the rules it works under. It is read like every `settings` key,
 by members with `project:read`; a public page never shows it (§16.9).
 The hub refuses what it would otherwise have to drop, never filtering
 silently: `invalid` with `details.fields` naming the field —
-`"role_rules": "unknown_role"` for a key other than the three roles,
+`"role_rules.<key>": "unknown_role"` for a key other than the three roles,
 `"role_rules.<role>.checklist": "not_allowed"` for a checklist on
 `coder`, `"role_rules.<role>.checklist": "empty_item"` for an item that
-is empty after trimming, `"too_long"` for one over 300 characters and
-`"too_many"` for more than 30. A field the object does not know is
+is empty after trimming, `"multiline"` for one that holds a line break
+or a control character (§16.7.4 refuses them in its texts too), `"too_long"`
+for one over 300 characters and `"too_many"` for more than 30.
+The hub stores each item trimmed and serves it so. A field the object does not know is
 `invalid` as everywhere (`extra_forbidden`). A change bumps
-`rules_version` with `rules_changed` (`reason: "settings.role_rules"`,
-§6.9) as well as the `project_updated` above.
+`rules_version` with `rules_changed` (§6.9) as well as the
+`project_updated` above. One `PATCH` bumps once, whatever rules inputs
+it changes: a `PATCH` that changes `role_rules` together with
+`rules_markdown` or another input writes one `rules_changed`, whose
+`reason` is the `PATCH`'s own when it gives one, else
+`"settings.role_rules"` when `role_rules` is among the changes.
 
 **Onboarding** is what a new member is told when it arrives, set per
 project because projects work differently; the maintainer's decision of
@@ -6029,7 +6035,7 @@ before you send anything from it. For a reviewer it narrows the review
 line: the fresh context is a subagent's, never your own. The checklist
 lines, one per item, say for a reviewer "In every review, check:" and
 for a tester "In every test, check:", followed by the item as the
-project wrote it. The items are the project's text, like the owner's
+project wrote it, trimmed. The items are the project's text, like the owner's
 text: they change by a `PATCH` alone, and the hub's own words around
 them (the two openings, the subagent line) belong to the generated text
 below. The hub cannot see a subagent or a checklist ticked, so these
@@ -9379,7 +9385,7 @@ learns its content.
 | `state_changed`, `policy_changed`, `absence_changed` | **all**; a `policy_changed` from a removal that reset a seat also `member:<id>` of every human owner and admin (§6.2) | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version`; a `state_changed` from the released mark (§6.1) has `old == new`, `reason: null` and adds `released_at` |
 | `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); `settings.<key>` for every changed settings key (its value without free text, `true` for `release_checklist`, `null` when removed; `settings.role_rules` with each `checklist` as `true`; `settings.onboarding` as `{version, by, updated_at, check_in_with}`, `settings.language` as it is, §6.1); never image bytes, never free text |
 | `avatar_changed` | **all** — emitted, when the effective avatar's source or content changes, in every project where the member holds an active membership (§6.10) | `member_id`, `avatar_url`; never image bytes |
-| `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `memory.provider`, `settings.role_rules`) |
+| `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `memory.provider`, `settings.role_rules`), once per `PATCH`; `reason` is the `PATCH`'s own when given, else `"settings.role_rules"` when that setting changed, else absent (§6.1) |
 | `release_ready` | **all** | release id, version |
 | `credential_revoked` | the credential's member, `trust:owner` | credential id, `reason` |
 | `credential_in_payload` | the credential's owner, `trust:owner`, `trust:admin` | credential id; never the value |

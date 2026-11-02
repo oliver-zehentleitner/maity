@@ -781,7 +781,7 @@ and for reviewers and testers a checklist whose items become rule
 lines. A security team or a project role gets the lines of its base.
 Only a human with `project:admin` sets them. A change bumps
 `rules_version`, so a running agent reads the new lines at its next
-rules fetch. The hub cannot see a subagent or a ticked item; these are
+resume. The hub cannot see a subagent or a ticked item; these are
 rules like the others.
 
 **Reason** (inferred: the decision and the alternatives are confirmed, the
@@ -804,7 +804,8 @@ checklist they reach every reviewer through the rules they already read.
   it, and nothing would mark it as the reviewer's or the tester's.
 - An agent with trust `admin` setting them: an agent would write the
   rules it works under, and the contract already lets an admin agent
-  change `onboarding` and nothing else in a project (`docs/api.md` §2.3 ʰ);
+  change only `onboarding` and the project briefing among a project's
+  settings (`docs/api.md` §2.3 ʰ);
   the lead first asked for owner and admin alike and agreed once that
   rule was pointed out.
 - Dropping an unknown role or an empty item silently: a typo would
