@@ -456,8 +456,9 @@ A `review_result` reaches, without the reviewer naming them, the author of
 the reviewed work, the member the reviewer reports to and the member the
 author reports to; each once, a part that resolves to nobody dropped, and
 what the reviewer addresses or mentions still added. The author's instance
-is added even when `to` names the author's member id; only the leads are
-deduplicated per member.
+replaces the author's member id where `to` or a mention put it in the
+audience, and is added even when `to` is `all`; `to` itself stays as
+written.
 
 **Reason:** on the morning of 2026-11-02 at least five results reached only
 the author and had to be forwarded by hand, so finished pull requests sat
@@ -472,7 +473,13 @@ instance, else the instance that reported; an instance rather than the
 member, so that a team of several instances wakes the one that did the work.
 For the same reason a `to` naming the author's member id does not stand in
 for the instance (found in review of #1203: reviewers address the member id,
-and under `wake: next_free` or `lead` it wakes another instance). The subject
+and under `wake: next_free` or `lead` it wakes another instance, under
+`all` every one). The CLI asks for a `to`, so reviewers name the member id
+nearly every time; the hub therefore delivers that token to the author's
+instance instead (decided by the contract's arbiter in review of #1203).
+Nor does `all` stand in for anyone added: it does not wake a supervised
+member, and beside it an added token wakes only a member `all` leaves
+asleep. The subject
 names a pull request only as the whole string, so that the hub never guesses
 one from prose.
 
@@ -485,5 +492,9 @@ one from prose.
 - Waking the author's member id: a member with several instances would wake
   as its `wake` rule says, the next free one under `next_free`, not
   necessarily the instance that holds the card.
+- Keeping both tokens, the reviewer's `member:<author>` beside the added
+  instance: nearly every review would then wake all of the author's
+  instances, the problem this entry exists to solve. A reviewer who means
+  the whole team names a role or mentions the instances one by one.
 - Searching `review.subject` for any `#<n>`: free text such as
   `#1203 after #1197` would resolve to the wrong card.

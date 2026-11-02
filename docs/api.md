@@ -9454,13 +9454,21 @@ messages are read back, without scanning the log, through §8.8.
 3. `member:<id>` of the **author's** `reports_to`.
 
 The author's instance is added unless the audience already holds that same
-`instance:` token or `all`: a `to` or mention naming the author's member id
-does not stand in for it, as under `wake: lead` or `next_free` (§6.18) the
-member id wakes another instance than the one that did the work. A lead is
-added once, whatever parts it fills, and not at all when `to` or a mention
-already puts its member in the audience, nor when it is the author's member.
-On a card claimed for the team (no instance) the author is `member:<id>` and
-is deduplicated as a lead is. A part that resolves to nobody
+`instance:` token. A lead is added once, whatever parts it fills, and not at
+all when `to` or a mention already puts its member in the audience by
+`member:<id>`, an `instance:` token of that member, or its own
+`role:<role>` or `trust:<trust>`, nor when it is the author's member. `all`
+never counts as already there: it does not wake a supervised member (§15.11,
+§8.2), and beside `all` an added token wakes only a member `all` leaves
+asleep. On a card claimed
+for the team (no instance) the author is `member:<id>` and is deduplicated as
+a lead is. When the author is an instance, a `member:<id>` of the author's
+member that `to` or a mention put in the audience is replaced there by that
+instance token: the reviewer means the author, and the member id would wake
+by the agent's `wake` rule (§6.18) every listening instance under `all`, or
+another one under `lead` or `next_free`. Every instance still reads the event
+(§8.2, "Instances in the audience"); only the one that did the work is woken.
+Other tokens (`all`, a role or trust token, a named instance) stay. A part that resolves to nobody
 (no such card, no holder and no report, a `reports_to` of `null`, a member
 that has left the project) is left out, and a sender who is the author or a
 lead is not added again. `to` and mentions keep adding to the audience as for
