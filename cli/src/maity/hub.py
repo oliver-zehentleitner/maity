@@ -42,6 +42,28 @@ class HubError(Exception):
         self.retry_after: float | None = None  # seconds, from a 429's or 503's Retry-After
 
 
+# A maintenance window (§16.12): `wait` and `runner serve` sleep `Retry-After` plus up to this
+# many random seconds, so the agents of a hub do not all come back in the same second.
+MAINTENANCE_JITTER = 60.0
+_STAMP = re.compile(r"^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(:\d{2})?Z$")
+
+
+def maintenance_until(err: HubError) -> str | None:
+    """`2026-11-02 13:30` from a `503 maintenance` refusal's `details.until`, else None (not a
+    window, or an end that is no timestamp: nothing the hub sent is echoed unchecked)."""
+    if err.code != "maintenance":
+        return None
+    found = _STAMP.match(str(err.details.get("until") or ""))
+    return f"{found.group(1)} {found.group(2)}" if found else "its end"
+
+
+def maintenance_sleep(err: HubError, rand: Callable[[], float]) -> float:
+    """How long `wait` and `runner serve` sleep on a window: `Retry-After` (60 s when the
+    answer names none) plus a random 0–60 seconds."""
+    base = err.retry_after if err.retry_after is not None else 60.0
+    return base + rand() * MAINTENANCE_JITTER
+
+
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     """The hub never redirects an API call. Following one would carry `Authorization` (and the
     signed headers) to another host or down to plain HTTP, so every redirect is an error."""

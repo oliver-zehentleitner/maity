@@ -10,6 +10,7 @@ import hashlib
 import io
 import json
 import os
+import random
 import re
 import shlex
 import shutil
@@ -46,6 +47,7 @@ EXIT_TIMEOUT = 3
 EXIT_REFUSED = 4
 EXIT_ISOLATED = 5
 EXIT_SUPERSEDED = 6
+EXIT_MAINTENANCE = 7  # §13, §16.12: the hub is in a maintenance window; never from `wait`
 EXIT_INTERRUPTED = 130
 
 REQUEST_CLASSES = ("decision", "consent", "contract", "info")
@@ -738,6 +740,7 @@ def cmd_wait(args: argparse.Namespace) -> int:
     backoff = 2.0
     warned = False
     skewed = False
+    paused = False
     version_checked = False
     while True:
         remaining = deadline - time.monotonic()
@@ -763,6 +766,21 @@ def cmd_wait(args: argparse.Namespace) -> int:
                 timeout=read_timeout,
             )
         except hub.HubError as exc:
+            until = hub.maintenance_until(exc)
+            if until is not None:
+                # A window (§16.12): sleep it out and read on with the same cursor; never
+                # past --timeout, which then ends as any timeout so the loop re-arms.
+                if not paused:
+                    text = onboarding.inline(exc.details.get("text") or "")
+                    _err(f"Maintenance until {until} UTC" + (f": {text}" if text else ""))
+                    paused = True
+                time.sleep(
+                    min(
+                        hub.maintenance_sleep(exc, random.random),
+                        max(0.0, deadline - time.monotonic()),
+                    )
+                )
+                continue
             server_error = exc.status is not None and 500 <= exc.status < 600
             disconnected = exc.status is None and exc.code is None
             if disconnected and time.monotonic() >= deadline:
@@ -5050,6 +5068,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         CommandError,
         OSError,
     ) as exc:
+        until = hub.maintenance_until(exc) if isinstance(exc, hub.HubError) else None
+        if until is not None:
+            _err(f"Maintenance until {until} UTC, try again then")
+            return EXIT_MAINTENANCE
         _err(_explain(exc))
         return EXIT_ISOLATED if _isolated(exc) is not None else EXIT_ERROR
     except config.ConfigError as exc:

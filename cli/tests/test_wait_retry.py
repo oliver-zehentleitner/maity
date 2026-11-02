@@ -242,3 +242,71 @@ def test_wait_says_nothing_about_data_without_a_message(
     fake.routes[("GET", "/api/v1/projects/oliver/maity/events")] = lambda s: (200, answer)
     assert cli.main(["wait", "--timeout", "60"]) == cli.EXIT_OK
     assert cli.DATA_NOTE not in capsys.readouterr().err
+
+
+WINDOW = {
+    "error": {
+        "code": "maintenance",
+        "message": "the hub is in a maintenance window",
+        "details": {"from": "2026-11-02T13:00:00Z", "until": "2026-11-02T13:30:00Z", "text": "DB"},
+    }
+}
+
+
+def test_wait_sleeps_a_maintenance_window_out_and_reads_on(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    clock: Clock,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("random.random", lambda: 0.25)
+    state.save_state(joined, {**state.load_state(joined), "cursor": 17})
+    calls: list[str] = []
+
+    def response(seen: fakehub.Seen) -> tuple[Any, ...]:
+        calls.append(seen.query)
+        if len(calls) <= 2:
+            return 503, WINDOW, {"Retry-After": "120"}
+        return 200, {"items": [{"seq": 18, "kind": "message"}], "cursor": 18}
+
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/events")] = response
+    assert cli.main(["wait", "--timeout", "600"]) == cli.EXIT_OK
+    captured = capsys.readouterr()
+    assert [e["seq"] for e in json.loads(captured.out)] == [18]
+    assert captured.err.count("Maintenance until 2026-11-02 13:30 UTC: DB") == 1  # once
+    assert clock.sleeps == [120 + 15, 120 + 15]  # Retry-After plus 0.25 × 60
+    assert all("after=17&" in query for query in calls)
+
+
+def test_wait_never_sleeps_a_window_past_its_timeout(
+    joined: Path, fake: fakehub.FakeHub, clock: Clock, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/events")] = lambda seen: (
+        503,
+        WINDOW,
+        {"Retry-After": "1800"},
+    )
+    assert cli.main(["wait", "--timeout", "60"]) == cli.EXIT_TIMEOUT  # never 7
+    assert clock.now <= 60
+    assert "Maintenance until 2026-11-02 13:30 UTC" in capsys.readouterr().err
+
+
+def test_other_commands_exit_7_in_a_window(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("POST", "/api/v1/me/resume")] = lambda seen: (
+        503,
+        WINDOW,
+        {"Retry-After": "1800"},
+    )
+    assert cli.main(["resume"]) == cli.EXIT_MAINTENANCE == 7
+    err = capsys.readouterr().err
+    assert "Maintenance until 2026-11-02 13:30 UTC, try again then" in err
+
+
+def test_an_end_that_is_no_timestamp_is_not_echoed() -> None:
+    error = hub.HubError("x", code="maintenance", status=503)
+    error.details = {"until": "\x1b[2Jsoon"}
+    assert hub.maintenance_until(error) == "its end"
+    assert hub.maintenance_until(hub.HubError("x", code="internal", status=503)) is None
