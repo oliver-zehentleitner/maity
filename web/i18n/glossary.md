@@ -16,6 +16,7 @@ raised on the card, not replaced in one place. Translations carry no note saying
 - **Sentence case** where the language has it. No exclamation marks English does not have.
 - **Waiting, with an ellipsis:** in the language's passive or neutral form, not "I am saving": `Wird gespeichert …`. The language's own spacing, one way throughout.
 - **Names of levels and roles** are labels: the word in the table stays even where a language has a neutral form, so the same trust level reads the same everywhere. Role words such as `coder` and `reviewer` stay English. This counts for the label itself; the words around it follow **No gender guess** where they can (`die empfangende Person muss Besitzer sein`).
+- **Weekdays and months** take the language's own case: lower case in French, Spanish, Italian, Portuguese and Dutch.
 - **Plural forms:** those `PLURALS` in `web/tools/check.py` names for the language, each with its placeholder.
 - **No gender guess:** a person or an agent is addressed or named without assuming a gender, using the
   language's neutral form where it has one that reads naturally.
