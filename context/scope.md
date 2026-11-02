@@ -894,6 +894,50 @@ sections are worth a link.
   not choose.
 
 
+## Every page without a session has the landing's header and footer, from one model the hub computes
+
+**Id:** 41837936-d085-4592-88d7-b1708a8b4b3a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-74rvy49kbv6s, the maintainer's go on the lead's four proposals and the designer's draft (2026-11-02); the lead's approval of the plan in three pull requests, with its rejected alternatives; contract `docs/api.md` §16.7.5
+**See:** scope.md#the-landing-header-links-only-the-sections-that-carry-a-short-nav_label-at-most-four — 7817872f-1876-40b2-8ec8-7ee4e2802991 — as of 2026-11-02
+
+The landing page, the legal pages, `/login` and `/register` show one
+header and one footer, the landing page's. The hub computes them once as
+a model (header links, sign in, call to action, footer columns, operator
+line, languages). It renders the landing page and the legal pages from
+that model and serves the same model as `GET /site/chrome` for the
+dashboard, which draws the sign-in and sign-up pages. Signed in, the
+app's header stays as it is.
+
+**Reason:** a visitor should not leave the site's frame between the
+landing page and signing in. The rules of the frame (which sections are a
+link, which legal pages are set, which social link a column above already
+has) are written once in the hub. A second copy in the dashboard would
+drift, and "a section that draws nothing is no link" depends on the
+renderer itself.
+
+**Rejected alternatives:**
+- The hub hands the dashboard the header and footer as finished HTML to
+  insert: that puts raw HTML from a response into the page, while the
+  dashboard builds its pages from text and elements only.
+- The dashboard computes the frame itself from `GET /landing` and
+  `GET /legal`: it would repeat the hub's rules in JavaScript, and the two
+  copies would disagree sooner or later.
+
+**Consequence:** the model holds only what the public landing page
+already shows. While the landing page is disabled, the operator line and
+the social links are in it only if a legal page is set, because only then
+does a page already show them; an operator preparing a landing page
+publishes nothing through the frame. Leaving them out always was
+rejected: the operator's line would then be missing beside the imprint,
+whose frame comes from the same model. A failed read of it draws the sign-in and sign-up pages
+without the frame, so signing in never depends on it. The pages that a
+mail's link opens (§2.7.1) keep their own small frame for now; they come
+later on their own card.
+
+
 ## The landing's counters show the real numbers, small ones too; cards done count across every project
 
 **Id:** 05b29565-5505-4bab-a67f-cfacef328964
