@@ -48,6 +48,11 @@ class NoteIn(Written):
     body: str = markdown(min_length=1)
 
 
+class NoteEditIn(Written):
+    body: str = markdown(min_length=1)
+    reason: str | None = Field(default=None, max_length=notes.REASON_MAX)
+
+
 class ResolveIn(Strict):
     state: str
     reason: str | None = markdown(default=None)
@@ -288,18 +293,31 @@ def redact_history(
 # --- notes (§6.16) -------------------------------------------------------------------------
 
 
-def _note_view(conn: Connection, row: Any) -> dict[str, Any]:
-    note = notes.view(row, history.members(conn, [row.author]))
+def _note_view(conn: Connection, row: Any, reader: Any = None) -> dict[str, Any]:
+    note = notes.view(row, history.members(conn, notes.people([row])), reader)
     return dict(shape_deleted(conn, [note])[0])
 
 
-def load_note(conn: Connection, note_id: str) -> dict[str, Any]:
+def load_note(conn: Connection, note_id: str, reader: Any = None) -> dict[str, Any]:
     return _note_view(
-        conn, conn.execute(select(t.card_note).where(t.card_note.c.id == note_id)).one()
+        conn, conn.execute(select(t.card_note).where(t.card_note.c.id == note_id)).one(), reader
     )
 
 
-idempotency.LOADERS["note"] = idempotency.plain(load_note)
+def _load_note_for_caller(conn: Connection, note_id: str, request: Request) -> dict[str, Any]:
+    """A replay shows the note as the caller sees it: a redaction's reason only to whom
+    §8.5 gives it."""
+    row = conn.execute(select(t.card_note).where(t.card_note.c.id == note_id)).one()
+    card = conn.execute(select(t.card.c.project_id).where(t.card.c.id == row.card_id)).one()
+    slug = namespace.name_of(conn, card.project_id)
+    try:
+        reader = membership(conn, request.state.caller, slug) if slug else None
+    except ApiError:
+        reader = None
+    return _note_view(conn, row, reader)
+
+
+idempotency.LOADERS["note"] = _load_note_for_caller
 
 
 def _note(conn: Connection, card: Any, note_id: str) -> Any:
@@ -351,13 +369,13 @@ def list_notes(
             )
         rows = conn.execute(query.order_by(c.created_at, c.id).limit(limit + 1)).all()
         page = rows[:limit]
-        authors = history.members(conn, (r.author for r in page))
+        authors = history.members(conn, notes.people(page))
         next_cursor = (
             paging.cursor(page[-1].created_at, page[-1].id, bound) if len(rows) > limit else None
         )
         return JSONResponse(
             {
-                "items": shape_deleted(conn, [notes.view(r, authors) for r in page]),
+                "items": shape_deleted(conn, [notes.view(r, authors, mine) for r in page]),
                 "next_cursor": next_cursor,
             }
         )
@@ -424,6 +442,71 @@ def post_note(
     return idempotency.run(engine_of(request), request, caller, action)
 
 
+@router.patch("/projects/{owner}/{slug}/tasks/{card_id}/notes/{note_id}")
+def edit_note(
+    slug: str, card_id: str, note_id: str, body: NoteEditIn, request: Request, caller: AnyCaller
+) -> JSONResponse:
+    """The author edits their own note, a human with `events:admin` anyone's with a reason;
+    the old text is rewritten out of every event that carried it (§6.16)."""
+    if len(body.body.encode()) > notes.BODY_MAX:
+        raise invalid({"body": "too_long"}, "a note is at most 4 KiB")
+
+    def action(conn: Connection) -> idempotency.Outcome:
+        mine = membership(conn, caller, slug)
+        mine = _locked(conn, mine)
+        card = _card(conn, mine, card_id)
+        row = _note(conn, card, note_id)
+        if row.author != mine.id:
+            if caller.kind != "human":
+                raise ApiError(
+                    403,
+                    "forbidden",
+                    "an agent edits only its own notes",
+                    {"reason": "not_your_note"},
+                )
+            mine.require("events:admin")
+            if not body.reason:
+                raise invalid({"reason": "required"}, "say why you edit someone else's note")
+        if row.redacted:
+            raise ApiError(400, "invalid", "a redacted note is not edited", {"reason": "redacted"})
+        _refuse_closed(mine)
+        key = str(mine.id)
+        wait, mark = notes.POSTED.place(key)
+        if wait:
+            raise rate_limited(wait)
+        on_rollback(conn, lambda: notes.POSTED.release(key, mark))
+        found = mentions.resolve(conn, mine.project.id, body.body, "body")
+        edited = {"by": mine.id, "at": clock.rfc3339(clock.now()), "reason": body.reason or None}
+        if not notes.edit(conn, row, body.body, found, edited):
+            raise ApiError(400, "invalid", "a redacted note is not edited", {"reason": "redacted"})
+        shown = load_note(conn, row.id)
+        for event in notes.carriers(conn, mine.project.id, row):
+            notes.rewrite(conn, event, shown)
+        if card.status in ("done", "cancelled"):
+            # The author and the newly mentioned: nobody else is still at work on it.
+            before = set(mentions.members(row.mentions or []))
+            reached = [m for m in mentions.members(found) if m not in before]
+            audience = _members(conn, row.author)
+        else:
+            reached = mentions.members(found)
+            audience = _members(
+                conn, row.author, card.claim_holder, card.created_by, *notes.authors(conn, card.id)
+            )
+        audience += mentions.tokens(conn, mine.project.id, found, reached)
+        emit(
+            conn,
+            mine.project.id,
+            "note_edited",
+            list(dict.fromkeys(audience)),
+            {"note": shown, "task": _task_ref(card)},
+            actor=caller.actor(mine.id),
+            subject=("task", card.id),
+        )
+        return idempotency.Outcome(200, "note", row.id, shown)
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
 @router.post("/projects/{owner}/{slug}/tasks/{card_id}/notes/{note_id}/resolve")
 def resolve_note(
     slug: str, card_id: str, note_id: str, body: ResolveIn, request: Request, caller: AnyCaller
@@ -465,7 +548,7 @@ def resolve_note(
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
-        return idempotency.Outcome(200, "note", row.id, load_note(conn, row.id))
+        return idempotency.Outcome(200, "note", row.id, load_note(conn, row.id, mine))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
@@ -480,7 +563,9 @@ def redact_note(
         mine = _locked(conn, mine)
         card = _card(conn, mine, card_id)
         row = _note(conn, card, note_id)
-        if notes.redact(conn, row, history.tombstone(body.reason, mine.principal_id)):
+        if notes.redact(
+            conn, mine.project.id, row, history.tombstone(body.reason, mine.principal_id)
+        ):
             emit(
                 conn,
                 mine.project.id,
@@ -490,7 +575,7 @@ def redact_note(
                 actor=caller.actor(mine.id),
                 subject=("task", card.id),
             )
-        return idempotency.Outcome(200, "note", row.id, load_note(conn, row.id))
+        return idempotency.Outcome(200, "note", row.id, load_note(conn, row.id, mine))
 
     return idempotency.run(engine_of(request), request, caller, action)
 

@@ -6,7 +6,8 @@ A card's text is public like an issue on a forge: the maintainer's decision of 2
 decision of that day). What stays out is the rest around it: history, requests, links,
 release and contract text. A card labelled `security` has a page only once it is `done`, a
 card under a moderation hold has none, and the holder and the notes' authors are named only
-as the Board names a holder; a redacted note shows as removed, without its reason. Whatever
+as the Board names a holder; an edited note shows its edit mark and reason, never its old
+text; a redacted note shows as removed, without its reason. Whatever
 changes a card or its notes calls `public_pages.touch` for the kind `card`.
 """
 
@@ -53,11 +54,19 @@ def _notes(conn: Connection, card_id: str) -> list[Any]:
     )
 
 
-def _note_html(note: Any, who: str) -> str:
-    when = clock.rfc3339(note.created_at)
-    tags = [who, f'<time datetime="{escape(when, quote=True)}">{escape(when[:10])}</time>']
+def _time(when: str) -> str:
+    return f'<time datetime="{escape(when, quote=True)}">{escape(when[:10])}</time>'
+
+
+def _note_html(note: Any, who: str, editor: str | None) -> str:
+    tags = [who, _time(clock.rfc3339(note.created_at))]
     if note.state != "open":
         tags.append(escape(note.state))
+    if editor is not None and note.edited and not note.redacted:
+        mark = f"edited by {editor} {_time(note.edited['at'])}"
+        if note.edited.get("reason"):
+            mark += f": {escape(note.edited['reason'])}"
+        tags.append(mark)
     text = (
         '<p class="muted">Removed.</p>'
         if note.redacted
@@ -77,7 +86,9 @@ def render_card(conn: Connection, hub: Settings, card_id: str) -> list[public_pa
         return []
     full = namespace.full_name(conn, project)
     notes = _notes(conn, card.id)
-    named = {note.author for note in notes}
+    named = {note.author for note in notes} | {
+        note.edited["by"] for note in notes if note.edited and not note.redacted
+    }
     if card.claim_holder is not None:
         named.add(card.claim_holder)
     people = members(conn, project.id, only=named) if named else {}
@@ -89,6 +100,13 @@ def render_card(conn: Connection, hub: Settings, card_id: str) -> list[public_pa
 
     def author(note: Any) -> Any:
         return people.get(note.author), note.author_kind == "agent"
+
+    def editor(note: Any) -> Any:
+        """The latest editor: the author, or a human with `events:admin` (§6.16)."""
+        if not note.edited or note.redacted:
+            return None
+        by = note.edited["by"]
+        return people.get(by), by == note.author and note.author_kind == "agent"
 
     status = card.status.replace("_", " ")
     tags = [escape(status)]
@@ -107,7 +125,10 @@ def render_card(conn: Connection, hub: Settings, card_id: str) -> list[public_pa
         + (render.markdown(body, ugc=True) if body.strip() else "")
         + (
             '<h2>Notes</h2><ol class="notes">'
-            + "".join(_note_html(note, _who(*author(note))) for note in notes)
+            + "".join(
+                _note_html(note, _who(*author(note)), _who(*editor(note)) if editor(note) else None)
+                for note in notes
+            )
             + "</ol>"
             if notes
             else ""
@@ -129,6 +150,15 @@ def render_card(conn: Connection, hub: Settings, card_id: str) -> list[public_pa
                 "state": note.state,
                 "created_at": clock.rfc3339(note.created_at),
                 "redacted": bool(note.redacted),
+                "edited": (
+                    {
+                        "by": _holder(*editor(note)),
+                        "at": note.edited["at"],
+                        "reason": note.edited.get("reason"),
+                    }
+                    if editor(note)
+                    else None
+                ),
             }
             for note in notes
         ],

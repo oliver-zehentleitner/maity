@@ -159,7 +159,7 @@ def _redact_card(
             rewritten.add(entry.event_seq)
     for seq in sorted(rewritten):
         _announce(conn, seq, redaction, actor)
-    for event in _events_of(conn, ("task", card.id), ("mentioned", "note_added")):
+    for event in _events_of(conn, ("task", card.id), ("mentioned", "note_added", "note_edited")):
         task = (event.payload or {}).get("task") or {}
         if not event.redacted and task.get("title") == title:
             payload = {**event.payload, "task": {**task, "title": tombstone}}

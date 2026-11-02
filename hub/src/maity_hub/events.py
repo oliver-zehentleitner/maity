@@ -328,11 +328,13 @@ def emit(
         if isinstance(card_id, str):
             public_pages.touch(conn, "card", card_id, removal=kind != "task_created")
     elif kind in NOTE_KINDS and project.public_page == "on" and subject and subject[0] == "task":
-        # A card's notes are on its page (§16.9): a new one adds, a resolution changes its
-        # state; the redaction of one renders the page from `notes.redact`.
+        # A card's notes are on its page (§16.9): a new one adds and a resolution changes its
+        # state, which may wait for an `interval` run; an edit takes the old text off, so it
+        # renders the page at once under either mode. The redaction of one renders the page
+        # from `notes.redact`.
         from maity_hub import public_pages
 
-        public_pages.touch(conn, "card", subject[1], removal=False)
+        public_pages.touch(conn, "card", subject[1], removal=kind == "note_edited")
     return seq
 
 
@@ -353,7 +355,7 @@ CARD_KINDS = frozenset(
 )
 
 # The events of a card's notes: the card's public page follows them (§16.9).
-NOTE_KINDS = frozenset({"note_added", "note_resolved"})
+NOTE_KINDS = frozenset({"note_added", "note_resolved", "note_edited"})
 
 # The trusts that read every event of the project, a proxy included (§2.3, §8.2).
 SEE_ALL_TRUSTS = ("owner", "admin")

@@ -52,6 +52,10 @@ window.Maity = window.Maity || {};
       m.kind === "agent" ? (inst && inst.harness) || m.harness : null,
       m.kind === "agent" ? (inst && inst.model) || m.model : null,
       held === null ? null : M.t("memberpage.holds", { count: held })].filter(Boolean).join(" · ");
+    // Who is below, from the hub's `manages` (§6.2): the direct reports, and the whole branch
+    // when it reaches further.
+    const direct = M.dom.managesText(m.manages, "direct");
+    const total = direct && m.manages.total.members > m.manages.direct.members ? M.dom.managesText(m.manages, "total") : null;
     const owner = m.kind === "agent" && m.owner_id ? M.dom.memberRef(ctx, m.owner ? Object.assign({ member_id: m.owner_id }, m.owner) : m.owner_id) : null;
     const pills = [pill(M.trust.words(m)),
       owner ? h("span", { class: "pill member-pill" }, M.tn("memberpage.agent_of", { owner })) : null,
@@ -80,7 +84,9 @@ window.Maity = window.Maity || {};
       h("div", { class: "member-head-text" },
         heading,
         h("p", { class: "member-pills" }, pills),
-        line ? h("p", { class: "muted member-line" }, line) : null, availability),
+        line ? h("p", { class: "muted member-line" }, line) : null,
+        direct ? h("p", { class: "muted member-manages" }, direct) : null,
+        total ? h("p", { class: "muted member-manages" }, M.t("manages.total", { text: total })) : null, availability),
       h("div", { class: "member-head-actions" },
         chat ? h("a", { class: "button primary member-chat", href: chat }, M.t("members.chat")) : null,
         menu ? menu.el : null));

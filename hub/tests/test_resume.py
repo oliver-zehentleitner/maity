@@ -106,6 +106,11 @@ def test_the_packet_has_every_part_of_the_contract(
         "owner_preferences": None,  # §19.4: not given
         "availability_policy": {"on_unavailable": "wait", "substitutes": [], "grace_minutes": 15},
         "covering": [],
+        # Nobody reports to it: zero counts, and `maity resume` prints no lead line (§5.2).
+        "manages": {
+            "direct": {"members": 0, "instances": 0, "online": 0, "dormant": 0},
+            "total": {"members": 0, "instances": 0, "online": 0, "dormant": 0},
+        },
         "placement": None,
     }
     assert packet["me"]["instance"] == agent.instance
