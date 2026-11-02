@@ -6728,6 +6728,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.postRaw = () => Promise.reject(new win.Maity.api.ApiError("d", 400, "/x", "invalid", { fields: { body: "dimensions" } }));
   await atPick("chat-files", [atFile("huge.png", PNG, 100, "image/png")]);
   expect(text(main).includes("the image is larger than 8192 pixels"), "attachments: an image too large in pixels in words");
+  // From here to the messages' file: sizes read with a decimal mark, so not the host's language.
+  const szLocale = win.Maity.i18n.locale;
+  win.Maity.i18n.locale = "en";
   // File sizes as they always read in English, whatever M.t does with a number; a sentence per role and trust.
   const szOf = win.Maity.attachments.sizeOf;
   expect(szOf(1023) === "1023 B" && szOf(1536) === "1.5 KB" && szOf(20480) === "20 KB" && szOf(1572864) === "1.5 MB", "attachments: sizes stay as they read " + szOf(1023));
@@ -6935,6 +6938,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(pmHand).includes("Handover") && text(pmHand).includes("Agent B to Maintainer") && pmHand.querySelectorAll("a").find((a) => !a.classList.contains("member-ref")).getAttribute("href") === "#/maintainer/maity/tasks/tsk-0004"
     && pmHand.querySelector("li.attach-item") && text(pmHand.querySelector(".attach-meta")).includes("exchange.log · 4.1 KB · text/plain") && btn(pmHand, "Delete"),
     "messages: type, sender, addressee, card and its file; an admin deletes the file");
+  win.Maity.i18n.locale = szLocale;
   expect(pmSeq(6001).querySelector("a.mention").getAttribute("href") === "#/maintainer/maity/members/hum-maintainer", "messages: the members it mentions, as links");
   byId("messages-type").value = "blocker"; byId("messages-type").dispatch("change");
   expect(pmItems().length === 1 && text(pmItems()[0]).includes("waits for the PyPI token"), "messages: filtered by type");
