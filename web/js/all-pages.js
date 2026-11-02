@@ -31,7 +31,8 @@ window.Maity = window.Maity || {};
     view: "jour-fixe",
     answer: (p, state) => ((state.series || []).length
       ? h("ul", { class: "all-jf-series" }, state.series.map((s) => h("li", { "data-series": s.id },
-        h("strong", null, s.topic || s.id),
+        // An owner's series an admin may not read has no topic (§20.1): said, its id is no name.
+        M.jourFixeSeries.isPrivate(s) ? h("em", null, M.t("all.jf.private")) : h("strong", null, s.topic),
         h("span", { class: "muted" }, " · " + (s.enabled
           ? M.t("jf.next", { at: s.next_at ? formatTime(s.next_at) : M.t("jf.next.none") }) : M.t("jf.not_scheduled"))),
         s.current_round
