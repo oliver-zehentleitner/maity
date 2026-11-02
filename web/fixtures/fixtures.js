@@ -3900,6 +3900,25 @@ window.MAITY_FIXTURES = {
         },
         "state": "dismissed",
         "task_id": "tsk-0001"
+      },
+      {
+        "author": {
+          "handle": "agent-b",
+          "kind": "agent",
+          "member_id": "agt-b"
+        },
+        "body": {
+          "at": "2026-10-21T12:00:00Z",
+          "by": "hum-maintainer",
+          "reason": "held a token",
+          "redacted": true
+        },
+        "created_at": "2026-10-21T11:30:00Z",
+        "id": "nte-0033",
+        "mentions": [],
+        "resolution": null,
+        "state": "open",
+        "task_id": "tsk-0001"
       }
     ]
   },

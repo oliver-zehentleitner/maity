@@ -961,6 +961,7 @@ window.MAITY_I18N["es"] = {
   "error.load_failed": "No se pudo cargar",
   "error.load_failed_at": "No se pudo cargar ({path})",
   "error.mail_not_configured": "Este hub no puede enviar correo.",
+  "error.maintenance": "El hub está en mantenimiento. Inténtalo de nuevo cuando termine.",
   "error.memory_full": "Esta memoria está llena.",
   "error.method_not_allowed": "Esta acción no está disponible aquí.",
   "error.namespace_owner": "El propietario del espacio de nombres de este proyecto no se puede cambiar ni quitar de esta manera.",
@@ -4642,5 +4643,9 @@ window.MAITY_I18N["es"] = {
     "one": "Se omitió {count} entrada sin id.",
     "other": "Se omitieron {count} entradas sin id."
   },
-  "why.title": "Why"
+  "why.title": "Why",
+  "why.type.constraint": "restricción",
+  "why.type.decision": "decisión",
+  "why.type.incident": "incidente",
+  "why.type.workaround": "solución provisional"
 };

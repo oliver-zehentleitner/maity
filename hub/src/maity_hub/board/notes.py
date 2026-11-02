@@ -91,6 +91,9 @@ def redact(conn: Connection, row: Any, mark: dict[str, Any]) -> bool:
     ).rowcount
     if won != 1:
         return False
+    from maity_hub import public_pages
+
+    public_pages.touch(conn, "card", row.card_id)  # a public card page shows its notes (§16.9)
     if row.event_seq is not None:
         event = conn.execute(select(t.event).where(t.event.c.seq == row.event_seq)).first()
         if event is not None and not event.redacted:

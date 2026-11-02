@@ -58,6 +58,7 @@ window.Maity = window.Maity || {};
     last_instance_admin: () => M.tOwn("error.last_instance_admin"),
     lease_active: () => M.tOwn("error.lease_active"),
     mail_not_configured: () => M.tOwn("error.mail_not_configured"),
+    maintenance: () => M.tOwn("error.maintenance"),
     memory_full: () => M.tOwn("error.memory_full"),
     method_not_allowed: () => M.tOwn("error.method_not_allowed"),
     namespace_owner: () => M.tOwn("error.namespace_owner"),

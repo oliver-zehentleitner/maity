@@ -196,12 +196,30 @@ for text, outside in [
     ("Sign in/register", True),
     ("docs/api.md", False),
     ("hub/", False),
+    ("Oct 21, 2026, 02:30 PM @ e3fcd8b", False),
+    ("Wednesday, October 21, 2026", False),
+    ("agent-a#a1b2", False),
+    ("ada@example.net", False),
+    ("example.org", False),
+    ("K7QM-4XPR-9D2F", False),
+    ("text/plain", False),
+    ("(@agent-d)", False),
+    ("English (Pseudo-Accents)", False),
+    ("Remove decade", True),
 ]:
     expect(pseudo_run.unmarked(text, data, "take over the lab notes today, please") is outside, "pseudo: %r outside the catalog: %s" % (text, outside))
 real = pseudo_run.fixture_strings()
 for word in ["online", "open", "Sign in"]:
     expect(pseudo_run.unmarked(word, real, ""), "pseudo: %r is no data, though a fixture has it" % word)
 expect(pseudo_run.unmarked("Agent D · Sep 14, 2026, 12:05 · online", real, ""), "pseudo: a raw state in a composed line counts with the real fixtures")
+for text, outside in [("Keep it;", False), ("here too.", False), ("Keep it", True), ("in progress", True),
+                      ("Skeleton with /health and the migration check;", False), ("New Comer", False), ("OZ Team", False)]:
+    expect(pseudo_run.unmarked(text, real, "\n".join(real)) is outside,
+           "pseudo: %r with the real fixtures outside the catalog: %s" % (text, outside))
+expect(pseudo_run.strings_in({"reason": "Within the rules.", "state": "open", "scope": "in_review"}) == {"Within the rules."},
+       "pseudo: prose under an enum's key is data, the enum's value is not")
+expect(pseudo_run.pieces_of("Keep it; @agent-d sorts `x` the tabs.") >= {"Keep it;", "sorts", "the tabs."},
+       "pseudo: a fixture's text comes apart where a page splits it")
 expect(len(pseudo_run.routes_of_smoke()) > 50, "pseudo: the routes come from the smoke test")
 
 raise SystemExit(1 if failures else 0)

@@ -77,6 +77,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     seed.add_argument("--humans", type=int, required=True)
     seed.add_argument("--out", required=True, help="a new file; it holds secrets")
+    purge = load_commands.add_parser(
+        "purge", help="delete every row of the lt-<n> accounts; without --apply only count"
+    )
+    purge.add_argument("--apply", action="store_true")
     quick = commands.add_parser(
         "quickstart",
         help="a personal hub on SQLite: set up a new database, the first account, then serve",
@@ -104,19 +108,47 @@ def main(argv: list[str] | None = None) -> int:
         return _unsuspend(settings, args.handle)
     if args.command == "quickstart":
         return _quickstart(settings, args.handle, args.display_name)
+    if args.command == "loadtest" and args.load_command == "purge":
+        return _loadtest_purge(settings, apply=args.apply)
     if args.command == "loadtest":
         return _loadtest_seed(settings, args.humans, Path(args.out))
     return _serve(settings)
 
 
-def _loadtest_seed(settings: Settings, humans: int, out: Path) -> int:
+def _loadtest_refusal(settings: Settings) -> str | None:
     if not os.environ.get("MAITY_PUBLIC_URL"):  # the operator's name for the hub, never derived
-        return _fail("refused: MAITY_PUBLIC_URL is not set", EXIT_CONFIG)
-    why = loadtest.refusal(
+        return "MAITY_PUBLIC_URL is not set"
+    return loadtest.refusal(
         settings.public_url,
         os.environ.get("LOADTEST_CONFIRMED_TEST_SYSTEM"),
         os.environ.get("LOADTEST_CONFIRMED_PRODUCTION"),
     )
+
+
+def _loadtest_purge(settings: Settings, *, apply: bool) -> int:
+    why = _loadtest_refusal(settings)
+    if why is not None:
+        return _fail(f"refused: {why}", EXIT_CONFIG)
+    try:
+        engine = make_engine(settings.database_url)
+        require_current_schema(engine)
+        counted = loadtest.purge(engine, change=apply)
+    except SchemaNotCurrentError as error:
+        return _fail(str(error), EXIT_FAILURE)
+    except loadtest.Refused as error:
+        return _fail(f"refused: {error}", EXIT_FAILURE)
+    except (SQLAlchemyError, ImportError) as error:
+        return _database_error(settings, error)
+    for name, count in counted.items():
+        print(f"{name}: {count}")
+    print(
+        ("deleted" if apply else "would delete") + f" the rows of {counted.get('human', 0)} humans"
+    )
+    return 0
+
+
+def _loadtest_seed(settings: Settings, humans: int, out: Path) -> int:
+    why = _loadtest_refusal(settings)
     if why is not None:
         return _fail(f"refused: {why}", EXIT_CONFIG)
     if humans < 0:

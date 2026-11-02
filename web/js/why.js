@@ -18,6 +18,13 @@ window.Maity = window.Maity || {};
     superseded: () => M.t("why.status.superseded"), other: () => M.t("why.status.other"),
   };
   const statusWord = (s) => (Object.hasOwn(STATUS_WORDS, s) ? STATUS_WORDS[s]() : s);
+  // An entry's Type in a Keep the Why export: the four values in words; `undefined — <reason>`
+  // and a value from a later version stay as the export writes them.
+  const TYPE_WORDS = {
+    decision: () => M.t("why.type.decision"), workaround: () => M.t("why.type.workaround"),
+    incident: () => M.t("why.type.incident"), constraint: () => M.t("why.type.constraint"),
+  };
+  const typeWord = (t) => (Object.hasOwn(TYPE_WORDS, t) ? TYPE_WORDS[t]() : t);
 
   // A member's failure (§11.3), in words.
   const REASONS = {
@@ -122,7 +129,7 @@ window.Maity = window.Maity || {};
       h("ul", { class: "why-entries" }, byMember[m.path].map((a) => h("li", null,
         h("span", { class: "badge why-" + a.status }, statusWord(a.status)),
         " ", entryLink(a, m, a.title),
-        h("span", { class: "muted" }, " · " + [a.topic || a.file, M.fmt.list(a.type || [])].filter(Boolean).join(" · "))))))),
+        h("span", { class: "muted" }, " · " + [a.topic || a.file, M.fmt.list((a.type || []).map(typeWord))].filter(Boolean).join(" · "))))))),
     answer.truncated ? h("p", { class: "muted" }, M.t("why.attention.truncated", { count: 200 })) : null];
   }
 
