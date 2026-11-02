@@ -39,9 +39,9 @@ def handle_reserved(handle: str, *, of_agent: bool = False) -> bool:
 # one of them, so that `/<owner>/<word>` stays free for pages of an owner's own.
 PROJECT_VIEWS = frozenset(
     {
-        "agents", "board", "chat", "contract", "inbox", "jour-fixe", "members", "memory", "message", "messages",
-        "organisation", "overview", "runners", "settings", "tasks", "ticker",
-        "why",
+        "agents", "board", "chat", "contract", "inbox", "jour-fixe", "members", "memory",
+        "message", "messages", "organisation", "overview", "runners", "settings", "tasks",
+        "ticker", "why",
     }
 )  # fmt: skip
 
