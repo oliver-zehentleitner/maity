@@ -388,6 +388,49 @@ mark with the text, since an edit's reason speaks of the old text.
   rewrite a human's or another agent's remark; a correction of someone
   else's words stays with a human who answers for it with a reason.
 
+## Editing or redacting a note names the version it was made on
+
+**Id:** 23165436-966c-48d6-94f4-80ea0638abf6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** a review finding on the web pull request for editing a note (#1227), and the coordinator's ruling as contract arbiter on card tsk-b6wb439f88nr (2026-11-02): a precondition on editing and removing a note, the details left to the contract pull request; contract `docs/api.md` §6.16 "Precondition"
+**Revisit when:** the API takes conditional request headers (`If-Match`, ETags) elsewhere, or notes gain a kept history
+**See:** cards.md#a-notes-author-edits-it-in-place-and-the-hub-keeps-no-trace-of-the-old-text — 0e6b3b31-1656-4744-841d-d48f1899a7fd — as of 2026-11-02
+
+A note carries a `version`, 1 when posted and one more with each edit
+and with its redaction. An edit (`PATCH …/notes/{note_id}`) and a
+redaction send it as `base_version`, always; a stale one is `conflict`
+with the note as it is now, and nothing changes.
+
+**Reason:** without it, an admin who edits a note to take out sensitive
+text while the author has the card open loses that edit when the author
+saves: the author's older text comes back, and since the hub keeps no
+history (entry 0e6b3b31) nobody sees that it happened. Reading the note
+again before editing narrows the window but leaves the race between
+reading and saving. The precondition itself is the arbiter's ruling
+(confirmed); the shape below was settled in the contract pull request
+(inferred): a body field named `base_version` and `conflict` with
+`current_version` are how the contract already guards a soul and a
+human's preferences against the same lost update (§19.1, §19.4), so
+clients and the CLI handle one pattern. Required, because the overwrite
+happens exactly in the client that sends nothing; no client on main
+edits notes yet, so nothing breaks. The redaction takes it too, so that
+an admin never removes a text it has not seen.
+
+**Rejected alternatives:**
+- `If-Match` with an ETag and `412 Precondition Failed`: the API uses no
+  conditional headers anywhere, and a second way to say the same thing
+  would serve no client better.
+- An optional `base_version`: a client that leaves it out is exactly
+  the one that overwrites; the hub could not tell a careful client from
+  a careless one.
+- Comparing `edited.at` or the old body instead of a counter: a
+  timestamp can repeat within its resolution, and sending the old body
+  back would carry the very text an edit may be removing.
+- Only the web reading the note again before saving: leaves the race
+  between the read and the write.
+
 ## A redacted note's reason reaches only the owners, the admins and the redactor
 
 **Id:** 09c47db5-75b7-4636-8c49-0cc46c8c9d46
