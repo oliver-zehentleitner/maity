@@ -1183,8 +1183,9 @@ limit the hub states, not one it closes. What it does instead:
   every session created after it can do neither, and the banner stays
   until the sign-in is confirmed, read or not.
 - **A session the human has not confirmed cannot lock the human
-  out.** A session in good standing — signed in by password, or its
-  sign-in confirmed by the human with "This was me" (§2.6.5) — may end any
+  out.** A session in good standing — signed in by password or with
+  the second factor, or its sign-in confirmed by the human with "This
+  was me" (§2.6.5) — may end any
   session of the human, a newer one included. A session not in good
   standing never ends one that is in good standing, and while it is
   younger than 1 hour it ends no older session at all. So a session
@@ -1207,7 +1208,7 @@ limit the hub states, not one it closes. What it does instead:
   least 24 hours old approves it, and only one in good standing — whose
   own sign-in the human confirmed from an earlier session (§2.6.5). A
   session obtained a moment ago cannot do it, and one that waits a day
-  still cannot while its alert is unread; nor can it reject or replace
+  still cannot while its sign-in is not confirmed, read or not; nor can it reject or replace
   a change the human filed.
 
 Additional rules that are not scopes:
@@ -1743,10 +1744,11 @@ and is never affected by mail limits; the password is not either.
 | `GET /auth/sessions` `?ended=true` | human | the caller's own sessions, newest first; with `ended=true` also the ones ended in the last 30 days |
 | `DELETE /auth/sessions/{id}` | human | ends one of the caller's own sessions, and every session it approved by device code that the caller may end (below); the current one is a logout; idempotent; answers the session as it is now, with `skipped` naming the approved sessions it did not end |
 | `POST /auth/sessions/end-others` | human | ends every session of the caller but the current one; answers the list of live sessions |
-| `POST /auth/sessions/{id}/confirm` | human | "This was me": confirms the sign-in of one of the caller's own sessions (below); answers the session as it is now. Idempotent: a session already confirmed, or signed in by password, answers `200` unchanged. An ended session, or one of another human, is `not_found`; a caller that may not confirm it is `forbidden` with `details.reason` `not_in_good_standing` (the caller is not in good standing) or `not_earlier` (the caller is the session itself or was created after it) |
+| `POST /auth/sessions/{id}/confirm` | human | "This was me": confirms the sign-in of one of the caller's own sessions (below) and marks its `session_created` item read; answers the session as it is now. The checks run in this order: an ended session, or one of another human, is `not_found`; then a caller that is the session itself or was created after it is `forbidden` with `details.reason: not_earlier`; then a caller not in good standing is `forbidden` with `details.reason: not_in_good_standing`. Only a caller past all three gets `200`: a session already in good standing (confirmed, or signed in by password or with the second factor, §2.8.2) stays as it is and only its item is marked read, so a repeated call changes nothing |
 
 **Good standing.** A session is **in good standing** when it was
-signed in by password, or when its sign-in has been **confirmed** —
+signed in by password or with the second factor (§2.8.2), or when its
+sign-in has been **confirmed** —
 `POST /auth/sessions/{id}/confirm` from an allowed session (below).
 Reading its alert never confirms it, however it is read: by `ids`, by
 `up_to`, by age or by the record's expiry (§18.3). The session list
@@ -1871,7 +1873,7 @@ notification of the kind `security` (#160, §18.1), title `New sign-in:
   every session the reported one approved by device code, and those
   approved by them in turn) and, in a session that may confirm it
   (above), **This was me**. The banner stays while the reported session
-  is not confirmed and it, or a session it approved, is still active —
+  is not in good standing and it, or a session it approved, is still active —
   whether its item is read or not, so that tidying the bell never
   removes it; a dashboard opened later shows it too. The item carries the
   new session's id (`target: {type: "session", id}`); the session it
@@ -1955,9 +1957,10 @@ event; the accounts design's instance audit log records it (pending).
   default button, and there is no plain "Approve".
 - **Profile → Sessions.** The list of §2.6.5 with "End" per session,
   "End all other sessions", and the ended sessions of the last 30 days;
-  a session neither signed in by password nor confirmed is marked "not
-  confirmed", with "This was me" where the current session may confirm
-  it, whether its alert was read or not.
+  a session not in good standing (§2.6.5: neither signed in by password
+  or with the second factor nor confirmed) is marked "not confirmed",
+  with "This was me" where the current session may confirm it, whether
+  its alert was read or not.
 - **The mail sign-in banner** of §2.6.5 in every other open session,
   with "This was me" only where that session may confirm it.
 - **Notification settings** (#160, §18.8) gain the `security` mail switch
@@ -2460,8 +2463,8 @@ is in good standing (§2.6.5), whatever the first factor was: the factor
 is what neither a mailbox nor an unlocked dashboard provides, which is
 the reason good standing exists. The mail factor (§2.8.8) is the
 mailbox and gives no standing of its own; such a session is in good
-standing by §2.6.5's own rules (a password sign-in, or its alert marked
-read). The session list carries `second_factor: true | false` per
+standing by §2.6.5's own rules (a password sign-in, or its sign-in
+confirmed — never its alert read). The session list carries `second_factor: true | false` per
 session, `true` for the mail factor too.
 
 #### 2.8.3 Recovery
@@ -16171,10 +16174,11 @@ names it:
 ```
 
 `skipped` lists every `security` item the call named or covered and
-did not mark, with `reason` `not_earlier` (the calling session is the
-one the item reports on, or was created after it) or
-`not_in_good_standing` (the calling session is not confirmed and was
-not signed in by password); `[]` when none. The dashboard says which
+did not mark, with one `reason`, checked in the order of `POST
+/auth/sessions/{id}/confirm` (§2.6.5): `not_earlier` (the calling
+session is the one the item reports on, or was created after it), else
+`not_in_good_standing` (the calling session is not in good standing,
+§2.6.5); `[]` when none. The dashboard says which
 alerts are left and why — "confirm this sign-in from a session that is
 older than it" — so a count that does not go to zero is explained
 (the lead's addition of 2026-11-02). An `ids` entry for an item the
@@ -16544,8 +16548,11 @@ mail.
   each linking to its `url`, unread ones marked, with "mark all read"
   and a filter "unread only" (`unread=true`, §18.2). Above the list
   stands the block of `pinned` security items, whatever their age: a
-  sign-in alert with "This was me" where the session may confirm it
-  (§2.6.5), every other one with "Mark read". When unread security
+  sign-in alert with "This was me" while its session is active and not
+  in good standing and the current session may confirm it (§2.6.5);
+  every other one — a sign-in already in good standing or ended, and
+  every other kind — with "Mark read", which the same sessions may use
+  (§18.3). When unread security
   items are among what "mark all read" covers, the dashboard first asks,
   listing each (time, place, browser): "2 sign-in alerts are included.
   Marking them read does not confirm them. Mark all read anyway?";

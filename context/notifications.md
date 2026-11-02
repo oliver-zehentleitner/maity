@@ -355,7 +355,7 @@ Confirming a sign-in is its own call, "This was me" (`POST
 /auth/sessions/{id}/confirm`), allowed from the same sessions that could
 mark its alert read before: one that existed before the sign-in and is
 in good standing. Good standing follows from that confirmation (or a
-password sign-in), never from a read flag. Reading a security alert
+password or second-factor sign-in), never from a read flag. Reading a security alert
 confirms nothing, so "mark all read" may include security alerts once
 the human has confirmed a dialog that lists them; a session not allowed
 to mark an alert still cannot, and the answer names what it left and
