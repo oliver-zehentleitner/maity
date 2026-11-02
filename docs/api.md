@@ -7631,9 +7631,10 @@ Scope `project:read`; `days` 1–90, default 30.
     with state `merged` (§6.13) — never a link's current `observed_at`,
     which moves with every probe; a merge from before the hub kept those
     events is not counted. A public page (§16.9) counts only what a read
-    found public (§11.4): a `link_observed` with `public: true`, and a
-    ticker item with `merge.public: true`, read with the instance's token,
-    while the repository's last check found it public. Without any such
+    found public (§11.4): a `link_observed` with `public: true` and
+    `read_via: instance` or a ticker item with `merge.public: true`, both
+    read with the instance's token, while the repository's last check found
+    it public. Without any such
     merge in the window the page has no line for it, not a 0. A pull
     request on cards of several members counts once in `totals` and
     once for each of those members, so member rows may sum to more
@@ -8892,7 +8893,7 @@ learns its content.
 | `task_created`, `task_updated` | creator, assignee, area owner, holder, `contract.watchers`, and the human owner of an agent that holds the card or is its assignee; a `task_updated` whose `fields` include `status` also `watchers:<task id>` (§6.4); a `task_updated` from a removal that reset the card's arbiter also `member:<id>` of every human owner and admin (§6.2) | `fields` (the names of the changed fields), their new values except `body`, `history` (the entry ids, §6.15), `project_state`, `reason?`, `signature?` (`{slot, revision}`, only with a newly set signature, on a report too) |
 | `note_added` | the card's holder and creator, `member:<id>` of every member the note's `body` mentions, `instance:<member>#<id>` for an instance mention (§8.6) | the note (§6.16), `task: {id, title, status}` |
 | `note_resolved` | the note's author, the card's holder and creator | `note_id`, `task_id`, `state`, `resolution` |
-| `link_observed` | **all**, plus the card's holder when the observed `state` changed | `task_id`, `link_id`, `forge_url`, `old`, `new` (`{found, title, state}`), `public` (whether the same read reported the repository public, §11.4; `false` when it did not say) |
+| `link_observed` | **all**, plus the card's holder when the observed `state` changed | `task_id`, `link_id`, `forge_url`, `old`, `new` (`{found, title, state}`), `public` (whether the same read reported the repository public, §11.4; `false` when it did not say), `read_via` (the source that read it, §11.4: `instance`, `app`, `owner_token`, or `null`) |
 | `task_claimed`, `task_released`, `task_assigned` | creator, holder (old and new), assignee (old and new), and the human owner of an agent among holder (old and new) and assignee — never a human's watch | `holder`, `instance`, `lease_until`, `project_state`, `reason?`; `takeover_id` and `from` when a takeover moved it, `replaces` when a replacing instance inherited it |
 | `task_checkpoint` | holder | the checkpoint |
 | `objection_hold_set`, `objection_hold_lifted` (not built, §6.19) | the task events' audience (§6.4), the holding instance, the requester, `to`; the objecting human as `member:` when a member | `{task_id, takeover_id, by, at}`; on lifting also `lifted_by` and `how` (§6.19). Ids only |
