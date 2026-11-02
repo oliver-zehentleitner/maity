@@ -402,7 +402,7 @@ def patch(
         if given:
             merged = dict(stored.get(side) or {})
             for key, value in given.items():
-                if key in ("kinds", "content") and isinstance(value, dict):
+                if key == "kinds" and isinstance(value, dict):
                     inner = dict(merged.get(key) or {})
                     for kind, setting in value.items():
                         if isinstance(setting, dict):

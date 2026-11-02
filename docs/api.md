@@ -15467,6 +15467,8 @@ device; the browser's own permission is per browser and is not stored.
   browser's answer beside the switch. `kinds` per kind on or off, every
   kind on by default.
   A notification carries the title only, never a message's text.
+  A `PATCH` that names any other key in `browser`, the former `content`
+  included, is `invalid` at `browser.<key>` and changes nothing.
   `security` here governs only the browser
   pop-up; the item is always in the bell (§18.1).
 - **The kinds.** `kinds` at the top, `browser.kinds` and `email.kinds`

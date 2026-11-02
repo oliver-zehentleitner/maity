@@ -276,11 +276,15 @@ switches stay: the mailer uses them.
 
 A value already stored stays in `preferences` unread: `_merged` reads
 only the browser keys it knows, and the value is only `true` or `false`.
+A `PATCH` that still names `browser.content` is refused as `invalid`, so
+a stale tab learns its switch did nothing, and only that one save fails.
 
 **Reason:** a setting that does nothing must not stand, and filling the
 field would have decided the privacy question in passing.
 
 **Rejected alternatives:**
+- Accept and drop a written `browser.content` for a transition: a `200`
+  would tell an old client the setting was saved when nothing changed.
 - Fill the field in the hub before the launch: it decides the privacy
   question by implementation.
 - Leave the switch in place: it promises what nothing does.
