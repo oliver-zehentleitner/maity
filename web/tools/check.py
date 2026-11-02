@@ -37,7 +37,7 @@ What is checked:
   every error code of docs/api.md §1.3 has words (js/errors.js);
   M.t takes its key as a string literal the English catalog holds, and
   every English key is used. Text in the views is ratcheted: each js file
-  may hold no more prose string literals than tools/strings-baseline.json
+  may hold no more prose string literals (`prose`) than tools/strings-baseline.json
   allows (`--write` lowers the baseline, never raises it), so new text goes
   through the catalog (context/rendering.md).
 - hub/src/maity_hub/landing_assets/landing.js, the public landing page's
@@ -293,7 +293,7 @@ def strip_js(src, literals=None):
     keeping newlines, so that patterns and brackets are checked on code only.
     Returns (code, error) where error is (line, message) or None. With
     `literals`, a list, each string and template literal is appended to it
-    as (line, text)."""
+    as (line, text, the source before it on its line)."""
     out = []
     i, n, line = 0, len(src), 1
     prev = ""  # last significant code character
@@ -328,7 +328,7 @@ def strip_js(src, literals=None):
                 return None, (line, "unterminated string")
             chunk = src[i:j + 1]
             if literals is not None:
-                literals.append((line, chunk[1:-1]))
+                literals.append((line, chunk[1:-1], src[max(src.rfind("\n", 0, i) + 1, i - 240):i]))
             line += chunk.count("\n") - (1 if c == "\n" else 0)
             out.append(c + re.sub(r"[^\n]", " ", chunk[1:-1]) + c)
             prev = c
@@ -450,6 +450,12 @@ def fingerprint(entry):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
+def well_formed(entry):
+    return isinstance(entry, str) or (
+        isinstance(entry, dict) and "other" in entry and set(entry) <= PLURAL_FORMS
+        and all(isinstance(v, str) for v in entry.values()))
+
+
 def translation_problems(lang, data, english):
     """What makes a translated catalog wrong, whatever else it lacks."""
     if lang not in PLURALS:
@@ -457,6 +463,8 @@ def translation_problems(lang, data, english):
     problems = []
     needed, optional = PLURALS[lang]
     for key, entry in data.items():
+        if not well_formed(entry):  # load_catalog has said so
+            continue
         if key not in english:
             problems.append("key %r: English has no such key" % key)
             continue
@@ -485,7 +493,7 @@ def translation_meta(data, english, meta):
     follows today's English, one that did not keeps what it had."""
     fresh = {}
     for key, entry in data.items():
-        if key not in english:
+        if key not in english or not well_formed(entry):
             continue
         own = fingerprint(entry)
         known = meta.get(key)
@@ -513,6 +521,9 @@ def read_meta(path):
 
 def check_translations(catalogs, write, release, notes):
     english = catalogs["en"]
+    for name in sorted(os.listdir(I18N)):
+        if name.endswith(I18N_META) and name[:-len(I18N_META)] not in catalogs:
+            finding(os.path.join(I18N, name), 1, "no catalog of this language: delete it")
     for lang, data in sorted(catalogs.items()):
         if lang == "en":
             continue
@@ -573,31 +584,83 @@ def load_catalog(path):
     for key, entry in data.items():
         if not I18N_KEY.match(key):
             finding(path, 1, "key %r: dotted lowercase names, as chat.instance.label" % key)
-        ok = isinstance(entry, str) or (
-            isinstance(entry, dict) and "other" in entry and set(entry) <= PLURAL_FORMS
-            and all(isinstance(v, str) for v in entry.values()))
-        if not ok:
+        if not well_formed(entry):
             finding(path, 1, "key %r: a text, or plural forms with `other`" % key)
     return data
 
 
-# Literals that read as words but are code: the strict-mode directive.
-NOT_PROSE = {"use strict"}
+# Literals that read as words but stay as they are in every language: the strict-mode
+# directive, product names, the brand in a page title, keys as a browser names them.
+NOT_PROSE = {"use strict", " · Maity", "Codex", "Hermes", "Kimi Code", "Cline", "Claude Code",
+             "⌘+Enter", "Ctrl+Enter", "Strg+Enter", "Control+Enter Meta+Enter",
+             "Maity", "GitHub", "GitLab", "Gitea", "HTTP ", "SHA-256 ", "[U+", "?c=", "XXXX-XXXX-XXXX", "de", "staging",
+             "badge ok", "reply primary"}
 
 
-def prose(text):
-    """A string literal that reads as words a person sees."""
-    if text in NOT_PROSE:
-        return False
-    if not re.search(r"[A-Za-z]", text) or "${" in text and not re.search(r"[A-Za-z]{2,}\s+[A-Za-z]{2,}", text):
-        return False
-    tokens = text.split()
-    # Class lists, ids, keys and paths: lowercase tokens with - . / or #.
-    if all(re.fullmatch(r"[a-z0-9_.#/:-]+", t) for t in tokens) and any(re.search(r"[-./#:]", t) for t in tokens):
-        return False
-    if re.search(r"[A-Za-z]{2,}\s+[A-Za-z]{2,}", text):
+# What comes before a literal that is code whatever it reads like: a class, an
+# attribute that is no text, a selector, a comparison, an address, a key.
+CODE_BEFORE = re.compile(
+    r"""(?:\b(?:class|className)["']?\s*\+?[:=][^,;{}\n]*
+         |\b(?:id|type|for|name|role|rel|target|autocomplete|method|key|inputmode|pattern|accept|href|src|d|viewBox|
+             fill|stroke|tabindex|kind|status|state|scope|reason|code)["']?\s*[:=]\s*
+         |\.(?:classList\.\w+|querySelector(?:All)?|closest|matches|getElementById|addEventListener|removeEventListener|
+             createElement|createElementNS|setAttribute|getAttribute|removeAttribute|getItem|setItem|removeItem|
+             includes|startsWith|endsWith|split|join|replace|get|has|set|append|delete|matchMedia|
+             api\.\w+|route\.\w+|go|t|tn|tOwn)\(\s*
+         |\bnew\ TypeError\([^;]*|(?:!|&&|\|\|)\s*\(\s*
+         |[=!]==?\s*|\bcase\s+|\btypeof\s+|\bh\(\s*|\bdispatch\(\s*)$""", re.X)
+# Where a word is on screen: the content of an element, or an attribute a person reads.
+TEXT_BEFORE = re.compile(
+    r"""(?:\.textContent\s*=\s*|\btitle["']?\s*[:=]\s*|placeholder["']?\s*[:=]\s*|aria-label["']?\s*[:=]\s*|\blabel["']?\s*:\s*|alt["']?\s*:\s*
+         |\bh\([^;\n]*(?:null|\}),\s*)$""", re.X)
+# A line of a generated config file or a shell command: `key = value`, `<<'EOF'`, `&&`.
+CONFIG_OR_SHELL = re.compile(r"""^\s*[a-z_.]+\s=(\s|$)|^(maity|pipx|export)\s|<<'|\s&&\s|\$\(""")
+# A comment in a generated file with words in it: the person reads it, whatever the line is.
+WORDS_IN_COMMENT = re.compile(r"(?:^|\s)#\s+[A-Za-z]+\s+[A-Za-z]")
+HTML_NAMES = {"a", "button", "input", "select", "textarea", "form", "label", "summary", "details", "li", "ul", "ol",
+              "div", "span", "p", "h2", "h3", "nav", "main", "section", "article", "header", "footer", "dialog"}
+
+
+def technical(token, alone):
+    """A token of a class list, a key or a path, not of a sentence."""
+    bare = token.rstrip(".!?…,;)").lstrip("(")
+    if alone and bare.endswith(":"):
         return True
-    return bool(re.fullmatch(r"\s*[A-Z][a-z]+[.!?:…]?\s*", text))
+    return bool(re.search(r"[-_/#=@]|[a-z0-9][.:][a-z0-9]", bare))
+
+
+def prose(text, before=""):
+    """A string literal that reads as words a person sees. Words beside code are
+    told apart by their shape and, for a lone word, by where they stand; a lone
+    word in a place this does not know is left to the reviewer, and so is one in an
+    h() call over several lines: `before` holds one line. An approximation by design:
+    the proof that nothing is left is the run with a pseudo catalog."""
+    if text in NOT_PROSE or not re.search(r"[A-Za-z]", text):
+        return False
+    if "${" in text and not re.search(r"[A-Za-z]{2,}\s+[A-Za-z]{2,}", text):
+        return False
+    if WORDS_IN_COMMENT.search(text):
+        return True
+    tokens = text.replace("\\n", "\n").split()  # the source's \\n, not yet a line break
+    if not tokens or re.match(r"\s*[Mm]\s?-?\d", text):  # an SVG path
+        return False
+    # A sentence is a sentence wherever it stands: no context hides one.
+    if len(tokens) > 2 and (re.match(r"\s*[A-Z][a-z]", text) or re.search(r"[a-z][.!?…]\s*$", text)):
+        return True
+    if CODE_BEFORE.search(before):
+        return False
+    if all(t.strip(",") in HTML_NAMES for t in tokens):  # a selector
+        return False
+    alone = len(tokens) == 1
+    if all(re.fullmatch(r"[a-z0-9_.#/:()@*…=-]+,?", t) for t in tokens) and any(technical(t, alone) for t in tokens):
+        return False
+    if CONFIG_OR_SHELL.search(text):
+        return False
+    if re.match(r"\s*[^A-Za-z]{0,2}[A-Z][a-z]", text) or not alone:
+        return True
+    if alone and text != tokens[0]:  # a piece of a sentence: "to ", ", in ", " draft"
+        return True
+    return bool(TEXT_BEFORE.search(before))
 
 
 def contract_error_codes():
@@ -606,7 +669,10 @@ def contract_error_codes():
     if not os.path.exists(path):
         return None
     part = re.search(r"(?ms)^### 1\.3.*?^### 1\.4", read(path))
-    return set(re.findall(r"(?m)^\| \d{3} \| `([a-z_]+)`", part.group(0))) if part else None
+    codes = set(re.findall(r"(?m)^\| \d{3} \| `([a-z_]+)`", part.group(0))) if part else set()
+    if not codes:
+        finding(path, 1, "the table of error codes in §1.3 was not found")
+    return codes
 
 
 def check_error_words(english):
@@ -677,7 +743,7 @@ def check_i18n(write, release=False, notes=None):
             if key not in english:
                 finding(path, lineno, "M.t key %r is not in i18n/en.json" % key)
         if f not in STRINGS_EXEMPT:
-            counts[f] = sum(1 for _, text in literals if prose(text))
+            counts[f] = sum(1 for _, text, before in literals if prose(text, before))
     check_error_words(english)
     for key in sorted(set(english) - used):
         finding(os.path.join(I18N, "en.json"), 1, "key %r is used nowhere" % key)

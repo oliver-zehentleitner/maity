@@ -61,8 +61,9 @@ window.Maity = window.Maity || {};
     // The two languages of §6.2: this page's, and the one agents write in, which starts as the
     // first of the browser's the hub offers.
     // The agents' language stays what the person made it, whatever the page's becomes.
+    // Not chosen yet, it starts at the page's, in case the list of languages cannot be had.
     let pickedLanguage = !!kept.language;
-    const picker = M.languagePicker("register-language", kept.language || "en");
+    const picker = M.languagePicker("register-language", kept.language || M.i18n.language);
     kept = { address: "", language: null };
     picker.select.addEventListener("change", () => { pickedLanguage = true; });
     const site = M.interfacePicker("register-interface", M.i18n.language, false);
