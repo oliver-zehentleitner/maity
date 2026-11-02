@@ -1332,6 +1332,14 @@ file, the page reads `fixtures/fixtures.js`, a generated bundle of the
 JSON files. After editing a fixture, run `make fixtures`; `make check`
 fails while the bundle is stale.
 
+`make check` also compares the fixture hub's answers to the requests in
+`tools/shape-requests.json` with the hub's, recorded in
+`tools/hub-shapes.json`: a key or type the hub does not send is a
+finding, unless `tools/fixture-shapes-baseline.json` lists it, which only
+shrinks. After a change to the hub's answers, run `make shapes`
+(`HUB_PYTHON=` a Python with the hub's test requirements) and commit the
+file (`context/fixtures.md`).
+
 ## Words: the text catalog
 
 The dashboard's sentences come from a catalog per language,
