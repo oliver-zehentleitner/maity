@@ -10029,6 +10029,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     for (let k = 0; k < 4; k++) await tick();
     expect(apHead.querySelector(".door-title").textContent === "Welcome" && apHead.querySelectorAll(".door-points li").length === 1 && !!apHead.querySelector(".door-note"),
       "pitch: the hub's words replace the heading and add what is set");
+    // After a sign-out or an ended session, the commonest way to /login: the call is public, so it still goes out.
+    win.Maity.api.endSession();
+    const apAfter = win.Maity.authPages.pitch("sign_in", "Sign in");
+    for (let k = 0; k < 4; k++) await tick();
+    expect(apAfter.querySelector(".door-title").textContent === "Welcome", "pitch: shown after the session ended, too");
+    await win.Maity.api.get("/auth/session");
     const apGet = win.Maity.api.get;
     win.Maity.api.get = () => Promise.reject(new Error("offline"));
     const apFailed = win.Maity.authPages.pitch("sign_in", "Sign in");

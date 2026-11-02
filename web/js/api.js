@@ -4673,7 +4673,7 @@ window.Maity = window.Maity || {};
   // visitor by design; every other /auth/* call is the session's own.
   // The path carries its query (the device-login wait, ?wait=0): a public
   // route ends at the path, whatever query follows.
-  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code)|legal|openapi\.json|invitations\/[^/?]+)(\?|$)/;
+  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code)|auth\/pages\/[^/?]+|legal|openapi\.json|invitations\/[^/?]+)(\?|$)/;
 
   // Every page of a list, following next_cursor (docs/api.md §1.4).
   async function getAll(path) {
