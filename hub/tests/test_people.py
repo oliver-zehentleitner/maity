@@ -55,6 +55,8 @@ def _serve(engine: Engine, kind: str, target_id: str, path: str) -> None:
             body="<html></html>",
             inputs="x",
             lastmod=clock.now(),
+            view="person",
+            data={},
         )
 
 
