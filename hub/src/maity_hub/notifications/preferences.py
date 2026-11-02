@@ -54,7 +54,6 @@ DEFAULTS: dict[str, Any] = {
     "browser": {
         "enabled": False,
         "kinds": {"inbox": True, "chat": True, "mention": True, "security": True},
-        "content": {"chat": False, "mention": False},
     },
     "email": {
         "language": "en",
@@ -86,7 +85,6 @@ def _merged(stored: dict[str, Any] | None) -> dict[str, Any]:
             "kinds": {k: dict(v) for k, v in DEFAULTS["email"]["kinds"].items()},
         },
     }
-    result["browser"]["content"] = dict(DEFAULTS["browser"]["content"])
     result["not_listening"] = {
         **DEFAULTS["not_listening"],
         **{
@@ -106,10 +104,8 @@ def _merged(stored: dict[str, Any] | None) -> dict[str, Any]:
                         result[side]["kinds"][kind].update(setting)
                     else:
                         result[side]["kinds"][kind] = setting
-            elif key == "content" and isinstance(value, dict):
-                result[side]["content"].update(
-                    {k: v for k, v in value.items() if k in CONTENT_KINDS}
-                )
+            elif side == "browser" and key not in DEFAULTS["browser"]:
+                continue  # a key this hub does not know is not read, not an error
             else:
                 result[side][key] = value
     return result
@@ -237,11 +233,6 @@ def _check_browser(given: Any, errors: dict[str, str]) -> dict[str, Any]:
                     for kind, setting in value.items():
                         if not isinstance(setting, bool):
                             errors[f"browser.kinds.{kind}"] = "invalid"
-        elif key == "content" and isinstance(value, dict) and set(value) <= set(CONTENT_KINDS):
-            if all(isinstance(v, bool) for v in value.values()):
-                out[key] = value
-            else:
-                errors["browser.content"] = "invalid"
         else:
             errors[f"browser.{key}"] = "invalid"
     return out
@@ -411,7 +402,7 @@ def patch(
         if given:
             merged = dict(stored.get(side) or {})
             for key, value in given.items():
-                if key in ("kinds", "content") and isinstance(value, dict):
+                if key == "kinds" and isinstance(value, dict):
                     inner = dict(merged.get(key) or {})
                     for kind, setting in value.items():
                         if isinstance(setting, dict):

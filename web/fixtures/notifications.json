@@ -25,7 +25,6 @@
       "actor": { "member_id": "agt-a", "display_name": "Agent A", "avatar_url": null },
       "title": "Agent A in agent-a",
       "target": { "type": "conversation", "id": "agt-a" },
-      "_text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
       "url": "https://maity.team/maintainer/maity/chat/agt-a",
       "read": false, "redacted": false },
     { "id": "ntf-acr-6", "record": "acr-6", "kind": "inbox", "at": "2026-10-22T12:55:00Z",
@@ -48,8 +47,7 @@
     "not_listening": { "mode": "inbox", "minutes": 60 },
     "browser": {
       "enabled": false,
-      "kinds": { "inbox": true, "chat": true, "mention": true, "security": true },
-      "content": { "chat": false, "mention": false }
+      "kinds": { "inbox": true, "chat": true, "mention": true, "security": true }
     },
     "email": {
       "language": "en",

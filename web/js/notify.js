@@ -277,10 +277,9 @@ window.Maity = window.Maity || {};
           if (x.read || shown.has(x.id) || !known(x) || !b.kinds[x.kind]) return;
           if (x.actor && x.actor.member_id === config.ctx.me.id) return;
           shown.add(x.id);
-          const withText = b.content && b.content[x.kind] && typeof x.content === "string";
           const note = new window.Notification(x.redacted ? "Maity" : x.title, {
             tag: x.id,
-            body: (x.project ? x.project.name : "") + (withText ? "\n" + x.content.slice(0, 120) : ""),
+            body: x.project ? x.project.name : "",
           });
           note.onclick = () => { window.focus(); M.route.go(linkOf(x)); note.close(); };
         });

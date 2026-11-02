@@ -10063,22 +10063,6 @@
     "en": "4470ee918e861af5",
     "text": "755244ab3e57195f"
   },
-  "notify.content.chat": {
-    "en": "9869dc4dc6c8c4c8",
-    "text": "fe77527fe5dfa851"
-  },
-  "notify.content.hint": {
-    "en": "af72e0a633a8bec4",
-    "text": "fea4923627890e53"
-  },
-  "notify.content.legend": {
-    "en": "9e9dda645641944f",
-    "text": "cb53bd3a50adc9b4"
-  },
-  "notify.content.mention": {
-    "en": "909c94c2eb0b9444",
-    "text": "703526c2125ec6cd"
-  },
   "notify.kind.chat": {
     "en": "70132db1e9c6612a",
     "text": "cf0bbab92556bcc6"

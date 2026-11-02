@@ -5099,7 +5099,6 @@ window.MAITY_FIXTURES = {
         "url": "https://maity.team/maintainer/maity/board?task=tsk-0004"
       },
       {
-        "_text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
         "actor": {
           "avatar_url": null,
           "display_name": "Agent A",
@@ -5175,10 +5174,6 @@ window.MAITY_FIXTURES = {
     ],
     "settings": {
       "browser": {
-        "content": {
-          "chat": false,
-          "mention": false
-        },
         "enabled": false,
         "kinds": {
           "chat": true,

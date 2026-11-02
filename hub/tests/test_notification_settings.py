@@ -33,7 +33,6 @@ def test_the_defaults_and_who_reads_them(make_client: ClientFactory, migrated: E
     assert got["browser"] == {
         "enabled": False,
         "kinds": {"inbox": True, "chat": True, "mention": True, "security": True},
-        "content": {"chat": False, "mention": False},
     }
     email = got["email"]
     assert email["address"] is None and email["address_status"] == "none"
@@ -67,7 +66,7 @@ def test_the_defaults_and_who_reads_them(make_client: ClientFactory, migrated: E
         ({"email": {"quiet_hours": {"from": "22:00"}}}, {"email.quiet_hours": "invalid"}),
         ({"email": {"language": "xx"}}, {"email.language": "invalid"}),
         ({"browser": {"kinds": {"inbox": "yes"}}}, {"browser.kinds.inbox": "invalid"}),
-        ({"browser": {"content": {"inbox": True}}}, {"browser.content": "invalid"}),
+        ({"browser": {"content": {"chat": True}}}, {"browser.content": "invalid"}),
         ({"browser": {"kinds": {"card": True}}}, {"browser.kinds.card": "unknown"}),
         ({"browser": {"kinds": {"nope": True}}}, {"browser.kinds.nope": "unknown"}),
         ({"email": {"kinds": {"ticker": {"mode": "off"}}}}, {"email.kinds.ticker": "unknown"}),
@@ -91,7 +90,7 @@ def test_preferences_change_key_by_key(make_client: ClientFactory, migrated: Eng
     got = owner.patch(
         S,
         {
-            "browser": {"enabled": True, "kinds": {"chat": False}, "content": {"chat": True}},
+            "browser": {"enabled": True, "kinds": {"chat": False}},
             "email": {
                 "kinds": {"chat": {"mode": "off"}},
                 "timezone": "Europe/Vienna",
@@ -107,7 +106,7 @@ def test_preferences_change_key_by_key(make_client: ClientFactory, migrated: Eng
         "mention": True,
         "security": True,
     }
-    assert got["browser"]["enabled"] is True and got["browser"]["content"]["chat"] is True
+    assert got["browser"]["enabled"] is True
     assert got["email"]["kinds"]["chat"] == {"mode": "off", "content": False}
     assert got["email"]["kinds"]["mention"] == {"mode": "immediate", "content": False}
     assert got["email"]["timezone"] == "Europe/Vienna" and got["email"]["language"] == "de"
@@ -148,12 +147,12 @@ def test_mail_available_follows_the_instance_settings(
     assert owner.get(S).json()["mail_available"] is True
 
 
-def test_a_stored_content_of_another_kind_is_not_read() -> None:
+def test_a_stored_browser_content_is_not_read() -> None:
     from maity_hub.notifications import preferences
 
-    merged = preferences._merged({"browser": {"content": {"chat": True, "inbox": True}}})
-    assert "inbox" not in merged["browser"]["content"]
-    assert merged["browser"]["content"]["chat"] is True
+    merged = preferences._merged({"browser": {"enabled": True, "content": {"chat": True}}})
+    assert merged["browser"]["enabled"] is True
+    assert "content" not in merged["browser"]
 
 
 def test_a_patch_hit_by_a_deadlock_runs_again(

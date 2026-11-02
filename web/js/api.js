@@ -1692,13 +1692,9 @@ window.Maity = window.Maity || {};
         if (!KINDS.includes(k)) fail(400, "invalid", "the request does not validate", path, { fields: { kind: "unknown" } });
       });
       const projects = query.get("project") ? query.get("project").split(",") : null;
-      const allowed = n.settings.browser.content || {};
-      // content only on chat and mention, and only when the settings allow it (§18.2).
       const view = (x) => {
         const out = Object.assign({}, x);
-        delete out._text;
         delete out.open_matter;
-        if (x._text && allowed[x.kind]) out.content = x._text.replace(/\s+/g, " ").slice(0, 120);
         return out;
       };
       const items = n.items.filter((x) => (query.get("unread") !== "true" || !x.read)
@@ -2040,10 +2036,6 @@ window.Maity = window.Maity || {};
       Object.entries(b.kinds || {}).forEach(([k, v]) => {
         if (!(k in set.browser.kinds)) fail(400, "invalid", "unknown kind", path, { fields: { ["browser.kinds." + k]: "unknown" } });
         set.browser.kinds[k] = !!v;
-      });
-      Object.entries(b.content || {}).forEach(([k, v]) => {
-        if (!(k in set.browser.content)) fail(400, "invalid", "no content for this kind", path, { fields: { ["browser.content." + k]: "unknown" } });
-        set.browser.content[k] = !!v;
       });
       return set;
     }],

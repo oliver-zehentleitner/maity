@@ -257,3 +257,36 @@ scan every event of every project.
   one addressee keeps one request per outage.
 - Keep card watches as a notification source: that is the activity log
   again; the watch stays as a board feature.
+
+## A browser notification says who and where, never a message's text
+
+**Id:** c44871c6-9d74-481b-892b-184e1ea518f5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the team lead's decision of 2026-11-02 on card tsk-jgntbtxb9jaj.
+**Revisit when:** someone wants a message's text in browser notifications.
+
+The setting `browser.content` and the items' `content` field are gone
+from the contract, the hub and the dashboard. The hub never filled that
+field, so the switch saved and changed nothing. A message's text in a
+browser notification can appear on a locked screen, which makes it a
+privacy question that needs its own decision. The mail's `content`
+switches stay: the mailer uses them.
+
+A value already stored stays in `preferences` unread: `_merged` reads
+only the browser keys it knows, and the value is only `true` or `false`.
+A `PATCH` that still names `browser.content` is refused as `invalid`, so
+a stale tab learns its switch did nothing, and only that one save fails.
+
+**Reason:** a setting that does nothing must not stand, and filling the
+field would have decided the privacy question in passing.
+
+**Rejected alternatives:**
+- Accept and drop a written `browser.content` for a transition: a `200`
+  would tell an old client the setting was saved when nothing changed.
+- Fill the field in the hub before the launch: it decides the privacy
+  question by implementation.
+- Leave the switch in place: it promises what nothing does.
+- A data migration that deletes the stored key: more work and risk for a
+  boolean nobody reads.
