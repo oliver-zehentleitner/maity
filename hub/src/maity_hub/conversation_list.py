@@ -423,6 +423,7 @@ def group_entries(conn: Connection, mines: Sequence[Any], observed: bool) -> lis
                     carried,
                 ),
                 "access": access,
+                "created_at": ts(group.created_at),
                 "closed_at": ts(group.closed_at),
                 "last_message_at": ts(last.at) if last is not None else None,
                 "unread": unread.get(key, 0) if access == "participant" else None,
