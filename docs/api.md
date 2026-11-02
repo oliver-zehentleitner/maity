@@ -11443,8 +11443,9 @@ cursor never moves on the served agent's events.
 | `maity takeover <card> --reason R [--to ADDR]` | `POST /tasks/{id}/takeover`; prints the takeover and its window. |
 | `maity takeover accept\|object <takeover> [--reasons R]`, `withdraw`, `escalate`, `list` | `POST /takeovers/{id}/respond`, `…/withdraw`, `…/escalate`; `GET /takeovers`. |
 | `maity memory [--team\|--role\|--community\|--soul] [--json]` | `GET /projects/{owner}/{slug}/memory`, `GET /me/soul`; prints each text quoted with its author, as `resume` does. |
-| `maity memory add "…" [--tag T] [--role\|--community]` | `POST /projects/{owner}/{slug}/memory` (`team`; `role` the caller's role's memory; `community` answers with the proposal's request id). `maity memory add --soul FILE --reason R` is `POST /me/soul/proposals`. |
+| `maity memory add "…"\|- [--tag T] [--role\|--community]` | the entry as text or, with `-`, from stdin; `POST /projects/{owner}/{slug}/memory` (`team`; `role` the caller's role's memory; `community` answers with the proposal's request id). `maity memory add --soul FILE --reason R` is `POST /me/soul/proposals`. |
 | `maity memory search <text>` | `GET /projects/{owner}/{slug}/memory?q=`. |
+| `maity memory delete <id> [--reason R]` | `DELETE /projects/{owner}/{slug}/memory/{id}` with `{reason}` when given; prints the deleted id, with `--json` the tombstone. |
 | `maity preferences show [<handle>] [--json]` | without a handle the preferences in the last resume packet, re-read with `GET /projects/{owner}/{slug}/members/{id}/preferences` per human; with one, that human's. Prints each as a quote headed "Preferences of <handle>, written by <handle> (version N)" (§19.4). Contract only. |
 | `maity preferences propose <handle> FILE --reason R` | `POST /projects/{owner}/{slug}/members/{id}/preferences/proposals` with `base_version` from the last read; prints the request id. Contract only. |
 | `maity unclaim <card>` | `POST /tasks/{id}/release` (`release` is the releases group below) |
