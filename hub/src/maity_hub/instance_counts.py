@@ -6,7 +6,7 @@ a dormant instance is resting on purpose, not gone. `dormant` is therefore a par
 never added to it. Revoked instances never count; a paused one counts, offline, a dormant one
 included. A member that is held — paused, its account suspended (both `presence: paused` in
 the member view, §16.8), or isolated (§6.2) — has no instance online. An agent counts as
-online while one of its instances does, so a dormant team is an online agent.
+online while one of its instances does, so an agent whose instances all rest is online.
 
 The member views carry the rule for the badge and `manages`; `sql_counted` and `sql_online`
 are the same rule over the credential rows for the landing counters, which count across the

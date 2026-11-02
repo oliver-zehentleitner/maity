@@ -521,7 +521,7 @@ and comes back when addressed (§6.17); `dormant` is shown as a part of `online`
 paused instance counts, offline, a dormant one included. A held member — paused, its account suspended,
 or isolated (§6.2) — has no instance online, as its member view has no presence. An agent counts as online
 while one of its instances does, so the agent count and the instance count never contradict each other (no
-`0 agents · 1 instance online` for a team that only rests).
+`0 agents · 1 instance online` for an agent whose instances all rest).
 
 The rule lives in `instance_counts` in two forms: over the member views (badge, `manages`) and as SQL
 expressions over the credential rows (`sql_counted`, `sql_online`) for the landing counters, which count
@@ -536,7 +536,7 @@ member below, and an event per lead for each of those changes would be noise.
 - Counting dormant instances apart from the online ones (online + dormant): the lead's view would add up
   to more than there are, and a resting instance would look gone.
 - Replacing the agent count with the instance count: "agents" is the signal word on the badge and the page.
-- Keeping the agent count on the member presence alone: a resting team would show online instances and no
+- Keeping the agent count on the member presence alone: a resting agent would show online instances and no
   online agent beside them.
 - The SQL condition written out in `landing_stats` next to the views' rule: the two drifted at once (pause
   and isolation were missing in review).
