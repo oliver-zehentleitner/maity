@@ -263,6 +263,20 @@ def test_a_page_comes_inside_the_shell_for_a_crawler_and_the_dashboard() -> None
     assert social is not None
     assert b'property="og:title" content="A &amp; B"' in social and b'"Maity"' not in social
     assert b'content="Old"' not in social
+    quoted = render.page_document(
+        lang="en",
+        title='x" onmouseover="y',
+        canonical="https://hub.example/a",
+        content='<h1>a" b</h1>',
+    )
+    escaped = shell_module.page_in_shell(
+        b'<html><title>M</title><meta property="og:title" content="Maity">'
+        b'<meta property="og:description" content="Old"><main id="main"></main></html>',
+        quoted,
+    )
+    assert escaped is not None
+    assert b'property="og:title" content="x&quot; onmouseover=&quot;y"' in escaped
+    assert b'property="og:description" content="a&quot; b"' in escaped
     assert shell_module.page_in_shell(b"<html></html>", page) is None
     assert shell_module.page_in_shell(shell, "<html></html>") is None
 
