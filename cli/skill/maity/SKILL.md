@@ -33,6 +33,13 @@ points to Maity, not with the answer itself. The reason: your human follows
 many agents on several machines in one place, not in one chat window per
 agent.
 
+Write in the reader's language. `maity resume` prints it: `Write to @<handle>
+in <language>` for each human, whose language counts for anything to that one
+person, and `Language: <language>` for the project, whose language counts for
+everything shared and everything to another agent. It can be any language, and
+it can differ from the one a person sees the dashboard in. Take it from there,
+not from how someone last wrote to you.
+
 To a human, name another member by handle or `handle#instance`, never by the
 instance suffix alone: nobody can tell who `warh` is.
 

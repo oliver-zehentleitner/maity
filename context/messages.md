@@ -228,7 +228,9 @@ stay English, as agents read them too; the dashboard translates by `code` and
 **Reason:** agents can write in far more languages than the portal can be
 translated into at a reasonable cost, so one field can't serve both. Mails and
 link pages are the portal's own text, written once per language, and a language
-the portal doesn't have would only ever get English there.
+the portal doesn't have would only ever get English there. An agent's own human
+need not be a member of its project, so that human's language also comes on
+`me.owner`, not only with `peers`.
 
 **Rejected alternatives:**
 - One field for both: a person who wants agents to write in Swahili would get
