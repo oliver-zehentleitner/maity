@@ -7,12 +7,13 @@ import hashlib
 import threading
 import time
 from collections.abc import Callable, Iterator
+from types import SimpleNamespace
 
 import psycopg
 import pytest
 from sqlalchemy import Engine, text
 
-from maity_hub import events, longpoll, wakeups
+from maity_hub import events, github_app, ktw, longpoll, wakeups
 from maity_hub.db import APPLICATION_LISTENER
 from tests import factory
 
@@ -365,3 +366,82 @@ def test_the_later_arrival_takes_over_where_no_clock_decides() -> None:
 
     first, second = asyncio.run(waiting())
     assert first.superseded and not second.superseded
+
+
+def _forget_notice(engine: Engine, payload: str) -> None:
+    """What another replica's commit sends."""
+    with engine.begin() as conn:
+        wakeups.announce_forget(conn, payload)
+
+
+def test_a_token_removed_on_another_replica_goes_from_this_one(
+    postgres: Engine, listener: wakeups.Listener
+) -> None:
+    key = ("app-1", 7)
+    github_app._tokens[key] = ("a token", time.time() + 3000)
+    github_app._tokens[("app-1", 8)] = ("another", time.time() + 3000)
+    _forget_notice(postgres, "token:app-1:7")
+    try:
+        assert _until(lambda: key not in github_app._tokens)
+        assert ("app-1", 8) in github_app._tokens
+    finally:
+        github_app._tokens.clear()
+
+
+def test_a_repository_changed_on_another_replica_goes_from_this_one(
+    postgres: Engine, listener: wakeups.Listener
+) -> None:
+    ktw.CACHE.entries["prj-1"] = object()  # type: ignore[assignment]
+    ktw.CACHE.entries["prj-2"] = object()  # type: ignore[assignment]
+    _forget_notice(postgres, "repository:prj-1")
+    try:
+        assert _until(lambda: "prj-1" not in ktw.CACHE.entries)
+        assert "prj-2" in ktw.CACHE.entries
+    finally:
+        ktw.CACHE.entries.clear()
+
+
+def test_a_notice_lost_with_the_connection_forgets_everything(
+    postgres: Engine, listener: wakeups.Listener
+) -> None:
+    github_app._tokens[("app-1", 7)] = ("a token", time.time() + 3000)
+    ktw.CACHE.entries["prj-1"] = object()  # type: ignore[assignment]
+    listener.listening.clear()
+    with postgres.connect() as conn:
+        conn.execution_options(isolation_level="AUTOCOMMIT").execute(
+            text(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE application_name = :name AND datname = current_database()"
+            ),
+            {"name": APPLICATION_LISTENER},
+        )
+    assert _until(lambda: not github_app._tokens and not ktw.CACHE.entries)
+
+
+def test_only_ids_go_through_the_channel_and_at_commit(postgres: Engine) -> None:
+    app = SimpleNamespace(app_id="app-1")
+    github_app._tokens[("app-1", 7)] = ("a secret token", time.time() + 3000)
+    with psycopg.connect(_url(postgres).replace("+psycopg", ""), autocommit=True) as watch:
+        watch.execute(f"LISTEN {wakeups.FORGET}")
+        with pytest.raises(RuntimeError, match="abort"), postgres.begin() as conn:
+            wakeups.forget_token_everywhere(conn, app, 9)  # type: ignore[arg-type]
+            raise RuntimeError("abort")
+        with postgres.begin() as conn:
+            wakeups.forget_token_everywhere(conn, app, 7)  # type: ignore[arg-type]
+        payloads = [n.payload for n in watch.notifies(timeout=2, stop_after=2)]
+    assert payloads == ["token:app-1:7"]
+    assert ("app-1", 7) not in github_app._tokens
+
+
+@pytest.mark.parametrize("payload", ["", "token:", "token:app:x", "repository:", "other:1"])
+def test_a_notice_that_names_nothing_is_ignored(payload: str) -> None:
+    wakeups.forgotten(payload)
+
+
+def test_elsewhere_the_token_goes_and_nothing_is_announced(migrated: Engine) -> None:
+    if migrated.dialect.name == "postgresql":
+        pytest.skip("PostgreSQL announces")
+    github_app._tokens[("app-1", 7)] = ("a token", time.time() + 3000)
+    with migrated.begin() as conn:
+        wakeups.forget_token_everywhere(conn, SimpleNamespace(app_id="app-1"), 7)  # type: ignore[arg-type]
+    assert ("app-1", 7) not in github_app._tokens

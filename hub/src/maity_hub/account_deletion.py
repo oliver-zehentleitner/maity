@@ -30,12 +30,12 @@ from sqlalchemy import Connection, delete, func, insert, select, update
 
 from maity_hub import (
     clock,
-    github_app,
     invitations,
     namespace,
     orgs,
     placements,
     public_pages,
+    wakeups,
     write_guard,
 )
 from maity_hub import tables as t
@@ -523,7 +523,7 @@ def _end_access(conn: Connection, hub: Settings, human_id: str) -> None:
     conn.execute(delete(t.forge_link).where(t.forge_link.c.human_id == human_id))
     if hub.github_app is not None:  # an installation's cached token, as an unlink drops it
         for installation_id in installations:
-            github_app.forget_token(hub.github_app, installation_id)
+            wakeups.forget_token_everywhere(conn, hub.github_app, installation_id)
     conn.execute(delete(t.email_sign_in).where(t.email_sign_in.c.human_id == human_id))
     conn.execute(delete(t.email_sign_in_day).where(t.email_sign_in_day.c.human_id == human_id))
     conn.execute(

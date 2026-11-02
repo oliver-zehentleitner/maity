@@ -28,7 +28,7 @@ from typing import Any
 
 from sqlalchemy import Engine, select, update
 
-from maity_hub import bounded, clock, forge, forge_links, github_app, secretbox
+from maity_hub import bounded, clock, forge, forge_links, github_app, secretbox, wakeups
 from maity_hub import tables as t
 from maity_hub.github_app import GitHubApp
 from maity_hub.notifications import records
@@ -172,6 +172,7 @@ class ForgeAccess:
         except github_app.InstallationGoneError as gone:
             with self.engine.begin() as conn:
                 forge_links.set_status(conn, link_id, gone.state)
+                wakeups.forget_token_everywhere(conn, self.app, installation_id)
             return None, f"installation_{gone.state}"
         if status != "active":
             with self.engine.begin() as conn:
