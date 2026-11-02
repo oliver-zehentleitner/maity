@@ -395,5 +395,5 @@ window.Maity = window.Maity || {};
   };
   const word = (set, value) => (WORDS[set] && Object.hasOwn(WORDS[set], value) ? WORDS[set][value]() : value);
 
-  M.dom = { word, handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, memberRef, instanceHref, memberChip, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, get SEND_KEYS() { return sendKeys(); }, sendKeysFor, showSendKeys, sendOnCtrlEnter };
+  M.dom = { word, isOwnImage, handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, memberRef, instanceHref, memberChip, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, get SEND_KEYS() { return sendKeys(); }, sendKeysFor, showSendKeys, sendOnCtrlEnter };
 })(window.Maity);

@@ -22,7 +22,8 @@ window.Maity = window.Maity || {};
     if (typeof url !== "string") return null;
     const origin = window.location && window.location.origin && window.location.origin !== "null" ? window.location.origin : "";
     const path = origin && url.startsWith(origin + "/") ? url.slice(origin.length) : url;
-    return /^\/api\/v1\/projects\/[^/?#]+\/[^/?#]+\/logo(\?[^#]*)?$/.test(path) ? path : null;
+    // The same rule as h()'s, so an address it would refuse leaves the mark instead of breaking the page.
+    return /\/logo(\?|$)/.test(path) && M.dom.isOwnImage(path) ? path : null;
   }
 
   async function signedIn() {

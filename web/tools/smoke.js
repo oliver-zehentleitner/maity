@@ -5752,6 +5752,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(hdOnly(), "header: an invitation's header is the bar alone, so the bar's own room below applies");
   const ivLogo = ivPage() && ivPage().querySelector(".invite-project .invite-logo");
   expect(ivLogo && ivLogo.tagName === "IMG" && ivLogo.getAttribute("src") === "/api/v1/projects/maintainer/maity/logo", "invite: the project's logo at the address the hub gives, owner and slug");
+  // The hub names the logo with its public URL; only this hub's own address is drawn, anything else leaves the mark and the page whole.
+  const logoGet = win.Maity.api.get, ivOrigin = win.location.origin, ivLogos = [];
+  win.location.origin = "https://maity.example";
+  for (const url of ["https://maity.example/api/v1/projects/maintainer/maity/logo", "https://evil.example/api/v1/projects/maintainer/maity/logo",
+    "https://maity.example.evil/api/v1/projects/maintainer/maity/logo", "//evil.example/api/v1/projects/maintainer/maity/logo",
+    "https://maity.example/api/v1/projects/../maity/logo", "https://maity.example/api/v1/projects/%2e%2e/maity/logo",
+    "https://maity.example/api/v1/projects/maintainer/maity/logo?x=1"]) {
+    win.Maity.api.get = (p) => (p.startsWith("/invitations/") ? logoGet(p).then((a) => { a.project = Object.assign({}, a.project, { logo_url: url }); return a; }) : logoGet(p));
+    await win.Maity.redraw(); for (let k = 0; k < 4; k++) await tick();
+    const shown = ivPage() && ivPage().querySelector(".invite-project .invite-logo");
+    ivLogos.push(!ivPage() || !ivPage().querySelector(".invite-ways") ? "broken" : shown && shown.tagName === "IMG" ? shown.getAttribute("src") : "mark");
+  }
+  win.Maity.api.get = logoGet; win.location.origin = ivOrigin;
+  await win.Maity.redraw(); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(ivLogos) === JSON.stringify(["/api/v1/projects/maintainer/maity/logo", "mark", "mark", "mark", "mark", "mark", "mark"]),
+    "invite: the logo at this hub's own absolute address is drawn; another host or a crafted path leaves the mark, the page whole: " + ivLogos.join());
   const ivSignIn = ivPage() && ivPage().querySelectorAll("a").find((a) => text(a) === "Sign in to accept");
   const ivRegister = ivPage() && ivPage().querySelectorAll("a").find((a) => text(a) === "Create one");
   expect(ivPage() && text(ivPage()).includes("Maintainer invites you to join Maity as member · coder.") && text(ivPage().querySelector(".invite-note")) === "You review the web side; D will brief you."
