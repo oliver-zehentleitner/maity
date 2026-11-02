@@ -46,6 +46,7 @@ jobs:
   # change to this workflow, runs everything.
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     outputs:
       hub: ${{ steps.paths.outputs.hub }}
       image: ${{ steps.paths.outputs.image }}
@@ -99,6 +100,7 @@ jobs:
   # docs renderer's Markdown and YAML, on the oldest Python the tools support.
   changelog:
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     defaults:
       run:
         working-directory: .
@@ -123,6 +125,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     defaults:
       run:
         working-directory: web
@@ -209,6 +212,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.contract == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -235,6 +239,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.hub == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -251,6 +256,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.hub == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -263,6 +269,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.image == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     defaults:
       run:
         working-directory: .
@@ -281,6 +288,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.helm == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     defaults:
       run:
         working-directory: .
@@ -296,6 +304,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.join == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     defaults:
       run:
         working-directory: .
@@ -346,6 +355,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.cli == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     strategy:
       matrix:
         python-version: ["3.11", "3.13"]
@@ -365,6 +375,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.cli == 'true'
     runs-on: windows-latest
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     strategy:
       fail-fast: false
       matrix:
@@ -386,6 +397,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.join == 'true'
     runs-on: windows-latest
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     defaults:
       run:
         working-directory: .

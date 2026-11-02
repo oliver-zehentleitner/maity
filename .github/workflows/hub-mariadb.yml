@@ -192,8 +192,11 @@ jobs:
                 echo "not closing issue $num: green at $SHA does not contain the red commit(s):$notin"
               fi
             fi
-          elif [ "$RESULT" = failure ]; then
-            text="hub-mariadb is red at $SHA ($RUN_URL). Last green run was at $BASE; the change is in $BASE..$SHA."
+          # cancelled is red too: nothing here cancels a running job (cancel-in-progress is false), so it is the
+          # job's timeout or a cancel by hand, and either must not end silently.
+          elif [ "$RESULT" = failure ] || [ "$RESULT" = cancelled ]; then
+            how=""; [ "$RESULT" = cancelled ] && how=" (cancelled: the job's timeout of 90 minutes or a cancel by hand)"
+            text="hub-mariadb is red at $SHA$how ($RUN_URL). Last green run was at $BASE; the change is in $BASE..$SHA."
             if [ -n "$num" ]; then
               gh issue comment "$num" --repo "$GITHUB_REPOSITORY" --body "$text"
             else
