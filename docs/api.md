@@ -14262,8 +14262,9 @@ second segment (§16.11), so the address never meets a project.
 is under no moderation hold: an open project names its members, so the
 name leads somewhere (the maintainer's decision of 2026-11-02). Private
 projects never appear on it. `PATCH /me` (human only) sets
-`public_profile` (default `true`; the accounts that existed on
-2026-11-02 were switched to `true`) and `public_bio` (`null` or plain
+`public_profile` (default `true`; the upgrade that brings this
+switches every account existing at that moment to `true`, so an
+operator tells their users first) and `public_bio` (`null` or plain
 text, at most 280 characters; every C0 control character and the
 bidirectional overrides U+202A–U+202E and U+2066–U+2069 are `invalid`
 with `details.fields.public_bio: "control_character"`).

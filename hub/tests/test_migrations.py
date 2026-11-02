@@ -1114,3 +1114,35 @@ def test_the_mail_factor_downgrade_refuses_while_email_is_stored(engine: Engine)
     with engine.begin() as conn:
         conn.execute(t.instance_setting.delete())
     downgrade(engine, _before(engine, revision))
+
+
+def test_profiles_public_switches_every_account_on_and_indexes_every_page(engine: Engine) -> None:
+    """20261102110000 up: every account's `public_profile` is on (§16.9, tsk-my5gvj4warte), a
+    new account defaults to on, and every stored page is `indexed` until it renders again."""
+    migrate(engine, "20261102100000_project_probe_via")
+    with engine.begin() as conn:
+        for n, chosen in (("a", 0), ("b", 1)):
+            conn.exec_driver_sql(
+                "INSERT INTO human (id, handle, display_name, password_hash, created_at, "
+                f"public_profile) VALUES ('hum-{n}', '{n}x', 'N', 'x', '2026-11-01 00:00:00', "
+                f"{chosen})"
+            )
+        conn.exec_driver_sql(
+            "INSERT INTO public_page (path, kind, target_id, body, etag, inputs, lastmod, "
+            "rendered_at) VALUES ('/ax', 'person', 'hum-a', '<p>', 'e', 'i', "
+            "'2026-11-01 00:00:00', '2026-11-01 00:00:00')"
+        )
+    migrate(engine)
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "INSERT INTO human (id, handle, display_name, password_hash, created_at) "
+            "VALUES ('hum-c', 'cx', 'N', 'x', '2026-11-02 00:00:00')"
+        )
+        profiles = conn.exec_driver_sql("SELECT id, public_profile FROM human ORDER BY id").all()
+        indexed = conn.exec_driver_sql("SELECT indexed FROM public_page").scalar_one()
+    assert [(i, bool(v)) for i, v in profiles] == [
+        ("hum-a", True),
+        ("hum-b", True),
+        ("hum-c", True),
+    ]
+    assert bool(indexed) is True
