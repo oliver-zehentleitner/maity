@@ -778,23 +778,28 @@ def _preference_lines(text: dict[str, Any]) -> list[str]:
     ]
 
 
-def _preferences(packet: dict[str, Any]) -> list[str]:
-    """Each human's `preferences` (§5.2, §19.4), below the rules in rank; the hub's notice says
-    so. Empty when no human has any."""
+def _preferences_intro(block: dict[str, Any], changed: bool = True) -> list[str]:
+    """The hub's notice that these texts rank below the rules, and whether they changed."""
+    lines = [inline(block["notice"])] if block.get("notice") else []
+    if changed and block.get("changed_since_cursor"):
+        lines.append("Changed since your last session.")
+    return lines
+
+
+def _preferences(packet: dict[str, Any], owner_shown: bool) -> list[str]:
+    """Each human's `preferences` (§5.2, §19.4), below the rules in rank. `owner_shown`: the
+    owner's text came first and already said whether they changed. Empty when nothing is to
+    say."""
     block = _dict(packet.get("preferences"))
-    texts = _items(block.get("items"))
     lines: list[str] = []
+    texts = _items(block.get("items"))
     if texts:
-        lines += [""]
-        if block.get("notice"):
-            lines.append(inline(block["notice"]))
-        if block.get("changed_since_cursor"):
-            lines.append("Changed since your last session.")
-        for text in texts:
-            lines += _preference_lines(text)
+        lines += _preferences_intro(block, changed=not owner_shown)
+    for text in texts:
+        lines += _preference_lines(text)
     if block.get("truncated"):
         lines.append("The preferences of further humans were cut (at most 8 texts).")
-    return lines
+    return ["", *lines] if lines else []
 
 
 def is_admin(packet: dict[str, Any]) -> bool:
@@ -1037,8 +1042,11 @@ def render(packet: Any, first: bool = False, board_empty: bool = False, full: bo
             )
         out += [line, ""]
     given = ms.get("owner_preferences")
+    owner_shown = isinstance(given, dict)
     if isinstance(given, dict):
-        out += [*_preference_lines(given), ""]
+        # The hub leaves the owner out of `preferences`, so these may be the only ones printed.
+        intro = _preferences_intro(_dict(packet.get("preferences")))
+        out += [*intro, *_preference_lines(given), ""]
     out += _who(packet, names)
     out += _project(packet)
     out += _languages(packet, names)
@@ -1048,7 +1056,7 @@ def render(packet: Any, first: bool = False, board_empty: bool = False, full: bo
         out += quote(rules["markdown"])
     elif rules.get("version") is not None:
         out += ["", f"Rules version {inline(rules['version'])}, unchanged since your last session."]
-    out += _preferences(packet)
+    out += _preferences(packet, owner_shown)
     instruction = get(packet, "keep_the_why", "instruction")
     if instruction and get(packet, "keep_the_why", "enabled"):
         out += ["", f"Keep the Why: {inline(instruction)}"]
