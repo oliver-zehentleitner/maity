@@ -64,7 +64,7 @@ def shell_document(page: bytes, public_url: str) -> bytes:
 
 _PAGE = re.compile(
     r"<title>(?P<title>.*?)</title>(?P<meta><meta name=\"description\"[^>]*>)?"
-    r"(?P<canonical><link rel=\"canonical\"[^>]*>).*"
+    r"(?P<canonical><link rel=\"canonical\"[^>]*>)(?P<robots><meta name=\"robots\"[^>]*>)?.*"
     r"<main class=\"wrap\">(?P<main>.*)</main></body>",
     re.DOTALL,
 )
@@ -84,7 +84,7 @@ def page_in_shell(shell: bytes, body: str) -> bytes | None:
     if found is None or not (_SHELL_TITLE.search(shell) and _SHELL_MAIN.search(shell)):
         return None
     title = f"<title>{found['title']}</title>".encode()
-    head = found["canonical"].encode()
+    head = found["canonical"].encode() + (found["robots"] or "").encode()  # `noindex` stays
     described = found["meta"].encode() if found["meta"] else b""
     done = _SHELL_DESCRIPTION.sub(lambda _: described, shell, count=1)
     # A shared link shows the page's name and text, already escaped in the stored document.

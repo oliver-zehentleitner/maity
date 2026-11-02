@@ -56,6 +56,7 @@ def put(
     lastmod: datetime,
     view: str,
     data: dict[str, Any],
+    indexed: bool = True,
 ) -> None:
     """Store the page of `path`, replacing the one there."""
     conn.execute(delete(t.public_page).where(t.public_page.c.path == path))
@@ -71,6 +72,7 @@ def put(
             rendered_at=clock.now(),
             view=view,
             data=data,
+            indexed=indexed,
         )
     )
 
@@ -92,6 +94,11 @@ def remove(conn: Connection, kind: str, target_id: str) -> int:
 def clear(conn: Connection) -> int:
     """Delete every page: the next render starts from the inputs as they are."""
     return int(conn.execute(delete(t.public_page)).rowcount)
+
+
+def _robots(page: Any) -> dict[str, str]:
+    """A page kept out of search says so in its header as well as in its HTML (§16.9)."""
+    return {} if page.indexed else {"X-Robots-Tag": "noindex"}
 
 
 def answer(
@@ -124,9 +131,9 @@ def answer(
     # a crawler reads the status, not what the app would draw.
     from maity_hub import maintenance
 
-    refused = maintenance.running_page(engine_of(request))
-    if refused is not None:
-        return refused  # type: ignore[no-any-return]
+    window = maintenance.window_now(engine_of(request))
+    if window is not None and window["state"] == "running":
+        return maintenance.refusal_page(window)  # type: ignore[no-any-return]
     wait = BY_ADDRESS.hit(origin_of(request).address)
     if wait:
         raise rate_limited(wait)
@@ -137,25 +144,29 @@ def answer(
         # The shell's files change with a deploy: its digest is part of the tag.
         tag = '"' + hashlib.sha256(shelled).hexdigest() + '"'
         candidates = request.headers.get("if-none-match", "").split(",")
-        wrapped = {"Cache-Control": CACHE, "ETag": tag, "Vary": "Cookie"}
+        wrapped = {"Cache-Control": CACHE, "ETag": tag, "Vary": "Cookie", **_robots(page)}
         if any(c.strip() == "*" or c.strip().removeprefix("W/") == tag for c in candidates):
             return Response(status_code=304, headers=wrapped)
         if request.method == "HEAD":
             return Response(media_type="text/html", headers=wrapped)
         return Response(shelled, media_type="text/html", headers=wrapped)
+    # The banner of an upcoming window is part of the answer, and so of its tag: a cache
+    # holding the page from before (or after) the window gets it again, not a 304.
+    tag = maintenance.etag(page.etag, window)
     headers = {
         "Cache-Control": CACHE,
-        "ETag": page.etag,
+        "ETag": tag,
         "Vary": "Cookie",
         "Content-Security-Policy": CSP,
         "X-Content-Type-Options": "nosniff",
+        **_robots(page),
     }
     candidates = request.headers.get("if-none-match", "").split(",")
-    if any(tag.strip() == "*" or tag.strip().removeprefix("W/") == page.etag for tag in candidates):
+    if any(c.strip() == "*" or c.strip().removeprefix("W/") == tag for c in candidates):
         return Response(status_code=304, headers=headers)
     if request.method == "HEAD":
         return Response(media_type="text/html", headers=headers)
-    return HTMLResponse(page.body, headers=headers)
+    return HTMLResponse(maintenance.with_banner(page.body, window), headers=headers)
 
 
 def read(request: Request, path: str) -> Response:
@@ -203,6 +214,7 @@ class Page:
     lastmod: datetime
     view: str
     data: dict[str, Any]
+    indexed: bool = True  # false: `noindex` and out of the sitemap (§16.9)
 
 
 @dataclass(frozen=True)
@@ -250,6 +262,7 @@ def refresh(conn: Connection, hub: Settings, kind: str, target_id: str) -> None:
                 t.public_page.c.inputs,
                 t.public_page.c.view,
                 t.public_page.c.data,
+                t.public_page.c.indexed,
                 t.public_page.c.lastmod,
             ).where(t.public_page.c.kind == kind, t.public_page.c.target_id == target_id)
         )
@@ -267,7 +280,7 @@ def refresh(conn: Connection, hub: Settings, kind: str, target_id: str) -> None:
         if (
             stored is None
             or not same_inputs
-            or (stored.view, stored.data) != (page.view, page.data)
+            or (stored.view, stored.data, stored.indexed) != (page.view, page.data, page.indexed)
         ):
             put(
                 conn,
@@ -280,6 +293,7 @@ def refresh(conn: Connection, hub: Settings, kind: str, target_id: str) -> None:
                 lastmod=stored.lastmod if stored is not None and same_inputs else page.lastmod,
                 view=page.view,
                 data=page.data,
+                indexed=page.indexed,
             )
     gone = existing.keys() - {page.path for page in rendered}
     if gone:

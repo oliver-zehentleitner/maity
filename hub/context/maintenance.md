@@ -77,7 +77,7 @@ create, change, cancel and early end with who and when, read through `GET /admin
 **Id:** b0bbdd1f-8166-44e4-905f-94f5e415081b
 **Type:** decision
 **Status:** active
-**Evidence:** confirmed
+**Evidence:** inferred
 **Source:** PR #1204 (card tsk-12hwmpykz2ht) and its reviews of 2026-11-02; docs/api.md §16.12
 **Revisit when:** a sweep acts on a deadline within seconds of it passing, or the hub keeps the window in a shared cache
 

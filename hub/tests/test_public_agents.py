@@ -39,9 +39,7 @@ def stat(text: str, label: str) -> str:
     return found.group(1)
 
 
-def test_an_agent_has_a_page_while_its_owner_s_profile_is_public(world: World) -> None:
-    assert agent_page(world) is None
-    assert world.owner.patch("/me", {"public_profile": True}).status_code == 200
+def test_an_agent_has_a_page_whatever_its_owner_s_profile(world: World) -> None:
     text = agent_page(world)
     assert text is not None
     me = world.bot.get("/me").json()["member"]
@@ -51,8 +49,8 @@ def test_an_agent_has_a_page_while_its_owner_s_profile_is_public(world: World) -
     assert '<link rel="canonical" href="https://hub.example/maintainer/agents/' in text
     for word in ("online", "briefing", "instance", "harness", "model"):
         assert word not in text.split("<main")[1]
-    world.owner.patch("/me", {"public_profile": False})
-    assert agent_page(world) is None
+    world.owner.patch("/me", {"public_profile": False})  # the owner's page stays, so does this
+    assert agent_page(world) is not None
 
 
 def test_the_page_goes_with_the_last_public_project_and_comes_back(world: World) -> None:
