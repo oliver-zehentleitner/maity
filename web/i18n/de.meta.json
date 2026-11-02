@@ -7903,9 +7903,117 @@
     "en": "5a365517fae8bf07",
     "text": "a3ddcbb71cc3b92f"
   },
+  "mail.address.again": {
+    "en": "28d2e9287919c38c",
+    "text": "e93304a8ded5ce3c"
+  },
+  "mail.address.empty": {
+    "en": "765a13fc06daec81",
+    "text": "a5660cd34b3cce6e"
+  },
+  "mail.address.forbidden.not_in_good_standing": {
+    "en": "37058fb06cf84d22",
+    "text": "63fd659d7cd2d6f3"
+  },
+  "mail.address.held": {
+    "en": "54608ec68257813d",
+    "text": "6d4d38d4742d2086"
+  },
+  "mail.address.held_hint": {
+    "en": "7a1ce8ea518f3362",
+    "text": "a8c75f17d88c2126"
+  },
+  "mail.address.held_link": {
+    "en": "df3f663a4e1d8229",
+    "text": "7e143c19562c6af1"
+  },
+  "mail.address.invalid": {
+    "en": "ac788e7333e05270",
+    "text": "fa04d9cffbfb9b46"
+  },
+  "mail.address.label": {
+    "en": "1b55f014dd7afbe6",
+    "text": "a291b88f4a30e82d"
+  },
+  "mail.address.not_configured": {
+    "en": "28806452c74d30f5",
+    "text": "5e57a81796231033"
+  },
+  "mail.address.password": {
+    "en": "d84fe85e83b2f1c5",
+    "text": "eeec47307f6b8201"
+  },
+  "mail.address.password_hint": {
+    "en": "cdf5037879c2a3b1",
+    "text": "59fbbc0bdeb2c2f2"
+  },
+  "mail.address.password_required": {
+    "en": "f1c7881ad0147ef7",
+    "text": "16b901a21c1516e2"
+  },
+  "mail.address.password_wrong": {
+    "en": "c5c700e524545a00",
+    "text": "7108d1411b7b869f"
+  },
+  "mail.address.remove": {
+    "en": "4bb964a877b49813",
+    "text": "0d9b4e580b6214df"
+  },
+  "mail.address.remove_confirm": {
+    "en": "0705b906e96f4596",
+    "text": "09f0ce9936e9b151"
+  },
+  "mail.address.remove_confirm_pending": {
+    "en": "83d937baab856e5d",
+    "text": "6da7854c8c7d889c"
+  },
+  "mail.address.removed": {
+    "en": "4881978a00e00212",
+    "text": "848d2fadcc4d772f"
+  },
+  "mail.address.save": {
+    "en": "cf2adaba7a2d2ddc",
+    "text": "0b402734334585f2"
+  },
+  "mail.address.sending": {
+    "en": "5645010486f7e07b",
+    "text": "bdce4933855eb871"
+  },
+  "mail.address.sent": {
+    "en": "2e6022080b52204e",
+    "text": "31b052dcb497695d"
+  },
+  "mail.address.state.disabled": {
+    "en": "5f307a6159dca639",
+    "text": "97a6b420b6e168ff"
+  },
+  "mail.address.state.none": {
+    "en": "80ed9629ac2aafec",
+    "text": "64c5ebf1e22b5f92"
+  },
+  "mail.address.state.pending": {
+    "en": "0fd529df9ba7894e",
+    "text": "357529ca5fe61e4a"
+  },
+  "mail.address.state.verified": {
+    "en": "a106906d97c532af",
+    "text": "1600a0724f740b39"
+  },
+  "mail.address.title": {
+    "en": "2c30b8cd5f5975cc",
+    "text": "2c30b8cd5f5975cc"
+  },
+  "mail.address.waiting": {
+    "en": "97baadb79214eb29",
+    "text": "7ea6ed2969c7adb5"
+  },
   "mail.complete": {
     "en": "035818ff4e144a85",
     "text": "fc3f8fecef153c15"
+  },
+  "mail.content": {
+    "en": "20c797994c0e339e",
+    "text": "744ee10ead1d463b"
   },
   "mail.count.failures": {
     "en": "567da5e03ff731cc",
@@ -7926,6 +8034,38 @@
   "mail.count.sign_in": {
     "en": "bcc7dccc569cd7b6",
     "text": "d15baa322b987459"
+  },
+  "mail.daily_at": {
+    "en": "369ed1844262c810",
+    "text": "3d57d13c7c298942"
+  },
+  "mail.day.fri": {
+    "en": "53b487dd0f6d2137",
+    "text": "15ac6c96db087541"
+  },
+  "mail.day.mon": {
+    "en": "d9d1db896a843912",
+    "text": "ff4b8a5f72c106ea"
+  },
+  "mail.day.sat": {
+    "en": "24ff9ac02cd8543c",
+    "text": "fcdc5cda3823cde8"
+  },
+  "mail.day.sun": {
+    "en": "2290e166c43ffeb9",
+    "text": "c191a1c3b0591adf"
+  },
+  "mail.day.thu": {
+    "en": "06fb20d3c30fc5dc",
+    "text": "15f3483bd4f20058"
+  },
+  "mail.day.tue": {
+    "en": "e1bc06db3604ce3a",
+    "text": "d9481ac2a8e3f50f"
+  },
+  "mail.day.wed": {
+    "en": "069f5bef5755c804",
+    "text": "ed54a6230bd90695"
   },
   "mail.enable": {
     "en": "56c3ae000c6cb96c",
@@ -7979,9 +8119,65 @@
     "en": "eae1847b0abc187e",
     "text": "022d7231201e0dd0"
   },
+  "mail.kind.chat": {
+    "en": "70132db1e9c6612a",
+    "text": "cf0bbab92556bcc6"
+  },
+  "mail.kind.inbox": {
+    "en": "847f0edf5fd1f88e",
+    "text": "8e31dd7a5b9eb9fa"
+  },
+  "mail.kind.mention": {
+    "en": "c03f431cb5a58f9a",
+    "text": "abc0704f9ec275e1"
+  },
+  "mail.kind.security": {
+    "en": "c045e21f890a12b9",
+    "text": "d7e80ebb32199aad"
+  },
+  "mail.kinds.hint": {
+    "en": "1c00c3142ed92ba0",
+    "text": "dd59b761345c0c6e"
+  },
+  "mail.kinds.legend": {
+    "en": "50b95d1634101d3b",
+    "text": "eed122acb4f18119"
+  },
   "mail.last_hour": {
     "en": "e5837bcc394066d8",
     "text": "60275ed48dc9cf14"
+  },
+  "mail.mode.daily": {
+    "en": "e1bd7da6f2ab099f",
+    "text": "2c2415f07902a062"
+  },
+  "mail.mode.hourly": {
+    "en": "14b7c80523806aba",
+    "text": "06055338a3cab0cb"
+  },
+  "mail.mode.immediate": {
+    "en": "c14dd8f3be624db5",
+    "text": "646f1e79035cd1a5"
+  },
+  "mail.mode.off": {
+    "en": "4c8a208324b4df35",
+    "text": "2cf1a06f97c4131b"
+  },
+  "mail.mode.unknown": {
+    "en": "85d2eff377b4fe3d",
+    "text": "62ed3d11a90c9a10"
+  },
+  "mail.mode.weekly": {
+    "en": "07bbac7050fc5f53",
+    "text": "044231e1d4c82ae4"
+  },
+  "mail.modes.title": {
+    "en": "beaca9c52c425d0f",
+    "text": "3b3f47168e2f7029"
+  },
+  "mail.modes.unconfirmed": {
+    "en": "7b7d7d550e618c05",
+    "text": "1c9fe40536df9ed8"
   },
   "mail.not_saved": {
     "en": "ae6ac2366f27b54c",
@@ -8010,6 +8206,22 @@
   "mail.password.remove": {
     "en": "6e83870255727d78",
     "text": "ad7015a350ba2863"
+  },
+  "mail.quiet.from": {
+    "en": "702140636ff3977a",
+    "text": "a639db8a271c8084"
+  },
+  "mail.quiet.legend": {
+    "en": "78eb61a2a0f33064",
+    "text": "c4b1b3f3c58246c3"
+  },
+  "mail.quiet.on": {
+    "en": "ec13e510c1a2bace",
+    "text": "b32ebe88a9695667"
+  },
+  "mail.quiet.to": {
+    "en": "b3214a20e45a7aed",
+    "text": "75d7f0219bf2421d"
   },
   "mail.read_failed": {
     "en": "3fdf3d3f11083e64",
@@ -8058,6 +8270,14 @@
   "mail.set": {
     "en": "c7f5814b92ec9430",
     "text": "fffb90b7df2fed79"
+  },
+  "mail.sign_in_link": {
+    "en": "a1cc44346eeeaf71",
+    "text": "4de43429dc7fc7bb"
+  },
+  "mail.sign_in_link.hint": {
+    "en": "1cb970248eb98d98",
+    "text": "14124d6fcafbb21a"
   },
   "mail.source": {
     "en": "7471382f2a386333",
@@ -8115,6 +8335,30 @@
     "en": "aee66cba7bd81a3e",
     "text": "8dadad4afe246868"
   },
+  "mail.time.invalid": {
+    "en": "2f3b756313bb0cb1",
+    "text": "4384b40d65d71b3f"
+  },
+  "mail.timezone": {
+    "en": "e94338cd48280ff4",
+    "text": "711fde81cc06a83c"
+  },
+  "mail.timezone.empty": {
+    "en": "0c62b16cf8d8d4e9",
+    "text": "fc026a9369220420"
+  },
+  "mail.timezone.hint": {
+    "en": "b0c175e699f53d2d",
+    "text": "225f22ea45523c41"
+  },
+  "mail.timezone.unknown": {
+    "en": "c7da8217bded281c",
+    "text": "cb5dee744bc1a3fc"
+  },
+  "mail.timezone.use": {
+    "en": "df3e90ad4c90adaf",
+    "text": "3aba955c7668ca4a"
+  },
   "mail.title": {
     "en": "79486f556e3c648f",
     "text": "a3500021090782d1"
@@ -8146,6 +8390,10 @@
   "mail.warning.plaintext_allowed": {
     "en": "31729d9143c47d90",
     "text": "91c08f4e7104791d"
+  },
+  "mail.weekly_on": {
+    "en": "96d3adabd30d1b47",
+    "text": "a320392bece105d6"
   },
   "mail.whole_number": {
     "en": "ce87e59eece203ad",

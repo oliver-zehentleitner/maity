@@ -2068,11 +2068,12 @@ window.Maity = window.Maity || {};
         Object.entries(e.kinds || {}).forEach(([k, v]) => {
           if (!(k in set.email.kinds)) fields["email.kinds." + k] = "unknown";
           else if (!v || typeof v !== "object" || Object.keys(v).some((x) => x !== "mode" && x !== "content")
-            || ("mode" in v && !modes.includes(v.mode)) || ("content" in v && typeof v.content !== "boolean")) fields["email.kinds." + k] = "invalid";
+            || ("mode" in v && !modes.includes(v.mode))
+            || ("content" in v && (typeof v.content !== "boolean" || !["chat", "mention"].includes(k)))) fields["email.kinds." + k] = "invalid";
         });
         if ("daily_at" in e && !hhmm.test(String(e.daily_at))) fields["email.daily_at"] = "invalid";
         if ("weekly_on" in e && !["mon", "tue", "wed", "thu", "fri", "sat", "sun"].includes(e.weekly_on)) fields["email.weekly_on"] = "invalid";
-        if ("timezone" in e && !/^(UTC|[A-Z][A-Za-z_]+(\/[A-Za-z0-9_+-]+)+)$/.test(String(e.timezone))) fields["email.timezone"] = "invalid";
+        if ("timezone" in e && !/^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+)*$/.test(String(e.timezone))) fields["email.timezone"] = "invalid";
         if ("quiet_hours" in e && e.quiet_hours !== null && !(e.quiet_hours && hhmm.test(String(e.quiet_hours.from)) && hhmm.test(String(e.quiet_hours.to)))) fields["email.quiet_hours"] = "invalid";
         if ("sign_in_link" in e && typeof e.sign_in_link !== "boolean") fields["email.sign_in_link"] = "invalid";
         if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });

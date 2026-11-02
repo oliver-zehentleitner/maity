@@ -40,7 +40,7 @@ window.Maity = window.Maity || {};
     get sun() { return M.t("mail.day.sun"); },
   };
   const HHMM = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
-  // The browser's own zone, proposed where the account still has the hub's default.
+  // The browser's own zone, offered as a button where it differs from the account's; never set unasked.
   const browserZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch { return null; } };
   const KIND_LABELS = {
     get inbox() { return M.t("notify.kind.inbox"); },
