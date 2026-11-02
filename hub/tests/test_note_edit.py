@@ -191,3 +191,28 @@ def test_a_redacted_notes_reason_reaches_only_owners_admins_and_the_redactor(
         assert shown(reader)["by"] and shown(reader)["at"]
     assert in_events(agent)["reason"] is None
     assert "a password" not in json.dumps(agent.get(f"{path}?state=all").json())
+
+
+def test_the_reason_stays_hidden_in_an_edit_event_and_in_a_replay(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine  # noqa: F811
+) -> None:
+    agent = flow.agent(make_client, owner)
+    card = task(owner)
+    path = f"/projects/maintainer/maity/tasks/{card['id']}/notes"
+    keyed = agent.auth | {"Idempotency-Key": "note-reason-replay-0001"}
+    body = {"body": "first words"}
+    posted = agent.client.post(f"/api/v1{path}", json=body, headers=keyed)
+    assert posted.status_code == 201, posted.text
+    note_id = posted.json()["id"]
+    assert agent.patch(f"{path}/{note_id}", {"body": "hunter2 by mistake"}).status_code == 200
+    assert owner.post(f"{path}/{note_id}/redact", {"reason": "a password"}).status_code == 200
+    # The tombstone inside the edit event, as the agent and the owner read it (§6.16, §8.5).
+    for who, seen in ((agent, None), (owner, "a password")):
+        listed = who.get("/projects/maintainer/maity/events?after=0&limit=200").json()["items"]
+        edited = [e for e in listed if e["kind"] == "note_edited"][-1]
+        assert edited["payload"]["note"]["body"]["reason"] == seen
+    # A replay of the agent's own post shows the note as the agent may read it now.
+    again = agent.client.post(f"/api/v1{path}", json=body, headers=keyed)
+    assert again.status_code == 201, again.text
+    assert again.json()["body"]["redacted"] is True and again.json()["body"]["reason"] is None
+    assert "a password" not in again.text
