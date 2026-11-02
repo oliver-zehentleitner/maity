@@ -85,6 +85,10 @@ expires; a session is in good standing once signed in by password or
 once its own alert was confirmed so; a session in good standing may end
 any other, one not in good standing never ends one in good standing
 and, in its first hour, no older session at all;
+(Since 2026-11-02 reading an alert no longer confirms a sign-in:
+"This was me" is its own call, good standing follows from it, and
+"mark all read" may include security alerts after a confirm —
+notifications.md, d01ba62b-7acc-471c-b8d0-65c6d60209cc.)
 changing the verified address needs the account password in the same
 request, or, for a human without a password, approval from a session
 in good standing at least a day old for exactly the change it was

@@ -1744,7 +1744,7 @@ and is never affected by mail limits; the password is not either.
 | `GET /auth/sessions` `?ended=true` | human | the caller's own sessions, newest first; with `ended=true` also the ones ended in the last 30 days |
 | `DELETE /auth/sessions/{id}` | human | ends one of the caller's own sessions, and every session it approved by device code that the caller may end (below); the current one is a logout; idempotent; answers the session as it is now, with `skipped` naming the approved sessions it did not end |
 | `POST /auth/sessions/end-others` | human | ends every session of the caller but the current one; answers the list of live sessions |
-| `POST /auth/sessions/{id}/confirm` | human | "This was me": confirms the sign-in of one of the caller's own sessions (below) and marks its `session_created` item read; answers the session as it is now. The checks run in this order: an ended session, or one of another human, is `not_found`; then a caller that is the session itself or was created after it is `forbidden` with `details.reason: not_earlier`; then a caller not in good standing is `forbidden` with `details.reason: not_in_good_standing`. Only a caller past all three gets `200`: a session already in good standing (confirmed, or signed in by password or with the second factor, §2.8.2) stays as it is and only its item is marked read, so a repeated call changes nothing |
+| `POST /auth/sessions/{id}/confirm` | human | "This was me": confirms the sign-in of one of the caller's own sessions (below) and marks its `session_created` item read; answers the session as it is now. The checks run in this order: an ended session, or one of another human, is `not_found`; then a caller that is the session itself or was created after it is `forbidden` with `details.reason: not_earlier`; then a caller not in good standing is `forbidden` with `details.reason: not_in_good_standing`. Only a caller past all three gets `200`; the target is confirmed only while it is still active, in one transaction with the checks, so that a concurrent `DELETE` of it either ends a confirmed session or leaves the confirm `not_found`. A session already in good standing (confirmed, or signed in by password or with the second factor, §2.8.2) stays as it is and only its item is marked read, so a repeated call changes nothing |
 
 **Good standing.** A session is **in good standing** when it was
 signed in by password or with the second factor (§2.8.2), or when its
@@ -1755,11 +1755,15 @@ Reading its alert never confirms it, however it is read: by `ids`, by
 shows it (`good_standing`, and `confirmed_at` and `confirmed_by`, the
 confirming session's id, on a confirmed one; both `null` otherwise).
 Good standing is what lets a session end others, confirm sign-ins,
-mark security alerts read and act on a held address change (§2.6.3).
+mark sign-in and address-change alerts read and act on a held address
+change (§2.6.3).
 The maintainer's decision of 2026-11-02 (`context/notifications.md`)
 separated confirming from reading, so that the bell can be tidied
-without the protection going with it: a session confirmed before then
-by marking its alert read keeps its good standing.
+without the protection going with it. A session whose alert an allowed
+session marked read before the hub change of tsk-0kz8v1ff5sgf, while
+reading still confirmed, keeps its good standing: the change carries it
+over as confirmed, with `confirmed_at` the time of that read mark and
+`confirmed_by` the session that made it.
 
 **Who may end which session.**
 
@@ -2598,7 +2602,9 @@ environment winning as there:
   (how such an account first gains good standing is pending, §2.8.1).
   A session in good standing that is moved into the enrolment state
   keeps that standing for the decisions §2.6.5 ties to it, "This was
-  me" on a sign-in alert among them. A human with a password
+  me" on a sign-in alert among them: beyond the calls above it reaches
+  `GET /me/notifications`, `POST /me/notifications/read` and
+  `POST /auth/sessions/{id}/confirm`. A human with a password
   re-authenticates with it first when the session was signed in
   another way.
 - **`email`.** Every human has a second factor: TOTP where enrolled,
@@ -16744,8 +16750,8 @@ mail.
   sign-in alert with "This was me" while its session is active and not
   in good standing and the current session may confirm it (§2.6.5);
   every other one — a sign-in already in good standing or ended, and
-  every other kind — with "Mark read", which the same sessions may use
-  (§18.3). When unread security
+  every other kind — with "Mark read", which the sessions of §18.3 may
+  use. When unread security
   items are among what "mark all read" covers, the dashboard first asks,
   listing each (time, place, browser): "2 sign-in alerts are included.
   Marking them read does not confirm them. Mark all read anyway?";
