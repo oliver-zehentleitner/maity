@@ -3,10 +3,10 @@ result reaches the author and both leads").
 
 The author of the reviewed work, the member the reviewer reports to and the member the author
 reports to. The card is the one the message's `task_id` names, or without it the card whose
-latest report names the pull request `review.subject` gives as `#<n>`; its author is the
-holding instance, or on a card nobody holds the instance that sent its latest report. A part
-that resolves to nobody is left out; `routes/events.post_message` drops whoever the audience
-already reaches.
+latest report names the pull request `#<n>` when `review.subject` is exactly that; its author
+is the holding instance, or on a card nobody holds the instance that sent its latest report.
+A part that resolves to nobody is left out; `routes/events._deliver_review` drops whoever the
+audience already reaches (the author's instance only for `all` or that same instance).
 """
 
 from __future__ import annotations

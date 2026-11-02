@@ -550,9 +550,12 @@ def _deliver_review(
     review: dict[str, Any],
     audience: list[str],
 ) -> list[str]:
-    """A review result's author and both leads, each added unless `to` or a mention reaches
-    the member already (§8.4): `all`, one of its role or trust tokens, or a token of its own.
-    One that then reaches nobody but its sender is `invalid`."""
+    """A review result's author and both leads (§8.4). The author's instance is added unless
+    the audience holds `all` or that same instance token: a member id would wake another
+    instance under `wake: lead` or `next_free`. A member token (a lead, or an author whose
+    card was claimed for the team) is added unless `to` or a mention reaches the member
+    already: `all`, one of its role or trust tokens, or a token of its own. One that then
+    reaches nobody but its sender is `invalid`."""
     sender = conn.execute(select(t.membership).where(t.membership.c.id == mine.id)).one()
     found = review_delivery.recipients(conn, mine.project.id, sender, task_id, review)
     roles = _roles(conn, mine.project.id, [r.member_id for r in found])
@@ -564,10 +567,14 @@ def _deliver_review(
     added = [
         r.token
         for r in found
-        if not (
-            "all" in audience
-            or r.member_id in reached_members
-            or bool(roles.get(r.member_id, set()) & set(audience))
+        if "all" not in audience
+        and (
+            r.token not in audience
+            if r.token.startswith("instance:")
+            else not (
+                r.member_id in reached_members
+                or bool(roles.get(r.member_id, set()) & set(audience))
+            )
         )
     ]
     audience = list(dict.fromkeys([*audience, *added]))

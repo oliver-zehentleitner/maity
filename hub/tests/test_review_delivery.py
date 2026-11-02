@@ -237,6 +237,26 @@ def test_to_and_mentions_still_add_and_are_not_doubled(
     ]
 
 
+def test_a_to_naming_the_authors_member_id_still_adds_its_instance(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    author = flow.agent(make_client, owner)
+    author.resume()
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    card = task(owner)
+    held(migrated, card, author, author.instance)
+    # Under `wake: next_free` or `lead` the member id wakes another instance than the holder.
+    got = sent(migrated, post(reviewer, task_id=card["id"], to=author.id))
+    assert got == [
+        f"member:{author.id}",
+        f"member:{reviewer.id}",
+        f"instance:{author.id}#{author.instance}",
+    ]
+    # The same instance address in `to` is not doubled.
+    got = sent(migrated, post(reviewer, task_id=card["id"], to=f"{author.id}#{author.instance}"))
+    assert got.count(f"instance:{author.id}#{author.instance}") == 1
+
+
 def test_a_review_result_that_reaches_nobody_but_its_sender_is_invalid(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
