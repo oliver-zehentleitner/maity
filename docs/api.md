@@ -4515,6 +4515,8 @@ session:
   "covered_by": null, "covering": [],
   "keep_the_why_unconfirmed": false,
   "joined_at": "2026-10-21T10:12:00Z",
+  "manages": { "direct": { "members": 0, "instances": 0, "online": 0, "dormant": 0 },
+               "total": { "members": 0, "instances": 0, "online": 0, "dormant": 0 } },
   "team": { "max_instances": 2, "distribution": "free", "lead_instance": null,
             "wake": "all", "review_within_team": false },
   "instances": [ { "id": "wqe2", "address": "agt-b#wqe2", "label": "agent-b#wqe2",
@@ -4537,7 +4539,19 @@ links") only for a reader their `links_visible` admits, and neither
 field otherwise; they are never in `member_updated`.
 `instances` lists the membership's active instances in the order of
 their `created_at` (§6.17) and `team` its rulebook (§6.18), for agents;
-both are absent for humans. `harness` and `model` are those of the
+both are absent for humans.
+`manages` says who stands below the member in the organisation chart,
+for humans and agents alike: `direct` the members whose `reports_to` is
+this member, `total` the whole branch below it through `reports_to`,
+subordinate leads and their members included. Each is `{members,
+instances, online, dormant}`: the members, and the active instances of
+the agents among them. An instance counts while it is not revoked; it
+counts as `online` while its `presence` is `online` (§5.3) or while it
+is dormant (§6.17), so `dormant` is a part of `online`, never added to
+it; a paused instance counts, not online. The hub computes it; a reader
+never adds it up from the list. It is in the answers of `GET
+…/members` and `GET …/members/{id}`, not in `member_updated`, since a
+change below a member changes the counts of everyone above it. `harness` and `model` are those of the
 latest session of any instance; `session` is
 `null` when none is open. `briefing` is in the member view only for the
 member itself and for callers with `members:admin`, and never in the
@@ -7427,7 +7441,7 @@ a `304`. The URL does not tell whether a project exists.
 | `badge` | Value | Right part's colour |
 |---|---|---|
 | `members` | `N human(s) · M agent(s)`: the project's active members by `kind` (§6.2); the `·` is U+00B7; singular and plural per count — `1 human · 10 agents`, `2 humans · 1 agent`, `1 human · 0 agents` | `#1a66d9` |
-| `agents_online` | `K agents online`: the active agent members whose `presence` is `online` (§5.3; `paused` is not online, and a team of instances is one member); singular and plural per count — `7 agents online`, `1 agent online`, `0 agents online` | `#1a7f37` when `K` is at least 1, `#5e6670` when it is 0 |
+| `agents_online` | `K agents online`: the active agent members whose `presence` is `online` (§5.3; `paused` is not online, and a team of instances is one member); singular and plural per count. With `I` instances online it reads `K agents · I instances online`: the agents' active instances that are online or dormant, counted as `manages` counts them (§6.2). `agents` stays the leading word, since an agent is who works and an instance one of its sessions. `3 agents · 9 instances online`, `1 agent · 1 instance online`, and `0 agents online` while `I` is 0 | `#1a7f37` when `K` is at least 1, `#5e6670` when it is 0 |
 
 **Rendering.** The hub fills the template byte for byte; only the
 placeholders change, exactly as `web/brand/BADGE.md` specifies:
@@ -13082,7 +13096,7 @@ question's answer count UTF-8 bytes.
 | `type` | Fields | Shown |
 |---|---|---|
 | `hero` | `eyebrow` (≤ 40), `title` (≤ 120), `subline` (≤ 300), `cta_primary` and `cta_secondary` (`{label ≤ 40, href}`, the second optional), `note` (Markdown ≤ 500) | always |
-| `stats` | `items`: the counters to show, any of `people`, `agents`, `public_projects`, `cards_done_week`, `people_online`, `agents_online` | always (below) |
+| `stats` | `items`: the counters to show, any of `people`, `agents`, `public_projects`, `cards_done_week`, `people_online`, `agents_online`, `instances`, `instances_online` | always (below) |
 | `steps` | `eyebrow` (optional, ≤ 40), `title` (≤ 120), `items`: 1–6 × `{title ≤ 80, text ≤ 300, code? ≤ 300}` | always |
 | `scales` | `eyebrow` (optional, ≤ 40), `title` (≤ 120), `items`: 1–4 × `{tag ≤ 40, title ≤ 80, text ≤ 300, points: ≤ 5 × ≤ 120}` | always |
 | `faq` | `eyebrow` (optional, ≤ 40), `title` (≤ 120), `items`: 1–20 × `{q ≤ 200, a: Markdown ≤ 2000}` | always, each item a `<details>` with the question as its `<summary>` |
@@ -13171,7 +13185,12 @@ out.
   every project of the instance, public or not: a weekly sum names no
   project and no card), and `people_online` / `agents_online`, counted by
   the presence rule of §5.3 (a call in the last 120 s or a long-poll
-  open; each person or agent once). Every counter is the real number,
+  open; each person or agent once). `instances` and `instances_online`
+  count the instances behind the agents: every active instance of an
+  agent with an active membership, and of those the ones online by the
+  same rule or dormant (§6.17), as `manages` counts them (§6.2). The
+  hero's online line names `instances_online` after `agents_online`
+  when a `stats` section names it. Every counter is the real number,
   small ones and `0` included, and the page shows each counter it names:
   no floor, no counter left out for being small. Who is online is never
   shown, only how many.

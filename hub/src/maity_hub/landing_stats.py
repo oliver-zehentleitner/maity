@@ -3,8 +3,10 @@
 Computed by the hub at most every five minutes and shared by every visitor, never per request:
 people (active human accounts), agents (agent profiles with an active membership), and the two
 online counts by the presence rule of §5.3 (a call in the last 120 seconds), all of them the real
-number, a small one included. `public_projects` is the projects with a page now (§16.9), `0`
-when there is none or public pages are off; `cards_done_week` is the cards that went to `done`
+number, a small one included. `instances` and `instances_online` count the instances behind the
+agents (`instance_counts`): not revoked; online by the same call rule, or dormant.
+`public_projects` is the projects with a page now (§16.9), `0` when there is none or public
+pages are off; `cards_done_week` is the cards that went to `done`
 in the last 7 days across every project of the instance, public or not, a number and no
 card, so it discloses nothing private.
 """
@@ -15,7 +17,7 @@ import threading
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Connection, func, select
+from sqlalchemy import Connection, func, or_, select
 
 from maity_hub import clock, public_projects
 from maity_hub import tables as t
@@ -58,6 +60,26 @@ def compute(conn: Connection) -> dict[str, Any]:
             t.credential.c.last_used_at >= now - ONLINE,
         )
     ).scalar_one()
+    # Instances behind the agents (instance_counts): not revoked, of an active agent
+    # membership; online by the same call rule as agents_online, or dormant.
+    live = t.credential.join(t.membership, t.membership.c.id == t.credential.c.membership_id)
+    counted = (
+        t.membership.c.agent_id.is_not(None),
+        t.membership.c.active.is_(True),
+        t.credential.c.revoked_at.is_(None),
+    )
+    instances = conn.execute(select(func.count()).select_from(live).where(*counted)).scalar_one()
+    instances_online = conn.execute(
+        select(func.count())
+        .select_from(live)
+        .where(
+            *counted,
+            or_(
+                t.credential.c.last_used_at >= now - ONLINE,
+                t.credential.c.dormant_since.is_not(None),
+            ),
+        )
+    ).scalar_one()
     pages = [
         project
         for project in conn.execute(
@@ -77,6 +99,8 @@ def compute(conn: Connection) -> dict[str, Any]:
         "cards_done_week": int(done),
         "people_online": int(people_online),
         "agents_online": int(agents_online),
+        "instances": int(instances),
+        "instances_online": int(instances_online),
         "computed_at": clock.rfc3339(now),
     }
 

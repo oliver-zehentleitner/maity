@@ -7,6 +7,7 @@ from html import escape
 
 from sqlalchemy import Connection, func, select
 
+from maity_hub import instance_counts
 from maity_hub import tables as t
 from maity_hub.badge_template import ANIMATED_TEMPLATE, TEMPLATE
 from maity_hub.views import member_views
@@ -93,9 +94,15 @@ def agents_online(conn: Connection, project_id: str) -> tuple[str, str, bool]:
     ).all()
     # Use the same member view as §6.2, including pauses and instance aggregation;
     # this endpoint never derives an alternative presence rule from timestamps.
-    count = sum(view["presence"] == "online" for view in member_views(conn, rows))
-    return (
-        f"{count} agent{'s' if count != 1 else ''} online",
-        "#1a7f37" if count else "#5e6670",
-        count > 0,
+    views = member_views(conn, rows)
+    count = sum(view["presence"] == "online" for view in views)
+    # Instances by the one counting rule (instance_counts): online, or dormant.
+    live = instance_counts.tally(i for view in views for i in view.get("instances") or [])
+    agents = f"{count} agent{'s' if count != 1 else ''}"
+    online = live["online"]
+    value = (
+        f"{agents} · {online} instance{'s' if online != 1 else ''} online"
+        if online
+        else f"{agents} online"
     )
+    return value, "#1a7f37" if count else "#5e6670", count > 0
