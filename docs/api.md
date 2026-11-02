@@ -4275,7 +4275,8 @@ owners, §6.26).
 **Repository**: `url` must be on a forge host the operator configured
 (§11), otherwise `invalid`; `forge` is derived from the host,
 `probe_configured` says whether the hub can read the repository, and
-`probe_via` with which grant (`app`, `owner_token`, `instance`, or
+`probe_via` with which grant (`app`, `owner_token`, `instance` for a
+project in the operator's own namespaces only, or
 `null`, §11.4), and `owner_confirmed` whether the namespace owner
 confirmed this URL for the owner's grants (§11.4), with `confirmed_by`
 the human who did (for a project of an organisation one of its owners,
@@ -10881,7 +10882,8 @@ kind, `api.github.com` for GitHub): nothing a project member sets can
 make the hub send its token anywhere else, and `repository.url` must be
 on a configured forge host (§6.1). Which grant reads a project's
 repository — the namespace owner's GitHub App installation, the owner's
-own token, or this instance token for a public repository only — is
+own token, or this instance token for a public repository of the operator's
+own namespaces only — is
 §11.4; every grant is read-only, and its permissions are the limit of
 what the project can observe. The hub caches an observation for
 `max_age` seconds (default 60, `0` forces a fresh read) and never writes
@@ -11253,7 +11255,8 @@ below):
    project's namespace owner (§6.25) has linked an installation of the
    instance's GitHub App, and the installation includes the repository.
 2. **The namespace owner's own token** (below).
-3. **The instance token** (`MAITY_FORGE_GITHUB_TOKEN`, §11), and only
+3. **The instance token** (`MAITY_FORGE_GITHUB_TOKEN`, §11), only for a
+   project in one of the operator's own namespaces (below), and only
    for a repository the forge reports as public. The hub checks
    `private` on the repository with the instance token before the first
    read and on every refresh of the repository (at most every 10
@@ -11283,7 +11286,8 @@ change of the URL — a `PATCH` by anyone, the namespace owner included;
 no other call sets the URL (the card import of §6.14 reads a forge
 issue and never changes the project's repository) — sets it to `false`,
 and until the owner confirms
-the repository is read with the instance token alone, so only while it
+the repository is read with the instance token alone, so only in the
+operator's own namespaces and only while it
 is public. So no co-admin can
 point a project at another of the owner's private repositories and have
 it read with the owner's access. A transfer (§6.25) resets
@@ -11315,7 +11319,41 @@ every 10 minutes, and at once after a refusal):
   never tried;
 - the owner's token covers it when a read of the repository with that
   token answers it;
-- the instance token covers it when the forge reports it public (above).
+- the instance token covers it when the project is in one of the
+  operator's own namespaces and the forge reports the repository public
+  (above).
+
+**The operator's own namespaces.** The maintainer's decision of
+2026-11-02: projects connect their repository to the forge themselves,
+through the App or the owner's token; the instance token is the
+operator's and serves the operator's own projects only. The operator
+names them in the environment:
+
+| Setting | Meaning |
+|---|---|
+| `MAITY_FORGE_INSTANCE_NAMESPACES` | comma separated namespace names (§6.25: a human's handle or an organisation's name, the `{owner}` of a project's address); spaces around a name are ignored. Unset or empty: the instance token serves no project |
+
+A project is in one of them when its current namespace is one of the
+names, compared in lower case. A rename of a listed namespace (§6.24)
+takes its projects out until the operator lists the new name; a name
+given up stays its id's alias and is never another's (§6.24), so a
+listed name cannot pass to someone else. A transfer (§6.25) into or out
+of a listed namespace applies at the next choice of the source. A name
+listed that no namespace carries does nothing.
+
+For every other project the instance token is used for no read at all:
+not the probe, not the visibility of §16.9, not the first look at a new
+project's repository, not an import (§6.14). Such a project is read only
+through its namespace owner's App installation or token, after the owner
+confirmed the repository; its visibility (§16.9) comes from that read,
+and the bare number of merges (the one exception below) may come from
+it as before. Without such a grant `probe_via` is `null`, every read
+answers `probe_not_configured` with `details.reason: no_grant` (with a
+grant the owner has not confirmed, `unconfirmed`), and the hub counts
+the repository as one it cannot read: a new project's page starts
+`off` (§16.9), and an existing page shows no forge data. The dashboard
+tells the namespace owner to connect the App or a token, not that the
+instance reads it.
 
 A repository the forge answers with a redirect (renamed or moved) is not
 followed: reads stop with `details.reason: repository_moved` until a
@@ -11327,8 +11365,9 @@ The project's `repository` (§6.1) says which source is used:
 `probe_configured` is `true` exactly when `probe_via` is not `null`.
 When no source covers the repository, every read answers
 `probe_not_configured` with `details.reason`: `no_grant` (nothing covers
-it), `private_without_grant` (only the instance token exists and the
-repository is private), `installation_suspended` or
+it), `private_without_grant` (the project is in one of the operator's
+own namespaces, only the instance token covers it, and the repository
+is private), `installation_suspended` or
 `installation_removed` (the owner's installation covered it and no
 longer does), `token_rejected` (the owner's token was refused by the
 forge), `unconfirmed` (a grant of the owner would cover it, but the
@@ -11441,7 +11480,7 @@ second source, for a forge setup where an App cannot be installed.
   classic token is refused (`invalid`, `details.fields.token:
   "classic_token"`): a classic token reaches a private repository only
   with the `repo` scope, which can write, and without it reads no more
-  than the instance token already does. The forge does not report a
+  than a public repository shows anyone. The forge does not report a
   fine-grained token's permissions, so the hub cannot check them; the
   dashboard asks for read-only permissions on the chosen repositories
   and says that the hub never writes (§11), which holds whatever the
