@@ -175,3 +175,13 @@ def test_only_a_leading_byte_order_mark_is_dropped(
     _stdin(monkeypatch, f"{BOM}a{BOM}b")
     assert cli.main(["say", "agt-a", "--type", "notice", "-"]) == cli.EXIT_OK
     assert fake.signed()[-1].json()["body"] == f"a{BOM}b"
+
+
+def test_a_byte_order_mark_at_the_end_of_a_file_stays(
+    joined: Path, fake: fakehub.FakeHub, events: None, tmp_path: Path
+) -> None:
+    """Only the first character can be a mark; anywhere else it is the writer's text."""
+    (tmp_path / "m.md").write_bytes(b"\xef\xbb\xbfa\xef\xbb\xbf")
+    argv = ["say", "agt-a", "--type", "notice", "--body-file", str(tmp_path / "m.md")]
+    assert cli.main(argv) == cli.EXIT_OK
+    assert fake.signed()[-1].json()["body"] == f"a{BOM}"

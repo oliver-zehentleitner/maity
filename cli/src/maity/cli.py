@@ -2099,10 +2099,7 @@ def cmd_memory_add(args: argparse.Namespace) -> int:
             raise UsageError("--soul FILE takes only --reason")
         if not args.reason:
             raise UsageError("--soul needs --reason: the owner reads why before saying go")
-        try:
-            markdown = Path(args.soul).read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError) as exc:
-            raise UsageError(f"cannot read {args.soul}: {exc}") from None
+        markdown = _read_text_file(args.soul, "--soul")
         if len(markdown.encode("utf-8")) > SOUL_MAX:
             raise UsageError("a soul is at most 8 KiB")
         proposal = {
