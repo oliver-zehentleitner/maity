@@ -585,9 +585,13 @@ def check_hub_words(write, release, notes):
                 finding(os.path.join(metas, name), 1, "no such hub words: delete this file")
 
 
+GLOSSARY_FORMS_OF_ONE = {"user,": "user", "users,": "user", "human,": "user", "join": "join"}
+
+
 def glossary_duplicates(text):
     """Words of the glossary that stand for two things in one language: (language, word, things).
-    One thing may have rows of its own for its forms (`user`, `users`; `join` as noun and verb)."""
+    One thing may have rows of its own for its forms: `user` and `users`, a person and a human,
+    `join` as noun and verb. `release (a version)` and `release (a claim)` are two things."""
     rows = [[cell.strip() for cell in line.split("|")[1:-1]] for line in text.splitlines()
             if line.startswith("| ") and line.count("|") == 11]  # fmt: skip
     if not rows:
@@ -596,10 +600,10 @@ def glossary_duplicates(text):
     for column, language in list(enumerate(rows[0]))[1:]:
         used = {}
         for row in rows[1:]:
-            used.setdefault(row[column], []).append(row[0])
+            for form in row[column].split(","):
+                used.setdefault(form.strip(), []).append(row[0])
         for word, things in used.items():
-            heads = {thing.split()[0].rstrip(",s") for thing in things}
-            if len(heads) > 1:
+            if word and len({GLOSSARY_FORMS_OF_ONE.get(thing.split()[0], thing) for thing in things}) > 1:
                 found.append((language, word, things))
     return found
 

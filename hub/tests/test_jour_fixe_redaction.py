@@ -11,7 +11,7 @@ from sqlalchemy import Engine, select
 
 from maity_hub import clock, listening
 from maity_hub import tables as t
-from tests import flow
+from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_jour_fixe_exchange import Round, kinds, rounds_path
 from tests.test_jour_fixe_triage import TO_OWNER, decided, report
@@ -85,6 +85,23 @@ def test_who_may_redact_what(round_: Round) -> None:
     report(round_)
     agent = redact(round_.lead, round_, "summary")
     assert agent.json()["error"]["details"]["reason"] == "humans_only"
+
+
+@pytest.mark.parametrize("anonymous", [False, True])
+def test_a_proxy_cannot_redact_an_answer(
+    round_: Round, make_client: ClientFactory, anonymous: bool
+) -> None:
+    proxy = flow.human(make_client, round_.engine, "the-proxy")
+    with round_.engine.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(round_.engine, project_id, role="proxy", human_id=proxy.id)
+    answer = next(a for a in answers_of(round_.owner, round_) if a["anonymous"] == anonymous)
+    before = len(kinds(round_.engine, "event_redacted"))
+    response = redact(proxy, round_, f"answer:{answer['id']}")
+    assert response.status_code == 404, response.text
+    assert response.json()["error"]["code"] == "not_found"
+    assert next(a for a in answers_of(round_.owner, round_) if a["id"] == answer["id"]) == answer
+    assert len(kinds(round_.engine, "event_redacted")) == before
 
 
 def test_a_redacted_proposal_reaches_its_request_its_card_and_the_report_event(
