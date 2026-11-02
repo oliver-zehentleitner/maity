@@ -113,8 +113,8 @@ human = Table(
     # The switch `meat_proxy` is derived: on while a part is.
     Column("meat_proxy_lead", Boolean, nullable=False, server_default=false()),
     Column("meat_proxy_hands", Boolean, nullable=False, server_default=false()),
-    # Whether the person has a public page, and the plain text on it (§16.9); a person is
-    # private until they choose.
+    # What the person's page shows beyond name, handle and agents, and the plain text on it
+    # (§16.9); every active account has a page, and the profile is public until they choose.
     Column("public_profile", Boolean, nullable=False, server_default=true()),
     # Whether the public pages of the person's projects name them as online (§16.9); off,
     # they are neither named nor counted.
