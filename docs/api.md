@@ -11704,7 +11704,7 @@ rule of §13 before it writes anything.
 | `GET /runners/{id}` | the owner, or `members:admin` in an attached project | the runner view |
 | `PATCH /runners/{id}` | the owner | `{name}`; `invalid` when the caller owns a runner of that name |
 | `POST /runners/{id}/revoke` | the owner | `{"reason"?, "agents"?}`; revokes the live credential, ends its long-poll; returns the runner view with `on_runner_revoke` (below). What happens to its agents follows `on_runner_revoke` per attached project, or `agents` (below) |
-| `DELETE /runners/{id}` | the owner | `{"agents"?}`; revokes the credential, applies `on_runner_revoke` to its agents (below) per attached project, closes every active placement of the runner at once (`runner_removed`, §15.5), detaches it from every project; `200` with the runner view, `removed_at` set, and `still_running`: the placements whose last report was `starting`, `running` or `stopping`, now the operator's to end (`maity runner stop-all`); a second `DELETE` answers `200` as it is |
+| `DELETE /runners/{id}` | the owner | `{"agents"?}`; revokes the credential, applies `on_runner_revoke` to its agents (below) per attached project, closes every active placement of the runner at once (`runner_removed`, §15.5), detaches it from every project; `200` with the runner view, `removed_at` set, and `still_running`: the ids of the placements whose last report was `starting`, `running` or `stopping`, now the operator's to end (`maity runner stop-all`); a second `DELETE` answers `200` as it is |
 
 **On revoking a runner.** What happens to the agents a revoked runner was
 running is a setting, chosen per project within the instance default

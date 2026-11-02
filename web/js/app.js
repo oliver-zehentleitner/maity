@@ -1571,6 +1571,8 @@ window.Maity = window.Maity || {};
   async function loadContext(where, me) {
     const ctx = {
       me: me.member,
+      // A deletion waiting for its mail (§2.9) stands beside the member in GET /me.
+      deletion: me.deletion || null,
       projects: me.projects,
       serverTime: me.server_time,
       scope: where.scope,
