@@ -29,6 +29,7 @@ from maity_hub import (
     namespace,
     not_listening,
     project_roles,
+    review_delivery,
     reviews,
     wakeups,
 )
@@ -422,10 +423,12 @@ def post_message(
     else:
         if body.conversation_id is not None:
             raise invalid({"conversation_id": "chat_only"})
-        if body.to is None and body.type != "update":
+        if body.to is None and body.type not in ("update", "review_result"):
             raise invalid({"to": "required"})
         to = body.to
-        if to is None:  # an update reaches the card's watchers, which `emit` adds (§6.4)
+        if to is None:
+            # An update reaches the card's watchers, which `emit` adds (§6.4); a review result
+            # its author and both leads, added below (§8.4).
             target = f"member:{me}"
         elif to == "all":
             target = "all"
@@ -506,6 +509,8 @@ def post_message(
                 pinged[token] = m["member_id"]
         mentions.charge(conn, mine.id, len({m for m in pinged.values() if m != me}))
         audience = list(dict.fromkeys([*audience, *pinged]))
+    if review is not None:
+        audience = _deliver_review(conn, mine, body.task_id, review, audience)
     named = attachments.bind(conn, mine, body.attachments, settings)
     payload = {
         "type": body.type,
@@ -536,6 +541,39 @@ def post_message(
     if group is not None:  # whoever speaks has read up to there (§9.2)
         remember_read(conn, mine.id, group.id, seq)
     return load_event(conn, str(seq), mine)
+
+
+def _deliver_review(
+    conn: Connection,
+    mine: Membership,
+    task_id: str | None,
+    review: dict[str, Any],
+    audience: list[str],
+) -> list[str]:
+    """A review result's author and both leads, each added unless `to` or a mention reaches
+    the member already (§8.4): `all`, one of its role or trust tokens, or a token of its own.
+    One that then reaches nobody but its sender is `invalid`."""
+    sender = conn.execute(select(t.membership).where(t.membership.c.id == mine.id)).one()
+    found = review_delivery.recipients(conn, mine.project.id, sender, task_id, review)
+    roles = _roles(conn, mine.project.id, [r.member_id for r in found])
+    reached_members = {
+        token.split(":", 1)[1].split("#", 1)[0]
+        for token in audience
+        if token.startswith(("member:", "instance:"))
+    }
+    added = [
+        r.token
+        for r in found
+        if not (
+            "all" in audience
+            or r.member_id in reached_members
+            or bool(roles.get(r.member_id, set()) & set(audience))
+        )
+    ]
+    audience = list(dict.fromkeys([*audience, *added]))
+    if set(audience) <= {f"member:{mine.principal_id}"}:
+        raise invalid({"to": "required"}, "a review result that reaches nobody but its sender")
+    return audience
 
 
 def _group_for_posting(conn: Connection, mine: Membership, conversation_id: str) -> Any:
