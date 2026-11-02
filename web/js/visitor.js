@@ -16,10 +16,6 @@ window.Maity = window.Maity || {};
     { path: "/organisation", get label() { return M.t("nav.organisation"); } },
     { path: "/why", get label() { return M.t("nav.why"); } },
   ];
-  const PROJECT_STATES = {
-    plan: () => M.t("state.plan"), build: () => M.t("state.build"), review: () => M.t("state.review"),
-    launch: () => M.t("state.launch"), archived: () => M.t("state.archived"),
-  };
   const PROJECT_KINDS = ["project", "board", "members", "organisation", "why"];
   const COUNTERS = {
     get cards_done() { return M.t("visitor.stat.cards_done"); },
@@ -63,7 +59,7 @@ window.Maity = window.Maity || {};
   const draw = {
     project(d) {
       return [
-        h("p", { class: "muted" }, Object.hasOwn(PROJECT_STATES, d.state) ? PROJECT_STATES[d.state]() : d.state),
+        h("p", { class: "muted" }, M.dom.word("project", d.state)),
         d.about ? h("div", { class: "about" }, M.markdown(d.about)) : null,
         d.repository_url ? h("p", null, external(d.repository_url)) : null,
         d.links.map((url) => h("p", null, external(url))),

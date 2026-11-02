@@ -35,7 +35,8 @@ window.Maity = window.Maity || {};
   // A label or a status is a word of the contract; the other fields are what was written.
   const VALUE_WORDS = { label: "label", status: "status", "contract.state": "contract" };
   function fieldValue(field, v) {
-    return Object.hasOwn(VALUE_WORDS, field) && typeof v === "string" && v ? M.dom.word(VALUE_WORDS[field], v) : shortValue(v);
+    const said = Object.hasOwn(VALUE_WORDS, field) && typeof v === "string" && v ? M.dom.word(VALUE_WORDS[field], v) : v;
+    return said === v ? shortValue(v) : said;
   }
 
   // Who changed or wrote it, as @handle, an agent with its instance

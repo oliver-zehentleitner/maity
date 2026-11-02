@@ -5790,17 +5790,7 @@ window.MAITY_FIXTURES = {
     ],
     "still_running": {
       "rnr-0002": [
-        {
-          "agent": {
-            "display_name": "Agent B",
-            "handle": "agent-b",
-            "id": "agt-b"
-          },
-          "id": "plc-0003",
-          "reported": {
-            "state": "running"
-          }
-        }
+        "plc-0003"
       ]
     }
   },
