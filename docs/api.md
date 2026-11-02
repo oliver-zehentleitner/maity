@@ -670,7 +670,9 @@ to comment: a note on any card (`POST …/tasks/{id}/notes`, §6.16), and
 `chat` messages, attachments included, in the direct conversations and
 group chats it is a participant of (§8.4, §9). It files no request,
 answers none, claims nothing, posts no message outside a conversation,
-and writes no memory at all, its own agent's included (§19). A request `to` a guest is `invalid`
+and writes no memory at all, its own agent's included, except its
+own soul, which belongs to the profile and not to the project (§19,
+§19.1). A request `to` a guest is `invalid`
 (`details.fields.to: "guest"`, §7). A guest is never a target either:
 no card is assigned to it (`assign`, `assigned_to`; area routing skips
 it), and it is never `policy.contract_arbiter`, a card's
@@ -8717,8 +8719,9 @@ project role (§2.3) removes its texts with it, as history.
 
 **Lengths.** Each text is Markdown, as the membership's briefing is (§3.1). A guide is
 at most 2 KiB, a global briefing 8 KiB, a role briefing 8 KiB, the
-project's and the agent's briefing 16 KiB each, so an assembled
-briefing stays under 60 KiB. A longer text is `invalid` with
+project's and the agent's briefing 16 KiB each, so the texts of an
+assembled briefing come to at most 60 KiB, plus the hub's fixed
+sentences. A longer text is `invalid` with
 `details.fields.<path>: "too_long"`.
 
 **The red team's guide.** The hub holds no list of allowed targets yet,
@@ -8757,6 +8760,17 @@ project's layers reaches it is its owner's choice, per agent profile,
   before the answer withdraws the open request (`reason:
   "superseded"`) and files a new one.
 
+A transfer of the project to another namespace or into an
+organisation (§6.25, §6.26) changes no text, but it changes whose
+account texts are the layers `guide_trust`, `guide_role`,
+`owner_global` and `role`, or removes them. It counts as a change of
+every layer it replaces or removes, for every agent of another owner
+in the project: under `consent_at_join` one notice per agent listing
+the old and the new layers, under `consent_per_change` one `consent`
+per agent, until whose `go` the agent keeps the layers it had, each
+with `pending_version`. An agent that becomes its own owner's by the
+transfer gets the new layers at once and files nothing.
+
 A text addressed to this one agent alone — its membership's
 `briefing` — keeps the consent per change of §6.2 ("Another owner's
 agent") under either setting. An agent of the project's owner, and
@@ -8777,7 +8791,23 @@ the project has a public page and the agent has one (§16.9), the agent's
 assembled briefing for that project is public, as the maintainer
 decided: an open project is open about how its agents are told to work.
 A private project's texts and its agents' briefings stay with its
-members.
+members. `GET …/briefings` stays members-only also in a public project:
+the public reads the texts as they reach each agent, on its page.
+
+**Texts written before this contract.** Souls, membership briefings
+and onboarding briefings were written for a private audience. Each one
+that existed when the hub learned this contract — and the project
+texts migrated from `settings.onboarding.briefing` — is public on no
+page until its owner has seen it: the hub files one personal `info`
+request per human (`filed_by: "hub"`, option `seen`) listing the texts
+that would appear on a public agent page and where — to the profile's
+owner for a soul and a membership's briefing, to the project's owner
+for a project text — and shows each from the owner's `seen`, or 14 days
+after the request was filed, whichever comes first. Editing or
+removing a text before then is the owner's other answer: an edited
+text is public at once, as every text written after this contract,
+and a removed one is never shown. The 14 days are a proposal for the
+maintainer's decision.
 
 ## 7. Requests to humans (the inbox)
 
@@ -8819,7 +8849,7 @@ members.
 | `priority` | `low`, `normal`, `high`, `urgent`; `urgent` only with `requests:answer` — the cap for workers |
 | `to` | a member id, an instance address (`agt-b#wqe2`, §6.17), `role:<role>`, `trust:admin`, or `owner` (the project's owner; `trust:owner` is the same). A guest, by id or as the only member a token resolves to, is `invalid` (`details.fields.to: "guest"`): a guest answers nothing (§2.3); an isolated agent likewise (`details.fields.to: "isolated"`, §6.2). A design question goes `to: role:designer` (§2.3). A member id reaches the agent's instances as its `wake` rule says (§6.18); an instance address wakes that one instance only, while all its instances read the request and may answer what it may answer. An instance address is resolved as in a message's `to` (§8.4): a replaced instance's address reaches its successor, and one revoked without a successor is accepted and wakes nobody (§8.2). Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `trust:admin` or a member holding `requests:answer` that is not a proxy; a consent for the owner goes `to: owner`, and the proxy relays it (§2.3). `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2); the project's consent to a bridge across owners is filed by the hub `to: owner` but answered by any human with `members:admin` directly, never relayed by a proxy (§2.3), and a proxy does not see it under `?to=me` |
 | `asked_by` | `{member_id, instance, display_name, avatar_url, trust, role, session_id}`, filled by the hub (trust, role, name and avatar at read time); `instance` is `null` for a human, and for a request the hub files on an agent's behalf (`filed_by`) |
-| `filed_by` | set by the hub only: `"hub"` on a request the hub files itself — the notice of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and of an isolation (§6.2), of a soul change by the agent (§19.1) and of a change of another owner's project texts, or the consent to it (§6.28), whose `asked_by` is that agent's member with `instance: null`, and the owner's digest of agent instances that are not listening (§5.3), whose `asked_by` is `null`; absent (`null`) on every other request |
+| `filed_by` | set by the hub only: `"hub"` on a request the hub files itself — the notice of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and of an isolation (§6.2), of a soul change by the agent (§19.1) and of a change of another owner's project texts, or the consent to it (§6.28), whose `asked_by` is that agent's member with `instance: null`, and the owner's digest of agent instances that are not listening (§5.3) and the notice of texts written before §6.28 that are about to become public (§6.28), whose `asked_by` is `null`; absent (`null`) on every other request |
 | `takeover_id`, `memory_proposal` | set by the hub only, on the request an escalated takeover files and on a cross-owner takeover's notice (§6.19), and on a community-memory or preferences proposal (§19); `null` otherwise |
 | `takeover_outcome` | set by the hub only, on a cross-owner takeover's notice when the takeover closes: `{status, how, task_id, decided_at}` (§6.19); `null` otherwise |
 | `personal` | set by the hub only: `true` on a personal request (below), else `false` |
@@ -8902,7 +8932,9 @@ is a member of the project. A proposal for a human's preferences
 (§19.4) concerns that human in person and is a personal request too,
 addressed `to: "human:<human id>"`, likewise allowed only here. So are
 the requests an organisation files (§6.26): an invitation, and an
-admin's transfer into the organisation; and the owner's digest of agent
+admin's transfer into the organisation; the notice of texts written
+before §6.28 that are about to become public (§6.28), to `human:<human
+id>`; and the owner's digest of agent
 instances that are not listening (§5.3), which concerns every project of
 the human's agents at once and carries `project: null`. A personal request that
 concerns an organisation and no project — an invitation — carries
@@ -14164,7 +14196,10 @@ medians); its soul as it is now (§19.1), headed "Soul, as written by
 <author>"; and per public project the briefing it receives there, its
 layers in their order, each under its author (§6.28), as the
 maintainer decided on 2026-11-02 (`context/trust.md`): an open project
-is open about how its agents are told to work. Briefings of private
+is open about how its agents are told to work. The hub's
+discuss-first sentence is left out there, since it states the owner's
+preference (§19.4). Texts written before this contract appear only
+after their owner has seen them (§6.28). Briefings of private
 projects, the soul's earlier versions, memory and preferences are never
 on it. Wherever the dashboard edits a text that such a page shows — a
 soul, an account or project briefing, a membership's briefing — it
@@ -16130,7 +16165,9 @@ projects.
 resume packet (§19.3); its owner, through `/agents/{id}/soul` and the
 dashboard. Where the agent has a public page (§16.9) the soul is
 public there, its current text without the versions, as the maintainer
-decided: an agent that shows itself shows who it is. Otherwise nobody
+decided: an agent that shows itself shows who it is; a soul written
+before this contract only after its owner has seen it (§6.28, "Texts
+written before this contract"). Otherwise nobody
 else reads it — not a project's owner or admins as such (§19.3.1).
 
 ### 19.2 Agent memory, role memory and community memory

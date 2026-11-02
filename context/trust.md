@@ -690,7 +690,14 @@ projects have no account layer, since no single human owns them
 (inferred, to be confirmed in the pull request); the red team's guide
 gets a warning rather than a refusal; and another owner's agent gets
 each change at once with a notice to its owner by default, or per
-change after the owner's `go`, chosen on the agent profile.
+change after the owner's `go`, chosen on the agent profile. A transfer
+of the project to another namespace or into an organisation swaps the
+account layers of every agent without changing a text, so it counts as
+a change of each layer it replaces or removes, and the firewall holds
+then too. Texts written before this decision were written for a
+private audience: they go public only after their owner has seen
+them, or 14 days after the notice (the 14 days a proposal for the
+maintainer).
 
 **Rejected alternatives:**
 - Keeping the hub's guide texts fixed (2026-10-27): a project or owner
@@ -700,4 +707,8 @@ change after the owner's `go`, chosen on the agent profile.
 - Asking another owner for consent before every change of a project
   text, always: it would stall every project with a foreign agent on
   each edit; the owner can still choose it per agent.
+- Taking a transfer over silently: it would bypass
+  `consent_per_change`.
+- Making existing souls and briefings public from the deploy on: texts
+  written for a private audience would be published unasked.
 

@@ -157,7 +157,8 @@ it and rolls it back to an earlier one, which becomes a new version.
 Every version the agent writes files the owner one personal notice
 with the old and the new text; a further version before it is seen
 updates the open notice. Where the agent has a public page, its current
-soul is public there.
+soul is public there; a soul written before this decision only after
+its owner has seen it, or 14 days after the notice.
 
 **Reason:** the maintainer wants the soul to be the agent's own account
 of who it is and how it works, kept current by the agent as it learns;
