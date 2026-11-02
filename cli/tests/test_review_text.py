@@ -102,10 +102,20 @@ def test_spans_that_name_nothing_checkable_are_skipped(clone: Path, span: str) -
 
 def test_a_hash_range_in_a_span_is_checked_as_objects(clone: Path) -> None:
     head = _commit(FILES)
-    short = head[:8]
+    # The shortest prefix from 8 characters on that §8.4 counts as a hash: a fixed head[:8]
+    # is all digits in about 2 % of commits, is then no hash, and the span is checked as a name.
+    short = next(head[:n] for n in range(8, 41) if textcheck.is_object_hash(head[:n]))
     assert textcheck.check(clone, head, f"`{short}..{short}`").bad == []
     found = textcheck.check(clone, head, f"`{short}..ab12cd34`").bad
-    assert len(found) == 1 and "ab12cd34: no such object" in found[0]
+    assert len(found) == 1 and "ab12cd34: no such object" in found[0], found
+
+
+def test_a_range_with_a_side_that_is_no_hash_is_checked_as_a_name(clone: Path) -> None:
+    head = _commit(FILES)
+    found = textcheck.check(clone, head, "`12345678..ab12cd34`").bad
+    assert len(found) == 2, found
+    assert "`12345678..ab12cd34`: not found as text" in found[0]
+    assert "ab12cd34: no such object" in found[1]
 
 
 def test_trees_and_blobs_are_objects_and_uuid_groups_are_no_hash(clone: Path) -> None:
