@@ -304,7 +304,7 @@ def _fresh_process_state() -> Iterator[None]:
     # again because its runner is slow (tsk-aaprca1rs4ny); a test that wants expiry moves it.
     maintenance.monotonic = lambda: 0.0
     yield
-    maintenance.monotonic = maintenance._wall
+    maintenance.monotonic = maintenance._process_monotonic
     clock.reset()
     from maity_hub import longpoll
 

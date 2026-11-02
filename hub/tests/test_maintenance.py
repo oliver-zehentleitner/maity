@@ -278,8 +278,8 @@ def test_a_replica_reads_a_window_set_elsewhere_once_its_cache_is_old(
 def test_a_slow_runner_does_not_change_what_a_request_costs(
     admin: flow.Human, migrated: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """tsk-aaprca1rs4ny: the wall clock moving 6 s between two measurements (a slow CI
-    runner) must not add the window's read to the second one."""
+    """tsk-aaprca1rs4ny: real time (`time.monotonic`) moving 6 s between two measurements
+    (a slow CI runner) must not add the window's read to the second one."""
     flow.project(admin, "maity")
 
     def call() -> None:
@@ -891,6 +891,8 @@ def test_the_sign_in_page_offers_no_registration_while_a_window_runs(
     assert answer.status_code == 200, answer.text
     assert answer.json()["registration"] is False
     assert visitor.get("/api/v1/auth/pages/sign_up").status_code == 503
+    now.set(UNTIL + timedelta(seconds=1))  # over: the way in is offered again
+    assert visitor.get("/api/v1/auth/methods").json()["registration"] is True
 
 
 def test_the_explore_page_carries_the_banner_of_an_upcoming_window(

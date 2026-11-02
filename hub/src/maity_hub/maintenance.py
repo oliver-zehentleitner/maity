@@ -31,12 +31,12 @@ MODES = ("accept_all", "refuse_all", "accept_only", "refuse_for")
 CACHE_SECONDS = 5.0  # how long one replica trusts its last read of the window
 
 
-def _wall() -> float:
+def _process_monotonic() -> float:
     return time.monotonic()
 
 
 # The cache's clock; tests hold it still, so a slow runner does not re-read the window mid-test.
-monotonic: Callable[[], float] = _wall
+monotonic: Callable[[], float] = _process_monotonic
 
 _lock = threading.Lock()
 _cached: tuple[float, dict[str, Any] | None] | None = None

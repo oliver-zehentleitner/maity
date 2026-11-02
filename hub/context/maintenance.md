@@ -134,7 +134,8 @@ project pages: an imprint and a privacy notice must be reachable at all times, a
 **See:** maintenance.md#each-replica-trusts-its-last-read-of-the-window-for-5-seconds-only-the-deadline-sweeps-wait — b0bbdd1f-8166-44e4-905f-94f5e415081b — as of 2026-11-02
 **Revisit when:** the window cache moves out of the process, or a test needs the cache to expire by real time
 
-The cache reads its age from `maintenance.monotonic`, the wall clock in production. The hub's test fixture
+The cache reads its age from `maintenance.monotonic`, which is `time.monotonic` in production: a
+clock of the process that a change of the system time (NTP) does not move. The hub's test fixture
 sets it to a constant for each test, so the window is read once and then held until `forget()` or the
 hub's clock passing `until`. Before that, a test that counts the statements of two requests saw two or
 three more in the second one when more than 5 seconds passed between them, which happened on slow runners
