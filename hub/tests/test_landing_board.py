@@ -245,7 +245,8 @@ def test_a_band_without_text_is_a_title_and_a_button(
     bare = {k: v for k, v in BAND.items() if k != "text"}
     html = page(owner, make_client, bare)
     assert re.search(
-        r'<h2>Start</h2><a class="btn btn-primary" href="/register">Go</a></div></div></section>',
+        r'<h2>Start</h2><a class="btn btn-primary" href="/register\?lang=en">Go</a>'
+        r"</div></div></section>",
         html,
     )
     assert "<p>Now.</p>" not in page(owner, make_client, bare)

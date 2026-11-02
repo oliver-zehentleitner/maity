@@ -14,6 +14,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import Connection, delete, func, insert, or_, select, update
+from sqlalchemy.dialects import postgresql
 
 from maity_hub import availability, clock
 from maity_hub import tables as t
@@ -180,6 +181,16 @@ def moderator_order(conn: Connection, series_id: str, members: list[Any]) -> lis
     )
 
 
+def _count_minute(conn: Connection, membership_id: str, minute: datetime) -> None:
+    values = {"membership_id": membership_id, "minute": minute}
+    if conn.dialect.name == "postgresql":
+        # Another pod's pass may count the same minute after `known` was read (only PostgreSQL
+        # runs replicas): the row is the same, so either one will do.
+        conn.execute(postgresql.insert(t.presence_minute).values(values).on_conflict_do_nothing())
+    else:
+        conn.execute(insert(t.presence_minute).values(values))
+
+
 def record_presence(conn: Connection, now: datetime) -> None:
     """The minute's count for every agent membership with an instance `online` and every
     human membership `online` (§5.3: a call within 120 seconds or a long-poll open); older
@@ -216,9 +227,7 @@ def record_presence(conn: Connection, now: datetime) -> None:
     )
     for membership_id in online:
         if membership_id not in known:
-            conn.execute(
-                insert(t.presence_minute).values(membership_id=membership_id, minute=minute)
-            )
+            _count_minute(conn, membership_id, minute)
     conn.execute(
         delete(t.presence_minute).where(t.presence_minute.c.minute < now - timedelta(hours=25))
     )

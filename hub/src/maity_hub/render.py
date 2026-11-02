@@ -57,6 +57,14 @@ def choose_language(
 ) -> str:
     """`?lang=` if offered, else the best match of `Accept-Language` among the offered
     languages, else the default language; the default itself only when it is offered."""
+    best = best_language(offered, query, accept_language)
+    if best is not None:
+        return best
+    return default if default in offered else (offered[0] if offered else default)
+
+
+def best_language(offered: list[str], query: str | None, accept_language: str | None) -> str | None:
+    """`?lang=` if offered, else the best match of `Accept-Language`, else nothing."""
     if query in offered:
         return str(query)
     ranked: list[tuple[float, int, str]] = []
@@ -71,9 +79,7 @@ def choose_language(
         match = _offered_match(tag.strip().lower(), offered)
         if match is not None and weight > 0:
             ranked.append((-weight, position, match))
-    if ranked:
-        return sorted(ranked)[0][2]
-    return default if default in offered else (offered[0] if offered else default)
+    return sorted(ranked)[0][2] if ranked else None
 
 
 # --- Markdown ----------------------------------------------------------------------------------
@@ -510,6 +516,24 @@ border-radius:.5rem;border:1px solid var(--line)}
 """
 
 
+_SIGN_IN_LINK = re.compile(r'href="(/login|/register)((?:\?[^"#]*)?)((?:#[^"]*)?)"')
+
+
+def _carry_language(body: str, lang: str) -> str:
+    """The links to `/login` and `/register` say the language the page was served in (§16.7.4)."""
+
+    def carry(found: re.Match[str]) -> str:
+        query = found.group(2)
+        if re.search(r"[?;&]lang=", query):
+            return found.group(0)
+        joined = "&amp;" if query else "?"
+        return (
+            f'href="{found.group(1)}{query}{joined}lang={escape(lang, quote=True)}{found.group(3)}"'
+        )
+
+    return _SIGN_IN_LINK.sub(carry, body)
+
+
 def _document(
     *,
     lang: str,
@@ -530,7 +554,7 @@ def _document(
         f'<!doctype html><html lang="{escape(lang)}"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f"<title>{escape(title)}</title>{meta if description else ''}{head}{alternates}"
-        f"{f'<style>{style}</style>' if style else ''}</head><body>{body}</body></html>"
+        f"{f'<style>{style}</style>' if style else ''}</head><body>{_carry_language(body, lang)}</body></html>"
     )
 
 

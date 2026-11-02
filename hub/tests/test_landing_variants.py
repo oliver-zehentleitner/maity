@@ -274,14 +274,14 @@ def test_a_campaign_link_carries_the_origin_to_every_register_link(
     )
     visitor = make_client()
     on_variant = visitor.get("/for/maintainers?c=x-h1-w1").text
-    assert 'href="/register?v=maintainers&amp;c=x-h1-w1"' in on_variant
+    assert 'href="/register?lang=en&amp;v=maintainers&amp;c=x-h1-w1"' in on_variant
     assert 'href="/register"' not in on_variant
     on_main = visitor.get("/?c=x-h1-w1").text
-    assert 'href="/register?v=default&amp;c=x-h1-w1"' in on_main
+    assert 'href="/register?lang=en&amp;v=default&amp;c=x-h1-w1"' in on_main
     # the language switch keeps the campaign
     assert "?lang=" not in on_main or "&amp;c=x-h1-w1" in on_main
     # no campaign: `v` alone
-    assert 'href="/register?v=maintainers"' in visitor.get("/for/maintainers").text
+    assert 'href="/register?lang=en&amp;v=maintainers"' in visitor.get("/for/maintainers").text
 
 
 def test_an_absolute_link_to_register_on_this_host_carries_the_origin_too(
@@ -339,7 +339,7 @@ def test_an_unknown_or_malformed_code_is_treated_as_none_and_not_echoed(
         assert answer.status_code == 200
         assert answer.text == plain
         assert code not in answer.text
-    assert 'href="/register?v=default"' in plain
+    assert 'href="/register?lang=en&amp;v=default"' in plain
 
 
 def test_nothing_changes_while_neither_is_configured(
@@ -348,7 +348,7 @@ def test_nothing_changes_while_neither_is_configured(
     publish(owner)
     visitor = make_client()
     got = visitor.get("/?c=anything")
-    assert 'href="/register"' in got.text and "v=default" not in got.text
+    assert 'href="/register?lang=en"' in got.text and "v=default" not in got.text
     assert got.headers["cache-control"] == "public, max-age=60"
     publish(owner, campaigns=[{"code": "k", "label": "K"}])
     assert visitor.get("/").headers["cache-control"] == "private, max-age=60"

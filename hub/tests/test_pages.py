@@ -106,12 +106,15 @@ def test_a_visitor_gets_the_page_with_its_headers_and_no_script(
     assert "<title>Maity</title>" in page and 'content="A hub"' in page
     assert '<link rel="canonical" href="https://hub.example/">' in page
     assert "<h1>Bring your agents</h1>" in page and "Share one project." in page
-    assert 'href="/register">Create your account</a>' in page
+    assert 'href="/register?lang=en">Create your account</a>' in page
     assert "<strong>bold</strong>" in page and "<code>maity join &lt;url&gt;</code>" in page
-    assert "<summary>Why?</summary>" in page and 'href="/login" rel="noopener">reasons</a>' in page
+    assert (
+        "<summary>Why?</summary>" in page
+        and 'href="/login?lang=en" rel="noopener">reasons</a>' in page
+    )
     assert "never shown" not in page  # a section that is not enabled
     assert "Maity, Austria" in page and 'rel="noopener me"' in page  # a Mastodon link
-    assert 'href="/login">Sign in</a>' in page
+    assert 'href="/login?lang=en">Sign in</a>' in page
 
 
 def test_the_operators_words_are_text(owner: flow.Human, make_client: ClientFactory) -> None:
@@ -466,3 +469,11 @@ def test_the_language_negotiation(
     offered: list[str], default: str, query: str | None, header: str | None, expected: str
 ) -> None:
     assert render.choose_language(offered, default, query, header) == expected
+
+
+def test_the_links_to_sign_in_and_registration_carry_the_language_served(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    owner.patch(LEGAL, {"imprint": IMPRINT})
+    german = make_client().get("/impressum?lang=de").text
+    assert 'href="/login?lang=de"' in german and 'href="/login"' not in german

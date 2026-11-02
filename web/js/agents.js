@@ -74,7 +74,7 @@ window.Maity = window.Maity || {};
         m.briefing ? h("p", { class: "pre" }, m.briefing) : h("p", { class: "muted" }, M.t("agentparts.briefing.none")),
         // Who wrote the current text, where the hub says (docs/api.md §6.2).
         m.briefing && m.briefing_by ? h("p", { class: "muted" }, m.briefing_version
-          ? M.t("agentparts.briefing.set_by_version", { handle: m.briefing_by.handle, version: m.briefing_version })
+          ? M.t("agentparts.briefing.set_by_version", { handle: m.briefing_by.handle, version: String(m.briefing_version) })
           : M.t("agentparts.briefing.set_by", { handle: m.briefing_by.handle })) : null,
         h("button", { type: "button", class: "small", onclick: edit }, m.briefing ? M.t("agentparts.briefing.edit") : M.t("agentparts.briefing.write")),
         status.el);

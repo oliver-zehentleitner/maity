@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, func, insert, select, update
 
-from maity_hub import attachment_store, clock, events, handles, moderation, namespace
+from maity_hub import attachment_store, clock, events, handles, moderation, namespace, worker_runs
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.admin import instance_admin_id
@@ -470,7 +470,10 @@ class Worker:
     def _run(self) -> None:
         while not self._stop.wait(self.interval):
             try:
-                with self.engine.begin() as conn:
-                    expire(conn)
+                with worker_runs.claim(self.engine, "reports", self.interval) as held:
+                    if held is None:
+                        continue
+                    with self.engine.begin() as conn:
+                        expire(conn)
             except Exception:
                 log.exception("the abuse report retention sweep failed")

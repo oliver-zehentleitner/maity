@@ -192,7 +192,7 @@ def send(
         raise rate_limited(left)
     BY_HUMAN.hit(row.human_id)  # after the update: the loser of a race has sent nothing
     human = conn.execute(select(t.human).where(t.human.c.id == row.human_id)).one()
-    language = preferences.preferences(conn, row.human_id)["email"]["language"]
+    language = preferences.text_language(conn, row.human_id)
     link = (
         f"{hub.public_url.rstrip('/')}/sign-in/second-factor/email#{token}" if with_link else None
     )
@@ -284,7 +284,7 @@ def send_confirmation(conn: Connection, hub: Settings, row: Any, nonce: str) -> 
             mail_sent_at=clock.now(),
         )
     )
-    german = preferences.preferences(conn, row.human_id)["email"]["language"] == "de"
+    german = preferences.text_language(conn, row.human_id) == "de"
     spaced = f"{code[:3]} {code[3:]}"
     outbox.enqueue(
         conn,

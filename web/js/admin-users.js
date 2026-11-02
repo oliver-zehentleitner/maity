@@ -71,7 +71,7 @@ window.Maity = window.Maity || {};
     const more = h("div", { class: "actions" });
     const q = h("input", { id: "users-q", type: "search", maxlength: "64", autocomplete: "off", spellcheck: "false" });
     const disabled = h("select", { id: "users-disabled" },
-      [["", "All accounts"], ["false", "Active"], ["true", "Disabled"]].map(([v, l]) => h("option", { value: v }, l)));
+      [["", M.t("users.filter.all")], ["false", M.t("users.filter.active")], ["true", M.t("users.filter.disabled")]].map(([v, l]) => h("option", { value: v }, l)));
     disabled.value = "";
     let rows = [];
     let next = null;
@@ -106,35 +106,39 @@ window.Maity = window.Maity || {};
 
     function draw() {
       const n = rows.length;
+      const col = {
+        name: M.t("users.column.name"), admin: M.t("users.column.admin"), status: M.t("users.column.status"), created: M.t("users.column.created"),
+        last_signin: M.t("users.column.last_signin"), last_seen: M.t("users.column.last_seen"), projects: M.t("users.column.projects"), agents: M.t("users.column.agents"),
+      };
       append(clear(box),
-        h("p", { class: "muted" }, n ? n + (next ? "+" : "") + (n === 1 ? " account" : " accounts") : "No account matches."),
-        n ? h("div", { class: "table-wrap", tabindex: "0", role: "region", "aria-label": "Users" },
-          h("table", { class: "users card-table", role: "table", "aria-label": "Users" },
+        h("p", { class: "muted" }, n ? (next ? M.t("users.count_more", { count: n }) : M.t("users.count", { count: n })) : M.t("users.none")),
+        n ? h("div", { class: "table-wrap", tabindex: "0", role: "region", "aria-label": M.t("users.table") },
+          h("table", { class: "users card-table", role: "table", "aria-label": M.t("users.table") },
             h("thead", { role: "rowgroup" }, h("tr", { role: "row" },
-              ["Name", "Admin", "Status", "Created", "Last sign-in", "Last seen", "Projects", "Agents", M.t("users.reset.column")]
+              [col.name, col.admin, col.status, col.created, col.last_signin, col.last_seen, col.projects, col.agents, M.t("users.reset.column")]
                 .map((t) => h("th", { scope: "col", role: "columnheader" }, t)))),
             h("tbody", { role: "rowgroup" }, rows.map((u) => h("tr", { role: "row", class: u.disabled ? "disabled" : "" },
-              h("th", { scope: "row", role: "rowheader", "data-label": "Name", tabindex: "-1" },
+              h("th", { scope: "row", role: "rowheader", "data-label": col.name, tabindex: "-1" },
                 h("span", { class: "user-name" }, u.display_name), h("span", { class: "muted" }, " @" + u.handle),
-                u.id === ctx.me.id ? h("span", { class: "muted" }, " (you)") : null),
-              h("td", { role: "cell", "data-label": "Admin" }, u.instance_admin ? "instance admin" : "—"),
-              h("td", { role: "cell", "data-label": "Status" }, u.disabled ? "disabled" : "active"),
-              h("td", { role: "cell", "data-label": "Created" }, formatTime(u.created_at)),
-              h("td", { role: "cell", "data-label": "Last sign-in" }, u.last_login_at ? formatAgo(u.last_login_at) : "never"),
-              h("td", { role: "cell", "data-label": "Last seen" }, u.last_seen_at ? formatAgo(u.last_seen_at) : "never"),
-              h("td", { role: "cell", "data-label": "Projects" }, String(u.memberships)),
-              h("td", { role: "cell", "data-label": "Agents" }, String(u.agents)),
+                u.id === ctx.me.id ? h("span", { class: "muted" }, " " + M.t("users.you")) : null),
+              h("td", { role: "cell", "data-label": col.admin }, u.instance_admin ? M.t("users.instance_admin") : "—"),
+              h("td", { role: "cell", "data-label": col.status }, u.disabled ? M.t("users.state.disabled") : M.t("users.state.active")),
+              h("td", { role: "cell", "data-label": col.created }, formatTime(u.created_at)),
+              h("td", { role: "cell", "data-label": col.last_signin }, u.last_login_at ? formatAgo(u.last_login_at) : M.t("users.never")),
+              h("td", { role: "cell", "data-label": col.last_seen }, u.last_seen_at ? formatAgo(u.last_seen_at) : M.t("users.never")),
+              h("td", { role: "cell", "data-label": col.projects }, String(u.memberships)),
+              h("td", { role: "cell", "data-label": col.agents }, String(u.agents)),
               h("td", { role: "cell", "data-label": M.t("users.reset.column") }, u.id === ctx.me.id
                 ? h("span", { class: "muted" }, M.t("users.reset.own"))
                 : resetButton(u))))))) : null);
       clear(more);
-      if (next) append(more, h("button", { type: "button", onclick: () => load(shownFilter, next) }, "Load more"));
+      if (next) append(more, h("button", { type: "button", onclick: () => load(shownFilter, next) }, M.t("users.load_more")));
     }
 
     // A newer search wins over an older answer still on its way.
     async function load(filter, cursor) {
       const mine = ++seq;
-      status.busy(cursor ? "Loading more…" : "Loading…");
+      status.busy(cursor ? M.t("users.loading_more") : M.t("users.loading"));
       try {
         const page = await M.api.get(query(filter, cursor));
         if (mine !== seq) return;
@@ -151,7 +155,7 @@ window.Maity = window.Maity || {};
         }
       } catch (err) {
         if (mine !== seq) return;
-        status.fail("The users could not be read: ", err);
+        status.fail(M.t("users.read_failed"), err);
       }
     }
 
@@ -165,12 +169,11 @@ window.Maity = window.Maity || {};
     });
     disabled.addEventListener("change", () => { changed(); load(filterNow(), null); });
 
-    append(root, h("h2", null, "Users of this hub"),
-      h("p", { class: "muted" }, "The people with an account here, for you as the instance admin: when they came, signed in and "
-        + "were last seen, how many projects they are in and how many agents they own. Being the instance admin opens no project."),
+    append(root, h("h2", null, M.t("users.title")),
+      h("p", { class: "muted" }, M.t("users.intro")),
       h("form", { class: "users-filter", role: "search", onsubmit: (e) => { e.preventDefault(); changed(); load(filterNow(), null); } },
-        h("label", { for: "users-q" }, "Search by handle or name"), q,
-        h("label", { for: "users-disabled" }, "Show"), disabled),
+        h("label", { for: "users-q" }, M.t("users.search")), q,
+        h("label", { for: "users-disabled" }, M.t("users.show")), disabled),
       status.el, box, more, resetBox);
     await load(filterNow(), null);
   }

@@ -183,7 +183,7 @@ def deliver(
             },
         )
         human = conn.execute(select(t.human).where(t.human.c.id == human_id)).one()
-        language = preferences.preferences(conn, human_id)["email"]["language"]
+        language = preferences.text_language(conn, human_id)
         browser, system = sessions.describe(user_agent)
         body = links.mail_body(
             language=language,
@@ -309,7 +309,7 @@ def link_page(token: str, request: Request) -> HTMLResponse:
         ):
             return _dead()
         human = conn.execute(select(t.human).where(t.human.c.id == row.human_id)).one()
-        language = preferences.preferences(conn, row.human_id)["email"]["language"]
+        language = preferences.text_language(conn, row.human_id)
         name = f"{human.display_name} ({human.handle})"
     form = secrets.token_urlsafe(32)
     title = f"Bei Maity anmelden als {name}" if language == "de" else f"Sign in to Maity as {name}"

@@ -1,7 +1,8 @@
 """The languages a human or a project can choose (§6.1, §6.2, §18.4).
 
 Every ISO 639-1 code, and Chinese in its two scripts, each by its own name. They say what agents
-write in; the hub's own texts exist in English and German only (`own_text`).
+write in. `COMMON` is what a person is offered, `INTERFACE` what the portal and the hub's own
+texts can be in (§6.2); the hub's words exist in English and German so far (`own_text`).
 """
 
 from __future__ import annotations
@@ -197,8 +198,30 @@ NAMES = {
 }
 
 
+# The written languages most language models handle well. Data: a language here needs no code.
+COMMON = frozenset(
+    {
+        "ar", "bg", "bn", "ca", "cs", "da", "de", "el", "en", "es", "et", "fa", "fi", "fr",
+        "he", "hi", "hr", "hu", "id", "it", "ja", "ko", "lt", "lv", "ms", "nb", "nl",
+        "pl", "pt", "ro", "ru", "sk", "sl", "sr", "sv", "th", "tr", "uk", "ur", "vi",
+        "zh-Hans", "zh-Hant",
+    }
+)  # fmt: skip
+# The ten of §16.7.
+INTERFACE = ("en", "de", "fr", "es", "pt", "it", "nl", "ja", "ko", "zh-Hans")
+
+
 def known(value: object) -> TypeGuard[str]:
     return isinstance(value, str) and value in NAMES
+
+
+def of_interface(chosen: object, language: object) -> str:
+    """The language the hub speaks to a human in (§6.2): the interface language chosen, else
+    what agents write in when the portal has it, else English."""
+    for tag in (chosen, language):
+        if tag in INTERFACE:
+            return str(tag)
+    return "en"
 
 
 def own_text(language: object) -> str:

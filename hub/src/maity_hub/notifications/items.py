@@ -18,7 +18,7 @@ from maity_hub import avatars, clock, events, inbox, namespace
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.notifications import records
-from maity_hub.views import deleted, deleted_person, human_languages
+from maity_hub.views import deleted, deleted_person
 
 WINDOW = timedelta(days=30)
 KINDS = ("inbox", "chat", "mention", "security")
@@ -150,7 +150,9 @@ def scope(conn: Connection, human_id: str, public_url: str) -> Scope:
         )
     ).all()
     found = Scope(human_id, public_url)
-    found.language = human_languages(conn, {human_id}).get(human_id, "en")
+    from maity_hub.notifications import preferences  # preferences reads what this module shows
+
+    found.language = preferences.text_language(conn, human_id)
     if not members:
         return found
     projects = {
