@@ -41,6 +41,18 @@ fix it.
 | `limits` | 4 | login burst and one request replayed on every pod for 280 s; restart the database and fail it over during it. The join exchange burst is not in yet |
 | `mixed` plus an operator | 5 | kill a pod, then a `RollingUpdate`; a threshold fails on the kill's errors, read them against the 10 s of the plan |
 
+## Afterwards
+
+Delete the accounts where the hub runs, with the same name confirmed as for the seed. Without
+`--apply` it only counts, per table, what it would delete:
+
+    LOADTEST_CONFIRMED_TEST_SYSTEM=<host> maity-hub loadtest purge
+    LOADTEST_CONFIRMED_TEST_SYSTEM=<host> maity-hub loadtest purge --apply
+
+It deletes every row of the `lt-<n>` accounts in every table, their keys included, so the output
+file of the seed is worthless afterwards; delete it too. It refuses when an account shares a project
+or a row with anyone else.
+
 ## Read on the server, not by k6
 
 Memory, CPU and connections per pod; on PostgreSQL `pg_stat_activity` (connections against the

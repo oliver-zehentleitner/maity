@@ -609,6 +609,8 @@ window.MAITY_I18N["de"] = {
   "cardpanel.notes.post": "Notiz posten",
   "cardpanel.notes.posting": "Wird gepostet …",
   "cardpanel.notes.read_failed": "Die Notizen konnten nicht gelesen werden: {reason}",
+  "cardpanel.notes.removed": "Die Notiz wurde entfernt: {reason}",
+  "cardpanel.notes.removed_by": "Die Notiz wurde von {who} entfernt: {reason}",
   "cardpanel.updates": "Updates",
   "cardpanel.updates.none": "Noch keine Updates zu dieser Karte.",
   "cardpanel.updates.none_latest": "Keine Updates zu dieser Karte unter den neuesten Nachrichten des Projekts.",
@@ -961,6 +963,7 @@ window.MAITY_I18N["de"] = {
   "error.load_failed": "Konnte nicht geladen werden",
   "error.load_failed_at": "Konnte nicht geladen werden ({path})",
   "error.mail_not_configured": "Dieser Hub kann keine Mail senden.",
+  "error.maintenance": "Der Hub wird gerade gewartet. Versuche es nach der Wartung noch einmal.",
   "error.memory_full": "Dieses Gedächtnis ist voll.",
   "error.method_not_allowed": "Diese Aktion ist hier nicht verfügbar.",
   "error.namespace_owner": "Der Besitzer des Namensraums dieses Projekts kann auf diesem Weg nicht geändert oder entfernt werden.",
@@ -4642,5 +4645,9 @@ window.MAITY_I18N["de"] = {
     "one": "{count} Eintrag ohne ID wurde übersprungen.",
     "other": "{count} Einträge ohne ID wurden übersprungen."
   },
-  "why.title": "Why"
+  "why.title": "Why",
+  "why.type.constraint": "Randbedingung",
+  "why.type.decision": "Entscheidung",
+  "why.type.incident": "Vorfall",
+  "why.type.workaround": "Workaround"
 };

@@ -56,8 +56,11 @@ def test_each_kind_answers_exactly_the_keys_of_the_contract(world: World) -> Non
         "agents",
         "other_agents",
         "statistics",
+        "ticker",
+        "online",
     }
     assert set(project["data"]["statistics"]) == {"totals", "members"}
+    assert set(project["data"]["online"]) == {"humans", "agents", "named", "as_of"}
     assert [set(p) for p in project["data"]["people"]] == [PERSON]
 
     board = read(world, f"{BASE}/board")

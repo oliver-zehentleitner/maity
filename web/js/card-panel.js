@@ -44,6 +44,17 @@ window.Maity = window.Maity || {};
   const byline = (ctx, who) => (who && (who.member_id || who.handle)
     ? M.dom.memberRef(ctx, who, { text: "handle", instance: who.instance }) : "@?");
 
+  // A redacted note keeps its place; its body is §8.5's tombstone, {redacted, reason,
+  // by, at}, never Markdown (§6.16).
+  const removedNote = (n) => !!n.body && typeof n.body === "object";
+  function noteTombstone(ctx, t) {
+    const reason = t.reason || "";
+    const said = t.by
+      ? M.tn("cardpanel.notes.removed_by", { who: M.dom.memberRef(ctx, t.by), reason })
+      : M.t("cardpanel.notes.removed", { reason });
+    return h("p", { class: "muted msg-redacted card-note-removed" }, said, t.at ? " · " + formatTime(t.at) : "");
+  }
+
   function historyLine(ctx, e) {
     const who = h("span", null, byline(ctx, e.actor));
     const when = h("span", { class: "muted" }, " · " + formatAgo(e.at, M.api.now()));
@@ -128,7 +139,8 @@ window.Maity = window.Maity || {};
       append(notesBox, list.length
         ? h("ul", { class: "card-note-list" }, list.map((n) => h("li", null,
           h("p", { class: "muted" }, byline(ctx, n.author), " · " + formatTime(n.created_at)),
-          h("div", { class: "md" }, M.markdown(n.body, where, { mentions: n.mentions, hrefOf: (id) => ctx.link("members", id), ctx })))))
+          removedNote(n) ? noteTombstone(ctx, n.body)
+            : h("div", { class: "md" }, M.markdown(n.body, where, { mentions: n.mentions, hrefOf: (id) => ctx.link("members", id), ctx })))))
         : h("p", { class: "muted" }, M.t("cardpanel.notes.none")));
       const closed = ctx.project && ctx.project.state === "archived";
       if (closed) return;
