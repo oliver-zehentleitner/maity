@@ -493,7 +493,7 @@
   },
   "agents.humans_only": {
     "en": "35131c6238e0c692",
-    "text": "8c190928839fe85b"
+    "text": "8b3195d88faa97af"
   },
   "agents.instances": {
     "en": "a55be366aba21e69",
@@ -517,7 +517,7 @@
   },
   "agents.intro": {
     "en": "eb3c55d425e3efcc",
-    "text": "2a1b4262a35f37bd"
+    "text": "1b033b85c9c23047"
   },
   "agents.join.failed": {
     "en": "8ddba9e2a23aff5b",
@@ -625,11 +625,11 @@
   },
   "agents.new.title": {
     "en": "7c68c424c84fcbf3",
-    "text": "2ba7812bcb4d197f"
+    "text": "4ba7d30a9b9615b2"
   },
   "agents.none": {
     "en": "bec638b32fbc01f7",
-    "text": "f39931715cf6733a"
+    "text": "c3ba98a851faa191"
   },
   "agents.project.hint": {
     "en": "ef61ab5d1a64a967",
@@ -641,7 +641,7 @@
   },
   "agents.project.humans_only": {
     "en": "f93783c13d1aab93",
-    "text": "e4929be94f05f177"
+    "text": "b81ff7e2d73cb7db"
   },
   "agents.project.in": {
     "en": "08b9767c85587e7b",
@@ -2397,7 +2397,7 @@
   },
   "cards.refused.lease_active": {
     "en": "02e810a9c932c803",
-    "text": "e31081bf5b2569e9"
+    "text": "6f26fb7459228ffb"
   },
   "cards.refused.missing": {
     "en": "bfdb2503b0f2e951",
@@ -3369,7 +3369,7 @@
   },
   "error.dependencies_open": {
     "en": "020090e328a642f5",
-    "text": "6eef5673d2394b13"
+    "text": "8e4d88a39211c3c7"
   },
   "error.forbidden": {
     "en": "426cd406687feeb1",
@@ -4049,7 +4049,7 @@
   },
   "group.manage.remove_confirm": {
     "en": "086a078bbe77b706",
-    "text": "b5f6435bd4648eb9"
+    "text": "d93ae25ed78e3198"
   },
   "group.manage.remove_failed": {
     "en": "31da7da208eb473f",
@@ -4869,7 +4869,7 @@
   },
   "instance.rest.lead": {
     "en": "4eb9e810580b9005",
-    "text": "af008a842bb15375"
+    "text": "7c1b253185246d01"
   },
   "instance.rest.title": {
     "en": "7e6b6d688a45f225",
@@ -5377,7 +5377,7 @@
   },
   "jf.month.ordinal": {
     "en": "382822c047436d9c",
-    "text": "924528daa115945c"
+    "text": "4770b3ebebd0a532"
   },
   "jf.month.weekday": {
     "en": "7273d7e651f317b3",
@@ -6229,7 +6229,7 @@
   },
   "join.agent.new": {
     "en": "9ba09cdd0900e0ef",
-    "text": "db56ea58ef6647ec"
+    "text": "e13ab3a188ddc276"
   },
   "join.agent.option": {
     "en": "6acafdef1e97265b",
@@ -9293,7 +9293,7 @@
   },
   "menu.add.user": {
     "en": "f59d0ea2e8ec813b",
-    "text": "db9ed4b6a293b2f2"
+    "text": "debe37a3c6723fe6"
   },
   "menu.agents": {
     "en": "21cf98a292e94015",
@@ -9425,7 +9425,7 @@
   },
   "messages.review.places": {
     "en": "ff11021b333a762c",
-    "text": "b8bb7c65efcba47e"
+    "text": "63fefadeb4b8fa74"
   },
   "messages.review.removed": {
     "en": "ccd78884d3e80244",
@@ -13969,7 +13969,7 @@
   },
   "settings.done_authority.admin": {
     "en": "cf5aafc19695cf23",
-    "text": "a00d3d2f2b7b2b62"
+    "text": "55959d6ffd79d298"
   },
   "settings.done_authority.hint": {
     "en": "00904d1439e56d8c",
@@ -16109,7 +16109,7 @@
   },
   "tickerset.read_only": {
     "en": "d62305f28eb45cbb",
-    "text": "6197d2d8ab6c2d9a"
+    "text": "d0efb48d7e1cfc1a"
   },
   "tickerset.save": {
     "en": "43ccc09f933d16ab",
@@ -16781,7 +16781,7 @@
   },
   "why.intro": {
     "en": "41317daaeede1c23",
-    "text": "064031003faf533e"
+    "text": "4b3573748a1a017e"
   },
   "why.no_read": {
     "en": "f5124f350b2f5ae8",

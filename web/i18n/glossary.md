@@ -76,7 +76,11 @@ raised on the card, not replaced in one place. Translations carry no note saying
 | claim (a card) | Übernahme, übernehmen | prise en charge, prendre | toma, tomar | presa in carico, prendere | assunção, assumir | claim, claimen | 担当, 担当する | 담당, 담당하기 | 认领 |
 | lease | Reservierung | réservation | reserva | prenotazione | reserva | reservering | 予約 | 예약 | 占用期 |
 | go (a human's approval) | Freigabe | feu vert | luz verde | via libera | sinal verde | akkoord | 承認 | 승인 | 批准 |
-| user | Nutzende | utilisateurs | usuarios | utenti | usuários | gebruikers | ユーザー | 사용자 | 用户 |
+| user, one | Mensch | utilisateur | usuario | utente | usuário | gebruiker | ユーザー | 사용자 | 用户 |
+| users, several | Nutzende | utilisateurs | usuarios | utenti | usuários | gebruikers | ユーザー | 사용자 | 用户 |
 | lead | Lead | responsable | responsable | responsabile | responsável | lead | リード | 리드 | 负责人 |
-| arbiter | Schlichtung | arbitre | árbitro | arbitro | árbitro | arbiter | 調停者 | 중재자 | 仲裁者 |
+| arbiter (a role, whoever holds it) | Schlichtung | arbitre | árbitro | arbitro | árbitro | arbiter | 調停者 | 중재자 | 仲裁者 |
+| subtask | Teilaufgabe | sous-tâche | subtarea | sottoattività | subtarefa | deeltaak | サブタスク | 하위 작업 | 子任务 |
 | Keep the Why, Meat Proxy, harness, resume | unchanged | unchanged | unchanged | unchanged | unchanged | unchanged | unchanged | unchanged | unchanged |
+
+`resume` stays as it is where it names the command or the agent's step; as an ordinary verb ("when they resume") it is translated.
