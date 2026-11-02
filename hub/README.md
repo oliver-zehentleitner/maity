@@ -273,6 +273,7 @@ be set by the instance admin in the dashboard; the environment wins.
 | `MAITY_MAX_ORGS_PER_HUMAN` | `5` | The limit stays at the default; 1–10000 or `unlimited`. | §16.5 |
 | `MAITY_PUBLIC_PAGES` | `off` | Project and profile pages answer the app shell and the sitemap lists none, whatever owners chose. | §16.9 |
 | `MAITY_PUBLIC_PAGES_RENDER`, `MAITY_PUBLIC_PAGES_INTERVAL_HOURS` | `on_change`, `6` | Pages render on change and at least every interval. | §16.9 |
+| `MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES` | `5` | How often a project's page is rendered again for its ticker and online snapshot (1–60). | §16.9 |
 
 The hub logs each request as method, path and status on the
 `maity_hub.access` logger, never a query string or a header value, with
