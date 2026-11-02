@@ -116,6 +116,9 @@ human = Table(
     # Whether the person has a public page, and the plain text on it (§16.9); a person is
     # private until they choose.
     Column("public_profile", Boolean, nullable=False, server_default=true()),
+    # Whether the public pages of the person's projects name them as online (§16.9); off,
+    # they are counted and not named.
+    Column("public_presence", Boolean, nullable=False, server_default=true()),
     Column("public_bio", String(280)),
     # The person's website and their names on the networks of §16.9 (never URLs), and who
     # sees them; the links are built from the names when shown.
