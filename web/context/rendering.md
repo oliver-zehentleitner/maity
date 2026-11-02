@@ -613,6 +613,11 @@ like a sentence wherever it stands; no context hides one. Other literals are exc
 lists, paths, selectors) and by the code before them (`class:`, `===`, `querySelector(`). A lone lowercase
 word counts only as a piece of a sentence (`"to "`) or where a person reads it (`textContent =`, the content
 of `h()`, `title:`). Others stay with the reviewer: `"online"` beside a variable cannot be told from a key.
+A `#` comment with words in it counts whatever the line is, since a person reads it in the generated file.
+
+`prose()` stays an approximation on purpose: a lone word in an `h()` call over several lines is not seen,
+because `before` holds one line. The ratchet shows the direction. The proof that nothing is left untranslated
+is the run with a pseudo catalog, so further single cases are not chased here.
 
 **Rejected alternatives:**
 - Counting every lone word: thousands of keys and values, and the ratchet would mean nothing.

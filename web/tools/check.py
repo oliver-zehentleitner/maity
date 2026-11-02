@@ -591,7 +591,9 @@ def load_catalog(path):
 # Literals that read as words but stay as they are in every language: the strict-mode
 # directive, product names, the brand in a page title, keys as a browser names them.
 NOT_PROSE = {"use strict", " · Maity", "Codex", "Hermes", "Kimi Code", "Cline", "Claude Code",
-             "⌘+Enter", "Ctrl+Enter", "Strg+Enter", "Control+Enter Meta+Enter"}
+             "⌘+Enter", "Ctrl+Enter", "Strg+Enter", "Control+Enter Meta+Enter",
+             "Maity", "GitHub", "GitLab", "Gitea", "HTTP ", "SHA-256 ", "[U+", "?c=", "XXXX-XXXX-XXXX", "de", "staging",
+             "badge ok", "reply primary"}
 
 
 # What comes before a literal that is code whatever it reads like: a class, an
@@ -604,7 +606,7 @@ CODE_BEFORE = re.compile(
              createElement|createElementNS|setAttribute|getAttribute|removeAttribute|getItem|setItem|removeItem|
              includes|startsWith|endsWith|split|join|replace|get|has|set|append|delete|matchMedia|
              api\.\w+|route\.\w+|go|t|tn|tOwn)\(\s*
-         |\bnew\ TypeError\([^;]*|!\(\s*
+         |\bnew\ TypeError\([^;]*|(?:!|&&|\|\|)\s*\(\s*
          |[=!]==?\s*|\bcase\s+|\btypeof\s+|\bh\(\s*|\bdispatch\(\s*)$""", re.X)
 # Where a word is on screen: the content of an element, or an attribute a person reads.
 TEXT_BEFORE = re.compile(
@@ -612,6 +614,8 @@ TEXT_BEFORE = re.compile(
          |\bh\([^;\n]*(?:null|\}),\s*)$""", re.X)
 # A line of a generated config file or a shell command: `key = value`, `<<'EOF'`, `&&`.
 CONFIG_OR_SHELL = re.compile(r"""^\s*[a-z_.]+\s=(\s|$)|^(maity|pipx|export)\s|<<'|\s&&\s|\$\(""")
+# A comment in a generated file with words in it: the person reads it, whatever the line is.
+WORDS_IN_COMMENT = re.compile(r"(?:^|\s)#\s+[A-Za-z]+\s+[A-Za-z]")
 HTML_NAMES = {"a", "button", "input", "select", "textarea", "form", "label", "summary", "details", "li", "ul", "ol",
               "div", "span", "p", "h2", "h3", "nav", "main", "section", "article", "header", "footer", "dialog"}
 
@@ -627,12 +631,16 @@ def technical(token, alone):
 def prose(text, before=""):
     """A string literal that reads as words a person sees. Words beside code are
     told apart by their shape and, for a lone word, by where they stand; a lone
-    word in a place this does not know is left to the reviewer."""
+    word in a place this does not know is left to the reviewer, and so is one in an
+    h() call over several lines: `before` holds one line. An approximation by design:
+    the proof that nothing is left is the run with a pseudo catalog."""
     if text in NOT_PROSE or not re.search(r"[A-Za-z]", text):
         return False
     if "${" in text and not re.search(r"[A-Za-z]{2,}\s+[A-Za-z]{2,}", text):
         return False
-    tokens = text.split()
+    if WORDS_IN_COMMENT.search(text):
+        return True
+    tokens = text.replace("\\n", "\n").split()  # the source's \\n, not yet a line break
     if not tokens or re.match(r"\s*[Mm]\s?-?\d", text):  # an SVG path
         return False
     # A sentence is a sentence wherever it stands: no context hides one.

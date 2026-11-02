@@ -1,16 +1,10 @@
 {
-  "app.js": 262,
+  "app.js": 256,
   "attachments.js": 3,
   "board.js": 110,
-  "device-sign-in.js": 1,
-  "inbox.js": 4,
-  "landing.js": 178,
-  "notify.js": 2,
+  "landing.js": 175,
   "qr.js": 2,
   "register.js": 37,
-  "runners.js": 2,
-  "sessions.js": 1,
-  "ticker-settings.js": 1,
-  "ticker.js": 1,
+  "runners.js": 4,
   "trust.js": 2
 }
