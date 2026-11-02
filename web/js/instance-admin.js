@@ -206,6 +206,8 @@ window.Maity = window.Maity || {};
       ["/admin/settings/sign-in", "sign-in", M.t("admin.section.sign_in"), (s) => M.adminSignIn.section(ctx, s)],
       // Landing and legal pages under one tab, the whole site's file above them (tsk-fct4awzw3k30).
       ["/admin/pages", "pages", M.t("admin.section.pages"), (s) => pagesSection(ctx, s, into === "pages" ? where.args[0] || null : null)],
+      // §16.12: the window, its changes; a running one also reached alone (js/app.js heldPage).
+      ["/admin/maintenance", "maintenance", M.t("admin.maintenance.title"), (s) => M.adminMaintenance.section(ctx, s)],
       ["/health", "instance-information", M.t("admin.section.info"), infoSection],
     ];
     // One section at a time, picked in a row of buttons at the top (the

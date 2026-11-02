@@ -262,6 +262,8 @@ window.Maity = window.Maity || {};
       if (logo) p.logo = { available: !!logo.available, etag: logo.available ? logo.etag : null };
     });
     data.server_time = nowIso();
+    // §5.1, §16.12: the window, upcoming or running, for every caller.
+    data.maintenance = maintenanceView(false);
     // A renamed project: its directory stays, its slug is the project's now (§6.25).
     return Object.assign({}, data, { projects: data.projects.map((p) => Object.assign({}, p, { slug: project(p.slug, "").slug })) });
   }
@@ -1422,6 +1424,34 @@ window.Maity = window.Maity || {};
     max_orgs_per_human: { value: 5, source: "env" }, humans_at_org_limit: 1,
   };
 
+  // §16.12 The fixture hub's maintenance window: none at first; ?maintenance=upcoming or
+  // ?maintenance=running starts with one, to see the banner or the full page.
+  let maintenanceRow = null;
+  const maintenanceChanges = [];
+  let broadcastsChoice = { mode: "accept_all", agents: [] };
+  (function startWindow(wanted) {
+    if (!["upcoming", "running"].includes(wanted)) return;
+    const at = (minutes) => new Date(Date.now() + minutes * 60000).toISOString().replace(/\.\d{3}Z$/, "Z");
+    const stamp = at(0);
+    maintenanceRow = { id: "mnt-fixture", from: wanted === "running" ? at(-10) : at(90), until: wanted === "running" ? at(20) : at(120),
+      text: "Database upgrade; agents wait it out.", by: "hum-maintainer", created_at: stamp, updated_at: stamp };
+  })(params.get("maintenance"));
+  // Its state by the clock, as the hub reads it on every request; null once it is over.
+  function maintenanceView(admin) {
+    const row = maintenanceRow;
+    if (!row || Date.parse(row.until) <= Date.now()) return null;
+    const view = { from: row.from, until: row.until, text: row.text, state: Date.parse(row.from) <= Date.now() ? "running" : "upcoming" };
+    return admin ? Object.assign(view, { by: row.by, created_at: row.created_at, updated_at: row.updated_at }) : view;
+  }
+  function maintenanceChange(action, row) {
+    maintenanceChanges.unshift({ id: localId("mch"), action, window: { id: row.id, from: row.from, until: row.until, text: row.text },
+      by: me().member.id, at: nowIso() });
+  }
+  // What a running window does not refuse (§16.12, MAINTENANCE_OPEN in the hub's middleware),
+  // the sign-in page's two reads included, as the lead decided on tsk-12hwmpykz2ht (hub: #1241);
+  // GET /me is read only.
+  const MAINTENANCE_OPEN = /^\/(health|maintenance|admin\/maintenance(\/end|\/changes)?|auth\/(login|logout|session|methods|pages\/sign_in|email-link|email-code|second-factor\/(verify|email)))$/;
+
   const PRESETS = {
     hierarchical: {
       claim_policy: "self-claim", done_authority: "reviewer", contract_arbiter: "trust:admin",
@@ -2313,6 +2343,71 @@ window.Maity = window.Maity || {};
     ["DELETE", /^\/admin\/registrations\/blocks\/([^/]+)$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
       return null;
+    }],
+    // §16.12 Maintenance: the window for anyone, the instance admin's routes, the owner's choice.
+    ["GET", /^\/maintenance$/, () => ({ window: maintenanceView(false) })],
+    ["GET", /^\/admin\/maintenance$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      return { window: maintenanceView(true) };
+    }],
+    ["PUT", /^\/admin\/maintenance$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      const current = maintenanceView(true);
+      const from = Date.parse(body.from), until = Date.parse(body.until);
+      const text = typeof body.text === "string" ? body.text.trim() : "";
+      const fields = {};
+      if (Object.keys(body).some((k) => !["from", "until", "text"].includes(k))) fields.body = "extra_forbidden";
+      if (Number.isNaN(from)) fields.from = "invalid";
+      if (Number.isNaN(until)) fields.until = "invalid";
+      if (!text) fields.text = "too_short";
+      else if ([...text].length > 500) fields.text = "too_long";
+      if (!fields.until && until <= Date.now()) fields.until = "until_past";
+      if (!fields.from && !fields.until && from >= until) fields.from = "from_after_until";
+      if (!fields.from && current && current.state === "running" && from !== Date.parse(current.from)) fields.from = "running";
+      if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+      const iso = (ms) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
+      const stamp = nowIso();
+      maintenanceRow = current
+        ? Object.assign(maintenanceRow, { from: iso(from), until: iso(until), text, by: me().member.id, updated_at: stamp })
+        : { id: localId("mnt"), from: iso(from), until: iso(until), text, by: me().member.id, created_at: stamp, updated_at: stamp };
+      maintenanceChange(current ? "changed" : "created", maintenanceRow);
+      return { window: maintenanceView(true) };
+    }],
+    ["DELETE", /^\/admin\/maintenance$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      const current = maintenanceView(false);
+      if (current && current.state === "running") fail(409, "maintenance_running", "a running window is ended, not cancelled", path);
+      if (current) maintenanceChange("cancelled", maintenanceRow);
+      maintenanceRow = null;
+      return { window: null };
+    }],
+    ["POST", /^\/admin\/maintenance\/end$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      const current = maintenanceView(false);
+      if (!current || current.state !== "running") fail(409, "maintenance_not_running", "no window is running", path);
+      maintenanceRow.until = nowIso();
+      maintenanceChange("ended", maintenanceRow);
+      maintenanceRow = null;
+      return { window: null };
+    }],
+    ["GET", /^\/admin\/maintenance\/changes$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      return { items: maintenanceChanges.slice(), next_cursor: null };
+    }],
+    ["GET", /^\/me\/broadcasts$/, () => Object.assign({}, broadcastsChoice, { agents: broadcastsChoice.agents.slice() })],
+    ["PATCH", /^\/me\/broadcasts$/, (m, body, path) => {
+      const modes = ["accept_all", "refuse_all", "accept_only", "refuse_for"];
+      const agents = body.agents === undefined ? [] : body.agents;
+      const own = fixtures()["agents.json"].items.filter((a) => a.owner_id === me().member.id && !a.deleted_at).map((a) => a.id);
+      const fields = {};
+      if (!modes.includes(body.mode)) fields.mode = "invalid";
+      if (!Array.isArray(agents) || !agents.every((a) => typeof a === "string")) fields.agents = "invalid";
+      else if (agents.length > 200) fields.agents = "too_many";
+      else if (["accept_all", "refuse_all"].includes(body.mode) && agents.length) fields.agents = "not_allowed";
+      else if (agents.some((a) => !own.includes(a))) fields.agents = "not_your_agent";
+      if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+      broadcastsChoice = { mode: body.mode, agents: [...new Set(agents)] };
+      return Object.assign({}, broadcastsChoice, { agents: broadcastsChoice.agents.slice() });
     }],
     ["GET", /^\/health$/, () => ({ status: "ok", version: "fixture", api: "v1", database: { reachable: true, revision: "fixture-head", head: "fixture-head" } })],
     ["GET", /^\/admin\/settings\/mail$/, (m, body, path) => {
@@ -4593,10 +4688,16 @@ window.Maity = window.Maity || {};
     const query = new URLSearchParams(q < 0 ? "" : fullPath.slice(q + 1));
     return loadFixtures().then(() => {
       let path = asked;
+      // §16.12: while a window runs the hub refuses nearly everything, before it asks who calls.
+      const running = maintenanceView(false);
+      if (running && running.state === "running" && !MAINTENANCE_OPEN.test(path) && !(method === "GET" && path === "/me")) {
+        fail(503, "maintenance", "the hub is in a maintenance window", fullPath,
+          { from: running.from, until: running.until, text: running.text, retry_after: Math.max(1, Math.ceil((Date.parse(running.until) - Date.now()) / 1000)) });
+      }
       // The hub serves its machine form and the landing page without a session.
       // Signed out, the fixture hub still answers what a visitor calls, and the
       // device codes, whose other side this one tab plays too.
-      if (!fixtureSignedIn && !/^\/auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|device-codes(\/.*)?)$/.test(path) && path !== "/legal" && path !== "/openapi.json" && !path.startsWith("/invitations/")) {
+      if (!fixtureSignedIn && !/^\/auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|device-codes(\/.*)?)$/.test(path) && path !== "/legal" && path !== "/openapi.json" && path !== "/maintenance" && !path.startsWith("/invitations/")) {
         fail(401, "unauthenticated", "Not signed in", fullPath);
       }
       // The fixture hub holds this session in enrolment (§2.8.5): outside /auth/* it refuses.
@@ -4681,7 +4782,7 @@ window.Maity = window.Maity || {};
       }
       if (code === "csrf_mismatch") detail += " (reload the page to get a fresh token)";
       // A rate limit's wait comes as the Retry-After header only (§1.4): kept with the details.
-      const wait = res.status === 429 && res.headers && res.headers.get ? Number(res.headers.get("Retry-After")) : NaN;
+      const wait = (res.status === 429 || res.status === 503) && res.headers && res.headers.get ? Number(res.headers.get("Retry-After")) : NaN;
       if (Number.isFinite(wait) && wait > 0 && !("retry_after" in details)) details = Object.assign({}, details, { retry_after: wait });
       throw new ApiError(detail || ("HTTP " + res.status), res.status, path, code, details);
     }
@@ -4697,11 +4798,14 @@ window.Maity = window.Maity || {};
   function request(method, path, body, raw, signal) {
     const publicCall = PUBLIC_PATH.test(path);
     const epoch = M.sessionEpoch || 0;
+    // §16.12: a window that runs refuses with 503 `maintenance`; the page is told once, in one
+    // place (js/maintenance.js), and the caller gets the refusal as before.
+    const told = (err) => { if (err && err.code === "maintenance" && M.onMaintenance) M.onMaintenance(err.details || {}); throw err; };
     if (sessionBlocked && !publicCall) return Promise.reject(obsoleteSession(path));
     // In fixture mode an image travels with the Content-Type the page sniffed.
-    const p = source === "fixtures"
+    const p = (source === "fixtures"
       ? fromFixtures(method, path, raw ? { blob: body, type: raw, size: body.size } : body)
-      : fromApi(method, path, body, raw, signal);
+      : fromApi(method, path, body, raw, signal)).catch(told);
     if (path === "/auth/session") {
       return p.then((s) => {
         if (epoch !== (M.sessionEpoch || 0)) throw obsoleteSession(path);
@@ -4735,7 +4839,7 @@ window.Maity = window.Maity || {};
   // visitor by design; every other /auth/* call is the session's own.
   // The path carries its query (the device-login wait, ?wait=0): a public
   // route ends at the path, whatever query follows.
-  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code)|auth\/pages\/[^/?]+|public\/pages\/[^?]+|legal|openapi\.json|invitations\/[^/?]+)(\?|$)/;
+  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code)|auth\/pages\/[^/?]+|public\/pages\/[^?]+|legal|maintenance|openapi\.json|invitations\/[^/?]+)(\?|$)/;
 
   // Every page of a list, following next_cursor (docs/api.md §1.4).
   async function getAll(path) {
