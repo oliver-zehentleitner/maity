@@ -88,6 +88,12 @@ def _assets() -> dict[str, Asset]:
             return f"fonts/{found_font.group(1)}" + (f"?v={asset.digest}" if asset else "")
 
         add("landing.css", FONT.sub(font_url, sheet.read_text(encoding="utf-8")).encode())
+    # The pictures `public-pages.css` names by a relative `url(brand/…)`: the sign-in panel's art
+    # and the "check your mail" icon (§16.7.5).
+    brand = ROOT / "brand"
+    if brand.is_dir():
+        for path in sorted(brand.glob("*.svg")):
+            add(f"brand/{path.name}", path.read_bytes())
     # The pages without a session beside the landing page, on top of its stylesheet (§16.7.5).
     pages = ROOT / "public-pages.css"
     if pages.is_file():

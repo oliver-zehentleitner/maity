@@ -224,3 +224,21 @@ def test_a_legal_page_without_a_landing_page_keeps_its_frame_small(
     assert '<nav class="site-nav"></nav>' in page and "btn-primary" not in page
     # A legal page is set, so Follow and the operator are there (§16.7.5).
     assert "Maity, Austria" in page and "Mastodon" in page
+
+
+def test_every_picture_the_public_pages_stylesheet_names_is_served(
+    make_client: ClientFactory,
+) -> None:
+    """`public-pages.css` names its pictures by a relative `url()`: each resolves under
+    `/assets/landing/` to an SVG the hub serves (the sign-in panel's art, the mail icon)."""
+    import re
+
+    client = make_client()
+    css = client.get("/assets/landing/public-pages.css").text
+    named = sorted(set(re.findall(r"url\(([^)]+)\)", css)))
+    assert named == ["brand/door-art.svg", "brand/door-mail.svg"]
+    for name in named:
+        answer = client.get(f"/assets/landing/{name}")
+        assert answer.status_code == 200, name
+        assert answer.headers["content-type"].startswith("image/svg+xml"), name
+        assert "<script" not in answer.text, name
