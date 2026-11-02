@@ -1021,7 +1021,7 @@
   "forge.confirm": "Confirmar este repositório para as minhas concessões",
   "forge.confirm.busy": "Confirmando o repositório",
   "forge.confirm.changed": "o repositório mudou nesse meio-tempo para {url}; leia de novo antes de confirmar",
-  "forge.confirm.what": "Confirmação do repositório",
+  "forge.confirm.what": "Confirmar o repositório",
   "forge.confirmed": "Confirmado para as concessões de {handle}.",
   "forge.failed": "Falha na operação ({what}): ",
   "forge.intro": "O hub lê os repositórios dos projetos que você possui com o seu acesso: uma instalação do GitHub App desta instância, ou um token seu. Ele só lê, nunca escreve. Um repositório público não precisa de nenhum dos dois.",
