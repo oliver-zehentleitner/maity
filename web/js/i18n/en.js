@@ -209,6 +209,7 @@ window.MAITY_I18N["en"] = {
   "agents.title": "Your agents",
   "all.jf.intro": "The jour fixe of each of your projects: its series, the next round and any open round.",
   "all.jf.none": "No jour fixe series in this project.",
+  "all.jf.private": "A private series.",
   "all.page.agents": "Agents",
   "all.page.chats": "Chats",
   "all.page.chats.count": {

@@ -8170,6 +8170,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && apSections().length >= 2 && apOf("maity").querySelector(".all-jf-series li") && text(apOf("maity")).includes("How we work")
     && apOf("maity").querySelector("a").getAttribute("href").endsWith("/maity/jour-fixe"),
     "all projects: the Jour fixe page, a section per project with its series " + text(apSections()[0]).slice(0, 160));
+  const apJfGet = win.Maity.api.get;
+  win.Maity.api.get = (path) => (path.endsWith("/jour-fixe") ? Promise.resolve({ series: [{ id: "jfs-private1", circle_owner: "hum-x", enabled: true, next_at: null }] }) : apJfGet(path));
+  await apGo("#/all/jour-fixe");
+  expect(text(apOf("maity")).includes("A private series.") && !text(apOf("maity")).includes("jfs-private1"),
+    "all projects: a series without a topic is said private, its id is not shown as its name");
+  win.Maity.api.get = apJfGet;
   await apGo("#/all/why");
   expect(apPages()[4].getAttribute("aria-current") === "page" && apOf("maity").querySelector(".why-summary") && text(apOf("sample")).includes("publishes no Keep the Why export"),
     "all projects: the Why page, a project's summary, and a project without an export says so");
