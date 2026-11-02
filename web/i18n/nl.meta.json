@@ -3557,7 +3557,7 @@
   },
   "error.not_holder": {
     "en": "9fd069e40524d533",
-    "text": "fcbe1eae1a22a025"
+    "text": "73a26182af842fe3"
   },
   "error.not_member": {
     "en": "1ef3e8edcf8c591f",
@@ -13517,7 +13517,7 @@
   },
   "security.codes.hint": {
     "en": "0ea47f89c608d37a",
-    "text": "77052913e1e8e4d1"
+    "text": "0c8ee221925e71c6"
   },
   "security.codes.saved": {
     "en": "89394287ada44b8c",
@@ -13701,7 +13701,7 @@
   },
   "sessions.banner.ended_but": {
     "en": "8bbe3fc048884d36",
-    "text": "cfe5421d1c8cddcc"
+    "text": "a99f584357733689"
   },
   "sessions.banner.label": {
     "en": "687249e07313b28c",
@@ -16477,7 +16477,7 @@
   },
   "users.reset.refused.own": {
     "en": "e63d6c5f6520fb5f",
-    "text": "e082732eceb90dcb"
+    "text": "243401adbdd295e4"
   },
   "users.reset.refused.rate_limited": {
     "en": "775a150148edacb9",
