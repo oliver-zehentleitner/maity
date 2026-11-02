@@ -14,7 +14,7 @@ from typing import Any
 from sqlalchemy import Connection, String, and_, cast, func, or_, select
 from sqlalchemy.orm import aliased
 
-from maity_hub import avatars, clock, events, inbox, namespace
+from maity_hub import avatars, catalog, clock, events, inbox, namespace
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.notifications import records
@@ -35,66 +35,6 @@ ADDRESSED = ("request_created", "request_forwarded")  # one item per request, th
 TITLE_MAX = 200
 
 # The texts the hub itself composes for a human, in that human's language (§6.2, §18.4).
-WORDS: dict[str, dict[str, str]] = {
-    "en": {
-        "asks": "{who} asks: {title}",
-        "jf_no_moderator": "Jour fixe skipped, nobody to moderate: {topic}",
-        "jf_reported": "Jour fixe report: {topic}",
-        "answered": "{who} answered: {title}",
-        "withdrew": "{who} withdrew: {title}",
-        "asks_you": "{who} asks you: {title}",
-        "chat": "{who} in {chat}",
-        "mentioned": "{who} mentioned you in {chat}",
-        "waits": "{handle} waits for approval",
-        "reported": "Report: {reason} — {type}",
-        "moderated": "Moderation: {action} — {type}",
-        "sign_in": "New sign-in: {browser} on {os} ({method})",
-        "a_browser": "a browser",
-        "unknown_os": "an unknown system",
-        "address_changed": "Sign-in address changed",
-        "mail_disabled": "Mail to {address} disabled after 3 failures",
-        "not_listening": "{n} of your agent instances are not listening",
-        "tf_enrolled": "Two-factor sign-in turned on",
-        "tf_disabled": "Two-factor sign-in turned off",
-        "tf_recovery_codes": "New recovery codes",
-        "tf_recovery_code_used": "Recovery code used",
-        "tf_reset": "Two-factor sign-in reset by {by}",
-        "tf_instance_off": "Two-factor sign-in turned off for this instance",
-        "tf_changed": "Two-factor sign-in changed",
-        "tf_failed": "Wrong second-factor codes after a sign-in: {browser} on {os}, {ip}",
-        "forge_added": "Forge access added: {login} ({source})",
-        "an_account": "an account",
-    },
-    "de": {
-        "asks": "{who} fragt: {title}",
-        "jf_no_moderator": "Jour fixe ausgefallen, niemand moderiert: {topic}",
-        "jf_reported": "Jour-fixe-Bericht: {topic}",
-        "answered": "{who} hat geantwortet: {title}",
-        "withdrew": "{who} hat zurückgezogen: {title}",
-        "asks_you": "{who} fragt dich: {title}",
-        "chat": "{who} in {chat}",
-        "mentioned": "{who} hat dich in {chat} erwähnt",
-        "waits": "{handle} wartet auf Freigabe",
-        "reported": "Meldung: {reason} — {type}",
-        "moderated": "Moderation: {action} — {type}",
-        "sign_in": "Neue Anmeldung: {browser} auf {os} ({method})",
-        "a_browser": "ein Browser",
-        "unknown_os": "einem unbekannten System",
-        "address_changed": "Anmeldeadresse geändert",
-        "mail_disabled": "Mail an {address} nach 3 Fehlern deaktiviert",
-        "not_listening": "{n} deiner Agent-Instanzen hören nicht zu",
-        "tf_enrolled": "Zwei-Faktor-Anmeldung eingeschaltet",
-        "tf_disabled": "Zwei-Faktor-Anmeldung ausgeschaltet",
-        "tf_recovery_codes": "Neue Wiederherstellungscodes",
-        "tf_recovery_code_used": "Wiederherstellungscode benutzt",
-        "tf_reset": "Zwei-Faktor-Anmeldung zurückgesetzt von {by}",
-        "tf_instance_off": "Zwei-Faktor-Anmeldung für diese Instanz ausgeschaltet",
-        "tf_changed": "Zwei-Faktor-Anmeldung geändert",
-        "tf_failed": "Falsche Zwei-Faktor-Codes nach einer Anmeldung: {browser} auf {os}, {ip}",
-        "forge_added": "Forge-Zugang hinzugefügt: {login} ({source})",
-        "an_account": "ein Konto",
-    },
-}
 
 
 @dataclass
@@ -137,7 +77,7 @@ class Scope:
     language: str = "en"  # the human's own, for the texts the hub composes (§6.2)
 
     def say(self, key: str, **values: object) -> str:
-        return WORDS.get(self.language, WORDS["en"])[key].format(**values)
+        return catalog.section("notify", self.language)[key].format(**values)
 
     def membership(self, project_id: str) -> Membership | None:
         return next((m for m in self.memberships if m.project.id == project_id), None)
@@ -606,7 +546,7 @@ def _two_factor_title(where: Scope, data: dict[str, Any]) -> str:
     """The bell's line for a change of the second factor (§18.1); a change this hub does
     not know says that the sign-in changed, never a guess."""
     change = f"tf_{data.get('change')}"
-    if change not in WORDS["en"] or change in ("tf_changed", "tf_failed"):
+    if change not in catalog.section("notify", "en") or change in ("tf_changed", "tf_failed"):
         change = "tf_changed"
     return where.say(change, by=data.get("by"))
 

@@ -16,7 +16,7 @@ from typing import Any
 
 from sqlalchemy import Connection, insert, select, update
 
-from maity_hub import clock
+from maity_hub import catalog, clock
 from maity_hub import tables as t
 from maity_hub.ratelimit import Limiter
 
@@ -223,27 +223,16 @@ def mail_body(
     name = " ".join(display_name.split())
     browser, system = browser or "?", system or "?"
     spaced = f"{code[:3]} {code[3:]}" if code else None
-    if language == "de":
-        alternative = (
-            "Oder gib diesen Code in dem Browser ein, "
-            f"in dem du den Link angefordert hast: {spaced}\n\n"
-            if spaced
-            else ""
-        )
-        return (
-            f"Hallo {name},\n\nMit diesem Link meldest du dich bei Maity an (15 Minuten gültig):\n"
-            f"{link}\n\n{alternative}Angefordert am {requested_at}, mit {browser} auf {system}, "
-            f"von {address}.\n\nWenn du das nicht angefordert hast, ignoriere diese Mail. "
-            "Ohne den Link oder den Code passiert nichts.\n"
-        )
-    alternative = (
-        f"Or enter this code in the browser where you asked for it: {spaced}\n\n" if spaced else ""
-    )
-    return (
-        f"Hello {name},\n\nUse this link to sign in to Maity (valid for 15 minutes):\n"
-        f"{link}\n\n{alternative}Requested at {requested_at}, from {browser} on {system}, "
-        f"{address}.\n\nIf you did not ask for this, ignore this mail; nothing happens "
-        "without the link or the code.\n"
+    words = catalog.section("sign_in", language)
+    alternative = words["mail_alternative"].format(code=spaced) if spaced else ""
+    return words["mail"].format(
+        name=name,
+        link=link,
+        alternative=alternative,
+        requested_at=requested_at,
+        browser=browser,
+        system=system,
+        address=address,
     )
 
 

@@ -7,7 +7,6 @@ from typing import Any
 import pytest
 from sqlalchemy import Connection, Engine, select, update
 
-from maity_hub import languages
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -191,10 +190,3 @@ def test_the_list_is_open_complete_and_names_each_language_itself(
     assert (named["de"], named["en"], named["ja"]) == ("Deutsch", "English", "日本語")
     assert {"zh-Hans", "zh-Hant"} <= set(tags)
     assert max(len(tag) for tag in tags) <= 7 and all(named.values())
-
-
-@pytest.mark.parametrize(
-    ("language", "text"), [("de", "de"), ("en", "en"), ("fr", "en"), (None, "en")]
-)
-def test_the_hubs_own_text_falls_back_to_english(language: str | None, text: str) -> None:
-    assert languages.own_text(language) == text
