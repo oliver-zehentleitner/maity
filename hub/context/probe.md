@@ -359,7 +359,7 @@ prevent.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** docs/api.md §11.4 ("What a private repository's data may reach") and the event table, §8.2; the lead's decision on card tsk-dtpr7zqxhxc2, part 5b
+**Source:** docs/api.md §11.4 ("What a private repository's data may reach") and the event table, §8.2; the lead's decision on card tsk-dtpr7zqxhxc2, part 5b; the maintainer's answer to req-ds8mk5vdtkxx (old merges count)
 **Revisit when:** another page without sign-in shows data the probe read, or the forge stops reporting visibility in the GraphQL read
 
 `link_observed` carries `public`: whether the same GraphQL read reported the
@@ -389,6 +389,15 @@ links. A public project read only through an App or an owner's token has no line
 The ticker's `merge.public` is tested at the probe: a scan with the instance's token writes
 `true`, one through an App or an owner's token writes `false`, since that line is the only thing
 between an owner's grant and a page without sign-in.
+
+Changed on 2026-11-02, again: the maintainer decided that the old merges of named projects count
+on public pages (req-ds8mk5vdtkxx). A one-time script, `hub/scripts/backfill_public_merges.py`,
+sets `merge.public` on their ticker items and stamps each with `public_backfill`, so `--undo`
+takes back exactly those. It is a script rather than a migration: the decision is about named
+projects on one instance, a migration would run on every self-hosted one, and the project ids
+don't belong in the repository. It refuses a project unless its id, name and repository address
+all match and the last check found the repository public; it changes nothing without `--apply`.
+The maintainer's §11.4 exception for the bare count (req-tqf82hvzmnw3) follows on its own card.
 
 **Reason:** §11.4 says data read through an owner's grant never appears
 there, no count derived from it either, and the contract stands above this
