@@ -105,7 +105,7 @@
   },
   "admin_sign_in.confirm.checking": {
     "en": "fa798a178c7c3128",
-    "text": "4706acb3da3b5778"
+    "text": "4c86b5643273b6e2"
   },
   "admin_sign_in.confirm.done": {
     "en": "28e0b8e2bd7457b0",
@@ -125,7 +125,7 @@
   },
   "admin_sign_in.confirm.sending": {
     "en": "bb2e3496f3e0d7e0",
-    "text": "5376eaafe5f3f1f2"
+    "text": "f783a19d6b7e0356"
   },
   "admin_sign_in.confirm.submit": {
     "en": "4716744f82ea9a0d",
@@ -265,7 +265,7 @@
   },
   "agentparts.briefing.saving": {
     "en": "4e65400e023b52a3",
-    "text": "83068754b7eb4d29"
+    "text": "8efa38438f5e434b"
   },
   "agentparts.briefing.set_by": {
     "en": "06ab423587fa0cf7",
@@ -329,7 +329,7 @@
   },
   "agentparts.credential.revoking": {
     "en": "8eaf9e2f90377c6e",
-    "text": "af3e19c53298e0f0"
+    "text": "18b54cdcdb7ba529"
   },
   "agentparts.credentials": {
     "en": "28d24da580aa5c06",
@@ -465,7 +465,7 @@
   },
   "agents.edit.saving": {
     "en": "4e65400e023b52a3",
-    "text": "83068754b7eb4d29"
+    "text": "8efa38438f5e434b"
   },
   "agents.edit.unchanged": {
     "en": "47edb6b9c072e29c",
@@ -509,7 +509,7 @@
   },
   "agents.instances.reading": {
     "en": "00e346a6c3596469",
-    "text": "8d63431f19b2e58d"
+    "text": "437ffbbe716b1e40"
   },
   "agents.instances_max": {
     "en": "c3a566844d11867c",
@@ -537,7 +537,7 @@
   },
   "agents.join.reading": {
     "en": "1fdf982b52955702",
-    "text": "870e04f15133e32d"
+    "text": "5e4e948b4347c60f"
   },
   "agents.join_link": {
     "en": "ce910a228ede51c0",
@@ -609,7 +609,7 @@
   },
   "agents.new.creating": {
     "en": "da317c5fd9f13c1c",
-    "text": "f9ac0b1616dec270"
+    "text": "43b7db4ac1104219"
   },
   "agents.new.done": {
     "en": "a3b944385cacd443",
@@ -741,7 +741,7 @@
   },
   "all.page.reading": {
     "en": "26c77b8aa1b262c3",
-    "text": "be1fc09c31a872cb"
+    "text": "56a40a051fbbd96c"
   },
   "all.page.unread": {
     "en": "47193cff451f4903",
@@ -953,11 +953,11 @@
   },
   "attach.uploading": {
     "en": "fea1eaac4613f774",
-    "text": "24dd10b4babef7de"
+    "text": "a8e9c0267a591b0b"
   },
   "attach.uploading_short": {
     "en": "12ba9a8258dca3a9",
-    "text": "c1704ec9f9ddd51d"
+    "text": "86fc1888ea2ce8c0"
   },
   "auth_pages.cancelled": {
     "en": "54f1af4497c12761",
@@ -965,7 +965,7 @@
   },
   "auth_pages.checking": {
     "en": "569f49470a666b2b",
-    "text": "c0d1d0280f2ce9e4"
+    "text": "b1f675f27e828375"
   },
   "auth_pages.default_language": {
     "en": "41f0297430e85ea1",
@@ -1037,7 +1037,7 @@
   },
   "auth_pages.saving": {
     "en": "4e65400e023b52a3",
-    "text": "83068754b7eb4d29"
+    "text": "8efa38438f5e434b"
   },
   "auth_pages.step_up": {
     "en": "2eb076d930d0af6f",
@@ -1117,7 +1117,7 @@
   },
   "bell.marking": {
     "en": "5e204676103a6a59",
-    "text": "4a386552fba3729b"
+    "text": "4b45511834a19ed9"
   },
   "bell.none": {
     "en": "a76e6011cb79b619",
@@ -1173,7 +1173,7 @@
   },
   "board.assign.busy": {
     "en": "da14a9ae4e384a60",
-    "text": "7e9daa28e41c1b3e"
+    "text": "7bdfe64dbc33fa1a"
   },
   "board.assign.done": {
     "en": "d6de783de4bc6f01",
@@ -1227,6 +1227,26 @@
     "en": "9c34e46f7a5ed2b4",
     "text": "9ddf1ef208ecdff5"
   },
+  "board.checks.failure": {
+    "en": "3045b5c998d76c75",
+    "text": "a4a7b5ed500c518f"
+  },
+  "board.checks.none": {
+    "en": "30a0924a3360be68",
+    "text": "a577a666b54f2b6f"
+  },
+  "board.checks.pending": {
+    "en": "12adac54ac6f7140",
+    "text": "6ef5c7c563abbd19"
+  },
+  "board.checks.success": {
+    "en": "68e7a69974a64106",
+    "text": "22b1f283e95e8be7"
+  },
+  "board.checks.unknown": {
+    "en": "eb8bf0d80db32399",
+    "text": "e1b5b7ad9d010f7c"
+  },
   "board.claim.assigned_unclaimed": {
     "en": "74058d8246bf52c0",
     "text": "485a08f2088ef444"
@@ -1265,11 +1285,19 @@
   },
   "board.contract.line": {
     "en": "c83e4a997a03550c",
-    "text": "b5c7ee0989fd9e2a"
+    "text": "34bcdd3f8a551181"
   },
   "board.contract.line_watched": {
     "en": "36fc6ce9462ebed3",
-    "text": "b5aad53b713ebdde"
+    "text": "9bc107bc9ecf0fca"
+  },
+  "board.contract.state.final": {
+    "en": "eaa25c327f22b7b0",
+    "text": "7001d88bec3773a4"
+  },
+  "board.contract.state.proposed": {
+    "en": "ff278f96de1e0054",
+    "text": "cc0639e454968a4d"
   },
   "board.could_not_refresh": {
     "en": "38be11b7bbb2c4cd",
@@ -1389,7 +1417,7 @@
   },
   "board.move.busy": {
     "en": "bb52fd4c3ff04509",
-    "text": "f3c611fd3554e02f"
+    "text": "3c851ed889927de6"
   },
   "board.move.done": {
     "en": "282e984f314e1fad",
@@ -1437,7 +1465,7 @@
   },
   "board.place.busy": {
     "en": "515870b11e526ed4",
-    "text": "a3476a0cf45165f9"
+    "text": "b542019f3e0459bb"
   },
   "board.place.failed": {
     "en": "9f339f8a2c54709a",
@@ -1462,6 +1490,18 @@
   "board.pr.not_found": {
     "en": "39d21b13cbe060ff",
     "text": "ab6ee0343ce3872b"
+  },
+  "board.pr.state.closed": {
+    "en": "02e31f51aa8b1b6a",
+    "text": "e9bf8350de842e55"
+  },
+  "board.pr.state.merged": {
+    "en": "b3ec183cdfd85052",
+    "text": "d56650cba054db16"
+  },
+  "board.pr.state.open": {
+    "en": "35ff74aeea25311f",
+    "text": "0206ab825cd09baf"
   },
   "board.pr.unverified": {
     "en": "e9f69bb9e95e952a",
@@ -1561,11 +1601,11 @@
   },
   "board.release.saving_checklist": {
     "en": "8514425d0247811b",
-    "text": "ca8e997674bd17d3"
+    "text": "6907267921f42083"
   },
   "board.release.saving_typed": {
     "en": "c5cc7b404db77287",
-    "text": "41e6db2964e93c8b"
+    "text": "38c8daa495238a41"
   },
   "board.release.shipped": {
     "en": "0abea7e8fd2ed399",
@@ -1573,7 +1613,7 @@
   },
   "board.release.ticking": {
     "en": "b91d1462d1c50b97",
-    "text": "c58b81444debd1de"
+    "text": "6c1a36e4b75f484f"
   },
   "board.release.typed": {
     "en": "0d2f999f388a97e5",
@@ -1617,7 +1657,7 @@
   },
   "board.release.unticking": {
     "en": "b9aadc79a7fb6a5c",
-    "text": "a7fba6c1da1424f1"
+    "text": "d03ea91efe60f3ab"
   },
   "board.report.label": {
     "en": "90a3c82f51107677",
@@ -1669,7 +1709,7 @@
   },
   "board.saving": {
     "en": "4e65400e023b52a3",
-    "text": "83068754b7eb4d29"
+    "text": "8efa38438f5e434b"
   },
   "board.search": {
     "en": "bde99b13e0a9d5a2",
@@ -1709,7 +1749,7 @@
   },
   "board.search.searching": {
     "en": "65cf7b9f249203f3",
-    "text": "f68ca660e516866f"
+    "text": "a746c12917a1cb92"
   },
   "board.search.too_long": {
     "en": "f55fd57baccc59bd",
@@ -1717,7 +1757,7 @@
   },
   "board.sign.busy": {
     "en": "ad70233041fbbc59",
-    "text": "d71e4b00563b6f57"
+    "text": "6e2b79c4e9a09a94"
   },
   "board.sign.failed": {
     "en": "5d78b089016916a2",
@@ -1786,6 +1826,14 @@
   "board.title": {
     "en": "3a642ea0d77e5aae",
     "text": "3a642ea0d77e5aae"
+  },
+  "board.verification.bearer": {
+    "en": "286fc5c8c94b2636",
+    "text": "d550719388934832"
+  },
+  "board.verification.signed": {
+    "en": "1ce9dc730506b2eb",
+    "text": "f557d7773fe25341"
   },
   "board.waits": {
     "en": "6907a255af4cb39d",
@@ -1949,7 +1997,7 @@
   },
   "campaigns.reading": {
     "en": "8de5985192cd84fb",
-    "text": "ea09f1dfdc83cde6"
+    "text": "48503fa504be444c"
   },
   "campaigns.registrations": {
     "en": "8a5d2ba3f389a226",
@@ -2133,7 +2181,7 @@
   },
   "cardpanel.notes.posting": {
     "en": "b9a64966e1362543",
-    "text": "fb6b058908fbb1f9"
+    "text": "c1a13d5174a1f8a9"
   },
   "cardpanel.notes.read_failed": {
     "en": "017079eacd7f007c",
@@ -2173,7 +2221,7 @@
   },
   "cardpanel.watch.saving": {
     "en": "4e65400e023b52a3",
-    "text": "83068754b7eb4d29"
+    "text": "8efa38438f5e434b"
   },
   "cards.assign": {
     "en": "f659e0277740b0fa",
@@ -2273,7 +2321,7 @@
   },
   "cards.new.creating": {
     "en": "da317c5fd9f13c1c",
-    "text": "f9ac0b1616dec270"
+    "text": "43b7db4ac1104219"
   },
   "cards.new.field.area": {
     "en": "8332ab41e22958f1",
@@ -2587,6 +2635,10 @@
     "en": "d2f88d9c865e0709",
     "text": "ea1ae07d001a7164"
   },
+  "chat.presence.revoked": {
+    "en": "5b509f63a4cef946",
+    "text": "9b3c5ae44fae8c9c"
+  },
   "chat.presence.unknown": {
     "en": "eb8bf0d80db32399",
     "text": "e1b5b7ad9d010f7c"
@@ -2637,7 +2689,7 @@
   },
   "chat.remove.busy": {
     "en": "e58493ed3baaf9ae",
-    "text": "2bf6085d1ebb320a"
+    "text": "115fa7b0eb602987"
   },
   "chat.remove.done": {
     "en": "bd4e04e54dedac48",
@@ -2681,7 +2733,7 @@
   },
   "chat.sending": {
     "en": "bb2e3496f3e0d7e0",
-    "text": "5376eaafe5f3f1f2"
+    "text": "f783a19d6b7e0356"
   },
   "chat.session": {
     "en": "a982f4e674071c2c",
@@ -2825,7 +2877,7 @@
   },
   "contract.reading": {
     "en": "5d8a5d1ff6b87c96",
-    "text": "43be4925c1d1dda8"
+    "text": "295f212c109af06f"
   },
   "contract.refresh": {
     "en": "ec0dd7ff6076fd7a",
@@ -2837,7 +2889,7 @@
   },
   "contract.saving": {
     "en": "4e65400e023b52a3",
-    "text": "83068754b7eb4d29"
+    "text": "8efa38438f5e434b"
   },
   "contract.section": {
     "en": "83e69c46410289fe",
@@ -2897,7 +2949,7 @@
   },
   "data.delete.asking": {
     "en": "8a7441d71753b3f2",
-    "text": "24667faefb31b0ae"
+    "text": "860e4723eb2664d9"
   },
   "data.delete.button": {
     "en": "262a94420e99cae1",
@@ -2945,7 +2997,7 @@
   },
   "data.delete.withdrawing": {
     "en": "2faef362360972bb",
-    "text": "0122a6c3703067a4"
+    "text": "c08290a3e71ddbac"
   },
   "data.delete.withdrawn": {
     "en": "abd76ece0ad00b35",
@@ -2953,7 +3005,7 @@
   },
   "data.export.busy": {
     "en": "e53083400c1d7a95",
-    "text": "910c1550bd0eb694"
+    "text": "ef385fb3cbf698ea"
   },
   "data.export.button": {
     "en": "0d5cee2c1ea2483a",
@@ -3021,7 +3073,7 @@
   },
   "device.approval.approving": {
     "en": "ae8d2762e1ba0dc0",
-    "text": "c47f8d55ecfa30d4"
+    "text": "3e2bdf8e7876a590"
   },
   "device.approval.choices": {
     "en": "a855e5f4c27d593d",
@@ -3053,7 +3105,7 @@
   },
   "device.approval.denying": {
     "en": "dfc4acaa8153e53f",
-    "text": "38b6d1535bd2f354"
+    "text": "4957e47689a2a263"
   },
   "device.approval.entered": {
     "en": "534bc01c1d1461ff",
@@ -3193,7 +3245,7 @@
   },
   "device.other.expires": {
     "en": "6e4a07ce6bf6223c",
-    "text": "c255a7a59d7439fb"
+    "text": "d1f460bd4fab6f37"
   },
   "device.other.gone": {
     "en": "5f6ffef5ff82e755",
@@ -3205,7 +3257,7 @@
   },
   "device.other.making": {
     "en": "4c28e5be6a4a5aef",
-    "text": "191f8ddb71a5e437"
+    "text": "6ec8f7a0e98d6612"
   },
   "device.other.new_code": {
     "en": "8a0d48ec32020eab",
@@ -3249,11 +3301,11 @@
   },
   "device.sending": {
     "en": "bb2e3496f3e0d7e0",
-    "text": "5376eaafe5f3f1f2"
+    "text": "f783a19d6b7e0356"
   },
   "device.signing_in": {
     "en": "8f8f7a7d741ceb59",
-    "text": "902fbedf3b5917a9"
+    "text": "363d18b3d3fab36e"
   },
   "device.wait.another": {
     "en": "c9871675b3203e67",
@@ -3629,15 +3681,15 @@
   },
   "error.takeover_closed": {
     "en": "e2e3f7d601d5cd44",
-    "text": "8d012dcecd894182"
+    "text": "da5ec4c0e4110175"
   },
   "error.takeover_open": {
     "en": "d4c96d39a03b45f6",
-    "text": "e433f03175941372"
+    "text": "1c7f4801ee06bef4"
   },
   "error.takeover_required": {
     "en": "c2c69f4459a037f7",
-    "text": "acf7aeed0e064799"
+    "text": "66229b1c778c7bdb"
   },
   "error.ticker_duplicate": {
     "en": "4a26503a372d99a4",
@@ -3945,7 +3997,7 @@
   },
   "group.compose.sending": {
     "en": "bb2e3496f3e0d7e0",
-    "text": "51d24612eeff1746"
+    "text": "f783a19d6b7e0356"
   },
   "group.compose.uploading": {
     "en": "3a26dc0879f9a035",
@@ -4005,7 +4057,7 @@
   },
   "group.manage.adding": {
     "en": "0e147a62fe8048f3",
-    "text": "9a30c7201af7b08b"
+    "text": "73083d747d224784"
   },
   "group.manage.closed": {
     "en": "ad0f2168a7677857",
@@ -4033,7 +4085,7 @@
   },
   "group.manage.leaving": {
     "en": "64a88d45706b7359",
-    "text": "291dc888d1b76ce8"
+    "text": "0a74d4cfc6d38396"
   },
   "group.manage.left": {
     "en": "376d7c5ed291701b",
@@ -4065,7 +4117,7 @@
   },
   "group.manage.removing": {
     "en": "e58493ed3baaf9ae",
-    "text": "478bfb0796408711"
+    "text": "115fa7b0eb602987"
   },
   "group.manage.rename": {
     "en": "d6952b4e54d246dd",
@@ -4081,7 +4133,7 @@
   },
   "group.manage.renaming": {
     "en": "55f8d0e263c5fefb",
-    "text": "26253e87673d5748"
+    "text": "57a886d630457bd1"
   },
   "group.manage.title": {
     "en": "2c7bddb287f4d2bc",
@@ -4113,7 +4165,7 @@
   },
   "group.new.creating": {
     "en": "da317c5fd9f13c1c",
-    "text": "d250061c8d06423e"
+    "text": "43b7db4ac1104219"
   },
   "group.new.direct": {
     "en": "535abe3f58ac349f",
@@ -4209,7 +4261,7 @@
   },
   "group.redact.busy": {
     "en": "e58493ed3baaf9ae",
-    "text": "478bfb0796408711"
+    "text": "115fa7b0eb602987"
   },
   "group.redact.done": {
     "en": "bd4e04e54dedac48",
@@ -4277,7 +4329,7 @@
   },
   "handles.busy": {
     "en": "55f8d0e263c5fefb",
-    "text": "26253e87673d5748"
+    "text": "57a886d630457bd1"
   },
   "handles.failed": {
     "en": "658b51fe3aed807b",
@@ -4709,7 +4761,7 @@
   },
   "inbox.sending": {
     "en": "bb2e3496f3e0d7e0",
-    "text": "51d24612eeff1746"
+    "text": "f783a19d6b7e0356"
   },
   "inbox.session": {
     "en": "a982f4e674071c2c",
@@ -4913,7 +4965,7 @@
   },
   "invitations.reading": {
     "en": "fca7ffad0806997b",
-    "text": "3221b02086d3f802"
+    "text": "ea4c07040ec0c9c5"
   },
   "invitations.title": {
     "en": "2a23fec2273e6e56",
@@ -4961,7 +5013,7 @@
   },
   "invite.creating": {
     "en": "da317c5fd9f13c1c",
-    "text": "d250061c8d06423e"
+    "text": "43b7db4ac1104219"
   },
   "invite.for_address": {
     "en": "3c57b331ce9ee343",
@@ -4989,7 +5041,7 @@
   },
   "invite.joining": {
     "en": "2df28518313a086a",
-    "text": "f2de671bcf65e589"
+    "text": "be203ea957203ce8"
   },
   "invite.lead": {
     "en": "bb9b8322ed491501",
@@ -5485,7 +5537,7 @@
   },
   "jf.rounds.reading": {
     "en": "d9f368c2d320ec2c",
-    "text": "a1a49432a3279076"
+    "text": "18ec28341c32b7c0"
   },
   "jf.settings_link": {
     "en": "701fab0b12e1172e",
@@ -5517,7 +5569,7 @@
   },
   "jf.start.busy": {
     "en": "73a1a9af6beea88e",
-    "text": "56050921a1b45c1b"
+    "text": "7c9e80f0f51a3b24"
   },
   "jf.start.failed": {
     "en": "3694b249df26cb24",
@@ -5645,7 +5697,7 @@
   },
   "jfa.answer.sending": {
     "en": "bb2e3496f3e0d7e0",
-    "text": "51d24612eeff1746"
+    "text": "f783a19d6b7e0356"
   },
   "jfa.answer.title": {
     "en": "bb5a3fe1d8447450",
@@ -5657,7 +5709,7 @@
   },
   "jfa.answer.withdrawing": {
     "en": "2faef362360972bb",
-    "text": "bf88c5f906347585"
+    "text": "c08290a3e71ddbac"
   },
   "jfa.answer.withdrawn": {
     "en": "946e0b019f18aaf5",
@@ -5733,7 +5785,7 @@
   },
   "jfa.posts.sending": {
     "en": "b9a64966e1362543",
-    "text": "87f4769b6677ad18"
+    "text": "c1a13d5174a1f8a9"
   },
   "jfa.posts.title": {
     "en": "cefa50efc0c91dde",
@@ -5769,7 +5821,7 @@
   },
   "jfa.redact.busy": {
     "en": "e58493ed3baaf9ae",
-    "text": "478bfb0796408711"
+    "text": "115fa7b0eb602987"
   },
   "jfa.redact.confirm": {
     "en": "4d3bad8266688cdd",
@@ -5881,7 +5933,7 @@
   },
   "jfa.report.sending": {
     "en": "82cf1ed0186ce9fc",
-    "text": "6daa8048ba8bfe7c"
+    "text": "0dd12d24fd9106ed"
   },
   "jfa.report.summary": {
     "en": "485e809dae73c0d0",
@@ -5933,7 +5985,7 @@
   },
   "jfa.statement.sending": {
     "en": "b9a64966e1362543",
-    "text": "87f4769b6677ad18"
+    "text": "c1a13d5174a1f8a9"
   },
   "jfa.statement.summary": {
     "en": "485e809dae73c0d0",
@@ -5961,7 +6013,7 @@
   },
   "jfa.step.sending": {
     "en": "0e147a62fe8048f3",
-    "text": "9a30c7201af7b08b"
+    "text": "73083d747d224784"
   },
   "jfa.triage.adopt": {
     "en": "016f34c61bc06b65",
@@ -6017,7 +6069,7 @@
   },
   "jfs.deleting": {
     "en": "c0ca40456b38f753",
-    "text": "c4dad31b9c913d71"
+    "text": "d3dc5d8371ec743e"
   },
   "jfs.edit": {
     "en": "f7e6729d30cf78fb",
@@ -6041,7 +6093,7 @@
   },
   "jfs.ending": {
     "en": "33136cb60eb46dda",
-    "text": "4675bba1d4e485ea"
+    "text": "00dde2126356d0be"
   },
   "jfs.error.topic": {
     "en": "c57dd8ac6dbd6881",
@@ -6077,7 +6129,7 @@
   },
   "jfs.granting": {
     "en": "0ca6df418cc7ffed",
-    "text": "9d49a8d9e9272ed7"
+    "text": "c4fe2a0aa36a8f28"
   },
   "jfs.hint": {
     "en": "f496ad7da5050f5b",
@@ -6133,7 +6185,7 @@
   },
   "jfs.part.saving": {
     "en": "4e65400e023b52a3",
-    "text": "29ad59b073c620df"
+    "text": "8efa38438f5e434b"
   },
   "jfs.part.title": {
     "en": "af4fbe3a86237273",
@@ -6189,7 +6241,7 @@
   },
   "jfs.saving": {
     "en": "4e65400e023b52a3",
-    "text": "29ad59b073c620df"
+    "text": "8efa38438f5e434b"
   },
   "jfs.sched.at": {
     "en": "5b12f3319ead3497",
@@ -6229,7 +6281,7 @@
   },
   "join.agent.new": {
     "en": "9ba09cdd0900e0ef",
-    "text": "e13ab3a188ddc276"
+    "text": "4d596165b51638f3"
   },
   "join.agent.option": {
     "en": "6acafdef1e97265b",
@@ -6285,7 +6337,7 @@
   },
   "join.creating": {
     "en": "da317c5fd9f13c1c",
-    "text": "d250061c8d06423e"
+    "text": "43b7db4ac1104219"
   },
   "join.display.label": {
     "en": "18c4fcd40ad3a751",
@@ -6573,7 +6625,7 @@
   },
   "join.revoke.busy": {
     "en": "8eaf9e2f90377c6e",
-    "text": "470c5a2d32b96b3c"
+    "text": "18b54cdcdb7ba529"
   },
   "join.revoke.failed": {
     "en": "cc3ad5656cc129e8",
@@ -8593,7 +8645,7 @@
   },
   "members.invite_user": {
     "en": "1bf547a47777ceb4",
-    "text": "2cad296554366d91"
+    "text": "69f31fd0caaf5769"
   },
   "members.isolate.confirm": {
     "en": "64f0a2b00d04f262",
@@ -12367,6 +12419,18 @@
     "en": "ae6ac2366f27b54c",
     "text": "56c2abc24df04978"
   },
+  "reg.now.allowlist": {
+    "en": "2e9df9384a7d0b60",
+    "text": "5bfeee50f7ecd645"
+  },
+  "reg.now.closed": {
+    "en": "02e31f51aa8b1b6a",
+    "text": "e9bf8350de842e55"
+  },
+  "reg.now.open": {
+    "en": "35ff74aeea25311f",
+    "text": "0206ab825cd09baf"
+  },
   "reg.pending.approve": {
     "en": "6a170dd7aac698f8",
     "text": "42fd20fc4927a6f4"
@@ -13549,7 +13613,7 @@
   },
   "security.state.mail": {
     "en": "c1de10a4738d9ca8",
-    "text": "a5e356451ac2af28"
+    "text": "03cb21684e18ccde"
   },
   "security.state.off": {
     "en": "1908dff9f8bbc8a7",
@@ -15153,7 +15217,7 @@
   },
   "stepup.code.hint": {
     "en": "c736bbd60c1b076f",
-    "text": "56d5b609b0fa5bb8"
+    "text": "3f19703172d7e84f"
   },
   "stepup.code.label": {
     "en": "39d73d8014fa01b4",
@@ -15177,7 +15241,7 @@
   },
   "stepup.mail.hint": {
     "en": "216627448b203b8f",
-    "text": "491e023de71229f2"
+    "text": "a711a4dda9124107"
   },
   "stepup.mail.label": {
     "en": "c81519722ffd32dd",
@@ -15209,7 +15273,7 @@
   },
   "stepup.password.hint": {
     "en": "af5cda079a3fb62e",
-    "text": "6cc28c07afc4a2dd"
+    "text": "236907fb0b2d4294"
   },
   "stepup.password.label": {
     "en": "9e10723b04013059",
@@ -15333,7 +15397,7 @@
   },
   "swarm.reading": {
     "en": "26c77b8aa1b262c3",
-    "text": "be1fc09c31a872cb"
+    "text": "56a40a051fbbd96c"
   },
   "swarm.since": {
     "en": "e89ac15b211e5ce5",
@@ -15661,7 +15725,7 @@
   },
   "ticker.post.posting": {
     "en": "b9a64966e1362543",
-    "text": "fb6b058908fbb1f9"
+    "text": "c1a13d5174a1f8a9"
   },
   "ticker.post.release": {
     "en": "b95c9a838359e4a0",
@@ -15865,7 +15929,7 @@
   },
   "ticker.sub.saving": {
     "en": "4e65400e023b52a3",
-    "text": "83068754b7eb4d29"
+    "text": "8efa38438f5e434b"
   },
   "ticker.sub.stop_following": {
     "en": "d92135ab08711881",
@@ -16211,6 +16275,66 @@
     "en": "8611a18d2da36d81",
     "text": "732639e4f625b39e"
   },
+  "trust.role_word.blue_team": {
+    "en": "5468fb2f6752be8f",
+    "text": "5468fb2f6752be8f"
+  },
+  "trust.role_word.coder": {
+    "en": "5eb54bb680e64ff4",
+    "text": "5eb54bb680e64ff4"
+  },
+  "trust.role_word.designer": {
+    "en": "82508a215e216b2e",
+    "text": "82508a215e216b2e"
+  },
+  "trust.role_word.manager": {
+    "en": "ae4e94930bf9413d",
+    "text": "ae4e94930bf9413d"
+  },
+  "trust.role_word.ops": {
+    "en": "145d8954cadc6d17",
+    "text": "145d8954cadc6d17"
+  },
+  "trust.role_word.proxy": {
+    "en": "8cb5416591641dea",
+    "text": "8cb5416591641dea"
+  },
+  "trust.role_word.purple_team": {
+    "en": "9111d4303f3d9f59",
+    "text": "9111d4303f3d9f59"
+  },
+  "trust.role_word.red_team": {
+    "en": "c3689ff7eaf89893",
+    "text": "c3689ff7eaf89893"
+  },
+  "trust.role_word.reviewer": {
+    "en": "02b93b284a355f07",
+    "text": "02b93b284a355f07"
+  },
+  "trust.role_word.tester": {
+    "en": "9aaf66d48dc13a73",
+    "text": "9aaf66d48dc13a73"
+  },
+  "trust.role_word.writer": {
+    "en": "5541f52abe448088",
+    "text": "5541f52abe448088"
+  },
+  "trust.word.admin": {
+    "en": "3d9a13ea8e39a966",
+    "text": "1beb01e34ccd52f4"
+  },
+  "trust.word.guest": {
+    "en": "874a9ce4bb065644",
+    "text": "a1a8900b13a98ea5"
+  },
+  "trust.word.member": {
+    "en": "68884b2d004b2e09",
+    "text": "fe62fa399a60fc3d"
+  },
+  "trust.word.owner": {
+    "en": "622f06cbcd2e7e61",
+    "text": "251cb70bdc3af9b1"
+  },
   "users.column.admin": {
     "en": "1beb01e34ccd52f4",
     "text": "1beb01e34ccd52f4"
@@ -16277,11 +16401,11 @@
   },
   "users.loading": {
     "en": "9e84d6d7b9885c4f",
-    "text": "6b6938d183a6ebc4"
+    "text": "560ca7b269bac375"
   },
   "users.loading_more": {
     "en": "80343b91752c45ed",
-    "text": "ef240dba0c90d8d1"
+    "text": "f7e10066db906e5f"
   },
   "users.never": {
     "en": "48c4ee8f1739566a",
@@ -16369,7 +16493,7 @@
   },
   "users.reset.sending": {
     "en": "bb2e3496f3e0d7e0",
-    "text": "5376eaafe5f3f1f2"
+    "text": "f783a19d6b7e0356"
   },
   "users.reset.sent": {
     "en": "e9a767704deeec18",
@@ -16553,7 +16677,7 @@
   },
   "waiting.marking": {
     "en": "5e204676103a6a59",
-    "text": "4a386552fba3729b"
+    "text": "4b45511834a19ed9"
   },
   "waiting.none": {
     "en": "c1a108df9d137371",
@@ -16649,7 +16773,7 @@
   },
   "webhook.making": {
     "en": "f678660236fe5819",
-    "text": "e0aae0f1317ab587"
+    "text": "9c4a24a6c95300b4"
   },
   "webhook.not_made": {
     "en": "db93c50774a9fe15",
@@ -16681,7 +16805,7 @@
   },
   "webhook.removing": {
     "en": "e58493ed3baaf9ae",
-    "text": "2bf6085d1ebb320a"
+    "text": "115fa7b0eb602987"
   },
   "webhook.rotate": {
     "en": "8614ae4803bcd3ce",

@@ -14,6 +14,8 @@ raised on the card, not replaced in one place. Translations carry no note saying
 - **Plain and short**, as in a good product, not word for word. Labels on buttons stay short; a text about the
   same length as English where the layout is tight.
 - **Sentence case** where the language has it. No exclamation marks English does not have.
+- **Waiting, with an ellipsis:** in the language's passive or neutral form, not "I am saving": `Wird gespeichert …`. The language's own spacing, one way throughout.
+- **Names of levels and roles** are labels: the word in the table stays even where a language has a neutral form, so the same trust level reads the same everywhere. Role words such as `coder` and `reviewer` stay English.
 - **Plural forms:** those `PLURALS` in `web/tools/check.py` names for the language, each with its placeholder.
 - **No gender guess:** a person or an agent is addressed or named without assuming a gender, using the
   language's neutral form where it has one that reads naturally.
@@ -74,12 +76,13 @@ raised on the card, not replaced in one place. Translations carry no note saying
 | join (a project) | beitreten | rejoindre | unirse | unirsi | entrar | deelnemen | 参加する | 참여하기 | 加入 |
 | dashboard | Dashboard | tableau de bord | panel | dashboard | painel | dashboard | ダッシュボード | 대시보드 | 控制台 |
 | claim (a card) | Übernahme, übernehmen | prise en charge, prendre | toma, tomar | presa in carico, prendere | assunção, assumir | claim, claimen | 担当, 担当する | 담당, 담당하기 | 认领 |
+| takeover (another's card, with a right to object) | Ablösung | reprise | relevo | subentro | substituição | overname | 引き継ぎ | 인계 | 接管 |
 | lease | Reservierung | réservation | reserva | prenotazione | reserva | reservering | 予約 | 예약 | 占用期 |
 | go (a human's approval) | Freigabe | feu vert | luz verde | via libera | sinal verde | akkoord | 承認 | 승인 | 批准 |
-| user, one | Mensch | utilisateur | usuario | utente | usuário | gebruiker | ユーザー | 사용자 | 用户 |
+| user, one | Mensch, Person | utilisateur | usuario | utente | usuário | gebruiker | ユーザー | 사용자 | 用户 |
 | users, several | Nutzende | utilisateurs | usuarios | utenti | usuários | gebruikers | ユーザー | 사용자 | 用户 |
 | lead | Lead | responsable | responsable | responsabile | responsável | lead | リード | 리드 | 负责人 |
-| arbiter (a role, whoever holds it) | Schlichtung | arbitre | árbitro | arbitro | árbitro | arbiter | 調停者 | 중재자 | 仲裁者 |
+| arbiter (a role, whoever holds it) | Schiedsinstanz | arbitre | árbitro | arbitro | árbitro | arbiter | 調停者 | 중재자 | 仲裁者 |
 | subtask | Teilaufgabe | sous-tâche | subtarea | sottoattività | subtarefa | deeltaak | サブタスク | 하위 작업 | 子任务 |
 | Keep the Why, Meat Proxy, harness, resume | unchanged | unchanged | unchanged | unchanged | unchanged | unchanged | unchanged | unchanged | unchanged |
 
