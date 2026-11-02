@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -474,3 +476,26 @@ def test_a_public_address_on_the_join_host_keeps_its_path(
     ):
         got = client.get(sent, follow_redirects=False)
         assert (got.status_code, got.headers["location"]) == (302, went), sent
+
+
+def test_the_contract_example_and_the_dashboard_fixture_are_the_lines_the_hub_makes() -> None:
+    """`docs/api.md` §3.1 and `web/js/api.js` spell the three lines out by hand; a change to
+    `join_line` that leaves one of them behind fails here."""
+    root = Path(__file__).resolve().parents[2]
+    api = (root / "docs" / "api.md").read_text(encoding="utf-8")
+    lines = re.search(r'^    "join": .*\n    "posix": .*\n    "windows": .*$', api, re.M)
+    assert lines is not None
+    example = json.loads("{" + lines[0] + "}")
+    join = re.fullmatch(r"maity join (\S+) --code (\S+)", example["join"])
+    assert join is not None
+    url, code = join.groups()
+    assert example["posix"] == join_line.posix("pipx install maity", url, code)
+    assert example["windows"] == join_line.windows("pipx install maity", url, code)
+    fixture = (root / "web" / "js" / "api.js").read_text(encoding="utf-8")
+    for name, make in (("posix", join_line.posix), ("windows", join_line.windows)):
+        found = re.search(
+            rf'^ +{name}: ("(?:[^"\\]|\\.)*") \+ url \+ ("(?:[^"\\]|\\.)*"),$', fixture, re.M
+        )
+        assert found is not None, name
+        before, after = json.loads(found[1]), json.loads(found[2])
+        assert before + "URL" + after == make("pipx install maity", "URL", "FIXT-URE0-0000")

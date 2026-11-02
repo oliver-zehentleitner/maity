@@ -543,7 +543,10 @@ def _chat_note(packet: dict[str, Any]) -> None:
         print(f"Talk to me in Maity: {onboarding.inline(url)}", file=sys.stderr)
 
 
-PATH_SENTENCE = "If `maity` is not found later, run `pipx ensurepath` once and open a new shell."
+PATH_SENTENCE = (
+    "If `maity` is not found later, run `pipx ensurepath` once (`python -m pipx ensurepath` "
+    "where `pipx` itself is not found) and open a new shell."
+)
 
 
 def _path_note() -> None:
@@ -556,7 +559,8 @@ def _path_note() -> None:
     where = f" (this run is {ran.parent})" if ran is not None and ran.name == "maity" else ""
     _err(
         f"`maity` is not on PATH{where}, so later commands will not find it: run "
-        "`pipx ensurepath` and open a new shell, or put its directory on PATH"
+        "`pipx ensurepath` (or `python -m pipx ensurepath`) and open a new shell, or put its "
+        "directory on PATH"
     )
 
 

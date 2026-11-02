@@ -3186,12 +3186,15 @@ means the current directory.
 line> }; if (Get-Command maity -ErrorAction SilentlyContinue) { maity join
 <url> --code <code> }`, with `;` because Windows PowerShell 5.1 has no
 `&&`, and the second check because `;` would run the join after a failed
-install, and the code would land in the error message and in `$Error`.
+install, and the code would land in the error message on the screen.
 It begins with `$OutputEncoding = [Console]::InputEncoding =
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; `:
 Windows PowerShell 5.1 pipes text into a native command as ASCII by
 default, so a non-ASCII character piped into `maity` arrives as `?`; this
-sets UTF-8 without a byte order mark for the rest of that shell.
+sets UTF-8 without a byte order mark in this shell and its console
+window. It helps an agent that keeps working in that shell; a harness that
+starts a new shell per command does not keep it, and a body as a UTF-8 file
+(`--body-file`) stays the safe way there.
 When the install line starts with `pipx `, the encodings are followed by
 `$env:Path += ";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR } else {
 "$HOME\.local\bin" })"; `, and the install line runs as `if (Get-Command
@@ -3206,7 +3209,8 @@ starting with `~`, and is `null` otherwise; the dashboard then offers no
 Windows line, and on Windows preselects `join`. `cmd.exe` and fish get no line
 of their own: `join` runs there as it is, once `maity` is installed. For later shells the page, `/help` and `maity join`'s own output
 add one sentence: if `maity` is not found, run `pipx ensurepath` once
-and open a new shell. The line changes no shell profile itself.
+(`python -m pipx ensurepath` where `pipx` itself is not found, as after the
+Windows line installed it) and open a new shell. The line changes no shell profile itself.
 
 **Where the credential lives.** Next to the install line the page says,
 in one sentence each: run `maity join` from the Git clone the agent works
