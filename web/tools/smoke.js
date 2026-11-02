@@ -2907,6 +2907,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !swBox().querySelectorAll("a").some((a) => /as=public/.test(a.getAttribute("href") || "")), "swarm: cards done per day, the coverage and samples notes, no public page");
   const swPoints = () => swBox().querySelector(".swarm-per-day").childNodes[1].childNodes[0].getAttribute("points").split(" ");
   expect(swPoints().length === 30 && swPoints()[29] === "158.0,6.8", "swarm: the per-day line runs oldest to newest, the newest day at the right " + swPoints().slice(-1));
+  // The swarm as a whole (§6.22): the team and the board now, the hours awake, created and merged per day, the messages.
+  const swFigures = swBox().querySelectorAll(".swarm-figures").map((f) => text(f));
+  expect(JSON.stringify(swFigures) === JSON.stringify(["Team nowAgents3 · 2 onlineHumans1 · 1 onlineInstances4 · 3 online", "Board nowopen5in progress2review1blocked1"])
+    && text(swBox().querySelector(".swarm-awake")) === "Agents were online in 22 of the last 24 hours.",
+    "swarm: the team and the board now, and the hours an agent was online " + JSON.stringify(swFigures));
+  const swLine = (c) => swBox().querySelector(".swarm-per-day." + c);
+  expect(text(swLine("swarm-created")).startsWith("61 cards created") && swLine("swarm-created").childNodes[1].childNodes[0].getAttribute("points").split(" ").length === 30
+    && text(swLine("swarm-merged")).startsWith("23 PRs merged")
+    && text(swBox().querySelector(".swarm-messages")) === "Messages: 420 chat · 310 notices · 56 review results · 55 other"
+    && text(swBox().querySelector(".swarm-reviews-per-pr")) === "Review results per merged PR: 2.4",
+    "swarm: cards created and PRs merged per day, the messages by type, review results per merged PR " + text(swLine("swarm-created")));
   const swBefore = swBox();
   let swFeed = [];
   win.Maity.api.get = (p) => {
@@ -2917,6 +2928,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(swBox(), "7 days").click(); for (let k = 0; k < 4; k++) await tick();
   expect(swGets[swGets.length - 1] === "/projects/maintainer/maity/swarm?days=7" && btn(swBox(), "7 days").getAttribute("aria-pressed") === "true" && swPoints().length === 7,
     "swarm: the switch reads 7 days and draws them");
+  expect(swLine("swarm-created").childNodes[1].childNodes[0].getAttribute("points").split(" ").length === 7
+    && swLine("swarm-merged").childNodes[1].childNodes[0].getAttribute("points").split(" ").length === 7,
+    "swarm: the created and merged lines follow the switch to 7 days");
   // A redraw of the counts (a card changed) keeps the section as it is: no new read, the window kept.
   const swReads = swGets.length;
   swFeed = [{ seq: 9990, kind: "task_updated", actor: { member_id: "agt-b" }, payload: {} }];
@@ -8807,6 +8821,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const maBefore = maPatches.length;
     main.querySelectorAll("button").find((b) => text(b) === "Remove the address").dispatch("click"); for (let k = 0; k < 4; k++) await tick();
     expect(maPatches.length === maBefore && maAsked.startsWith("Remove maintainer@example.org?"), "mail address: removing is asked first, declined nothing is sent");
+    // An address never confirmed: the question does not speak of signing in by mail.
+    const maGet0 = win.Maity.api.get;
+    win.Maity.api.get = (p) => (p === "/me/notification-settings" ? maGet0(p).then((x) => ({ ...x, email: { ...x.email, address: null,
+      address_status: "pending", verified_at: null, pending_address: "fresh@example.net", address_change: null } })) : maGet0(p));
+    await go("#/all"); await go("#/account/notifications"); for (let k = 0; k < 4; k++) await tick();
+    main.querySelectorAll("button").find((b) => text(b) === "Remove the address").dispatch("click"); for (let k = 0; k < 4; k++) await tick();
+    expect(maAsked === "Remove fresh@example.net? Its link stops working, and Maity sends you no mail." && maPatches.length === maBefore,
+      "mail address: removing an address never confirmed asks without speaking of signing in by mail");
+    win.Maity.api.get = maGet0;
+    await go("#/all"); await go("#/account/notifications"); for (let k = 0; k < 4; k++) await tick();
     win.confirm = maConfirm;
     // The removal answered here, so the fixture keeps its confirmed address for what follows.
     win.Maity.api.patch = (p, b) => {
@@ -8820,6 +8844,48 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && text(main.querySelector(".mail-address-state")) === "No mail address yet: Maity sends you no mail."
       && !byId("mail-address-password") && text(maBox()).includes("Address removed."),
       "mail address: removed with the password, then none and no password asked");
+    // When mail goes out (§18.4): a mode per kind, digests' time and day, zone, quiet hours, sign-in
+    // link; only what changed is sent, a kind with only its changed part.
+    win.Maity.api.patch = (p, b) => { maPatches.push([p, JSON.parse(JSON.stringify(b))]); return nlPatch(p, b); };
+    await go("#/all"); await go("#/account/notifications"); for (let k = 0; k < 4; k++) await tick();
+    const mmForm = () => main.querySelector("form.mail-modes-form");
+    const mmSubmit = async () => { mmForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick(); };
+    const mmLast = () => maPatches[maPatches.length - 1][1];
+    expect(mmForm() && ["inbox", "chat", "mention", "security"].map((k) => byId("mail-mode-" + k).value).join() === "immediate,daily,daily,immediate"
+      && byId("mail-mode-chat").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "immediate,hourly,daily,weekly,off"
+      && byId("mail-daily-at").value === "08:00" && byId("mail-weekly-on").value === "mon" && byId("mail-timezone").value === "Europe/Vienna"
+      && !byId("mail-quiet").checked && byId("mail-quiet-from").disabled && byId("mail-sign-in-link").checked
+      && !!byId("mail-content-chat") && !!byId("mail-content-mention") && !byId("mail-content-inbox") && !byId("mail-content-security"),
+      "mail modes: every kind with its mode, five modes each, the digests' time and day, the zone, quiet hours off, the text only for chat and mention");
+    const mmBefore = maPatches.length;
+    await mmSubmit();
+    expect(maPatches.length === mmBefore && text(main.querySelector("section.mail-modes")).includes("Nothing changed"),
+      "mail modes: nothing changed, nothing sent");
+    byId("mail-mode-chat").value = "weekly"; byId("mail-weekly-on").value = "fri"; byId("mail-content-mention").checked = true;
+    await mmSubmit();
+    expect(JSON.stringify(mmLast()) === JSON.stringify({ email: { kinds: { chat: { mode: "weekly" }, mention: { content: true } }, weekly_on: "fri" } })
+      && byId("mail-mode-chat").value === "weekly" && byId("mail-mode-inbox").value === "immediate"
+      && text(main.querySelector("section.mail-modes")).includes("Saved."),
+      "mail modes: only the changed kinds and only their changed parts are sent, the answer shown");
+    byId("mail-quiet").checked = true; byId("mail-quiet").dispatch("change"); byId("mail-quiet-from").value = "25:00";
+    const mmBad = maPatches.length;
+    await mmSubmit();
+    expect(maPatches.length === mmBad && text(byId("mail-quiet-error")) === "A time as HH:MM, from 00:00 to 23:59." && !byId("mail-quiet-from").disabled,
+      "mail modes: a time out of range is refused before sending");
+    byId("mail-quiet-from").value = "23:00"; byId("mail-quiet-to").value = "06:30"; byId("mail-sign-in-link").checked = false;
+    await mmSubmit();
+    expect(JSON.stringify(mmLast()) === JSON.stringify({ email: { quiet_hours: { from: "23:00", to: "06:30" }, sign_in_link: false } }),
+      "mail modes: quiet hours and the sign-in link as set");
+    byId("mail-quiet").checked = false; byId("mail-quiet").dispatch("change");
+    await mmSubmit();
+    expect(JSON.stringify(mmLast()) === JSON.stringify({ email: { quiet_hours: null } }), "mail modes: quiet hours turned off send null");
+    win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("x", 400, "/me/notification-settings", "invalid", { fields: { "email.timezone": "invalid" } }));
+    byId("mail-timezone").value = "Mars/Olympus";
+    await mmSubmit();
+    expect(text(byId("mail-timezone-error")).startsWith("The hub does not know this time zone") && byId("mail-timezone").getAttribute("aria-invalid") === "true",
+      "mail modes: the hub's refusal of the zone is said at the zone");
+    win.Maity.api.patch = (p, b) => { maPatches.push([p, JSON.parse(JSON.stringify(b))]); return nlPatch(p, b); };
+    await win.Maity.api.patch("/me/notification-settings", { email: { kinds: { chat: { mode: "daily" }, mention: { content: false } }, weekly_on: "mon", sign_in_link: true } });
     const maGet = win.Maity.api.get;
     win.Maity.api.get = (p) => (p === "/me/notification-settings" ? maGet(p).then((x) => ({ ...x, mail_available: false })) : maGet(p));
     await go("#/all"); await go("#/account/notifications"); for (let k = 0; k < 4; k++) await tick();
@@ -9293,7 +9359,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       notes: [{ id: "nte-1", author: "member", body: "A *note* <img src=y onerror=alert(2)>", state: "open", created_at: "2026-11-02T08:00:00Z", redacted: false },
         { id: "nte-2", author: "agent", body: null, state: "dismissed", created_at: "2026-11-02T09:00:00Z", redacted: true }] } },
     "/public/pages/stranger/tool/board": { path: "/stranger/tool/board", kind: "board", data: { columns: [{ status: "open", cards: [{ id: "tsk-1", title: "A <b>card</b>", label: "bug", holder: "member" }] }] } },
-    "/public/pages/stranger/tool": { path: "/stranger/tool", kind: "project", data: { name: "Tool", full_name: "stranger/tool", about: null, state: "active", repository_url: "javascript:alert(1)", links: [], people: [{ name: "Sam", handle: "sam", page: "/sam" }], agents: [], other_agents: 2, statistics: { totals: { cards_done: 3, prs_merged: null } },
+    "/public/pages/stranger/tool": { path: "/stranger/tool", kind: "project", data: { name: "Tool", full_name: "stranger/tool", about: null, state: "active", repository_url: "javascript:alert(1)", links: [], people: [{ name: "Sam", handle: "sam", page: "/sam" }], agents: [], statistics: { totals: { cards_done: 3, prs_merged: null } },
       ticker: [{ type: "merge", text: "#1 <b>merged</b>", url: "https://github.com/s/t/pull/1", at: "2026-11-02T08:00:00Z" }, { type: "decision", text: "Decided: tsk-1", url: null, at: "2026-11-02T07:00:00Z" }],
       online: { humans: 1, agents: 2, named: [{ name: "Sam", handle: "sam", page: "/sam" }], as_of: "2026-11-02T08:05:00Z" } } },
   };

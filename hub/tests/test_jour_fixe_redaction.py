@@ -91,6 +91,7 @@ def test_who_may_redact_what(round_: Round) -> None:
 def test_a_proxy_cannot_redact_an_answer(
     round_: Round, make_client: ClientFactory, anonymous: bool
 ) -> None:
+    # A human passes the humans-only gate; admin trust must still exclude the proxy role.
     proxy = flow.human(make_client, round_.engine, "the-proxy")
     with round_.engine.connect() as conn:
         project_id = conn.execute(select(t.project.c.id)).scalar_one()

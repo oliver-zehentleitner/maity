@@ -251,6 +251,18 @@ def test_the_answer_from_a_json_file(
     assert _posted(fake) == [{"went_well": "a\n\nb", "went_badly": "d", "anonymous": False}]
 
 
+def test_an_answer_file_may_start_with_a_byte_order_mark(
+    joined: Path, fake: fakehub.FakeHub, tmp_path: Path
+) -> None:
+    """Notepad saves JSON with a mark first, which `json.loads` refuses."""
+    _overview(fake, _round())
+    fake.routes[("POST", f"{ROUND}/answers")] = lambda seen: (201, {"anonymous": False, "id": "a"})
+    path = tmp_path / "answer.json"
+    path.write_bytes(b"\xef\xbb\xbf" + json.dumps({"went_well": "a"}).encode())
+    assert cli.main(["jourfixe", "answer", "--file", str(path)]) == 0
+    assert _posted(fake) == [{"went_well": "a", "anonymous": False}]
+
+
 @pytest.mark.parametrize(
     ("current", "said"),
     [

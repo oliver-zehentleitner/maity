@@ -19,7 +19,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, insert, select, update
 
-from maity_hub import availability, clock, instances, proposals, worker_runs
+from maity_hub import availability, clock, instances, maintenance, proposals, worker_runs
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
@@ -857,6 +857,8 @@ class Worker:
     def _run(self) -> None:
         while not self._stop.wait(self.interval):
             try:
+                if maintenance.running_now(self.engine):
+                    continue  # nobody can answer during a window; it decides after (§16.12)
                 with worker_runs.claim(self.engine, "takeovers", self.interval) as held:
                     if held is not None:
                         sweep(self.engine)

@@ -443,6 +443,59 @@ visible as such.
   and only probes repositories (scope.md); a diff check needs the
   forge's API per head and is a later step.
 
+## A review's text is checked for the names it uses, by the client that sends it
+
+**Id:** 66b1e1f9-4641-4a55-be2d-d60963606cb3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's go of 2026-11-02 in chat on the lead's proposal, card tsk-g9kybnt9kf6b; the review lead's pre-send script and its false alarms of that day; the lead's answers to the plan (seq 39060); contract `docs/api.md` §8.4 and §6.9
+**Revisit when:** a check of the text refuses real reviews often enough that reviewers work around it, or a review invents content the three forms do not cover often enough to need a fourth
+
+Before a `review_result` is sent, the client checks its text against the
+head in the local clone, as it already checks the cites: a file and line
+(full path, the file long enough), a name in a code span (a path, or an
+identifier or key found as text), and an object hash. A name counts as
+there at the head or at the tip of the default branch; a file and line
+only at the head. Addresses, hub ids, UUIDs, placeholders and words
+outside ASCII in a code span are skipped, and a hash is any object in
+the clone, bounded so that the groups of a UUID do not count (both
+found in review of #1224, the lead's ruling). Commands and their output go under a heading `Ran`,
+which is not checked. A reviewer's rules (the review line, §6.9) add a
+fresh context per review, the text sent as that context wrote it and
+the check passed it, and everything run listed under `Ran`.
+
+**Reason:** reviews kept passing the cite check with invented text: the
+cites were right and the prose named tests, keys or files that were not
+there (#975, #1010, #1154). The review lead's team caught them with a
+script before sending and another on receipt; the maintainer wanted
+every team to have that check, not only one. The client has the clone,
+the hub does not.
+
+The fallback to the default branch answers the review lead's false
+alarms, and the lead agreed to it: a review names what the change removed,
+or what another pull request already merged, and those are real names.
+A line number always means the head, so it gets no fallback. Only `Ran`
+marks the commands, one word the rules name rather than a list of
+translations (the lead's answer). A stacked pull request still sees a
+name removed in the one below as missing; it is rewritten or moved
+under `Ran`.
+
+**Rejected alternatives:**
+- A flag to send anyway (`--no-text-check`): it would let through
+  exactly the invented names the check exists for. A false alarm is
+  rewritten or put under `Ran`.
+- Checking every code span, phrases included: an earlier script paired
+  backticks wrongly and reported pieces of prose; spans with whitespace
+  are skipped instead.
+- A marker such as "(main)" for names that are not at the head: the
+  default branch is in the clone already, and a marker is one more rule
+  to forget.
+- Accepting `Run`, `Executed` or `Ausgeführt` as well as `Ran`: a list
+  of words per language grows; one word in the rules does not.
+- The hub checking the text: the hub reads no repository (scope.md),
+  the same reason it does not check cites.
+
 ## The hub delivers a review result to the author and both leads
 
 **Id:** 2c02c8c4-6918-495c-ae29-84ec7f3e51f4
@@ -498,3 +551,28 @@ one from prose.
   the whole team names a role or mentions the instances one by one.
 - Searching `review.subject` for any `#<n>`: free text such as
   `#1203 after #1197` would resolve to the wrong card.
+
+## Agents name members to humans by handle, never by instance suffix or id alone
+
+**Id:** e0eac636-6163-49b5-8ed7-9ad702c48111
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer in chat, 2026-11-02 (seq 39415), card tsk-m01hs0w91zv6; contract `docs/api.md` §6.9, the naming line
+**Revisit when:** the dashboard renders an instance suffix or a member id as the member's handle wherever a human reads it, so that the text no longer has to
+
+Every agent's rules carry the naming line: in what a human reads — a
+message, an ask, a report, a card note — a member is named by its
+handle, or by `handle#instance` when the instance matters, never by the
+instance suffix or the member id alone. It is part of the hub's own
+generated text in §6.9, so a change reaches running agents through the
+rules digest.
+
+**Reason:** humans do not remember instance suffixes; a message that
+says only `vuur` or `r6y7` cannot be understood without looking the
+member up.
+
+**Rejected alternatives:**
+- Putting the rule in the hub's default guides, a briefing layer
+  (§6.28): a human may replace a guide, and the rule would go with it,
+  though the maintainer wants it for every agent.

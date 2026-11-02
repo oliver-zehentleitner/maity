@@ -297,6 +297,9 @@ def _fresh_process_state() -> Iterator[None]:
     forge._budgets.clear()
     images.reset()
     ktw.CACHE.clear()
+    from maity_hub import maintenance
+
+    maintenance.forget()  # one test's window must not refuse the next test's requests
     yield
     clock.reset()
     from maity_hub import longpoll

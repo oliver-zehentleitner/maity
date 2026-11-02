@@ -74,11 +74,11 @@ def test_the_notes_are_on_the_page_with_their_authors_named_as_the_holder(world:
     text = page(world, card_id) or ""
     assert "<h2>Notes</h2>" in text and "<em>finding</em>" in text
     assert "<script>x" not in text and "anna-note-words" in text
-    assert "Human anna (anna)" not in text and "a member" in text
+    assert "Human anna (anna)" in text
     notes = data(world, card_id).json()["data"]["notes"]
     assert [n["body"] for n in notes] == ["A *finding* <script>x</script>", "anna-note-words"]
     assert set(notes[0]) == {"id", "author", "body", "state", "created_at", "redacted", "edited"}
-    assert notes[1]["author"] == "member" and notes[1]["state"] == "open"
+    assert notes[1]["author"]["handle"] == "anna" and notes[1]["state"] == "open"
     resolved = world.owner.post(
         f"{TASKS}/{card_id}/notes/{second.json()['id']}/resolve", {"state": "dismissed"}
     )
@@ -87,15 +87,13 @@ def test_the_notes_are_on_the_page_with_their_authors_named_as_the_holder(world:
     assert "dismissed" in (page(world, card_id) or "")
 
 
-def test_a_note_author_follows_their_profile(world: World) -> None:
+def test_a_note_author_follows_their_name(world: World) -> None:
     card_id = world.owner.post(TASKS, {"title": "Noted by anna"}).json()["id"]
     world.anna.post(f"{TASKS}/{card_id}/notes", {"body": "from anna"})
-    world.anna.patch("/me", {"public_profile": True})
     assert data(world, card_id).json()["data"]["notes"][0]["author"]["handle"] == "anna"
-    assert "Human anna (anna)" in (page(world, card_id) or "")
-    world.anna.patch("/me", {"public_profile": False})
-    assert data(world, card_id).json()["data"]["notes"][0]["author"] == "member"
-    assert "(anna)" not in (page(world, card_id) or "")
+    assert world.anna.patch("/me", {"handle": "anne"}).status_code == 200
+    assert data(world, card_id).json()["data"]["notes"][0]["author"]["handle"] == "anne"
+    assert "(anne)" in (page(world, card_id) or "")
 
 
 def test_a_redacted_note_shows_as_removed_without_its_text_or_reason(world: World) -> None:
@@ -130,7 +128,7 @@ def test_an_edited_note_shows_its_mark_and_reason_never_the_old_text(world: Worl
     got = data(world, card_id)
     assert "canary-old-words" not in got.text
     shown = got.json()["data"]["notes"][0]
-    assert shown["body"] == "canary-new-words" and shown["author"] == "member"
+    assert shown["body"] == "canary-new-words" and shown["author"]["handle"] == "anna"
     assert shown["edited"]["reason"] == "canary-reason-words" and shown["edited"]["at"]
 
 
@@ -146,10 +144,12 @@ def test_an_edit_renders_the_page_at_once_also_under_interval(world: World, sett
     assert "canary-old-words" not in data(world, card_id).text
 
 
-def test_the_editor_of_anothers_note_follows_their_profile(world: World) -> None:
+def test_the_editor_of_anothers_note_is_named_whatever_their_profile_and_a_hold_hides_them(
+    world: World,
+) -> None:
     card_id = world.owner.post(TASKS, {"title": "Edited by the owner"}).json()["id"]
     note = world.anna.post(f"{TASKS}/{card_id}/notes", {"body": "from anna"}).json()
-    world.owner.patch("/me", {"public_profile": True})
+    world.owner.patch("/me", {"public_profile": False})  # off is not invisible (§16.9)
     edited = world.owner.patch(
         f"{TASKS}/{card_id}/notes/{note['id']}", {"body": "from anna, cleaned", "reason": "typo"}
     )
@@ -158,7 +158,10 @@ def test_the_editor_of_anothers_note_follows_their_profile(world: World) -> None
     assert data(world, card_id).json()["data"]["notes"][0]["edited"]["by"]["handle"] == handle
     assert f"({handle})" in (page(world, card_id) or "")
     # The owner is neither the card's holder nor a note's author on it.
-    world.owner.patch("/me", {"public_profile": False})
+    made = report(world.anna, {"type": "profile", "id": world.owner.id}, "impersonation")
+    assert made.status_code == 201, made.text
+    resolved = world.owner.post(f"/admin/reports/{made.json()['id']}/resolve", {"action": "hide"})
+    assert resolved.status_code == 200, resolved.text
     assert data(world, card_id).json()["data"]["notes"][0]["edited"]["by"] == "member"
     assert f"({handle})" not in (page(world, card_id) or "")
 
@@ -207,11 +210,12 @@ def test_the_holder_is_named_as_the_board_names_them(world: World) -> None:
     claimed = world.bot.post(f"{TASKS}/{card_id}/claim", {})
     assert claimed.status_code == 200, claimed.text
     holder = data(world, card_id).json()["data"]["holder"]
-    assert holder == "agent"  # the owner's profile is not public in this world
-    assert "an agent" in (page(world, card_id) or "")
+    agent = world.bot.get("/me").json()["member"]
+    assert holder["handle"] == agent["handle"]
+    assert f"({agent['handle']})" in (page(world, card_id) or "")
 
 
-def test_the_holder_on_a_card_page_follows_their_profile(world: World) -> None:
+def test_the_holder_on_a_card_page_follows_their_name_and_a_hold(world: World) -> None:
     card_id = world.owner.post(TASKS, {"title": "Held by anna"}).json()["id"]
     with world.migrated.begin() as conn:
         conn.execute(
@@ -220,10 +224,12 @@ def test_the_holder_on_a_card_page_follows_their_profile(world: World) -> None:
             .values(claim_holder=world.anna_member, status="in_progress")
         )
         public_pages.touch(conn, "card", card_id)
-    assert data(world, card_id).json()["data"]["holder"] == "member"
-    world.anna.patch("/me", {"public_profile": True})
     assert data(world, card_id).json()["data"]["holder"]["handle"] == "anna"
-    assert "Human anna (anna)" in (page(world, card_id) or "")
-    world.anna.patch("/me", {"public_profile": False})
+    assert world.anna.patch("/me", {"handle": "anne"}).status_code == 200
+    assert data(world, card_id).json()["data"]["holder"]["handle"] == "anne"
+    made = report(world.owner, {"type": "profile", "id": world.anna.id}, "impersonation")
+    assert made.status_code == 201, made.text
+    path = f"/admin/reports/{made.json()['id']}/resolve"
+    assert world.owner.post(path, {"action": "hide"}).status_code == 200
     assert data(world, card_id).json()["data"]["holder"] == "member"
     assert "(anna)" not in (page(world, card_id) or "")

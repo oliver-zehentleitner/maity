@@ -115,13 +115,16 @@ human = Table(
     Column("meat_proxy_hands", Boolean, nullable=False, server_default=false()),
     # Whether the person has a public page, and the plain text on it (§16.9); a person is
     # private until they choose.
-    Column("public_profile", Boolean, nullable=False, server_default=false()),
+    Column("public_profile", Boolean, nullable=False, server_default=true()),
     Column("public_bio", String(280)),
     # The person's website and their names on the networks of §16.9 (never URLs), and who
     # sees them; the links are built from the names when shown.
     Column("website", String(200)),
     Column("social", JSON_VALUE),
     Column("links_visible", String(24), nullable=False, server_default="private"),
+    # Which of its agents receive the hub's broadcasts (§16.12): `{mode, agents}`, NULL is
+    # `accept_all`.
+    Column("broadcasts", JSON_VALUE),
     # The portal's language and that of the hub's own texts (§6.2); null until chosen.
     Column("interface_language", String(35)),
     # `active`, or `pending` while a registration waits for the operator (§2.7.5).
@@ -2207,6 +2210,41 @@ instance_setting = Table(
     **MYSQL_TABLE,
 )
 
+# A maintenance window (§16.12): at most one active or upcoming. A cancelled one keeps its row;
+# `settled_at` is when the deadlines that fell into it were moved, once, after its end.
+maintenance_window = Table(
+    "maintenance_window",
+    metadata,
+    Column("id", String(ID), primary_key=True),
+    Column("starts_at", UtcDateTime, nullable=False),
+    Column("ends_at", UtcDateTime, nullable=False),
+    Column("text", Text, nullable=False),
+    _ref("created_by", "human.id", nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    _ref("updated_by", "human.id", nullable=False),
+    Column("updated_at", UtcDateTime, nullable=False),
+    Column("cancelled_at", UtcDateTime),
+    Column("settled_at", UtcDateTime),
+    Index("ix_maintenance_window_ends_at", "ends_at"),
+    **MYSQL_TABLE,
+)
+
+# Every change of a window, kept for good: the trail until the instance audit log exists.
+maintenance_change = Table(
+    "maintenance_change",
+    metadata,
+    Column("id", String(ID), primary_key=True),
+    _ref("window_id", "maintenance_window.id", nullable=False),
+    Column("action", String(16), nullable=False),  # created, changed, cancelled, ended
+    Column("starts_at", UtcDateTime, nullable=False),
+    Column("ends_at", UtcDateTime, nullable=False),
+    Column("text", Text, nullable=False),
+    _ref("by", "human.id", nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    Index("ix_maintenance_change_at", "at"),
+    **MYSQL_TABLE,
+)
+
 instance_secret = Table(
     "instance_secret",
     metadata,
@@ -2504,6 +2542,7 @@ public_page = Table(
     Column("rendered_at", UtcDateTime, nullable=False),
     Column("view", String(20)),  # the `kind` of `GET /public/pages/{path}` (§16.9)
     Column("data", JSON_VALUE),  # its `data`, from the render that made `body`
+    Column("indexed", Boolean, nullable=False, server_default=true()),  # false: `noindex`
     Index("ix_public_page_target", "kind", "target_id"),
     **MYSQL_TABLE,
 )
