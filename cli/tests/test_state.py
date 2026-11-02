@@ -206,3 +206,19 @@ def test_another_users_file_names_the_way_out_and_who_else_reaches_it(
     assert text.endswith("; revoke it there")
     assert ("group or others (mode 0750)" in text) is loose
     assert "chmod" not in text
+
+
+@posix
+def test_another_users_state_dir_by_default_names_a_directory_of_ones_own(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Revoking alone leaves a `sudo maity join`'s directory where it was: the way on is an own
+    directory and a new join."""
+    directory = tmp_path / "s"
+    state.write_credential(directory, state.Secret("tok"))
+    me = os.getuid()
+    monkeypatch.setattr(os, "getuid", lambda: me + 1)
+    with pytest.raises(state.StateError) as raised:
+        state.read_credential(directory)
+    assert str(raised.value).endswith(f"; {state.REVOKE_SESSION_FOREIGN}")
+    assert "MAITY_STATE_DIR" in state.REVOKE_SESSION_FOREIGN

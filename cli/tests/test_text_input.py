@@ -146,7 +146,7 @@ def test_inline_text_that_the_shell_ate_is_warned_about(
     assert fake.signed()[-1].json()["body"] == text
 
 
-BOM = "﻿"
+BOM = "\ufeff"
 
 
 def test_say_drops_a_byte_order_mark_from_stdin(
