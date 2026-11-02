@@ -701,7 +701,7 @@ change only with what the page shows.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's answer of 2026-11-02 on request req-jkqzzy638k10 (an open project may name who is online, but a person must be able to turn that off in the settings); the lead's choices on card tsk-my5gvj4warte the same day (counted, not named; the switch covers the person only); contract `docs/api.md` §16.9 ("Online on public pages")
+**Source:** the maintainer's answer of 2026-11-02 on request req-jkqzzy638k10 (an open project may name who is online, but a person must be able to turn that off in the settings); the lead's choices on card tsk-my5gvj4warte the same day (counted, not named; the switch covers the person only), which the maintainer approved as they stand; contract `docs/api.md` §16.9 ("Online on public pages")
 **See:** public-pages.md#a-public-project-shows-a-snapshot-of-its-ticker-and-who-is-online-rendered-on-a-timer-never-live — 65c0167c-f61c-419a-9506-8d9453edd482 — as of 2026-11-02
 **Revisit when:** the maintainer wants the switch to cover a person's agents, or a small project's count is reported as naming someone
 
