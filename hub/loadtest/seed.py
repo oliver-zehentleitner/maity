@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,7 @@ from tests import factory  # noqa: E402
 
 AGENTS_PER_HUMAN = 2
 SLUG = "load"
+PLAIN_NAME = re.compile(r"/[A-Za-z0-9_.-]+")
 
 
 def refusal(database_url: str, confirmed: str | None) -> str | None:
@@ -38,11 +40,13 @@ def refusal(database_url: str, confirmed: str | None) -> str | None:
     One plain address or none: libpq also takes several hosts, and takes the target from the query,
     where it wins over the part a reader looks at."""
     parts = urlsplit(database_url)
-    if "," in parts.netloc or parts.query:
-        return "only a plain URL: one host, one port, one database, no query"
+    if "," in parts.netloc or parts.query or parts.fragment:
+        return "only a plain URL: one host, one port, one database, no query or fragment"
     identity = identity_of(database_url)
     if not parts.path.strip("/"):
         return "the URL names no database"
+    if not parts.scheme.startswith("sqlite") and not PLAIN_NAME.fullmatch(parts.path):
+        return "the database is not one plain name"  # libpq reads a name with = as a connection
     if parts.hostname is None and not parts.scheme.startswith("sqlite"):
         return "the URL names no host, so the environment would choose it"
     host = (parts.hostname or "").lower().rstrip(".")

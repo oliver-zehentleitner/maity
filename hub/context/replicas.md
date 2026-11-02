@@ -625,7 +625,8 @@ in the test system's database first: the API's limits on logins and on agents pe
 the run measures, and seeding through it would have to lift them. It refuses every database not
 named by host, port and database, SQLite too: a hub may run on SQLite in earnest, and a host called
 `db` says nothing. It takes one plain URL and refuses a query, several hosts and a missing host: the
-driver takes the target from all of them and they win over the part a reader looks at. A list of
+driver takes the target from all of them and they win over the part a reader looks at. "Plain" covers the database name too: libpq reads a name containing
+`=` as a connection string, and the URL's path is decoded into it, so it is one plain name. A list of
 those cases was rejected, as reviews kept finding another; so was a list of production names alone,
 as a database host is rarely named after the product.
 The 60 000 held connections are spread over several generator pods with their own source
