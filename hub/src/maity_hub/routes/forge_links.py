@@ -123,12 +123,13 @@ def list_links(request: Request, caller: AnyCaller) -> JSONResponse:
         token = forge_tokens.view(conn, human_id)
     links: list[dict[str, Any]] = []
     for row in rows:
-        repositories, gone = forge_links.shown(app, row)
-        if app is not None and gone is not None and gone != row.status:
+        repositories, found = forge_links.shown(app, row)
+        if app is not None and found is not None and found != row.status:
             with engine.begin() as conn:
-                forge_links.set_status(conn, row.id, gone)
-                wakeups.forget_token_everywhere(conn, app, row.installation_id)
-        links.append(forge_links.view(row, repositories, gone or row.status))
+                forge_links.set_status(conn, row.id, found)
+                if found != "active":
+                    wakeups.forget_token_everywhere(conn, app, row.installation_id)
+        links.append(forge_links.view(row, repositories, found or row.status))
     return JSONResponse(
         {
             "app_configured": app is not None,

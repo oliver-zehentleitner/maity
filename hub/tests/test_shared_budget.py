@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Iterator
+from types import SimpleNamespace
 from typing import Any
 from unittest import mock
 
@@ -132,3 +133,9 @@ def test_old_sources_go(shared: Engine, monkeypatch: pytest.MonkeyPatch) -> None
     other = "o" * 64
     forge._note(other, headers(4000, time.time() + HOUR), spent=False)
     assert [_row(shared).source] == [other]
+
+
+def test_a_later_window_without_a_remaining_takes_it_as_the_row_does() -> None:
+    budget = forge._Budget(remaining=7, reset=100.0)
+    forge._merge(budget, SimpleNamespace(until=0.0, limit=None, remaining=None, reset=200.0))
+    assert (budget.remaining, budget.reset) == (None, 200.0)

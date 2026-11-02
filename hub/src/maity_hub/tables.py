@@ -563,6 +563,7 @@ project = Table(
     # before the hub looked, which counts as private. Cleared when the page goes on or off, a
     # transfer happens or the repository changes: the answer of an earlier page is never reused.
     Column("repository_public", Boolean),
+    Column("probe_via", String(16)),  # the last choice's source (`forge_access`), or `none`
     # Whether the namespace owner confirmed this URL for their own forge grants (§11.4);
     # every change of the URL and every transfer sets it back.
     Column("repository_owner_confirmed", Boolean, nullable=False, server_default=false()),

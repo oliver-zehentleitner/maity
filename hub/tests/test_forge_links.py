@@ -417,6 +417,18 @@ def test_a_refused_mint_on_the_list_forgets_the_token_as_every_refusal_does(
         github_app._tokens.clear()
 
 
+def test_a_successful_mint_on_the_list_turns_a_suspended_link_active_again(
+    human: flow.Human, fake: Forge, migrated: Engine
+) -> None:
+    fake.install(7)
+    setup(human, 7, start(human))
+    with migrated.begin() as conn:
+        conn.execute(update(t.forge_link).values(status="suspended"))
+    assert links(human)[0]["status"] == "active"
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.forge_link.c.status)).scalar_one() == "active"
+
+
 def test_without_an_app_nothing_is_linked(human: flow.Human, no_app: None) -> None:
     refused = human.post("/me/forge/github/link")
     assert (refused.status_code, refused.json()["error"]["code"]) == (409, "forge_app_missing")

@@ -215,7 +215,9 @@ def repository(
 ) -> dict[str, Any] | None:
     if project.repository_url is None:
         return None
-    via = forge_access.probe_via(project.id, project.repository_url, settings.forge_github_token)
+    via = forge_access.probe_via(
+        project.id, project.repository_url, project.probe_via, settings.forge_github_token
+    )
     return {
         "url": project.repository_url,
         "default_branch": project.repository_default_branch,
