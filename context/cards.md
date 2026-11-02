@@ -242,7 +242,7 @@ through the probe gives that without a second source of truth.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's wish in the Maity chat, 2026-11-02, that the overview link the contract and better show it rendered inside Maity (card tsk-yhbmz7mjng7n); the coordinator's go the same day for the implementer to write the contract; the arbiter's ruling on #1235, 2026-11-02; the contract review of #1235 and the arbiter's ruling on its findings the same day (Markdown only, `private, no-cache`, the repository in the `ETag`); contract in `docs/api.md` §6.8, §6.1, §6.11, §16.11
+**Source:** the maintainer's wish in the Maity chat, 2026-11-02, that the overview link the contract and better show it rendered inside Maity (card tsk-yhbmz7mjng7n); the coordinator's go the same day for the implementer to write the contract; the arbiter's ruling on #1235, 2026-11-02; the contract review of #1235 and the arbiter's ruling on its findings the same day (Markdown only, `private, no-cache`, the repository in the `ETag`), and the delta review (the symlink check); contract in `docs/api.md` §6.8, §6.1, §6.11, §16.11
 **Revisit when:** a project's contract outgrows 4 MiB, or a project keeps its contract in more than one file
 **See:** cards.md#a-contracts-text-stays-in-the-repository-the-card-shows-the-section-read-from-it — f29e3cb3-12ab-4af6-83f1-9b04dbaeb578 — as of 2026-11-02
 
@@ -265,8 +265,8 @@ this project's own contract passed 1 MiB on 2026-11-02, so a card's
 section read already refused it; cutting instead would show part of a
 contract as if it were all of it. The answer is `private, no-cache`, as
 attachments are, so a new tab or a reload revalidates instead of
-reading up to 4 MiB again; after a `304` the view keeps the `ref` and
-`fetched_at` of the last full answer.
+reading up to 4 MiB again; after a `304` the view keeps the `ref`,
+`url` and `fetched_at` of the last full answer.
 
 **Rejected alternatives:**
 - The table of contents plus one section per request: smaller answers,
@@ -281,6 +281,10 @@ reading up to 4 MiB again; after a `304` the view keeps the `ref` and
   matching heading; so the setting names a Markdown file (`.md`,
   `.markdown`), lest a committed secret reach every `project:read`
   holder, guests included.
+- The name rule alone: a committed symlink `x.md` to a non-Markdown
+  file resolves on the forge to the target's bytes, so the hub compares
+  the answer's `path` with the setting and refuses a mismatch instead of
+  trusting the name.
 - `no-store` like the other API answers: every tab and reload would
   read the whole file again, so the load would grow with tabs.
 
