@@ -14425,17 +14425,23 @@ dashboard (§6.27). No address, no session, no presence, no image: a
 visitor sees the placeholder avatar.
 
 **Online on public pages.** `PATCH /me` (human only) also sets
-`public_presence` (default `true`; the maintainer's decision of
+`public_presence` (`true` or `false`, anything else `null` included
+`invalid`; default `true`; the maintainer's decision of
 2026-11-02, `hub/context/public-pages.md`). While it is `false` no
 public page names the person as online: the snapshot's **Online**
 (above) counts them and leaves their name out, in the page and in its
 `online.named` (below). Every other count stays as it is: the landing
 page's (§16.7) and the badge's (§6.20) count people and agents, never
 name them. The switch is the person's own and never covers their
-agents: an agent is public work and is named by its handle. Switching
+agents: an agent is public work and is named by its handle. It covers
+only who is named under **Online**: what the person does stays on the
+pages with its time, as a note's `created_at` on a card's page or an
+item under **Recently**. Switching
 it to `false` takes the name off the person's project pages at once,
-also under `MAITY_PUBLIC_PAGES_RENDER=interval` (below); switching it
-to `true` shows them with the next snapshot. A project with a single
+also under `MAITY_PUBLIC_PAGES_RENDER=interval` (below), though a cache
+outside the hub may keep the old page for up to 60 seconds
+(`max-age=60`, below); switching it to `true` shows them with the next
+snapshot. A project with a single
 human member still counts one human online while they are: a count
 names nobody, but in a small project a visitor may guess who it is.
 
@@ -14546,7 +14552,9 @@ Removing something is never left to the interval. Under either
 setting, a change that takes anything off a page — a page that stops
 being public (above), a member or agent owner who makes their profile
 private (which no longer takes their agents' pages with it, "An
-agent's page" above), an organisation's page turned off, a person suspended or hidden, a
+agent's page" above), a person who turns `public_presence` off (their
+name under **Online** on their projects' pages and in `online.named`),
+an organisation's page turned off, a person suspended or hidden, a
 repository that turns private, a member removed from a project or an
 agent profile deleted (off the project's views and the person's page;
 an agent's page goes when its last public project does), `links_visible`
