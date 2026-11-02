@@ -23,9 +23,11 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
+
+from maity_hub import shared_budget
 
 HOSTS = {"github.com": "github"}  # host -> forge kind
 API_HOST = "api.github.com"
@@ -108,6 +110,8 @@ def _quote(ref: str) -> str:
 # or one under LOW of its limit stops every read with that source until the reset:
 # a read then fails at once, with that time as `retry_at`, and nothing goes out.
 # One budget per token, by its digest (never the token), and one for reads without.
+# On PostgreSQL every replica reads and merges the same budget (`shared_budget`); what it
+# has in flight stays its own.
 
 LOW = 0.05  # below this share of the limit left, the rest is kept for the reset
 WAIT_UNKNOWN = 60  # seconds to hold off when a spent budget names no reset
@@ -156,16 +160,37 @@ def _hold_until(budget: _Budget, now: float) -> float:
     return budget.reset if budget.reset is not None and budget.reset > now else now + WAIT_UNKNOWN
 
 
+def _merge(budget: _Budget, shared: Any) -> None:
+    """What the other replicas learned, by the rules of `_note`. Call with the lock held."""
+    budget.until = max(budget.until, shared.until)
+    if shared.reset is not None and budget.reset is not None and shared.reset < budget.reset:
+        return
+    if shared.limit is not None:
+        budget.limit = shared.limit
+    newer = shared.reset is not None and (budget.reset is None or shared.reset > budget.reset)
+    if newer:
+        budget.reset = shared.reset
+    if shared.remaining is not None:
+        budget.remaining = (
+            shared.remaining
+            if newer or budget.remaining is None
+            else min(budget.remaining, shared.remaining)
+        )
+
+
 def _take(source: str) -> datetime | None:
     """Count one read against the source before it is sent, atomically with the check:
     readers in parallel may not spend together what the last answer said was left.
     Returns when the source may be read again, or None with the read counted."""
+    shared = shared_budget.read(source)  # outside the lock: it waits for a database
     now = time.time()
     with _budgets_lock:
         if len(_budgets) > BUDGETS_KEPT:
             for idle in [s for s, b in _budgets.items() if s != source and _says_nothing(b, now)]:
                 del _budgets[idle]
         budget = _budgets.setdefault(source, _Budget())
+        if shared is not None:
+            _merge(budget, shared)
         if budget.reset is not None and budget.reset <= now:
             # The window is over: what was left in it says nothing about the new one.
             budget.remaining, budget.reset = None, None
@@ -180,11 +205,17 @@ def _take(source: str) -> datetime | None:
 
 
 def _note(source: str, headers: Any, spent: bool) -> None:
+    """`_note_here`, then the same for every other replica."""
+    budget = _note_here(source, headers, spent)
+    shared_budget.write(source, budget.limit, budget.remaining, budget.reset, budget.until)
+
+
+def _note_here(source: str, headers: Any, spent: bool) -> _Budget:
     """What an answer's headers say about the source's budget; the read it answers is
     no longer in flight. Answers arrive in any order: within one window (one reset)
     the lowest `remaining` counts; a later reset is a new window and replaces it; an
     answer from an earlier window changes nothing of the newer one, except that a
-    Retry-After it carries still holds the source that long."""
+    Retry-After it carries still holds the source that long. Returns a copy of the budget."""
     limit, remaining = (
         _number(headers, "X-RateLimit-Limit"),
         _number(headers, "X-RateLimit-Remaining"),
@@ -198,7 +229,7 @@ def _note(source: str, headers: Any, spent: bool) -> None:
             budget.until = max(budget.until, now + after)
         older = reset is not None and budget.reset is not None and reset < budget.reset
         if older:
-            return
+            return replace(budget)
         new_window = reset is not None and (budget.reset is None or reset > budget.reset)
         if limit is not None:
             budget.limit = int(limit)
@@ -215,6 +246,7 @@ def _note(source: str, headers: Any, spent: bool) -> None:
         )
         if (spent and after is None) or low:
             budget.until = max(budget.until, _hold_until(budget, now))
+        return replace(budget)
 
 
 def _settled(source: str) -> None:
@@ -228,9 +260,13 @@ def _settled(source: str) -> None:
 
 def retry_at(token: str | None) -> datetime | None:
     """When the source of `token` may be read again; None while it may now."""
+    source = _source(token)
+    shared = shared_budget.read(source)
     with _budgets_lock:
-        budget = _budgets.get(_source(token))
-        until = budget.until if budget is not None else 0.0
+        budget = _budgets.get(source)
+        until = max(
+            budget.until if budget is not None else 0.0, shared.until if shared is not None else 0.0
+        )
     return datetime.fromtimestamp(until, UTC) if until > time.time() else None
 
 
