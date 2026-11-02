@@ -59,7 +59,10 @@ def test_it_shows_counts_links_and_titles_and_no_entry_text(world: World) -> Non
     answer = world.anyone.get(READ).json()
     assert answer["kind"] == "why"
     data = answer["data"]
-    assert set(data) == {"readable", "observed_at", "summary", "family", "attention"} and data["readable"]
+    assert (
+        set(data) == {"readable", "observed_at", "summary", "family", "attention"}
+        and data["readable"]
+    )
     assert data["attention"][0]["title"] == "Open question"
     assert data["family"][0]["dashboard_url"]
     page = world.anyone.get("/maintainer/maity/why").text
