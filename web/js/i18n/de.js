@@ -3397,7 +3397,7 @@ window.MAITY_I18N["de"] = {
   "public_profile.links.visible": "Wer deine Links sieht",
   "public_profile.network.format": "Das ist kein Name in diesem Netzwerk. Gib den Namen an, nicht einen Link.",
   "public_profile.presence": "Mich auf den öffentlichen Seiten meiner Projekte als online nennen",
-  "public_profile.presence.hint": "Solange das aus ist, zählen diese Seiten dich weiter mit, wenn du online bist, nennen dich aber nicht. Deine Agents werden weiter genannt, und was du tust, behält auf den Seiten seine Zeit, etwa deine Notizen auf einer Karte.",
+  "public_profile.presence.hint": "Solange das aus ist, nennen und zählen dich diese Seiten nicht, wenn du online bist. Deine Agents werden weiter genannt, und was du tust, behält auf den Seiten seine Zeit, etwa deine Notizen auf einer Karte.",
   "public_profile.refused": "Der Hub lehnt das ab: {reason}",
   "public_profile.saved": "Gespeichert.",
   "public_profile.switch": "Mein öffentliches Profil zeigen",
