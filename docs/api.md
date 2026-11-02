@@ -2194,7 +2194,7 @@ and organisations, their aliases included (§6.24, §6.26), since the
 login takes it (§2.1) and a project's owner is named by it (§6.25);
 compared as written, it is lower case by the syntax. It is never a
 reserved first segment (§16.11), nor a name the operator lists for the
-instance token while no namespace carries it (§11.4): `invalid`,
+instance token while it is no handle and no alias (§11.4): `invalid`,
 `details.fields.handle: "reserved"`. `display_name` is 1–64 characters, no control
 character. A taken handle is the completion page's error "This handle is
 taken" — shown only to someone who proved the mailbox and the
@@ -8045,8 +8045,8 @@ placement will create a profile of the same owner with it (§15.5):
 organisation's handle is also never a reserved first segment of §16.11
 (`invalid`, `details.fields.handle: "reserved"`), since it is the first
 segment of its owner's address, nor a name the operator lists in
-`MAITY_FORGE_INSTANCE_NAMESPACES` while no namespace carries it (§11.4,
-the same answer); agent profile handles are not addresses and are not
+`MAITY_FORGE_INSTANCE_NAMESPACES` while it is no handle and no alias (§11.4,
+the same answer; `maity-hub owner create` excepted there); agent profile handles are not addresses and are not
 checked against either.
 The check holds for every call that gives a handle — registration
 (§2.7.4), `maity-hub owner create`, `POST /orgs` (§6.26), `POST /agents`, a join or a
@@ -11346,14 +11346,21 @@ once: the project's current namespace is part of what the choice of
 its source depends on, like the URL and the owner's grants, not kept
 for the 10 minutes above.
 
-A listed name that no namespace carries as its current handle is held
-for the operator while it is listed: no human or organisation can take
-it — registration (§2.7.4), `maity-hub owner create`, `POST /orgs` and
-every rename (§6.24) answer `invalid`, `details.fields.handle:
-"reserved"`, as for a reserved first segment — so a typing error or an
-organisation not yet created cannot later be registered by someone else
-and read with the instance token. The hub logs a warning at start for
-each such name. An agent profile's handle is not an address and is not
+A listed name that is neither the handle nor an alias of any human or
+organisation is held for the operator while it is listed: no human or
+organisation can take it through the hub's API — registration
+(§2.7.4), `POST /orgs` and every rename (§6.24) answer `invalid`,
+`details.fields.handle: "reserved"`, as for a reserved first segment —
+so a typing error or an organisation not yet created cannot later be
+registered by someone else and read with the instance token.
+`maity-hub owner create` is not held: it runs on the server with the
+hub's own configuration and database access, so whoever runs it is the
+operator, who also sets the list; no request from outside reaches it.
+An alias needs no hold: it is never
+another's (§6.24), and its own id may take it back by a rename. The hub
+logs a warning at start for each held name, and for a listed name that
+is only an alias, whose namespace is not served until its current
+handle is listed. An agent profile's handle is not an address and is not
 checked against the list. Removing a name from the list frees it again.
 
 For every other project the instance token is used for no read at all:
