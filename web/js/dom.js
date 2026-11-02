@@ -71,7 +71,7 @@ window.Maity = window.Maity || {};
   // another origin.
   function isOwnImage(value) {
     if (typeof value !== "string") return false;
-    if (/^\/api\/v1\/projects\/[a-z0-9][a-z0-9-]{1,30}\/[a-z0-9][a-z0-9-]{1,62}\/(logo|banner)\?v=[A-Za-z0-9%._-]*$/.test(value)) return true;
+    if (/^\/api\/v1\/projects\/[a-z0-9][a-z0-9-]{1,30}\/[a-z0-9][a-z0-9-]{1,62}\/(logo|banner)(\?v=[A-Za-z0-9%._-]*)?$/.test(value)) return true;
     if (/^\/api\/v1\/avatars\/[A-Za-z0-9_-]{1,64}\?v=[A-Za-z0-9%._-]*$/.test(value)) return true;
     // A project's README badge, served by the hub at its root (§6.20).
     if (/^\/badge\/[a-z0-9][a-z0-9-]{1,30}\/[a-z0-9][a-z0-9-]{1,62}\.svg(\?v=[A-Za-z0-9%._-]*)?$/.test(value)) return true;
@@ -395,5 +395,5 @@ window.Maity = window.Maity || {};
   };
   const word = (set, value) => (WORDS[set] && Object.hasOwn(WORDS[set], value) ? WORDS[set][value]() : value);
 
-  M.dom = { word, handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, memberRef, instanceHref, memberChip, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, get SEND_KEYS() { return sendKeys(); }, sendKeysFor, showSendKeys, sendOnCtrlEnter };
+  M.dom = { word, isOwnImage, handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, memberRef, instanceHref, memberChip, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, get SEND_KEYS() { return sendKeys(); }, sendKeysFor, showSendKeys, sendOnCtrlEnter };
 })(window.Maity);

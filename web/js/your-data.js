@@ -68,7 +68,7 @@ window.Maity = window.Maity || {};
 
   function deletionPart(ctx, ask, redraw) {
     const status = M.statusLine();
-    const pending = ctx.me.deletion;
+    const pending = ctx.deletion;
     if (pending) {
       const withdraw = h("button", { type: "button" }, M.t("data.delete.withdraw"));
       withdraw.addEventListener("click", async () => {
@@ -76,7 +76,7 @@ window.Maity = window.Maity || {};
         status.busy(M.t("data.delete.withdrawing"));
         try {
           await M.api.del("/me/deletion");
-          ctx.me.deletion = null;
+          ctx.deletion = null;
           redraw(M.t("data.delete.withdrawn"));
         } catch (err) {
           withdraw.disabled = false;
@@ -109,7 +109,7 @@ window.Maity = window.Maity || {};
         status.busy(M.t("data.delete.asking"));
         try {
           const answer = await M.stepUp.run(() => M.api.post("/me/deletion", { confirm: ctx.me.handle }), ask, M.t("data.delete.step_up"));
-          ctx.me.deletion = (answer && answer.deletion) || null;
+          ctx.deletion = (answer && answer.deletion) || null;
           redraw(M.t("data.delete.mailed"));
         } catch (err) {
           busy = false;

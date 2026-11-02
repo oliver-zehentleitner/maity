@@ -2477,6 +2477,26 @@ def visitor_step(run: Run, page: Page) -> None:
     guest.locator('a[href="/owner/e2e-alpha"]').click()
     expect(guest).to_have_url(f"{run.base}/owner/e2e-alpha")
     expect(guest.locator("#login-handle")).to_have_count(0)
+    # The dashboard draws the page, read-only, with the way to sign in.
+    expect(guest.locator("section.view-visitor")).to_be_visible()
+    expect(guest.locator("section.view-visitor button")).to_have_count(0)
+    expect(guest.locator(".visitor-sign-in")).to_be_visible()
+    guest.get_by_role("link", name="Board", exact=True).click()
+    expect(guest).to_have_url(f"{run.base}/owner/e2e-alpha/board")
+    expect(guest.locator('section.view-visitor[data-kind="board"]')).to_be_visible()
+    # The way to sign in leads to the form, and the address it came from is kept.
+    guest.locator(".visitor-sign-in").click()
+    expect(guest.locator("#login-handle")).to_be_visible()
+    assert "next=" in guest.url, guest.url
+    # A hub page whose data cannot be read stays readable, with its links working.
+    guest.route("**/api/v1/public/pages/**", lambda route: route.abort())
+    guest.goto(f"{run.base}/owner/e2e-alpha/board")
+    expect(guest.locator("#login-handle")).to_have_count(0)
+    expect(guest.locator("#main h1")).to_be_visible()
+    assert guest.locator("#main > [inert]").count() == 0
+    guest.unroute("**/api/v1/public/pages/**")
+    served = page.request.get(f"{run.base}/owner/e2e-alpha/board", headers={"Cookie": ""})
+    assert "x-robots-tag" not in served.headers, served.headers
     guest.goto(f"{run.base}/owner/e2e-alpha/")
     expect(guest).to_have_url(f"{run.base}/owner/e2e-alpha")
     expect(guest.locator("#login-handle")).to_have_count(0)

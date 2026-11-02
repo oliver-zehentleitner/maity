@@ -1209,6 +1209,7 @@ window.MAITY_FIXTURES = {
         "note": "You review the web side; D will brief you.",
         "project": {
           "full_name": "maintainer/maity",
+          "logo_url": "/api/v1/projects/maintainer/maity/logo",
           "name": "Maity",
           "slug": "maity"
         },
@@ -5003,9 +5004,9 @@ window.MAITY_FIXTURES = {
     }
   },
   "me.json": {
+    "deletion": null,
     "member": {
       "aliases": [],
-      "deletion": null,
       "display_name": "Maintainer",
       "handle": "maintainer",
       "id": "hum-maintainer",

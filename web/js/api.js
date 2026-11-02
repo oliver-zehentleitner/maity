@@ -1975,12 +1975,12 @@ window.Maity = window.Maity || {};
       if (me().member.kind !== "human") fail(403, "forbidden", "a human's own account", path, { reason: "humans_only" });
       if (body.confirm !== me().member.handle) fail(400, "invalid", "the request does not validate", path, { fields: { confirm: "mismatch" } });
       const at = new Date();
-      me().member.deletion = { requested_at: at.toISOString().replace(/\.\d{3}Z$/, "Z"),
+      me().deletion = { requested_at: at.toISOString().replace(/\.\d{3}Z$/, "Z"),
         expires_at: new Date(at.getTime() + 86400000).toISOString().replace(/\.\d{3}Z$/, "Z") };
-      return { deletion: me().member.deletion };
+      return { deletion: me().deletion };
     }],
     ["DELETE", /^\/me\/deletion$/, () => {
-      me().member.deletion = null;
+      me().deletion = null;
       return { deletion: null };
     }],
     ["POST", /^\/auth\/reauthenticate$/, (m, body, path) => {
