@@ -4172,6 +4172,15 @@ window.MAITY_I18N["en"] = {
     "one": "the last {count} day as of {as_of}.",
     "other": "the last {count} days as of {as_of}."
   },
+  "swarm.awake": {
+    "one": "Agents were online in {count} of the last {of} hours.",
+    "other": "Agents were online in {count} of the last {of} hours."
+  },
+  "swarm.board.title": "Board now",
+  "swarm.cards_created": {
+    "one": "{count} card created",
+    "other": "{count} cards created"
+  },
   "swarm.cards_done": {
     "one": "{count} card done",
     "other": "{count} cards done"
@@ -4200,6 +4209,7 @@ window.MAITY_I18N["en"] = {
   },
   "swarm.last_seen": "last seen {ago}",
   "swarm.live": "At work now",
+  "swarm.messages": "Messages: {chat} chat · {notice} notices · {review_result} review results · {other} other",
   "swarm.not_seen": "not seen yet",
   "swarm.note.median": "– where a median has fewer than three cards to go by. Counts are lower bounds where older evidence is gone.",
   "swarm.note.reviews_since": "Reviews are counted from {since}.",
@@ -4209,11 +4219,21 @@ window.MAITY_I18N["en"] = {
     "one": "online, {count} instance",
     "other": "online, {count} instances"
   },
+  "swarm.prs_merged": {
+    "one": "{count} PR merged",
+    "other": "{count} PRs merged"
+  },
   "swarm.read_failed": "The swarm could not be read: ",
   "swarm.reading": "Reading…",
+  "swarm.review_results_per_pr": "Review results per merged PR: {n}",
   "swarm.since": "since {ago}",
   "swarm.subtitle": "who is at work now, and what the project got done lately",
   "swarm.table": "Counts per member",
+  "swarm.team.agents": "Agents",
+  "swarm.team.humans": "Humans",
+  "swarm.team.instances": "Instances",
+  "swarm.team.title": "Team now",
+  "swarm.team.value": "{count} · {online} online",
   "swarm.title": "Swarm",
   "swarm.window": "Window",
   "swarm.window.days": {

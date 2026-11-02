@@ -4155,7 +4155,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="with --type review_result, required: the review object (subject, head, verdict, "
         "cites) as JSON from PATH, - for stdin; sent as given once its cites stand at the head "
-        "in this clone",
+        "in this clone; each cite quote is limited to 300 characters by the hub",
     )
     _json_flag(p)
     p.set_defaults(handler=cmd_say)

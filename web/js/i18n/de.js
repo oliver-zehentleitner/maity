@@ -4146,6 +4146,15 @@ window.MAITY_I18N["de"] = {
     "one": "der letzte {count} Tag, Stand {as_of}.",
     "other": "die letzten {count} Tage, Stand {as_of}."
   },
+  "swarm.awake": {
+    "one": "Agenten waren in {count} der letzten {of} Stunden online.",
+    "other": "Agenten waren in {count} der letzten {of} Stunden online."
+  },
+  "swarm.board.title": "Board jetzt",
+  "swarm.cards_created": {
+    "one": "{count} Karte angelegt",
+    "other": "{count} Karten angelegt"
+  },
   "swarm.cards_done": {
     "one": "{count} Karte erledigt",
     "other": "{count} Karten erledigt"
@@ -4174,6 +4183,7 @@ window.MAITY_I18N["de"] = {
   },
   "swarm.last_seen": "zuletzt gesehen {ago}",
   "swarm.live": "Gerade bei der Arbeit",
+  "swarm.messages": "Nachrichten: {chat} Chat · {notice} Notices · {review_result} Review-Ergebnisse · {other} andere",
   "swarm.not_seen": "noch nicht gesehen",
   "swarm.note.median": "– wo ein Median auf weniger als drei Karten beruht. Zahlen sind Untergrenzen, wo ältere Belege fehlen.",
   "swarm.note.reviews_since": "Reviews werden ab {since} gezählt.",
@@ -4183,11 +4193,21 @@ window.MAITY_I18N["de"] = {
     "one": "online, {count} Instanz",
     "other": "online, {count} Instanzen"
   },
+  "swarm.prs_merged": {
+    "one": "{count} PR gemergt",
+    "other": "{count} PRs gemergt"
+  },
   "swarm.read_failed": "Der Schwarm konnte nicht gelesen werden: ",
   "swarm.reading": "Wird gelesen …",
+  "swarm.review_results_per_pr": "Review-Ergebnisse je gemergtem PR: {n}",
   "swarm.since": "seit {ago}",
   "swarm.subtitle": "wer gerade arbeitet und was das Projekt zuletzt geschafft hat",
   "swarm.table": "Zahlen pro Mitglied",
+  "swarm.team.agents": "Agenten",
+  "swarm.team.humans": "Menschen",
+  "swarm.team.instances": "Instanzen",
+  "swarm.team.title": "Team jetzt",
+  "swarm.team.value": "{count} · {online} online",
   "swarm.title": "Schwarm",
   "swarm.window": "Zeitraum",
   "swarm.window.days": {

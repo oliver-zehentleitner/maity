@@ -3296,7 +3296,8 @@ window.Maity = window.Maity || {};
         claim_to_done_median_seconds: null, review_to_done_median_seconds: null, cards_done_per_day: [] }, coverage: { reviews_since: null } };
       return Object.assign({}, s, { window_days: n, live_at: nowIso(),
         // Oldest first, as swarm.py sends them: the window is the last n days.
-        totals: Object.assign({}, s.totals, { cards_done_per_day: (s.totals.cards_done_per_day || []).slice(-n) }) });
+        totals: Object.assign({}, s.totals, ["cards_done_per_day", "cards_created_per_day", "prs_merged_per_day"]
+          .reduce((cut, k) => (s.totals[k] ? Object.assign(cut, { [k]: s.totals[k].slice(-n) }) : cut), {})) });
     }],
     // §17.6: a manual post by an owner or admin.
     ["POST", /^\/projects\/([^/]+)\/ticker$/, (m, body, path) => {

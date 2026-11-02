@@ -852,10 +852,15 @@ too.
     - **Latest reports**: avatar, card, `@who`, when, the pull request with
       the state the probe saw as a pill, a mismatch said.
     - **Swarm** (`js/swarm.js`, `docs/api.md` §6.22; no tab or path of its
-      own, the maintainer, 2026-10-29): **At work now**, every member,
+      own, the maintainer, 2026-10-29): **Team now** (agents, humans,
+      instances, each with how many are online) and **Board now** (open, in
+      progress, review, blocked), and in how many of the last 24 hours an
+      agent was online; **At work now**, every member,
       online or last seen, an agent's instances online, and the cards each
-      holds as links to them; the window (**7 / 30 / 90 days**): cards done
-      with a small line per day, and a table per member and in all — cards
+      holds as links to them; the window (**7 / 30 / 90 days**): cards done,
+      cards created and PRs merged, each with a small line per day; the
+      messages by type and review results per merged PR; and a table per
+      member and in all — cards
       done, reviews given, PRs merged, handovers, claim → done and review →
       done medians in words, – where fewer than three cards give a median;
       when reviews are counted from; when the hub counted. It reads
