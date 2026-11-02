@@ -62,6 +62,10 @@ primitive needed: `pg_notify` delivered on commit, compare-and-set updates, upse
 - **Replicas on every supported database:** MariaDB has no `LISTEN`/`NOTIFY`; the wake-up would
   have to poll, which is the load this design removes.
 
+`tests/test_two_processes.py` starts two real hub processes on one PostgreSQL and checks the
+wake-up, the supersede rule, a shared rate limit, the nonce window and the worker claim across
+them; the unit tests of each piece stand in for the other process.
+
 ## Wake-ups cross pods through NOTIFY sent in the writing transaction, one LISTEN connection per pod
 
 **Id:** 387c2409-1c68-4bf8-a9a0-8a56a4002545
@@ -338,7 +342,7 @@ is the standard trade-off and errs by at most the previous window's share.
 
 **Id:** 24489a9c-6035-41d0-9236-9eb0e04fc902
 **Type:** decision
-**Status:** open
+**Status:** active
 **Evidence:** inferred
 **Source:** the fifteen `Worker` classes started in `app.py` (attachments, availability, commitment, images, jour fixe, mail outbox, notification mailer, not-listening and its digest, organisation invitations, probe, registrations, reports, request stats, takeovers) and how each picks its rows; `not_listening_digest.reconcile` (reads `latest()` before the human's lock); `jourfixe` `record_presence` (insert into `presence_minute` without a lock); `probe.Worker` (forge calls every 120 s and 300 s)
 **Revisit when:** one worker's pass takes longer than its interval on the one pod that holds it, so that it has to be split across pods
@@ -385,6 +389,20 @@ of any connection and of any pod, and it carries the "last ran" time that the in
 - **A session advisory lock on a dedicated connection:** holds across the pass, but is lost when
   that connection drops while the pass goes on through the pool, needs a direct connection past
   PgBouncer, and still lacks the "last ran" time.
+
+Built (`worker_runs.claim`): the claim is an `UPDATE`, then an `INSERT … ON CONFLICT DO NOTHING` for a
+worker's first pass, on the database's clock. Only PostgreSQL writes the row; on the other
+databases every pass runs, as they run one replica. A finished or failed pass releases its lease,
+since a lease of five minutes would otherwise decide the next pass of a worker with a shorter
+interval. `Claim.is_set` is what a pass asks between two transactions: stopping, or another pod
+has it, and asking renews the lease once a minute. The passes that loop over many transactions
+ask it (probe, images, mail, notification mail, public pages, attachments, digest); the others are
+short, and one that outlives its lease costs a second run, not a wrong result. The hourly digest
+claims with half an hour, not an hour: pods look at the clock at different seconds, and with the
+full hour a pass that began at 10:00:30 would refuse the pod that looks at 11:00:05. On a restart
+within the interval the probe's first sweep is refused like any other. The digest's lock before
+`latest()` was already in place when this was built (`reconcile` takes it); only the presence
+insert changed.
 
 ## The forge budget is shared; forge caches stay per pod
 
