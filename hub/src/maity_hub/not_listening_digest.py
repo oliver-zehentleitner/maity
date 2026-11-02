@@ -28,7 +28,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, select, update
 
-from maity_hub import clock
+from maity_hub import clock, worker_runs
 from maity_hub import tables as t
 from maity_hub.events import lock_project, transaction
 from maity_hub.notifications import preferences, records
@@ -37,6 +37,9 @@ log = logging.getLogger(__name__)
 
 RECORD = "agents_not_listening"
 CHECK_EVERY = 60.0  # seconds between the worker's looks at the clock
+# Half an hour, not one: the pods look at the clock at different seconds, and with a full hour the
+# pass that started at 10:00:30 would refuse every pod that looks at 11:00:05.
+ONE_PASS_PER_HOUR = 1800.0
 
 
 @dataclass(frozen=True)
@@ -268,7 +271,9 @@ def mode_changed(conn: Connection, owner_id: str, old: str, new: str) -> None:
         _close_digest(conn, owner_id)
 
 
-def run(engine: Engine, now: datetime | None = None) -> None:
+def run(
+    engine: Engine, now: datetime | None = None, stop: worker_runs.Stopping | None = None
+) -> None:
     """One hour's pass over every owner with an episode, a record or an open digest
     request."""
     now = now or clock.now()
@@ -298,6 +303,8 @@ def run(engine: Engine, now: datetime | None = None) -> None:
             ).scalars()
         }
     for owner_id in sorted(owners):
+        if stop is not None and stop.is_set():
+            return
         with transaction(engine) as conn:
             reconcile(conn, owner_id, now)
 
@@ -334,6 +341,10 @@ class Worker:
                 continue
             self._due = next_hour(now)
             try:
-                run(self.engine, now)
+                with worker_runs.claim(
+                    self.engine, "not-listening-digest", ONE_PASS_PER_HOUR, self._stop
+                ) as held:
+                    if held is not None:
+                        run(self.engine, now, held)
             except Exception:
                 log.exception("the not-listening digest failed")

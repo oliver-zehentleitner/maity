@@ -579,6 +579,39 @@ stop under reduced motion by the stylesheet itself. The file under
 `web/landing/`: a hub serving only the landing page, without the
 dashboard's files, would have no script.
 
+## English is always loaded; the reader's language comes as its own script, chosen by one rule in one place
+
+**Id:** 7e1c4f02-6a3b-4d55-9b1e-2f0c8d7a41b6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-ya56x9gx986r, 2026-11-01; docs/api.md §6.2; `en.json` holds 3326 keys, 208 KB, 54 KB compressed
+**Revisit when:** a language's file grows so that its load shows on the first paint, or a catalog is complete enough that English need not come with it
+
+`js/i18n/en.js` stays in `index.html`, since a key without a translation reads in English. Another
+language is one script more, loaded before the first view (`M.i18n.ready`), only if
+`js/i18n/languages.js` names it, so no value from an address ever becomes a script's path.
+`M.api` hands every answer of `GET /auth/session` to `M.i18n.follow`, and a 401 hands it null, so
+every view, the invitation's and the registration's among them, gets the same rule without asking.
+Plural forms follow the catalog's language, not the locale of the numbers: a German browser reading
+the English catalog needs English forms.
+
+The registration sends `interface_language` only for an explicit choice (the picker on `/register`,
+`?lang=`, or the one kept in the browser). Without one it leaves the field out, so the account keeps
+`null` and goes on following the browser.
+
+**Reason:** the visible language must be known before a view draws its words, and several views read
+the session themselves. A catalog per language keeps nine languages off every page load.
+
+**Rejected alternatives:**
+- Always sending the page's language at registration: every account would get `en` while it is the
+  only catalog, which later could not be told apart from a real choice, and the hub's mails would then
+  ignore `language` (§6.2).
+- All ten in `index.html`: about 2 MB of script before anything is drawn, for one language used.
+- Asking in `render()` after its session read: `invite.js` and `register.js` draw before that line.
+- Picking the language in the hub before sign-in: an explicit choice is kept in the browser, where
+  the hub does not see it, so the dashboard chooses and passes `lang` to the page texts (§16.7.4).
+
 ## A missing translation is a note until the release; a wrong one fails at once
 
 **Id:** 3d9a6c17-52e8-4b0f-a7c4-91e6f2b08d35

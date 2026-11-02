@@ -134,7 +134,7 @@ window.Maity = window.Maity || {};
     // The two sections a notification links into (§18.2): Registration, and Reports with one report opened;
     // and Pages with a part of it (tsk-fct4awzw3k30).
     if (parts[0] === "admin" && (parts[1] === "registration" && !parts[2] || parts[1] === "reports" && !parts[3]
-      || parts[1] === "pages" && !parts[3] && (!parts[2] || ["landing", "legal", "site"].includes(parts[2])))) {
+      || parts[1] === "pages" && !parts[3] && (!parts[2] || ["landing", "legal", "sign-in", "sign-up", "site"].includes(parts[2])))) {
       return { scope: "instance-admin", section: parts[1], args: parts.slice(2) };
     }
     if (parts[1] && !OWN_WORDS.includes(parts[0])) {
@@ -1799,6 +1799,7 @@ window.Maity = window.Maity || {};
     Array.from(main.childNodes).forEach((n) => { if (n.setAttribute) n.setAttribute("inert", ""); });
     let where = { scope: "unknown" };
     let ctx;
+    await M.i18n.ready;
     try {
       where = parseRoute();
       if (where.scope === "invite" && M.invite) { await M.invite.page(main, document.getElementById("header"), where.token); return; }
@@ -2000,6 +2001,7 @@ window.Maity = window.Maity || {};
       h("div", { class: "page-failed-actions" }, signIn, again));
   }
 
+  M.redraw = render;
   M.errorBox = errorBox;
   M.withMembers = withMembers;
   M.logout = logout;

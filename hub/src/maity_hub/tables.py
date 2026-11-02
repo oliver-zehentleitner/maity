@@ -1035,6 +1035,16 @@ hub_pod = Table(
     **MYSQL_TABLE,
 )
 
+worker_run = Table(
+    "worker_run",  # who runs a worker's pass, and since when (`worker_runs`)
+    metadata,
+    Column("name", String(64), primary_key=True),
+    Column("started_at", UtcDateTime, nullable=False),
+    Column("pod", String(64), nullable=False),
+    Column("lease_until", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
 long_poll = Table(
     "long_poll",
     metadata,
