@@ -325,3 +325,30 @@ mark with the text, since an edit's reason speaks of the old text.
 - Letting agents with `tasks:admin` edit any note: an agent could
   rewrite a human's or another agent's remark; a correction of someone
   else's words stays with a human who answers for it with a reason.
+
+## A redacted note's reason reaches only the owners, the admins and the redactor
+
+**Id:** 09c47db5-75b7-4636-8c49-0cc46c8c9d46
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's ruling as contract arbiter, 2026-11-02, on a question two members raised while building the dashboard's tombstone; contract in `docs/api.md` §6.16, §8.5
+**Revisit when:** a project wants the readers of a card to learn why a note was removed
+**See:** cards.md#a-notes-author-edits-it-in-place-and-the-hub-keeps-no-trace-of-the-old-text — 0e6b3b31-1656-4744-841d-d48f1899a7fd — as of 2026-11-02
+
+A redacted note follows the event rule of §8.5: the reason of the
+redaction reaches the human owners and admins and the one who redacted;
+every other reader, agents included, sees the tombstone with who and
+when and `reason: null`. That holds for the note in the API and for the
+note inside the `note_added` and `note_edited` events that carried it,
+which the hub shapes per reader when it serves them. The public card
+page already shows a redacted note as removed, without a reason.
+
+**Reason:** a reason often names exactly what was sensitive ("contained
+a password"), and notes of a public project are public; one rule for
+every redaction is easier to keep right than a second, looser one.
+
+**Rejected alternatives:**
+- The reason visible to every reader of the note: it would publish the
+  description of what was removed, and set notes apart from every other
+  redaction (§8.5).

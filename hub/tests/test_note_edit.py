@@ -159,3 +159,35 @@ def test_an_edit_keeps_the_body_rules(owner: flow.Human) -> None:  # noqa: F811
     assert fields_of(edit(owner, card, posted, body="x" * 4097)) == {"body": "too_long"}
     assert fields_of(edit(owner, card, posted, body="x", mentions=[])) == {"mentions": "read_only"}
     assert edit(owner, card, posted, body="x", reason="r" * 501).status_code == 400
+
+
+def test_a_redacted_notes_reason_reaches_only_owners_admins_and_the_redactor(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine  # noqa: F811
+) -> None:
+    agent = flow.agent(make_client, owner, role="admin")
+    member = flow.human(make_client, migrated, "a-member")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, role="coder", human_id=member.id)
+    card = task(owner)
+    posted = note(agent, card, "contains hunter2 @maintainer").json()
+    path = f"/projects/maintainer/maity/tasks/{card['id']}/notes"
+    assert owner.post(f"{path}/{posted['id']}/redact", {"reason": "a password"}).status_code == 200
+
+    def shown(who: Any) -> dict[str, Any]:
+        items = who.get(f"{path}?state=all").json()["items"]
+        body: dict[str, Any] = items[0]["body"]
+        return body
+
+    def in_events(who: Any) -> Any:
+        listed = who.get("/projects/maintainer/maity/events?after=0&limit=200").json()
+        added = [e for e in listed["items"] if e["kind"] == "note_added"]
+        return added[-1]["payload"]["note"]["body"]
+
+    assert shown(owner)["reason"] == "a password"  # the owner, who redacted
+    assert in_events(owner)["reason"] == "a password"
+    for reader in (agent, member):
+        assert shown(reader)["reason"] is None and shown(reader)["redacted"] is True
+        assert shown(reader)["by"] and shown(reader)["at"]
+    assert in_events(agent)["reason"] is None
+    assert "a password" not in json.dumps(agent.get(f"{path}?state=all").json())

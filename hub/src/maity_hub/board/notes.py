@@ -81,13 +81,25 @@ def people(rows: Iterable[Any]) -> list[int]:
     return found
 
 
-def view(row: Any, authors: dict[int, dict[str, Any]]) -> dict[str, Any]:
-    """A note as §6.16 shows it; `authors` from `history.members` over `people`."""
+def tombstone_for(mark: dict[str, Any], reader: Any) -> dict[str, Any]:
+    """A redacted note's tombstone as `reader` sees it (§6.16, §8.5): the reason reaches the
+    human owners and admins and the redactor; everyone else, agents included, reads it as
+    `null`, since a reason often names what was removed (context/cards.md 09c47db5)."""
+    from maity_hub.views import sees_reasons
+
+    if sees_reasons(reader) or (reader is not None and mark.get("by") == reader.principal_id):
+        return mark
+    return {**mark, "reason": None}
+
+
+def view(row: Any, authors: dict[int, dict[str, Any]], reader: Any = None) -> dict[str, Any]:
+    """A note as §6.16 shows it to `reader` (no reader: the reason of a redaction hidden);
+    `authors` from `history.members` over `people`."""
     return {
         "id": row.id,
         "task_id": row.card_id,
         "author": authors[row.author],
-        "body": row.redaction if row.redacted else row.body,
+        "body": tombstone_for(row.redaction, reader) if row.redacted else row.body,
         "mentions": [] if row.redacted else (row.mentions or []),
         "state": row.state,
         "resolution": row.resolution,

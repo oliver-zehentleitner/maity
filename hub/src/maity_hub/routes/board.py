@@ -293,18 +293,31 @@ def redact_history(
 # --- notes (§6.16) -------------------------------------------------------------------------
 
 
-def _note_view(conn: Connection, row: Any) -> dict[str, Any]:
-    note = notes.view(row, history.members(conn, notes.people([row])))
+def _note_view(conn: Connection, row: Any, reader: Any = None) -> dict[str, Any]:
+    note = notes.view(row, history.members(conn, notes.people([row])), reader)
     return dict(shape_deleted(conn, [note])[0])
 
 
-def load_note(conn: Connection, note_id: str) -> dict[str, Any]:
+def load_note(conn: Connection, note_id: str, reader: Any = None) -> dict[str, Any]:
     return _note_view(
-        conn, conn.execute(select(t.card_note).where(t.card_note.c.id == note_id)).one()
+        conn, conn.execute(select(t.card_note).where(t.card_note.c.id == note_id)).one(), reader
     )
 
 
-idempotency.LOADERS["note"] = idempotency.plain(load_note)
+def _load_note_for_caller(conn: Connection, note_id: str, request: Request) -> dict[str, Any]:
+    """A replay shows the note as the caller sees it: a redaction's reason only to whom
+    §8.5 gives it."""
+    row = conn.execute(select(t.card_note).where(t.card_note.c.id == note_id)).one()
+    card = conn.execute(select(t.card.c.project_id).where(t.card.c.id == row.card_id)).one()
+    slug = namespace.name_of(conn, card.project_id)
+    try:
+        reader = membership(conn, request.state.caller, slug) if slug else None
+    except ApiError:
+        reader = None
+    return _note_view(conn, row, reader)
+
+
+idempotency.LOADERS["note"] = _load_note_for_caller
 
 
 def _note(conn: Connection, card: Any, note_id: str) -> Any:
@@ -362,7 +375,7 @@ def list_notes(
         )
         return JSONResponse(
             {
-                "items": shape_deleted(conn, [notes.view(r, authors) for r in page]),
+                "items": shape_deleted(conn, [notes.view(r, authors, mine) for r in page]),
                 "next_cursor": next_cursor,
             }
         )
@@ -535,7 +548,7 @@ def resolve_note(
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )
-        return idempotency.Outcome(200, "note", row.id, load_note(conn, row.id))
+        return idempotency.Outcome(200, "note", row.id, load_note(conn, row.id, mine))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
@@ -562,7 +575,7 @@ def redact_note(
                 actor=caller.actor(mine.id),
                 subject=("task", card.id),
             )
-        return idempotency.Outcome(200, "note", row.id, load_note(conn, row.id))
+        return idempotency.Outcome(200, "note", row.id, load_note(conn, row.id, mine))
 
     return idempotency.run(engine_of(request), request, caller, action)
 
