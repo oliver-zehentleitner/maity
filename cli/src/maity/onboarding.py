@@ -315,6 +315,24 @@ def _project(packet: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _languages(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
+    """In which language to write what (§5.2): the project's, and each human's, with the
+    agent's own human also where that human is no member of the project."""
+    project = _dict(packet.get("project"))
+    lines = [f"Language: {inline(project.get('language') or 'en')}"] if project else []
+    humans = [p for p in _items(packet.get("peers")) if p.get("kind") == "human"]
+    for peer in humans:
+        who = _name(peer.get("member_id") or peer.get("handle"), names)
+        lines.append(f"Write to @{who} in {inline(peer.get('language') or 'en')}")
+    owner = get(packet, "me", "owner")
+    if isinstance(owner, dict) and owner.get("handle"):
+        if owner.get("id") not in {p.get("member_id") for p in humans}:
+            lines.append(
+                f"Write to @{inline(owner['handle'])} in {inline(owner.get('language') or 'en')}"
+            )
+    return lines
+
+
 def _cover(item: dict[str, Any], names: dict[str, str]) -> str:
     """` (cover for @<handle>)` for a card or request handed over during an outage."""
     covered = get(item, "cover", "for")
@@ -990,6 +1008,7 @@ def render(packet: Any, first: bool = False, board_empty: bool = False, full: bo
         out += [line, ""]
     out += _who(packet, names)
     out += _project(packet)
+    out += _languages(packet, names)
     rules = _dict(packet.get("rules"))
     if rules.get("markdown"):
         out += ["", f"Rules (version {inline(rules.get('version'))}), read them before you work:"]

@@ -78,7 +78,8 @@ is HTTPS (plain HTTP only on loopback) and on the join URL's host or its
 parent domain; otherwise `join` exits 1 and keeps nothing, and the human
 creates a new join line. `maity runner pair` checks the same way.
 
-Join's first resume and every text `maity resume` show the project's
+Join's first resume and every text `maity resume` print `Language: <language>`
+for the project and `Write to @<handle> in <language>` for each human. They show the project's
 expected repository URL when configured. Join compares the clone's
 `upstream` remote (or `origin` when there is no upstream) with it, treating
 HTTPS, SSH, scp-style SSH and a trailing `.git` as the same address. A
