@@ -4410,10 +4410,10 @@ A click on a chat in `/chats` no longer runs the page's `render()`. The
 view registers `ctx.followRoute`, and the pane is drawn into a detached
 holder and put in place once it is ready. Meanwhile the list already
 marks the new chat and the pane being left stands dimmed and inert. Direct chats take
-their unread count and newest message from the list as last read; what
-came since is the forward read's. The list is read again after the pane
-is drawn, and nothing waits for it. A project that is not on the page,
-or a failed read, still draws the page anew, since that page says what is wrong.
+their unread count, newest message and one's own participant entry from the list as last read; what
+came since is the forward read's, and a chat left before that read is not marked read by it. The list is read again after the pane
+is drawn, and nothing waits for it. A project or chat not in the list as last read,
+or a failed read, still draws the page anew, which reads it or says what is wrong.
 A chat's timers and listeners are the pane's own, ended when it is left.
 
 **Reason:** every click cost 16 requests, 13 of them in 10 steps one after

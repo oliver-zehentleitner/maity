@@ -84,7 +84,7 @@ window.Maity = window.Maity || {};
       const groups = [];
       items.forEach((c) => { if (c.kind === "direct") byAgent[c.agent_id || c.id] = c; else groups.push(c); });
       const mine = pctx.members.filter((m) => m.kind === "agent" && m.owner_id === pctx.me.id);
-      read[slug] = { chats: P.chatsOf(pctx, mine, byAgent, groups), groups };
+      read[slug] = { chats: P.chatsOf(pctx, mine, byAgent, groups), groups, items };
     }
     // One read across projects (docs/api.md §9.3, GET /me/conversations).
     async function readOnce() {
@@ -122,8 +122,9 @@ window.Maity = window.Maity || {};
       h("div", { class: "toolbar" }, h("h2", null, M.t("chats.title"))),
       h("p", { class: "muted" }, M.t("chats.hint")),
       none, failed, ul, status.el);
-    const shown = (open) => (open && read[open.slug]) || { chats: [], groups: [] };
-    return { el, refresh, draw, groups: () => shown(opened()).groups, chats: () => shown(opened()).chats };
+    const shown = (open) => (open && read[open.slug]) || { chats: [], groups: [], items: [] };
+    return { el, refresh, draw, groups: () => shown(opened()).groups, conversations: () => shown(opened()).items,
+      knows: (x) => shown(x).chats.some((c) => c.id === x.id) };
   }
 
   M.views.chats = async function (ctx, root, args) {
@@ -217,28 +218,38 @@ window.Maity = window.Maity || {};
       sub.listeners = [];
       sub.onEvents = (fn) => { sub.listeners.push(fn); };
       sub.every = (ms, fn) => { if (!stale()) timers.push(window.setInterval(fn, ms)); };
+      sub.stale = stale;
       pane = { ctx: sub, close: () => timers.forEach((t) => window.clearInterval(t)) };
       // The list is read after the pane is drawn, not on its way: nothing waits for it.
       let drawn = false;
       const paneList = Object.assign({}, list, { refresh: (...a) => (drawn ? list.refresh(...a) : Promise.resolve()) });
       const holder = h("div");
-      await M.views.chat(sub, root, [open.id], { list: paneList, holder, stale });
-      if (stale()) return;
+      try {
+        await M.views.chat(sub, root, [open.id], { list: paneList, holder, stale });
+      } catch (err) {
+        if (stale()) return false;
+        throw err;
+      }
+      if (stale()) return false;
       place(Array.from(holder.childNodes));
       drawn = true;
       if (!fitted) { fitted = true; M.chatParts.fitToScreen(layout); }
       list.refresh();
+      return true;
     }
     await list.refresh();
     await showPane();
-    // Within this view the address changes the pane alone. A project that is
-    // not on this page, or a failed read, draws the page anew, which says what is wrong.
+    // Within this view the address changes the pane alone. A project or chat that is
+    // not on this page (a group made or an agent joined since the last read, reached by its
+    // address), or a failed read, draws the page anew, which reads them or says what is wrong;
+    // what a chat already left answers changes nothing, nor does a session that ended,
+    // whose own page is up by then.
     ctx.followRoute((where) => {
       if (where.scope !== "chats") return false;
       const next = chatAt(where.args);
-      if (next && !pctxs[next.slug]) return false;
+      if (next && !list.knows(next)) return false;
       open = next;
-      showPane().then(() => (open ? M.notify.read() : null)).catch(() => ctx.refresh());
+      showPane().then((drawn) => (drawn ? M.notify.read() : null)).catch(() => { if (!disposed) ctx.refresh(); });
       return true;
     });
   };

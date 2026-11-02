@@ -342,8 +342,10 @@ window.Maity = window.Maity || {};
   // The forward read keeps to a group chat's window (§9.2): what lies
   // before one joined is not shown, only offered (earlier).
   const PAGE = 50;
-  async function newestPage(path, newest) {
+  // stale: a chat left meanwhile is not read forward, which would mark it read.
+  async function newestPage(path, newest, stale) {
     const back = await M.api.get(path + "?before=" + encodeURIComponent(newest || Number.MAX_SAFE_INTEGER) + "&limit=" + PAGE);
+    if (stale && stale()) return { items: [], earlier: null, cursor: 0 };
     const from = back.items.length ? back.items[0].seq - 1 : 0;
     const fwd = await M.api.get(path + "?after=" + encodeURIComponent(from) + "&limit=" + PAGE);
     const start = fwd.items.length ? fwd.items[0].seq : Infinity;
@@ -530,14 +532,14 @@ window.Maity = window.Maity || {};
     // line by one; a failed read draws no line and says so below.
     let unreadFailed = null;
     // A caller's list holds them already, and what came since is read below.
-    const before = given && given.holder ? { items: list.chats() }
+    const before = given && given.holder ? { items: list.conversations() }
       : await M.api.getAll(ctx.base + "/conversations?observed=true").catch((err) => { unreadFailed = err; return { items: [] }; });
     const unreadBefore = ((before.items.find((c) => (c.agent_id || c.id) === agent.id) || {}).unread) || 0;
     // The newest page only (docs/api.md §9); older ones on scroll-up. The
     // list's last message says where the newest is.
     const listed = before.items.find((c) => (c.agent_id || c.id) === agent.id);
     const newest = listed && listed.last_message && listed.last_message.seq ? listed.last_message.seq + 1 : null;
-    const conv = await newestPage(path, newest);
+    const conv = await newestPage(path, newest, ctx.stale);
     // What is drawn, oldest first; `earlier`: the seq to read before, or null.
     const loaded = conv.items;
     let earlier = conv.earlier;
