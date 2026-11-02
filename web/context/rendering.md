@@ -1011,6 +1011,9 @@ terms are `이용약관`, without a space. Changing a password and resetting som
 `users.reset.*`) are security texts and so 합니다, like `security.*` and the hub's reset mail, and the hints on deleting
 a profile are 합니다 like those on deleting the account. A particle after a placeholder whose value may end in a vowel
 or a consonant gives both forms (`(이)에요`, `(으)로`, `은(는)`, `와(과)`).
+A confirmation question (`…할까요?`) and the sentence after it share one register, 해요, also on a legal or security
+page: a dialog is a message to the person at the screen, not the legal or security text itself, and one dialog never
+switches mid-way; 합니다 after a 해요 question was rejected because the dialog then mixes both.
 
 **Rejected alternatives:**
 - `Übernahme` for both claim and takeover: an error then says a card "needs a takeover" next to "nobody has claimed it".

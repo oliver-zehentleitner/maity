@@ -317,7 +317,7 @@
   },
   "agentparts.credential.revoke_confirm": {
     "en": "679fcaf26da1fa34",
-    "text": "695fbdbc8efc696f"
+    "text": "1bf0638bc95e894d"
   },
   "agentparts.credential.revoked": {
     "en": "76b56ef03abaec9d",
@@ -817,7 +817,7 @@
   },
   "attach.delete.confirm": {
     "en": "b103bb2451da3914",
-    "text": "ecd8d061df090d1d"
+    "text": "fc800ad664659ff7"
   },
   "attach.delete.label": {
     "en": "18836b9b62311fa1",
@@ -2697,7 +2697,7 @@
   },
   "chat.remove.ask": {
     "en": "f3ec3045f69287b4",
-    "text": "31246d22cf61be82"
+    "text": "466dfcee3751d39e"
   },
   "chat.remove.busy": {
     "en": "e58493ed3baaf9ae",
@@ -4281,7 +4281,7 @@
   },
   "group.redact.ask": {
     "en": "574318f736f06357",
-    "text": "282fefd5822fee4a"
+    "text": "a91380b94efaf7a0"
   },
   "group.redact.busy": {
     "en": "e58493ed3baaf9ae",
@@ -7705,7 +7705,7 @@
   },
   "legal.privacy.confirm": {
     "en": "107090055c54e8bf",
-    "text": "9bb2fedcc031d7aa"
+    "text": "755c82eac503cd4f"
   },
   "legal.privacy.down": {
     "en": "52ed21306f287422",
@@ -7741,7 +7741,7 @@
   },
   "legal.terms.confirm": {
     "en": "91f76cd5b1d287b2",
-    "text": "4a08c90345531b9c"
+    "text": "af8a353950906442"
   },
   "legal.terms.down": {
     "en": "27924e693a3013a4",
@@ -7969,11 +7969,11 @@
   },
   "mail.address.remove_confirm": {
     "en": "0705b906e96f4596",
-    "text": "08cd916a7355c989"
+    "text": "a96c48a7d4d6460b"
   },
   "mail.address.remove_confirm_pending": {
     "en": "83d937baab856e5d",
-    "text": "4fc72abddddc9f28"
+    "text": "9cc56069ff441612"
   },
   "mail.address.removed": {
     "en": "4881978a00e00212",
@@ -8949,7 +8949,7 @@
   },
   "members.isolate.confirm": {
     "en": "64f0a2b00d04f262",
-    "text": "9efd4dbdfbcf849a"
+    "text": "99ebc40829691fc5"
   },
   "members.isolate.done": {
     "en": "7b5c6ff53e8c613f",
