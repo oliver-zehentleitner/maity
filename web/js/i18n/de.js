@@ -609,6 +609,8 @@ window.MAITY_I18N["de"] = {
   "cardpanel.notes.post": "Notiz posten",
   "cardpanel.notes.posting": "Wird gepostet …",
   "cardpanel.notes.read_failed": "Die Notizen konnten nicht gelesen werden: {reason}",
+  "cardpanel.notes.removed": "Die Notiz wurde entfernt: {reason}",
+  "cardpanel.notes.removed_by": "Die Notiz wurde von {who} entfernt: {reason}",
   "cardpanel.updates": "Updates",
   "cardpanel.updates.none": "Noch keine Updates zu dieser Karte.",
   "cardpanel.updates.none_latest": "Keine Updates zu dieser Karte unter den neuesten Nachrichten des Projekts.",
