@@ -8,13 +8,15 @@
 **Evidence:** confirmed
 **Source:** the maintainer's decision, 2026-10-22, and his answers on the contract pull request the same day (both password sources, the tab total); contract in `docs/api.md` §16.2, §16.3, §18
 **Revisit when:** mail volume or complaints show that per-kind modes are not enough, or notifications are needed without an open tab (Web Push)
+**See:** notifications.md#mentions-and-chat-arrive-as-a-daily-digest-by-default-inbox-and-security-at-once — da12f2b5-5767-4b1e-bfd6-6dce344ec85f — as of 2026-11-02
 
 Humans learn that something waits for them in three stages, all of
 them built: badges and a bell in the dashboard (inbox, unread chats,
 mentions, changes on their cards; the sum in the tab title), browser
 notifications per kind while a dashboard tab is open, and mail through
-an SMTP account the operator provides — immediately, as an hourly or
-daily digest, or not at all, per kind, with quiet hours and a one-click
+an SMTP account the operator provides — immediately, as an hourly,
+daily or weekly digest, or not at all, per kind (the defaults since
+2026-11-02: entry da12f2b5), with quiet hours and a one-click
 unsubscribe per kind. A notification is derived from the events the
 human may read, checked again when it is shown and when it is mailed,
 so it never reveals more than the human could read in the dashboard
@@ -290,3 +292,42 @@ field would have decided the privacy question in passing.
 - Leave the switch in place: it promises what nothing does.
 - A data migration that deletes the stored key: more work and risk for a
   boolean nobody reads.
+
+## Mentions and chat arrive as a daily digest by default; inbox and security at once
+
+**Id:** da12f2b5-5767-4b1e-bfd6-6dce344ec85f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-02 on card tsk-6nzhqvbvcsrz, after a user's mailbox filled with mention mails; the coordinator's rulings the same day on the weekday, the interval per kind, security digests and what counts as saved; contract in `docs/api.md` §18.4, §18.5, §2.6.5, §16.2
+**Revisit when:** humans miss inbox requests because they put the inbox in a digest, or a security alert in a digest arrives too late to matter
+**See:** notifications.md#humans-are-notified-in-three-stages--dashboard-badges-browser-notifications-mail-over-the-instances-smtp--all-derived-from-the-events-they-may-read — d2d3356f-7a73-4e77-ac7c-3e04b07c2517 — as of 2026-11-02
+
+Mail per kind keeps one setting, the mode, which is also the interval:
+`immediate`, `hourly`, `daily`, `weekly` (on `weekly_on`, Monday by
+default, at `daily_at`) or `off`. The defaults are `immediate` for the
+inbox and security notices and `daily` for mentions, chat and any kind
+added later. Every kind takes every mode, security included: the human
+may put sign-in alerts in a digest. The old-address notice after an
+address change and the transactional mails (sign-in link and code,
+second factor, password reset, address verification) are no
+notifications and follow no mode. The hub stores only what the human
+set, so the new defaults reach every kind nobody chose, and a choice
+someone made stays.
+
+**Reason:** a mail per mention filled a user's mailbox; one mail a day
+still tells them, while what blocks agents (the inbox) and what warns
+of a takeover (security) keeps arriving at once. The maintainer's rule
+for existing accounts is that whoever saved something keeps it. Letting
+security go into a digest replaces the earlier rule "a delayed alert is
+no alert" by the human's own choice; the notice that the address
+itself changed still cannot be delayed, since it warns the one mailbox
+an attacker no longer controls.
+
+**Rejected alternatives:**
+- Mentions and chat off by default: a human would never learn they
+  were asked for something unless they opened the dashboard.
+- One digest interval for all kinds: the inbox and security would
+  have to share the mentions' delay, or the mentions the inbox's speed.
+- Resetting stored modes to the new defaults: it overrides choices
+  people made, against the maintainer's rule.

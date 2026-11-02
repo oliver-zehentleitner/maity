@@ -1863,9 +1863,9 @@ notification of the kind `security` (#160, §18.1), title `New sign-in:
   that session, not being in good standing, cannot end the human's
   sessions in good standing that show the banner, at any age (above).
 - **By mail** it goes to the human's verified address, `immediate` by
-  default; `email.kinds.security.mode` (#160, §18.4) is `immediate` or
-  `off` — no digest, since a delayed alert is no alert — and quiet
-  hours do not hold it. The mail carries the time, method, browser,
+  default; `email.kinds.security.mode` (#160, §18.4) may also put it in
+  a digest or turn it `off`, the human's choice. Quiet hours do not
+  hold an `immediate` alert. The mail carries the time, method, browser,
   operating system and IP address of the new session and the link to
   Profile → Sessions, with the unsubscribe line for its kind (§18.5);
   never a session id, a code or a link that signs anyone in. A human
@@ -12860,7 +12860,7 @@ can use up another:
 
 - `max_per_hour` — notification mail. Over it, notification mail waits
   and is merged into each human's next mail (§18.5).
-- `security_max_per_hour` — verification mails, `security`
+- `security_max_per_hour` — verification mails, `immediate` `security`
   notifications and the old-address notice: mail that a human's own
   account activity triggers. Over it, a mail is **queued** for the next
   hour, in order, and `security_queued` counts it; a security mail is
@@ -12926,7 +12926,7 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
 | `MAITY_SMTP_FROM` | `from` | `{address, name?}`; the envelope sender and `From:`. In the environment `maity@example.org` or `Maity <maity@example.org>` |
 | `MAITY_SMTP_REPLY_TO` | `reply_to` | `null` or an address |
 | `MAITY_MAIL_MAX_PER_HOUR` | `max_per_hour` | notification mail, all humans together; default 500; over it, mail waits for the next hour and is merged into each human's next mail (§18.5). Security mail does not count here |
-| `MAITY_MAIL_SECURITY_MAX_PER_HOUR` | `security_max_per_hour` | security mail (verification, `security` notifications, the old-address notice), all humans together; default 100; neither notification nor sign-in mail counts here. Over it, security mail is queued for the next hour, never dropped |
+| `MAITY_MAIL_SECURITY_MAX_PER_HOUR` | `security_max_per_hour` | security mail (verification, `immediate` `security` notifications, the old-address notice), all humans together; default 100; neither notification nor sign-in mail counts here. Over it, security mail is queued for the next hour, never dropped |
 | `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR` | `sign_in_max_per_hour` | sign-in links and codes (#169, §2.6.3), all humans together; default 60. Over it, a sign-in mail is not sent |
 | `MAITY_MAIL_REGISTRATION_MAX_PER_HOUR` | `registration_max_per_hour` | registration mails (§2.7.1), all addresses together; default 30. Over it, a registration mail is not sent |
 | — | `enabled` | `false` stops every mail — notification, verification and security — without losing the settings; the test send still works |
@@ -15748,12 +15748,13 @@ device; the browser's own permission is per browser and is not stored.
     "timezone": "Europe/Vienna",
     "kinds": {
       "inbox":     { "mode": "immediate" },
-      "chat":      { "mode": "hourly", "content": false },
-      "mention":   { "mode": "immediate", "content": false },
+      "chat":      { "mode": "daily", "content": false },
+      "mention":   { "mode": "daily", "content": false },
       "security":  { "mode": "immediate" }
     },
     "sign_in_link": true,
     "daily_at": "08:00",
+    "weekly_on": "mon",
     "quiet_hours": { "from": "22:00", "to": "07:00" },
     "hard_failures": 0,
     "disabled_at": null
@@ -15871,16 +15872,34 @@ device; the browser's own permission is per browser and is not stored.
   caller's own account (its human id is the caller's): a token of
   another human is `not_found`, the same as an invalid one, and confirms
   nothing.
-- **`email.kinds.<kind>.mode`.** `immediate` (sent within about two
-  minutes, skipped if the item was read in the dashboard first),
-  `hourly` (one mail at the full hour with every unread item of the
-  kinds set to `hourly`), `daily` (one mail at `daily_at` in
-  `timezone`), or `off`. Default for a new address: `inbox`, `mention`
-  `immediate`; `chat` `hourly`. The `inbox` mode never covers a
-  `registration_pending` or `mail_disabled` item: neither is mailed
-  (§18.1). `security` takes only `immediate` (the default) or `off` —
-  no digest, since a delayed alert is no alert — and quiet hours do not
-  hold it.
+- **`email.kinds.<kind>.mode`.** The mode is the interval, chosen per
+  kind: `immediate` (sent within about two minutes, skipped if the item
+  was read in the dashboard first), `hourly` (one mail at the full hour
+  with every unread item of the kinds set to `hourly`), `daily` (one
+  mail at `daily_at` in `timezone`), `weekly` (one mail at `daily_at`
+  on `weekly_on` in `timezone`), or `off`. Every kind takes every mode.
+  The defaults, by the maintainer's decision of 2026-11-02 against
+  mailboxes filled by mention mails: `inbox` and `security`
+  `immediate`; `mention`, `chat` and every kind added later `daily`.
+  The `inbox` mode never covers a `registration_pending` or
+  `mail_disabled` item: neither is mailed (§18.1). An `immediate`
+  `security` item is not held by quiet hours; one the human put in a
+  digest goes out with that digest. The notice to the old address after
+  an address change (above) goes out at once whatever the mode.
+- **Defaults and what was saved.** The hub stores only what the human
+  set; a kind whose `mode` the human never set follows the default as
+  it is when the mail is built, so a changed default reaches every such
+  kind of every account. A mode the human set — by `PATCH` or by an
+  unsubscribe link (§18.6) — stays as set.
+- **`weekly_on`** (default `mon`): the day of a `weekly` digest, one of
+  `mon`, `tue`, `wed`, `thu`, `fri`, `sat`, `sun`; anything else is
+  `invalid` at `email.weekly_on`. A `weekly` digest holds every item of
+  the kinds set to `weekly` that is still unread when it is built.
+- **Not notifications.** The sign-in link and code (§2.6.3), the second
+  factor's code (§2.8.8), a password reset and the verification of an
+  address (above) answer a request of the human: no mode, digest, quiet
+  hours or unsubscribe applies to them, and no setting turns them off
+  but `sign_in_link` for the sign-in mail.
 - **`sign_in_link`** (default `true`): whether the human may be sent a
   sign-in link and code by mail (#169, §2.6.3). Turning it off voids an
   open link and code. It has no effect until the sign-in contract is in.
@@ -15902,7 +15921,7 @@ device; the browser's own permission is per browser and is not stored.
   hides the mail part. `timezone` is an IANA name; the dashboard
   proposes the browser's.
 - `PATCH` takes any subset of `not_listening` (`mode`, `minutes`), `browser` and `email` (`address`,
-  `language`, `timezone`, `kinds`, `daily_at`, `quiet_hours`,
+  `language`, `timezone`, `kinds`, `daily_at`, `weekly_on`, `quiet_hours`,
   `sign_in_link`), and `current_password` beside `email` when the
   address changes (above; never stored, never echoed, ignored
   otherwise); the
@@ -15959,15 +15978,16 @@ Plain text only, UTF-8, no HTML, no images, no tracking.
   per hour per human leave; past that the items of the hour go out as
   one mail at the hour's end. When the instance's `max_per_hour`
   (§16.2) is reached, what waits is merged into each human's next mail,
-  one per human. Security mail has its own budget and is never batched
-  (§16.2).
+  one per human. An `immediate` security mail has its own budget and is
+  never batched (§16.2); `security` items the human put in a digest
+  travel in that digest and count as notification mail.
 - **Never mailed:** a `registration_pending` or `mail_disabled` item,
   whatever the `inbox` mode (§18.1); the dashboard shows them. A
   `report_open` item is mailed by the `inbox` mode like any other
   (§18.1, §16.8).
 - **Mailed whatever the mode:** a `moderation_applied` item of a
   `suspend` goes out as an immediate item even when the `inbox` mode is
-  `hourly`, `daily` or `off`, while the address is verified and not
+  `hourly`, `daily`, `weekly` or `off`, while the address is verified and not
   disabled; quiet hours and the rate above still apply. The suspended
   account signs in no more and reads no inbox (§16.8, §18.1). Its other
   actions follow the `inbox` mode.
