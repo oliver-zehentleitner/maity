@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy import Engine, select
 
 from maity_hub import clock, public_pages, render
+from maity_hub import shell as shell_module
 from maity_hub import tables as t
 from maity_hub.config import ConfigError, Settings
 from tests import flow
@@ -238,3 +239,43 @@ def test_a_slash_at_the_end_leads_a_visitor_to_the_page(
     assert (got.status_code, got.headers["location"]) == (308, f"{PATH}?as=public")
     assert client.get(f"{PATH}/", follow_redirects=True).status_code == 200
     assert client.get("/nobody/here/", follow_redirects=False).status_code != 308
+
+
+def test_a_page_comes_inside_the_shell_for_a_crawler_and_the_dashboard() -> None:
+    shell = (
+        b'<html><head><title>Maity</title><meta name="description" content="x"></head><body>'
+        b'<script src="js/app.js"></script><main id="main"><p>Loading</p></main></body></html>'
+    )
+    page = render.page_document(
+        lang="en", title="A & B", canonical="https://hub.example/a", content="<h1>Text</h1>"
+    )
+    made = shell_module.page_in_shell(shell, page)
+    assert made is not None
+    assert b"<title>A &amp; B</title>" in made and b"Loading" not in made
+    assert b'<link rel="canonical" href="https://hub.example/a">' in made
+    assert b'<main id="main" data-public-page><h1>Text</h1></main>' in made
+    assert b'src="js/app.js"' in made and b'content="x"' not in made
+    assert shell_module.page_in_shell(b"<html></html>", page) is None
+    assert shell_module.page_in_shell(shell, "<html></html>") is None
+
+
+def test_a_visitor_gets_the_shell_with_the_page_and_as_public_the_bare_page(
+    make_client: ClientFactory, migrated: Engine, web_dir: Any
+) -> None:
+    (web_dir / "index.html").write_text(
+        '<html><head><title>Maity</title></head><body><script src="js/app.js"></script>'
+        '<main id="main"><p>Loading</p></main></body></html>'
+    )
+    client = visitor(make_client)
+    store(migrated)
+    got = client.get("/oz-team")
+    assert got.status_code == 200 and "<h1>OZ Team</h1>" in got.text and "js/app.js" in got.text
+    assert (
+        "x-robots-tag" not in got.headers and got.headers["cache-control"] == "public, max-age=60"
+    )
+    assert client.get("/oz-team", headers={"If-None-Match": got.headers["etag"]}).status_code == 304
+    bare = client.get("/oz-team?as=public")
+    assert (
+        "js/app.js" not in bare.text
+        and "default-src 'none'" in bare.headers["content-security-policy"]
+    )

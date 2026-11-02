@@ -1833,7 +1833,8 @@ window.Maity = window.Maity || {};
         if (err.status === 401) {
           // A public page of this address, read-only (§16.9); otherwise the login.
           if (M.visitor && await M.visitor.page(main, document.getElementById("header"), where, M.route.current().path, { signedIn: false, brand: brandTitle(false), tools: themeMenu(), live: () => seq === renderSeq })) return;
-          if (seq === renderSeq) renderLogin(main);
+          // The hub's own page in <main> stands when its data could not be read.
+          if (seq === renderSeq && !(main.hasAttribute && main.hasAttribute("data-public-page"))) renderLogin(main);
           return;
         }
         throw err;

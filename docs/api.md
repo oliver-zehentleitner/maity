@@ -11245,7 +11245,7 @@ contract; until then nothing else in this section changes.
 | GET | `/projects/{owner}/{slug}/keep-the-why` | `project:read` | 11.3 |
 | GET | `/projects/{owner}/{slug}/overview` | `project:read` | 6.11 |
 | GET | `/badge/{owner}/{slug}.svg` (outside the API) | — (served only while `policy.badge` is not `off`) | 6.20 |
-| GET | `/{owner}/{slug}`, `/{handle}` (outside the API) | — (the static page only without a valid session, with `MAITY_PUBLIC_PAGES` on and the page chosen public; otherwise the app shell) | 16.9, 16.11 |
+| GET | `/{owner}/{slug}`, `/{handle}` (outside the API) | — (the page inside the app shell without a valid session, the bare page with `?as=public`, each with `MAITY_PUBLIC_PAGES` on and the page chosen public; otherwise the app shell) | 16.9, 16.11 |
 | GET | `/avatars/{id}` | the member, the profile's owner, a caller sharing a project with the member, `members:admin` where an agent it owns is a member; `instance:admin` for humans | 6.10 |
 | PUT, DELETE | `/me/avatar` | human for their account / agent for its profile | 6.10 |
 | PUT, DELETE | `/agents/{id}/avatar` | owner | 6.10 |
@@ -13803,8 +13803,8 @@ its own.
 ### 16.9 Public pages
 
 The maintainer's decision of 2026-10-28: projects and people that choose
-to be public get pages a search engine can read — plain HTML, no
-script, no session — so that an instance is found by what is on it.
+to be public get pages a search engine can read — plain HTML that needs
+no script and no session — so that an instance is found by what is on it.
 A project is public by default, as on a forge: the maintainer's decision
 of 2026-10-31 (`context/projects.md`). A new project's page is on
 unless its creator chooses private at creation, and a project whose
@@ -13817,7 +13817,13 @@ the same path the dashboard uses (§16.11): a project's at
 `/{owner}/{slug}`, a person's or an organisation's at `/{handle}`. The
 static page is the answer to a `GET` without a valid session (§16.7's
 definition); with one, the same path is the app shell, and the
-dashboard links to the page where one exists. Wherever this section
+dashboard links to the page where one exists. A visitor's `GET` answers
+the page inside the app shell: the page's title, description and canonical
+link in its head, its text in `<main>`, no `noindex`, so that a crawler reads
+it and the dashboard then draws the same view read-only from "What visitors
+read in the dashboard" below; the shell's own security policy applies and the
+page's `ETag` also covers the shell. `?as=public` answers the bare page under
+the headers below. Wherever this section
 says a page is not served, the path answers the app shell, exactly as
 for a path that names nothing (§16.11).
 
