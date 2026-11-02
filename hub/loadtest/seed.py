@@ -18,7 +18,7 @@ import os
 import sys
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import urlsplit
 
 from sqlalchemy import Engine, create_engine, select
 
@@ -34,9 +34,16 @@ SLUG = "load"
 
 def refusal(database_url: str, confirmed: str | None) -> str | None:
     """Why this database is not seeded. Every database has to be named, SQLite too, since a hub
-    may run on it in earnest; and by host, port and name, since a host called `db` says nothing."""
+    may run on it in earnest; and by host, port and name, since a host called `db` says nothing.
+    One plain address or none: libpq also takes several hosts, and takes the target from the query,
+    where it wins over the part a reader looks at."""
+    parts = urlsplit(database_url)
+    if "," in parts.netloc or parts.query:
+        return "only a plain URL: one host, one port, one database, no query"
     identity = identity_of(database_url)
-    host = identity.split(":")[0].lower().rstrip(".")
+    if not parts.path.strip("/"):
+        return "the URL names no database"
+    host = (parts.hostname or "").lower().rstrip(".")
     if host == "maity.team" or host.endswith(".maity.team"):
         return f"{host} may be production"
     if confirmed != identity:
@@ -45,14 +52,11 @@ def refusal(database_url: str, confirmed: str | None) -> str | None:
 
 
 def identity_of(database_url: str) -> str:
-    """Where the URL really connects, without its secrets: libpq takes `host` and `hostaddr` from
-    the query as well, and they win over the part a reader looks at."""
+    """Where the URL connects, without its secrets."""
     parts = urlsplit(database_url)
-    query = parse_qs(parts.query)
-    host = ",".join(query.get("hostaddr") or query.get("host") or [parts.hostname or ""])
-    if not host:
+    if parts.hostname is None:
         return parts.path  # a file
-    return f"{host}:{parts.port or ''}{parts.path}"
+    return f"{parts.hostname}:{parts.port or ''}{parts.path}"
 
 
 def seed_one(engine: Engine, n: int) -> dict[str, Any]:

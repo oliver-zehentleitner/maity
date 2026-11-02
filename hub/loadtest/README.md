@@ -13,11 +13,11 @@ syntax check only: it has not run under k6 yet. Start with a small local run and
    output holds session cookies and signing keys: it is created new with mode 0600, never reused,
    and stays out of the repository.
 
+       # a plain URL: one host, one port, one database, no query
        LOADTEST_CONFIRMED_TEST_SYSTEM=<host>:<port>/<database> MAITY_DATABASE_URL=... \
-         python loadtest/seed.py --humans 23000 --out /secure/accounts.json
+         python loadtest/seed.py --humans 20000 --out /secure/accounts.json
 
-   At the full peak: 20 000 for the waits and about 3 000 more, since the writers' and readers' VUs
-   take numbers too and a number wrapped around would make two waits share an account.
+   One human for three waits, at the scale of the run.
 
 2. Run one scenario per generator. `LOADTEST_TARGETS` lists each pod's address when pods can be
    reached one by one, so that a write and its wake-up land on different pods; through a balancer

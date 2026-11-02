@@ -65,11 +65,12 @@ function signed(account, method, pod, path, pairs, body, params = {}) {
 }
 
 const held = { timeout: `${WAIT + 30}s`, tags: { held: "yes" } };
-// Three waits per human, from the number of the VU alone: two agents and the dashboard, as the plan
-// assumes. All on the human's pod; a message to the second agent comes through the next pod.
-const place = () => (exec.vu.idInTest - 1) % 3;
-const humanIndex = () => Math.floor((exec.vu.idInTest - 1) / 3) % seeded.length;
-const human = () => seeded[humanIndex()];
+// Three waits per human, two agents and the dashboard as the plan assumes, all on the human's pod; a
+// message to the second agent comes through the next pod. A wait's place is the number of its
+// iteration in the scenario, which runs for the whole test: unlike a VU's number, which writers and
+// readers take as well, it counts up from 0 without gaps.
+const WAITS = Math.ceil((EVENT_WAITS + BELL_WAITS) * SCALE / GENERATORS);
+const HUMANS_WAITING = Math.min(seeded.length, Math.ceil(WAITS / 3));
 const eventsPath = (h) => `/api/v1/projects/${h.owner}/${h.slug}/events`;
 const pod = (n) => PODS[n % PODS.length];
 
@@ -79,15 +80,17 @@ function latestCursor(account, h, target) {
 }
 
 export function waiter() {
-  if (place() === 2) bellWait();
-  else eventWait(place());
+  const slot = exec.scenario.iterationInTest;
+  const index = Math.floor(slot / 3) % seeded.length;
+  if (slot % 3 === 2) bellWait(index);
+  else eventWait(index, slot % 3);
 }
 
-function eventWait(which) {
-  const h = human();
+function eventWait(index, which) {
+  const h = seeded[index];
   const addressed = which === 1;
   const account = h.agents[which];
-  const target = pod(humanIndex());
+  const target = pod(index);
   let cursor = latestCursor(account, h, target);
   for (let i = 0; i < 1000; i++) {
     const answer = signed(account, "GET", target, eventsPath(h), [["after", String(cursor)], ["wait", String(WAIT)]], null, held).send();
@@ -104,9 +107,9 @@ function eventWait(which) {
   }
 }
 
-function bellWait() {
-  const h = human();
-  const target = pod(humanIndex());
+function bellWait(index) {
+  const h = seeded[index];
+  const target = pod(index);
   const params = { headers: { Cookie: `maity_session=${h.session}` } };
   const first = http.get(`${target}/api/v1/me/notifications?limit=0`, params);
   if (first.status !== 200) {
@@ -129,7 +132,7 @@ function bellWait() {
 // The first agent writes through the pod after its human's, so a write and its wake-up are on
 // different pods as soon as there are two. Clocks: the waiter reads the time this generator wrote.
 export function write() {
-  const index = exec.scenario.iterationInTest % seeded.length;
+  const index = exec.scenario.iterationInTest % HUMANS_WAITING; // someone waits for each message
   const h = seeded[index];
   const target = pod(index + 1);
   const body = { kind: "message", type: "notice", to: h.agents[1].agent_id, body: `load sent:${Date.now()}` };
@@ -138,7 +141,7 @@ export function write() {
 }
 
 export function read() {
-  const h = seeded[exec.scenario.iterationInTest % seeded.length];
+  const h = seeded[exec.scenario.iterationInTest % HUMANS_WAITING];
   const path = `/api/v1/projects/${h.owner}/${h.slug}/tasks`;
   const answer = signed(h.agents[0], "GET", pod(exec.scenario.iterationInTest), path, [], null, { tags: { kind: "read" } }).send();
   if (answer.status !== 200) unexpected.add(1);
@@ -175,9 +178,8 @@ export function replay() {
 
 const share = (n) => Math.max(1, Math.ceil((n * SCALE) / GENERATORS));
 const ramp = "10m";
-const waits = share(EVENT_WAITS + BELL_WAITS);
 const holding = {
-  waits: { executor: "ramping-vus", exec: "waiter", startVUs: 0, stages: [{ duration: ramp, target: waits }, { duration: "20m", target: waits }] },
+  waits: { executor: "ramping-vus", exec: "waiter", startVUs: 0, stages: [{ duration: ramp, target: WAITS }, { duration: "20m", target: WAITS }] },
 };
 const rate = (fn, perSecond) => ({
   executor: "constant-arrival-rate",
