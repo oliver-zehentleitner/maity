@@ -280,6 +280,21 @@ def _looks_public(
     return reader_of(request).repository_public(forge.repository_of(url))
 
 
+def _may_patch(request: Request, caller: Any, slug: str, body: Any, given: set[str]) -> bool:
+    """A cheap look, before the forge is asked, at whether the caller may make this change:
+    otherwise anyone signed in could make the operator's token read any URL by naming a project
+    in a listed namespace (§11.4). The transaction checks it again under its lock and answers
+    the refusal; a caller refused here gets that answer without the look."""
+    try:
+        with engine_of(request).connect() as conn:
+            mine = membership(conn, caller, slug)
+            _refuse_for_agents(mine, body, given)
+            _authorise_patch(mine, body, given)
+    except ApiError:
+        return False
+    return True
+
+
 def _instance_serves(request: Request, owner: str | None, human_id: str | None) -> bool:
     """Whether the namespace `owner` names is one of the operator's own (§11.4). At a creation
     (`human_id` the creator) only a namespace the creator may be in counts — their own, or an
@@ -712,7 +727,9 @@ def patch_project(
     # transaction (§6.1): the page stays on only for one the hub sees public.
     owner = slug.split("/", 1)[0]  # the full name (`ProjectRoute`): any of the owner's names
     seen_public = (
-        _looks_public(request, body.repository, owner, None) if "repository" in given else None
+        _looks_public(request, body.repository, owner, None)
+        if "repository" in given and _may_patch(request, caller, slug, body, given)
+        else None
     )
 
     def action(conn: Connection) -> idempotency.Outcome:

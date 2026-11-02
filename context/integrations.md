@@ -107,6 +107,13 @@ held while the forge answers; it is made only for a namespace the
 creator may create in (their own, or an organisation where their role
 allows it), so that naming a listed organisation one is not in cannot
 spend the operator's token.
+The look on a `PATCH` that names a new repository likewise comes only
+after a cheap check that the caller may make the change, since otherwise
+any signed-in account could make the operator's token read any URL by
+naming a project in a listed namespace, even one that does not exist.
+Making the look inside the transaction was rejected: it would hold the
+project's row lock while the forge answers. The transaction still checks
+the right under its lock.
 
 **Reason:** the maintainer wants projects to connect their repository
 to the forge themselves and keeps the instance's token for the

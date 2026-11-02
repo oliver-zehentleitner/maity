@@ -299,3 +299,15 @@ def test_naming_a_listed_organisation_one_is_not_in_makes_no_look(
     assert refused.status_code == 400, refused.text
     assert refused.json()["error"]["details"]["fields"] == {"owner": "unknown"}
     assert fake.sent == []
+
+
+@pytest.mark.parametrize("slug", ["thing", "nosuch"])
+def test_a_patch_by_someone_who_may_not_change_the_project_makes_no_look(
+    make_client: ClientFactory, migrated: Engine, fake: FakeForge, slug: str
+) -> None:
+    owner = flow.human(make_client, migrated)
+    flow.project(owner, "thing", public_page="on")
+    stranger = flow.human(make_client, migrated, "stranger")
+    refused = stranger.patch(f"/projects/maintainer/{slug}", {"repository": {"url": URL}})
+    assert refused.status_code == 404, refused.text
+    assert fake.sent == []
