@@ -549,7 +549,6 @@ window.Maity = window.Maity || {};
   const arbiterName = (ctx, a) => {
     if (a === "trust:admin") return M.t("board.contract.arbiter_admins");
     if (/^role:/.test(a || "")) return M.t("board.contract.arbiter_role", { role: M.trust.roleLabel(a.slice(5)) });
-    if (/^trust:/.test(a || "")) return M.t("board.contract.arbiter_trust", { trust: a.slice(6) });
     return M.dom.memberRef(ctx, a);
   };
 
