@@ -48,6 +48,7 @@ from maity_hub import (
     reports,
     request_stats,
     rules,
+    shared_budget,
     shared_counts,
     takeovers,
     wakeups,
@@ -167,6 +168,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     health_engine = make_health_engine(engine)  # the probe's own connection, outside the pool
     write_guard.install(engine)  # no write of a deleted account commits (§2.9)
     shared_counts.configure(engine)  # the limits count across replicas on PostgreSQL
+    shared_budget.configure(engine)  # and so does the forge's budget
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:

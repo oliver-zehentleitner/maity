@@ -29,6 +29,7 @@ from sqlalchemy import (
     CheckConstraint,
     Column,
     Date,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -1042,6 +1043,18 @@ worker_run = Table(
     Column("started_at", UtcDateTime, nullable=False),
     Column("pod", String(64), nullable=False),
     Column("lease_until", UtcDateTime, nullable=False),
+    **MYSQL_TABLE,
+)
+
+forge_budget = Table(
+    "forge_budget",  # what the forge said is left, per source (`shared_budget`)
+    metadata,
+    Column("source", String(64), primary_key=True),
+    Column("limit", Integer),
+    Column("remaining", Integer),
+    Column("reset", Float),
+    Column("until", Float, nullable=False),
+    Column("seen_at", UtcDateTime, nullable=False),
     **MYSQL_TABLE,
 )
 
