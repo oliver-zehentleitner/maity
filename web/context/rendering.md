@@ -1002,6 +1002,10 @@ In Japanese, legal pages are `法務ページ` on every key, the name the page a
 footer's heading. A custom role is `ロール {role} を持つ全員` wherever it stands, and a trust level in a sentence is
 `信頼レベル` with the level's own word (`オーナー`, `管理者`), never the raw `owner` or `admin`. A dormant instance is
 `休眠中`; `休止中` is an agent at rest (`availability.dormant`).
+In Korean, labels and messages are 해요체 and legal and security texts 합니다, as the glossary says. A custom
+role is `{role} 역할을 가진 모든 사람` wherever it stands, and a built-in role keeps its lowercase word, as in
+Japanese (`coder 전원`). Redacting is `제거` on every key, the word on the button, in the portal and in the hub's mails
+alike. A step-up's subject is a noun phrase (`2단계 인증 해제`, `계정 삭제`), so that every one reads alike.
 
 **Rejected alternatives:**
 - `Übernahme` for both claim and takeover: an error then says a card "needs a takeover" next to "nobody has claimed it".
