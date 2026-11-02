@@ -225,7 +225,7 @@ def test_a_commit_not_in_the_clone_is_said_and_sent(
 ) -> None:
     (tmp_path / "review.json").write_text(json.dumps(REVIEW))
     assert cli.main(_say("Approve.", "--review-file", str(tmp_path / "review.json"))) == cli.EXIT_OK
-    assert f"cites not checked: commit {REVIEW['head']} is not in this clone" in (
+    assert f"cites and text not checked: commit {REVIEW['head']} is not in this clone" in (
         capsys.readouterr().err
     )
     assert fake.signed()[-1].json()["review"] == REVIEW
@@ -247,7 +247,7 @@ def test_no_clone_is_said_and_sent(
     monkeypatch.setenv("MAITY_STATE_DIR", str(state_dir))
     monkeypatch.chdir(elsewhere)
     assert cli.main(_say("Approve.", "--review-file", str(tmp_path / "review.json"))) == cli.EXIT_OK
-    assert "cites not checked: this directory is not a clone" in capsys.readouterr().err
+    assert "cites and text not checked: this directory is not a clone" in capsys.readouterr().err
 
 
 def test_a_malformed_review_is_left_to_the_hub(

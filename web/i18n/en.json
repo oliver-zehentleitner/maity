@@ -959,6 +959,8 @@
   "error.load_failed_at": "Could not load ({path})",
   "error.mail_not_configured": "This hub cannot send mail.",
   "error.maintenance": "The hub is down for maintenance. Try again when it is over.",
+  "error.maintenance_not_running": "No maintenance window is running.",
+  "error.maintenance_running": "A running maintenance window is ended, not cancelled.",
   "error.memory_full": "This memory is full.",
   "error.method_not_allowed": "This action is not available here.",
   "error.namespace_owner": "The owner of this project's namespace cannot be changed or removed this way.",

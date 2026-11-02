@@ -228,6 +228,8 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `secret_key_missing` | a forge webhook secret is to be stored and the instance has no `MAITY_SECRET_KEY` (§17.4); a second-factor enrolment or verify while the instance has no `MAITY_SECRET_KEY`, or one that no longer opens the stored secrets (§2.8.1) |
 | 409 | `attachment_quota` | an attachment upload would take the project over its quota, or the uploading membership over its pending cap (§8.7); `details.scope` (`project` or `pending`), `details.used`, `details.quota`, and `details.count`, `details.max` for `pending` |
 | 409 | `attachments_not_configured` | an attachment upload, read or delete, or a message that names an attachment, while the instance has no attachment store: `MAITY_ATTACHMENT_STORE` is `local` and `MAITY_ATTACHMENT_DIR` is unset (§8.7) |
+| 409 | `maintenance_running` | `DELETE /admin/maintenance` on a running window, which `POST /admin/maintenance/end` ends instead (§16.12) |
+| 409 | `maintenance_not_running` | `POST /admin/maintenance/end` while no window is running (§16.12) |
 | 413 | `payload_too_large` | body over the cap (§1.7) |
 | 429 | `rate_limited` | `Retry-After` is set |
 | 500 | `internal` | an unexpected failure; `details` is `{}`, the message names no internals; the response still carries the envelope and every header of §1.1 |
@@ -9694,12 +9696,13 @@ there is not sent:
    character outside ASCII (a word in another script); one with `#`,
    `@`, `{`, `}`, `<` or `>` (an address such as a handle with its
    instance, a pull request, a placeholder); one shaped like an id the
-   hub issues (lowercase letters, `-` and twelve characters of `0`–`9`
-   and `a`–`z`) or a UUID; one that is only digits and punctuation; and
+   hub issues (`[a-z]+-[0-9a-z]{12}`, the whole span) or a UUID; one that is only digits and punctuation; and
    an object hash or a range `a..b` of them (form 3). A span with a `/`
    names a path: it is a file or a directory, and with a `*` the part
    before the first `*` begins one (`hub/tests/test_public_*`); anything
-   after a `:` is left out. Any other span names an identifier or a key:
+   after a `:` is left out. A path that is no file or directory still
+   passes as text in some file, verbatim, so that a route such as
+   `/api/v1/events` or a part of a URL is not refused. Any other span names an identifier or a key:
    its core, the longest run that starts with a letter or `_` and goes
    on with letters, digits, `_`, `.`, `/` and `-` (three characters or
    more), is text in some file or the name of a file; failing that, each
@@ -9711,7 +9714,8 @@ there is not sent:
    a file and line (form 1) does not get that fallback. A name the review
    says is missing, or proposes, is therefore written without backticks.
 3. **An object**, anywhere in the text: 7 to 40 lowercase hexadecimal
-   characters with at least one of `a`–`f`, as a word bounded by
+   characters with at least one of `a`–`f` and at least one digit (so
+   an English word such as `defaced` is no hash), as a word bounded by
    anything but letters, digits, `_` and `-` (so the groups of a UUID
    are no hash), and either end of `a..b` alike, is an object in the
    clone: a commit, or a tree or blob such as `git merge-tree` and a
@@ -15264,7 +15268,9 @@ while the window runs they answer `503` with `Retry-After`
 and a small page saying the same, a stored public page inside the app
 shell too; the legal pages (§16.7.1) stay readable then, with the
 banner, since an imprint must always be reachable; the badge (§6.20) answers `503` with no
-image.
+image. A page served without an `ETag`, such as `/explore`, may be kept by
+a reader's cache for its `max-age=60`, so its banner can appear or vanish
+up to a minute late.
 
 **Agents: the notice.** Creating or changing a window posts
 `maintenance_scheduled` (wakes), cancelling an upcoming one
@@ -15296,7 +15302,9 @@ Not refused:
   §2.6 (`POST /auth/email-link`, `POST /auth/email-code` and the link's
   page `/mail/sign-in/{token}`), the second-factor step of §2.8.2
   (`POST /auth/second-factor/verify`, `POST /auth/second-factor/email`),
-  `POST /auth/logout` and `GET /auth/session`; every other call of such
+  `POST /auth/logout` and `GET /auth/session`, and the two reads the
+  sign-in page is drawn from, `GET /auth/methods` (§2.6.1) and
+  `GET /auth/pages/sign_in` (§16.7.4); every other call of such
   a session is refused like anyone's, and registration (§2.7) is
   refused;
 - `GET /me` (§5.1), read only, so the web knows who looks at the full

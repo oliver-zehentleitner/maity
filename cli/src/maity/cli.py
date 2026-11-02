@@ -35,6 +35,7 @@ from maity import (
     proc,
     sign,
     state,
+    textcheck,
     versioninfo,
 )
 from maity.runner import commands as runner_commands
@@ -1872,12 +1873,23 @@ def cmd_say(args: argparse.Namespace) -> int:
         body["task_id"] = args.task
     if review is not None:
         cites = citecheck.check(Path.cwd(), review)
-        if cites.bad:
-            _err(f"not sent: {len(cites.bad)} cite(s) do not stand at the review's head (§8.4)")
-            for line in cites.bad:
+        names = (
+            textcheck.check(cites.top, review["head"], text).bad if cites.top is not None else []
+        )
+        if cites.bad or names:
+            if cites.bad:
+                _err(f"not sent: {len(cites.bad)} cite(s) do not stand at the review's head (§8.4)")
+            if names:
+                _err(
+                    f"not sent: {len(names)} name(s) in the text are not there (§8.4); "
+                    "write a missing or proposed name without backticks, a command under `## Ran`"
+                )
+            for line in [*cites.bad, *names]:
                 _err(line)
             return EXIT_ERROR
-        if cites.unchecked:
+        if cites.unchecked and cites.top is None:
+            _err(f"cites and text not checked: {cites.unchecked}")
+        elif cites.unchecked:
             _err(f"cites not checked: {cites.unchecked}")
         body["review"] = review  # as given: the hub checks it and names each bad path
     return _say_event(args, session, body, attach, f"sent {args.type} to {to}")
@@ -4151,7 +4163,9 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="with --type review_result, required: the review object (subject, head, verdict, "
         "cites) as JSON from PATH, - for stdin; sent as given once its cites stand at the head "
-        "in this clone; each cite quote is limited to 300 characters by the hub",
+        "in this clone and every file:line, name in backticks and hash in the message is there "
+        "(commands and their output go under a heading `## Ran`, which is not checked); each "
+        "cite quote is limited to 300 characters by the hub",
     )
     _json_flag(p)
     p.set_defaults(handler=cmd_say)
