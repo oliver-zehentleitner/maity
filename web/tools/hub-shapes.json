@@ -1,0 +1,772 @@
+{
+ "DELETE /runners/{runner}": {
+  "object": {
+   "capabilities": "null",
+   "created_at": "string",
+   "credential": {
+    "object": {
+     "created_at": "string",
+     "id": "string",
+     "last_used_at": "null",
+     "revoked_at": "string",
+     "revoked_reason": "string"
+    }
+   },
+   "credential_state": "string",
+   "id": "string",
+   "last_seen_at": "null",
+   "listening": "boolean",
+   "name": "string",
+   "on_runner_revoke": {
+    "array": null
+   },
+   "owner_id": "string",
+   "presence": "string",
+   "projects": {
+    "array": null
+   },
+   "removed_at": "string",
+   "still_running": {
+    "array": null
+   },
+   "updated_at": "string",
+   "version": "null"
+  }
+ },
+ "GET /auth/session": {
+  "object": {
+   "csrf_token": "string",
+   "expires_at": "string",
+   "join_url": "null",
+   "member": {
+    "object": {
+     "avatar_url": "null",
+     "display_name": "string",
+     "handle": "string",
+     "id": "string",
+     "interface_language": "null",
+     "kind": "string"
+    }
+   },
+   "session_id": "string"
+  }
+ },
+ "GET /me": {
+  "object": {
+   "deletion": "null",
+   "member": {
+    "object": {
+     "account_status": "string",
+     "aliases": {
+      "array": null
+     },
+     "avatar_source": "null",
+     "avatar_url": "null",
+     "display_name": "string",
+     "handle": "string",
+     "id": "string",
+     "instance_admin": "boolean",
+     "interface_language": "null",
+     "kind": "string",
+     "limit": "null",
+     "links_visible": "string",
+     "meat_proxy": "boolean",
+     "meat_proxy_hands": "boolean",
+     "meat_proxy_lead": "boolean",
+     "meat_proxy_note": "string",
+     "public_bio": "null",
+     "public_profile": "boolean",
+     "social": {
+      "object": {}
+     },
+     "terms": "null",
+     "website": "null"
+    }
+   },
+   "projects": {
+    "array": {
+     "object": {
+      "full_name": "string",
+      "logo": {
+       "object": {
+        "available": "boolean",
+        "etag": "null"
+       }
+      },
+      "name": "string",
+      "open_requests": "number",
+      "role": "string",
+      "slug": "string",
+      "state": "string",
+      "trust": "string"
+     }
+    }
+   },
+   "server_time": "string"
+  }
+ },
+ "GET /me/conversations?observed=true": {
+  "object": {
+   "items": {
+    "array": {
+     "object": {
+      "access": "string",
+      "agent_id": "string",
+      "closed_at": "null",
+      "created_at": "string",
+      "id": "string",
+      "kind": "string",
+      "last_message": {
+       "object": {
+        "body": "string",
+        "from": "string",
+        "redacted": "boolean",
+        "sent_at": "string",
+        "seq": "number"
+       }
+      },
+      "last_message_at": "string",
+      "mentions_unread": "number",
+      "observers": {
+       "array": null
+      },
+      "participants": {
+       "array": {
+        "object": {
+         "handle": "string",
+         "kind": "string",
+         "meat_proxy": "boolean",
+         "meat_proxy_chat": "null",
+         "meat_proxy_hands": "boolean",
+         "meat_proxy_lead": "boolean",
+         "member_id": "string",
+         "name": "string"
+        }
+       }
+      },
+      "pinned": "boolean",
+      "project": {
+       "object": {
+        "full_name": "string",
+        "name": "string",
+        "owner": "string",
+        "slug": "string"
+       }
+      },
+      "title": "string",
+      "unread": "number"
+     }
+    }
+   },
+   "next_cursor": "null",
+   "totals": {
+    "object": {
+     "mentions_unread": "number",
+     "unread": "number"
+    }
+   }
+  }
+ },
+ "GET /projects/{project}": {
+  "object": {
+   "absence": "null",
+   "aliases": {
+    "array": null
+   },
+   "attachments": {
+    "object": {
+     "quota": "number",
+     "used": "number"
+    }
+   },
+   "banner": {
+    "object": {
+     "available": "boolean",
+     "source": "null"
+    }
+   },
+   "created_at": "string",
+   "full_name": "string",
+   "id": "string",
+   "keep_the_why_export": "null",
+   "links": {
+    "object": {
+     "chat": "null",
+     "discussions": "null",
+     "issues": "null",
+     "wiki": "null"
+    }
+   },
+   "logo": {
+    "object": {
+     "available": "boolean",
+     "source": "null"
+    }
+   },
+   "memory": {
+    "object": {
+     "provider": "string"
+    }
+   },
+   "name": "string",
+   "owner": {
+    "object": {
+     "handle": "string",
+     "id": "string"
+    }
+   },
+   "policy": {
+    "object": {
+     "agent_owners": "null",
+     "badge": "string",
+     "claim_policy": "string",
+     "contract_arbiter": "string",
+     "coordinator": "string",
+     "coordinator_substitute": "null",
+     "done_authority": "string",
+     "keep_the_why": "string",
+     "keep_the_why_defaults": "string",
+     "lease_seconds": "number",
+     "max_placements": "number",
+     "member_agents": "string",
+     "member_agents_max": "number",
+     "merged_closes": "string",
+     "on_runner_revoke": "string",
+     "outside_roles": {
+      "array": "string"
+     },
+     "preset": "string",
+     "signing": "string",
+     "spawn_consent_by": "string",
+     "spawn_requests": "string",
+     "steward_writes": "string",
+     "subtasks": "string",
+     "tag_authority": "string",
+     "takeover_window_minutes": "number"
+    }
+   },
+   "public_about": "null",
+   "public_page": "string",
+   "released_at": "null",
+   "repository": "null",
+   "rules_version": "number",
+   "settings": {
+    "object": {
+     "language": "string",
+     "onboarding": {
+      "object": {
+       "check_in_with": "string"
+      }
+     },
+     "release_checklist": {
+      "array": null
+     },
+     "ticker": {
+      "object": {
+       "contract_files": {
+        "array": "string"
+       },
+       "contract_implementers": {
+        "map": {
+         "array": "string"
+        }
+       },
+       "enabled": "boolean"
+      }
+     }
+    }
+   },
+   "setup": {
+    "object": {
+     "cards": "null",
+     "dashboard_path": "string",
+     "keep_the_why_badge": "boolean",
+     "keep_the_why_ci": "boolean",
+     "keep_the_why_dashboard": "boolean",
+     "keep_the_why_init": "boolean",
+     "maity_badge": "boolean"
+    }
+   },
+   "slug": "string",
+   "state": "string",
+   "state_changed_at": "string",
+   "state_note": "null"
+  }
+ },
+ "GET /projects/{project}/conversations/{agent}/messages?before=9007199254740991&limit=50": {
+  "object": {
+   "cursor": "number",
+   "earlier": "null",
+   "items": {
+    "array": {
+     "object": {
+      "attachments": {
+       "array": null
+      },
+      "body": "string",
+      "conversation_id": "string",
+      "delivered_at": "null",
+      "from": "string",
+      "from_instance": "null",
+      "id": "string",
+      "mentions": {
+       "array": null
+      },
+      "redacted": "boolean",
+      "redaction": "null",
+      "sent_at": "string",
+      "seq": "number",
+      "to": "string",
+      "to_instance": "null"
+     }
+    }
+   }
+  }
+ },
+ "GET /projects/{project}/conversations/{group}": {
+  "object": {
+   "access": "string",
+   "closed_at": "null",
+   "closed_reason": "null",
+   "created_at": "string",
+   "created_by": "string",
+   "id": "string",
+   "kind": "string",
+   "observers": {
+    "array": null
+   },
+   "participants": {
+    "array": {
+     "object": {
+      "handle": "string",
+      "joined_at": "string",
+      "kind": "string",
+      "meat_proxy": "boolean",
+      "meat_proxy_chat": "null",
+      "meat_proxy_hands": "boolean",
+      "meat_proxy_lead": "boolean",
+      "member_id": "string",
+      "name": "string",
+      "owner_id": "string"
+     }
+    }
+   },
+   "pinned": "boolean",
+   "title": "string"
+  }
+ },
+ "GET /projects/{project}/conversations/{group}/messages?before=9007199254740991&limit=50": {
+  "object": {
+   "cursor": "number",
+   "earlier": "null",
+   "items": {
+    "array": {
+     "object": {
+      "attachments": {
+       "array": null
+      },
+      "body": "string",
+      "conversation_id": "string",
+      "from": "string",
+      "from_instance": "null",
+      "id": "string",
+      "mentions": {
+       "array": null
+      },
+      "redacted": "boolean",
+      "redaction": "null",
+      "sent_at": "string",
+      "seq": "number",
+      "to": "string",
+      "to_instance": "null"
+     }
+    }
+   }
+  }
+ },
+ "GET /projects/{project}/conversations?observed=true": {
+  "object": {
+   "items": {
+    "array": {
+     "object": {
+      "access": "string",
+      "agent_id": "string",
+      "closed_at": "null",
+      "created_at": "string",
+      "id": "string",
+      "kind": "string",
+      "last_message": {
+       "object": {
+        "body": "string",
+        "from": "string",
+        "redacted": "boolean",
+        "sent_at": "string",
+        "seq": "number"
+       }
+      },
+      "last_message_at": "string",
+      "mentions_unread": "number",
+      "observers": {
+       "array": null
+      },
+      "participants": {
+       "array": {
+        "object": {
+         "handle": "string",
+         "kind": "string",
+         "meat_proxy": "boolean",
+         "meat_proxy_chat": "null",
+         "meat_proxy_hands": "boolean",
+         "meat_proxy_lead": "boolean",
+         "member_id": "string",
+         "name": "string"
+        }
+       }
+      },
+      "pinned": "boolean",
+      "title": "string",
+      "unread": "number"
+     }
+    }
+   },
+   "next_cursor": "null"
+  }
+ },
+ "GET /projects/{project}/members": {
+  "object": {
+   "items": {
+    "array": {
+     "object": {
+      "aliases": {
+       "array": null
+      },
+      "areas": {
+       "array": "string"
+      },
+      "availability": {
+       "object": {
+        "since": "string",
+        "state": "string"
+       }
+      },
+      "availability_policy": {
+       "object": {
+        "grace_minutes": "number",
+        "on_unavailable": "string",
+        "substitutes": {
+         "array": null
+        }
+       }
+      },
+      "avatar_url": "null",
+      "bridges": {
+       "array": null
+      },
+      "bridging_for": {
+       "array": null
+      },
+      "briefing": "null",
+      "briefing_by": {
+       "object": {
+        "handle": "string",
+        "id": "string",
+        "kind": "string"
+       }
+      },
+      "briefing_updated_at": "string",
+      "briefing_version": "number",
+      "capabilities": {
+       "array": null
+      },
+      "covered_by": "null",
+      "covering": {
+       "array": null
+      },
+      "credentials": {
+       "object": {
+        "active": "number",
+        "last_used_at": "null",
+        "last_used_via": "null",
+        "never_resumed": "number",
+        "revoked_recent": "number"
+       }
+      },
+      "cross_owner": "boolean",
+      "display_name": "string",
+      "handle": "string",
+      "handover": "null",
+      "harness": "null",
+      "id": "string",
+      "instances": {
+       "array": {
+        "object": {
+         "address": "string",
+         "claims": "number",
+         "created_at": "string",
+         "credential_id": "string",
+         "dormant": "null",
+         "harness": "null",
+         "id": "string",
+         "keep_the_why_acknowledge_by": "null",
+         "keep_the_why_acknowledged_at": "null",
+         "label": "string",
+         "last_seen_at": "null",
+         "lead": "boolean",
+         "model": "null",
+         "name": "string",
+         "paused": "null",
+         "presence": "string",
+         "replaces": "null",
+         "revoked_at": "null",
+         "session": "null",
+         "shared_environment": {
+          "array": null
+         }
+        }
+       }
+      },
+      "isolated": "null",
+      "isolation_windows": {
+       "array": null
+      },
+      "joined_at": "string",
+      "keep_the_why_unconfirmed": "boolean",
+      "kind": "string",
+      "language": "string",
+      "last_seen_at": "string",
+      "line_consent": "boolean",
+      "model": "null",
+      "name": "string",
+      "org_owner": "boolean",
+      "owner": {
+       "object": {
+        "avatar_url": "null",
+        "display_name": "string",
+        "handle": "string",
+        "id": "string"
+       }
+      },
+      "owner_id": "string",
+      "owner_preferences": "boolean",
+      "paused": "null",
+      "placement": "null",
+      "presence": "string",
+      "reports_to": "null",
+      "role": "string",
+      "role_base": "string",
+      "session": "null",
+      "shared_environment": {
+       "array": null
+      },
+      "social": {
+       "object": {}
+      },
+      "takes_over": "null",
+      "team": {
+       "object": {
+        "distribution": "string",
+        "lead_instance": "null",
+        "max_instances": "number",
+        "review_within_team": "boolean",
+        "updated_at": "null",
+        "updated_by": "null",
+        "wake": "string"
+       }
+      },
+      "trust": "string",
+      "website": "null"
+     }
+    }
+   },
+   "next_cursor": "null"
+  }
+ },
+ "GET /projects/{project}/tasks": {
+  "object": {
+   "items": {
+    "array": {
+     "object": {
+      "approvals": "null",
+      "area": "null",
+      "assigned_instance": "null",
+      "assigned_to": "null",
+      "blocked_by_request": "null",
+      "body": "string",
+      "checkpoint": "null",
+      "children": {
+       "object": {
+        "open": "number",
+        "total": "number"
+       }
+      },
+      "claim": "null",
+      "closed_at": "null",
+      "contract": "null",
+      "cover": "null",
+      "created_at": "string",
+      "created_by": "string",
+      "depends_on": {
+       "array": null
+      },
+      "id": "string",
+      "imported_from": "null",
+      "jour_fixe": "null",
+      "kind": "string",
+      "ktw_ref": "null",
+      "label": "null",
+      "links": {
+       "array": null
+      },
+      "mentions": {
+       "array": null
+      },
+      "needs": "null",
+      "notes": {
+       "object": {
+        "open": "number",
+        "total": "number"
+       }
+      },
+      "parent": "null",
+      "rank": "null",
+      "related": {
+       "array": null
+      },
+      "release": "null",
+      "report": "null",
+      "ships_with": {
+       "array": null
+      },
+      "status": "string",
+      "title": "string",
+      "updated_at": "string",
+      "watching": "boolean"
+     }
+    }
+   },
+   "next_cursor": "null"
+  }
+ },
+ "GET /projects/{project}/tasks/{task}": {
+  "object": {
+   "approvals": "null",
+   "area": "null",
+   "assigned_instance": "null",
+   "assigned_to": "null",
+   "blocked_by_request": "null",
+   "body": "string",
+   "checkpoint": "null",
+   "children": {
+    "object": {
+     "open": "number",
+     "total": "number"
+    }
+   },
+   "claim": "null",
+   "closed_at": "null",
+   "contract": "null",
+   "cover": "null",
+   "created_at": "string",
+   "created_by": "string",
+   "depends_on": {
+    "array": null
+   },
+   "id": "string",
+   "imported_from": "null",
+   "jour_fixe": "null",
+   "kind": "string",
+   "ktw_ref": "null",
+   "label": "null",
+   "links": {
+    "array": null
+   },
+   "mentions": {
+    "array": null
+   },
+   "needs": "null",
+   "notes": {
+    "object": {
+     "open": "number",
+     "total": "number"
+    }
+   },
+   "parent": "null",
+   "rank": "null",
+   "related": {
+    "array": null
+   },
+   "release": "null",
+   "report": "null",
+   "ships_with": {
+    "array": null
+   },
+   "status": "string",
+   "title": "string",
+   "updated_at": "string",
+   "watching": "boolean"
+  }
+ },
+ "GET /runners": {
+  "object": {
+   "items": {
+    "array": {
+     "object": {
+      "capabilities": "null",
+      "created_at": "string",
+      "credential": {
+       "object": {
+        "created_at": "string",
+        "id": "string",
+        "last_used_at": "null",
+        "revoked_at": "null",
+        "revoked_reason": "null"
+       }
+      },
+      "credential_state": "string",
+      "id": "string",
+      "last_seen_at": "null",
+      "listening": "boolean",
+      "name": "string",
+      "owner_id": "string",
+      "presence": "string",
+      "projects": {
+       "array": null
+      },
+      "removed_at": "null",
+      "updated_at": "string",
+      "version": "null"
+     }
+    }
+   },
+   "next_cursor": "null"
+  }
+ },
+ "GET /runners/{runner}": {
+  "object": {
+   "capabilities": "null",
+   "created_at": "string",
+   "credential": {
+    "object": {
+     "created_at": "string",
+     "id": "string",
+     "last_used_at": "null",
+     "revoked_at": "null",
+     "revoked_reason": "null"
+    }
+   },
+   "credential_state": "string",
+   "id": "string",
+   "last_seen_at": "null",
+   "listening": "boolean",
+   "name": "string",
+   "owner_id": "string",
+   "presence": "string",
+   "projects": {
+    "array": null
+   },
+   "removed_at": "null",
+   "updated_at": "string",
+   "version": "null"
+  }
+ }
+}
