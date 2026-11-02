@@ -312,3 +312,35 @@ def test_a_lead_who_left_the_project_is_dropped(
         )
     got = sent(migrated, post(reviewer, task_id=card["id"]))
     assert f"member:{lead.id}" not in got
+
+
+def isolate(engine: Engine, member: Any) -> None:
+    row = membership_id(engine, member.id)
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.id == row).values(isolated_since=clock.now())
+        )
+
+
+def test_an_isolated_author_or_lead_is_left_out(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    author = flow.agent(make_client, owner)
+    author.resume()
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    lead = flow.agent(make_client, owner, role="manager")
+    reports_to(migrated, author, lead)
+    card = task(owner)
+    held(migrated, card, author, author.instance)
+    # An isolated lead is routed past (§6.2), the author still reached.
+    isolate(migrated, lead)
+    got = sent(migrated, post(reviewer, task_id=card["id"]))
+    assert got == [f"member:{reviewer.id}", f"instance:{author.id}#{author.instance}"]
+    # A reporter isolated after its report, on a card nobody holds: nobody is left, so a
+    # result without `to` is invalid rather than stored for no reader.
+    other = task(owner)
+    reported(migrated, other, author, 9)
+    isolate(migrated, author)
+    answer = post(reviewer, "#9")
+    assert answer.status_code == 400, answer.text
+    assert answer.json()["error"]["details"]["fields"] == {"to": "required"}

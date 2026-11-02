@@ -36,7 +36,8 @@ def _principal(row: Any) -> str:
 
 
 def _active(conn: Connection, project_id: str, member_id: str) -> Any:
-    """The member's active membership in the project, or None once it has left (§6.2)."""
+    """The member's active membership in the project, or None once it has left or while it is
+    isolated, which leaves it out of every audience (§6.2)."""
     column = t.membership.c.agent_id if member_id.startswith("agt-") else t.membership.c.human_id
     return conn.execute(
         select(t.membership).where(
@@ -44,12 +45,14 @@ def _active(conn: Connection, project_id: str, member_id: str) -> Any:
             column == member_id,
             t.membership.c.active.is_(True),
             t.membership.c.removed_at.is_(None),
+            t.membership.c.isolated_since.is_(None),
         )
     ).first()
 
 
 def _lead(conn: Connection, membership: Any) -> Recipient | None:
-    """The member `membership` reports to, while that member is still in the project."""
+    """The member `membership` reports to, while that member is still in the project; an
+    isolated one is routed past as `views.routing_boss` does (§6.2)."""
     if membership is None or membership.reports_to is None:
         return None
     lead = conn.execute(
@@ -57,6 +60,7 @@ def _lead(conn: Connection, membership: Any) -> Recipient | None:
             t.membership.c.id == membership.reports_to,
             t.membership.c.active.is_(True),
             t.membership.c.removed_at.is_(None),
+            t.membership.c.isolated_since.is_(None),
         )
     ).first()
     if lead is None:
@@ -98,7 +102,12 @@ def _author(conn: Connection, project_id: str, card: Any) -> tuple[Recipient, An
         holder = conn.execute(
             select(t.membership).where(t.membership.c.id == card.claim_holder)
         ).first()
-        if holder is None or not holder.active or holder.removed_at is not None:
+        if (
+            holder is None
+            or not holder.active
+            or holder.removed_at is not None
+            or holder.isolated_since is not None
+        ):
             return None
         member_id = _principal(holder)
         token = (
