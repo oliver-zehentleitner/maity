@@ -4,11 +4,12 @@ sign-in does not count them. The maintainer decided that for two projects they c
 `merge.public: true` and a mark on exactly those items, and `--undo` takes off exactly what it set.
 
     MAITY_DATABASE_URL=... python scripts/backfill_public_merges.py \\
-        --project <id> <owner>/<slug> <repository url> [--project ...] [--apply | --undo]
+        --project <id> <owner>/<slug> <repository url> [--project ...] [--undo] [--apply]
 
-Without `--apply` or `--undo` it only counts. A project is refused unless its id, full name and
-repository URL all match what is given and its repository's last check found it public. Items
-that already say `public`, true or false, are never touched.
+Without `--apply` it only counts: what it would mark or, with `--undo`, what it would take off.
+A project is refused unless its id, full name and repository URL all match what is given and its
+repository's last check found it public. Items that already say `public`, true or false, are
+never touched.
 """
 
 from __future__ import annotations
@@ -109,9 +110,8 @@ def main(argv: list[str] | None = None) -> int:
         "--project", nargs=3, action="append", required=True,
         metavar=("ID", "OWNER/SLUG", "REPOSITORY_URL"),
     )  # fmt: skip
-    mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--apply", action="store_true")
-    mode.add_argument("--undo", action="store_true")
+    parser.add_argument("--undo", action="store_true", help="take off what a run marked")
+    parser.add_argument("--apply", action="store_true", help="change; without it, only count")
     args = parser.parse_args(argv)
     engine = make_engine(os.environ["MAITY_DATABASE_URL"])
     named = [Named(*triple) for triple in args.project]
@@ -121,10 +121,14 @@ def main(argv: list[str] | None = None) -> int:
             if why is not None:
                 print(f"refused: {why}", file=sys.stderr)
                 return 2
-    change = args.apply or args.undo
-    verb = ("undid" if args.undo else "marked") if change else "would mark"
+    verb = {
+        (False, False): "would mark",
+        (True, False): "marked",
+        (False, True): "would undo",
+        (True, True): "undid",
+    }[(args.apply, args.undo)]
     for one in named:
-        count = run(engine, one, change=change, undo=args.undo, stamp=date.today().isoformat())
+        count = run(engine, one, change=args.apply, undo=args.undo, stamp=date.today().isoformat())
         print(f"{one.full_name}: {verb} {count} merges")
     return 0
 

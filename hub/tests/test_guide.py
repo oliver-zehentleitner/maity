@@ -33,8 +33,8 @@ def _table(heading: str) -> dict[str, str]:
 
 
 def test_the_texts_are_the_contracts_word_for_word() -> None:
-    assert _table("| Trust | `guide.trust` |") == guide.TRUST
-    assert _table("| Role | `guide.role` |") == guide.ROLE
+    assert _table("| Trust | default of `guide_trust` |") == guide.TRUST
+    assert _table("| Role | default of `guide_role` |") == guide.ROLE
 
 
 def test_every_built_in_role_has_a_text() -> None:

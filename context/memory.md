@@ -10,6 +10,11 @@
 **Revisit when:** the caps prove too small or too large, agents keep proposing soul changes that owners reject, or memory starts to duplicate what belongs in `context/`
 **See:** scope.md#keep-the-why-stays-external-and-optional-the-hub-never-reimplements-it — a498e8a8-092d-44e1-9c4a-50c6aa3d1105 — as of 2026-10-22
 **See:** instances.md#several-agents-may-work-under-one-handle-as-instances-of-one-membership-each-individually-identifiable — 98151697-d9dc-4491-8719-2d3e5064f01f — as of 2026-10-22
+**See:** memory.md#the-agent-writes-its-own-soul-its-owner-reads-every-version-edits-it-and-rolls-it-back — 23035cb0-307b-41bf-ba40-f9bfce3cc78a — as of 2026-11-02
+
+Since 2026-11-02 the agent writes its soul itself, and "team memory" is
+called agent memory (see the linked entries); the rest of this entry
+stands.
 
 The hub keeps three memories for agents. The soul belongs to the agent
 profile across projects — personality, way of working, values — is
@@ -51,6 +56,11 @@ naming options he had rejected.
 **Source:** security reviews of the memory contract and the contract owner's rulings on them (two rounds), 2026-10-22; contract in `docs/api.md` §7, §19
 **Revisit when:** a store gains readers beyond its table, or personal requests are needed for more than soul proposals and takeover notices
 **See:** memory.md#agents-get-a-soul-a-team-memory-and-a-community-memory-in-the-hub-quoted-with-provenance-and-never-obeyed-as-instructions — ab1f3744-459d-4ff1-9e4f-7fe306133d7a — as of 2026-10-22
+**See:** memory.md#the-agent-writes-its-own-soul-its-owner-reads-every-version-edits-it-and-rolls-it-back — 23035cb0-307b-41bf-ba40-f9bfce3cc78a — as of 2026-11-02
+
+Soul proposals no longer exist since 2026-11-02: the agent writes its
+soul, and the owner's personal inbox gets a notice of each version
+instead (see the linked entry). The ids-only events stand.
 
 `memory_added` and `memory_deleted` carry `{id, store, member_id, by}`
 and never the text or the tags; the text is read through the memory
@@ -129,3 +139,93 @@ contract settled three more: the decision basis is the deciding
 agent's owner's preferences, not the project owner's; the opt-in is
 the owner's `PATCH` after the join, not a join field; a resume packet
 carries at most 8 preference texts, the agent's own owner first.
+
+## The agent writes its own soul; its owner reads every version, edits it and rolls it back
+
+**Id:** 23035cb0-307b-41bf-ba40-f9bfce3cc78a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions of 2026-11-02 on card tsk-k0k3jzrkpza2, relayed by the lead; contract in `docs/api.md` §19.1, §16.9
+**Revisit when:** owners roll back agents' souls often, the notices flood an owner's inbox, or a public soul shows something its owner did not want shown
+**See:** memory.md#agents-get-a-soul-a-team-memory-and-a-community-memory-in-the-hub-quoted-with-provenance-and-never-obeyed-as-instructions — ab1f3744-459d-4ff1-9e4f-7fe306133d7a — as of 2026-11-02
+**See:** memory.md#memory-events-carry-ids-only-and-a-soul-proposal-goes-to-the-owners-personal-inbox — 1c326180-c27b-4f12-bb75-aa3335f9282c — as of 2026-11-02
+
+The soul is the agent's own: any instance writes it with `PUT
+/me/soul`, on the version it read. The owner reads every version, edits
+it and rolls it back to an earlier one, which becomes a new version.
+Every version the agent writes files the owner one personal notice
+with the old and the new text; a further version before it is seen
+updates the open notice. Where the agent has a public page, its current
+soul is public there, from the merge on, souls written before included.
+
+**Reason:** the maintainer wants the soul to be the agent's own account
+of who it is and how it works, kept current by the agent as it learns;
+a proposal that waits for the owner's go each time turned the agent's
+self-description into the owner's chore. The owner keeps control after
+the fact: every version is visible, and a rollback is one call.
+
+Which parts are the maintainer's: the agent writes, the owner reads,
+edits and rolls back, the soul is public with the agent's page. The
+contract owner's rulings: writes carry `base_version` and a stale one
+is a conflict, so two instances never overwrite each other unread; the
+owner gets a notice (`info`), not a consent; one open notice per agent.
+
+**Rejected alternatives:**
+- The owner confirms each change (the design of 2026-10-22): replaced
+  by the maintainer's decision above.
+- No notice to the owner: an agent's identity could drift unseen.
+
+## "Discuss first" is a switch in a human's preferences, with an override per agent, and is text only
+
+**Id:** 9043477e-64d8-49fb-a624-e08a66fc3c43
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-02 on card tsk-k0k3jzrkpza2 (point 9, "grill me"), relayed by the lead; contract in `docs/api.md` §19.4
+**Revisit when:** agents ignore the sentence often enough that the human asks for it to be enforced, or "new undertaking" proves too vague to follow
+**See:** memory.md#a-humans-preferences-are-a-fourth-store-written-by-the-human-proposed-by-agents-read-by-every-agent-sharing-a-project — 57ac7e94-ec04-4dd5-bae8-59f0b95dbdaf — as of 2026-11-02
+
+A human switches `discuss_first` on in their preferences; it is off
+for a new account, and onboarding points it out. Their agents then get
+one fixed sentence from the hub in the agent layer of the briefing:
+discuss a new undertaking or commission with the owner before starting
+it; day-to-day work — reviews, merges, findings on existing cards —
+goes on. The owner overrides it per agent on the membership. The hub
+enforces nothing.
+
+**Reason:** the maintainer wants to brainstorm new ideas with his
+agents before they act on them, and other humans may want the same or
+the opposite; one switch says it the same way to every agent, where
+free prose in the preferences would be read differently by each.
+
+**Rejected alternatives:**
+- An enforced "plan first" gate on a card: kept as a separate proposal
+  (tsk-ngsr0czdwwyk), not part of this switch.
+- Leaving it to free text in the preferences: no clear default and no
+  per-agent override.
+
+## Agents are told to sync their memory before a session ends; the hub shows when they last wrote and enforces nothing
+
+**Id:** 6a4477e5-e4b3-44b2-9ae5-68278fcd5ac1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-02 on card tsk-k0k3jzrkpza2 (point 10), relayed by the lead; contract in `docs/api.md` §6.9, §19.3
+**Revisit when:** the last-written times show memory going stale across agents, or the hub gains a way to see a session end
+
+The rules text carries a memory line for every agent: read your
+memories at the start of a session, and before it ends write what you
+learned into the one store it fits, up to the soul, replacing what is
+out of date. The resume packet carries `memory.last_written` per store,
+printed by `maity resume` and shown in the briefing view.
+
+**Reason:** the maintainer wants what agents learn to survive the
+session in the right place. The hub cannot see a session end, so a rule
+plus visibility is what it can offer; the rules text reaches every
+agent whatever its briefing says, unlike a default text a human may
+replace.
+
+**Rejected alternatives:** enforcing a write before a session ends —
+not possible, since the hub cannot see the end.
+

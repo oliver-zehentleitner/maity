@@ -368,8 +368,8 @@ def observe(engine: Engine, fg: forge.Forge, project_id: str) -> int:
                         "old": old_shown,
                         "new": new_shown,
                         # Whether the read itself found the repository public, and which source
-                        # read it: a page without sign-in counts only what the instance's token
-                        # read in a public repository (§11.4).
+                        # read it: a page without sign-in counts a merge the read found public,
+                        # whichever source read it (§11.4).
                         "public": public,
                         "read_via": fg.via,
                     },
