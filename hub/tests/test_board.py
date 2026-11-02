@@ -492,8 +492,8 @@ class FakeForge(forge.Forge):
 def test_a_link_event_names_the_source_that_read_it(
     owner: flow.Human, migrated: Engine, granted: str | None
 ) -> None:
-    """§11.4: data read through an owner's grant never reaches a page without sign-in, not even
-    as a count, though the read found the repository public."""
+    """§11.4: of a read through an owner's grant, only the bare count reaches a page without
+    sign-in, and only while that read found the repository public."""
     card = task(owner)
     link(owner, card, kind="pr", forge_url=PULL)
     number = int(PULL.rsplit("/", 1)[1])

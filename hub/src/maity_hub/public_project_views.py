@@ -65,16 +65,18 @@ class Person:
         return self.handle is not None
 
 
-def members(conn: Connection, project_id: str) -> dict[int, Person]:
+def members(conn: Connection, project_id: str, only: int | None = None) -> dict[int, Person]:
     """Every active member by membership id, an isolated agent not among them (§6.28); the names
-    only of those the page shows (no profile hold on an agent, §16.8)."""
+    only of those the page shows (no profile hold on an agent, §16.8). With `only`, that one
+    membership, for a page that names a single member."""
     m = t.membership.c
     found: dict[int, Person] = {}
-    rows = conn.execute(
-        select(t.membership)
-        .where(m.project_id == project_id, m.active.is_(True), m.isolated_since.is_(None))
-        .order_by(m.id)
-    ).all()
+    query = select(t.membership).where(
+        m.project_id == project_id, m.active.is_(True), m.isolated_since.is_(None)
+    )
+    if only is not None:
+        query = query.where(m.id == only)
+    rows = conn.execute(query.order_by(m.id)).all()
     humans = {
         h.id: h
         for h in conn.execute(
@@ -199,11 +201,16 @@ def board_rows(
     return columns, gone
 
 
-def board_html(columns: list[tuple[str, list[Any]]], who: dict[int, Person], gone: set[int]) -> str:
+def board_html(
+    columns: list[tuple[str, list[Any]]], who: dict[int, Person], gone: set[int], full: str
+) -> str:
+    """Each card's id links its own page (§16.9, "Card")."""
+    base = escape(f"/{full}/tasks/", quote=True)
     html = []
     for status, rows in columns:
         items = "".join(
-            f'<li><span class="tag">{escape(r.id)}</span> {escape(r.title)}'
+            f'<li><a class="tag" href="{base}{escape(r.id, quote=True)}">{escape(r.id)}</a> '
+            f"{escape(r.title)}"
             + (f' <span class="tag">{escape(r.label)}</span>' if r.label else "")
             + (
                 f' <span class="tag">{_who(who.get(r.claim_holder), r.claim_holder in gone)}</span>'
@@ -410,7 +417,7 @@ def render_views(conn: Connection, hub: Settings, project_id: str) -> list[publi
     columns, gone = board_rows(conn, project_id, who)
     why = why_data(conn, project, f"/{full}/why")
     views = (
-        ("board", "Board", board_html(columns, who, gone), board_data(columns, who, gone)),
+        ("board", "Board", board_html(columns, who, gone, full), board_data(columns, who, gone)),
         ("members", "Members", members_html(who), members_data(who)),
         ("organisation", "Organisation", organisation_html(who), organisation_data(who)),
         ("why", "Why", why_html(why), why),

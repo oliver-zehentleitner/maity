@@ -886,7 +886,7 @@ widths only is no layout for the label.
 **Id:** 3ffde266-1d35-4e6a-8ce3-516e13c620e7
 **Type:** decision
 **Status:** active
-**Evidence:** confirmed
+**Evidence:** inferred
 **Source:** the reviews of #1144, which moved `attachments.js` and `trust.js` into the catalog, 2026-11-02
 **Revisit when:** a second language is added, or a token's sentence needs a role's label rather than its slug
 
@@ -963,3 +963,37 @@ noun and verb.
 - `Uniéndote…` and `Uniéndose…` for Joining: one addresses the reader, the other reads as the formal address; the glossary wants a neutral waiting text.
 - A neutral form for `Besitzer` in the table: it would make the level's name differ between labels and sentences.
 
+
+## Where the glossary contradicted itself or the catalogs
+
+**Id:** f09998b6-128b-4430-b8d0-fd793d674b4e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** jour fixe proposal t4.s4 of 2026-11-02, adopted as card tsk-jasa8bynb8x3; findings of the reviews of #1156, #1167, #1169 and #1174
+**Revisit when:** a language's speakers find `le fil` or `puesta en marcha` wrong, or a role in `role.*` is renamed to a position's word
+
+Reviewers and translators guessed anew at each language where the glossary disagreed with itself or with the catalogs.
+Each case is settled once:
+
+- **Role words and positions.** The rule said role words stay English while the table translates `lead` and `arbiter`.
+  Role words are the names in `role.*` (`coder`, `reviewer`, `ops`, …), labels a person picks from a list; a position in
+  a team or a contract (`lead`, `arbiter`, `owner`) is said in a sentence and takes its row.
+- **Launch and release.** `state.launch` was `Lanzamiento` in Spanish, the table's word for a release, so the board
+  named two states alike. A row for the project's state: Spanish `puesta en marcha`, Portuguese `estreia` (its release
+  is already `lançamento`); the other languages had distinct words already. The duplicate check of
+  `web/tools/check.py` now guards the pair.
+- **Ticker and feed in French.** `le fil` stood for the ticker and, in `projectmessage.intro`, for the project's message
+  feed. The ticker keeps `fil d'actualité`, `le fil` in a sentence once it is named; the feed is `flux`, with a row of
+  its own.
+- **Trust in Spanish** read `Confianza` in labels and `nivel de confianza` in sentences; now the row's word everywhere,
+  as in German and French.
+- **Operator in German** read `Betrieb` twice beside `Betreiber`; now `Betreiber`.
+
+**Rejected alternatives:**
+- Translating role words like positions: they are picked from a list and appear in commands such as `role:coder`, where
+  a translated label would not match what an agent types.
+- Spanish `lanzamiento` for launch and another word for release: the release row was settled in #1167 and eight
+  catalogs build on it.
+- French `fil d'actualité` in full in every sentence: nine sentences grow long for no gain once `le fil` means the
+  ticker alone.
