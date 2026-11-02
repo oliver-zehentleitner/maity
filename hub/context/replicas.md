@@ -615,7 +615,7 @@ land on another pod.
 **Type:** decision
 **Status:** open
 **Evidence:** inferred
-**Source:** the card (k6 or locust, target numbers), the maintainer's internal deployment planning (2026-10-30) (a staging address, 1, 2 and 4 pods; the run sets node pool, HPA target, database size and pool size), `hub/tests/test_load.py` (statement-count load tests of the bell), the request signature (HMAC-SHA256 over a canonical string, `auth/credentials.py:101`); the maintainer's answers to req-6cw5xwfpyeva (production, throwaway accounts) and req-gjzkcdtbg7t2 (a second confirmation for production), and req-3efa9j1v8ez2 (purge deletes every row)
+**Source:** the card (k6 or locust, target numbers), the maintainer's internal deployment planning (2026-10-30) (a staging address, 1, 2 and 4 pods; the run sets node pool, HPA target, database size and pool size), `hub/tests/test_load.py` (statement-count load tests of the bell), the request signature (HMAC-SHA256 over a canonical string, `auth/credentials.py:101`); the maintainer's answers to req-6cw5xwfpyeva (production, throwaway accounts) and req-gjzkcdtbg7t2 (a second confirmation for production), and req-3efa9j1v8ez2 (purge deletes every row), and req-zx1nhgy5r6ab (a second balancer for the run)
 **Revisit when:** the maintainer gives a concurrency or traffic figure that replaces the assumptions below
 
 **Tool: k6.** It holds tens of thousands of concurrent long-polls per load generator cheaply,
@@ -654,6 +654,22 @@ deleted (found in the review of the purge). Reserving the prefix was the other o
 the contract's reserved words and was left for its own change, and the marker is needed even then,
 for an account made before the reservation. Its test reads every table
 after a purge for the accounts' ids, keys and handles, so a new table that keeps one fails there.
+
+Changed on 2026-11-02, the third time: production may be reached through more than one name. One
+balancer in front of production carries fewer held connections than the half of the plan, and the
+maintainer added a second one for the run, reached under a name of its own (req-zx1nhgy5r6ab);
+the full plan stays off production. `LOADTEST_CONFIRMED_PRODUCTION` became a list, and `run.js`
+takes exactly one target for each name in it, production never beside another system and no
+target twice. The rule it replaces, one production target, kept k6 off the pods one by one; a
+name cannot tell a balancer from a pod, so the names the operator confirms are what is allowed,
+and a name confirmed but not targeted is refused as well, as a sign the two lists were not set
+together. Connecting to both balancers under the one production name, through k6's `hosts`
+option, was the other way; k6 maps a name to one address, so it would not have spread the load
+(inferred, not tried). The seed reads the same variables as lists too, so that one setting serves
+both, and takes the host as `run.js` does: a trailing dot is refused, since `maity.team.` is
+production and would otherwise have passed as a test system's name (found in the review). Twice
+means the same host and port as reached (`https://a` and `https://a:443`); another port on one
+host stays another target, as a test system's pods may be port-forwards on one machine.
 The 60 000 held connections are spread over several generator pods with their own source
 addresses: one source address has about 64 000 ephemeral ports, and the run must measure the
 hub, not the generator's port exhaustion.

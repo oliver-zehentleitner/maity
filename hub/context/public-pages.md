@@ -618,9 +618,13 @@ state once resolved, and its body as Markdown without raw HTML. A redacted note 
 neither its text nor the redaction's reason is published, since a reason may repeat what was removed. A resolved
 note shows its state but not its `resolution` (who, when, why): the reason is written to the note's author and
 the card's people, as a redaction's is, and the state alone says what became of the note. A note's own
-events (`note_added`, `note_resolved`) and its redaction call `touch` for the card, and an author's profile change
+events (`note_added`, `note_resolved`, `note_edited`) and its redaction call `touch` for the card, and an author's profile change
 reaches the page through the person's dependents, as a holder's does. Notes have no moderation target of their own:
 they follow the card's hold and the `security` rule with it.
+An edited note shows its new text with "edited by", the editor named as an author is, the date and the edit's reason;
+the old text is gone with the render in the same transaction (`context/cards.md` 0e6b3b31). Unlike a redaction's
+reason, an edit's reason is published: the maintainer decided it is shown with the edit mark to every reader, and its
+writer knows that, while a redaction's reason is written for the members (2026-11-02, tsk-bj9yb4d8f2cg).
 
 **Rejected:**
 - Only open notes: an incorporated or dismissed note is part of the discussion an issue keeps, and the page would

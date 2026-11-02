@@ -1504,6 +1504,7 @@ card_note = Table(
     Column("event_seq", BIG_ID),  # its `note_added`, redacted with it
     Column("redacted", Boolean, nullable=False),
     Column("redaction", JSON_VALUE),
+    Column("edited", JSON_VALUE),  # {by, at, reason} of the latest edit; no earlier text is kept
     Index("ix_card_note_card_created", "card_id", "created_at", "id"),
     Index("ix_card_note_author_created", "author", "created_at"),
     **MYSQL_TABLE,
@@ -2367,6 +2368,7 @@ notification_mail_state = Table(
     _ref("human_id", "human.id", primary_key=True),
     Column("hourly_at", UtcDateTime),
     Column("daily_at", UtcDateTime),
+    Column("weekly_at", UtcDateTime),
     Column("held_since", UtcDateTime),  # held over the instance budget (§18.5)
     Column("stamp", Text),
     Column("waiting", Boolean, nullable=False, server_default=false()),

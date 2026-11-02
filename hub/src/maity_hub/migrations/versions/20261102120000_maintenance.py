@@ -2,7 +2,7 @@
 each human's choice which of its agents receive the hub's broadcasts.
 
 Revision ID: 20261102120000_maintenance
-Revises: 20261102100000_project_probe_via
+Revises: 20261102110000_card_note_edited
 Create Date: 2026-11-02
 """
 
@@ -16,7 +16,7 @@ from sqlalchemy.dialects import mysql
 from maity_hub.types import JSON_VALUE
 
 revision: str = "20261102120000_maintenance"
-down_revision: str | None = "20261102100000_project_probe_via"
+down_revision: str | None = "20261102110000_card_note_edited"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

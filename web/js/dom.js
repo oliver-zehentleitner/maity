@@ -395,5 +395,15 @@ window.Maity = window.Maity || {};
   };
   const word = (set, value) => (WORDS[set] && Object.hasOwn(WORDS[set], value) ? WORDS[set][value]() : value);
 
-  M.dom = { word, isOwnImage, handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, memberRef, instanceHref, memberChip, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, get SEND_KEYS() { return sendKeys(); }, sendKeysFor, showSendKeys, sendOnCtrlEnter };
+  // `manages` of a member (§6.2), one of its halves (`direct` or `total`) as one line:
+  // "leads 4 members · 9 instances (6 online, 1 dormant)". Dormant is a part of online,
+  // never added to it; null when nobody is below.
+  const managesText = (manages, half) => {
+    const c = manages && manages[half];
+    if (!c || !c.members) return null;
+    const live = [M.t("manages.online", { count: c.online }), c.dormant ? M.t("manages.dormant", { count: c.dormant }) : null].filter(Boolean).join(", ");
+    return [M.t("manages.members", { count: c.members }), c.instances ? M.t("manages.instances", { count: c.instances }) + " (" + live + ")" : null].filter(Boolean).join(" · ");
+  };
+
+  M.dom = { word, isOwnImage, handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, managesText, memberRef, instanceHref, memberChip, h, append, clear, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, get SEND_KEYS() { return sendKeys(); }, sendKeysFor, showSendKeys, sendOnCtrlEnter };
 })(window.Maity);

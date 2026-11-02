@@ -6,7 +6,7 @@ import { SharedArray } from "k6/data";
 import { Counter, Trend } from "k6/metrics";
 import { sleep } from "k6";
 import { canonicalQuery, signedHeaders } from "./sign.js";
-import { hostOf, production, refusal } from "./target.js";
+import { targetsRefusal } from "./target.js";
 
 const PODS = (__ENV.LOADTEST_TARGETS || "").split(",").filter(Boolean);
 const SCALE = Number(__ENV.LOADTEST_SCALE || "0.25");
@@ -22,15 +22,12 @@ const WRITES_PER_SECOND = 670;
 const READS_PER_SECOND = (EVENT_WAITS + BELL_WAITS) / 60;
 const LOGIN_LIMIT = 10; // routes/auth.py, per address and per handle, per minute
 
-if (PODS.length === 0) throw new Error("LOADTEST_TARGETS names no address");
-for (const target of PODS) {
-  const why = refusal(target, __ENV.LOADTEST_CONFIRMED_TEST_SYSTEM || "", __ENV.LOADTEST_CONFIRMED_PRODUCTION || "");
-  if (why) throw new Error(why);
-}
-// Production only through its balancer: its one public address, never pods one by one.
-if (PODS.some((target) => production(hostOf(target))) && PODS.length !== 1) {
-  throw new Error("production takes one target, its public address");
-}
+const refused = targetsRefusal(
+  PODS,
+  __ENV.LOADTEST_CONFIRMED_TEST_SYSTEM || "",
+  __ENV.LOADTEST_CONFIRMED_PRODUCTION || "",
+);
+if (refused) throw new Error(refused);
 
 const seeded = new SharedArray("humans", () => {
   const all = JSON.parse(open(__ENV.LOADTEST_ACCOUNTS));

@@ -78,6 +78,15 @@ window.Maity = window.Maity || {};
       i.dormant ? h("span", { class: "muted member-dormant" }, " " + M.dom.dormantNote(ctx, m, i)) : null)));
   }
 
+  // Who is below a lead, from the hub's `manages` (§6.2), never counted here: the direct
+  // reports with their instances, and the whole branch on hover when it is larger.
+  function manages(m) {
+    const direct = M.dom.managesText(m.manages, "direct");
+    if (!direct) return null;
+    const total = m.manages.total.members > m.manages.direct.members ? M.dom.managesText(m.manages, "total") : null;
+    return h("span", { class: "muted org-manages", title: total ? M.t("manages.total", { text: total }) : null }, direct);
+  }
+
   function node(ctx, m, tree) {
     const kids = tree.children[m.id] || [];
     const link = tree.parentOf[m.id];
@@ -89,7 +98,8 @@ window.Maity = window.Maity || {};
         h("span", { class: "role" }, M.trust.words(m)),
         m.areas.length ? h("span", { class: "area" }, m.areas.join(", ")) : null,
         link && link.via === "area" ? h("span", { class: "muted" }, M.t("org.by_area")) : null,
-        instances(ctx, m)),
+        instances(ctx, m),
+        manages(m)),
       kids.length ? h("ul", null, kids.map((k) => node(ctx, k, tree))) : null);
   }
 

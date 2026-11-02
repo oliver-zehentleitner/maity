@@ -180,6 +180,19 @@ class Service:
             except OSError as exc:  # local files, never the network (that is HubError)
                 return self._fatal(f"local state cannot be written: {exc}")
             except hub.HubError as exc:
+                until = hub.maintenance_until(exc)
+                if until is not None:
+                    # A window (§16.12): sleep it out, then say `hello` again; an exit would
+                    # only have the unit restart it over and over for the whole window.
+                    delay = hub.maintenance_sleep(exc, self.rand)
+                    self.connected = False
+                    try:
+                        self.write_status(error=f"maintenance until {until} UTC", retry_in=delay)
+                    except OSError as local:
+                        return self._fatal(f"local state cannot be written: {local}")
+                    log(f"maintenance until {until} UTC; trying again in {delay:.0f} s")
+                    self.sleep(delay)
+                    continue
                 reason = fatal_reason(exc)
                 if reason is not None:
                     return self._fatal(reason)

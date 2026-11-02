@@ -1,4 +1,44 @@
 {
+  "factor.advice_password": {
+    "en": "d3f377764b058242",
+    "text": "a459bc7df44fe89f"
+  },
+  "factor.advice_session": {
+    "en": "09d4b7092bbafb26",
+    "text": "fbc5c2c8ce0b7824"
+  },
+  "factor.confirm_mail": {
+    "en": "7a87f9ef5b00233c",
+    "text": "3a330feb8286e3c2"
+  },
+  "factor.confirm_subject": {
+    "en": "bb5ffd7e38d1bb22",
+    "text": "c89c00eb8c8e4933"
+  },
+  "factor.how_password": {
+    "en": "31ac68883876fa15",
+    "text": "2b928a6ddc4a2696"
+  },
+  "factor.how_session": {
+    "en": "e60ee095eb74d877",
+    "text": "91eb13edf163d487"
+  },
+  "factor.mail": {
+    "en": "55fcb3ca05c88ec0",
+    "text": "7477624a70a1eda3"
+  },
+  "factor.subject": {
+    "en": "2834f29f1bd983e4",
+    "text": "986f62dc5d7d3b46"
+  },
+  "factor.with_link": {
+    "en": "facf29431b94ba9c",
+    "text": "0d8995a2b0aff666"
+  },
+  "factor.without_link": {
+    "en": "5fbab9ca9deec008",
+    "text": "34a59f5563770507"
+  },
   "frame.agents": {
     "en": "21cf98a292e94015",
     "text": "21cf98a292e94015"
@@ -9,7 +49,7 @@
   },
   "frame.as_of": {
     "en": "67f21e83d943ba4e",
-    "text": "f7e83f057af86931"
+    "text": "18fb15ac21b14f33"
   },
   "frame.cards_done_week": {
     "en": "ad5f7e36feb077c4",
@@ -26,6 +66,14 @@
   "frame.imprint": {
     "en": "1d0610cdac8612da",
     "text": "37d477e04fffcd45"
+  },
+  "frame.instances": {
+    "en": "468a5f1b13f3feda",
+    "text": "4a7edb4636fd9b03"
+  },
+  "frame.instances_online": {
+    "en": "74a65479137b8f26",
+    "text": "3bca2d7ece39ac8f"
   },
   "frame.language": {
     "en": "1fa24b4905737a8d",
@@ -102,5 +150,369 @@
   "frame.you": {
     "en": "9d1a4d7e2b6e1f5d",
     "text": "f40395844acf931d"
+  },
+  "mail.more": {
+    "en": "a1cd32796e7e9005",
+    "text": "555c05a04cea5c5e"
+  },
+  "mail.only": {
+    "en": "fb2c1b804e84d045",
+    "text": "72430d053947205a"
+  },
+  "mail.settings": {
+    "en": "00f94cee302bab0b",
+    "text": "1193afe9c904d8fa"
+  },
+  "mail.sign_in": {
+    "en": "e24bfa71cc905928",
+    "text": "f7f53c5767d45830"
+  },
+  "mail.sign_in_body": {
+    "en": "9502874985e60746",
+    "text": "32d2680add4f243e"
+  },
+  "mail.stop": {
+    "en": "0376eae5c3fe8b7a",
+    "text": "b6fd47e662b807eb"
+  },
+  "mail.two_factor_body": {
+    "en": "dfaef747e184ddf6",
+    "text": "01c5000103663239"
+  },
+  "mail.updates": {
+    "en": "ee72d97604a9a40d",
+    "text": "ee72d97604a9a40d"
+  },
+  "mail.wrote": {
+    "en": "3cff4d92714ec5c4",
+    "text": "4d25cb49dd8ca406"
+  },
+  "mail_links.dead": {
+    "en": "a2ed72021f0f4f89",
+    "text": "713ecfdc5174cd4d"
+  },
+  "mail_links.delete_button": {
+    "en": "262a94420e99cae1",
+    "text": "c04b6977b0c0f647"
+  },
+  "mail_links.delete_done": {
+    "en": "a4ca18cdc8780b63",
+    "text": "f953aee5f1d6ae9c"
+  },
+  "mail_links.delete_export": {
+    "en": "921281bb99d3d39b",
+    "text": "f1eb60cc6ea624ca"
+  },
+  "mail_links.delete_keeps": {
+    "en": "b9332194849db01e",
+    "text": "77d70d120b11f69b"
+  },
+  "mail_links.delete_removes": {
+    "en": "6238e9e46c4a4ccb",
+    "text": "4f8248a3ec606ef8"
+  },
+  "mail_links.delete_text": {
+    "en": "59f56f043e04097b",
+    "text": "cc70cfdc25b44d9e"
+  },
+  "mail_links.delete_title": {
+    "en": "262a94420e99cae1",
+    "text": "c04b6977b0c0f647"
+  },
+  "mail_links.last_instance_admin": {
+    "en": "18557aa04586d60e",
+    "text": "a2897a7c652a1358"
+  },
+  "mail_links.namespace_owner": {
+    "en": "c31a1874981fc3ef",
+    "text": "25223b1fcc6dd612"
+  },
+  "mail_links.org_last_owner": {
+    "en": "bf00915408e46369",
+    "text": "c8321e960a287bd0"
+  },
+  "mail_links.reset_button": {
+    "en": "a5e961d996a774e7",
+    "text": "015a1a9c2d744b4c"
+  },
+  "mail_links.reset_done": {
+    "en": "17f65699b594a752",
+    "text": "a6c685f048f73f17"
+  },
+  "mail_links.reset_reason": {
+    "en": "30ee9b373264f71c",
+    "text": "d4bb02a3eb2e3fa9"
+  },
+  "mail_links.reset_text": {
+    "en": "fe912a1eeefdb155",
+    "text": "d5653aeb1054ee25"
+  },
+  "mail_links.reset_title": {
+    "en": "c5c9e3b89352c1fb",
+    "text": "10852a1bffd3c1fb"
+  },
+  "mail_links.unsub_button": {
+    "en": "370a9b159d6a6096",
+    "text": "d7111abfb588dd24"
+  },
+  "mail_links.unsub_done": {
+    "en": "31fa673e19667c20",
+    "text": "1164afbd707933e2"
+  },
+  "mail_links.unsub_text": {
+    "en": "ced2af5d40a5780e",
+    "text": "4119f668a95e052d"
+  },
+  "mail_links.unsub_title": {
+    "en": "370a9b159d6a6096",
+    "text": "d7111abfb588dd24"
+  },
+  "mail_links.verify_button": {
+    "en": "f66dc4fe259c8634",
+    "text": "869aa9c060d4c5fc"
+  },
+  "mail_links.verify_done": {
+    "en": "d03d1354f186f1a3",
+    "text": "ba575353ae94eb76"
+  },
+  "mail_links.verify_text": {
+    "en": "a5f23778bddf0bc2",
+    "text": "d5336db4b0ccdf49"
+  },
+  "mail_links.verify_title": {
+    "en": "749bdc78cabbe4a2",
+    "text": "0245e95dd2967bc0"
+  },
+  "notify.a_browser": {
+    "en": "1b83f4de4a7e8a1f",
+    "text": "ba8237633f33a9ed"
+  },
+  "notify.address_changed": {
+    "en": "bc06da1f171d41d6",
+    "text": "749dc10295242791"
+  },
+  "notify.an_account": {
+    "en": "82662c3439d58e67",
+    "text": "d749802c1d799adc"
+  },
+  "notify.answered": {
+    "en": "5c712dd863885c6b",
+    "text": "7d9c23ae5bfa4d4c"
+  },
+  "notify.asks": {
+    "en": "cc6f0c553e1f735e",
+    "text": "ae19ef436aa2ca71"
+  },
+  "notify.asks_you": {
+    "en": "8fd1a420d56e812a",
+    "text": "6669e87a8b795ccc"
+  },
+  "notify.chat": {
+    "en": "c413ccd5c3885e86",
+    "text": "c413ccd5c3885e86"
+  },
+  "notify.forge_added": {
+    "en": "7dfbf6ca720405f1",
+    "text": "fa579e6824c9b657"
+  },
+  "notify.jf_no_moderator": {
+    "en": "e34dc5e8e1bcde70",
+    "text": "9a88875e4600ce0a"
+  },
+  "notify.jf_reported": {
+    "en": "ddf80171e6c30d8e",
+    "text": "843e5c5d605e46ff"
+  },
+  "notify.mail_disabled": {
+    "en": "9bb8fee2e033a643",
+    "text": "08df87fb201266fa"
+  },
+  "notify.mentioned": {
+    "en": "1c63ac02a50bed90",
+    "text": "c450c5789becb707"
+  },
+  "notify.moderated": {
+    "en": "c33811f8a469650a",
+    "text": "b398bc5898f47a6f"
+  },
+  "notify.not_listening": {
+    "en": "ad5753822b4df1d6",
+    "text": "e5a7bab2ecfce033"
+  },
+  "notify.reported": {
+    "en": "d9954ef211d54ced",
+    "text": "6cec71a223240f0f"
+  },
+  "notify.sign_in": {
+    "en": "a01714534ab0e36a",
+    "text": "829530ad2d48105a"
+  },
+  "notify.tf_changed": {
+    "en": "fa4d18720be24156",
+    "text": "9417a5a24a44312c"
+  },
+  "notify.tf_disabled": {
+    "en": "ad639be2f0b858c8",
+    "text": "606634606436b83c"
+  },
+  "notify.tf_enrolled": {
+    "en": "a53441ed564f30d1",
+    "text": "a1f1adf49ac2300e"
+  },
+  "notify.tf_failed": {
+    "en": "bc7de30f70be93d7",
+    "text": "80b63684e9e81029"
+  },
+  "notify.tf_instance_off": {
+    "en": "a6da094fa8eb3d8c",
+    "text": "c63cc2e41a759d6f"
+  },
+  "notify.tf_recovery_code_used": {
+    "en": "14ab6a08b02918e0",
+    "text": "aa7f5833301f741f"
+  },
+  "notify.tf_recovery_codes": {
+    "en": "28a03d5b74eeee24",
+    "text": "4a4c7d6142deb27a"
+  },
+  "notify.tf_reset": {
+    "en": "515f3177da9bc9f0",
+    "text": "e0429b9b9ca1ad42"
+  },
+  "notify.unknown_os": {
+    "en": "761c4d589d9d161f",
+    "text": "5aa8b64412a500f9"
+  },
+  "notify.waits": {
+    "en": "79dcf2bbb695ac6a",
+    "text": "cc2976e2094e8d7a"
+  },
+  "notify.withdrew": {
+    "en": "5479a39e9f32ab9d",
+    "text": "2ea44690422b22fd"
+  },
+  "register_page.button": {
+    "en": "e63588a861737d67",
+    "text": "d8f2af165fa17037"
+  },
+  "register_page.closed": {
+    "en": "df7ca80e6754dfc9",
+    "text": "ad664145a57ac7f2"
+  },
+  "register_page.dead": {
+    "en": "a2ed72021f0f4f89",
+    "text": "713ecfdc5174cd4d"
+  },
+  "register_page.display_name": {
+    "en": "18c4fcd40ad3a751",
+    "text": "88d54e71810720e5"
+  },
+  "register_page.error_display_name_invalid": {
+    "en": "4c39917f3fd97ff9",
+    "text": "ce3a8a095cef1653"
+  },
+  "register_page.error_handle_invalid": {
+    "en": "3a330b6161a97216",
+    "text": "34a6fd775f23c7fc"
+  },
+  "register_page.error_handle_reserved": {
+    "en": "0852f629ceee0ad8",
+    "text": "b6fc99f1239c1004"
+  },
+  "register_page.error_handle_taken": {
+    "en": "64461ff8c8bd5d53",
+    "text": "6e0141271d3b8117"
+  },
+  "register_page.error_password": {
+    "en": "d1d0babace725338",
+    "text": "9c4976c3252898bc"
+  },
+  "register_page.error_terms_required": {
+    "en": "89c71e1f5a396594",
+    "text": "3a5e7659688352db"
+  },
+  "register_page.handle": {
+    "en": "41483b645efc0c65",
+    "text": "41483b645efc0c65"
+  },
+  "register_page.intro": {
+    "en": "3af54dd923e1059b",
+    "text": "17e4aa99695f5489"
+  },
+  "register_page.later": {
+    "en": "240294e5364ce34d",
+    "text": "d4b434a485542290"
+  },
+  "register_page.legal_imprint": {
+    "en": "1d0610cdac8612da",
+    "text": "37d477e04fffcd45"
+  },
+  "register_page.legal_privacy": {
+    "en": "5da7aab1c428b242",
+    "text": "62f28282e40e486a"
+  },
+  "register_page.legal_terms": {
+    "en": "b6afdb846801fc10",
+    "text": "0eb15909e13c332a"
+  },
+  "register_page.password": {
+    "en": "8adcb6a3d0c1f216",
+    "text": "822f09b8184d4e6e"
+  },
+  "register_page.terms": {
+    "en": "738f3cd4cd578c5c",
+    "text": "e4d9e1390e11d74b"
+  },
+  "register_page.terms_changed": {
+    "en": "c77b80e8212e12e4",
+    "text": "1c4b34a86b01ec27"
+  },
+  "register_page.title": {
+    "en": "d2e0791af554a4da",
+    "text": "294dfc811ced048c"
+  },
+  "registration_mail.confirm": {
+    "en": "4ba145193ee90c2f",
+    "text": "bb2d5f3c53a5330d"
+  },
+  "registration_mail.confirm_subject": {
+    "en": "014f0bfcc0649e56",
+    "text": "6780d7725ea5e597"
+  },
+  "registration_mail.known": {
+    "en": "f3671b10cd1eec10",
+    "text": "eadb3837d6ea6ee8"
+  },
+  "registration_mail.known_subject": {
+    "en": "398f5a20461a5e60",
+    "text": "3b02f61f6c09e53c"
+  },
+  "second_factor_reset.subject": {
+    "en": "7b77b043ef40b02d",
+    "text": "56f6d92d5b05387e"
+  },
+  "second_factor_reset.text": {
+    "en": "80727452054ee780",
+    "text": "040ae0113aaee223"
+  },
+  "sign_in.mail": {
+    "en": "d21d997533e012c4",
+    "text": "df80fec93789b153"
+  },
+  "sign_in.mail_alternative": {
+    "en": "d68047166a4ed749",
+    "text": "e1f83719ba3d2847"
+  },
+  "sign_in.page_button": {
+    "en": "6b230bb723794d8b",
+    "text": "ad70f71339911a98"
+  },
+  "sign_in.page_title": {
+    "en": "4ab9f027c126cc1c",
+    "text": "03665a79fb31147b"
+  },
+  "sign_in.subject": {
+    "en": "c08c2ebbb2993e1d",
+    "text": "dd02037855e360dd"
   }
 }

@@ -25,6 +25,7 @@ from maity_hub import (
     handles,
     handover,
     idempotency,
+    instance_counts,
     instances,
     ktw_skill,
     languages,
@@ -627,6 +628,8 @@ def _packet(
             "owner_preferences": owner_preferences,
             "availability_policy": availability.policy_of(mine.row),  # §6.12
             "covering": own_view["covering"],  # whom it covers (§6.12)
+            # Who stands below it, as the member answers count it (§6.2): what a lead resumes to.
+            "manages": instance_counts.for_member(conn, mine.row),
             "placement": _placement_block(conn, mine.id),
         },
         "team": siblings,
