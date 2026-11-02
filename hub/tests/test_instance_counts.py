@@ -152,3 +152,22 @@ def test_the_landing_counts_instances_and_dormant_ones_as_online(
     # dormant one.
     assert (found["instances"], found["instances_online"]) == (6, 4)
     assert found["agents_online"] == 3  # sub, leaf and the resting solo
+
+
+def test_the_resume_packet_carries_the_agents_own_manages(
+    setup: tuple[flow.Human, TestClient, str], make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner, _, project_id = setup
+    lead = flow.agent(make_client, owner, role="member", reports_to=owner.id)
+    below = factory.agent(migrated, project_id, owner.id, instance="aaaa")
+    with migrated.connect() as conn:
+        lead_row = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.agent_id == lead.id)
+        ).scalar_one()
+    under(migrated, below, lead_row)
+    sibling(migrated, below, "bbbb", dormant=True)
+    packet = lead.resume(harness="test", model="test").json()
+    assert packet["membership"]["manages"] == {
+        "direct": counts(1, 2, 1, 1),
+        "total": counts(1, 2, 1, 1),
+    }
