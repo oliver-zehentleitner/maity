@@ -372,8 +372,9 @@ def touch_owned(conn: Connection, human_id: str, *, removal: bool = True) -> Non
 
 
 def touch_of_org(conn: Connection, org_id: str, *, removal: bool = True) -> None:
-    """The pages of every project the organisation owns: it was suspended, deleted or
-    renamed."""
+    """The organisation's page and those of every project it owns: it was suspended, deleted
+    or renamed."""
+    public_pages.touch(conn, "organisation", org_id, removal=removal)
     for project_id in conn.execute(
         select(t.project.c.id).where(
             t.project.c.owner_org_id == org_id, t.project.c.public_page == "on"
@@ -396,8 +397,12 @@ def dependents(conn: Connection, project_id: str) -> list[tuple[str, str]]:
         .where(m.project_id == project_id)
     ).all()
     people = sorted({h for h, _ in members if h} | {o for _, o in members if o})
+    org = conn.execute(
+        select(t.project.c.owner_org_id).where(t.project.c.id == project_id)
+    ).scalar()
     return [
         (VIEWS, project_id),
+        *([("organisation", org)] if org else []),
         *public_agents.pages_of_project(conn, project_id),
         *[("person", person) for person in people],
     ]

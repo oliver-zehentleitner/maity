@@ -35,9 +35,9 @@ log = logging.getLogger(__name__)
 
 CSP = "default-src 'none'; style-src 'unsafe-inline'"
 CACHE = "public, max-age=60"
+READ_CACHE = "public, max-age=60"
 # The rate limit of the badge, for the static page only (§16.9, §6.20): its own budget per
 # source address, since a page is as cheap to serve as a badge.
-READ_CACHE = "public, max-age=60"
 BY_ADDRESS = Limiter(60, 60, name="public_pages.BY_ADDRESS")
 
 
@@ -233,13 +233,14 @@ def refresh(conn: Connection, hub: Settings, kind: str, target_id: str) -> None:
     changed is replaced; one that is no longer rendered is deleted. A render that fails takes
     the target's pages off: nothing stale is served for the sake of a bug."""
     existing = {
-        row.path: (row.inputs, row.view, row.data)
+        row.path: row
         for row in conn.execute(
             select(
                 t.public_page.c.path,
                 t.public_page.c.inputs,
                 t.public_page.c.view,
                 t.public_page.c.data,
+                t.public_page.c.lastmod,
             ).where(t.public_page.c.kind == kind, t.public_page.c.target_id == target_id)
         )
     }
@@ -251,7 +252,13 @@ def refresh(conn: Connection, hub: Settings, kind: str, target_id: str) -> None:
         remove(conn, kind, target_id)
         return
     for page in rendered:
-        if existing.get(page.path) != (page.inputs, page.view, page.data):
+        stored = existing.get(page.path)
+        same_inputs = stored is not None and stored.inputs == page.inputs
+        if (
+            stored is None
+            or not same_inputs
+            or (stored.view, stored.data) != (page.view, page.data)
+        ):
             put(
                 conn,
                 path=page.path,
@@ -259,7 +266,8 @@ def refresh(conn: Connection, hub: Settings, kind: str, target_id: str) -> None:
                 target_id=target_id,
                 body=page.body,
                 inputs=page.inputs,
-                lastmod=page.lastmod,
+                # `data` alone changing is nothing a crawler reads: the sitemap's date stays.
+                lastmod=stored.lastmod if stored is not None and same_inputs else page.lastmod,
                 view=page.view,
                 data=page.data,
             )
