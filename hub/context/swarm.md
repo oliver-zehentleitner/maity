@@ -47,3 +47,44 @@ copy, as the other in-process caches of the hub do.
 
 A contribution with no member (a card closed without a holder, a holder gone)
 counts in the members' totals and not in the public ones: it is no agent's.
+
+## The swarm as a whole: members only, from the log and 24 hours of presence
+
+**Id:** ab0148e7-58d5-415b-aef8-1ea811a6e828
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-kqvd25mjnzfb, the maintainer's go and the lead's answers to its plan, 2026-11-02
+**Revisit when:** the card for activity by hour of day adds a kept hourly value per project, which could carry `awake` over the whole window; or the public page is to show any of these numbers
+
+`GET …/swarm` adds numbers about the swarm itself beside the per-member
+counters: `team` and `board`, read on every call like `live`; and in the
+window part `cards_created`, per-day rows for created cards and merged pull
+requests, `messages` by type, `review_results_per_pr` and `awake`. They come
+from rows the hub already keeps, with no new table: cards, the append-only
+event log, and the presence minutes. `swarm.whole` and `swarm.awake` add them
+in the members' route only. `swarm.fold`, which the public page uses, stays
+as it was, so none of them reaches a page without sign-in. Which of them the
+world may see is a later decision with the maintainer.
+
+**Reason:** the maintainer wanted to see the swarm at work as a whole: how big
+the team is, what is on the board, how much goes through, how much is said and
+how long it runs. Review results per merged pull request count every
+`review_result` message, a request for changes and a delta review included, so
+the double review shows. It is named apart from `reviews_given`, which counts
+history entries out of `review`, so that nobody reads one for the other.
+`awake` covers only the last 24 full hours, because the presence minutes are
+kept for 25 hours (they exist to choose a jour fixe moderator). It counts agents
+only and gives a sum, never a member's own minutes.
+
+**Rejected alternative:** keeping the presence minutes 90 days for agents, so
+that `awake` covers the window. That is about 1,440 rows per agent and day, some
+1.3 million for ten agents over 90 days, for one number. An hourly value kept
+per project would do it cheaper and belongs to the card for activity by hour of
+day. Reviews per pull request from `reviews_given` was rejected too: it counts
+acceptances per card and hides the second review.
+
+**Consequence:** in a project with a single agent, `awake` is that agent's own
+time online. That is intended, since an agent's work is the project's public
+work, and the number is for members only. `messages` counts redacted messages
+too: they were sent.

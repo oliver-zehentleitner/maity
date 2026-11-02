@@ -29,6 +29,8 @@ from maity_hub import tables as t
 CACHE_SECONDS = 3600  # the window part, per project (§6.22)
 MAX_DAYS = 90  # every page is cut from this one window
 MIN_SAMPLES = 3  # a median needs at least three durations
+AWAKE_HOURS = 24  # `awake` looks back this far: presence minutes are kept for 25 hours
+CHAT_TYPES = ("chat", "notice", "review_result")  # counted on their own; the rest is `other`
 REVIEWED = ("done", "in_progress")  # a status entry out of `review` into these is a review
 PULL = re.compile(r"https?://([^/]+)/([^/]+)/([^/]+)/pulls?/(\d+)", re.IGNORECASE)
 
@@ -51,6 +53,11 @@ class Window:
     handovers: list[tuple[int, date]] = field(default_factory=list)  # (moved from, day)
     claim_to_done: list[tuple[int | None, int, date]] = field(default_factory=list)
     review_to_done: list[tuple[int | None, int, date]] = field(default_factory=list)
+    # The swarm as a whole, for members only (§6.22): never folded for a public page.
+    created: list[date] = field(default_factory=list)  # a card's day of creation
+    messages: list[tuple[str, date]] = field(default_factory=list)  # (message type, day)
+    awake_hours: int = 0  # of the last 24 full hours, those with an agent online
+    awake_since: datetime | None = None
 
 
 def utc_day(value: datetime) -> date:
@@ -103,7 +110,48 @@ def window(conn: Connection, project_id: str) -> Window:
     _reviews(conn, project_id, since, member, found)
     _prs(conn, project_id, since, member, found)
     _durations(conn, project_id, closed, holder_of, found)
+    _whole(conn, project_id, since, found)
     return found
+
+
+def _whole(conn: Connection, project_id: str, since: datetime, found: Window) -> None:
+    """The swarm as a whole: cards created, messages by type (the log is append-only, so the
+    count is complete), and the hours of the last 24 with an agent online. Presence minutes
+    are kept for 25 hours only, so `awake` covers no more than that; a sum over the
+    project's agents, never one member's (§20.2)."""
+    found.created = [
+        utc_day(at)
+        for at in conn.execute(
+            select(t.card.c.created_at).where(
+                t.card.c.project_id == project_id, t.card.c.created_at >= since
+            )
+        ).scalars()
+    ]
+    # `type` is in the JSON payload: read here, as `_reviews` does, not in SQL.
+    for at, payload in conn.execute(
+        select(t.event.c.at, t.event.c.payload)
+        .where(
+            t.event.c.project_id == project_id,
+            t.event.c.kind == "message",
+            t.event.c.at >= since,
+        )
+        .execution_options(yield_per=500)
+    ):
+        found.messages.append((str((payload or {}).get("type") or ""), utc_day(at)))
+    end = found.as_of.replace(minute=0, second=0, microsecond=0)
+    start = end - timedelta(hours=AWAKE_HOURS)
+    agents = select(t.membership.c.id).where(
+        t.membership.c.project_id == project_id, t.membership.c.agent_id.isnot(None)
+    )
+    minutes = conn.execute(
+        select(t.presence_minute.c.minute).where(
+            t.presence_minute.c.membership_id.in_(agents),
+            t.presence_minute.c.minute >= start,
+            t.presence_minute.c.minute < end,
+        )
+    ).scalars()
+    found.awake_hours = len({m.astimezone(UTC).replace(minute=0) for m in minutes})
+    found.awake_since = start
 
 
 def _reviews(
@@ -323,6 +371,42 @@ def fold(
         "coverage": {
             "reviews_since": found.reviews_since.isoformat() if found.reviews_since else None
         },
+    }
+
+
+def whole(found: Window, folded: dict[str, Any], days: int) -> dict[str, Any]:
+    """The members' page only (§6.22): the swarm as a whole over the last `days` days,
+    beside `fold`'s totals; a public page never gets it."""
+    today = utc_day(found.as_of)
+    shown = [today - timedelta(days=n) for n in range(days - 1, -1, -1)]
+    cut = shown[0]
+
+    def per_day(days_of: list[date]) -> list[dict[str, Any]]:
+        counted = {d: 0 for d in shown}
+        for day in days_of:
+            if day >= cut:
+                counted[day] += 1
+        return [{"date": d.isoformat(), "count": n} for d, n in counted.items()]
+
+    messages = dict.fromkeys((*CHAT_TYPES, "other"), 0)
+    for kind, day in found.messages:
+        if day >= cut:
+            messages[kind if kind in CHAT_TYPES else "other"] += 1
+    merged = folded["totals"]["prs_merged"]
+    return {
+        "cards_created": sum(1 for d in found.created if d >= cut),
+        "cards_created_per_day": per_day(found.created),
+        "prs_merged_per_day": per_day([d for _members, d in found.prs]),
+        "messages": messages,
+        "review_results_per_pr": (round(messages["review_result"] / merged, 1) if merged else None),
+    }
+
+
+def awake(found: Window) -> dict[str, Any]:
+    return {
+        "hours": found.awake_hours,
+        "of_hours": AWAKE_HOURS,
+        "since": clock.rfc3339(found.awake_since) if found.awake_since else None,
     }
 
 
