@@ -142,7 +142,7 @@ window.Maity = window.Maity || {};
     if (!held.length) return states;
     const wrong = held.filter((p) => !M.authPages.shapeOk(file[p]));
     if (wrong.length) {
-      held.forEach((p) => { states[p] = wrong.includes(p) ? { state: "refused", words: M.t("site.refused.auth_page") } : { state: "same" }; });
+      held.forEach((p) => { states[p] = wrong.includes(p) ? { state: "refused", words: M.t("auth_pages.not_a_page") } : { state: "same" }; });
       return states;
     }
     const pages = Object.assign({}, now.authPages.pages);

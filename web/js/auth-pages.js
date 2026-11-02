@@ -23,18 +23,17 @@ window.Maity = window.Maity || {};
   const isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
   const shapeOk = (page) => isObject(page) && Object.values(page).every(isObject);
 
-  // What a save sends: an empty field is a key left out, and a language with none is no language.
-  function bodyOf(draft) {
-    const pages = {};
-    PAGES.forEach((page) => {
-      pages[page] = {};
-      Object.entries(draft.pages[page] || {}).forEach(([lang, texts]) => {
-        const kept = Object.fromEntries(Object.entries(texts).filter(([, v]) => typeof v !== "string" || v.trim()));
-        if (Object.keys(kept).length) pages[page][lang] = kept;
-      });
+  // A page as the hub takes it: an empty field of this form is a key left out, and one of §16.7's
+  // languages with none is no language. Anything else stays, for the hub to refuse by name.
+  function cleanPage(page) {
+    const out = {};
+    Object.entries(page || {}).forEach(([lang, texts]) => {
+      const kept = Object.fromEntries(Object.entries(texts).filter(([k, v]) => !FIELDS.some((f) => f.key === k) || typeof v !== "string" || v.trim()));
+      if (Object.keys(kept).length || !LANGUAGES.includes(lang)) out[lang] = kept;
     });
-    return { default_language: draft.default_language, pages };
+    return out;
   }
+  const bodyOf = (draft) => ({ default_language: draft.default_language, pages: Object.fromEntries(PAGES.map((page) => [page, cleanPage(draft.pages[page])])) });
 
   // The hub's refusal in a few words: the fields it names, or its message.
   const refusal = (err) => {
@@ -108,11 +107,11 @@ window.Maity = window.Maity || {};
         body: () => bodyOf(draft).pages[page],
         load: async (data, io) => {
           if (!shapeOk(data)) { io.fail(M.t("jsonio.not_loaded"), { message: M.t("auth_pages.not_a_page") }); return false; }
-          const next = { default_language: draft.default_language, pages: Object.assign({}, draft.pages, { [page]: data }) };
           io.busy(M.t("auth_pages.checking"));
-          try { await M.api.post(URL + "/check", bodyOf(next)); }
+          // This page alone: what is unsaved in the other sub-tab is no reason to refuse this file.
+          try { await M.api.post(URL + "/check", { default_language: draft.default_language, pages: { [page]: cleanPage(data) } }); }
           catch (err) { io.fail(M.t("jsonio.not_loaded"), { message: refusal(err) }); return false; }
-          draft = next;
+          draft.pages[page] = data;
           errors = {};
           redrawAll();
           io.done();

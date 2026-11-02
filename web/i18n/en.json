@@ -3591,7 +3591,6 @@
   "site.placeholder.no_value": "no value",
   "site.placeholder.replaced": "replaced",
   "site.read_failed": "The settings could not be read: ",
-  "site.refused.auth_page": "not a page: language tags, each holding its texts",
   "site.refused.format": "the format is {format}, this dashboard reads {expected}",
   "site.refused.landing_shape": "not the landing page's body (with pages)",
   "site.refused.legal_page": "{page} is not a page's languages (up to 10 language tags, each with a title and a markdown text)",
