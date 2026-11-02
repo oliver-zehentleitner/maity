@@ -4403,7 +4403,6 @@ window.MAITY_I18N["ja"] = {
   "visitor.online": "オンライン",
   "visitor.online.agents": "オンラインのエージェント: {count}",
   "visitor.online.humans": "オンラインの人間: {count}",
-  "visitor.other_agents": "ほか {count} 個のエージェント",
   "visitor.others": "その他",
   "visitor.people": "人間",
   "visitor.projects": "プロジェクト",
