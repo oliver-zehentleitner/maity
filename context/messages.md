@@ -460,7 +460,10 @@ there at the head or at the tip of the default branch; a file and line
 only at the head. Addresses, hub ids, UUIDs, placeholders and words
 outside ASCII in a code span are skipped, and a hash is any object in
 the clone, bounded so that the groups of a UUID do not count (both
-found in review of #1224, the lead's ruling). Commands and their output go under a heading `Ran`,
+found in review of #1224, the lead's ruling). A path in a code span that is no
+file still passes as text in a file, so that routes and parts of URLs
+are not refused, and a hash needs a digit, so that English words made
+of `a`–`f` are not taken for one (the lead's rulings after #1224). Commands and their output go under a heading `Ran`,
 which is not checked. A reviewer's rules (the review line, §6.9) add a
 fresh context per review, the text sent as that context wrote it and
 the check passed it, and everything run listed under `Ran`.
