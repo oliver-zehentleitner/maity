@@ -99,6 +99,7 @@ def reference_groups(conn: Connection, mine: Any, observed: bool) -> list[dict[s
                 "participants": [routes._short(p) for p in view["participants"]],
                 "observers": view["observers"],
                 "access": found,
+                "created_at": view["created_at"],
                 "closed_at": view["closed_at"],
                 "last_message_at": ts(last.at) if last is not None else None,
                 "unread": unread,

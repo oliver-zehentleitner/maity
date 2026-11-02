@@ -13,7 +13,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, select
 
-from maity_hub import events, instances, paging
+from maity_hub import attachments, events, instances, paging
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.deps import AnyCaller, engine_of
@@ -113,7 +113,9 @@ def _items(conn: Connection, rows: list[Any], mine: Membership) -> list[dict[str
     # A message from an agent names its instance (§8.8, §6.17); a human's has none.
     instance_of = instances.instances_of(conn, [r.actor_credential_id for r in rows])
     # A deleted account among the mentions is shown as one (§2.9).
-    payloads = shape_deleted(conn, [r.payload or {} for r in rows])
+    payloads = attachments.with_tombstones(
+        conn, shape_deleted(conn, [r.payload or {} for r in rows])
+    )
     items = []
     for row, payload in zip(rows, payloads, strict=True):
         tomb = _without_reason(row, mine) if row.redacted else None

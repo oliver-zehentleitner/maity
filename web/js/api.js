@@ -1104,6 +1104,11 @@ window.Maity = window.Maity || {};
   }
   // A message item as §9 shows it (#206): redacted and redaction always there.
   const messageView = (x) => Object.assign({ redacted: false, redaction: null }, x);
+  // Read again, a deleted file says so (§8.7): the message as written, the tombstone from the file.
+  const withTombstones = (slug, x) => (x.attachments && x.attachments.length ? Object.assign({}, x, { attachments: x.attachments.map((f) => {
+    const a = attachmentsOf(slug).find((y) => y.id === f.id);
+    return a && a.deleted_at ? Object.assign({}, f, { deleted_at: a.deleted_at }) : f;
+  }) }) : x);
   // §9.2 group chats in fixture mode: fixtures/<slug>/group-chats.json,
   // each { view, items, read }; joined_seq is where a participant's window begins.
   function groupChats(slug) {
@@ -2765,7 +2770,7 @@ window.Maity = window.Maity || {};
         if (!view) return null;
         // The rounds of a series are shown to its readers only (§20.7).
         const rounds = jfReads(m[1], s) ? jf.rounds.filter((r) => r.series_id === s.id) : [];
-        return Object.assign(view, { next_at: s.enabled && jfReads(m[1], s) ? s.next_at || null : null,
+        return Object.assign(view, { next_at: s.enabled ? s.next_at || null : null,
           current_round: rounds.find((r) => JF_OPEN.includes(r.status)) || null, last_round: rounds.find((r) => r.status === "reported") || null });
       }).filter(Boolean) };
     }],
@@ -3472,7 +3477,7 @@ window.Maity = window.Maity || {};
           const r = t.report;
           const code = r.code !== false;
           return { task: { id: t.id, title: t.title, status: t.status, kind: t.kind, label: t.label || null },
-            reported_by: who(r.reported_by), reported_at: r.reported_at, code, verification: r.verification || null,
+            reported_by: Object.assign(who(r.reported_by), { instance: r.reported_instance || null }), reported_at: r.reported_at, code, verification: r.verification || null,
             pr: code && r.pr_status === "found" && r.pr ? { number: r.pr.number, url: r.pr.url } : null,
             pr_state: r.observed ? r.observed.pr_state || null : null, observed_at: r.observed ? r.observed.observed_at || null : null,
             // null until the probe has looked (§6.6), never "no mismatch".
@@ -4389,7 +4394,7 @@ window.Maity = window.Maity || {};
       const earlier = first !== null && c.items.some((x) => x.seq < first) ? first : null;
       // An admin's reason is shown to it and the chat's former humans only (§8.5).
       const shown = (x) => {
-        const v = messageView(x);
+        const v = messageView(withTombstones(m[1], x));
         if (v.redaction && v.redaction.admin_reason) {
           const r = Object.assign({}, v.redaction);
           delete r.admin_reason;
@@ -4489,7 +4494,7 @@ window.Maity = window.Maity || {};
       const earlier = items.length && conv.items.some((x) => x.seq < items[0].seq) ? items[0].seq : null;
       return {
         items: items.map((x) => {
-          const copy = messageView(x);
+          const copy = messageView(withTombstones(m[1], x));
           delete copy.seen_by_human;
           return copy;
         }),

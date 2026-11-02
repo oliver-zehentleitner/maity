@@ -579,6 +579,10 @@ def check_hub_words(write, release, notes):
                 finding(path, 1, line)
             else:
                 notes.append(line)
+    if os.path.isdir(metas):
+        for name in sorted(os.listdir(metas)):
+            if not os.path.exists(os.path.join(words, name)):
+                finding(os.path.join(metas, name), 1, "no such hub words: delete this file")
 
 
 def list_gaps(lang):

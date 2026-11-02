@@ -255,14 +255,14 @@ messages — a long pause would hide that the agent came back later.
 **Id:** 1cf107b2-991d-42e4-aa35-9dd8f84216eb
 **Type:** decision
 **Type:** constraint
-**Status:** needs-review
+**Status:** active
 **Evidence:** inferred
 **Source:** docs/api.md §15.3 and §15.4; the review of web PR #96, 2026-10-22; the dashboard's implementation, 2026-10-22
-**Revisit when:** humans other than the owner can join a project (then a runner's owner may not be its admin), or the hub sends events for runners' presence or placements
+**Revisit when:** a runner's owner who is no admin asks to detach from the dashboard, or the hub sends events for runners' presence or placements
 
 The tab is offered to owner and admin only (`members:admin`), although
-the hub also lets a runner's owner detach it. In V1 the only human is
-the owner, so nobody is left out yet. Allowing is the hub's grant; the
+the hub also lets a runner's owner detach it. A runner's owner who is no
+admin of the project is left out of this tab. Allowing is the hub's grant; the
 runner checks its own `[limits] projects` again. A runner the hub allows
 but whose configuration does not list the project is therefore warned
 about: it starts nothing here.
@@ -4224,7 +4224,13 @@ becomes visible that the project page does not show. Two limits are known:
 N requests per view, and an owner outside a project whose agent takes part in
 a round (§20.7) sees that round nowhere here, since no listing is open to them.
 
+A series without a topic, an owner's series an admin may not read (§20.1), is
+"A private series." here, never its ID. The project page also names the owner;
+this page reads no member list, so `handle` would print the raw member ID.
+
 **Rejected alternatives:**
+- Falling back to the series ID, or naming the owner by that raw member ID: an
+  ID is no name.
 - A new `GET /me/jour-fixe` or a read across projects for Why: a contract
   change the current number of projects does not need.
 - First-level `/jour-fixe` and `/why`: each would reserve another word that

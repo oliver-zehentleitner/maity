@@ -126,7 +126,14 @@ def test_the_overview_lists_the_latest_reports_newest_first(
         "label": "feature",
     }
     assert shown["reported_by"]["member_id"] == agent.id
-    assert set(shown["reported_by"]) == {"member_id", "handle", "display_name", "avatar_url"}
+    assert set(shown["reported_by"]) == {
+        "member_id",
+        "handle",
+        "display_name",
+        "avatar_url",
+        "instance",
+    }
+    assert shown["reported_by"]["instance"]  # the instance that reported (§6.17)
     assert (shown["code"], shown["pr"], shown["pr_state"], shown["mismatch"]) == (
         False,
         None,

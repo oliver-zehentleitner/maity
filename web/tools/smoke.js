@@ -6747,6 +6747,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(atLog, "Delete").click(); for (let k = 0; k < 4; k++) await tick();
   expect(atCalls.slice(-1)[0][0] === "DELETE" && text(atLog).includes("build.log: removed."), "attachments: a file of the chat deleted, said in place");
   win.confirm = atConfirm;
+  // Read again, the hub says which file is gone: named, nothing left to delete.
+  const atRead = text(win.Maity.attachments.render({ slug: "maintainer/maity" }, { body: "", attachments: [{ id: "f-gone", name: "old.log", size: 3, type: "text/plain", kind: "file", deleted_at: "2026-11-02T00:00:00Z" }] }, () => true));
+  expect(atRead.includes("old.log: removed.") && !atRead.includes("Delete"), "attachments: a file with deleted_at read again is said removed");
   // The hub's refusals, in words.
   win.Maity.api.postRaw = () => Promise.reject(new win.Maity.api.ApiError("q", 409, "/x", "attachment_quota", { scope: "pending" }));
   await atPick("chat-files", [atFile("more.png", PNG, 100, "image/png")]);
@@ -8173,7 +8176,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const apJfGet = win.Maity.api.get;
   win.Maity.api.get = (path) => (path.endsWith("/jour-fixe") ? Promise.resolve({ series: [{ id: "jfs-private1", circle_owner: "hum-x", enabled: true, next_at: null }] }) : apJfGet(path));
   await apGo("#/all/jour-fixe");
-  expect(text(apOf("maity")).includes("A private series.") && !text(apOf("maity")).includes("jfs-private1"),
+  expect(apOf("maity").querySelector("li[data-series=\"jfs-private1\"] em") && text(apOf("maity")).includes("A private series.") && !text(apOf("maity")).includes("jfs-private1"),
     "all projects: a series without a topic is said private, its id is not shown as its name");
   win.Maity.api.get = apJfGet;
   await apGo("#/all/why");

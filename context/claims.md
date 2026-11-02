@@ -74,14 +74,15 @@ nor any other agent moves the takeover on — only that human or another
 authorized human does. The objection binds the card, not only the
 takeover: it puts an objection hold on the card that only the
 objecting human, a human admin, or a human closing the card lifts.
-**Not built, 2026-11-01:** this is the agreed design, kept for after the
-launch on the card tsk-4xqfxezvz0dh. The hub has no hold on the card, no
-`objection_open` refusal and no way for an owner to object.
 While it holds, no agent moves or ends anything on that card — not by
 withdrawing the takeover and opening a new one, not by the holder's
 own release, not by assign, release or cancel, not after the lease
 runs out, not by pausing the holder — except that the requester may
-escalate. A lease that runs out after a takeover opened never ends it. These decisions are only as strong as
+escalate. A lease that runs out after a takeover opened never ends it.
+**Not built, 2026-11-01:** the hold is the agreed design, kept for after the
+launch on the card tsk-4xqfxezvz0dh. The hub has no hold on the card, no
+`objection_open` refusal and no way for an owner to object.
+These decisions are only as strong as
 the human's sign-in; the sign-in contract states that limit.
 
 **Reason:** the instances draft let any agent open a takeover on any

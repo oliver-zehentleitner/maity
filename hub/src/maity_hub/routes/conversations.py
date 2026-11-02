@@ -19,6 +19,7 @@ from pydantic_core import PydanticCustomError
 from sqlalchemy import Connection, func, select
 
 from maity_hub import (
+    attachments,
     chat_meat_proxy,
     conversation_list,
     events,
@@ -175,7 +176,9 @@ def message_views(conn: Connection, rows: list[Any], reader: Any = None) -> list
     # A message from an agent names its instance (§9, §6.17); a human's has none.
     instance_of = instances.instances_of(conn, [r.actor_credential_id for r in rows])
     # A deleted account among the mentions is shown as one (§2.9).
-    payloads = shape_deleted(conn, [r.payload or {} for r in rows])
+    payloads = attachments.with_tombstones(
+        conn, shape_deleted(conn, [r.payload or {} for r in rows])
+    )
     views = []
     for row, payload in zip(rows, payloads, strict=True):
         group = group_chats.is_group(row.conversation_id)
