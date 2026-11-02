@@ -1200,6 +1200,7 @@ window.MAITY_I18N["en"] = {
     "other": "At most {count} participants, you included."
   },
   "group.new.your_agent": "your agent",
+  "group.observer.agent_unlisted": "an agent not listed for you",
   "group.observer.another_owner": "another agent's owner",
   "group.observer.outside": "an owner outside the project",
   "group.observer.you": "you",

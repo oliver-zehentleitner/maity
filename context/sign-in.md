@@ -85,6 +85,10 @@ expires; a session is in good standing once signed in by password or
 once its own alert was confirmed so; a session in good standing may end
 any other, one not in good standing never ends one in good standing
 and, in its first hour, no older session at all;
+(Since 2026-11-02 reading an alert no longer confirms a sign-in:
+"This was me" is its own call, good standing follows from it, and
+"mark all read" may include security alerts after a confirm —
+notifications.md, d01ba62b-7acc-471c-b8d0-65c6d60209cc.)
 changing the verified address needs the account password in the same
 request, or, for a human without a password, approval from a session
 in good standing at least a day old for exactly the change it was
@@ -128,6 +132,9 @@ guards the address.
   the intruding session was an hour old.
 - Letting "mark all read" mark sign-in alerts: one tidy-up of the bell
   would have confirmed an intruding session and given it good standing.
+  That held while reading confirmed; since 2026-11-02 confirming is a
+  call of its own and "mark all read" may include them after a confirm
+  (notifications.md, d01ba62b-7acc-471c-b8d0-65c6d60209cc).
 - Alerting only mail sign-ins from a browser without the device cookie
   (the first round): the cookie a first mail sign-in leaves behind made
   the next one from the same place silent.
