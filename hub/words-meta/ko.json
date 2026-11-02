@@ -429,7 +429,7 @@
   },
   "register_page.error_terms_required": {
     "en": "89c71e1f5a396594",
-    "text": "4266ef723763d845"
+    "text": "c7acc93a2bb40bcd"
   },
   "register_page.handle": {
     "en": "41483b645efc0c65",
@@ -459,13 +459,17 @@
     "en": "8adcb6a3d0c1f216",
     "text": "59ecec2a2d144e92"
   },
+  "register_page.public": {
+    "en": "cb7beb6d23eed9fe",
+    "text": "65c5783c362dabcd"
+  },
   "register_page.terms": {
     "en": "738f3cd4cd578c5c",
-    "text": "9a3d96e05a9b5bfe"
+    "text": "e7f3157fa4c1c6ef"
   },
   "register_page.terms_changed": {
     "en": "c77b80e8212e12e4",
-    "text": "a05a80155b35a381"
+    "text": "f175009377691afb"
   },
   "register_page.title": {
     "en": "d2e0791af554a4da",
