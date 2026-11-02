@@ -4790,6 +4790,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("step-up-reauthentication_required").value = "correct horse"; ydForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(text(ydBox()).includes("We sent a mail to your verified address") && btn(ydBox(), "Withdraw the deletion") && text(ydBox()).includes("follow the link in the mail"),
     "your data: requested, the page says it waits for the mail's link and offers to withdraw");
+  // The page drawn again from GET /me, where the hub has the deletion beside the member: still pending, not the form again.
+  expect((await win.Maity.api.get("/me")).deletion && !(await win.Maity.api.get("/me")).member.deletion, "your data: the fixture's deletion stands where the hub's does");
+  await win.Maity.redraw(); for (let k = 0; k < 6; k++) await tick();
+  expect(btn(ydBox(), "Withdraw the deletion") && !btn(ydBox(), "Delete my account"), "your data: a pending deletion is still offered for withdrawal after a new load");
   btn(ydBox(), "Withdraw the deletion").click(); for (let k = 0; k < 6; k++) await tick();
   expect(text(ydBox()).includes("The deletion was withdrawn") && ydDel(), "your data: withdrawn, the account stays");
   win.Maity.api.post = (p, b) => (p === "/me/deletion" ? Promise.reject(new win.Maity.api.ApiError("x", 409, p, "namespace_owner", {})) : ydPost(p, b));
@@ -5746,6 +5750,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The rule's selector meets the pages it is for (tsk-swr1bywv3agq): here the header is the bar alone; a project's header is never.
   const hdOnly = () => header.childNodes.filter((x) => x.tagName).length === 1 && header.childNodes.find((x) => x.tagName).className === "bar";
   expect(hdOnly(), "header: an invitation's header is the bar alone, so the bar's own room below applies");
+  const ivLogo = ivPage() && ivPage().querySelector(".invite-project .invite-logo");
+  expect(ivLogo && ivLogo.tagName === "IMG" && ivLogo.getAttribute("src") === "/api/v1/projects/maintainer/maity/logo", "invite: the project's logo at the address the hub gives, owner and slug");
   const ivSignIn = ivPage() && ivPage().querySelectorAll("a").find((a) => text(a) === "Sign in to accept");
   const ivRegister = ivPage() && ivPage().querySelectorAll("a").find((a) => text(a) === "Create one");
   expect(ivPage() && text(ivPage()).includes("Maintainer invites you to join Maity as member · coder.") && text(ivPage().querySelector(".invite-note")) === "You review the web side; D will brief you."

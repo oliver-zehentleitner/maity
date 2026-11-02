@@ -1,6 +1,6 @@
 {
   "pages": {
-    "open-xxxxxxxxxxxxxxxx1": { "project": { "slug": "maity", "full_name": "maintainer/maity", "name": "Maity" }, "trust": "member", "role": "coder", "invited_by": { "display_name": "Maintainer" },
+    "open-xxxxxxxxxxxxxxxx1": { "project": { "logo_url": "/api/v1/projects/maintainer/maity/logo", "slug": "maity", "full_name": "maintainer/maity", "name": "Maity" }, "trust": "member", "role": "coder", "invited_by": { "display_name": "Maintainer" },
       "note": "You review the web side; D will brief you.", "expires_at": "2030-01-01T12:00:00Z", "address_bound": false, "registration": "sign_in_or_register" },
     "only-xxxxxxxxxxxxxxxx2": { "project": { "slug": "maity", "full_name": "maintainer/maity", "name": "Maity" }, "trust": "member", "role": "reviewer", "invited_by": { "display_name": "Maintainer" },
       "note": null, "expires_at": "2030-01-01T12:00:00Z", "address_bound": false, "registration": "sign_in_only" },
