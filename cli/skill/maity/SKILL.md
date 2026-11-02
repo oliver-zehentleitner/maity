@@ -124,6 +124,7 @@ or `--timeout N` seconds.
 | 3 | nothing arrived | start it again if you still have nothing to do |
 | 5 | a human isolated you in the project | stop; do not re-arm the wait, it is refused too |
 | 6 | another `maity wait` of this clone took over | do not start a second one; one is already running |
+| 7 | not from `wait`: another command hit a maintenance window | try again after the time it names; `wait` sleeps a window out by itself |
 
 If a background wait is killed, reaped, cancelled, or ends without events
 (even with a normal-looking status), you are no longer listening. Check
@@ -258,4 +259,4 @@ answers `not_holder`. When in doubt, `maity resume` lists your claims.
 
 0 success · 1 error (the hub's code is in the message, e.g. `paused`) ·
 2 usage · 3 `wait` timed out · 4 `report` refused · 5 isolated · 6 `wait` superseded ·
-130 interrupted.
+7 maintenance window (never from `wait`) · 130 interrupted.

@@ -231,6 +231,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 413 | `payload_too_large` | body over the cap (§1.7) |
 | 429 | `rate_limited` | `Retry-After` is set |
 | 500 | `internal` | an unexpected failure; `details` is `{}`, the message names no internals; the response still carries the envelope and every header of §1.1 |
+| 503 | `maintenance` | the hub is in a maintenance window (§16.12); `Retry-After` is the seconds until its `until`, `details` is `{from, until, text}`; every caller, every route but the few §16.12 names |
 | 503 | `forge_unavailable` | the forge did not answer while linking a GitHub App installation (§11.4) |
 | 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any; `details.retry_at` while the forge's rate limit for the source is spent: no read before that time (§11) |
 | 503 | `ktw_unavailable` | the root `.keep-the-why` of the Keep the Why family could not be read (§11.3); `details.reason`, `details.last` holds the last good answer if any; a family member's own failure is reported on that member, not as this error |
@@ -3502,9 +3503,14 @@ Scope: any authenticated caller.
     { "slug": "sample", "full_name": "oliver/sample", "name": "Sample shop", "state": "review", "trust": "owner", "role": "coder", "open_requests": 1,
       "logo": { "available": false, "etag": null } }
   ],
+  "maintenance": null,
   "server_time": "2026-10-21T13:41:10Z"
 }
 ```
+
+`maintenance` is the hub's maintenance window while it is upcoming or
+running, `{from, until, text, state}`, else `null` (§16.12), for every
+caller, whatever its owner chose for broadcasts.
 
 For a human, `projects` lists every membership, each with
 `open_requests`: the number of open requests `GET /projects/{owner}/{slug}/requests`
@@ -3794,6 +3800,10 @@ Response `200`, bounded and deterministic:
   null` and `pending_version`. A removal waits the same way: until the
   `go` the removed text still applies, with `pending_version` the
   version of the removal.
+- `maintenance` (not in the example above) is the hub's maintenance
+  window while it is upcoming or running, else `null`, as in `GET /me`
+  (§16.12). `maity resume` prints it as `Maintenance <from>–<until> UTC:
+  <text>` near the top, so an agent plans around it.
 - `membership.chat_url` (not in the example above, agents only) is the
   dashboard address of the agent's direct conversation with its owner,
   `<public URL>/<owner>/<slug>/chat/<the agent's member id>` (the id of
@@ -9262,6 +9272,7 @@ learns its content.
 | `forge_webhook_changed` | `trust:owner`, `trust:admin` | `action`, `by`; never the secret (§17.4) |
 | `jour_fixe_opened`, `jour_fixe_answers_closed`, `jour_fixe_step_opened`, `jour_fixe_exchange_closed`, `jour_fixe_reported`, `jour_fixe_skipped`, `jour_fixe_series_changed` | as §20.9: the selected instance (§6.18) of each agent the event concerns — the invited, the moderator, a step's eligible members —, `member:` of such humans, and the series' keepers; the report `all`, a series change `all`, except for a series with `circle: owner`, whose events reach only the readers of §20.7 and §20.1 ("Who sees a series") | §20.9; never an answer and never the author of one. The opening wakes each invited agent once, a step only its eligible members, the two closes the moderator; the report wakes only the agents on the series' report list, at the instance their agent's wake rule selects (§20.2); a skip and a series change wake nobody, and no absent member is woken for a step |
 | `request_forwarded`, `request_claimed` | the asker, the old holder, the new holder (`member:<id>`, or `trust:admin` when opened to the admins), the addressee in `to` | `{id, holder, forwarding}` (§7); a forward to a member wakes it by its agent's `wake` rule, an opening to `trust:admin` and a claim wake nobody; for a personal request never emitted |
+| `maintenance_scheduled`, `maintenance_cancelled` | `member:<id>` of every agent member of the project whose owner accepts hub broadcasts for it (§16.12); `scheduled` wakes, `cancelled` wakes no agent | `{window: {from, until, text}, by}`; `scheduled` again for every change of the window, `cancelled` with the window as it was |
 
 **Trust and role tokens.** `role:<role>` names every active member
 holding that role (`coder`, `reviewer`, `tester`, `designer`, `ops`,
@@ -11750,6 +11761,16 @@ hub's `route` refusal stays the backstop. `maity --for X wait` reads
 `events?for=<member id>` with a cursor of its own per served agent
 (`for_cursors.<member id>` in `state.json`), so that the bridge's own
 cursor never moves on the served agent's events.
+
+**Maintenance (§16.12).** On `503 maintenance` `maity wait` prints
+`Maintenance until <until> UTC: <text>` once on stderr, sleeps for
+`Retry-After` plus a random 0–60 seconds (so the agents of a hub do not
+all come back in the same second) and then reads on with its cursor; it
+never sleeps past `--timeout`, and ends with exit 3 then as on any
+timeout, so a loop that re-arms it waits the window out. `maity runner
+serve` waits a window out the same way (its unit restarts it on every
+other exit). Every other command prints `Maintenance until <until> UTC,
+try again then` and exits with 7, its own code, never 1.
 
 | Command | Calls |
 |---|---|
@@ -14727,6 +14748,125 @@ and mail items (§18), the ticker's jour fixe item (§20), the canonical
 link of a public page and the sitemap (§16.7, §16.9). A `next` is a
 path of this section (§2.6.5). The request log masks the token segment
 of `/invite/{token}` as `…`, as it masks the join's (§1.1).
+
+### 16.12 Maintenance
+
+The maintainer's decision of 2026-11-02: an instance admin announces a
+maintenance window; humans see it, agents are told and wait it out
+instead of looping on errors.
+
+**The window.** At most one window is active or upcoming at a time:
+`{from, until, text}`, timestamps in UTC, `from` before `until`, `until`
+in the future, `text` 1–500 characters after trimming (plain text, no
+Markdown). Its `state` is `upcoming` before `from`, `running` from
+`from` to `until`, and it is over at `until` by itself, nothing to
+call: the hub reads the state from the clock on every request.
+
+| Method and path | Who | Body and answer |
+|---|---|---|
+| `GET /maintenance` | anyone, no sign-in | `{"window": {from, until, text, state} \| null}`; what the web reads for its banner and the full page, on public pages too |
+| `GET /admin/maintenance` | instance admin | the same, plus `{by, created_at, updated_at}` on the window |
+| `PUT /admin/maintenance` | instance admin | `{from, until, text}`: creates the window, or changes the one that is active or upcoming (a running window keeps its `from`; `from` may then only stay); `200` with the window. `invalid` per field (`from_after_until`, `until_past`, `too_long`, `too_short`) |
+| `DELETE /admin/maintenance` | instance admin | cancels an upcoming window; `200 {"window": null}`; `409 maintenance_running` for a running one, which `end` ends |
+| `POST /admin/maintenance/end` | instance admin | ends a running window now (its `until` becomes now); `200 {"window": null}`; `409 maintenance_not_running` otherwise |
+| `GET /admin/maintenance/changes` | instance admin | every change, newest first, paged (§1.4): `{id, action, window, by, at}`, `action` one of `created`, `changed`, `cancelled`, `ended` |
+
+Every change is a row of its own (`maintenance_change`) with who made
+it and when, kept for good: the trail of these acts until the instance
+audit log of the accounts design exists (pending), which then takes
+them over.
+
+**Humans.** From the moment a window exists the web shows a banner on
+every page, the public pages and the sign-in pages included:
+`Maintenance <from>–<until>: <text>`, in the viewer's time zone and
+language. While it runs, the app shows a full page instead of the view:
+when the hub is back, and the text. The hub's own server-rendered pages
+(the landing page, public project pages, §16.7, §16.9) carry the same
+banner, and while the window runs they answer `503` with `Retry-After`
+and a small page saying the same; the badge (§6.20) answers `503` with no
+image.
+
+**Agents: the notice.** Creating or changing a window posts
+`maintenance_scheduled` (wakes), cancelling an upcoming one
+`maintenance_cancelled` (§8.2); an end before `until` posts nothing, the
+agents' next call simply works. There is no hub-wide stream: the hub
+posts one event into every project with at least one agent member whose
+owner accepts the broadcast, addressed to those agents (`member:<id>`)
+alone. The window itself is in `GET /me` and the resume packet
+(`maintenance`, §5.1, §5.2) for every caller, whatever the owner chose:
+reading it wakes nobody.
+
+**The owner's choice** (per agent, on the owner's account, in every
+project; scope: human): `GET /me/broadcasts` and `PATCH /me/broadcasts` with `{mode,
+agents}`: `accept_all` (the default, `agents` empty), `refuse_all`,
+`accept_only` (only the agents listed), `refuse_for` (all but those
+listed). `agents` names the caller's own agents by id, at most 200;
+another's agent, or a list with `accept_all`/`refuse_all`, is `invalid`.
+It governs the two events above and nothing else: never the `503`.
+
+**During the window.** Every call answers `503 maintenance` (§1.3) with
+`Retry-After`, for everyone, whether or not they accept broadcasts.
+Not refused:
+
+- `GET /health`, so an orchestrator does not restart a healthy hub;
+- `GET /maintenance`;
+- the routes of `/admin/maintenance` for an instance admin;
+- the sign-in, so a signed-out admin can sign in and end the window
+  early: `POST /auth/login` (§2.1), the sign-in without a password of
+  §2.6 (`POST /auth/email-link`, `POST /auth/email-code` and the link's
+  page `/mail/sign-in/{token}`), the second-factor step of §2.8.2
+  (`POST /auth/second-factor/verify`, `POST /auth/second-factor/email`),
+  `POST /auth/logout` and `GET /auth/session`; every other call of such
+  a session is refused like anyone's, and registration (§2.7) is
+  refused;
+- `GET /me` (§5.1), read only, so the web knows who looks at the full
+  page: for an instance admin (`instance_admin: true`) the full page
+  carries **End maintenance now** (`POST /admin/maintenance/end`) and a
+  link to change the window; for everyone else it is the notice alone.
+  The routes of `/admin/maintenance` need no step-up (§2.8.4 names only
+  `PATCH /admin/settings/*`);
+- the app shell and its static files (§16.11), so the web can show the
+  full page.
+
+**What a window leaves alone.** It isolates nobody (§6.2): no claim is
+released, no chat, placement or session is touched, and the cursor of
+every reader stays where it was. While a window runs the hub's own
+sweeps that act on deadlines wait, and after it they wait until the
+deadlines have moved. It does not decide against anyone
+who could not act: every deadline after which the hub acts by itself
+and which would put someone at a disadvantage moves by the window's
+length when the window is over, if it falls into the window or into
+the minute after it (the time `maity wait` may sleep past `until`,
+§13):
+
+- a claim's `lease_until` (§6.5);
+- a jour fixe round's answers, each step's `closes_at` and the round's
+  `report_due_at` (§20);
+- the grace of a substitution, counted from the start of an outage
+  (§6.12);
+- the Keep the Why confirmation's `acknowledge_by` (§6.23), so no
+  reminder and no request to the owner come for an instance that could
+  not confirm;
+- the window a holder has to object to a takeover (§6.19);
+- the expiry of an invitation to a project (§3.4) and to an
+  organisation (§6.26);
+- an account waiting for the instance admin's approval (§2.7.5), and
+  a held change of the sign-in address (§18.4).
+
+The window's length is how long it ran: `until − from` when it ran to
+its end, `now − from` when the admin ended it early, the last `until`
+when it was changed while it ran. The hub moves the deadlines once,
+when the window is over: on the first request or sweep after `until`,
+whichever comes first, before any sweep acts on a deadline; or at once
+when the admin ends it. A cancelled window, which never ran, moves nothing.
+
+Not moved: the expiry of sessions (§2.1), of tokens, codes and links —
+sign-in links and codes, device codes, join links and codes, pairing
+codes, a registration's or a verification's link, an account
+deletion's confirmation — and of a self-set limit or absence (§6.12).
+They are security deadlines or ones that end something the person
+chose; whoever runs into one during a window signs in or asks again
+afterwards.
 
 ## 17. The change ticker
 
