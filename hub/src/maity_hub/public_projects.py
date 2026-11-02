@@ -388,7 +388,7 @@ def dependents(conn: Connection, project_id: str) -> list[tuple[str, str]]:
     page: served, named and shown alike), its agents' pages, and the person pages that list it
     or its agents: its human members' and the owners' of its agent members, who need not be
     members themselves (§16.9)."""
-    from maity_hub import public_agents
+    from maity_hub import public_agents, public_cards
 
     m = t.membership.c
     members = conn.execute(
@@ -402,6 +402,7 @@ def dependents(conn: Connection, project_id: str) -> list[tuple[str, str]]:
     ).scalar()
     return [
         (VIEWS, project_id),
+        *[(public_cards.KIND, card) for card in public_cards.of_project(conn, project_id)],
         *([("organisation", org)] if org else []),
         *public_agents.pages_of_project(conn, project_id),
         *[("person", person) for person in people],

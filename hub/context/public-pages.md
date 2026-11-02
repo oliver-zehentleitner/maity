@@ -568,3 +568,26 @@ row, which makes a private organisation and an unknown handle the same `not_foun
 owner has its page turned off rather than appearing under the new one unasked.
 
 **Rejected:** a list of the organisation's members with public profiles: §16.9 says who belongs to it is not public.
+
+## A card has its own page at its dashboard address, with its text and without its notes
+
+**Id:** e3bcdf82-e7f1-447d-becd-43171c8cd513
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer to req-0qvbrqwddkc6 of 2026-11-02 (a card's text public, as an issue on a forge); the plan the lead approved on tsk-1g5f436h6ez1
+**See:** public-pages.md#a-visitor-gets-the-stored-page-inside-the-app-shell-and-aspublic-the-bare-page — 70c80e4f-bf45-430d-beb2-7abbab2c8e4c — as of 2026-11-02
+**Revisit when:** the maintainer decides on notes, or card writes grow slow enough that a render per write shows
+
+A card of a project with a public page is a third kind of page, `card`, at `/{owner}/{slug}/tasks/{id}`, the address
+a member opens, and the Board links each id to it. It carries the title, status, label, the holder as the Board
+names them, and the body as Markdown without raw HTML (`ugc`, as the project's About). A `security` card has a page
+only once it is `done`, a held card none; the moderation paths and every card event call `touch` for it, as they do
+for the Board, so the page follows the card in the same transaction. Notes, history, requests and links stay out:
+whether notes are public is the maintainer's open question, and leaving them out is the side that can be widened.
+
+**Rejected:**
+- The text on the Board itself: the Board would carry up to 200 bodies per column, and a card would have no address
+  to link from a mail or a commit.
+- A separate public address such as `/{owner}/{slug}/cards/{id}`: two addresses for one card, against the rule
+  that a public page has the address a member opens (§16.11).
