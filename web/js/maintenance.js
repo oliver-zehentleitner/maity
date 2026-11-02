@@ -94,8 +94,9 @@ window.Maity = window.Maity || {};
     const w = current();
     if (!w) { if (old) parent.removeChild(old); return; }
     const words = M.t("maintenance.banner", Object.assign(span(w), { text: w.text }));
-    if (old && old.textContent === words) return;
     const banner = h("p", { id: "maintenance-banner", class: "maintenance-banner" + (w.state === "running" ? " running" : ""), role: "status" }, words);
+    // The same words can change state: an upcoming window starts under an open page.
+    if (old && old.textContent === words && old.className === banner.className) return;
     if (old) parent.replaceChild(banner, old);
     else parent.insertBefore(banner, header);
   }

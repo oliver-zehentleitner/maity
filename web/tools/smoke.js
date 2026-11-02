@@ -10756,6 +10756,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(mtSection().querySelector(".maintenance-change-list")).startsWith("Announced"), "maintenance: the change is listed");
   await go("#/all"); await mtSettle();
   expect(mtBanner() === mtUp && !main.querySelector(".maintenance-page") && main.querySelector(".view-all"), "maintenance: an upcoming window leaves the view, the banner stays across pages");
+  // The start passes under the open page (the boundary timer): the same words, the banner turns running.
+  const mtNow = win.Maity.api.now;
+  win.Maity.api.now = () => Date.now() + 3600000 + 60000;
+  win.Maity.maintenance.drawBanner();
+  expect(mtBanner() && mtBanner().className === "maintenance-banner running", "maintenance: an upcoming window that starts under the page turns the banner running");
+  win.Maity.api.now = mtNow;
+  win.Maity.maintenance.drawBanner();
+  expect(mtBanner() && mtBanner().className === "maintenance-banner", "maintenance: back before the start, the banner is upcoming again");
   await go("#/admin/maintenance"); await mtSettle();
   btn(mtSection(), "Cancel the window").click(); await mtSettle();
   expect(!mtBanner() && text(mtSection()).includes("No maintenance window is announced.")

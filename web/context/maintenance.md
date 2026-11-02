@@ -57,9 +57,10 @@ test see the full page as a browser would.
 
 A page drawn for a running window marks itself (`aware`), and so does
 the sign-in page. A refusal it still meets then redraws nothing. Without
-that mark, the sign-in page's read of `/auth/methods`, which the hub
-refused until the maintainer exempted it, would redraw the page in an
-endless loop.
+that mark, a refused read on the sign-in page would redraw the page in
+an endless loop: `/auth/methods` was refused by the hub until #1241
+opened it on the lead's decision (tsk-12hwmpykz2ht), and a hub without
+that change still refuses it.
 
 **Reason:** a single source would miss cases. A visitor has no `/me`. A
 window announced while a page is open reaches it through `/me` or the

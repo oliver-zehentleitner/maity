@@ -1447,8 +1447,9 @@ window.Maity = window.Maity || {};
     maintenanceChanges.unshift({ id: localId("mch"), action, window: { id: row.id, from: row.from, until: row.until, text: row.text },
       by: me().member.id, at: nowIso() });
   }
-  // What a running window does not refuse (§16.12, MAINTENANCE_OPEN in the hub's middleware), with
-  // the sign-in page's two reads the maintainer added (tsk-12hwmpykz2ht); GET /me is read only.
+  // What a running window does not refuse (§16.12, MAINTENANCE_OPEN in the hub's middleware),
+  // the sign-in page's two reads included, as the lead decided on tsk-12hwmpykz2ht (hub: #1241);
+  // GET /me is read only.
   const MAINTENANCE_OPEN = /^\/(health|maintenance|admin\/maintenance(\/end|\/changes)?|auth\/(login|logout|session|methods|pages\/sign_in|email-link|email-code|second-factor\/(verify|email)))$/;
 
   const PRESETS = {
