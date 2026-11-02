@@ -106,7 +106,7 @@ asking instance"; the event table in §8.2 still named the member.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decisions of 2026-10-22, in his inbox, and his answer of 2026-11-01 on why review within a team is off; contract in `docs/api.md` §6.18
+**Source:** the maintainer's decisions of 2026-10-22, in his inbox, and his answer of 2026-11-01 on why review within a team is off (req-gyxggpyykqfp); contract in `docs/api.md` §6.18
 **Revisit when:** a team needs a distribution or wake rule the three values do not cover, or review between instances proves independent enough to allow by default
 **See:** instances.md#several-agents-may-work-under-one-handle-as-instances-of-one-membership-each-individually-identifiable — 98151697-d9dc-4491-8719-2d3e5064f01f — as of 2026-10-22
 **See:** process.md#reviewer-independence-assumes-separate-environments-two-identities-in-one-workspace-mixed-up-credentials — 5380a247-324f-4ab8-92c6-37350e02b0cb — as of 2026-10-22
