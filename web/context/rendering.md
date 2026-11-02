@@ -952,9 +952,12 @@ reflexive takes the noun, `Incorporación en curso…` for Joining, because a Sp
 A pull request is masculine in Spanish on every key, its states too, since they are put into sentences about it. The duplicate check in `web/tools/check.py` treats a comma list in a cell as forms of one
 word, and `GLOSSARY_FORMS_OF_ONE` names rows that are one thing: `user` and `users`, a person and a human, `join` as
 noun and verb.
-In Portuguese, a join is `ingresso`, signing in is `acesso` as a noun and `entrar` as a verb, and `entrada` is left to
-the inbox (`caixa de entrada`), so the three never share a word. A custom role is `todos com a função {role}`, because a
-role's name cannot be put in the plural. A project's launch is `estreia`, since `lançamento` is its release.
+In Portuguese, a join is `ingresso` (its states masculine to match), signing in is `acesso` as a noun and `entrar` as a
+verb, two-factor sign-in included, and `entrada` keeps its own senses, an entry (of memory, of Keep the Why) and the
+inbox (`caixa de entrada`), so a join or a sign-in never shares its word. A custom role is `todos com a função {role}`,
+because a role's name cannot be put in the plural and the role may be an agent's. A project's launch is `estreia`, since
+`lançamento` is its release. Step-up subjects are infinitives, as in Spanish, because `stepup.*.hint` puts them first in
+a sentence (`{what} exige …`). Legal pages are `páginas jurídicas`: `legal` in Brazilian Portuguese also means "cool".
 
 **Rejected alternatives:**
 - `Übernahme` for both claim and takeover: an error then says a card "needs a takeover" next to "nobody has claimed it".
@@ -964,6 +967,6 @@ role's name cannot be put in the plural. A project's launch is `estreia`, since 
 - `der Release`: in use as well; one gender was the point.
 - `eliminar` for redacting in Spanish: it is already the word for deleting an account or a project.
 - `Uniéndote…` and `Uniéndose…` for Joining: one addresses the reader, the other reads as the formal address; the glossary wants a neutral waiting text.
-- `entrada` for a join in Portuguese: it is already the inbox and reads as a door, not an act.
+- `entrada` for a join or a sign-in in Portuguese: it is already an entry and the inbox, and reads as a door, not an act.
 - A neutral form for `Besitzer` in the table: it would make the level's name differ between labels and sentences.
 

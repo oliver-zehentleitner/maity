@@ -241,7 +241,7 @@
   },
   "mail_links.reset_title": {
     "en": "c5c9e3b89352c1fb",
-    "text": "6e22d75f00118bc9"
+    "text": "9d8b1bf614d342aa"
   },
   "mail_links.unsub_button": {
     "en": "370a9b159d6a6096",
@@ -341,15 +341,15 @@
   },
   "notify.tf_changed": {
     "en": "fa4d18720be24156",
-    "text": "6018e53fabe5940c"
+    "text": "682c7147e2bedc43"
   },
   "notify.tf_disabled": {
     "en": "ad639be2f0b858c8",
-    "text": "881410fa274c3737"
+    "text": "f84f967959e35c2a"
   },
   "notify.tf_enrolled": {
     "en": "a53441ed564f30d1",
-    "text": "56c289ed9f6ec377"
+    "text": "49c8cb808ad22797"
   },
   "notify.tf_failed": {
     "en": "bc7de30f70be93d7",
@@ -357,7 +357,7 @@
   },
   "notify.tf_instance_off": {
     "en": "a6da094fa8eb3d8c",
-    "text": "652da5dac253d899"
+    "text": "5edf35bedfbd0501"
   },
   "notify.tf_recovery_code_used": {
     "en": "14ab6a08b02918e0",
@@ -369,7 +369,7 @@
   },
   "notify.tf_reset": {
     "en": "515f3177da9bc9f0",
-    "text": "c576acc19545711c"
+    "text": "0433bb5183e02fc0"
   },
   "notify.unknown_os": {
     "en": "761c4d589d9d161f",
@@ -481,7 +481,7 @@
   },
   "second_factor_reset.subject": {
     "en": "7b77b043ef40b02d",
-    "text": "707341d1c82a0a17"
+    "text": "14299279fdb7424a"
   },
   "second_factor_reset.text": {
     "en": "80727452054ee780",
