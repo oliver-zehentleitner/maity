@@ -127,6 +127,8 @@ def at_a_terminal(env: dict[str, str], command: str, typed: bytes) -> tuple[int,
         if not sent and b"up" in seen:
             os.write(terminal, typed)
             sent = True
+    else:  # the deadline passed: a hung script must not hang the run with it
+        os.kill(pid, signal.SIGKILL)
     os.close(terminal)
     _, status = os.waitpid(pid, 0)
     return os.waitstatus_to_exitcode(status), seen

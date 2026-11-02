@@ -3,12 +3,16 @@ as a visitor reaches them, and as the admin sees them before saving."""
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 
 from maity_hub import render
+from maity_hub.app import create_app
+from maity_hub.config import Settings
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_landing import GOOD, HERO, text
@@ -194,6 +198,19 @@ def test_a_hub_without_a_dashboard_names_no_social_image(owner: flow.Human) -> N
         setting, "en", public_url="https://hub.example", legal=legal, stats=None, social_image=False
     )
     assert "og:image" not in kept and 'name="twitter:card" content="summary"' in kept
+
+
+def test_the_served_landing_page_names_the_image_only_with_a_dashboard(
+    owner: flow.Human, database_url: str, migrated: Engine
+) -> None:
+    assert publish(owner).status_code == 200
+    env = {"MAITY_DATABASE_URL": database_url, "MAITY_PUBLIC_URL": "https://hub.example"}
+    served = Settings.from_env(env)
+    assert served.web_dir is not None
+    with TestClient(create_app(served, migrated)) as client:
+        assert "og:image" in client.get("/").text
+    with TestClient(create_app(replace(served, web_dir=None), migrated)) as client:
+        assert "og:image" not in client.get("/").text
 
 
 def test_a_variant_is_served_at_its_address_to_every_visitor(

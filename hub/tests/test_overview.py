@@ -103,6 +103,19 @@ def test_the_overview_counts_only_requests_the_caller_may_see(
     }
 
 
+def test_a_human_reporter_has_no_instance(owner: flow.Human) -> None:
+    card = task(owner)
+    assert owner.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {}).status_code == 200
+    response = owner.post(
+        f"/projects/maintainer/maity/tasks/{card['id']}/report",
+        {"summary": "done", "code": False, "pr_status": "none"},
+    )
+    assert response.status_code == 200, response.text
+    [shown] = owner.get("/projects/maintainer/maity/overview").json()["reports"]
+    assert shown["reported_by"]["member_id"] == owner.id
+    assert shown["reported_by"]["instance"] is None
+
+
 def test_the_overview_lists_the_latest_reports_newest_first(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
