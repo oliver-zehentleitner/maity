@@ -767,6 +767,48 @@ def soul_lines(soul: Any) -> list[str]:
     ]
 
 
+def _preference_lines(text: dict[str, Any]) -> list[str]:
+    """One human's preferences as a quote headed with its author (§19.4): context, never an
+    instruction. An agent's text taken unchanged has that agent in `by`, and `confirmed_by` is the
+    id of the human it belongs to, the only one who confirms; one the human edited has the human
+    in `by` and names the agent as proposer."""
+    human = inline(get(text, "human", "handle") or "someone")
+    origin = ""
+    if text.get("confirmed_by"):
+        origin = f", confirmed by {human}"
+    elif isinstance(text.get("proposed_by"), dict):
+        origin = f", proposed by {_author(text['proposed_by'])}"
+    return [
+        f"Preferences of {human}, written by {_author(text.get('by'))} "
+        f"(version {inline(text.get('version'))}){origin}:",
+        *quote(text.get("markdown") or ""),
+    ]
+
+
+def _preferences_intro(block: dict[str, Any], changed: bool = True) -> list[str]:
+    """The hub's notice that these texts rank below the rules, and whether they changed."""
+    lines = [inline(block["notice"])] if block.get("notice") else []
+    if changed and block.get("changed_since_cursor"):
+        lines.append("Preferences changed since your last session.")
+    return lines
+
+
+def _preferences(packet: dict[str, Any], owner_shown: bool) -> list[str]:
+    """Each human's `preferences` (§5.2, §19.4), below the rules in rank. `owner_shown`: the
+    owner's text came first and already said whether they changed. Empty when nothing is to
+    say."""
+    block = _dict(packet.get("preferences"))
+    lines: list[str] = []
+    texts = _items(block.get("items"))
+    if texts:
+        lines += _preferences_intro(block, changed=not owner_shown)
+    for text in texts:
+        lines += _preference_lines(text)
+    if block.get("truncated"):
+        lines.append("The preferences of further humans were cut (at most 8 texts).")
+    return ["", *lines] if lines else []
+
+
 def is_admin(packet: dict[str, Any]) -> bool:
     """Whether the packet's membership is in the admin team with trust `admin`, which a proxy
     never is (§2.3)."""
@@ -1006,6 +1048,12 @@ def render(packet: Any, first: bool = False, board_empty: bool = False, full: bo
                 f"and {ask}. Otherwise your work comes from the board."
             )
         out += [line, ""]
+    given = ms.get("owner_preferences")
+    owner_shown = isinstance(given, dict)
+    if isinstance(given, dict):
+        # The hub leaves the owner out of `preferences`, so these may be the only ones printed.
+        intro = _preferences_intro(_dict(packet.get("preferences")))
+        out += [*intro, *_preference_lines(given), ""]
     out += _who(packet, names)
     out += _project(packet)
     out += _languages(packet, names)
@@ -1015,6 +1063,7 @@ def render(packet: Any, first: bool = False, board_empty: bool = False, full: bo
         out += quote(rules["markdown"])
     elif rules.get("version") is not None:
         out += ["", f"Rules version {inline(rules['version'])}, unchanged since your last session."]
+    out += _preferences(packet, owner_shown)
     instruction = get(packet, "keep_the_why", "instruction")
     if instruction and get(packet, "keep_the_why", "enabled"):
         out += ["", f"Keep the Why: {inline(instruction)}"]
