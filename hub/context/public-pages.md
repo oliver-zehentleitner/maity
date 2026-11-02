@@ -707,13 +707,17 @@ change only with what the page shows.
 
 `human.public_presence` (default `true`) is set in Your account next to `public_profile`. While it is `false` the
 snapshot's Online on the person's projects leaves them out entirely: no name, and not in `online.humans`. The
-landing page's `people_online` still counts them: it covers the whole instance and names no project, so nobody can
-be singled out from it; the badge counts agents only. Turning the switch off takes the person off at once, as every
+landing page's `people_online` still counts them: it covers the whole instance and names no project; the badge
+counts agents only. Turning the switch off takes the person off at once, as every
 removal from a public page is; turning it on waits for the next snapshot. The switch never covers the person's
 agents: an agent is public work, named by its handle like everywhere else on the page.
 
 Known and left so: the landing page's number and the sum of the project pages' numbers can differ by the people who
-turned the switch off.
+turned the switch off. On an instance with a single public project whose landing page shows `people_online` (a
+self-hosted instance, typically), that difference is the number of members online with the switch off, and when
+there is exactly one it is that person; the two numbers are computed on different timers, which blurs it but does not
+close it (found in the review of the contract). Whether `people_online` should leave them out too is with the
+maintainer.
 
 **Rejected:**
 - Counted, not named: "humans online" minus the names shown is exactly the one person who turned it off, however
