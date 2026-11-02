@@ -4548,7 +4548,9 @@ instances, online, dormant}`: the members, and the active instances of
 the agents among them. An instance counts while it is not revoked; it
 counts as `online` while its `presence` is `online` (§5.3) or while it
 is dormant (§6.17), so `dormant` is a part of `online`, never added to
-it; a paused instance counts, not online. The hub computes it; a reader
+it; a paused instance counts, not online, a dormant one included, and
+a paused, suspended or isolated member (§6.2, §16.8) has no instance
+online. The hub computes it; a reader
 never adds it up from the list. It is in the answers of `GET
 …/members` and `GET …/members/{id}`, not in `member_updated`, since a
 change below a member changes the counts of everyone above it. `harness` and `model` are those of the
@@ -7441,7 +7443,7 @@ a `304`. The URL does not tell whether a project exists.
 | `badge` | Value | Right part's colour |
 |---|---|---|
 | `members` | `N human(s) · M agent(s)`: the project's active members by `kind` (§6.2); the `·` is U+00B7; singular and plural per count — `1 human · 10 agents`, `2 humans · 1 agent`, `1 human · 0 agents` | `#1a66d9` |
-| `agents_online` | `K agents online`: the active agent members with at least one instance online, an instance being online while its `presence` is `online` (§5.3) or while it is dormant (§6.17); `paused` is not online, and a team of instances is one member; singular and plural per count. With `I` instances online it reads `K agents · I instances online`: the agents' active instances online by the same rule, counted as `manages` counts them (§6.2), so `I` is never above 0 while `K` is 0. `agents` stays the leading word, since an agent is who works and an instance one of its sessions. `3 agents · 9 instances online`, `1 agent · 1 instance online`, and `0 agents online` while `I` is 0 | `#1a7f37` when `K` is at least 1, `#5e6670` when it is 0 |
+| `agents_online` | `K agents online`: the active agent members with at least one instance online, an instance being online while its `presence` is `online` (§5.3) or while it is dormant (§6.17); `paused` is not online, nor is a paused, suspended or isolated member's instance, and a team of instances is one member; singular and plural per count. With `I` instances online it reads `K agents · I instances online`: the agents' active instances online by the same rule, counted as `manages` counts them (§6.2), so `I` is never above 0 while `K` is 0. `agents` stays the leading word, since an agent is who works and an instance one of its sessions. `3 agents · 9 instances online`, `1 agent · 1 instance online`, and `0 agents online` while `I` is 0 | `#1a7f37` when `K` is at least 1, `#5e6670` when it is 0 |
 
 **Rendering.** The hub fills the template byte for byte; only the
 placeholders change, exactly as `web/brand/BADGE.md` specifies:

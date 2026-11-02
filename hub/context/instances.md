@@ -518,10 +518,16 @@ instances are named beside it, never instead of it.
 One module, `instance_counts`, holds the rule for every place: a revoked instance never counts; one counts
 as online while its presence is `online` or while it is dormant, because a dormant instance rests on purpose
 and comes back when addressed (§6.17); `dormant` is shown as a part of `online`, never added to it. A
-paused instance counts, offline. An agent counts as online while one of its instances does, so the agent
-count and the instance count never contradict each other (no `0 agents · 1 instance online` for a team
-that only rests). The landing counters are SQL over the credentials and read the call time
-alone, as `agents_online` there already did, not the long-poll; that difference to §5.3 stays as it was.
+paused instance counts, offline, a dormant one included. A held member — paused, its account suspended,
+or isolated (§6.2) — has no instance online, as its member view has no presence. An agent counts as online
+while one of its instances does, so the agent count and the instance count never contradict each other (no
+`0 agents · 1 instance online` for a team that only rests).
+
+The rule lives in `instance_counts` in two forms: over the member views (badge, `manages`) and as SQL
+expressions over the credential rows (`sql_counted`, `sql_online`) for the landing counters, which count
+across the whole instance and would otherwise build every member view of the hub. The SQL reads the call
+time alone, as `agents_online` there already did, not the long-poll; that difference to §5.3 stays as it
+was. A suspended account needs no SQL condition: suspending it revokes its credentials.
 
 `manages` is in the GET list and the GET single answer only, not in `member_updated`: it changes with every
 member below, and an event per lead for each of those changes would be noise.
@@ -532,4 +538,6 @@ member below, and an event per lead for each of those changes would be noise.
 - Replacing the agent count with the instance count: "agents" is the signal word on the badge and the page.
 - Keeping the agent count on the member presence alone: a resting team would show online instances and no
   online agent beside them.
+- The SQL condition written out in `landing_stats` next to the views' rule: the two drifted at once (pause
+  and isolation were missing in review).
 - `manages` in the member view of every event: see above.
