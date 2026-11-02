@@ -13026,7 +13026,7 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
 | `MAITY_SMTP_FROM` | `from` | `{address, name?}`; the envelope sender and `From:`. In the environment `maity@example.org` or `Maity <maity@example.org>` |
 | `MAITY_SMTP_REPLY_TO` | `reply_to` | `null` or an address |
 | `MAITY_MAIL_MAX_PER_HOUR` | `max_per_hour` | notification mail, all humans together; default 500; over it, mail waits for the next hour and is merged into each human's next mail (§18.5). Security mail does not count here |
-| `MAITY_MAIL_SECURITY_MAX_PER_HOUR` | `security_max_per_hour` | security mail (verification, `immediate` `security` notifications, the old-address notice), all humans together; default 100; neither notification nor sign-in mail counts here. Over it, security mail is queued for the next hour, never dropped |
+| `MAITY_MAIL_SECURITY_MAX_PER_HOUR` | `security_max_per_hour` | security mail (verification, `immediate` `security` notifications and the mails sent at once whatever the mode, §18.4), all humans together; default 100; neither notification nor sign-in mail counts here. Over it, security mail is queued for the next hour, never dropped |
 | `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR` | `sign_in_max_per_hour` | sign-in links and codes (#169, §2.6.3), all humans together; default 60. Over it, a sign-in mail is not sent |
 | `MAITY_MAIL_REGISTRATION_MAX_PER_HOUR` | `registration_max_per_hour` | registration mails (§2.7.1), all addresses together; default 30. Over it, a registration mail is not sent |
 | — | `enabled` | `false` stops every mail — notification, verification and security — without losing the settings; the test send still works |
