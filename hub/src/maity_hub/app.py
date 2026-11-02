@@ -46,6 +46,7 @@ from maity_hub import (
     public_people,  # noqa: F401  (registers the kind of page)
     public_project_views,  # noqa: F401  (registers the kind of page)
     public_projects,  # noqa: F401  (registers the kind of page)
+    public_snapshot,
     registration_accounts,
     reports,
     request_stats,
@@ -266,6 +267,8 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         load_watch = asyncio.create_task(request_stats.watch_load(request_stats.LOAD))
         pages_worker = public_pages.Worker(engine, settings)
         pages_worker.start()
+        snapshot_worker = public_snapshot.Worker(engine, settings)  # §16.9, no live connection
+        snapshot_worker.start()
         # A long-poll wakes when another replica writes (hub/context/replicas.md 387c2409).
         listener = None
         if engine.dialect.name == "postgresql":
@@ -280,6 +283,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
         if listener is not None:
             listener.stop()
         pages_worker.stop()
+        snapshot_worker.stop()
         load_watch.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await load_watch

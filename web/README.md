@@ -1332,6 +1332,14 @@ file, the page reads `fixtures/fixtures.js`, a generated bundle of the
 JSON files. After editing a fixture, run `make fixtures`; `make check`
 fails while the bundle is stale.
 
+`make check` also compares the fixture hub's answers to the requests in
+`tools/shape-requests.json` with the hub's, recorded in
+`tools/hub-shapes.json`: a key or type the hub does not send is a
+finding, unless `tools/fixture-shapes-baseline.json` lists it, which only
+shrinks. After a change to the hub's answers, run `make shapes`
+(`HUB_PYTHON=` a Python with the hub's test requirements) and commit the
+file (`context/fixtures.md`).
+
 ## Words: the text catalog
 
 The dashboard's sentences come from a catalog per language,
@@ -1446,12 +1454,13 @@ request.
 `make pseudo` (`tools/pseudo_run.py`, Playwright, no hub) opens every route `tools/smoke.js` visits, in the fixtures,
 with a pseudo catalog made from `i18n/en.json`: each text marked `⟦…⟧` and accented, placeholders kept. The site is
 copied for the run, so the pseudo language is never in the repository. What carries no mark is listed by the file that
-holds its words; data of the fixtures, dates, handles and addresses are left out. `--report FILE` writes it as JSON,
-`--strict` (`make pseudo STRICT=1`) fails on any.
+holds its words; data of the fixtures, dates, handles and addresses are left out, and so is what sits under
+`translate="no"` (an example, a language's own name, a technical reason: give it that attribute when a page shows it as
+it is on purpose) or `aria-hidden="true"`. `--report FILE` writes it as JSON, `--strict` (`make pseudo STRICT=1`) fails
+on any.
 
 It sees a page as it opens: what only a click shows, and what the fixtures do not reach, stays with the reviewer.
-CI runs it in `web-e2e` as a report (`pseudo-report.json` among the screenshots) and turns strict with the last
-language's pull request.
+CI runs it strict in `web-e2e`, with `pseudo-report.json` among the screenshots.
 
 ## Browser end-to-end test
 

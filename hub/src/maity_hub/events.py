@@ -321,10 +321,18 @@ def emit(
         from maity_hub import public_pages
 
         public_pages.touch(conn, "project_views", project_id, removal=kind != "task_created")
+        if kind != "task_created":  # a card turning `security` or held takes a ticker entry off
+            public_pages.touch(conn, "project", project_id)
         # And so does the card's own page (§16.9, "Card").
         card_id = subject[1] if subject and subject[0] == "task" else payload.get("id")
         if isinstance(card_id, str):
             public_pages.touch(conn, "card", card_id, removal=kind != "task_created")
+    elif kind in NOTE_KINDS and project.public_page == "on" and subject and subject[0] == "task":
+        # A card's notes are on its page (§16.9): a new one adds, a resolution changes its
+        # state; the redaction of one renders the page from `notes.redact`.
+        from maity_hub import public_pages
+
+        public_pages.touch(conn, "card", subject[1], removal=False)
     return seq
 
 
@@ -343,6 +351,9 @@ CARD_KINDS = frozenset(
         "task_merged",
     }
 )
+
+# The events of a card's notes: the card's public page follows them (§16.9).
+NOTE_KINDS = frozenset({"note_added", "note_resolved"})
 
 # The trusts that read every event of the project, a proxy included (§2.3, §8.2).
 SEE_ALL_TRUSTS = ("owner", "admin")

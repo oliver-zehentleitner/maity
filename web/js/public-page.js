@@ -89,13 +89,13 @@ window.Maity = window.Maity || {};
     const box = h("input", { type: "checkbox", id: "public-profile" });
     // One line: the hub refuses every line break in this text.
     const bio = profileField("public-bio", M.t("public_profile.bio"), { maxlength: "280" });
-    const website = profileField("public-website", M.t("public_profile.website"), { type: "url", placeholder: "https://example.org", maxlength: "200" });
+    const website = profileField("public-website", M.t("public_profile.website"), { type: "url", translate: "no", placeholder: "https://example.org", maxlength: "200" });
     const networks = {
       github: profileField("public-github", M.t("person.network.github")),
       gitlab: profileField("public-gitlab", M.t("person.network.gitlab")),
       x: profileField("public-x", M.t("person.network.x")),
-      mastodon: profileField("public-mastodon", M.t("person.network.mastodon"), { placeholder: "@name@example.social" }),
-      bluesky: profileField("public-bluesky", M.t("person.network.bluesky"), { placeholder: "name.example.org" }),
+      mastodon: profileField("public-mastodon", M.t("person.network.mastodon"), { translate: "no", placeholder: "@name@example.social" }),
+      bluesky: profileField("public-bluesky", M.t("person.network.bluesky"), { translate: "no", placeholder: "name.example.org" }),
       linkedin: profileField("public-linkedin", M.t("person.network.linkedin")),
       discord: profileField("public-discord", M.t("person.network.discord")),
     };

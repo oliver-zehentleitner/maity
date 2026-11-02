@@ -2,10 +2,12 @@
 dashboard's address of the card, while the project's page is served.
 
 A card's text is public like an issue on a forge: the maintainer's decision of 2026-11-02
-(hub/context/public-pages.md). What stays out is everything around it: notes, history,
-requests, links, release and contract text. A card labelled `security` has a page only once
-it is `done`, a card under a moderation hold has none, and the holder is named only as the
-Board names them. Whatever changes a card calls `public_pages.touch` for the kind `card`.
+(hub/context/public-pages.md), and so are its notes, as comments on an issue (a second
+decision of that day). What stays out is the rest around it: history, requests, links,
+release and contract text. A card labelled `security` has a page only once it is `done`, a
+card under a moderation hold has none, and the holder and the notes' authors are named only
+as the Board names a holder; a redacted note shows as removed, without its reason. Whatever
+changes a card or its notes calls `public_pages.touch` for the kind `card`.
 """
 
 from __future__ import annotations
@@ -41,6 +43,29 @@ def _gone_agent(conn: Connection, membership_id: int) -> bool:
     )
 
 
+def _notes(conn: Connection, card_id: str) -> list[Any]:
+    """The card's notes, oldest first (§6.16)."""
+    n = t.card_note.c
+    return list(
+        conn.execute(
+            select(t.card_note).where(n.card_id == card_id).order_by(n.created_at, n.id)
+        ).all()
+    )
+
+
+def _note_html(note: Any, who: str) -> str:
+    when = clock.rfc3339(note.created_at)
+    tags = [who, f'<time datetime="{escape(when, quote=True)}">{escape(when[:10])}</time>']
+    if note.state != "open":
+        tags.append(escape(note.state))
+    text = (
+        '<p class="muted">Removed.</p>'
+        if note.redacted
+        else render.markdown(note.body or "", ugc=True)
+    )
+    return f'<li><p class="muted">{" · ".join(tags)}</p>{text}</li>'
+
+
 def render_card(conn: Connection, hub: Settings, card_id: str) -> list[public_pages.Page]:
     card = conn.execute(select(t.card).where(t.card.c.id == card_id)).first()
     if card is None or not shown(card):
@@ -51,11 +76,20 @@ def render_card(conn: Connection, hub: Settings, card_id: str) -> list[public_pa
     if moderation.hold(conn, "card", card.id) is not None:
         return []
     full = namespace.full_name(conn, project)
+    notes = _notes(conn, card.id)
+    named = {note.author for note in notes}
+    if card.claim_holder is not None:
+        named.add(card.claim_holder)
+    people = members(conn, project.id, only=named) if named else {}
     person = None
     gone = False
     if card.claim_holder is not None:
-        person = members(conn, project.id, only=card.claim_holder).get(card.claim_holder)
+        person = people.get(card.claim_holder)
         gone = person is None and _gone_agent(conn, card.claim_holder)
+
+    def author(note: Any) -> Any:
+        return people.get(note.author), note.author_kind == "agent"
+
     status = card.status.replace("_", " ")
     tags = [escape(status)]
     if card.label:
@@ -71,6 +105,13 @@ def render_card(conn: Connection, hub: Settings, card_id: str) -> list[public_pa
         + " ".join(f'<span class="tag">{tag}</span>' for tag in tags)
         + "</p>"
         + (render.markdown(body, ugc=True) if body.strip() else "")
+        + (
+            '<h2>Notes</h2><ol class="notes">'
+            + "".join(_note_html(note, _who(*author(note))) for note in notes)
+            + "</ol>"
+            if notes
+            else ""
+        )
     )
     path = f"/{full}/tasks/{card.id}"
     data = {
@@ -80,6 +121,17 @@ def render_card(conn: Connection, hub: Settings, card_id: str) -> list[public_pa
         "label": card.label,
         "holder": _holder(person, gone) if card.claim_holder is not None else None,
         "body": body,
+        "notes": [
+            {
+                "id": note.id,
+                "author": _holder(*author(note)),
+                "body": None if note.redacted else note.body or "",
+                "state": note.state,
+                "created_at": clock.rfc3339(note.created_at),
+                "redacted": bool(note.redacted),
+            }
+            for note in notes
+        ],
     }
     digest = hashlib.sha256("\x00".join((path, project.name, content)).encode())
     return [
