@@ -332,15 +332,15 @@ window.Maity = window.Maity || {};
     // As a sign-out does: the next human in this tab starts with their own settings.
     M.notify.stopBrowser();
     M.notify.state.settings = null;
-    renderLogin(document.getElementById("main"), "Your session has ended. Sign in again to go on where you were.");
+    renderLogin(document.getElementById("main"), M.t("login.session_ended"));
   };
 
   let keptHandle = "";
   function renderLogin(main, note) {
-    document.title = "Sign in · Maity";
+    document.title = M.t("login.page_title");
     append(clear(document.getElementById("header")), h("div", { class: "bar" },
       brandTitle(false),
-      M.api.source === "fixtures" ? h("span", { class: "source" }, "Fixtures") : null,
+      M.api.source === "fixtures" ? h("span", { class: "source" }, M.t("login.fixtures")) : null,
       themeMenu()));
     const handle = h("input", { id: "login-handle", name: "handle", autocomplete: "username", required: true });
     handle.value = keptHandle;
@@ -358,7 +358,7 @@ window.Maity = window.Maity || {};
       class: "login door",
       onsubmit: async (e) => {
         e.preventDefault();
-        status.busy("Signing in…");
+        status.busy(M.t("login.busy"));
         try {
           const next = routeNext();
           const answer = await M.api.post("/auth/login", Object.assign({ handle: handle.value.trim(), password: password.value }, next ? { next } : {}));
@@ -366,15 +366,15 @@ window.Maity = window.Maity || {};
           goNext(answer && answer.next);
         } catch (err) {
           password.value = "";
-          status.fail("Not signed in: ", err);
+          status.fail(M.t("login.failed"), err);
         }
       },
     },
-    M.authPages.pitch("sign_in", "Sign in"),
-    h("label", { for: "login-handle" }, "Handle"), handle,
-    h("label", { for: "login-password" }, "Password"), password,
+    M.authPages.pitch("sign_in", M.t("login.title")),
+    h("label", { for: "login-handle" }, M.t("login.handle")), handle,
+    h("label", { for: "login-password" }, M.t("login.password")), password,
     site ? h("label", { for: "login-interface" }, M.t("language.interface.label")) : null, site,
-    h("button", { type: "submit" }, "Sign in"),
+    h("button", { type: "submit" }, M.t("login.title")),
     status.el);
     // A code from another device or a link by mail, as the hub offers them
     // (js/device-sign-in.js), on this page's own timers.
@@ -420,12 +420,12 @@ window.Maity = window.Maity || {};
 
   // The one page of a pending account (§2.7.5): it may sign out, nothing else.
   function renderPending(main) {
-    document.title = "Waiting for approval · Maity";
+    document.title = M.t("pending.page_title");
     append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle(false), themeMenu()));
     append(clear(main), h("section", { class: "pending-account" },
-      h("h2", null, "Your account waits for the operator's approval"),
-      h("p", null, "Once it is approved you get a mail, and this page becomes your dashboard. An invitation you followed waits for you meanwhile."),
-      h("button", { type: "button", onclick: logout }, "Sign out")));
+      h("h2", null, M.t("pending.title")),
+      h("p", null, M.t("pending.text")),
+      h("button", { type: "button", onclick: logout }, M.t("pending.sign_out"))));
   }
 
   // back: a dashboard path (checked as a sign-in's next is) to
