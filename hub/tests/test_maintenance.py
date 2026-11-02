@@ -192,6 +192,11 @@ def test_a_running_window_refuses_the_api_with_retry_after(
     assert admin.get("/admin/maintenance").status_code == 200
     assert admin.get("/admin/maintenance/changes").status_code == 200
     assert admin.get("/auth/session").status_code == 200
+    # the two reads the sign-in page is drawn from, for a visitor too
+    visitor = make_client()
+    assert visitor.get("/api/v1/auth/methods").status_code == 200
+    assert visitor.get("/api/v1/auth/pages/sign_in").status_code == 200
+    assert visitor.get("/api/v1/auth/pages/sign_up").status_code == 503
     me = admin.get("/me")
     assert me.status_code == 200, me.text
     assert me.json()["maintenance"]["state"] == "running"
@@ -812,6 +817,19 @@ def test_a_stored_page_s_tag_follows_the_window(
     after = client.get(PATH + "?as=public", headers={"If-None-Match": again.headers["etag"]})
     assert after.status_code == 200 and "maintenance-banner" not in after.text
     assert after.headers["etag"] == plain.headers["etag"]
+
+
+def test_the_explore_page_carries_the_banner_of_an_upcoming_window(
+    make_client: ClientFactory, admin: flow.Human, now: Clock
+) -> None:
+    """`/explore` has no `ETag`; the banner is in every answer and lags by `max-age=60` at most."""
+    visitor = make_client(public_pages=True)
+    assert "maintenance-banner" not in visitor.get("/explore").text
+    put(admin, text="DB & mail")
+    got = visitor.get("/explore")
+    assert got.status_code == 200, got.text
+    assert BANNER in got.text
+    assert got.headers["Cache-Control"] == "public, max-age=60"
 
 
 def test_a_legal_page_carries_the_banner_while_the_window_runs(
