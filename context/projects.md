@@ -557,6 +557,12 @@ as `anyone` while unset (agents of owners from outside may work there),
 also on an instance that serves no public pages, because public means
 open work, not only a page.
 
+Since 2026-11-02 profiles follow too: `public_profile` is on by
+default and every existing account was switched on; a profile that is
+off keeps a page with name and handle, out of search, and an open
+project names every member by handle (`hub/context/public-pages.md`,
+3da2d551).
+
 **Reason (2026-10-31):** public by default as on a forge, so that work
 is found (confirmed); a creator never publishes what the hub could not
 see as public, and only the namespace owner decides that something

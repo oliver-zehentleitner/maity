@@ -765,3 +765,63 @@ def test_the_legal_pages_stay_readable_during_a_window(
     put(admin)
     running(now)
     assert make_client().get("/impressum").status_code == 200
+
+
+# --- the banner of the hub's own pages ---------------------------------------------------
+
+BANNER = "Maintenance 2026-11-02 13:00–2026-11-02 13:30 UTC: DB &amp; mail"
+
+
+def test_the_landing_page_carries_the_banner_of_an_upcoming_window(
+    make_client: ClientFactory, admin: flow.Human, now: Clock
+) -> None:
+    page_body = {"title": "Maity", "description": "A hub", "sections": [HERO]}
+    assert (
+        admin.patch(
+            "/admin/settings/landing", {"enabled": True, "pages": {"en": page_body}}
+        ).status_code
+        == 200
+    )
+    visitor = make_client()
+    assert "maintenance-banner" not in visitor.get("/").text
+    put(admin, text="DB & mail")  # escaped
+    got = visitor.get("/")
+    assert got.status_code == 200
+    assert BANNER in got.text
+    assert got.text.index("maintenance-banner") < got.text.index("<h1")  # first in the body
+
+
+def test_a_stored_page_s_tag_follows_the_window(
+    make_client: ClientFactory, migrated: Engine, admin: flow.Human, now: Clock
+) -> None:
+    """A reader's cache must not keep the page without the banner, or with it after the window
+    is gone: the tag changes with it, so a conditional request gets the page again."""
+    from tests.test_public_pages import PATH, store
+
+    client = make_client(public_pages=True)
+    store(migrated)
+    plain = client.get(PATH + "?as=public")
+    assert "maintenance-banner" not in plain.text
+    put(admin, text="DB & mail")
+    again = client.get(PATH + "?as=public", headers={"If-None-Match": plain.headers["etag"]})
+    assert again.status_code == 200 and BANNER in again.text
+    assert again.headers["etag"] != plain.headers["etag"]
+    unchanged = client.get(PATH + "?as=public", headers={"If-None-Match": again.headers["etag"]})
+    assert unchanged.status_code == 304
+    admin.delete("/admin/maintenance")
+    after = client.get(PATH + "?as=public", headers={"If-None-Match": again.headers["etag"]})
+    assert after.status_code == 200 and "maintenance-banner" not in after.text
+    assert after.headers["etag"] == plain.headers["etag"]
+
+
+def test_a_legal_page_carries_the_banner_while_the_window_runs(
+    make_client: ClientFactory, admin: flow.Human, now: Clock
+) -> None:
+    from tests.test_legal import EN
+    from tests.test_legal import PATH as LEGAL
+
+    admin.patch(LEGAL, {"imprint": EN})
+    put(admin, text="DB & mail")
+    running(now)
+    got = make_client().get("/impressum")
+    assert got.status_code == 200 and BANNER in got.text

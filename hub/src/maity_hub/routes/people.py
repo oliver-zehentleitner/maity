@@ -103,11 +103,17 @@ def _person(conn: Connection, request: Request, caller: Any, human: Any) -> dict
                 theirs.where(or_(m.project_id.in_(mine), _served_project(request, m.project_id)))
             ).scalars()
         )
+    # With the profile off, the personal details (bio, links, the list of projects) are for
+    # members of a shared project only (§16.9); handle and name stay for everyone.
+    shared = own or bool(ids & mine)
+    chosen = own or bool(human.public_profile)
+    if not chosen:
+        ids &= mine
     listed = _listed(conn, ids, mine)
     page_served = public_people.served(conn, human) and _served(
         conn, request, public_people.KIND, human.id
     )
-    links = _links(conn, human, me)
+    links = _links(conn, human, me) if chosen or shared else {}
     if not own and not page_served and not listed["projects_total"] and not links:
         raise not_found()  # shows the caller nothing
     answer: dict[str, Any] = {
@@ -117,7 +123,7 @@ def _person(conn: Connection, request: Request, caller: Any, human: Any) -> dict
         "avatar_url": _avatar(conn, caller, human.id),
         "page_served": page_served,
     }
-    if own or page_served:
+    if own or (page_served and (chosen or shared)):
         answer["public_bio"] = human.public_bio
     return {**answer, **links, **listed}
 
