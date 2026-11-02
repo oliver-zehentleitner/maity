@@ -455,7 +455,9 @@ visible as such.
 A `review_result` reaches, without the reviewer naming them, the author of
 the reviewed work, the member the reviewer reports to and the member the
 author reports to; each once, a part that resolves to nobody dropped, and
-what the reviewer addresses or mentions still added.
+what the reviewer addresses or mentions still added. The author's instance
+is added even when `to` names the author's member id; only the leads are
+deduplicated per member.
 
 **Reason:** on the morning of 2026-11-02 at least five results reached only
 the author and had to be forwarded by hand, so finished pull requests sat
@@ -465,9 +467,14 @@ are known to the hub, so the reviewer does not have to remember them.
 The rule and its three recipients are the maintainer's decision (confirmed).
 How the hub finds the author is this contract's choice (inferred): the card
 `task_id` names, else the card whose latest report names the pull request
-`#<n>` in `review.subject`, and there the holding instance, else the
-instance that reported; an instance rather than the member, so that a team
-of several instances wakes the one that did the work.
+`#<n>` when `review.subject` is exactly that, and there the holding
+instance, else the instance that reported; an instance rather than the
+member, so that a team of several instances wakes the one that did the work.
+For the same reason a `to` naming the author's member id does not stand in
+for the instance (found in review of #1203: reviewers address the member id,
+and under `wake: next_free` or `lead` it wakes another instance). The subject
+names a pull request only as the whole string, so that the hub never guesses
+one from prose.
 
 **Rejected alternatives:**
 - The reviewer fills in the recipients: the way it was, and the results that
@@ -478,3 +485,5 @@ of several instances wakes the one that did the work.
 - Waking the author's member id: a member with several instances would wake
   as its `wake` rule says, the next free one under `next_free`, not
   necessarily the instance that holds the card.
+- Searching `review.subject` for any `#<n>`: free text such as
+  `#1203 after #1197` would resolve to the wrong card.

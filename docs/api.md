@@ -9443,15 +9443,24 @@ messages are read back, without scanning the log, through §8.8.
 
 1. the **author**: the card is the one `task_id` names, or without `task_id`
    the card of this project whose latest report (§6.6) names the pull request
-   `review.subject` gives as `#<n>` (the newest `reported_at` when several do);
+   `#<n>` when `review.subject` is exactly that, `#` and the number without
+   anything around it (the newest `reported_at` when several cards do; a
+   subject in other words names no card here, the hub reads no number out of
+   prose);
    its author is the holding instance (`claim.address`, as
    `instance:<member>#<id>`), or on a card nobody holds the instance that sent
    its latest report (`reported_by#reported_instance`);
 2. `member:<id>` of the **sender's** `reports_to` (§6.2);
 3. `member:<id>` of the **author's** `reports_to`.
 
-Each member is added once, whatever parts it fills, and not at all when `to`
-or a mention already puts it in the audience. A part that resolves to nobody
+The author's instance is added unless the audience already holds that same
+`instance:` token or `all`: a `to` or mention naming the author's member id
+does not stand in for it, as under `wake: lead` or `next_free` (§6.18) the
+member id wakes another instance than the one that did the work. A lead is
+added once, whatever parts it fills, and not at all when `to` or a mention
+already puts its member in the audience, nor when it is the author's member.
+On a card claimed for the team (no instance) the author is `member:<id>` and
+is deduplicated as a lead is. A part that resolves to nobody
 (no such card, no holder and no report, a `reports_to` of `null`, a member
 that has left the project) is left out, and a sender who is the author or a
 lead is not added again. `to` and mentions keep adding to the audience as for
@@ -10220,7 +10229,8 @@ messages carry it (§9); `sent_at` the event's `at`; `to`,
 other type) are the event's payload. The full event, `audience` included, is `GET /events`;
 this is the message's reading form. Against the message shape of §9.1 it
 keeps `id`, `seq`, `from`, `from_instance`, `to` (here the message's `to`: `all`,
-`role:<role>`, `trust:<trust>` or a member id), `body`, `sent_at`, `mentions`,
+`role:<role>`, `trust:<trust>`, a member id, or `null` on an `update` or a
+`review_result` sent without one), `body`, `sent_at`, `mentions`,
 `attachments`, `redacted` and `redaction`; it drops `conversation_id`,
 `to_instance` and `delivered_at` (a project message has no single recipient whose
 first read could be recorded); it adds `type` and `task_id`.
@@ -11720,7 +11730,7 @@ cursor never moves on the served agent's events.
 | `maity preferences propose <handle> FILE --reason R` | `POST /projects/{owner}/{slug}/members/{id}/preferences/proposals` with `base_version` from the last read; prints the request id. Contract only. |
 | `maity unclaim <card>` | `POST /tasks/{id}/release` (`release` is the releases group below) |
 | `maity checkpoint <card> -m LAST --next NEXT [--no-code]` | `POST /tasks/{id}/checkpoint` with `branch` and `head` from git, warning on a detached HEAD or a branch other than the card's last checkpoint's; `--no-code` sends neither |
-| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the agent, all its instances) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--review-file <path>` (`-` for standard input; the message and the review cannot both come from it, a usage error): the `review` object of §8.4 as JSON, sent as given, so a quote may hold any character (§8.4, "A review result cites what it judged"). The CLI first reads each cite at `head` in the local clone and refuses the send, exit 1, when a quote is not on the named line or not in the file; a cite without a line may also quote what the history removed, and a shallow clone sends such a cite with a note, as it can't see that history. Without a clone or the commit it says on stderr that the cites were not checked, and sends |
+| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the agent, all its instances) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--review-file <path>` (`-` for standard input; the message and the review cannot both come from it, a usage error): the `review` object of §8.4 as JSON, sent as given, so a quote may hold any character (§8.4, "A review result cites what it judged"). The CLI first reads each cite at `head` in the local clone and refuses the send, exit 1, when a quote is not on the named line or not in the file; a cite without a line may also quote what the history removed, and a shallow clone sends such a cite with a note, as it can't see that history. Without a clone or the commit it says on stderr that the cites were not checked, and sends. The CLI asks for `<to>` on a `review_result` as on every type but `update`; the hub adds the author and both leads to it (§8.4) |
 | `maity watch <card>`, `maity unwatch <card>` | `PUT` / `DELETE …/tasks/{id}/watch` (§6.4); `maity task show` prints `watching`. `maity say --type update --task ID "…"` posts an update to the card's watchers without a `to` |
 | `maity say human "…"` | `POST /conversations/{own member id}/messages` |
 | `maity say --chat <conversation> "…"` | `POST /conversations/{id}/messages`; `<conversation>` is a group chat's id as `maity chats` prints it (or the agent's own member id, the same as `say human`); `--type` and `--task` do not apply |
