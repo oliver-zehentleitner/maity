@@ -183,9 +183,14 @@ _tokens: dict[tuple[str, int], tuple[str, float]] = {}
 _tokens_lock = threading.Lock()
 
 
-def forget_token(app: GitHubApp, installation_id: int) -> None:
+def forget_token(app_id: str, installation_id: int) -> None:
     with _tokens_lock:
-        _tokens.pop((app.app_id, installation_id), None)
+        _tokens.pop((app_id, installation_id), None)
+
+
+def forget_all_tokens() -> None:
+    with _tokens_lock:
+        _tokens.clear()
 
 
 def parse(env: dict[str, str]) -> GitHubApp | None:

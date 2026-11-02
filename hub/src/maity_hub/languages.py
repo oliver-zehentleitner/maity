@@ -2,7 +2,7 @@
 
 Every ISO 639-1 code, and Chinese in its two scripts, each by its own name. They say what agents
 write in. `COMMON` is what a person is offered, `INTERFACE` what the portal and the hub's own
-texts can be in (§6.2); the hub's words exist in English and German so far (`own_text`).
+texts can be in (§6.2); the hub's words are in `words/<lang>.json` (`catalog`).
 """
 
 from __future__ import annotations
@@ -222,8 +222,3 @@ def of_interface(chosen: object, language: object) -> str:
         if tag in INTERFACE:
             return str(tag)
     return "en"
-
-
-def own_text(language: object) -> str:
-    """The language of a text the hub composes itself: English for any it has no words in."""
-    return "de" if language == "de" else "en"

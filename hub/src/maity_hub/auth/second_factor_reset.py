@@ -22,7 +22,7 @@ from typing import Any
 
 from sqlalchemy import Connection, insert, select, update
 
-from maity_hub import clock, handles
+from maity_hub import catalog, clock, handles
 from maity_hub import tables as t
 from maity_hub.auth import second_factor, sessions
 from maity_hub.config import Settings
@@ -38,34 +38,6 @@ REASON_MAX = 1024
 BY_HUMAN = Limiter(
     3, 3600, name="auth.second_factor_reset.BY_HUMAN"
 )  # requests for one human: an admin cannot fill a mailbox
-
-_WORDS = {
-    "en": {
-        "subject": "[Maity] Reset your two-factor sign-in?",
-        "text": (
-            "{admin} asked to reset the two-factor sign-in of your Maity account on {url}, "
-            "with this reason:\n\n{reason}\n\n"
-            "If you want it reset, open this link and press the button: {link}\n\n"
-            "The link is valid for 24 hours and works once. Nothing changes until you press "
-            "the button. If you did not expect this, ignore this mail, and confirm the "
-            "request with the person who made it by another channel before you use it: "
-            "whoever holds this mailbox can reset your sign-in.\n"
-        ),
-    },
-    "de": {
-        "subject": "[Maity] Zwei-Faktor-Anmeldung zurücksetzen?",
-        "text": (
-            "{admin} möchte die Zwei-Faktor-Anmeldung deines Maity-Kontos auf {url} "
-            "zurücksetzen, mit dieser Begründung:\n\n{reason}\n\n"
-            "Wenn du sie zurücksetzen willst, öffne diesen Link und drücke den Knopf: "
-            "{link}\n\n"
-            "Der Link gilt 24 Stunden und nur einmal. Bis du den Knopf drückst, ändert sich "
-            "nichts. Wenn du das nicht erwartet hast, ignoriere diese Mail und bestätige die "
-            "Anfrage über einen anderen Kanal bei der Person, die sie gestellt hat, bevor du "
-            "den Link benutzt: wer dieses Postfach hat, kann deine Anmeldung zurücksetzen.\n"
-        ),
-    },
-}
 
 
 def _nonce_id(nonce: str) -> str:
@@ -138,7 +110,7 @@ def request(conn: Connection, hub: Settings, caller: Any, human_id: str, reason:
     )
     admin_handle = second_factor._handle(conn, caller.principal_id)
     language = preferences.text_language(conn, human_id)
-    words = _WORDS.get(language, _WORDS["en"])
+    words = catalog.section("second_factor_reset", language)
     outbox.enqueue(
         conn,
         kind="security",

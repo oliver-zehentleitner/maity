@@ -23,7 +23,15 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import Connection, select
 
-from maity_hub import clock, legal, registration, registration_accounts, registration_mail, render
+from maity_hub import (
+    catalog,
+    clock,
+    legal,
+    registration,
+    registration_accounts,
+    registration_mail,
+    render,
+)
 from maity_hub import tables as t
 from maity_hub.auth import sessions
 from maity_hub.auth.caller import SESSION_COOKIE, require_secure_transport
@@ -45,62 +53,6 @@ CSP = (
     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; "
     "frame-ancestors 'none'"
 )
-
-_WORDS = {
-    "en": {
-        "title": "Create your Maity account",
-        "intro": "Create your Maity account for {address}.",
-        "password": "The password you chose when you asked for the account",
-        "handle": "Handle",
-        "display_name": "Display name",
-        "terms": "I accept the terms ({url}, version {version})",
-        "button": "Create account",
-        "dead": "This link no longer works.",
-        "closed": "Registration is closed.",
-        "later": (
-            "Too many accounts were made in the last hour. "
-            "Try again later; the link stays valid."
-        ),
-        "terms_changed": "The terms changed while this page was open. Read them again and confirm.",
-        "error_password": "That is not the password chosen at registration.",
-        "error_handle_invalid": "A handle has 2 to 31 letters, digits or hyphens.",
-        "error_handle_reserved": "This handle is reserved.",
-        "error_handle_taken": "This handle is taken.",
-        "error_display_name_invalid": "A display name has 1 to 64 characters.",
-        "error_terms_required": "Accept the terms to create the account.",
-        "legal_imprint": "Imprint",
-        "legal_privacy": "Privacy notice",
-        "legal_terms": "Terms of use",
-    },
-    "de": {
-        "title": "Maity-Konto anlegen",
-        "intro": "Lege dein Maity-Konto für {address} an.",
-        "password": "Das Passwort, das du bei der Anfrage gewählt hast",
-        "handle": "Handle",
-        "display_name": "Anzeigename",
-        "terms": "Ich akzeptiere die Bedingungen ({url}, Version {version})",
-        "button": "Konto anlegen",
-        "dead": "Dieser Link funktioniert nicht mehr.",
-        "closed": "Die Registrierung ist geschlossen.",
-        "later": (
-            "In der letzten Stunde wurden zu viele Konten angelegt. "
-            "Versuche es später noch einmal; der Link bleibt gültig."
-        ),
-        "terms_changed": (
-            "Die Bedingungen haben sich geändert, während die Seite offen war. "
-            "Lies sie noch einmal und bestätige sie."
-        ),
-        "error_password": "Das ist nicht das bei der Anfrage gewählte Passwort.",
-        "error_handle_invalid": "Ein Handle hat 2 bis 31 Buchstaben, Ziffern oder Bindestriche.",
-        "error_handle_reserved": "Dieses Handle ist reserviert.",
-        "error_handle_taken": "Dieses Handle ist schon vergeben.",
-        "error_display_name_invalid": "Ein Anzeigename hat 1 bis 64 Zeichen.",
-        "error_terms_required": "Akzeptiere die Bedingungen, um das Konto anzulegen.",
-        "legal_imprint": "Impressum",
-        "legal_privacy": "Datenschutzerklärung",
-        "legal_terms": "Nutzungsbedingungen",
-    },
-}
 
 
 def _html(
@@ -126,7 +78,11 @@ def _message(title: str, text: str, status: int, lang: str = "en") -> HTMLRespon
 
 def _dead() -> HTMLResponse:
     """Invalid, expired, used or voided: one page, `not_found`, never which (§18.6)."""
-    return _message(_WORDS["en"]["dead"], _WORDS["en"]["dead"], 404)
+    return _message(
+        catalog.section("register_page", "en")["dead"],
+        catalog.section("register_page", "en")["dead"],
+        404,
+    )
 
 
 def _humans_only(request: Request) -> None:
@@ -287,7 +243,7 @@ def register_page(token: str, request: Request) -> Response:
     form_value = secrets.token_urlsafe(24)
     lang = registration_mail.language_of(row.interface_language or row.language)
     page = _form(
-        _WORDS[lang],
+        catalog.section("register_page", lang),
         lang=lang,
         address=row.address,
         form_value=form_value,
@@ -390,7 +346,7 @@ async def register_complete(token: str, request: Request) -> Response:
         return _dead()
     done, row, payload, terms, device, pages = result
     lang = registration_mail.language_of(row.interface_language or row.language)
-    words = _WORDS[lang]
+    words = catalog.section("register_page", lang)
     if done.kind == "created":
         assert done.session_id is not None and done.csrf is not None and done.next is not None
         response = RedirectResponse(done.next, status_code=303)
