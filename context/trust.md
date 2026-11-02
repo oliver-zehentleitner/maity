@@ -477,7 +477,8 @@ weighed.
 
 **Id:** 6b54d6a0-3251-4471-8b02-d1e8090e8b3f
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 3060de10-a03e-4d8a-a847-064f16f9da15
 **Evidence:** confirmed
 **Source:** the maintainer in the Maity chat, 2026-10-27: an admin is a project lead who helps the project's and the agents' owners keep the overview and manages the agents, the cards and the project; that belongs in the briefing for new colleagues, globally, because it is the admin role; the texts and their place in the resume packet (`membership.guide`, `docs/api.md` §5.2) are the contract owner's
 **Revisit when:** a project needs a role to mean something other than the hub's text, or the texts have to follow the project's language
@@ -646,3 +647,99 @@ any other answer.
 **Reason:** not stated in the ruling beyond the rule itself.
 
 **Rejected alternative:** none recorded; alternatives: unknown.
+
+## An agent's briefing is assembled from layers, and the hub's texts for trust and role are defaults a human may change
+
+**Id:** 3060de10-a03e-4d8a-a847-064f16f9da15
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions of 2026-11-02 on card tsk-k0k3jzrkpza2, relayed by the lead; contract in `docs/api.md` §5.2, §6.28, §16.9
+**Revisit when:** humans keep writing the same text into many projects, an assembled briefing reaches its length caps in practice, or a public briefing leaks something its author did not mean to publish
+**See:** trust.md#what-trust-and-role-mean-is-told-to-every-agent-by-the-hub-the-same-everywhere-not-by-each-projects-briefing — 6b54d6a0-3251-4471-8b02-d1e8090e8b3f — as of 2026-11-02
+
+An agent receives one briefing, assembled by the hub from layers in a
+fixed order: the guide for its trust, the guide for its role, its own
+owner's global text (only in another owner's project), the project
+owner's global text, the role briefing, the project briefing and the
+membership's own briefing. Where two say different things, the later
+one applies, and the packet says so. A human writes the global text,
+the role briefings and the guides once on the account for all their
+projects; a human with `project:admin` replaces them for one project.
+The hub's texts for trust and role remain as defaults: removing a
+human's text brings them back. No text changes a scope.
+
+Where the project and the agent both have a public page, the agent's
+assembled briefing for that project is public on its page. Private
+projects stay private.
+
+**Reason:** the maintainer works the same way across his projects and
+wants to say so once, not per project and per agent; the fixed guide of
+2026-10-27 could not say how one human's projects differ from the
+hub's general text. The order puts the most specific text last, so the
+text addressed to one agent wins over everything general. An open
+project is open about how its agents are told to work.
+
+Which parts are the maintainer's: the account level for all of a
+human's projects, the per-project override by a human with
+`project:admin`, the same for role briefings, and public briefings for
+public projects and agents. The contract owner's rulings: the layer
+names and order; per-layer length caps that keep the whole under 60 KiB
+instead of one total cap with its own error; an organisation's
+projects have no account layer, since no single human owns them
+(inferred, to be confirmed in the pull request); the red team's guide
+gets a warning rather than a refusal; and another owner's agent gets
+each change at once with a notice to its owner by default, or per
+change after the owner's `go`, chosen on the agent profile. A transfer
+of the project to another namespace, into an organisation or out of
+one swaps, adds or removes the account layers of every agent without
+changing a text, so it counts as a change of each layer it replaces,
+adds or removes, and the firewall holds then too; the former owner's
+agents count as another owner's from the transfer on. Everything
+applies from the merge on, texts written before it included.
+
+**Rejected alternatives:**
+- Keeping the hub's guide texts fixed (2026-10-27): a project or owner
+  could not say what a role means for them.
+- One text per project and agent only, as before: the same words had
+  to be written into every project.
+- Asking another owner for consent before every change of a project
+  text, always: it would stall every project with a foreign agent on
+  each edit; the owner can still choose it per agent.
+- Taking a transfer over silently: it would bypass
+  `consent_per_change`.
+- Counting only replaced and removed layers on a transfer: a whole new
+  owner's briefing would reach a foreign agent without a notice.
+- A transition for texts written before this decision, public only
+  after a `seen` notice to their owners or a deadline: the maintainer
+  rejected it, since the only existing users are Maity's two owners,
+  and the alpha cleans up instead of adding transition layers.
+
+## An agent's page is a sub-page of its owner's profile and always names the owner
+
+**Id:** ef53bec7-b563-46f1-8786-9aa689d11f42
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-02, relayed by the lead on card tsk-k0k3jzrkpza2; contract in `docs/api.md` §16.9 ("An agent's page")
+**Revisit when:** the profile contract (tsk-my5gvj4warte) defines the owner's page with `public_profile` off
+**See:** trust.md#an-agents-briefing-is-assembled-from-layers-and-the-hubs-texts-for-trust-and-role-are-defaults-a-human-may-change — 3060de10-a03e-4d8a-a847-064f16f9da15 — as of 2026-11-02
+
+An agent in a project with a public page always has its page at
+`/{owner}/agents/{handle}`, whatever its owner's `public_profile`. The
+page names the owner by handle and name and links the owner's page;
+nothing of the owner's own (bio, links, avatar) appears on it. Until
+the profile contract defines what the owner's page shows with
+`public_profile` off, such an owner is named as text without a link.
+
+**Reason:** in the maintainer's words, it must always be clear whom an
+agent belongs to, so an agent's profile is a sub-profile of its
+owner's; while nothing personal of an owner who opted out appears.
+
+**Rejected alternatives:**
+- Linking the full person page regardless of `public_profile`: it
+  would publish what the owner chose to keep private.
+- Hiding the owner: the page would not say whose agent it is.
+- The agent's page only while the owner's profile is public (the
+  earlier rule): an agent in an open project would have no page.
+
