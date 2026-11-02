@@ -13929,7 +13929,9 @@ the list answers the app shell.
 **A card's page.** `GET /{owner}/{slug}/tasks/{id}`, the dashboard's
 address of the card (§16.11), while the project's page is served. The
 maintainer's decision of 2026-11-02: a card's text is public as an
-issue's is on a forge. The page shows the card's `id`, `title`,
+issue's is on a forge. Every card of the project has one, also a `done`
+or `cancelled` card the Board no longer lists (after its 30 days or
+beyond its limit), so a card keeps its address once it is closed. The page shows the card's `id`, `title`,
 `status` and `label`, its holder as the Board names them, and its
 `body` as Markdown under the rules of §16.7, raw HTML as text. Never
 its notes, history, requests, links, release or contract text. A card

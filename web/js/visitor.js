@@ -176,7 +176,8 @@ window.Maity = window.Maity || {};
       inProject ? h("nav", { class: "view-tabs", "aria-label": title }, VIEWS.map((v) => h("a", {
         href: base + v.path,
         class: "view-tab",
-        "aria-current": base + v.path === answer.path ? "page" : null,
+        // A card's page belongs to the Board, the tab it is reached from.
+        "aria-current": base + v.path === answer.path || (answer.kind === "card" && v.path === "/board") ? "page" : null,
       }, v.label))) : null,
       draw[answer.kind] ? draw[answer.kind](d, base) : null));
     document.title = title;

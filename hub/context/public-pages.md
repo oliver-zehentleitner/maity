@@ -585,9 +585,13 @@ names them, and the body as Markdown without raw HTML (`ugc`, as the project's A
 only once it is `done`, a held card none; the moderation paths and every card event call `touch` for it, as they do
 for the Board, so the page follows the card in the same transaction. Notes, history, requests and links stay out:
 whether notes are public is the maintainer's open question, and leaving them out is the side that can be widened.
+Every card of the project has a page, also a closed one older than the Board's 30 days or beyond its limit: an
+issue stays at its address after it is closed, and a link from a mail or a commit must not break when the card
+leaves the Board.
 
 **Rejected:**
 - The text on the Board itself: the Board would carry up to 200 bodies per column, and a card would have no address
   to link from a mail or a commit.
+- Pages only for the cards the Board lists: a card would lose its address 30 days after it closed.
 - A separate public address such as `/{owner}/{slug}/cards/{id}`: two addresses for one card, against the rule
   that a public page has the address a member opens (§16.11).
