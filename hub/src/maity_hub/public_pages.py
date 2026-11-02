@@ -237,7 +237,11 @@ def refresh(conn: Connection, hub: Settings, kind: str, target_id: str) -> None:
     for page in rendered:
         stored = existing.get(page.path)
         same_inputs = stored is not None and stored.inputs == page.inputs
-        if not same_inputs or (stored.view, stored.data) != (page.view, page.data):
+        if (
+            stored is None
+            or not same_inputs
+            or (stored.view, stored.data) != (page.view, page.data)
+        ):
             put(
                 conn,
                 path=page.path,
@@ -246,7 +250,7 @@ def refresh(conn: Connection, hub: Settings, kind: str, target_id: str) -> None:
                 body=page.body,
                 inputs=page.inputs,
                 # `data` alone changing is nothing a crawler reads: the sitemap's date stays.
-                lastmod=stored.lastmod if same_inputs else page.lastmod,
+                lastmod=stored.lastmod if stored is not None and same_inputs else page.lastmod,
                 view=page.view,
                 data=page.data,
             )
