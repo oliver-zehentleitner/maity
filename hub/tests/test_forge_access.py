@@ -8,6 +8,7 @@ for real.
 from __future__ import annotations
 
 import base64
+import time
 from collections import OrderedDict
 from dataclasses import replace
 from typing import Any
@@ -355,6 +356,23 @@ def test_a_gone_installation_falls_back_with_its_reason(
     assert raised.value.reason == f"installation_{state}"
     with migrated.connect() as conn:
         assert conn.execute(select(t.forge_link.c.status)).scalar_one() == state
+
+
+def test_a_suspended_link_asks_for_a_new_mint_not_for_a_token_held_from_before(
+    owner: flow.Human, migrated: Engine, fake: FakeForge, settings: Settings
+) -> None:
+    """Another replica found it suspended; a token held here must not turn it `active` again:
+    only a mint that succeeds says the installation is back."""
+    assert settings.github_app is not None
+    held = (settings.github_app.app_id, 7)
+    _link(migrated, owner.id, status="suspended")
+    _confirm(owner)
+    github_app._tokens[held] = ("from before", time.time() + 3000)
+    try:
+        _reader(migrated).branch(REPO, "main")
+        assert held not in github_app._tokens  # the fake mints without storing
+    finally:
+        github_app._tokens.clear()
 
 
 def test_a_new_url_takes_the_grant_away_at_once(

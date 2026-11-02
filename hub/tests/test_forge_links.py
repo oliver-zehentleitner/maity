@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import time
 import urllib.error
 import urllib.request
 from dataclasses import replace
@@ -398,6 +399,22 @@ def test_a_refused_mint_shows_the_link_suspended(
     assert (link["status"], link["repositories_shown"]) == ("suspended", [])
     with migrated.connect() as conn:
         assert conn.execute(select(t.forge_link.c.status)).scalar_one() == "suspended"
+
+
+def test_a_refused_mint_on_the_list_forgets_the_token_as_every_refusal_does(
+    human: flow.Human, fake: Forge, settings: Settings
+) -> None:
+    fake.install(7)
+    setup(human, 7, start(human))
+    assert settings.github_app is not None
+    held = (settings.github_app.app_id, 7)
+    github_app._tokens[held] = ("from before", time.time() + 3000)
+    fake.repositories[7] = github_app.InstallationGoneError("suspended")
+    try:
+        links(human)
+        assert held not in github_app._tokens
+    finally:
+        github_app._tokens.clear()
 
 
 def test_without_an_app_nothing_is_linked(human: flow.Human, no_app: None) -> None:
