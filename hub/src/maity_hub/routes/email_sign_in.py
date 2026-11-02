@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Connection, Engine, select
 
-from maity_hub import clock, paths
+from maity_hub import catalog, clock, paths
 from maity_hub import tables as t
 from maity_hub.auth import email_links as links
 from maity_hub.auth import second_factor, sessions, sign_in_settings
@@ -200,7 +200,7 @@ def deliver(
             kind="sign_in",
             to=row.address,
             human_id=human_id,
-            subject="[Maity] Anmeldelink" if language == "de" else "[Maity] Sign-in link",
+            subject=catalog.section("sign_in", language)["subject"],
             body=body,
         )
 
@@ -312,8 +312,9 @@ def link_page(token: str, request: Request) -> HTMLResponse:
         language = preferences.text_language(conn, row.human_id)
         name = f"{human.display_name} ({human.handle})"
     form = secrets.token_urlsafe(32)
-    title = f"Bei Maity anmelden als {name}" if language == "de" else f"Sign in to Maity as {name}"
-    button = "Auf diesem Gerät anmelden" if language == "de" else "Sign in on this device"
+    words = catalog.section("sign_in", language)
+    title = words["page_title"].format(name=name)
+    button = escape(words["page_button"])
     response = HTMLResponse(
         '<!doctype html><html><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width">'

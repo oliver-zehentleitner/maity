@@ -81,7 +81,7 @@ def test_the_mail_is_in_the_language_the_request_names(
         (None, "en"),
         ("", "en"),
         ("fr-FR,fr;q=0.9", "en"),
-        ("fr, de;q=0.5", "de"),
+        ("xx, de;q=0.5", "de"),
         ("DE", "de"),
         ("en-US", "en"),
         ("*", "en"),
