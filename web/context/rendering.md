@@ -910,7 +910,8 @@ which is a sentence from pieces.
 
 **Id:** ce9ba9bb-087c-44bd-b1af-3a697a7727d3
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 8d1bbe07-94c0-4071-99d5-3d8f342a07a2
 **Evidence:** inferred
 **Source:** agreement with the lead on card tsk-ya56x9gx986r, 2026-11-02
 **Revisit when:** the report is empty and `--strict` is on, or a page's texts come only after a click often enough to hide many
@@ -925,6 +926,40 @@ a translation, and what only a click shows is not walked.
   and it reaches far fewer pages than the fixtures do.
 - A pseudo language in the repository's catalogs: it would be offered to people and need a marking to keep it out.
 - The routes in a list of its own: it would fall behind; those of the smoke test are already kept up.
+
+## The pseudo run is strict; `translate="no"` marks what stays as it is
+
+**Id:** 8d1bbe07-94c0-4071-99d5-3d8f342a07a2
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-33ze4aznv5qj from the lead, 2026-11-02
+**Revisit when:** a page's texts come only after a click often enough to hide many, or fixtures grow so that judging data by their strings lets catalog wording through
+
+`tools/pseudo_run.py --strict` runs in CI's `web-e2e` now, not only with the last language: today's findings were
+cleared, and each language's pull request and each new view would otherwise bring new ones back unseen. What a page
+shows on purpose as it is (an example address, a language's own name on its tab, a technical reason from the browser)
+carries `translate="no"`, which the run skips together with `aria-hidden` decoration. The attribute is HTML's own word
+for it, and browsers' page translation leaves those parts alone too.
+
+What the fixtures say is data: their JSON and the answers `js/api.js` writes itself, minus any literal a view writes as
+well and minus the catalog's texts. Prose under an enum's key (a decision's reason, a release's scope) is data, a bare
+enum value is not, so a raw state still counts. A fixture's text also counts in the pieces a page splits it into at a
+code span or a mention, raw with their stops, so `Keep it;` is data and the button `Keep it` is not. Dates, commits,
+handles with instances, device codes, mail addresses, domains and media types are no words.
+
+Two fixture names are also catalog texts, `Reviewer` (`role.reviewer`) and `OZ Team` (`orgs.new.name_placeholder`).
+Taking the catalog out would drop them from the data, and every page showing those agents would be reported, so
+`FIXTURE_NAMES` in `tools/pseudo_run.py` puts them back (a workaround). The price: a view that writes `Reviewer` itself
+instead of `role.reviewer` is not reported on any page.
+
+**Rejected alternatives:**
+- Renaming the two fixtures so that no name is a catalog word: `tools/smoke.js` matches `Reviewer` exactly some thirty
+  times (member rows, conversation order, notices), a change out of proportion to one exception.
+- An allowlist of the texts the run should accept: it would grow with every fixture and hide a real finding in it.
+- Any two words inside a fixture's prose as data: 18 catalog texts such as `in progress` and `not valid` occur in some
+  fixture sentence and would never be reported.
+- A class of our own for "stays as it is": `translate="no"` already means that, also to a browser's translator.
 
 ## One word per thing in the translations
 
@@ -952,6 +987,12 @@ reflexive takes the noun, `Incorporación en curso…` for Joining, because a Sp
 A pull request is masculine in Spanish on every key, its states too, since they are put into sentences about it. The duplicate check in `web/tools/check.py` treats a comma list in a cell as forms of one
 word, and `GLOSSARY_FORMS_OF_ONE` names rows that are one thing: `user` and `users`, a person and a human, `join` as
 noun and verb.
+In Portuguese, a join is `ingresso` (its states masculine to match), signing in is `acesso` as a noun and `entrar` as a
+verb, two-factor sign-in included, and `entrada` keeps its own senses, an entry (of memory, of Keep the Why) and the
+inbox (`caixa de entrada`), so a join or a sign-in never shares its word. A custom role is `todos com a função {role}`,
+because a role's name cannot be put in the plural and the role may be an agent's. A project's launch is `estreia`, since
+`lançamento` is its release. Step-up subjects are infinitives, as in Spanish, because `stepup.*.hint` puts them first in
+a sentence (`{what} exige …`). Legal pages are `páginas jurídicas`: `legal` in Brazilian Portuguese also means "cool".
 
 **Rejected alternatives:**
 - `Übernahme` for both claim and takeover: an error then says a card "needs a takeover" next to "nobody has claimed it".
@@ -961,6 +1002,7 @@ noun and verb.
 - `der Release`: in use as well; one gender was the point.
 - `eliminar` for redacting in Spanish: it is already the word for deleting an account or a project.
 - `Uniéndote…` and `Uniéndose…` for Joining: one addresses the reader, the other reads as the formal address; the glossary wants a neutral waiting text.
+- `entrada` for a join or a sign-in in Portuguese: it is already an entry and the inbox, and reads as a door, not an act.
 - A neutral form for `Besitzer` in the table: it would make the level's name differ between labels and sentences.
 
 

@@ -24,6 +24,10 @@ window.Maity = window.Maity || {};
     get prs_merged() { return M.t("visitor.stat.prs_merged"); },
     get handovers() { return M.t("visitor.stat.handovers"); },
   };
+  const NOTE_STATES = {
+    get incorporated() { return M.t("visitor.note.incorporated"); },
+    get dismissed() { return M.t("visitor.note.dismissed"); },
+  };
   const COLUMNS = {
     get proposed() { return M.t("cards.column.proposed"); },
     get open() { return M.t("cards.column.open"); },
@@ -67,6 +71,11 @@ window.Maity = window.Maity || {};
         d.people.length ? [h("h2", null, M.t("visitor.people")), names(d.people)] : null,
         d.agents.length ? [h("h2", null, M.t("visitor.agents")), names(d.agents)] : null,
         d.other_agents ? h("p", { class: "muted" }, M.t("visitor.other_agents", { count: d.other_agents })) : null,
+        d.ticker && d.ticker.length ? [h("h2", null, M.t("visitor.recently")), h("ul", { class: "visitor-ticker" }, d.ticker.map((e) => h("li", null,
+          h("span", { class: "muted" }, M.dom.formatTime(e.at)), " ", (e.url && external(e.url, e.text)) || e.text)))] : null,
+        d.online ? [h("h2", null, M.t("visitor.online")),
+          h("p", null, M.t("visitor.online.humans", { count: d.online.humans }), " · ", M.t("visitor.online.agents", { count: d.online.agents })),
+          d.online.named.length ? names(d.online.named) : null] : null,
         h("h2", null, M.t("visitor.statistics")), statistics(d.statistics.totals),
       ];
     },
@@ -85,7 +94,7 @@ window.Maity = window.Maity || {};
           d.holder ? [" ", holderLabel(d.holder)] : null),
         d.body && d.body.trim() ? h("div", { class: "about" }, M.markdown(d.body)) : null,
         d.notes && d.notes.length ? [h("h2", null, M.t("cardpanel.notes")), h("ol", { class: "card-notes" }, d.notes.map((n) => h("li", { "data-note": n.id },
-          h("p", { class: "muted" }, holderLabel(n.author), " · ", M.dom.formatTime(n.created_at), n.state !== "open" ? " · " + n.state : ""),
+          h("p", { class: "muted" }, holderLabel(n.author), " · ", M.dom.formatTime(n.created_at), NOTE_STATES[n.state] ? " · " + NOTE_STATES[n.state] : ""),
           n.redacted ? h("p", { class: "muted" }, M.t("jfa.redacted")) : h("div", { class: "about" }, M.markdown(n.body || "")))))] : null,
       ];
     },

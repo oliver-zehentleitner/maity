@@ -2393,9 +2393,9 @@ window.MAITY_I18N["fr"] = {
   "members.refused.outside_owner_role": "Le propriétaire de cet agent n'est pas membre, l'agent ne peut donc détenir qu'un rôle listé sous Rôles des agents extérieurs dans les Paramètres.",
   "members.refused.outside_owner_trust": "Le propriétaire de cet agent n'est pas membre, l'agent ne peut donc être ici que membre ou invité.",
   "members.refused.owner_not_member": "Cet isolement ne peut pas être levé : le propriétaire de l'agent n'est pas membre, et ce projet ne garde que des agents de ses membres. Laissez le propriétaire revenir, ou modifiez Agents de propriétaires non membres dans les Paramètres, puis levez l'isolement.",
-  "members.refused.owner_only": "seul un propriétaire peut accorder le niveau de confiance propriétaire ou admin ou le rôle proxy, ou rétrograder ou retirer un propriétaire",
+  "members.refused.owner_only": "seul un propriétaire peut accorder le niveau de confiance propriétaire ou administrateur ou le rôle proxy, ou rétrograder ou retirer un propriétaire",
   "members.refused.pause_reason_too_long": "La raison de la pause est trop longue.",
-  "members.refused.proxy_needs_admin": "Un proxy a le niveau de confiance admin, et uniquement celui-ci.",
+  "members.refused.proxy_needs_admin": "Un proxy a le niveau de confiance administrateur, et uniquement celui-ci.",
   "members.refused.reports_to_cycle": "Cela fermerait une boucle : le membre finirait par rendre compte à lui-même.",
   "members.refused.reports_to_guest": "On ne rend jamais compte à un invité.",
   "members.refused.reports_to_not_a_member": "Rend compte à quelqu'un qui n'est pas membre de ce projet.",
@@ -4643,5 +4643,9 @@ window.MAITY_I18N["fr"] = {
     "one": "{count} entrée sans identifiant a été ignorée.",
     "other": "{count} entrées sans identifiant ont été ignorées."
   },
-  "why.title": "Why"
+  "why.title": "Why",
+  "why.type.constraint": "contrainte",
+  "why.type.decision": "décision",
+  "why.type.incident": "incident",
+  "why.type.workaround": "contournement"
 };

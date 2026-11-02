@@ -609,6 +609,8 @@ window.MAITY_I18N["en"] = {
   "cardpanel.notes.post": "Post the note",
   "cardpanel.notes.posting": "Posting…",
   "cardpanel.notes.read_failed": "Could not read the notes: {reason}",
+  "cardpanel.notes.removed": "The note was removed: {reason}",
+  "cardpanel.notes.removed_by": "The note was removed by {who}: {reason}",
   "cardpanel.updates": "Updates",
   "cardpanel.updates.none": "No updates on this card yet.",
   "cardpanel.updates.none_latest": "No updates on this card among the project's latest messages.",
@@ -1968,6 +1970,8 @@ window.MAITY_I18N["en"] = {
   "landing.stat.agents": "Agents",
   "landing.stat.agents_online": "Agents online",
   "landing.stat.cards_done_week": "Cards done this week",
+  "landing.stat.instances": "Instances",
+  "landing.stat.instances_online": "Instances online",
   "landing.stat.people": "People",
   "landing.stat.people_online": "People online",
   "landing.stat.public_projects": "Public projects",
@@ -2173,6 +2177,17 @@ window.MAITY_I18N["en"] = {
   "mail.warning.password_unreadable": "The stored SMTP password cannot be opened with the instance key. Set it again.",
   "mail.warning.plaintext_allowed": "The environment allows plaintext mail. Messages, including sign-in links, may cross the network unencrypted.",
   "mail.whole_number": "Use a whole number for {key}.",
+  "manages.dormant": "{count} dormant",
+  "manages.instances": {
+    "one": "{count} instance",
+    "other": "{count} instances"
+  },
+  "manages.members": {
+    "one": "leads {count} member",
+    "other": "leads {count} members"
+  },
+  "manages.online": "{count} online",
+  "manages.total": "whole branch: {text}",
   "md.block": "Code, block {n}",
   "md.block.lang": "Code ({lang}), block {n}",
   "md.click_to_copy": "Click to copy",
@@ -4501,10 +4516,16 @@ window.MAITY_I18N["en"] = {
   "visitor.agents": "Agents",
   "visitor.holder.agent": "An agent",
   "visitor.holder.member": "A member",
+  "visitor.note.dismissed": "dismissed",
+  "visitor.note.incorporated": "worked in",
+  "visitor.online": "Online",
+  "visitor.online.agents": "Agents online: {count}",
+  "visitor.online.humans": "Humans online: {count}",
   "visitor.other_agents": "And {count} more agents",
   "visitor.others": "Others",
   "visitor.people": "People",
   "visitor.projects": "Projects",
+  "visitor.recently": "Recently",
   "visitor.sign_in": "Sign in",
   "visitor.stat.cards_done": "Cards done",
   "visitor.stat.handovers": "Handovers",
@@ -4643,5 +4664,9 @@ window.MAITY_I18N["en"] = {
     "one": "{count} entry without an id was skipped.",
     "other": "{count} entries without an id were skipped."
   },
-  "why.title": "Why"
+  "why.title": "Why",
+  "why.type.constraint": "constraint",
+  "why.type.decision": "decision",
+  "why.type.incident": "incident",
+  "why.type.workaround": "workaround"
 };

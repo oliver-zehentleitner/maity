@@ -231,6 +231,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 413 | `payload_too_large` | body over the cap (§1.7) |
 | 429 | `rate_limited` | `Retry-After` is set |
 | 500 | `internal` | an unexpected failure; `details` is `{}`, the message names no internals; the response still carries the envelope and every header of §1.1 |
+| 503 | `maintenance` | the hub is in a maintenance window (§16.12); `Retry-After` is the seconds until its `until`, `details` is `{from, until, text}`; every caller, every route but the few §16.12 names |
 | 503 | `forge_unavailable` | the forge did not answer while linking a GitHub App installation (§11.4) |
 | 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any; `details.retry_at` while the forge's rate limit for the source is spent: no read before that time (§11) |
 | 503 | `ktw_unavailable` | the root `.keep-the-why` of the Keep the Why family could not be read (§11.3); `details.reason`, `details.last` holds the last good answer if any; a family member's own failure is reported on that member, not as this error |
@@ -1863,9 +1864,9 @@ notification of the kind `security` (#160, §18.1), title `New sign-in:
   that session, not being in good standing, cannot end the human's
   sessions in good standing that show the banner, at any age (above).
 - **By mail** it goes to the human's verified address, `immediate` by
-  default; `email.kinds.security.mode` (#160, §18.4) is `immediate` or
-  `off` — no digest, since a delayed alert is no alert — and quiet
-  hours do not hold it. The mail carries the time, method, browser,
+  default; `email.kinds.security.mode` (#160, §18.4) may also put it in
+  a digest or turn it `off`, the human's choice. Quiet hours do not
+  hold an `immediate` alert. The mail carries the time, method, browser,
   operating system and IP address of the new session and the link to
   Profile → Sessions, with the unsubscribe line for its kind (§18.5);
   never a session id, a code or a link that signs anyone in. A human
@@ -2363,7 +2364,8 @@ secret_key_missing`.
   QR in §2.6.7); the secret is also shown as text for manual entry.
 - **Told.** Every change writes the account record
   `second_factor_changed` `{change, by}` (§18.1, a `security`
-  notification) and sends the security mail of §18.5. `change` is
+  notification) and sends the security mail of §18.5, at once whatever
+  `email.kinds.security.mode` says (§18.4). `change` is
   `enrolled`, `disabled`, `recovery_codes`, `recovery_code_used`,
   `reset` or `instance_off`; `by` is the human's own handle for the
   first four, the admin's handle for a reset through the API,
@@ -2411,7 +2413,8 @@ included:
 - Wrong: `code_invalid`. The fifth wrong code ends the second-factor
   session (the first factor must be done again) and writes the account
   record `second_factor_failed` `{method, ip, browser, os}`, a
-  `security` notification with a security mail: someone held the
+  `security` notification with a security mail, sent at once whatever
+  the mode (§18.4): someone held the
   password, the mailbox or a device code, but not the app. At step-up
   (§2.8.4) the tenth wrong code in the window of §2.8.6, from whichever
   session, writes it too, with `method: step_up`.
@@ -3502,9 +3505,14 @@ Scope: any authenticated caller.
     { "slug": "sample", "full_name": "oliver/sample", "name": "Sample shop", "state": "review", "trust": "owner", "role": "coder", "open_requests": 1,
       "logo": { "available": false, "etag": null } }
   ],
+  "maintenance": null,
   "server_time": "2026-10-21T13:41:10Z"
 }
 ```
+
+`maintenance` is the hub's maintenance window while it is upcoming or
+running, `{from, until, text, state}`, else `null` (§16.12), for every
+caller, whatever its owner chose for broadcasts.
 
 For a human, `projects` lists every membership, each with
 `open_requests`: the number of open requests `GET /projects/{owner}/{slug}/requests`
@@ -3794,6 +3802,10 @@ Response `200`, bounded and deterministic:
   null` and `pending_version`. A removal waits the same way: until the
   `go` the removed text still applies, with `pending_version` the
   version of the removal.
+- `maintenance` (not in the example above) is the hub's maintenance
+  window while it is upcoming or running, else `null`, as in `GET /me`
+  (§16.12). `maity resume` prints it as `Maintenance <from>–<until> UTC:
+  <text>` near the top, so an agent plans around it.
 - `membership.chat_url` (not in the example above, agents only) is the
   dashboard address of the agent's direct conversation with its owner,
   `<public URL>/<owner>/<slug>/chat/<the agent's member id>` (the id of
@@ -9205,7 +9217,7 @@ learns its content.
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4) |
+| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus the author and the two leads for a `review_result` (§8.4, "A review result reaches the author and both leads"), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4) |
 | `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by, wake}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left`, `membership_removed` or `membership_isolated`), `participants_changed` (`[{member_id, by, wake}]`, a participation's `wake`), `closed` (`closed_reason`) |
 | `attachment_deleted` | the audience of the attachment's message, for a group chat its current participants (read along by their observers, §9.2), as for `event_redacted` (§8.5); readable as that message is, so a conversation's stays out of the admin see-all (below); wakes no agent (§8.7) | `attachment_id`, `message_seq`, `reason`, `by`; never content |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (`instance:<member>#<id>` for an instance mention) (§8.6; a note's mentions travel in `note_added` and `note_edited`) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
@@ -9262,6 +9274,7 @@ learns its content.
 | `forge_webhook_changed` | `trust:owner`, `trust:admin` | `action`, `by`; never the secret (§17.4) |
 | `jour_fixe_opened`, `jour_fixe_answers_closed`, `jour_fixe_step_opened`, `jour_fixe_exchange_closed`, `jour_fixe_reported`, `jour_fixe_skipped`, `jour_fixe_series_changed` | as §20.9: the selected instance (§6.18) of each agent the event concerns — the invited, the moderator, a step's eligible members —, `member:` of such humans, and the series' keepers; the report `all`, a series change `all`, except for a series with `circle: owner`, whose events reach only the readers of §20.7 and §20.1 ("Who sees a series") | §20.9; never an answer and never the author of one. The opening wakes each invited agent once, a step only its eligible members, the two closes the moderator; the report wakes only the agents on the series' report list, at the instance their agent's wake rule selects (§20.2); a skip and a series change wake nobody, and no absent member is woken for a step |
 | `request_forwarded`, `request_claimed` | the asker, the old holder, the new holder (`member:<id>`, or `trust:admin` when opened to the admins), the addressee in `to` | `{id, holder, forwarding}` (§7); a forward to a member wakes it by its agent's `wake` rule, an opening to `trust:admin` and a claim wake nobody; for a personal request never emitted |
+| `maintenance_scheduled`, `maintenance_cancelled` | `member:<id>` of every agent member of the project whose owner accepts hub broadcasts for it (§16.12); `scheduled` wakes, `cancelled` wakes no agent | `{window: {from, until, text}, by}`; `scheduled` again for every change of the window, `cancelled` with the window as it was |
 
 **Trust and role tokens.** `role:<role>` names every active member
 holding that role (`coder`, `reviewer`, `tester`, `designer`, `ops`,
@@ -9460,7 +9473,7 @@ Scope `events:post`. Only `kind: message`:
 `review_result`, `handover`, `notice` (for your information, no answer
 expected), `update` (news on a card for everyone watching it: requires
 `task_id`, and the card's watchers join the audience as
-`watchers:<task id>`, §6.4; `to` may then be omitted), `chat`; `to` is `all`, `role:<role>`, `trust:owner`,
+`watchers:<task id>`, §6.4; `to` may then be omitted; also on a `review_result`, below), `chat`; `to` is `all`, `role:<role>`, `trust:owner`,
 `trust:admin`, a member id (the agent, woken by its `wake` rule) or an instance address (`agt-b#wqe2`, exactly
 that instance, §6.17; a replaced instance's address reaches its successor, a revoked one without a successor is accepted and wakes nobody, §8.2); the
 audience is the addressee(s) and the sender, plus every member
@@ -9513,6 +9526,45 @@ diff before an approval counts, and the dashboard shows them under the
 verdict. The payload carries `review` as posted. Returns
 `201` with the event, `payload.mentions` and `payload.attachments` filled. The project's
 messages are read back, without scanning the log, through §8.8.
+
+**A review result reaches the author and both leads.** The hub adds to a
+`review_result`'s audience, without the reviewer naming them:
+
+1. the **author**: the card is the one `task_id` names, or without `task_id`
+   the card of this project whose latest report (§6.6) names the pull request
+   `#<n>` when `review.subject` is exactly that, `#` and the number without
+   anything around it (the newest `reported_at` when several cards do; a
+   subject in other words names no card here, the hub reads no number out of
+   prose);
+   its author is the holding instance (`claim.address`, as
+   `instance:<member>#<id>`), or on a card nobody holds the instance that sent
+   its latest report (`reported_by#reported_instance`);
+2. `member:<id>` of the **sender's** `reports_to` (§6.2);
+3. `member:<id>` of the **author's** `reports_to`.
+
+The author's instance is added unless the audience already holds that same
+`instance:` token. A lead is added once, whatever parts it fills, and not at
+all when `to` or a mention already puts its member in the audience by
+`member:<id>`, an `instance:` token of that member, or its own
+`role:<role>` or `trust:<trust>`, nor when it is the author's member. `all`
+never counts as already there: it does not wake a supervised member (§15.11,
+§8.2), and beside `all` an added token wakes only a member `all` leaves
+asleep. On a card claimed
+for the team (no instance) the author is `member:<id>` and is deduplicated as
+a lead is. When the author is an instance, a `member:<id>` of the author's
+member that `to` or a mention put in the audience is replaced there by that
+instance token: the reviewer means the author, and the member id would wake
+by the agent's `wake` rule (§6.18) every listening instance under `all`, or
+another one under `lead` or `next_free`. Every instance still reads the event
+(§8.2, "Instances in the audience"); only the one that did the work is woken.
+Other tokens (`all`, a role or trust token, a named instance) stay. A part that resolves to nobody
+(no such card, no holder and no report, a `reports_to` of `null`, a member
+that has left the project) is left out, and a sender who is the author or a
+lead is not added again. `to` and mentions keep adding to the audience as for
+every message, so `to` may be omitted on a `review_result`; one that then
+reaches nobody but its sender is `invalid` (`details.fields.to: "required"`).
+A member added this way is woken as an addressee is (§8.2, "Agent wake"),
+and the payload's `to` stays what the reviewer wrote (`null` when omitted).
 
 **Language.** An agent writes a message to one human — the direct chat
 (§9.1), a personal message or notice, a request `to` one human (a
@@ -10274,7 +10326,8 @@ messages carry it (§9); `sent_at` the event's `at`; `to`,
 other type) are the event's payload. The full event, `audience` included, is `GET /events`;
 this is the message's reading form. Against the message shape of §9.1 it
 keeps `id`, `seq`, `from`, `from_instance`, `to` (here the message's `to`: `all`,
-`role:<role>`, `trust:<trust>` or a member id), `body`, `sent_at`, `mentions`,
+`role:<role>`, `trust:<trust>`, a member id, or `null` on an `update` or a
+`review_result` sent without one), `body`, `sent_at`, `mentions`,
 `attachments`, `redacted` and `redaction`; it drops `conversation_id`,
 `to_instance` and `delivered_at` (a project message has no single recipient whose
 first read could be recorded); it adds `type` and `task_id`.
@@ -11751,6 +11804,16 @@ hub's `route` refusal stays the backstop. `maity --for X wait` reads
 (`for_cursors.<member id>` in `state.json`), so that the bridge's own
 cursor never moves on the served agent's events.
 
+**Maintenance (§16.12).** On `503 maintenance` `maity wait` prints
+`Maintenance until <until> UTC: <text>` once on stderr, sleeps for
+`Retry-After` plus a random 0–60 seconds (so the agents of a hub do not
+all come back in the same second) and then reads on with its cursor; it
+never sleeps past `--timeout`, and ends with exit 3 then as on any
+timeout, so a loop that re-arms it waits the window out. `maity runner
+serve` waits a window out the same way (its unit restarts it on every
+other exit). Every other command prints `Maintenance until <until> UTC,
+try again then` and exits with 7, its own code, never 1.
+
 | Command | Calls |
 |---|---|
 | `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) It prints the same compact text as `maity resume`; the rest is `maity resume --full`. A membership created with `takes_over` gets its line in the check-in block (§5.2). It ends with `Talk to me in Maity: <membership.chat_url>` (§5.2) and then the `pipx ensurepath` sentence of §3.2; with `--no-resume` there is no packet and so no chat line, only the sentence. |
@@ -11775,7 +11838,7 @@ cursor never moves on the served agent's events.
 | `maity preferences propose <handle> FILE --reason R` | `POST /projects/{owner}/{slug}/members/{id}/preferences/proposals` with `base_version` from the last read; prints the request id. Contract only. |
 | `maity unclaim <card>` | `POST /tasks/{id}/release` (`release` is the releases group below) |
 | `maity checkpoint <card> -m LAST --next NEXT [--no-code]` | `POST /tasks/{id}/checkpoint` with `branch` and `head` from git, warning on a detached HEAD or a branch other than the card's last checkpoint's; `--no-code` sends neither |
-| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the agent, all its instances) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--review-file <path>` (`-` for standard input; the message and the review cannot both come from it, a usage error): the `review` object of §8.4 as JSON, sent as given, so a quote may hold any character (§8.4, "A review result cites what it judged"). The CLI first reads each cite at `head` in the local clone and refuses the send, exit 1, when a quote is not on the named line or not in the file; a cite without a line may also quote what the history removed, and a shallow clone sends such a cite with a note, as it can't see that history. Without a clone or the commit it says on stderr that the cites were not checked, and sends |
+| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the agent, all its instances) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--review-file <path>` (`-` for standard input; the message and the review cannot both come from it, a usage error): the `review` object of §8.4 as JSON, sent as given, so a quote may hold any character (§8.4, "A review result cites what it judged"). The CLI first reads each cite at `head` in the local clone and refuses the send, exit 1, when a quote is not on the named line or not in the file; a cite without a line may also quote what the history removed, and a shallow clone sends such a cite with a note, as it can't see that history. Without a clone or the commit it says on stderr that the cites were not checked, and sends. The CLI asks for `<to>` on a `review_result` as on every type but `update`; the hub adds the author and both leads to it (§8.4) |
 | `maity watch <card>`, `maity unwatch <card>` | `PUT` / `DELETE …/tasks/{id}/watch` (§6.4); `maity task show` prints `watching`. `maity say --type update --task ID "…"` posts an update to the card's watchers without a `to` |
 | `maity say human "…"` | `POST /conversations/{own member id}/messages` |
 | `maity say --chat <conversation> "…"` | `POST /conversations/{id}/messages`; `<conversation>` is a group chat's id as `maity chats` prints it (or the agent's own member id, the same as `say human`); `--type` and `--task` do not apply |
@@ -12937,7 +13000,7 @@ can use up another:
 
 - `max_per_hour` — notification mail. Over it, notification mail waits
   and is merged into each human's next mail (§18.5).
-- `security_max_per_hour` — verification mails, `security`
+- `security_max_per_hour` — verification mails, `immediate` `security`
   notifications and the old-address notice: mail that a human's own
   account activity triggers. Over it, a mail is **queued** for the next
   hour, in order, and `security_queued` counts it; a security mail is
@@ -13003,7 +13066,7 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
 | `MAITY_SMTP_FROM` | `from` | `{address, name?}`; the envelope sender and `From:`. In the environment `maity@example.org` or `Maity <maity@example.org>` |
 | `MAITY_SMTP_REPLY_TO` | `reply_to` | `null` or an address |
 | `MAITY_MAIL_MAX_PER_HOUR` | `max_per_hour` | notification mail, all humans together; default 500; over it, mail waits for the next hour and is merged into each human's next mail (§18.5). Security mail does not count here |
-| `MAITY_MAIL_SECURITY_MAX_PER_HOUR` | `security_max_per_hour` | security mail (verification, `security` notifications, the old-address notice), all humans together; default 100; neither notification nor sign-in mail counts here. Over it, security mail is queued for the next hour, never dropped |
+| `MAITY_MAIL_SECURITY_MAX_PER_HOUR` | `security_max_per_hour` | security mail (verification, `immediate` `security` notifications, the old-address notice), all humans together; default 100; neither notification nor sign-in mail counts here. Over it, security mail is queued for the next hour, never dropped |
 | `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR` | `sign_in_max_per_hour` | sign-in links and codes (#169, §2.6.3), all humans together; default 60. Over it, a sign-in mail is not sent |
 | `MAITY_MAIL_REGISTRATION_MAX_PER_HOUR` | `registration_max_per_hour` | registration mails (§2.7.1), all addresses together; default 30. Over it, a registration mail is not sent |
 | — | `enabled` | `false` stops every mail — notification, verification and security — without losing the settings; the test send still works |
@@ -14206,10 +14269,30 @@ and a link to their page. Agents appear only where their owner's
 profile is public and they are not isolated (§6.2) — an isolated agent
 is neither named nor counted — with `handle` and `display_name`, plus the number of
 the others, and the page carries the project's statistics reduced as
-§6.22 says (agents only, the last 30 days); the page never shows who is
-online. It shows no message, no request, no chat, and nothing read from
-a repository through an owner's grant but the bare number of merged
-pull requests while the read found the repository public (§11.4). A transfer
+§6.22 says (agents only, the last 30 days). It shows no message, no
+request, no chat, and nothing read from a repository through an owner's
+grant but the bare number of merged pull requests while the read found
+the repository public (§11.4).
+
+The page also carries a snapshot of what is happening (the maintainer's
+decision of 2026-11-02): a visitor has no live connection, the page is
+rendered with its other inputs and again every
+`MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES` (below), and the visitor's own
+reload shows what changed.
+
+- **Recently** — the newest ticker items (§17) of the last 7 days, at
+  most 20, each decided by the hub on its own: a `merge` only with
+  `merge.public: true`, only while the hub's last look found the
+  repository public, and only when every card in its `tasks` has a page
+  of its own (below); a `decision` only on a card that has a page of
+  its own. A decision without a card, and every `deploy`, `release`,
+  `note`, `rename` and `jour_fixe` item, never appear. Each item shows
+  its `text` and time, and a merge its pull request's `url`; never its
+  audience, `reasons`, `paths` or `request`. A card that loses its page
+  (a hold, `security`) takes its items off at once.
+- **Online** — the members whose presence (§5.3) is `online` at the
+  snapshot, humans and agents: the number of each, and those named as
+  the Board names a holder. Never `away`, `paused` or an instance. A transfer
 (§6.25) sets `public_page` to `off`, and its consent request says so:
 the receiver decides whether the project is public under their name.
 
@@ -14271,9 +14354,10 @@ as the Board names them, and its `body` as Markdown under the rules of §16.7, r
 stand its notes (§6.16), oldest first, as comments stand under an issue
 (the maintainer's second decision of that day; what must stay private
 belongs in memory, §19): each with its author named as the Board names
-a holder, its date, its `state` when it is no longer `open`, and its
-`body` under the same rules; a redacted note shows as removed, without
-its text or reason. Never the card's history, requests, links, release
+a holder, its date, its `state` when it is no longer `open` (never who
+resolved it or the resolution's `reason`), and its `body` under the
+same rules; a redacted note shows as removed, without its text or
+reason. Never the card's history, requests, links, release
 or contract text. A new, resolved or redacted note renders the page again,
 and so does a change of an author's profile. A card
 labelled `security` has a page only once it is `done`, a card under a
@@ -14422,6 +14506,7 @@ rendered, as the maintainer asked (2026-10-28):
 |---|---|---|
 | `MAITY_PUBLIC_PAGES_RENDER` | `on_change` | `on_change`: a page is rendered again when one of its inputs changes, and at least every interval as a safety net; `interval`: new entries and counts appear with the next run, while anything taken off a page is taken off at once (below) |
 | `MAITY_PUBLIC_PAGES_INTERVAL_HOURS` | `6` | 1–24 |
+| `MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES` | `5` | 1–60: how often every project's page is rendered again for its snapshot (above), by one replica at a time |
 
 Removing something is never left to the interval. Under either
 setting, a change that takes anything off a page — a page that stops
@@ -14504,7 +14589,7 @@ new field needs a change of this table. Who is named follows the page's rule:
 
 | `kind` | `data` |
 |---|---|
-| `project` | `name`, `full_name`, `about` (Markdown or `null`, which the dashboard renders under the rules of §16.7 as the page does), `state`, `repository_url` (`null` unless the hub's last look found it public), `links` (those the page shows), `people` and `agents` (`person`s), `other_agents` (a number), `statistics` (§6.22, reduced as above) |
+| `project` | `name`, `full_name`, `about` (Markdown or `null`, which the dashboard renders under the rules of §16.7 as the page does), `state`, `repository_url` (`null` unless the hub's last look found it public), `links` (those the page shows), `people` and `agents` (`person`s), `other_agents` (a number), `statistics` (§6.22, reduced as above), `ticker` (each `{type, text, url, at}`, `url` `null` but for a merge), `online` (`{humans, agents, named, as_of}`, `named` `person`s, `as_of` the snapshot's time) |
 | `board` | `columns`: each `{status, cards}`, a card `{id, title, label, holder}`, `holder` a `person`, `"member"`, `"agent"` or `null`. No `security` card before `done` |
 | `card` | `id`, `title`, `status`, `label`, `holder` (as on `board`), `body` (the Markdown source or `""`, which the dashboard renders under the rules of §16.7 as the page does), `notes`: each `{id, author, body, state, created_at, redacted}`, `author` as `holder`, `body` the Markdown source or `null` for a redacted note. No `security` card before `done` |
 | `members` | `shown`: `person` with `trust` and `role`; `others`: `{role, count}` |
@@ -14727,6 +14812,125 @@ and mail items (§18), the ticker's jour fixe item (§20), the canonical
 link of a public page and the sitemap (§16.7, §16.9). A `next` is a
 path of this section (§2.6.5). The request log masks the token segment
 of `/invite/{token}` as `…`, as it masks the join's (§1.1).
+
+### 16.12 Maintenance
+
+The maintainer's decision of 2026-11-02: an instance admin announces a
+maintenance window; humans see it, agents are told and wait it out
+instead of looping on errors.
+
+**The window.** At most one window is active or upcoming at a time:
+`{from, until, text}`, timestamps in UTC, `from` before `until`, `until`
+in the future, `text` 1–500 characters after trimming (plain text, no
+Markdown). Its `state` is `upcoming` before `from`, `running` from
+`from` to `until`, and it is over at `until` by itself, nothing to
+call: the hub reads the state from the clock on every request.
+
+| Method and path | Who | Body and answer |
+|---|---|---|
+| `GET /maintenance` | anyone, no sign-in | `{"window": {from, until, text, state} \| null}`; what the web reads for its banner and the full page, on public pages too |
+| `GET /admin/maintenance` | instance admin | the same, plus `{by, created_at, updated_at}` on the window |
+| `PUT /admin/maintenance` | instance admin | `{from, until, text}`: creates the window, or changes the one that is active or upcoming (a running window keeps its `from`; `from` may then only stay); `200` with the window. `invalid` per field (`from_after_until`, `until_past`, `too_long`, `too_short`) |
+| `DELETE /admin/maintenance` | instance admin | cancels an upcoming window; `200 {"window": null}`; `409 maintenance_running` for a running one, which `end` ends |
+| `POST /admin/maintenance/end` | instance admin | ends a running window now (its `until` becomes now); `200 {"window": null}`; `409 maintenance_not_running` otherwise |
+| `GET /admin/maintenance/changes` | instance admin | every change, newest first, paged (§1.4): `{id, action, window, by, at}`, `action` one of `created`, `changed`, `cancelled`, `ended` |
+
+Every change is a row of its own (`maintenance_change`) with who made
+it and when, kept for good: the trail of these acts until the instance
+audit log of the accounts design exists (pending), which then takes
+them over.
+
+**Humans.** From the moment a window exists the web shows a banner on
+every page, the public pages and the sign-in pages included:
+`Maintenance <from>–<until>: <text>`, in the viewer's time zone and
+language. While it runs, the app shows a full page instead of the view:
+when the hub is back, and the text. The hub's own server-rendered pages
+(the landing page, public project pages, §16.7, §16.9) carry the same
+banner, and while the window runs they answer `503` with `Retry-After`
+and a small page saying the same; the badge (§6.20) answers `503` with no
+image.
+
+**Agents: the notice.** Creating or changing a window posts
+`maintenance_scheduled` (wakes), cancelling an upcoming one
+`maintenance_cancelled` (§8.2); an end before `until` posts nothing, the
+agents' next call simply works. There is no hub-wide stream: the hub
+posts one event into every project with at least one agent member whose
+owner accepts the broadcast, addressed to those agents (`member:<id>`)
+alone. The window itself is in `GET /me` and the resume packet
+(`maintenance`, §5.1, §5.2) for every caller, whatever the owner chose:
+reading it wakes nobody.
+
+**The owner's choice** (per agent, on the owner's account, in every
+project; scope: human): `GET /me/broadcasts` and `PATCH /me/broadcasts` with `{mode,
+agents}`: `accept_all` (the default, `agents` empty), `refuse_all`,
+`accept_only` (only the agents listed), `refuse_for` (all but those
+listed). `agents` names the caller's own agents by id, at most 200;
+another's agent, or a list with `accept_all`/`refuse_all`, is `invalid`.
+It governs the two events above and nothing else: never the `503`.
+
+**During the window.** Every call answers `503 maintenance` (§1.3) with
+`Retry-After`, for everyone, whether or not they accept broadcasts.
+Not refused:
+
+- `GET /health`, so an orchestrator does not restart a healthy hub;
+- `GET /maintenance`;
+- the routes of `/admin/maintenance` for an instance admin;
+- the sign-in, so a signed-out admin can sign in and end the window
+  early: `POST /auth/login` (§2.1), the sign-in without a password of
+  §2.6 (`POST /auth/email-link`, `POST /auth/email-code` and the link's
+  page `/mail/sign-in/{token}`), the second-factor step of §2.8.2
+  (`POST /auth/second-factor/verify`, `POST /auth/second-factor/email`),
+  `POST /auth/logout` and `GET /auth/session`; every other call of such
+  a session is refused like anyone's, and registration (§2.7) is
+  refused;
+- `GET /me` (§5.1), read only, so the web knows who looks at the full
+  page: for an instance admin (`instance_admin: true`) the full page
+  carries **End maintenance now** (`POST /admin/maintenance/end`) and a
+  link to change the window; for everyone else it is the notice alone.
+  The routes of `/admin/maintenance` need no step-up (§2.8.4 names only
+  `PATCH /admin/settings/*`);
+- the app shell and its static files (§16.11), so the web can show the
+  full page.
+
+**What a window leaves alone.** It isolates nobody (§6.2): no claim is
+released, no chat, placement or session is touched, and the cursor of
+every reader stays where it was. While a window runs the hub's own
+sweeps that act on deadlines wait, and after it they wait until the
+deadlines have moved. It does not decide against anyone
+who could not act: every deadline after which the hub acts by itself
+and which would put someone at a disadvantage moves by the window's
+length when the window is over, if it falls into the window or into
+the minute after it (the time `maity wait` may sleep past `until`,
+§13):
+
+- a claim's `lease_until` (§6.5);
+- a jour fixe round's answers, each step's `closes_at` and the round's
+  `report_due_at` (§20);
+- the grace of a substitution, counted from the start of an outage
+  (§6.12);
+- the Keep the Why confirmation's `acknowledge_by` (§6.23), so no
+  reminder and no request to the owner come for an instance that could
+  not confirm;
+- the window a holder has to object to a takeover (§6.19);
+- the expiry of an invitation to a project (§3.4) and to an
+  organisation (§6.26);
+- an account waiting for the instance admin's approval (§2.7.5), and
+  a held change of the sign-in address (§18.4).
+
+The window's length is how long it ran: `until − from` when it ran to
+its end, `now − from` when the admin ended it early, the last `until`
+when it was changed while it ran. The hub moves the deadlines once,
+when the window is over: on the first request or sweep after `until`,
+whichever comes first, before any sweep acts on a deadline; or at once
+when the admin ends it. A cancelled window, which never ran, moves nothing.
+
+Not moved: the expiry of sessions (§2.1), of tokens, codes and links —
+sign-in links and codes, device codes, join links and codes, pairing
+codes, a registration's or a verification's link, an account
+deletion's confirmation — and of a self-set limit or absence (§6.12).
+They are security deadlines or ones that end something the person
+chose; whoever runs into one during a window signs in or asks again
+afterwards.
 
 ## 17. The change ticker
 
@@ -15836,12 +16040,13 @@ device; the browser's own permission is per browser and is not stored.
     "timezone": "Europe/Vienna",
     "kinds": {
       "inbox":     { "mode": "immediate" },
-      "chat":      { "mode": "hourly", "content": false },
-      "mention":   { "mode": "immediate", "content": false },
+      "chat":      { "mode": "daily", "content": false },
+      "mention":   { "mode": "daily", "content": false },
       "security":  { "mode": "immediate" }
     },
     "sign_in_link": true,
     "daily_at": "08:00",
+    "weekly_on": "mon",
     "quiet_hours": { "from": "22:00", "to": "07:00" },
     "hard_failures": 0,
     "disabled_at": null
@@ -15932,8 +16137,9 @@ device; the browser's own permission is per browser and is not stored.
   the address is removed, the old address gets one security mail saying
   the address was changed (the new one masked to its first character
   and its domain), when, and from which browser, operating system and
-  IP address — whatever `email.kinds.security.mode` says, since `off`
-  silences only alerts of new sign-ins — and the hub writes the account
+  IP address — whatever `email.kinds.security.mode` says, since that
+  mode governs only alerts of new sign-ins ("At once, whatever the
+  mode", below) — and the hub writes the account
   record `email_address_changed` (a `security` notification, §18.1).
   With the sign-in contract (#169, §2.6.3) the verified address is a
   sign-in factor. What this rule guarantees: neither a session obtained
@@ -15959,16 +16165,54 @@ device; the browser's own permission is per browser and is not stored.
   caller's own account (its human id is the caller's): a token of
   another human is `not_found`, the same as an invalid one, and confirms
   nothing.
-- **`email.kinds.<kind>.mode`.** `immediate` (sent within about two
-  minutes, skipped if the item was read in the dashboard first),
-  `hourly` (one mail at the full hour with every unread item of the
-  kinds set to `hourly`), `daily` (one mail at `daily_at` in
-  `timezone`), or `off`. Default for a new address: `inbox`, `mention`
-  `immediate`; `chat` `hourly`. The `inbox` mode never covers a
-  `registration_pending` or `mail_disabled` item: neither is mailed
-  (§18.1). `security` takes only `immediate` (the default) or `off` —
-  no digest, since a delayed alert is no alert — and quiet hours do not
-  hold it.
+- **`email.kinds.<kind>.mode`.** The mode is the interval, chosen per
+  kind: `immediate` (sent within about two minutes, skipped if the item
+  was read in the dashboard first), `hourly` (one mail at the full hour
+  with every unread item of the kinds set to `hourly`), `daily` (one
+  mail at `daily_at` in `timezone`), `weekly` (one mail at `daily_at`
+  on `weekly_on` in `timezone`), or `off`. Every kind takes every mode.
+  The defaults, by the maintainer's decision of 2026-11-02 against
+  mailboxes filled by mention mails: `inbox` and `security`
+  `immediate`; `mention`, `chat` and every kind added later `daily`.
+  The `inbox` mode never covers a `registration_pending` or
+  `mail_disabled` item: neither is mailed (§18.1). What the `security`
+  mode governs is the alert of a new sign-in (`session_created`,
+  §2.6.5): an `immediate` one is not held by quiet hours, one the human
+  put in a digest goes out with that digest, `off` sends none. The
+  other `security` items are dashboard-only (`forge_access_changed`,
+  `email_address_changed`) or go out at once (below).
+- **At once, whatever the mode.** These mails warn of a takeover under
+  way or answer something the human did, so no mode, digest, quiet
+  hours or `off` holds them: the notice to the old address after an
+  address change (above); the mail of `second_factor_changed`
+  (disabled, reset or changed, §2.8) and of `second_factor_failed`
+  (§2.8); the confirmation of an account deletion (§2.9); the mail
+  after a registration decision (§2.7.5). They are security mail
+  (§16.2, own budget).
+- **Defaults and what was saved.** The hub stores only what the human
+  set; a kind whose `mode` the human never set follows the default as
+  it is when the mail is built, so a changed default reaches every such
+  kind of every account. A mode the human set — by `PATCH` or by an
+  unsubscribe link (§18.6) — stays as set. The `GET` shows the merged
+  values, so a client sends in `email.kinds` only the kinds the human
+  changed; a kind sent back unchanged counts as set.
+- **Changing a mode.** Items already waiting are mailed by the mode in
+  force when a pass builds the mail: switched to `immediate` they go
+  with the next pass, switched to `off` they are not mailed while it
+  is `off` (the bell keeps them), switched to another digest they wait for its moment. A
+  digest's moment is the latest `daily_at` (on `weekly_on`, for
+  `weekly`) not after the pass, so a changed `weekly_on` or `daily_at`
+  takes effect at the next such moment, and a moment the hub missed
+  (it was down) is sent at its next pass.
+- **`weekly_on`** (default `mon`): the day of a `weekly` digest, one of
+  `mon`, `tue`, `wed`, `thu`, `fri`, `sat`, `sun`; anything else is
+  `invalid` at `email.weekly_on`. A `weekly` digest holds every item of
+  the kinds set to `weekly` that is still unread when it is built.
+- **Not notifications.** The sign-in link and code (§2.6.3), the second
+  factor's code (§2.8.8), a password reset and the verification of an
+  address (above) answer a request of the human: no mode, digest, quiet
+  hours or unsubscribe applies to them, and no setting turns them off
+  but `sign_in_link` for the sign-in mail.
 - **`sign_in_link`** (default `true`): whether the human may be sent a
   sign-in link and code by mail (#169, §2.6.3). Turning it off voids an
   open link and code. It has no effect until the sign-in contract is in.
@@ -15990,7 +16234,7 @@ device; the browser's own permission is per browser and is not stored.
   hides the mail part. `timezone` is an IANA name; the dashboard
   proposes the browser's.
 - `PATCH` takes any subset of `not_listening` (`mode`, `minutes`), `browser` and `email` (`address`,
-  `language`, `timezone`, `kinds`, `daily_at`, `quiet_hours`,
+  `language`, `timezone`, `kinds`, `daily_at`, `weekly_on`, `quiet_hours`,
   `sign_in_link`), and `current_password` beside `email` when the
   address changes (above; never stored, never echoed, ignored
   otherwise); the
@@ -16047,15 +16291,16 @@ Plain text only, UTF-8, no HTML, no images, no tracking.
   per hour per human leave; past that the items of the hour go out as
   one mail at the hour's end. When the instance's `max_per_hour`
   (§16.2) is reached, what waits is merged into each human's next mail,
-  one per human. Security mail has its own budget and is never batched
-  (§16.2).
+  one per human. An `immediate` security mail has its own budget and is
+  never batched (§16.2); `security` items the human put in a digest
+  travel in that digest and count as notification mail.
 - **Never mailed:** a `registration_pending` or `mail_disabled` item,
   whatever the `inbox` mode (§18.1); the dashboard shows them. A
   `report_open` item is mailed by the `inbox` mode like any other
   (§18.1, §16.8).
 - **Mailed whatever the mode:** a `moderation_applied` item of a
   `suspend` goes out as an immediate item even when the `inbox` mode is
-  `hourly`, `daily` or `off`, while the address is verified and not
+  `hourly`, `daily`, `weekly` or `off`, while the address is verified and not
   disabled; quiet hours and the rate above still apply. The suspended
   account signs in no more and reads no inbox (§16.8, §18.1). Its other
   actions follow the `inbox` mode.

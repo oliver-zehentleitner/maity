@@ -2191,6 +2191,14 @@
     "en": "017079eacd7f007c",
     "text": "65ed7e67cdc80bbd"
   },
+  "cardpanel.notes.removed": {
+    "en": "52898b6ba030c660",
+    "text": "fca5391bee7986d1"
+  },
+  "cardpanel.notes.removed_by": {
+    "en": "c2765c6a0d21da56",
+    "text": "93bbc6e7435d79b6"
+  },
   "cardpanel.updates": {
     "en": "940bff6368ac60d9",
     "text": "940bff6368ac60d9"
@@ -7399,6 +7407,14 @@
     "en": "ad5f7e36feb077c4",
     "text": "57188de05f27fc85"
   },
+  "landing.stat.instances": {
+    "en": "468a5f1b13f3feda",
+    "text": "40abb70f7169c4f1"
+  },
+  "landing.stat.instances_online": {
+    "en": "74a65479137b8f26",
+    "text": "00ab84d1d96516a9"
+  },
   "landing.stat.people": {
     "en": "d4bc0ae2931e67d5",
     "text": "34fe1533f72a354c"
@@ -8134,6 +8150,26 @@
   "mail.whole_number": {
     "en": "ce87e59eece203ad",
     "text": "b5dc48ff54d909ca"
+  },
+  "manages.dormant": {
+    "en": "7dc2cb09c86b43b2",
+    "text": "149b18bc65dad7dd"
+  },
+  "manages.instances": {
+    "en": "a1ba171d882876c8",
+    "text": "cd87d78565927873"
+  },
+  "manages.members": {
+    "en": "128c85a8aca5d158",
+    "text": "f1e4aa0e66108794"
+  },
+  "manages.online": {
+    "en": "42f4b9b3fd957611",
+    "text": "42f4b9b3fd957611"
+  },
+  "manages.total": {
+    "en": "cdaee4bef6108c91",
+    "text": "1b5411d2a783af0d"
   },
   "md.block": {
     "en": "c594c2f071d22117",
@@ -8921,7 +8957,7 @@
   },
   "members.refused.owner_only": {
     "en": "5986939bc51d1d96",
-    "text": "b3f0fc5b0b627b04"
+    "text": "e88ee29beabb2aca"
   },
   "members.refused.pause_reason_too_long": {
     "en": "3942251ad1003268",
@@ -8929,7 +8965,7 @@
   },
   "members.refused.proxy_needs_admin": {
     "en": "a3d0d161b25c5f9d",
-    "text": "67247cd3a43b73d3"
+    "text": "485f3e7f761e7b4c"
   },
   "members.refused.reports_to_cycle": {
     "en": "7b52fc0a988bdfbf",
@@ -17082,5 +17118,21 @@
   "why.title": {
     "en": "3b27804ac2ee6218",
     "text": "3b27804ac2ee6218"
+  },
+  "why.type.constraint": {
+    "en": "de0740072b4b7e32",
+    "text": "61feb5d4f9da2edd"
+  },
+  "why.type.decision": {
+    "en": "0807ce842aee5194",
+    "text": "da082d0b9ffa18d6"
+  },
+  "why.type.incident": {
+    "en": "eca7e46dba9d5a4d",
+    "text": "f8464870e62eb0a3"
+  },
+  "why.type.workaround": {
+    "en": "9ca98a86c44a2b28",
+    "text": "0f135bb6ab72585a"
   }
 }

@@ -1131,6 +1131,7 @@ the service never ends the agents' tmux sessions.
 | 4 | `report` refused |
 | 5 | this agent is isolated in the project (§6.2): every call but `resume` is refused until a human lifts it; do not re-arm `wait` |
 | 6 | `wait` superseded by another `wait` of this credential |
+| 7 | the hub is in a maintenance window (§16.12 of docs/api.md): the message names its end; try again then. `wait` and `runner serve` never exit 7: they sleep the window out |
 | 78 | `maity runner serve`: a revoked credential, a configuration, state directory or answer the hub will not change, or a second service; the systemd unit does not restart it |
 | 130 | interrupted (Ctrl-C) |
 

@@ -4643,5 +4643,9 @@ window.MAITY_I18N["it"] = {
     "one": "{count} voce senza id è stata saltata.",
     "other": "{count} voci senza id sono state saltate."
   },
-  "why.title": "Perché"
+  "why.title": "Perché",
+  "why.type.constraint": "vincolo",
+  "why.type.decision": "decisione",
+  "why.type.incident": "incidente",
+  "why.type.workaround": "workaround"
 };
