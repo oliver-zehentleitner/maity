@@ -942,10 +942,13 @@ a role someone holds, like the other languages' word. A trust level keeps its on
 so that a level reads the same everywhere; the words around it stay neutral where they can.
 A report of abuse is resolved with `erledigen` on every key of its page, because `bearbeiten` is already the word for Edit and
 reads as editing.
+A release keeps its own word apart from a version where a language has both: `A release with this version already exists`
+names the two together, and legal pages and older frames already use `version` for a saved text. German has one gender for it.
 
 **Rejected alternatives:**
 - `Übernahme` for both claim and takeover: an error then says a card "needs a takeover" next to "nobody has claimed it".
 - `Schlichtung` for arbiter: a procedure, and it reads badly before a name.
+- `version`, `versión`, `versão` for a release: one word for two things in `error.version_exists`.
 - `bearbeiten` for resolving a report: a half-changed page showed `Erledigen` next to `Wird bearbeitet …`.
 - A neutral form for `Besitzer` in the table: it would make the level's name differ between labels and sentences.
 

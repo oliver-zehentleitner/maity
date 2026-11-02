@@ -106,6 +106,15 @@ for text, before in [
 ]:
     expect(not prose(text, before), "code: %r after %r" % (text, before))
 
+def table(*rows):
+    head = "| English | de | fr | es | it | pt | nl | ja | ko | zh-Hans |\n|---|---|---|---|---|---|---|---|---|---|\n"
+    return head + "".join("| %s | a | b | c | d | %s | f | g | h | i |\n" % row for row in rows)
+
+
+duplicates = check.glossary_duplicates
+expect(duplicates(table(("sign in", "entrar"), ("join", "entrar"))) != [], "glossary: one word for two things")
+expect(all(d[0] != "pt" for d in duplicates(table(("user, one", "x"), ("users, several", "x")))), "glossary: one thing's two forms")
+
 # The hub's words: a translation and what it follows, in a stand-in of the repository.
 import json  # noqa: E402
 import os  # noqa: E402
@@ -140,6 +149,10 @@ found, _ = hub_words_findings({"en.json": words_en, "de.json": {}}, [], release=
 expect(any("1 key(s) missing" in f for f in found), "hub words: at a release it is a finding")
 found, _ = hub_words_findings({"en.json": words_en}, ["fr.json"])
 expect(any("fr.json" in f and "delete" in f for f in found), "hub words: a meta file without a translation")
+found, _ = hub_words_findings({"en.json": words_en}, ["en.json"])
+expect(any("en.json" in f for f in found), "hub words: English has no meta file")
+found, _ = hub_words_findings({"en.json": words_en}, [".gitkeep"])
+expect(found == [], "hub words: only meta files count")
 check.ROOT = root
 check.findings.clear()
 
