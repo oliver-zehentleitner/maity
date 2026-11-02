@@ -550,14 +550,21 @@ def _deliver_review(
     review: dict[str, Any],
     audience: list[str],
 ) -> list[str]:
-    """A review result's author and both leads (§8.4). The author's instance is added unless
-    the audience holds `all` or that same instance token: a member id would wake another
-    instance under `wake: lead` or `next_free`. A member token (a lead, or an author whose
+    """A review result's author and both leads (§8.4). The author's instance takes the place
+    of the author's `member:` token that `to` or a mention put in the audience, and is added
+    unless the audience holds that same instance token. A member token (a lead, or an author whose
     card was claimed for the team) is added unless `to` or a mention reaches the member
-    already: `all`, one of its role or trust tokens, or a token of its own. One that then
-    reaches nobody but its sender is `invalid`."""
+    already: one of its role or trust tokens, or a token of its own. `all` counts for
+    neither: it does not wake a supervised member, and beside it an added token wakes
+    only such a one. One that then reaches nobody but its sender is `invalid`."""
     sender = conn.execute(select(t.membership).where(t.membership.c.id == mine.id)).one()
     found = review_delivery.recipients(conn, mine.project.id, sender, task_id, review)
+    for r in found:
+        if r.token.startswith("instance:"):
+            # The reviewer means the author: the member id would wake other instances by the
+            # agent's `wake` rule (§6.18). The payload's `to` stays as written.
+            member = f"member:{r.member_id}"
+            audience = [r.token if token == member else token for token in audience]
     roles = _roles(conn, mine.project.id, [r.member_id for r in found])
     reached_members = {
         token.split(":", 1)[1].split("#", 1)[0]
@@ -567,8 +574,7 @@ def _deliver_review(
     added = [
         r.token
         for r in found
-        if "all" not in audience
-        and (
+        if (
             r.token not in audience
             if r.token.startswith("instance:")
             else not (

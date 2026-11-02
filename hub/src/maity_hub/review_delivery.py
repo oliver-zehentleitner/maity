@@ -6,7 +6,7 @@ reports to. The card is the one the message's `task_id` names, or without it the
 latest report names the pull request `#<n>` when `review.subject` is exactly that; its author
 is the holding instance, or on a card nobody holds the instance that sent its latest report.
 A part that resolves to nobody is left out; `routes/events._deliver_review` drops whoever the
-audience already reaches (the author's instance only for `all` or that same instance).
+audience already reaches (the author's instance only that same instance; `all` never).
 """
 
 from __future__ import annotations

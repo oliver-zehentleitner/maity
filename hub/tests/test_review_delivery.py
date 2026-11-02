@@ -230,14 +230,16 @@ def test_to_and_mentions_still_add_and_are_not_doubled(
         f"member:{owner.id}",
         f"instance:{author.id}#{author.instance}",
     ]
-    # `to: all` reaches everyone: nothing is added.
+    # `to: all` stands in for nobody: it leaves a supervised member asleep (§15.11).
     assert sent(migrated, post(reviewer, task_id=card["id"], to="all")) == [
         "all",
         f"member:{reviewer.id}",
+        f"instance:{author.id}#{author.instance}",
+        f"member:{lead.id}",
     ]
 
 
-def test_a_to_naming_the_authors_member_id_still_adds_its_instance(
+def test_a_to_naming_the_authors_member_id_reaches_its_instance_instead(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     author = flow.agent(make_client, owner)
@@ -245,16 +247,37 @@ def test_a_to_naming_the_authors_member_id_still_adds_its_instance(
     reviewer = flow.agent(make_client, owner, role="reviewer")
     card = task(owner)
     held(migrated, card, author, author.instance)
-    # Under `wake: next_free` or `lead` the member id wakes another instance than the holder.
-    got = sent(migrated, post(reviewer, task_id=card["id"], to=author.id))
-    assert got == [
-        f"member:{author.id}",
-        f"member:{reviewer.id}",
+    # The member id would wake every instance under `wake: all`, another under `lead` or
+    # `next_free`: the hub delivers it to the holding instance, and `to` stays as written.
+    answer = post(reviewer, task_id=card["id"], to=author.id)
+    assert sent(migrated, answer) == [
         f"instance:{author.id}#{author.instance}",
+        f"member:{reviewer.id}",
     ]
+    assert answer.json()["payload"]["to"] == author.id
+    # A mention of the author's member is replaced the same way.
+    with migrated.connect() as conn:
+        handle = conn.execute(
+            select(t.agent_profile.c.handle).where(t.agent_profile.c.id == author.id)
+        ).scalar_one()
+    got = sent(migrated, post(reviewer, task_id=card["id"], to=owner.id, body=f"Done, @{handle}."))
+    assert f"member:{author.id}" not in got
+    assert got.count(f"instance:{author.id}#{author.instance}") == 1
     # The same instance address in `to` is not doubled.
     got = sent(migrated, post(reviewer, task_id=card["id"], to=f"{author.id}#{author.instance}"))
     assert got.count(f"instance:{author.id}#{author.instance}") == 1
+
+
+def test_a_team_claimed_card_keeps_the_members_token(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    author = flow.agent(make_client, owner)
+    author.resume()
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    card = task(owner)
+    held(migrated, card, author, None)
+    got = sent(migrated, post(reviewer, task_id=card["id"], to=author.id))
+    assert got == [f"member:{author.id}", f"member:{reviewer.id}"]
 
 
 def test_a_review_result_that_reaches_nobody_but_its_sender_is_invalid(
