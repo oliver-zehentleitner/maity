@@ -5,3 +5,7 @@
   (§11.4), and there only public repositories; unset, it serves no project. Every other project
   is read only through its namespace owner's App or token after confirmation, otherwise
   `probe_via` is `null` and the dashboard asks the owner to connect (§6.1, §11.4)
+- contract: a name listed in `MAITY_FORGE_INSTANCE_NAMESPACES` that no namespace carries is
+  `reserved` for human and organisation handles while it is listed, and the hub warns about it at
+  start (§2.7.4, §6.24, §11.4); the public page's Why is read only for the operator's own
+  namespaces (§16.9)

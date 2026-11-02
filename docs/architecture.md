@@ -671,7 +671,8 @@ One codebase, three shapes, all documented in `docs/` and all exercised
 
 Common to all: settings come from the environment (`MAITY_DATABASE_URL`,
 `MAITY_BIND`, `MAITY_PUBLIC_URL`, `MAITY_WEB_DIR`, `MAITY_TRUSTED_PROXIES`,
-`MAITY_ALLOW_PLAIN_HTTP`, `MAITY_FORGE_GITHUB_TOKEN`); the hub binds
+`MAITY_ALLOW_PLAIN_HTTP`, `MAITY_FORGE_GITHUB_TOKEN`,
+`MAITY_FORGE_INSTANCE_NAMESPACES`); the hub binds
 loopback by default and opening it is one variable
 (`hub/context/serving.md`); TLS is the operator's reverse proxy or
 ingress, and the hub takes scheme and client address from forwarded

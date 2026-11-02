@@ -2193,8 +2193,9 @@ A human's handle follows the agent profiles' syntax
 and organisations, their aliases included (§6.24, §6.26), since the
 login takes it (§2.1) and a project's owner is named by it (§6.25);
 compared as written, it is lower case by the syntax. It is never a
-reserved first segment (§16.11): `invalid`, `details.fields.handle:
-"reserved"`. `display_name` is 1–64 characters, no control
+reserved first segment (§16.11), nor a name the operator lists for the
+instance token while no namespace carries it (§11.4): `invalid`,
+`details.fields.handle: "reserved"`. `display_name` is 1–64 characters, no control
 character. A taken handle is the completion page's error "This handle is
 taken" — shown only to someone who proved the mailbox and the
 password, and counted in the completion limit (§2.7.3). The human
@@ -8043,8 +8044,10 @@ placement will create a profile of the same owner with it (§15.5):
 `invalid`, `details.fields.handle: "taken"`. A human's or an
 organisation's handle is also never a reserved first segment of §16.11
 (`invalid`, `details.fields.handle: "reserved"`), since it is the first
-segment of its owner's address; agent profile handles are not
-addresses and are not checked against it.
+segment of its owner's address, nor a name the operator lists in
+`MAITY_FORGE_INSTANCE_NAMESPACES` while no namespace carries it (§11.4,
+the same answer); agent profile handles are not addresses and are not
+checked against either.
 The check holds for every call that gives a handle — registration
 (§2.7.4), `maity-hub owner create`, `POST /orgs` (§6.26), `POST /agents`, a join or a
 placement that creates a profile (§3.1, §15.5, `handle_taken` at the
@@ -11337,9 +11340,21 @@ A project is in one of them when its current namespace is one of the
 names, compared in lower case. A rename of a listed namespace (§6.24)
 takes its projects out until the operator lists the new name; a name
 given up stays its id's alias and is never another's (§6.24), so a
-listed name cannot pass to someone else. A transfer (§6.25) into or out
-of a listed namespace applies at the next choice of the source. A name
-listed that no namespace carries does nothing.
+listed name cannot pass to someone else. A rename and a transfer
+(§6.25) into or out of a listed namespace apply to the next read at
+once: the project's current namespace is part of what the choice of
+its source depends on, like the URL and the owner's grants, not kept
+for the 10 minutes above.
+
+A listed name that no namespace carries as its current handle is held
+for the operator while it is listed: no human or organisation can take
+it — registration (§2.7.4), `maity-hub owner create`, `POST /orgs` and
+every rename (§6.24) answer `invalid`, `details.fields.handle:
+"reserved"`, as for a reserved first segment — so a typing error or an
+organisation not yet created cannot later be registered by someone else
+and read with the instance token. The hub logs a warning at start for
+each such name. An agent profile's handle is not an address and is not
+checked against the list. Removing a name from the list frees it again.
 
 For every other project the instance token is used for no read at all:
 not the probe, not the visibility of §16.9, not the first look at a new
@@ -14372,9 +14387,11 @@ the list answers the app shell.
   members by name or path with their published dashboards' links, and the attention
   entries; never an entry's body, author or anything from `context/`,
   which the hub does not read (§11.3). It is read with the instance's
-  own token only and only while the hub's last look found the repository
-  public (below); while it is private or unread the view says so and
-  shows nothing of it. An owner's grant is never used for it (§11.4).
+  own token only, so only for a project in the operator's own
+  namespaces (§11.4), and only while the hub's last look found the
+  repository public (below); for any other project, and while it is
+  private or unread, the view says so and shows nothing of it. An
+  owner's grant is never used for it (§11.4).
   The hub reads the export ahead of its interval render
   (`MAITY_PUBLIC_PAGES_INTERVAL_HOURS`) and once when a process starts,
   never during a render, so the view may be that much older than the
