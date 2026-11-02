@@ -47,7 +47,7 @@ window.Maity = window.Maity || {};
         const body = {};
         if ((box.checked ? "on" : "off") !== (p.public_page || "off")) body.public_page = box.checked ? "on" : "off";
         if (about.value !== (p.public_about || "")) body.public_about = about.value || null;
-        if (Object.keys(body).length) save(body, M.t("public_page.title"), atFields);
+        if (Object.keys(body).length) save(body, { saved: M.t("public_page.saved"), notSaved: M.t("public_page.not_saved") }, atFields);
       },
     },
     h("h2", { class: "panel-title" }, M.t("public_page.title")),
