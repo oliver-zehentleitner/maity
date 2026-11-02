@@ -408,11 +408,11 @@ insert changed.
 
 **Id:** 83da2bfa-ee4b-4f35-bfe7-d12d7780f575
 **Type:** decision
-**Status:** open
+**Status:** active
 **Evidence:** inferred
 **Source:** `forge.py:125-126` (`_budgets`: `remaining`, `in_flight`, `until` per token, `LOW` reserve of 5 %), `forge.py:246-250` (`_visible`, `_public`), `github_app.py:182` (`_tokens`), `forge_access.py:62` (`_chosen`), `forge_access.py:258-277` (`_last_via`, `probe_via`, read in `views.py:185` and `releases.py:190`), `forge_links.forget_token`, `ktw.CACHE` and its `forget` at `routes/projects.py:743`, `contract_text`
 **See:** keep-the-why.md — f5af1bd9-bb11-4310-b751-334de2668dfe — as of 2026-10-30
-**Revisit when:** forge reads per hour approach the token's limit with the probe on one pod, or a cache's staleness across pods is seen by a user
+**Revisit when:** forge reads per hour approach the token's limit with the probe on one pod, or a cache's staleness across pods is seen by a user, or the forge answers 403 or 429 while the shared row shows the reserve intact, or the budget's two statements show as pool waits in the load test
 
 The budget per token (`remaining`, the reset time) moves to a small shared row updated from each
 response's headers, so every pod sees what the others spent and the 5 % reserve holds; `in_flight`
@@ -435,6 +435,13 @@ it, the later hold counts), and each read and `retry_at` merge the row into what
 knows. A database that does not answer costs the sharing, never a forge read: the budget guards
 the forge, and a read refused because the database is down would turn one outage into two.
 
+Two limits of that. `in_flight` stays with the process, so the reserve can be overrun by the reads
+the other pods have under way before their answers reach the row; with GitHub's 5000 an hour and a
+reserve of 250 that takes more parallel reads than a hub has. And each forge read costs one read of
+the row before and one upsert after, each on a second connection, often from a request that holds
+one already: with a full pool a forge read waits up to `pool_timeout`, then goes on unshared, the
+same pattern as the shared limits (entry on limits above).
+
 The notice on `maity_forget` (`wakeups.forget_token_everywhere`, `forget_repository_everywhere`)
 carries only ids, in the writing transaction. This process forgets at once, as before, not at
 commit: a token being removed is not read with again from here on, even if the removal rolls back,
@@ -442,11 +449,20 @@ which costs one more mint. A listener whose connection dropped forgets every tok
 the Why read when it is back: a lost notice could otherwise leave a removed token in use for up to
 an hour, and asking the forge again costs a read.
 
-A dropped connection forgets at once as well, since no notice arrives until it is back. The first
-connection of a process does not forget: nothing was cached yet beyond the moments of its start,
-and clearing there would empty what a starting process has just read. A link not `active` never
+A dropped connection forgets at once as well, since no notice arrives until it is back, and that
+includes a first attempt that fails. A first connection that succeeds does not forget: nothing was
+cached yet beyond the moments of its start, and clearing there would empty what a starting process
+has just read. A link not `active` never
 trusts a token held from before: only a mint that succeeds may turn it `active` again, or a replica
-that missed the notice would undo what another one found.
+that missed the notice would undo what another one found. Listing a link mints like any other
+read, so a mint that succeeds there turns it `active` as well; otherwise a link nobody reads through
+would stay `suspended` beside its repositories and mint on every listing.
+
+The stored source is a column of `project` (`none` when a choice found none, NULL before any), read
+with the row every view has already, so no list reads it per project. A forge read often runs inside
+a request that holds that project's row, and a second connection waiting for it would wait forever,
+out of the database's sight. So the write takes the row `FOR UPDATE SKIP LOCKED` and leaves it to
+the next choice when it is taken: the value is only shown.
 
 **Reason:** with the probe and the image refresh on one pod (entry 24489a9c), the remaining
 forge reads come from requests and are bounded by them; sharing every cache would put a database
@@ -456,6 +472,10 @@ causes errors (403 or 429 from the forge for everyone).
 **Rejected alternatives:**
 - **Share the caches too:** fewer forge reads, more database reads, and cache invalidation across
   pods for data that expires in minutes anyway.
+- **The first connection of a process forgets too:** only the start window gains, and it would empty
+  what a starting process has just read.
+- **A held token may turn a link that is not `active` back to `active`:** a replica that missed the
+  notice would undo what another one found.
 
 ## Attachments move to S3-compatible object storage
 

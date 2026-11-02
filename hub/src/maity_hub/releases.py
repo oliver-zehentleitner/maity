@@ -184,10 +184,12 @@ def readiness(
 
 
 def probe_configured(conn: Connection, project_id: str, fg: forge.Forge) -> bool:
-    url = conn.execute(
-        select(t.project.c.repository_url).where(t.project.c.id == project_id)
-    ).scalar()
-    via = forge_access.probe_via(project_id, url, fg.token)
+    url, stored = conn.execute(
+        select(t.project.c.repository_url, t.project.c.probe_via).where(
+            t.project.c.id == project_id
+        )
+    ).one()
+    via = forge_access.probe_via(project_id, url, stored, fg.token)
     return via is not None
 
 

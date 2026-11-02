@@ -170,10 +170,11 @@ def _merge(budget: _Budget, shared: Any) -> None:
     newer = shared.reset is not None and (budget.reset is None or shared.reset > budget.reset)
     if newer:
         budget.reset = shared.reset
-    if shared.remaining is not None:
+        budget.remaining = shared.remaining  # a new window: what the old one left says nothing
+    elif shared.remaining is not None:
         budget.remaining = (
             shared.remaining
-            if newer or budget.remaining is None
+            if budget.remaining is None
             else min(budget.remaining, shared.remaining)
         )
 
