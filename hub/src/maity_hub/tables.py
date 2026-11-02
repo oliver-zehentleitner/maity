@@ -2330,6 +2330,7 @@ notification_mail_state = Table(
     _ref("human_id", "human.id", primary_key=True),
     Column("hourly_at", UtcDateTime),
     Column("daily_at", UtcDateTime),
+    Column("weekly_at", UtcDateTime),
     Column("held_since", UtcDateTime),  # held over the instance budget (§18.5)
     Column("stamp", Text),
     Column("waiting", Boolean, nullable=False, server_default=false()),

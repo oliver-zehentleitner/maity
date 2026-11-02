@@ -412,7 +412,9 @@ see and do.
 
 The probe needs the token in the clear, so it is not a database row: it
 comes from the hub's environment (`MAITY_FORGE_GITHUB_TOKEN`) and is
-scoped read-only to the repositories the hub probes. The forge API host
+scoped read-only to the repositories the hub probes, and it serves only
+the projects in the operator's own namespaces
+(`MAITY_FORGE_INSTANCE_NAMESPACES`, API §11.4). The forge API host
 is fixed per forge kind in the hub's configuration, never derived from a
 project's repository URL, and a project's URL must be on a configured
 host — nothing a member sets can make the hub send its token elsewhere.
@@ -669,7 +671,8 @@ One codebase, three shapes, all documented in `docs/` and all exercised
 
 Common to all: settings come from the environment (`MAITY_DATABASE_URL`,
 `MAITY_BIND`, `MAITY_PUBLIC_URL`, `MAITY_WEB_DIR`, `MAITY_TRUSTED_PROXIES`,
-`MAITY_ALLOW_PLAIN_HTTP`, `MAITY_FORGE_GITHUB_TOKEN`); the hub binds
+`MAITY_ALLOW_PLAIN_HTTP`, `MAITY_FORGE_GITHUB_TOKEN`,
+`MAITY_FORGE_INSTANCE_NAMESPACES`); the hub binds
 loopback by default and opening it is one variable
 (`hub/context/serving.md`); TLS is the operator's reverse proxy or
 ingress, and the hub takes scheme and client address from forwarded

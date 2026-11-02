@@ -2030,12 +2030,16 @@ window.Maity = window.Maity || {};
     const signIn = err.status === 401
       ? h("button", { type: "button", onclick: () => { M.route.go("/login"); } }, M.t("page.failed.sign_in")) : null;
     const mark = (file, theme) => h("img", { class: "page-failed-mark brand-mark " + theme, src: "brand/" + file, alt: "", width: "40", height: "40" });
+    const technical = (text) => h("span", { translate: "no" }, text);
     return h("div", { class: "page-failed", role: "alert" },
       mark("maity-mark-small.svg", "brand-light"), mark("maity-mark-small-dark.svg", "brand-dark"),
       h("h2", { class: "page-failed-title" }, title),
       h("p", { class: "muted" }, advice),
-      h("details", null, h("summary", null, M.t("page.failed.details")), h("p", { class: "page-failed-reason", translate: "no" },
-        [err.status ? "HTTP " + err.status + (err.code ? " " + err.code : "") : M.t("page.failed.no_answer"), err.message, err.path || null].filter(Boolean).join(" · "))),
+      // What the browser or the hub said stays as it is; the catalog's sentence is translated.
+      h("details", null, h("summary", null, M.t("page.failed.details")), h("p", { class: "page-failed-reason" },
+        [err.status ? technical("HTTP " + err.status + (err.code ? " " + err.code : "")) : M.t("page.failed.no_answer"),
+          err.message ? technical(err.message) : null, err.path ? technical(err.path) : null]
+          .filter(Boolean).flatMap((part, i) => (i ? [" · ", part] : [part])))),
       h("div", { class: "page-failed-actions" }, signIn, again));
   }
 

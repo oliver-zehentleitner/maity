@@ -82,7 +82,9 @@ def test_each_is_a_security_mail_of_its_own_and_goes_once(
         "[Maity] Wrong second-factor codes after a sign-in: Firefox on Linux, 203.0.113.9",
     ]
     reset = next(m for m in mails if "reset by grace" in m.subject)
-    assert "/account/security" in reset.body and "List-Unsubscribe" in reset.headers
+    # No mode turns it off, so it offers no unsubscribe (§18.4 "At once, whatever the mode").
+    assert "/account/security" in reset.body and "List-Unsubscribe" not in reset.headers
+    assert "/mail/unsubscribe/" not in reset.body
     assert "Maity only links to https://hub.example" in reset.body
     before = len(outbox_rows(migrated))
     at(minutes=3)
@@ -91,17 +93,18 @@ def test_each_is_a_security_mail_of_its_own_and_goes_once(
     assert notifications(migrated) == []  # and none of them went into a digest
 
 
-def test_the_security_switch_holds_these_mails_too(
-    make_client: ClientFactory, migrated: Engine, at: Any
+@pytest.mark.parametrize("mode", ["off", "weekly"])
+def test_no_security_mode_holds_these_mails(
+    make_client: ClientFactory, migrated: Engine, at: Any, mode: str
 ) -> None:
     owner, _ = setup(make_client, migrated)
-    owner.patch(S, {"email": {"kinds": {"security": {"mode": "off"}}}})
-    write(migrated, owner.id, "second_factor_changed", {"change": "reset", "by": "grace"})
+    owner.patch(S, {"email": {"kinds": {"security": {"mode": mode}}}})
+    write(migrated, owner.id, "second_factor_changed", {"change": "disabled", "by": "x"})
+    write(migrated, owner.id, "second_factor_failed", FAILED)
     at(minutes=1)
     run(migrated)
-    left = [r for r in outbox_rows(migrated) if "two-factor" in r.subject.lower()]
-    assert left == []
-    assert [i for i in bell(owner) if "reset by grace" in i["title"]]  # the bell still has it
+    mails = [r for r in outbox_rows(migrated) if r.kind == "security" and r.status == "waiting"]
+    assert len(mails) == 2  # a takeover under way is told at once (§18.4)
 
 
 def test_a_security_item_is_confirmed_from_a_session_older_than_it(

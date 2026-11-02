@@ -2193,8 +2193,9 @@ A human's handle follows the agent profiles' syntax
 and organisations, their aliases included (§6.24, §6.26), since the
 login takes it (§2.1) and a project's owner is named by it (§6.25);
 compared as written, it is lower case by the syntax. It is never a
-reserved first segment (§16.11): `invalid`, `details.fields.handle:
-"reserved"`. `display_name` is 1–64 characters, no control
+reserved first segment (§16.11), nor a name the operator lists for the
+instance token while it is no handle and no alias (§11.4): `invalid`,
+`details.fields.handle: "reserved"`. `display_name` is 1–64 characters, no control
 character. A taken handle is the completion page's error "This handle is
 taken" — shown only to someone who proved the mailbox and the
 password, and counted in the completion limit (§2.7.3). The human
@@ -4275,7 +4276,8 @@ owners, §6.26).
 **Repository**: `url` must be on a forge host the operator configured
 (§11), otherwise `invalid`; `forge` is derived from the host,
 `probe_configured` says whether the hub can read the repository, and
-`probe_via` with which grant (`app`, `owner_token`, `instance`, or
+`probe_via` with which grant (`app`, `owner_token`, `instance` for a
+project in the operator's own namespaces only, or
 `null`, §11.4), and `owner_confirmed` whether the namespace owner
 confirmed this URL for the owner's grants (§11.4), with `confirmed_by`
 the human who did (for a project of an organisation one of its owners,
@@ -8042,8 +8044,10 @@ placement will create a profile of the same owner with it (§15.5):
 `invalid`, `details.fields.handle: "taken"`. A human's or an
 organisation's handle is also never a reserved first segment of §16.11
 (`invalid`, `details.fields.handle: "reserved"`), since it is the first
-segment of its owner's address; agent profile handles are not
-addresses and are not checked against it.
+segment of its owner's address, nor a name the operator lists in
+`MAITY_FORGE_INSTANCE_NAMESPACES` while it is no handle and no alias (§11.4,
+the same answer; `maity-hub owner create` excepted there); agent profile handles are not addresses and are not
+checked against either.
 The check holds for every call that gives a handle — registration
 (§2.7.4), `maity-hub owner create`, `POST /orgs` (§6.26), `POST /agents`, a join or a
 placement that creates a profile (§3.1, §15.5, `handle_taken` at the
@@ -9217,7 +9221,7 @@ learns its content.
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4) |
+| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus the author and the two leads for a `review_result` (§8.4, "A review result reaches the author and both leads"), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4) |
 | `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by, wake}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left`, `membership_removed` or `membership_isolated`), `participants_changed` (`[{member_id, by, wake}]`, a participation's `wake`), `closed` (`closed_reason`) |
 | `attachment_deleted` | the audience of the attachment's message, for a group chat its current participants (read along by their observers, §9.2), as for `event_redacted` (§8.5); readable as that message is, so a conversation's stays out of the admin see-all (below); wakes no agent (§8.7) | `attachment_id`, `message_seq`, `reason`, `by`; never content |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (`instance:<member>#<id>` for an instance mention) (§8.6; a note's mentions travel in `note_added` and `note_edited`) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
@@ -9473,7 +9477,7 @@ Scope `events:post`. Only `kind: message`:
 `review_result`, `handover`, `notice` (for your information, no answer
 expected), `update` (news on a card for everyone watching it: requires
 `task_id`, and the card's watchers join the audience as
-`watchers:<task id>`, §6.4; `to` may then be omitted), `chat`; `to` is `all`, `role:<role>`, `trust:owner`,
+`watchers:<task id>`, §6.4; `to` may then be omitted; also on a `review_result`, below), `chat`; `to` is `all`, `role:<role>`, `trust:owner`,
 `trust:admin`, a member id (the agent, woken by its `wake` rule) or an instance address (`agt-b#wqe2`, exactly
 that instance, §6.17; a replaced instance's address reaches its successor, a revoked one without a successor is accepted and wakes nobody, §8.2); the
 audience is the addressee(s) and the sender, plus every member
@@ -9526,6 +9530,45 @@ diff before an approval counts, and the dashboard shows them under the
 verdict. The payload carries `review` as posted. Returns
 `201` with the event, `payload.mentions` and `payload.attachments` filled. The project's
 messages are read back, without scanning the log, through §8.8.
+
+**A review result reaches the author and both leads.** The hub adds to a
+`review_result`'s audience, without the reviewer naming them:
+
+1. the **author**: the card is the one `task_id` names, or without `task_id`
+   the card of this project whose latest report (§6.6) names the pull request
+   `#<n>` when `review.subject` is exactly that, `#` and the number without
+   anything around it (the newest `reported_at` when several cards do; a
+   subject in other words names no card here, the hub reads no number out of
+   prose);
+   its author is the holding instance (`claim.address`, as
+   `instance:<member>#<id>`), or on a card nobody holds the instance that sent
+   its latest report (`reported_by#reported_instance`);
+2. `member:<id>` of the **sender's** `reports_to` (§6.2);
+3. `member:<id>` of the **author's** `reports_to`.
+
+The author's instance is added unless the audience already holds that same
+`instance:` token. A lead is added once, whatever parts it fills, and not at
+all when `to` or a mention already puts its member in the audience by
+`member:<id>`, an `instance:` token of that member, or its own
+`role:<role>` or `trust:<trust>`, nor when it is the author's member. `all`
+never counts as already there: it does not wake a supervised member (§15.11,
+§8.2), and beside `all` an added token wakes only a member `all` leaves
+asleep. On a card claimed
+for the team (no instance) the author is `member:<id>` and is deduplicated as
+a lead is. When the author is an instance, a `member:<id>` of the author's
+member that `to` or a mention put in the audience is replaced there by that
+instance token: the reviewer means the author, and the member id would wake
+by the agent's `wake` rule (§6.18) every listening instance under `all`, or
+another one under `lead` or `next_free`. Every instance still reads the event
+(§8.2, "Instances in the audience"); only the one that did the work is woken.
+Other tokens (`all`, a role or trust token, a named instance) stay. A part that resolves to nobody
+(no such card, no holder and no report, a `reports_to` of `null`, a member
+that has left the project) is left out, and a sender who is the author or a
+lead is not added again. `to` and mentions keep adding to the audience as for
+every message, so `to` may be omitted on a `review_result`; one that then
+reaches nobody but its sender is `invalid` (`details.fields.to: "required"`).
+A member added this way is woken as an addressee is (§8.2, "Agent wake"),
+and the payload's `to` stays what the reviewer wrote (`null` when omitted).
 
 **Language.** An agent writes a message to one human — the direct chat
 (§9.1), a personal message or notice, a request `to` one human (a
@@ -10287,7 +10330,8 @@ messages carry it (§9); `sent_at` the event's `at`; `to`,
 other type) are the event's payload. The full event, `audience` included, is `GET /events`;
 this is the message's reading form. Against the message shape of §9.1 it
 keeps `id`, `seq`, `from`, `from_instance`, `to` (here the message's `to`: `all`,
-`role:<role>`, `trust:<trust>` or a member id), `body`, `sent_at`, `mentions`,
+`role:<role>`, `trust:<trust>`, a member id, or `null` on an `update` or a
+`review_result` sent without one), `body`, `sent_at`, `mentions`,
 `attachments`, `redacted` and `redaction`; it drops `conversation_id`,
 `to_instance` and `delivered_at` (a project message has no single recipient whose
 first read could be recorded); it adds `type` and `task_id`.
@@ -10841,7 +10885,8 @@ kind, `api.github.com` for GitHub): nothing a project member sets can
 make the hub send its token anywhere else, and `repository.url` must be
 on a configured forge host (§6.1). Which grant reads a project's
 repository — the namespace owner's GitHub App installation, the owner's
-own token, or this instance token for a public repository only — is
+own token, or this instance token for a public repository of the operator's
+own namespaces only — is
 §11.4; every grant is read-only, and its permissions are the limit of
 what the project can observe. The hub caches an observation for
 `max_age` seconds (default 60, `0` forces a fresh read) and never writes
@@ -10954,10 +10999,9 @@ operator can configure those forges. Image hosts: for GitHub
 `repository-images.githubusercontent.com` (social previews); for the
 others the forge's own host. An image URL on any other host (a Gravatar
 fallback, a CDN the hub does not know) is no image. The API reads use
-the grant §11.4 picks for the repository; without one the hub reads
-without a token where the forge allows it (a public repository on GitHub:
-the REST read works, GraphQL does not, so there is no banner without a
-token), and otherwise has no image. The GraphQL read is a `POST` that
+the grant §11.4 picks for the repository — the instance token only for a
+project in the operator's own namespaces; without a grant the hub reads
+nothing from the forge and has no image (§11.4, `no_grant`). The GraphQL read is a `POST` that
 only queries; the hub still never writes to the forge.
 
 What the hub accepts, whatever the forge said:
@@ -11043,8 +11087,9 @@ never anything else of an entry.
 line inside the `keep-the-why:config` block of the repository's root
 `.keep-the-why` on the default branch, read through the forge's contents
 API (`GET /repos/{owner}/{repo}/contents/.keep-the-why` on GitHub) with
-the grant §11.4 picks for the repository, without one where the forge
-allows (a public repository), at most 64 KiB. There is no project setting that
+the grant §11.4 picks for the repository (the instance token only for a
+project in the operator's own namespaces), at most 64 KiB; without a
+grant nothing is read (§11.4, `no_grant`). There is no project setting that
 names or overrides the URL: the repository is the single source of truth,
 as in Keep the Why itself. No repository, no root `.keep-the-why`, or no
 `dashboard-state:` line in it: `ktw_not_configured`. A state URL must be
@@ -11213,7 +11258,8 @@ below):
    project's namespace owner (§6.25) has linked an installation of the
    instance's GitHub App, and the installation includes the repository.
 2. **The namespace owner's own token** (below).
-3. **The instance token** (`MAITY_FORGE_GITHUB_TOKEN`, §11), and only
+3. **The instance token** (`MAITY_FORGE_GITHUB_TOKEN`, §11), only for a
+   project in one of the operator's own namespaces (below), and only
    for a repository the forge reports as public. The hub checks
    `private` on the repository with the instance token before the first
    read and on every refresh of the repository (at most every 10
@@ -11243,7 +11289,8 @@ change of the URL — a `PATCH` by anyone, the namespace owner included;
 no other call sets the URL (the card import of §6.14 reads a forge
 issue and never changes the project's repository) — sets it to `false`,
 and until the owner confirms
-the repository is read with the instance token alone, so only while it
+the repository is read with the instance token alone, so only in the
+operator's own namespaces and only while it
 is public. So no co-admin can
 point a project at another of the owner's private repositories and have
 it read with the owner's access. A transfer (§6.25) resets
@@ -11275,7 +11322,60 @@ every 10 minutes, and at once after a refusal):
   never tried;
 - the owner's token covers it when a read of the repository with that
   token answers it;
-- the instance token covers it when the forge reports it public (above).
+- the instance token covers it when the project is in one of the
+  operator's own namespaces and the forge reports the repository public
+  (above).
+
+**The operator's own namespaces.** The maintainer's decision of
+2026-11-02: projects connect their repository to the forge themselves,
+through the App or the owner's token; the instance token is the
+operator's and serves the operator's own projects only. The operator
+names them in the environment:
+
+| Setting | Meaning |
+|---|---|
+| `MAITY_FORGE_INSTANCE_NAMESPACES` | comma separated namespace names (§6.25: a human's handle or an organisation's name, the `{owner}` of a project's address); spaces around a name are ignored. Unset or empty: the instance token serves no project |
+
+A project is in one of them when its current namespace is one of the
+names, compared in lower case. A rename of a listed namespace (§6.24)
+takes its projects out until the operator lists the new name; a name
+given up stays its id's alias and is never another's (§6.24), so a
+listed name cannot pass to someone else. A rename and a transfer
+(§6.25) into or out of a listed namespace apply to the next read at
+once: the project's current namespace is part of what the choice of
+its source depends on, like the URL and the owner's grants, not kept
+for the 10 minutes above.
+
+A listed name that is neither the handle nor an alias of any human or
+organisation is held for the operator while it is listed: no human or
+organisation can take it through the hub's API — registration
+(§2.7.4), `POST /orgs` and every rename (§6.24) answer `invalid`,
+`details.fields.handle: "reserved"`, as for a reserved first segment —
+so a typing error or an organisation not yet created cannot later be
+registered by someone else and read with the instance token.
+`maity-hub owner create` is not held: it runs on the server with the
+hub's own configuration and database access, so whoever runs it is the
+operator, who also sets the list; no request from outside reaches it.
+An alias needs no hold: it is never
+another's (§6.24), and its own id may take it back by a rename. The hub
+logs a warning at start for each held name, and for a listed name that
+is only an alias, whose namespace is not served until its current
+handle is listed. An agent profile's handle is not an address and is not
+checked against the list. Removing a name from the list frees it again.
+
+For every other project the instance token is used for no read at all:
+not the probe, not the visibility of §16.9, not the first look at a new
+project's repository, not an import (§6.14). Such a project is read only
+through its namespace owner's App installation or token, after the owner
+confirmed the repository; its visibility (§16.9) comes from that read,
+and the bare number of merges (the one exception below) may come from
+it as before. Without such a grant `probe_via` is `null`, every read
+answers `probe_not_configured` with `details.reason: no_grant` (with a
+grant the owner has not confirmed, `unconfirmed`), and the hub counts
+the repository as one it cannot read: a new project's page starts
+`off` (§16.9), and an existing page shows no forge data. The dashboard
+tells the namespace owner to connect the App or a token, not that the
+instance reads it.
 
 A repository the forge answers with a redirect (renamed or moved) is not
 followed: reads stop with `details.reason: repository_moved` until a
@@ -11287,8 +11387,9 @@ The project's `repository` (§6.1) says which source is used:
 `probe_configured` is `true` exactly when `probe_via` is not `null`.
 When no source covers the repository, every read answers
 `probe_not_configured` with `details.reason`: `no_grant` (nothing covers
-it), `private_without_grant` (only the instance token exists and the
-repository is private), `installation_suspended` or
+it), `private_without_grant` (the project is in one of the operator's
+own namespaces, only the instance token covers it, and the repository
+is private), `installation_suspended` or
 `installation_removed` (the owner's installation covered it and no
 longer does), `token_rejected` (the owner's token was refused by the
 forge), `unconfirmed` (a grant of the owner would cover it, but the
@@ -11401,7 +11502,7 @@ second source, for a forge setup where an App cannot be installed.
   classic token is refused (`invalid`, `details.fields.token:
   "classic_token"`): a classic token reaches a private repository only
   with the `repo` scope, which can write, and without it reads no more
-  than the instance token already does. The forge does not report a
+  than a public repository shows anyone. The forge does not report a
   fine-grained token's permissions, so the hub cannot check them; the
   dashboard asks for read-only permissions on the chosen repositories
   and says that the hub never writes (§11), which holds whatever the
@@ -11798,7 +11899,7 @@ try again then` and exits with 7, its own code, never 1.
 | `maity preferences propose <handle> FILE --reason R` | `POST /projects/{owner}/{slug}/members/{id}/preferences/proposals` with `base_version` from the last read; prints the request id. Contract only. |
 | `maity unclaim <card>` | `POST /tasks/{id}/release` (`release` is the releases group below) |
 | `maity checkpoint <card> -m LAST --next NEXT [--no-code]` | `POST /tasks/{id}/checkpoint` with `branch` and `head` from git, warning on a detached HEAD or a branch other than the card's last checkpoint's; `--no-code` sends neither |
-| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the agent, all its instances) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--review-file <path>` (`-` for standard input; the message and the review cannot both come from it, a usage error): the `review` object of §8.4 as JSON, sent as given, so a quote may hold any character (§8.4, "A review result cites what it judged"). The CLI first reads each cite at `head` in the local clone and refuses the send, exit 1, when a quote is not on the named line or not in the file; a cite without a line may also quote what the history removed, and a shallow clone sends such a cite with a note, as it can't see that history. Without a clone or the commit it says on stderr that the cites were not checked, and sends |
+| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the agent, all its instances) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--review-file <path>` (`-` for standard input; the message and the review cannot both come from it, a usage error): the `review` object of §8.4 as JSON, sent as given, so a quote may hold any character (§8.4, "A review result cites what it judged"). The CLI first reads each cite at `head` in the local clone and refuses the send, exit 1, when a quote is not on the named line or not in the file; a cite without a line may also quote what the history removed, and a shallow clone sends such a cite with a note, as it can't see that history. Without a clone or the commit it says on stderr that the cites were not checked, and sends. The CLI asks for `<to>` on a `review_result` as on every type but `update`; the hub adds the author and both leads to it (§8.4) |
 | `maity watch <card>`, `maity unwatch <card>` | `PUT` / `DELETE …/tasks/{id}/watch` (§6.4); `maity task show` prints `watching`. `maity say --type update --task ID "…"` posts an update to the card's watchers without a `to` |
 | `maity say human "…"` | `POST /conversations/{own member id}/messages` |
 | `maity say --chat <conversation> "…"` | `POST /conversations/{id}/messages`; `<conversation>` is a group chat's id as `maity chats` prints it (or the agent's own member id, the same as `say human`); `--type` and `--task` do not apply |
@@ -13026,7 +13127,7 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
 | `MAITY_SMTP_FROM` | `from` | `{address, name?}`; the envelope sender and `From:`. In the environment `maity@example.org` or `Maity <maity@example.org>` |
 | `MAITY_SMTP_REPLY_TO` | `reply_to` | `null` or an address |
 | `MAITY_MAIL_MAX_PER_HOUR` | `max_per_hour` | notification mail, all humans together; default 500; over it, mail waits for the next hour and is merged into each human's next mail (§18.5). Security mail does not count here |
-| `MAITY_MAIL_SECURITY_MAX_PER_HOUR` | `security_max_per_hour` | security mail (verification, `immediate` `security` notifications, the old-address notice), all humans together; default 100; neither notification nor sign-in mail counts here. Over it, security mail is queued for the next hour, never dropped |
+| `MAITY_MAIL_SECURITY_MAX_PER_HOUR` | `security_max_per_hour` | security mail (verification, `immediate` `security` notifications and the mails sent at once whatever the mode, §18.4), all humans together; default 100; neither notification nor sign-in mail counts here. Over it, security mail is queued for the next hour, never dropped |
 | `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR` | `sign_in_max_per_hour` | sign-in links and codes (#169, §2.6.3), all humans together; default 60. Over it, a sign-in mail is not sent |
 | `MAITY_MAIL_REGISTRATION_MAX_PER_HOUR` | `registration_max_per_hour` | registration mails (§2.7.1), all addresses together; default 30. Over it, a registration mail is not sent |
 | — | `enabled` | `false` stops every mail — notification, verification and security — without losing the settings; the test send still works |
@@ -14293,9 +14394,11 @@ the list answers the app shell.
   members by name or path with their published dashboards' links, and the attention
   entries; never an entry's body, author or anything from `context/`,
   which the hub does not read (§11.3). It is read with the instance's
-  own token only and only while the hub's last look found the repository
-  public (below); while it is private or unread the view says so and
-  shows nothing of it. An owner's grant is never used for it (§11.4).
+  own token only, so only for a project in the operator's own
+  namespaces (§11.4), and only while the hub's last look found the
+  repository public (below); for any other project, and while it is
+  private or unread, the view says so and shows nothing of it. An
+  owner's grant is never used for it (§11.4).
   The hub reads the export ahead of its interval render
   (`MAITY_PUBLIC_PAGES_INTERVAL_HOURS`) and once when a process starts,
   never during a render, so the view may be that much older than the

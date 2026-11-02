@@ -507,3 +507,14 @@ def test_a_page_that_does_not_move_the_cursor_is_waited_out(tmp_path: Path) -> N
     svc, _, _ = service(tmp_path, script, clock)
     run(svc)
     assert clock.slept[:1] == [serve.POLL_FLOOR]
+
+
+def test_a_maintenance_window_is_slept_out_without_counting_as_a_failure(tmp_path: Path) -> None:
+    window = err(503, "maintenance", retry_after=1800)
+    window.details = {"from": "2026-11-02T13:00:00Z", "until": "2026-11-02T13:30:00Z", "text": "DB"}
+    script = Script(HELLO, ("GET /runner/events", window), HELLO, events())
+    svc, _, clock = service(tmp_path, script)
+    assert run(svc) is None  # it said hello again instead of stopping
+    assert clock.slept == [1800 + 0.5 * hub.MAINTENANCE_JITTER]  # Retry-After plus jitter
+    status = json.loads((tmp_path / "st" / serve.STATUS_FILE).read_text())
+    assert status["connected"] is True  # the second hello

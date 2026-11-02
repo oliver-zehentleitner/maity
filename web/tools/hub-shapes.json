@@ -33,6 +33,40 @@
    "version": "null"
   }
  },
+ "GET /agents": {
+  "object": {
+   "items": {
+    "array": {
+     "object": {
+      "aliases": {
+       "array": null
+      },
+      "allowed_projects": "null",
+      "avatar_source": "null",
+      "avatar_url": "null",
+      "created_at": "string",
+      "deleted_at": "null",
+      "display_name": "string",
+      "git_identity": "null",
+      "handle": "string",
+      "id": "string",
+      "memberships": {
+       "array": {
+        "object": {
+         "project": "string",
+         "role": "string",
+         "trust": "string"
+        }
+       }
+      },
+      "name": "string",
+      "owner_id": "string"
+     }
+    }
+   },
+   "next_cursor": "null"
+  }
+ },
  "GET /auth/session": {
   "object": {
    "csrf_token": "string",
@@ -167,6 +201,69 @@
    }
   }
  },
+ "GET /me/notifications?limit=20": {
+  "object": {
+   "by_project": {
+    "map": {
+     "object": {
+      "chat": "number",
+      "inbox": "number",
+      "member": "boolean",
+      "mention": "number",
+      "total": "number"
+     }
+    }
+   },
+   "counts": {
+    "object": {
+     "chat": "number",
+     "inbox": "number",
+     "mention": "number",
+     "security": "number",
+     "total": "number"
+    }
+   },
+   "items": {
+    "array": {
+     "object": {
+      "actor": {
+       "object": {
+        "avatar_url": "null",
+        "display_name": "string",
+        "member_id": "string"
+       }
+      },
+      "at": "string",
+      "id": "string",
+      "kind": "string",
+      "project": {
+       "object": {
+        "full_name": "string",
+        "member": "boolean",
+        "name": "string",
+        "slug": "string"
+       }
+      },
+      "read": "boolean",
+      "record": "string",
+      "redacted": "boolean",
+      "seq": "number",
+      "target": {
+       "object": {
+        "id": "string",
+        "type": "string"
+       }
+      },
+      "title": "string",
+      "url": "string"
+     }
+    }
+   },
+   "next_after": "string",
+   "next_cursor": "null",
+   "server_time": "string"
+  }
+ },
  "GET /projects/{project}": {
   "object": {
    "absence": "null",
@@ -248,7 +345,17 @@
    "public_about": "null",
    "public_page": "string",
    "released_at": "null",
-   "repository": "null",
+   "repository": {
+    "object": {
+     "confirmed_by": "null",
+     "default_branch": "string",
+     "forge": "string",
+     "owner_confirmed": "boolean",
+     "probe_configured": "boolean",
+     "probe_via": "null",
+     "url": "string"
+    }
+   },
    "rules_version": "number",
    "settings": {
     "object": {
@@ -259,7 +366,7 @@
       }
      },
      "release_checklist": {
-      "array": null
+      "array": "string"
      },
      "ticker": {
       "object": {
@@ -278,7 +385,9 @@
    },
    "setup": {
     "object": {
-     "cards": "null",
+     "cards": {
+      "array": "string"
+     },
      "dashboard_path": "string",
      "keep_the_why_badge": "boolean",
      "keep_the_why_ci": "boolean",
@@ -371,7 +480,17 @@
       "from_instance": "null",
       "id": "string",
       "mentions": {
-       "array": null
+       "array": {
+        "object": {
+         "field": "string",
+         "handle": "string",
+         "instance": "null",
+         "length": "number",
+         "member_id": "string",
+         "name": "string",
+         "offset": "number"
+        }
+       }
       },
       "redacted": "boolean",
       "redaction": "null",
@@ -485,8 +604,8 @@
       "credentials": {
        "object": {
         "active": "number",
-        "last_used_at": "null",
-        "last_used_via": "null",
+        "last_used_at": "string",
+        "last_used_via": "string",
         "never_resumed": "number",
         "revoked_recent": "number"
        }
@@ -510,7 +629,7 @@
          "keep_the_why_acknowledge_by": "null",
          "keep_the_why_acknowledged_at": "null",
          "label": "string",
-         "last_seen_at": "null",
+         "last_seen_at": "string",
          "lead": "boolean",
          "model": "null",
          "name": "string",
@@ -535,6 +654,26 @@
       "language": "string",
       "last_seen_at": "string",
       "line_consent": "boolean",
+      "manages": {
+       "object": {
+        "direct": {
+         "object": {
+          "dormant": "number",
+          "instances": "number",
+          "members": "number",
+          "online": "number"
+         }
+        },
+        "total": {
+         "object": {
+          "dormant": "number",
+          "instances": "number",
+          "members": "number",
+          "online": "number"
+         }
+        }
+       }
+      },
       "model": "null",
       "name": "string",
       "org_owner": "boolean",
@@ -581,13 +720,108 @@
    "next_cursor": "null"
   }
  },
+ "GET /projects/{project}/members/{agent}/credentials": {
+  "object": {
+   "items": {
+    "array": {
+     "object": {
+      "client": "string",
+      "created_at": "string",
+      "id": "string",
+      "instance": "string",
+      "last_used_at": "string",
+      "last_used_via": "string",
+      "member_id": "string",
+      "replaces": "null",
+      "resumed_at": "null",
+      "revoked_at": "null",
+      "revoked_by": "null",
+      "revoked_reason": "null",
+      "session_id": "null"
+     }
+    }
+   },
+   "next_cursor": "null"
+  }
+ },
+ "GET /projects/{project}/requests?status=all": {
+  "object": {
+   "items": {
+    "array": {
+     "object": {
+      "action": "null",
+      "answer": "null",
+      "answered_at": "null",
+      "asked_by": {
+       "object": {
+        "avatar_url": "null",
+        "display_name": "string",
+        "instance": "null",
+        "member_id": "string",
+        "role": "string",
+        "session_id": "null",
+        "trust": "string"
+       }
+      },
+      "class": "string",
+      "cover": "null",
+      "created_at": "string",
+      "filed_by": "null",
+      "forwarding": {
+       "array": null
+      },
+      "holder": "string",
+      "humans_only": "boolean",
+      "id": "string",
+      "jour_fixe": "null",
+      "ktw_ref": "null",
+      "mentions": {
+       "array": null
+      },
+      "needs_in_session": "null",
+      "on_behalf_of": "null",
+      "options": {
+       "array": {
+        "object": {
+         "detail": "null",
+         "id": "string",
+         "label": "string"
+        }
+       }
+      },
+      "personal": "boolean",
+      "placement": "null",
+      "priority": "string",
+      "replies": {
+       "array": {
+        "object": {
+         "id": "string",
+         "label": "string"
+        }
+       }
+      },
+      "status": "string",
+      "summary": "null",
+      "takeover_id": "null",
+      "task": "null",
+      "task_id": "null",
+      "title": "string",
+      "to": "string",
+      "tried": "null",
+      "while_open": "string"
+     }
+    }
+   },
+   "next_cursor": "null"
+  }
+ },
  "GET /projects/{project}/tasks": {
   "object": {
    "items": {
     "array": {
      "object": {
       "approvals": "null",
-      "area": "null",
+      "area": "string",
       "assigned_instance": "null",
       "assigned_to": "null",
       "blocked_by_request": "null",
@@ -606,19 +840,41 @@
       "created_at": "string",
       "created_by": "string",
       "depends_on": {
-       "array": null
+       "array": "string"
       },
       "id": "string",
       "imported_from": "null",
       "jour_fixe": "null",
       "kind": "string",
       "ktw_ref": "null",
-      "label": "null",
+      "label": "string",
       "links": {
-       "array": null
+       "array": {
+        "object": {
+         "added_at": "string",
+         "added_by": "string",
+         "forge": "string",
+         "forge_url": "string",
+         "id": "string",
+         "kind": "string",
+         "number": "number",
+         "observed": "null",
+         "repository": "string"
+        }
+       }
       },
       "mentions": {
-       "array": null
+       "array": {
+        "object": {
+         "field": "string",
+         "handle": "string",
+         "instance": "null",
+         "length": "number",
+         "member_id": "string",
+         "name": "string",
+         "offset": "number"
+        }
+       }
       },
       "needs": "null",
       "notes": {
@@ -630,12 +886,12 @@
       "parent": "null",
       "rank": "null",
       "related": {
-       "array": null
+       "array": "string"
       },
       "release": "null",
       "report": "null",
       "ships_with": {
-       "array": null
+       "array": "string"
       },
       "status": "string",
       "title": "string",
@@ -678,10 +934,32 @@
    "ktw_ref": "null",
    "label": "null",
    "links": {
-    "array": null
+    "array": {
+     "object": {
+      "added_at": "string",
+      "added_by": "string",
+      "forge": "string",
+      "forge_url": "string",
+      "id": "string",
+      "kind": "string",
+      "number": "number",
+      "observed": "null",
+      "repository": "string"
+     }
+    }
    },
    "mentions": {
-    "array": null
+    "array": {
+     "object": {
+      "field": "string",
+      "handle": "string",
+      "instance": "null",
+      "length": "number",
+      "member_id": "string",
+      "name": "string",
+      "offset": "number"
+     }
+    }
    },
    "needs": "null",
    "notes": {
@@ -693,17 +971,262 @@
    "parent": "null",
    "rank": "null",
    "related": {
-    "array": null
+    "array": "string"
    },
    "release": "null",
    "report": "null",
    "ships_with": {
-    "array": null
+    "array": "string"
    },
    "status": "string",
    "title": "string",
    "updated_at": "string",
    "watching": "boolean"
+  }
+ },
+ "GET /projects/{project}/tasks/{task}/history": {
+  "object": {
+   "items": {
+    "array": {
+     "object": {
+      "actor": {
+       "object": {
+        "handle": "string",
+        "kind": "string",
+        "member_id": "string",
+        "session_id": "null"
+       }
+      },
+      "after": {
+       "object": {
+        "added_at": "string",
+        "added_by": "string",
+        "body": "string",
+        "forge": "string",
+        "forge_url": "string",
+        "id": "string",
+        "kind": "string",
+        "number": "number",
+        "observed": "null",
+        "repository": "string",
+        "status": "string",
+        "title": "string"
+       }
+      },
+      "at": "string",
+      "before": "null",
+      "diff": "null",
+      "field": "string",
+      "id": "string"
+     }
+    }
+   },
+   "next_cursor": "null"
+  }
+ },
+ "GET /projects/{project}/tasks/{task}/notes?state=all": {
+  "object": {
+   "items": {
+    "array": {
+     "object": {
+      "author": {
+       "object": {
+        "handle": "string",
+        "kind": "string",
+        "member_id": "string"
+       }
+      },
+      "body": "string",
+      "created_at": "string",
+      "id": "string",
+      "mentions": {
+       "array": {
+        "object": {
+         "field": "string",
+         "handle": "string",
+         "instance": "null",
+         "length": "number",
+         "member_id": "string",
+         "name": "string",
+         "offset": "number"
+        }
+       }
+      },
+      "resolution": "null",
+      "state": "string",
+      "task_id": "string"
+     }
+    }
+   },
+   "next_cursor": "null"
+  }
+ },
+ "GET /projects/{project}/tasks?status=all": {
+  "object": {
+   "items": {
+    "array": {
+     "object": {
+      "approvals": "null",
+      "area": "string",
+      "assigned_instance": "null",
+      "assigned_to": "null",
+      "blocked_by_request": "null",
+      "body": "string",
+      "checkpoint": "null",
+      "children": {
+       "object": {
+        "open": "number",
+        "total": "number"
+       }
+      },
+      "claim": "null",
+      "closed_at": "null",
+      "contract": "null",
+      "cover": "null",
+      "created_at": "string",
+      "created_by": "string",
+      "depends_on": {
+       "array": "string"
+      },
+      "id": "string",
+      "imported_from": "null",
+      "jour_fixe": "null",
+      "kind": "string",
+      "ktw_ref": "null",
+      "label": "string",
+      "links": {
+       "array": {
+        "object": {
+         "added_at": "string",
+         "added_by": "string",
+         "forge": "string",
+         "forge_url": "string",
+         "id": "string",
+         "kind": "string",
+         "number": "number",
+         "observed": "null",
+         "repository": "string"
+        }
+       }
+      },
+      "mentions": {
+       "array": {
+        "object": {
+         "field": "string",
+         "handle": "string",
+         "instance": "null",
+         "length": "number",
+         "member_id": "string",
+         "name": "string",
+         "offset": "number"
+        }
+       }
+      },
+      "needs": "null",
+      "notes": {
+       "object": {
+        "open": "number",
+        "total": "number"
+       }
+      },
+      "parent": "null",
+      "rank": "null",
+      "related": {
+       "array": "string"
+      },
+      "release": "null",
+      "report": "null",
+      "ships_with": {
+       "array": "string"
+      },
+      "status": "string",
+      "title": "string",
+      "updated_at": "string",
+      "watching": "boolean"
+     }
+    }
+   },
+   "next_cursor": "null"
+  }
+ },
+ "GET /requests": {
+  "object": {
+   "items": {
+    "array": {
+     "object": {
+      "action": "null",
+      "answer": "null",
+      "answered_at": "null",
+      "asked_by": {
+       "object": {
+        "avatar_url": "null",
+        "display_name": "string",
+        "instance": "null",
+        "member_id": "string",
+        "role": "string",
+        "session_id": "null",
+        "trust": "string"
+       }
+      },
+      "class": "string",
+      "cover": "null",
+      "created_at": "string",
+      "filed_by": "null",
+      "forwarding": {
+       "array": null
+      },
+      "holder": "string",
+      "humans_only": "boolean",
+      "id": "string",
+      "jour_fixe": "null",
+      "ktw_ref": "null",
+      "mentions": {
+       "array": null
+      },
+      "needs_in_session": "null",
+      "on_behalf_of": "null",
+      "options": {
+       "array": {
+        "object": {
+         "detail": "null",
+         "id": "string",
+         "label": "string"
+        }
+       }
+      },
+      "org": "null",
+      "personal": "boolean",
+      "placement": "null",
+      "priority": "string",
+      "project": {
+       "object": {
+        "full_name": "string",
+        "name": "string",
+        "slug": "string",
+        "state": "string"
+       }
+      },
+      "replies": {
+       "array": {
+        "object": {
+         "id": "string",
+         "label": "string"
+        }
+       }
+      },
+      "status": "string",
+      "summary": "string",
+      "takeover_id": "null",
+      "task": "null",
+      "task_id": "null",
+      "title": "string",
+      "to": "string",
+      "tried": "null",
+      "while_open": "string"
+     }
+    }
+   },
+   "next_cursor": "null"
   }
  },
  "GET /runners": {
