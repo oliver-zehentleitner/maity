@@ -169,6 +169,8 @@ def shown(app: GitHubApp | None, row: Any) -> tuple[list[str], str | None]:
     Makes forge reads: no connection is held."""
     if app is None or row.status == "removed":
         return [], None
+    if row.status != "active":  # only a new mint says it is back, not a token held from before
+        github_app.forget_token(app.app_id, row.installation_id)
     try:
         return app.repositories(row.installation_id, REPOSITORIES_SHOWN), None
     except github_app.InstallationGoneError as gone:

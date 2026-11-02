@@ -167,6 +167,8 @@ class ForgeAccess:
         link_id, _, status = mine[0]
         if status == "removed":
             return None, "installation_removed"
+        if status != "active":  # only a new mint says it is back, not a token held from before
+            github_app.forget_token(self.app.app_id, installation_id)
         try:
             token = self.app.token(installation_id)
         except github_app.InstallationGoneError as gone:

@@ -436,6 +436,12 @@ which costs one more mint. A listener whose connection dropped forgets every tok
 the Why read when it is back: a lost notice could otherwise leave a removed token in use for up to
 an hour, and asking the forge again costs a read.
 
+A dropped connection forgets at once as well, since no notice arrives until it is back. The first
+connection of a process does not forget: nothing was cached yet beyond the moments of its start,
+and clearing there would empty what a starting process has just read. A link not `active` never
+trusts a token held from before: only a mint that succeeds may turn it `active` again, or a replica
+that missed the notice would undo what another one found.
+
 **Reason:** with the probe and the image refresh on one pod (entry 24489a9c), the remaining
 forge reads come from requests and are bounded by them; sharing every cache would put a database
 read in front of each forge read for little gain. The budget is the one value whose divergence

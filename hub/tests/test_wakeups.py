@@ -418,6 +418,23 @@ def test_a_notice_lost_with_the_connection_forgets_everything(
     assert _until(lambda: not github_app._tokens and not ktw.CACHE.entries)
 
 
+def test_a_dropped_connection_forgets_at_once_not_only_when_it_is_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    running = wakeups.Listener.__new__(wakeups.Listener)
+    running._stop, running.listening = threading.Event(), threading.Event()
+    forgot_while_down: list[bool] = []
+
+    def down(*, catch_up: bool) -> None:
+        running._stop.set()
+        raise OSError("gone")
+
+    monkeypatch.setattr(running, "_listen", down)
+    monkeypatch.setattr(wakeups, "forget_all", lambda: forgot_while_down.append(True))
+    running._run()
+    assert forgot_while_down == [True]
+
+
 def test_only_ids_go_through_the_channel_and_at_commit(postgres: Engine) -> None:
     app = SimpleNamespace(app_id="app-1")
     github_app._tokens[("app-1", 7)] = ("a secret token", time.time() + 3000)

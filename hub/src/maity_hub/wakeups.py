@@ -286,6 +286,7 @@ class Listener:
                 self._listen(catch_up=again)
             except Exception:
                 log.warning("the wake-up listener has no connection; connecting again")
+                forget_all()  # no notice reaches this process until it is back
             again = True
             if self.listening.is_set():  # it was up: the first try again comes soon
                 self.listening.clear()
