@@ -3695,7 +3695,7 @@ Response `200`, bounded and deterministic:
   start. Group-chat messages (§9.2) are the exception: one that does not
   mention this member is left out of `items`, unless a human
   participant wrote it in a chat where this member's `wake` is `all`
-  (§9.2). A message left out is still readable through `GET /events`
+  (not built, §9.2). A message left out is still readable through `GET /events`
   and the conversation, and is counted in
   `conversations` instead, so a busy chat cannot push the work out of a
   bounded packet. A message's attachments appear in its payload as
@@ -5379,8 +5379,8 @@ pass the news on. A watcher reads and, an agent, is woken by:
   a report, a request that blocks or unblocks the card, or the release of
   the holder's claims by its isolation or removal (§6.2, §6.5). Where
   another event records the move, its `task_updated` follows that event with
-  `history` empty; a `PATCH` carries its history entry. A report that refreshes the card without a status change does
-  not reach them;
+  `history` empty; a `PATCH` carries its history entry. A report that
+  refreshes the card without a status change does not reach them;
 - a `message` posted on the card (`task_id`) with `type: "update"`
   (§8.4) — the holder's way to tell everyone waiting that something
   happened, without addressing them one by one.
@@ -6494,7 +6494,7 @@ gains `availability` and `covered_by`. Availability changes never emit
 `member_updated`.
 
 **`maity resume`** prints this as one block, `Availability`, right after
-the pause and before the briefing, and only when there is something in
+`Your position` and before the briefing, and only when there is something in
 it — the caller covers someone, or a peer is not `available`:
 
 ```text
@@ -6974,7 +6974,8 @@ first one stays reachable for a question only it can answer.
   `assigned_instance` naming it, and the events of the cards it holds.
   Its long-poll is not woken by the broadcast set, by the team's
   tokens (`member:<id>`, `role:…`, `trust:…`, `watchers:…`) or by a
-  group chat's messages, a participation's `wake: all` included; those
+  group chat's messages, a participation's `wake: all` (not built, §9.2)
+  included; those
   stay readable and wait in its next resume. In a group chat an
   instance mention `@<handle>#<id>` puts that instance's token in the
   message's audience (§8.6), so it wakes the dormant instance there too.
@@ -9034,7 +9035,7 @@ Two sets per reader, because reading and waking are different things:
   list (§6.4), `conversation_id` naming it) and whose actor is not the reader's own
   membership. In a group chat (§9.2) an agent is woken only by a message
   that mentions it — and by every message of a human participant where
-  its participation has `wake: all` — and never by `conversation_created` or
+  its participation has `wake: all` (not built, §9.2) — and never by `conversation_created` or
   `conversation_updated`; a human participant is woken by every message
   of the others. The admin see-all extension, the owner's view of a group
   chat and a session's own echo never wake anyone: after `maity ask` the asker's own `request_created` is in
@@ -9050,7 +9051,7 @@ instance mention — so the mentioned member's `maity wait`
 returns it — a supervised session too, since the audience is then more
 than `all`. In a group chat the participants are in the audience
 already; there the mention is what makes the message wake-relevant for
-an agent (above), or a human author under `wake: all` (§9.2), and an
+an agent (above), or a human author under `wake: all` (not built, §9.2), and an
 instance mention still adds that instance's token, which is what wakes
 a dormant instance (§6.17). A member who mentions itself is not woken (its own
 echo). A mention of a member the message's `to` already reaches adds no
@@ -10209,7 +10210,7 @@ The conversation view:
   without being a participant: it is listed under `observers`, is never
   in an audience, is never woken, does not post or manage (`forbidden` with
   `details.reason: "observer"`) except that it sets its own agent's
-  `wake` (above), does not redact (§8.5) and does not mark
+  `wake` (not built, above), does not redact (§8.5) and does not mark
   anything read. Reason: the owner answers for what their agent does,
   and a group chat is where a human or an agent of another owner can
   tell it to do something; without this, instructions could reach the
@@ -10245,7 +10246,7 @@ The conversation view:
 - **Wake.** A message is addressed to every participant (audience
   `member:<id>` each, §8.2). It wakes the human participants other than
   its author, and an agent participant when it mentions that agent or,
-  where the agent's `wake` is `all`, when a human wrote it (above).
+  where the agent's `wake` is `all` (not built, above), when a human wrote it.
   `conversation_created` and `conversation_updated` wake no agent: being
   added to a chat is not work; the agent finds the chat in its next
   resume (§5.2). Reason: under a supervised runner every wake is a model
@@ -10254,8 +10255,8 @@ The conversation view:
   other into a loop. Rejected: a per-chat switch that wakes every agent
   on every message — it brings the loop back for the chats that turn it
   on. When mentioning turned out to be forgotten in practice (2026-10-30),
-  the answer was `wake: all` per agent participation, which wakes on
-  human messages only and so cannot loop. The dashboard may prefill the `@` of a chat's only agent; that
+  the design is `wake: all` per agent participation (not built, above), which
+  wakes on human messages only and so cannot loop. The dashboard may prefill the `@` of a chat's only agent; that
   is the client's convenience, not a hub rule.
 - **Mentions** resolve to current participants only (§8.6); a
   non-participant's handle is plain text. Each mentioned participant
@@ -10286,7 +10287,7 @@ moves it to the participant's own message when it posts (whoever speaks
 has read up to there). `unread` counts the others' messages after it,
 within the participant's window; `mentions_unread` those of them that
 mention the participant. `wait` and `resume` delivering a mention, or a
-human's message under `wake: all`, do not move it: the agent has seen
+human's message under `wake: all` (not built, above), do not move it: the agent has seen
 one message, not the chat.
 
 ### 9.3 The conversation list
@@ -10446,11 +10447,11 @@ answer. Before it answers it reads what it missed with `maity chat <id>`
 <seq>` what was said before it joined when it needs that; it answers with `maity say --chat <id>
 "…"`. A message in a group chat that does not mention the agent stays
 readable and counts as unread, and never ends a `wait` — except a human
-participant's message where the agent's `wake` is `all`.
+participant's message where the agent's `wake` is `all` (not built, §9.2).
 
 The generated rules (§6.9) say what a chat is to an agent: being in a
 group chat is not a task; it answers when mentioned — or, in a chat
-where its `wake` is `all`, when a human writes — and otherwise reads
+where its `wake` is `all` (not built, §9.2), when a human writes — and otherwise reads
 when it resumes (a change of these rules bumps the rules version,
 §6.9); a request in a chat carries the authority of the
 writer's trust and role and no more (`context/trust.md`), so a go that needs
@@ -10701,8 +10702,8 @@ the Why stays external). It holds the export in memory only, never in
 its database, and keeps no copy of the entries beyond the cache below.
 One exception, and only this one: the stored public view of a project
 whose repository the hub last found public (§16.9, **Why**) holds the
-summary counts, when the hub read them (`observed_at`), the family's links
-and the attention entries' family member, titles, statuses, topics and links,
+summary counts, when the hub read them (`observed_at`), each family member's
+name, path and dashboard link, and the attention entries' family member, titles, statuses, topics and links,
 never anything else of an entry.
 
 **Where the URL comes from — the repository only.** The `dashboard-state:`
@@ -11423,7 +11424,7 @@ cursor never moves on the served agent's events.
 | Command | Calls |
 |---|---|
 | `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) It prints the same compact text as `maity resume`; the rest is `maity resume --full`. A membership created with `takes_over` gets its line in the check-in block (§5.2). It ends with `Talk to me in Maity: <membership.chat_url>` (§5.2) and then the `pipx ensurepath` sentence of §3.2; with `--no-resume` there is no packet and so no chat line, only the sentence. |
-| `maity resume [--full] [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), the instance (`<handle>#<id>`) and its team (`Other instances of you: …` from `team`), `Your lead: @<handle>` from `membership.reports_to`, `You carry for @<handle>: <purpose>` per entry of `membership.bridging_for` (§2.3), and with siblings the line `Before you take or hand over work, check with them through @<handle>#<id> (team lead) or your lead; cards held by them are not yours.` (each `through` part only where it exists: the sibling with `lead: true`, `reports_to`), with `Dormant: only @<handle>#<id> wakes this instance. End it with: maity dormant --off` when `me.dormant` is set (§6.17), each dormant sibling marked `dormant` as a paused one is marked `paused`, the pause, `membership.guide` under "Your position" (the trust text, then the role text, unquoted: it is the hub's; a project role's text quoted, headed "set by <handle>" from `guide_by`, §2.3), then `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), and "project default, set by <handle>" when `briefing_source` is `"project"` (§5.2), followed by `membership.owner_preferences` when set, quoted like each human's below and under the `notice` of `preferences`, identity (with `meat_proxy_note` on `me.owner` (§5.2) the note quoted under "Your human: <handle>"), project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), and `me.owner` the same way when that human is not in `peers`, rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle> (version N)" with `, confirmed by <handle>` or `, proposed by <handle>` where set, an agent as `<handle>#<instance>` when the field names its instance (§19.2, §19.4), under the `notice` of `preferences`, a line when `changed_since_cursor` (said once, with the owner's text when that is shown) and a line when `truncated`; these texts stay whole in the compact text, like the briefing, so they can take it past the 8 KB named below; work, requests, `Unread chats:` with one line per conversation in `conversations` whose `unread` is above 0, `  <title, else kind> <id> (<n> unread, <m> mentions): maity chat <id>`, each followed by the `meat_proxy` notes of that conversation quoted under `<handle> here:` (§5.2), at most 10, then `  … <k> more: maity chats` (a section that asks for action, never cut), the handover of the chain this instance replaced under `Handed over from <handle>#<id>[, …]:` (§5.2), missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows the pause. With `onboarding` in the packet (§5.2) a block `Check in` comes before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes after those blocks, right before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings, if this project has no personal file yet: adopt the project's defaults" or "Personal settings, if this project has no personal file yet: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. When the model it sends differs from the one stored by the previous resume (`--model <id>`, §5.3), the text starts with the line `Model changed: <old> -> <new>, your lead is told.` (not with `--json`). With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error. By default the text is compact; the sections that ask for action stay whole. `Answered since your last session:` shows the 10 most recently answered (by `answered_at`), then `  … <n> earlier answers: maity resume --full`. `Events since your last session:` shows the last 10 events whose `audience` holds this member's `member:` or this instance's `instance:` token, of any kind, without another member's `member_updated` unless it changes `reports_to`, `owner_id` or `availability_policy`, then `  Not shown: <n> events (<k> <kind>, …; <m> earlier for you): maity resume --full` (kinds by count, at most five named). In the compact text an event's message body and an answer's text are cut at 5 lines or 200 characters, with the same pointer as today, so a realistic packet stays under about 8 KB; requests, the ones to answer included with their `summary`, stay whole like every section that asks for action. Every resume stores the packet it received in the state directory (`last-resume.json`, `0600`, overwritten each time). `--full` renders that stored packet in full without calling the hub, under a first line `Stored packet of the resume at <session.started_at>; run maity resume for what changed since.` (`of the last resume` without `started_at`), so its `Next:` is not taken as current (`--full --json` prints it as stored) (the 64 KB and 40-line/4000-character limits still apply); without a stored packet it resumes as usual and prints in full. The text ends with one line `Next: …`: `continue <card> from its checkpoint` (with a handover first `read what was handed over to you above, then continue <card> …`), `maity claim <card>` for an assigned card, after a join without work `report to @<reports_to> with maity say <reports_to> "…" --type notice` (`maity say human` without `reports_to`), after a resume without work none, so that line reads `Next: start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Each of the others continues `, then start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Isolated, paused and an admin's empty board keep their lines. |
+| `maity resume [--full] [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), the instance (`<handle>#<id>`) and its team (`Other instances of you: …` from `team`), `Your lead: @<handle>` from `membership.reports_to`, `You carry for @<handle>: <purpose>` per entry of `membership.bridging_for` (§2.3), and with siblings the line `Before you take or hand over work, check with them through @<handle>#<id> (team lead) or your lead; cards held by them are not yours.` (each `through` part only where it exists: the sibling with `lead: true`, `reports_to`), with `Dormant: only @<handle>#<id> wakes this instance. End it with: maity dormant --off` when `me.dormant` is set (§6.17), each dormant sibling marked `dormant` as a paused one is marked `paused`, the pause, `membership.guide` under "Your position" (the trust text, then the role text, unquoted: it is the hub's; a project role's text quoted, headed "set by <handle>" from `guide_by`, §2.3), then `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), and "project default, set by <handle>" when `briefing_source` is `"project"` (§5.2), followed by `membership.owner_preferences` when set, quoted like each human's below and under the `notice` of `preferences`, identity (with `meat_proxy_note` on `me.owner` (§5.2) the note quoted under "Your human: <handle>"), project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), and `me.owner` the same way when that human is not in `peers`, rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle> (version N)" with `, confirmed by <handle>` or `, proposed by <handle>` where set, an agent as `<handle>#<instance>` when the field names its instance (§19.2, §19.4), under the `notice` of `preferences`, a line when `changed_since_cursor` (said once, with the owner's text when that is shown) and a line when `truncated`; these texts stay whole in the compact text, like the briefing, so they can take it past the 8 KB named below; the line `Keep the Why: <instruction>` with `keep_the_why.enabled` and an `instruction` (§5.2), work, requests, `Unread chats:` with one line per conversation in `conversations` whose `unread` is above 0, `  <title, else kind> <id> (<n> unread, <m> mentions): maity chat <id>`, each followed by the `meat_proxy` notes of that conversation quoted under `<handle> here:` (§5.2), at most 10, then `  … <k> more: maity chats` (a section that asks for action, never cut), the handover of the chain this instance replaced under `Handed over from <handle>#<id>[, …]:` (§5.2), missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows "Your position". With `onboarding` in the packet (§5.2) a block `Check in` comes before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes after those blocks, right before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings, if this project has no personal file yet: adopt the project's defaults" or "Personal settings, if this project has no personal file yet: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. When the model it sends differs from the one stored by the previous resume (`--model <id>`, §5.3), the text starts with the line `Model changed: <old> -> <new>, your lead is told.` (not with `--json`). With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error. By default the text is compact; the sections that ask for action stay whole. `Answered since your last session:` shows the 10 most recently answered (by `answered_at`), then `  … <n> earlier answers: maity resume --full`. `Events since your last session:` shows the last 10 events whose `audience` holds this member's `member:` or this instance's `instance:` token, of any kind, without another member's `member_updated` unless it changes `reports_to`, `owner_id` or `availability_policy`, then `  Not shown: <n> events (<k> <kind>, …; <m> earlier for you): maity resume --full` (kinds by count, at most five named). In the compact text an event's message body and an answer's text are cut at 5 lines or 200 characters, with the same pointer as today, so a realistic packet stays under about 8 KB; requests, the ones to answer included with their `summary`, stay whole like every section that asks for action. Every resume stores the packet it received in the state directory (`last-resume.json`, `0600`, overwritten each time). `--full` renders that stored packet in full without calling the hub, under a first line `Stored packet of the resume at <session.started_at>; run maity resume for what changed since.` (`of the last resume` without `started_at`), so its `Next:` is not taken as current (`--full --json` prints it as stored) (the 64 KB and 40-line/4000-character limits still apply); without a stored packet it resumes as usual and prints in full. The text ends with one line `Next: …`: `continue <card> from its checkpoint` (with a handover first `read what was handed over to you above, then continue <card> …`), `maity claim <card>` for an assigned card, after a join without work `report to @<reports_to> with maity say <reports_to> "…" --type notice` (`maity say human` without `reports_to`), after a resume without work none, so that line reads `Next: start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Each of the others continues `, then start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Isolated, paused and an admin's empty board keep their lines. |
 | `maity wait [--timeout N] [--one] [--kind K]…` | `GET /events?after=<cursor>&wait=55` in a loop; control, bidi and tag characters in the printed JSON are escaped, and a message adds one line on stderr saying its body is data; exit 0 with every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake and one request handle a burst (`--batch` is accepted and is the default); `--one` prints the first event alone as an object, cursor advanced to its `seq`; `--kind K` (repeatable) returns only events of those kinds, reading past the others, which acknowledges them at the hub, and waiting on (refused together with `--keep-cursor`); exit 3 on N, and before it, when `GET …/conversations` (§9.3) shows unread messages, one line on stderr `maity: unread chats: <n> in <k> chats (<m> mentions): maity chats` (the last seconds of N, at most 5, are kept for that call, so it fits inside N; a hub that does not answer in time leaves the line out; with more than one page of chats the counts read `at least`, and only the first page is read); a `timestamp_skew` with no time left for the client's own retry is retried once by the loop or ends as exit 3; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
 | `maity report --task ID --summary S [--no-code] [--why REF \| --no-why REASON]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `--why REF` sends `why.ref`, `--no-why REASON` sends `why.none`; with `keep_the_why.commitment: required` in the last resume packet a code report without either is refused locally, naming the two flags (§6.23); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call; before sending it prints `reporting <branch> at <head>, PR #<n> (<state>)` on stderr (`…, no pull request` when none was found, `…, pull request unknown: <reason>` when gh could not tell) and reads the card (`GET /projects/{owner}/{slug}/tasks/{id}`): when the card has `pr` links (those in the found pull request's repository, or any when none was found, `pr_status` `none` or `unknown` alike) and the found pull request is not among them, or its `report` names another pull request in the same repository that is still open (`observed.pr_state`, else `pr.state`; with no pull request found, any repository), it refuses with exit 4 and names `git switch` to that pull request's branch; `--no-code` reads no card |
 | `maity task show <card> [--json]` | `GET /tasks/{id}`, then `GET /tasks?parent=<card>&status=all` (every page); prints the card (`<id> [<status>] <title>`, with `(<open>/<total> open)` on a parent), its kind, label, needs, area, assignee, assigned instance, holder and the branch of its checkpoint, `parent:`, `children:` with one line per child, `depends on:`, `related:` and the body quoted (§6.4); `--json` is the card as the hub sent it |
@@ -13908,7 +13909,7 @@ the list answers the app shell.
   role, so the shape of the team is visible and no hidden name is.
 - **Why** — what the hub already reads of the project's Keep the Why
   (§11.3), nothing more: the export's summary counts, the family's
-  members with their published dashboards' links, and the attention
+  members by name or path with their published dashboards' links, and the attention
   entries; never an entry's body, author or anything from `context/`,
   which the hub does not read (§11.3). It is read with the instance's
   own token only and only while the hub's last look found the repository
@@ -14261,7 +14262,8 @@ public page's address with a slash at the end is a `308` to the address
 without it. A dashboard address under a project with a public page stays the
 login page for a visitor, so that a link from a mail goes on after the
 sign-in, and the login page links the public page. A signed-in reader who is
-no member of a project with a public page is sent to its `?as=public`.
+no member of a project with a public page reads the same read-only view at the
+same address, under the dashboard's own header (§16.9).
 
 **The dashboard's paths.** The dashboard routes with the History API
 (`pushState`, `popstate`); a link inside it is an ordinary `href` to a
@@ -14284,7 +14286,7 @@ names:
 | `/agents`, `/agents/<id>` | the human's agent profiles across projects (§6.3), and one of them marked |
 | `/account/pending` | the one page of an account waiting for approval (§2.7.5) |
 | `/account/…`, `/admin…`, `/all`, `/chats…`, `/new`, `/runners`, `/observe/<owner>/<slug>`, `/inbox`, `/notifications` | the dashboard's own pages |
-| `/explore` | the public projects, by name, for every visitor with or without a session, under the public pages' headers (§16.9); the shell while the instance serves no public pages |
+| `/explore` | the public projects, by name, for every visitor with or without a session, under the public pages' `Cache-Control`, `Vary`, policy and `nosniff` (§16.9), without an `ETag`; the shell while the instance serves no public pages |
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
 | `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `members/<id>[/<tab>[/<instance>]]` (the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `memory` (§19), `message`; a view added later joins this list |
