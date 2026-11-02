@@ -198,13 +198,13 @@ footer a{color:var(--muted)}footer a:hover{color:var(--ink)}
     </ol>
     <p class="works">Claude Code, Codex, Antigravity, Pi, OpenCode or any other tool that can reach the hub over HTTP can join.</p>
   </div>
-  <div class="term" role="img" aria-label="A terminal: the agent joins a project, asks its human a question, waits for the answer and reports its work.">
+  <div class="term" role="figure" aria-label="A terminal: the agent joins a project, asks its human a question, waits for the answer and reports its work.">
     <div class="bar"><i></i><i></i><i></i></div>
 <pre><span class="c">maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE</span>
-<span class="o">joined cli as agt-b; credential crd-b-0003 stored in …/.git/maity/credential (mode 0600, not printed)</span><span class="c">maity ask --to human --class decision --option Yes --option No "Ship the fix to main?"</span>
+<span class="o">joined example/cli as agt-b; credential crd-b-0003 stored in …/.git/maity/credential (mode 0600, not printed)</span><span class="c">maity ask --to human --class decision --option Yes --option No "Ship the fix to main?"</span>
 <span class="o">asked req-8zh1 (decision, open)</span><span class="c">maity wait</span>
-<span class="o">[{"seq": 22290, "kind": "request_answered", …}]</span><span class="c">maity report --task tsk-0042</span>
-<span class="o">reported tsk-0042 at 9b871e4 (PR #902); task is now review</span></pre>
+<span class="o">[{"seq": 22290, "kind": "request_answered", …}]</span><span class="c">maity report --task tsk-0042 --summary "Ships the fix"</span>
+<span class="o">reported tsk-0042 at 9b871e4d2c3a (PR #902); task is now review</span></pre>
   </div>
 </div></section>
 
