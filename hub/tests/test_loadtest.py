@@ -90,6 +90,11 @@ def test_the_scripts_signature_is_the_one_the_hub_expects(
         ("https://test.example", "a.example,test.example", None, False),
         ("https://maity.team", None, "lt.maity.team,", True),
         ("https://maity.team", None, "maity.team.team", True),
+        # A trailing dot is production too: never a test system's name, as run.js refuses it.
+        ("https://maity.team.", "maity.team.", None, True),
+        ("https://join.maity.team.", "join.maity.team.", None, True),
+        ("https://maity.team.", None, "maity.team.", True),
+        ("https://test.example.", "test.example.", None, True),
     ],
 )
 def test_the_seed_runs_only_on_a_hub_named_for_it(
@@ -151,12 +156,17 @@ def test_the_script_reaches_only_a_named_system(
         (["https://a.example", "https://b.example"], "a.example,b.example", "", False),
         (["https://a.example", "https://b.example"], "a.example", "", True),
         (["https://a.example", "https://A.example"], "a.example", "", True),  # one pod twice
+        (["https://a.example", "https://a.example:443"], "a.example", "", True),  # the same port
+        (["http://a.example", "http://a.example:080"], "a.example", "", True),
+        (["https://a.example:8001", "https://a.example:8002"], "a.example", "", False),  # forwards
         # Production: one target for each confirmed name, the balancers of the run.
         (["https://maity.team"], "", "maity.team", False),
         (["https://maity.team", "https://lt.maity.team"], "", "maity.team,lt.maity.team", False),
         (["https://maity.team", "https://lt.maity.team"], "", "maity.team", True),
         (["https://maity.team"], "", "maity.team,lt.maity.team", True),  # a name left unused
         (["https://maity.team", "https://maity.team:8443"], "", "maity.team", True),
+        # One name twice leaves the other unused, though the counts match.
+        (["https://maity.team", "https://maity.team:8443"], "", "maity.team,lt.maity.team", True),
         (["https://maity.team", "https://MAITY.team"], "", "maity.team", True),  # twice
         (["https://maity.team", "https://a.example"], "a.example", "maity.team", True),  # mixed
         ([], "", "", True),

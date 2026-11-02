@@ -50,6 +50,9 @@ PRODUCTION = "maity.team"
 NO_PASSWORD = "loadtest"
 
 
+HOST = re.compile(r"(?:[a-z0-9-]+\.)*[a-z0-9-]+")
+
+
 def named(confirmed: str | None) -> set[str]:
     """The hosts of a comma separated confirmation; empty entries are none."""
     return {host.strip() for host in (confirmed or "").split(",") if host.strip()}
@@ -61,6 +64,10 @@ def refusal(public_url: str, test_system: str | None, production: str | None) ->
     host = (urlsplit(public_url).hostname or "").lower()
     if not host:
         return "MAITY_PUBLIC_URL names no host"
+    # The host as `loadtest/target.js` takes it: labels of letters, digits and `-`, no trailing
+    # dot. `maity.team.` is production too, and would otherwise pass as a test system's name.
+    if not HOST.fullmatch(host):
+        return f"{host} is not a plain host name"
     if host == PRODUCTION or host.endswith(f".{PRODUCTION}"):
         if host not in named(production):
             return f"{host} may be production: LOADTEST_CONFIRMED_PRODUCTION does not name it"

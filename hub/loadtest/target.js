@@ -4,7 +4,8 @@
 // LOADTEST_CONFIRMED_PRODUCTION names one. Both confirmations are comma separated lists. Production
 // is reached through its balancers' names only, one target per confirmed name, never pods one by
 // one: with a second balancer for the run (replicas.md cac80c88) that is two names.
-const ORIGIN = /^https?:\/\/((?:[a-z0-9-]+\.)*[a-z0-9-]+)(?::\d+)?$/i;
+const ORIGIN = /^(https?):\/\/((?:[a-z0-9-]+\.)*[a-z0-9-]+)(?::(\d+))?$/i;
+const DEFAULT_PORT = { http: "80", https: "443" };
 
 export function production(host) {
   return host === "maity.team" || host.endsWith(".maity.team");
@@ -12,11 +13,20 @@ export function production(host) {
 
 export function hostOf(target) {
   const found = ORIGIN.exec(target);
-  return found ? found[1].toLowerCase() : null;
+  return found ? found[2].toLowerCase() : null;
 }
 
 function named(list) {
   return list.split(",").map((host) => host.trim()).filter(Boolean);
+}
+
+// Host and port as reached, so that `https://a`, `https://A:443` are one target. Another scheme or
+// port is another target: on a test system that may be another pod's port-forward.
+export function reached(target) {
+  const found = ORIGIN.exec(target);
+  if (!found) return null;
+  const scheme = found[1].toLowerCase();
+  return `${found[2].toLowerCase()}:${found[3] ? String(Number(found[3])) : DEFAULT_PORT[scheme]}`;
 }
 
 export function refusal(target, confirmedList, confirmedProduction) {
@@ -43,7 +53,7 @@ export function targetsRefusal(targets, confirmedList, confirmedProduction) {
     if (why) return why;
   }
   const hosts = targets.map(hostOf);
-  if (new Set(targets.map((target) => target.toLowerCase())).size !== targets.length) {
+  if (new Set(targets.map(reached)).size !== targets.length) {
     return "LOADTEST_TARGETS names a target twice";
   }
   const onProduction = hosts.filter(production);

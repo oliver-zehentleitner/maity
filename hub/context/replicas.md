@@ -666,7 +666,10 @@ and a name confirmed but not targeted is refused as well, as a sign the two list
 together. Connecting to both balancers under the one production name, through k6's `hosts`
 option, was the other way; k6 maps a name to one address, so it would not have spread the load
 (inferred, not tried). The seed reads the same variables as lists too, so that one setting serves
-both.
+both, and takes the host as `run.js` does: a trailing dot is refused, since `maity.team.` is
+production and would otherwise have passed as a test system's name (found in the review). Twice
+means the same host and port as reached (`https://a` and `https://a:443`); another port on one
+host stays another target, as a test system's pods may be port-forwards on one machine.
 The 60 000 held connections are spread over several generator pods with their own source
 addresses: one source address has about 64 000 ephemeral ports, and the run must measure the
 hub, not the generator's port exhaustion.
