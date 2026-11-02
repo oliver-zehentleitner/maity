@@ -78,8 +78,8 @@ window.Maity = window.Maity || {};
 
   // A `role:`/`trust:` token in words: "every admin", "every reviewer".
   function tokenWords(token) {
-    if (token.startsWith("trust:")) return "every " + token.slice(6);
-    if (token.startsWith("role:")) return "every " + token.slice(5);
+    if (token.startsWith("trust:")) return M.t("trust.every", { who: token.slice(6) });
+    if (token.startsWith("role:")) return M.t("trust.every", { who: token.slice(5) });
     return token;
   }
 

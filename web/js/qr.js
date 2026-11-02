@@ -173,10 +173,10 @@ window.Maity = window.Maity || {};
     const bytes = utf8(text);
     let ver = o.version || 1;
     while (ver <= MAX_VERSION && 4 + (ver <= 9 ? 8 : 16) + bytes.length * 8 > dataCodewords(ver) * 8) {
-      if (o.version) throw new Error("too long for version " + o.version);
+      if (o.version) throw new Error("qr_too_long_for_version_" + o.version);
       ver++;
     }
-    if (ver > MAX_VERSION) throw new Error("too long for a QR code here");
+    if (ver > MAX_VERSION) throw new Error("qr_too_long");
     const size = ver * 4 + 17;
     const mod = Array.from({ length: size }, () => new Array(size).fill(false));
     const fn = Array.from({ length: size }, () => new Array(size).fill(false));
