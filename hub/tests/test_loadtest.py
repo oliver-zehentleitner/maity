@@ -85,6 +85,11 @@ def test_the_scripts_signature_is_the_one_the_hub_expects(
         ("https://maity.team", "maity.team", None, True),  # production is only confirmed so
         ("https://join.maity.team", None, "maity.team", True),
         ("https://", "", "", True),
+        # Both are lists, as run.js reads the same variables: one setting for seed and run.
+        ("https://maity.team", None, "lt.maity.team, maity.team", False),
+        ("https://test.example", "a.example,test.example", None, False),
+        ("https://maity.team", None, "lt.maity.team,", True),
+        ("https://maity.team", None, "maity.team.team", True),
     ],
 )
 def test_the_seed_runs_only_on_a_hub_named_for_it(
@@ -114,6 +119,8 @@ def test_the_seed_runs_only_on_a_hub_named_for_it(
         ("https://join.maity.team", "", "maity.team", True),
         ("https://maity.team.", "", "maity.team", True),
         ("https://test.example", "", "test.example", True),
+        ("https://lt.maity.team", "", "maity.team,lt.maity.team", False),
+        ("https://lt.maity.team", "", "maity.team", True),
     ],
 )
 def test_the_script_reaches_only_a_named_system(
@@ -130,6 +137,46 @@ def test_the_script_reaches_only_a_named_system(
     )
     made = subprocess.run(
         [node, str(driver), target, confirmed, production],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert (json.loads(made.stdout) is not None) is refused
+
+
+@pytest.mark.parametrize(
+    ("targets", "confirmed", "production", "refused"),
+    [
+        # A test system: each pod by itself, every host named.
+        (["https://a.example", "https://b.example"], "a.example,b.example", "", False),
+        (["https://a.example", "https://b.example"], "a.example", "", True),
+        (["https://a.example", "https://A.example"], "a.example", "", True),  # one pod twice
+        # Production: one target for each confirmed name, the balancers of the run.
+        (["https://maity.team"], "", "maity.team", False),
+        (["https://maity.team", "https://lt.maity.team"], "", "maity.team,lt.maity.team", False),
+        (["https://maity.team", "https://lt.maity.team"], "", "maity.team", True),
+        (["https://maity.team"], "", "maity.team,lt.maity.team", True),  # a name left unused
+        (["https://maity.team", "https://maity.team:8443"], "", "maity.team", True),
+        (["https://maity.team", "https://MAITY.team"], "", "maity.team", True),  # twice
+        (["https://maity.team", "https://a.example"], "a.example", "maity.team", True),  # mixed
+        ([], "", "", True),
+    ],
+)
+def test_the_script_reaches_production_only_through_its_named_balancers(
+    tmp_path: Path, targets: list[str], confirmed: str, production: str, refused: bool
+) -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("no node on this machine")
+    driver = tmp_path / "driver.mjs"
+    module = (LOADTEST / "target.js").as_uri()
+    driver.write_text(
+        f'import {{ targetsRefusal }} from "{module}";\n'
+        "const [targets, ...rest] = process.argv.slice(2);\n"
+        "console.log(JSON.stringify(targetsRefusal(JSON.parse(targets), ...rest)));\n"
+    )
+    made = subprocess.run(
+        [node, str(driver), json.dumps(targets), confirmed, production],
         capture_output=True,
         text=True,
         check=True,
