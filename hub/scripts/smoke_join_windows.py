@@ -23,6 +23,7 @@ import base64
 import http.cookiejar
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -45,6 +46,7 @@ GOOD_INSTALL = f"pipx install {CLI}"
 BAD_INSTALL = f"pipx install {CLI / 'no-such-directory'}"
 JOINED = "joined owner/smoke as agt-"
 # Prints the bytes a native command gets on stdin, as hex.
+HEX = re.compile(r"[0-9a-f]+")
 STDIN_HEX = 'python -c "import sys; print(sys.stdin.buffer.read().hex())"'
 # The hub is not made for Windows: `avatar_decode` imports `resource` at the top. This smoke test
 # uploads no avatar, so an empty module lets the rest of the hub start.
@@ -145,7 +147,9 @@ class Smoke:
         """Case 6: `ü` through a pipe after the line's first statement."""
         line = f'{join_line.UTF8_POWERSHELL}; "\u00fc" | {STDIN_HEX}'
         output, _ = self.paste("encodings", shell, line, "\0", self.env)
-        got = output.strip().splitlines()[-1] if output.strip() else ""
+        # PowerShell may add a CLIXML progress record after it, so the hex line is looked for.
+        hex_lines = [ln.strip() for ln in output.splitlines() if HEX.fullmatch(ln.strip())]
+        got = hex_lines[-1] if hex_lines else output[-300:]
         if not got.startswith("c3bc"):  # `?` would be 3f, a mark efbbbf
             raise SystemExit(f"smoke: {shell}: encodings: stdin was {got!r}, not UTF-8 c3bc")
 
