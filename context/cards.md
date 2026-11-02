@@ -242,7 +242,7 @@ through the probe gives that without a second source of truth.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's wish in the Maity chat, 2026-11-02, that the overview link the contract and better show it rendered inside Maity (card tsk-yhbmz7mjng7n); the coordinator's go the same day for the implementer to write the contract; the arbiter's ruling on #1235, 2026-11-02; the contract review of #1235 and the arbiter's ruling on its findings the same day (Markdown only, `private, no-cache`, the repository in the `ETag`), and the arbiter's rulings on the delta reviews the same day (a symlink refused, told by the tree's mode); contract in `docs/api.md` §6.8, §6.1, §6.11, §16.11
+**Source:** the maintainer's wish in the Maity chat, 2026-11-02, that the overview link the contract and better show it rendered inside Maity (card tsk-yhbmz7mjng7n); the coordinator's go the same day for the implementer to write the contract; the arbiter's ruling on #1235, 2026-11-02; the contract review of #1235 and the arbiter's ruling on its findings the same day (Markdown only, `private, no-cache`, the repository in the `ETag`), and the arbiter's rulings on the delta reviews the same day (a symlink refused, told by the tree's mode, each directory's tree read and the check failing closed); contract in `docs/api.md` §6.8, §6.1, §6.11, §16.11
 **Revisit when:** a project's contract outgrows 4 MiB, or a project keeps its contract in more than one file
 **See:** cards.md#a-contracts-text-stays-in-the-repository-the-card-shows-the-section-read-from-it — f29e3cb3-12ab-4af6-83f1-9b04dbaeb578 — as of 2026-11-02
 
@@ -256,9 +256,12 @@ file only (`not_markdown` otherwise, the extension in any case), which
 keeps it from exposing arbitrary repository files to every
 `project:read` holder, guests included; a symlink is refused too, since
 the name says nothing about the file it points to: the hub reads the
-entry's mode from the commit's Git tree, and mode `120000` is
-`not_markdown`. The tree of a commit never changes, so it is cached per
-commit SHA. The file cap for this read and for a card's section is
+non-recursive tree of each directory on the path at the commit, every
+segment must be listed as a directory (`040000`) or, last, a regular
+file (`100644`, `100755`), and anything else, a missing entry or a
+truncated tree included, is `not_markdown`: the check fails closed. The
+tree of a commit never changes, so it is cached per commit SHA and
+directory. The file cap for this read and for a card's section is
 4 MiB instead of 1 MiB; a larger file is refused, never cut.
 
 **Reason:** a setting is the one place that says which file is the
@@ -295,6 +298,11 @@ reading up to 4 MiB again; after a `304` the view keeps the `ref`,
   raw form that §6.8 prescribes above 1 MB carries no `sha`, so large
   files would slip through, and the hash only infers what the tree's
   mode states directly.
+- One read of the recursive tree, a missing entry taken as no symlink:
+  GitHub truncates that tree for a large repository (torvalds/linux
+  lists nothing under `scripts/`), so a symlink there would pass; the
+  directory's own tree is never truncated, and a missing entry fails
+  closed.
 - `no-store` like the other API answers: every tab and reload would
   read the whole file again, so the load would grow with tabs.
 

@@ -6079,12 +6079,19 @@ whether or not they can read the repository on the forge: this read
 shows the whole file, unlike a card's section, which shows only
 Markdown under a matching heading, so a file without one (an `.env`)
 shows nothing there. The name alone is not enough, so the read checks
-what the name points to: the hub reads the entry's mode from the Git tree
-of the commit (on GitHub, the Git Trees API), and mode `120000`, a
-symlink, is `invalid` with `details.fields["settings.contract_path"]:
-"not_markdown"`; nothing is shown, never the target's text. A commit's
-tree never changes, so the hub may cache it per commit SHA: the extra
-read comes once per commit, not per file or per reader. Without the
+what the name points to, segment by segment, at the commit. It reads
+the non-recursive tree of each directory on the path, from the root
+down (on GitHub, `GET …/git/trees/{commit}:{dir}`, never the recursive
+tree, which GitHub truncates for a large repository). Every segment
+must be listed: each directory with mode `040000`, the file itself with
+`100644` or `100755`. A segment that is missing, a symlink (`120000`), a
+submodule (`160000`) or any other mode, and a tree answered with
+`truncated: true`, are `invalid` with
+`details.fields["settings.contract_path"]: "not_markdown"`: the check
+fails closed, and nothing is shown, never the target's text. A commit's
+tree never changes, so the hub may cache each directory's tree per
+commit SHA and directory: the extra reads come once per commit, not per
+reader. Without the
 key it is `docs/api.md`; `null` removes the key and the default applies
 again (§6.1). Set by `PATCH /projects/{owner}/{slug}` under
 `project:admin`, like every setting; a change emits `project_updated`
