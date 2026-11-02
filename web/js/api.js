@@ -626,6 +626,33 @@ window.Maity = window.Maity || {};
     list.forEach((x, k) => each(x || {}, path + "." + k));
   }
   const landingHref = (t) => typeof t === "string" && ((/^\/(?!\/)[A-Za-z0-9._~%\/?=&-]*$/.test(t)) || /^https:\/\/[^\s/@]+(\/[^\s]*)?$/.test(t));
+  // `manages` (§6.2) as the hub counts it (instance_counts): the members reporting to each
+  // member and its whole branch, with their instances not revoked; an instance is online while
+  // its presence is online or, not paused, it is dormant, and dormant is a part of online. A
+  // paused, suspended (presence paused) or isolated member has no instance online.
+  function fixtureManages(items) {
+    const below = {};
+    items.forEach((x) => { if (x.reports_to) (below[x.reports_to] = below[x.reports_to] || []).push(x); });
+    const held = (x) => x.presence === "paused" || x.paused || x.isolated;
+    const online = (i) => i.presence !== "paused" && (i.presence === "online" || !!i.dormant);
+    const count = (members) => {
+      const live = members.flatMap((x) => (x.instances || []).filter((i) => !i.revoked_at));
+      const awake = members.filter((x) => !held(x)).flatMap((x) => (x.instances || []).filter((i) => !i.revoked_at && online(i)));
+      return { members: members.length, instances: live.length, online: awake.length,
+        dormant: awake.filter((i) => i.dormant).length };
+    };
+    const branch = (id) => {
+      const found = [], seen = new Set([id]), queue = (below[id] || []).slice();
+      while (queue.length) {
+        const x = queue.pop();
+        if (seen.has(x.id)) continue;
+        seen.add(x.id); found.push(x); queue.push(...(below[x.id] || []));
+      }
+      return found;
+    };
+    return Object.fromEntries(items.map((x) => [x.id, { direct: count(below[x.id] || []), total: count(branch(x.id)) }]));
+  }
+
   function landingText(x, path, max, required, errors) {
     if (x === undefined || x === null || x === "") { if (required) errors[path] = "required"; return; }
     if (typeof x !== "string") errors[path] = "invalid";
@@ -693,7 +720,7 @@ window.Maity = window.Maity || {};
         landingText(s.subline, sp + ".subline", 300, false, errors); landingCta(s.cta_primary, sp + ".cta_primary", true, errors);
         landingCta(s.cta_secondary, sp + ".cta_secondary", false, errors); landingMarkdown(s.note, sp + ".note", 500, false, errors);
       } else if (s.type === "stats") {
-        const ok = ["people", "agents", "public_projects", "cards_done_week", "people_online", "agents_online"];
+        const ok = ["people", "agents", "public_projects", "cards_done_week", "people_online", "agents_online", "instances", "instances_online"];
         if (!Array.isArray(s.items) || s.items.some((x) => !ok.includes(x))) errors[sp + ".items"] = "invalid";
       } else if (s.type === "steps" || s.type === "scales" || s.type === "faq") {
         landingText(s.title, sp + ".title", 120, true, errors);
@@ -2020,6 +2047,39 @@ window.Maity = window.Maity || {};
     ["GET", /^\/languages$/, () => ({ items: FIXTURE_LANGUAGES })],
     ["PATCH", /^\/me\/notification-settings$/, (m, body, path) => {
       const set = fixtures()["notifications.json"].settings;
+      // §18.4: a new address waits for its link; a confirmed one changes or goes only with the
+      // password (any password until one is set here, as at /auth/login).
+      if (body.email && "address" in body.email) {
+        const address = body.email.address, email = set.email;
+        if (!set.mail_available) fail(409, "mail_not_configured", "this instance sends no mail", path);
+        if (address !== null && !/^[\x21-\x7e]{1,64}@[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(String(address))) fail(400, "invalid", "the request does not validate", path, { fields: { "email.address": "invalid" } });
+        if (email.address && email.verified_at) {
+          if (!body.current_password) fail(400, "invalid", "the request does not validate", path, { fields: { current_password: "required" } });
+          if (fixturePassword !== null && body.current_password !== fixturePassword) fail(400, "invalid", "the request does not validate", path, { fields: { current_password: "mismatch" } });
+        }
+        if (address === null) Object.assign(email, { address: null, address_status: "none", verified_at: null, pending_address: null, disabled_at: null });
+        else Object.assign(email, { pending_address: address, address_status: email.address && email.verified_at ? email.address_status : "pending" });
+      }
+      // §18.4: the modes per kind, the digests' time and day, the zone, quiet hours, the sign-in link;
+      // each checked at its path, nothing stored if one fails.
+      if (body.email) {
+        const e = body.email, fields = {}, hhmm = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+        const modes = ["immediate", "hourly", "daily", "weekly", "off"];
+        Object.entries(e.kinds || {}).forEach(([k, v]) => {
+          if (!(k in set.email.kinds)) fields["email.kinds." + k] = "unknown";
+          else if (!v || typeof v !== "object" || Object.keys(v).some((x) => x !== "mode" && x !== "content")
+            || ("mode" in v && !modes.includes(v.mode))
+            || ("content" in v && (typeof v.content !== "boolean" || !["chat", "mention"].includes(k)))) fields["email.kinds." + k] = "invalid";
+        });
+        if ("daily_at" in e && !hhmm.test(String(e.daily_at))) fields["email.daily_at"] = "invalid";
+        if ("weekly_on" in e && !["mon", "tue", "wed", "thu", "fri", "sat", "sun"].includes(e.weekly_on)) fields["email.weekly_on"] = "invalid";
+        if ("timezone" in e && !/^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+)*$/.test(String(e.timezone))) fields["email.timezone"] = "invalid";
+        if ("quiet_hours" in e && e.quiet_hours !== null && !(e.quiet_hours && hhmm.test(String(e.quiet_hours.from)) && hhmm.test(String(e.quiet_hours.to)))) fields["email.quiet_hours"] = "invalid";
+        if ("sign_in_link" in e && typeof e.sign_in_link !== "boolean") fields["email.sign_in_link"] = "invalid";
+        if (Object.keys(fields).length) fail(400, "invalid", "the request does not validate", path, { fields });
+        Object.entries(e.kinds || {}).forEach(([k, v]) => { set.email.kinds[k] = Object.assign({}, set.email.kinds[k], v); });
+        ["daily_at", "weekly_on", "timezone", "quiet_hours", "sign_in_link"].forEach((key) => { if (key in e) set.email[key] = e[key]; });
+      }
       if (body.email && "language" in body.email) {
         if (!FIXTURE_LANGUAGES.some((l) => l.tag === body.email.language)) fail(400, "invalid", "unknown language", path);
         set.email.language = body.email.language;
@@ -3256,7 +3316,8 @@ window.Maity = window.Maity || {};
         claim_to_done_median_seconds: null, review_to_done_median_seconds: null, cards_done_per_day: [] }, coverage: { reviews_since: null } };
       return Object.assign({}, s, { window_days: n, live_at: nowIso(),
         // Oldest first, as swarm.py sends them: the window is the last n days.
-        totals: Object.assign({}, s.totals, { cards_done_per_day: (s.totals.cards_done_per_day || []).slice(-n) }) });
+        totals: Object.assign({}, s.totals, ["cards_done_per_day", "cards_created_per_day", "prs_merged_per_day"]
+          .reduce((cut, k) => (s.totals[k] ? Object.assign(cut, { [k]: s.totals[k].slice(-n) }) : cut), {})) });
     }],
     // §17.6: a manual post by an owner or admin.
     ["POST", /^\/projects\/([^/]+)\/ticker$/, (m, body, path) => {
@@ -3712,7 +3773,9 @@ window.Maity = window.Maity || {};
       const admin = membersAdmin(m[1]);
       const creds = fixtures()[m[1] + "/credentials.json"] || {};
       const monthAgo = Date.now() - 30 * 86400000;
-      return { next_cursor: null, items: list.items.map((x) => {
+      const counted = fixtureManages(list.items);
+      return { next_cursor: null, items: list.items.map((x0) => {
+        const x = Object.assign({}, x0, { manages: counted[x0.id] });
         if (!admin && x.owner_id !== me().member.id) return x;
         if (x.kind !== "agent") return Object.assign({}, x, { owner: null, credentials: null });
         const all = (creds[x.id] || { items: [] }).items;
@@ -4699,6 +4762,8 @@ window.Maity = window.Maity || {};
     isPublicPath: (path) => PUBLIC_PATH.test(path),
     // The hub's time as best known: this clock corrected by the last answer's.
     now: () => Date.now() + skew,
+    // The fixture hub's `manages` count (§6.2), for the smoke test of its rule.
+    fixtureManages,
     source,
     ApiError,
     get: (path, opts) => request("GET", path, undefined, undefined, opts && opts.signal),

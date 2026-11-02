@@ -159,7 +159,7 @@ def _redact_card(
             rewritten.add(entry.event_seq)
     for seq in sorted(rewritten):
         _announce(conn, seq, redaction, actor)
-    for event in _events_of(conn, ("task", card.id), ("mentioned", "note_added")):
+    for event in _events_of(conn, ("task", card.id), ("mentioned", "note_added", "note_edited")):
         task = (event.payload or {}).get("task") or {}
         if not event.redacted and task.get("title") == title:
             payload = {**event.payload, "task": {**task, "title": tombstone}}
@@ -291,7 +291,6 @@ def _answer_readers(conn: Connection, round_row: Any, row: Any) -> list[str]:
             )
         ).scalars()
     )
-
     tokens = [f"member:{round_row.moderator['member_id']}", *(f"member:{h}" for h in humans)]
     if not row.anonymous and row.author is not None:
         author = conn.execute(select(t.membership).where(t.membership.c.id == row.author)).one()

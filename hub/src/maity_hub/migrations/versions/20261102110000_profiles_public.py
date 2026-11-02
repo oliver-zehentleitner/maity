@@ -6,7 +6,7 @@ maintainer's decision of 2026-11-02 (tsk-my5gvj4warte), with two accounts at the
 profile is off keeps a page with handle and name, `noindex` and out of the sitemap).
 
 Revision ID: 20261102110000_profiles_public
-Revises: 20261102100000_project_probe_via
+Revises: 20261102120000_maintenance
 Create Date: 2026-11-02
 """
 
@@ -16,7 +16,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "20261102110000_profiles_public"
-down_revision: str | None = "20261102100000_project_probe_via"
+down_revision: str | None = "20261102120000_maintenance"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

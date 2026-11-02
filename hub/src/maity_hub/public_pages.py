@@ -127,6 +127,13 @@ def answer(
         query = f"?{request.url.query}" if request.url.query else ""
         return RedirectResponse(f"{bare}{query}", status_code=308)
     assert page is not None
+    # A visitor gets the small 503 page while a window runs, bare or inside the shell (§16.12):
+    # a crawler reads the status, not what the app would draw.
+    from maity_hub import maintenance
+
+    window = maintenance.window_now(engine_of(request))
+    if window is not None and window["state"] == "running":
+        return maintenance.refusal_page(window)  # type: ignore[no-any-return]
     wait = BY_ADDRESS.hit(origin_of(request).address)
     if wait:
         raise rate_limited(wait)
@@ -143,20 +150,23 @@ def answer(
         if request.method == "HEAD":
             return Response(media_type="text/html", headers=wrapped)
         return Response(shelled, media_type="text/html", headers=wrapped)
+    # The banner of an upcoming window is part of the answer, and so of its tag: a cache
+    # holding the page from before (or after) the window gets it again, not a 304.
+    tag = maintenance.etag(page.etag, window)
     headers = {
         "Cache-Control": CACHE,
-        "ETag": page.etag,
+        "ETag": tag,
         "Vary": "Cookie",
         "Content-Security-Policy": CSP,
         "X-Content-Type-Options": "nosniff",
         **_robots(page),
     }
     candidates = request.headers.get("if-none-match", "").split(",")
-    if any(tag.strip() == "*" or tag.strip().removeprefix("W/") == page.etag for tag in candidates):
+    if any(c.strip() == "*" or c.strip().removeprefix("W/") == tag for c in candidates):
         return Response(status_code=304, headers=headers)
     if request.method == "HEAD":
         return Response(media_type="text/html", headers=headers)
-    return HTMLResponse(page.body, headers=headers)
+    return HTMLResponse(maintenance.with_banner(page.body, window), headers=headers)
 
 
 def read(request: Request, path: str) -> Response:

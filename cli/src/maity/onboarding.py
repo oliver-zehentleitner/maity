@@ -198,6 +198,37 @@ def _key(handle: str) -> str:
     return "".join(c for c in handle if unicodedata.category(c) != "Cf").strip().casefold()
 
 
+def _count(value: Any) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
+
+
+def _plural(count: int, word: str) -> str:
+    return f"{count} {word}{'' if count == 1 else 's'}"
+
+
+def _manages(manages: Any) -> str | None:
+    """`You lead …` from `membership.manages` (§5.2, §6.2), or None when nobody reports to
+    this agent. The hub counts; dormant is a part of online, never added to it."""
+    if not isinstance(manages, dict):
+        return None
+    direct, total = manages.get("direct"), manages.get("total")
+    direct = direct if isinstance(direct, dict) else {}
+    members = _count(direct.get("members"))
+    if not members:
+        return None
+    line = "You lead " + _plural(members, "member")
+    instances = _count(direct.get("instances"))
+    if instances:
+        live = f"{_count(direct.get('online'))} online"
+        dormant = _count(direct.get("dormant"))
+        live += f", {dormant} dormant" if dormant else ""
+        line += f" · {_plural(instances, 'instance')} ({live})"
+    branch = _count(total.get("members")) if isinstance(total, dict) else 0
+    if branch > members:
+        line += f"; {_plural(branch, 'member')} in your branch"
+    return line + "."
+
+
 def _name(value: Any, names: dict[str, str]) -> str:
     """A member's handle when the packet names it, else the value as it is (an id)."""
     return inline(names.get(value, value) if isinstance(value, str) else value)
@@ -224,6 +255,9 @@ def _who(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     lead = ms.get("reports_to")
     if lead:
         lines.append(f"Your lead: @{_name(lead, names)}")
+    leads = _manages(ms.get("manages"))
+    if leads:
+        lines.append(leads)
     for carried in _items(ms.get("bridging_for")):  # the agents it lends its hands to (§2.3)
         who = carried.get("handle") or carried.get("member_id") or "?"
         other = " (another owner's agent)" if carried.get("cross_owner") else ""

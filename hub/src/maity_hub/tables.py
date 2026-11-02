@@ -122,6 +122,9 @@ human = Table(
     Column("website", String(200)),
     Column("social", JSON_VALUE),
     Column("links_visible", String(24), nullable=False, server_default="private"),
+    # Which of its agents receive the hub's broadcasts (§16.12): `{mode, agents}`, NULL is
+    # `accept_all`.
+    Column("broadcasts", JSON_VALUE),
     # The portal's language and that of the hub's own texts (§6.2); null until chosen.
     Column("interface_language", String(35)),
     # `active`, or `pending` while a registration waits for the operator (§2.7.5).
@@ -1501,6 +1504,7 @@ card_note = Table(
     Column("event_seq", BIG_ID),  # its `note_added`, redacted with it
     Column("redacted", Boolean, nullable=False),
     Column("redaction", JSON_VALUE),
+    Column("edited", JSON_VALUE),  # {by, at, reason} of the latest edit; no earlier text is kept
     Index("ix_card_note_card_created", "card_id", "created_at", "id"),
     Index("ix_card_note_author_created", "author", "created_at"),
     **MYSQL_TABLE,
@@ -2206,6 +2210,41 @@ instance_setting = Table(
     **MYSQL_TABLE,
 )
 
+# A maintenance window (§16.12): at most one active or upcoming. A cancelled one keeps its row;
+# `settled_at` is when the deadlines that fell into it were moved, once, after its end.
+maintenance_window = Table(
+    "maintenance_window",
+    metadata,
+    Column("id", String(ID), primary_key=True),
+    Column("starts_at", UtcDateTime, nullable=False),
+    Column("ends_at", UtcDateTime, nullable=False),
+    Column("text", Text, nullable=False),
+    _ref("created_by", "human.id", nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    _ref("updated_by", "human.id", nullable=False),
+    Column("updated_at", UtcDateTime, nullable=False),
+    Column("cancelled_at", UtcDateTime),
+    Column("settled_at", UtcDateTime),
+    Index("ix_maintenance_window_ends_at", "ends_at"),
+    **MYSQL_TABLE,
+)
+
+# Every change of a window, kept for good: the trail until the instance audit log exists.
+maintenance_change = Table(
+    "maintenance_change",
+    metadata,
+    Column("id", String(ID), primary_key=True),
+    _ref("window_id", "maintenance_window.id", nullable=False),
+    Column("action", String(16), nullable=False),  # created, changed, cancelled, ended
+    Column("starts_at", UtcDateTime, nullable=False),
+    Column("ends_at", UtcDateTime, nullable=False),
+    Column("text", Text, nullable=False),
+    _ref("by", "human.id", nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    Index("ix_maintenance_change_at", "at"),
+    **MYSQL_TABLE,
+)
+
 instance_secret = Table(
     "instance_secret",
     metadata,
@@ -2329,6 +2368,7 @@ notification_mail_state = Table(
     _ref("human_id", "human.id", primary_key=True),
     Column("hourly_at", UtcDateTime),
     Column("daily_at", UtcDateTime),
+    Column("weekly_at", UtcDateTime),
     Column("held_since", UtcDateTime),  # held over the instance budget (§18.5)
     Column("stamp", Text),
     Column("waiting", Boolean, nullable=False, server_default=false()),

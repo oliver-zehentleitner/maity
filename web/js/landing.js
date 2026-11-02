@@ -31,7 +31,7 @@ window.Maity = window.Maity || {};
   const pair = (value, words) => Object.defineProperty([value], 1, { get: words, enumerable: true });
   // The small line above a section's title, optional on the types §16.7 lists; the words are the catalog's when said.
   const eyebrowField = { key: "eyebrow", kind: "text", max: 40, optional: true, get label() { return M.t("landing.eyebrow"); } };
-  const STATS = [pair("people", () => M.t("landing.stat.people")), pair("agents", () => M.t("landing.stat.agents")), pair("public_projects", () => M.t("landing.stat.public_projects")), pair("cards_done_week", () => M.t("landing.stat.cards_done_week")), pair("people_online", () => M.t("landing.stat.people_online")), pair("agents_online", () => M.t("landing.stat.agents_online"))];
+  const STATS = [pair("people", () => M.t("landing.stat.people")), pair("agents", () => M.t("landing.stat.agents")), pair("public_projects", () => M.t("landing.stat.public_projects")), pair("cards_done_week", () => M.t("landing.stat.cards_done_week")), pair("people_online", () => M.t("landing.stat.people_online")), pair("agents_online", () => M.t("landing.stat.agents_online")), pair("instances", () => M.t("landing.stat.instances")), pair("instances_online", () => M.t("landing.stat.instances_online"))];
   // The agents a works_with section may name, as the hub's fixed list (§16.7, AGENTS in
   // hub/src/maity_hub/landing.py; smoke compares the two).
   // Product names, not words of the dashboard: they stay out of the catalog.

@@ -114,7 +114,7 @@ public page they could reorder or hide text to make one person's words read as a
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision of 2026-11-02, relayed by the lead on card tsk-my5gvj4warte (the card's body and the lead's answers on it); contract `docs/api.md` §2.7.1, §6.22, §6.27, §16.9
+**Source:** the maintainer's decision of 2026-11-02, relayed by the lead on card tsk-my5gvj4warte (the card's body and the lead's answers on it); for who is online, the maintainer's answer the same day (request req-jkqzzy638k10): yes in principle, but a person must be able to turn their online status off in the settings; contract `docs/api.md` §2.7.1, §6.22, §6.27, §16.9
 **Revisit when:** a person needs to work in an open project without being named there, or a profile that is off should keep a visitor from its page altogether
 **See:** https://github.com/oliver-zehentleitner/maity — 038e685e-62bb-4f21-be5d-ab4a58b9c444 — as of 2026-11-02
 
@@ -122,7 +122,9 @@ It supersedes 833b0f1f, whose `touch` paths stay as written there. `public_profi
 existing account on. `public_people.served` no longer reads it: every active account that is not suspended
 or deleted and whose profile is under no hold of moderation has its page at `/{handle}` and is named on the
 pages of its open projects, by handle, on the Overview, Board, Members, Organisation, a card's page and the
-snapshot alike; `public_projects.team` counts nobody it does not name, so "and N more agents" is gone. The
+snapshot alike, who is online included (on `main` before, an online member with the profile off was only
+counted); a setting to keep one's online status off the public pages follows on its own card, and this change
+goes to production only together with it; `public_projects.team` counts nobody it does not name, so "and N more agents" is gone. The
 switch decides what the page shows: on, the bio, the links under `everyone` and the public projects; off,
 only the name, the handle and the agents, with `noindex` in the page and its headers (`public_page.indexed`,
 which the sitemap also skips). With the profile off, the bio, the links and the list of projects are for the
@@ -655,9 +657,13 @@ state once resolved, and its body as Markdown without raw HTML. A redacted note 
 neither its text nor the redaction's reason is published, since a reason may repeat what was removed. A resolved
 note shows its state but not its `resolution` (who, when, why): the reason is written to the note's author and
 the card's people, as a redaction's is, and the state alone says what became of the note. A note's own
-events (`note_added`, `note_resolved`) and its redaction call `touch` for the card, and an author's profile change
+events (`note_added`, `note_resolved`, `note_edited`) and its redaction call `touch` for the card, and an author's profile change
 reaches the page through the person's dependents, as a holder's does. Notes have no moderation target of their own:
 they follow the card's hold and the `security` rule with it.
+An edited note shows its new text with "edited by", the editor named as an author is, the date and the edit's reason;
+the old text is gone with the render in the same transaction (`context/cards.md` 0e6b3b31). Unlike a redaction's
+reason, an edit's reason is published: the maintainer decided it is shown with the edit mark to every reader, and its
+writer knows that, while a redaction's reason is written for the members (2026-11-02, tsk-bj9yb4d8f2cg).
 
 **Rejected:**
 - Only open notes: an incorporated or dismissed note is part of the discussion an issue keeps, and the page would

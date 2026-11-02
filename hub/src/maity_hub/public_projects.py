@@ -218,9 +218,10 @@ def _statistics_html(stats: dict[str, Any]) -> str:
 
 def pages_of_member(conn: Connection, human_id: str) -> list[tuple[str, str]]:
     """The public project pages that show the person: a member, or the owner of an agent that
-    is one (a person's profile turning private or public changes them, §16.9), and the card
-    pages whose holder or a note's author is one of those memberships, which name them as the
-    Board names a holder."""
+    is one (a moderation hold on the person's profile, its lifting, a rename or a change of
+    what the profile shows changes them, §16.9), and the card pages whose holder, a note's
+    author or a note's latest editor is one of those memberships, which name them as the
+    Board names a holder: by handle, or "member" while a hold stands."""
     from maity_hub import public_cards
 
     m = t.membership.c
@@ -249,7 +250,25 @@ def pages_of_member(conn: Connection, human_id: str) -> list[tuple[str, str]]:
         .join(t.project, t.project.c.id == t.card.c.project_id)
         .where(t.project.c.public_page == "on", *theirs)
     )
-    cards = sorted(set(conn.execute(held).scalars()) | set(conn.execute(noted).scalars()))
+    # The latest editor of a note is named on the page too; `edited` keeps their membership in
+    # JSON, so the few edited notes of the person's projects are matched here.
+    mine = set(
+        conn.execute(
+            select(m.id)
+            .join(t.project, t.project.c.id == m.project_id)
+            .where(t.project.c.public_page == "on", *theirs)
+        ).scalars()
+    )
+    edited = conn.execute(
+        select(t.card_note.c.card_id, t.card_note.c.edited)
+        .join(t.card, t.card.c.id == t.card_note.c.card_id)
+        .where(
+            t.card_note.c.edited.is_not(None),
+            t.card.c.project_id.in_(select(m.project_id).where(m.id.in_(mine))),
+        )
+    )
+    by_them = {row.card_id for row in edited if row.edited["by"] in mine}
+    cards = sorted(set(conn.execute(held).scalars()) | set(conn.execute(noted).scalars()) | by_them)
     return [(kind, project_id) for project_id in ids for kind in (KIND, VIEWS)] + [
         (public_cards.KIND, card) for card in cards
     ]

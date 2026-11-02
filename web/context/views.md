@@ -4429,3 +4429,57 @@ the list stays until the chat can replace it.
 
 **Known limit:** member lists are read every 30 seconds rather than on each click, so a
 new member's name can lag that long. A project's own Chat tab still draws the whole page.
+
+## The mail address asks for the password beside it, optional, and the hub decides
+
+**Id:** 1f725886-4f1f-47a3-b1cd-a74bf82aedb2
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §18.4 "Changing a verified address" and §2.6.3, the web mail section of tsk-x9g29m2rcx72, 2026-11-02
+**Revisit when:** the session or `GET /me` says whether the human has a password
+
+The mail address sits on `/account/notifications`, only where `mail_available` is true;
+the personal language above it stays either way. Changing or removing a confirmed address
+shows a password field marked "if you have one", and `current_password` is sent only when
+something was typed. The hub's `current_password: "required"` or `"mismatch"` is said at
+that field. A change the hub holds (`202`, `address_change` naming the address just sent)
+is said as waiting, with a link to the sessions on the same page, where it is approved or
+rejected; an older held change shown there is not taken for this one.
+
+**Reason:** the dashboard cannot tell whether a human has a password: neither the session
+nor `/me` says so, and §18.4 treats the two cases differently (password in the request, or
+the age of the session). An optional field covers both, and the hub's answer tells which
+case it was.
+
+**Rejected alternatives:** a field in `/auth/session` saying whether a password is set: a
+contract change for one hint, and it would tell any script in the page something about the
+account's sign-in. Asking for the password always: a human who never set one could not
+change the address at all. Never asking and waiting for the refusal: one failed request
+on every change of a confirmed address.
+
+## When mail goes out: the page sends only what changed, the browser's zone only offered
+
+**Id:** 444115c8-aaaf-408e-a16c-571aa48f69cf
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §18.4 "Defaults and what was saved", the web mail section of tsk-x9g29m2rcx72 (#1223), 2026-11-02
+**Revisit when:** the hub can reset a kind to its default
+
+The modes and times on `/account/notifications` are compared with the hub's merged answer, and
+the `PATCH` names only what differs: in `email.kinds` only the kinds that changed, each with only
+its changed part (`mode` or `content`). The time zone is the account's. When the browser reports
+another one, a button offers it, but the page never sets it unasked.
+
+**Reason:** the hub stores only what the human set, and a kind it was sent counts as set even if
+the value is unchanged. Sending the whole form would pin every kind at today's default, and a
+later change of the default (as the digest defaults of 2026-11-02) would no longer reach them. The
+zone decides when digests and quiet hours fall; a browser on a trip should not move them.
+
+**Rejected alternatives:** sending the whole `email` object on each save: it pins every default.
+Setting the browser's zone when the account still has `UTC`: a person who chose UTC on purpose
+would see it changed.
+
+**Known limit:** a mode changed and later set back to the default stays set; the contract has no
+reset.

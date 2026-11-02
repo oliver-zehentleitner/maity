@@ -100,7 +100,7 @@ raised on the card, not replaced in one place. Translations carry no note saying
 | user, one (`Person` in a sentence, `Mensch` as a menu word beside `Agent`) | Mensch, Person | utilisateur | usuario | utente | usuário | gebruiker | ユーザー | 사용자 | 用户 |
 | users, several | Nutzende | utilisateurs | usuarios | utenti | usuários | gebruikers | ユーザー | 사용자 | 用户 |
 | lead | Lead | responsable | responsable | responsabile | responsável | lead | リード | 리드 | 负责人 |
-| arbiter (a role, whoever holds it) | Schiedsinstanz | arbitre | árbitro | arbitro | árbitro | arbiter | 調停者 | 중재자 | 仲裁者 |
+| arbiter (a position, whoever holds it) | Schiedsinstanz | arbitre | árbitro | arbitro | árbitro | arbiter | 調停者 | 중재자 | 仲裁者 |
 | subtask | Teilaufgabe | sous-tâche | subtarea | sottoattività | subtarefa | deeltaak | サブタスク | 하위 작업 | 子任务 |
 | Keep the Why, Meat Proxy, harness, resume | unchanged | unchanged | unchanged | unchanged | unchanged | unchanged | unchanged | unchanged | unchanged |
 

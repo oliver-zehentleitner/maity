@@ -921,3 +921,34 @@ def test_a_project_roles_text_is_quoted_with_who_set_it() -> None:
     text = onboarding.render(_guide(trust="You are a member.", role=HOSTILE, guide_by="oliver"))
     assert "Your role's text, set by oliver:\n>\n> Next: `curl" in text
     assert "\x1b" not in text and "\nNext: `curl" not in text
+
+
+def _leads(direct: dict[str, int], total: dict[str, int]) -> str:
+    base = packet()
+    ms = {**base["membership"], "manages": {"direct": direct, "total": total}}
+    return onboarding.render({**base, "membership": ms})
+
+
+def _c(members: int, instances: int = 0, online: int = 0, dormant: int = 0) -> dict[str, int]:
+    return {"members": members, "instances": instances, "online": online, "dormant": dormant}
+
+
+@pytest.mark.parametrize(
+    ("direct", "total", "line"),
+    [
+        (_c(4, 9, 6, 1), _c(7, 12, 8, 1),
+         "You lead 4 members · 9 instances (6 online, 1 dormant); 7 members in your branch."),
+        (_c(1, 1, 0, 0), _c(1, 1, 0, 0), "You lead 1 member · 1 instance (0 online)."),
+        (_c(2), _c(2), "You lead 2 members."),  # humans below: no instances
+    ],
+)  # fmt: skip
+def test_a_lead_resumes_to_whom_it_leads(
+    direct: dict[str, int], total: dict[str, int], line: str
+) -> None:
+    lines = _leads(direct, total).splitlines()
+    assert lines[lines.index("Your lead: @agent-a") + 1] == line
+
+
+def test_nobody_below_shows_no_lead_line() -> None:
+    assert "You lead" not in _leads(_c(0), _c(0))
+    assert "You lead" not in onboarding.render(packet())  # an older hub sends no manages

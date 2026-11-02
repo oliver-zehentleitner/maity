@@ -1898,7 +1898,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // the admin is one level under the owner and the guest one under the admin.
   {
     const orgCtx = { members: [
-      { id: "o1", kind: "human", display_name: "Owner One", trust: "owner", role: "manager", areas: [] },
+      { id: "o1", kind: "human", display_name: "Owner One", trust: "owner", role: "manager", areas: [],
+        manages: { direct: { members: 1, instances: 2, online: 2, dormant: 1 }, total: { members: 3, instances: 4, online: 3, dormant: 1 } } },
       { id: "a1", kind: "human", display_name: "Admin One", trust: "admin", role: "coder", areas: [] },
       { id: "g1", kind: "human", display_name: "Guest One", trust: "guest", role: "tester", areas: [] },
       { id: "ag1", kind: "agent", handle: "ag", display_name: "Agent One", trust: "member", role: "coder", areas: [], presence: "online", reports_to: "o1",
@@ -1914,6 +1915,21 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(orgAsleep.length === 2 && !orgAsleep[0].querySelector(".member-dormant") && orgAsleep[1].querySelector(".member-dormant"),
       "org: only the dormant instance says it is dormant");
     expect(t && t.querySelectorAll(".org-node").filter((n) => n.querySelector(".org-instances")).length === 1, "org: a human lists no instances");
+    // The fixture hub counts `manages` by the hub's rule: a paused instance is not online even
+    // while dormant, and a paused or isolated member has no instance online (instance_counts).
+    const fm = win.Maity.api.fixtureManages;
+    const lead = { id: "L" };
+    const under = (id, extra, instances) => Object.assign({ id, reports_to: "L", presence: "online", instances }, extra);
+    const fmDirect = fm ? fm([lead,
+      under("live", {}, [{ id: "a", presence: "online" }, { id: "b", presence: "paused", dormant: { since: "x" } }, { id: "c", presence: "offline", dormant: { since: "x" } }]),
+      under("iso", { presence: "offline", isolated: { since: "x" } }, [{ id: "d", presence: "online" }]),
+      under("pau", { presence: "paused", paused: { since: "x" } }, [{ id: "e", presence: "paused", dormant: { since: "x" } }])]).L.direct : null;
+    expect(fmDirect && JSON.stringify(fmDirect) === JSON.stringify({ members: 3, instances: 5, online: 2, dormant: 1 }),
+      "fixture manages: paused instances and held members count, none of them online " + JSON.stringify(fmDirect));
+    const orgManages = t ? t.querySelectorAll(".org-manages") : [];
+    expect(orgManages.length === 1 && text(orgManages[0]) === "leads 1 member · 2 instances (2 online, 1 dormant)"
+      && orgManages[0].getAttribute("title") === "whole branch: leads 3 members · 4 instances (3 online, 1 dormant)",
+      "org: a lead says whom it leads with their instances, dormant a part of online, the whole branch on hover " + orgManages.map((x) => text(x) + " | " + x.getAttribute("title")));
     const depthOf = (name) => { let d = 0; let n = t && t.querySelectorAll(".org-node").find((x) => text(x).includes(name)); while (n && n !== t) { if (n.tagName === "UL") d += 1; n = n.parentNode; } return d; };
     expect(t && depthOf("Owner One") === 0 && depthOf("Admin One") === 1 && depthOf("Guest One") === 2,
       "org: owner, then admin, then guest, each a level deeper, the empty member level leaving no step " + [depthOf("Owner One"), depthOf("Admin One"), depthOf("Guest One")]);
@@ -2891,6 +2907,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !swBox().querySelectorAll("a").some((a) => /as=public/.test(a.getAttribute("href") || "")), "swarm: cards done per day, the coverage and samples notes, no public page");
   const swPoints = () => swBox().querySelector(".swarm-per-day").childNodes[1].childNodes[0].getAttribute("points").split(" ");
   expect(swPoints().length === 30 && swPoints()[29] === "158.0,6.8", "swarm: the per-day line runs oldest to newest, the newest day at the right " + swPoints().slice(-1));
+  // The swarm as a whole (§6.22): the team and the board now, the hours awake, created and merged per day, the messages.
+  const swFigures = swBox().querySelectorAll(".swarm-figures").map((f) => text(f));
+  expect(JSON.stringify(swFigures) === JSON.stringify(["Team nowAgents3 · 2 onlineHumans1 · 1 onlineInstances4 · 3 online", "Board nowopen5in progress2review1blocked1"])
+    && text(swBox().querySelector(".swarm-awake")) === "Agents were online in 22 of the last 24 hours.",
+    "swarm: the team and the board now, and the hours an agent was online " + JSON.stringify(swFigures));
+  const swLine = (c) => swBox().querySelector(".swarm-per-day." + c);
+  expect(text(swLine("swarm-created")).startsWith("61 cards created") && swLine("swarm-created").childNodes[1].childNodes[0].getAttribute("points").split(" ").length === 30
+    && text(swLine("swarm-merged")).startsWith("23 PRs merged")
+    && text(swBox().querySelector(".swarm-messages")) === "Messages: 420 chat · 310 notices · 56 review results · 55 other"
+    && text(swBox().querySelector(".swarm-reviews-per-pr")) === "Review results per merged PR: 2.4",
+    "swarm: cards created and PRs merged per day, the messages by type, review results per merged PR " + text(swLine("swarm-created")));
   const swBefore = swBox();
   let swFeed = [];
   win.Maity.api.get = (p) => {
@@ -2901,6 +2928,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(swBox(), "7 days").click(); for (let k = 0; k < 4; k++) await tick();
   expect(swGets[swGets.length - 1] === "/projects/maintainer/maity/swarm?days=7" && btn(swBox(), "7 days").getAttribute("aria-pressed") === "true" && swPoints().length === 7,
     "swarm: the switch reads 7 days and draws them");
+  expect(swLine("swarm-created").childNodes[1].childNodes[0].getAttribute("points").split(" ").length === 7
+    && swLine("swarm-merged").childNodes[1].childNodes[0].getAttribute("points").split(" ").length === 7,
+    "swarm: the created and merged lines follow the switch to 7 days");
   // A redraw of the counts (a card changed) keeps the section as it is: no new read, the window kept.
   const swReads = swGets.length;
   swFeed = [{ seq: 9990, kind: "task_updated", actor: { member_id: "agt-b" }, payload: {} }];
@@ -8654,6 +8684,136 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(main.querySelector(".my-nl-effective")) === "Applies now: 90 minutes, your default.", "my settings: back to the default sends null");
   win.Maity.api.patch = nlPatch;
   await win.Maity.api.patch("/me/notification-settings", { not_listening: { mode: "inbox", minutes: 60 } });
+  // The mail address (§18.4): shown where the instance sends mail, a confirmed one changed only with the
+  // password, the hub's answer followed; nothing of it where it sends none, the language kept.
+  {
+    const maPatches = [];
+    win.Maity.api.patch = (p, b) => { maPatches.push([p, JSON.parse(JSON.stringify(b))]); return nlPatch(p, b); };
+    await go("#/all"); await go("#/account/notifications"); for (let k = 0; k < 4; k++) await tick();
+    const maBox = () => main.querySelector("section.mail-address");
+    expect(maBox() && text(main.querySelector(".mail-address-state")) === "Mail goes to maintainer@example.org."
+      && byId("mail-address").value === "maintainer@example.org" && !!byId("mail-address-password")
+      && /\/account\/sessions$/.test(main.querySelector(".mail-address-held a").getAttribute("href")),
+      "mail address: the confirmed address, the password field for a change, a held change led to the sessions");
+    byId("mail-address").value = " "; main.querySelector("form.mail-address-form").dispatch("submit"); await tick();
+    expect(!maPatches.length && text(byId("mail-address-error")) === "Enter a mail address." && byId("mail-address").getAttribute("aria-invalid") === "true",
+      "mail address: an empty one is refused before sending");
+    byId("mail-address").value = "new@example.net"; main.querySelector("form.mail-address-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(maPatches.length === 1 && JSON.stringify(maPatches[0][1]) === JSON.stringify({ email: { address: "new@example.net" } })
+      && text(byId("mail-address-password-error")) === "Enter your password to change a confirmed address."
+      && byId("mail-address-password").getAttribute("aria-invalid") === "true",
+      "mail address: without the password the hub's refusal is said at the password");
+    byId("mail-address").value = "new@example.net"; byId("mail-address-password").value = "pw";
+    main.querySelector("form.mail-address-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(JSON.stringify(maPatches[1][1]) === JSON.stringify({ email: { address: "new@example.net" }, current_password: "pw" })
+      && text(maBox()).includes("A link to confirm it went to new@example.net.")
+      && text(maBox()).includes("new@example.net is not confirmed yet; mail keeps going to maintainer@example.org until you follow its link.")
+      && text(main.querySelector(".mail-address-state")) === "Mail goes to maintainer@example.org."
+      && !text(maBox()).includes("The change waits for your approval."),
+      "mail address: the new one waits for its link, the confirmed one keeps receiving; an older held change is not this one");
+    const again = main.querySelectorAll("button").find((b) => text(b) === "Send the link again");
+    byId("mail-address-password").value = "pw"; again.dispatch("click"); for (let k = 0; k < 4; k++) await tick();
+    expect(JSON.stringify(maPatches[2][1]) === JSON.stringify({ email: { address: "new@example.net" }, current_password: "pw" }),
+      "mail address: the link sent again names the waiting address");
+    win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("x", 400, "/me/notification-settings", "invalid", { fields: { "email.address": "invalid" } }));
+    byId("mail-address").value = "a,b@example.org"; main.querySelector("form.mail-address-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(text(byId("mail-address-error")).startsWith("This is not a mail address the hub can send to") && !main.querySelector("section.mail-address button").disabled,
+      "mail address: the hub's refusal of the address is said at the address, the buttons free again");
+    // A human without a password from a young session: the hub holds this change (202).
+    win.Maity.api.patch = (p, b) => {
+      maPatches.push([p, JSON.parse(JSON.stringify(b))]);
+      return win.Maity.api.get("/me/notification-settings").then((x) => ({ ...x, email: { ...x.email,
+        address_change: { id: "adc-new1", address: "held@example.net", requested_at: "2026-11-02T15:00:00Z", session_id: "hss-41c0" } } }));
+    };
+    byId("mail-address").value = "held@example.net"; main.querySelector("form.mail-address-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(JSON.stringify(maPatches[maPatches.length - 1][1]) === JSON.stringify({ email: { address: "held@example.net" } })
+      && text(maBox()).includes("The change waits for your approval.") && !!main.querySelector(".mail-address-held"),
+      "mail address: a change the hub holds is said as waiting for approval, with the way to the sessions");
+    // A session not in good standing may not replace a held change (§2.6.3): the reason is said.
+    win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("x", 403, "/me/notification-settings", "forbidden", { reason: "not_in_good_standing" }));
+    byId("mail-address").value = "other@example.net"; main.querySelector("form.mail-address-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(text(maBox()).includes("this session is not confirmed, so it cannot change the address while a change waits. Decide that change in your sessions")
+      && maBox().querySelectorAll("a").some((l) => /\/account\/sessions$/.test(l.getAttribute("href")) && text(l) === "your sessions" && l.parentNode !== main.querySelector(".mail-address-held")),
+      "mail address: a session not in good standing is told why, not only that nothing was saved");
+    // Removing is asked first; declined, nothing is sent.
+    const maConfirm = win.confirm;
+    let maAsked = "";
+    win.confirm = (q) => { maAsked = q; return false; };
+    const maBefore = maPatches.length;
+    main.querySelectorAll("button").find((b) => text(b) === "Remove the address").dispatch("click"); for (let k = 0; k < 4; k++) await tick();
+    expect(maPatches.length === maBefore && maAsked.startsWith("Remove maintainer@example.org?"), "mail address: removing is asked first, declined nothing is sent");
+    // An address never confirmed: the question does not speak of signing in by mail.
+    const maGet0 = win.Maity.api.get;
+    win.Maity.api.get = (p) => (p === "/me/notification-settings" ? maGet0(p).then((x) => ({ ...x, email: { ...x.email, address: null,
+      address_status: "pending", verified_at: null, pending_address: "fresh@example.net", address_change: null } })) : maGet0(p));
+    await go("#/all"); await go("#/account/notifications"); for (let k = 0; k < 4; k++) await tick();
+    main.querySelectorAll("button").find((b) => text(b) === "Remove the address").dispatch("click"); for (let k = 0; k < 4; k++) await tick();
+    expect(maAsked === "Remove fresh@example.net? Its link stops working, and Maity sends you no mail." && maPatches.length === maBefore,
+      "mail address: removing an address never confirmed asks without speaking of signing in by mail");
+    win.Maity.api.get = maGet0;
+    await go("#/all"); await go("#/account/notifications"); for (let k = 0; k < 4; k++) await tick();
+    win.confirm = maConfirm;
+    // The removal answered here, so the fixture keeps its confirmed address for what follows.
+    win.Maity.api.patch = (p, b) => {
+      maPatches.push([p, JSON.parse(JSON.stringify(b))]);
+      return win.Maity.api.get("/me/notification-settings").then((x) => ({ ...x, email: { ...x.email, address: null, address_status: "none",
+        verified_at: null, pending_address: null, address_change: null } }));
+    };
+    const remove = main.querySelectorAll("button").find((b) => text(b) === "Remove the address");
+    byId("mail-address-password").value = "pw"; remove.dispatch("click"); for (let k = 0; k < 4; k++) await tick();
+    expect(JSON.stringify(maPatches[maPatches.length - 1][1]) === JSON.stringify({ email: { address: null }, current_password: "pw" })
+      && text(main.querySelector(".mail-address-state")) === "No mail address yet: Maity sends you no mail."
+      && !byId("mail-address-password") && text(maBox()).includes("Address removed."),
+      "mail address: removed with the password, then none and no password asked");
+    // When mail goes out (§18.4): a mode per kind, digests' time and day, zone, quiet hours, sign-in
+    // link; only what changed is sent, a kind with only its changed part.
+    win.Maity.api.patch = (p, b) => { maPatches.push([p, JSON.parse(JSON.stringify(b))]); return nlPatch(p, b); };
+    await go("#/all"); await go("#/account/notifications"); for (let k = 0; k < 4; k++) await tick();
+    const mmForm = () => main.querySelector("form.mail-modes-form");
+    const mmSubmit = async () => { mmForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick(); };
+    const mmLast = () => maPatches[maPatches.length - 1][1];
+    expect(mmForm() && ["inbox", "chat", "mention", "security"].map((k) => byId("mail-mode-" + k).value).join() === "immediate,daily,daily,immediate"
+      && byId("mail-mode-chat").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "immediate,hourly,daily,weekly,off"
+      && byId("mail-daily-at").value === "08:00" && byId("mail-weekly-on").value === "mon" && byId("mail-timezone").value === "Europe/Vienna"
+      && !byId("mail-quiet").checked && byId("mail-quiet-from").disabled && byId("mail-sign-in-link").checked
+      && !!byId("mail-content-chat") && !!byId("mail-content-mention") && !byId("mail-content-inbox") && !byId("mail-content-security"),
+      "mail modes: every kind with its mode, five modes each, the digests' time and day, the zone, quiet hours off, the text only for chat and mention");
+    const mmBefore = maPatches.length;
+    await mmSubmit();
+    expect(maPatches.length === mmBefore && text(main.querySelector("section.mail-modes")).includes("Nothing changed"),
+      "mail modes: nothing changed, nothing sent");
+    byId("mail-mode-chat").value = "weekly"; byId("mail-weekly-on").value = "fri"; byId("mail-content-mention").checked = true;
+    await mmSubmit();
+    expect(JSON.stringify(mmLast()) === JSON.stringify({ email: { kinds: { chat: { mode: "weekly" }, mention: { content: true } }, weekly_on: "fri" } })
+      && byId("mail-mode-chat").value === "weekly" && byId("mail-mode-inbox").value === "immediate"
+      && text(main.querySelector("section.mail-modes")).includes("Saved."),
+      "mail modes: only the changed kinds and only their changed parts are sent, the answer shown");
+    byId("mail-quiet").checked = true; byId("mail-quiet").dispatch("change"); byId("mail-quiet-from").value = "25:00";
+    const mmBad = maPatches.length;
+    await mmSubmit();
+    expect(maPatches.length === mmBad && text(byId("mail-quiet-error")) === "A time as HH:MM, from 00:00 to 23:59." && !byId("mail-quiet-from").disabled,
+      "mail modes: a time out of range is refused before sending");
+    byId("mail-quiet-from").value = "23:00"; byId("mail-quiet-to").value = "06:30"; byId("mail-sign-in-link").checked = false;
+    await mmSubmit();
+    expect(JSON.stringify(mmLast()) === JSON.stringify({ email: { quiet_hours: { from: "23:00", to: "06:30" }, sign_in_link: false } }),
+      "mail modes: quiet hours and the sign-in link as set");
+    byId("mail-quiet").checked = false; byId("mail-quiet").dispatch("change");
+    await mmSubmit();
+    expect(JSON.stringify(mmLast()) === JSON.stringify({ email: { quiet_hours: null } }), "mail modes: quiet hours turned off send null");
+    win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("x", 400, "/me/notification-settings", "invalid", { fields: { "email.timezone": "invalid" } }));
+    byId("mail-timezone").value = "Mars/Olympus";
+    await mmSubmit();
+    expect(text(byId("mail-timezone-error")).startsWith("The hub does not know this time zone") && byId("mail-timezone").getAttribute("aria-invalid") === "true",
+      "mail modes: the hub's refusal of the zone is said at the zone");
+    win.Maity.api.patch = (p, b) => { maPatches.push([p, JSON.parse(JSON.stringify(b))]); return nlPatch(p, b); };
+    await win.Maity.api.patch("/me/notification-settings", { email: { kinds: { chat: { mode: "daily" }, mention: { content: false } }, weekly_on: "mon", sign_in_link: true } });
+    const maGet = win.Maity.api.get;
+    win.Maity.api.get = (p) => (p === "/me/notification-settings" ? maGet(p).then((x) => ({ ...x, mail_available: false })) : maGet(p));
+    await go("#/all"); await go("#/account/notifications"); for (let k = 0; k < 4; k++) await tick();
+    expect(!maBox() && !!byId("personal-language"), "mail address: hidden where the instance sends no mail, the language stays");
+    win.Maity.api.get = maGet;
+    win.Maity.api.patch = nlPatch;
+  }
   // The bell's agents_not_listening item leads to one's agents (§18.2 target agents).
   expect(win.Maity.notify.linkOf({ kind: "inbox", record: "acr-9", target: { type: "agents" }, project: null }) === "/agents",
     "not listening: the bell's item links to /agents");
@@ -8970,6 +9130,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && mpPills().some((t) => t.startsWith("agent of")) && text(mpBox().querySelector(".member-line")).includes("Claude Code")
     && mpBox().querySelectorAll("a").some((a) => a.classList.contains("member-chat") && a.getAttribute("href") === "#/maintainer/maity/chat/agt-b"),
     "member page: breadcrumb, pills (agent of the owner), the line with the harness, Chat to one's own agent");
+  // `manages` from the hub (§6.2): nothing for a member nobody reports to; the direct reports,
+  // and the whole branch when it is larger, for a lead (the fixture counts as the hub does).
+  expect(!mpBox().querySelector(".member-manages"), "member page: no manages line for a member nobody reports to");
+  await go("#/maintainer/maity/members/hum-maintainer"); for (let k = 0; k < 6; k++) await tick();
+  const mpManages = mpBox() ? mpBox().querySelectorAll(".member-manages").map((x) => text(x)) : [];
+  // agt-c's instance is online, but agt-c is paused in the fixture: none online (instance_counts).
+  expect(JSON.stringify(mpManages) === JSON.stringify(["leads 1 member", "whole branch: leads 4 members · 2 instances (0 online)"]),
+    "member page: the direct reports, then the whole branch with its instances " + JSON.stringify(mpManages));
+  await go("#/maintainer/maity/members/agt-b"); for (let k = 0; k < 6; k++) await tick();
   const mpMenu = mpBox().querySelector(".member-actions-menu button");
   mpMenu.click(); await tick();
   const mpItems = mpBox().querySelectorAll(".member-actions-menu a").map((x) => [text(x), x.getAttribute("href")]);

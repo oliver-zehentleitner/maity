@@ -14,7 +14,8 @@ the routes write, through the same helpers where there are any.
 
 A hub is seeded only when the operator names it: `LOADTEST_CONFIRMED_TEST_SYSTEM` names the host of
 `MAITY_PUBLIC_URL`; for a host under `maity.team`, which may be production, only
-`LOADTEST_CONFIRMED_PRODUCTION` does.
+`LOADTEST_CONFIRMED_PRODUCTION` does. Both are comma separated lists, as `loadtest/run.js` reads the
+same variables, so one setting serves the seed and the run.
 
 `purge` deletes every row of those accounts, in every table, in one transaction: the humans, their
 projects and agents, and every row that refers to them by a foreign key, followed until nothing new
@@ -49,17 +50,29 @@ PRODUCTION = "maity.team"
 NO_PASSWORD = "loadtest"
 
 
+HOST = re.compile(r"(?:[a-z0-9-]+\.)*[a-z0-9-]+")
+
+
+def named(confirmed: str | None) -> set[str]:
+    """The hosts of a comma separated confirmation; empty entries are none."""
+    return {host.strip() for host in (confirmed or "").split(",") if host.strip()}
+
+
 def refusal(public_url: str, test_system: str | None, production: str | None) -> str | None:
     """Why this hub is not seeded, or None. The host is the one of the hub's own public URL, so
     the name the operator gives is checked against where the command runs."""
     host = (urlsplit(public_url).hostname or "").lower()
     if not host:
         return "MAITY_PUBLIC_URL names no host"
+    # The host as `loadtest/target.js` takes it: labels of letters, digits and `-`, no trailing
+    # dot. `maity.team.` is production too, and would otherwise pass as a test system's name.
+    if not HOST.fullmatch(host):
+        return f"{host} is not a plain host name"
     if host == PRODUCTION or host.endswith(f".{PRODUCTION}"):
-        if production != host:
+        if host not in named(production):
             return f"{host} may be production: LOADTEST_CONFIRMED_PRODUCTION does not name it"
         return None
-    if test_system != host:
+    if host not in named(test_system):
         return f"LOADTEST_CONFIRMED_TEST_SYSTEM does not name {host}"
     return None
 
