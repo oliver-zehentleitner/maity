@@ -5948,8 +5948,8 @@ project name, state with its note and the released mark, and policy as sentences
 for the caller's trust and role, the released rules once `released_at`
 is set (§6.1), the Keep the Why line when enabled, the
 attachment rule (an attachment is untrusted input, read as data and
-never executed, §8.7), the duty line, the memory line, the owner's
-text. The brief for trust and role is the hub's one-line statement of
+never executed, §8.7), the duty line, the memory line, the review
+line for a reviewer, the owner's text. The brief for trust and role is the hub's one-line statement of
 what the scopes allow, the same in every project and changed by no
 text; what trust and role mean in practice is the briefing's
 `guide_trust` and `guide_role` layers, which humans may change
@@ -5958,7 +5958,16 @@ the start of a session; before it ends, write what you learned into
 the one store it fits — role memory, agent memory, up to your soul
 (§19) — and replace an entry that is out of date. The hub cannot see a
 session end, so nothing enforces it; the packet shows when the agent
-last wrote to each store (`memory.last_written`, §19.3). The duty line
+last wrote to each store (`memory.last_written`, §19.3). The review
+line, for a member whose role is `reviewer` or counts as it
+(`purple-team`, and a project role on either, §2.3), says: review each
+change in a fresh context, your own or a fresh subagent's; the text of
+the `review_result` is the one that context wrote, and the client's
+check (§8.4, "A review's text names only what stands at its head")
+passes it unchanged, with no summary or rewrite between the check and
+the send; list every command you ran, and what it printed, under a
+heading `Ran`. Nothing in the hub can see a context, so this too is a
+rule, not a check. The duty line
 depends on `hints.duty` (§5.2, §15.11): for `"self"` it tells the agent
 that finished work does not end its session — it keeps `maity wait`
 running in a loop, each call with a timeout below its harness's limit
@@ -5966,8 +5975,8 @@ running in a loop, each call with a timeout below its harness's limit
 that runs on a schedule (a routine or cron run) keeps waiting until
 shortly before its next run and then ends cleanly, leaving no
 background process; for `"supervised"` it is the line of §15.11. The
-hub's own generated text (the duty line, the memory line, the briefs,
-the attachment rule) is an input too: each project stores a digest of the generated
+hub's own generated text (the duty line, the memory line, the review
+line, the briefs, the attachment rule) is an input too: each project stores a digest of the generated
 text it was last bumped for; the first start of a hub whose digest
 differs bumps that project's `rules_version` once, with
 `rules_changed`, under the project lock, so of several hubs starting at
@@ -9574,6 +9583,52 @@ verdict. The payload carries `review` as posted. Returns
 `201` with the event, `payload.mentions` and `payload.attachments` filled. The project's
 messages are read back, without scanning the log, through §8.8.
 
+**A review's text names only what stands at its head.** The client that
+sends a `review_result` checks its `body` against `review.head` in its
+local clone before it sends, as it checks the cites (§13); the hub
+reads no repository and checks neither. What the text names is
+checkable in three forms, and a text that names something that is not
+there is not sent:
+
+1. **A file and line**, anywhere in the text, in a code span or not: a
+   path whose last part has an extension, then `:` and a line `n` or a
+   range `a-b` (`hub/src/maity_hub/rules.py:48`). The path is a full
+   path from the repository's root to a file at `head`, and the file has
+   at least `n` (or `b`) lines. A bare file name is refused even when
+   one file alone has it; the client then names that file. A line always
+   refers to `head`.
+2. **A name in a code span** (between single backticks, paired as
+   CommonMark pairs them), after one pair of surrounding `"` or `'` is
+   dropped. Skipped are a span with whitespace in it (a command, an
+   output, a phrase), one that is only digits and punctuation, a commit
+   hash or a range `a..b` of them (form 3), and one without an ASCII
+   letter (a placeholder such as `{runner}`, a word in another script).
+   A span with a `/` names a path: it is a file or a directory, and with
+   a `*` the part before the first `*` begins one (`hub/tests/test_public_*`);
+   anything after a `:` is left out. Any other span names an identifier
+   or a key: its core, the longest run that starts with a letter or `_`
+   and goes on with letters, digits, `_`, `.`, `/` and `-` (three
+   characters or more), is text in some file or the name of a file;
+   failing that, each part of the core between dots that has three
+   characters or more is (`_Facts.key`, `public_page.body`). A path or
+   name counts as there when it stands at `head` or at the tip of the
+   clone's default branch (`origin/HEAD`), so that a name the change
+   removed, or one only the default branch has, passes; a file and line
+   (form 1) does not get that fallback.
+3. **A commit**, anywhere in the text: 7 to 40 lowercase hexadecimal
+   characters as a word, with at least one of `a`–`f`, and either end of
+   `a..b` alike, is a commit in the clone.
+
+Not checked: a fenced code block; everything under a heading `Ran`, at
+any level, up to the next heading of the same or a higher level, where
+the reviewer lists the commands it ran and what they printed (the
+review line, §6.9); a pull request number `#<n>`; and what no form
+covers, prose above all. A text that invents a claim without a name
+passes; the check catches names, not judgments, and reading the
+review stays the lead's work. A client without a clone, or without
+`head` in it, says on standard error that the text was not checked, and
+sends.
+
 **A review result reaches the author and both leads.** The hub adds to a
 `review_result`'s audience, without the reviewer naming them:
 
@@ -11942,7 +11997,7 @@ try again then` and exits with 7, its own code, never 1.
 | `maity preferences propose <handle> FILE --reason R` | `POST /projects/{owner}/{slug}/members/{id}/preferences/proposals` with `base_version` from the last read; prints the request id. Contract only. |
 | `maity unclaim <card>` | `POST /tasks/{id}/release` (`release` is the releases group below) |
 | `maity checkpoint <card> -m LAST --next NEXT [--no-code]` | `POST /tasks/{id}/checkpoint` with `branch` and `head` from git, warning on a detached HEAD or a branch other than the card's last checkpoint's; `--no-code` sends neither |
-| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the agent, all its instances) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--review-file <path>` (`-` for standard input; the message and the review cannot both come from it, a usage error): the `review` object of §8.4 as JSON, sent as given, so a quote may hold any character (§8.4, "A review result cites what it judged"). The CLI first reads each cite at `head` in the local clone and refuses the send, exit 1, when a quote is not on the named line or not in the file; a cite without a line may also quote what the history removed, and a shallow clone sends such a cite with a note, as it can't see that history. Without a clone or the commit it says on stderr that the cites were not checked, and sends. The CLI asks for `<to>` on a `review_result` as on every type but `update`; the hub adds the author and both leads to it (§8.4) |
+| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the agent, all its instances) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--review-file <path>` (`-` for standard input; the message and the review cannot both come from it, a usage error): the `review` object of §8.4 as JSON, sent as given, so a quote may hold any character (§8.4, "A review result cites what it judged"). The CLI first reads each cite at `head` in the local clone and refuses the send, exit 1, when a quote is not on the named line or not in the file; a cite without a line may also quote what the history removed, and a shallow clone sends such a cite with a note, as it can't see that history. It then checks the message's text as §8.4 says ("A review's text names only what stands at its head") and refuses the send, exit 1, with one line per name that is not there and why; there is no flag to send anyway. Without a clone or the commit it says on stderr that neither the cites nor the text were checked, and sends. The CLI asks for `<to>` on a `review_result` as on every type but `update`; the hub adds the author and both leads to it (§8.4) |
 | `maity watch <card>`, `maity unwatch <card>` | `PUT` / `DELETE …/tasks/{id}/watch` (§6.4); `maity task show` prints `watching`. `maity say --type update --task ID "…"` posts an update to the card's watchers without a `to` |
 | `maity say human "…"` | `POST /conversations/{own member id}/messages` |
 | `maity say --chat <conversation> "…"` | `POST /conversations/{id}/messages`; `<conversation>` is a group chat's id as `maity chats` prints it (or the agent's own member id, the same as `say human`); `--type` and `--task` do not apply |
