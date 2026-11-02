@@ -827,7 +827,7 @@ class Merge:
     paths_truncated: bool
     # contract file → its sections, or None when they could not be told
     contract: dict[str, set[str] | None] = field(default_factory=dict)
-    # Read with the instance's token, which reads public repositories only (§11.4).
+    # Whether the read found the repository public, whichever source read it (§11.4).
     public: bool = False
 
 

@@ -175,3 +175,26 @@ spends which subscription is the owner's choice, hence humans only.
   not one instance's.
 - `team.wake: lead` as a stopgap: it is the whole team's rule, set by
   the owner only, and broadcasts still wake every listening instance.
+
+## The instances of one membership are called an agent, not a team
+
+**Id:** cb126aae-c66a-4e79-b1f5-7c1adba4b922
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-02 on card tsk-k0k3jzrkpza2, relayed by the lead; contract in `docs/api.md` §5.2, §6.18, §19
+**See:** instances.md#each-team-has-a-rulebook-set-by-a-human-size-work-distribution-who-a-team-message-wakes-review-within-the-team — e42155de-c20d-43cc-a042-4151f860e25d — as of 2026-11-02
+
+Everything that called the instances of one membership a "team" says
+"agent" now: the rulebook `agent` (with `review_within_agent`), agent
+memory (`store: "agent"`), "Agent wake", and the packet's list of the
+other instances, `instances`. The project team, the admin team and the
+security teams keep their names, and `team` stays a reserved role name.
+
+**Reason:** "team" already meant the people and agents of a project;
+the same word for one agent's instances made the contract ambiguous.
+The project is in alpha, so the rename takes no compatibility layer.
+
+**Rejected alternatives:** keeping the old field names next to the new
+ones — no clients outside the project depend on them yet.
+

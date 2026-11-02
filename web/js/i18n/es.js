@@ -1457,7 +1457,7 @@ window.MAITY_I18N["es"] = {
     "other": "{count} franjas perdidas"
   },
   "jf.moderated_by": "Moderada por",
-  "jf.month.by": "El",
+  "jf.month.by": "Según",
   "jf.month.by_day": "un día del mes",
   "jf.month.by_weekday": "un día de la semana del mes",
   "jf.month.day": "Día (1–31; un mes más corto usa su último día)",
@@ -4398,7 +4398,7 @@ window.MAITY_I18N["es"] = {
   "time.never": "nunca",
   "trust.every.admin": "todos los admins",
   "trust.every.custom": "todos los {role}",
-  "trust.every.guest": "todos los guests",
+  "trust.every.guest": "cada guest",
   "trust.every.member": "todos los miembros",
   "trust.every.owner": "todos los propietarios",
   "trust.every.role.blue_team": "cada blue team",

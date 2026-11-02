@@ -152,3 +152,85 @@ def test_the_landing_counts_instances_and_dormant_ones_as_online(
     # dormant one.
     assert (found["instances"], found["instances_online"]) == (6, 4)
     assert found["agents_online"] == 3  # sub, leaf and the resting solo
+
+
+def hold(engine: Engine, agent: factory.Agent, how: str) -> None:
+    """Hold the agent's membership or instances the way `how` names (§6.2, §6.17, §16.8)."""
+    now = clock.now()
+    with engine.begin() as conn:
+        if how in ("isolated", "paused"):
+            column = "isolated_since" if how == "isolated" else "paused_since"
+            conn.execute(
+                update(t.membership)
+                .where(t.membership.c.id == agent.membership_id)
+                .values({column: now})
+            )
+        elif how == "instances_paused":
+            conn.execute(
+                update(t.credential)
+                .where(t.credential.c.membership_id == agent.membership_id)
+                .values(paused_since=now)
+            )
+        else:  # the owner's account suspended; its membership acts as paused
+            conn.execute(
+                update(t.human)
+                .where(t.human.c.id == agent.owner_id)
+                .values(suspended_at=now, suspended_report="rpt-x")
+            )
+
+
+@pytest.mark.parametrize("how", ["isolated", "paused", "instances_paused", "suspended"])
+def test_a_held_member_has_no_instance_online(
+    setup: tuple[flow.Human, TestClient, str], migrated: Engine, how: str
+) -> None:
+    owner, public, project_id = setup
+    response = owner.patch(
+        "/projects/maintainer/maity", {"policy": {"badge": "agents_online"}, "reason": "README"}
+    )
+    assert response.status_code == 200, response.text
+    lead = factory.agent(migrated, project_id, owner.id, instance="aaaa")
+    # Another human owns the held agent, so suspending that account leaves the reader alone.
+    other = factory.human(migrated, "other")
+    agent = factory.agent(migrated, project_id, other, instance="aaaa")
+    under(migrated, agent, lead.membership_id)
+    seen(migrated, agent)
+    sibling(migrated, agent, "bbbb", dormant=True)
+    hold(migrated, agent, how)
+
+    from tests.test_badges import value
+
+    assert value(public.get("/badge/maintainer/maity.svg")) == "0 agents online"
+    single = owner.get(f"/projects/maintainer/maity/members/{lead.agent_id}").json()
+    assert single["manages"]["direct"] == counts(1, 2, 0, 0)  # counted, none online
+    if how != "suspended":  # a real suspension revokes the credentials (moderation.suspend)
+        landing_stats.reset()
+        with migrated.begin() as conn:
+            found = landing_stats.compute(conn)
+        assert (found["instances"], found["instances_online"], found["agents_online"]) == (3, 0, 0)
+
+
+def test_a_paused_dormant_instance_is_not_online_beside_a_live_one(
+    setup: tuple[flow.Human, TestClient, str], migrated: Engine
+) -> None:
+    owner, public, project_id = setup
+    response = owner.patch(
+        "/projects/maintainer/maity", {"policy": {"badge": "agents_online"}, "reason": "README"}
+    )
+    assert response.status_code == 200, response.text
+    agent = factory.agent(migrated, project_id, owner.id, instance="aaaa")
+    seen(migrated, agent)
+    sibling(migrated, agent, "bbbb", dormant=True)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.credential)
+            .where(t.credential.c.instance == "bbbb")
+            .values(paused_since=clock.now())
+        )
+
+    from tests.test_badges import value
+
+    # The member is online through its live instance; the paused one counts, not online.
+    assert value(public.get("/badge/maintainer/maity.svg")) == "1 agent · 1 instance online"
+    with migrated.begin() as conn:
+        found = landing_stats.compute(conn)
+    assert (found["instances"], found["instances_online"]) == (2, 1)

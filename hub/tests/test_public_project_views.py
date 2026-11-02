@@ -83,7 +83,8 @@ def test_the_board_shows_id_title_status_and_label_and_never_a_body(world: World
     text = view(world.anyone, "board") or ""
     assert "Shipped" in text and "Next up" in text and "Maybe" in text and done in text
     assert "secret body" not in text and "bug" in text
-    assert "<a href" not in text.split("<h1>")[1]  # the ids are text, not links
+    after = text.split("<h1>")[1]  # each id links its card's page, nothing else links
+    assert after.count("<a ") == 3 and f'href="{BASE}/tasks/{done}"' in after
     assert text.index("proposed") < text.index("open") < text.index("done")
 
 

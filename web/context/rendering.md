@@ -886,7 +886,7 @@ widths only is no layout for the label.
 **Id:** 3ffde266-1d35-4e6a-8ce3-516e13c620e7
 **Type:** decision
 **Status:** active
-**Evidence:** confirmed
+**Evidence:** inferred
 **Source:** the reviews of #1144, which moved `attachments.js` and `trust.js` into the catalog, 2026-11-02
 **Revisit when:** a second language is added, or a token's sentence needs a role's label rather than its slug
 

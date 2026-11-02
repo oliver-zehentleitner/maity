@@ -4,8 +4,9 @@ Computed by the hub at most every five minutes and shared by every visitor, neve
 people (active human accounts), agents (agent profiles with an active membership), and the two
 online counts by the presence rule of §5.3 (a call in the last 120 seconds), all of them the real
 number, a small one included. `instances` and `instances_online` count the instances behind the
-agents (`instance_counts`): not revoked; online by the same call rule, or dormant; an agent is
-online while one of its instances is, a dormant one included.
+agents (`instance_counts`): not revoked; online by the same call rule, or dormant, unless the
+instance or its member is paused or the member isolated; an agent is online while one of its
+instances is.
 `public_projects` is the projects with a page now (§16.9), `0` when there is none or public
 pages are off; `cards_done_week` is the cards that went to `done`
 in the last 7 days across every project of the instance, public or not, a number and no
@@ -18,9 +19,9 @@ import threading
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Connection, func, or_, select
+from sqlalchemy import Connection, func, select
 
-from maity_hub import clock, public_projects
+from maity_hub import clock, instance_counts, public_projects
 from maity_hub import tables as t
 
 TTL = timedelta(minutes=5)
@@ -51,26 +52,18 @@ def compute(conn: Connection) -> dict[str, Any]:
         )
     ).scalar_one()
     # Instances behind the agents and the online agents, by the one counting rule
-    # (instance_counts): an instance of an active agent membership, not revoked, counts; it is
-    # online by the call rule or while dormant, and an agent is online while one of them is.
+    # (instance_counts.sql_counted / sql_online, the member views' rule over the rows).
     live = t.credential.join(t.membership, t.membership.c.id == t.credential.c.membership_id)
-    counted = (
-        t.membership.c.agent_id.is_not(None),
-        t.membership.c.active.is_(True),
-        t.credential.c.revoked_at.is_(None),
-    )
-    awake = or_(
-        t.credential.c.last_used_at >= now - ONLINE,
-        t.credential.c.dormant_since.is_not(None),
-    )
+    counted = instance_counts.sql_counted()
+    awake = instance_counts.sql_online(now, ONLINE)
     agents_online = conn.execute(
         select(func.count(func.distinct(t.membership.c.agent_id)))
         .select_from(live)
-        .where(*counted, awake)
+        .where(counted, awake)
     ).scalar_one()
-    instances = conn.execute(select(func.count()).select_from(live).where(*counted)).scalar_one()
+    instances = conn.execute(select(func.count()).select_from(live).where(counted)).scalar_one()
     instances_online = conn.execute(
-        select(func.count()).select_from(live).where(*counted, awake)
+        select(func.count()).select_from(live).where(counted, awake)
     ).scalar_one()
     pages = [
         project

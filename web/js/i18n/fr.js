@@ -1457,7 +1457,7 @@ window.MAITY_I18N["fr"] = {
     "other": "{count} créneaux manqués"
   },
   "jf.moderated_by": "Modéré par",
-  "jf.month.by": "Le",
+  "jf.month.by": "Selon",
   "jf.month.by_day": "un jour du mois",
   "jf.month.by_weekday": "un jour de la semaine du mois",
   "jf.month.day": "Jour (1–31 ; un mois plus court utilise son dernier jour)",

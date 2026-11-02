@@ -5848,6 +5848,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(rgPosts[0]) === JSON.stringify({ address: "anna@example.org", password: "a long enough password", language: "en", next: "/invite/bound-xxxxxxxxxxxxxxx3" })
     && text(main).includes("Check your mail") && text(main).includes("works for 24 hours") && text(main).includes("come back to where you were"),
     "register: sent with the invitation as next, then 'check your mail' for every address alike");
+  // A link of one hour says so in the singular.
+  {
+    const post = win.Maity.api.post;
+    win.Maity.api.post = (p, b) => (p === "/auth/register" ? Promise.resolve({ expires_in: 3600 }) : post(p, b));
+    await go("#/register?next=%2Finvite%2Fbound-xxxxxxxxxxxxxxx3"); for (let k = 0; k < 6; k++) await tick();
+    byId("register-address").value = "anna@example.org"; byId("register-password").value = "a long enough password"; byId("register-repeat").value = "a long enough password";
+    rgForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(text(main).includes("works for 1 hour."), "register: one hour in the singular");
+    win.Maity.api.post = post;
+  }
   // The landing page's link carries where the visitor came from (§16.7.2): sent as origin; a malformed part is left out.
   const rgSend = async (q) => {
     await go("#/register?next=%2Finvite%2Fbound-xxxxxxxxxxxxxxx3&" + q); for (let k = 0; k < 6; k++) await tick();
@@ -8345,11 +8355,72 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "global chat: an agent in one of the reader's projects shows that one project's mark, its name on hover");
   win.Maity.api.getAll = (p) => gxGetAll(p).then((r) => (p === "/projects/maintainer/sample/members"
     ? Object.assign({}, r, { items: r.items.concat([{ id: "agt-a", kind: "agent", handle: "agent-a", display_name: "Agent A", trust: "member", role: "coder", presence: "online" }]) }) : r));
-  await go("#/chats/maintainer/maity/agt-a"); for (let k = 0; k < 8; k++) await tick();
+  await go("#/all"); await go("#/chats/maintainer/maity/agt-a"); for (let k = 0; k < 8; k++) await tick();
   expect(gpIn().length && JSON.stringify(gpMarks(gpIn()[0])) === JSON.stringify(["Maity", "Sample shop"]),
     "global chat: an agent in two of the reader's projects shows both, in the switcher's order");
   win.Maity.api.getAll = gxGetAll;
   expect(!main.querySelectorAll("li.msg.out .msg-projects").length, "global chat: the reader's own messages name no project");
+  // Going from chat to chat changes the pane alone (tsk-cdc3m5g1ew81): no session, /me or member list read,
+  // the same list element, the pane being left dimmed until the next is drawn.
+  await go("#/all"); await go("#/chats/maintainer/maity/agt-a"); for (let k = 0; k < 8; k++) await tick();
+  const ipList = main.querySelector(".chat-list-pane"), ipOld = main.querySelector("section.chat-pane");
+  const ipReads = [];
+  win.Maity.api.get = (p) => { ipReads.push(p); return gxGet(p); };
+  win.Maity.api.getAll = (p) => { ipReads.push(p); return gxGetAll(p); };
+  await go("#/chats/maintainer/maity/cnv-0007"); for (let k = 0; k < 8; k++) await tick();
+  expect(main.querySelector(".chat-list-pane") === ipList && main.querySelector("section.chat-pane") !== ipOld && !ipOld.parentNode
+    && main.querySelectorAll("section.chat-pane").length === 1 && text(main).includes("Release 0.2: go")
+    && gxConv("#/chats/maintainer/maity/cnv-0007").getAttribute("aria-current") === "page" && !gxConv("#/chats/maintainer/maity/agt-a").getAttribute("aria-current")
+    && !ipReads.some((p) => /^\/auth\/session|^\/me$|\/members|^\/projects\/[^/]+\/[^/]+$/.test(p)),
+    "chats: going to another chat changes the pane alone " + JSON.stringify(ipReads));
+  // A chat that answers late never replaces the one asked for after it, and the pane left stands dimmed meanwhile.
+  let ipRelease;
+  const ipHeld = new Promise((r) => { ipRelease = r; });
+  const ipForward = [];
+  win.Maity.api.get = (p) => {
+    if (p.includes("/conversations/agt-a/messages?after")) ipForward.push(p);
+    return p.includes("/conversations/agt-a/messages") ? ipHeld.then(() => gxGet(p)) : gxGet(p);
+  };
+  await go("#/chats/maintainer/maity/agt-a"); for (let k = 0; k < 4; k++) await tick();
+  const ipLeft = main.querySelector("section.chat-pane");
+  expect(ipLeft && ipLeft.getAttribute("aria-busy") === "true" && ipLeft.getAttribute("inert") !== undefined && text(ipLeft).includes("Release 0.2: go")
+    && gxConv("#/chats/maintainer/maity/agt-a").getAttribute("aria-current") === "page", "chats: the pane being left stands dimmed, the list already marks the next");
+  await go("#/chats/maintainer/maity/cnv-0007"); for (let k = 0; k < 8; k++) await tick();
+  ipRelease(); for (let k = 0; k < 8; k++) await tick();
+  expect(!ipForward.length, "chats: a chat left before its forward read is not marked read " + JSON.stringify(ipForward));
+  // A failing chat already left does not draw the page over the one asked for after it.
+  let ipFail;
+  const ipFailing = new Promise((_, no) => { ipFail = no; });
+  const ipPane = main.querySelector("section.chat-pane");
+  win.Maity.api.get = (p) => (p.includes("/conversations/agt-a/messages") ? ipFailing : gxGet(p));
+  await go("#/chats/maintainer/maity/agt-a"); for (let k = 0; k < 4; k++) await tick();
+  await go("#/chats/maintainer/maity/cnv-0007"); for (let k = 0; k < 8; k++) await tick();
+  const ipStays = main.querySelector("section.chat-pane"), ipListNow = main.querySelector(".chat-list-pane");
+  ipFail(new Error("gone")); for (let k = 0; k < 8; k++) await tick();
+  expect(ipPane && main.querySelector("section.chat-pane") === ipStays && main.querySelector(".chat-list-pane") === ipListNow, "chats: a failure of the chat left leaves the page alone");
+  expect(text(main.querySelector("section.chat-pane")).includes("Release 0.2: go") && !main.querySelector("section.chat-pane").getAttribute("aria-busy"), "chats: a late answer of the chat left replaces nothing");
+  // Back to the list, and a project not on the page draws the page anew.
+  win.Maity.api.get = gxGet;
+  await go("#/chats"); for (let k = 0; k < 4; k++) await tick();
+  expect(main.querySelector(".chat-list-pane") === ipList && !main.querySelector(".chat-layout.open") && !main.querySelector("section.chat-pane") && main.querySelector(".chat-none"), "chats: back to the list keeps it, and asks to pick");
+  await go("#/chats/someone/nowhere/agt-a"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main).includes("No project of yours named someone/nowhere."), "chats: a project not on the page is said by a new page");
+  // A chat the list has not read yet, reached by its address, draws the page anew, whose read finds it.
+  await go("#/chats/maintainer/maity/agt-a"); for (let k = 0; k < 8; k++) await tick();
+  const ipBefore = main.querySelector(".chat-list-pane");
+  await go("#/chats/maintainer/maity/cnv-unknown"); for (let k = 0; k < 8; k++) await tick();
+  expect(main.querySelector(".chat-list-pane") !== ipBefore && text(main).includes("cnv-unknown"), "chats: a chat not in the list read draws the page anew");
+  // A direct chat keeps what the list holds of one's own entry: the per-chat proxy switch, opened in place or not.
+  const ipEntry = { items: [{ id: "agt-a", kind: "direct", agent_id: "agt-a", unread: 0, project: { full_name: "maintainer/maity" }, participants: [{ member_id: "hum-maintainer", kind: "human", meat_proxy_lead: false, meat_proxy_chat: false }] }] };
+  win.Maity.api.getAll = (p) => (p.startsWith("/me/conversations") ? gxGetAll(p).then((r) => ({ items: r.items.map((c) => ((c.agent_id || c.id) === "agt-a" ? Object.assign({}, c, ipEntry.items[0]) : c)) })) : gxGetAll(p));
+  await go("#/chats/maintainer/maity/agt-a"); for (let k = 0; k < 8; k++) await tick();
+  const ipToggle = () => main.querySelector("button.meat-chat-toggle");
+  const ipFirst = !!ipToggle();
+  await go("#/chats/maintainer/maity/cnv-0007"); for (let k = 0; k < 8; k++) await tick();
+  await go("#/chats/maintainer/maity/agt-a"); for (let k = 0; k < 8; k++) await tick();
+  expect(ipFirst && ipToggle(), "chats: the per-chat proxy switch stands in a direct chat, opened anew and in place");
+  win.Maity.api.getAll = gxGetAll;
+  await go("#/chats/maintainer/maity/agt-a"); for (let k = 0; k < 8; k++) await tick();
   await go("#/maintainer/maity/chat/agt-a"); for (let k = 0; k < 8; k++) await tick();
   expect(main.querySelectorAll("li.msg.in").length && !main.querySelector(".msg-projects"), "global chat: a project's own chat names no projects");
   win.Maity.api.get = gxGet; win.Maity.api.getAll = gxGetAll; win.Maity.api.post = gxPost;
@@ -9048,6 +9119,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const viAsked = [];
   const viGet = win.Maity.api.get;
   const viPages = {
+    "/public/pages/stranger/tool/tasks/tsk-1": { path: "/stranger/tool/tasks/tsk-1", kind: "card", data: { id: "tsk-1", title: "A <b>card</b>", status: "in_progress", label: "bug", holder: "agent", body: "## Steps\n\n<img src=x onerror=alert(1)> [x](javascript:alert(1))" } },
     "/public/pages/stranger/tool/board": { path: "/stranger/tool/board", kind: "board", data: { columns: [{ status: "open", cards: [{ id: "tsk-1", title: "A <b>card</b>", label: "bug", holder: "member" }] }] } },
     "/public/pages/stranger/tool": { path: "/stranger/tool", kind: "project", data: { name: "Tool", full_name: "stranger/tool", about: null, state: "active", repository_url: "javascript:alert(1)", links: [], people: [{ name: "Sam", handle: "sam", page: "/sam" }], agents: [], other_agents: 2, statistics: { totals: { cards_done: 3, prs_merged: null } } } },
   };
@@ -9067,6 +9139,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(viView()).includes("A <b>card</b>") && text(viView()).includes("A member")
     && !viView().querySelectorAll("button, input, select, textarea").length,
     "visitor: the board of a project one is no member of, its text as text, and nothing to press");
+  expect(viView().querySelectorAll("a.card-id").some((a) => (a.getAttribute("href") || "").endsWith("/stranger/tool/tasks/tsk-1")), "visitor: the board links each card to its own page");
+  await go("#/stranger/tool/tasks/tsk-1"); for (let k = 0; k < 4; k++) await tick();
+  expect(viView() && viView().getAttribute("data-kind") === "card" && viAsked.includes("/public/pages/stranger/tool/tasks/tsk-1")
+    && text(viView()).startsWith("A <b>card</b>") && text(viView().querySelector(".about")).includes("Steps") && text(viView()).includes("An agent")
+    && !viView().querySelector("img") && !viView().querySelectorAll("a").some((a) => /javascript:/.test(a.getAttribute("href") || ""))
+    && viView().querySelectorAll("a.view-tab").some((a) => (a.getAttribute("href") || "").endsWith("/stranger/tool/board") && a.getAttribute("aria-current") === "page") && !viView().querySelectorAll("button, input, select, textarea").length,
+    "visitor: a card's own page, its Markdown drawn without raw HTML, the project's tabs above it, and nothing to press");
   await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
   expect(viView() && viView().getAttribute("data-kind") === "project" && text(viView()).includes("Sam")
     && !viView().querySelectorAll("a").some((a) => /javascript:/.test(a.getAttribute("href") || "")) && text(viView()).includes("Cards done: 3")
