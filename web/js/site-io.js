@@ -1,5 +1,5 @@
 // The whole site as one JSON (tsk-xw8a2hd84x3a, the maintainer's choice o1): the
-// landing page, the legal pages and registration as `maity-site/1`, exported and
+// landing page, the legal pages, the pitch of sign-in and sign-up and registration as `maity-site/1`, exported and
 // imported in one go in the instance admin. Each part has the shape its own
 // section's import takes; a part the file leaves out stays as it is. Only the
 // dashboard is involved: the parts are checked with the calls their sections use
@@ -17,37 +17,39 @@ window.Maity = window.Maity || {};
   const LEGAL = "/admin/settings/legal";
   const REGISTRATION = "/admin/settings/registration";
   const VALUES = "/admin/settings/site-values";
+  const AUTH_PAGES = "/admin/settings/auth-pages";
   // As the hub reads a placeholder (§16.7.3): a slip such as {{ Name }} counts, and has no value.
   const PLACEHOLDER = /\{\{\s*[A-Za-z][A-Za-z0-9_-]*\s*\}\}/g;
   const PAGES = ["imprint", "privacy", "terms"];
-  const KEYS = ["format", "landing", "legal", "registration"];
+  const KEYS = ["format", "landing", "legal", "sign_in", "sign_up", "registration"];
   // The landing part takes what the landing editor imports.
   const LANDING_KEYS = ["enabled", "default_language", "pages", "footer", "variants", "campaigns"];
   const LANG = /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
   const isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
   // Getters: the words are the catalog's when said.
   const PAGE_WORDS = { get imprint() { return M.t("site.page.imprint"); }, get privacy() { return M.t("site.page.privacy"); }, get terms() { return M.t("site.page.terms"); } };
-  const PART_WORDS = { get landing() { return M.t("site.part.landing"); }, get legal() { return M.t("site.part.legal"); }, get registration() { return M.t("site.part.registration"); } };
+  const PART_WORDS = { get landing() { return M.t("site.part.landing"); }, get legal() { return M.t("site.part.legal"); }, get sign_in() { return M.t("site.part.sign_in"); }, get sign_up() { return M.t("site.part.sign_up"); }, get registration() { return M.t("site.part.registration"); } };
 
   // Two values alike whatever the order of their keys.
   const sorted = (v) => (Array.isArray(v) ? v.map(sorted) : isObject(v) ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sorted(v[k])])) : v);
   const same = (a, b) => JSON.stringify(sorted(a)) === JSON.stringify(sorted(b));
 
-  // What the three settings hold now, each in the shape its section exports.
+  // What the settings hold now, each in the shape its section exports.
   async function readNow() {
-    const [landing, legal, registration, values] = await Promise.all([M.api.get(LANDING), M.api.get(LEGAL), M.api.get(REGISTRATION), M.api.get(VALUES)]);
+    const [landing, legal, registration, values, authPages] = await Promise.all([M.api.get(LANDING), M.api.get(LEGAL), M.api.get(REGISTRATION), M.api.get(VALUES), M.api.get(AUTH_PAGES)]);
     const fixed = (k) => (registration[k] || {}).source === "env" || (k === "terms" && (registration.terms || {}).source === "legal_pages");
     return {
       landing: { enabled: !!landing.enabled, default_language: landing.default_language, pages: landing.pages || {}, footer: landing.footer || { social: [] }, variants: landing.variants || {}, campaigns: landing.campaigns || [] },
       legal: Object.fromEntries(PAGES.filter((p) => legal.pages && legal.pages[p]).map((p) => [p, { languages: legal.pages[p].languages }])),
       registration: Object.fromEntries(M.adminRegistration.FIELDS.filter((k) => registration[k] && !fixed(k)).map((k) => [k, registration[k].value])),
+      authPages: { default_language: authPages.default_language, pages: authPages.pages },
       fixed: M.adminRegistration.FIELDS.filter(fixed),
       values: values.values,
     };
   }
   // Registration left out when the environment sets every field: an empty part is
   // refused, and one's own file must always import again.
-  const bundleOf = (now) => Object.assign({ format: FORMAT, landing: now.landing, legal: now.legal },
+  const bundleOf = (now) => Object.assign({ format: FORMAT, landing: now.landing, legal: now.legal, sign_in: now.authPages.pages.sign_in, sign_up: now.authPages.pages.sign_up },
     Object.keys(now.registration).length ? { registration: now.registration } : {});
 
   // Every key a site file does not have, by its path (landing.enabeld, legal.privacy.foo).
@@ -131,6 +133,39 @@ window.Maity = window.Maity || {};
       steps: [{ what: PART_WORDS.registration, call: () => M.api.patch(REGISTRATION, patch) }] };
   }
 
+  // Sign-in and sign-up are two parts of one setting: one PATCH saves both, kept on the first
+  // that changes, and a part the file leaves out stays as saved.
+  async function checkAuthPages(file, now) {
+    const names = M.authPages.PAGES;
+    const held = names.filter((p) => Object.hasOwn(file, p));
+    const states = Object.fromEntries(names.map((p) => [p, { state: "missing" }]));
+    if (!held.length) return states;
+    const wrong = held.filter((p) => !M.authPages.shapeOk(file[p]));
+    if (wrong.length) {
+      held.forEach((p) => { states[p] = wrong.includes(p) ? { state: "refused", words: M.t("auth_pages.not_a_page") } : { state: "same" }; });
+      return states;
+    }
+    const pages = Object.assign({}, now.authPages.pages);
+    held.forEach((p) => { pages[p] = file[p]; });
+    const next = { default_language: now.authPages.default_language, pages };
+    const changed = held.filter((p) => !same(file[p], now.authPages.pages[p]));
+    held.forEach((p) => { states[p] = { state: changed.includes(p) ? "changes" : "same" }; });
+    if (!changed.length) return states;
+    try { await M.api.post(AUTH_PAGES + "/check", next); }
+    catch (err) {
+      const fields = (err.code === "invalid" && err.details && err.details.fields) || {};
+      const hit = (p) => Object.entries(fields).filter(([f]) => f.startsWith("pages." + p + "."));
+      const any = held.some((p) => hit(p).length);
+      held.forEach((p) => {
+        if (!any) states[p] = { state: "refused", words: refusalWords(err) };
+        else if (hit(p).length) states[p] = { state: "refused", words: hit(p).map(([f, r]) => f + ": " + r).join("; ") };
+      });
+      return states;
+    }
+    states[changed[0]].steps = [{ what: M.fmt.list(changed.map((p) => PART_WORDS[p])), call: () => M.api.patch(AUTH_PAGES, next) }];
+    return states;
+  }
+
   // The file as a whole: null and the parts' states, or what is wrong with it.
   async function check(data, now) {
     if (!isObject(data)) return { refused: M.t("site.refused.shape") };
@@ -143,6 +178,7 @@ window.Maity = window.Maity || {};
     // The hub would refuse each one again; the list below already says what to do.
     if (placeholders.some((p) => !p.replaced)) return { refused: null, placeholders, parts: null };
     const parts = {
+      ...(await checkAuthPages(file, now)),
       landing: Object.hasOwn(file, "landing") ? await checkLanding(file.landing, now) : { state: "missing" },
       legal: Object.hasOwn(file, "legal") ? await checkLegal(file.legal, now) : { state: "missing" },
       registration: Object.hasOwn(file, "registration") ? checkRegistration(file.registration, now) : { state: "missing" },
@@ -159,7 +195,7 @@ window.Maity = window.Maity || {};
     const STATE_WORDS = { get missing() { return M.t("site.state.missing"); }, get same() { return M.t("site.state.same"); },
       get changes() { return M.t("site.state.changes"); }, get refused() { return M.t("site.state.refused"); } };
 
-    // The parts' states in a list, and one Save for every change, legal, registration, landing in that order.
+    // The parts' states in a list, and one Save for every change, legal, sign-in and sign-up, registration, landing in that order.
     function show(result) {
       const parts = result.parts;
       const list = result.placeholders.length ? h("ul", { class: "site-placeholders" }, result.placeholders.map((p) => h("li", { "data-replaced": p.replaced ? "true" : "false" },
@@ -169,7 +205,7 @@ window.Maity = window.Maity || {};
           h("button", { type: "button", class: "primary site-save", disabled: true }, M.t("site.save")));
         return;
       }
-      const steps = ["legal", "registration", "landing"].flatMap((k) => parts[k].steps || []);
+      const steps = ["legal", "sign_in", "sign_up", "registration", "landing"].flatMap((k) => parts[k].steps || []);
       const refused = Object.values(parts).some((p) => p.state === "refused");
       const save = h("button", { type: "button", class: "primary site-save", disabled: refused || !steps.length ? true : null }, M.t("site.save"));
       save.addEventListener("click", async () => {
@@ -194,7 +230,7 @@ window.Maity = window.Maity || {};
         append(status.el, h("span", { class: "ok" }, M.t("site.saved_all", { parts: M.fmt.list(saved) })));
         clear(overview);
       });
-      append(clear(overview), list, h("ul", { class: "site-parts" }, ["landing", "legal", "registration"].map((k) => h("li", { class: "site-part site-" + parts[k].state, "data-part": k },
+      append(clear(overview), list, h("ul", { class: "site-parts" }, ["landing", "legal", "sign_in", "sign_up", "registration"].map((k) => h("li", { class: "site-part site-" + parts[k].state, "data-part": k },
         h("strong", null, PART_WORDS[k]), ": ", STATE_WORDS[parts[k].state], parts[k].words ? [" · ", h("span", { class: parts[k].state === "refused" ? "field-error" : "muted" }, parts[k].words)] : null))),
         refused ? h("p", { class: "field-error" }, M.t("site.refused.some")) : !steps.length ? h("p", { class: "muted" }, M.t("site.nothing")) : null,
         save);

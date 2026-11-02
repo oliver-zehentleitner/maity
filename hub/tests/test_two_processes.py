@@ -23,6 +23,7 @@ import pytest
 from sqlalchemy import Engine, text
 
 from maity_hub.db import APPLICATION_LISTENER
+from maity_hub.mail import outbox
 from tests import flow
 from tests.test_auth_agent import signed
 
@@ -229,7 +230,7 @@ def test_a_rate_limit_counts_once_over_both_processes(
 ) -> None:
     a, b = hubs
     wrong = {"handle": "maintainer", "password": "not the password at all"}
-    # Ten a minute (`LOGIN_BY_HANDLE`), and the in-process login of the setup is one of them:
+    # Ten a minute (`LOGIN_BY_HANDLE`), and the login of the setup is one of them:
     # neither process alone sees more than six of its own.
     answers = [
         (a if n % 2 else b).send({}, "POST", "/api/v1/auth/login", json=wrong) for n in range(12)
@@ -248,3 +249,40 @@ def test_a_signed_requests_nonce_is_refused_on_the_other_process(
     again = b.send(headers, "GET", "/api/v1/me")
     assert again.status_code == 401
     assert again.headers["Maity-Error"] == "nonce_reused"
+
+
+def test_a_workers_pass_runs_once_per_interval_over_both_processes(
+    hubs: tuple[Hub, Hub], migrated: Engine
+) -> None:
+    """The mail worker looks every 5 seconds in each process, whether or not there is mail. A
+    trigger writes down every pass: polling the row would miss a second pass right after the first,
+    and two processes started together tick that close."""
+    with migrated.begin() as conn:
+        conn.execute(text("CREATE TABLE pass_seen (started_at timestamp NOT NULL)"))
+        conn.execute(
+            text(
+                "CREATE FUNCTION note_pass() RETURNS trigger AS $$ BEGIN "
+                "INSERT INTO pass_seen VALUES (NEW.started_at); RETURN NEW; "
+                "END $$ LANGUAGE plpgsql"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TRIGGER note_pass AFTER UPDATE OF started_at ON worker_run FOR EACH ROW "
+                "WHEN (NEW.name = 'mail') EXECUTE FUNCTION note_pass()"
+            )
+        )
+    try:
+        time.sleep(outbox.INTERVAL * 4)
+        with migrated.connect() as conn:
+            seen = list(
+                conn.execute(text("SELECT started_at FROM pass_seen ORDER BY started_at")).scalars()
+            )
+    finally:
+        with migrated.begin() as conn:
+            conn.execute(text("DROP TRIGGER note_pass ON worker_run"))
+            conn.execute(text("DROP FUNCTION note_pass()"))
+            conn.execute(text("DROP TABLE pass_seen"))
+    gaps = [(b - a).total_seconds() for a, b in zip(seen, seen[1:], strict=False)]
+    assert len(gaps) >= 1, seen
+    assert min(gaps) >= outbox.INTERVAL, gaps

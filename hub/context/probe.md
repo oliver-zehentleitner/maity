@@ -362,10 +362,12 @@ prevent.
 **Source:** docs/api.md §11.4 ("What a private repository's data may reach") and the event table, §8.2; the lead's decision on card tsk-dtpr7zqxhxc2, part 5b
 **Revisit when:** another page without sign-in shows data the probe read, or the forge stops reporting visibility in the GraphQL read
 
-`link_observed` carries `public`: whether the same GraphQL read reported
-the repository public (`isPrivate: false`), `false` when it did not say.
-A page without sign-in counts merged pull requests only from events with
-`public: true`. Events written before the field existed do not count.
+`link_observed` carries `public`: whether the same GraphQL read reported the
+repository public (`isPrivate: false`), `false` when it did not say; and
+`read_via`: the source that read it. A page without sign-in counts merged pull
+requests only from events with `public: true` and `read_via: instance`, and only
+while the repository's last check found it public. Events without those fields
+do not count.
 
 Changed on 2026-11-01: the count read only `link_observed`, which only a
 card's forge link produces, while nearly all pull requests of a project
@@ -378,24 +380,28 @@ uncounted on public pages; setting the flag on them is a data change that needs
 no code, should the maintainer allow it. With nothing flagged the page has no
 line: a 0 there says nothing was merged.
 
-The rule above that a grant's read counts when the read found the repository
-public contradicts §11.4 ("data read through an owner's grant never appears
-there"); the ticker follows the contract. Open for link events.
+Changed on 2026-11-02: until then a link event read through a grant counted when the read found
+the repository public, and the link events skipped the last check. Both went against §11.4. Events
+already written with `public: true` can't be told apart by token, so they stopped counting at once
+rather than running out of the 30-day window; that takes no data change, and few merges come from
+links. A public project read only through an App or an owner's token has no line.
 
 The ticker's `merge.public` is tested at the probe: a scan with the instance's token writes
 `true`, one through an App or an owner's token writes `false`, since that line is the only thing
 between an owner's grant and a page without sign-in.
 
-**Reason:** the flag follows what the read itself saw, not which token
-made it. With the token as the test, a public repository read with an
-App or owner token would never count, and a repository that turned
-private between two reads would still count. The old events go
+**Reason:** §11.4 says data read through an owner's grant never appears
+there, no count derived from it either, and the contract stands above this
+entry; privacy goes before the statistic. The read's own answer stays part of
+the rule, or a repository that turned private between two reads would still
+count. The old events go
 uncounted on purpose: before the instance token was limited to public
 repositories, it could read private ones too, so those events cannot
 prove they were public. Privacy goes before the statistic.
 
 **Rejected alternatives:**
-- `public` from the source (`via == "instance"`): it leaves out public
-  repositories read with an owner's grant.
+- `public` from what the read saw alone, whichever token made it: it counts
+  public repositories read with an owner's grant too, but §11.4 excludes those.
+  It was the rule until 2026-11-02.
 - Counting events without the field: it may count merges of private
   repositories read before the instance token was limited.

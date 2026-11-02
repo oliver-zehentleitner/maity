@@ -2140,6 +2140,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(searchCalls[0].includes("status=all&q=note-only") && !searchCalls[0].includes("closed_after"), "board search: full history query");
   expect(visibleIds().includes("tsk-old") && text(main).includes("Matched: note")
     && text(main).includes("Closed · outside board window"), "board search: remote note match and old closed marker");
+  expect(text(main).includes("Found 1 card across all dates."), "board search: one card found, in the singular");
   searchInput.value = "delayed"; searchInput.dispatch("input");
   main.querySelector("form.board-filter").dispatch("submit"); await tick();
   btn(main, "Clear search").click();
@@ -3142,6 +3143,96 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "errors: without a translation, or for a code unknown here, the hub's English");
     i18n.language = was;
     delete win.MAITY_I18N.de;
+  }
+  // The reader's language (§6.2): the account's, else ?lang= or the choice, then the browser's, then en.
+  {
+    const i18n = win.Maity.i18n;
+    expect(JSON.stringify([...i18n.available]) === '["en"]' && win.Maity.interfacePicker("x", "en", false) === null,
+      "language: only languages with a catalog are offered, and with one there is no choice to make");
+    const oldNavigator = win.navigator, oldStorage = win.localStorage, oldSearch = win.location.search;
+    const kept = {};
+    win.localStorage = { getItem: (k) => kept[k] ?? null, setItem: (k, v) => { kept[k] = v; }, removeItem: (k) => { delete kept[k]; } };
+    win.MAITY_I18N.de = { "chat.instance.label": "Senden an" };
+    win.MAITY_I18N["zh-Hans"] = {};
+    i18n.available.push("de", "zh-Hans");
+    win.navigator = { languages: ["de-AT", "en"] };
+    await i18n.follow(null);
+    expect(i18n.language === "de" && tr("chat.instance.label") === "Senden an" && tr("account.title") !== "account.title",
+      "language: de-AT reads de, a key without a translation reads in English");
+    win.navigator = { languages: ["zh-TW", "fr"] };
+    await i18n.follow(null);
+    expect(i18n.language === "en", "language: Traditional Chinese does not fall to Simplified, and with nothing close the page is English");
+    win.navigator = { languages: ["zh-CN"] };
+    await i18n.follow(null);
+    expect(i18n.language === "zh-Hans", "language: zh-CN reads zh-Hans");
+    await i18n.choose("de");
+    win.navigator = { languages: ["en"] };
+    await i18n.follow(null);
+    expect(i18n.language === "de", "language: an explicit choice comes before the browser's");
+    win.location.search = "?lang=zh-Hans";
+    await i18n.follow(null);
+    win.location.search = "";
+    expect(i18n.language === "zh-Hans" && kept["maity.language"] === "zh-Hans" && i18n.explicit() === "zh-Hans", "language: ?lang= is a choice, and stays one");
+    expect(i18n.fromBrowser(["de", "zh-Hans"]) === null, "language: the browser's first among some tags, none here");
+    win.navigator = { languages: ["zh-CN"] };
+    expect(i18n.fromBrowser(["de", "zh-Hans", "zh-Hant"]) === "zh-Hans", "language: the agents' language is matched as the page's is, zh-CN to zh-Hans");
+    win.navigator = { languages: ["en"] };
+    delete kept["maity.language"];
+    expect(i18n.explicit() === null, "language: what the browser says is no choice of the person's");
+    kept["maity.language"] = "zh-Hans";
+    win.location.search = "?lang=xx";
+    await i18n.follow(null);
+    win.location.search = "";
+    expect(i18n.language === "zh-Hans", "language: ?lang= without a catalog changes nothing");
+    await i18n.follow("de");
+    expect(i18n.language === "de", "language: the account's comes before any choice");
+    win.MAITY_I18N.de["test.forms"] = { one: "ein", other: "viele" };
+    win.MAITY_I18N["zh-Hans"]["test.forms"] = { other: "多" };
+    win.Maity.i18n.locale = "en";
+    await i18n.follow("zh-Hans");
+    expect(tr("test.forms", { count: 1 }) === "多", "language: plural forms follow the catalog's language, not the locale of the numbers");
+    win.Maity.i18n.locale = i18nLocale;
+    const select = win.Maity.interfacePicker("x", "", true);
+    expect(select && select.querySelectorAll("option").length === 4, "language: with several, each by its name, and the browser's as a choice");
+    const noCatalog = win.Maity.interfacePicker("x", "fr", true);
+    expect(noCatalog.querySelectorAll("option").length === 5 && noCatalog.value === "fr", "language: a value without a catalog here stays shown, so saving keeps it");
+    // A second script: one per language however many ask, and the last one asked for wins.
+    const added = [];
+    win.document = {
+      baseURI: "https://hub.example/assets/",
+      documentElement: { lang: "" },
+      head: { appendChild: (el) => added.push(el) },
+      createElement: () => ({}),
+    };
+    i18n.available.push("fr");
+    const first = i18n.follow("fr"), second = i18n.follow("fr");
+    await tick();
+    expect(added.length === 1 && i18n.language === "zh-Hans", "language: one script while it loads, and the page stays as it is meanwhile " + added.length);
+    win.MAITY_I18N.fr = { "chat.instance.label": "Envoyer à" };
+    added[0].onload();
+    await first; await second;
+    expect(i18n.language === "fr" && tr("chat.instance.label") === "Envoyer à", "language: the catalog is read once it has loaded");
+    await i18n.follow("de");
+    delete win.MAITY_I18N.fr;
+    const late = i18n.follow("fr"), back = i18n.follow("de");
+    await back;
+    win.MAITY_I18N.fr = {};
+    added[1].onload();
+    await late;
+    expect(i18n.language === "de", "language: a script that arrives late does not take the page back");
+    delete win.MAITY_I18N.fr;
+    const failing = i18n.follow("fr");
+    await tick();
+    added[2].onerror();
+    await failing;
+    expect(i18n.language === "de", "language: a catalog that cannot be had leaves the page as it is");
+    expect(added[0].src === "https://hub.example/assets/js/i18n/fr.js", "language: the script's address comes from the page's base, not its route " + added[0].src);
+    expect(win.document.documentElement.lang === "de", "language: the page says which language it is in");
+    delete win.document;
+    i18n.available.length = 1;
+    delete win.MAITY_I18N.de; delete win.MAITY_I18N["zh-Hans"];
+    win.navigator = oldNavigator; win.localStorage = oldStorage; win.location.search = oldSearch;
+    await i18n.follow(null);
   }
   // Markdown in a chat (js/markdown.js): text nodes only, https links only.
   const MD = (src) => { const box = document.createElement("div"); win.Maity.dom.append(box, win.Maity.markdown(src)); return box; };
@@ -5680,6 +5771,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.post = (p, b) => { if (p === "/auth/register") rgPosts.push(b); return rgPost(p, b); };
   await go("#/register?next=%2Finvite%2Fbound-xxxxxxxxxxxxxxx3"); for (let k = 0; k < 6; k++) await tick();
   const rgForm = () => main.querySelector("form.register-form");
+  // Two languages at registration: choosing the page's keeps the address and the agents' language.
+  {
+    const i18n = win.Maity.i18n, storage = win.localStorage, kept = {};
+    win.localStorage = { getItem: (k) => kept[k] ?? null, setItem: (k, v) => { kept[k] = v; }, removeItem: (k) => { delete kept[k]; } };
+    win.MAITY_I18N.de = {};
+    i18n.available.push("de");
+    await go(win.location.hash); for (let k = 0; k < 4; k++) await tick();
+    if (byId("register-interface")) {
+      byId("register-address").value = "kim@example.org";
+      byId("register-language").value = "fr"; byId("register-language").dispatch("change");
+      byId("register-interface").value = "de"; byId("register-interface").dispatch("change");
+      for (let k = 0; k < 6; k++) await tick();
+      expect(i18n.language === "de" && byId("register-address").value === "kim@example.org" && byId("register-language").value === "fr",
+        "register: choosing the page's language keeps the address and the agents' language");
+    } else expect(false, "register: the page's language is offered once there are two");
+    i18n.available.length = 1;
+    delete win.MAITY_I18N.de;
+    win.localStorage = storage;
+    await i18n.follow(null);
+    await win.Maity.redraw(); for (let k = 0; k < 4; k++) await tick();
+  }
   // Laid out as sign-in is (tsk-egx8xpcrz5z2: on prod the labels ran inline with their fields): one column, label above field.
   const rgCss = fs.readFileSync(path.join(WEB, "css/app.css"), "utf8");
   expect(/\.sign-in-form, \.register-form \{[^}]*display: grid;[^}]*grid-template-columns: minmax\(0, 1fr\);/.test(rgCss)
@@ -5691,7 +5803,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!rgPosts.length && text(rgForm()).includes("at least 12 characters"), "register: a short password is said before anything is sent");
   byId("register-password").value = "a long enough password"; byId("register-repeat").value = "a long enough password";
   rgForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
-  expect(JSON.stringify(rgPosts[0]) === JSON.stringify({ address: "anna@example.org", password: "a long enough password", next: "/invite/bound-xxxxxxxxxxxxxxx3" })
+  expect(JSON.stringify(rgPosts[0]) === JSON.stringify({ address: "anna@example.org", password: "a long enough password", language: "en", next: "/invite/bound-xxxxxxxxxxxxxxx3" })
     && text(main).includes("Check your mail") && text(main).includes("works for 24 hours") && text(main).includes("come back to where you were"),
     "register: sent with the invitation as next, then 'check your mail' for every address alike");
   // The landing page's link carries where the visitor came from (§16.7.2): sent as origin; a malformed part is left out.
@@ -6856,10 +6968,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("Only messages within the hub's latest 5,000 events (all projects counted) are shown") && text(main).includes("No project messages yet."),
     "messages: a long log is read from its latest events, and that is said");
   let pmCalls = 0;
-  win.Maity.api.get = (p) => (/\/events\?after=\d+&wait=0&limit=200$/.test(p)
-    ? (pmCalls++, Promise.resolve({ items: Array.from({ length: 200 }, () => ({ seq: 5, kind: "member_joined", payload: {} })), cursor: 5 })) : pmGet(p));
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/events?after=latest&wait=0" ? Promise.resolve({ items: [], cursor: 20000 })
+    : /\/events\?after=\d+&wait=0&limit=200$/.test(p)
+    ? (pmCalls++, Promise.resolve({ items: Array.from({ length: 200 }, () => ({ seq: 15000, kind: "member_joined", payload: {} })), cursor: 15000 })) : pmGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/messages"); for (let k = 0; k < 4; k++) await tick();
-  expect(pmCalls === 1 && text(main).includes("did not move"), "messages: a cursor that does not move stops the scan, said");
+  expect(pmCalls === 1 && text(main).includes("did not move past 15000"), "messages: a cursor that does not move stops the scan, said, its number as written");
   // A member without events:admin: only what it may read, no Remove, Delete only on what it sent.
   win.Maity.api.get = (p) => (p === "/me" ? pmGet(p).then((x) => { x.projects.find((y) => y.slug === "maity").trust = "member"; return x; }) : pmGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/messages");
@@ -8234,6 +8347,29 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Notification = function (title, opts) { shownNotes.push([title, opts]); this.close = () => {}; };
   win.Notification.permission = "default";
   win.Notification.requestPermission = async () => { asked += 1; win.Notification.permission = "granted"; return "granted"; };
+  // The account's language: saved in the session, and the page follows it.
+  {
+    const i18n = win.Maity.i18n;
+    win.MAITY_I18N.de = {};
+    i18n.available.push("de");
+    await go("#/all"); await go("#/account/notifications");
+    const choose = byId("interface-language");
+    expect(!!choose, "account language: offered once there are two");
+    choose.value = "de";
+    main.querySelector("form.interface-language").dispatch("submit");
+    for (let k = 0; k < 8; k++) await tick();
+    expect(win.Maity.api.session().member.interface_language === "de" && i18n.language === "de", "account language: saved, and the page follows it");
+    expect(byId("interface-language") && byId("interface-language").value === "de", "account language: shown as saved after the redraw");
+    byId("interface-language").value = "";
+    main.querySelector("form.interface-language").dispatch("submit");
+    for (let k = 0; k < 8; k++) await tick();
+    expect(win.Maity.api.session().member.interface_language === null, "account language: can be given back to the browser");
+    await win.Maity.api.patch("/me", { interface_language: "xx" }).then(() => expect(false, "account language: an unknown one is refused"), (err) => expect(err.status === 400, "account language: an unknown one is refused"));
+    i18n.available.length = 1;
+    delete win.MAITY_I18N.de;
+    await i18n.follow(null);
+    await go("#/all");
+  }
   await go("#/account/notifications");
   expect(byId("notify-browser") && !byId("notify-browser").checked && asked === 0 && text(main).includes("has not been asked yet")
     && byId("notify-kind-chat").attrs.disabled !== undefined, "notifications: the settings, off, the browser not asked on opening them");
@@ -8630,6 +8766,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(ceLabelHidden && text(ceLabelHidden).includes("Ctrl+Enter sends") && !text(ceLabel("chat-text")).replace(text(ceLabelHidden), "").includes("Ctrl+Enter"),
     "Ctrl+Enter: the chat's label keeps the keys for a screen reader, not shown twice");
   const ceKeys = win.Maity.dom.sendKeysFor;
+  {
+    const keysBefore = win.Maity.dom.SEND_KEYS, langBefore = document.documentElement.getAttribute("lang");
+    document.documentElement.setAttribute("lang", "de");
+    expect(win.Maity.dom.SEND_KEYS === ceKeys("de", win.navigator && win.navigator.platform, win.navigator && win.navigator.userAgent), "send keys: read when shown, so a language that comes later counts");
+    document.documentElement.setAttribute("lang", langBefore || "");
+    expect(win.Maity.dom.SEND_KEYS === keysBefore, "send keys: and back with the page's language");
+  }
   expect(ceKeys("de-AT", "Linux x86_64", "") === "Strg+Enter" && ceKeys("de", "Win32", "") === "Strg+Enter"
     && ceKeys("en-US", "Win32", "") === "Ctrl+Enter" && ceKeys("", "", "") === "Ctrl+Enter" && ceKeys("dev", "Win32", "") === "Ctrl+Enter"
     && ceKeys("de-DE", "MacIntel", "") === "⌘+Enter" && ceKeys("en", "", "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)") === "⌘+Enter",
@@ -9141,7 +9284,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   {
     const picker = win.Maity.languagePicker("language-under-test", "fr");
     await tick();
-    expect(picker.select.value === "fr" && picker.select.querySelectorAll("option").length === 7, "language: the picker lists the hub's languages and keeps the choice");
+    expect(picker.select.value === "fr" && picker.select.querySelectorAll("option").length === 6, "language: the picker lists the languages the hub offers and keeps the choice");
+    const outside = win.Maity.languagePicker("language-outside", "aa");
+    await tick();
+    expect(outside.select.value === "aa" && outside.select.querySelectorAll("option").length === 7, "language: a value chosen outside the offered ones stays valid and shown");
     picker.search.value = "japan";
     picker.search.dispatch("input");
     expect(picker.select.querySelectorAll("option").length === 2 && picker.select.value === "fr", "language: search by English name narrows and keeps the choice");
@@ -9816,7 +9962,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await siCheck();
     const siParts = () => siBox().querySelectorAll("li.site-part").map((li) => li.getAttribute("data-part") + ":" + li.className.split(" ").find((c) => c.startsWith("site-") && c !== "site-part"));
     // The fixture's landing page is the template's, so only the legal pages change.
-    expect(JSON.stringify(siParts()) === JSON.stringify(["landing:site-same", "legal:site-changes", "registration:site-missing"]),
+    expect(JSON.stringify(siParts()) === JSON.stringify(["landing:site-same", "legal:site-changes", "sign_in:site-changes", "sign_up:site-changes", "registration:site-missing"]),
       "site: Check shows each part's state " + JSON.stringify(siParts()));
     const siPatches = [], siPatchReal = win.Maity.api.patch;
     win.Maity.api.patch = (p, b) => { siPatches.push(p); return siPatches.length === 2
@@ -9841,6 +9987,33 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "pages: /admin/pages opens the tab on Landing pages, the file folded " + subShown());
     await go("#/admin/pages/legal"); for (let k = 0; k < 6; k++) await tick();
     expect(JSON.stringify(subShown()) === JSON.stringify(["admin-legal-pages"]), "pages: /admin/pages/legal opens Legal pages " + subShown());
+    // Sign in and Sign up (§16.7.4): one setting, an empty field left out, a refusal said at its field, JSON checked before it loads.
+    btn(main.querySelector("nav.admin-subnav"), "Sign in").click(); await tick();
+    expect(JSON.stringify(subShown()) === JSON.stringify(["admin-sign-in-page"]), "auth pages: the Sign in sub-tab shows its part " + subShown());
+    const apBox = byId("admin-sign-in-page");
+    const apInput = (key) => byId("ap-sign_in-" + key);
+    const apType = (el, value) => { el.value = value; el.dispatch("input"); };
+    apType(apInput("title"), "Welcome");
+    apType(apInput("subline"), "   ");
+    const apSent = [], apPatch = win.Maity.api.patch;
+    win.Maity.api.patch = (p, b) => { apSent.push(b); return apPatch(p, b); };
+    btn(apBox, "Save the sign-in and sign-up pages").click(); for (let k = 0; k < 6; k++) await tick();
+    expect(apSent.length === 1 && JSON.stringify(apSent[0].pages.sign_in.en) === JSON.stringify({ title: "Welcome" }) && /Saved\./.test(text(apBox)),
+      "auth pages: Save sends the text and leaves out an empty field " + JSON.stringify(apSent));
+    apType(byId("ap-sign_in-title"), "Hello {{name}}");
+    btn(apBox, "Save the sign-in and sign-up pages").click(); for (let k = 0; k < 6; k++) await tick();
+    win.Maity.api.patch = apPatch;
+    expect(/Still holds a placeholder/.test(text(apBox)) && /Not saved/.test(text(apBox)), "auth pages: the hub's refusal is said at the field " + text(apBox));
+    apType(byId("ap-sign_in-title"), "Welcome");
+    const apIo = (value) => { const area = byId("ap-sign_in-json"); area.value = value; btn(apBox, "Load into the editor").click(); };
+    apIo("[1]"); for (let k = 0; k < 4; k++) await tick();
+    expect(/not a page/.test(text(apBox)), "auth pages: a file that is not a page is refused");
+    apIo(JSON.stringify({ en: { label: "" } })); for (let k = 0; k < 6; k++) await tick();
+    expect(/extra_forbidden/.test(text(apBox)), "auth pages: a key not listed is refused even when empty");
+    apIo(JSON.stringify({ en: { title: "Loaded", label: "x" } })); for (let k = 0; k < 6; k++) await tick();
+    expect(/extra_forbidden/.test(text(apBox)) && byId("ap-sign_in-title").value === "Welcome", "auth pages: a key not listed is refused, the editor stays");
+    apIo(JSON.stringify({ en: { title: "Loaded", note: "A note" } })); for (let k = 0; k < 6; k++) await tick();
+    expect(byId("ap-sign_in-title").value === "Loaded" && byId("ap-sign_in-note").value === "A note", "auth pages: a checked file loads into the editor");
     btn(main.querySelector("nav.admin-subnav"), "Landing pages").click(); await tick();
     expect(JSON.stringify(subShown()) === JSON.stringify(["admin-landing-page"]), "pages: a sub-tab switches the part " + subShown());
     await go("#/admin/pages/site"); for (let k = 0; k < 6; k++) await tick();

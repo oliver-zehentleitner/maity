@@ -3729,7 +3729,8 @@ legal training. The English and German are not changed by them.
 
 The site file of the instance the project runs is kept outside this
 repository, and an operator writes their own. Tests, smoke and e2e read
-`web/tools/site-fixture.json`: every section type and all ten languages, with
+`web/tools/site-fixture.json`: every section type, all ten languages for the
+landing and legal parts and two for sign-in and sign-up, with
 placeholder text and the seven placeholders, none of an instance's words. Git
 history keeps the old versions, and nobody rewrites it.
 
@@ -3743,7 +3744,7 @@ texts kept as a template: that is what the instruction ends.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decisions req-0cv1n7eaegay (o1: one JSON for landing, legal and registration, dashboard only, no hub endpoint) and req-39vmjgrq5s32 (o1: a template in the repository, the imprint with placeholders only, landing-v3-complete.json dropped for one source), relayed by the coordinator on the card tsk-xw8a2hd84x3a, 2026-10-31; the coordinator's word that placeholders go in square brackets; the coordinator's decision on the review of #961, 2026-10-31 (an unknown key anywhere refuses the whole file; variants and campaigns stayed out while the editor's import did not know them, until the coordinator's decision on tsk-ets3x0c4ethg, 2026-11-01, took them in); the coordinator's decision on #961, 2026-10-31 (the template carries no registration; registration is the instance's own); docs/api.md §2.8.4 (a step-up holds 10 minutes); the dashboard's implementation, 2026-10-31
+**Source:** the maintainer's decisions req-0cv1n7eaegay (o1: one JSON for landing, legal and registration, dashboard only, no hub endpoint) and req-39vmjgrq5s32 (o1: a template in the repository, the imprint with placeholders only, landing-v3-complete.json dropped for one source; the template in the repository ended with 68502afd-2713-4ea1-b341-73a6efb50537, 2026-11-01), relayed by the coordinator on the card tsk-xw8a2hd84x3a, 2026-10-31; the coordinator's word that placeholders go in square brackets; the coordinator's decision on the review of #961, 2026-10-31 (an unknown key anywhere refuses the whole file; variants and campaigns stayed out while the editor's import did not know them, until the coordinator's decision on tsk-ets3x0c4ethg, 2026-11-01, took them in); the coordinator's decision on #961, 2026-10-31 (the template carries no registration; registration is the instance's own); docs/api.md §2.8.4 (a step-up holds 10 minutes); the dashboard's implementation, 2026-10-31
 **Revisit when:** the hub offers one call that saves several settings in a transaction, or a fourth setting joins the site file
 **See:** views.md#the-legal-pages-and-registration-import-and-export-json-too-text-not-loaded-stops-a-preview — 951ed7bf-6f23-4279-a4c6-f2c03c7c31ea — as of 2026-10-31
 
@@ -3768,8 +3769,9 @@ repository (views.md#an-instances-site-file-is-not-in-the-public-repository).
 A site file need carry no registration: registration is the instance's own,
 and a file imported whole would otherwise close an open registration without
 a word.
-Its placeholders are in square brackets: the hub's Markdown rules read
-`<Operator>` as an HTML tag and refuse the text.
+Placeholders were first in square brackets, since the hub's Markdown rules
+read `<Operator>` as an HTML tag and refuse the text; they are `{{name}}` now
+(`docs/api.md` §16.7.3).
 
 An unknown key anywhere in the file refuses the whole file, named by its
 path, down to each part and legal page (deeper, in a page's languages or
@@ -4372,3 +4374,19 @@ The site file gives `/login` and `/register` their pitch per language: title, su
 **Reason:** `next`, the device code's polling, the second factor and a session that ends under a page all live in the dashboard, so a second renderer would be a second sign-in path. No sign-in may depend on reading words.
 
 **Rejected alternatives:** the dashboard taking its own language from `GET /auth/pages`: that answer picks among the languages the file has, so a form could change language with the instance's content; the dashboard draws in its own language and passes it as `lang`. A missing key filled from `default_language`: the answer would mix two languages under one `language`; the catalogue fills it, in the language the dashboard draws in. Form labels and buttons in the file too, with the file winning over the catalogue: two sources for one text, and an imported file would pin a form's words against later catalogue changes. The hub rendering the two pages as it does the landing page: a second path, above. Free HTML or sections from the file: the forms are a security surface. A format `maity-site/2`: it would invalidate files in use, and a part left out already stays as it is. Words in the `registration` part: those are settings, with their own environment rules. A table of its own with versions: unlike legal texts nothing needs to be proven later, so one setting row is enough.
+
+## The sign-in and sign-up sub-tabs share one editor, and Save sends both pages
+
+**Id:** 42fcba86-1e4e-43dd-b028-62de42cd1258
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** PR #1136 (tsk-fct4awzw3k30); docs/api.md §16.7.4: a `PATCH` of `/admin/settings/auth-pages` replaces the setting as a whole
+
+`js/auth-pages.js` reads the setting once per admin page and both sub-tabs draw from one draft, so Save in either sends both pages. An empty field and a language without text are left out. JSON for one page is checked with `/check` (no second factor) before it reaches the editor, and only Save stores it. In the site file the two parts become one `PATCH`, at the first changed part; a part the file leaves out is sent as saved.
+
+**Reason:** the hub has one row and no partial update. Two editors, each with its own read, would let a save in one tab overwrite what the other just saved.
+
+**Rejected alternatives:** a `PATCH` per page: the contract has none, and the second would overwrite the first. Sending empty strings: the hub refuses them as `invalid`.
+
+**Known limit:** like the landing editor, the draft is read when the Pages tab opens. After importing the whole site file in the same view, reload before saving in a sub-tab.

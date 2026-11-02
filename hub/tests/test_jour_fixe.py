@@ -3,6 +3,8 @@ answers, named and anonymous."""
 
 from __future__ import annotations
 
+import threading
+import time
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -12,7 +14,7 @@ from sqlalchemy import Engine, insert, select, update
 
 from maity_hub import clock, listening
 from maity_hub import tables as t
-from maity_hub.jourfixe import redaction, worker
+from maity_hub.jourfixe import redaction, rounds, worker
 from tests import factory, flow
 from tests.conftest import ClientFactory
 
@@ -376,7 +378,6 @@ def test_the_close_wakes_the_moderator_where_it_listens_now_or_nobody(
 def test_minutes_online_count_working_calls_not_only_long_polls(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
 ) -> None:
-    from maity_hub.jourfixe import rounds
 
     working = flow.agent(make_client, owner, role="admin")
     working.resume()  # a call just now, no long-poll open: online (§5.3)
@@ -393,6 +394,31 @@ def test_minutes_online_count_working_calls_not_only_long_polls(
         counted = set(conn.execute(select(t.presence_minute.c.membership_id)).scalars())
     agents = {member_of[a.id] for a in (working, idle)}
     assert counted & agents == {member_of[working.id]}  # humans online count too (§20.2)
+
+
+def test_two_pods_counting_one_minute_both_commit(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    """The second pass read `known` before the first committed, then finds its row (§20.2)."""
+    if migrated.dialect.name != "postgresql":
+        pytest.skip("only PostgreSQL runs replicas")
+    flow.agent(make_client, owner, role="admin").resume()
+    failed: list[BaseException] = []
+
+    def second_pod() -> None:
+        try:
+            with migrated.begin() as conn:
+                rounds.record_presence(conn, now[0])
+        except Exception as error:
+            failed.append(error)
+
+    with migrated.begin() as conn:
+        rounds.record_presence(conn, now[0])
+        thread = threading.Thread(target=second_pod)
+        thread.start()
+        time.sleep(0.5)  # its insert now waits for this transaction
+    thread.join(timeout=30)
+    assert not thread.is_alive() and failed == []
 
 
 def test_the_schedule_opens_skips_and_records_a_missed_slot(

@@ -22,7 +22,7 @@ from fastapi import Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import Connection, Engine, delete, insert, select
 
-from maity_hub import clock
+from maity_hub import clock, worker_runs
 from maity_hub import tables as t
 from maity_hub.auth import caller as auth_caller
 from maity_hub.config import Settings
@@ -223,13 +223,15 @@ def touch(conn: Connection, kind: str, target_id: str, *, removal: bool = True) 
             refresh(conn, hub, other, other_id)
 
 
-def render_all(engine: Engine, hub: Settings) -> None:
+def render_all(engine: Engine, hub: Settings, stop: worker_runs.Stopping | None = None) -> None:
     """Every page of every kind from the inputs as they are now: the targets that exist are
     rendered again, the pages of targets that no longer exist are deleted."""
     for kind in KINDS.values():
         with engine.begin() as conn:
             ids = kind.targets(conn)
         for target_id in ids:
+            if stop is not None and stop.is_set():
+                return
             with engine.begin() as conn:
                 refresh(conn, hub, kind.name, target_id)
         with engine.begin() as conn:
@@ -278,6 +280,10 @@ class Worker:
     def _run(self) -> None:
         while not self._stop.wait(self.interval):
             try:
-                render_all(self.engine, self.hub)
+                with worker_runs.claim(
+                    self.engine, "public-pages", self.interval, self._stop
+                ) as held:
+                    if held is not None:
+                        render_all(self.engine, self.hub, held)
             except Exception:
                 log.exception("rendering the public pages again failed")

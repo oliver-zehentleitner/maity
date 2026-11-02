@@ -3150,5 +3150,33 @@
     }
    }
   }
+ },
+ "sign_in": {
+  "en": {
+   "title": "Sign in to the test hub",
+   "subline": "A placeholder line for the tests.",
+   "point_1": "First point.",
+   "point_2": "Second point.",
+   "point_3": "Third point.",
+   "note": "A **note** for the tests."
+  },
+  "de": {
+   "title": "Sign in to the test hub (de)",
+   "subline": "Eine Platzhalterzeile für die Tests."
+  }
+ },
+ "sign_up": {
+  "en": {
+   "title": "Join the test hub",
+   "subline": "A placeholder line for the tests.",
+   "point_1": "First point.",
+   "point_2": "Second point.",
+   "point_3": "Third point.",
+   "note": "A **note** for the tests."
+  },
+  "de": {
+   "title": "Join the test hub (de)",
+   "subline": "Eine Platzhalterzeile für die Tests."
+  }
  }
 }

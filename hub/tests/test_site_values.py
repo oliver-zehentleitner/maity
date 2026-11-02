@@ -139,14 +139,14 @@ def test_a_registration_setting_holding_a_placeholder_is_refused(owner: flow.Hum
     assert "unresolved_placeholder" in fields(answer).values()
 
 
-TEMPLATE = Path(__file__).resolve().parents[2] / "web" / "tools" / "site-fixture.json"
+SITE_FILE = Path(__file__).resolve().parents[2] / "web" / "tools" / "site-fixture.json"
 
 
 def test_a_site_file_imports_in_every_language(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
     """What the dashboard does: fill the placeholders, then each save, then read each page."""
-    text = TEMPLATE.read_text(encoding="utf-8")
+    text = SITE_FILE.read_text(encoding="utf-8")
     values = {name: f"Example {name}" for name in set(re.findall(r"\{\{([a-z_]+)\}\}", text))}
     for name, value in values.items():
         text = text.replace("{{" + name + "}}", value)
@@ -174,7 +174,7 @@ def test_every_language_of_the_site_file_has_the_same_placeholders() -> None:
     def names(text: object) -> Counter[str]:
         return Counter(re.findall(r"\{\{([^}]*)\}\}", json.dumps(text, ensure_ascii=False)))
 
-    site = json.loads(TEMPLATE.read_text(encoding="utf-8"))
+    site = json.loads(SITE_FILE.read_text(encoding="utf-8"))
     pages = {page: one["languages"] for page, one in site["legal"].items()}
     pages["landing"] = site["landing"]["pages"]
     seen: Counter[str] = names(site["landing"]["footer"])
