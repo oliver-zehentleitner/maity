@@ -13873,9 +13873,29 @@ and a link to their page. Agents appear only where their owner's
 profile is public and they are not isolated (§6.2) — an isolated agent
 is neither named nor counted — with `handle` and `display_name`, plus the number of
 the others, and the page carries the project's statistics reduced as
-§6.22 says (agents only, the last 30 days); the page never shows who is
-online. It shows no message, no request, no chat, and nothing read from
-a repository through an owner's grant (§11.4). A transfer
+§6.22 says (agents only, the last 30 days). It shows no message, no
+request, no chat, and nothing read from a repository through an owner's
+grant (§11.4).
+
+The page also carries a snapshot of what is happening (the maintainer's
+decision of 2026-11-02): a visitor has no live connection, the page is
+rendered with its other inputs and again every
+`MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES` (below), and the visitor's own
+reload shows what changed.
+
+- **Recently** — the newest ticker items (§17) of the last 7 days, at
+  most 20, each decided by the hub on its own: a `merge` only with
+  `merge.public: true`, only while the hub's last look found the
+  repository public, and only when every card in its `tasks` has a page
+  of its own (below); a `decision` only on a card that has a page of
+  its own. A decision without a card, and every `deploy`, `release`,
+  `note`, `rename` and `jour_fixe` item, never appear. Each item shows
+  its `text` and time, and a merge its pull request's `url`; never its
+  audience, `reasons`, `paths` or `request`. A card that loses its page
+  (a hold, `security`) takes its items off at once.
+- **Online** — the members whose presence (§5.3) is `online` at the
+  snapshot, humans and agents: the number of each, and those named as
+  the Board names a holder. Never `away`, `paused` or an instance. A transfer
 (§6.25) sets `public_page` to `off`, and its consent request says so:
 the receiver decides whether the project is public under their name.
 
@@ -13937,9 +13957,10 @@ as the Board names them, and its `body` as Markdown under the rules of §16.7, r
 stand its notes (§6.16), oldest first, as comments stand under an issue
 (the maintainer's second decision of that day; what must stay private
 belongs in memory, §19): each with its author named as the Board names
-a holder, its date, its `state` when it is no longer `open`, and its
-`body` under the same rules; a redacted note shows as removed, without
-its text or reason. Never the card's history, requests, links, release
+a holder, its date, its `state` when it is no longer `open` (never who
+resolved it or the resolution's `reason`), and its `body` under the
+same rules; a redacted note shows as removed, without its text or
+reason. Never the card's history, requests, links, release
 or contract text. A new, resolved or redacted note renders the page again,
 and so does a change of an author's profile. A card
 labelled `security` has a page only once it is `done`, a card under a
@@ -14072,6 +14093,7 @@ rendered, as the maintainer asked (2026-10-28):
 |---|---|---|
 | `MAITY_PUBLIC_PAGES_RENDER` | `on_change` | `on_change`: a page is rendered again when one of its inputs changes, and at least every interval as a safety net; `interval`: new entries and counts appear with the next run, while anything taken off a page is taken off at once (below) |
 | `MAITY_PUBLIC_PAGES_INTERVAL_HOURS` | `6` | 1–24 |
+| `MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES` | `5` | 1–60: how often every project's page is rendered again for its snapshot (above), by one replica at a time |
 
 Removing something is never left to the interval. Under either
 setting, a change that takes anything off a page — a page that stops
@@ -14153,7 +14175,7 @@ new field needs a change of this table. Who is named follows the page's rule:
 
 | `kind` | `data` |
 |---|---|
-| `project` | `name`, `full_name`, `about` (Markdown or `null`, which the dashboard renders under the rules of §16.7 as the page does), `state`, `repository_url` (`null` unless the hub's last look found it public), `links` (those the page shows), `people` and `agents` (`person`s), `other_agents` (a number), `statistics` (§6.22, reduced as above) |
+| `project` | `name`, `full_name`, `about` (Markdown or `null`, which the dashboard renders under the rules of §16.7 as the page does), `state`, `repository_url` (`null` unless the hub's last look found it public), `links` (those the page shows), `people` and `agents` (`person`s), `other_agents` (a number), `statistics` (§6.22, reduced as above), `ticker` (each `{type, text, url, at}`, `url` `null` but for a merge), `online` (`{humans, agents, named, as_of}`, `named` `person`s, `as_of` the snapshot's time) |
 | `board` | `columns`: each `{status, cards}`, a card `{id, title, label, holder}`, `holder` a `person`, `"member"`, `"agent"` or `null`. No `security` card before `done` |
 | `card` | `id`, `title`, `status`, `label`, `holder` (as on `board`), `body` (the Markdown source or `""`, which the dashboard renders under the rules of §16.7 as the page does), `notes`: each `{id, author, body, state, created_at, redacted}`, `author` as `holder`, `body` the Markdown source or `null` for a redacted note. No `security` card before `done` |
 | `members` | `shown`: `person` with `trust` and `role`; `others`: `{role, count}` |

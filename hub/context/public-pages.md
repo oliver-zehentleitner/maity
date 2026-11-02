@@ -613,7 +613,9 @@ leaves the Board.
 
 The card's page lists its notes oldest first, each with its author named as the Board names a holder, its date, its
 state once resolved, and its body as Markdown without raw HTML. A redacted note keeps its place and shows as removed;
-neither its text nor the redaction's reason is published, since a reason may repeat what was removed. A note's own
+neither its text nor the redaction's reason is published, since a reason may repeat what was removed. A resolved
+note shows its state but not its `resolution` (who, when, why): the reason is written to the note's author and
+the card's people, as a redaction's is, and the state alone says what became of the note. A note's own
 events (`note_added`, `note_resolved`) and its redaction call `touch` for the card, and an author's profile change
 reaches the page through the person's dependents, as a holder's does. Notes have no moderation target of their own:
 they follow the card's hold and the `security` rule with it.
@@ -622,3 +624,31 @@ they follow the card's hold and the `security` rule with it.
 - Only open notes: an incorporated or dismissed note is part of the discussion an issue keeps, and the page would
   change meaning when a note is resolved.
 - Showing a redacted note's reason: it is written for the members and may name what was removed.
+
+## A public project shows a snapshot of its ticker and who is online, rendered on a timer, never live
+
+**Id:** 65c0167c-f61c-419a-9506-8d9453edd482
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-02 on tsk-hsq3ns8ryd7d (visitors see what is happening as a snapshot, no live connection; humans shown online too); the plan the lead approved on that card
+**See:** public-pages.md#a-card-has-its-own-page-at-its-dashboard-address-with-its-text — e3bcdf82-e7f1-447d-becd-43171c8cd513 — as of 2026-11-02
+**Revisit when:** the load test of the live ticker for visitors has run
+
+The project's page carries the newest ticker items a visitor may read and who is online, decided in the hub per
+item by the card page's rule: a merge only from a repository last seen public and only when every linked card has a
+page; a decision only on such a card; deploys, releases, notes, renames and jour fixe reports never, since their
+text names what the card rule does not cover. `public_snapshot.Worker` renders every public project page again every
+`MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES` under one `worker_runs` claim; presence is read at that moment. A card change
+that may take a ticker item off renders the project page at once, so a removal never waits for the timer.
+
+The load grows with the page cache, not with connections: a visitor reads a stored row behind the public cache and
+reloads to see more, and the hub's cost is one render per project per interval, whatever the number of visitors.
+`data.online.as_of` changes with every render and is stored with it, while the HTML, its ETag and the sitemap's date
+change only with what the page shows.
+
+**Rejected:**
+- A live connection for visitors (a stream or polling the ticker): its load grows with every open tab, and it waits
+  for a load test.
+- Rendering on every ticker item and presence change: presence changes all the time, and every agent's heartbeat
+  would render a page.
