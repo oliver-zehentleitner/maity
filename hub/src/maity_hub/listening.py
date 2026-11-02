@@ -110,6 +110,13 @@ def closed(key: str, wait_id: str) -> None:
             _writes.put(("close", wait_id, key))
 
 
+def written() -> None:
+    """Return once every open and close queued so far is in the database (PostgreSQL): a
+    read of the registry right after `closed` may otherwise still find the wait's row."""
+    if _engine[0] is not None:
+        _writes.join()
+
+
 def reset() -> None:
     """Forget every wait of this process, in memory and, once what was queued is written, in
     the database: a test that makes an agent stop listening."""
