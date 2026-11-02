@@ -215,7 +215,6 @@ window.Maity = window.Maity || {};
 
   // The released mark (docs/api.md §6.1): set once with the first release
   // tag, never cleared; shown beside the state wherever the state is.
-  const releasedRules = () => M.t("project.released.rules");
   function releasedDay(project) {
     const d = new Date(project.released_at);
     return Number.isNaN(d.getTime()) ? project.released_at
@@ -285,7 +284,7 @@ window.Maity = window.Maity || {};
 
   function releasedMark(project) {
     if (!project || !project.released_at) return null;
-    return h("span", { class: "state released", title: M.t("project.released.since", { day: releasedDay(project), rules: releasedRules() }) }, M.t("project.released"));
+    return h("span", { class: "state released", title: M.t("project.released.since", { day: releasedDay(project) }) }, M.t("project.released"));
   }
 
   // ---- sign-in ------------------------------------------------------------
@@ -586,6 +585,20 @@ window.Maity = window.Maity || {};
     status.el);
   }
 
+  // One sentence per role the hub defines (web/context/rendering.md); a later one reads neutrally.
+  const ONBOARDING_ROLES = {
+    "coder": () => M.t("settings.onboarding.role.coder"),
+    "reviewer": () => M.t("settings.onboarding.role.reviewer"),
+    "tester": () => M.t("settings.onboarding.role.tester"),
+    "designer": () => M.t("settings.onboarding.role.designer"),
+    "writer": () => M.t("settings.onboarding.role.writer"),
+    "ops": () => M.t("settings.onboarding.role.ops"),
+    "proxy": () => M.t("settings.onboarding.role.proxy"),
+    "manager": () => M.t("settings.onboarding.role.manager"),
+    "red-team": () => M.t("settings.onboarding.role.red_team"),
+    "blue-team": () => M.t("settings.onboarding.role.blue_team"),
+    "purple-team": () => M.t("settings.onboarding.role.purple_team"),
+  };
   function onboardingForm(ctx) {
     const current = ctx.project.settings.onboarding || { check_in_with: "coordinator" };
     const status = statusLine();
@@ -593,7 +606,7 @@ window.Maity = window.Maity || {};
     const choices = [{ value: "", label: M.t("settings.onboarding.no_check_in") }, { value: "coordinator", label: M.t("settings.onboarding.coordinator") }]
       // §6.1: trust:owner, trust:admin or a role; never a guest (§2.3).
       .concat([{ value: "trust:owner", label: M.t("settings.onboarding.trust_owner") }, { value: "trust:admin", label: M.t("settings.onboarding.trust_admin") }])
-      .concat(M.trust.ROLES.map((role) => ({ value: "role:" + role, label: M.t("settings.onboarding.role", { role: M.trust.roleLabel(role).toLowerCase() }) })))
+      .concat(M.trust.ROLES.map((role) => ({ value: "role:" + role, label: Object.hasOwn(ONBOARDING_ROLES, role) ? ONBOARDING_ROLES[role]() : M.t("settings.onboarding.role", { role: M.trust.roleLabel(role) }) })))
       .concat(ctx.members.filter((m) => !m.removed_at && !M.trust.guest(m)).map((m) => ({ value: m.id, label: m.kind === "human" ? M.t("settings.onboarding.member_human", { handle: M.dom.handleOf(ctx, m) }) : M.t("settings.onboarding.member_agent", { handle: M.dom.handleOf(ctx, m) }) })));
     if (current.check_in_with && !choices.some((c) => c.value === current.check_in_with)) {
       choices.push({ value: current.check_in_with, label: M.t("settings.onboarding.unavailable", { id: current.check_in_with }) });
@@ -636,17 +649,18 @@ window.Maity = window.Maity || {};
     const status = statusLine();
     // atFields: a form's own handler of the hub's field refusals; when it says
     // them at its fields, the status line only says that nothing was saved.
-    const save = async (body, label, atFields) => {
+    // words: the whole sentences of this save, { saved, notSaved }.
+    const save = async (body, words, atFields) => {
       status.busy(M.t("settings.saving"));
       try {
         await M.api.patch(ctx.base, body);
-        settingsSaved = M.t("settings.label_saved", { label });
+        settingsSaved = words.saved;
         render();
       } catch (err) {
         // true: said at the fields; a text: what the status line says besides them.
         const atField = atFields && atFields(err);
-        if (atField) { status.fail(M.t("settings.label_not_saved", { label }), { message: atField === true ? M.t("settings.see_fields") : atField }); return; }
-        status.fail(M.t("settings.label_not_saved", { label }), err);
+        if (atField) { status.fail(words.notSaved, { message: atField === true ? M.t("settings.see_fields") : atField }); return; }
+        status.fail(words.notSaved, err);
       }
     };
 
@@ -657,9 +671,9 @@ window.Maity = window.Maity || {};
       const picker = M.languagePicker("project-language", language);
       const select = picker.select;
       append(panel, h("form", { class: "inline-form project-language", onsubmit: (e) => {
-        e.preventDefault(); save({ settings: { language: select.value } }, M.t("settings.language.saved_label"));
+        e.preventDefault(); save({ settings: { language: select.value } }, { saved: M.t("settings.language.saved"), notSaved: M.t("settings.language.not_saved") });
       } }, h("h2", { class: "panel-title" }, M.t("settings.language.title")),
-      h("label", { for: "project-language" }, M.t("settings.language.saved_label")), picker.search, select,
+      h("label", { for: "project-language" }, M.t("settings.language.label")), picker.search, select,
       h("button", { type: "submit" }, M.t("settings.language.save"))));
     } else {
       const shown = h("p", { class: "project-language" });
@@ -682,12 +696,12 @@ window.Maity = window.Maity || {};
         onsubmit: (e) => {
           e.preventDefault();
           if (!reason.value.trim()) { reason.focus(); return; }
-          save({ state: state.value, state_note: note.value.trim() || null, reason: reason.value.trim() }, M.t("settings.state.label"));
+          save({ state: state.value, state_note: note.value.trim() || null, reason: reason.value.trim() }, { saved: M.t("settings.state.saved"), notSaved: M.t("settings.state.not_saved") });
         },
       },
       h("h2", { class: "panel-title" }, M.t("settings.state.title")),
       ctx.project.released_at
-        ? h("p", { class: "released-note" }, M.t("settings.state.released", { day: releasedDay(ctx.project), rules: releasedRules() }))
+        ? h("p", { class: "released-note" }, M.t("settings.state.released", { day: releasedDay(ctx.project) }))
         : null,
       h("label", { for: "state-select" }, M.t("settings.state.label")), state,
       h("label", { for: "state-note" }, M.t("settings.state.note")), note,
@@ -730,14 +744,14 @@ window.Maity = window.Maity || {};
           const when = new Date(until.value);
           if (!until.value || Number.isNaN(when.getTime())) { until.focus(); return; }
           if (!scope.value.trim()) { scope.focus(); return; }
-          save({ absence: { until: when.toISOString().replace(/\.\d{3}Z$/, "Z"), scope: scope.value.trim() } }, M.t("settings.absence.saved_label"));
+          save({ absence: { until: when.toISOString().replace(/\.\d{3}Z$/, "Z"), scope: scope.value.trim() } }, { saved: M.t("settings.absence.saved"), notSaved: M.t("settings.absence.not_saved") });
         },
       },
       h("h2", { class: "panel-title" }, M.t("settings.absence.title")),
       h("label", { for: "absence-until" }, M.t("settings.absence.until")), until,
       h("label", { for: "absence-scope" }, M.t("settings.absence.scope")), scope,
       h("div", { class: "actions" },
-        a ? h("button", { type: "button", onclick: () => save({ absence: null }, M.t("settings.absence.saved_label")) }, M.t("settings.absence.back")) : null,
+        a ? h("button", { type: "button", onclick: () => save({ absence: null }, { saved: M.t("settings.absence.saved"), notSaved: M.t("settings.absence.not_saved") }) }, M.t("settings.absence.back")) : null,
         h("button", { type: "submit" }, a ? M.t("settings.absence.update") : M.t("settings.absence.set")))));
     }
     append(panel, status.el);
@@ -891,7 +905,7 @@ window.Maity = window.Maity || {};
         if (select.value === current) return;
         if (!reason.value.trim()) { reason.focus(); return; }
         if (select.value === "required" && needsConfirm && !confirmBox.checked) { confirmBox.focus(); return; }
-        save({ policy: { signing: select.value }, reason: reason.value.trim() }, M.t("settings.signing.label"));
+        save({ policy: { signing: select.value }, reason: reason.value.trim() }, { saved: M.t("settings.signing.saved"), notSaved: M.t("settings.signing.not_saved") });
       },
     },
     h("h2", { class: "panel-title" }, M.t("settings.signing.title")),
@@ -939,7 +953,7 @@ window.Maity = window.Maity || {};
         e.preventDefault();
         if (select.value === provider) return;
         if (!reason.value.trim()) { reason.focus(); return; }
-        save({ memory: { provider: select.value }, reason: reason.value.trim() }, M.t("memory.saved_label"));
+        save({ memory: { provider: select.value }, reason: reason.value.trim() }, { saved: M.t("memory.saved"), notSaved: M.t("memory.not_saved") });
       },
     },
     h("h2", { class: "panel-title", id: "memory-heading" }, M.t("memory.title")), shown,
@@ -974,7 +988,7 @@ window.Maity = window.Maity || {};
         e.preventDefault();
         if (off || select.value === current) return;
         if (!reason.value.trim()) { reason.focus(); return; }
-        save({ policy: { keep_the_why: select.value }, reason: reason.value.trim() }, M.t("settings.ktw.title"));
+        save({ policy: { keep_the_why: select.value }, reason: reason.value.trim() }, { saved: M.t("settings.ktw.saved"), notSaved: M.t("settings.ktw.not_saved") });
       },
     },
     h("h2", { class: "panel-title" }, M.t("settings.ktw.title")),
@@ -1034,7 +1048,7 @@ window.Maity = window.Maity || {};
         if (roles.length !== current.length || roles.some((r) => !current.includes(r))) policy.outside_roles = roles;
         if (!Object.keys(policy).length) return;
         if (!reason.value.trim()) { reason.focus(); return; }
-        save({ policy, reason: reason.value.trim() }, M.t("settings.agent_owners.title"), (err) => {
+        save({ policy, reason: reason.value.trim() }, { saved: M.t("settings.agent_owners.saved"), notSaved: M.t("settings.agent_owners.not_saved") }, (err) => {
           if (((err.details || {}).fields || {}).outside_roles !== "outside_owner") return false;
           error.textContent = M.t("settings.agent_owners.role_in_use");
           return true;
@@ -1069,7 +1083,7 @@ window.Maity = window.Maity || {};
         e.preventDefault();
         if (select.value === current) return;
         if (!reason.value.trim()) { reason.focus(); return; }
-        save({ policy: { done_authority: select.value }, reason: reason.value.trim() }, M.t("settings.done_authority.title"));
+        save({ policy: { done_authority: select.value }, reason: reason.value.trim() }, { saved: M.t("settings.done_authority.saved"), notSaved: M.t("settings.done_authority.not_saved") });
       },
     },
     h("h2", { class: "panel-title" }, M.t("settings.done_authority.title")),
@@ -1102,7 +1116,7 @@ window.Maity = window.Maity || {};
         if (n !== (pol.member_agents_max === undefined ? 3 : pol.member_agents_max)) policy.member_agents_max = n;
         if (!Object.keys(policy).length) return;
         if (!reason.value.trim()) { reason.focus(); return; }
-        save({ policy, reason: reason.value.trim() }, M.t("settings.member_agents.title"));
+        save({ policy, reason: reason.value.trim() }, { saved: M.t("settings.member_agents.saved"), notSaved: M.t("settings.member_agents.not_saved") });
       },
     },
     h("h2", { class: "panel-title" }, M.t("settings.member_agents.title")),
@@ -1129,7 +1143,7 @@ window.Maity = window.Maity || {};
         e.preventDefault();
         if (select.value === current) return;
         if (!reason.value.trim()) { reason.focus(); return; }
-        save({ policy: { keep_the_why_defaults: select.value }, reason: reason.value.trim() }, M.t("settings.ktw_defaults.title"));
+        save({ policy: { keep_the_why_defaults: select.value }, reason: reason.value.trim() }, { saved: M.t("settings.ktw_defaults.saved"), notSaved: M.t("settings.ktw_defaults.not_saved") });
       },
     },
     h("h2", { class: "panel-title" }, M.t("settings.ktw_defaults.title")),
@@ -1165,7 +1179,7 @@ window.Maity = window.Maity || {};
         e.preventDefault();
         if (select.value === current) return;
         // The badge alone needs no reason (docs/api.md §6.20).
-        save({ policy: { badge: select.value } }, M.t("settings.badge.label"));
+        save({ policy: { badge: select.value } }, { saved: M.t("settings.badge.saved"), notSaved: M.t("settings.badge.not_saved") });
       },
     },
     h("h2", { class: "panel-title" }, M.t("settings.badge.title")),
