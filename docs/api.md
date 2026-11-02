@@ -14316,9 +14316,10 @@ stand its notes (§6.16), oldest first, as comments stand under an issue
 belongs in memory, §19): each with its author named as the Board names
 a holder, its date, its `state` when it is no longer `open` (never who
 resolved it or the resolution's `reason`), and its `body` under the
-same rules; a redacted note shows as removed, without its text or
-reason. Never the card's history, requests, links, release
-or contract text. A new, resolved or redacted note renders the page again,
+same rules; an edited note its edit mark, "edited by" its editor named
+the same way, the date and the reason (never the old text); a redacted
+note shows as removed, without its text or reason. Never the card's history, requests, links, release
+or contract text. A new, resolved, edited or redacted note renders the page again,
 and so does a change of an author's profile. A card
 labelled `security` has a page only once it is `done`, a card under a
 moderation hold (§16.8 `hide` or `remove`) has none and gets it back
@@ -14551,7 +14552,7 @@ new field needs a change of this table. Who is named follows the page's rule:
 |---|---|
 | `project` | `name`, `full_name`, `about` (Markdown or `null`, which the dashboard renders under the rules of §16.7 as the page does), `state`, `repository_url` (`null` unless the hub's last look found it public), `links` (those the page shows), `people` and `agents` (`person`s), `other_agents` (a number), `statistics` (§6.22, reduced as above), `ticker` (each `{type, text, url, at}`, `url` `null` but for a merge), `online` (`{humans, agents, named, as_of}`, `named` `person`s, `as_of` the snapshot's time) |
 | `board` | `columns`: each `{status, cards}`, a card `{id, title, label, holder}`, `holder` a `person`, `"member"`, `"agent"` or `null`. No `security` card before `done` |
-| `card` | `id`, `title`, `status`, `label`, `holder` (as on `board`), `body` (the Markdown source or `""`, which the dashboard renders under the rules of §16.7 as the page does), `notes`: each `{id, author, body, state, created_at, redacted}`, `author` as `holder`, `body` the Markdown source or `null` for a redacted note. No `security` card before `done` |
+| `card` | `id`, `title`, `status`, `label`, `holder` (as on `board`), `body` (the Markdown source or `""`, which the dashboard renders under the rules of §16.7 as the page does), `notes`: each `{id, author, body, state, created_at, redacted, edited}`, `author` as `holder`, `body` the Markdown source or `null` for a redacted note, `edited` `{by, at, reason}` with `by` as `holder`, or `null`. No `security` card before `done` |
 | `members` | `shown`: `person` with `trust` and `role`; `others`: `{role, count}` |
 | `organisation` | `nodes`: `{index, person, role, reports_to}`, `index` a number of this answer and `reports_to` another node's, never a member id |
 | `why` | `readable`; while it is `true`: `observed_at` (when the hub read the export), `summary`, `family` and `attention` as the page shows them |

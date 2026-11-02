@@ -77,7 +77,7 @@ def test_the_notes_are_on_the_page_with_their_authors_named_as_the_holder(world:
     assert "Human anna (anna)" not in text and "a member" in text
     notes = data(world, card_id).json()["data"]["notes"]
     assert [n["body"] for n in notes] == ["A *finding* <script>x</script>", "anna-note-words"]
-    assert set(notes[0]) == {"id", "author", "body", "state", "created_at", "redacted"}
+    assert set(notes[0]) == {"id", "author", "body", "state", "created_at", "redacted", "edited"}
     assert notes[1]["author"] == "member" and notes[1]["state"] == "open"
     resolved = world.owner.post(
         f"{TASKS}/{card_id}/notes/{second.json()['id']}/resolve", {"state": "dismissed"}
@@ -113,6 +113,25 @@ def test_a_redacted_note_shows_as_removed_without_its_text_or_reason(world: Worl
     assert "canary-secret-words" not in got.text and "canary-reason-words" not in got.text
     assert got.json()["data"]["notes"][0]["redacted"] is True
     assert got.json()["data"]["notes"][0]["body"] is None
+
+
+def test_an_edited_note_shows_its_mark_and_reason_never_the_old_text(world: World) -> None:
+    card_id = world.owner.post(TASKS, {"title": "Edited"}).json()["id"]
+    note = world.anna.post(f"{TASKS}/{card_id}/notes", {"body": "canary-old-words"}).json()
+    assert "canary-old-words" in (page(world, card_id) or "")
+    edited = world.owner.patch(
+        f"{TASKS}/{card_id}/notes/{note['id']}",
+        {"body": "canary-new-words", "reason": "canary-reason-words"},
+    )
+    assert edited.status_code == 200, edited.text
+    text = page(world, card_id) or ""
+    assert "canary-old-words" not in text and "canary-new-words" in text
+    assert "edited by" in text and "canary-reason-words" in text
+    got = data(world, card_id)
+    assert "canary-old-words" not in got.text
+    shown = got.json()["data"]["notes"][0]
+    assert shown["body"] == "canary-new-words" and shown["author"] == "member"
+    assert shown["edited"]["reason"] == "canary-reason-words" and shown["edited"]["at"]
 
 
 def test_a_security_card_has_a_page_only_once_it_is_done(world: World) -> None:
