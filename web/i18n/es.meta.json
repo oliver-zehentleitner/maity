@@ -197,7 +197,7 @@
   },
   "admin_sign_in.policy.email.note": {
     "en": "f31ecce1112a0a8d",
-    "text": "f26e84ab70088186"
+    "text": "31c701cea0fcd857"
   },
   "admin_sign_in.policy.label": {
     "en": "ca4ae1ba2d424523",
@@ -1497,7 +1497,7 @@
   },
   "board.pr.state.closed": {
     "en": "02e31f51aa8b1b6a",
-    "text": "90646c26e3b69d79"
+    "text": "c2ec228ca0fb3ca8"
   },
   "board.pr.state.merged": {
     "en": "b3ec183cdfd85052",
@@ -1505,7 +1505,7 @@
   },
   "board.pr.state.open": {
     "en": "35ff74aeea25311f",
-    "text": "9e41c97685b16888"
+    "text": "48c59f6e9e299b9d"
   },
   "board.pr.unverified": {
     "en": "e9f69bb9e95e952a",
@@ -1633,7 +1633,7 @@
   },
   "board.release.typed.closed": {
     "en": "02e31f51aa8b1b6a",
-    "text": "90646c26e3b69d79"
+    "text": "c2ec228ca0fb3ca8"
   },
   "board.release.typed.merged": {
     "en": "b3ec183cdfd85052",
@@ -1649,7 +1649,7 @@
   },
   "board.release.typed.open": {
     "en": "35ff74aeea25311f",
-    "text": "9e41c97685b16888"
+    "text": "48c59f6e9e299b9d"
   },
   "board.release.typed.state": {
     "en": "4e9d32f13c37efcc",
@@ -2953,7 +2953,7 @@
   },
   "data.delete.asking": {
     "en": "8a7441d71753b3f2",
-    "text": "0092ede4b13d746a"
+    "text": "65b16f322b3fdac2"
   },
   "data.delete.button": {
     "en": "262a94420e99cae1",
@@ -4549,11 +4549,11 @@
   },
   "inbox.answered_by_for": {
     "en": "6bf73e4005968ec1",
-    "text": "13ad0e7a34a13be3"
+    "text": "7fc031a9a30e9fb7"
   },
   "inbox.asker_for": {
     "en": "d0e7e7751a94b7ac",
-    "text": "7d17f6a14107ae19"
+    "text": "e11ba504cea8726e"
   },
   "inbox.card": {
     "en": "7ef9a2c7bf324381",
@@ -5045,7 +5045,7 @@
   },
   "invite.joining": {
     "en": "2df28518313a086a",
-    "text": "0f28c1501b9753f7"
+    "text": "6546a42280352727"
   },
   "invite.lead": {
     "en": "bb9b8322ed491501",
@@ -12385,7 +12385,7 @@
   },
   "reg.missing.mail": {
     "en": "98330884823cf097",
-    "text": "c384ad0568f1ab47"
+    "text": "7cf22bbb3c45b03f"
   },
   "reg.missing.other": {
     "en": "e001cca2656388ee",
@@ -12517,7 +12517,7 @@
   },
   "reg.refused.mail_required": {
     "en": "c509e6769ab11b4a",
-    "text": "32a2bcaa3de40b27"
+    "text": "070d167361e79d49"
   },
   "reg.refused.set_by_environment": {
     "en": "cbfb3be5c284a256",

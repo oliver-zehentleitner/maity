@@ -947,9 +947,9 @@ names the two together, and legal pages and older frames already use `version` f
 `ein Release`; why the neuter won over `der Release` is not recorded.
 Words outside the table follow the same aim. In Spanish, redacting is `suprimir`, deleting is `eliminar` and the button
 Remove is `Quitar`: three acts with three words, so a deletion text cannot be read as hiding or as removing from a list.
-"Reports to" is `informa a` on every key; the anglicism `reporta a` appeared on half of them. A waiting text whose verb
-needs a person, such as `Uniéndote…` for Joining, uses the address form of `glossary.md`, because a Spanish reflexive
-gerund has no neutral form. The duplicate check in `web/tools/check.py` treats a comma list in a cell as forms of one
+"Reports to" is `informa a` on every key; the anglicism `reporta a` appeared on half of them. A waiting text whose verb is
+reflexive takes the noun, `Incorporación en curso…` for Joining, because a Spanish reflexive gerund needs a person.
+A pull request is masculine in Spanish on every key, its states too, since they are put into sentences about it. The duplicate check in `web/tools/check.py` treats a comma list in a cell as forms of one
 word, and `GLOSSARY_FORMS_OF_ONE` names rows that are one thing: `user` and `users`, a person and a human, `join` as
 noun and verb.
 
@@ -960,6 +960,6 @@ noun and verb.
 - `bearbeiten` for resolving a report: a half-changed page showed `Erledigen` next to `Wird bearbeitet …`.
 - `der Release`: in use as well; one gender was the point.
 - `eliminar` for redacting in Spanish: it is already the word for deleting an account or a project.
-- `Uniéndose…`: reads as the formal address, which the glossary does not use.
+- `Uniéndote…` and `Uniéndose…` for Joining: one addresses the reader, the other reads as the formal address; the glossary wants a neutral waiting text.
 - A neutral form for `Besitzer` in the table: it would make the level's name differ between labels and sentences.
 
