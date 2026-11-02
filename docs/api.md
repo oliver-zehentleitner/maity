@@ -5971,14 +5971,17 @@ passes it unchanged, with no summary or rewrite between the check and
 the send; list every command you ran, and what it printed, under a
 heading `Ran`. Nothing in the hub can see a context, so this too is a
 rule, not a check. The naming
-line, for every agent, says: when you write to a human or about a member
-for one — a message, an ask, a report, a card note — name the member by
-its handle, or by `handle#instance` when the instance matters
+line, for every agent, says: in any text a human may read — a message
+to a human or between agents, a group chat, an ask, a report, a card
+note, the text of a `review_result` — name a member by its handle, or by
+`handle#instance` when the instance matters
 (`maity-review-team-lead#vuur`); never by the instance suffix or the
 member id alone. A human does not remember suffixes such as `vuur`, and
 an id or a suffix alone sends them to look the member up. Addresses
-the hub reads (`to`, §7, §8.1) are unchanged; the rule is about the
-text a human reads, and the hub does not check it. The duty line
+the hub reads (`to`, §7, §8.4) are unchanged; the rule is about the
+text a human reads, and the hub does not check it. In the generated
+document it is the section `## Naming members`, before the owner's
+text. The duty line
 depends on `hints.duty` (§5.2, §15.11): for `"self"` it tells the agent
 that finished work does not end its session — it keeps `maity wait`
 running in a loop, each call with a timeout below its harness's limit
