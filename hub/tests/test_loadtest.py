@@ -1,9 +1,9 @@
 """The load test's own parts that run without k6: the signature in `loadtest/sign.js`, its refusal
-of anything but a test system, and the seed (hub/context/replicas.md cac80c88)."""
+of anything not named, and the seed, `maity-hub loadtest seed` (hub/context/replicas.md cac80c88).
+"""
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import secrets
 import shutil
@@ -12,18 +12,20 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from urllib.parse import urlsplit
 
 import pytest
-from sqlalchemy import Engine
+from sqlalchemy import Engine, select
 
+from maity_hub import cli
+from maity_hub import loadtest as seed
+from maity_hub import tables as t
 from maity_hub.auth import credentials
+from maity_hub.auth.passwords import verify_password
+from maity_hub.config import Settings
 from tests.conftest import ClientFactory
 
 LOADTEST = Path(__file__).resolve().parent.parent / "loadtest"
-spec = importlib.util.spec_from_file_location("loadtest_seed", LOADTEST / "seed.py")
-assert spec is not None and spec.loader is not None
-seed: Any = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(seed)
 
 VERIFIER = "ab" * 32
 DRIVER = """
@@ -71,64 +73,51 @@ def test_the_scripts_signature_is_the_one_the_hub_expects(
 
 
 @pytest.mark.parametrize(
-    ("url", "confirmed", "refused"),
+    ("public_url", "test_system", "production", "refused"),
     [
-        ("postgresql://u@db.example/maity", None, True),
-        ("postgresql://u@db.example/maity", "other.example", True),
-        ("postgresql://u@db.example/maity", "db.example", True),
-        ("postgresql://u@db.example:5433/maity", "db.example:5433/maity", False),
-        ("postgresql://u@db.example/maity", "db.example:/maity", False),
-        ("postgresql://u@localhost/m?host=prod.example", "localhost:/m", True),
-        ("postgresql://u@localhost/m?host=prod.example", "prod.example:/m", True),
-        ("postgresql://u@localhost/m?hostaddr=192.0.2.9", "localhost:/m", True),
-        ("postgresql://u@db.example:5432/test?dbname=prod", "db.example:5432/test", True),
-        ("postgresql://u@db.example:5432/test?port=5433", "db.example:5432/test", True),
-        ("postgresql://u@db.maity.team,other.example/m", "other.example:/m", True),
-        ("sqlite://", "", True),
-        ("postgresql:///loadtest", "/loadtest", True),
-        (
-            "postgresql://u@db.example:5432/host%3Dprod.example",
-            "db.example:5432/host%3Dprod.example",
-            True,
-        ),
-        ("postgresql://u@db.example:5432/load#x", "db.example:5432/load", True),
-        ("postgresql://u@db.example/m?sslmode=require", "db.example:/m", True),
-        ("postgresql://u:secret@db.maity.team/m", "db.maity.team:/m", True),
-        ("sqlite:///x.db", None, True),
-        ("sqlite:////tmp/x.db", "//tmp/x.db", False),
+        ("https://test.example", "test.example", None, False),
+        ("https://TEST.example:8443/", "test.example", None, False),
+        ("https://test.example", None, None, True),
+        ("https://test.example", "other.example", None, True),
+        ("https://test.example", None, "test.example", True),  # not a production name
+        ("https://maity.team", None, "maity.team", False),
+        ("https://join.maity.team", None, "join.maity.team", False),
+        ("https://maity.team", "maity.team", None, True),  # production is only confirmed so
+        ("https://join.maity.team", None, "maity.team", True),
+        ("https://", "", "", True),
     ],
 )
-def test_the_seed_touches_only_a_database_named_as_a_test_system(
-    url: str, confirmed: str | None, refused: bool
+def test_the_seed_runs_only_on_a_hub_named_for_it(
+    public_url: str, test_system: str | None, production: str | None, refused: bool
 ) -> None:
-    assert (seed.refusal(url, confirmed) is not None) is refused
-
-
-def test_a_refusal_never_prints_a_password() -> None:
-    why = seed.refusal("postgresql://u:secret@db.example/m?password=secret&host=/run", None)
-    assert why is not None and "secret" not in why
+    assert (seed.refusal(public_url, test_system, production) is not None) is refused
 
 
 @pytest.mark.parametrize(
-    ("target", "confirmed", "refused"),
+    ("target", "confirmed", "production", "refused"),
     [
-        ("https://test.example", "test.example", False),
-        ("https://a.example:8443", "b.example,a.example", False),
-        ("https://TEST.example", "test.example", False),
-        ("https://test.example.", "test.example", True),
-        ("https://test.example", "", True),
-        ("http://:8000", "", True),
-        ("https://test.example:x@maity.team", "test.example", True),
-        ("https://test.example/path", "test.example", True),
-        ("https://MAITY.TEAM", "maity.team", True),
-        ("https://maity.team.", "maity.team", True),
-        ("https://maity.team..", "maity.team.", True),
-        ("https://join.maity.team", "join.maity.team", True),
-        ("HTTPS://staging.maity.team", "staging.maity.team", True),
+        ("https://test.example", "test.example", "", False),
+        ("https://a.example:8443", "b.example,a.example", "", False),
+        ("https://TEST.example", "test.example", "", False),
+        ("https://test.example.", "test.example", "", True),
+        ("https://test.example", "", "", True),
+        ("http://:8000", "", "", True),
+        ("https://test.example:x@maity.team", "test.example", "", True),
+        ("https://test.example/path", "test.example", "", True),
+        ("https://MAITY.TEAM", "maity.team", "", True),
+        ("https://maity.team.", "maity.team", "", True),
+        ("https://maity.team..", "maity.team.", "", True),
+        ("https://join.maity.team", "join.maity.team", "", True),
+        ("HTTPS://staging.maity.team", "staging.maity.team", "", True),
+        ("https://maity.team", "", "maity.team", False),
+        ("https://MAITY.team", "", "maity.team", False),
+        ("https://join.maity.team", "", "maity.team", True),
+        ("https://maity.team.", "", "maity.team", True),
+        ("https://test.example", "", "test.example", True),
     ],
 )
-def test_the_script_reaches_only_a_named_test_system(
-    tmp_path: Path, target: str, confirmed: str, refused: bool
+def test_the_script_reaches_only_a_named_system(
+    tmp_path: Path, target: str, confirmed: str, production: str, refused: bool
 ) -> None:
     node = shutil.which("node")
     if node is None:
@@ -137,10 +126,13 @@ def test_the_script_reaches_only_a_named_test_system(
     module = (LOADTEST / "target.js").as_uri()
     driver.write_text(
         f'import {{ refusal }} from "{module}";\n'
-        "console.log(JSON.stringify(refusal(process.argv[2], process.argv[3])));\n"
+        "console.log(JSON.stringify(refusal(...process.argv.slice(2))));\n"
     )
     made = subprocess.run(
-        [node, str(driver), target, confirmed], capture_output=True, text=True, check=True
+        [node, str(driver), target, confirmed, production],
+        capture_output=True,
+        text=True,
+        check=True,
     )
     assert (json.loads(made.stdout) is not None) is refused
 
@@ -148,27 +140,82 @@ def test_the_script_reaches_only_a_named_test_system(
 def test_the_seed_refuses_before_it_connects(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setenv("MAITY_DATABASE_URL", "postgresql://u@prod.example/maity")
-    monkeypatch.delenv("LOADTEST_CONFIRMED_TEST_SYSTEM", raising=False)
+    monkeypatch.setenv("MAITY_DATABASE_URL", "postgresql://u@unreachable.invalid/maity")
+    monkeypatch.setenv("MAITY_PUBLIC_URL", "https://maity.team")
+    monkeypatch.setenv("LOADTEST_CONFIRMED_TEST_SYSTEM", "maity.team")
+    monkeypatch.delenv("LOADTEST_CONFIRMED_PRODUCTION", raising=False)
     out = tmp_path / "accounts.json"
-    assert seed.main(["--humans", "1", "--out", str(out)]) == 2
+    assert cli.main(["loadtest", "seed", "--humans", "1", "--out", str(out)]) == 2
+    assert not out.exists()
+
+
+def test_the_seed_refuses_a_public_url_it_derived(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, migrated: Engine
+) -> None:
+    """Without MAITY_PUBLIC_URL the hub derives one from its bind address; that is no name."""
+    monkeypatch.setenv("MAITY_DATABASE_URL", migrated.url.render_as_string(hide_password=False))
+    monkeypatch.delenv("MAITY_PUBLIC_URL", raising=False)
+    monkeypatch.delenv("MAITY_BIND", raising=False)
+    derived = urlsplit(Settings.from_env().public_url).hostname
+    monkeypatch.setenv("LOADTEST_CONFIRMED_TEST_SYSTEM", str(derived))
+    out = tmp_path / "accounts.json"
+    assert cli.main(["loadtest", "seed", "--humans", "1", "--out", str(out)]) == 2
     assert not out.exists()
 
 
 def test_the_seeds_secrets_go_to_a_new_file_only_its_owner_reads(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, migrated: Engine
 ) -> None:
-    database = tmp_path / "x.db"
-    monkeypatch.setenv("MAITY_DATABASE_URL", f"sqlite:///{database}")
-    monkeypatch.setenv("LOADTEST_CONFIRMED_TEST_SYSTEM", seed.identity_of(f"sqlite:///{database}"))
+    monkeypatch.setenv("MAITY_DATABASE_URL", migrated.url.render_as_string(hide_password=False))
+    monkeypatch.setenv("MAITY_PUBLIC_URL", "https://test.example")
+    monkeypatch.setenv("LOADTEST_CONFIRMED_TEST_SYSTEM", "test.example")
     there = tmp_path / "there.json"
     there.write_text("kept")
-    assert seed.main(["--humans", "0", "--out", str(there)]) == 2
+    assert cli.main(["loadtest", "seed", "--humans", "1", "--out", str(there)]) == 2
     assert there.read_text() == "kept"
     new = tmp_path / "new.json"
-    monkeypatch.setattr(seed, "first_free", lambda engine: 0)
-    assert seed.main(["--humans", "0", "--out", str(new)]) == 0
+    assert cli.main(["loadtest", "seed", "--humans", "2", "--out", str(new)]) == 0
     assert new.stat().st_mode & 0o777 == 0o600
+    assert [h["handle"] for h in json.loads(new.read_text())] == ["lt-0", "lt-1"]
+    again = tmp_path / "again.json"
+    assert cli.main(["loadtest", "seed", "--humans", "1", "--out", str(again)]) == 0
+    assert [h["handle"] for h in json.loads(again.read_text())] == ["lt-2"]
+
+
+def test_a_seeded_human_has_no_mail_address_and_no_password(migrated: Engine) -> None:
+    """Nothing the run does can send a mail, and nobody signs in as a seeded human."""
+    one = seed.seed_one(migrated, 0)
+    with migrated.connect() as conn:
+        human = conn.execute(select(t.human).where(t.human.c.handle == one["handle"])).one()
+        address = conn.execute(
+            select(t.notification_settings.c.address).where(
+                t.notification_settings.c.human_id == human.id
+            )
+        ).scalar()
+    assert address is None
+    assert not verify_password("loadtest", human.password_hash)
+
+
+def signed_call(
+    client: Any, who: Any, method: str, route: str, query: str = "", **body: Any
+) -> Any:
+    """A request signed with a seeded agent's key, as `run.js` signs it."""
+    text = json.dumps(body).encode() if body else b""
+    stamp, nonce = str(int(time.time())), secrets.token_hex(16)
+    canonical = credentials.canonical_string(
+        method, route.encode(), query.encode(), stamp, nonce, text
+    )
+    headers = {
+        "Authorization": f"Maity-HMAC {who.credential_id}",
+        "Maity-Timestamp": stamp,
+        "Maity-Nonce": nonce,
+        "Maity-Signature": credentials.sign(who.verifier, canonical),
+    }
+    if body:
+        headers |= {"Content-Type": "application/json", "Idempotency-Key": nonce}
+    return client.request(
+        method, route + (f"?{query}" if query else ""), content=text, headers=headers
+    )
 
 
 def test_a_seeded_human_makes_the_calls_of_the_scripts(
@@ -177,28 +224,13 @@ def test_a_seeded_human_makes_the_calls_of_the_scripts(
     """Each answer's field that `run.js` reads, on accounts of the seed."""
     one = seed.seed_one(migrated, seed.first_free(migrated))
     other = seed.seed_one(migrated, seed.first_free(migrated))
-    assert (one["handle"], other["handle"]) == ("load-0", "load-1")
+    assert (one["handle"], other["handle"]) == ("lt-0", "lt-1")
     client = make_client()
     path = f"/api/v1/projects/{one['owner']}/{one['slug']}"
     writer, waiter = (SimpleNamespace(**a, value="") for a in one["agents"])
 
     def call(who: Any, method: str, route: str, query: str = "", **body: Any) -> Any:
-        text = json.dumps(body).encode() if body else b""
-        stamp, nonce = str(int(time.time())), secrets.token_hex(16)
-        canonical = credentials.canonical_string(
-            method, route.encode(), query.encode(), stamp, nonce, text
-        )
-        headers = {
-            "Authorization": f"Maity-HMAC {who.credential_id}",
-            "Maity-Timestamp": stamp,
-            "Maity-Nonce": nonce,
-            "Maity-Signature": credentials.sign(who.verifier, canonical),
-        }
-        if body:
-            headers |= {"Content-Type": "application/json", "Idempotency-Key": nonce}
-        return client.request(
-            method, route + (f"?{query}" if query else ""), content=text, headers=headers
-        )
+        return signed_call(client, who, method, route, query, **body)
 
     first = call(waiter, "GET", f"{path}/events", "after=latest")
     assert first.status_code == 200, first.text

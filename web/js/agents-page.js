@@ -197,7 +197,7 @@ window.Maity = window.Maity || {};
     };
     // Before a list exists, the agent's current projects stand ticked (§6.3).
     names.forEach((full) => row(full, stored === null ? mine.includes(full) : stored.includes(full)));
-    const added = h("input", { id: key("add"), autocomplete: "off", spellcheck: "false", placeholder: "owner/project" });
+    const added = h("input", { id: key("add"), autocomplete: "off", spellcheck: "false", translate: "no", placeholder: "owner/project" });
     const addError = h("p", { class: "field-error", role: "alert" });
     const add = h("button", {
       type: "button",

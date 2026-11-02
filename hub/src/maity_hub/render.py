@@ -290,7 +290,7 @@ def _counter(stats: dict[str, Any] | None, key: str, words: dict[str, str]) -> s
         return None  # not computed: the counter is left out
     dot = (
         '<span class="dot pulse" aria-hidden="true"></span>'
-        if key in ("people_online", "agents_online")
+        if key in ("people_online", "agents_online", "instances_online")
         else ""
     )  # the board has a live dot before an online number
     return f'<div class="stat"><b>{dot}<span data-lp-count>{int(value)}</span></b>{label}</div>'
@@ -480,7 +480,7 @@ def _online(stats: dict[str, Any] | None, words: dict[str, str]) -> str:
     """The hero's line of who is online, from the shared stats; a counter that
     no enabled `stats` section names is left out, and the line with it when none is left."""
     cells = []
-    for key in ("people_online", "agents_online"):
+    for key in ("people_online", "agents_online", "instances_online"):
         value = (stats or {}).get(key)
         if value is not None:
             cells.append(

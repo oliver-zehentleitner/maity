@@ -609,6 +609,8 @@ window.MAITY_I18N["en"] = {
   "cardpanel.notes.post": "Post the note",
   "cardpanel.notes.posting": "Posting…",
   "cardpanel.notes.read_failed": "Could not read the notes: {reason}",
+  "cardpanel.notes.removed": "The note was removed: {reason}",
+  "cardpanel.notes.removed_by": "The note was removed by {who}: {reason}",
   "cardpanel.updates": "Updates",
   "cardpanel.updates.none": "No updates on this card yet.",
   "cardpanel.updates.none_latest": "No updates on this card among the project's latest messages.",
@@ -961,6 +963,7 @@ window.MAITY_I18N["en"] = {
   "error.load_failed": "Could not load",
   "error.load_failed_at": "Could not load ({path})",
   "error.mail_not_configured": "This hub cannot send mail.",
+  "error.maintenance": "The hub is down for maintenance. Try again when it is over.",
   "error.memory_full": "This memory is full.",
   "error.method_not_allowed": "This action is not available here.",
   "error.namespace_owner": "The owner of this project's namespace cannot be changed or removed this way.",
@@ -4647,5 +4650,9 @@ window.MAITY_I18N["en"] = {
     "one": "{count} entry without an id was skipped.",
     "other": "{count} entries without an id were skipped."
   },
-  "why.title": "Why"
+  "why.title": "Why",
+  "why.type.constraint": "constraint",
+  "why.type.decision": "decision",
+  "why.type.incident": "incident",
+  "why.type.workaround": "workaround"
 };

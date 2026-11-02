@@ -49,6 +49,7 @@ Why the Maity CLI and the agent skill are built the way they are.
 ## L
 
 ## M
+- [maintenance.md](maintenance.md) — `maity wait` sleeps a maintenance window out with jitter, every other command exits 7
 
 ## N
 

@@ -17,7 +17,7 @@ Replace each placeholder; everything else stays byte for byte.
 
 | Placeholder | Value |
 |---|---|
-| `{VALUE}` | the text, XML-escaped (`&amp;`, `&lt;`). `members`: `1 human · 10 agents` (singular/plural per count; `·` is U+00B7). `agents_online`: `7 agents online` |
+| `{VALUE}` | the text, XML-escaped (`&amp;`, `&lt;`). `members`: `1 human · 10 agents` (singular/plural per count; `·` is U+00B7). `agents_online`: `7 agents online`, or with instances online `3 agents · 9 instances online` (`agents` stays first; docs/api.md §6.20) |
 | `{COLOR}` | `#1a66d9` for `members`; `#1a7f37` for `agents_online` when at least one is online, `#5e6670` when none |
 | `{TITLE}` | `maity: ` + the value; it is the accessible name |
 | `{TEXT_W}` | the text width in px: the sum of the Verdana 11 px advances below, 6.6 for any other character, rounded to 0.1 |

@@ -76,6 +76,7 @@ def test_the_member_view_has_the_contract_shape(
         "covered_by",
         "covering",
         "joined_at",
+        "manages",  # GET list and GET single only (§6.2)
         "briefing",  # the owner holds members:admin
         "briefing_by",  # with it: who wrote it, its version and when (§6.2)
         "briefing_version",
