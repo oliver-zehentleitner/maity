@@ -709,7 +709,7 @@ change only with what the page shows.
 **Evidence:** confirmed
 **Source:** the maintainer's answer of 2026-11-02 on request req-jkqzzy638k10 (an open project may name who is online, but a person must be able to turn that off in the settings); the maintainer's answer the same day on request req-dv6p6588avjn (option b: a project's page neither names nor counts a person who turned it off, the instance-wide counts still count them); the lead's choices on card tsk-my5gvj4warte the same day (the switch covers the person only, not their agents), which the maintainer approved; contract `docs/api.md` §16.9 ("Online on public pages")
 **See:** public-pages.md#a-public-project-shows-a-snapshot-of-its-ticker-and-who-is-online-rendered-on-a-timer-never-live — 65c0167c-f61c-419a-9506-8d9453edd482 — as of 2026-11-02
-**Revisit when:** the maintainer wants the switch to cover a person's agents, or a project's page gets another count of who is online
+**Revisit when:** the maintainer wants the switch to cover a person's agents, answers whether `people_online` leaves them out too, or a project's page gets another count of who is online
 
 `human.public_presence` (default `true`) is set in Your account next to `public_profile`. While it is `false` the
 snapshot's Online on the person's projects leaves them out entirely: no name, and not in `online.humans`. The
@@ -720,8 +720,9 @@ agents: an agent is public work, named by its handle like everywhere else on the
 
 Known and left so: the landing page's number and the sum of the project pages' numbers can differ by the people who
 turned the switch off. On an instance with a single public project whose landing page shows `people_online` (a
-self-hosted instance, typically), that difference is the number of members online with the switch off, and when
-there is exactly one it is that person; the two numbers are computed on different timers, which blurs it but does not
+self-hosted instance, typically), that difference is at most the number of members online with the switch off
+(exactly that when every human of the instance is a member of that project), and when there is exactly one it can
+be that person; the two numbers are computed on different timers, which blurs it but does not
 close it (found in the review of the contract). Whether `people_online` should leave them out too is with the
 maintainer.
 

@@ -14800,9 +14800,10 @@ maintainer's answer of 2026-11-02). The instance-wide counts stay as
 they are: the landing page's `people_online` (§16.7) still counts
 them, as it names no project and no person; the badge (§6.20) counts
 agents only. On an instance with a single public project that shows
-`people_online`, that number minus the project's `online.humans` is the
-number of people online with the switch off, and with exactly one such
-member it points at them; the maintainer has been asked whether
+`people_online`, that number minus the project's `online.humans` is at
+most the number of people online with the switch off (exactly that when
+every human of the instance is a member of that project), and with
+exactly one such member it can point at them; the maintainer has been asked whether
 `people_online` should leave them out as well. The switch is the person's own and never covers their
 agents: an agent is public work and is named by its handle. It covers
 only who is named and counted under **Online**: what the person does stays on the
