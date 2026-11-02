@@ -116,7 +116,7 @@ window.Maity = window.Maity || {};
   // Fixture mode keeps a project in fixtures/<slug>/; its full name is the
   // project view's, else its owner's handle as the fixtures name it.
   const FIXTURE_OWNERS = { guestlab: "guest" };
-  const FIXTURE_LANGUAGES = [["aa", "Afaraf"], ["ar", "العربية"], ["de", "Deutsch"], ["en", "English"], ["fr", "français"], ["ja", "日本語"], ["zh-Hans", "简体中文"]].map(([tag, name]) => ({ tag, name }));
+  const FIXTURE_LANGUAGES = [["aa", "Afaraf"], ["ar", "العربية"], ["de", "Deutsch"], ["en", "English"], ["fr", "français"], ["ja", "日本語"], ["zh-Hans", "简体中文"]].map(([tag, name]) => ({ tag, name, common: tag !== "aa", interface: ["de", "en", "fr", "ja", "zh-Hans"].includes(tag) }));
   const fixtureSlug = (full) => String(full).split("/").pop();
   function fullOf(slug) {
     const view = fixtures()[slug + "/project.json"];
@@ -654,6 +654,18 @@ window.Maity = window.Maity || {};
   function landingPlaceholders(v, at, errors) {
     if (typeof v === "string") { if (/\{\{\s*[A-Za-z][A-Za-z0-9_-]*\s*\}\}/.test(v) && !errors[at]) errors[at] = "unresolved_placeholder"; return; }
     if (v && typeof v === "object") Object.entries(v).forEach(([k, x]) => landingPlaceholders(x, at ? at + "." + k : k, errors));
+  }
+  let fixtureAuthPages = { default_language: "en", pages: { sign_in: {}, sign_up: {} }, updated_at: null, updated_by: null };
+  // §16.7.4: the refusals the admin's editor shows.
+  function authPagesCheck(body, path) {
+    const errors = {};
+    Object.entries(body.pages || {}).forEach(([page, langs]) => Object.entries(langs).forEach(([lang, texts]) => Object.entries(texts).forEach(([key, text]) => {
+      const at = "pages." + page + "." + lang + "." + key;
+      if (!["title", "subline", "point_1", "point_2", "point_3", "note"].includes(key)) errors[at] = "extra_forbidden";
+      else if (/\{\{/.test(text)) errors[at] = "unresolved_placeholder";
+      else if (key !== "note" && (text.length > 500 || /[\r\n]/.test(text))) errors[at] = "invalid";
+    })));
+    if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
   }
   let fixtureSiteValues = {};
   function landingPage(pg, at, errors) {
@@ -1798,7 +1810,15 @@ window.Maity = window.Maity || {};
         if ("social" in body) mm.social = body.social === null ? {} : merged;
         if ("links_visible" in body) mm.links_visible = body.links_visible;
       }
-      const profileFields = ["public_profile", "public_bio", "website", "social", "links_visible", "handle"];
+      if ("interface_language" in body) {
+        const chosen = body.interface_language;
+        if (chosen !== null && !FIXTURE_LANGUAGES.some((l) => l.tag === chosen && l.interface)) {
+          fail(400, "invalid", "the request does not validate", path, { fields: { interface_language: "unknown_language" } });
+        }
+        mm.interface_language = chosen;
+        fixtures()["auth-session.json"].member.interface_language = chosen;
+      }
+      const profileFields = ["public_profile", "public_bio", "website", "social", "links_visible", "handle", "interface_language"];
       if (Object.keys(body).length && Object.keys(body).every((k) => profileFields.includes(k))) return meView();
       const fields = {};
       const MEAT = ["meat_proxy", "meat_proxy_lead", "meat_proxy_hands"];
@@ -3116,6 +3136,21 @@ window.Maity = window.Maity || {};
       v.updated_at = nowIso(); v.updated_by = me().member.id;
       fixtures()["landing.json"] = JSON.parse(JSON.stringify(v));
       return v;
+    }],
+    ["GET", /^\/admin\/settings\/auth-pages$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      return fixtureAuthPages;
+    }],
+    ["POST", /^\/admin\/settings\/auth-pages\/check$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      authPagesCheck(body, path);
+      return null;
+    }],
+    ["PATCH", /^\/admin\/settings\/auth-pages$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      authPagesCheck(body, path);
+      fixtureAuthPages = { default_language: body.default_language, pages: { sign_in: {}, sign_up: {}, ...JSON.parse(JSON.stringify(body.pages)) }, updated_at: nowIso(), updated_by: me().member.id };
+      return fixtureAuthPages;
     }],
     ["GET", /^\/admin\/settings\/site-values$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
@@ -4604,7 +4639,10 @@ window.Maity = window.Maity || {};
         sessionCsrf = s.csrf_token || null;
         lastSession = s;
         sessionBlocked = false;
-        return s;
+        return M.i18n.follow(s.member && s.member.interface_language).then(() => s);
+      }, (err) => {
+        if (err && err.status === 401) return M.i18n.follow(null).then(() => { throw err; });
+        throw err;
       });
     }
     // A 401 on a call that needs the session: it ended (expired, revoked,

@@ -14,7 +14,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, select, update
 
-from maity_hub import clock, instances, namespace, policy
+from maity_hub import clock, instances, namespace, policy, worker_runs
 from maity_hub import tables as t
 from maity_hub.events import emit, lock_project, transaction
 
@@ -278,6 +278,8 @@ class Worker:
     def _run(self) -> None:
         while not self._stop.wait(self.interval):
             try:
-                sweep(self.engine)
+                with worker_runs.claim(self.engine, "commitment", self.interval) as held:
+                    if held is not None:
+                        sweep(self.engine)
             except Exception:
                 log.exception("the commitment sweep failed")

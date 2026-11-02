@@ -1140,6 +1140,7 @@ def scenario(run: Run, page: Page) -> None:
     forge_access_step(run, page)
     landing_json_step(run, page)
     legal_json_step(run, page)
+    auth_pages_step(run, page)
     site_json_step(run, page)
     landing_variants_step(run, page)
     jour_fixe_step(run, page)
@@ -3286,7 +3287,7 @@ def landing_json_step(run: Run, page: Page) -> None:
 
 
 def site_json_step(run: Run, page: Page) -> None:
-    """The whole site as one JSON (maity-site/1, tsk-xw8a2hd84x3a) on the real hub: the template with en and de
+    """The whole site as one JSON (maity-site/1, tsk-xw8a2hd84x3a) on the real hub: the test file with every language
     is checked, saved in one go, and exported again unchanged."""
     me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
     if not me.get("instance_admin"):
@@ -3323,7 +3324,7 @@ def site_json_step(run: Run, page: Page) -> None:
     expect(section).to_contain_text("Check the file again")
     io.get_by_role("button", name="Check the file", exact=True).click()
     expect(section.locator("ul.site-placeholders li[data-replaced='true']")).to_have_count(7)
-    expect(section.locator("li.site-part")).to_have_count(3)
+    expect(section.locator("li.site-part")).to_have_count(5)
     expect(section.locator("li.site-refused")).to_have_count(0)
     section.get_by_role("button", name="Save all changes", exact=True).click()
     expect(section.locator(".send-status").last).to_contain_text("Saved:")
@@ -3331,6 +3332,9 @@ def site_json_step(run: Run, page: Page) -> None:
     out = export()
     assert out["format"] == "maity-site/1", out.get("format")
     assert out["landing"]["pages"] == template["landing"]["pages"], "the landing pages differ after the round trip"
+    assert out["sign_in"] == template["sign_in"] and out["sign_up"] == template["sign_up"], "sign-in or sign-up differ"
+    seen_pitch = page.request.get(f"{run.base}/api/v1/auth/pages/sign_in?lang=de").json()
+    assert seen_pitch == {"language": "de", "texts": template["sign_in"]["de"]}, seen_pitch
     # Every language on the public pages, as a visitor without a session gets it: nothing refused, no placeholder left.
     languages = list(template["landing"]["pages"])
     assert len(languages) == 10 and set(languages) == set(next(iter(template["legal"].values()))["languages"]), languages
@@ -3433,6 +3437,25 @@ def landing_variants_step(run: Run, page: Page) -> None:
     saved = save()
     assert saved["variants"] == {} and saved["campaigns"] == [], (saved["variants"], saved["campaigns"])
     no_problems(run, "landing variants")
+
+
+def auth_pages_step(run: Run, page: Page) -> None:
+    """Instance administration → Pages → Sign up (docs/api.md §16.7.4): the admin writes a pitch, the
+    hub stores it, and a visitor's call gets exactly that language's keys."""
+    me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
+    if not me.get("instance_admin"):
+        return
+    run.step("sign-up page: the admin writes its pitch, the public call serves it")
+    page.goto(f"{run.base}/admin/pages/sign-up")
+    section = page.locator("#admin-sign-up-page")
+    section.locator(".lp-tabs").get_by_role("button", name="fr", exact=True).click()
+    page.locator("#ap-sign_up-title").fill("Rejoindre")
+    run.a11y(page, "sign-up page's pitch")
+    section.get_by_role("button", name="Save the sign-in and sign-up pages", exact=True).click()
+    expect(section.locator(".send-status").last).to_contain_text("Saved.")
+    answer = page.request.get(f"{run.base}/api/v1/auth/pages/sign_up?lang=fr").json()
+    assert answer["language"] == "fr" and answer["texts"]["title"] == "Rejoindre", answer
+    no_problems(run, "sign-up page")
 
 
 def legal_json_step(run: Run, page: Page) -> None:

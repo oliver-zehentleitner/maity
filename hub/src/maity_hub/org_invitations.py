@@ -25,7 +25,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, insert, select, update
 
-from maity_hub import clock, handles, orgs, proposals
+from maity_hub import clock, handles, orgs, proposals, worker_runs
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid, not_found, rate_limited
 from maity_hub.ids import new_id
@@ -402,6 +402,8 @@ class Worker:
     def _run(self) -> None:
         while not self._stop.wait(self.interval):
             try:
-                sweep(self.engine)
+                with worker_runs.claim(self.engine, "org-invitations", self.interval) as held:
+                    if held is not None:
+                        sweep(self.engine)
             except Exception:
                 log.exception("the sweep of expired organisation invitations failed")
