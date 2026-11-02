@@ -10,6 +10,7 @@ moderation hold is on no board. Whatever changes one of these inputs calls
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Collection
 from datetime import timedelta
 from html import escape
 from typing import Any
@@ -65,17 +66,19 @@ class Person:
         return self.handle is not None
 
 
-def members(conn: Connection, project_id: str, only: int | None = None) -> dict[int, Person]:
+def members(
+    conn: Connection, project_id: str, only: Collection[int] | None = None
+) -> dict[int, Person]:
     """Every active member by membership id, an isolated agent not among them (§6.28); the names
-    only of those the page shows (no profile hold on an agent, §16.8). With `only`, that one
-    membership, for a page that names a single member."""
+    only of those the page shows (no profile hold on an agent, §16.8). With `only`, those
+    memberships, for a page that names a few members (a card's holder and note authors)."""
     m = t.membership.c
     found: dict[int, Person] = {}
     query = select(t.membership).where(
         m.project_id == project_id, m.active.is_(True), m.isolated_since.is_(None)
     )
     if only is not None:
-        query = query.where(m.id == only)
+        query = query.where(m.id.in_(list(only)))
     rows = conn.execute(query.order_by(m.id)).all()
     humans = {
         h.id: h
