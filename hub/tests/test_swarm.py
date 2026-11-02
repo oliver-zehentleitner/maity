@@ -293,10 +293,11 @@ def test_a_public_page_counts_a_link_event_only_while_the_repository_is_public(
 
 
 @pytest.mark.parametrize("read_via", [None, "app", "owner_token"])
-def test_a_public_page_counts_a_link_event_only_as_read_with_the_instances_token(
+def test_a_public_page_counts_a_link_event_the_read_found_public_whoever_read_it(
     owner: flow.Human, migrated: Engine, project_id: str, read_via: str | None
 ) -> None:
-    """§11.4: nor one written before the event named its source, though it says public."""
+    """§11.4: the bare count may come from a read through an owner's grant, as long as that read
+    found the repository public; only the number reaches the page."""
     task = card(migrated, project_id, membership_of(migrated, owner.id))
     payload: dict[str, Any] = {
         "new": {"found": True, "title": "x", "state": "merged"},
@@ -311,7 +312,7 @@ def test_a_public_page_counts_a_link_event_only_as_read_with_the_instances_token
         conn.execute(
             update(t.project).where(t.project.c.id == project_id).values(repository_public=True)
         )
-    assert public_prs(migrated, project_id) is None
+    assert public_prs(migrated, project_id) == 1
 
 
 def test_a_public_page_counts_a_ticker_merge_only_if_flagged_and_the_repository_is_public(
