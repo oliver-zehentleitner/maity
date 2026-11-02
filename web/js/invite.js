@@ -147,7 +147,7 @@ window.Maity = window.Maity || {};
     // Trust owner or admin, and the role proxy, only from an owner (owner_only, §2.3);
     // proxy only with trust admin (§3.4).
     const trusts = ctx.isOwner ? M.trust.TRUSTS : ["member", "guest"];
-    const trust = h("select", { id: "invite-trust" }, trusts.map((r) => h("option", { value: r }, r)));
+    const trust = h("select", { id: "invite-trust" }, trusts.map((r) => h("option", { value: r }, M.trust.trustWord(r))));
     trust.value = "member";
     const role = h("select", { id: "invite-role" });
     const roles = () => {

@@ -32,6 +32,21 @@ window.Maity = window.Maity || {};
     return String(v);
   }
 
+  // A label or a status is a word of the contract; the other fields are what was written.
+  const VALUE_WORDS = {
+    label: { fix: () => M.t("cards.label.fix"), feature: () => M.t("cards.label.feature"), chore: () => M.t("cards.label.chore") },
+    status: {
+      proposed: () => M.t("board.status.proposed"), open: () => M.t("board.status.open"), in_progress: () => M.t("board.status.in_progress"),
+      blocked: () => M.t("board.status.blocked"), review: () => M.t("board.status.review"), done: () => M.t("board.status.done"),
+      cancelled: () => M.t("board.status.cancelled"),
+    },
+    "contract.state": { proposed: () => M.t("board.contract.state.proposed"), final: () => M.t("board.contract.state.final") },
+  };
+  function fieldValue(field, v) {
+    const words = Object.hasOwn(VALUE_WORDS, field) ? VALUE_WORDS[field] : null;
+    return words && typeof v === "string" && Object.hasOwn(words, v) ? words[v]() : shortValue(v);
+  }
+
   // Who changed or wrote it, as @handle, an agent with its instance
   // (§6.17) where the hub names one.
   const byline = (ctx, who) => (who && (who.member_id || who.handle)
@@ -48,7 +63,7 @@ window.Maity = window.Maity || {};
         h("details", null, h("summary", null, M.t("cardpanel.history.what_changed")), h("pre", { class: "history-diff" }, e.diff)));
     }
     return h("li", null, M.tn("cardpanel.history.changed_value", { who, field,
-      before: h("span", { class: "history-before" }, shortValue(e.before)), after: h("span", { class: "history-after" }, shortValue(e.after)) }), when);
+      before: h("span", { class: "history-before" }, fieldValue(e.field, e.before)), after: h("span", { class: "history-after" }, fieldValue(e.field, e.after)) }), when);
   }
 
   // A pull request or an issue: its reference, with the title and state the hub observed.

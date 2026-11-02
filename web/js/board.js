@@ -33,6 +33,17 @@ window.Maity = window.Maity || {};
     review: () => M.t("board.status.review"), done: () => M.t("board.status.done"),
     cancelled: () => M.t("board.status.cancelled"),
   };
+  // A pull request's state and checks as the forge reports them (§6.11), in words.
+  const PR_WORDS = {
+    open: () => M.t("board.release.typed.open"), merged: () => M.t("board.release.typed.merged"), closed: () => M.t("board.release.typed.closed"),
+  };
+  const CHECK_WORDS = {
+    success: () => M.t("board.checks.success"), failure: () => M.t("board.checks.failure"), pending: () => M.t("board.checks.pending"),
+    none: () => M.t("board.checks.none"), unknown: () => M.t("board.checks.unknown"),
+  };
+  const CONTRACT_WORDS = { proposed: () => M.t("board.contract.state.proposed"), final: () => M.t("board.contract.state.final") };
+  const LABEL_WORDS = { fix: () => M.t("cards.label.fix"), feature: () => M.t("cards.label.feature"), chore: () => M.t("cards.label.chore") };
+  const word = (words, value) => (Object.hasOwn(words, value) ? words[value]() : value);
   const statusWord = (s) => (Object.hasOwn(STATUS_WORDS, s) ? STATUS_WORDS[s]() : s.replace("_", " "));
 
   const PRESENCE_WORDS = {
@@ -272,7 +283,7 @@ window.Maity = window.Maity || {};
     if (!r) return null;
     const pr = r.pr ? M.t("board.report.pr", { number: "#" + r.pr.number }) : (r.pr_status === "none" ? M.t("board.report.no_pr") : M.t("board.report.pr_unknown", { reason: r.pr_unknown_reason || "—" }));
     const observed = r.observed
-      ? M.t("board.report.observed", { state: r.observed.pr_state, checks: r.observed.checks, ago: formatAgo(r.observed.observed_at) })
+      ? M.t("board.report.observed", { state: word(PR_WORDS, r.observed.pr_state), checks: word(CHECK_WORDS, r.observed.checks), ago: formatAgo(r.observed.observed_at) })
       : M.t("board.report.not_observed");
     return h("div", { class: "report" + (r.mismatch ? " mismatch" : "") },
       h("span", { class: "label" }, M.t("board.report.label", { ago: formatAgo(r.reported_at), verification: r.verification })),
@@ -308,9 +319,9 @@ window.Maity = window.Maity || {};
     if (pr.found === false) return h("td", { class: "pr-missing" }, M.t("board.pr.not_found"));
     if (!pr.observed_at) {
       return h("td", { class: "pr-unverified" }, M.t("board.pr.unverified"),
-        pr.state ? h("span", { class: "muted" }, " · ", M.t("board.pr.claimed_state", { source: pr.source, state: pr.state })) : null);
+        pr.state ? h("span", { class: "muted" }, " · ", M.t("board.pr.claimed_state", { source: pr.source, state: word(PR_WORDS, pr.state) })) : null);
     }
-    return h("td", { class: "pr-" + pr.state }, pr.state || "—");
+    return h("td", { class: "pr-" + pr.state }, pr.state ? word(PR_WORDS, pr.state) : "—");
   }
 
   function pullRequests(rel) {
@@ -325,7 +336,7 @@ window.Maity = window.Maity || {};
         h("td", null, safeUrl(pr.url) ? h("a", { href: safeUrl(pr.url), rel: "noopener noreferrer" }, "#" + pr.number) : "#" + pr.number,
           " " + (pr.title || ""), h("span", { class: "muted" }, " · " + (pr.task_id ? M.t("board.prs.source_by", { source: pr.source, card: pr.task_id }) : pr.source))),
         prState(pr),
-        h("td", { class: "checks-" + pr.checks }, pr.observed_at && pr.checks ? pr.checks : "—"),
+        h("td", { class: "checks-" + pr.checks }, pr.observed_at && pr.checks ? word(CHECK_WORDS, pr.checks) : "—"),
         h("td", null, pr.observed_at ? formatAgo(pr.observed_at) + (pr.head_sha ? " @ " + pr.head_sha : "") : M.t("board.pr.never"))))));
   }
 
@@ -598,7 +609,7 @@ window.Maity = window.Maity || {};
         c.watching ? h("span", { class: "card-watching" }, M.t("cards.watching")) : null,
         Array.isArray(c.match) && c.match.length
           ? h("span", { class: "label-tag" }, M.t("board.search.matched", { fields: M.fmt.list(c.match) })) : null,
-        c.label ? h("span", { class: "label-tag" }, c.label) : null,
+        c.label ? h("span", { class: "label-tag" }, word(LABEL_WORDS, c.label)) : null,
         c.needs ? h("span", { class: "label-tag card-needs" }, M.t("cards.needs.tag", { role: M.trust.roleLabel(c.needs) })) : null,
         c.area ? h("span", { class: "area" }, c.area) : null,
         assignee(ctx, c)),
@@ -621,9 +632,9 @@ window.Maity = window.Maity || {};
         : null,
       c.contract
         ? h("p", { class: "muted" }, (c.contract.watchers || []).length
-          ? M.tn("board.contract.line_watched", { state: c.contract.state, arbiter: arbiterName(ctx, c.contract.arbiter),
+          ? M.tn("board.contract.line_watched", { state: word(CONTRACT_WORDS, c.contract.state), arbiter: arbiterName(ctx, c.contract.arbiter),
             watchers: c.contract.watchers.map((w, i) => [i ? ", " : null, M.dom.memberRef(ctx, w)]) })
-          : M.tn("board.contract.line", { state: c.contract.state, arbiter: arbiterName(ctx, c.contract.arbiter) }))
+          : M.tn("board.contract.line", { state: word(CONTRACT_WORDS, c.contract.state), arbiter: arbiterName(ctx, c.contract.arbiter) }))
         : null,
       // Its section from the repository (§6.8).
       c.contract && M.contractPanel ? M.contractPanel.panel(ctx, c, redraw) : null,

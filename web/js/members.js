@@ -679,7 +679,7 @@ window.Maity = window.Maity || {};
       const trustOffered = (ctx.isOwner ? M.trust.TRUSTS : M.trust.owner(m) ? ["owner"] : ["member", "guest"])
         .filter((t) => t !== "owner" || m.kind === "human");
       if (m.trust && !trustOffered.includes(m.trust)) trustOffered.push(m.trust);
-      const trust = keyed("trust:" + m.id, h("select", { id: id("trust") }, trustOffered.map((t) => h("option", { value: t }, t))));
+      const trust = keyed("trust:" + m.id, h("select", { id: id("trust") }, trustOffered.map((t) => h("option", { value: t }, M.trust.trustWord(t)))));
       trust.value = draft.trust !== undefined ? draft.trust : m.trust;
       const role = keyed("role:" + m.id, h("select", { id: id("role") }));
       // The role proxy goes with trust admin only (proxy_needs_admin): with any

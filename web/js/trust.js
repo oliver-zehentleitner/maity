@@ -31,6 +31,27 @@ window.Maity = window.Maity || {};
   const MEMBER_ROLES = ROLES.filter((r) => r !== "ops" && r !== "proxy");
   // What a card's needs may name, beside a project role (§6.4).
   const NEEDS_ROLES = ROLES.filter((r) => r !== "proxy" && r !== "manager");
+  // A trust or a role as a word in a line ("member · coder"), where roleLabel is the choice's name.
+  // Words outside the contract's sets stay as they come: a project may name its own roles.
+  const TRUST_WORDS = {
+    owner: () => M.t("trust.word.owner"), admin: () => M.t("trust.word.admin"),
+    member: () => M.t("trust.word.member"), guest: () => M.t("trust.word.guest"),
+  };
+  const ROLE_LINE_WORDS = {
+    "coder": () => M.t("trust.role_word.coder"),
+    "reviewer": () => M.t("trust.role_word.reviewer"),
+    "tester": () => M.t("trust.role_word.tester"),
+    "designer": () => M.t("trust.role_word.designer"),
+    "writer": () => M.t("trust.role_word.writer"),
+    "ops": () => M.t("trust.role_word.ops"),
+    "proxy": () => M.t("trust.role_word.proxy"),
+    "manager": () => M.t("trust.role_word.manager"),
+    "red-team": () => M.t("trust.role_word.red_team"),
+    "blue-team": () => M.t("trust.role_word.blue_team"),
+    "purple-team": () => M.t("trust.role_word.purple_team"),
+  };
+  const trustWord = (t) => (Object.hasOwn(TRUST_WORDS, t) ? TRUST_WORDS[t]() : t);
+  const roleWord = (r) => (Object.hasOwn(ROLE_LINE_WORDS, r) ? ROLE_LINE_WORDS[r]() : r);
   const roleLabel = (r) => (Object.hasOwn(ROLE_WORDS, r) ? ROLE_WORDS[r]()[0] : r);
   const roleHelp = (r) => (Object.hasOwn(ROLE_WORDS, r) ? ROLE_WORDS[r]()[1] : "");
 
@@ -72,8 +93,8 @@ window.Maity = window.Maity || {};
   function words(x) {
     if (!x) return "";
     const t = trustOf(x);
-    if (!t) return x.role || "";
-    return x.role ? t + " · " + x.role : t;
+    if (!t) return x.role ? roleWord(x.role) : "";
+    return x.role ? trustWord(t) + " · " + roleWord(x.role) : trustWord(t);
   }
 
   // A `role:`/`trust:` token in words: "every admin", "every reviewer".
@@ -102,5 +123,5 @@ window.Maity = window.Maity || {};
     return token;
   }
 
-  M.trust = { TRUSTS, ROLES, NEEDS_ROLES, MEMBER_TRUSTS, MEMBER_ROLES, roleLabel, roleHelp, fillRoles, roleHint, governs, owner, guest, roleIs, reviews, tests, releases, words, tokenWords };
+  M.trust = { trustWord, roleWord, TRUSTS, ROLES, NEEDS_ROLES, MEMBER_TRUSTS, MEMBER_ROLES, roleLabel, roleHelp, fillRoles, roleHint, governs, owner, guest, roleIs, reviews, tests, releases, words, tokenWords };
 })(window.Maity);
