@@ -1494,6 +1494,11 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .not-listening-settings { display: grid; gap: 6px; max-width: 32rem; margin: 16px 0; }
 .not-listening-settings h3 { margin: 0; }
 .not-listening-settings button { justify-self: start; }
+.mail-address { margin: 16px 0; max-width: 32rem; }
+.mail-address h3 { margin: 0 0 6px; }
+.mail-address-state { margin: 0 0 6px; }
+.mail-address-form { display: grid; gap: 6px; }
+.mail-address-form .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 /* My settings: each choice a row of at least 28 px, so the radios are targets of their own. */
 .my-nl { display: grid; gap: 6px; }
 .my-nl .check { display: flex; align-items: center; gap: 8px; min-height: 28px; }

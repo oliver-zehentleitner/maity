@@ -1,8 +1,8 @@
 // Personal language, agents that stop listening, and browser notifications
 // on the account (/account/notifications, docs/api.md §18.4): the account's wish, the browser's own permission beside
 // it, the kinds, and whether a chat's or mention's text may be shown. The
-// browser's permission is asked only when the human turns them on. Mail
-// settings follow with the hub's mail (stage 3).
+// browser's permission is asked only when the human turns them on. The mail
+// address where the instance sends mail; the modes and times follow.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -96,6 +96,106 @@ window.Maity = window.Maity || {};
   }
   M.notListening = { MINUTES, minutesOk };
 
+  // The mail address (§18.4): set, sent again, removed. A new address waits in `pending_address`
+  // until its link is followed; the confirmed one keeps receiving until then. Changing or removing
+  // a confirmed address takes the password of a human who has one; without one the hub may hold
+  // the change (202, `address_change`) for a session at least a day old, in the sessions list.
+  // The hub checks the address; the form only refuses an empty one.
+  function mailAddressForm(settings, saved) {
+    const box = h("section", { class: "mail-address", "aria-labelledby": "mail-address-title" });
+    const status = M.statusLine();
+    const say = (words) => { status.done(); append(status.el, h("span", { class: "ok" }, words)); };
+    function draw() {
+      const email = settings.email;
+      const confirmed = !!(email.address && email.verified_at);
+      const input = h("input", { id: "mail-address", type: "email", autocomplete: "email", spellcheck: "false",
+        "aria-describedby": "mail-address-error" });
+      input.value = email.pending_address || email.address || "";
+      const password = h("input", { id: "mail-address-password", type: "password", autocomplete: "current-password",
+        "aria-describedby": "mail-address-password-hint mail-address-password-error" });
+      const errors = {
+        address: h("p", { class: "field-error", id: "mail-address-error", role: "alert" }),
+        password: h("p", { class: "field-error", id: "mail-address-password-error", role: "alert" }),
+      };
+      const fail = (field, text) => {
+        errors[field].textContent = text;
+        (field === "address" ? input : password).setAttribute("aria-invalid", "true");
+      };
+      const buttons = [];
+      // One PATCH of the address; the page follows the hub's answer, a held change included.
+      async function send(address, busy) {
+        Object.values(errors).forEach((x) => { x.textContent = ""; });
+        input.removeAttribute("aria-invalid"); password.removeAttribute("aria-invalid");
+        const body = { email: { address } };
+        if (confirmed && password.value) body.current_password = password.value;
+        buttons.forEach((b) => { b.disabled = true; });
+        status.busy(busy);
+        try {
+          settings = await M.api.patch("/me/notification-settings", body);
+          saved(settings);
+          // Held is this change waiting (202), not an older one the hub still holds.
+          const held = settings.email.address_change && settings.email.address_change.address === address;
+          draw();
+          if (held) say(M.t("mail.address.held"));
+          else if (address === null) say(M.t("mail.address.removed"));
+          else say(M.t("mail.address.sent", { address }));
+        } catch (err) {
+          const fields = err.code === "invalid" && err.details && err.details.fields;
+          if (fields && fields["email.address"]) fail("address", M.t("mail.address.invalid"));
+          if (fields && fields.current_password === "required") fail("password", M.t("mail.address.password_required"));
+          if (fields && fields.current_password === "mismatch") fail("password", M.t("mail.address.password_wrong"));
+          status.fail(err.code === "mail_not_configured" ? M.t("mail.address.not_configured") : M.t("notify.not_saved"), err);
+          buttons.forEach((b) => { b.disabled = false; });
+        }
+      }
+      const save = h("button", { type: "submit" }, M.t("mail.address.save"));
+      const again = email.pending_address
+        ? h("button", { type: "button", class: "secondary", onclick: () => send(email.pending_address, M.t("mail.address.sending")) }, M.t("mail.address.again"))
+        : null;
+      const remove = email.address || email.pending_address
+        ? h("button", { type: "button", class: "secondary danger", onclick: () => send(null, M.t("notify.saving")) }, M.t("mail.address.remove"))
+        : null;
+      buttons.push(...[save, again, remove].filter(Boolean));
+      const state = {
+        none: () => M.t("mail.address.state.none"),
+        pending: () => M.t("mail.address.state.pending", { pending: email.pending_address || "" }),
+        verified: () => M.t("mail.address.state.verified", { address: email.address }),
+        disabled: () => M.t("mail.address.state.disabled", { address: email.address }),
+      }[email.address_status];
+      const lines = [h("p", { class: "mail-address-state" }, state ? state() : email.address_status)];
+      if (email.address_status !== "pending" && email.pending_address) {
+        lines.push(h("p", { class: "hint" }, M.t("mail.address.waiting", { pending: email.pending_address, address: email.address })));
+      }
+      if (email.address_change) {
+        lines.push(h("p", { class: "hint mail-address-held" }, M.tn("mail.address.held_hint", {
+          link: h("a", { href: "/account/sessions" }, M.t("mail.address.held_link")) })));
+      }
+      append(clear(box),
+        h("h3", { id: "mail-address-title" }, M.t("mail.address.title")),
+        ...lines,
+        h("form", {
+          class: "mail-address-form",
+          novalidate: true,
+          onsubmit: (e) => {
+            e.preventDefault();
+            if (save.disabled) return;
+            const address = input.value.trim();
+            if (!address) { fail("address", M.t("mail.address.empty")); input.focus(); return; }
+            send(address, M.t("mail.address.sending"));
+          },
+        },
+        h("label", { for: "mail-address" }, M.t("mail.address.label")), input, errors.address,
+        confirmed ? [
+          h("label", { for: "mail-address-password" }, M.t("mail.address.password")), password,
+          h("p", { class: "hint", id: "mail-address-password-hint" }, M.t("mail.address.password_hint")), errors.password,
+        ] : null,
+        h("div", { class: "actions" }, save, again, remove)),
+        status.el);
+    }
+    draw();
+    return box;
+  }
+
   // The language of the dashboard and of the hub's own texts (§6.2), apart from the one agents
   // write in; no form while there is only one to have.
   function interfaceForm() {
@@ -158,6 +258,8 @@ window.Maity = window.Maity || {};
       h("p", { class: "hint" }, M.t("notify.language.hint")),
       button, languageStatus.el));
     }
+    // Mail only where the instance sends it (`mail_available`); the language above stays without it.
+    if (settings.mail_available && settings.email) append(box, mailAddressForm(settings, (now) => { settings = now; }));
     // Agent instances that stop listening (§5.3, §18.4): how one hears of
     // them and after how long; a project may override the minutes (My settings).
     append(box, notListeningForm(settings, (now) => { settings = now; }));
