@@ -67,7 +67,8 @@ window.Maity = window.Maity || {};
     if (t0.type === "registration") return "/admin/registration";
     if (t0.type === "report") return "/admin/reports/" + encodeURIComponent(t0.id);
     const full = item.project && item.project.full_name;
-    if (!full || item.project.member === false) return "/all";
+    // A project the reader is no member of (a personal request, §7): by_project says so (§18.2).
+    if (!full || (state.byProject[full] || {}).member === false) return "/all";
     const base = "/" + M.api.projectPath(full) + "/";
     const t = item.target || {};
     if (t.type === "conversation") return base + "chat/" + encodeURIComponent(t.id);

@@ -1697,6 +1697,8 @@ window.Maity = window.Maity || {};
       const view = (x) => {
         const out = Object.assign({}, x);
         delete out.open_matter;
+        // Whether the reader is a member is said in by_project, not on the item (§18.2).
+        if (out.project) { const { member: _member, ...project } = out.project; out.project = project; }
         return out;
       };
       const items = n.items.filter((x) => (query.get("unread") !== "true" || !x.read)
