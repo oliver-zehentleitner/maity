@@ -1654,7 +1654,10 @@ window.Maity = window.Maity || {};
   // Timers belong to one render; the next render stops them.
   let timers = [];
   let disposers = [];
+  // A view that follows a change of the address itself (js/chats.js) until the next render.
+  let followingRoute = null;
   function stopTimers() {
+    followingRoute = null;
     disposers.forEach((fn) => fn());
     disposers = [];
     timers.forEach((t) => window.clearInterval(t));
@@ -1886,6 +1889,7 @@ window.Maity = window.Maity || {};
         M.notify.read().catch((err) => { notifyError = err; })]);
       ctx = loaded;
       ctx.projectViews = views;
+      ctx.followRoute = (fn) => { if (seq === renderSeq) followingRoute = fn; };
       if (seq !== renderSeq) return;
     } catch (err) {
       if (seq !== renderSeq) return;
@@ -2043,7 +2047,7 @@ window.Maity = window.Maity || {};
   M.statusLine = statusLine;
 
   // Back, forward, a link of the dashboard, M.route.go: the view follows.
-  M.route.listen(render);
+  M.route.listen(() => { if (!followingRoute || !followingRoute(parseRoute())) render(); });
   window.addEventListener("resize", () => {
     document.getElementById("header").querySelectorAll("nav").forEach(updateCue);
   });

@@ -131,7 +131,7 @@ window.Maity = window.Maity || {};
     // The newest page only (js/chat.js newestPage, tsk-r1adgwp0a5dr): what
     // came before it, before one joined included (§9.2), with Show earlier
     // messages or on scroll-up.
-    const first = await parts.newestPage(path, item.last_message && item.last_message.seq ? item.last_message.seq + 1 : null);
+    const first = await parts.newestPage(path, item.last_message && item.last_message.seq ? item.last_message.seq + 1 : null, ctx.stale);
     const all = first.items;
     let earlier = first.earlier;
     let cursor = first.cursor || 0;
