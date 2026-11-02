@@ -224,6 +224,15 @@ def _no_outbound_network(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _no_held_instance_names(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A hub started with `MAITY_FORGE_INSTANCE_NAMESPACES` holds its names process-wide
+    (§11.4); the next test starts with none held."""
+    from maity_hub import handles
+
+    monkeypatch.setattr(handles, "_instance_names", frozenset())
+
+
+@pytest.fixture(autouse=True)
 def _no_background_ktw_reads(monkeypatch: pytest.MonkeyPatch) -> None:
     """A project view schedules a Keep the Why read in the background; in tests that
     would race the next test's cache. Tests of the scheduling replace this themselves."""

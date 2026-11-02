@@ -104,3 +104,37 @@ operator's own projects.
 **Rejected alternatives:**
 - The instance token for every public repository, as since 2026-10-28:
   what the maintainer turned away from. Other alternatives: unknown.
+
+## A listed namespace name nobody has is held for the operator; an alias and the operator's own command are not
+
+**Id:** d74e201f-7f31-4a5e-8482-2c3d91b30353
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the project lead's decisions on the review of the contract (`docs/api.md` §11.4), 2026-11-02: the hold as a must, the exception for `maity-hub owner create`; the alias exception from the same review; card tsk-frfcjf7q1mja
+**Revisit when:** the instance token's namespaces are configured anywhere but the server's environment, or names can be released
+
+A name in `MAITY_FORGE_INSTANCE_NAMESPACES` that is neither the handle
+nor an alias of any human or organisation is `reserved` while it is
+listed: registration, `POST /orgs` and every rename refuse it, and the
+hub warns at start about it and about a listed name that is only an
+alias. `maity-hub owner create` may take it, and an alias stays with
+its id, which may take it back.
+
+**Reason:** the instance token reads for whatever namespace carries a
+listed name (ce611bd9). A typing error in the list, or an organisation
+the operator has not created yet, would otherwise let anyone register
+the name later and have their projects read with the operator's token.
+An alias needs no hold, since it is never another's (§6.24), and holding
+it would stop the operator taking back their own former name. `owner
+create` runs on the server with the hub's configuration and database,
+so whoever runs it is the operator who also sets the list.
+
+**Rejected alternatives:**
+- Only a warning at start, or the risk named as the operator's duty: a
+  warning in a log does not stop a registration.
+- Holding every listed name that is not a current handle, aliases
+  included: blocks the operator's own rename back.
+- Holding the name for `owner create` too: the operator could create
+  their own listed account or organisation only after taking the name
+  off the list and restarting.

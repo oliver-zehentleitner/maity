@@ -22,6 +22,7 @@ from maity_hub import (
     clock,
     commitment,
     forge,
+    forge_access,
     handles,
     idempotency,
     images,
@@ -264,13 +265,30 @@ def _repository_columns(repository: RepositoryIn | None) -> dict[str, Any]:
     return {"repository_url": url, "repository_default_branch": repository.default_branch}
 
 
-def _looks_public(request: Request, repository: RepositoryIn | None) -> bool | None:
+def _looks_public(
+    request: Request, repository: RepositoryIn | None, owner: str | None, human_id: str | None
+) -> bool | None:
     """The hub's first look at a repository: whether the forge reports it public. One it has not
-    looked at, cannot read or finds private is not (§16.9, §11.4); None when there is none."""
+    looked at, cannot read or finds private is not (§16.9, §11.4); None when there is none. The
+    look is the operator's token's, so only for a project in one of the operator's own
+    namespaces: `owner` names the namespace (any of its names; None: the creator `human_id`'s)."""
     if repository is None:
         return None
     url = _repository_columns(repository)["repository_url"]
+    if not _instance_serves(request, owner, human_id):
+        return False  # nothing reads it before the owner confirms it (§11.4)
     return reader_of(request).repository_public(forge.repository_of(url))
+
+
+def _instance_serves(request: Request, owner: str | None, human_id: str | None) -> bool:
+    """Whether the namespace `owner` names is one of the operator's own (§11.4)."""
+    settings = settings_of(request)
+    if not settings.forge_instance_namespaces:
+        return False
+    with engine_of(request).connect() as conn:
+        owner_id = human_id if owner is None else namespace.resolve_owner(conn, owner)
+        handle = None if owner_id is None else namespace.current_handle(conn, owner_id)
+    return forge_access.serves(settings.forge_instance_namespaces, handle)
 
 
 def _refuse_outside_roles(
@@ -540,7 +558,11 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
     words = namespace.app_words(request.app)
     assert caller.human_id is not None  # a human caller
     # Before the transaction, which waits for no forge: a page asked for `off` needs no look.
-    seen_public = _looks_public(request, body.repository) if body.public_page != "off" else None
+    seen_public = (
+        _looks_public(request, body.repository, body.owner, caller.human_id)
+        if body.public_page != "off"
+        else None
+    )
 
     def action(conn: Connection) -> idempotency.Outcome:
         # The creator is the namespace owner, or an organisation they may create in:
@@ -670,7 +692,10 @@ def patch_project(
     words = namespace.app_words(request.app)
     # The look at a new repository is the hub's own call to the forge, made before the
     # transaction (§6.1): the page stays on only for one the hub sees public.
-    seen_public = _looks_public(request, body.repository) if "repository" in given else None
+    owner = slug.split("/", 1)[0]  # the full name (`ProjectRoute`): any of the owner's names
+    seen_public = (
+        _looks_public(request, body.repository, owner, None) if "repository" in given else None
+    )
 
     def action(conn: Connection) -> idempotency.Outcome:
         if "setup" in given:

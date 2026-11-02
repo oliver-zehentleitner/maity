@@ -337,7 +337,9 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
         if caller.credential_id:
             # A reminder that fell due while no session was open comes now (§6.23).
             commitment.reconcile(conn, mine.project, now, caller.credential_id)
-        packet = _packet(conn, mine, caller, body, cursor, started, session, settings)
+        packet = _packet(
+            conn, mine, caller, body, cursor, started, session, settings, request.app.state
+        )
     return packet
 
 
@@ -435,9 +437,10 @@ def _packet(
     started_seq: int,
     session: dict[str, Any],
     settings: Any,
+    state: Any,
 ) -> dict[str, Any]:
     project = events.lock_project(conn, mine.project.id)
-    fg = Forge(settings.forge_github_token)
+    fg = Forge(settings.forge_github_token, access=state.forge_access)
     agent = conn.execute(
         select(t.agent_profile).where(t.agent_profile.c.id == caller.agent_id)
     ).one()
@@ -640,7 +643,10 @@ def _packet(
             "state_note": project.state_note,
             "state_changed_at": ts(project.state_changed_at),
             "repository": repository(
-                project, settings, confirmed_by_of(conn, [project])[project.id]
+                project,
+                settings,
+                namespace.owner_of(conn, project)["handle"],
+                confirmed_by_of(conn, [project])[project.id],
             ),
             "policy": policy_of(project),
             "absence": absence(project),

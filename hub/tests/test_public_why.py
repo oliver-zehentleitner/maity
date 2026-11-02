@@ -17,6 +17,7 @@ from tests.test_public_project_views import World
 READ = "/api/v1/public/pages/maintainer/maity/why"
 URL = "https://github.com/maintainer/maity"
 BODY = "CANARY entry body"
+OWN = frozenset({"maintainer"})  # MAITY_FORGE_INSTANCE_NAMESPACES
 
 
 def snapshot() -> ktw.Snapshot:
@@ -40,6 +41,12 @@ def snapshot() -> ktw.Snapshot:
         path=".", name="root", state_url="https://example.org/dash/state.json", read=read
     )
     return ktw.Snapshot("2026-11-01T00:00:00Z", [member], False)
+
+
+@pytest.fixture
+def settings(settings: Any) -> Any:
+    """The instance token, serving the namespace of the project (§11.4)."""
+    return replace(settings, forge_github_token="instance", forge_instance_namespaces=OWN)
 
 
 @pytest.fixture
@@ -112,7 +119,14 @@ def test_the_read_before_a_render_uses_the_instance_token_and_no_grant(
         seen.append((reader.token, reader.access))
 
     monkeypatch.setattr(public_project_views.WHY_CACHE, "get", get)
-    public_project_views.prepare_why(migrated, replace(settings, forge_github_token="instance"))
+    public_project_views.prepare_why(
+        migrated,
+        replace(
+            settings,
+            forge_github_token="instance",
+            forge_instance_namespaces=OWN,
+        ),
+    )
     assert seen == [("instance", None)]
 
 
@@ -153,3 +167,37 @@ def test_a_failed_read_keeps_the_view_and_a_removed_export_empties_it(
     cache.entries[world.project_id] = ktw._Entry(None, 0.0, URL)
     world.touch()
     assert world.anyone.get(READ).json()["data"] == {"readable": False}
+
+
+# --- only the operator's own namespaces (§11.4, §16.9) ---------------------------------------
+
+
+def test_a_project_outside_the_operators_namespaces_is_not_read_for_why(
+    world: World, migrated: Engine, settings: Any, monkeypatch: Any
+) -> None:
+    monkeypatch.setattr(
+        public_project_views.WHY_CACHE, "get", lambda *_: pytest.fail("read another's project")
+    )
+    others = frozenset({"someone-else"})
+    public_project_views.prepare_why(
+        migrated, replace(settings, forge_github_token="instance", forge_instance_namespaces=others)
+    )
+    unset = frozenset[str]()
+    public_project_views.prepare_why(migrated, replace(settings, forge_instance_namespaces=unset))
+
+
+def test_a_project_outside_the_operators_namespaces_shows_no_why_not_even_a_stored_one(
+    world: World, settings: Any
+) -> None:
+    assert world.anyone.get(READ).json()["data"]["readable"] is True  # stored
+    public_pages.configure(
+        replace(
+            settings,
+            public_pages=True,
+            forge_github_token="instance",
+            forge_instance_namespaces=frozenset({"someone-else"}),
+        )
+    )
+    world.touch()
+    assert world.anyone.get(READ).json()["data"] == {"readable": False}
+    assert "Open question" not in world.anyone.get("/maintainer/maity/why").text

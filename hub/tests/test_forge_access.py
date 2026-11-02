@@ -26,6 +26,7 @@ from tests.conftest import ClientFactory
 URL = "https://github.com/maintainer-gh/private-thing"
 REPO = "maintainer-gh/private-thing"
 OPERATOR = "operator-token"
+OWN = frozenset({"maintainer"})  # MAITY_FORGE_INSTANCE_NAMESPACES: the owner's namespace
 OWNER_TOKEN = "github_pat_owner_secret"
 KEY = secretbox.parse_key(base64.b64encode(b"k" * 32).decode())
 APP = github_app.GitHubApp("1", "maity-test", "unused", "client", "secret")
@@ -77,7 +78,13 @@ def fake(monkeypatch: pytest.MonkeyPatch) -> FakeForge:
 
 @pytest.fixture
 def settings(settings: Settings) -> Settings:
-    return replace(settings, forge_github_token=OPERATOR, github_app=APP, secret_key=KEY)
+    return replace(
+        settings,
+        forge_github_token=OPERATOR,
+        github_app=APP,
+        secret_key=KEY,
+        forge_instance_namespaces=OWN,
+    )
 
 
 @pytest.fixture
@@ -130,8 +137,8 @@ def _token(engine: Engine, human_id: str) -> None:
         )
 
 
-def _reader(engine: Engine) -> forge.Forge:
-    access = forge_access.ForgeAccess(engine, APP, KEY)
+def _reader(engine: Engine, own: frozenset[str] = OWN) -> forge.Forge:
+    access = forge_access.ForgeAccess(engine, APP, KEY, own)
     return forge.Forge(OPERATOR, access=access).for_project(_project_id(engine))
 
 
@@ -228,7 +235,7 @@ def test_a_repository_that_turns_private_falls_back_and_is_no_longer_read(
         _reader(migrated).branch(REPO, "main")
     assert raised.value.reason == "private_without_grant"
     assert fake.sent[reads_before:] == [(OPERATOR, f"/repos/{REPO}")]  # the check, no read
-    assert forge_access.probe_via(_project_id(migrated), URL, None, OPERATOR) is None
+    assert forge_access.probe_via(_project_id(migrated), URL, None, True) is None
 
 
 def test_a_rejected_owner_token_falls_back_to_the_operators_token(
@@ -435,11 +442,11 @@ def test_no_source_found_is_stored_and_differs_from_no_choice_yet(
     owner: flow.Human, migrated: Engine, fake: FakeForge
 ) -> None:
     _on_postgresql(migrated)
-    assert forge_access.probe_via("p", URL, None, OPERATOR) == "instance"  # no choice yet
+    assert forge_access.probe_via("p", URL, None, True) == "instance"  # no choice yet
     with pytest.raises(forge.NotCoveredError):
         _reader(migrated).branch(REPO, "main")
     assert _stored(migrated) == forge_access.NO_SOURCE
-    assert forge_access.probe_via("p", URL, _stored(migrated), OPERATOR) is None
+    assert forge_access.probe_via("p", URL, _stored(migrated), True) is None
 
 
 def test_a_project_locked_by_the_request_that_reads_is_skipped_not_waited_for(

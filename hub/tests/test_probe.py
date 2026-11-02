@@ -80,7 +80,9 @@ def settings(settings: Settings, request: pytest.FixtureRequest) -> Settings:
     """The operator's forge token, as the environment sets it, for the tests that
     ask for the probe; the others run without one."""
     if {"probe", "github"} & set(request.fixturenames):
-        return replace(settings, forge_github_token=TOKEN)
+        return replace(
+            settings, forge_github_token=TOKEN, forge_instance_namespaces=frozenset({"maintainer"})
+        )
     return settings
 
 
@@ -522,7 +524,11 @@ def test_the_worker_probes_right_after_a_report(
     fake.branch("agent-b/probe")
 
     def with_token(**overrides: Any) -> Any:  # every app starts its worker
-        return make_client(forge_github_token=TOKEN, **overrides)
+        return make_client(
+            forge_instance_namespaces=frozenset({"maintainer"}),
+            forge_github_token=TOKEN,
+            **overrides,
+        )
 
     human = flow.human(with_token, migrated)
     flow.project(human, "maity", repository=REPO)

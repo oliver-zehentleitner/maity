@@ -48,7 +48,11 @@ def settings(settings: Settings, request: pytest.FixtureRequest) -> Settings:
     """The operator's forge token, as the environment sets it, for the tests that
     ask for the probe; the others run without one."""
     if {"probe", "github"} & set(request.fixturenames):
-        return replace(settings, forge_github_token="test-token")
+        return replace(
+            settings,
+            forge_github_token="test-token",
+            forge_instance_namespaces=frozenset({"maintainer"}),
+        )
     return settings
 
 
