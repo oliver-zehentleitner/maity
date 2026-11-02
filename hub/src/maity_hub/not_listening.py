@@ -24,7 +24,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, or_, select, update
 
-from maity_hub import clock, events, listening, worker_runs
+from maity_hub import clock, events, listening, maintenance, worker_runs
 from maity_hub import tables as t
 from maity_hub.events import emit, lock_project, transaction
 from maity_hub.views import routing_boss
@@ -274,6 +274,8 @@ class Worker:
     def _run(self) -> None:
         while not self._stop.wait(self.interval):
             try:
+                if maintenance.running_now(self.engine):
+                    continue  # nobody can answer during a window; it decides after (§16.12)
                 with worker_runs.claim(self.engine, "not-listening", self.interval) as held:
                     if held is not None:
                         sweep(self.engine)

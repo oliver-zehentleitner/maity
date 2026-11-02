@@ -29,6 +29,7 @@ from maity_hub import (
     handle_register,
     handles,
     invitations,
+    maintenance,
     paths,
     public_pages,
     registration,
@@ -502,6 +503,8 @@ class Worker:
     def _run(self) -> None:
         while not self._stop.wait(self.interval):
             try:
+                if maintenance.running_now(self.engine):
+                    continue  # nobody can answer during a window; it decides after (§16.12)
                 with worker_runs.claim(self.engine, "registrations", self.interval) as held:
                     if held is None:
                         continue

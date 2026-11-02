@@ -607,6 +607,7 @@ def _remove_person(conn: Connection, human_id: str, secret_key: bytes | None) ->
             public_profile=False,  # the profile and its page are deleted with the person (§2.9)
             public_bio=None,
             interface_language=None,
+            broadcasts=None,  # the owner's choice of hub broadcasts (§16.12)
             deleted_at=clock.now(),
         )
     )

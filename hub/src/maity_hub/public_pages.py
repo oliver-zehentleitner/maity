@@ -120,6 +120,13 @@ def answer(
         query = f"?{request.url.query}" if request.url.query else ""
         return RedirectResponse(f"{bare}{query}", status_code=308)
     assert page is not None
+    # A visitor gets the small 503 page while a window runs, bare or inside the shell (§16.12):
+    # a crawler reads the status, not what the app would draw.
+    from maity_hub import maintenance
+
+    refused = maintenance.running_page(engine_of(request))
+    if refused is not None:
+        return refused  # type: ignore[no-any-return]
     wait = BY_ADDRESS.hit(origin_of(request).address)
     if wait:
         raise rate_limited(wait)

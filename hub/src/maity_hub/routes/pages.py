@@ -21,6 +21,7 @@ from maity_hub import (
     landing,
     landing_stats,
     legal,
+    maintenance,
     public_pages,
     public_projects,
     render,
@@ -127,10 +128,14 @@ def root(
     """The landing page for a visitor without a valid session, or for anyone who asks to see
     it as one (`?as=public`), while it is enabled; the app shell otherwise (§16.7)."""
     settings = settings_of(request)
+    # Read before the transaction below: the window has a connection of its own.
+    refused = maintenance.running_page(engine_of(request))
     with engine_of(request).begin() as conn:
         setting = landing.stored(conn)
         visitor = as_ == "public" or not auth_caller.has_live_session(conn, request.cookies)
         if setting["enabled"] and visitor:
+            if refused is not None:
+                return refused  # type: ignore[no-any-return]
             campaign = known_campaign(setting, c)
             body = landing_html(conn, request, setting, lang=lang, campaign=campaign)
             _count_view(conn, request, setting, landing.DEFAULT_VARIANT, campaign, as_)
@@ -235,7 +240,7 @@ def _legal_route(page: str, address: str) -> None:
         f"/{address}", methods=["GET", "HEAD"], include_in_schema=False, name=f"legal_{page}"
     )
     def current(request: Request, lang: str | None = None) -> Response:
-        with engine_of(request).begin() as conn:
+        with engine_of(request).begin() as conn:  # readable during a window (§16.12)
             body = legal_html(conn, request, page, None, lang)
         return _answer(body)
 
@@ -246,7 +251,7 @@ def _legal_route(page: str, address: str) -> None:
         name=f"legal_{page}_old",
     )
     def earlier(version: str, request: Request, lang: str | None = None) -> Response:
-        with engine_of(request).begin() as conn:
+        with engine_of(request).begin() as conn:  # readable during a window (§16.12)
             body = legal_html(conn, request, page, version, lang)
         return _answer(body)
 
