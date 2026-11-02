@@ -1,11 +1,12 @@
-"""A person's public page (docs/api.md §16.9): `GET /{handle}` while the person's
-`public_profile` is on.
+"""A person's public page (docs/api.md §16.9): `GET /{handle}` for every active account.
 
-It shows the `display_name`, the `handle` and the `public_bio`, and (in the steps that follow) the
-projects with a public page they are a member of, their links and their agents that have a page.
-Never an address, a session or who is online. A person who is suspended, waits for approval, is
-deleted or is hidden by moderation (§16.8) has no page: the page is taken off in the transaction
-that changed it, by `public_pages.touch`.
+The maintainer's decision of 2026-11-02: profiles are public by default, and one turned off
+is not invisible. The page always shows the `display_name` and the `handle`, with the agents
+that have a page; with `public_profile` on also the `public_bio`, the links and the projects
+with a public page they are a member of. A page whose profile is off is `noindex` and out of
+the sitemap. Never an address, a session or who is online. A person who is suspended, waits
+for approval, is deleted or is hidden by moderation (§16.8) has no page: the page is taken off
+in the transaction that changed it, by `public_pages.touch`.
 """
 
 from __future__ import annotations
@@ -37,11 +38,11 @@ def bio_problem(value: str) -> str | None:
 
 
 def served(conn: Connection, human: Any) -> bool:
-    """Whether the person has a page: they chose one, their account is active and not
-    suspended or deleted, and no hold of moderation stands on their profile."""
+    """Whether the person has a page and is named on public pages: their account is active and
+    not suspended or deleted, and no hold of moderation stands on their profile. Their own
+    choice (`public_profile`) decides what the page shows, not whether it exists (§16.9)."""
     return bool(
-        human.public_profile
-        and human.account_status == "active"
+        human.account_status == "active"
         and human.deleted_at is None
         and human.suspended_at is None
         and moderation.hold(conn, "profile", human.id) is None
@@ -70,8 +71,8 @@ def _links(human: Any) -> str:
 
 
 def _listed(conn: Connection, human: Any) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
-    """The projects with a public page the person is a member of, as `(full name, name)`, and
-    their agents that have a page, as `(handle, name)` (§16.9)."""
+    """The projects with a public page the person is a member of, as `(full name, name)`, only
+    while their profile is on, and their agents that have a page, as `(handle, name)` (§16.9)."""
     from maity_hub import namespace, public_agents, public_projects
 
     m = t.membership.c
@@ -81,8 +82,14 @@ def _listed(conn: Connection, human: Any) -> tuple[list[tuple[str, str]], list[t
         .where(t.project.c.public_page == "on", m.human_id == human.id, m.active.is_(True))
         .order_by(t.project.c.id)
     ).all()
-    named = sorted(
-        (namespace.full_name(conn, p), p.name) for p in projects if public_projects.served(conn, p)
+    named = (
+        sorted(
+            (namespace.full_name(conn, p), p.name)
+            for p in projects
+            if public_projects.served(conn, p)
+        )
+        if human.public_profile
+        else []
     )
     agents = sorted(
         (a.handle, a.display_name)
@@ -118,14 +125,14 @@ def _data(
     data: dict[str, Any] = {
         "name": human.display_name,
         "handle": human.handle,
-        "bio": human.public_bio,
+        "bio": human.public_bio if human.public_profile else None,
         "projects": [{"name": name, "full_name": full} for full, name in named],
         "agents": [
             {"name": name, "handle": handle, "page": f"/{human.handle}/agents/{handle}"}
             for handle, name in agents
         ],
     }
-    if human.links_visible == "everyone":
+    if human.public_profile and human.links_visible == "everyone":
         data["website"] = human.website
         data["social"] = {
             network: human.social[network] for network in person_links.built(human.social)
@@ -137,12 +144,14 @@ def render_person(conn: Connection, hub: Settings, human_id: str) -> list[public
     human = conn.execute(select(t.human).where(t.human.c.id == human_id)).first()
     if human is None or not served(conn, human):
         return []
-    bio = f'<p class="sub">{escape(human.public_bio)}</p>' if human.public_bio else ""
+    chosen = bool(human.public_profile)  # the personal details, by the person's choice
+    bio = f'<p class="sub">{escape(human.public_bio)}</p>' if chosen and human.public_bio else ""
+    links = _links(human) if chosen else ""
     named, agents = _listed(conn, human)
     listed = _listed_html(human, named, agents)
     content = (
         f'<p class="eyebrow">{escape(human.handle)}</p><h1>{escape(human.display_name)}</h1>'
-        f"{bio}{_links(human)}{listed}"
+        f"{bio}{links}{listed}"
     )
     path = f"/{human.handle}"
     body = render.page_document(
@@ -150,14 +159,16 @@ def render_person(conn: Connection, hub: Settings, human_id: str) -> list[public
         title=f"{human.display_name} ({human.handle})",
         canonical=f"{hub.public_url.rstrip('/')}{path}",
         content=content,
+        indexed=chosen,
     )
     inputs = hashlib.sha256(
         "\x00".join(
             (
                 human.handle,
                 human.display_name,
-                human.public_bio or "",
-                _links(human),
+                "on" if chosen else "off",
+                human.public_bio or "" if chosen else "",
+                links,
                 listed,
             )
         ).encode()
@@ -170,6 +181,7 @@ def render_person(conn: Connection, hub: Settings, human_id: str) -> list[public
             lastmod=clock.now(),
             view="person",
             data=_data(human, named, agents),
+            indexed=chosen,
         )
     ]
 
@@ -177,7 +189,9 @@ def render_person(conn: Connection, hub: Settings, human_id: str) -> list[public
 def targets(conn: Connection) -> list[str]:
     return list(
         conn.execute(
-            select(t.human.c.id).where(t.human.c.public_profile.is_(True)).order_by(t.human.c.id)
+            select(t.human.c.id)
+            .where(t.human.c.account_status == "active", t.human.c.deleted_at.is_(None))
+            .order_by(t.human.c.id)
         ).scalars()
     )
 

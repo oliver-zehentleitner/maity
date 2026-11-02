@@ -14,6 +14,7 @@ from maity_hub import public_pages
 from maity_hub import tables as t
 from tests.conftest import ClientFactory
 from tests.test_public_project_views import World
+from tests.test_reports import report
 
 ROUTE = "/api/v1/public/pages"
 BASE = "maintainer/maity"
@@ -54,14 +55,13 @@ def test_each_kind_answers_exactly_the_keys_of_the_contract(world: World) -> Non
         "links",
         "people",
         "agents",
-        "other_agents",
         "statistics",
         "ticker",
         "online",
     }
     assert set(project["data"]["statistics"]) == {"totals", "members"}
     assert set(project["data"]["online"]) == {"humans", "agents", "named", "as_of"}
-    assert [set(p) for p in project["data"]["people"]] == [PERSON]
+    assert project["data"]["people"] and all(set(p) == PERSON for p in project["data"]["people"])
 
     board = read(world, f"{BASE}/board")
     assert board["kind"] == "board" and set(board["data"]) == {"columns"}
@@ -129,7 +129,7 @@ def test_links_appear_only_while_the_person_lets_everyone_see_them(world: World)
     assert read(world, "maintainer")["data"]["website"] == "https://canary.example"
 
 
-def test_a_holder_is_named_only_while_the_page_names_them(world: World) -> None:
+def test_a_holder_is_named_by_handle_and_a_held_one_is_a_member(world: World) -> None:
     card = world.card(status="in_progress", title="Held", claim_holder=world.owner_member)
     assert card
     world.touch()
@@ -138,9 +138,14 @@ def test_a_holder_is_named_only_while_the_page_names_them(world: World) -> None:
         columns = read(world, f"{BASE}/board")["data"]["columns"]
         return next(c for col in columns for c in col["cards"] if c["title"] == "Held")["holder"]
 
+    assert holder()["handle"] == "maintainer"  # profiles are public by default (§16.9)
+    world.owner.patch("/me", {"public_profile": False})
+    assert holder()["handle"] == "maintainer"  # and off is not invisible
+    made = report(world.anna, {"type": "profile", "id": world.owner.id}, "impersonation")
+    assert made.status_code == 201, made.text
+    path = f"/admin/reports/{made.json()['id']}/resolve"
+    assert world.owner.post(path, {"action": "hide"}).status_code == 200
     assert holder() == "member"
-    publish_profile(world, world.owner)
-    assert holder()["handle"] == "maintainer"
 
 
 def test_the_organisation_numbers_its_nodes_and_never_names_a_member_id(

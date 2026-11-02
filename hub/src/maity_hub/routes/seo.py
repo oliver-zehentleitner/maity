@@ -95,7 +95,9 @@ def urls(
     found += [_url(base, address, version) for address, version in _set_pages(pages)]
     if public_pages:
         for row in conn.execute(
-            select(t.public_page.c.path, t.public_page.c.lastmod).order_by(t.public_page.c.path)
+            select(t.public_page.c.path, t.public_page.c.lastmod)
+            .where(t.public_page.c.indexed.is_(True))  # a page kept out of search (§16.9)
+            .order_by(t.public_page.c.path)
         ):
             found.append(_url(base, row.path, ts(row.lastmod)))
     return found

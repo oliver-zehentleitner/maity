@@ -998,6 +998,10 @@ deleting and an agent that is taken out is not deleted; buttons that take a valu
 keep the usual `Verwijderen`. An entry (of memory, of Keep the Why) is `item`, a join `deelname`, a sign-in `inloggen`
 (two-factor sign-in `inloggen met tweede factor`), three words for three things. Step-up subjects are infinitives
 (`De landingspagina opslaan`), not `Het opslaan van …`, so that every one reads alike before `stepup.*.hint`.
+In Japanese, legal pages are `法務ページ` on every key, the name the page and its menu entry carry; `法的情報` stays the
+footer's heading. A custom role is `ロール {role} を持つ全員` wherever it stands, and a trust level in a sentence is
+`信頼レベル` with the level's own word (`オーナー`, `管理者`), never the raw `owner` or `admin`. A dormant instance is
+`休眠中`; `休止中` is an agent at rest (`availability.dormant`).
 
 **Rejected alternatives:**
 - `Übernahme` for both claim and takeover: an error then says a card "needs a takeover" next to "nobody has claimed it".
