@@ -1,4 +1,5 @@
-"""`maity-hub serve` and `maity-hub migrate`, and the operator's account commands."""
+"""`maity-hub serve` and `maity-hub migrate`, the operator's account commands, and the load test's
+seed."""
 
 from __future__ import annotations
 
@@ -6,8 +7,10 @@ import argparse
 import asyncio
 import getpass
 import logging
+import os
 import re
 import sys
+from pathlib import Path
 from types import FrameType
 from typing import Any
 
@@ -20,6 +23,7 @@ from maity_hub import (
     clock,
     handle_register,
     handles,
+    loadtest,
     longpoll,
     moderation,
     namespace,
@@ -66,6 +70,13 @@ def main(argv: list[str] | None = None) -> int:
         "unsuspend", help="lift an instance admin's suspension of a human account"
     )
     unsuspend.add_argument("--handle", required=True)
+    load = commands.add_parser("loadtest", help="the load test's accounts (loadtest/README.md)")
+    load_commands = load.add_subparsers(dest="load_command", required=True)
+    seed = load_commands.add_parser(
+        "seed", help="seed lt-<n> accounts into this hub's database and write their keys to a file"
+    )
+    seed.add_argument("--humans", type=int, required=True)
+    seed.add_argument("--out", required=True, help="a new file; it holds secrets")
     quick = commands.add_parser(
         "quickstart",
         help="a personal hub on SQLite: set up a new database, the first account, then serve",
@@ -93,7 +104,38 @@ def main(argv: list[str] | None = None) -> int:
         return _unsuspend(settings, args.handle)
     if args.command == "quickstart":
         return _quickstart(settings, args.handle, args.display_name)
+    if args.command == "loadtest":
+        return _loadtest_seed(settings, args.humans, Path(args.out))
     return _serve(settings)
+
+
+def _loadtest_seed(settings: Settings, humans: int, out: Path) -> int:
+    if not os.environ.get("MAITY_PUBLIC_URL"):  # the operator's name for the hub, never derived
+        return _fail("refused: MAITY_PUBLIC_URL is not set", EXIT_CONFIG)
+    why = loadtest.refusal(
+        settings.public_url,
+        os.environ.get("LOADTEST_CONFIRMED_TEST_SYSTEM"),
+        os.environ.get("LOADTEST_CONFIRMED_PRODUCTION"),
+    )
+    if why is not None:
+        return _fail(f"refused: {why}", EXIT_CONFIG)
+    if humans < 0:
+        return _fail("--humans: 0 or more", EXIT_CONFIG)
+    if out.exists():  # before the database is asked anything; again when it is created
+        return _fail(f"refused: {out} exists", EXIT_CONFIG)
+    try:
+        engine = make_engine(settings.database_url)
+        require_current_schema(engine)
+    except SchemaNotCurrentError as error:
+        return _fail(str(error), EXIT_FAILURE)
+    except (SQLAlchemyError, ImportError) as error:
+        return _database_error(settings, error)
+    try:
+        made = loadtest.seed(engine, humans, out)
+    except FileExistsError:
+        return _fail(f"refused: {out} exists", EXIT_CONFIG)
+    print(f"seeded {made} humans into {out}")
+    return 0
 
 
 HANDLE = re.compile(r"[a-z0-9][a-z0-9-]{1,62}")
