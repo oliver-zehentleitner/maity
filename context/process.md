@@ -993,15 +993,9 @@ last green automatic run; a quiet hour is skipped. `hub-postgresql` (what produc
 pull request and in `ci-ok`.
 
 **The clock is not enough (2026-11-01):** (Source: the coordinator's finding, 2026-11-01, that scheduled runs were skipped, visible in the run history of the workflow; the choice of `workflow_run` is the author's proposal in the pull request that added it, evidence inferred, not a maintainer decision.) GitHub starts scheduled workflows on a best-effort basis; in the first nine hours
-after the merge only one scheduled run happened (and not at the minute asked for). Every finished `ci` run on main therefore also
-starts the workflow (`workflow_run`), with the same checks: one running, one waiting, skipped when nothing relevant changed. The
-clock stays as the fallback for quiet days. "Automatic run" below means either trigger; a hand start is not one.
-
-**An exception to the runner's trust boundary (2026-11-02):** `deploy/runner/README.md` said that no workflow uses `workflow_run`.
-This one does. It stays within the boundary only while all of this holds: the workflow file comes from the default branch,
-`decide` and the suite check out nothing but `github.sha` (the head of main), no value of `github.event.workflow_run` is read
-except in the `if:` that lets a push to this repository through, and no artifact is downloaded. The README names the same four
-conditions; changing one of them puts the rule back in force.
+after the merge only one scheduled run happened (and not at the minute asked for). Every push to main therefore also
+starts the workflow, from the last job of `ci.yml` (`gh workflow run` with `trigger=ci`, a `workflow_dispatch` with the workflow's own token), with the same checks: one running, one waiting, skipped when nothing relevant changed. The
+clock stays as the fallback for quiet days. "Automatic run" below means the clock or a start from `ci`; a hand start is not one. Both a start from `ci` and a hand start are a `workflow_dispatch`, so the run title (`hub-mariadb ci` or `hub-mariadb hand`) tells them apart where the run list is read.
 
 **What keeps it from rotting:** a red run opens one issue labelled `ci-red` that names the commit range since the last
 green run, and later red runs comment on it, so the change that broke it is found within the hour; a green automatic run
@@ -1020,16 +1014,14 @@ fault close to the change that caused it without making every author wait for it
 - Remove it: self-hosters on MariaDB would learn about a break from their own upgrade.
 - One concurrency group for the automatic runs and the hand start: GitHub keeps one waiting run per group, so a hand start for a
   deploy candidate would be displaced by the next automatic run while it waits behind a running one; they have a group each.
-- A `push` trigger on main instead of `workflow_run`: the run would start beside `ci` instead of after it and compete with it for
+- A `workflow_run` trigger on `ci` (the first version of the pull request): `deploy/runner/README.md` says that no workflow of this
+  repository uses `workflow_run`, and with reason: `branches: [main]` compares the head branch name, so the `ci` run of a
+  fork's pull request from a branch called `main` would start it, with a write token in the report job and on the
+  maintainer's machine. The rule stays; `ci` starts the run itself (below). Found in review, decided by the coordinator, 2026-11-02.
+- A `push` trigger on main in `hub-mariadb.yml`: the run would start beside `ci` instead of after it and compete with it for
   the same machines, and it would start for a commit whose `ci` is still going.
-- `workflow_run` only after a green `ci` (`conclusion == 'success'`): a red `ci` on main would then pause the MariaDB check
-  entirely, and a red state is what it is for.
-- `workflow_run` without a filter on the event and the repository: `branches: [main]` compares the head branch name, so the `ci`
-  run of a fork's pull request from a branch called `main` would start it, with a write token in the report job and on the
-  maintainer's machine. Only a push to this repository is let through, in the `if:` of `decide` (a script answering
-  `run=false` would count as a green run and make the head of main the diff base untested). One edge is accepted: such a run
-  still enters the concurrency group before the `if:` is read and can replace a waiting automatic run; the hourly clock
-  catches that up.
+- Starting it from `ci` only after a green `ci`: a red `ci` on main would then pause the MariaDB check entirely, and a red
+  state is what it is for; the last job of `ci.yml` runs whatever the result of the jobs before it.
 - One group per trigger (`github.event_name`, the first version): the clock and a finished `ci` run then do not queue behind
   each other, both decide at once against the same last green run, and the suite starts twice for one commit; the two
   automatic triggers share one group.
