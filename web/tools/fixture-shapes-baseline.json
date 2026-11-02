@@ -158,6 +158,7 @@
   ".items[].holder: the fixture leaves it out",
   ".items[].humans_only: the fixture leaves it out",
   ".items[].jour_fixe: the fixture leaves it out",
+  ".items[].org: the fixture leaves it out",
   ".items[].placement: the fixture leaves it out",
   ".items[].takeover_id: the fixture leaves it out"
  ]

@@ -15,7 +15,14 @@ import os
 from pathlib import Path
 from typing import Any
 
-from tests import flow
+from sqlalchemy import select
+
+from maity_hub import tables as t
+from maity_hub.access import membership
+from maity_hub.auth.caller import Caller
+from maity_hub.events import transaction
+from maity_hub.routes.requests import file_personal
+from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_runners import paired
 
@@ -72,7 +79,7 @@ def test_web_check_computes_the_same_forms() -> None:
     assert spec and spec.loader
     check = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(check)
-    maps = frozenset({".m"})
+    maps = frozenset({".m", ".m{}"})
     values: list[Any] = [
         None,
         True,
@@ -84,6 +91,8 @@ def test_web_check_computes_the_same_forms() -> None:
         [1, "x"],
         [{"a": 1}, {"b": None}, {"a": None, "b": "y"}],
         {"m": {"1": [1], "2": [], "3": None}, "n": {"1": True}},
+        {"m": {"1": None, "2": ["x"]}},
+        {"m": {"a": {"x": 1}, "b": {"y": "z"}}},
         [[{"a": 1}], [], [{"a": "z"}]],
     ]
     for value in values:
@@ -98,6 +107,25 @@ def test_web_check_computes_the_same_forms() -> None:
 def _ok(answer: Any) -> Any:
     assert answer.status_code < 300, answer.text
     return answer.json()
+
+
+def _personal_from_elsewhere(make_client: ClientFactory, engine: Any, owner: flow.Human) -> None:
+    """The owner's agent in another human's project, where the owner is no member, asks
+    the owner personally (§7): only that notification carries `project.member`."""
+    friend = flow.human(make_client, engine, "friend")
+    lab = flow.project(friend, "lab")
+    lent = factory.agent(engine, lab["id"], owner.id).agent_id
+    with transaction(engine) as conn:
+        row = conn.execute(select(t.membership).where(t.membership.c.agent_id == lent)).one()
+        caller = Caller(
+            kind="agent",
+            via="bearer",
+            agent_id=lent,
+            membership_id=row.id,
+            project_id=row.project_id,
+        )
+        mine = membership(conn, caller, "friend/lab")
+        file_personal(conn, mine, caller, lent, "consent", "May I?", "the text")
 
 
 def _seed(make_client: ClientFactory, migrated: Any) -> tuple[flow.Human, dict[str, str]]:
@@ -132,6 +160,7 @@ def _seed(make_client: ClientFactory, migrated: Any) -> tuple[flow.Human, dict[s
     _ok(owner.post(f"{base}/tasks", second | {"ships_with": [first["id"]]}))
     options = [{"id": "yes", "label": "Yes"}, {"id": "no", "label": "No"}]
     _ok(agent.post(f"{base}/requests", {"class": "decision", "title": "Ship?", "options": options}))
+    _personal_from_elsewhere(make_client, migrated, owner)
     runner = paired(make_client, owner)
     ids = {
         "project": "maintainer/maity",

@@ -7737,12 +7737,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "keep the why: no why says the reason; a path out of the repository stays text");
   win.Maity.api.getAll = ktGetAll;
   // Since 2026-10-26 the owner's notice is a personal request in the inbox (§6.23, §18.1): no kind of its own.
-  // Whether the reader is a member of an item's project is said in by_project (§18.2), not on the item.
+  // A personal request of a project the reader is no member of carries project.member false (§7, §18.2):
+  // its notification leads to /all, also once by_project no longer lists that project.
   const ntKept = win.Maity.notify.state.byProject;
-  win.Maity.notify.state.byProject = { "lv/lasteverlm": { member: false }, "maintainer/maity": { member: true } };
-  const ntItem = (full) => ({ kind: "inbox", project: { slug: full.split("/")[1], full_name: full }, target: { type: "request", id: "req-x" } });
-  expect(win.Maity.notify.linkOf(ntItem("lv/lasteverlm")) === "/all" && win.Maity.notify.linkOf(ntItem("maintainer/maity")) === "/maintainer/maity/inbox/req-x",
-    "notifications: an item of a project the reader is no member of (by_project) leads to /all " + win.Maity.notify.linkOf(ntItem("lv/lasteverlm")));
+  win.Maity.notify.state.byProject = {};
+  const ntItem = (full, member) => ({ kind: "inbox", project: Object.assign({ slug: full.split("/")[1], full_name: full }, member === undefined ? {} : { member }), target: { type: "request", id: "req-x" } });
+  expect(win.Maity.notify.linkOf(ntItem("lv/lasteverlm", false)) === "/all" && win.Maity.notify.linkOf(ntItem("maintainer/maity")) === "/maintainer/maity/inbox/req-x",
+    "notifications: a personal request of a project the reader is no member of leads to /all " + win.Maity.notify.linkOf(ntItem("lv/lasteverlm", false)));
   win.Maity.notify.state.byProject = ntKept;
   expect(!("keep_the_why" in win.Maity.notify.KIND_WORDS), "keep the why: the owner's notice is a request in the inbox, no notification kind of its own");
   const ktProto = Object.getPrototypeOf(main), ktFocus = ktProto.focus;

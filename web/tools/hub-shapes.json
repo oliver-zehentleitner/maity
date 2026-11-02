@@ -239,6 +239,7 @@
       "project": {
        "object": {
         "full_name": "string",
+        "member": "boolean",
         "name": "string",
         "slug": "string"
        }
@@ -1173,6 +1174,7 @@
         }
        }
       },
+      "org": "null",
       "personal": "boolean",
       "placement": "null",
       "priority": "string",
@@ -1193,7 +1195,7 @@
        }
       },
       "status": "string",
-      "summary": "null",
+      "summary": "string",
       "takeover_id": "null",
       "task": "null",
       "task_id": "null",
