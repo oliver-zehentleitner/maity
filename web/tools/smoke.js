@@ -9529,6 +9529,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Works with (§16.7): the agents picked in order from the hub's list, each once; the list is the hub's.
   const wwHub = fs.readFileSync(path.join(WEB, "../hub/src/maity_hub/landing.py"), "utf8").match(/^AGENTS: dict\[str, str\] = \{\n([\s\S]*?)^\}/m)[1];
   const wwSlugs = [...wwHub.matchAll(/^\s*"([^"]+)": "([^"]+)",$/gm)].map((m) => m[1] + "=" + m[2]);
+  // A limit is a quantity: formatted for the reader, so English is pinned here; the section leaves again.
+  const lpLocale = win.Maity.i18n.locale;
+  win.Maity.i18n.locale = "en";
+  byId("lp-add-type-en").value = "faq"; btn(leBox().querySelector(".lp-add"), "Add the section").click(); await tick();
+  const lpFaq = leBox().querySelectorAll(".lp-section").at(-1);
+  expect(text(lpFaq).includes("At most 2,000 characters."), "landing editor: a limit in characters reads as a formatted number");
+  btn(lpFaq.querySelector(".lp-section-head"), "Remove").click(); await tick();
+  win.Maity.i18n.locale = lpLocale;
   byId("lp-add-type-en").value = "works_with"; btn(leBox().querySelector(".lp-add"), "Add the section").click(); await tick();
   const wwAt = leSections().length - 1;
   const wwId = (rest) => "lp-pages-en-sections-" + wwAt + "-" + rest;

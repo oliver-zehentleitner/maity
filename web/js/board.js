@@ -546,7 +546,12 @@ window.Maity = window.Maity || {};
   }
 
   // A contract's arbiter may be a token ("trust:admin", "role:reviewer"): named in words.
-  const arbiterName = (ctx, a) => (/^(role|trust):/.test(a || "") ? M.t("board.contract.arbiter_group", { group: a.replace(/^(role|trust):/, "") }) : M.dom.memberRef(ctx, a));
+  const arbiterName = (ctx, a) => {
+    if (a === "trust:admin") return M.t("board.contract.arbiter_admins");
+    if (/^role:/.test(a || "")) return M.t("board.contract.arbiter_role", { role: M.trust.roleLabel(a.slice(5)) });
+    if (/^trust:/.test(a || "")) return M.t("board.contract.arbiter_trust", { trust: a.slice(6) });
+    return M.dom.memberRef(ctx, a);
+  };
 
   // manage: { move, assign, place, columnOf, drag } from the board, or null (read only).
   function actions(...controls) {
