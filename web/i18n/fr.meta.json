@@ -12224,8 +12224,8 @@
     "text": "06faf21693a49663"
   },
   "public_profile.hint": {
-    "en": "b9c7adc490cdec63",
-    "text": "ab61ba98d76762c0"
+    "en": "bdc3c71606e891f1",
+    "text": "a1a31447571e8756"
   },
   "public_profile.links": {
     "en": "5b3bd4bf0fd959d5",
@@ -12262,6 +12262,14 @@
   "public_profile.network.format": {
     "en": "86d6d20cf41e43d7",
     "text": "df3757b34ade0e4e"
+  },
+  "public_profile.presence": {
+    "en": "13fd36440a3dfcb7",
+    "text": "b913e4e8f14e125e"
+  },
+  "public_profile.presence.hint": {
+    "en": "e13e591267b9ad44",
+    "text": "db729c365114c3e4"
   },
   "public_profile.refused": {
     "en": "eefc90bc95b7b6cc",
