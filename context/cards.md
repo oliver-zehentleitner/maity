@@ -242,7 +242,7 @@ through the probe gives that without a second source of truth.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's wish in the Maity chat, 2026-11-02, that the overview link the contract and better show it rendered inside Maity (card tsk-yhbmz7mjng7n); the coordinator's go the same day for the implementer to write the contract; the arbiter's ruling on #1235, 2026-11-02; the contract review of #1235 and the arbiter's ruling on its findings the same day (Markdown only, `private, no-cache`, the repository in the `ETag`), and the delta review (the symlink check); contract in `docs/api.md` §6.8, §6.1, §6.11, §16.11
+**Source:** the maintainer's wish in the Maity chat, 2026-11-02, that the overview link the contract and better show it rendered inside Maity (card tsk-yhbmz7mjng7n); the coordinator's go the same day for the implementer to write the contract; the arbiter's ruling on #1235, 2026-11-02; the contract review of #1235 and the arbiter's ruling on its findings the same day (Markdown only, `private, no-cache`, the repository in the `ETag`), and the arbiter's ruling on the delta review the same day (a symlink refused); contract in `docs/api.md` §6.8, §6.1, §6.11, §16.11
 **Revisit when:** a project's contract outgrows 4 MiB, or a project keeps its contract in more than one file
 **See:** cards.md#a-contracts-text-stays-in-the-repository-the-card-shows-the-section-read-from-it — f29e3cb3-12ab-4af6-83f1-9b04dbaeb578 — as of 2026-11-02
 
@@ -252,9 +252,10 @@ own, read-only: the hub reads the file a project setting names
 the default branch's commit and answers it whole, with a table of
 contents and an anchor per heading, under an `ETag` over the
 repository, the path and the file's bytes. The setting names a Markdown
-file only (`not_markdown` otherwise), which keeps it from exposing
-arbitrary repository files to every `project:read` holder, guests
-included. The file cap for this read and for a card's section is
+file only (`not_markdown` otherwise, the extension in any case), which
+keeps it from exposing arbitrary repository files to every
+`project:read` holder, guests included; a symlink is refused too, since
+the name says nothing about the file it points to. The file cap for this read and for a card's section is
 4 MiB instead of 1 MiB; a larger file is refused, never cut.
 
 **Reason:** a setting is the one place that says which file is the
@@ -282,9 +283,9 @@ reading up to 4 MiB again; after a `304` the view keeps the `ref`,
   `.markdown`), lest a committed secret reach every `project:read`
   holder, guests included.
 - The name rule alone: a committed symlink `x.md` to a non-Markdown
-  file resolves on the forge to the target's bytes, so the hub compares
-  the answer's `path` with the setting and refuses a mismatch instead of
-  trusting the name.
+  file resolves on the forge to the target's bytes, so the hub refuses a
+  symlink and any answer whose `path` differs from the setting
+  (`not_markdown`) instead of trusting the name.
 - `no-store` like the other API answers: every tab and reload would
   read the whole file again, so the load would grow with tabs.
 

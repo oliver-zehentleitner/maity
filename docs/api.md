@@ -6070,18 +6070,20 @@ repository-relative path under the rule for `contract.path` above (no
 leading slash, no `..` segment, no URL, no scheme, at most 255
 characters), else `invalid` with
 `details.fields["settings.contract_path"]: "not_a_path"`; and it ends in
-`.md` or `.markdown`, in any case (`README.MD` counts), else `invalid`
-with `"not_markdown"`. A Markdown
+`.md` or `.markdown`, compared case-insensitively (`README.MD` counts),
+else `invalid` with `details.fields["settings.contract_path"]:
+"not_markdown"`. A Markdown
 file only, so that the setting cannot expose an arbitrary file of the
 repository to every holder of `project:read`, guests included and
 whether or not they can read the repository on the forge: this read
 shows the whole file, unlike a card's section, which shows only
 Markdown under a matching heading, so a file without one (an `.env`)
-shows nothing there. The rule checks the name, so the read checks the
-target too: the hub compares the path the forge answers for with the
-setting, and a mismatch — a committed symlink `x.md` that the forge
-resolves to another file of the repository — is `not_found` with
-`"not_found_on_forge"`, never the target's text. Without the
+shows nothing there. The name alone is not enough, so the read checks
+what the name points to: the hub reads the entry's metadata at the
+commit and refuses a symlink, or any answer whose path differs from the
+setting (a forge that resolves a symlink `x.md` to its target), as
+`invalid` with `details.fields["settings.contract_path"]:
+"not_markdown"`; nothing is shown, never the target's text. Without the
 key it is `docs/api.md`; `null` removes the key and the default applies
 again (§6.1). Set by `PATCH /projects/{owner}/{slug}` under
 `project:admin`, like every setting; a change emits `project_updated`
