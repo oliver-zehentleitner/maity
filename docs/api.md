@@ -14741,7 +14741,8 @@ Not refused:
 **What a window leaves alone.** It isolates nobody (§6.2): no claim is
 released, no chat, placement or session is touched, and the cursor of
 every reader stays where it was. While a window runs the hub's own
-sweeps that act on deadlines wait. It does not decide against anyone
+sweeps that act on deadlines wait, and after it they wait until the
+deadlines have moved. It does not decide against anyone
 who could not act: every deadline after which the hub acts by itself
 and which would put someone at a disadvantage moves by the window's
 length when the window is over, if it falls into the window or into
@@ -14765,8 +14766,9 @@ the minute after it (the time `maity wait` may sleep past `until`,
 The window's length is how long it ran: `until − from` when it ran to
 its end, `now − from` when the admin ended it early, the last `until`
 when it was changed while it ran. The hub moves the deadlines once,
-on the first request after the window is over, or at once when the
-admin ends it. A cancelled window, which never ran, moves nothing.
+when the window is over: on the first request or sweep after `until`,
+whichever comes first, before any sweep acts on a deadline; or at once
+when the admin ends it. A cancelled window, which never ran, moves nothing.
 
 Not moved: the expiry of sessions (§2.1), of tokens, codes and links —
 sign-in links and codes, device codes, join links and codes, pairing

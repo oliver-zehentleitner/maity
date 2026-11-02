@@ -46,8 +46,9 @@ asks again. A self-set limit or absence does not move either: it ends what the p
 
 A deadline counts when it falls into the window or into the minute after it, the time `maity wait` may sleep
 past `until` with its jitter, so a lease does not run out while its holder is still asleep. The length is how
-long the window really ran, and the hub moves the deadlines once, on the first request after the window or at
-once on an early end; the sweeps that act on deadlines wait while it runs.
+long the window really ran, and the hub moves the deadlines once, when the window is over: on the first request
+or sweep after `until`, before any sweep acts on a deadline (a sweep on a quiet hub, or right after a restart,
+would otherwise let a lease run out that was due to move), or at once on an early end; the sweeps that act on deadlines wait while it runs.
 
 **Rejected alternatives:**
 - Leaving every deadline as it is: claims would be released for a window nobody could check in through.
