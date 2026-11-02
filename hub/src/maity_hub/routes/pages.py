@@ -129,16 +129,17 @@ def root(
     it as one (`?as=public`), while it is enabled; the app shell otherwise (§16.7)."""
     settings = settings_of(request)
     # Read before the transaction below: the window has a connection of its own.
-    refused = maintenance.running_page(engine_of(request))
+    window = maintenance.window_now(engine_of(request))
     with engine_of(request).begin() as conn:
         setting = landing.stored(conn)
         visitor = as_ == "public" or not auth_caller.has_live_session(conn, request.cookies)
         if setting["enabled"] and visitor:
-            if refused is not None:
-                return refused  # type: ignore[no-any-return]
+            if window is not None and window["state"] == "running":
+                return maintenance.refusal_page(window)  # type: ignore[no-any-return]
             campaign = known_campaign(setting, c)
             body = landing_html(conn, request, setting, lang=lang, campaign=campaign)
             _count_view(conn, request, setting, landing.DEFAULT_VARIANT, campaign, as_)
+            body = maintenance.with_banner(body, window)
             return HTMLResponse(body, headers=landing_headers(setting))
     return _shell(settings)
 
@@ -165,8 +166,9 @@ def explore(request: Request) -> Response:
     wait = public_pages.BY_ADDRESS.hit(origin_of(request).address)
     if wait:
         raise rate_limited(wait)
+    window = maintenance.window_now(engine_of(request))
     with engine_of(request).begin() as conn:
-        body = public_projects.explore_html(conn, settings)
+        body = maintenance.with_banner(public_projects.explore_html(conn, settings), window)
     return HTMLResponse(
         body,
         headers={
@@ -183,11 +185,13 @@ def variant(request: Request, slug: str, lang: str | None = None, c: str | None 
     """A variant of the landing page (§16.7.2), for every visitor, with or without a session,
     while the landing page is enabled and the variant exists; the app shell otherwise, as an
     unknown path would be, so that an address does not tell whether a variant existed."""
+    window = maintenance.window_now(engine_of(request))
     with engine_of(request).begin() as conn:
         setting = landing.stored(conn)
         if setting["enabled"] and slug in setting["variants"]:
             campaign = known_campaign(setting, c)
             body = landing_html(conn, request, setting, lang=lang, variant=slug, campaign=campaign)
+            body = maintenance.with_banner(body, window)
             _count_view(conn, request, setting, slug, campaign, None)
             return HTMLResponse(body, headers=landing_headers(setting))
     return _shell(settings_of(request))
@@ -240,9 +244,10 @@ def _legal_route(page: str, address: str) -> None:
         f"/{address}", methods=["GET", "HEAD"], include_in_schema=False, name=f"legal_{page}"
     )
     def current(request: Request, lang: str | None = None) -> Response:
+        window = maintenance.window_now(engine_of(request))  # read first: its own connection
         with engine_of(request).begin() as conn:  # readable during a window (§16.12)
             body = legal_html(conn, request, page, None, lang)
-        return _answer(body)
+        return _answer(maintenance.with_banner(body, window))
 
     @page_router.api_route(
         f"/{address}/{{version}}",
@@ -251,9 +256,10 @@ def _legal_route(page: str, address: str) -> None:
         name=f"legal_{page}_old",
     )
     def earlier(version: str, request: Request, lang: str | None = None) -> Response:
+        window = maintenance.window_now(engine_of(request))  # read first: its own connection
         with engine_of(request).begin() as conn:  # readable during a window (§16.12)
             body = legal_html(conn, request, page, version, lang)
-        return _answer(body)
+        return _answer(maintenance.with_banner(body, window))
 
 
 def _answer(body: str) -> Response:
