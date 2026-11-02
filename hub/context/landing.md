@@ -140,16 +140,19 @@ puts a section without a required field in front of the renderer.
 **Status:** active
 **Evidence:** inferred
 **Source:** `docs/api.md` §16.7 ("The page", "Content security"), §16.7.1; the implementation of tsk-2vv6h5jptvem, 2026-10-29
-**Revisit when:** a legal page needs a script or an image, or public pages (§16.9) arrive and `profiles`, `explore` and `activity` get something to show. The "no script, no image, one `<style>`" of the landing page held until landing V3 stage 1 (2026-10-30), which gave it the hub's own files, see the entry on its files below.
+**Revisit when:** a legal page needs a script, or public pages (§16.9) arrive and `profiles`, `explore` and `activity` get something to show. The "no script, no image, one `<style>`" of the landing page held until landing V3 stage 1 (2026-10-30), which gave it the hub's own files, see the entry on its files below; that of the legal pages until their frame (2026-11-02), see the entry on their stylesheets below.
+**See:** landing.md#the-legal-pages-load-the-landing-pages-stylesheets-and-fonts-and-still-carry-no-script — dde46a41-8792-4201-9623-3900652815d7 — as of 2026-11-02
 
 `render.py` turns a page into one HTML string: a fixed header, the enabled sections in order,
 a fixed footer, a style that follows `prefers-color-scheme` (for the landing page the hub's own
-stylesheet, below; for the legal pages one inline `<style>` element), and the
+stylesheet, below; for the legal pages one inline `<style>` element until 2026-11-02, since then the
+landing page's stylesheets, below), and the
 operator's words only ever as escaped text. Markdown goes through a small renderer that knows
 exactly what the validator allows (headings, paragraphs, emphasis, lists, quotes, fenced code,
-links whose target passes the same check again at render time). The documents answer with
-`default-src 'none'; style-src 'unsafe-inline'` (the legal pages), which is why they have no image
-and no logo file: the wordmark is text. The landing page's policy is wider since V3 stage 1 (below).
+links whose target passes the same check again at render time). The legal pages answered with
+`default-src 'none'; style-src 'unsafe-inline'`, which is why they had no image and no logo file: the
+wordmark was text. Both policies are wider now: the landing page's since V3 stage 1, the legal pages'
+since their frame (both below).
 `/` shows the landing page to a visitor (no live `maity_session`; `has_live_session` reads, renews
 nothing and never raises) while it is enabled, to anyone with `?as=public`, and the app shell
 otherwise. The language is `?lang=`, else the best `Accept-Language` match among the languages
@@ -184,7 +187,7 @@ value, since a row written by an older version or by hand is still shown to the 
 **Evidence:** confirmed
 **Source:** docs/api.md §16.7 ("Progressive enhancement", "Content security", "Search engines"; contract #737) and the coordinator's decisions on card tsk-m6ew67r1w3hc, 2026-10-30 (the files come from the hub package, a stale digest answers `no-cache`, `img-src 'self'` without `data:`); the designer's board "Landing V3 – volle Fassung"
 **See:** landing.md#the-hub-renders-the-landing-page-and-the-legal-pages-itself-as-documents-with-a-policy-of-their-own-the-legal-pages-carry-no-script — 7b1e4c52-5a86-4f0e-9d3b-0c2a6e8f1d47 — as of 2026-10-30
-**Revisit when:** the hub serves a second public page of its own that wants the same files, an operator needs to restyle the page (today the look is code, the same for every instance), or the fonts' subset has to grow past Latin
+**Revisit when:** the hub serves a second public page of its own that wants the same files (the legal pages did on 2026-11-02, see the entry on their stylesheets below), an operator needs to restyle the page (today the look is code, the same for every instance), or the fonts' subset has to grow past Latin
 
 The landing page loads `/assets/landing/landing.css`, `landing.js` (D's, at most 10 KiB, `defer`) and
 nine `woff2` fonts (Space Grotesk 500/600/700, Inter 400/500/600/700, JetBrains Mono 400/500; the
@@ -197,7 +200,8 @@ answers the current file with `no-cache`, so a stale link repairs itself. The st
 `{font:<file>}` where it names a font, and the hub fills in the font's own versioned URL when it first
 reads the file, so the fonts are cached for good as well; the script is linked only when the file
 exists. The hero's rings, the call-to-action band's loader and the logo are inline SVG
-(`hero-rings.svg`, `band-loader.svg`, `mark.svg` beside the files, not served), coloured by the CSS
+(`hero-rings.svg`, `band-loader.svg`, `mark.svg` beside the files, not served; the two pictures of
+`public-pages.css` under `brand/` are served, see the entry on the legal pages' stylesheets), coloured by the CSS
 variables. Everything is text in the HTML: the demo's lines are `d1`… with the inbox item as `d5`
 and the lines after the fourth following it. That is the designer's timeline (the question after the
 fourth line, or after the last when there are fewer), which the coordinator takes into §16.7 (2026-10-30); building the timeline for the
@@ -233,6 +237,46 @@ below 760 px the line is static and wraps.
 - A `.lp-motion` class set by the script (D's first proposal): the designer's CSS already animates
   by itself and stops under `prefers-reduced-motion`, so the script only toggles `.demo-on`, the theme
   and the counters.
+
+## The legal pages load the landing page's stylesheets and fonts, and still carry no script
+
+**Id:** dde46a41-8792-4201-9623-3900652815d7
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-jc5y1bsjsfbf, PR #1252 (the legal pages in the designer's frame, §16.7.5, the second of the three pull requests the lead approved) and #1254 (its two pictures, served by the hub as agreed with the web side); the reviews of both, 2026-11-02; contract `docs/api.md` §16.7 ("Content security")
+**See:** https://github.com/oliver-zehentleitner/maity — 41837936-d085-4592-88d7-b1708a8b4b3a — as of 2026-11-02
+**Revisit when:** a legal page needs a script, the operator's text may hold an image, or anything a user stores can be answered under the public host's origin as a stylesheet or a font
+
+Since they have the landing page's header and footer, the legal pages and their preview link
+`/assets/landing/landing.css`, `public-pages.css` and the fonts the stylesheet names, each under its
+digest, and answer with `default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self';
+img-src 'self'; base-uri 'none'; frame-ancestors 'none'`, the last two as on the landing page. There is still no `script-src`, so `default-src 'none'` forbids every script, and the
+page holds none. `img-src 'self'` is for the favicon and the pictures `public-pages.css` names
+(`brand/`); the legal text itself never holds an image. If the stylesheets cannot be read, the page
+carries the old inline style. Those two pictures, `brand/door-art.svg` and `brand/door-mail.svg`, are
+the designer's files unchanged, checked before they were taken in for anything active (no script, no
+event handler, no link, no external reference); the hub serves the `*.svg` directly in `brand/` and
+nothing else from it.
+
+**Reason:** the frame should look the same on every page without a session, and the files are the
+landing page's own: cached as `immutable` under their digest, the same for every instance, never read
+from the database. `'self'` is safe here because of three conditions of this hub, which the
+"Revisit when" names: every answer is `nosniff`, so a browser takes only `text/css` as a stylesheet
+and only the package's `woff2` as a font, and nothing a user stores (avatars, logos, image
+attachments) is either; the Markdown renderer knows no image and escapes raw HTML; the header and
+footer come from the frame's model as escaped text and checked links.
+
+**Rejected alternatives:**
+- Inlining `public-pages.css` and keeping `default-src 'none'; style-src 'unsafe-inline'`: about 7 KiB
+  in every page instead of one cached file, a second copy of the landing page's look in the
+  renderer, and no fonts without `font-src`.
+- The pictures in the dashboard's `web/` beside its sign-in pages: the stylesheet names them by a
+  relative address, so they have to be served where it is, and a hub without a dashboard directory
+  would draw its legal pages with two missing pictures.
+- Leaving out `img-src 'self'`: nothing visible on the legal pages needs it today, but browsers
+  that apply `img-src` to the favicon would refuse it, and a picture of the shared stylesheet would
+  fail without a word as soon as a legal page uses its class.
 
 ## The terms of a registration come from the legal pages only when neither the environment nor the admin gave any
 

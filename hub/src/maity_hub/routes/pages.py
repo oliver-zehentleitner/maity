@@ -41,7 +41,10 @@ LANDING_CSP = (
     "frame-ancestors 'none'"
 )
 # The legal pages load the landing page's stylesheets and fonts, and no script (§16.7.5).
-LEGAL_CSP = "default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'"
+LEGAL_CSP = (
+    "default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; "
+    "base-uri 'none'; frame-ancestors 'none'"
+)
 PUBLIC = "public, max-age=60"
 PRIVATE = "private, max-age=60"
 
@@ -226,6 +229,7 @@ def legal_html(
     chosen = render.choose_language(
         list(texts), setting["default_language"], lang, request.headers.get("accept-language")
     )
+    frame = landing.stored(conn)
     return render.legal_document(
         page=page,
         lang=chosen,
@@ -235,9 +239,9 @@ def legal_html(
         current=served["version"] if served else None,
         languages=list(texts),
         legal=legal.public(setting),
-        setting=landing.stored(conn),
+        setting=frame,
         public_url=settings_of(request).public_url,
-        stats=landing_stats.for_frame(conn, landing.stored(conn)),
+        stats=landing_stats.for_frame(conn, frame),
     )
 
 

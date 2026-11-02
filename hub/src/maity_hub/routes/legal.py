@@ -98,6 +98,7 @@ def show_legal_preview(
         texts = row.payload
         setting = legal.stored(conn)
         chosen = render.choose_language(list(texts), setting["default_language"], lang, None)
+        frame = landing.stored(conn)
         body = render.legal_document(
             page=row.page,
             lang=chosen,
@@ -107,9 +108,9 @@ def show_legal_preview(
             current=None,
             languages=list(texts),
             legal=legal.public(setting),
-            setting=landing.stored(conn),
+            setting=frame,
             public_url=settings_of(request).public_url,
-            stats=landing_stats.for_frame(conn, landing.stored(conn)),
+            stats=landing_stats.for_frame(conn, frame),
         )
     return HTMLResponse(
         body,

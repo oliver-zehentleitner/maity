@@ -13873,7 +13873,10 @@ same header and footer (§16.7.5).
   of a `works_with` section under `/assets/landing/agents/` (above). Their URLs carry
   `?v=<digest>` of the file and are answered with `Cache-Control:
   public, max-age=31536000, immutable`. The hero's rings and other
-  pictures of the design are inline SVG in the template. The page is
+  pictures of the design are inline SVG in the template. The frame's
+  stylesheet `/assets/landing/public-pages.css` (§16.7.5) is served the
+  same way, and the two pictures it names under
+  `/assets/landing/brand/` without a digest, answered `no-cache`. The page is
   complete without the script: all text is in the HTML, every section
   shows its end state, and the FAQ opens without it. The stylesheet
   animates the hero's rings, the band's loader and the `works_with`
@@ -13895,10 +13898,14 @@ same header and footer (§16.7.5).
   hub's own origin and loads nothing from elsewhere; `img-src 'self'`
   covers the instance's logo and favicon and the agent logos of a
   `works_with` section; the design's own pictures are inline SVG. The preview of a draft (below) answers with the same
-  policy. The legal pages (§16.7.1) carry no script and
-  answer with §16.9's policy, `default-src 'none'; style-src
-  'unsafe-inline'`. Both replace §1.1's `default-src 'self'` for these
-  documents only.
+  policy. The legal pages (§16.7.1) and their preview carry no script
+  and answer with `default-src 'none'; style-src 'self' 'unsafe-inline';
+  font-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors
+  'none'`: they load the landing page's
+  `landing.css`, `public-pages.css` and fonts under `/assets/landing/`
+  for the frame (§16.7.5), and `img-src 'self'` covers the favicon and
+  the pictures `public-pages.css` names; the page's text has no image.
+  Both replace §1.1's `default-src 'self'` for these documents only.
 - **Changes** are recorded on the setting itself — `updated_at`,
   `updated_by` — which is the record in this version; they emit no
   project event and wake nobody.

@@ -337,7 +337,8 @@ def test_a_legal_page_is_static_html_with_its_version_and_its_own_policy(
     assert answer.status_code == 200
     assert (
         answer.headers["content-security-policy"]
-        == "default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'"
+        == "default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; "
+        "img-src 'self'; base-uri 'none'; frame-ancestors 'none'"
     )
     assert answer.headers["cache-control"] == "public, max-age=60"
     assert answer.headers["vary"] == "Cookie, Accept-Language"  # as the page's (§16.7)
