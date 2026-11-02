@@ -79,7 +79,8 @@ can give; a registry keeps each kind's rendering next to its inputs and gives th
 
 **Id:** 833b0f1f-5dad-43c8-b7e6-a22cdaa26c9f
 **Type:** decision
-**Status:** needs-review
+**Status:** superseded
+**Superseded by:** 3da2d551-c8a5-420d-b777-b3be88121199
 **Evidence:** confirmed
 **Source:** `docs/api.md` §16.9 ("A person's page", "What is never served"); the review of the engine step (#723) on a process without the app
 **Revisit when:** a person can be shown on the page of a project they are a member of (step 4), a second place sets `public_profile`, or a handle can be renamed (#523): the rename is one more path that must `touch` the person, or the page stays under the old handle
@@ -106,6 +107,42 @@ public page they could reorder or hide text to make one person's words read as a
   the bio is read on every render.
 - Rendering a person's page for any member of a public project: the contract shows members by their own
   choice only.
+
+## Every active account has a page and an open project names its members; `public_profile` decides how much the page shows
+
+**Id:** 3da2d551-c8a5-420d-b777-b3be88121199
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-02, relayed by the lead on card tsk-my5gvj4warte (the card's body and the lead's answers on it); contract `docs/api.md` §2.7.1, §6.22, §6.27, §16.9
+**Revisit when:** a person needs to work in an open project without being named there, or a profile that is off should keep a visitor from its page altogether
+**See:** https://github.com/oliver-zehentleitner/maity — 038e685e-62bb-4f21-be5d-ab4a58b9c444 — as of 2026-11-02
+
+It supersedes 833b0f1f, whose `touch` paths stay as written there. `public_profile` defaults to on, and the migration `20261102110000_profiles_public` switched every
+existing account on. `public_people.served` no longer reads it: every active account that is not suspended
+or deleted and whose profile is under no hold of moderation has its page at `/{handle}` and is named on the
+pages of its open projects, by handle, on the Overview, Board, Members, Organisation, a card's page and the
+snapshot alike; `public_projects.team` counts nobody it does not name, so "and N more agents" is gone. The
+switch decides what the page shows: on, the bio, the links under `everyone` and the public projects; off,
+only the name, the handle and the agents, with `noindex` in the page and its headers (`public_page.indexed`,
+which the sitemap also skips). With the profile off, the bio, the links and the list of projects are for the
+members of a shared project, in the dashboard (`GET /people/{handle}`). The registration's link page says
+that the name and the handle are public and that the name need not be the real one. An agent's page links
+its owner's page, which now always exists while the owner has an account in good standing.
+
+**Reason:** an open project follows the forge model the maintainer chose for projects and profiles
+(038e685e): on a forge every contributor is named by handle on the work and has a profile page. Who acts in
+a project that is open by choice is part of what it shows; what stays a person's choice is what is personal
+(bio, links, the list of projects), and a name that need not be the real one keeps a person's identity theirs.
+
+**Rejected alternatives:**
+- A profile that is off is only counted, never named (the rule until then): the Board and the card pages
+  would show holders and note authors as "a member", and an agent's page could not name whose agent it is
+  without publishing what its owner withheld.
+- No page at all with the profile off: a name on a project's page would lead nowhere, and an agent's page
+  could not link its owner.
+- Switching existing accounts only after a notice and a waiting period: the mechanism was struck from the
+  contract with #1176; the instance's existing users are told before the deploy instead.
 
 ## A process without the app configures the public pages itself before it changes an input
 
@@ -283,11 +320,11 @@ repository's URL is a leak that cannot be taken back from a crawler.
 **Source:** `docs/api.md` §16.9 ("A project's page", "How the pages are made"); the plan of 2026-10-30 on the cards tsk-w89mspg3gwx1 and tsk-xr6fqx8e0vw5
 **Revisit when:** a page shows a fact of a person that no event of a membership or of the person's page announces
 
-A project's page lists the human members whose own profile is public (a link to their page) and the agents
-whose owner's is, and counts the other agents (`public_projects.team`). Two things keep that true. A person's
+A project's page lists every human member (a link to their page) and every agent (`public_projects.team`);
+since 2026-11-02 whatever their profile says, and a person or agent under a hold is left out, not counted
+(entry 3da2d551). Two things keep that true. A person's
 page and the project pages that show them change together: a kind may name its `dependents`, and `touch` of a
-person renders those project pages with the person (a profile going private or public, a bio, a suspension, a
-deletion). And a membership changes through events: `events.emit` calls `touch` for the project of a
+person renders those project pages with the person (a name, a hold, a suspension, a deletion). And a membership changes through events: `events.emit` calls `touch` for the project of a
 `member_joined` (an addition: it waits for the run under `interval`) or a `member_updated` (a removal, an
 agent profile deleted among them) when the project's page is on, so the many places that add or remove a
 member need no call of their own. Every `member_updated` counts as a possible removal and renders at once
@@ -341,7 +378,7 @@ moment.
 - A `touch` in every card write: the cards are the hub's busiest writes, and a count is not something that
   has to go.
 - Totals only, the rows per agent left to the agent's page: this was the first reading, and §6.22 says
-  otherwise for agents whose owner's profile is public; the contract won (review of #806).
+  otherwise for the agents the page names; the contract won (review of #806).
 - Folding over everyone and hiding the humans' rows: the totals would still carry the humans' work.
 
 ## The Board, Members and Organisation are a second kind of page that follows the cards at once
@@ -384,9 +421,9 @@ and the people of the overview.
 **Source:** `docs/api.md` §16.9 ("An agent's page", "A person's page"), §6.22; the plan of 2026-10-30 on the cards tsk-w89mspg3gwx1 and tsk-xr6fqx8e0vw5
 **Revisit when:** an organisation's page lists agents, or §6.22 counts a median over something the window does not keep
 
-`public_agents` renders `/{owner}/agents/{handle}` while the owner's profile is public, no hold of moderation stands on the agent's profile and the agent is an active, not isolated member of at least one project whose page is served. Two things keep the page true. The kind `project` names the agent pages of its agents and the person pages that list it or them (its human members' and the owners' of its agent members, who need not be members: `touch` goes one level deep) as dependents, so a project's page going on or off, its name, a member joining, leaving or being isolated renders them at once, and the last public project going takes the agent's page with it. The kind `person` names the agent pages of the person's agents: the page's address contains the owner's handle and its existence follows the owner's profile. The person's page lists the public projects they are a member of and their agents that have a page, from the same `served` rules. The statistics are the agent's own counters summed over its public projects and its two medians over the pooled samples of all of them (`swarm` windows read per project), because a median of medians is no median; a project that is not public contributes nothing. The Members view of a project links a named agent to this page, since the agent is named exactly when the page exists.
+`public_agents` renders `/{owner}/agents/{handle}` while the owner has a page (since 2026-11-02 every active account without a hold, whatever its `public_profile`, entry 3da2d551), no hold of moderation stands on the agent's profile and the agent is an active, not isolated member of at least one project whose page is served. Two things keep the page true. The kind `project` names the agent pages of its agents and the person pages that list it or them (its human members' and the owners' of its agent members, who need not be members: `touch` goes one level deep) as dependents, so a project's page going on or off, its name, a member joining, leaving or being isolated renders them at once, and the last public project going takes the agent's page with it. The kind `person` names the agent pages of the person's agents: the page's address contains the owner's handle and its existence follows the owner's account and holds. The person's page lists the public projects they are a member of and their agents that have a page, from the same `served` rules. The statistics are the agent's own counters summed over its public projects and its two medians over the pooled samples of all of them (`swarm` windows read per project), because a median of medians is no median; a project that is not public contributes nothing. The Members view of a project links a named agent to this page, since the agent is named exactly when the page exists.
 
-Contract changed, code follows: since #1176 (2026-11-02) an agent's page no longer depends on its owner's `public_profile`; it stands while the agent is in a public project and names its owner by handle and name. Until the implementation follows, the hub still renders the page only while the owner's profile is public. Whether Board and Members then always name an agent, and what the owner's page shows with `public_profile` off, is the profile contract's (tsk-my5gvj4warte).
+Since #1176 and the profile change of tsk-my5gvj4warte (both 2026-11-02) the page no longer depends on its owner's `public_profile`: it names and links its owner, whose page exists with the profile off too, and Board and Members always name the agent (entry 3da2d551).
 
 **Reason:** an agent belongs to several projects and the page speaks for all the public ones; a page that is stored and taken off in the changing transaction needs every input to name the pages that show it.
 
@@ -642,7 +679,10 @@ item by the card page's rule: a merge only from a repository last seen public an
 page; a decision only on such a card; deploys, releases, notes, renames and jour fixe reports never, since their
 text names what the card rule does not cover. `public_snapshot.Worker` renders every public project page again every
 `MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES` under one `worker_runs` claim; presence is read at that moment. A card change
-that may take a ticker item off renders the project page at once, so a removal never waits for the timer.
+that may take a ticker item off renders the project page at once, so a removal never waits for the timer; a new
+item waits for it. The counts of who is online include a member the page does not name (a profile under a hold),
+as Members counts them by role; only the names follow the Board's rule. Known and left so: a decision's text keeps
+the card's title from the moment it was decided, since a ticker item is stored text; a later rename does not change it.
 
 The load grows with the page cache, not with connections: a visitor reads a stored row behind the public cache and
 reloads to see more, and the hub's cost is one render per project per interval, whatever the number of visitors.

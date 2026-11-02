@@ -88,8 +88,9 @@ def test_the_statistics_name_no_one_and_never_who_is_online(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
     world = World(make_client, migrated)
-    text = statistics(shown(world.anyone))
-    for word in ("online", "last_seen", "presence"):
+    text = shown(world.anyone)
+    assert "online" not in statistics(text)  # who is online is the snapshot's (§16.9)
+    for word in ("last_seen", "presence"):
         assert word not in text
 
 
@@ -225,6 +226,6 @@ def test_an_online_agent_and_a_held_card_leave_no_trace_on_the_page(
     )  # fmt: skip
     _refresh(migrated, world.project_id)
     text = shown(world.anyone)
-    for word in ("Held secret title", "in_progress", "last_seen", "lease"):
+    for word in ("Held secret title", "in_progress", "last_seen", "lease", "presence"):
         assert word not in text
     assert "online" not in statistics(text)

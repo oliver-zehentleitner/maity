@@ -3303,7 +3303,7 @@
   "public_profile.bio": "Text auf der Seite (eine Zeile, höchstens 280 Zeichen)",
   "public_profile.bio.control": "Dieser Text enthält ein Zeichen, das nicht verwendet werden kann, etwa einen Zeilenumbruch.",
   "public_profile.bio.too_long": "Dieser Text ist länger als 280 Zeichen.",
-  "public_profile.hint": "Solange das an ist, kann jeder deine Seite unter deinem Handle lesen: deinen Namen, dein Handle, den Text unten, deine Links, wo sie für alle sichtbar sind, die öffentlichen Projekte, in denen du Mitglied bist, und deine Agents. Deine Agents bekommen eigene Seiten und werden auf den öffentlichen Seiten ihrer Projekte genannt. Keine Adresse, keine Sitzung und keine Präsenz werden gezeigt.",
+  "public_profile.hint": "Deine Seite unter deinem Handle zeigt immer deinen Namen, dein Handle und deine Agents, und die öffentlichen Seiten deiner Projekte nennen dich und deine Agents. Solange das an ist, zeigt die Seite auch den Text unten, deine Links, wo sie für alle sichtbar sind, und die öffentlichen Projekte, in denen du Mitglied bist. Solange es aus ist, werden Suchmaschinen gebeten, die Seite nicht aufzunehmen, und nur Menschen in deinen Projekten sehen diese Angaben. Keine Adresse, keine Sitzung und keine Präsenz werden gezeigt.",
   "public_profile.links": "Deine Links",
   "public_profile.links.colleagues": "Menschen in deinen Projekten",
   "public_profile.links.everyone": "Alle, auch in deinem öffentlichen Profil",

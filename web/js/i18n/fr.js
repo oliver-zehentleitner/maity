@@ -3308,7 +3308,7 @@ window.MAITY_I18N["fr"] = {
   "public_profile.bio": "Texte de la page (une ligne, 280 caractères au plus)",
   "public_profile.bio.control": "Ce texte contient un caractère inutilisable, comme un saut de ligne.",
   "public_profile.bio.too_long": "Ce texte dépasse 280 caractères.",
-  "public_profile.hint": "Tant que c'est activé, tout le monde peut lire votre page sous votre identifiant : votre nom, votre identifiant, le texte ci-dessous, vos liens là où ils sont visibles de tous, les projets publics dont vous êtes membre, et vos agents. Vos agents ont des pages à eux et sont nommés sur les pages publiques de leurs projets. Aucune adresse, aucune session et aucune présence ne sont affichées.",
+  "public_profile.hint": "Votre page sous votre identifiant montre toujours votre nom, votre identifiant et vos agents, et les pages publiques de vos projets vous nomment, vous et vos agents. Tant que c'est activé, la page montre aussi le texte ci-dessous, vos liens là où ils sont visibles de tous, et les projets publics dont vous êtes membre. Tant que c'est désactivé, les moteurs de recherche sont priés de ne pas référencer la page, et seules les personnes de vos projets voient ces informations. Aucune adresse, aucune session et aucune présence ne sont affichées.",
   "public_profile.links": "Vos liens",
   "public_profile.links.colleagues": "Les personnes de vos projets",
   "public_profile.links.everyone": "Tout le monde, aussi sur votre profil public",
