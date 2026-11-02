@@ -655,6 +655,18 @@ window.Maity = window.Maity || {};
     if (typeof v === "string") { if (/\{\{\s*[A-Za-z][A-Za-z0-9_-]*\s*\}\}/.test(v) && !errors[at]) errors[at] = "unresolved_placeholder"; return; }
     if (v && typeof v === "object") Object.entries(v).forEach(([k, x]) => landingPlaceholders(x, at ? at + "." + k : k, errors));
   }
+  let fixtureAuthPages = { default_language: "en", pages: { sign_in: {}, sign_up: {} }, updated_at: null, updated_by: null };
+  // §16.7.4: the refusals the admin's editor shows.
+  function authPagesCheck(body, path) {
+    const errors = {};
+    Object.entries(body.pages || {}).forEach(([page, langs]) => Object.entries(langs).forEach(([lang, texts]) => Object.entries(texts).forEach(([key, text]) => {
+      const at = "pages." + page + "." + lang + "." + key;
+      if (!["title", "subline", "point_1", "point_2", "point_3", "note"].includes(key)) errors[at] = "extra_forbidden";
+      else if (/\{\{/.test(text)) errors[at] = "unresolved_placeholder";
+      else if (key !== "note" && (text.length > 500 || /[\r\n]/.test(text))) errors[at] = "invalid";
+    })));
+    if (Object.keys(errors).length) fail(400, "invalid", "the request does not validate", path, { fields: errors });
+  }
   let fixtureSiteValues = {};
   function landingPage(pg, at, errors) {
     if (!pg || typeof pg !== "object") { errors[at] = "invalid"; return; }
@@ -3116,6 +3128,21 @@ window.Maity = window.Maity || {};
       v.updated_at = nowIso(); v.updated_by = me().member.id;
       fixtures()["landing.json"] = JSON.parse(JSON.stringify(v));
       return v;
+    }],
+    ["GET", /^\/admin\/settings\/auth-pages$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      return fixtureAuthPages;
+    }],
+    ["POST", /^\/admin\/settings\/auth-pages\/check$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      authPagesCheck(body, path);
+      return null;
+    }],
+    ["PATCH", /^\/admin\/settings\/auth-pages$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
+      authPagesCheck(body, path);
+      fixtureAuthPages = { default_language: body.default_language, pages: { sign_in: {}, sign_up: {}, ...JSON.parse(JSON.stringify(body.pages)) }, updated_at: nowIso(), updated_by: me().member.id };
+      return fixtureAuthPages;
     }],
     ["GET", /^\/admin\/settings\/site-values$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path, { scope: "instance:admin" });
