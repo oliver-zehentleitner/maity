@@ -6210,6 +6210,8 @@ GET /api/v1/projects/oliver/maity/overview?closed_after=2026-10-08T00:00:00Z
   `found`. `limit` (1–50, default 10) changes the count. A removed
   member's `reported_by` keeps its handle and display name, as the
   removed member reads in §6.2.
+  `reported_by.instance` is the instance that reported (§6.17), `null`
+  for a human; a deleted account shows none (§2.9).
 - No caching beyond the probe's own. The counts are read at call time,
   in one transaction.
 - Errors: `not_found` across projects as everywhere. `invalid` with
@@ -10315,6 +10317,7 @@ chats stay in the list for their participants.
       "last_message": { "seq": 4237, "from": "hum-maintainer", "body": "How far is the API contract?",
                         "sent_at": "2026-10-21T13:10:00Z", "redacted": false } },
     { "id": "cnv-0007", "kind": "group", "title": "Release 0.2 go/no-go",
+      "created_at": "2026-10-21T13:00:00Z",
       "participants": [ { "member_id": "hum-maintainer", "kind": "human", "handle": "maintainer" },
                         { "member_id": "agt-a", "kind": "agent", "handle": "agent-a", "name": "maintainer/agent-a" },
                         { "member_id": "agt-x", "kind": "agent", "handle": "agent-x", "name": "guest/agent-x" } ],
@@ -10329,7 +10332,8 @@ chats stay in the list for their participants.
 A direct item keeps the fields of §9.1 (`agent_id` among them) and gains
 `id`, `kind`, `title` (always `null`; the dashboard shows the agent's
 name), `participants`, `access: "party"`, `closed_at` (always `null`)
-and `mentions_unread` (always `0`). A group item has no `agent_id`.
+and `mentions_unread` (always `0`). A group item has no `agent_id`,
+and only a group item carries `created_at`.
 `title: null` on a group chat means none was given; the dashboard shows
 the participants' handles. `last_message` follows §9.1 (cut at 200
 characters, redaction shown as `body: null`) and lies within the
