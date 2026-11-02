@@ -581,8 +581,34 @@ def check_hub_words(write, release, notes):
                 notes.append(line)
     if os.path.isdir(metas):
         for name in sorted(os.listdir(metas)):
-            if not os.path.exists(os.path.join(words, name)):
+            if name == "en.json" or (name.endswith(".json") and not os.path.exists(os.path.join(words, name))):
                 finding(os.path.join(metas, name), 1, "no such hub words: delete this file")
+
+
+def glossary_duplicates(text):
+    """Words of the glossary that stand for two things in one language: (language, word, things).
+    One thing may have rows of its own for its forms (`user`, `users`; `join` as noun and verb)."""
+    rows = [[cell.strip() for cell in line.split("|")[1:-1]] for line in text.splitlines()
+            if line.startswith("| ") and line.count("|") == 11]  # fmt: skip
+    if not rows:
+        return []
+    found = []
+    for column, language in list(enumerate(rows[0]))[1:]:
+        used = {}
+        for row in rows[1:]:
+            used.setdefault(row[column], []).append(row[0])
+        for word, things in used.items():
+            heads = {thing.split()[0].rstrip(",s") for thing in things}
+            if len(heads) > 1:
+                found.append((language, word, things))
+    return found
+
+
+def check_glossary():
+    path = os.path.join(I18N, "glossary.md")
+    if os.path.exists(path):
+        for language, word, things in glossary_duplicates(read(path)):
+            finding(path, 1, "%s: %r stands for %s" % (language, word, " and ".join(things)))
 
 
 def list_gaps(lang):
@@ -893,6 +919,7 @@ def main(argv):
     # fresh checkout makes js/i18n/*.js before index.html is checked.
     check_i18n(write, "--release" in argv, notes)
     check_hub_words(write, "--release" in argv, notes)
+    check_glossary()
     check_html()
     node = shutil.which("node")
     check_js(node)
