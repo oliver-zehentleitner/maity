@@ -146,7 +146,7 @@ window.Maity = window.Maity || {};
   }
 
   function errorBox(err) {
-        const status = err.status ? "HTTP " + err.status + (err.code ? " " + err.code : "") + ": " : "";
+    const status = err.status ? "HTTP " + err.status + (err.code ? " " + err.code : "") + ": " : "";
     return h("div", { class: "error", role: "alert" },
       h("strong", null, err.path ? M.t("error.load_failed_at", { path: err.path }) : M.t("error.load_failed")),
       h("p", null, status + err.message));
