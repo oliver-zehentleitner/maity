@@ -1,7 +1,7 @@
 name: hub-mariadb
 
-# The hub's test suite against MariaDB, outside the pull request gate: at most once an hour on main,
-# and only when hub code changed since the last green run (a quiet hour skips). PostgreSQL (what
+# The hub's test suite against MariaDB, outside the pull request gate: after every finished ci run on main and at
+# the latest once an hour, and only when hub code changed since the last green run (a quiet hour skips). PostgreSQL (what
 # production runs) and SQLite stay per pull request in ci.yml; MariaDB is the self-hoster's
 # database and the slowest suite, so it checks main on a clock instead of holding every merge.
 # A red run opens (or comments on) one issue labelled ci-red that names the commit range, so the
@@ -50,6 +50,11 @@ jobs:
   # files runs again the next hour. A skipped hour counts as green for the comparison, which is right
   # because it only skips after a green run with nothing relevant changed since.
   decide:
+    # A ci run counts only when it is a push to this repository. `branches: [main]` compares the head branch name, so
+    # the ci run of a fork's pull request from a branch called main would start this workflow (with a write token for
+    # the report job, on the maintainer's machine). Only code of main is checked out below, but outsiders must not start
+    # runs. The filter belongs here and not in the script: a script that answered run=false would count as a green run.
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -88,7 +93,7 @@ jobs:
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "base=${base:-none}" >> "$GITHUB_OUTPUT"
           if [ "$EVENT" = workflow_dispatch ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
-          last="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow hub-mariadb.yml --branch main --status completed --limit 20 --json conclusion,event --jq '[.[]|select(.event!="workflow_dispatch" and .conclusion!="cancelled")][0].conclusion // "none"')"
+          last="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow hub-mariadb.yml --branch main --status completed --limit 20 --json conclusion,event --jq '[.[]|select(.event!="workflow_dispatch" and .conclusion!="cancelled" and .conclusion!="skipped")][0].conclusion // "none"')"
           open_issues="$(gh issue list --repo "$GITHUB_REPOSITORY" --label ci-red --state open --json number --jq 'length')"
           if [ "$last" != success ] && [ "$last" != none ]; then
             echo "the last automatic run ended $last: running again"; echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
@@ -151,6 +156,12 @@ jobs:
       run:
         working-directory: .
     steps:
+      # the history of main, to tell whether the green commit contains the commit that was red
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.decide.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
       - shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -163,14 +174,26 @@ jobs:
           num="$(gh issue list --repo "$GITHUB_REPOSITORY" --label ci-red --state open --json number --jq '.[0].number // ""')"
           if [ "$RESULT" = success ]; then
             if [ "$EVENT" != workflow_dispatch ] && [ -n "$num" ]; then
-              gh issue close "$num" --repo "$GITHUB_REPOSITORY" --comment "Green again at $SHA ($RUN_URL)."
+              # Close only when this green commit contains every commit the issue names as red: a hand run on a newer
+              # commit may have opened it, and an older green commit says nothing about that one.
+              txt="$(gh issue view "$num" --repo "$GITHUB_REPOSITORY" --json body,comments --jq '[.body, (.comments[].body)] | join("\n")')"
+              reds="$(printf '%s' "$txt" | grep -o 'red at [0-9a-f]\{40\}' | cut -d' ' -f3 | sort -u || true)"
+              notin=""
+              for r in $reds; do
+                git cat-file -e "$r^{commit}" 2>/dev/null && git merge-base --is-ancestor "$r" "$SHA" || notin="$notin $r"
+              done
+              if [ -z "$notin" ]; then
+                gh issue close "$num" --repo "$GITHUB_REPOSITORY" --comment "Green again at $SHA ($RUN_URL)."
+              else
+                echo "not closing issue $num: green at $SHA does not contain the red commit(s):$notin"
+              fi
             fi
           elif [ "$RESULT" = failure ]; then
             text="hub-mariadb is red at $SHA ($RUN_URL). Last green run was at $BASE; the change is in $BASE..$SHA."
             if [ -n "$num" ]; then
               gh issue comment "$num" --repo "$GITHUB_REPOSITORY" --body "$text"
             else
-              gh label create ci-red --repo "$GITHUB_REPOSITORY" --color B60205 --description "the hourly MariaDB run on main is red" 2>/dev/null || true
+              gh label create ci-red --repo "$GITHUB_REPOSITORY" --color B60205 --description "the MariaDB run on main is red" 2>/dev/null || true
               gh issue create --repo "$GITHUB_REPOSITORY" --label ci-red --title "hub-mariadb is red on main" --body "$text"
             fi
           fi

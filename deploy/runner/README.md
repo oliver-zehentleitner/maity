@@ -39,8 +39,12 @@ the repository setting, and nothing else:
   outside collaborators**. Every "Approve and run" on a fork pull request puts that code on
   the machine. Before approving, read the diff, `.github/` above all; never approve a fork
   pull request that touches `.github/`.
-- No workflow of this repository uses `pull_request_target`, `workflow_run` or a label
-  trigger; keep it so.
+- No workflow of this repository uses `pull_request_target` or a label trigger; keep it so.
+  One workflow uses `workflow_run`: `hub-mariadb.yml`, after a finished `ci` run on main. That is safe
+  only as long as it keeps all of this: the workflow file comes from the default branch, the job
+  checks out nothing but `github.sha`, it reads no value of `github.event.workflow_run` except in the
+  `if:` that lets only a push to this repository through, and it downloads no artifact. Change one of
+  these and the rule above applies again (entry on the MariaDB run in `context/process.md`).
 - "Only code of this repository" means every branch of everyone with push access to the
   repository, agents included.
 

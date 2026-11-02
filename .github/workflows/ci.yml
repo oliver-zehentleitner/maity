@@ -38,7 +38,7 @@ defaults:
 # parallel, so that a queue of pull requests for one runner per job type cannot hold up the checks
 # people wait for. Unset or empty, they run on GitHub-hosted runners; unsetting the variable is the
 # whole fallback. Setup: deploy/runner/README.md.
-# The MariaDB suite is not here: it runs hourly on main, outside the pull request gate and ci-ok
+# The MariaDB suite is not here: it runs on main after every ci run and at the latest hourly, outside the pull request gate and ci-ok
 # (hub-mariadb.yml, and the entry on it in context/process.md).
 jobs:
   # Which parts a pull request touches, from its merge commit against the base it
