@@ -615,7 +615,7 @@ land on another pod.
 **Type:** decision
 **Status:** open
 **Evidence:** inferred
-**Source:** the card (k6 or locust, target numbers), the maintainer's internal deployment planning (2026-10-30) (a staging address, 1, 2 and 4 pods; the run sets node pool, HPA target, database size and pool size), `hub/tests/test_load.py` (statement-count load tests of the bell), the request signature (HMAC-SHA256 over a canonical string, `auth/credentials.py:101`); the maintainer's answers to req-6cw5xwfpyeva (production, throwaway accounts) and req-gjzkcdtbg7t2 (a second confirmation for production)
+**Source:** the card (k6 or locust, target numbers), the maintainer's internal deployment planning (2026-10-30) (a staging address, 1, 2 and 4 pods; the run sets node pool, HPA target, database size and pool size), `hub/tests/test_load.py` (statement-count load tests of the bell), the request signature (HMAC-SHA256 over a canonical string, `auth/credentials.py:101`); the maintainer's answers to req-6cw5xwfpyeva (production, throwaway accounts) and req-gjzkcdtbg7t2 (a second confirmation for production), and req-3efa9j1v8ez2 (purge deletes every row)
 **Revisit when:** the maintainer gives a concurrency or traffic figure that replaces the assumptions below
 
 **Tool: k6.** It holds tens of thousands of concurrent long-polls per load generator cheaply,
@@ -639,6 +639,15 @@ from outside, and a checkout's `tests/factory.py` is not in the image. That made
 rules above moot: the name checked is the host of the hub's own `MAITY_PUBLIC_URL`, never a guessed
 one. Accounts are `lt-<n>`, without a mail address or a password, so that they are found by the
 prefix and nothing the run does sends a mail.
+
+Changed on 2026-11-02, again: `maity-hub loadtest purge` deletes the accounts afterwards, every row
+in every table (req-3efa9j1v8ez2, the maintainer chose this). The account deletion of §2.9 was the
+other option and lost: it revokes every key but keeps the account as a tombstone with its handle
+taken, needs the projects archived first and keeps them with their events, since the hub has no way
+to delete a project. `purge` follows the foreign keys from the humans, projects, agents and
+memberships until nothing new turns up, adds the few tables that name an account without one, and
+is refused when an account shares a project or a row with anyone else. Its test reads every table
+after a purge for the accounts' ids, keys and handles, so a new table that keeps one fails there.
 The 60 000 held connections are spread over several generator pods with their own source
 addresses: one source address has about 64 000 ephemeral ports, and the run must measure the
 hub, not the generator's port exhaustion.
