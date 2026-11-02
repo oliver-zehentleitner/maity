@@ -122,3 +122,21 @@ def test_the_holder_is_named_as_the_board_names_them(world: World) -> None:
     holder = data(world, card_id).json()["data"]["holder"]
     assert holder == "agent"  # the owner's profile is not public in this world
     assert "an agent" in (page(world, card_id) or "")
+
+
+def test_the_holder_on_a_card_page_follows_their_profile(world: World) -> None:
+    card_id = world.owner.post(TASKS, {"title": "Held by anna"}).json()["id"]
+    with world.migrated.begin() as conn:
+        conn.execute(
+            t.card.update()
+            .where(t.card.c.id == card_id)
+            .values(claim_holder=world.anna_member, status="in_progress")
+        )
+        public_pages.touch(conn, "card", card_id)
+    assert data(world, card_id).json()["data"]["holder"] == "member"
+    world.anna.patch("/me", {"public_profile": True})
+    assert data(world, card_id).json()["data"]["holder"]["handle"] == "anna"
+    assert "Human anna (anna)" in (page(world, card_id) or "")
+    world.anna.patch("/me", {"public_profile": False})
+    assert data(world, card_id).json()["data"]["holder"] == "member"
+    assert "(anna)" not in (page(world, card_id) or "")
