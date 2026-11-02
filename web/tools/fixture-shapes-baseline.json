@@ -14,6 +14,7 @@
   ".member.interface_language: the fixture leaves it out"
  ],
  "GET /me": [
+  ".maintenance: the fixture leaves it out",
   ".member.account_status: the fixture leaves it out",
   ".member.avatar_source: the fixture leaves it out",
   ".member.avatar_url: the fixture leaves it out",
