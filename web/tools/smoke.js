@@ -9863,6 +9863,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const apIo = (value) => { const area = byId("ap-sign_in-json"); area.value = value; btn(apBox, "Load into the editor").click(); };
     apIo("[1]"); for (let k = 0; k < 4; k++) await tick();
     expect(/not a page/.test(text(apBox)), "auth pages: a file that is not a page is refused");
+    apIo(JSON.stringify({ en: { label: "" } })); for (let k = 0; k < 6; k++) await tick();
+    expect(/extra_forbidden/.test(text(apBox)), "auth pages: a key not listed is refused even when empty");
     apIo(JSON.stringify({ en: { title: "Loaded", label: "x" } })); for (let k = 0; k < 6; k++) await tick();
     expect(/extra_forbidden/.test(text(apBox)) && byId("ap-sign_in-title").value === "Welcome", "auth pages: a key not listed is refused, the editor stays");
     apIo(JSON.stringify({ en: { title: "Loaded", note: "A note" } })); for (let k = 0; k < 6; k++) await tick();
