@@ -82,6 +82,7 @@ ROUTE_CACHE = frozenset(
 # (§16.7), the sign-in pages and what a visitor's dashboard reads of a public page (§16.9).
 PUBLIC_PATHS = re.compile(
     r"/badge/(?:[^/]+/)?[^/]+\.svg|/api/v1/landing|/api/v1/legal|/api/v1/auth/pages/[^/]+"
+    r"|/api/v1/site/chrome"
     r"|/api/v1/public/pages/.+"
     r"|/|/(?:impressum|privacy|terms)(?:/[^/]+)?"
 )
