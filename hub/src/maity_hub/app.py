@@ -120,6 +120,7 @@ from maity_hub.routes import (
     attachments as attachment_routes,
 )
 from maity_hub.routes import auth as auth_routes
+from maity_hub.routes import auth_pages as auth_pages_routes
 from maity_hub.routes import events as events_routes
 from maity_hub.routes import invitations as invitation_routes
 from maity_hub.routes import landing as landing_routes
@@ -342,6 +343,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(limit.router, prefix=prefix)
     app.include_router(limits_routes.router, prefix=prefix)
     app.include_router(site_values_routes.router, prefix=prefix)
+    app.include_router(auth_pages_routes.router, prefix=prefix)
     app.include_router(projects.router, prefix=prefix)
     app.include_router(project_images.router, prefix=prefix)
     app.include_router(keep_the_why.router, prefix=prefix)
@@ -426,7 +428,15 @@ def _api_router() -> APIRouter:
 
     @router.get("/languages")
     def language_list() -> JSONResponse:
-        items = [{"tag": tag, "name": name} for tag, name in languages.NAMES.items()]
+        items = [
+            {
+                "tag": tag,
+                "name": name,
+                "common": tag in languages.COMMON,
+                "interface": tag in languages.INTERFACE,
+            }
+            for tag, name in languages.NAMES.items()
+        ]
         return JSONResponse({"items": items})
 
     @router.get("/health")

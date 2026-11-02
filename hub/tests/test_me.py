@@ -69,6 +69,7 @@ def test_a_human_sees_every_membership_with_its_open_requests(
         "avatar_url": None,
         "avatar_source": None,
         "instance_admin": True,  # the earliest human (§16)
+        "interface_language": None,  # the person's own, only here and in the session (§6.2)
         "meat_proxy": False,  # §5.2
         "meat_proxy_lead": False,
         "meat_proxy_hands": False,

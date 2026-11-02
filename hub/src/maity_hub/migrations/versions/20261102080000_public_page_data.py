@@ -4,7 +4,7 @@ The hub clears and renders every page when it starts with pages on, so a row wit
 never served; the columns stay nullable for the rows of an instance with pages off.
 
 Revision ID: 20261102080000_public_page_data
-Revises: 20261101140000_request_action
+Revises: 20261102000000_interface_lang
 Create Date: 2026-11-02
 """
 
@@ -16,7 +16,7 @@ from alembic import op
 from maity_hub.types import JSON_VALUE
 
 revision: str = "20261102080000_public_page_data"
-down_revision = "20261101140000_request_action"
+down_revision = "20261102000000_interface_lang"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

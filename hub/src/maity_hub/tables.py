@@ -121,6 +121,8 @@ human = Table(
     Column("website", String(200)),
     Column("social", JSON_VALUE),
     Column("links_visible", String(24), nullable=False, server_default="private"),
+    # The portal's language and that of the hub's own texts (§6.2); null until chosen.
+    Column("interface_language", String(35)),
     # `active`, or `pending` while a registration waits for the operator (§2.7.5).
     Column("account_status", String(16), nullable=False, server_default="active"),
     Column("registered_at", UtcDateTime),  # set only for an account made by registration
@@ -251,7 +253,10 @@ pending_registration = Table(
     Column("password_hash", String(255), nullable=False),
     Column("source_ip", String(64), nullable=False),
     Column("user_agent", String(512)),
-    Column("language", String(35)),
+    Column("language", String(35)),  # the request's `Accept-Language`
+    # What the form chose (§2.7.1), for the account: the hub's words and what agents write in.
+    Column("interface_language", String(35)),
+    Column("chosen_language", String(35)),
     Column("terms_version", String(64)),  # what the request saw, never an acceptance
     Column("next", String(2048)),
     # The campaign link the visitor came by, `{variant, campaign}` (§16.7.2): only what still

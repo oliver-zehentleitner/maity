@@ -215,6 +215,7 @@ def _account(conn: Connection, human: Any) -> dict[str, Any]:
         "display_name": human.display_name,
         **avatars.state(conn, human.id),
         "account_status": human.account_status,
+        "interface_language": human.interface_language,
         "created_at": ts(human.created_at),
         "registered_at": ts(human.registered_at),
         "last_login_at": ts(human.last_login_at),

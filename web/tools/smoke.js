@@ -6848,8 +6848,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The scan reads the latest window and says so; a cursor that does not move fails loud.
   const pmGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/events?after=latest&wait=0" ? Promise.resolve({ items: [], cursor: 20000 }) : pmGet(p));
+  // The window is a number in the reader's locale: English here.
+  const pmLocale = win.Maity.i18n.locale;
+  win.Maity.i18n.locale = "en";
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/messages");
-  expect(text(main).includes("Only messages within the hub's latest 5000 events (all projects counted) are shown") && text(main).includes("No project messages yet."),
+  win.Maity.i18n.locale = pmLocale;
+  expect(text(main).includes("Only messages within the hub's latest 5,000 events (all projects counted) are shown") && text(main).includes("No project messages yet."),
     "messages: a long log is read from its latest events, and that is said");
   let pmCalls = 0;
   win.Maity.api.get = (p) => (/\/events\?after=\d+&wait=0&limit=200$/.test(p)
@@ -9635,7 +9639,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const lgPrivacy = () => lgBox().find((x) => x.attrs["aria-label"] === "Privacy");
   expect(lgBox().length === 3 && text(lgImprint()).includes("Served at /impressum") && lgImprint().querySelectorAll("a").some((a) => a.getAttribute("href") === "/impressum")
     && byId("lp-imprint-en-title").value === "Imprint" && text(lgPrivacy()).includes("Not set: /privacy answers not found"),
-    "legal: each page, served or not set, its earlier versions linked, the text per language");
+    "legal: each page, served or not set, the earlier versions of privacy and terms linked, the text per language");
   byId("lg-privacy-new-language").value = "en"; btn(lgPrivacy(), "Add the language").click(); await tick();
   byId("lp-privacy-en-markdown").value = "We keep <b>nothing</b>."; byId("lp-privacy-en-markdown").dispatch("input");
   lgPrivacy().querySelector("form.lg-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
