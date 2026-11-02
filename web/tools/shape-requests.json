@@ -1,7 +1,7 @@
 {
   "about": "The requests whose answers the fixtures must shape like the hub's (tools/check.py, hub/tests/test_web_shapes.py). {placeholders} are filled by each side with its own ids.",
   "fixture_ids": {"project": "maintainer/maity", "agent": "agt-a", "group": "cnv-0007", "task": "tsk-0001", "runner": "rnr-0002"},
-  "maps": [".settings.ticker.contract_implementers"],
+  "maps": [".settings.ticker.contract_implementers", ".by_project"],
   "requests": [
     {"method": "GET", "path": "/auth/session"},
     {"method": "GET", "path": "/me"},
@@ -16,6 +16,14 @@
     {"method": "GET", "path": "/projects/{project}/tasks/{task}"},
     {"method": "GET", "path": "/runners"},
     {"method": "GET", "path": "/runners/{runner}"},
+    {"method": "GET", "path": "/me/notifications?limit=20"},
+    {"method": "GET", "path": "/requests"},
+    {"method": "GET", "path": "/projects/{project}/requests?status=all"},
+    {"method": "GET", "path": "/agents"},
+    {"method": "GET", "path": "/projects/{project}/members/{agent}/credentials"},
+    {"method": "GET", "path": "/projects/{project}/tasks?status=all"},
+    {"method": "GET", "path": "/projects/{project}/tasks/{task}/notes?state=all"},
+    {"method": "GET", "path": "/projects/{project}/tasks/{task}/history"},
     {"method": "DELETE", "path": "/runners/{runner}"}
   ]
 }
