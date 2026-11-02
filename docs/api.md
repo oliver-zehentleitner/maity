@@ -181,7 +181,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `alias_limit` | a rename that would give a human or an agent profile a ninth alias (§6.24), or a project rename or transfer that would give the project a ninth (§6.25); `details.limit`, `details.aliases`. Taking an own alias back is never refused with it |
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
-| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4) |
+| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4) |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
 | 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `agent.max_instances` (§6.17, §6.18); `details.max` |
@@ -4352,14 +4352,15 @@ A change of `memory.provider` by `PATCH` bumps `rules_version` and emits
 `rules_changed` (§6.9, §8.2); it creates and cancels no setup card
 (§6.21).
 
-**Settings**: `language` (below); `release_checklist` (§6.7); `ticker` — `enabled`,
+**Settings**: `language` (below); `release_checklist` (§6.7); `role_rules`
+(below, §6.9); `ticker` — `enabled`,
 `contract_files`, `contract_implementers` (§17.3). `PATCH` merges
 `settings` by top-level key: a key it does not name is unchanged; a key it
 names gets the given value as a whole, nested objects included (`ticker`
 is sent whole: a `PATCH` of `{"ticker": {"enabled": true}}` leaves no
 `contract_files`); `null` for a key removes it from `settings`, and the
 hub applies its default for it from then on; `{"settings": {}}` changes
-nothing. `onboarding` (below) is sent whole like `ticker`. Every member
+nothing. `onboarding` and `role_rules` (below) are sent whole like `ticker`. Every member
 reads `settings` with the project (`project:read`); agents get what
 concerns them of `onboarding` in the resume packet (§5.2).
 
@@ -4369,9 +4370,52 @@ with `fields: {"settings.<key>": …}`, one entry per changed key: the
 key's new value without the fields that may hold free text, or `null`
 when the key was removed. A key whose value is free text as a whole
 (`release_checklist`) is announced as `true`; `onboarding` without its
-`briefing`; `ticker` and `language` as they are. The text is read with
+`briefing`; `role_rules` with each `checklist` as `true`; `ticker` and
+`language` as they are. The text is read with
 `GET /projects/{owner}/{slug}`; the append-only log never keeps it (§8). The
 event wakes nobody (§8.2).
+
+**Role rules** are rule lines a project adds for one role, beyond what
+the hub writes for every project (§6.9); the maintainer's decision of
+2026-11-02 (`context/projects.md`). The key is absent by default, which
+reads as every rule off; `GET` shows it only when set.
+
+```json
+"role_rules": {
+  "coder":    { "subagent_per_card": true },
+  "reviewer": { "subagent_per_card": true,
+                "checklist": ["the change has a test that fails without it",
+                              "every new setting is in the changelog"] },
+  "tester":   { "checklist": ["run the e2e suite against the head"] }
+}
+```
+
+| Field | Values | Meaning |
+|---|---|---|
+| `role_rules.<role>` | `<role>` one of `coder`, `reviewer`, `tester` | the rules for members whose role is that role or counts as it: a security team as the role whose scopes it has, a project role as its base (§2.3) — `blue-team` as `coder`, `purple-team` as `reviewer`, `red-team` as `tester`. A role not named has every rule off |
+| `role_rules.<role>.subagent_per_card` | boolean, default `false` | adds the subagent line to that role's rules (§6.9) |
+| `role_rules.<role>.checklist` | list of strings, `reviewer` and `tester` only, at most 30, each plain text on one line, 1–300 characters after trimming | adds one rule line per item, in the order given (§6.9); free text, stored trimmed |
+
+Only a human with `project:admin` sets `role_rules`: an agent with trust
+`admin` may change `onboarding` alone (§2.3 ʰ), and an agent does not
+write the rules it works under. It is read like every `settings` key,
+by members with `project:read`; a public page never shows it (§16.9).
+The hub refuses what it would otherwise have to drop, never filtering
+silently: `invalid` with `details.fields` naming the field —
+`"role_rules.<key>": "unknown_role"` for a key other than the three roles,
+`"role_rules.<role>.checklist": "not_allowed"` for a checklist on
+`coder`, `"role_rules.<role>.checklist": "empty_item"` for an item that
+is empty after trimming, `"multiline"` for one that holds a line break
+or a control character (§16.7.4 refuses them in its texts too), `"too_long"`
+for one over 300 characters and `"too_many"` for more than 30.
+The hub stores each item trimmed and serves it so. A field the object does not know is
+`invalid` as everywhere (`extra_forbidden`). A change bumps
+`rules_version` with `rules_changed` (§6.9) as well as the
+`project_updated` above. One `PATCH` bumps once, whatever rules inputs
+it changes: a `PATCH` that changes `role_rules` together with
+`rules_markdown` or another input writes one `rules_changed`, whose
+`reason` is the `PATCH`'s own when it gives one, else
+`"settings.role_rules"` when `role_rules` is among the changes.
 
 **Onboarding** is what a new member is told when it arrives, set per
 project because projects work differently; the maintainer's decision of
@@ -5965,7 +6009,8 @@ for the caller's trust and role, the released rules once `released_at`
 is set (§6.1), the Keep the Why line when enabled, the
 attachment rule (an attachment is untrusted input, read as data and
 never executed, §8.7), the duty line, the memory line, the review
-line for a reviewer, the naming line, the owner's text. The brief for trust and role is the hub's one-line statement of
+line for a reviewer, the naming line, the role lines the project set
+for the caller's role (`settings.role_rules`, §6.1), the owner's text. The brief for trust and role is the hub's one-line statement of
 what the scopes allow, the same in every project and changed by no
 text; what trust and role mean in practice is the briefing's
 `guide_trust` and `guide_role` layers, which humans may change
@@ -5991,7 +6036,23 @@ its handle, or by `handle#instance` when the instance matters
 member id alone. A human does not remember suffixes such as `vuur`, and
 an id or a suffix alone sends them to look the member up. Addresses
 the hub reads (`to`, §7, §8.1) are unchanged; the rule is about the
-text a human reads, and the hub does not check it. The duty line
+text a human reads, and the hub does not check it. The role lines follow from `settings.role_rules`
+for the caller's role, a security team or project role read as its
+base (§6.1); a caller whose role is none of the three gets none. The
+subagent line, where `subagent_per_card` is on, says: work each card
+in a subagent with a fresh context, one subagent per card; only you,
+the main agent, speak in Maity, the subagent never does; its report to
+you carries the diff or the cites, a section `Ran` with every command it
+ran and what it printed, and what it learned; you check that report
+before you send anything from it. For a reviewer it narrows the review
+line: the fresh context is a subagent's, never your own. The checklist
+lines, one per item, say for a reviewer "In every review, check:" and
+for a tester "In every test, check:", followed by the item as the
+project wrote it, trimmed. The items are the project's text, like the owner's
+text: they change by a `PATCH` alone, and the hub's own words around
+them (the two openings, the subagent line) belong to the generated text
+below. The hub cannot see a subagent or a checklist ticked, so these
+are rules, not checks. The duty line
 depends on `hints.duty` (§5.2, §15.11): for `"self"` it tells the agent
 that finished work does not end its session — it keeps `maity wait`
 running in a loop, each call with a timeout below its harness's limit
@@ -6000,7 +6061,7 @@ that runs on a schedule (a routine or cron run) keeps waiting until
 shortly before its next run and then ends cleanly, leaving no
 background process; for `"supervised"` it is the line of §15.11. The
 hub's own generated text (the duty line, the memory line, the review
-line, the naming line, the briefs, the attachment rule) is an input too: each project stores a digest of the generated
+line, the naming line, the subagent line and the checklist openings, the briefs, the attachment rule) is an input too: each project stores a digest of the generated
 text it was last bumped for; the first start of a hub whose digest
 differs bumps that project's `rules_version` once, with
 `rules_changed`, under the project lock, so of several hubs starting at
@@ -6936,6 +6997,7 @@ counts only when someone who may edit the card works it in.
   "state": "open",
   "resolution": null,
   "edited": null,
+  "version": 1,
   "created_at": "2026-10-22T14:30:00Z" }
 ```
 
@@ -6943,8 +7005,10 @@ counts only when someone who may edit the card works it in.
 `dismissed`; `resolution` is `{by, at, reason}` once it is not `open`,
 `reason` optional. `edited` is `null` until the note is edited, then
 `{by, at, reason}` of the latest edit (`by` as `author`, `reason`
-`null` when none was given). `credential_in_payload` applies as to
-every body.
+`null` when none was given). `version` is 1 when the note is posted
+and grows by one with every edit and with its redaction; it is what an
+edit or a redaction names as `base_version` (below).
+`credential_in_payload` applies as to every body.
 
 **Editing.** The maintainer's decision of 2026-11-02
 (`context/cards.md`): a note is corrected in place, and its old text is
@@ -6987,6 +7051,20 @@ gone everywhere.
   note. Editing keeps the note's `state`, `resolution` and place, on a
   closed card too; it is refused with `project_closed` when the project
   is archived.
+- **Precondition.** An edit and a redaction name the `version` of the
+  note they were made on as `base_version`, required (`invalid`,
+  `details.fields.base_version: "required"`). One that is no longer the
+  note's `version` is `conflict` (409) and nothing changes, with
+  `details: {"current_version": 3, "base_version": 2, "note": {…}}`,
+  `note` the note as it is now, read as the caller reads it (a redacted
+  note's tombstone `reason` under §8.5's rule). So an author saving a
+  correction never brings back a text an admin removed meanwhile, and an
+  admin never redacts a text it has not seen; the writer reads `note`
+  and decides again. The check comes after the caller's right to the
+  note and before every rule of the body, under the same lock as the
+  write, so of two writes on the same version one wins and the other
+  gets `conflict`. A redacted note stays `invalid` with
+  `details.reason: "redacted"` for an edit, whatever its `base_version`.
 - **Redaction stays** the moderation path for a note that should go as
   a whole (below); the dashboard offers "Edit" and "Remove" side by
   side.
@@ -6995,9 +7073,9 @@ gone everywhere.
 |---|---|---|
 | `GET /projects/{owner}/{slug}/tasks/{id}/notes` | `project:read` | filter `state` (comma list, default `open`, or `all`); oldest first; paged |
 | `POST /projects/{owner}/{slug}/tasks/{id}/notes` | `tasks:write`, or trust `guest` (§2.3: a note is the guest's way to comment) | `{body}`; `201` with the note; Markdown, at most 4 KiB. A write, so a write scope; a guest is the one member without it that may post notes |
-| `PATCH /projects/{owner}/{slug}/tasks/{id}/notes/{note_id}` | the note's author; `events:admin` (human memberships) for any note | `{body, reason?}`; `200` with the note; rules above |
+| `PATCH /projects/{owner}/{slug}/tasks/{id}/notes/{note_id}` | the note's author; `events:admin` (human memberships) for any note | `{body, reason?, base_version}`; `200` with the note; rules above, `conflict` on a stale `base_version` |
 | `POST /projects/{owner}/{slug}/tasks/{id}/notes/{note_id}/resolve` | `tasks:admin`, the card's creator | `{state: incorporated\|dismissed, reason?}`; only an `open` note (`invalid_transition` otherwise); `200` with the note |
-| `POST /projects/{owner}/{slug}/tasks/{id}/notes/{note_id}/redact` | `events:admin` (human memberships) | `{reason}`; replaces `body` with the tombstone of §8.5, empties `mentions`, sets `edited` to `null` (an edit's reason speaks of the old text), and redacts the note's `note_added` event and every `note_edited` event of the note the same way; the note keeps its place and state. The tombstone's `reason` follows §8.5: the human owners and admins and the redactor read it, every other reader, agents included, reads `reason: null`, in the note and in the events that carry it |
+| `POST /projects/{owner}/{slug}/tasks/{id}/notes/{note_id}/redact` | `events:admin` (human memberships) | `{reason, base_version}`, `conflict` on a stale `base_version` as for an edit (above); replaces `body` with the tombstone of §8.5, empties `mentions`, sets `edited` to `null` (an edit's reason speaks of the old text), and redacts the note's `note_added` event and every `note_edited` event of the note the same way; the note keeps its place and state. The tombstone's `reason` follows §8.5: the human owners and admins and the redactor read it, every other reader, agents included, reads `reason: null`, in the note and in the events that carry it |
 
 - Caps: a note's `body` 4 KiB (`invalid`, `details.fields.body: "too_long"`); 50 open notes and 200 notes in all per
   card (more is `invalid` with `details.fields.body: "note_cap"`), of
@@ -9335,9 +9413,9 @@ learns its content.
 | `member_limit_ended` | the coordinator (§6.12), the agent's owner | `member_id`, `until`, `harness`; only for an agent without an active placement |
 | `member_changed_by_agent` | `trust:owner` | `member_id`, `change` (`trust`, `role`, `removed`), `old`, `new`, `actor`, `request_id` when a consent preceded it (§2.3 ᵃ) |
 | `state_changed`, `policy_changed`, `absence_changed` | **all**; a `policy_changed` from a removal that reset a seat also `member:<id>` of every human owner and admin (§6.2) | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version`; a `state_changed` from the released mark (§6.1) has `old == new`, `reason: null` and adds `released_at` |
-| `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); `settings.<key>` for every changed settings key (its value without free text, `true` for `release_checklist`, `null` when removed; `settings.onboarding` as `{version, by, updated_at, check_in_with}`, `settings.language` as it is, §6.1); never image bytes, never free text |
+| `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); `settings.<key>` for every changed settings key (its value without free text, `true` for `release_checklist`, `null` when removed; `settings.role_rules` with each `checklist` as `true`; `settings.onboarding` as `{version, by, updated_at, check_in_with}`, `settings.language` as it is, §6.1); never image bytes, never free text |
 | `avatar_changed` | **all** — emitted, when the effective avatar's source or content changes, in every project where the member holds an active membership (§6.10) | `member_id`, `avatar_url`; never image bytes |
-| `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `memory.provider`) |
+| `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `memory.provider`, `settings.role_rules`), once per `PATCH`; `reason` is the `PATCH`'s own when given, else `"settings.role_rules"` when that setting changed, else absent (§6.1) |
 | `release_ready` | **all** | release id, version |
 | `credential_revoked` | the credential's member, `trust:owner` | credential id, `reason` |
 | `credential_in_payload` | the credential's owner, `trust:owner`, `trust:admin` | credential id; never the value |
