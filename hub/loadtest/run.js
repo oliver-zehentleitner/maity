@@ -6,8 +6,8 @@ import { SharedArray } from "k6/data";
 import { Counter, Trend } from "k6/metrics";
 import { sleep } from "k6";
 import { canonicalQuery, signedHeaders } from "./sign.js";
+import { refusal } from "./target.js";
 
-const CONFIRMED = (__ENV.LOADTEST_CONFIRMED_TEST_SYSTEM || "").split(",");
 const PODS = (__ENV.LOADTEST_TARGETS || "").split(",").filter(Boolean);
 const SCALE = Number(__ENV.LOADTEST_SCALE || "0.25");
 const GENERATOR = Number(__ENV.LOADTEST_GENERATOR || "0");
@@ -22,18 +22,11 @@ const WRITES_PER_SECOND = 670;
 const READS_PER_SECOND = (EVENT_WAITS + BELL_WAITS) / 60;
 const LOGIN_LIMIT = 10; // routes/auth.py, per address and per handle, per minute
 
-const hostOf = (url) =>
-  url.replace(/^https?:\/\//i, "").split("/")[0].split("@").pop().split(":")[0].toLowerCase().replace(/\.$/, "");
-
-function refuseAnythingButATestSystem() {
-  if (PODS.length === 0) throw new Error("LOADTEST_TARGETS names no address");
-  for (const pod of PODS) {
-    const host = hostOf(pod);
-    if (host === "maity.team" || host.endsWith(".maity.team")) throw new Error(`${host} may be production`);
-    if (!CONFIRMED.includes(host)) throw new Error(`LOADTEST_CONFIRMED_TEST_SYSTEM does not name ${host}`);
-  }
+if (PODS.length === 0) throw new Error("LOADTEST_TARGETS names no address");
+for (const target of PODS) {
+  const why = refusal(target, __ENV.LOADTEST_CONFIRMED_TEST_SYSTEM || "");
+  if (why) throw new Error(why);
 }
-refuseAnythingButATestSystem();
 
 const seeded = new SharedArray("humans", () => {
   const all = JSON.parse(open(__ENV.LOADTEST_ACCOUNTS));
@@ -72,8 +65,10 @@ function signed(account, method, pod, path, pairs, body, params = {}) {
 }
 
 const held = { timeout: `${WAIT + 30}s`, tags: { held: "yes" } };
-// Two waits per human, each on the human's pod; the message goes to the second through the next pod.
-const humanIndex = () => Math.floor((exec.vu.idInTest - 1) / 2) % seeded.length;
+// Three waits per human, from the number of the VU alone: two agents and the dashboard, as the plan
+// assumes. All on the human's pod; a message to the second agent comes through the next pod.
+const place = () => (exec.vu.idInTest - 1) % 3;
+const humanIndex = () => Math.floor((exec.vu.idInTest - 1) / 3) % seeded.length;
 const human = () => seeded[humanIndex()];
 const eventsPath = (h) => `/api/v1/projects/${h.owner}/${h.slug}/events`;
 const pod = (n) => PODS[n % PODS.length];
@@ -83,10 +78,15 @@ function latestCursor(account, h, target) {
   return answer.status === 200 ? answer.json("cursor") : 0;
 }
 
-export function eventWait() {
+export function waiter() {
+  if (place() === 2) bellWait();
+  else eventWait(place());
+}
+
+function eventWait(which) {
   const h = human();
-  const addressed = (exec.vu.idInTest - 1) % 2 === 1;
-  const account = h.agents[addressed ? 1 : 0];
+  const addressed = which === 1;
+  const account = h.agents[which];
   const target = pod(humanIndex());
   let cursor = latestCursor(account, h, target);
   for (let i = 0; i < 1000; i++) {
@@ -104,7 +104,7 @@ export function eventWait() {
   }
 }
 
-export function bellWait() {
+function bellWait() {
   const h = human();
   const target = pod(humanIndex());
   const params = { headers: { Cookie: `maity_session=${h.session}` } };
@@ -151,7 +151,7 @@ export function logins() {
     headers: { "Content-Type": "application/json" },
     responseCallback: http.expectedStatuses(401, 429),
   });
-  if (answer.status !== 429) loginsAccepted.add(1);
+  if (answer.status === 401) loginsAccepted.add(1); // past the limit, at the password
 }
 
 // One request, once accepted, replayed on every pod for the nonce's whole window; the operator
@@ -175,9 +175,9 @@ export function replay() {
 
 const share = (n) => Math.max(1, Math.ceil((n * SCALE) / GENERATORS));
 const ramp = "10m";
+const waits = share(EVENT_WAITS + BELL_WAITS);
 const holding = {
-  eventWaits: { executor: "ramping-vus", exec: "eventWait", startVUs: 0, stages: [{ duration: ramp, target: share(EVENT_WAITS) }, { duration: "20m", target: share(EVENT_WAITS) }] },
-  bellWaits: { executor: "ramping-vus", exec: "bellWait", startVUs: 0, stages: [{ duration: ramp, target: share(BELL_WAITS) }, { duration: "20m", target: share(BELL_WAITS) }] },
+  waits: { executor: "ramping-vus", exec: "waiter", startVUs: 0, stages: [{ duration: ramp, target: waits }, { duration: "20m", target: waits }] },
 };
 const rate = (fn, perSecond) => ({
   executor: "constant-arrival-rate",

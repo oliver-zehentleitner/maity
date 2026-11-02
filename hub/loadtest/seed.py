@@ -18,7 +18,7 @@ import os
 import sys
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from sqlalchemy import Engine, create_engine, select
 
@@ -36,16 +36,23 @@ def refusal(database_url: str, confirmed: str | None) -> str | None:
     """Why this database is not seeded. Every database has to be named, SQLite too, since a hub
     may run on it in earnest; and by host, port and name, since a host called `db` says nothing."""
     identity = identity_of(database_url)
+    host = identity.split(":")[0].lower().rstrip(".")
+    if host == "maity.team" or host.endswith(".maity.team"):
+        return f"{host} may be production"
     if confirmed != identity:
         return f"LOADTEST_CONFIRMED_TEST_SYSTEM does not name {identity}"
     return None
 
 
 def identity_of(database_url: str) -> str:
+    """Where the URL really connects, without its secrets: libpq takes `host` and `hostaddr` from
+    the query as well, and they win over the part a reader looks at."""
     parts = urlsplit(database_url)
-    if parts.hostname is None:
-        return parts.path + (f"?{parts.query}" if parts.query else "")  # a file or a socket
-    return f"{parts.hostname}:{parts.port or ''}{parts.path}"
+    query = parse_qs(parts.query)
+    host = ",".join(query.get("hostaddr") or query.get("host") or [parts.hostname or ""])
+    if not host:
+        return parts.path  # a file
+    return f"{host}:{parts.port or ''}{parts.path}"
 
 
 def seed_one(engine: Engine, n: int) -> dict[str, Any]:

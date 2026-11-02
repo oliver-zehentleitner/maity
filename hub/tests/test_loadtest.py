@@ -78,6 +78,10 @@ def test_the_scripts_signature_is_the_one_the_hub_expects(
         ("postgresql://u@db.example/maity", "db.example", True),
         ("postgresql://u@db.example:5433/maity", "db.example:5433/maity", False),
         ("postgresql://u@db.example/maity", "db.example:/maity", False),
+        ("postgresql://u@localhost/m?host=prod.example", "localhost:/m", True),
+        ("postgresql://u@localhost/m?host=prod.example", "prod.example:/m", False),
+        ("postgresql://u@localhost/m?hostaddr=192.0.2.9", "localhost:/m", True),
+        ("postgresql://u:secret@db.maity.team/m", "db.maity.team:/m", True),
         ("sqlite:///x.db", None, True),
         ("sqlite:////tmp/x.db", "//tmp/x.db", False),
     ],
@@ -86,6 +90,45 @@ def test_the_seed_touches_only_a_database_named_as_a_test_system(
     url: str, confirmed: str | None, refused: bool
 ) -> None:
     assert (seed.refusal(url, confirmed) is not None) is refused
+
+
+def test_a_refusal_never_prints_a_password() -> None:
+    why = seed.refusal("postgresql://u:secret@db.example/m?password=secret&host=/run", None)
+    assert why is not None and "secret" not in why
+
+
+@pytest.mark.parametrize(
+    ("target", "confirmed", "refused"),
+    [
+        ("https://test.example", "test.example", False),
+        ("https://a.example:8443", "b.example,a.example", False),
+        ("https://TEST.example.", "test.example", False),
+        ("https://test.example", "", True),
+        ("http://:8000", "", True),
+        ("https://test.example:x@maity.team", "test.example", True),
+        ("https://test.example/path", "test.example", True),
+        ("https://MAITY.TEAM", "maity.team", True),
+        ("https://maity.team.", "maity.team", True),
+        ("https://join.maity.team", "join.maity.team", True),
+        ("HTTPS://staging.maity.team", "staging.maity.team", True),
+    ],
+)
+def test_the_script_reaches_only_a_named_test_system(
+    tmp_path: Path, target: str, confirmed: str, refused: bool
+) -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("no node on this machine")
+    driver = tmp_path / "driver.mjs"
+    module = (LOADTEST / "target.js").as_uri()
+    driver.write_text(
+        f'import {{ refusal }} from "{module}";\n'
+        "console.log(JSON.stringify(refusal(process.argv[2], process.argv[3])));\n"
+    )
+    made = subprocess.run(
+        [node, str(driver), target, confirmed], capture_output=True, text=True, check=True
+    )
+    assert (json.loads(made.stdout) is not None) is refused
 
 
 def test_the_seed_refuses_before_it_connects(
