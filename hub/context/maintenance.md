@@ -123,3 +123,24 @@ project pages: an imprint and a privacy notice must be reachable at all times, a
   changes a few times a year.
 - Pausing every background worker: mail and clean-up would pile up for the whole window for no one's benefit.
 - Answering 503 on the legal pages too: the hub would be without an imprint for the length of the window.
+
+## Tests hold the window cache's clock still
+
+**Id:** 09a4b0f6-6185-4765-bb6d-ea0280d2cc78
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-aaprca1rs4ny, found in a review of 2026-11-02 after two PRs went red on slow CI runners
+**See:** maintenance.md#each-replica-trusts-its-last-read-of-the-window-for-5-seconds-only-the-deadline-sweeps-wait — b0bbdd1f-8166-44e4-905f-94f5e415081b — as of 2026-11-02
+**Revisit when:** the window cache moves out of the process, or a test needs the cache to expire by real time
+
+The cache reads its age from `maintenance.monotonic`, the wall clock in production. The hub's test fixture
+sets it to a constant for each test, so the window is read once and then held until `forget()` or the
+hub's clock passing `until`. Before that, a test that counts the statements of two requests saw two or
+three more in the second one when more than 5 seconds passed between them, which happened on slow runners
+and made unrelated PRs red. A test that wants the cache to expire moves `maintenance.monotonic` itself.
+
+**Rejected alternatives:**
+- Raising `CACHE_SECONDS`: it only makes the race rarer, and the value is chosen for production.
+- Counting without the window's read in each counting test: every such test, present and future, would
+  have to know about it, and a filter on the table name hides a real extra read of that table.
