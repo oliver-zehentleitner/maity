@@ -462,7 +462,9 @@ The stored source is a column of `project` (`none` when a choice found none, NUL
 with the row every view has already, so no list reads it per project. A forge read often runs inside
 a request that holds that project's row, and a second connection waiting for it would wait forever,
 out of the database's sight. So the write takes the row `FOR UPDATE SKIP LOCKED` and leaves it to
-the next choice when it is taken: the value is only shown.
+the next choice when it is taken: the value is only shown. That holds for the pod that chose as
+well: `probe_via` reads the column first, so its newer `_last_via` counts only when the next choice
+has written. `_last_via` before the column would let a pod's old memory hide a fresher column.
 
 **Reason:** with the probe and the image refresh on one pod (entry 24489a9c), the remaining
 forge reads come from requests and are bounded by them; sharing every cache would put a database
@@ -616,7 +618,9 @@ land on another pod.
 
 **Tool: k6.** It holds tens of thousands of concurrent long-polls per load generator cheaply,
 signs requests with `k6/crypto` HMAC-SHA256, and reports percentiles and thresholds that fail
-the run. A seeding script creates projects, humans and agent credentials through the API first.
+the run. A seeding script (`hub/loadtest/seed.py`) creates projects, humans and agent credentials directly
+in the test system's database first: the API's limits on logins and on agents per human are what
+the run measures, and seeding through it would have to lift them.
 The 60 000 held connections are spread over several generator pods with their own source
 addresses: one source address has about 64 000 ephemeral ports, and the run must measure the
 hub, not the generator's port exhaustion.

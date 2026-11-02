@@ -23,7 +23,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock, forge, github_app, secretbox
+from maity_hub import clock, forge, forge_links, github_app, secretbox
 from maity_hub import tables as t
 from maity_hub.config import ConfigError, Settings
 from tests import factory, flow
@@ -427,6 +427,18 @@ def test_a_successful_mint_on_the_list_turns_a_suspended_link_active_again(
     assert links(human)[0]["status"] == "active"
     with migrated.connect() as conn:
         assert conn.execute(select(t.forge_link.c.status)).scalar_one() == "active"
+
+
+def test_a_mint_on_the_list_does_not_undo_a_removal_found_meanwhile(
+    human: flow.Human, fake: Forge, migrated: Engine
+) -> None:
+    fake.install(7)
+    setup(human, 7, start(human))
+    with migrated.begin() as conn:
+        conn.execute(update(t.forge_link).values(status="removed"))
+        link_id = conn.execute(select(t.forge_link.c.id)).scalar_one()
+        forge_links.set_status(conn, link_id, "active")
+        assert conn.execute(select(t.forge_link.c.status)).scalar_one() == "removed"
 
 
 def test_without_an_app_nothing_is_linked(human: flow.Human, no_app: None) -> None:
