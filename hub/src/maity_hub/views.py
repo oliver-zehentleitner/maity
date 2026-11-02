@@ -1177,7 +1177,7 @@ def _without_reason(row: Any, reader: Any, group_readers: set[str] | None = None
         # A redacted note's tombstone sits inside the event that carried it (§6.16).
         note = payload.get("note")
         body = note.get("body") if isinstance(note, dict) else None
-        if isinstance(body, dict) and body.get("redacted"):
+        if isinstance(note, dict) and isinstance(body, dict) and body.get("redacted"):
             from maity_hub.board import notes
 
             return {**payload, "note": {**note, "body": notes.tombstone_for(body, reader)}}
