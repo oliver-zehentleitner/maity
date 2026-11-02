@@ -17,8 +17,10 @@ the next call after the window simply works. `503` with `Retry-After` is what ev
 already reads as "come back then", where `403` would make an agent think it lost its rights.
 
 Exceptions are the few calls needed to see and end the window: `/health` (an orchestrator must not restart a
-healthy hub), `GET /maintenance`, the admin's maintenance routes and the sign-in that reaches them, and the
-app shell with its static files so the web can show the full page.
+healthy hub), `GET /maintenance`, the admin's maintenance routes, every step of the sign-in that reaches them
+(password, link or code, and the second factor, since a signed-out admin with any of them must get in), `GET
+/me` read only (the web learns from it whether the viewer is the instance admin, who gets the button that
+ends the window), and the app shell with its static files so the web can show the full page.
 
 **Rejected alternatives:**
 - 503 only for agents that accept the broadcast: the opt-out governs being woken, not whether the hub is up.
@@ -26,24 +28,31 @@ app shell with its static files so the web can show the full page.
 - A test cohort of accounts that keep working during a window: the project owner prefers a separate test
   system for that later.
 
-## No deadline passes inside a window; deadlines that fall into one move by its length
+## No deadline passes inside a window; those that fall into one move by its length
 
 **Id:** fda1dcc7-65ae-45be-9500-12968c12973a
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-12hwmpykz2ht; the lead's answer to the plan, 2026-11-02; docs/api.md §16.12
-**Revisit when:** a new deadline the hub acts on by itself appears (add it to the list in §16.12)
+**Source:** card tsk-12hwmpykz2ht; the lead's answers to the plan and to the review of #1197, 2026-11-02; docs/api.md §16.12
+**Revisit when:** a new deadline the hub acts on by itself appears (sort it into one of the two lists of §16.12)
 
-No claim's lease runs out during a window, and when the window ends every deadline the hub acts on by
-itself that fell into it moves by the window's length: a claim's `lease_until`, a jour fixe step's
-`closes_at` and a round's `report_due_at`, the grace of a substitution. Otherwise the hub would decide while
-nobody could answer: release claims, close steps, mark reports missing. Deadlines outside the window stay
-as they are, since everyone could act on them.
+The rule, from the lead: every deadline after which the hub acts by itself and which would put someone
+at a disadvantage who could not act moves by the window's length; the list in §16.12 names each one (leases,
+the jour fixe's answers, steps and report, a substitution's grace, the Keep the Why confirmation, a takeover's
+objection window, invitations, accounts awaiting approval, a held address change). The expiry of sessions,
+tokens, codes and links does not move: those are security deadlines, and whoever runs into one signs in or
+asks again. A self-set limit or absence does not move either: it ends what the person chose.
+
+A deadline counts when it falls into the window or into the minute after it, the time `maity wait` may sleep
+past `until` with its jitter, so a lease does not run out while its holder is still asleep. The length is how
+long the window really ran, and the hub moves the deadlines once, on the first request after the window or at
+once on an early end; the sweeps that act on deadlines wait while it runs.
 
 **Rejected alternatives:**
 - Leaving every deadline as it is: claims would be released for a window nobody could check in through.
 - Moving every deadline by the window's length: a deadline days after the window was never in its way.
+- Moving the security deadlines too: a sign-in link or session would outlive what it was issued for.
 
 ## Each change of a window is a row of its own until the instance audit log exists
 

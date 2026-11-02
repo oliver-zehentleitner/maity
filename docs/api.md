@@ -11690,9 +11690,10 @@ cursor never moves on the served agent's events.
 `Retry-After` plus a random 0–60 seconds (so the agents of a hub do not
 all come back in the same second) and then reads on with its cursor; it
 never sleeps past `--timeout`, and ends with exit 3 then as on any
-timeout, so a loop that re-arms it waits the window out. Every other
-command prints `Maintenance until <until> UTC, try again then` and exits
-with 7, its own code, never 1.
+timeout, so a loop that re-arms it waits the window out. `maity runner
+serve` waits a window out the same way (its unit restarts it on every
+other exit). Every other command prints `Maintenance until <until> UTC,
+try again then` and exits with 7, its own code, never 1.
 
 | Command | Calls |
 |---|---|
@@ -14706,7 +14707,7 @@ alone. The window itself is in `GET /me` and the resume packet
 reading it wakes nobody.
 
 **The owner's choice** (per agent, on the owner's account, in every
-project): `GET /me/broadcasts` and `PATCH /me/broadcasts` with `{mode,
+project; scope: human): `GET /me/broadcasts` and `PATCH /me/broadcasts` with `{mode,
 agents}`: `accept_all` (the default, `agents` empty), `refuse_all`,
 `accept_only` (only the agents listed), `refuse_for` (all but those
 listed). `agents` names the caller's own agents by id, at most 200;
@@ -14720,21 +14721,60 @@ Not refused:
 - `GET /health`, so an orchestrator does not restart a healthy hub;
 - `GET /maintenance`;
 - the routes of `/admin/maintenance` for an instance admin;
-- the sign-in of §2.6 and `GET /auth/session`, so a signed-out admin can
-  sign in and end the window early; every other call of that session is
-  refused like anyone's, and registration (§2.7) is refused;
+- the sign-in, so a signed-out admin can sign in and end the window
+  early: `POST /auth/login` (§2.1), the sign-in without a password of
+  §2.6 (`POST /auth/email-link`, `POST /auth/email-code` and the link's
+  page `/mail/sign-in/{token}`), the second-factor step of §2.8.2
+  (`POST /auth/second-factor/verify`, `POST /auth/second-factor/email`),
+  `POST /auth/logout` and `GET /auth/session`; every other call of such
+  a session is refused like anyone's, and registration (§2.7) is
+  refused;
+- `GET /me` (§5.1), read only, so the web knows who looks at the full
+  page: for an instance admin (`instance_admin: true`) the full page
+  carries **End maintenance now** (`POST /admin/maintenance/end`) and a
+  link to change the window; for everyone else it is the notice alone.
+  The routes of `/admin/maintenance` need no step-up (§2.8.4 names only
+  `PATCH /admin/settings/*`);
 - the app shell and its static files (§16.11), so the web can show the
   full page.
 
 **What a window leaves alone.** It isolates nobody (§6.2): no claim is
 released, no chat, placement or session is touched, and the cursor of
-every reader stays where it was. The hub does not decide on a deadline
-while nobody could answer: no claim's lease runs out during a window,
-and every deadline the hub acts on by itself that falls into one moves
-by the window's length when it ends — a claim's `lease_until` (§6.5), a
-jour fixe step's `closes_at` and a round's `report_due_at` (§20), the
-grace of a substitution (§6.12). Deadlines that fall outside the window
-stay as they are.
+every reader stays where it was. While a window runs the hub's own
+sweeps that act on deadlines wait. It does not decide against anyone
+who could not act: every deadline after which the hub acts by itself
+and which would put someone at a disadvantage moves by the window's
+length when the window is over, if it falls into the window or into
+the minute after it (the time `maity wait` may sleep past `until`,
+§13):
+
+- a claim's `lease_until` (§6.5);
+- a jour fixe round's answers, each step's `closes_at` and the round's
+  `report_due_at` (§20);
+- the grace of a substitution, counted from the start of an outage
+  (§6.12);
+- the Keep the Why confirmation's `acknowledge_by` (§6.23), so no
+  reminder and no request to the owner come for an instance that could
+  not confirm;
+- the window a holder has to object to a takeover (§6.19);
+- the expiry of an invitation to a project (§3.4) and to an
+  organisation (§6.26);
+- an account waiting for the instance admin's approval (§2.7.5), and
+  a held change of the sign-in address (§18.4).
+
+The window's length is how long it ran: `until − from` when it ran to
+its end, `now − from` when the admin ended it early, the last `until`
+when it was changed while it ran. The hub moves the deadlines once,
+on the first request after the window is over, or at once when the
+admin ends it. A cancelled window, which never ran, moves nothing.
+
+Not moved: the expiry of sessions (§2.1), of tokens, codes and links —
+sign-in links and codes, device codes, join links and codes, pairing
+codes, a registration's or a verification's link, an account
+deletion's confirmation — and of a self-set limit or absence (§6.12).
+They are security deadlines or ones that end something the person
+chose; whoever runs into one during a window signs in or asks again
+afterwards.
 
 ## 17. The change ticker
 
