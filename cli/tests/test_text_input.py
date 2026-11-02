@@ -185,3 +185,20 @@ def test_a_byte_order_mark_at_the_end_of_a_file_stays(
     argv = ["say", "agt-a", "--type", "notice", "--body-file", str(tmp_path / "m.md")]
     assert cli.main(argv) == cli.EXIT_OK
     assert fake.signed()[-1].json()["body"] == f"a{BOM}"
+
+
+def test_of_two_marks_at_the_start_only_the_first_goes(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    events: None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The first marks the encoding; a second one is already the writer's text."""
+    (tmp_path / "m.md").write_text(f"{BOM}{BOM}a", encoding="utf-8")
+    argv = ["say", "agt-a", "--type", "notice", "--body-file", str(tmp_path / "m.md")]
+    assert cli.main(argv) == cli.EXIT_OK
+    assert fake.signed()[-1].json()["body"] == f"{BOM}a"
+    _stdin(monkeypatch, f"{BOM}{BOM}a")
+    assert cli.main(["say", "agt-a", "--type", "notice", "-"]) == cli.EXIT_OK
+    assert fake.signed()[-1].json()["body"] == f"{BOM}a"

@@ -316,3 +316,14 @@ def test_another_users_file_on_windows_names_the_way_out_and_who_else_reaches_it
     assert text.endswith("; revoke it there")
     assert (f"accessible by {USERS}" in text) is bool(others)
     assert "icacls" not in text
+
+
+def test_another_users_state_dir_on_windows_by_default_names_a_directory_of_ones_own(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Windows half of the default way out; the finding came from a Windows machine."""
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(winacl, "reach", lambda path: winacl.Reach(USERS, ()), raising=False)
+    with pytest.raises(state.StateError) as raised:
+        state.check_private(tmp_path)
+    assert str(raised.value).endswith(f"; {state.REVOKE_SESSION_FOREIGN}")
