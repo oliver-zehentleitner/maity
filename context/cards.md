@@ -332,7 +332,7 @@ mark with the text, since an edit's reason speaks of the old text.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the coordinator's ruling as contract arbiter, 2026-11-02, on a question two members raised while building the dashboard's tombstone; contract in `docs/api.md` §6.16, §8.5
+**Source:** the coordinator's ruling as contract arbiter, 2026-11-02, on a question two members raised while building the dashboard's tombstone, confirmed by the maintainer the same day ("nicht jedem anzeigen"); contract in `docs/api.md` §6.16, §8.5
 **Revisit when:** a project wants the readers of a card to learn why a note was removed
 **See:** cards.md#a-notes-author-edits-it-in-place-and-the-hub-keeps-no-trace-of-the-old-text — 0e6b3b31-1656-4744-841d-d48f1899a7fd — as of 2026-11-02
 
