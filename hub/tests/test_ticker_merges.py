@@ -88,6 +88,7 @@ def merged(
     at: str = "2099-01-01T10:00:00Z",
     head: str = "agent-b/x",
     title: str | None = None,
+    private: bool | None = False,
 ) -> None:
     pulls = github.answers.setdefault(
         "/repos/acme/maity/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=50&page=1",
@@ -100,7 +101,7 @@ def merged(
             "html_url": f"https://github.com/acme/maity/pull/{number}",
             "merged_at": at,
             "merge_commit_sha": MERGE_SHA,
-            "base": {"ref": "main", "sha": BASE_SHA},
+            "base": {"ref": "main", "sha": BASE_SHA, "repo": {"private": private}},
             "head": {"ref": head},
             "user": {"login": "agent-b"},
         }
@@ -223,21 +224,27 @@ def test_a_merge_reaches_area_owners_card_holders_and_the_contracts_implementers
     ), "one item per pull request"
 
 
-@pytest.mark.parametrize(
-    ("granted", "public"), [(None, True), ("app", False), ("owner_token", False)]
-)
-def test_only_a_merge_read_with_the_instances_token_counts_as_public(
+@pytest.mark.parametrize("granted", [None, "app", "owner_token"])
+@pytest.mark.parametrize(("private", "public"), [(False, True), (True, False), (None, False)])
+def test_a_merge_counts_as_public_only_if_its_read_found_the_repository_public(
     owner: flow.Human,
     team: dict[str, flow.Agent],
     github: FakeGitHub,
     migrated: Engine,
     granted: str | None,
+    private: bool | None,
     public: bool,
 ) -> None:
-    """Data read through an owner's grant never reaches a page without sign-in (§11.4), and this
-    flag is all that stands between the two."""
+    """The bare count may come from a read through an owner's grant while the repository was
+    public (§11.4); this flag is all that stands between such a read and a page without sign-in,
+    so a read that did not say counts as not public."""
     enable(owner)
-    merged(github, 212, [{"filename": "hub/maity_hub/claims.py", "patch": "@@ -1 +1 @@\n-a\n+b\n"}])
+    merged(
+        github,
+        212,
+        [{"filename": "hub/maity_hub/claims.py", "patch": "@@ -1 +1 @@\n-a\n+b\n"}],
+        private=private,
+    )
     reader = replace(READER, granted=granted)
     assert reader.via == (granted or "instance")
     assert probe.announce_merges(migrated, reader, project_id(migrated)) == 1

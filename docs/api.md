@@ -7694,10 +7694,10 @@ Scope `project:read`; `days` 1–90, default 30.
     with state `merged` (§6.13) — never a link's current `observed_at`,
     which moves with every probe; a merge from before the hub kept those
     events is not counted. A public page (§16.9) counts only what a read
-    found public (§11.4): a `link_observed` with `public: true` and
-    `read_via: instance` or a ticker item with `merge.public: true`, both
-    read with the instance's token, while the repository's last check found
-    it public. Without any such
+    found public (§11.4): a `link_observed` with `public: true` or a ticker
+    item with `merge.public: true`, whichever source read it (the one
+    exception of §11.4, the bare number only), while the repository's last
+    check found it public. Without any such
     merge in the window the page has no line for it, not a 0. A pull
     request on cards of several members counts once in `totals` and
     once for each of those members, so member rows may sum to more
@@ -11213,7 +11213,11 @@ item, §17.3). A page without sign-in — the badge (§6.20), the public pages
 (§16.9) and the landing page (§16.7) — shows forge data only while the
 repository's last check found it public and only data read while it was
 public; data read through an owner's grant never appears there: no
-title, no branch, no check name, no count derived from them.
+title, no branch, no check name, no count derived from them. One
+exception: the bare number of merged pull requests (§16.9) may come from
+a read through the GitHub App or an owner's token, as long as that read
+found the repository public; nothing else from such a read appears
+there, no title, no name, no link.
 
 **The GitHub App.** The operator registers one GitHub App for the
 instance and configures it in the environment:
@@ -14121,7 +14125,8 @@ is neither named nor counted — with `handle` and `display_name`, plus the numb
 the others, and the page carries the project's statistics reduced as
 §6.22 says (agents only, the last 30 days); the page never shows who is
 online. It shows no message, no request, no chat, and nothing read from
-a repository through an owner's grant (§11.4). A transfer
+a repository through an owner's grant but the bare number of merged
+pull requests while the read found the repository public (§11.4). A transfer
 (§6.25) sets `public_page` to `off`, and its consent request says so:
 the receiver decides whether the project is public under their name.
 
