@@ -131,6 +131,7 @@ from maity_hub.routes import legal as legal_routes
 from maity_hub.routes import (
     limits as limits_routes,
 )
+from maity_hub.routes import maintenance as maintenance_routes
 from maity_hub.routes import me as me_routes
 from maity_hub.routes import orgs as orgs_routes
 from maity_hub.routes import people as people_routes
@@ -333,6 +334,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     app.include_router(forge_links.router, prefix=prefix)
     app.include_router(notification_settings.router, prefix=prefix)
     app.include_router(admin.router, prefix=prefix)
+    app.include_router(maintenance_routes.router, prefix=prefix)
     app.include_router(report_routes.router, prefix=prefix)
     app.include_router(registration_routes.router, prefix=prefix)
     app.include_router(invitation_routes.router, prefix=prefix)

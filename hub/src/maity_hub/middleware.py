@@ -23,7 +23,16 @@ from starlette.concurrency import run_in_threadpool
 from starlette.routing import Match
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from maity_hub import clock, events, forge_webhook, join_host, net, paths, request_stats
+from maity_hub import (
+    clock,
+    events,
+    forge_webhook,
+    join_host,
+    maintenance,
+    net,
+    paths,
+    request_stats,
+)
 from maity_hub.auth import credentials
 from maity_hub.auth.leaks import revoke_leaked
 from maity_hub.config import Settings
@@ -84,6 +93,25 @@ LANDING_FILES = re.compile(r"/assets/landing/.+")
 LANDING_FILES_CACHE = b"public, max-age=31536000, immutable"
 
 
+# Not refused during a maintenance window (§16.12): health, the window's own routes, and the
+# sign-in a signed-out admin needs to end it early. Registration is refused like the rest.
+MAINTENANCE_OPEN = re.compile(
+    r"/api/v1/(health|maintenance|admin/maintenance(/end|/changes)?"
+    r"|auth/(login|logout|session|email-link|email-code|second-factor/(verify|email)))"
+    r"|/mail/sign-in/[^/]+"
+)
+# The hub's own server-rendered pages, which answer a small 503 page during a window; every
+# other address outside the API is the app shell or a static file, and the app shows the full
+# page itself.
+MAINTENANCE_PAGES = re.compile(r"/|/explore|/for/[^/]+|/join/[^/]+|/r/[^/]+|/mail/.+")
+MAINTENANCE_HTML = (
+    '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+    '<meta name="viewport" content="width=device-width"><meta name="robots" '
+    'content="noindex"><title>Maintenance</title></head><body><main><h1>Maintenance</h1>'
+    "<p>Back at {until} UTC.</p><p>{text}</p></main></body></html>"
+)
+
+
 class HubMiddleware:
     def __init__(self, app: ASGIApp, settings: Settings, engine: Engine) -> None:
         self.app = app
@@ -114,6 +142,9 @@ class HubMiddleware:
                 # app shell of the same address stays `no-cache` (§16.9).
                 public = b"public, max-age=60"
         send = _with_headers(send, public=public)
+
+        if await self._maintenance_refused(scope, receive, send, path):
+            return
 
         if not on_join_host and forge_webhook.matches(scope):
             # Signed, not authenticated, and limited before its body is read (§17.4).
@@ -216,6 +247,44 @@ class HubMiddleware:
             await response(scope, receive, send)
         finally:
             _access(scope, status)
+
+    async def _maintenance_refused(
+        self, scope: Scope, receive: Receive, send: Send, path: str
+    ) -> bool:
+        """`503 maintenance` with `Retry-After` while a window runs (§16.12); True when sent."""
+        if MAINTENANCE_OPEN.fullmatch(path):
+            return False
+        api = path.startswith("/api/")
+        badge = path.startswith("/badge/")
+        if not (api or badge or MAINTENANCE_PAGES.fullmatch(path)):
+            return False  # the app shell and its files: the app shows the full page
+        try:
+            found = await run_in_threadpool(maintenance.window_now, self.engine)
+        except (OperationalError, InterfaceError):
+            return False  # the database's own answer follows on the route
+        if found is None or found["state"] != "running":
+            return False
+        headers = {"Retry-After": str(maintenance.retry_after(found))}
+        if api:
+            details = {k: found[k] for k in ("from", "until", "text")}
+            response: Any = error_response(
+                503, "maintenance", "the hub is in a maintenance window", details, headers
+            )
+        else:
+            from html import escape
+
+            from starlette.responses import HTMLResponse, Response
+
+            if badge:
+                response = Response(status_code=503, headers=headers)
+            else:
+                page = MAINTENANCE_HTML.format(
+                    until=escape(found["until"]), text=escape(found["text"])
+                )
+                response = HTMLResponse(page, status_code=503, headers=headers)
+        await response(scope, receive, send)
+        _access(scope, 503)
+        return True
 
     def _revoke(self, found: list[credentials.Presented]) -> None:
         with events.transaction(self.engine) as conn:

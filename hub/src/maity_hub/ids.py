@@ -48,6 +48,8 @@ PREFIXES = {
     "org_invitation": "oiv",
     "abuse_report": "rpt",
     "bridge": "brg",
+    "maintenance_window": "mnt",
+    "maintenance_change": "mnc",
 }
 
 
