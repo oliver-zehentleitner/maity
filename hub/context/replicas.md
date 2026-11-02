@@ -344,7 +344,7 @@ is the standard trade-off and errs by at most the previous window's share.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the fifteen `Worker` classes started in `app.py` (attachments, availability, commitment, images, jour fixe, mail outbox, notification mailer, not-listening and its digest, organisation invitations, probe, registrations, reports, request stats, takeovers) and how each picks its rows; `not_listening_digest.reconcile` (reads `latest()` before the human's lock); `jourfixe` `record_presence` (insert into `presence_minute` without a lock); `probe.Worker` (forge calls every 120 s and 300 s)
+**Source:** the fifteen `Worker` classes started in `app.py` (attachments, availability, commitment, images, jour fixe, mail outbox, notification mailer, not-listening and its digest, organisation invitations, probe, registrations, public pages, reports, takeovers) and how each picks its rows; `not_listening_digest.reconcile` (reads `latest()` before the human's lock); `jourfixe` `record_presence` (insert into `presence_minute` without a lock); `probe.Worker` (forge calls every 120 s and 300 s)
 **Revisit when:** one worker's pass takes longer than its interval on the one pod that holds it, so that it has to be split across pods
 
 Every worker keeps running in every pod, so any pod can take over at once, but a pass starts only
@@ -428,6 +428,12 @@ old repository.
 interval (entry 24489a9c), the others never learn it. The source the last choice found is
 therefore written beside the project's other probe facts when it changes (one small column or
 row per project, written only on a change), and views read it from there.
+
+Built so far: the budget (`shared_budget`, table `forge_budget`). Each answer merges into the row by
+the rules a process already had (the lowest `remaining` within a window, a later reset replaces
+it, the later hold counts), and each read and `retry_at` merge the row into what the process
+knows. A database that does not answer costs the sharing, never a forge read: the budget guards
+the forge, and a read refused because the database is down would turn one outage into two.
 
 The notice on `maity_forget` (`wakeups.forget_token_everywhere`, `forget_repository_everywhere`)
 carries only ids, in the writing transaction. This process forgets at once, as before, not at
