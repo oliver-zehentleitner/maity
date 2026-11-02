@@ -1,7 +1,9 @@
 """Profiles are public by default, and a page can be kept out of search (docs/api.md §16.9).
 
 `human.public_profile` defaults to true, and every existing account is switched on: the
-maintainer's decision of 2026-11-02 (tsk-my5gvj4warte), with two accounts at the time.
+maintainer's decision of 2026-11-02 (tsk-my5gvj4warte), with two accounts at the time. An
+instance that upgrades later switches its existing accounts the same way, which is why the
+changelog asks its operator to tell their users before the upgrade.
 `public_page.indexed` is false for a page search engines must not list (a person whose
 profile is off keeps a page with handle and name, `noindex` and out of the sitemap).
 
