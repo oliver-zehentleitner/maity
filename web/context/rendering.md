@@ -948,7 +948,14 @@ enum value is not, so a raw state still counts. A fixture's text also counts in 
 code span or a mention, raw with their stops, so `Keep it;` is data and the button `Keep it` is not. Dates, commits,
 handles with instances, device codes, mail addresses, domains and media types are no words.
 
+Two fixture names are also catalog texts, `Reviewer` (`role.reviewer`) and `OZ Team` (`orgs.new.name_placeholder`).
+Taking the catalog out would drop them from the data, and every page showing those agents would be reported, so
+`FIXTURE_NAMES` in `tools/pseudo_run.py` puts them back (a workaround). The price: a view that writes `Reviewer` itself
+instead of `role.reviewer` is not reported on any page.
+
 **Rejected alternatives:**
+- Renaming the two fixtures so that no name is a catalog word: `tools/smoke.js` matches `Reviewer` exactly some thirty
+  times (member rows, conversation order, notices), a change out of proportion to one exception.
 - An allowlist of the texts the run should accept: it would grow with every fixture and hide a real finding in it.
 - Any two words inside a fixture's prose as data: 18 catalog texts such as `in progress` and `not valid` occur in some
   fixture sentence and would never be reported.
@@ -980,6 +987,12 @@ reflexive takes the noun, `Incorporación en curso…` for Joining, because a Sp
 A pull request is masculine in Spanish on every key, its states too, since they are put into sentences about it. The duplicate check in `web/tools/check.py` treats a comma list in a cell as forms of one
 word, and `GLOSSARY_FORMS_OF_ONE` names rows that are one thing: `user` and `users`, a person and a human, `join` as
 noun and verb.
+In Portuguese, a join is `ingresso` (its states masculine to match), signing in is `acesso` as a noun and `entrar` as a
+verb, two-factor sign-in included, and `entrada` keeps its own senses, an entry (of memory, of Keep the Why) and the
+inbox (`caixa de entrada`), so a join or a sign-in never shares its word. A custom role is `todos com a função {role}`,
+because a role's name cannot be put in the plural and the role may be an agent's. A project's launch is `estreia`, since
+`lançamento` is its release. Step-up subjects are infinitives, as in Spanish, because `stepup.*.hint` puts them first in
+a sentence (`{what} exige …`). Legal pages are `páginas jurídicas`: `legal` in Brazilian Portuguese also means "cool".
 
 **Rejected alternatives:**
 - `Übernahme` for both claim and takeover: an error then says a card "needs a takeover" next to "nobody has claimed it".
@@ -989,6 +1002,7 @@ noun and verb.
 - `der Release`: in use as well; one gender was the point.
 - `eliminar` for redacting in Spanish: it is already the word for deleting an account or a project.
 - `Uniéndote…` and `Uniéndose…` for Joining: one addresses the reader, the other reads as the formal address; the glossary wants a neutral waiting text.
+- `entrada` for a join or a sign-in in Portuguese: it is already an entry and the inbox, and reads as a door, not an act.
 - A neutral form for `Besitzer` in the table: it would make the level's name differ between labels and sentences.
 
 

@@ -84,6 +84,7 @@
   ".items[].isolation_windows: the fixture leaves it out",
   ".items[].language: the fixture leaves it out",
   ".items[].line_consent: the fixture leaves it out",
+  ".items[].manages: the fixture leaves it out",
   ".items[].org_owner: the fixture leaves it out",
   ".items[].owner.avatar_url: the fixture leaves it out",
   ".items[].placement: the fixture leaves it out",

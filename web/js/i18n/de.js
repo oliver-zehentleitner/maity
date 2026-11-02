@@ -1970,6 +1970,8 @@ window.MAITY_I18N["de"] = {
   "landing.stat.agents": "Agents",
   "landing.stat.agents_online": "Agents online",
   "landing.stat.cards_done_week": "Karten diese Woche erledigt",
+  "landing.stat.instances": "Instanzen",
+  "landing.stat.instances_online": "Instanzen online",
   "landing.stat.people": "Menschen",
   "landing.stat.people_online": "Menschen online",
   "landing.stat.public_projects": "Öffentliche Projekte",
@@ -2175,6 +2177,17 @@ window.MAITY_I18N["de"] = {
   "mail.warning.password_unreadable": "Das gespeicherte SMTP-Passwort lässt sich mit dem Schlüssel der Instanz nicht öffnen. Setze es erneut.",
   "mail.warning.plaintext_allowed": "Die Umgebung erlaubt Mail im Klartext. Nachrichten, auch Anmeldelinks, können unverschlüsselt über das Netz gehen.",
   "mail.whole_number": "Verwende eine ganze Zahl für {key}.",
+  "manages.dormant": "{count} ruhend",
+  "manages.instances": {
+    "one": "{count} Instanz",
+    "other": "{count} Instanzen"
+  },
+  "manages.members": {
+    "one": "leitet {count} Mitglied",
+    "other": "leitet {count} Mitglieder"
+  },
+  "manages.online": "{count} online",
+  "manages.total": "ganzer Zweig: {text}",
   "md.block": "Code, Block {n}",
   "md.block.lang": "Code ({lang}), Block {n}",
   "md.click_to_copy": "Zum Kopieren klicken",
@@ -2395,9 +2408,9 @@ window.MAITY_I18N["de"] = {
   "members.refused.outside_owner_role": "Der Besitzer dieses Agents ist kein Mitglied, daher kann er nur eine Rolle haben, die in den Einstellungen unter Rollen für externe Agents aufgeführt ist.",
   "members.refused.outside_owner_trust": "Der Besitzer dieses Agents ist kein Mitglied, daher kann er hier nur Mitglied oder Gast sein.",
   "members.refused.owner_not_member": "Diese Isolation kann nicht aufgehoben werden: der Besitzer des Agents ist kein Mitglied, und dieses Projekt behält nur Agents seiner Mitglieder. Lass den Besitzer zurückkehren oder ändere in den Einstellungen Agents von Besitzern, die keine Mitglieder sind, und hebe sie dann auf.",
-  "members.refused.owner_only": "nur ein Besitzer darf die Vertrauensstufe owner oder admin oder die Rolle proxy vergeben oder einen Besitzer herabstufen oder entfernen",
+  "members.refused.owner_only": "nur ein Besitzer darf die Vertrauensstufe Besitzer oder Admin oder die Rolle proxy vergeben oder einen Besitzer herabstufen oder entfernen",
   "members.refused.pause_reason_too_long": "Der Grund der Pause ist zu lang.",
-  "members.refused.proxy_needs_admin": "Ein Proxy hat die Vertrauensstufe admin, und nur diese.",
+  "members.refused.proxy_needs_admin": "Ein Proxy hat die Vertrauensstufe Admin, und nur diese.",
   "members.refused.reports_to_cycle": "Das würde einen Kreis schließen: sie würden am Ende an sich selbst berichten.",
   "members.refused.reports_to_guest": "An einen Gast wird nie berichtet.",
   "members.refused.reports_to_not_a_member": "Berichtet an jemanden, der kein Mitglied dieses Projekts ist.",
