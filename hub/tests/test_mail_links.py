@@ -250,7 +250,7 @@ def test_a_language_the_hub_has_no_words_in_gets_the_english_page(
     client: TestClient, migrated: Engine
 ) -> None:
     human_id = factory.human(migrated, "maintainer")
-    stored(migrated, human_id, {"email": {"language": "fr"}}, epoch=1)
+    stored(migrated, human_id, {"email": {"language": "sw"}}, epoch=1)
     page = client.get(f"/mail/unsubscribe/{link(human_id, epoch=0)}")
     assert page.status_code == 404 and "no longer works" in page.text
 

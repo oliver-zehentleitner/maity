@@ -74,6 +74,15 @@ raised on the card, not replaced in one place. Translations carry no note saying
 | second factor | zweiter Faktor | second facteur | segundo factor | secondo fattore | segundo fator | tweede factor | 第2要素 | 2단계 인증 | 第二因素 |
 | token | Token | jeton | token | token | token | token | トークン | 토큰 | 令牌 |
 | invitation | Einladung | invitation | invitación | invito | convite | uitnodiging | 招待 | 초대 | 邀请 |
+| join (noun, the act and its open line) | Beitritt | adhésion | incorporación | adesione | entrada | deelname | 参加 | 참여 | 加入 |
+| credential | Zugangsdaten | identifiant d'accès | credencial | credenziale | credencial | toegangsgegeven | 認証情報 | 자격 증명 | 凭据 |
+| check-in | Check-in | prise de contact | presentación | presentazione | apresentação | aanmelding | 着任連絡 | 체크인 | 报到 |
+| handover | Übergabe | passation | traspaso | passaggio di consegne | passagem | overdracht | 引き継ぎ | 인수인계 | 交接 |
+| operator (who runs the hub) | Betreiber | exploitant | operador | gestore | operador | beheerder | 運営者 | 운영자 | 运营方 |
+| seat (a place in a team or a role) | Platz | place | puesto | posto | posto | plek | 席 | 자리 | 席位 |
+| merge | Merge | fusion | fusión | merge | merge | merge | マージ | 병합 | 合并 |
+| placement (an agent on a runner) | Platzierung | placement | ubicación | collocazione | alocação | plaatsing | 配置 | 배치 | 部署 |
+| read along | mitlesen | suivre en lecture | leer en paralelo | seguire in lettura | acompanhar a leitura | meelezen | 閲覧のみで参加する | 함께 읽기 | 旁听 |
 | join (a project) | beitreten | rejoindre | unirse | unirsi | entrar | deelnemen | 参加する | 참여하기 | 加入 |
 | dashboard | Dashboard | tableau de bord | panel | dashboard | painel | dashboard | ダッシュボード | 대시보드 | 控制台 |
 | claim (a card) | Übernahme, übernehmen | prise en charge, prendre | toma, tomar | presa in carico, prendere | assunção, assumir | claim, claimen | 担当, 担当する | 담당, 담당하기 | 认领 |

@@ -42,10 +42,15 @@ def test_a_translation_has_english_keys_and_placeholders(tag: str) -> None:
         assert _fields(text) == _fields(english[key]), key
 
 
-def test_a_key_without_a_translation_reads_in_english() -> None:
-    english, french = catalog.section("factor", "en"), catalog.section("factor", "fr")
-    assert french == english
-    assert catalog.section("frame", "fr")["sign_in"] != catalog.section("frame", "en")["sign_in"]
+def test_a_key_without_a_translation_reads_in_english(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Every language is on its way to complete, so this stands in for one that is not yet.
+    partial = {"frame.sign_in": "Connexion"}
+    real = catalog._file
+    monkeypatch.setattr(catalog, "_file", lambda tag: partial if tag == "fr" else real(tag))
+    catalog._section.cache_clear()
+    assert catalog.section("factor", "fr") == catalog.section("factor", "en")
+    assert catalog.section("frame", "fr")["sign_in"] == "Connexion"
+    catalog._section.cache_clear()  # not to leave the stand-in for the next test
 
 
 @pytest.mark.parametrize("tag", ["xx", "../en", None, 5])
