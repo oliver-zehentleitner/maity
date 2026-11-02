@@ -9694,12 +9694,13 @@ there is not sent:
    character outside ASCII (a word in another script); one with `#`,
    `@`, `{`, `}`, `<` or `>` (an address such as a handle with its
    instance, a pull request, a placeholder); one shaped like an id the
-   hub issues (lowercase letters, `-` and twelve characters of `0`–`9`
-   and `a`–`z`) or a UUID; one that is only digits and punctuation; and
+   hub issues (`[a-z]+-[0-9a-z]{12}`, the whole span) or a UUID; one that is only digits and punctuation; and
    an object hash or a range `a..b` of them (form 3). A span with a `/`
    names a path: it is a file or a directory, and with a `*` the part
    before the first `*` begins one (`hub/tests/test_public_*`); anything
-   after a `:` is left out. Any other span names an identifier or a key:
+   after a `:` is left out. A path that is no file or directory still
+   passes as text in some file, verbatim, so that a route such as
+   `/api/v1/events` or a part of a URL is not refused. Any other span names an identifier or a key:
    its core, the longest run that starts with a letter or `_` and goes
    on with letters, digits, `_`, `.`, `/` and `-` (three characters or
    more), is text in some file or the name of a file; failing that, each
@@ -9711,7 +9712,8 @@ there is not sent:
    a file and line (form 1) does not get that fallback. A name the review
    says is missing, or proposes, is therefore written without backticks.
 3. **An object**, anywhere in the text: 7 to 40 lowercase hexadecimal
-   characters with at least one of `a`–`f`, as a word bounded by
+   characters with at least one of `a`–`f` and at least one digit (so
+   an English word such as `defaced` is no hash), as a word bounded by
    anything but letters, digits, `_` and `-` (so the groups of a UUID
    are no hash), and either end of `a..b` alike, is an object in the
    clone: a commit, or a tree or blob such as `git merge-tree` and a
