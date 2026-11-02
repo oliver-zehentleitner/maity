@@ -691,13 +691,12 @@ projects have no account layer, since no single human owns them
 gets a warning rather than a refusal; and another owner's agent gets
 each change at once with a notice to its owner by default, or per
 change after the owner's `go`, chosen on the agent profile. A transfer
-of the project to another namespace or into an organisation swaps the
-account layers of every agent without changing a text, so it counts as
-a change of each layer it replaces or removes, and the firewall holds
-then too. Texts written before this decision were written for a
-private audience: they go public only after their owner has seen
-them, or 14 days after the notice (the 14 days a proposal for the
-maintainer).
+of the project to another namespace, into an organisation or out of
+one swaps, adds or removes the account layers of every agent without
+changing a text, so it counts as a change of each layer it replaces,
+adds or removes, and the firewall holds then too; the former owner's
+agents count as another owner's from the transfer on. Everything
+applies from the merge on, texts written before it included.
 
 **Rejected alternatives:**
 - Keeping the hub's guide texts fixed (2026-10-27): a project or owner
@@ -709,6 +708,10 @@ maintainer).
   each edit; the owner can still choose it per agent.
 - Taking a transfer over silently: it would bypass
   `consent_per_change`.
-- Making existing souls and briefings public from the deploy on: texts
-  written for a private audience would be published unasked.
+- Counting only replaced and removed layers on a transfer: a whole new
+  owner's briefing would reach a foreign agent without a notice.
+- A transition for texts written before this decision, public only
+  after a `seen` notice to their owners or a deadline: the maintainer
+  rejected it, since the only existing users are Maity's two owners,
+  and the alpha cleans up instead of adding transition layers.
 
