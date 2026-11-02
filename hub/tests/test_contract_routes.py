@@ -20,6 +20,25 @@ NOT_ROUTED = {
     ("DELETE", "/projects/{}/{}/tasks/{}/objection-hold"),
     # Contract without a route yet: tsk-r97n4e6v4kaz.
     ("PATCH", "/projects/{}/{}/conversations/{}/participants/{}"),
+    # Contract without a route yet: tsk-k0k3jzrkpza2 (layered briefings, the agent's soul,
+    # "discuss first").
+    ("GET", "/me/briefings"),
+    ("PATCH", "/me/briefings"),
+    ("GET", "/me/briefings/versions"),
+    ("GET", "/projects/{}/{}/briefings"),
+    ("PATCH", "/projects/{}/{}/briefings"),
+    ("GET", "/projects/{}/{}/briefings/versions"),
+    ("PUT", "/me/soul"),
+    ("GET", "/me/soul/versions"),
+    ("POST", "/agents/{}/soul/rollback"),
+    ("PATCH", "/me/preferences"),
+}
+
+# Routes the contract no longer names, removed with the hub change of the same card. Remove an
+# entry when its route goes: the test fails on an entry that no longer applies.
+UNLISTED = {
+    # The agent writes its soul itself now (§19.1): tsk-k0k3jzrkpza2.
+    ("POST", "/me/soul/proposals"),
 }
 
 
@@ -57,5 +76,7 @@ def _routes(openapi: dict[str, Any]) -> set[tuple[str, str]]:
 def test_the_index_and_the_routes_name_the_same_endpoints(client: Any) -> None:
     routes = _routes(client.get("/api/v1/openapi.json").json())
     index = _index()
-    assert routes - index == set(), "routes the contract's index does not name"
+    assert (
+        routes - index == UNLISTED
+    ), "routes the contract's index does not name, or a stale UNLISTED"
     assert index - routes == NOT_ROUTED, "index rows without a route, or a stale NOT_ROUTED"

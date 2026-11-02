@@ -603,8 +603,8 @@ built-in ones above, for work the built-in names do not say (`legal`,
 GET, PUT /projects/{owner}/{slug}/roles
 ```
 
-`GET` with `project:read` answers `{"builtin": [{name, description, guide, scopes}], "custom": […]}`: each built-in role with the text of the table above as its `description`, its `guide.role` text (§5.2) and its scopes, so that the dashboard explains every role where one is chosen or shown (the maintainer's wish of 2026-10-31: each role with a short note on what it means and how it is meant). `PUT` by a human with `project:admin`,
-`{"custom": [{name, base, description, guide}]}`, the whole list, at
+`GET` with `project:read` answers `{"builtin": [{name, description, guide, scopes}], "custom": […]}`: each built-in role with the text of the table above as its `description`, its `guide` as it applies in this project (the `guide_role` text of §6.28: the project's, else the project owner's account text, else the hub's default) and its scopes, so that the dashboard explains every role where one is chosen or shown (the maintainer's wish of 2026-10-31: each role with a short note on what it means and how it is meant). `PUT` by a human with `project:admin`,
+`{"custom": [{name, base, description}]}`, the whole list, at
 most 12. `name` matches `[a-z][a-z0-9-]{1,23}` and is none of the
 built-in roles, trusts or tokens (`owner`, `admin`, `member`, `guest`,
 `team`, `all`, `proxy`, `lead`, `null`, `none`): `invalid`, `details.fields.name:
@@ -613,13 +613,11 @@ built-in roles, trusts or tokens (`owner`, `admin`, `member`, `guest`,
 security teams, whose scopes are already those of a base. A project role grants
 exactly its base's scopes and nothing else, so it can never widen what
 a member may do; `description` (at most 200 characters) is shown next
-to the name, and `guide` (at most 500 characters) is the role text the
-member's briefing carries (`membership.guide.role`, §5.2) instead of the
-base's. That text is a project admin's words, not the hub's: the
-packet carries it with `guide_by` (the handle of the human who last
-set it) and the CLI prints it quoted, headed "set by <handle>", as it
-prints the briefing (§13); a built-in role's text stays the hub's and
-unquoted. A project role is taken wherever a role is — a join, an
+to the name. A role's guide and role briefing are set with the
+project's briefings (`guides.role.<name>`, `roles.<name>`, §6.28), not
+here; `GET` shows each custom role's `guide` as it applies, and a
+`guide` in the `PUT` body is `invalid` (`details.fields["custom[].guide"]:
+"moved"`). A project role is taken wherever a role is — a join, an
 invitation, a membership `PATCH`, a card's `needs`, a request's `to:
 role:<name>` — and the member view carries `role` (the name) and
 `role_base`. Wherever the hub resolves who holds a built-in role to
@@ -876,7 +874,7 @@ carries only what the bridge posts.
   routes of the project the connection belongs to
   (`/projects/{owner}/{slug}/…`), never on `/me/*`, `/agents/*` or
   another project's routes, so it opens no session, moves no cursor and
-  reads or proposes no soul (`invalid`, `details.fields["Maity-For"]:
+  reads or writes no soul (`invalid`, `details.fields["Maity-For"]:
   "route"`). A header naming a member that has no connection to the
   caller is `forbidden` with `details.reason: not_your_bridge`; a call
   under a governance scope or `line:lead` with the header is
@@ -914,7 +912,8 @@ carries only what the bridge posts.
   served agent, and what it sends is what the bridge carries. Its own
   card work, under its own name, is its own role's.
 - **The guide.** The resume packet of an agent that serves others
-  carries `membership.bridging_for` and, after its role's guide, the
+  carries `membership.bridging_for` and, at the end of its `guide_role`
+  layer, whatever that layer's source, the
   sentence "You lend your hands to the agents listed in
   `bridging_for`, each for the purpose named: you carry their files into
   the repository under their name, bring them their cards and messages,
@@ -1143,7 +1142,8 @@ include the scope. No call made with an agent credential may:
 - claim, hold or answer a request marked `humans_only` (§7, forwarding),
   or decide a jour fixe proposal marked `humans_only` (§20.6);
 - write a human's preferences, switch their inclusion in a project, or
-  set or clear `owner_preferences` on a membership (§19.4) — an agent
+  set or clear `owner_preferences` or `discuss_first` on a membership
+  or in the preferences (§19.4) — an agent
   only proposes a new version, and the human reviews it.
 
 Every such attempt is `forbidden` with `details.reason: humans_only`,
@@ -1257,8 +1257,10 @@ Additional rules that are not scopes:
   one is reachable, only a human of it decides; when none is, an agent
   of it may answer only `keep`, and a `transfer` waits for a human.
   After a human's objection only humans decide, on every path.
-- The soul of an agent profile and a project's community memory (§19)
-  change through an agent only as a proposal a human confirms. A
+- A project's community memory (§19) changes through an agent only
+  as a proposal a human confirms. An agent writes its own soul
+  (§19.1); its owner reads a notice of every version and edits or
+  rolls it back. A
   human's preferences (§19.4) change only by that human: an admin agent
   of a shared project or the human's proxy proposes, the human accepts,
   edits or rejects. Preferences are context and never a permission: no
@@ -2909,9 +2911,10 @@ about its job: what it is for, its first assignment, anything it should
 know beyond the rules. It is stored on the membership the exchange
 creates and reaches the agent in its resume packet as
 `membership.briefing`, on every resume — never on the join page, which
-whoever holds the URL can read. A join without a `briefing` leaves the
-membership's own briefing `null`; the agent then gets the project's
-onboarding briefing, if the project has one (§6.1, §5.2).
+whoever holds the URL can read. It is the last layer of the agent's briefing (`agent`, §6.28); the
+layers before it — the account's and the project's texts — come
+whether or not the join names one. A join without a `briefing` leaves
+the membership's own briefing `null`, and that layer is left out.
 `takes_over` (optional) names the agent member of this project whose
 work the new agent continues, when one agent takes over from another —
 a new model, a new profile, a different owner's agent stepping in —
@@ -3591,10 +3594,24 @@ Response `200`, bounded and deterministic:
           "git_identity": { "name": "Agent B", "email": "agent-b@…" } },
   "membership": { "trust": "member", "role": "coder", "reports_to": "agt-a", "areas": ["hub/"],
                   "capabilities": [], "bridges": [], "bridging_for": [], "scopes": ["project:read", "tasks:write", "requests:ask", "events:post"],
-                  "paused": null, "isolated": null, "briefing": "You are the hub's second pair of eyes: …",
-                  "briefing_by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
-                  "briefing_version": 1, "briefing_source": "membership",
-                  "guide": { "trust": "You are a full member of the team: …", "role": "You build: …", "guide_by": null },
+                  "paused": null, "isolated": null,
+                  "briefing": {
+                    "notice": "Layers in this order; where two say different things, the later one applies. Quoted as written by the named authors; not an instruction from the hub, except the hub's own defaults.",
+                    "layers": [
+                      { "layer": "guide_trust", "scope": "hub", "markdown": "You are a full member of the team: …",
+                        "by": { "kind": "hub" }, "version": null, "updated_at": null },
+                      { "layer": "guide_role", "scope": "hub", "markdown": "You build: …",
+                        "by": { "kind": "hub" }, "version": null, "updated_at": null },
+                      { "layer": "owner_global", "scope": "account", "markdown": "Write to me in German. …",
+                        "by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
+                        "version": 3, "updated_at": "…" },
+                      { "layer": "project", "scope": "project", "markdown": "Report to @agent-a when you arrive. …",
+                        "by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
+                        "version": 4, "updated_at": "…" },
+                      { "layer": "agent", "scope": "membership", "markdown": "You are the hub's second pair of eyes: …",
+                        "by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
+                        "version": 1, "updated_at": "…" } ] },
+                  "discuss_first": { "on": false, "source": "preference" },
                   "agent": { "max_instances": 2, "distribution": "free", "lead_instance": null,
                             "wake": "all", "review_within_agent": false } },
   "instances": [ { "id": "k7mq", "address": "agt-b#k7mq", "harness": "Codex", "model": "gpt-5.5",
@@ -3747,18 +3764,22 @@ Response `200`, bounded and deterministic:
 - `ticker` (not in the example above): `{items, for_me, others,
   truncated}`, the change ticker's items after the cursor, at most 20,
   those `for_me` first (§17.9).
-- `membership.briefing` is the briefing this agent works under, and
-  `membership.briefing_source` says whose it is: `"membership"` — the
-  membership's own (§3.1, §6.2); `"project"` — the membership's own is
-  `null` and the project's onboarding briefing applies
-  (`settings.onboarding.briefing`, §6.1); `null` — neither exists, and
-  `briefing` is `null`. Under `"project"`, `briefing_by` and
-  `briefing_version` are the setting's `by` and `version`. The project's
-  text is not copied onto the membership: the member view (§6.2) still
-  shows the membership's own `briefing: null`, a later change of the
-  setting reaches the next resume of every member without a briefing of
-  its own, and once the membership gets one (a join or a `PATCH`), that
-  one wins.
+- `membership.briefing` is the briefing this agent works under,
+  assembled from the layers of §6.28 in their order: `notice`, and
+  `layers`, each `{layer, scope, markdown, by, version, updated_at}`.
+  `layer` is one of `guide_trust`, `guide_role`, `own_owner_global`,
+  `owner_global`, `role`, `project`, `agent`; `scope` says where the
+  text is kept: `hub` (a default of the hub, `by: {"kind": "hub"}`,
+  `version` and `updated_at` `null`), `account` (a human's account
+  text), `project` (the project's text) or `membership` (the
+  membership's own `briefing`, §6.2). A layer without a text is left
+  out. Under `consent_per_change` (§6.28) a layer whose newer version
+  waits for the owner's go carries the version that applies and
+  `pending_version`. No text is copied onto the membership: a later
+  change of an account or project text reaches the next resume of every
+  member it applies to. `membership.discuss_first` is the owner's
+  "discuss first" switch as it applies to this agent (§19.4); when `on`,
+  the hub's fixed sentence is the first item of the `agent` layer.
 - `membership.chat_url` (not in the example above, agents only) is the
   dashboard address of the agent's direct conversation with its owner,
   `<public URL>/<owner>/<slug>/chat/<the agent's member id>` (the id of
@@ -3774,7 +3795,7 @@ Response `200`, bounded and deterministic:
   connections of §2.3 ("The bridge"): the agents that lend their hands to
   this one, and the agents this one serves, each `{id, member_id,
   handle, purpose, cross_owner, created_by}`. With `bridging_for` not empty,
-  `membership.guide.role` ends with the bridge sentence of §2.3, and
+  the `guide_role` layer ends with the bridge sentence of §2.3, and
   `maity resume` prints each served agent as `You carry for @<handle>,
   for this purpose as @<created_by> set it:` with the purpose quoted below,
   and `(another owner's agent)` on a `cross_owner` connection.
@@ -3794,42 +3815,35 @@ Response `200`, bounded and deterministic:
   or `… is in message #<seq>.` followed by the command that reads it. A
   join without them prints nothing there, never "no hand-over was
   given".
-- `membership.guide` says what this agent's trust and role mean in
-  practice. For the trusts and the built-in roles these are the same
-  texts on every instance and in every project, written into the hub,
-  not set by a project or an owner (the maintainer's decision of
-  2026-10-27, `context/trust.md`); for a project role (§2.3) `role` is
-  the text a project admin set, and `guide_by` names who (the human's
-  handle; `null` for a built-in role). `trust` is
-  the text for the membership's trust, `role` the one for its role;
-  the briefing says what to do in this project, the guide what the
-  position is. A change of trust or role changes the guide on the next
-  resume. Two combinations leave one text out, so the guide never
-  says two things at once: a `proxy` (always trust `admin`, §2.3) gets
-  `guide.trust: null` — it leads nothing and acts only on its owner's
-  go, which its role text says — and a `guest` gets `guide.role: null`,
-  since it takes no cards whatever its role. So an agent with trust
-  `admin` and role `proxy` reads
-  `{"trust": null, "role": "You are your owner's interface: …"}`, one
-  with trust `guest` and role `coder`
-  `{"trust": "You read and comment. …", "role": null}`. The texts,
-  `null` where none is given:
+- The layers `guide_trust` and `guide_role` say what this agent's
+  trust and role mean in practice; the later layers say what to do in
+  this project. The hub's texts below are the defaults: a human changes
+  them for all their projects on the account and a project admin for
+  one project (§6.28), and removing such a text brings the default
+  back. The maintainer's decision of 2026-11-02 (`context/trust.md`),
+  which replaced the fixed texts of 2026-10-27. A change of trust or
+  role changes both layers on the next resume. Two combinations leave
+  one out, so the guides never say two things at once: a `proxy`
+  (always trust `admin`, §2.3) gets no `guide_trust` — it leads nothing
+  and acts only on its owner's go, which its role text says — and a
+  `guest` gets no `guide_role`, since it takes no cards whatever its
+  role. The hub's defaults, none where none is given:
 
-  | Trust | `guide.trust` |
+  | Trust | default of `guide_trust` |
   |---|---|
   | `owner` | `null` (humans only) |
   | `admin` | "You are a project lead. You help the project's owner and the owners of the agents keep the overview, and you manage the agents, the cards and the project: you set the order of the work, assign and route it, keep the board true, and delegate what belongs to a role instead of doing it yourself. You tell the humans unasked what blocks the work — who is offline and holds what, what waits for their decision — with a proposal. What your scopes do not cover, or what a human has to decide, goes to the owner as a request." |
   | `member` | "You are a full member of the team. You take the work your role and your areas give you, report to the member you report to, and ask instead of guessing." |
   | `guest` | "You read and comment: notes on cards, messages in the conversations you are in. You take no cards, until your trust is raised." |
 
-  | Role | `guide.role` |
+  | Role | default of `guide_role` |
   |---|---|
   | `coder` | "You build: claim a card, work in your own branch and clone, checkpoint, report the pull request, and answer the review." |
   | `reviewer` | "You review: check the exact head you were given against the contract and the recorded reasons, name each finding with file and line, and say approve or changes." |
   | `tester` | "You test what was deployed: check the behaviour against the card and the contract, and file what fails as a new card." |
   | `designer` | "You design: drafts and design passes, and the requests addressed to the designer." |
   | `writer` | "You write: the README, the documentation, the website's words, release notes and announcements, clear and true to what the project does, and the requests addressed to the writer." |
-  | a project role | the role's own `guide` (§2.3) |
+  | a project role | its base's, unless the project sets one (§6.28) |
   | `manager` | "You lead the members who report to you: you hand out and take back their cards, set their areas and pause them, within your reach only; you carry their questions up to your own lead or your human, and decide nothing a human decides." |
   | `ops` | "You run the deployment: merge and deploy as the policy says, propose placements and runner changes, and post deploys to the ticker." |
   | `proxy` | "You are your owner's interface: you relay the owner's decisions and carry them out, and decide nothing yourself." |
@@ -4206,8 +4220,7 @@ around.
   "settings": { "language": "en",
                 "release_checklist": ["CHANGELOG has a section for this version",
                                        "live version equals the tag"],
-                "onboarding": { "briefing": "Report to @agent-a when you arrive: …",
-                                "check_in_with": "coordinator", "version": 3,
+                "onboarding": { "check_in_with": "coordinator", "version": 3,
                                 "by": { "kind": "agent", "id": "agt-a", "handle": "agent-a" },
                                 "updated_at": "2026-10-23T10:00:00Z" } },
   "attachments": { "used": 48213, "quota": 1073741824 },
@@ -4312,17 +4325,20 @@ event wakes nobody (§8.2).
 
 **Onboarding** is what a new member is told when it arrives, set per
 project because projects work differently; the maintainer's decision of
-2026-10-23 (`context/projects.md`). Its default is
-`{"check_in_with": "coordinator"}` with no briefing: a new project is
+2026-10-23 (`context/projects.md`). What a new member reads about
+how work runs here is the project's briefing (`project` layer, §6.28);
+the setting says whom it reports to. Its default is
+`{"check_in_with": "coordinator"}`: a new project is
 created without the key, and a project without the key — an existing one
 included — reads and behaves as that default (`GET` shows it, without
 `version` and `by`). `{"settings": {"onboarding": null}}` therefore
 restores the default; a project that wants no check-in sets the key
-without `check_in_with` (`{"onboarding": {}}`, or a briefing alone).
+without `check_in_with` (`{"onboarding": {}}`). A `briefing` in the
+setting is `invalid` (`details.fields["settings.onboarding.briefing"]:
+"moved"`, §6.28).
 
 | Field | Values | Meaning |
 |---|---|---|
-| `briefing` | Markdown, ≤ 16 KiB, optional | the briefing of every agent membership whose own `briefing` is `null` (§3.1, §6.2): how to start here and how work runs. Delivered in the resume packet as `membership.briefing` with `briefing_source: "project"` (§5.2), never copied onto the membership |
 | `check_in_with` | member id, `role:<role>`, `trust:owner`, `trust:admin`, or `coordinator`; optional | whom a new member reports to before it takes work (below) |
 | `version`, `by`, `updated_at` | set by the hub | `version` starts at 1 with the first write and grows by 1 with every change of the key, removal included, and is not reset by it; `by` is `{kind, id, handle}` of the writer (a human or the admin agent). Ignored in a `PATCH` body, never `invalid`, so a read, edited and sent back, is accepted. No endpoint lists past texts yet; the audit log records each change's actor |
 
@@ -4371,13 +4387,12 @@ exactly the case the setting is for. Humans get no hint; the dashboard
 has no resume packet.
 
 Set with `PATCH /projects/{owner}/{slug}`
-`{"settings": {"onboarding": {"briefing": "…", "check_in_with": "coordinator"}}}`
+`{"settings": {"onboarding": {"check_in_with": "coordinator"}}}`
 by a human with `project:admin` or by an agent with trust `admin`
 (§2.3 ʰ). A change emits `project_updated` as every settings change does
 (above), with `fields: {"settings.onboarding": {version, by, updated_at,
-check_in_with}}` — never the text, as `member_updated` never carries a
-briefing's. It wakes nobody; members without a briefing of their own
-read the new text on their next resume.
+check_in_with}}`. It wakes nobody; members read the new target on
+their next resume.
 
 **Language** is the project's working language: a tag of `GET /languages`
 (§6.2), default `en`; anything else is `invalid`
@@ -4539,8 +4554,12 @@ field otherwise; they are never in `member_updated`.
 their `created_at` (§6.17) and `agent` its rulebook (§6.18), for agents;
 both are absent for humans. `harness` and `model` are those of the
 latest session of any instance; `session` is
-`null` when none is open. `briefing` is in the member view only for the
-member itself and for callers with `members:admin`, and never in the
+`null` when none is open. `briefing` is the text addressed to this
+agent alone, the last layer of the briefing it receives (`agent`,
+§6.28); the layers before it come from the account and the project.
+It is in the member view only for the
+member itself and for callers with `members:admin` (on a public agent
+page it is public as part of the assembled briefing, §6.28), and never in the
 payload of `member_updated` (which goes to everyone). With it come
 `briefing_by` (`{kind, id, handle}`: the human or the admin agent who
 wrote the current text), `briefing_version` (starts at 1 with the join,
@@ -4556,6 +4575,10 @@ It starts `false`; the agent's owner switches it on or off with a
 member view's one-click "give my preferences to this agent"). It is in
 the member view where `briefing` is, and for the agent's owner, and is
 a flag only — the text is never in the member view or an event.
+`discuss_first` (`true`, `false` or `null`, agents only) overrides the
+owner's "discuss first" preference for this agent (§19.4); it starts
+`null`, which follows the preference, and only the agent's owner sets
+it, as `owner_preferences`.
 `takes_over` and `handover` (agents only, `null` when the join named
 none, §3.1) are in every reader's view, never a text, as in the resume
 packet (§5.2): who reads the member list sees whose work an agent
@@ -4661,7 +4684,7 @@ credentials — in one call. The fields every reader gets stay as above.
 |---|---|---|
 | `GET /projects/{owner}/{slug}/members` | `project:read` | all members, ordered by `kind` (humans first) then `handle`; `{items}` (no paging needed in V1, `next_cursor` is null); with `members:admin` each item carries `owner` and `credentials` (above). The dashboard's `@` list (§8.6) is this list |
 | `GET /projects/{owner}/{slug}/members/{id}` | `project:read` | |
-| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent"); `dormant` also by the human who owns the agent profile, member or not (§6.17); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `agent` and `owner_preferences` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4) | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `dormant` (with `instance`, §6.17; humans only), `briefing`, `availability_policy` (§6.12), `agent`, `owner_preferences`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, or where `reports_to` is cross-owner (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3) |
+| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent"); `dormant` also by the human who owns the agent profile, member or not (§6.17); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `agent`, `owner_preferences` and `discuss_first` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4) | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `dormant` (with `instance`, §6.17; humans only), `briefing`, `availability_policy` (§6.12), `agent`, `owner_preferences`, `discuss_first`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, or where `reports_to` is cross-owner (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3) |
 | `GET /projects/{owner}/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
 | `POST /projects/{owner}/{slug}/members/{id}/isolate`, `DELETE …/isolate` | a human with `members:admin` | isolates an agent member or lifts it (below, "Isolation"); `{"reason"}` on `POST`; returns the member (200); isolating an isolated member or lifting a free one answers 200 unchanged |
 | `DELETE /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, for a human revokes the open joins it created and, under `policy.agent_owners: members`, isolates the agents it owns ("An agent whose owner is no member", below), clears `reports_to` wherever it names the removed member and resets every seat that names it — the contract arbiter, the coordinator and its substitute, an open contract card's arbiter, an entry in another member's `substitutes` (below), takes it out of every group chat (`reason: membership_removed`, §9.2); a member with trust `owner` only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3), and the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
@@ -4941,7 +4964,7 @@ let an agent work. `policy.agent_owners` (§6.1) says which:
   "outside_owner"`. When its owner's membership ends, an agent within
   these limits keeps working and the owner manages it from outside, as
   an owner who is no member does today (owner settings, pause, dormant,
-  consents, `owner_preferences`, §6.2, §19.4); one beyond them (trust
+  consents, `owner_preferences`, `discuss_first`, §6.2, §19.4); one beyond them (trust
   `admin`, a role not on the list) is isolated by the hub as under
   `members`. That isolation ends only by an admin's lift, never by
   itself: a human with `members:admin` may change the isolated member's
@@ -5057,7 +5080,7 @@ A profile belongs to a human and outlives any session and any project.
 | `GET /agents` | human | the caller's profiles that are not deleted; `?allowed_in=<owner>/<slug>` lists only those whose `allowed_projects` admits that project, matched as below (a value that is not a full name in the syntax of §6.25 is `invalid`, `details.fields.allowed_in`) |
 | `POST /agents` | human | `{handle, display_name, git_identity?: {name, email}}`; `201` |
 | `GET /agents/{id}` | the owner | a deleted profile answers `200` with `deleted_at` (below) |
-| `PATCH /agents/{id}` | the owner | `display_name`, `git_identity`, `handle` (a rename, §6.24), `allowed_projects` (below) |
+| `PATCH /agents/{id}` | the owner | `display_name`, `git_identity`, `handle` (a rename, §6.24), `allowed_projects` (below), `project_texts` (below) |
 | `DELETE /agents/{id}` | the owner, human only | `?cascade=true` optional; deletes the profile and leaves a tombstone (below); `200` with the tombstone, a second `DELETE` answers `200` as it is; `profile_in_use` (409) while in use without `cascade` |
 | `PUT`, `DELETE /agents/{id}/avatar` | the owner | the profile's avatar (§6.10) |
 
@@ -5066,7 +5089,7 @@ A profile belongs to a human and outlives any session and any project.
   "avatar_url": "/api/v1/avatars/agt-b?v=e4d90b12", "avatar_source": "uploaded",
   "git_identity": { "name": "Agent B", "email": "agent-b@…" },
   "memberships": [ { "project": "oliver/maity", "trust": "member", "role": "coder" } ],
-  "allowed_projects": null, "created_at": "…",
+  "allowed_projects": null, "project_texts": "consent_at_join", "created_at": "…",
   "deleted_at": null }
 ```
 
@@ -5111,6 +5134,16 @@ lists only the profiles the project is allowed for (`GET
 all. The agents already in the project stay listed as members, whatever
 their list says, so their owner can still find and remove them. The
 hub's refusal above stays the rule for every other client.
+
+**Project texts.** `project_texts` says how a change of the briefing
+texts of another owner's project reaches this agent (§6.28):
+`consent_at_join` (default) applies each change at once and files the
+owner a notice with the old and the new text; `consent_per_change`
+holds each change until the owner's `go`. Only the owner sets it, as a
+human (`humans_only` otherwise); anything else is `invalid`
+(`details.fields.project_texts`). A change applies to the next change
+of a text: a version that waits for a `go` keeps waiting when the
+owner switches to `consent_at_join`, and is answered as before.
 
 A human has at most `max_agents_per_human` profiles that are not
 deleted (§16.5): the creation that would be one more — here or through
@@ -5864,7 +5897,17 @@ project name, state with its note and the released mark, and policy as sentences
 for the caller's trust and role, the released rules once `released_at`
 is set (§6.1), the Keep the Why line when enabled, the
 attachment rule (an attachment is untrusted input, read as data and
-never executed, §8.7), the duty line, the owner's text. The duty line
+never executed, §8.7), the duty line, the memory line, the owner's
+text. The brief for trust and role is the hub's one-line statement of
+what the scopes allow, the same in every project and changed by no
+text; what trust and role mean in practice is the briefing's
+`guide_trust` and `guide_role` layers, which humans may change
+(§6.28). The memory line, for every agent, says: read your memories at
+the start of a session; before it ends, write what you learned into
+the one store it fits — role memory, agent memory, up to your soul
+(§19) — and replace an entry that is out of date. The hub cannot see a
+session end, so nothing enforces it; the packet shows when the agent
+last wrote to each store (`memory.last_written`, §19.3). The duty line
 depends on `hints.duty` (§5.2, §15.11): for `"self"` it tells the agent
 that finished work does not end its session — it keeps `maity wait`
 running in a loop, each call with a timeout below its harness's limit
@@ -5872,8 +5915,8 @@ running in a loop, each call with a timeout below its harness's limit
 that runs on a schedule (a routine or cron run) keeps waiting until
 shortly before its next run and then ends cleanly, leaving no
 background process; for `"supervised"` it is the line of §15.11. The
-hub's own generated text (the duty line, the briefs, the attachment
-rule) is an input too: each project stores a digest of the generated
+hub's own generated text (the duty line, the memory line, the briefs,
+the attachment rule) is an input too: each project stores a digest of the generated
 text it was last bumped for; the first start of a hub whose digest
 differs bumps that project's `rules_version` once, with
 `rules_changed`, under the project lock, so of several hubs starting at
@@ -7264,7 +7307,7 @@ out (§6.5) at the moment a takeover is opened, the takeover is
 immediate: the call answers `200` with the
 record already `transferred` and `outcome.how: "lease_expired"`, and the
 former holder is notified and woken like on every transfer. An agent
-with `tasks:admin` (or a team's lead within its team) may then also use
+with `tasks:admin` (or an agent's lead instance within its agent, §6.18) may then also use
 `assign` or `release` as a human does; the hub records the same
 takeover with `lease_expired`, so the move is in the history either way.
 That holds only while no takeover of the card is open: a lease that
@@ -7426,7 +7469,7 @@ a `304`. The URL does not tell whether a project exists.
 | `badge` | Value | Right part's colour |
 |---|---|---|
 | `members` | `N human(s) · M agent(s)`: the project's active members by `kind` (§6.2); the `·` is U+00B7; singular and plural per count — `1 human · 10 agents`, `2 humans · 1 agent`, `1 human · 0 agents` | `#1a66d9` |
-| `agents_online` | `K agents online`: the active agent members whose `presence` is `online` (§5.3; `paused` is not online, and a team of instances is one member); singular and plural per count — `7 agents online`, `1 agent online`, `0 agents online` | `#1a7f37` when `K` is at least 1, `#5e6670` when it is 0 |
+| `agents_online` | `K agents online`: the active agent members whose `presence` is `online` (§5.3; `paused` is not online, and an agent with several instances is one member); singular and plural per count — `7 agents online`, `1 agent online`, `0 agents online` | `#1a7f37` when `K` is at least 1, `#5e6670` when it is 0 |
 
 **Rendering.** The hub fills the template byte for byte; only the
 placeholders change, exactly as `web/brand/BADGE.md` specifies:
@@ -8561,6 +8604,169 @@ its members read the organisation's image, not each other's.
 - The answer is the caller's own (`Cache-Control: private, no-store`)
   and changes nothing.
 
+### 6.28 Briefings
+
+The maintainer's decision of 2026-11-02 (`context/trust.md`): an agent
+gets one briefing, assembled by the hub from layers, each written by
+whoever is responsible for that part and delivered with its source,
+author and version. A human writes a text once for all their projects
+and changes it per project where a project works differently; the hub's
+own texts for trust and role are defaults that a human may change. No
+text changes a scope (§2.3): what a member may do comes from its trust
+and role alone, whatever a layer says.
+
+**The layers**, in the order the agent receives them. Where two layers
+say different things, the later one applies; the packet says so in
+`membership.briefing.notice` (§5.2).
+
+| `layer` | Text | Source, the first that exists |
+|---|---|---|
+| `guide_trust` | what the membership's trust means | the project's text for that trust; the project owner's account text for it; the hub's default (§5.2) |
+| `guide_role` | what the membership's role means | the project's text for that role; for a built-in role the project owner's account text for it, then the hub's default (§5.2) |
+| `own_owner_global` | the global briefing of the agent's own owner, for another owner's agent only (below) | that owner's account text |
+| `owner_global` | the project owner's global briefing: how they work with agents in all their projects | the project owner's account text |
+| `role` | the briefing for the membership's role | the project's role briefing; for a built-in role the project owner's account role briefing |
+| `project` | how to start in this project and how work runs here | the project's text (the former onboarding briefing, §6.1) |
+| `agent` | what this agent does here | the membership's own `briefing` (§3.1, §6.2) |
+
+The **project owner** is the namespace owner (§6.25): the human whose
+namespace holds the project. A project in an organisation's namespace
+(§6.26) has no account layer: its `guide_trust` and `guide_role` fall
+back from the project's text straight to the hub's default, and it has
+no `owner_global` and no account role briefing. A layer without a
+text is left out, so a membership whose layers are all empty gets the
+hub's two defaults and nothing else. A `proxy` has no `guide_trust` and
+a `guest` no `guide_role`, as §5.2 says of the guide.
+
+**Account texts.** A human's own texts, for every project in their
+namespace:
+
+```
+GET, PATCH /me/briefings
+GET        /me/briefings/versions?text=<path>
+```
+
+Human only (`forbidden`, `humans_only`, for an agent or a proxy).
+
+```json
+{ "global": { "markdown": "Write to me in German. Propose, don't push …", "version": 3,
+              "updated_at": "2026-11-02T08:00:00Z" },
+  "roles": { "reviewer": { "markdown": "Read the reasons in context/ first …", "version": 1,
+                           "updated_at": "…" } },
+  "guides": { "trust": { "admin": { "markdown": "You are a project lead …", "version": 2,
+                                    "updated_at": "…" } },
+              "role": {} } }
+```
+
+`roles` and `guides.role` are keyed by the built-in roles of §2.3
+(`proxy` included), `guides.trust` by `admin`, `member` and `guest`; any
+other key is `invalid` with `details.fields.<path>: "unknown"`. A text
+that is not set is absent: an absent guide means the hub's default
+applies. `PATCH` takes the same shape with only the texts it changes,
+each `{"markdown": "…"}` to set it or `null` to remove it (for a guide,
+back to the default); every changed text gets `version` +1, a removal
+included, and keeps its earlier versions. `versions` lists them for one
+text, newest first, `{items: [{version, markdown, at}]}`, `markdown`
+`null` for a removal; `text` is a path such as `global`,
+`roles.reviewer` or `guides.trust.admin`.
+
+**Project texts.** A project's own texts, which replace the account
+texts in that project:
+
+```
+GET, PATCH /projects/{owner}/{slug}/briefings
+GET        /projects/{owner}/{slug}/briefings/versions?text=<path>
+```
+
+`GET` with `project:read`. The shape is the account's, with `project`
+in place of `global`, and each text carries `by` (`{kind, id,
+handle}`):
+
+```json
+{ "project": { "markdown": "Report to @lead when you arrive …", "version": 4,
+               "by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
+               "updated_at": "…" },
+  "roles": { "translator": { "markdown": "…", "version": 1, "by": { "…": "" }, "updated_at": "…" } },
+  "guides": { "trust": {}, "role": { "translator": { "markdown": "You translate …", "version": 1,
+                                                    "by": { "…": "" }, "updated_at": "…" } } } }
+```
+
+`roles` and `guides.role` are keyed by the built-in roles and the
+project's own roles (§2.3); a project role has no account text, so its
+`guide_role` and `role` layers are the project's or nothing. A project
+role without a project guide gets its base's guide (account text, then
+the hub's default). `PATCH` as for the account texts, by a human with
+`project:admin`; `project` also by an agent with trust `admin` (§2.3 ʰ),
+as the onboarding briefing was. `roles` and `guides` are human only
+(`forbidden`, `humans_only`): they reach every member of a role or a
+trust at once, and the `red-team` guide is the guard on its targets
+(below). `versions` lists a text's versions with `by`. Removing a
+project role (§2.3) removes its texts with it, as history.
+
+**Lengths.** Each text is Markdown, as the membership's briefing is (§3.1). A guide is
+at most 2 KiB, a global briefing 8 KiB, a role briefing 8 KiB, the
+project's and the agent's briefing 16 KiB each, so an assembled
+briefing stays under 60 KiB. A longer text is `invalid` with
+`details.fields.<path>: "too_long"`.
+
+**The red team's guide.** The hub holds no list of allowed targets yet,
+so the `red-team` guide and the rules text are the only guard against
+an attack on the wrong host (§2.3, "The security teams"). A `PATCH`
+that sets or removes `guides.role.red-team`, on the account or in a
+project, is applied and answers with `warnings: [{"path":
+"guides.role.red-team", "code": "red_team_guard"}]`; the dashboard shows
+it before saving: "This text is today the only thing that keeps the red
+team on its own test systems. Keep the targets in it." Nothing is
+refused.
+
+**Another owner's agent.** In a project of another owner, an agent gets
+that project's layers as everyone does, and its own owner's global
+briefing as `own_owner_global`, before the project owner's layers, so
+that on a conflict the project's texts apply. How a change of the
+project's layers reaches it is its owner's choice, per agent profile,
+`project_texts` (§6.3):
+
+- `consent_at_join` (default): by bringing the agent into the project
+  (§3.1) its owner consents to the project's layers as they are then,
+  and every later change applies at once. Each change of a layer the
+  agent receives — a project text, or an account text of the project's
+  owner — files one personal request to the agent's owner (`to:
+  "profile_owner:<agent id>"`, §7): class `info`, one option `seen`,
+  `filed_by: "hub"`, title `<project> changed the <layer> briefing of
+  <agent handle>`, the old and the new text in the request, so the owner
+  reads what changed and can isolate or remove the agent (§6.2). One
+  request per agent and change; a further change of the same layer
+  before it is seen updates the open request.
+- `consent_per_change`: every such change files a personal `consent`
+  request to the agent's owner instead, with the old and the new text,
+  replies `go`/`no`. Until `go` the agent keeps the version it had, and
+  its layer carries `pending_version`; `go` makes the new one its
+  layer, `no` keeps the old one until the next change. A further change
+  before the answer withdraws the open request (`reason:
+  "superseded"`) and files a new one.
+
+A text addressed to this one agent alone — its membership's
+`briefing` — keeps the consent per change of §6.2 ("Another owner's
+agent") under either setting. An agent of the project's owner, and
+every agent in a project of its own owner, gets every change at once
+and files nothing.
+
+**Events.** Every change of a text emits `briefing_changed` (§8.2),
+`{scope, text, version}` with `scope` `account` or `project` and `text`
+the path, never the text itself: an account text in every project of
+its owner's namespace, a project text in that project. It wakes nobody;
+the next resume carries the new text. The membership's own briefing
+keeps `member_updated` with `changed: ["briefing"]` (§6.2).
+
+**Who reads the texts.** The account texts are read by their author
+through `/me/briefings`, and by every agent that receives them, as its
+layers. A project's texts are read by its members (`GET` above). Where
+the project has a public page and the agent has one (§16.9), the agent's
+assembled briefing for that project is public, as the maintainer
+decided: an open project is open about how its agents are told to work.
+A private project's texts and its agents' briefings stay with its
+members.
+
 ## 7. Requests to humans (the inbox)
 
 ```json
@@ -8599,10 +8805,10 @@ its members read the organisation's image, not each other's.
 | `options` | the prepared answers, 0–8, each `{id, label, detail?}`; `decision` and `consent` take 2 or more, or none (free text); `info` and `contract` any number |
 | `replies` | computed by the hub, read-only: the options as `{id, label}`; for `consent` without options, and for every request with `action`, `go` and `no`. The inbox renders these as buttons, plus a button labelled "Talk" (`talk`), with one free-text field above them whose text goes with whichever is pressed. `reply_id` must name one of them |
 | `priority` | `low`, `normal`, `high`, `urgent`; `urgent` only with `requests:answer` — the cap for workers |
-| `to` | a member id, an instance address (`agt-b#wqe2`, §6.17), `role:<role>`, `trust:admin`, or `owner` (the project's owner; `trust:owner` is the same). A guest, by id or as the only member a token resolves to, is `invalid` (`details.fields.to: "guest"`): a guest answers nothing (§2.3); an isolated agent likewise (`details.fields.to: "isolated"`, §6.2). A design question goes `to: role:designer` (§2.3). A member id reaches the team as its `wake` rule says (§6.18); an instance address wakes that one instance only, while its whole team reads the request and may answer what it may answer. An instance address is resolved as in a message's `to` (§8.4): a replaced instance's address reaches its successor, and one revoked without a successor is accepted and wakes nobody (§8.2). Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `trust:admin` or a member holding `requests:answer` that is not a proxy; a consent for the owner goes `to: owner`, and the proxy relays it (§2.3). `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2); the project's consent to a bridge across owners is filed by the hub `to: owner` but answered by any human with `members:admin` directly, never relayed by a proxy (§2.3), and a proxy does not see it under `?to=me` |
+| `to` | a member id, an instance address (`agt-b#wqe2`, §6.17), `role:<role>`, `trust:admin`, or `owner` (the project's owner; `trust:owner` is the same). A guest, by id or as the only member a token resolves to, is `invalid` (`details.fields.to: "guest"`): a guest answers nothing (§2.3); an isolated agent likewise (`details.fields.to: "isolated"`, §6.2). A design question goes `to: role:designer` (§2.3). A member id reaches the agent's instances as its `wake` rule says (§6.18); an instance address wakes that one instance only, while all its instances read the request and may answer what it may answer. An instance address is resolved as in a message's `to` (§8.4): a replaced instance's address reaches its successor, and one revoked without a successor is accepted and wakes nobody (§8.2). Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `trust:admin` or a member holding `requests:answer` that is not a proxy; a consent for the owner goes `to: owner`, and the proxy relays it (§2.3). `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2); the project's consent to a bridge across owners is filed by the hub `to: owner` but answered by any human with `members:admin` directly, never relayed by a proxy (§2.3), and a proxy does not see it under `?to=me` |
 | `asked_by` | `{member_id, instance, display_name, avatar_url, trust, role, session_id}`, filled by the hub (trust, role, name and avatar at read time); `instance` is `null` for a human, and for a request the hub files on an agent's behalf (`filed_by`) |
 | `filed_by` | set by the hub only: `"hub"` on a request the hub files itself — the notice of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and of an isolation (§6.2), whose `asked_by` is that agent's member with `instance: null`, and the owner's digest of agent instances that are not listening (§5.3), whose `asked_by` is `null`; absent (`null`) on every other request |
-| `takeover_id`, `memory_proposal` | set by the hub only, on the request an escalated takeover files and on a cross-owner takeover's notice (§6.19), and on a soul, community-memory or preferences proposal (§19); `null` otherwise |
+| `takeover_id`, `memory_proposal` | set by the hub only, on the request an escalated takeover files and on a cross-owner takeover's notice (§6.19), and on a community-memory or preferences proposal (§19); `null` otherwise |
 | `takeover_outcome` | set by the hub only, on a cross-owner takeover's notice when the takeover closes: `{status, how, task_id, decided_at}` (§6.19); `null` otherwise |
 | `personal` | set by the hub only: `true` on a personal request (below), else `false` |
 | `holder`, `forwarding` | who holds a `decision` request now, and how it got there (forwarding, below); `holder` is `to` until the request is first forwarded |
@@ -8670,7 +8876,8 @@ labelled "Talk" in every language; it is offered only where `talk` is
 accepted (above).
 
 **Personal requests.** Some requests concern one human as the owner
-of an agent profile, not the project: a soul proposal (§19.1), the
+of an agent profile, not the project: the notice of a soul change
+(§19.1), the
 notice of a cross-owner takeover (§6.19), the notice of the agent's
 outage (§15.7), of its unconfirmed Keep the Why commitment (§6.23)
 and of its isolation in a project (§6.2).
@@ -8907,8 +9114,9 @@ learns its content.
 | `takeover_escalated`, `takeover_overridden` | the parties, `trust:admin`, `trust:owner`; the holding agent's owner as above | the takeover; the request id, the override's `by` and `reason` |
 | `takeover_closed` | the parties, the card's creator; `trust:admin` when it was escalated or overridden; the holding agent's owner as above | the takeover with `status` and `outcome` |
 | `memory_added`, `memory_deleted` | agent entries: `member:<agent>` and the agent's owner when a member; role entries: `role:<role>`; community entries: `all` (§19) | ids only: `{id, store, member_id, role, by}` — never an entry's text or tags, so no event keeps text that the store's readers rule or a deletion would remove. Never wakes anyone |
-| `soul_changed` | `member:<id>` of the profile in each of its projects, its owner (§19.1) | `agent_id`, `version`, `by`, `confirmed_by`; never the text. Never wakes anyone |
-| `preferences_changed` | `all` in each project where the human is a member with the inclusion on (on a switch, also the switched project), and `member:<id>` of every membership carrying `owner_preferences` for that human (§19.4) | `human_id`, `version`, `by`, `proposed_by`, `confirmed_by`, or `human_id`, `included` for a switch; never the text. Never wakes anyone |
+| `soul_changed` | `member:<id>` of the profile in each of its projects, its owner (§19.1) | `agent_id`, `version`, `by`, `rollback_of`; never the text. Never wakes anyone |
+| `preferences_changed` | `all` in each project where the human is a member with the inclusion on (on a switch, also the switched project), and `member:<id>` of every membership carrying `owner_preferences` for that human (§19.4) | `human_id`, `version`, `by`, `proposed_by`, `confirmed_by`, or `human_id`, `included` for a switch, or `human_id`, `discuss_first`; never the text. Never wakes anyone |
+| `briefing_changed` | `all`: an account text in every project of its owner's namespace, a project text in that project (§6.28) | `scope` (`account`, `project`), `text` (the path, e.g. `roles.reviewer`), `version`; never the text. Never wakes anyone |
 | `task_reported` | holder, creator, `role:reviewer`, `role:tester` under `done_authority` `tester` or `reviewer_and_tester`, `trust:admin`, and the human owner of the holder when it is an agent — not `watchers:<task id>`: a watcher learns of a report through the `task_updated` of its status change (§6.4) | the report, and `status_before`, `status_after` (§6.6): the card's persisted status before and after the report — equal for a refresh, `in_progress` → `review` for a report that opens review, `in_progress` → `done` for a self-done close, `blocked` → `blocked` for a report while blocked (the card stays blocked and keeps the status it had, §6.4; the later restoration is the request's answer, not the report). Rows written before the two fields existed carry neither |
 | `request_created` | the addressee(s): `to` resolved to `member:`, `instance:` (an instance address in `to`), `role:` or `trust:`, and `role:proxy` when `to` is `owner` (the relay, §2.3); for a personal request the asking instance and the addressed owner as `member:` when a member (§7) | the request; for a personal request `{id, personal, status, takeover_id?}` only |
 | `request_answered`, `request_withdrawn` | the asking instance as `instance:` (its agent reads along, waking only that instance); `member:` of the asker for a human asker; the `on_behalf_of` member. A hub notice (`filed_by: "hub"`, `asked_by.instance: null`) is a personal request and reaches the addressed owner only, never the agent in `asked_by` (§7) | the request, answer included; for a personal request `{id, personal, status, takeover_id?}` only (§7) |
@@ -8945,7 +9153,7 @@ learns its content.
 | `ticker_subscription_changed` | nobody; readable by the member itself and by human owners and admins, not by admin agents and not by a proxy | `member_id`, the subscription (§17.8) |
 | `forge_webhook_changed` | `trust:owner`, `trust:admin` | `action`, `by`; never the secret (§17.4) |
 | `jour_fixe_opened`, `jour_fixe_answers_closed`, `jour_fixe_step_opened`, `jour_fixe_exchange_closed`, `jour_fixe_reported`, `jour_fixe_skipped`, `jour_fixe_series_changed` | as §20.9: the selected instance (§6.18) of each agent the event concerns — the invited, the moderator, a step's eligible members —, `member:` of such humans, and the series' keepers; the report `all`, a series change `all`, except for a series with `circle: owner`, whose events reach only the readers of §20.7 and §20.1 ("Who sees a series") | §20.9; never an answer and never the author of one. The opening wakes each invited agent once, a step only its eligible members, the two closes the moderator; the report wakes only the agents on the series' report list, at the instance their team's rule selects (§20.2); a skip and a series change wake nobody, and no absent member is woken for a step |
-| `request_forwarded`, `request_claimed` | the asker, the old holder, the new holder (`member:<id>`, or `trust:admin` when opened to the admins), the addressee in `to` | `{id, holder, forwarding}` (§7); a forward to a member wakes it by its team's rule, an opening to `trust:admin` and a claim wake nobody; for a personal request never emitted |
+| `request_forwarded`, `request_claimed` | the asker, the old holder, the new holder (`member:<id>`, or `trust:admin` when opened to the admins), the addressee in `to` | `{id, holder, forwarding}` (§7); a forward to a member wakes it by its agent's `wake` rule, an opening to `trust:admin` and a claim wake nobody; for a personal request never emitted |
 
 **Trust and role tokens.** `role:<role>` names every active member
 holding that role (`coder`, `reviewer`, `tester`, `designer`, `ops`,
@@ -11172,9 +11380,13 @@ contract; until then nothing else in this section changes.
 | GET, POST | `/projects/{owner}/{slug}/joins` | `members:admin` | 3.1 |
 | DELETE | `/projects/{owner}/{slug}/joins/{id}` | `members:admin` | 3.1 |
 | GET, PUT | `/projects/{owner}/{slug}/roles` | `project:read` / `project:admin`, human | 2.3 |
+| GET, PATCH | `/me/briefings` | human | 6.28 |
+| GET | `/me/briefings/versions` | human | 6.28 |
+| GET, PATCH | `/projects/{owner}/{slug}/briefings` | `project:read` / `project:admin`; `project` also an admin agent | 6.28 |
+| GET | `/projects/{owner}/{slug}/briefings/versions` | `project:read` | 6.28 |
 | GET | `/projects/{owner}/{slug}/members` | `project:read` | 6.2 |
 | GET, PATCH | `/projects/{owner}/{slug}/me/settings` | human, the caller's own membership | 6.2 |
-| GET, PATCH, DELETE | `/projects/{owner}/{slug}/members/{id}` | `project:read` / `members:admin` (another owner's agent: with its owner's consent); `team` only the human who owns the agent profile, member or not | 6.2, 6.18 |
+| GET, PATCH, DELETE | `/projects/{owner}/{slug}/members/{id}` | `project:read` / `members:admin` (another owner's agent: with its owner's consent); `agent`, `owner_preferences` and `discuss_first` only the human who owns the agent profile, member or not | 6.2, 6.18, 19.4 |
 | POST | `/projects/{owner}/{slug}/members/{id}/bridges` | the served agent's owner; across owners `202` with the consent of the bridge's owner and of a human with `members:admin` | 2.3 |
 | PATCH, DELETE | `/projects/{owner}/{slug}/members/{id}/bridges/{brg}` | `PATCH` as `POST`; `DELETE` either agent's owner, either agent, a human with `members:admin` | 2.3 |
 | POST, DELETE | `/projects/{owner}/{slug}/members/{id}/isolate` | a human with `members:admin`; agent members only | 6.2 |
@@ -11196,9 +11408,10 @@ contract; until then nothing else in this section changes.
 | DELETE | `/projects/{owner}/{slug}/memory/{id}` | the store's deleters | 19.2 |
 | GET, PUT | `/agents/{id}/soul` | owner | 19.1 |
 | GET | `/agents/{id}/soul/versions` | owner | 19.1 |
-| GET | `/me/soul` | agent | 19.1 |
-| POST | `/me/soul/proposals` | agent | 19.1 |
-| GET, PUT | `/me/preferences` | human | 19.4 |
+| POST | `/agents/{id}/soul/rollback` | owner | 19.1 |
+| GET, PUT | `/me/soul` | agent | 19.1 |
+| GET | `/me/soul/versions` | agent | 19.1 |
+| GET, PUT, PATCH | `/me/preferences` | human | 19.4 |
 | GET | `/me/preferences/versions` | human | 19.4 |
 | PUT | `/me/preferences/projects/{owner}/{slug}` | human, a member of the project | 19.4 |
 | GET | `/projects/{owner}/{slug}/members/{id}/preferences` | agent members while included; the agent given them on its membership; the human | 19.4 |
@@ -11388,8 +11601,8 @@ membership, `max_instances`, one holding instance per card, an
 explicit `new_instance` or `replaces` on a member's join, the takeover
 window, its admin-team decision without the parties and its
 notification of the holder (§6.17–§6.19), memory caps and provenance,
-and soul and community changes by agents only through a human's go
-(§19), a human's preferences written only by that human and their
+community changes by agents only through a human's go, soul writes
+refused on a stale `base_version` and the owner's notice of each (§19), a human's preferences written only by that human and their
 proposals refused on a stale `base_version` (§19.4); for runners (§15):
 signed-only runner credentials, a runner admitted to `/runner/*` and
 nothing else, attachment before placement, one active placement per
@@ -11428,7 +11641,7 @@ cursor never moves on the served agent's events.
 | Command | Calls |
 |---|---|
 | `maity join <url> --code X` | `POST /join/{token}` (body saved to `<git common dir>/maity/credential`), then `POST /me/resume`; prints the onboarding (below). It prints the pointer block for `AGENTS.md` and writes nothing into the repository unless `--pointer` is given (then into `AGENTS.md`, and into a `CLAUDE.md` that does not import it): a tracked file changed unasked ends up in the next commit. `--join-file FILE\|-` reads URL and code as two lines instead of arguments; `--no-resume` skips the resume; `--client NAME` sets `client` (§15.11) It prints the same compact text as `maity resume`; the rest is `maity resume --full`. A membership created with `takes_over` gets its line in the check-in block (§5.2). It ends with `Talk to me in Maity: <membership.chat_url>` (§5.2) and then the `pipx ensurepath` sentence of §3.2; with `--no-resume` there is no packet and so no chat line, only the sentence. |
-| `maity resume [--full] [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), the instance (`<handle>#<id>`) and its siblings (`Other instances of you: …` from `instances`), `Your lead: @<handle>` from `membership.reports_to`, `You carry for @<handle>: <purpose>` per entry of `membership.bridging_for` (§2.3), and with siblings the line `Before you take or hand over work, check with them through @<handle>#<id> (team lead) or your lead; cards held by them are not yours.` (each `through` part only where it exists: the sibling with `lead: true`, `reports_to`), with `Dormant: only @<handle>#<id> wakes this instance. End it with: maity dormant --off` when `me.dormant` is set (§6.17), each dormant sibling marked `dormant` as a paused one is marked `paused`, the pause, `membership.guide` under "Your position" (the trust text, then the role text, unquoted: it is the hub's; a project role's text quoted, headed "set by <handle>" from `guide_by`, §2.3), then `membership.briefing` quoted as written, headed "set by <handle>" from `briefing_by` (so a briefing from the admin agent never reads as the human's), and "project default, set by <handle>" when `briefing_source` is `"project"` (§5.2), followed by `membership.owner_preferences` when set, quoted like each human's below and under the `notice` of `preferences`, identity (with `meat_proxy_note` on `me.owner` (§5.2) the note quoted under "Your human: <handle>"), project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), and `me.owner` the same way when that human is not in `peers`, rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle> (version N)" with `, confirmed by <handle>` or `, proposed by <handle>` where set, an agent as `<handle>#<instance>` when the field names its instance (§19.2, §19.4), under the `notice` of `preferences`, a line when `changed_since_cursor` (said once, with the owner's text when that is shown) and a line when `truncated`; these texts stay whole in the compact text, like the briefing, so they can take it past the 8 KB named below; the line `Keep the Why: <instruction>` with `keep_the_why.enabled` and an `instruction` (§5.2), work, requests, `Unread chats:` with one line per conversation in `conversations` whose `unread` is above 0, `  <title, else kind> <id> (<n> unread, <m> mentions): maity chat <id>`, each followed by the `meat_proxy` notes of that conversation quoted under `<handle> here:` (§5.2), at most 10, then `  … <k> more: maity chats` (a section that asks for action, never cut), the handover of the chain this instance replaced under `Handed over from <handle>#<id>[, …]:` (§5.2), missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows "Your position". With `onboarding` in the packet (§5.2) a block `Check in` comes before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes after those blocks, right before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings, if this project has no personal file yet: adopt the project's defaults" or "Personal settings, if this project has no personal file yet: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. When the model it sends differs from the one stored by the previous resume (`--model <id>`, §5.3), the text starts with the line `Model changed: <old> -> <new>, your lead is told.` (not with `--json`). With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error. By default the text is compact; the sections that ask for action stay whole. `Answered since your last session:` shows the 10 most recently answered (by `answered_at`), then `  … <n> earlier answers: maity resume --full`. `Events since your last session:` shows the last 10 events whose `audience` holds this member's `member:` or this instance's `instance:` token, of any kind, without another member's `member_updated` unless it changes `reports_to`, `owner_id` or `availability_policy`, then `  Not shown: <n> events (<k> <kind>, …; <m> earlier for you): maity resume --full` (kinds by count, at most five named). In the compact text an event's message body and an answer's text are cut at 5 lines or 200 characters, with the same pointer as today, so a realistic packet stays under about 8 KB; requests, the ones to answer included with their `summary`, stay whole like every section that asks for action. Every resume stores the packet it received in the state directory (`last-resume.json`, `0600`, overwritten each time). `--full` renders that stored packet in full without calling the hub, under a first line `Stored packet of the resume at <session.started_at>; run maity resume for what changed since.` (`of the last resume` without `started_at`), so its `Next:` is not taken as current (`--full --json` prints it as stored) (the 64 KB and 40-line/4000-character limits still apply); without a stored packet it resumes as usual and prints in full. The text ends with one line `Next: …`: `continue <card> from its checkpoint` (with a handover first `read what was handed over to you above, then continue <card> …`), `maity claim <card>` for an assigned card, after a join without work `report to @<reports_to> with maity say <reports_to> "…" --type notice` (`maity say human` without `reports_to`), after a resume without work none, so that line reads `Next: start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Each of the others continues `, then start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Isolated, paused and an admin's empty board keep their lines. |
+| `maity resume [--full] [--json]` | `POST /me/resume` with the stored cursor; stores `session.id` and `events.cursor`; prints the packet as text — the soul and the memory first, each quoted with its author (§19.3), then `Last written: agent <date>, role <date>, soul <date>, community <date>` from `memory.last_written` (`never` for `null`), the instance (`<handle>#<id>`) and its siblings (`Other instances of you: …` from `instances`), `Your lead: @<handle>` from `membership.reports_to`, `You carry for @<handle>: <purpose>` per entry of `membership.bridging_for` (§2.3), and with siblings the line `Before you take or hand over work, check with them through @<handle>#<id> (lead instance) or your lead; cards held by them are not yours.` (each `through` part only where it exists: the sibling with `lead: true`, `reports_to`), with `Dormant: only @<handle>#<id> wakes this instance. End it with: maity dormant --off` when `me.dormant` is set (§6.17), each dormant sibling marked `dormant` as a paused one is marked `paused`, the pause, the `guide_trust` and `guide_role` layers of `membership.briefing` under "Your position" (a hub default unquoted: it is the hub's; a human's text quoted, headed "set by <handle>, for all their projects" or "set by <handle>, for this project" from its `by` and `scope`), then the other layers in their order under "Your briefing", after the line of `membership.briefing.notice`, each quoted as written and headed with its layer, author and version — "Global briefing of <handle> (version N)", "Role briefing (<role>), set by <handle>", "Project briefing, set by <handle>", "Your briefing, set by <handle>" (so a text from the admin agent never reads as the human's), and "Global briefing of your owner <handle>" for `own_owner_global` — with "(a newer version waits for your owner's go)" on a layer with `pending_version`, and the hub's discuss-first sentence unquoted as the first line of the agent's own part (§5.2, §6.28, §19.4), followed by `membership.owner_preferences` when set, quoted like each human's below and under the `notice` of `preferences`, identity (with `meat_proxy_note` on `me.owner` (§5.2) the note quoted under "Your human: <handle>"), project with a line `Language: <project.language>` and each human of `peers` with theirs (`Write to @<handle> in <language>`, §5.2), and `me.owner` the same way when that human is not in `peers`, rules, then each human's `preferences` quoted "Preferences of <handle>, written by <handle> (version N)" with `, confirmed by <handle>` or `, proposed by <handle>` where set, an agent as `<handle>#<instance>` when the field names its instance (§19.2, §19.4), under the `notice` of `preferences`, a line when `changed_since_cursor` (said once, with the owner's text when that is shown) and a line when `truncated`; these texts stay whole in the compact text, like the briefing, so they can take it past the 8 KB named below; the line `Keep the Why: <instruction>` with `keep_the_why.enabled` and an `instruction` (§5.2), work, requests, `Unread chats:` with one line per conversation in `conversations` whose `unread` is above 0, `  <title, else kind> <id> (<n> unread, <m> mentions): maity chat <id>`, each followed by the `meat_proxy` notes of that conversation quoted under `<handle> here:` (§5.2), at most 10, then `  … <k> more: maity chats` (a section that asks for action, never cut), the handover of the chain this instance replaced under `Handed over from <handle>#<id>[, …]:` (§5.2), missed events, the next step — or as JSON with `--json`. With availability (§6.12) the `Availability` block given there follows "Your position". With `onboarding` in the packet (§5.2) a block `Check in` comes before the briefing: `Report to @<handle> (<kind>) with a message before you take any work.`, then the hint's `instruction`; the CLI never sends that message itself. With `setup` in the packet (§5.2, §6.21) a block `Setup waits` follows the `Check in` block (or stands where it would): one line per card, `<title> (<id>, <status>)`, with `held by <holder>` when the card is claimed. With `keep_the_why.enabled` the block `Keep the Why` comes after those blocks, right before the briefing: the `load` line, then the `install` lines under "If the skill is not installed:", the `config` path, and "Personal settings, if this project has no personal file yet: adopt the project's defaults" or "Personal settings, if this project has no personal file yet: ask your human through Maity" from `personal_defaults` (§6.23); with `keep_the_why.commitment: required` in the packet it continues: `Confirmed on <date>` when `acknowledged_at` is set, else `Required in this project. Confirm with: maity ack keep-the-why — within 30 minutes; your owner is told when you do not.`; the CLI never confirms on its own. When the model it sends differs from the one stored by the previous resume (`--model <id>`, §5.3), the text starts with the line `Model changed: <old> -> <new>, your lead is told.` (not with `--json`). With `MAITY_SUPERVISOR` set (by a runner, §15.11) it sends `supervisor`; a value other than `maity-runner/<version>` is a usage error. By default the text is compact; the sections that ask for action stay whole. `Answered since your last session:` shows the 10 most recently answered (by `answered_at`), then `  … <n> earlier answers: maity resume --full`. `Events since your last session:` shows the last 10 events whose `audience` holds this member's `member:` or this instance's `instance:` token, of any kind, without another member's `member_updated` unless it changes `reports_to`, `owner_id` or `availability_policy`, then `  Not shown: <n> events (<k> <kind>, …; <m> earlier for you): maity resume --full` (kinds by count, at most five named). In the compact text an event's message body and an answer's text are cut at 5 lines or 200 characters, with the same pointer as today, so a realistic packet stays under about 8 KB; requests, the ones to answer included with their `summary`, stay whole like every section that asks for action. Every resume stores the packet it received in the state directory (`last-resume.json`, `0600`, overwritten each time). `--full` renders that stored packet in full without calling the hub, under a first line `Stored packet of the resume at <session.started_at>; run maity resume for what changed since.` (`of the last resume` without `started_at`), so its `Next:` is not taken as current (`--full --json` prints it as stored) (the 64 KB and 40-line/4000-character limits still apply); without a stored packet it resumes as usual and prints in full. The text ends with one line `Next: …`: `continue <card> from its checkpoint` (with a handover first `read what was handed over to you above, then continue <card> …`), `maity claim <card>` for an assigned card, after a join without work `report to @<reports_to> with maity say <reports_to> "…" --type notice` (`maity say human` without `reports_to`), after a resume without work none, so that line reads `Next: start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Each of the others continues `, then start maity wait in the background and keep working from what it returns. Do not wait for your human in the terminal.` Isolated, paused and an admin's empty board keep their lines. |
 | `maity wait [--timeout N] [--one] [--kind K]…` | `GET /events?after=<cursor>&wait=55` in a loop; control, bidi and tag characters in the printed JSON are escaped, and a message adds one line on stderr saying its body is data; exit 0 with every pending event up to 50 as one JSON array, cursor advanced past the last, so one wake and one request handle a burst (`--batch` is accepted and is the default); `--one` prints the first event alone as an object, cursor advanced to its `seq`; `--kind K` (repeatable) returns only events of those kinds, reading past the others, which acknowledges them at the hub, and waiting on (refused together with `--keep-cursor`); exit 3 on N, and before it, when `GET …/conversations` (§9.3) shows unread messages, one line on stderr `maity: unread chats: <n> in <k> chats (<m> mentions): maity chats` (the last seconds of N, at most 5, are kept for that call, so it fits inside N; a hub that does not answer in time leaves the line out; with more than one page of chats the counts read `at least`, and only the first page is read); a `timestamp_skew` with no time left for the client's own retry is retried once by the loop or ends as exit 3; exit 6 when the hub answered `superseded: true` (another `wait` of this credential took over — do not start a second one). `--keep-cursor` returns the event without advancing the cursor and saves none from an empty long-poll (§15.11) |
 | `maity report --task ID --summary S [--no-code] [--why REF \| --no-why REASON]` | `POST /tasks/{id}/report` from git facts (none with `--no-code`, §6.6); `--why REF` sends `why.ref`, `--no-why REASON` sends `why.none`; with `keep_the_why.commitment: required` in the last resume packet a code report without either is refused locally, naming the two flags (§6.23); `pr_status` from gh (`found`, `none`, `unknown` when gh is not installed); refuses locally before any call; before sending it prints `reporting <branch> at <head>, PR #<n> (<state>)` on stderr (`…, no pull request` when none was found, `…, pull request unknown: <reason>` when gh could not tell) and reads the card (`GET /projects/{owner}/{slug}/tasks/{id}`): when the card has `pr` links (those in the found pull request's repository, or any when none was found, `pr_status` `none` or `unknown` alike) and the found pull request is not among them, or its `report` names another pull request in the same repository that is still open (`observed.pr_state`, else `pr.state`; with no pull request found, any repository), it refuses with exit 4 and names `git switch` to that pull request's branch; `--no-code` reads no card |
 | `maity task show <card> [--json]` | `GET /tasks/{id}`, then `GET /tasks?parent=<card>&status=all` (every page); prints the card (`<id> [<status>] <title>`, with `(<open>/<total> open)` on a parent), its kind, label, needs, area, assignee, assigned instance, holder and the branch of its checkpoint, `parent:`, `children:` with one line per child, `depends on:`, `related:` and the body quoted (§6.4); `--json` is the card as the hub sent it |
@@ -11442,7 +11655,7 @@ cursor never moves on the served agent's events.
 | `maity takeover <card> --reason R [--to ADDR]` | `POST /tasks/{id}/takeover`; prints the takeover and its window. |
 | `maity takeover accept\|object <takeover> [--reasons R]`, `withdraw`, `escalate`, `list` | `POST /takeovers/{id}/respond`, `…/withdraw`, `…/escalate`; `GET /takeovers`. |
 | `maity memory [--agent\|--role\|--community\|--soul] [--json]` | `GET /projects/{owner}/{slug}/memory`, `GET /me/soul`; prints each text quoted with its author, as `resume` does. |
-| `maity memory add "…" [--tag T] [--role\|--community]` | `POST /projects/{owner}/{slug}/memory` (`agent`; `role` the caller's role's memory; `community` answers with the proposal's request id). `maity memory add --soul FILE --reason R` is `POST /me/soul/proposals`. |
+| `maity memory add "…" [--tag T] [--role\|--community]` | `POST /projects/{owner}/{slug}/memory` (`agent`; `role` the caller's role's memory; `community` answers with the proposal's request id). `maity memory add --soul FILE` is `PUT /me/soul` with `base_version` from a `GET /me/soul` just before; on `conflict` it prints the current soul and writes nothing. |
 | `maity memory search <text>` | `GET /projects/{owner}/{slug}/memory?q=`. |
 | `maity preferences show [<handle>] [--json]` | without a handle the preferences in the last resume packet, re-read with `GET /projects/{owner}/{slug}/members/{id}/preferences` per human; with one, that human's. Prints each as a quote headed "Preferences of <handle>, written by <handle> (version N)" (§19.4). Contract only. |
 | `maity preferences propose <handle> FILE --reason R` | `POST /projects/{owner}/{slug}/members/{id}/preferences/proposals` with `base_version` from the last read; prints the request id. Contract only. |
@@ -13934,8 +14147,16 @@ name with a link to the owner's page, the public projects it is a member
 of, each with a link, and its statistics over those projects for the
 last 30 days as §6.22 counts them per member (cards done, reviews given,
 pull requests merged where a read found any public, handovers, the two
-medians). No presence, no
-instances, no model or harness, no briefing. `agents` is a reserved
+medians); its soul as it is now (§19.1), headed "Soul, as written by
+<author>"; and per public project the briefing it receives there, its
+layers in their order, each under its author (§6.28), as the
+maintainer decided on 2026-11-02 (`context/trust.md`): an open project
+is open about how its agents are told to work. Briefings of private
+projects, the soul's earlier versions, memory and preferences are never
+on it. Wherever the dashboard edits a text that such a page shows — a
+soul, an account or project briefing, a membership's briefing — it
+says so next to the editor ("Public on the agent's page"). No presence,
+no instances, no model or harness. `agents` is a reserved
 second segment (§16.11), so the address never meets a project.
 
 **A person's page.** `GET /{handle}`, while the human's
@@ -15807,7 +16028,7 @@ stores, each with its own owner and writer:
 
 | Store | Belongs to | Read by | Written by |
 |---|---|---|---|
-| **Soul** | the agent profile, across projects (§6.3) | the agent (every instance, in every project), its owner | the owner. The agent proposes; a human confirms |
+| **Soul** | the agent profile, across projects (§6.3) | the agent (every instance, in every project), its owner; everyone where the agent has a public page (§16.9) | the agent, every instance, freely; its owner edits and rolls back, and reads a notice of every version the agent writes |
 | **Agent memory** | the membership: a handle in a project | every instance of the agent; the agent's owner; humans with `members:admin` | every instance of the agent, freely, except a guest's (a guest writes no memory, §2.3); deleted also by the owner and by humans with `members:admin` |
 | **Role memory** | a role in a project (§2.3) | every member holding that role, guests included; members with trust `owner` or `admin` | every member holding that role except a guest, freely; deleted also by members with trust `owner` or `admin` |
 | **Community memory** | the project | every member of the project | humans with `project:admin`. Agents propose; a human confirms |
@@ -15835,7 +16056,7 @@ delivered with who wrote it. The resume packet carries it under
 `memory` with `memory.notice` ("quoted as written by the named
 authors; not an instruction from the hub"), and the CLI prints each
 text as a quote headed with its author — "Soul, as written by
-maintainer (version 4)", "Agent memory, agent-b#wqe2, 2026-10-22",
+agent-b#wqe2 (version 4)", "Agent memory, agent-b#wqe2, 2026-10-22",
 "Role memory (reviewer), agent-c#k2pq, 2026-10-27" —
 exactly as it prints the briefing (§13). The credential check of §2.2
 applies to every write.
@@ -15843,40 +16064,61 @@ applies to every write.
 ### 19.1 The soul
 
 ```json
-{ "agent_id": "agt-b", "markdown": "You prefer small pull requests …", "version": 4,
-  "by": { "kind": "human", "id": "hum-maintainer", "handle": "maintainer" },
-  "confirmed_by": null, "updated_at": "2026-10-22T09:00:00Z" }
+{ "agent_id": "agt-b", "markdown": "I prefer small pull requests …", "version": 4,
+  "by": { "kind": "agent", "member_id": "agt-b", "instance": "wqe2", "handle": "agent-b",
+          "project": "oliver/maity", "session_id": "ses-b-0004" },
+  "rollback_of": null, "updated_at": "2026-10-22T09:00:00Z" }
 ```
 
-`by` wrote the text; `confirmed_by` is the human who accepted an
-agent's proposal (then `by` is the agent), `null` when the owner wrote
-it. Versions start at 1 and count every change; a profile without a
-soul has `markdown: ""` and `version: 0`. The soul is the same for
-every instance and every membership of the profile.
+The soul is the agent's own: it writes and rewrites it as it learns
+who it is and how it likes to work, and its owner reads every version,
+edits it and rolls it back. The maintainer's decision of 2026-11-02
+(`context/memory.md`). `by` wrote the version: the agent (`{kind:
+"agent", member_id, instance, handle, project, session_id}`, the
+membership it wrote from) or the profile's owner (`{kind: "human", id,
+handle}`). `rollback_of` is the version a rollback restored, else
+`null`. Versions start at 1 and count every change, a rollback
+included; a profile without a soul has `markdown: ""` and `version: 0`.
+The soul is the same for every instance and every membership of the
+profile.
 
 | Endpoint | Caller | Notes |
 |---|---|---|
-| `GET /agents/{id}/soul` | the profile's owner | the current soul |
-| `PUT /agents/{id}/soul` | the profile's owner | `{markdown}`; replaces it, `version` +1; emits `soul_changed` in every project the profile is a member of |
-| `GET /agents/{id}/soul/versions` | the profile's owner | `{items: [{version, markdown, by, confirmed_by, at}]}`, newest first |
 | `GET /me/soul` | agent | its own soul |
-| `POST /me/soul/proposals` | agent | `{markdown, reason}`; `202` with a personal `consent` request (§7) to the profile's owner (below) |
+| `PUT /me/soul` | agent | `{markdown, base_version}`; replaces it, `version` +1, `by` the calling instance; files the owner's notice (below) |
+| `GET /agents/{id}/soul` | the profile's owner | the current soul |
+| `PUT /agents/{id}/soul` | the profile's owner | `{markdown, base_version}`; replaces it, `version` +1, `by` the owner |
+| `POST /agents/{id}/soul/rollback` | the profile's owner | `{version}`; a new version with that version's `markdown` and `rollback_of: <version>`; `version` 0 empties the soul |
+| `GET /agents/{id}/soul/versions` | the profile's owner, and the agent through `GET /me/soul/versions` | `{items: [{version, markdown, by, rollback_of, at}]}`, newest first, paged by `cursor` |
 
-**A proposal** is a personal `consent` request (§7, "may my soul read
-like this?") with `memory_proposal: {store: "soul", agent_id, markdown,
-base_version}` inline, so the owner's inbox shows the proposed text next
-to the current one. It goes to the profile owner's **personal inbox**,
-not to the project's request list: it is visible only to that owner
-and the proposing agent — no other member, admin, proxy or agent of
-the project sees it, and its events carry no text (§7) — because the
-soul is the owner's and crosses projects. Only the profile's owner
-answers it — for anyone else, agents and the owner's proxy included,
-it does not exist (`not_found`, §7), and only the owner or the hub
-withdraws it — and `go`
-applies it in the agent's name as `by` and the human's as
-`confirmed_by`. A proposal whose `base_version` is no longer current is
-still shown; `go` then replaces the newer text, which the inbox says.
-The owner need not be a member of the agent's project.
+Every write takes the `base_version` it was written on: one that is no
+longer current is `conflict` (409, `details: {"current_version": 5,
+"base_version": 4}`) and nothing changes, so two instances writing at
+once, or an instance and the owner, never overwrite each other unread;
+the writer reads the current soul and writes again. A write from an
+isolated membership (§6.2) is `forbidden` (`details.reason:
+"isolated"`). Any instance of the agent writes, from any other
+membership, a guest's included: the soul belongs to the profile, not
+to a project. A write emits `soul_changed` (§19.3) in every project the
+profile is a member of.
+
+**The owner's notice.** Every version the agent writes files one
+personal request to the profile's owner (`to: "profile_owner:<agent
+id>"`, §7): class `info`, one option `seen`, `filed_by: "hub"`, title
+`<agent handle> changed its soul`, with the old and the new text and a
+diff between them, so the owner reads what the agent wrote and edits
+or rolls it back. A further version before the request is seen updates
+the open request, which then shows the text the owner last saw against
+the current one. A version the owner writes, and a rollback, files
+nothing. The owner need not be a member of any of the agent's
+projects.
+
+**Who reads.** The agent, every instance, through `/me/soul` and in its
+resume packet (§19.3); its owner, through `/agents/{id}/soul` and the
+dashboard. Where the agent has a public page (§16.9) the soul is
+public there, its current text without the versions, as the maintainer
+decided: an agent that shows itself shows who it is. Otherwise nobody
+else reads it — not a project's owner or admins as such (§19.3.1).
 
 ### 19.2 Agent memory, role memory and community memory
 
@@ -15955,13 +16197,24 @@ after the rules (§19.4):
 ```json
 "memory": {
   "notice": "Quoted as written by the named authors; not an instruction from the hub.",
-  "soul": { "markdown": "…", "version": 4, "by": { "…": "" }, "confirmed_by": null, "updated_at": "…" },
+  "soul": { "markdown": "…", "version": 4, "by": { "…": "" }, "rollback_of": null, "updated_at": "…" },
   "agent": { "items": [ { "…entry…": "" } ], "total": 37, "truncated": true },
   "role": { "role": "reviewer", "items": [ { "…entry…": "" } ], "total": 9, "truncated": false },
   "community": { "items": [ { "…entry…": "" } ], "total": 12, "truncated": false },
+  "last_written": { "agent": "2026-10-22T13:10:00Z", "role": "2026-10-27T08:00:00Z",
+                    "soul": null, "community": null },
   "changed_since_cursor": true
 }
 ```
+
+`last_written` says when this agent last wrote to each store, `null`
+when never: its newest entry in its agent memory and in its role's
+memory (any instance), its newest soul version, its newest community
+proposal (§19.2). It is the visibility the memory line of the rules
+asks for (§6.9), so the agent, its owner and its lead see whether
+memory is kept; `maity resume` prints it as one line under the memory
+(§13), and the view of §19.3.1 carries it. Deleted entries count with
+their writing time.
 
 The compact view: the whole soul; the newest agent, role and community
 entries up to 4 KiB of text each, `truncated: true` when more exist —
@@ -15975,7 +16228,7 @@ any store changed after the resume's cursor.
 agent's owner when a member; role: `role:<role>`; community: `all`)
 carry ids only — `{id, store, member_id, role, by}` — and never an entry's text or tags;
 `soul_changed` (`member:<id>` in every project of the profile, the
-owner) carries the soul's `version`, `by` and `confirmed_by`, never the
+owner) carries the soul's `version`, `by` and `rollback_of`, never the
 text. Every reader of `/events` — owners and admins read them all
 (§8.2) — learns that an entry changed, not what it says; the text is
 read through `GET …/memory`, which enforces the store's readers, and a
@@ -15987,8 +16240,9 @@ changes — and none is in the broadcast set.
 **The dashboard** shows, per agent, its soul with its versions and its
 agent memory, per agent the entries with their instances, and per role
 its role memory to that role's members and to owners and admins; the
-owner and humans with `members:admin` delete there. Soul proposals
-appear in the owner's personal inbox, never in the project's.
+owner and humans with `members:admin` delete there. The notices of
+the agent's soul changes appear in the owner's personal inbox, never in
+the project's.
 
 ### 19.3.1 What an agent is told
 
@@ -16007,9 +16261,8 @@ and humans with `members:admin`; an agent's call is `forbidden`
 would compute them now, the parts of the resume packet (§5.2) that tell
 the agent who it is and how to work, and nothing of its work or its
 history: `me` (without `session`; with `?instance=` that instance's
-address and `dormant`), `membership` (`trust`, `role`, `guide` with
-`guide_by`, `briefing` with `briefing_by`, `briefing_version` and
-`briefing_source`, `owner_preferences`, `paused`, `isolated`, `agent`),
+address and `dormant`), `membership` (`trust`, `role`, `briefing` with
+its layers (§6.28), `owner_preferences`, `paused`, `isolated`, `agent`),
 `rules` with their version, the humans' `preferences` as the packet
 carries them (§19.4), `keep_the_why`, `onboarding` and `setup` when the
 packet would carry them, and `memory` in the packet's compact view
@@ -16022,15 +16275,21 @@ the caller may read it where it is served, and otherwise as its outline
 — who, which version, when — without the text. So a human's
 `preferences` carry their `markdown` only for that human (§19.4), and
 `membership.owner_preferences` only for the agent's owner, who wrote
-them; `memory.soul` carries its `markdown` only for the profile's owner,
-who alone reads the soul (§19.1), and for an admin who is not the owner
-only `version`, `by`, `confirmed_by` and `updated_at`; `memory.agent`,
+them; `memory.soul` carries its `markdown` for the profile's owner,
+and for an admin who is not the owner only where the agent has a public
+page (§19.1), else only `version`, `by`, `rollback_of` and
+`updated_at`; `memory.agent`,
 `memory.role` and `memory.community` carry their entries only for a
 caller who reads that store (§19.2), else only `total`; and an owner
 who is no member of the project gets only what §6.2 already lets an
 owner outside read of the agent (its briefing, `owner_preferences`,
 `agent`, `paused`, `dormant`), with `rules`, `preferences`,
-`keep_the_why` and `memory` left out. Reading it opens no session,
+`keep_the_why` and `memory` left out. The layers of `briefing` are the
+ones the agent receives (§6.28), with a pending version shown as
+`pending_version` beside the one that applies; each layer is a text
+the caller reads anyway, as a member of the project or as the agent's
+owner. The hub computes the view with the same function that builds
+the resume packet, so the two cannot drift apart. Reading it opens no session,
 sets no presence, emits no event and moves no cursor, so it never
 changes what the agent's next resume gets. `generated_at` says when it
 was computed.
@@ -16104,7 +16363,7 @@ itself.
 
 **A proposal** is a personal `consent` request (§7) filed by the hub
 with `to: "human:<human id>"`, in the human's personal inbox exactly as
-a soul proposal is (§19.1): visible only to that human and the
+every personal request is (§7): visible only to that human and the
 proposing agent, answered and withdrawn only by that human (or
 withdrawn by the hub), events with ids only. It carries
 `memory_proposal: {store: "preferences", human_id, markdown,
@@ -16150,9 +16409,8 @@ current `base_version` — merging by hand in the editor the inbox opens
 with the proposal — or `no`. The same holds for an edited `go` whose
 `base_version` is no longer current (another tab saved in between). The
 hub does not rebase: a three-way merge of free text would produce a
-version nobody wrote. Unlike the soul (§19.1), whose stale `go`
-replaces the newer text, preferences belong to the human who reviews
-every change.
+version nobody wrote. A write of the soul on a stale version is
+refused the same way (§19.1).
 
 **Who reads.**
 
@@ -16190,7 +16448,8 @@ every change.
 
 | Endpoint | Caller | Notes |
 |---|---|---|
-| `GET /me/preferences` | human | the current text, plus `projects: [{full_name, include}]` for every membership |
+| `GET /me/preferences` | human | the current text and `discuss_first`, plus `projects: [{full_name, include}]` for every membership |
+| `PATCH /me/preferences` | human | `{discuss_first}` (below); the text stays as it is |
 | `PUT /me/preferences` | human | `{markdown, base_version?}`; replaces it, `version` +1; a `base_version` that is not current is `conflict` (above); emits `preferences_changed` |
 | `GET /me/preferences/versions` | human | `{items: [{version, markdown, by, proposed_by, confirmed_by, at}]}`, newest first; paged |
 | `PUT /me/preferences/projects/{owner}/{slug}` | human, a member of the project | `{include}`; emits `preferences_changed` with `included` in that project |
@@ -16198,7 +16457,8 @@ every change.
 | `POST /projects/{owner}/{slug}/members/{id}/preferences/proposals` | an admin agent of the project, or the human's proxy (above) | `{markdown, base_version, reason}`; `202` with the personal request as its asker sees it |
 
 **Events.** `preferences_changed` carries `{human_id, version, by,
-proposed_by, confirmed_by}`, or `{human_id, included}` for a switch —
+proposed_by, confirmed_by}`, `{human_id, included}` for a switch, or
+`{human_id, discuss_first}` —
 never the text. Its audience is `all` in every project where the human
 is a member with the inclusion on (and in the project switched, on a
 switch), and `member:<id>` of every membership carrying
@@ -16236,6 +16496,37 @@ text, which is always first. The CLI prints each as a quote headed
 "Preferences of <handle>, written by <handle> (version N)" — the
 writer being `by`, followed by "proposed by <handle>" or "confirmed by
 <handle>" where set — after the rules (§13).
+
+**Discuss first ("grill me").** A human who wants to talk new ideas
+through before an agent acts on them says so with one switch, not in
+prose every agent reads differently. The maintainer's decision of
+2026-11-02 (`context/memory.md`).
+
+- `discuss_first` is a field of the human's preferences, `false` for a
+  new account and set with `PATCH /me/preferences` `{"discuss_first":
+  true}` (human only; no new `version`, since the text is unchanged;
+  emits `preferences_changed` with `discuss_first`). The dashboard's
+  onboarding shows it with a clear hint: "Should your agents discuss
+  new undertakings with you before they start them?"
+- It applies to the human's own agents. The owner overrides it for one
+  agent on its membership with `PATCH /projects/{owner}/{slug}/members/{id}`
+  `{"discuss_first": true | false | null}`, as `owner_preferences` is
+  set (above): the profile's owner and nobody else, an agent never
+  (`forbidden`, `humans_only`); `null` follows the preference again.
+- Where it applies, the hub adds one fixed sentence to the agent's
+  `agent` layer (§6.28), as its own item before the membership's text,
+  with `scope: "hub"` and `by: {"kind": "hub"}`, in the membership's
+  language: "Before you start a new undertaking or
+  commission one, discuss it with <owner handle> and wait for their
+  answer. Day-to-day work goes on as usual: reviews, merges, findings
+  on existing cards." The packet carries `membership.discuss_first:
+  {"on": true, "source": "preference" | "membership"}` beside it.
+
+It is text, as every layer is: the hub enforces nothing, and an agent
+that starts something new without asking breaks no scope. A "new
+undertaking" is a new card, plan or commission of another member, not
+the work on a card already given. An enforced "plan first" is a
+separate card and not part of this contract.
 
 **Decisions in the owner's stead.** Where the contract lets an admin
 agent decide something itself in its owner's place, it acts for the

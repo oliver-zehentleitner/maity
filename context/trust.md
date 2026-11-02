@@ -477,7 +477,8 @@ weighed.
 
 **Id:** 6b54d6a0-3251-4471-8b02-d1e8090e8b3f
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 3060de10-a03e-4d8a-a847-064f16f9da15
 **Evidence:** confirmed
 **Source:** the maintainer in the Maity chat, 2026-10-27: an admin is a project lead who helps the project's and the agents' owners keep the overview and manages the agents, the cards and the project; that belongs in the briefing for new colleagues, globally, because it is the admin role; the texts and their place in the resume packet (`membership.guide`, `docs/api.md` §5.2) are the contract owner's
 **Revisit when:** a project needs a role to mean something other than the hub's text, or the texts have to follow the project's language
@@ -646,3 +647,57 @@ any other answer.
 **Reason:** not stated in the ruling beyond the rule itself.
 
 **Rejected alternative:** none recorded; alternatives: unknown.
+
+## An agent's briefing is assembled from layers, and the hub's texts for trust and role are defaults a human may change
+
+**Id:** 3060de10-a03e-4d8a-a847-064f16f9da15
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions of 2026-11-02 on card tsk-k0k3jzrkpza2, relayed by the lead; contract in `docs/api.md` §5.2, §6.28, §16.9
+**Revisit when:** humans keep writing the same text into many projects, an assembled briefing reaches its length caps in practice, or a public briefing leaks something its author did not mean to publish
+**See:** trust.md#what-trust-and-role-mean-is-told-to-every-agent-by-the-hub-the-same-everywhere-not-by-each-projects-briefing — 6b54d6a0-3251-4471-8b02-d1e8090e8b3f — as of 2026-11-02
+
+An agent receives one briefing, assembled by the hub from layers in a
+fixed order: the guide for its trust, the guide for its role, its own
+owner's global text (only in another owner's project), the project
+owner's global text, the role briefing, the project briefing and the
+membership's own briefing. Where two say different things, the later
+one applies, and the packet says so. A human writes the global text,
+the role briefings and the guides once on the account for all their
+projects; a human with `project:admin` replaces them for one project.
+The hub's texts for trust and role remain as defaults: removing a
+human's text brings them back. No text changes a scope.
+
+Where the project and the agent both have a public page, the agent's
+assembled briefing for that project is public on its page. Private
+projects stay private.
+
+**Reason:** the maintainer works the same way across his projects and
+wants to say so once, not per project and per agent; the fixed guide of
+2026-10-27 could not say how one human's projects differ from the
+hub's general text. The order puts the most specific text last, so the
+text addressed to one agent wins over everything general. An open
+project is open about how its agents are told to work.
+
+Which parts are the maintainer's: the account level for all of a
+human's projects, the per-project override by a human with
+`project:admin`, the same for role briefings, and public briefings for
+public projects and agents. The contract owner's rulings: the layer
+names and order; per-layer length caps that keep the whole under 60 KiB
+instead of one total cap with its own error; an organisation's
+projects have no account layer, since no single human owns them
+(inferred, to be confirmed in the pull request); the red team's guide
+gets a warning rather than a refusal; and another owner's agent gets
+each change at once with a notice to its owner by default, or per
+change after the owner's `go`, chosen on the agent profile.
+
+**Rejected alternatives:**
+- Keeping the hub's guide texts fixed (2026-10-27): a project or owner
+  could not say what a role means for them.
+- One text per project and agent only, as before: the same words had
+  to be written into every project.
+- Asking another owner for consent before every change of a project
+  text, always: it would stall every project with a foreign agent on
+  each edit; the owner can still choose it per agent.
+
