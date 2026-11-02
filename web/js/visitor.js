@@ -138,20 +138,28 @@ window.Maity = window.Maity || {};
 
   // Draws the page of `path` when the hub stores one; false when it stores none, for the
   // caller's own answer (the login, or not_found).
-  async function page(main, header, where, path, { signedIn, brand, live }) {
+  async function page(main, header, where, path, { signedIn, brand, tools, head, live }) {
     if (!canBePublic(where, path)) return false;
     let answer;
     try {
       answer = await M.api.get("/public/pages/" + path.replace(/^\/+/, ""));
     } catch (err) {
-      return false; // no page, or none to be had now: the caller's answer stands
+      // No page: the caller's answer stands. Signed out, so does a failed read: the login is
+      // still a way on. Signed in, it is said as any failed page is.
+      if (err.status === 404 || !signedIn) return false;
+      throw err;
     }
     if (!live()) return true;
     const d = answer.data;
     const inProject = PROJECT_KINDS.includes(answer.kind);
     const base = inProject ? projectBase(answer.path) : answer.path;
-    const signIn = signedIn ? null : h("a", { class: "visitor-sign-in", href: "/login?next=" + encodeURIComponent(path) }, M.t("visitor.sign_in"));
-    append(clear(header), h("div", { class: "bar" }, brand, signIn));
+    if (signedIn) {
+      await head();
+      if (!live()) return true;
+    } else {
+      const signIn = h("a", { class: "visitor-sign-in", href: M.withNext("/login", path) }, M.t("visitor.sign_in"));
+      append(clear(header), h("div", { class: "bar" }, brand, signIn, tools));
+    }
     const title = d.name || base.slice(1);
     append(clear(main), h("section", { class: "view-visitor", "data-kind": answer.kind },
       h("h1", null, title),

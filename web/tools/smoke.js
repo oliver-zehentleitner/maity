@@ -8982,7 +8982,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "/public/pages/stranger/tool/board": { path: "/stranger/tool/board", kind: "board", data: { columns: [{ status: "open", cards: [{ id: "tsk-1", title: "A <b>card</b>", label: "bug", holder: "member" }] }] } },
     "/public/pages/stranger/tool": { path: "/stranger/tool", kind: "project", data: { name: "Tool", full_name: "stranger/tool", about: null, state: "active", repository_url: "javascript:alert(1)", links: [], people: [{ name: "Sam", handle: "sam", page: "/sam" }], agents: [], other_agents: 2, statistics: { totals: { cards_done: 3, prs_merged: null } } } },
   };
+  const viAll = [];
   win.Maity.api.get = (p) => {
+    viAll.push(p);
     if (p.startsWith("/public/")) {
       viAsked.push(p);
       if (viPages[p]) return Promise.resolve(viPages[p]);
@@ -9001,6 +9003,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !viView().querySelectorAll("a").some((a) => /javascript:/.test(a.getAttribute("href") || "")) && text(viView()).includes("Cards done: 3")
     && !text(viView()).includes("Pull requests merged"),
     "visitor: the overview, no unsafe link and no counter the hub left empty");
+  expect(!viAll.some((p) => p.startsWith("/projects/stranger")), "visitor: a stranger's public project asks no member route");
+  expect(text(header).length && !header.querySelector(".visitor-sign-in"), "visitor: signed in, the reader's own header stays, with no sign-in link");
+  expect(win.Maity.api.isPublicPath("/public/pages/stranger/tool"), "visitor: the read works after the session ended here");
   await go("#/stranger/none"); for (let k = 0; k < 4; k++) await tick();
   expect(!viView() && text(main).includes("You are not a member"), "visitor: no public page: a non-member's error stays");
   win.Maity.api.get = viGet;
