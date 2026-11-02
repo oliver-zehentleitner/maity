@@ -28,11 +28,13 @@ on:
 permissions:
   contents: read
 
-# One at a time per kind, none cancelled. GitHub keeps one running and one waiting run per group
-# and replaces a waiting run by a newer one, so a hand start for a deploy candidate has its own
-# group: the next hourly run would otherwise displace it while it waits behind a running one.
+# One at a time per kind, none cancelled. The two automatic triggers (the clock and a finished ci run) share one
+# group, so they queue behind each other instead of both deciding at once against the same last green run and starting
+# the suite twice for one commit. GitHub keeps one running and one waiting run per group and replaces a waiting run
+# by a newer one, so a hand start for a deploy candidate has its own group: the next automatic run would otherwise
+# displace it while it waits behind a running one.
 concurrency:
-  group: hub-mariadb-${{ github.event_name }}
+  group: hub-mariadb-${{ github.event_name == 'workflow_dispatch' && 'hand' || 'automatic' }}
   cancel-in-progress: false
 
 defaults:
@@ -86,7 +88,7 @@ jobs:
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "base=${base:-none}" >> "$GITHUB_OUTPUT"
           if [ "$EVENT" = workflow_dispatch ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
-          last="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow hub-mariadb.yml --branch main --status completed --limit 20 --json conclusion,event --jq '[.[]|select(.event!="workflow_dispatch")][0].conclusion // "none"')"
+          last="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow hub-mariadb.yml --branch main --status completed --limit 20 --json conclusion,event --jq '[.[]|select(.event!="workflow_dispatch" and .conclusion!="cancelled")][0].conclusion // "none"')"
           open_issues="$(gh issue list --repo "$GITHUB_REPOSITORY" --label ci-red --state open --json number --jq 'length')"
           if [ "$last" != success ] && [ "$last" != none ]; then
             echo "the last automatic run ended $last: running again"; echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
@@ -136,8 +138,8 @@ jobs:
       - run: make install
       - run: make test
 
-  # Red: one issue labelled ci-red names the range; more red runs comment on it. Green on the
-  # clock closes it. A hand run for a deploy candidate never closes the issue of main.
+  # Red: one issue labelled ci-red names the range; more red runs comment on it. A green
+  # automatic run closes it. A hand run for a deploy candidate never closes the issue of main.
   report:
     needs: [decide, hub-mariadb]
     if: always() && needs.decide.outputs.run == 'true' && needs.hub-mariadb.result != 'skipped'

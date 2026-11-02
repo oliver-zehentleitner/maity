@@ -987,8 +987,8 @@ for the newest run to finish.
 **Source:** the maintainer's decision, 2026-10-31 (left to the coordinator), on card tsk-p7dfb6e9p5wz, after the database jobs had grown to 60 to 90 minutes a run
 **Revisit when:** MariaDB breaks on main often enough that the hourly clock finds it too late, or the suite gets fast enough to be a gate again
 
-The hub's test suite against MariaDB left `ci.yml` and `ci-ok`. `.github/workflows/hub-mariadb.yml` runs it at most
-once an hour on main, and only when files under `hub/` (or the join page doc, or the workflow itself) changed since the
+The hub's test suite against MariaDB left `ci.yml` and `ci-ok`. `.github/workflows/hub-mariadb.yml` runs it on main after
+every finished `ci` run and at the latest once an hour, and only when files under `hub/` (or the join page doc, or the workflow itself) changed since the
 last green automatic run; a quiet hour is skipped. `hub-postgresql` (what production runs) and `hub-sqlite` stay per
 pull request and in `ci-ok`.
 
@@ -998,7 +998,7 @@ starts the workflow (`workflow_run`), with the same checks: one running, one wai
 clock stays as the fallback for quiet days. "Automatic run" below means either trigger; a hand start is not one.
 
 **What keeps it from rotting:** a red run opens one issue labelled `ci-red` that names the commit range since the last
-green run, and later red runs comment on it, so the change that broke it is found within the hour; a green scheduled run
+green run, and later red runs comment on it, so the change that broke it is found within the hour; a green automatic run
 closes it. The next hour always runs again after a run that did not end green or while the issue is open, so a revert
 closes the issue and a failure outside the watched files is not skipped over. A deploy or release is not allowed past a red MariaDB: the run is started by hand for that commit
 (Actions, hub-mariadb, Run workflow, with the sha), and its result is read before the deploy.
@@ -1012,8 +1012,15 @@ fault close to the change that caused it without making every author wait for it
 - Keep it in the gate and add runners: more machines for a suite whose value is the daily catch, not the per-PR one.
 - Nightly only: the culprit would sit among a day of merges instead of an hour's.
 - Remove it: self-hosters on MariaDB would learn about a break from their own upgrade.
-- One concurrency group for the hourly run and the hand start: GitHub keeps one waiting run per group, so a hand start for a
-  deploy candidate would be displaced by the next hourly run while it waits behind a running one; they have a group each.
+- One concurrency group for the automatic runs and the hand start: GitHub keeps one waiting run per group, so a hand start for a
+  deploy candidate would be displaced by the next automatic run while it waits behind a running one; they have a group each.
+- One group per trigger (`github.event_name`, the first version): the clock and a finished `ci` run then do not queue behind
+  each other, both decide at once against the same last green run, and the suite starts twice for one commit; the two
+  automatic triggers share one group.
+- Counting a `cancelled` run as the last result: a waiting run that a newer one replaced in the queue ends `cancelled`
+  and sorts ahead of the run that is still going, so the next `decide` would see "the last run was not green" and run
+  although nothing relevant changed; `cancelled` is left out when the last result is read, and the diff base is still the
+  last green run, so no change goes untested.
 - Any commit for a hand start: the sha is free text and a commit of a fork's pull request can be checked out by it, which
   would run it on the self-hosted machine without the approval of outside collaborators; only commits of main are accepted.
 - Notify agents directly from the workflow: that needs a Maity credential in the repository's secrets; the issue is the
