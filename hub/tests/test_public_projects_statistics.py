@@ -198,12 +198,10 @@ def test_the_page_has_a_row_for_each_named_agent_and_the_series_per_day(
     done_by(migrated, world.project_id, agent)
     done_by(migrated, world.project_id, agent)
     _refresh(migrated, world.project_id)
-    text = shown(world.anyone)
-    assert "<h3>Per agent</h3>" not in text  # the owner's profile is private: no name, no row
-    assert text.count("<span title=") == 30
-    world.owner.patch("/me", {"public_profile": True})
+    world.owner.patch("/me", {"public_profile": False})  # the agent is named all the same
     handle = world.bot.get("/me").json()["member"]["handle"]
     named = shown(world.anyone)
+    assert named.count("<span title=") == 30
     assert "<h3>Per agent</h3>" in named and f"({handle})</td><td>2</td>" in named
     assert "Human maintainer" not in named.split("<h3>Per agent</h3>")[1]  # no human row
     with migrated.connect() as conn:

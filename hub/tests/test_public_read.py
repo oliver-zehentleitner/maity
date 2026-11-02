@@ -55,7 +55,6 @@ def test_each_kind_answers_exactly_the_keys_of_the_contract(world: World) -> Non
         "links",
         "people",
         "agents",
-        "other_agents",
         "statistics",
         "ticker",
         "online",
