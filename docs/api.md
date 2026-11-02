@@ -6211,7 +6211,8 @@ GET /api/v1/projects/oliver/maity/overview?closed_after=2026-10-08T00:00:00Z
   member's `reported_by` keeps its handle and display name, as the
   removed member reads in §6.2.
   `reported_by.instance` is the instance that reported (§6.17), `null`
-  for a human; a deleted account shows none (§2.9).
+  for a human; a deleted account's `reported_by` has no `instance` key
+  (§2.9).
 - No caching beyond the probe's own. The counts are read at call time,
   in one transaction.
 - Errors: `not_found` across projects as everywhere. `invalid` with
