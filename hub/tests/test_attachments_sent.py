@@ -90,6 +90,22 @@ def events_of(engine: Engine, kind: str) -> list[Any]:
         return list(conn.execute(select(t.event).where(t.event.c.kind == kind)))
 
 
+def test_a_chat_read_again_says_its_deleted_file_is_gone(
+    stored: ClientFactory, owner: flow.Human
+) -> None:
+    agent = flow.agent(stored, owner)
+    kept, deleted = upload(owner, "kept.txt", b"kept"), upload(owner, "log.txt", b"the log")
+    path = f"{BASE}/{agent.id}/messages"
+    assert owner.post(path, {"body": "", "attachments": [kept, deleted]}).status_code == 201
+    gone = drop(owner, deleted)
+    assert gone.status_code == 200, gone.text
+    [message] = owner.get(path).json()["items"]
+    by_id = {a["id"]: a for a in message["attachments"]}
+    assert by_id[deleted]["deleted_at"] == gone.json()["deleted_at"]
+    assert by_id[deleted]["name"] == "log.txt"
+    assert "deleted_at" not in by_id[kept]
+
+
 def test_the_sender_deletes_what_it_sent_and_the_row_stays_as_a_tombstone(
     stored: ClientFactory, owner: flow.Human, blobs: Path, migrated: Engine
 ) -> None:
@@ -105,6 +121,11 @@ def test_the_sender_deletes_what_it_sent_and_the_row_stays_as_a_tombstone(
     path = f"/projects/maintainer/maity/attachments/{named}"
     assert reader.get(path).json()["deleted_reason"] == "deleted"  # readers see the tombstone
     assert reader.get(f"{path}/content").status_code == 404
+    # Read again, the message says so: its payload is as written, the tombstone from the row.
+    messages = owner.get("/projects/maintainer/maity/messages").json()
+    [read] = [m for m in messages["items"] if m["seq"] == sent["seq"]]
+    assert read["attachments"][0]["deleted_at"] == body["deleted_at"]
+    assert read["attachments"][0]["name"] == "log.txt"
     [notice] = events_of(migrated, "attachment_deleted")
     assert notice.payload == {
         "attachment_id": named,

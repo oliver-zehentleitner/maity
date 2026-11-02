@@ -273,6 +273,33 @@ def view(conn: Connection, rows: list[Any], *, whole: bool = True) -> list[dict[
 MESSAGE_MAX = 10  # attachments one message may name (§1.7)
 
 
+def with_tombstones(conn: Connection, payloads: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Messages as read: a deleted attachment carries `deleted_at` (§8.7). The stored payload
+    stays as written, the log is append-only, so the tombstone comes from its row."""
+    ids = {a["id"] for p in payloads for a in p.get("attachments") or []}
+    if not ids:
+        return payloads
+    gone = dict(
+        conn.execute(
+            select(t.attachment.c.id, t.attachment.c.deleted_at).where(
+                t.attachment.c.id.in_(ids), t.attachment.c.deleted_at.is_not(None)
+            )
+        ).all()
+    )
+    if not gone:
+        return payloads
+    return [
+        {
+            **p,
+            "attachments": [
+                {**a, "deleted_at": clock.rfc3339(gone[a["id"]])} if a["id"] in gone else a
+                for a in p.get("attachments") or []
+            ],
+        }
+        for p in payloads
+    ]
+
+
 def meta(row: Any) -> dict[str, Any]:
     """What a message carries of an attachment: metadata only, never content or a URL."""
     return {

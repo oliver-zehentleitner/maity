@@ -239,7 +239,7 @@ window.Maity = window.Maity || {};
         append(li, note);
         note.focus();
       };
-      if (a.removed) {
+      if (a.removed || a.deleted_at) {
         append(li, h("span", { class: "muted" }, M.t("attach.removed", { name: a.name })));
         append(box, li);
         return;
