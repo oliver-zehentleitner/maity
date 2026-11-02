@@ -10999,10 +10999,9 @@ operator can configure those forges. Image hosts: for GitHub
 `repository-images.githubusercontent.com` (social previews); for the
 others the forge's own host. An image URL on any other host (a Gravatar
 fallback, a CDN the hub does not know) is no image. The API reads use
-the grant §11.4 picks for the repository; without one the hub reads
-without a token where the forge allows it (a public repository on GitHub:
-the REST read works, GraphQL does not, so there is no banner without a
-token), and otherwise has no image. The GraphQL read is a `POST` that
+the grant §11.4 picks for the repository — the instance token only for a
+project in the operator's own namespaces; without a grant the hub reads
+nothing from the forge and has no image (§11.4, `no_grant`). The GraphQL read is a `POST` that
 only queries; the hub still never writes to the forge.
 
 What the hub accepts, whatever the forge said:
@@ -11088,8 +11087,9 @@ never anything else of an entry.
 line inside the `keep-the-why:config` block of the repository's root
 `.keep-the-why` on the default branch, read through the forge's contents
 API (`GET /repos/{owner}/{repo}/contents/.keep-the-why` on GitHub) with
-the grant §11.4 picks for the repository, without one where the forge
-allows (a public repository), at most 64 KiB. There is no project setting that
+the grant §11.4 picks for the repository (the instance token only for a
+project in the operator's own namespaces), at most 64 KiB; without a
+grant nothing is read (§11.4, `no_grant`). There is no project setting that
 names or overrides the URL: the repository is the single source of truth,
 as in Keep the Why itself. No repository, no root `.keep-the-why`, or no
 `dashboard-state:` line in it: `ktw_not_configured`. A state URL must be
