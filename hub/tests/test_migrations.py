@@ -1118,10 +1118,12 @@ def test_the_mail_factor_downgrade_refuses_while_email_is_stored(engine: Engine)
 
 def test_profiles_public_switches_every_account_on_and_indexes_every_page(engine: Engine) -> None:
     """20261102110000 up: every account's `public_profile` is on (§16.9, tsk-my5gvj4warte), a
-    new account defaults to on, and every stored page is `indexed` until it renders again."""
-    migrate(engine, "20261102100000_project_probe_via")
+    new account defaults to on, and every stored page is `indexed` until it renders again. It
+    migrates to the head afterwards, so the new account is made as the current schema makes it.
+    The booleans are SQL's `false`/`true`: PostgreSQL casts no integer to a boolean."""
+    migrate(engine, _before(engine, "20261102110000_profiles_public"))
     with engine.begin() as conn:
-        for n, chosen in (("a", 0), ("b", 1)):
+        for n, chosen in (("a", "false"), ("b", "true")):
             conn.exec_driver_sql(
                 "INSERT INTO human (id, handle, display_name, password_hash, created_at, "
                 f"public_profile) VALUES ('hum-{n}', '{n}x', 'N', 'x', '2026-11-01 00:00:00', "
