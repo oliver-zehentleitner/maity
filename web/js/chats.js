@@ -5,7 +5,9 @@
 // in the hub's order (four bands: pinned with unread, unpinned with unread,
 // quiet pinned, the rest), each with its project; a human pins one here too. A conversation opens
 // in place (/chats/<owner>/<slug>/<id>) with chat.js's own pane, in its project's
-// context.
+// context. Going from one chat to another changes the pane alone: the page, the
+// list and every project's context stay, and the pane being left stands dimmed until
+// the next is drawn.
 //
 // Live updates hold no events feed of any project: the notifications stream
 // (js/notify.js), which the page reads anyway, tells that something changed;
@@ -33,9 +35,9 @@ window.Maity = window.Maity || {};
       : ranked(a) ? -1 : ranked(b) ? 1 : a.chat.title.localeCompare(b.chat.title)));
   }
 
-  // The merged list. pctxs: full name -> the project's context; open: the
-  // open conversation's {slug: its project's full name, id}, or null. Shaped as chat.js's own list.
-  function globalList(pctxs, open) {
+  // The merged list. pctxs: full name -> the project's context; opened: what
+  // gives the open conversation's {slug: its project's full name, id}, or null. Shaped as chat.js's own list.
+  function globalList(pctxs, opened) {
     const P = M.chatParts;
     const ul = h("ul", { class: "chat-list" });
     const status = M.statusLine();
@@ -44,8 +46,9 @@ window.Maity = window.Maity || {};
     none.hidden = true;
     // slug -> { chats, groups } as last read.
     const read = {};
-    const currentKey = open ? open.slug + "/" + open.id : null;
     const draw = () => {
+      const open = opened();
+      const currentKey = open ? open.slug + "/" + open.id : null;
       // A redraw keeps the keyboard on the same chat's link.
       const focused = document.activeElement && ul.contains && ul.contains(document.activeElement)
         ? document.activeElement.getAttribute("href") : null;
@@ -119,12 +122,13 @@ window.Maity = window.Maity || {};
       h("div", { class: "toolbar" }, h("h2", null, M.t("chats.title"))),
       h("p", { class: "muted" }, M.t("chats.hint")),
       none, failed, ul, status.el);
-    return { el, refresh, groups: () => (open && read[open.slug] ? read[open.slug].groups : []) };
+    const shown = (open) => (open && read[open.slug]) || { chats: [], groups: [] };
+    return { el, refresh, draw, groups: () => shown(opened()).groups, chats: () => shown(opened()).chats };
   }
 
   M.views.chats = async function (ctx, root, args) {
-    const [owner, name, id] = args || [];
-    const open = owner && name && id ? { slug: owner + "/" + name, id } : null;
+    const chatAt = ([owner, name, id] = []) => (owner && name && id ? { slug: owner + "/" + name, id } : null);
+    let open = chatAt(args);
     // Each project's context, read once when the view opens; one that fails is said, the rest shown.
     const pctxs = {};
     const unreadable = [];
@@ -138,8 +142,10 @@ window.Maity = window.Maity || {};
       .filter((p) => pctxs[p.full_name] && pctxs[p.full_name].memberById && pctxs[p.full_name].memberById[memberId])
       .map((p) => ({ slug: p.full_name, name: p.name || p.full_name, view: (ctx.projectViews || {})[p.full_name] }));
     Object.values(pctxs).forEach((x) => { x.projectsOf = projectsOf; });
-    const list = globalList(pctxs, open);
-    const pctx = open ? pctxs[open.slug] : null;
+    const list = globalList(pctxs, () => open);
+    // The pane on screen: its project's context with timers and listeners of its own.
+    let pane = null;
+    let paneSeq = 0;
 
     // The stream says something changed: the list once it settles, and the
     // open conversation what came after it, as its project's feed would.
@@ -156,10 +162,10 @@ window.Maity = window.Maity || {};
         await Promise.all(Object.values(pctxs).map((x) => M.api.getAll(x.base + "/members")
           .then((r) => { M.withMembers(x, r.items); }, () => null)));
       }
-      if (pctx) {
+      if (pane) {
         const changed = [{ kind: "message", seq: Number.MAX_SAFE_INTEGER, actor: { member_id: open.id }, payload: { type: "chat", conversation_id: open.id } },
           { kind: M.chatParts.RESYNC }];
-        await Promise.all(pctx.listeners.map((fn) => Promise.resolve(fn(changed)).catch(() => null)));
+        await Promise.all(pane.ctx.listeners.map((fn) => Promise.resolve(fn(changed)).catch(() => null)));
       }
       await list.refresh();
     }
@@ -178,20 +184,63 @@ window.Maity = window.Maity || {};
     let settle = null;
     const nudge = () => { window.clearTimeout(settle); settle = window.setTimeout(() => run(false), SETTLE_MS); };
     const unsubscribe = M.notify.subscribe(nudge);
-    ctx.onDispose(() => { disposed = true; window.clearTimeout(settle); unsubscribe(); });
+    ctx.onDispose(() => { disposed = true; window.clearTimeout(settle); unsubscribe(); paneSeq++; if (pane) pane.close(); });
     // Every project's chats each round: none while the tab is hidden.
     ctx.every(M.chatParts.LIST_MS, () => (document.visibilityState === "hidden" ? null : run(true)));
     ctx.every(NOTICE_MS, () => (document.visibilityState === "hidden" ? null : M.notify.read().catch(() => null)));
 
-    if (!open || !pctx) {
-      append(root, h("div", { class: "chat-layout" + (open ? " open" : "") }, list.el,
-        open ? h("p", { class: "error", role: "alert" }, M.t("chats.no_project", { project: open.slug }))
-          : h("p", { class: "chat-none muted" }, M.t("chats.pick"))));
-      await list.refresh();
-      return;
+    const layout = h("div", { class: "chat-layout" }, list.el);
+    append(root, layout);
+    // What stands beside the list: the view's parts go in together, once they are ready.
+    const place = (parts) => {
+      layout.className = "chat-layout" + (open ? " open" : "");
+      Array.from(layout.childNodes).filter((c) => c !== list.el).forEach((c) => layout.removeChild(c));
+      append(layout, parts);
+    };
+    let fitted = false;
+    // Draws what the address names; a newer one takes over from one still reading.
+    async function showPane() {
+      const seq = ++paneSeq;
+      const stale = () => seq !== paneSeq || disposed;
+      list.draw();
+      if (pane) pane.close();
+      pane = null;
+      Array.from(layout.childNodes).filter((c) => c !== list.el).forEach((c) => { c.setAttribute("inert", ""); c.setAttribute("aria-busy", "true"); });
+      const pctx = open ? pctxs[open.slug] : null;
+      if (!pctx) {
+        place(open ? h("p", { class: "error", role: "alert" }, M.t("chats.no_project", { project: open.slug }))
+          : h("p", { class: "chat-none muted" }, M.t("chats.pick")));
+        return;
+      }
+      const timers = [];
+      const sub = Object.create(pctx);
+      sub.listeners = [];
+      sub.onEvents = (fn) => { sub.listeners.push(fn); };
+      sub.every = (ms, fn) => { if (!stale()) timers.push(window.setInterval(fn, ms)); };
+      pane = { ctx: sub, close: () => timers.forEach((t) => window.clearInterval(t)) };
+      // The list is read after the pane is drawn, not on its way: nothing waits for it.
+      let drawn = false;
+      const paneList = Object.assign({}, list, { refresh: (...a) => (drawn ? list.refresh(...a) : Promise.resolve()) });
+      const holder = h("div");
+      await M.views.chat(sub, root, [open.id], { list: paneList, holder, stale });
+      if (stale()) return;
+      place(Array.from(holder.childNodes));
+      drawn = true;
+      if (!fitted) { fitted = true; M.chatParts.fitToScreen(layout); }
+      list.refresh();
     }
     await list.refresh();
-    await M.views.chat(pctx, root, [open.id], { list });
+    await showPane();
+    // Within this view the address changes the pane alone. A project that is
+    // not on this page, or a failed read, draws the page anew, which says what is wrong.
+    ctx.followRoute((where) => {
+      if (where.scope !== "chats") return false;
+      const next = chatAt(where.args);
+      if (next && !pctxs[next.slug]) return false;
+      open = next;
+      showPane().then(() => (open ? M.notify.read() : null)).catch(() => ctx.refresh());
+      return true;
+    });
   };
 
   M.chats = { chatLink };
