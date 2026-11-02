@@ -15331,6 +15331,18 @@
     "en": "d85de28db09239b8",
     "text": "95c0b267e5471acc"
   },
+  "swarm.awake": {
+    "en": "83e874304bc0ca30",
+    "text": "51c4fe7c7a7ea444"
+  },
+  "swarm.board.title": {
+    "en": "2dd4ffe67a06f0f1",
+    "text": "e92d17a8a3769f1d"
+  },
+  "swarm.cards_created": {
+    "en": "105bfb1452ef9404",
+    "text": "3af25a43fc92d68f"
+  },
   "swarm.cards_done": {
     "en": "7ffce06a8e383ba8",
     "text": "56cd3cc705c2bdbf"
@@ -15395,6 +15407,10 @@
     "en": "8ccd96642610a39a",
     "text": "1827335e795011c2"
   },
+  "swarm.messages": {
+    "en": "2977f5ebddd21011",
+    "text": "347bb0f543ea4966"
+  },
   "swarm.not_seen": {
     "en": "c0d5d398a4ca6f8a",
     "text": "0b6d1b82a2d46fba"
@@ -15419,6 +15435,10 @@
     "en": "e90294e2a0ec39eb",
     "text": "6abd121d43804eaa"
   },
+  "swarm.prs_merged": {
+    "en": "98f741fd479656f7",
+    "text": "a2f582387d675106"
+  },
   "swarm.read_failed": {
     "en": "9eff96dfc71831e4",
     "text": "7842b9792aafeda1"
@@ -15426,6 +15446,10 @@
   "swarm.reading": {
     "en": "26c77b8aa1b262c3",
     "text": "56a40a051fbbd96c"
+  },
+  "swarm.review_results_per_pr": {
+    "en": "dea54f0832d83079",
+    "text": "757d4ed80165c05e"
   },
   "swarm.since": {
     "en": "e89ac15b211e5ce5",
@@ -15438,6 +15462,26 @@
   "swarm.table": {
     "en": "6bcbb929257d0599",
     "text": "c6af32c52737155f"
+  },
+  "swarm.team.agents": {
+    "en": "21cf98a292e94015",
+    "text": "7f662265ecc2b71c"
+  },
+  "swarm.team.humans": {
+    "en": "0c43b9248afea1d5",
+    "text": "34fe1533f72a354c"
+  },
+  "swarm.team.instances": {
+    "en": "468a5f1b13f3feda",
+    "text": "40abb70f7169c4f1"
+  },
+  "swarm.team.title": {
+    "en": "e7d83e9b7d7b3f36",
+    "text": "985d60d595660554"
+  },
+  "swarm.team.value": {
+    "en": "9175c8157180a148",
+    "text": "9175c8157180a148"
   },
   "swarm.title": {
     "en": "65d6a1591c092df5",

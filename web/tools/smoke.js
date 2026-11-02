@@ -2907,6 +2907,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !swBox().querySelectorAll("a").some((a) => /as=public/.test(a.getAttribute("href") || "")), "swarm: cards done per day, the coverage and samples notes, no public page");
   const swPoints = () => swBox().querySelector(".swarm-per-day").childNodes[1].childNodes[0].getAttribute("points").split(" ");
   expect(swPoints().length === 30 && swPoints()[29] === "158.0,6.8", "swarm: the per-day line runs oldest to newest, the newest day at the right " + swPoints().slice(-1));
+  // The swarm as a whole (§6.22): the team and the board now, the hours awake, created and merged per day, the messages.
+  const swFigures = swBox().querySelectorAll(".swarm-figures").map((f) => text(f));
+  expect(JSON.stringify(swFigures) === JSON.stringify(["Team nowAgents3 · 2 onlineHumans1 · 1 onlineInstances4 · 3 online", "Board nowopen5in progress2review1blocked1"])
+    && text(swBox().querySelector(".swarm-awake")) === "Agents were online in 22 of the last 24 hours.",
+    "swarm: the team and the board now, and the hours an agent was online " + JSON.stringify(swFigures));
+  const swLine = (c) => swBox().querySelector(".swarm-per-day." + c);
+  expect(text(swLine("swarm-created")).startsWith("61 cards created") && swLine("swarm-created").childNodes[1].childNodes[0].getAttribute("points").split(" ").length === 30
+    && text(swLine("swarm-merged")).startsWith("23 PRs merged")
+    && text(swBox().querySelector(".swarm-messages")) === "Messages: 420 chat · 310 notices · 56 review results · 55 other"
+    && text(swBox().querySelector(".swarm-reviews-per-pr")) === "Review results per merged PR: 2.4",
+    "swarm: cards created and PRs merged per day, the messages by type, review results per merged PR " + text(swLine("swarm-created")));
   const swBefore = swBox();
   let swFeed = [];
   win.Maity.api.get = (p) => {
@@ -2917,6 +2928,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(swBox(), "7 days").click(); for (let k = 0; k < 4; k++) await tick();
   expect(swGets[swGets.length - 1] === "/projects/maintainer/maity/swarm?days=7" && btn(swBox(), "7 days").getAttribute("aria-pressed") === "true" && swPoints().length === 7,
     "swarm: the switch reads 7 days and draws them");
+  expect(swLine("swarm-created").childNodes[1].childNodes[0].getAttribute("points").split(" ").length === 7
+    && swLine("swarm-merged").childNodes[1].childNodes[0].getAttribute("points").split(" ").length === 7,
+    "swarm: the created and merged lines follow the switch to 7 days");
   // A redraw of the counts (a card changed) keeps the section as it is: no new read, the window kept.
   const swReads = swGets.length;
   swFeed = [{ seq: 9990, kind: "task_updated", actor: { member_id: "agt-b" }, payload: {} }];

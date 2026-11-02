@@ -694,6 +694,7 @@ NON_WAKING = frozenset(
         "attachment_deleted",  # a deleted file wakes nobody (§8.7)
         "jour_fixe_skipped",  # a skip and a series change wake nobody (§20.9)
         "jour_fixe_series_changed",
+        "maintenance_cancelled",  # nothing to plan around any more (§16.12)
     }
 )
 

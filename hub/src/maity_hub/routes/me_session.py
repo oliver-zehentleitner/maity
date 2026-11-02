@@ -29,6 +29,7 @@ from maity_hub import (
     instances,
     ktw_skill,
     languages,
+    maintenance,
     memory,
     mentions,
     moderation,
@@ -651,6 +652,8 @@ def _packet(
             "rules_version": project.rules_version,
         },
         "rules": rules_block,
+        # The hub's maintenance window while upcoming or running, for every agent (§16.12).
+        "maintenance": maintenance.view(maintenance.current(conn)),
         "preferences": preferences_block,
         "areas": areas,
         **_setup_block(conn, project),
