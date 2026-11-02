@@ -236,6 +236,43 @@ through the probe gives that without a second source of truth.
 - Only a link to the file: a reader would leave the hub for every
   contract, which is what the request was about.
 
+## The whole contract is read inside Maity from a project setting, whole or not at all
+
+**Id:** 7f6ed086-6faf-44f1-81d8-c25ffaa4011a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's wish in the Maity chat, 2026-11-02, that the overview link the contract and better show it rendered inside Maity (card tsk-yhbmz7mjng7n); the coordinator's go the same day for the implementer to write the contract; contract in `docs/api.md` §6.8, §6.1, §6.11, §16.11
+**Revisit when:** a project's contract outgrows 4 MiB, or a project keeps its contract in more than one file
+**See:** cards.md#a-contracts-text-stays-in-the-repository-the-card-shows-the-section-read-from-it — f29e3cb3-12ab-4af6-83f1-9b04dbaeb578 — as of 2026-11-02
+
+The overview links the project's contract and shows it in a view of its
+own, read-only: the hub reads the file a project setting names
+(`settings.contract_path`, default `docs/api.md`) through the probe at
+the default branch's commit and answers it whole, with a table of
+contents and an anchor per heading, under an `ETag` over the path and
+the file's bytes. The file cap for this read and for a card's section is
+4 MiB instead of 1 MiB; a larger file is refused, never cut.
+
+**Reason:** the wish is confirmed; the shape is the implementer's
+proposal and stands as inferred until the arbiter's review settles it. A
+setting is the one place that says which file is the contract when no
+card names one. The whole file in one answer keeps the browser's search
+over the entire contract and costs one read, which the `ETag` makes
+cheap to repeat while the file does not change. The cap moved because
+this project's own contract passed 1 MiB on 2026-11-02, so a card's
+section read already refused it; cutting instead would show part of a
+contract as if it were all of it.
+
+**Rejected alternatives:**
+- The table of contents plus one section per request: smaller answers,
+  but no search across the contract, and every jump a new read.
+- The first of `ticker.contract_files` as the file: ties the view to an
+  opt-in ticker and to a list whose order means nothing.
+- The file taken from the contract cards' `path`: no card, no contract;
+  several paths, no answer.
+- The 1 MiB cap kept, with the text cut: a cut contract reads as whole.
+
 ## Agents watch cards too: a status change or an update message wakes everyone waiting on the card
 
 **Id:** 95001efe-eb05-4bd0-af03-ffa42b6dbe9e
