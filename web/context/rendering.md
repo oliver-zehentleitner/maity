@@ -579,6 +579,39 @@ stop under reduced motion by the stylesheet itself. The file under
 `web/landing/`: a hub serving only the landing page, without the
 dashboard's files, would have no script.
 
+## English is always loaded; the reader's language comes as its own script, chosen by one rule in one place
+
+**Id:** 7e1c4f02-6a3b-4d55-9b1e-2f0c8d7a41b6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-ya56x9gx986r, 2026-11-01; docs/api.md §6.2; `en.json` holds 3326 keys, 208 KB, 54 KB compressed
+**Revisit when:** a language's file grows so that its load shows on the first paint, or a catalog is complete enough that English need not come with it
+
+`js/i18n/en.js` stays in `index.html`, since a key without a translation reads in English. Another
+language is one script more, loaded before the first view (`M.i18n.ready`), only if
+`js/i18n/languages.js` names it, so no value from an address ever becomes a script's path.
+`M.api` hands every answer of `GET /auth/session` to `M.i18n.follow`, and a 401 hands it null, so
+every view, the invitation's and the registration's among them, gets the same rule without asking.
+Plural forms follow the catalog's language, not the locale of the numbers: a German browser reading
+the English catalog needs English forms.
+
+The registration sends `interface_language` only for an explicit choice (the picker on `/register`,
+`?lang=`, or the one kept in the browser). Without one it leaves the field out, so the account keeps
+`null` and goes on following the browser.
+
+**Reason:** the visible language must be known before a view draws its words, and several views read
+the session themselves. A catalog per language keeps nine languages off every page load.
+
+**Rejected alternatives:**
+- Always sending the page's language at registration: every account would get `en` while it is the
+  only catalog, which later could not be told apart from a real choice, and the hub's mails would then
+  ignore `language` (§6.2).
+- All ten in `index.html`: about 2 MB of script before anything is drawn, for one language used.
+- Asking in `render()` after its session read: `invite.js` and `register.js` draw before that line.
+- Picking the language in the hub before sign-in: an explicit choice is kept in the browser, where
+  the hub does not see it, so the dashboard chooses and passes `lang` to the page texts (§16.7.4).
+
 ## A missing translation is a note until the release; a wrong one fails at once
 
 **Id:** 3d9a6c17-52e8-4b0f-a7c4-91e6f2b08d35
@@ -599,6 +632,31 @@ English: when the translation's text changes it follows today's English, with no
   file would read as new translations.
 - A command that marks a language as translated: one run after any edit would mark every key current.
 
+## What counts as prose: sentences by shape wherever they stand, a lone word only by where it stands
+
+**Id:** c14e7b90-3a6d-4f28-8e15-7d2a60b9f3c1
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** review findings on card tsk-ya56x9gx986r, 2026-11-02: `"Pick a conversation."` and `" reads what you write here…"` were not counted, so a baseline of zero would have proved nothing
+**Revisit when:** the baseline reaches zero, or a false positive cannot be worded around
+
+`prose()` in `tools/check.py` counts a literal of three words or more that starts with a capital or ends
+like a sentence wherever it stands; no context hides one. Other literals are excluded by shape (class
+lists, paths, selectors) and by the code before them (`class:`, `===`, `querySelector(`). A lone lowercase
+word counts only as a piece of a sentence (`"to "`) or where a person reads it (`textContent =`, the content
+of `h()`, `title:`). Others stay with the reviewer: `"online"` beside a variable cannot be told from a key.
+A `#` comment with words in it counts whatever the line is, since a person reads it in the generated file.
+
+`prose()` stays an approximation on purpose: a lone word in an `h()` call over several lines is not seen,
+because `before` holds one line. The ratchet shows the direction. The proof that nothing is left untranslated
+is the run with a pseudo catalog, so further single cases are not chased here.
+
+**Rejected alternatives:**
+- Counting every lone word: thousands of keys and values, and the ratchet would mean nothing.
+- Shape alone: `"Text (Markdown)"` and `", in "` read like code to it, `"reply primary"` like words.
+- A browser run that collects what is on screen: it sees only the views a run opens.
+
 ## A refusal is translated by code in `ApiError`; in English the hub's message stays
 
 **Id:** 8b52e0d4-1f7a-4c69-b3d8-60a7c9e1f24d
@@ -611,7 +669,9 @@ English: when the translation's text changes it follows today's English, with no
 `ApiError` asks `M.errorWords` once, so no view changes. The catalog has one sentence per code of §1.3
 and a few for `details.reason`: it says the kind of refusal. The hub's message says the case, naming a
 card or a limit, and a translation loses that. So English readers keep the hub's message, and only a
-translated language gets the kind.
+translated language gets the kind. A `details.reason` the catalog knows comes before the code, since
+under `forbidden` it says more. Each code is written out as `M.tOwn("error.<code>")`, because
+`tools/check.py` reads keys only as literals.
 
 **Rejected alternatives:**
 - Translating the roughly 795 messages: a sentence per place in the hub, in ten languages, with values
@@ -619,6 +679,7 @@ translated language gets the kind.
 - Using the catalog's sentence in English too: every English reader would lose the specifics for the
   sake of one rule.
 - A map in every view: 50 places to keep in step.
+- One computed key per code: the key check could not see it, and every `error.*` key would read as unused.
 
 ## Words come from a catalog per language, one key per sentence; new text in the views is held back by a ratchet
 

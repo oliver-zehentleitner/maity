@@ -9,7 +9,7 @@ import threading
 
 from sqlalchemy import Engine, select
 
-from maity_hub import clock
+from maity_hub import clock, worker_runs
 from maity_hub import tables as t
 from maity_hub.events import transaction
 from maity_hub.jourfixe import rounds
@@ -50,6 +50,8 @@ class Worker:
     def _run(self) -> None:
         while not self._stop.wait(self.interval):
             try:
-                sweep(self.engine)
+                with worker_runs.claim(self.engine, "jour-fixe", self.interval) as held:
+                    if held is not None:
+                        sweep(self.engine)
             except Exception:
                 log.exception("the jour fixe sweep failed")

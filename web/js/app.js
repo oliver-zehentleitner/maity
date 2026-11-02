@@ -134,7 +134,7 @@ window.Maity = window.Maity || {};
     // The two sections a notification links into (§18.2): Registration, and Reports with one report opened;
     // and Pages with a part of it (tsk-fct4awzw3k30).
     if (parts[0] === "admin" && (parts[1] === "registration" && !parts[2] || parts[1] === "reports" && !parts[3]
-      || parts[1] === "pages" && !parts[3] && (!parts[2] || ["landing", "legal", "site"].includes(parts[2])))) {
+      || parts[1] === "pages" && !parts[3] && (!parts[2] || ["landing", "legal", "sign-in", "sign-up", "site"].includes(parts[2])))) {
       return { scope: "instance-admin", section: parts[1], args: parts.slice(2) };
     }
     if (parts[1] && !OWN_WORDS.includes(parts[0])) {
@@ -335,6 +335,7 @@ window.Maity = window.Maity || {};
     renderLogin(document.getElementById("main"), "Your session has ended. Sign in again to go on where you were.");
   };
 
+  let keptHandle = "";
   function renderLogin(main, note) {
     document.title = "Sign in · Maity";
     append(clear(document.getElementById("header")), h("div", { class: "bar" },
@@ -342,6 +343,15 @@ window.Maity = window.Maity || {};
       M.api.source === "fixtures" ? h("span", { class: "source" }, "Fixtures") : null,
       themeMenu()));
     const handle = h("input", { id: "login-handle", name: "handle", autocomplete: "username", required: true });
+    handle.value = keptHandle;
+    keptHandle = "";
+    // The page's language (§6.2), as on /register: the form is drawn again in it, the handle kept, the password not.
+    const site = M.interfacePicker ? M.interfacePicker("login-interface", M.i18n.language, false) : null;
+    if (site) site.addEventListener("change", async () => {
+      keptHandle = handle.value;
+      await M.i18n.choose(site.value);
+      renderLogin(main, note);
+    });
     const password = h("input", { id: "login-password", name: "password", type: "password", autocomplete: "current-password", required: true });
     const status = statusLine();
     const form = h("form", {
@@ -360,9 +370,10 @@ window.Maity = window.Maity || {};
         }
       },
     },
-    h("h2", null, "Sign in"),
+    M.authPages.pitch("sign_in", "Sign in"),
     h("label", { for: "login-handle" }, "Handle"), handle,
     h("label", { for: "login-password" }, "Password"), password,
+    site ? h("label", { for: "login-interface" }, M.t("language.interface.label")) : null, site,
     h("button", { type: "submit" }, "Sign in"),
     status.el);
     // A code from another device or a link by mail, as the hub offers them
@@ -1795,6 +1806,7 @@ window.Maity = window.Maity || {};
     Array.from(main.childNodes).forEach((n) => { if (n.setAttribute) n.setAttribute("inert", ""); });
     let where = { scope: "unknown" };
     let ctx;
+    await M.i18n.ready;
     try {
       where = parseRoute();
       if (where.scope === "invite" && M.invite) { await M.invite.page(main, document.getElementById("header"), where.token); return; }
@@ -1809,7 +1821,7 @@ window.Maity = window.Maity || {};
         // is the hub's own static page (§16.7), never drawn here.
         if (err.status === 401) {
           // A public page of this address, read-only (§16.9); otherwise the login.
-          if (M.visitor && await M.visitor.page(main, document.getElementById("header"), M.route.current().path, { signedIn: false, brand: brandTitle(false), live: () => seq === renderSeq })) return;
+          if (M.visitor && await M.visitor.page(main, document.getElementById("header"), where, M.route.current().path, { signedIn: false, brand: brandTitle(false), live: () => seq === renderSeq })) return;
           if (seq === renderSeq) renderLogin(main);
           return;
         }
@@ -1848,7 +1860,7 @@ window.Maity = window.Maity || {};
       if (moved) { M.route.go(moved, { replace: true }); return; }
       // Someone else's project may have a public page (§16.9): the reader sees it, read-only.
       if (where.scope === "project" && !me.projects.some((p) => p.full_name === where.slug) && M.visitor
-        && await M.visitor.page(main, document.getElementById("header"), M.route.current().path, { signedIn: true, brand: brandTitle(true), live: () => seq === renderSeq })) return;
+        && await M.visitor.page(main, document.getElementById("header"), where, M.route.current().path, { signedIn: true, brand: brandTitle(true), live: () => seq === renderSeq })) return;
       if (seq !== renderSeq) return;
       // Notifications never stop the page: a failed read is said in the
       // notice (watch), and the counts stay as /me has them.
@@ -2005,6 +2017,7 @@ window.Maity = window.Maity || {};
       h("div", { class: "page-failed-actions" }, signIn, again));
   }
 
+  M.redraw = render;
   M.errorBox = errorBox;
   M.withMembers = withMembers;
   M.logout = logout;

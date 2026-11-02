@@ -32,6 +32,7 @@ from maity_hub import (
     paths,
     public_pages,
     registration,
+    worker_runs,
 )
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id
@@ -501,8 +502,11 @@ class Worker:
     def _run(self) -> None:
         while not self._stop.wait(self.interval):
             try:
-                with self.engine.begin() as conn:
-                    expire(conn, self.hub)
-                    campaigns.purge(conn)  # the origins after 30 days, the sums after 400
+                with worker_runs.claim(self.engine, "registrations", self.interval) as held:
+                    if held is None:
+                        continue
+                    with self.engine.begin() as conn:
+                        expire(conn, self.hub)
+                        campaigns.purge(conn)  # the origins after 30 days, the sums after 400
             except Exception:
                 log.exception("the registration expiry sweep failed")

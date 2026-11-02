@@ -96,6 +96,30 @@ window.Maity = window.Maity || {};
   }
   M.notListening = { MINUTES, minutesOk };
 
+  // The language of the dashboard and of the hub's own texts (§6.2), apart from the one agents
+  // write in; no form while there is only one to have.
+  function interfaceForm() {
+    const session = M.api.session();
+    const current = session && session.member && session.member.interface_language;
+    const select = M.interfacePicker("interface-language", current || "", true);
+    if (!select) return null;
+    const status = M.statusLine();
+    const button = h("button", { type: "submit" }, M.t("language.interface.save"));
+    return h("form", { class: "inline-form interface-language", onsubmit: async (e) => {
+      e.preventDefault();
+      button.disabled = true;
+      status.busy(M.t("notify.saving"));
+      try {
+        await M.api.patch("/me", { interface_language: select.value || null });
+        M.redraw();  // reads the session again, and with it the language
+      } catch (err) {
+        button.disabled = false;
+        status.fail(M.t("language.interface.failed"), err);
+      }
+    } }, h("h3", null, M.t("language.interface.title")), h("label", { for: "interface-language" }, M.t("language.interface.label")), select,
+    h("p", { class: "hint" }, M.t("language.interface.hint")), button, status.el);
+  }
+
   M.notifySettings = async function (ctx) {
     const box = h("section", { class: "notify-settings", "aria-labelledby": "notify-heading" });
     const heading = h("h3", { id: "notify-heading", class: "notify-heading", tabindex: "-1" }, M.t("notify.title"));
@@ -114,6 +138,8 @@ window.Maity = window.Maity || {};
       // Each language by its own name, as its readers write it: no key.
       const picker = M.languagePicker("personal-language", settings.email.language);
       const language = picker.select;
+      const own = interfaceForm();
+      if (own) append(box, own);
       const languageStatus = M.statusLine();
       const button = h("button", { type: "submit" }, M.t("notify.language.save"));
       append(box, h("form", { class: "inline-form personal-language", onsubmit: async (e) => {
@@ -276,6 +302,21 @@ window.Maity = window.Maity || {};
     return languages;
   };
 
+  M.languages = loadLanguages;
+
+  // The languages the dashboard has, each by its own name; null while there is only one.
+  // withBrowser adds the choice of no language of one's own, value "".
+  M.interfacePicker = (id, current, withBrowser) => {
+    if (M.i18n.available.length < 2) return null;
+    const select = h("select", { id },
+      withBrowser ? h("option", { value: "" }, M.t("language.interface.browser")) : null,
+      // A value chosen where no catalog is here yet stays shown, or saving would clear it.
+      [...M.i18n.available, ...(current && !M.i18n.available.includes(current) ? [current] : [])]
+        .map((tag) => h("option", { value: tag }, M.languageName(tag))));
+    select.value = current;
+    return select;
+  };
+
   // A language's own name from the browser, the tag if it has none: until the hub's list is here.
   M.languageName = (tag) => {
     try { return new Intl.DisplayNames([tag], { type: "language" }).of(tag) || tag; } catch { return tag; }
@@ -292,7 +333,8 @@ window.Maity = window.Maity || {};
     });
   };
 
-  // Every language the hub lists (§6.2), each by its own name, with a field that narrows them:
+  // The languages the hub offers a person (`common`, §6.2), each by its own name, and one already
+  // chosen outside them, with a field that narrows them:
   // by that name, the tag or the English name, so someone can find a script they can't type.
   M.languagePicker = (id, current) => {
     const select = h("select", { id });
@@ -311,7 +353,7 @@ window.Maity = window.Maity || {};
     select.addEventListener("change", () => { chosen = select.value; });
     search.addEventListener("input", fill);
     fill();
-    loadLanguages().then((items) => { if (items) { all = items; fill(); } });  // else the two stay
+    loadLanguages().then((items) => { if (items) { all = items.filter((l) => l.common); fill(); } });  // else the two stay
     return { select, search, set: (tag) => { chosen = tag; fill(); } };
   };
 })(window.Maity);

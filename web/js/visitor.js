@@ -127,9 +127,19 @@ window.Maity = window.Maity || {};
   // The project's address under which a view of it stands: `<owner>/<slug>`.
   const projectBase = (path) => "/" + path.split("/").filter(Boolean).slice(0, 2).join("/");
 
+  // Whether the address can name a stored page at all: the hub is not asked for the rest.
+  function canBePublic(where, path) {
+    const parts = path.split("/").filter(Boolean);
+    if (where.scope === "person") return parts.length === 1;
+    if (where.scope !== "project") return false;
+    if (parts[1] === "agents") return parts.length === 3;
+    return parts.length === 2 || (parts.length === 3 && ["board", "members", "organisation", "why"].includes(parts[2]));
+  }
+
   // Draws the page of `path` when the hub stores one; false when it stores none, for the
   // caller's own answer (the login, or not_found).
-  async function page(main, header, path, { signedIn, brand, live }) {
+  async function page(main, header, where, path, { signedIn, brand, live }) {
+    if (!canBePublic(where, path)) return false;
     let answer;
     try {
       answer = await M.api.get("/public/pages/" + path.replace(/^\/+/, ""));

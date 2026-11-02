@@ -47,6 +47,8 @@ def shown(settings: Settings) -> Iterator[Shown]:
                 body=f"<!doctype html><title>{title}</title>",
                 inputs=f"{title}@{at.isoformat()}",
                 lastmod=at,
+                view="note",
+                data={"title": title},
             )
         ]
 
@@ -204,6 +206,8 @@ def test_startup_renders_every_page_again_before_any_is_served(
             body="old",
             inputs="x",
             lastmod=clock.now(),
+            view="note",
+            data={},
         )
     shown.targets["a"] = ("A", True, clock.now())
     public_pages.startup(migrated, config)
@@ -255,6 +259,8 @@ def stored(engine: Engine, *paths: str, lastmod: datetime | None = None) -> None
                 body="x",
                 inputs="x",
                 lastmod=lastmod or datetime(2026, 10, 30, 12, 0, 0, tzinfo=UTC),
+                view="note",
+                data={},
             )
 
 

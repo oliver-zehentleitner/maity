@@ -18,7 +18,7 @@ from typing import Any
 from sqlalchemy import Connection, Engine, String, cast, delete, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock
+from maity_hub import clock, worker_runs
 from maity_hub import tables as t
 from maity_hub.mail import headers, settings, smtp
 from maity_hub.mail.environment import MailEnvironment
@@ -76,7 +76,12 @@ def _count(conn: Connection, kind: str, outcome: str) -> None:
     conn.execute(insert(t.mail_delivery).values(kind=kind, outcome=outcome, at=clock.now()))
 
 
-def send_due(engine: Engine, env: MailEnvironment, secret_key: bytes | None) -> int:
+def send_due(
+    engine: Engine,
+    env: MailEnvironment,
+    secret_key: bytes | None,
+    stop: worker_runs.Stopping | None = None,
+) -> int:
     """Send what is due now; returns how many left the hub.
 
     The settings in effect are read again before every delivery, so `enabled: false` and
@@ -96,6 +101,8 @@ def send_due(engine: Engine, env: MailEnvironment, secret_key: bytes | None) -> 
         ).all()
     sent = 0
     for row in due:
+        if stop is not None and stop.is_set():
+            break
         resolved = _resolved(engine, env, secret_key)
         if resolved is None:
             break
@@ -366,8 +373,11 @@ class Worker:
     def _run(self) -> None:
         while not self._stop.wait(self.interval):
             try:
-                send_due(self.engine, self.env, self.secret_key)
-                with self.engine.begin() as conn:
-                    forget_old(conn)
+                with worker_runs.claim(self.engine, "mail", self.interval, self._stop) as held:
+                    if held is None:
+                        continue
+                    send_due(self.engine, self.env, self.secret_key, held)
+                    with self.engine.begin() as conn:
+                        forget_old(conn)
             except Exception:  # one bad pass must not stop the sender
                 log.exception("mail: a pass over the outbox failed")

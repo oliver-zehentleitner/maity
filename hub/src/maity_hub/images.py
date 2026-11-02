@@ -27,7 +27,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, delete, insert, select, update
 
-from maity_hub import bounded, clock, events, forge, outbound
+from maity_hub import bounded, clock, events, forge, outbound, worker_runs
 from maity_hub import tables as t
 
 log = logging.getLogger(__name__)
@@ -429,11 +429,11 @@ class Worker:
         if self._thread is not None:
             self._thread.join(timeout=5)
 
-    def sweep(self) -> None:
+    def sweep(self, stop: worker_runs.Stopping | None = None) -> None:
         with self.engine.begin() as conn:
             due = stale(conn)
         for project_id, kind in due:
-            if self._stop.is_set():
+            if (stop or self._stop).is_set():
                 return
             try:
                 refresh(self.engine, self.reader, project_id, kind)
@@ -442,4 +442,9 @@ class Worker:
 
     def _run(self) -> None:
         while not self._stop.wait(self.interval):
-            self.sweep()
+            try:
+                with worker_runs.claim(self.engine, "images", self.interval, self._stop) as held:
+                    if held is not None:
+                        self.sweep(held)
+            except Exception:
+                log.exception("the image sweep failed")

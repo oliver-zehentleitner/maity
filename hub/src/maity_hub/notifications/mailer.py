@@ -27,7 +27,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import Connection, Engine, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock, languages
+from maity_hub import clock, languages, worker_runs
 from maity_hub import tables as t
 from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail_settings
@@ -115,7 +115,13 @@ def key(item: Item) -> str:
 # --- the pass ------------------------------------------------------------------------
 
 
-def run(engine: Engine, env: MailEnvironment, secret_key: bytes | None, public_url: str) -> int:
+def run(
+    engine: Engine,
+    env: MailEnvironment,
+    secret_key: bytes | None,
+    public_url: str,
+    stop: worker_runs.Stopping | None = None,
+) -> int:
     """One pass over every human with a verified address; returns mails queued."""
     with engine.begin() as conn:
         resolved = mail_settings.resolve(conn, env, secret_key)
@@ -131,6 +137,8 @@ def run(engine: Engine, env: MailEnvironment, secret_key: bytes | None, public_u
     budget = int(resolved.value("max_per_hour"))
     queued = 0
     for human_id in humans:
+        if stop is not None and stop.is_set():
+            break
         try:
             with engine.begin() as conn:
                 queued += for_human(conn, human_id, env.signing_key, public_url, budget)
@@ -537,6 +545,10 @@ class Worker:
     def _run(self) -> None:
         while not self._stop.wait(self.interval):
             try:
-                run(self.engine, self.env, self.secret_key, self.public_url)
+                with worker_runs.claim(
+                    self.engine, "notification-mail", self.interval, self._stop
+                ) as held:
+                    if held is not None:
+                        run(self.engine, self.env, self.secret_key, self.public_url, held)
             except Exception:
                 log.exception("notification mail: a pass failed")
