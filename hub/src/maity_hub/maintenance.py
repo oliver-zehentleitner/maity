@@ -23,6 +23,7 @@ from maity_hub import tables as t
 from maity_hub.ids import new_id
 
 TEXT_MAX = 500
+MARGIN = timedelta(minutes=1)  # deadlines this soon after `until` move too (§16.12)
 AGENTS_MAX = 200
 MODES = ("accept_all", "refuse_all", "accept_only", "refuse_for")
 CACHE_SECONDS = 5.0  # how long one replica trusts its last read of the window
@@ -79,8 +80,10 @@ def window_now(engine: Engine) -> dict[str, Any] | None:
     with _lock:
         if _cached is not None and time.monotonic() - _cached[0] < CACHE_SECONDS:
             found = _cached[1]
-            # The clock may pass `until` or `from` inside the cache's few seconds.
-            return _refreshed(found)
+            # The clock may pass `from` inside the cache's few seconds; past `until` the
+            # window is read again, so the deadlines are settled before a sweep acts on them.
+            if found is None or _parse(found["until"]) > clock.now():
+                return _refreshed(found)
     with engine.begin() as conn:
         found = view(current(conn))
     with _lock:
@@ -92,8 +95,6 @@ def _refreshed(found: dict[str, Any] | None) -> dict[str, Any] | None:
     if found is None:
         return None
     now = clock.now()
-    if _parse(found["until"]) <= now:
-        return None
     if found["state"] == "upcoming" and _parse(found["from"]) <= now:
         return {**found, "state": "running"}
     return found
@@ -248,34 +249,47 @@ def settle(conn: Connection, now: datetime) -> None:
 
 
 def _inside(column: Any, starts_at: datetime, ends_at: datetime) -> Any:
-    return and_(column.is_not(None), column > starts_at, column <= ends_at)
+    return and_(column.is_not(None), column > starts_at, column <= ends_at + MARGIN)
 
 
 def shift(conn: Connection, starts_at: datetime, ends_at: datetime) -> None:
-    """Every deadline the hub acts on by itself that fell into `(starts_at, ends_at]` moves by
-    the window's length (§16.12): a claim's lease, a jour fixe round's answers and report and
-    each of its steps' `closes_at`, and an outage's start, which the grace of a substitution
-    counts from."""
+    """Every deadline the hub acts on by itself, to someone's disadvantage, that fell into the
+    window or the minute after it, `(starts_at, ends_at + 1 min]`, moves by the window's length
+    (§16.12): a claim's lease, a jour fixe round's answers and report and each of its steps'
+    `closes_at`, an outage's start (the grace of a substitution counts from it), an instance's
+    KTW `acknowledge_by`, an open takeover's objection window, open project and organisation
+    invitations, accounts waiting for approval, and a held address change. Sessions, tokens,
+    codes and sign-in links keep their expiry, and so do limits and absences a person set."""
     length = ends_at - starts_at
-    card = t.card.c
-    conn.execute(
-        update(t.card)
-        .where(_inside(card.lease_until, starts_at, ends_at))
-        .values(lease_until=card.lease_until + length)
-    )
-    member = t.membership.c
-    conn.execute(
-        update(t.membership)
-        .where(_inside(member.outage_since, starts_at, ends_at))
-        .values(outage_since=member.outage_since + length)
-    )
-    rounds = t.jour_fixe_round.c
-    for column in (rounds.answers_close_at, rounds.report_due_at):
+
+    def move(table: Any, column: Any, *where: Any) -> None:
         conn.execute(
-            update(t.jour_fixe_round)
-            .where(_inside(column, starts_at, ends_at))
+            update(table)
+            .where(_inside(column, starts_at, ends_at), *where)
             .values({column.name: column + length})
         )
+
+    move(t.card, t.card.c.lease_until)
+    move(t.membership, t.membership.c.outage_since)
+    move(t.credential, t.credential.c.ktw_acknowledge_by, t.credential.c.revoked_at.is_(None))
+    move(t.takeover, t.takeover.c.window_ends_at, t.takeover.c.status == "open")
+    invitation = t.invitation.c
+    move(
+        t.invitation,
+        invitation.expires_at,
+        invitation.used_at.is_(None),
+        invitation.revoked_at.is_(None),
+        invitation.voided_at.is_(None),
+    )
+    move(t.org_invitation, t.org_invitation.c.expires_at, t.org_invitation.c.closed_at.is_(None))
+    move(
+        t.account_registration,
+        t.account_registration.c.expires_at,
+        t.account_registration.c.status == "pending",
+    )
+    rounds = t.jour_fixe_round.c
+    move(t.jour_fixe_round, rounds.answers_close_at)
+    move(t.jour_fixe_round, rounds.report_due_at)
     open_rounds = conn.execute(
         select(rounds.id, rounds.steps).where(
             rounds.reported_at.is_(None), rounds.steps.is_not(None)
@@ -285,6 +299,34 @@ def shift(conn: Connection, starts_at: datetime, ends_at: datetime) -> None:
         steps = _shifted_steps(found.steps, starts_at, ends_at, length)
         if steps is not None:
             conn.execute(update(t.jour_fixe_round).where(rounds.id == found.id).values(steps=steps))
+    _shift_held_changes(conn, starts_at, ends_at, length)
+
+
+def _shift_held_changes(
+    conn: Connection, starts_at: datetime, ends_at: datetime, length: timedelta
+) -> None:
+    """A held address change lapses `HELD_FOR` after `requested_at`; when that falls into the
+    window, `requested_at` moves, so the change lapses that much later."""
+    from maity_hub.notifications.preferences import HELD_FOR
+
+    settings = t.notification_settings.c
+    held = conn.execute(
+        select(settings.human_id, settings.address_change).where(
+            settings.address_change.is_not(None)
+        )
+    ).all()
+    for found in held:
+        change = found.address_change
+        if not isinstance(change, dict) or not isinstance(change.get("requested_at"), str):
+            continue
+        requested = _parse(change["requested_at"])
+        if starts_at < requested + HELD_FOR <= ends_at + MARGIN:
+            moved = {**change, "requested_at": clock.rfc3339(requested + length)}
+            conn.execute(
+                update(t.notification_settings)
+                .where(settings.human_id == found.human_id)
+                .values(address_change=moved)
+            )
 
 
 def _shifted_steps(
@@ -299,7 +341,7 @@ def _shifted_steps(
         closes = step.get("closes_at") if isinstance(step, dict) else None
         if isinstance(closes, str):
             at = _parse(closes)
-            if starts_at < at <= ends_at:
+            if starts_at < at <= ends_at + MARGIN:
                 step = {**step, "closes_at": clock.rfc3339(at + length)}
                 moved = True
         out.append(step)

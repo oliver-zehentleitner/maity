@@ -100,6 +100,9 @@ MAINTENANCE_OPEN = re.compile(
     r"|auth/(login|logout|session|email-link|email-code|second-factor/(verify|email)))"
     r"|/mail/sign-in/[^/]+"
 )
+# Read only: the web learns from `GET /me` who signed in, so the instance admin finds the
+# full page's End button (§16.12).
+MAINTENANCE_READ = re.compile(r"/api/v1/me")
 # The hub's own server-rendered pages, which answer a small 503 page during a window; every
 # other address outside the API is the app shell or a static file, and the app shows the full
 # page itself.
@@ -253,6 +256,8 @@ class HubMiddleware:
     ) -> bool:
         """`503 maintenance` with `Retry-After` while a window runs (§16.12); True when sent."""
         if MAINTENANCE_OPEN.fullmatch(path):
+            return False
+        if scope.get("method") in ("GET", "HEAD") and MAINTENANCE_READ.fullmatch(path):
             return False
         api = path.startswith("/api/")
         badge = path.startswith("/badge/")
