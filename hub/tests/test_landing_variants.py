@@ -4,7 +4,7 @@ as a visitor reaches them, and as the admin sees them before saving."""
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -211,6 +211,18 @@ def test_the_served_landing_page_names_the_image_only_with_a_dashboard(
         assert "og:image" in client.get("/").text
     with TestClient(create_app(replace(served, web_dir=None), migrated)) as client:
         assert "og:image" not in client.get("/").text
+
+
+def test_the_preview_names_the_image_only_with_a_dashboard(
+    owner: flow.Human, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    draft = owner.post(PREVIEW, {"default_language": "en", "pages": main_page()})
+    assert draft.status_code == 201, draft.text
+    state = cast(Any, owner.client.app).state
+    assert state.settings.web_dir is not None
+    assert "og:image" in owner.client.get(draft.json()["url"]).text
+    monkeypatch.setattr(state, "settings", replace(state.settings, web_dir=None))
+    assert "og:image" not in owner.client.get(draft.json()["url"]).text
 
 
 def test_a_variant_is_served_at_its_address_to_every_visitor(
