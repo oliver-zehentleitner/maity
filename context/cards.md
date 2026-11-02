@@ -242,7 +242,7 @@ through the probe gives that without a second source of truth.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's wish in the Maity chat, 2026-11-02, that the overview link the contract and better show it rendered inside Maity (card tsk-yhbmz7mjng7n); the coordinator's go the same day for the implementer to write the contract; the arbiter's ruling on #1235, 2026-11-02; the contract review of #1235 the same day (Markdown only, `private, no-cache`); contract in `docs/api.md` §6.8, §6.1, §6.11, §16.11
+**Source:** the maintainer's wish in the Maity chat, 2026-11-02, that the overview link the contract and better show it rendered inside Maity (card tsk-yhbmz7mjng7n); the coordinator's go the same day for the implementer to write the contract; the arbiter's ruling on #1235, 2026-11-02; the contract review of #1235 and the arbiter's ruling on its findings the same day (Markdown only, `private, no-cache`, the repository in the `ETag`); contract in `docs/api.md` §6.8, §6.1, §6.11, §16.11
 **Revisit when:** a project's contract outgrows 4 MiB, or a project keeps its contract in more than one file
 **See:** cards.md#a-contracts-text-stays-in-the-repository-the-card-shows-the-section-read-from-it — f29e3cb3-12ab-4af6-83f1-9b04dbaeb578 — as of 2026-11-02
 
@@ -252,7 +252,9 @@ own, read-only: the hub reads the file a project setting names
 the default branch's commit and answers it whole, with a table of
 contents and an anchor per heading, under an `ETag` over the
 repository, the path and the file's bytes. The setting names a Markdown
-file only. The file cap for this read and for a card's section is
+file only (`not_markdown` otherwise), which keeps it from exposing
+arbitrary repository files to every `project:read` holder, guests
+included. The file cap for this read and for a card's section is
 4 MiB instead of 1 MiB; a larger file is refused, never cut.
 
 **Reason:** a setting is the one place that says which file is the
