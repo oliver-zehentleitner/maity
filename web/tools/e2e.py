@@ -2015,13 +2015,22 @@ def verify_address(run: Run, page, catcher: MailCatcher) -> None:
     """The owner's own address, verified by the mail's link: the code of the switch goes there."""
     seen = len(catcher.mails)
     page.evaluate("""(password) => window.Maity.api.post("/auth/reauthenticate", { password })""", OWNER_PASSWORD)
-    page.evaluate("""(address) => window.Maity.api.patch("/me/notification-settings", { email: { address } })""", MAIL_ADDRESS)
+    # Set in the account's Mail section (§18.4), the form against the real hub.
+    page.goto(f"{run.base}/account/notifications")
+    section = page.locator("section.mail-address")
+    expect(section.locator(".mail-address-state")).to_have_text("No mail address yet: Maity sends you no mail.")
+    page.locator("#mail-address").fill(MAIL_ADDRESS)
+    section.get_by_role("button", name="Save the address", exact=True).click()
+    expect(section).to_contain_text(f"A link to confirm it went to {MAIL_ADDRESS}.")
+    expect(section.locator(".mail-address-state")).to_have_text(f"Not confirmed yet: follow the link sent to {MAIL_ADDRESS}.")
     # The hub's signed token is `<body>.<mac>`, both base64url (notifications/tokens.py).
     token = re.search(r"/mail/verify/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)", newest_mail(catcher, MAIL_ADDRESS, seen))
     assert token, "no verification link in the mail"
     page.evaluate("""(token) => window.Maity.api.post("/me/notification-settings/email/verify", { token })""", token.group(1))
     settings = page.evaluate("""() => window.Maity.api.get("/me/notification-settings")""")
     assert settings["email"]["address_status"] == "verified", settings["email"]
+    page.reload()
+    expect(page.locator("section.mail-address .mail-address-state")).to_have_text(f"Mail goes to {MAIL_ADDRESS}.")
 
 
 def turn_on_mail_factor(run: Run, page, catcher: MailCatcher) -> None:

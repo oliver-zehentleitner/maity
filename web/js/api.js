@@ -2047,6 +2047,19 @@ window.Maity = window.Maity || {};
     ["GET", /^\/languages$/, () => ({ items: FIXTURE_LANGUAGES })],
     ["PATCH", /^\/me\/notification-settings$/, (m, body, path) => {
       const set = fixtures()["notifications.json"].settings;
+      // §18.4: a new address waits for its link; a confirmed one changes or goes only with the
+      // password (any password until one is set here, as at /auth/login).
+      if (body.email && "address" in body.email) {
+        const address = body.email.address, email = set.email;
+        if (!set.mail_available) fail(409, "mail_not_configured", "this instance sends no mail", path);
+        if (address !== null && !/^[\x21-\x7e]{1,64}@[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(String(address))) fail(400, "invalid", "the request does not validate", path, { fields: { "email.address": "invalid" } });
+        if (email.address && email.verified_at) {
+          if (!body.current_password) fail(400, "invalid", "the request does not validate", path, { fields: { current_password: "required" } });
+          if (fixturePassword !== null && body.current_password !== fixturePassword) fail(400, "invalid", "the request does not validate", path, { fields: { current_password: "mismatch" } });
+        }
+        if (address === null) Object.assign(email, { address: null, address_status: "none", verified_at: null, pending_address: null, disabled_at: null });
+        else Object.assign(email, { pending_address: address, address_status: email.address && email.verified_at ? email.address_status : "pending" });
+      }
       if (body.email && "language" in body.email) {
         if (!FIXTURE_LANGUAGES.some((l) => l.tag === body.email.language)) fail(400, "invalid", "unknown language", path);
         set.email.language = body.email.language;

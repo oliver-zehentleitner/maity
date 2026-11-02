@@ -5220,7 +5220,7 @@ window.MAITY_FIXTURES = {
         "mention",
         "security"
       ],
-      "mail_available": false,
+      "mail_available": true,
       "not_listening": {
         "minutes": 60,
         "mode": "inbox"

@@ -8670,6 +8670,84 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(main.querySelector(".my-nl-effective")) === "Applies now: 90 minutes, your default.", "my settings: back to the default sends null");
   win.Maity.api.patch = nlPatch;
   await win.Maity.api.patch("/me/notification-settings", { not_listening: { mode: "inbox", minutes: 60 } });
+  // The mail address (§18.4): shown where the instance sends mail, a confirmed one changed only with the
+  // password, the hub's answer followed; nothing of it where it sends none, the language kept.
+  {
+    const maPatches = [];
+    win.Maity.api.patch = (p, b) => { maPatches.push([p, JSON.parse(JSON.stringify(b))]); return nlPatch(p, b); };
+    await go("#/all"); await go("#/account/notifications"); for (let k = 0; k < 4; k++) await tick();
+    const maBox = () => main.querySelector("section.mail-address");
+    expect(maBox() && text(main.querySelector(".mail-address-state")) === "Mail goes to maintainer@example.org."
+      && byId("mail-address").value === "maintainer@example.org" && !!byId("mail-address-password")
+      && /\/account\/sessions$/.test(main.querySelector(".mail-address-held a").getAttribute("href")),
+      "mail address: the confirmed address, the password field for a change, a held change led to the sessions");
+    byId("mail-address").value = " "; main.querySelector("form.mail-address-form").dispatch("submit"); await tick();
+    expect(!maPatches.length && text(byId("mail-address-error")) === "Enter a mail address." && byId("mail-address").getAttribute("aria-invalid") === "true",
+      "mail address: an empty one is refused before sending");
+    byId("mail-address").value = "new@example.net"; main.querySelector("form.mail-address-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(maPatches.length === 1 && JSON.stringify(maPatches[0][1]) === JSON.stringify({ email: { address: "new@example.net" } })
+      && text(byId("mail-address-password-error")) === "Enter your password to change a confirmed address."
+      && byId("mail-address-password").getAttribute("aria-invalid") === "true",
+      "mail address: without the password the hub's refusal is said at the password");
+    byId("mail-address").value = "new@example.net"; byId("mail-address-password").value = "pw";
+    main.querySelector("form.mail-address-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(JSON.stringify(maPatches[1][1]) === JSON.stringify({ email: { address: "new@example.net" }, current_password: "pw" })
+      && text(maBox()).includes("A link to confirm it went to new@example.net.")
+      && text(maBox()).includes("new@example.net is not confirmed yet; mail keeps going to maintainer@example.org until you follow its link.")
+      && text(main.querySelector(".mail-address-state")) === "Mail goes to maintainer@example.org."
+      && !text(maBox()).includes("The change waits for your approval."),
+      "mail address: the new one waits for its link, the confirmed one keeps receiving; an older held change is not this one");
+    const again = main.querySelectorAll("button").find((b) => text(b) === "Send the link again");
+    byId("mail-address-password").value = "pw"; again.dispatch("click"); for (let k = 0; k < 4; k++) await tick();
+    expect(JSON.stringify(maPatches[2][1]) === JSON.stringify({ email: { address: "new@example.net" }, current_password: "pw" }),
+      "mail address: the link sent again names the waiting address");
+    win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("x", 400, "/me/notification-settings", "invalid", { fields: { "email.address": "invalid" } }));
+    byId("mail-address").value = "a,b@example.org"; main.querySelector("form.mail-address-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(text(byId("mail-address-error")).startsWith("This is not a mail address the hub can send to") && !main.querySelector("section.mail-address button").disabled,
+      "mail address: the hub's refusal of the address is said at the address, the buttons free again");
+    // A human without a password from a young session: the hub holds this change (202).
+    win.Maity.api.patch = (p, b) => {
+      maPatches.push([p, JSON.parse(JSON.stringify(b))]);
+      return win.Maity.api.get("/me/notification-settings").then((x) => ({ ...x, email: { ...x.email,
+        address_change: { id: "adc-new1", address: "held@example.net", requested_at: "2026-11-02T15:00:00Z", session_id: "hss-41c0" } } }));
+    };
+    byId("mail-address").value = "held@example.net"; main.querySelector("form.mail-address-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(JSON.stringify(maPatches[maPatches.length - 1][1]) === JSON.stringify({ email: { address: "held@example.net" } })
+      && text(maBox()).includes("The change waits for your approval.") && !!main.querySelector(".mail-address-held"),
+      "mail address: a change the hub holds is said as waiting for approval, with the way to the sessions");
+    // A session not in good standing may not replace a held change (§2.6.3): the reason is said.
+    win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("x", 403, "/me/notification-settings", "forbidden", { reason: "not_in_good_standing" }));
+    byId("mail-address").value = "other@example.net"; main.querySelector("form.mail-address-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(text(maBox()).includes("this session is not confirmed, so it cannot change the address while a change waits. Decide that change in your sessions")
+      && maBox().querySelectorAll("a").some((l) => /\/account\/sessions$/.test(l.getAttribute("href")) && text(l) === "your sessions" && l.parentNode !== main.querySelector(".mail-address-held")),
+      "mail address: a session not in good standing is told why, not only that nothing was saved");
+    // Removing is asked first; declined, nothing is sent.
+    const maConfirm = win.confirm;
+    let maAsked = "";
+    win.confirm = (q) => { maAsked = q; return false; };
+    const maBefore = maPatches.length;
+    main.querySelectorAll("button").find((b) => text(b) === "Remove the address").dispatch("click"); for (let k = 0; k < 4; k++) await tick();
+    expect(maPatches.length === maBefore && maAsked.startsWith("Remove maintainer@example.org?"), "mail address: removing is asked first, declined nothing is sent");
+    win.confirm = maConfirm;
+    // The removal answered here, so the fixture keeps its confirmed address for what follows.
+    win.Maity.api.patch = (p, b) => {
+      maPatches.push([p, JSON.parse(JSON.stringify(b))]);
+      return win.Maity.api.get("/me/notification-settings").then((x) => ({ ...x, email: { ...x.email, address: null, address_status: "none",
+        verified_at: null, pending_address: null, address_change: null } }));
+    };
+    const remove = main.querySelectorAll("button").find((b) => text(b) === "Remove the address");
+    byId("mail-address-password").value = "pw"; remove.dispatch("click"); for (let k = 0; k < 4; k++) await tick();
+    expect(JSON.stringify(maPatches[maPatches.length - 1][1]) === JSON.stringify({ email: { address: null }, current_password: "pw" })
+      && text(main.querySelector(".mail-address-state")) === "No mail address yet: Maity sends you no mail."
+      && !byId("mail-address-password") && text(maBox()).includes("Address removed."),
+      "mail address: removed with the password, then none and no password asked");
+    const maGet = win.Maity.api.get;
+    win.Maity.api.get = (p) => (p === "/me/notification-settings" ? maGet(p).then((x) => ({ ...x, mail_available: false })) : maGet(p));
+    await go("#/all"); await go("#/account/notifications"); for (let k = 0; k < 4; k++) await tick();
+    expect(!maBox() && !!byId("personal-language"), "mail address: hidden where the instance sends no mail, the language stays");
+    win.Maity.api.get = maGet;
+    win.Maity.api.patch = nlPatch;
+  }
   // The bell's agents_not_listening item leads to one's agents (§18.2 target agents).
   expect(win.Maity.notify.linkOf({ kind: "inbox", record: "acr-9", target: { type: "agents" }, project: null }) === "/agents",
     "not listening: the bell's item links to /agents");
