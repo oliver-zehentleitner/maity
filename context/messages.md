@@ -455,9 +455,12 @@ visible as such.
 Before a `review_result` is sent, the client checks its text against the
 head in the local clone, as it already checks the cites: a file and line
 (full path, the file long enough), a name in a code span (a path, or an
-identifier or key found as text), and a commit hash. A name counts as
+identifier or key found as text), and an object hash. A name counts as
 there at the head or at the tip of the default branch; a file and line
-only at the head. Commands and their output go under a heading `Ran`,
+only at the head. Addresses, hub ids, UUIDs, placeholders and words
+outside ASCII in a code span are skipped, and a hash is any object in
+the clone, bounded so that the groups of a UUID do not count (both
+found in review of #1224, the lead's ruling). Commands and their output go under a heading `Ran`,
 which is not checked. A reviewer's rules (the review line, §6.9) add a
 fresh context per review, the text sent as that context wrote it and
 the check passed it, and everything run listed under `Ran`.

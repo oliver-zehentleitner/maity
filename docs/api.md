@@ -9599,35 +9599,45 @@ there is not sent:
    refers to `head`.
 2. **A name in a code span** (between single backticks, paired as
    CommonMark pairs them), after one pair of surrounding `"` or `'` is
-   dropped. Skipped are a span with whitespace in it (a command, an
-   output, a phrase), one that is only digits and punctuation, a commit
-   hash or a range `a..b` of them (form 3), and one without an ASCII
-   letter (a placeholder such as `{runner}`, a word in another script).
-   A span with a `/` names a path: it is a file or a directory, and with
-   a `*` the part before the first `*` begins one (`hub/tests/test_public_*`);
-   anything after a `:` is left out. Any other span names an identifier
-   or a key: its core, the longest run that starts with a letter or `_`
-   and goes on with letters, digits, `_`, `.`, `/` and `-` (three
-   characters or more), is text in some file or the name of a file;
-   failing that, each part of the core between dots that has three
-   characters or more is (`_Facts.key`, `public_page.body`). A path or
-   name counts as there when it stands at `head` or at the tip of the
-   clone's default branch (`origin/HEAD`), so that a name the change
-   removed, or one only the default branch has, passes; a file and line
-   (form 1) does not get that fallback.
-3. **A commit**, anywhere in the text: 7 to 40 lowercase hexadecimal
-   characters as a word, with at least one of `a`–`f`, and either end of
-   `a..b` alike, is a commit in the clone.
+   dropped. Letters here are ASCII letters. Skipped are a span with
+   whitespace in it (a command, an output, a phrase); one with a
+   character outside ASCII (a word in another script); one with `#`,
+   `@`, `{`, `}`, `<` or `>` (an address such as a handle with its
+   instance, a pull request, a placeholder); one shaped like an id the
+   hub issues (lowercase letters, `-` and twelve characters of `0`–`9`
+   and `a`–`z`) or a UUID; one that is only digits and punctuation; and
+   an object hash or a range `a..b` of them (form 3). A span with a `/`
+   names a path: it is a file or a directory, and with a `*` the part
+   before the first `*` begins one (`hub/tests/test_public_*`); anything
+   after a `:` is left out. Any other span names an identifier or a key:
+   its core, the longest run that starts with a letter or `_` and goes
+   on with letters, digits, `_`, `.`, `/` and `-` (three characters or
+   more), is text in some file or the name of a file; failing that, each
+   part of the core between dots that has three characters or more is
+   (`_Facts.key`, `public_page.body`). A span without such a core is
+   skipped. A path or name counts as there when it stands at `head` or
+   at the tip of the clone's default branch (`origin/HEAD`), so that a
+   name the change removed, or one only the default branch has, passes;
+   a file and line (form 1) does not get that fallback. A name the review
+   says is missing, or proposes, is therefore written without backticks.
+3. **An object**, anywhere in the text: 7 to 40 lowercase hexadecimal
+   characters with at least one of `a`–`f`, as a word bounded by
+   anything but letters, digits, `_` and `-` (so the groups of a UUID
+   are no hash), and either end of `a..b` alike, is an object in the
+   clone: a commit, or a tree or blob such as `git merge-tree` and a
+   diff's index line show.
 
-Not checked: a fenced code block; everything under a heading `Ran`, at
-any level, up to the next heading of the same or a higher level, where
-the reviewer lists the commands it ran and what they printed (the
-review line, §6.9); a pull request number `#<n>`; and what no form
-covers, prose above all. A text that invents a claim without a name
-passes; the check catches names, not judgments, and reading the
-review stays the lead's work. A client without a clone, or without
-`head` in it, says on standard error that the text was not checked, and
-sends.
+Not checked: a fenced code block; everything under a heading `Ran` up
+to the next heading of the same or a higher level, where the reviewer
+lists the commands it ran and what they printed (the review line,
+§6.9) — an ATX heading (`#` to `######`) whose text is `Ran` and
+nothing else, in any case, not a setext heading and not `Ran (head)`;
+a pull request number `#<n>`; and what no form covers, prose above
+all. The check catches names that are not there, not wrong claims: a
+wrong line in a long enough file, a wrong count, or a test said to
+cover what it does not all pass, and reading the review stays the
+lead's work. A client without a clone, or without `head` in it, says
+on standard error that the text was not checked, and sends.
 
 **A review result reaches the author and both leads.** The hub adds to a
 `review_result`'s audience, without the reviewer naming them:
