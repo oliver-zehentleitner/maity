@@ -102,12 +102,12 @@ def test_the_callers_own_handle_shows_everything_of_its_own(
 ) -> None:
     flow.project(owner, "second")
     _with_picture(owner)
-    owner.patch("/me", {"public_bio": "my own words"})  # not public: still the owner's to see
+    owner.patch("/me", {"public_profile": False, "public_bio": "my own words"})  # still theirs
     got = owner.get(f"{P}/maintainer")
     assert got.status_code == 200, got.text
     assert got.headers["cache-control"] == "private, no-store"
     body = got.json()
-    assert (body["kind"], body["handle"], body["page_served"]) == ("human", "maintainer", False)
+    assert (body["kind"], body["handle"], body["page_served"]) == ("human", "maintainer", True)
     assert body["public_bio"] == "my own words"
     assert body["avatar_url"] is not None
     assert body["projects"] == [
@@ -128,7 +128,10 @@ def test_every_hidden_case_is_the_same_not_found(
     agent_handle = owner.get(f"/projects/maintainer/maity/members/{agent.id}").json()["handle"]
     nobody = _not_found(stranger.get(f"{P}/no-such-name"))
     assert _not_found(stranger.get(f"{P}/{agent_handle}")) == nobody  # an agent's handle
-    assert _not_found(stranger.get(f"{P}/maintainer")) == nobody  # shows the caller nothing
+    owner.patch("/me", {"public_profile": False, "public_bio": "off words"})
+    off = stranger.get(f"{P}/maintainer").json()  # off is not invisible: handle and name stay
+    assert (off["handle"], off["page_served"], off["projects_total"]) == ("maintainer", True, 0)
+    assert "public_bio" not in off
     for column, value in (
         ("deleted_at", clock.now()),
         ("suspended_at", clock.now()),
@@ -155,14 +158,15 @@ def test_a_public_page_shows_a_stranger_the_bio_but_no_picture(
     assert (body["projects"], body["projects_total"]) == ([], 0)
 
 
-def test_a_shared_project_shows_the_person_without_a_bio(
+def test_with_the_profile_off_a_shared_project_shows_the_details(
     owner: flow.Human, stranger: flow.Human, migrated: Engine
 ) -> None:
     _with_picture(owner)
-    owner.patch("/me", {"public_bio": "not public"})
+    owner.patch("/me", {"public_profile": False, "public_bio": "for colleagues"})
+    assert "public_bio" not in stranger.get(f"{P}/maintainer").json()
     factory.membership(migrated, _project_id(migrated, "maity"), "coder", human_id=stranger.id)
     body = stranger.get(f"{P}/maintainer").json()
-    assert body["page_served"] is False and "public_bio" not in body
+    assert body["page_served"] is True and body["public_bio"] == "for colleagues"
     assert body["avatar_url"] is not None  # a shared project lets the caller see it
     assert body["projects"] == [{"full_name": "maintainer/maity", "name": "Maity", "shared": True}]
 
@@ -239,14 +243,17 @@ def test_links_show_exactly_where_links_visible_admits_the_caller(
     _links(owner, "colleagues")
     mine = owner.get(f"{P}/maintainer").json()  # one's own, always
     assert mine["website"] == "https://example.org" and mine["social"]["github"]
-    _not_found(stranger.get(f"{P}/maintainer"))  # a link not admitted shows nothing
+    assert "website" not in stranger.get(f"{P}/maintainer").json()  # a link not admitted
     _links(owner, "everyone")
-    body = stranger.get(f"{P}/maintainer").json()  # a link admitted is enough to be seen
+    body = stranger.get(f"{P}/maintainer").json()
     assert (body["website"], body["projects_total"], body["page_served"]) == (
         "https://example.org",
         0,
-        False,
+        True,
     )
+    owner.patch("/me", {"public_profile": False})  # off: links for shared projects only
+    assert "website" not in stranger.get(f"{P}/maintainer").json()
+    owner.patch("/me", {"public_profile": True})
     _links(owner, "colleagues")
     factory.membership(migrated, _project_id(migrated, "maity"), "coder", human_id=stranger.id)
     assert stranger.get(f"{P}/maintainer").json()["website"] == "https://example.org"
@@ -349,4 +356,4 @@ def test_a_project_page_the_owner_turns_on_and_off_is_what_the_view_lists(
         {"full_name": "maintainer/open-one", "name": "Open-One", "shared": False}
     ]
     assert owner.patch("/projects/maintainer/open-one", {"public_page": "off"}).status_code == 200
-    _not_found(stranger.get(f"{P}/maintainer"))  # nothing left to show a stranger
+    assert stranger.get(f"{P}/maintainer").json()["projects"] == []  # handle and name stay

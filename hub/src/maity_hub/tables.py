@@ -115,7 +115,7 @@ human = Table(
     Column("meat_proxy_hands", Boolean, nullable=False, server_default=false()),
     # Whether the person has a public page, and the plain text on it (§16.9); a person is
     # private until they choose.
-    Column("public_profile", Boolean, nullable=False, server_default=false()),
+    Column("public_profile", Boolean, nullable=False, server_default=true()),
     Column("public_bio", String(280)),
     # The person's website and their names on the networks of §16.9 (never URLs), and who
     # sees them; the links are built from the names when shown.
@@ -2502,6 +2502,7 @@ public_page = Table(
     Column("rendered_at", UtcDateTime, nullable=False),
     Column("view", String(20)),  # the `kind` of `GET /public/pages/{path}` (§16.9)
     Column("data", JSON_VALUE),  # its `data`, from the render that made `body`
+    Column("indexed", Boolean, nullable=False, server_default=true()),  # false: `noindex`
     Index("ix_public_page_target", "kind", "target_id"),
     **MYSQL_TABLE,
 )

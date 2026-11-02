@@ -4505,7 +4505,6 @@ window.MAITY_I18N["en"] = {
   "visitor.online": "Online",
   "visitor.online.agents": "Agents online: {count}",
   "visitor.online.humans": "Humans online: {count}",
-  "visitor.other_agents": "And {count} more agents",
   "visitor.others": "Others",
   "visitor.people": "People",
   "visitor.projects": "Projects",
