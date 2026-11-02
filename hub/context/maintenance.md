@@ -41,8 +41,9 @@ ends the window), and the app shell with its static files so the web can show th
 
 `GET /auth/methods` (which ways to sign in this hub offers) and `GET /auth/pages/sign_in` (the admin's words
 for the sign-in page) answer during a running window, for everyone; `GET /auth/pages/sign_up` does not, since
-registration is refused then. Both are read only, carry nothing private, and the web draws the sign-in page
-from them. Without them a signed-out instance admin, the one person the window must let in, met a sign-in
+registration is refused then, and for the same reason `GET /auth/methods` says `registration: false` while
+the window runs, so the page offers no way in that ends in a `503`. Both are read only, carry nothing
+private, and the web draws the sign-in page from them. Without them a signed-out instance admin, the one person the window must let in, met a sign-in
 page that did not know whether to offer the mail link or the password.
 
 **Rejected alternative:** keeping both refused and letting the web guess: the web PR did show the mail link

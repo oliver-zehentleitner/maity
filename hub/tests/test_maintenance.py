@@ -13,10 +13,12 @@ from sqlalchemy import Engine, insert, select, update
 
 from maity_hub import clock, maintenance
 from maity_hub import tables as t
+from maity_hub.config import Settings
 from maity_hub.notifications.preferences import HELD_FOR
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_landing import HERO
+from tests.test_registration import SIGNING
 
 START = datetime(2026, 11, 2, 12, 0, tzinfo=UTC)
 FROM = START + timedelta(hours=1)
@@ -817,6 +819,32 @@ def test_a_stored_page_s_tag_follows_the_window(
     after = client.get(PATH + "?as=public", headers={"If-None-Match": again.headers["etag"]})
     assert after.status_code == 200 and "maintenance-banner" not in after.text
     assert after.headers["etag"] == plain.headers["etag"]
+
+
+def test_the_sign_in_page_offers_no_registration_while_a_window_runs(
+    make_client: ClientFactory, admin: flow.Human, now: Clock
+) -> None:
+    """Registration is refused in a running window (§16.12), so `GET /auth/methods`, which
+    stays open, does not offer a way in that ends in a 503 (§2.7)."""
+    env = Settings.from_env(
+        {
+            "MAITY_DATABASE_URL": "sqlite://",
+            "MAITY_REGISTRATION": "open",
+            "MAITY_MAIL_SIGNING_KEY": SIGNING,
+            "MAITY_SMTP_HOST": "smtp.example.com",
+            "MAITY_SMTP_FROM": "hub@example.com",
+        }
+    )
+    visitor = make_client(mail=env.mail, registration=env.registration)
+    assert visitor.get("/api/v1/auth/methods").json()["registration"] is True
+    put(admin)
+    maintenance.forget()
+    assert visitor.get("/api/v1/auth/methods").json()["registration"] is True  # upcoming
+    running(now)
+    answer = visitor.get("/api/v1/auth/methods")
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["registration"] is False
+    assert visitor.get("/api/v1/auth/pages/sign_up").status_code == 503
 
 
 def test_the_explore_page_carries_the_banner_of_an_upcoming_window(

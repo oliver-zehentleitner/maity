@@ -2000,7 +2000,8 @@ when either list matches.
 `registration`: `true` while the mode is `allowlist` or `open` and mail
 is complete and enabled, else `false` — also `false` under `allowlist`
 while both lists are empty, since nobody could register then (the admin
-sees it as `missing: ["allowlist"]`, §16.4); and `terms`: `{url, version}` or
+sees it as `missing: ["allowlist"]`, §16.4), and `false` while a
+maintenance window runs, which refuses registration (§16.12); and `terms`: `{url, version}` or
 `null` (§16.4). It says nothing about the lists' entries or any account;
 only whether an allowlist has any entry follows from `registration`. The
 login page shows "Create an account" only with `registration: true`.
