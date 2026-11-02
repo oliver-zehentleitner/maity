@@ -1,0 +1,510 @@
+{
+  "factor.advice_password": {
+    "en": "d3f377764b058242",
+    "text": "0104626c934357ea"
+  },
+  "factor.advice_session": {
+    "en": "09d4b7092bbafb26",
+    "text": "3a05f6891780e36e"
+  },
+  "factor.confirm_mail": {
+    "en": "7a87f9ef5b00233c",
+    "text": "9ba4a8bb7dffc814"
+  },
+  "factor.confirm_subject": {
+    "en": "bb5ffd7e38d1bb22",
+    "text": "3d830ca46d40e318"
+  },
+  "factor.how_password": {
+    "en": "31ac68883876fa15",
+    "text": "57f5a279c0d92427"
+  },
+  "factor.how_session": {
+    "en": "e60ee095eb74d877",
+    "text": "49044804a00e8442"
+  },
+  "factor.mail": {
+    "en": "55fcb3ca05c88ec0",
+    "text": "07bf5e2806c10848"
+  },
+  "factor.subject": {
+    "en": "2834f29f1bd983e4",
+    "text": "fa568f0aa48ce6ff"
+  },
+  "factor.with_link": {
+    "en": "facf29431b94ba9c",
+    "text": "73290c0807141d47"
+  },
+  "factor.without_link": {
+    "en": "5fbab9ca9deec008",
+    "text": "fa61e46aad39de39"
+  },
+  "frame.agents": {
+    "en": "21cf98a292e94015",
+    "text": "21cf98a292e94015"
+  },
+  "frame.agents_online": {
+    "en": "21dc1a4560871eb4",
+    "text": "21dc1a4560871eb4"
+  },
+  "frame.as_of": {
+    "en": "67f21e83d943ba4e",
+    "text": "d55fd08fde9e274c"
+  },
+  "frame.cards_done_week": {
+    "en": "ad5f7e36feb077c4",
+    "text": "57188de05f27fc85"
+  },
+  "frame.draft": {
+    "en": "0f80d38c431412cd",
+    "text": "85bc0114a6a032a4"
+  },
+  "frame.follow": {
+    "en": "1d192d10ecc1c2e0",
+    "text": "ae523e0e3b9eb0e9"
+  },
+  "frame.imprint": {
+    "en": "1d0610cdac8612da",
+    "text": "a4e7bebda6999d2d"
+  },
+  "frame.language": {
+    "en": "1fa24b4905737a8d",
+    "text": "e845ac1cb81fad3a"
+  },
+  "frame.legal": {
+    "en": "221ef46b788b7bf8",
+    "text": "da59bf229f2375a3"
+  },
+  "frame.no": {
+    "en": "b2cbc4e2e5545a6c",
+    "text": "9eaaddf49ce91767"
+  },
+  "frame.older": {
+    "en": "fc770fa8f8422465",
+    "text": "fe5080a2b3479218"
+  },
+  "frame.open_source": {
+    "en": "4f71909da478ab9b",
+    "text": "8f604f692189247a"
+  },
+  "frame.people": {
+    "en": "d4bc0ae2931e67d5",
+    "text": "34fe1533f72a354c"
+  },
+  "frame.people_online": {
+    "en": "5c25d5653324c5c1",
+    "text": "f19cc5cd343d6019"
+  },
+  "frame.platform": {
+    "en": "d38a6aa13c6163f4",
+    "text": "06348dde5ab8747e"
+  },
+  "frame.preview": {
+    "en": "ae7527485a991e68",
+    "text": "5fd8a3919d1ecd43"
+  },
+  "frame.privacy": {
+    "en": "d4e11841abf22593",
+    "text": "26a34e593b01adbb"
+  },
+  "frame.public_projects": {
+    "en": "1a72c10edf3e3765",
+    "text": "3260f78288665d00"
+  },
+  "frame.register": {
+    "en": "3bf5c2b4fffd3a4d",
+    "text": "5125df8532f74053"
+  },
+  "frame.reply": {
+    "en": "5601c71a3668000f",
+    "text": "4f46432048196056"
+  },
+  "frame.rings": {
+    "en": "cbace0e1c7cfc0ed",
+    "text": "8a0c59f165bfa72e"
+  },
+  "frame.sign_in": {
+    "en": "5a365517fae8bf07",
+    "text": "a3ddcbb71cc3b92f"
+  },
+  "frame.terms": {
+    "en": "06b2dd027a0d1a0d",
+    "text": "fb8ebbba590444bc"
+  },
+  "frame.theme": {
+    "en": "1a11962c1e6eeee3",
+    "text": "125919e9e575f7e7"
+  },
+  "frame.yes": {
+    "en": "184fda5c980b9d9c",
+    "text": "ead3db889b70db91"
+  },
+  "frame.you": {
+    "en": "9d1a4d7e2b6e1f5d",
+    "text": "b01bd34c93a9ca0e"
+  },
+  "mail.more": {
+    "en": "a1cd32796e7e9005",
+    "text": "b4aa37fec662bb12"
+  },
+  "mail.only": {
+    "en": "fb2c1b804e84d045",
+    "text": "c7f4ff17941ea976"
+  },
+  "mail.settings": {
+    "en": "00f94cee302bab0b",
+    "text": "7b8ae3cd1442b585"
+  },
+  "mail.sign_in": {
+    "en": "e24bfa71cc905928",
+    "text": "1d72cfddabac898d"
+  },
+  "mail.sign_in_body": {
+    "en": "9502874985e60746",
+    "text": "a6f8d9159b962ee7"
+  },
+  "mail.stop": {
+    "en": "0376eae5c3fe8b7a",
+    "text": "c2fbfa9c747d058c"
+  },
+  "mail.two_factor_body": {
+    "en": "dfaef747e184ddf6",
+    "text": "c68a287ca329d0b4"
+  },
+  "mail.updates": {
+    "en": "ee72d97604a9a40d",
+    "text": "f2c3c4c0d2ce4e6e"
+  },
+  "mail.wrote": {
+    "en": "3cff4d92714ec5c4",
+    "text": "f165ab14ffc38b5f"
+  },
+  "mail_links.dead": {
+    "en": "a2ed72021f0f4f89",
+    "text": "e22fce1a64c28cd2"
+  },
+  "mail_links.delete_button": {
+    "en": "262a94420e99cae1",
+    "text": "6eb3e8045496ad83"
+  },
+  "mail_links.delete_done": {
+    "en": "a4ca18cdc8780b63",
+    "text": "69720e29ac829afa"
+  },
+  "mail_links.delete_export": {
+    "en": "921281bb99d3d39b",
+    "text": "e0c2aaf796692061"
+  },
+  "mail_links.delete_keeps": {
+    "en": "b9332194849db01e",
+    "text": "ac96cfcef5b4d2d0"
+  },
+  "mail_links.delete_removes": {
+    "en": "6238e9e46c4a4ccb",
+    "text": "6d5a88ceaf8b8d6c"
+  },
+  "mail_links.delete_text": {
+    "en": "59f56f043e04097b",
+    "text": "a75b4f0798b0b301"
+  },
+  "mail_links.delete_title": {
+    "en": "262a94420e99cae1",
+    "text": "6eb3e8045496ad83"
+  },
+  "mail_links.last_instance_admin": {
+    "en": "18557aa04586d60e",
+    "text": "7f35d2033fd154d8"
+  },
+  "mail_links.namespace_owner": {
+    "en": "c31a1874981fc3ef",
+    "text": "ee8bcf872e5290d0"
+  },
+  "mail_links.org_last_owner": {
+    "en": "bf00915408e46369",
+    "text": "513b52b610c5d7d5"
+  },
+  "mail_links.reset_button": {
+    "en": "a5e961d996a774e7",
+    "text": "65080e34d97d171a"
+  },
+  "mail_links.reset_done": {
+    "en": "17f65699b594a752",
+    "text": "3a4cb48c644640b7"
+  },
+  "mail_links.reset_reason": {
+    "en": "30ee9b373264f71c",
+    "text": "1b334fcb8fa15f7c"
+  },
+  "mail_links.reset_text": {
+    "en": "fe912a1eeefdb155",
+    "text": "f28572f338baf704"
+  },
+  "mail_links.reset_title": {
+    "en": "c5c9e3b89352c1fb",
+    "text": "625fe8228dc881b7"
+  },
+  "mail_links.unsub_button": {
+    "en": "370a9b159d6a6096",
+    "text": "88ff3149f7a139b2"
+  },
+  "mail_links.unsub_done": {
+    "en": "31fa673e19667c20",
+    "text": "f734ffe5b8361018"
+  },
+  "mail_links.unsub_text": {
+    "en": "ced2af5d40a5780e",
+    "text": "b3d66d7c98a2b477"
+  },
+  "mail_links.unsub_title": {
+    "en": "370a9b159d6a6096",
+    "text": "88ff3149f7a139b2"
+  },
+  "mail_links.verify_button": {
+    "en": "f66dc4fe259c8634",
+    "text": "76cf672c432141cc"
+  },
+  "mail_links.verify_done": {
+    "en": "d03d1354f186f1a3",
+    "text": "eb6e50e4e766421f"
+  },
+  "mail_links.verify_text": {
+    "en": "a5f23778bddf0bc2",
+    "text": "9b5cef4e53f521de"
+  },
+  "mail_links.verify_title": {
+    "en": "749bdc78cabbe4a2",
+    "text": "b48d8c4049f21b3e"
+  },
+  "notify.a_browser": {
+    "en": "1b83f4de4a7e8a1f",
+    "text": "3c0c6dc003389740"
+  },
+  "notify.address_changed": {
+    "en": "bc06da1f171d41d6",
+    "text": "6a46ea2bc345cab1"
+  },
+  "notify.an_account": {
+    "en": "82662c3439d58e67",
+    "text": "6f6019ddc2dae127"
+  },
+  "notify.answered": {
+    "en": "5c712dd863885c6b",
+    "text": "b9dda0975df732ce"
+  },
+  "notify.asks": {
+    "en": "cc6f0c553e1f735e",
+    "text": "e03a3b0be78c40cf"
+  },
+  "notify.asks_you": {
+    "en": "8fd1a420d56e812a",
+    "text": "5314c173ddaefbb9"
+  },
+  "notify.chat": {
+    "en": "c413ccd5c3885e86",
+    "text": "c413ccd5c3885e86"
+  },
+  "notify.forge_added": {
+    "en": "7dfbf6ca720405f1",
+    "text": "f4be63689530af08"
+  },
+  "notify.jf_no_moderator": {
+    "en": "e34dc5e8e1bcde70",
+    "text": "fbc002bfb0185cc9"
+  },
+  "notify.jf_reported": {
+    "en": "ddf80171e6c30d8e",
+    "text": "54d36841cc171d41"
+  },
+  "notify.mail_disabled": {
+    "en": "9bb8fee2e033a643",
+    "text": "ec57c878ab8e5d19"
+  },
+  "notify.mentioned": {
+    "en": "1c63ac02a50bed90",
+    "text": "b473da126b271a3b"
+  },
+  "notify.moderated": {
+    "en": "c33811f8a469650a",
+    "text": "c33811f8a469650a"
+  },
+  "notify.not_listening": {
+    "en": "ad5753822b4df1d6",
+    "text": "53a6d8bedbcb70ef"
+  },
+  "notify.reported": {
+    "en": "d9954ef211d54ced",
+    "text": "d528d8cb9a1c59a9"
+  },
+  "notify.sign_in": {
+    "en": "a01714534ab0e36a",
+    "text": "4c00f1b1ea6d0cd7"
+  },
+  "notify.tf_changed": {
+    "en": "fa4d18720be24156",
+    "text": "5dce87edc904a292"
+  },
+  "notify.tf_disabled": {
+    "en": "ad639be2f0b858c8",
+    "text": "8ea653a7201ba5db"
+  },
+  "notify.tf_enrolled": {
+    "en": "a53441ed564f30d1",
+    "text": "94948c28bca0a8f6"
+  },
+  "notify.tf_failed": {
+    "en": "bc7de30f70be93d7",
+    "text": "ef83a700c0d94c35"
+  },
+  "notify.tf_instance_off": {
+    "en": "a6da094fa8eb3d8c",
+    "text": "c96862b5fb031587"
+  },
+  "notify.tf_recovery_code_used": {
+    "en": "14ab6a08b02918e0",
+    "text": "8b19703f131a6245"
+  },
+  "notify.tf_recovery_codes": {
+    "en": "28a03d5b74eeee24",
+    "text": "4a1a277daa8952c3"
+  },
+  "notify.tf_reset": {
+    "en": "515f3177da9bc9f0",
+    "text": "d5c792538a8170a1"
+  },
+  "notify.unknown_os": {
+    "en": "761c4d589d9d161f",
+    "text": "8c535f38df251ea5"
+  },
+  "notify.waits": {
+    "en": "79dcf2bbb695ac6a",
+    "text": "550e87c9d744b28d"
+  },
+  "notify.withdrew": {
+    "en": "5479a39e9f32ab9d",
+    "text": "ff86c7ec549bda32"
+  },
+  "register_page.button": {
+    "en": "e63588a861737d67",
+    "text": "5125df8532f74053"
+  },
+  "register_page.closed": {
+    "en": "df7ca80e6754dfc9",
+    "text": "cc8c0cd0ca7027bd"
+  },
+  "register_page.dead": {
+    "en": "a2ed72021f0f4f89",
+    "text": "e22fce1a64c28cd2"
+  },
+  "register_page.display_name": {
+    "en": "18c4fcd40ad3a751",
+    "text": "ea9b82c680e41a36"
+  },
+  "register_page.error_display_name_invalid": {
+    "en": "4c39917f3fd97ff9",
+    "text": "2d6c272fbcc333f2"
+  },
+  "register_page.error_handle_invalid": {
+    "en": "3a330b6161a97216",
+    "text": "9cbe06c21460f2c5"
+  },
+  "register_page.error_handle_reserved": {
+    "en": "0852f629ceee0ad8",
+    "text": "f62bf70cc67ef299"
+  },
+  "register_page.error_handle_taken": {
+    "en": "64461ff8c8bd5d53",
+    "text": "0af3f3190440b275"
+  },
+  "register_page.error_password": {
+    "en": "d1d0babace725338",
+    "text": "c30cb241a7ebc7a3"
+  },
+  "register_page.error_terms_required": {
+    "en": "89c71e1f5a396594",
+    "text": "2cffcfe3dc5d921b"
+  },
+  "register_page.handle": {
+    "en": "41483b645efc0c65",
+    "text": "41483b645efc0c65"
+  },
+  "register_page.intro": {
+    "en": "3af54dd923e1059b",
+    "text": "7cb8c23f5642aa76"
+  },
+  "register_page.later": {
+    "en": "240294e5364ce34d",
+    "text": "4b8115db4d15149a"
+  },
+  "register_page.legal_imprint": {
+    "en": "1d0610cdac8612da",
+    "text": "a4e7bebda6999d2d"
+  },
+  "register_page.legal_privacy": {
+    "en": "5da7aab1c428b242",
+    "text": "ef177d17e4b0207a"
+  },
+  "register_page.legal_terms": {
+    "en": "b6afdb846801fc10",
+    "text": "fb8ebbba590444bc"
+  },
+  "register_page.password": {
+    "en": "8adcb6a3d0c1f216",
+    "text": "b2cdb70a28e8b705"
+  },
+  "register_page.terms": {
+    "en": "738f3cd4cd578c5c",
+    "text": "c0c101fa1c1ca01d"
+  },
+  "register_page.terms_changed": {
+    "en": "c77b80e8212e12e4",
+    "text": "3939fafe3592dee3"
+  },
+  "register_page.title": {
+    "en": "d2e0791af554a4da",
+    "text": "517bbf0d4faefb9b"
+  },
+  "registration_mail.confirm": {
+    "en": "4ba145193ee90c2f",
+    "text": "5dec2ffec148cafc"
+  },
+  "registration_mail.confirm_subject": {
+    "en": "014f0bfcc0649e56",
+    "text": "b2f1d3b157e82552"
+  },
+  "registration_mail.known": {
+    "en": "f3671b10cd1eec10",
+    "text": "2f2b9b22103bfbfc"
+  },
+  "registration_mail.known_subject": {
+    "en": "398f5a20461a5e60",
+    "text": "6016913d3c4fb67c"
+  },
+  "second_factor_reset.subject": {
+    "en": "7b77b043ef40b02d",
+    "text": "a16231b87a05245e"
+  },
+  "second_factor_reset.text": {
+    "en": "80727452054ee780",
+    "text": "a8f46c289e30fcaa"
+  },
+  "sign_in.mail": {
+    "en": "d21d997533e012c4",
+    "text": "1cce4b4bbf7615af"
+  },
+  "sign_in.mail_alternative": {
+    "en": "d68047166a4ed749",
+    "text": "f3fdc59a6051f168"
+  },
+  "sign_in.page_button": {
+    "en": "6b230bb723794d8b",
+    "text": "60fbeebb679d8118"
+  },
+  "sign_in.page_title": {
+    "en": "4ab9f027c126cc1c",
+    "text": "c8c249240e617ce8"
+  },
+  "sign_in.subject": {
+    "en": "c08c2ebbb2993e1d",
+    "text": "5b53d159782d12b1"
+  }
+}

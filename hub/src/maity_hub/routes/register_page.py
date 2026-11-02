@@ -241,7 +241,7 @@ def register_page(token: str, request: Request) -> Response:
         terms = _terms(conn, request)
         pages = _legal(conn)
     form_value = secrets.token_urlsafe(24)
-    lang = registration_mail.language_of(row.interface_language or row.language)
+    lang = registration_mail.language_of(row.interface_language or row.language, "register_page")
     page = _form(
         catalog.section("register_page", lang),
         lang=lang,
@@ -345,7 +345,7 @@ async def register_complete(token: str, request: Request) -> Response:
     if result is None:
         return _dead()
     done, row, payload, terms, device, pages = result
-    lang = registration_mail.language_of(row.interface_language or row.language)
+    lang = registration_mail.language_of(row.interface_language or row.language, "register_page")
     words = catalog.section("register_page", lang)
     if done.kind == "created":
         assert done.session_id is not None and done.csrf is not None and done.next is not None

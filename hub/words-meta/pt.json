@@ -1,0 +1,106 @@
+{
+  "frame.agents": {
+    "en": "21cf98a292e94015",
+    "text": "eddfaa05c60f272a"
+  },
+  "frame.agents_online": {
+    "en": "21dc1a4560871eb4",
+    "text": "5574e00ce7ea93d0"
+  },
+  "frame.as_of": {
+    "en": "67f21e83d943ba4e",
+    "text": "85c76cacc3414bc8"
+  },
+  "frame.cards_done_week": {
+    "en": "ad5f7e36feb077c4",
+    "text": "11973d9377bda9f2"
+  },
+  "frame.draft": {
+    "en": "0f80d38c431412cd",
+    "text": "c054cd3d6d614549"
+  },
+  "frame.follow": {
+    "en": "1d192d10ecc1c2e0",
+    "text": "8608c3554d009530"
+  },
+  "frame.imprint": {
+    "en": "1d0610cdac8612da",
+    "text": "2f8b680ce1abf6fa"
+  },
+  "frame.language": {
+    "en": "1fa24b4905737a8d",
+    "text": "406f12a0dc0b476d"
+  },
+  "frame.legal": {
+    "en": "221ef46b788b7bf8",
+    "text": "9b46f19a58c56f7f"
+  },
+  "frame.no": {
+    "en": "b2cbc4e2e5545a6c",
+    "text": "7874d6f522991ac6"
+  },
+  "frame.older": {
+    "en": "fc770fa8f8422465",
+    "text": "32f09d8707e2b92f"
+  },
+  "frame.open_source": {
+    "en": "4f71909da478ab9b",
+    "text": "006e74e5db33d2f9"
+  },
+  "frame.people": {
+    "en": "d4bc0ae2931e67d5",
+    "text": "ec9ac18af96a0cc2"
+  },
+  "frame.people_online": {
+    "en": "5c25d5653324c5c1",
+    "text": "b07debadb545d0d5"
+  },
+  "frame.platform": {
+    "en": "d38a6aa13c6163f4",
+    "text": "0587ccc78c5e6f32"
+  },
+  "frame.preview": {
+    "en": "ae7527485a991e68",
+    "text": "6f0858e43d99b930"
+  },
+  "frame.privacy": {
+    "en": "d4e11841abf22593",
+    "text": "1d879cd5c813999a"
+  },
+  "frame.public_projects": {
+    "en": "1a72c10edf3e3765",
+    "text": "b706a6ca14f81ae5"
+  },
+  "frame.register": {
+    "en": "3bf5c2b4fffd3a4d",
+    "text": "5d7eab2437b55da1"
+  },
+  "frame.reply": {
+    "en": "5601c71a3668000f",
+    "text": "c8041045e0e8ef7e"
+  },
+  "frame.rings": {
+    "en": "cbace0e1c7cfc0ed",
+    "text": "6121212ac4673315"
+  },
+  "frame.sign_in": {
+    "en": "5a365517fae8bf07",
+    "text": "8430782343ec3399"
+  },
+  "frame.terms": {
+    "en": "06b2dd027a0d1a0d",
+    "text": "3f4750644f318d05"
+  },
+  "frame.theme": {
+    "en": "1a11962c1e6eeee3",
+    "text": "91e00e319d67fbaf"
+  },
+  "frame.yes": {
+    "en": "184fda5c980b9d9c",
+    "text": "0ec7a813381818e3"
+  },
+  "frame.you": {
+    "en": "9d1a4d7e2b6e1f5d",
+    "text": "5161773d13e2997c"
+  }
+}

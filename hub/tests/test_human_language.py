@@ -7,6 +7,7 @@ from typing import Any
 
 from sqlalchemy import Engine, select
 
+from maity_hub import clock
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -80,3 +81,21 @@ def test_the_mail_speaks_the_humans_language_too(
     run(migrated)
     [mail] = notifications(migrated)
     assert mail.subject.startswith("[Maity] ") and "fragt: Welche?" in mail.subject
+
+
+def test_an_agent_reads_its_own_humans_language_outside_the_project_too(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = flow.human(make_client, migrated)
+    flow.project(owner)
+    agent = flow.agent(make_client, owner)
+    assert owner.patch(S, {"email": {"language": "de"}}).status_code == 200
+    with migrated.begin() as conn:
+        conn.execute(
+            t.membership.update()
+            .where(t.membership.c.human_id == owner.id)
+            .values(active=None, removed_at=clock.now())
+        )
+    packet = agent.resume().json()
+    assert not [p for p in packet["peers"] if p["kind"] == "human"]
+    assert packet["me"]["owner"]["language"] == "de"

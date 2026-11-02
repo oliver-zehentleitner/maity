@@ -18,7 +18,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select, update
 
-from maity_hub import catalog, clock
+from maity_hub import catalog, clock, languages, render
 from maity_hub import tables as t
 from maity_hub.auth import sessions
 from maity_hub.mail import outbox
@@ -29,17 +29,17 @@ KINDS = ("register_link", "already_registered")
 _LANGUAGE = re.compile(r"^\s*([A-Za-z]{2,3})((?:-[A-Za-z0-9-]+)?)\s*(?:;|,|$)")
 
 
-def language_of(accept_language: str | None) -> str:
-    """The first language of an `Accept-Language` the hub has, else English (§2.7.1)."""
+def language_of(accept_language: str | None, words: str = "registration_mail") -> str:
+    """The first language of an `Accept-Language`, or a stored tag, that has these words, else
+    English (§2.7.1). `zh-CN` reads `zh-Hans`, as on the public pages; a language without these
+    words yet is passed over."""
+    offered = [tag for tag in languages.INTERFACE if catalog.speaks(words, tag)]
     for part in (accept_language or "").split(","):
         found = _LANGUAGE.match(part)
-        if not found:
-            continue
-        tag = found.group(1).lower()
-        # zh-Hans, as a stored tag is written; a language without these words yet is passed over
-        for candidate in (tag + found.group(2), tag):
-            if catalog.speaks("registration_mail", candidate):
-                return candidate
+        if found:
+            match = render.offered_match((found.group(1) + found.group(2)).lower(), offered)
+            if match:
+                return match
     return "en"
 
 
