@@ -1501,6 +1501,7 @@ card_note = Table(
     Column("event_seq", BIG_ID),  # its `note_added`, redacted with it
     Column("redacted", Boolean, nullable=False),
     Column("redaction", JSON_VALUE),
+    Column("edited", JSON_VALUE),  # {by, at, reason} of the latest edit; no earlier text is kept
     Index("ix_card_note_card_created", "card_id", "created_at", "id"),
     Index("ix_card_note_author_created", "author", "created_at"),
     **MYSQL_TABLE,

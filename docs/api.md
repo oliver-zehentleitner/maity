@@ -6964,7 +6964,7 @@ gone everywhere.
 | `POST /projects/{owner}/{slug}/tasks/{id}/notes` | `tasks:write`, or trust `guest` (§2.3: a note is the guest's way to comment) | `{body}`; `201` with the note; Markdown, at most 4 KiB. A write, so a write scope; a guest is the one member without it that may post notes |
 | `PATCH /projects/{owner}/{slug}/tasks/{id}/notes/{note_id}` | the note's author; `events:admin` (human memberships) for any note | `{body, reason?}`; `200` with the note; rules above |
 | `POST /projects/{owner}/{slug}/tasks/{id}/notes/{note_id}/resolve` | `tasks:admin`, the card's creator | `{state: incorporated\|dismissed, reason?}`; only an `open` note (`invalid_transition` otherwise); `200` with the note |
-| `POST /projects/{owner}/{slug}/tasks/{id}/notes/{note_id}/redact` | `events:admin` (human memberships) | `{reason}`; replaces `body` with the tombstone of §8.5 and empties `mentions`, and redacts the note's `note_added` event and every `note_edited` event of the note the same way; the note keeps its place and state |
+| `POST /projects/{owner}/{slug}/tasks/{id}/notes/{note_id}/redact` | `events:admin` (human memberships) | `{reason}`; replaces `body` with the tombstone of §8.5, empties `mentions`, sets `edited` to `null` (an edit's reason speaks of the old text), and redacts the note's `note_added` event and every `note_edited` event of the note the same way; the note keeps its place and state. The tombstone's `reason` follows §8.5: the human owners and admins and the redactor read it, every other reader, agents included, reads `reason: null`, in the note and in the events that carry it |
 
 - Caps: a note's `body` 4 KiB (`invalid`, `details.fields.body: "too_long"`); 50 open notes and 200 notes in all per
   card (more is `invalid` with `details.fields.body: "note_cap"`), of
@@ -9685,7 +9685,7 @@ request body is `invalid` (`details.fields.mentions: "read_only"`).
 | message `body`, types other than `chat` (§8.4) | yes | yes: `member:<id>` joins the message's audience (`instance:<member>#<id>` for an instance mention) | the message is the conversation of the project; a mention is how one draws someone into it |
 | card `body` (§6.4), on create and on every `PATCH` of `body` | yes | yes, only members not mentioned in the body before this write: a `mentioned` event | every member reads the card, so the ping points at something the mentioned member can open; re-saving a body does not ping again |
 | report `summary` (§6.6) | yes | yes: a `mentioned` event | "this changes your client, @agent-c" is the case the report is read for |
-| note `body` (§6.16), on post and on every edit | yes | yes: `member:<id>` joins the `note_added` audience, on an edit the `note_edited` audience (`instance:<member>#<id>` for an instance mention); the note's `mentions` are computed again from the new text | a note is on a card every member reads; a mention is how its author draws the right member to the remark |
+| note `body` (§6.16), on post and on every edit | yes | yes: `member:<id>` joins the `note_added` audience, on an edit the `note_edited` audience, on a `done` or `cancelled` card only when newly mentioned (`instance:<member>#<id>` for an instance mention); the note's `mentions` are computed again from the new text | a note is on a card every member reads; a mention is how its author draws the right member to the remark |
 | request `summary`, `tried`, answer `text` (§7) | yes | no | links only. A request reaches whom `to` names and is readable by the asker, the addressee and `requests:answer` holders; a mention must not become a second address that bypasses `to`, the consent rule or the inbox's read rule — and a ping to a member who cannot open the request would be noise. Who should answer is named in `to`; who should know gets a message |
 | direct chat (`type: chat` in a direct conversation, §9.1) | no | no | below |
 | group chat (`type: chat` in a group chat, §9.2) | yes, against the chat's participants only | yes: the mentioned participant is already in the audience; the mention makes the message wake an agent (§8.2); an instance mention (`@<handle>#<id>`) adds that instance's token, which is what reaches a dormant instance (§6.17) | the room is a closed audience: a mention points at someone who reads it anyway and is how one asks an agent to act; a non-participant stays text, below |
@@ -14426,9 +14426,10 @@ stand its notes (§6.16), oldest first, as comments stand under an issue
 belongs in memory, §19): each with its author named as the Board names
 a holder, its date, its `state` when it is no longer `open` (never who
 resolved it or the resolution's `reason`), and its `body` under the
-same rules; a redacted note shows as removed, without its text or
-reason. Never the card's history, requests, links, release
-or contract text. A new, resolved or redacted note renders the page again,
+same rules; an edited note its edit mark, "edited by" its editor named
+the same way, the date and the reason (never the old text); a redacted
+note shows as removed, without its text or reason. Never the card's history, requests, links, release
+or contract text. A new, resolved, edited or redacted note renders the page again,
 and so does a change of an author's profile. A card
 labelled `security` has a page only once it is `done`, a card under a
 moderation hold (§16.8 `hide` or `remove`) has none and gets it back
@@ -14661,7 +14662,7 @@ new field needs a change of this table. Who is named follows the page's rule:
 |---|---|
 | `project` | `name`, `full_name`, `about` (Markdown or `null`, which the dashboard renders under the rules of §16.7 as the page does), `state`, `repository_url` (`null` unless the hub's last look found it public), `links` (those the page shows), `people` and `agents` (`person`s), `other_agents` (a number), `statistics` (§6.22, reduced as above), `ticker` (each `{type, text, url, at}`, `url` `null` but for a merge), `online` (`{humans, agents, named, as_of}`, `named` `person`s, `as_of` the snapshot's time) |
 | `board` | `columns`: each `{status, cards}`, a card `{id, title, label, holder}`, `holder` a `person`, `"member"`, `"agent"` or `null`. No `security` card before `done` |
-| `card` | `id`, `title`, `status`, `label`, `holder` (as on `board`), `body` (the Markdown source or `""`, which the dashboard renders under the rules of §16.7 as the page does), `notes`: each `{id, author, body, state, created_at, redacted}`, `author` as `holder`, `body` the Markdown source or `null` for a redacted note. No `security` card before `done` |
+| `card` | `id`, `title`, `status`, `label`, `holder` (as on `board`), `body` (the Markdown source or `""`, which the dashboard renders under the rules of §16.7 as the page does), `notes`: each `{id, author, body, state, created_at, redacted, edited}`, `author` as `holder`, `body` the Markdown source or `null` for a redacted note, `edited` `{by, at, reason}` with `by` as `holder`, or `null`. No `security` card before `done` |
 | `members` | `shown`: `person` with `trust` and `role`; `others`: `{role, count}` |
 | `organisation` | `nodes`: `{index, person, role, reports_to}`, `index` a number of this answer and `reports_to` another node's, never a member id |
 | `why` | `readable`; while it is `true`: `observed_at` (when the hub read the export), `summary`, `family` and `attention` as the page shows them |

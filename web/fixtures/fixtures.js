@@ -3877,6 +3877,7 @@ window.MAITY_FIXTURES = {
         },
         "body": "The CLI needs `--no-code` here too.",
         "created_at": "2026-10-21T10:30:00Z",
+        "edited": null,
         "id": "nte-0031",
         "mentions": [],
         "resolution": null,
@@ -3891,6 +3892,7 @@ window.MAITY_FIXTURES = {
         },
         "body": "Already in §6.4.",
         "created_at": "2026-10-21T10:40:00Z",
+        "edited": null,
         "id": "nte-0032",
         "mentions": [],
         "resolution": {
@@ -3914,6 +3916,7 @@ window.MAITY_FIXTURES = {
           "redacted": true
         },
         "created_at": "2026-10-21T11:30:00Z",
+        "edited": null,
         "id": "nte-0033",
         "mentions": [],
         "resolution": null,
