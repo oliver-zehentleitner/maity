@@ -43,6 +43,8 @@ def refusal(database_url: str, confirmed: str | None) -> str | None:
     identity = identity_of(database_url)
     if not parts.path.strip("/"):
         return "the URL names no database"
+    if parts.hostname is None and not parts.scheme.startswith("sqlite"):
+        return "the URL names no host, so the environment would choose it"
     host = (parts.hostname or "").lower().rstrip(".")
     if host == "maity.team" or host.endswith(".maity.team"):
         return f"{host} may be production"
@@ -101,14 +103,17 @@ def main(argv: list[str] | None = None) -> int:
     if why is not None:
         print(f"refused: {why}", file=sys.stderr)
         return 2
+    if args.out.exists():  # before the database is asked anything, and again below on creating it
+        print(f"refused: {args.out} exists", file=sys.stderr)
+        return 2
+    engine = create_engine(url)
+    start = first_free(engine)
     # Created new and only for its owner before anything is seeded: it holds secrets.
     try:
         descriptor = os.open(args.out, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     except FileExistsError:
         print(f"refused: {args.out} exists", file=sys.stderr)
         return 2
-    engine = create_engine(url)
-    start = first_free(engine)
     humans: list[dict[str, Any]] = []
     try:
         for n in range(args.humans):

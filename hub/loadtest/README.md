@@ -1,8 +1,9 @@
 # Hub load test
 
 The plan, its assumptions and its targets are in `hub/context/replicas.md` cac80c88. These scripts
-are never pointed at production: both refuse a target that is not named as a test system, and
-`run.js` refuses `maity.team` and every name under it, so a test system needs a name of its own.
+are never pointed at production. `seed.py` takes one plain database URL whose host, port and
+database are named as a test system. `run.js` takes plain origins whose hosts are named, at any
+port. Both refuse `maity.team` and every name under it, so a test system needs a name of its own.
 
 **State:** `sign.js` and the seed are checked by `tests/test_loadtest.py`. `run.js` has passed a
 syntax check only: it has not run under k6 yet. Start with a small local run and expect to fix it.
