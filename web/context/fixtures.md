@@ -87,8 +87,10 @@ reports every difference that is not in
 `tools/fixture-shapes-baseline.json`: a key the fixture has and the hub
 does not, a key the hub has and the fixture lacks, another type. The
 baseline holds today's differences and only shrinks (`make fixtures`
-drops what no longer differs). It starts with about ten routes; more
-come one at a time.
+drops what no longer differs). It started with about ten routes; more
+come one at a time, and a test keeps the two copies of the form functions
+(the hub test's and `check.py`'s, which uses the standard library only)
+equal.
 
 **Reason:** the hub declares no `response_model`; its answers are dicts
 built by view functions. A check against models would first need models
@@ -105,6 +107,13 @@ missing key as a finding at once — about 80 today; the baseline lets the
 check land and the fixtures catch up route by route.
 
 **Consequence:** a key the hub sends only in some states is missing
-from the record when the seed lacks that state; the seed sets
-`settings.ticker` for that reason, while `banner.etag` and `logo.etag`
-(only with an image) stay in the baseline.
+from the record when the seed lacks that state, and an empty list says
+nothing about its items. So the seed fills what is cheap: settings,
+mentions, a note, a link, a dependency, a request. `banner.etag` and
+`logo.etag` (only with an image) stay in the baseline as keys "the hub
+sends no such key"; a personal request from a project the reader is no
+member of is seeded because only its notification carries
+`project.member`; without that state the record reads as if the hub never
+sent the key, and a fixture "fixed" to match would be wrong.
+Lists the seed
+leaves empty (attachments, aliases, a runner's projects) are not compared.

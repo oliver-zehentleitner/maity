@@ -1898,7 +1898,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // the admin is one level under the owner and the guest one under the admin.
   {
     const orgCtx = { members: [
-      { id: "o1", kind: "human", display_name: "Owner One", trust: "owner", role: "manager", areas: [] },
+      { id: "o1", kind: "human", display_name: "Owner One", trust: "owner", role: "manager", areas: [],
+        manages: { direct: { members: 1, instances: 2, online: 2, dormant: 1 }, total: { members: 3, instances: 4, online: 3, dormant: 1 } } },
       { id: "a1", kind: "human", display_name: "Admin One", trust: "admin", role: "coder", areas: [] },
       { id: "g1", kind: "human", display_name: "Guest One", trust: "guest", role: "tester", areas: [] },
       { id: "ag1", kind: "agent", handle: "ag", display_name: "Agent One", trust: "member", role: "coder", areas: [], presence: "online", reports_to: "o1",
@@ -1914,6 +1915,21 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(orgAsleep.length === 2 && !orgAsleep[0].querySelector(".member-dormant") && orgAsleep[1].querySelector(".member-dormant"),
       "org: only the dormant instance says it is dormant");
     expect(t && t.querySelectorAll(".org-node").filter((n) => n.querySelector(".org-instances")).length === 1, "org: a human lists no instances");
+    // The fixture hub counts `manages` by the hub's rule: a paused instance is not online even
+    // while dormant, and a paused or isolated member has no instance online (instance_counts).
+    const fm = win.Maity.api.fixtureManages;
+    const lead = { id: "L" };
+    const under = (id, extra, instances) => Object.assign({ id, reports_to: "L", presence: "online", instances }, extra);
+    const fmDirect = fm ? fm([lead,
+      under("live", {}, [{ id: "a", presence: "online" }, { id: "b", presence: "paused", dormant: { since: "x" } }, { id: "c", presence: "offline", dormant: { since: "x" } }]),
+      under("iso", { presence: "offline", isolated: { since: "x" } }, [{ id: "d", presence: "online" }]),
+      under("pau", { presence: "paused", paused: { since: "x" } }, [{ id: "e", presence: "paused", dormant: { since: "x" } }])]).L.direct : null;
+    expect(fmDirect && JSON.stringify(fmDirect) === JSON.stringify({ members: 3, instances: 5, online: 2, dormant: 1 }),
+      "fixture manages: paused instances and held members count, none of them online " + JSON.stringify(fmDirect));
+    const orgManages = t ? t.querySelectorAll(".org-manages") : [];
+    expect(orgManages.length === 1 && text(orgManages[0]) === "leads 1 member · 2 instances (2 online, 1 dormant)"
+      && orgManages[0].getAttribute("title") === "whole branch: leads 3 members · 4 instances (3 online, 1 dormant)",
+      "org: a lead says whom it leads with their instances, dormant a part of online, the whole branch on hover " + orgManages.map((x) => text(x) + " | " + x.getAttribute("title")));
     const depthOf = (name) => { let d = 0; let n = t && t.querySelectorAll(".org-node").find((x) => text(x).includes(name)); while (n && n !== t) { if (n.tagName === "UL") d += 1; n = n.parentNode; } return d; };
     expect(t && depthOf("Owner One") === 0 && depthOf("Admin One") === 1 && depthOf("Guest One") === 2,
       "org: owner, then admin, then guest, each a level deeper, the empty member level leaving no step " + [depthOf("Owner One"), depthOf("Admin One"), depthOf("Guest One")]);
@@ -7742,6 +7758,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "keep the why: no why says the reason; a path out of the repository stays text");
   win.Maity.api.getAll = ktGetAll;
   // Since 2026-10-26 the owner's notice is a personal request in the inbox (§6.23, §18.1): no kind of its own.
+  // A personal request of a project the reader is no member of carries project.member false (§7, §18.2):
+  // its notification leads to /all, also once by_project no longer lists that project.
+  const ntKept = win.Maity.notify.state.byProject;
+  win.Maity.notify.state.byProject = {};
+  const ntItem = (full, member) => ({ kind: "inbox", project: Object.assign({ slug: full.split("/")[1], full_name: full }, member === undefined ? {} : { member }), target: { type: "request", id: "req-x" } });
+  expect(win.Maity.notify.linkOf(ntItem("lv/lasteverlm", false)) === "/all" && win.Maity.notify.linkOf(ntItem("maintainer/maity")) === "/maintainer/maity/inbox/req-x",
+    "notifications: a personal request of a project the reader is no member of leads to /all " + win.Maity.notify.linkOf(ntItem("lv/lasteverlm", false)));
+  win.Maity.notify.state.byProject = ntKept;
   expect(!("keep_the_why" in win.Maity.notify.KIND_WORDS), "keep the why: the owner's notice is a request in the inbox, no notification kind of its own");
   const ktProto = Object.getPrototypeOf(main), ktFocus = ktProto.focus;
   ktProto.focus = function () { document.activeElement = this; };
@@ -8962,6 +8986,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && mpPills().some((t) => t.startsWith("agent of")) && text(mpBox().querySelector(".member-line")).includes("Claude Code")
     && mpBox().querySelectorAll("a").some((a) => a.classList.contains("member-chat") && a.getAttribute("href") === "#/maintainer/maity/chat/agt-b"),
     "member page: breadcrumb, pills (agent of the owner), the line with the harness, Chat to one's own agent");
+  // `manages` from the hub (§6.2): nothing for a member nobody reports to; the direct reports,
+  // and the whole branch when it is larger, for a lead (the fixture counts as the hub does).
+  expect(!mpBox().querySelector(".member-manages"), "member page: no manages line for a member nobody reports to");
+  await go("#/maintainer/maity/members/hum-maintainer"); for (let k = 0; k < 6; k++) await tick();
+  const mpManages = mpBox() ? mpBox().querySelectorAll(".member-manages").map((x) => text(x)) : [];
+  // agt-c's instance is online, but agt-c is paused in the fixture: none online (instance_counts).
+  expect(JSON.stringify(mpManages) === JSON.stringify(["leads 1 member", "whole branch: leads 4 members · 2 instances (0 online)"]),
+    "member page: the direct reports, then the whole branch with its instances " + JSON.stringify(mpManages));
+  await go("#/maintainer/maity/members/agt-b"); for (let k = 0; k < 6; k++) await tick();
   const mpMenu = mpBox().querySelector(".member-actions-menu button");
   mpMenu.click(); await tick();
   const mpItems = mpBox().querySelectorAll(".member-actions-menu a").map((x) => [text(x), x.getAttribute("href")]);

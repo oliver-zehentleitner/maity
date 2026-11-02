@@ -626,6 +626,33 @@ window.Maity = window.Maity || {};
     list.forEach((x, k) => each(x || {}, path + "." + k));
   }
   const landingHref = (t) => typeof t === "string" && ((/^\/(?!\/)[A-Za-z0-9._~%\/?=&-]*$/.test(t)) || /^https:\/\/[^\s/@]+(\/[^\s]*)?$/.test(t));
+  // `manages` (§6.2) as the hub counts it (instance_counts): the members reporting to each
+  // member and its whole branch, with their instances not revoked; an instance is online while
+  // its presence is online or, not paused, it is dormant, and dormant is a part of online. A
+  // paused, suspended (presence paused) or isolated member has no instance online.
+  function fixtureManages(items) {
+    const below = {};
+    items.forEach((x) => { if (x.reports_to) (below[x.reports_to] = below[x.reports_to] || []).push(x); });
+    const held = (x) => x.presence === "paused" || x.paused || x.isolated;
+    const online = (i) => i.presence !== "paused" && (i.presence === "online" || !!i.dormant);
+    const count = (members) => {
+      const live = members.flatMap((x) => (x.instances || []).filter((i) => !i.revoked_at));
+      const awake = members.filter((x) => !held(x)).flatMap((x) => (x.instances || []).filter((i) => !i.revoked_at && online(i)));
+      return { members: members.length, instances: live.length, online: awake.length,
+        dormant: awake.filter((i) => i.dormant).length };
+    };
+    const branch = (id) => {
+      const found = [], seen = new Set([id]), queue = (below[id] || []).slice();
+      while (queue.length) {
+        const x = queue.pop();
+        if (seen.has(x.id)) continue;
+        seen.add(x.id); found.push(x); queue.push(...(below[x.id] || []));
+      }
+      return found;
+    };
+    return Object.fromEntries(items.map((x) => [x.id, { direct: count(below[x.id] || []), total: count(branch(x.id)) }]));
+  }
+
   function landingText(x, path, max, required, errors) {
     if (x === undefined || x === null || x === "") { if (required) errors[path] = "required"; return; }
     if (typeof x !== "string") errors[path] = "invalid";
@@ -693,7 +720,7 @@ window.Maity = window.Maity || {};
         landingText(s.subline, sp + ".subline", 300, false, errors); landingCta(s.cta_primary, sp + ".cta_primary", true, errors);
         landingCta(s.cta_secondary, sp + ".cta_secondary", false, errors); landingMarkdown(s.note, sp + ".note", 500, false, errors);
       } else if (s.type === "stats") {
-        const ok = ["people", "agents", "public_projects", "cards_done_week", "people_online", "agents_online"];
+        const ok = ["people", "agents", "public_projects", "cards_done_week", "people_online", "agents_online", "instances", "instances_online"];
         if (!Array.isArray(s.items) || s.items.some((x) => !ok.includes(x))) errors[sp + ".items"] = "invalid";
       } else if (s.type === "steps" || s.type === "scales" || s.type === "faq") {
         landingText(s.title, sp + ".title", 120, true, errors);
@@ -3712,7 +3739,9 @@ window.Maity = window.Maity || {};
       const admin = membersAdmin(m[1]);
       const creds = fixtures()[m[1] + "/credentials.json"] || {};
       const monthAgo = Date.now() - 30 * 86400000;
-      return { next_cursor: null, items: list.items.map((x) => {
+      const counted = fixtureManages(list.items);
+      return { next_cursor: null, items: list.items.map((x0) => {
+        const x = Object.assign({}, x0, { manages: counted[x0.id] });
         if (!admin && x.owner_id !== me().member.id) return x;
         if (x.kind !== "agent") return Object.assign({}, x, { owner: null, credentials: null });
         const all = (creds[x.id] || { items: [] }).items;
@@ -4699,6 +4728,8 @@ window.Maity = window.Maity || {};
     isPublicPath: (path) => PUBLIC_PATH.test(path),
     // The hub's time as best known: this clock corrected by the last answer's.
     now: () => Date.now() + skew,
+    // The fixture hub's `manages` count (§6.2), for the smoke test of its rule.
+    fixtureManages,
     source,
     ApiError,
     get: (path, opts) => request("GET", path, undefined, undefined, opts && opts.signal),

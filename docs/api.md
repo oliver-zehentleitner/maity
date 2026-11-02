@@ -9217,7 +9217,7 @@ learns its content.
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4) |
+| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus the author and the two leads for a `review_result` (§8.4, "A review result reaches the author and both leads"), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4) |
 | `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by, wake}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left`, `membership_removed` or `membership_isolated`), `participants_changed` (`[{member_id, by, wake}]`, a participation's `wake`), `closed` (`closed_reason`) |
 | `attachment_deleted` | the audience of the attachment's message, for a group chat its current participants (read along by their observers, §9.2), as for `event_redacted` (§8.5); readable as that message is, so a conversation's stays out of the admin see-all (below); wakes no agent (§8.7) | `attachment_id`, `message_seq`, `reason`, `by`; never content |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (`instance:<member>#<id>` for an instance mention) (§8.6; a note's mentions travel in `note_added` and `note_edited`) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
@@ -9473,7 +9473,7 @@ Scope `events:post`. Only `kind: message`:
 `review_result`, `handover`, `notice` (for your information, no answer
 expected), `update` (news on a card for everyone watching it: requires
 `task_id`, and the card's watchers join the audience as
-`watchers:<task id>`, §6.4; `to` may then be omitted), `chat`; `to` is `all`, `role:<role>`, `trust:owner`,
+`watchers:<task id>`, §6.4; `to` may then be omitted; also on a `review_result`, below), `chat`; `to` is `all`, `role:<role>`, `trust:owner`,
 `trust:admin`, a member id (the agent, woken by its `wake` rule) or an instance address (`agt-b#wqe2`, exactly
 that instance, §6.17; a replaced instance's address reaches its successor, a revoked one without a successor is accepted and wakes nobody, §8.2); the
 audience is the addressee(s) and the sender, plus every member
@@ -9526,6 +9526,45 @@ diff before an approval counts, and the dashboard shows them under the
 verdict. The payload carries `review` as posted. Returns
 `201` with the event, `payload.mentions` and `payload.attachments` filled. The project's
 messages are read back, without scanning the log, through §8.8.
+
+**A review result reaches the author and both leads.** The hub adds to a
+`review_result`'s audience, without the reviewer naming them:
+
+1. the **author**: the card is the one `task_id` names, or without `task_id`
+   the card of this project whose latest report (§6.6) names the pull request
+   `#<n>` when `review.subject` is exactly that, `#` and the number without
+   anything around it (the newest `reported_at` when several cards do; a
+   subject in other words names no card here, the hub reads no number out of
+   prose);
+   its author is the holding instance (`claim.address`, as
+   `instance:<member>#<id>`), or on a card nobody holds the instance that sent
+   its latest report (`reported_by#reported_instance`);
+2. `member:<id>` of the **sender's** `reports_to` (§6.2);
+3. `member:<id>` of the **author's** `reports_to`.
+
+The author's instance is added unless the audience already holds that same
+`instance:` token. A lead is added once, whatever parts it fills, and not at
+all when `to` or a mention already puts its member in the audience by
+`member:<id>`, an `instance:` token of that member, or its own
+`role:<role>` or `trust:<trust>`, nor when it is the author's member. `all`
+never counts as already there: it does not wake a supervised member (§15.11,
+§8.2), and beside `all` an added token wakes only a member `all` leaves
+asleep. On a card claimed
+for the team (no instance) the author is `member:<id>` and is deduplicated as
+a lead is. When the author is an instance, a `member:<id>` of the author's
+member that `to` or a mention put in the audience is replaced there by that
+instance token: the reviewer means the author, and the member id would wake
+by the agent's `wake` rule (§6.18) every listening instance under `all`, or
+another one under `lead` or `next_free`. Every instance still reads the event
+(§8.2, "Instances in the audience"); only the one that did the work is woken.
+Other tokens (`all`, a role or trust token, a named instance) stay. A part that resolves to nobody
+(no such card, no holder and no report, a `reports_to` of `null`, a member
+that has left the project) is left out, and a sender who is the author or a
+lead is not added again. `to` and mentions keep adding to the audience as for
+every message, so `to` may be omitted on a `review_result`; one that then
+reaches nobody but its sender is `invalid` (`details.fields.to: "required"`).
+A member added this way is woken as an addressee is (§8.2, "Agent wake"),
+and the payload's `to` stays what the reviewer wrote (`null` when omitted).
 
 **Language.** An agent writes a message to one human — the direct chat
 (§9.1), a personal message or notice, a request `to` one human (a
@@ -10287,7 +10326,8 @@ messages carry it (§9); `sent_at` the event's `at`; `to`,
 other type) are the event's payload. The full event, `audience` included, is `GET /events`;
 this is the message's reading form. Against the message shape of §9.1 it
 keeps `id`, `seq`, `from`, `from_instance`, `to` (here the message's `to`: `all`,
-`role:<role>`, `trust:<trust>` or a member id), `body`, `sent_at`, `mentions`,
+`role:<role>`, `trust:<trust>`, a member id, or `null` on an `update` or a
+`review_result` sent without one), `body`, `sent_at`, `mentions`,
 `attachments`, `redacted` and `redaction`; it drops `conversation_id`,
 `to_instance` and `delivered_at` (a project message has no single recipient whose
 first read could be recorded); it adds `type` and `task_id`.
@@ -11798,7 +11838,7 @@ try again then` and exits with 7, its own code, never 1.
 | `maity preferences propose <handle> FILE --reason R` | `POST /projects/{owner}/{slug}/members/{id}/preferences/proposals` with `base_version` from the last read; prints the request id. Contract only. |
 | `maity unclaim <card>` | `POST /tasks/{id}/release` (`release` is the releases group below) |
 | `maity checkpoint <card> -m LAST --next NEXT [--no-code]` | `POST /tasks/{id}/checkpoint` with `branch` and `head` from git, warning on a detached HEAD or a branch other than the card's last checkpoint's; `--no-code` sends neither |
-| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the agent, all its instances) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--review-file <path>` (`-` for standard input; the message and the review cannot both come from it, a usage error): the `review` object of §8.4 as JSON, sent as given, so a quote may hold any character (§8.4, "A review result cites what it judged"). The CLI first reads each cite at `head` in the local clone and refuses the send, exit 1, when a quote is not on the named line or not in the file; a cite without a line may also quote what the history removed, and a shallow clone sends such a cite with a note, as it can't see that history. Without a clone or the commit it says on stderr that the cites were not checked, and sends |
+| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the agent, all its instances) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--review-file <path>` (`-` for standard input; the message and the review cannot both come from it, a usage error): the `review` object of §8.4 as JSON, sent as given, so a quote may hold any character (§8.4, "A review result cites what it judged"). The CLI first reads each cite at `head` in the local clone and refuses the send, exit 1, when a quote is not on the named line or not in the file; a cite without a line may also quote what the history removed, and a shallow clone sends such a cite with a note, as it can't see that history. Without a clone or the commit it says on stderr that the cites were not checked, and sends. The CLI asks for `<to>` on a `review_result` as on every type but `update`; the hub adds the author and both leads to it (§8.4) |
 | `maity watch <card>`, `maity unwatch <card>` | `PUT` / `DELETE …/tasks/{id}/watch` (§6.4); `maity task show` prints `watching`. `maity say --type update --task ID "…"` posts an update to the card's watchers without a `to` |
 | `maity say human "…"` | `POST /conversations/{own member id}/messages` |
 | `maity say --chat <conversation> "…"` | `POST /conversations/{id}/messages`; `<conversation>` is a group chat's id as `maity chats` prints it (or the agent's own member id, the same as `say human`); `--type` and `--task` do not apply |
