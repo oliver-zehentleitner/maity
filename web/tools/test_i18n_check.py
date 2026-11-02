@@ -120,6 +120,7 @@ expect(pt_words(("sign in", "entrar"), ("join", "entrar")) == ["entrar"], "gloss
 expect(pt_words(("user, one", "x"), ("users, several", "x")) == [], "glossary: one thing's two forms")
 expect(pt_words(("release (a version)", "x"), ("release (a claim)", "x")) == ["x"], "glossary: one English word, two things")
 expect(pt_words(("claim", "assumir, tomar"), ("take", "tomar")) == ["tomar"], "glossary: a form in a list of forms")
+expect(pt_words(("join (noun)", "ingresso"), ("join (a project)", "ingresso")) == [], "glossary: join as noun and verb")
 
 # The hub's words: a translation and what it follows, in a stand-in of the repository.
 import json  # noqa: E402

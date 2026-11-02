@@ -943,12 +943,23 @@ so that a level reads the same everywhere; the words around it stay neutral wher
 A report of abuse is resolved with `erledigen` on every key of its page, because `bearbeiten` is already the word for Edit and
 reads as editing.
 A release keeps its own word apart from a version where a language has both: `A release with this version already exists`
-names the two together, and legal pages and older frames already use `version` for a saved text. The German row fixes `das Release`, though both genders are in use.
+names the two together, and legal pages and older frames already use `version` for a saved text. The German row fixes one gender, `das Release`, because a half-changed catalog had `ein anderer Release` next to
+`ein Release`; why the neuter won over `der Release` is not recorded.
+Words outside the table follow the same aim. In Spanish, redacting is `suprimir`, deleting is `eliminar` and the button
+Remove is `Quitar`: three acts with three words, so a deletion text cannot be read as hiding or as removing from a list.
+"Reports to" is `informa a` on every key; the anglicism `reporta a` appeared on half of them. A waiting text whose verb
+needs a person, such as `Uniéndote…` for Joining, uses the address form of `glossary.md`, because a Spanish reflexive
+gerund has no neutral form. The duplicate check in `web/tools/check.py` treats a comma list in a cell as forms of one
+word, and `GLOSSARY_FORMS_OF_ONE` names rows that are one thing: `user` and `users`, a person and a human, `join` as
+noun and verb.
 
 **Rejected alternatives:**
 - `Übernahme` for both claim and takeover: an error then says a card "needs a takeover" next to "nobody has claimed it".
 - `Schlichtung` for arbiter: a procedure, and it reads badly before a name.
 - `version`, `versión`, `versão` for a release: one word for two things in `error.version_exists`.
 - `bearbeiten` for resolving a report: a half-changed page showed `Erledigen` next to `Wird bearbeitet …`.
+- `der Release`: in use as well; one gender was the point.
+- `eliminar` for redacting in Spanish: it is already the word for deleting an account or a project.
+- `Uniéndose…`: reads as the formal address, which the glossary does not use.
 - A neutral form for `Besitzer` in the table: it would make the level's name differ between labels and sentences.
 
