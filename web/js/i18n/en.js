@@ -609,6 +609,8 @@ window.MAITY_I18N["en"] = {
   "cardpanel.notes.post": "Post the note",
   "cardpanel.notes.posting": "Posting…",
   "cardpanel.notes.read_failed": "Could not read the notes: {reason}",
+  "cardpanel.notes.removed": "The note was removed: {reason}",
+  "cardpanel.notes.removed_by": "The note was removed by {who}: {reason}",
   "cardpanel.updates": "Updates",
   "cardpanel.updates.none": "No updates on this card yet.",
   "cardpanel.updates.none_latest": "No updates on this card among the project's latest messages.",
@@ -4662,5 +4664,9 @@ window.MAITY_I18N["en"] = {
     "one": "{count} entry without an id was skipped.",
     "other": "{count} entries without an id were skipped."
   },
-  "why.title": "Why"
+  "why.title": "Why",
+  "why.type.constraint": "constraint",
+  "why.type.decision": "decision",
+  "why.type.incident": "incident",
+  "why.type.workaround": "workaround"
 };

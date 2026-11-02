@@ -305,7 +305,7 @@ window.Maity = window.Maity || {};
   // Lifting a block early (§16.4): a rejected or expired address waits 30
   // days; the hub lists no blocks, so the address is typed.
   function blockPart() {
-    const address = h("input", { id: "reg-block-address", type: "email", autocomplete: "off", placeholder: "ada@example.com" });
+    const address = h("input", { id: "reg-block-address", type: "email", translate: "no", autocomplete: "off", placeholder: "ada@example.com" });
     const status = M.statusLine();
     const go = h("button", { type: "submit" }, M.t("reg.block.lift"));
     return h("form", {

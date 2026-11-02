@@ -609,6 +609,8 @@ window.MAITY_I18N["de"] = {
   "cardpanel.notes.post": "Notiz posten",
   "cardpanel.notes.posting": "Wird gepostet …",
   "cardpanel.notes.read_failed": "Die Notizen konnten nicht gelesen werden: {reason}",
+  "cardpanel.notes.removed": "Die Notiz wurde entfernt: {reason}",
+  "cardpanel.notes.removed_by": "Die Notiz wurde von {who} entfernt: {reason}",
   "cardpanel.updates": "Updates",
   "cardpanel.updates.none": "Noch keine Updates zu dieser Karte.",
   "cardpanel.updates.none_latest": "Keine Updates zu dieser Karte unter den neuesten Nachrichten des Projekts.",
@@ -4656,5 +4658,9 @@ window.MAITY_I18N["de"] = {
     "one": "{count} Eintrag ohne ID wurde übersprungen.",
     "other": "{count} Einträge ohne ID wurden übersprungen."
   },
-  "why.title": "Why"
+  "why.title": "Why",
+  "why.type.constraint": "Randbedingung",
+  "why.type.decision": "Entscheidung",
+  "why.type.incident": "Vorfall",
+  "why.type.workaround": "Workaround"
 };

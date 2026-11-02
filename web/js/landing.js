@@ -437,7 +437,7 @@ window.Maity = window.Maity || {};
         draw();
       });
       const tabs = h("div", { class: "lp-tabs", role: "group", "aria-label": M.t("landing.languages") }, langs.map((l) => {
-        const b = h("button", { type: "button", "aria-pressed": String(l === lang) }, l);
+        const b = h("button", { type: "button", translate: "no", "aria-pressed": String(l === lang) }, l);
         b.addEventListener("click", () => { lang = l; draw(); });
         return b;
       }));
@@ -679,7 +679,7 @@ window.Maity = window.Maity || {};
         draw();
       });
       const tabs = h("div", { class: "lp-tabs", role: "group", "aria-label": M.t("legal.languages", { page: label }) }, langs.map((l) => {
-        const b = h("button", { type: "button", "aria-pressed": String(l === lang) }, l);
+        const b = h("button", { type: "button", translate: "no", "aria-pressed": String(l === lang) }, l);
         b.addEventListener("click", () => { lang = l; draw(); });
         return b;
       }));

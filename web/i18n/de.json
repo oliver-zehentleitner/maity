@@ -603,6 +603,8 @@
   "cardpanel.notes.placeholder": "Ein Befund, ein fehlender Fall, ein Hinweis (Markdown)",
   "cardpanel.notes.post": "Notiz posten",
   "cardpanel.notes.posting": "Wird gepostet …",
+  "cardpanel.notes.removed": "Die Notiz wurde entfernt: {reason}",
+  "cardpanel.notes.removed_by": "Die Notiz wurde von {who} entfernt: {reason}",
   "cardpanel.notes.read_failed": "Die Notizen konnten nicht gelesen werden: {reason}",
   "cardpanel.updates": "Updates",
   "cardpanel.updates.none": "Noch keine Updates zu dieser Karte.",
@@ -4651,5 +4653,9 @@
     "one": "{count} Eintrag ohne ID wurde übersprungen.",
     "other": "{count} Einträge ohne ID wurden übersprungen."
   },
-  "why.title": "Why"
+  "why.title": "Why",
+  "why.type.decision": "Entscheidung",
+  "why.type.workaround": "Workaround",
+  "why.type.incident": "Vorfall",
+  "why.type.constraint": "Randbedingung"
 }

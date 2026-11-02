@@ -3430,9 +3430,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(cpPanel().querySelector(".card-body")) === "The REST contract hub, CLI and dashboard build against; ask @agent-b."
     // Its stored mention a link where it stands (the one renderer, review of #860).
     && cpPanel().querySelector(".card-body a.mention") && cpPanel().querySelector(".card-body a.mention").getAttribute("href") === "#/maintainer/maity/members/agt-b"
-    && JSON.stringify(cpNotes()) === JSON.stringify(["@agent-c · " + win.Maity.dom.formatTime("2026-10-21T10:30:00Z") + "The CLI needs --no-code here too."])
-    && cpGets.includes("/projects/maintainer/maity/tasks/tsk-0001/notes?state=open"),
+    && cpNotes()[0] === "@agent-c · " + win.Maity.dom.formatTime("2026-10-21T10:30:00Z") + "The CLI needs --no-code here too."
+    && cpNotes().length === 2 && cpGets.includes("/projects/maintainer/maity/tasks/tsk-0001/notes?state=open"),
     "card panel: the card with its controls (no link to itself, not dragged), the body as Markdown, the open notes only " + JSON.stringify(cpNotes()));
+  // A redacted note (§6.16) keeps its place; its body is §8.5's tombstone, never "[object Object]".
+  const cpRemoved = cpPanel().querySelector(".card-note-removed");
+  expect(cpNotes()[1] === "@agent-b · " + win.Maity.dom.formatTime("2026-10-21T11:30:00Z") + "The note was removed by Maintainer: held a token · "
+    + win.Maity.dom.formatTime("2026-10-21T12:00:00Z") && !!cpRemoved && !cpRemoved.parentNode.querySelector(".md") && !cpNotes()[1].includes("[object"),
+    "card panel: a redacted note shows who removed it, why and when, no Markdown " + JSON.stringify(cpNotes()[1]));
   const cpHist = cpPanel().querySelectorAll(".card-history-list li").map((li) => text(li));
   expect(cpHist.length === 3 && cpHist[0].startsWith("@maintainer changed the description") && cpPanel().querySelector("pre.history-diff").textContent.includes("+The REST contract hub")
     && cpHist[1].startsWith("@maintainer changed the label: fix → feature") && cpHist[2].startsWith("@agent-a created the card"),
@@ -3511,7 +3516,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!cpPosts.length, "card panel: an empty note is not sent");
   byId("card-note-body").value = "Check §6.16 too."; cpPanel().querySelector("form.card-note-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(JSON.stringify(cpPosts[0]) === JSON.stringify(["/projects/maintainer/maity/tasks/tsk-0001/notes", { body: "Check §6.16 too." }])
-    && cpNotes().length === 2 && cpNotes()[1].startsWith("@maintainer") && document.activeElement === byId("card-note-body") && byId("card-note-body").value === "",
+    && cpNotes().length === 3 && cpNotes()[2].startsWith("@maintainer") && document.activeElement === byId("card-note-body") && byId("card-note-body").value === "",
     "card panel: a note is posted and listed, the form ready for the next");
   // A second submit while the first post is on its way sends nothing; a refusal lets it be sent again.
   let cpRelease = null;
@@ -3530,7 +3535,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "card panel: a refused post keeps the text and the button usable again");
   win.Maity.api.post = (p, b) => { if (p.includes("/notes")) cpPosts.push([p, b]); return cpPost(p, b); };
   cpForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
-  expect(cpPosts.length === cpBefore + 2 && cpNotes().length === 3, "card panel: the note is sent again after the refusal");
+  expect(cpPosts.length === cpBefore + 2 && cpNotes().length === 4, "card panel: the note is sent again after the refusal");
   // Escape closes, as Close does: the board again, the card marked, its title focused.
   cpPanel().dispatch("keydown", { key: "Escape" }); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
   expect(win.location.hash === "#/maintainer/maity/board" && !cpPanel() && cpCard().classList.contains("wanted") && document.activeElement === cpCard().querySelector("a.card-open"),

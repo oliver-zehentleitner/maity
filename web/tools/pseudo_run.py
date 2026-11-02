@@ -29,18 +29,27 @@ OPEN, CLOSE = "⟦", "⟧"
 ACCENTS = str.maketrans("AaEeIiOoUuCcNnYy", "ÀàÉéÎîÕõÜüÇçÑñÝý")
 
 # What is on the page and in no catalog on purpose: each language's name in itself, product names.
-KEPT = {"Afaraf", "العربية", "Deutsch", "English", "français", "日本語", "简体中文", "Maity", "GitHub", "GitLab", "Gitea"}
+KEPT = {"Afaraf", "العربية", "Deutsch", "English", "français", "日本語", "简体中文", "Maity", "GitHub", "GitLab", "Gitea",
+        "English (Pseudo-Accents)"}  # the browser's own name for the pseudo tag
+
+# Names in the fixtures that are also a word of the catalog: as data they would be taken
+# out with the catalog's texts, and then count as a text of the interface.
+FIXTURE_NAMES = {"Reviewer", "OZ Team"}
 
 COLLECT = """() => {
   const SKIP = new Set(["SCRIPT", "STYLE", "CODE", "PRE", "KBD", "SAMP", "TIME", "TEMPLATE", "NOSCRIPT"]);
+  // translate="no" marks what stays as it is on purpose (an example, a tag, a technical
+  // reason); aria-hidden is decoration such as a monogram, no text anyone reads.
+  const kept = (e) => e.closest('[translate="no"], [aria-hidden="true"]');
   const found = [];
   const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   for (let n = walk.nextNode(); n; n = walk.nextNode()) {
-    let inside = false;
+    let inside = kept(n.parentElement) !== null;
     for (let e = n.parentElement; e; e = e.parentElement) if (SKIP.has(e.tagName)) inside = true;
     if (!inside) found.push(n.textContent.trim());
   }
   for (const e of document.body.querySelectorAll("[title],[placeholder],[aria-label],[alt]")) {
+    if (kept(e)) continue;
     for (const a of ["title", "placeholder", "aria-label", "alt"]) if (e.getAttribute(a)) found.push(e.getAttribute(a).trim());
   }
   if (document.title) found.push(document.title);
@@ -63,6 +72,7 @@ def pseudo_catalog(english: dict[str, Any]) -> dict[str, Any]:
 
 # A value under these keys is a word of the contract the interface has to put in words,
 # so a page that shows it as it comes has a text outside the catalog.
+ENUM_VALUE = re.compile(r"[a-z][a-z0-9_.-]*")
 ENUM_KEYS = {"state", "status", "kind", "presence", "role", "trust", "type", "reason", "code", "scope", "severity", "mode"}
 
 
@@ -70,15 +80,21 @@ def strings_in(value: Any) -> set[str]:
     if isinstance(value, str):
         return {value.strip()}
     if isinstance(value, dict):
-        return {s for key, item in value.items() if key not in ENUM_KEYS for s in strings_in(item)}
+        # An enum's value is no data, a page shows it through the catalog; the same keys
+        # also carry prose (a decision's reason, a release's scope), and that is data.
+        return {s for key, item in value.items() for s in strings_in(item) if key not in ENUM_KEYS or not ENUM_VALUE.fullmatch(s)}
     return {s for item in value for s in strings_in(item)} if isinstance(value, list) else set()
 
 
 # What a page composes around words and is no word: a count in the title, a date in the
-# browser's format, a handle, an instance, a card, an address, a path.
+# browser's format, a handle, an instance, a card, an address, a path, a commit, a
+# device code, a mail address, a domain, a media type.
 NOT_WORDS = re.compile(
     r"""^\(\d+\)\s | \b[A-Z][a-z]{2}\ \d{1,2},\ \d{4}(?:,\ \d{1,2}:\d{2}(?:\s?[AP]M)?)? | \b\d{1,2}:\d{2}(?:\s?[AP]M)?
-        | (?:^|(?<=\s))[@\#]\S+ | \b(?:tsk|req|agt|hum|att)-\S+ | \bhttps?://\S+ """,
+        | \b(?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day,\ [A-Z][a-z]+\ \d{1,2},\ \d{4}
+        | (?:^|(?<=[\s(]))[@\#]\S+ | \b(?:tsk|req|agt|hum|att)-\S+ | \bhttps?://\S+
+        | \b(?:text|image|application|audio|video)/[\w.+-]+ | \b[\w-]+\#[a-z0-9]{4}\b | \b(?=[0-9a-f]*\d)[0-9a-f]{7,40}\b
+        | \b[A-Z0-9]{4}(?:-[A-Z0-9]{4}){2}\b | \S+@[\w-]+(?:\.[\w-]+)+ | \b[\w-]+(?:\.[\w-]+)*\.(?:org|net|com|dev|team|social|example)\b """,
     re.X,
 )
 MARKED = re.compile(f"{OPEN}[^{CLOSE}]*{CLOSE}")
@@ -96,30 +112,59 @@ def _no_paths(text: str, data: set[str]) -> str:
 def unmarked(text: str, data: set[str], data_text: str = "") -> bool:
     """A text of the interface the catalog's marks did not reach. What is marked comes out
     first, so a word beside a marked one still counts; each piece of a line composed with
-    `·` is judged by itself; data and what has no word are no text. Long pieces are data
+    `·` is judged by itself, a piece as it stands before the stops come off it; data and
+    what has no word are no text. Long pieces are data
     also inside a fixture's text, which markup splits into several nodes. An accent without
     a mark is a catalog text with its ends cut off."""
+    if text.strip() in data or text.strip() in KEPT:
+        return False
     rest = _no_paths(NOT_WORDS.sub(" ", MARKED.sub(" · ", text)), data)
     for piece in re.split(r"\s[·–—]\s|^[·–—]\s", rest):
-        piece = piece.strip(" ·–—,;:.()⟦⟧")
+        if " ".join(piece.split()).strip(" ·–—○()⟦⟧") in data:
+            continue
+        piece = piece.strip(" ·–—○,;:.()⟦⟧")
         if not re.search(r"[^\W\d_]{2}", piece) or piece in data or piece + "." in data:
             continue
         if any(c in ACCENTED for c in piece):
             continue
-        if piece in KEPT or piece in check.NOT_PROSE or (len(piece.split()) > 2 and piece in data_text):
+        if piece in KEPT or piece in check.NOT_PROSE or (len(piece.split()) > 2 and " ".join(piece.split()) in data_text):
             continue
         return True
     return False
 
 
+LITERAL = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
+
+
+def literals(source: str) -> set[str]:
+    return {m.strip() for m in LITERAL.findall(source) if m.strip()}
+
+
+# Where a page splits what someone wrote into several nodes: a code span, a mention.
+SPLIT = re.compile(r"`[^`]*`|(?:^|(?<=\s))@\S+")
+
+
+def pieces_of(written: str) -> set[str]:
+    """A fixture's text as the page shows it in pieces: each node between a code span and a
+    mention, and the whole with what `unmarked` takes out of a page's text (a path, a
+    date) taken out. Raw, with their stops: `Keep it;` is a piece, `Keep it` a button."""
+    parts = SPLIT.split(written) + [_no_paths(NOT_WORDS.sub(" ", written), set())]
+    return {" ".join(p.split()) for p in parts if re.search(r"[^\W\d_]{2}", p)}
+
+
 def fixture_strings() -> set[str]:
-    """What the fixtures say as data. A catalog's text among them does not count: a page
-    that shows that wording without the catalog is what this run looks for."""
+    """What the fixtures say as data: the JSON files and the answers `api.js` writes itself.
+    A catalog's text among them does not count, nor a literal a view also writes: a page
+    that shows that wording without the catalog is what this run looks for. A fixture's
+    name that is also a catalog's word comes back, it is a name there."""
     out: set[str] = set()
     for path in (WEB / "fixtures").rglob("*.json"):
         out |= strings_in(json.loads(path.read_text(encoding="utf-8")))
+    views = set().union(*(literals(p.read_text(encoding="utf-8")) for p in (WEB / "js").glob("*.js") if p.name != "api.js"))
+    out |= literals((WEB / "js" / "api.js").read_text(encoding="utf-8")) - views
+    out |= {p for written in out for p in pieces_of(written)}
     english = json.loads((WEB / "i18n" / "en.json").read_text(encoding="utf-8"))
-    return out - {t.strip() for e in english.values() for t in ([e] if isinstance(e, str) else e.values())}
+    return (out - {t.strip() for e in english.values() for t in ([e] if isinstance(e, str) else e.values())}) | FIXTURE_NAMES
 
 
 def routes_of_smoke() -> list[str]:
