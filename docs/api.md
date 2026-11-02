@@ -158,7 +158,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (setting its own agent's `wake` excepted, §9.2), and on a post, chat change or redaction of an owner outside the project, its own agent's `wake` again excepted (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`owner_sets_wake` §9.2, `same_agent_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: isolated` for every call of an isolated agent's credentials into its project except `GET /me` and the resume packet (§6.2, "Isolation"); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1); `project_not_allowed` for a join of an agent into a project its owner's `allowed_projects` does not name (§6.3); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `not_your_bridge` and `bridge_no_governance` for a bridge's `Maity-For` call on an agent it has no connection to, or under a governance scope or `line:lead` (§2.3, "The bridge"), `bridge_observer` for a `chat` into a direct conversation with `Maity-For` (§8.4, §9.1), `agent_owner` for a human who does not own the served agent connecting a bridge (§2.3); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26) |
+| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (setting its own agent's `wake` excepted, §9.2), and on a post, chat change or redaction of an owner outside the project, its own agent's `wake` again excepted (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, confirming a sign-in, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: not_earlier` for confirming a sign-in from the session it reports on or from one created after it (§2.6.5); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`owner_sets_wake` §9.2, `same_agent_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: isolated` for every call of an isolated agent's credentials into its project except `GET /me` and the resume packet (§6.2, "Isolation"); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1); `project_not_allowed` for a join of an agent into a project its owner's `allowed_projects` does not name (§6.3); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `not_your_bridge` and `bridge_no_governance` for a bridge's `Maity-For` call on an agent it has no connection to, or under a governance scope or `line:lead` (§2.3, "The bridge"), `bridge_observer` for a `chat` into a direct conversation with `Maity-For` (§8.4, §9.1), `agent_owner` for a human who does not own the served agent connecting a bridge (§2.3); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -1179,11 +1179,12 @@ limit the hub states, not one it closes. What it does instead:
   other session of the human shows it in the dashboard at once, with
   the session and a one-click "End this session" (§2.6.5) — not only by
   a mail the agent could delete. Only a session that existed before
-  that sign-in can mark it read; the obtained session and every session
-  created after it cannot.
+  that sign-in can confirm it or mark it read; the obtained session and
+  every session created after it can do neither, and the banner stays
+  until the sign-in is confirmed, read or not.
 - **A session the human has not confirmed cannot lock the human
   out.** A session in good standing — signed in by password, or its
-  own sign-in alert marked read by the human (§2.6.5) — may end any
+  sign-in confirmed by the human with "This was me" (§2.6.5) — may end any
   session of the human, a newer one included. A session not in good
   standing never ends one that is in good standing, and while it is
   younger than 1 hour it ends no older session at all. So a session
@@ -1742,13 +1743,21 @@ and is never affected by mail limits; the password is not either.
 | `GET /auth/sessions` `?ended=true` | human | the caller's own sessions, newest first; with `ended=true` also the ones ended in the last 30 days |
 | `DELETE /auth/sessions/{id}` | human | ends one of the caller's own sessions, and every session it approved by device code that the caller may end (below); the current one is a logout; idempotent; answers the session as it is now, with `skipped` naming the approved sessions it did not end |
 | `POST /auth/sessions/end-others` | human | ends every session of the caller but the current one; answers the list of live sessions |
+| `POST /auth/sessions/{id}/confirm` | human | "This was me": confirms the sign-in of one of the caller's own sessions (below); answers the session as it is now. Idempotent: a session already confirmed, or signed in by password, answers `200` unchanged. An ended session, or one of another human, is `not_found`; a caller that may not confirm it is `forbidden` with `details.reason` `not_in_good_standing` (the caller is not in good standing) or `not_earlier` (the caller is the session itself or was created after it) |
 
 **Good standing.** A session is **in good standing** when it was
-signed in by password, or when its own `session_created` item has been
-marked read by an allowed session through `ids` (below) — never by
-`up_to`, by age or by the record's expiry. The session list shows it
-(`good_standing`). Good standing is what lets a session end others,
-mark sign-in alerts read and act on a held address change (§2.6.3).
+signed in by password, or when its sign-in has been **confirmed** —
+`POST /auth/sessions/{id}/confirm` from an allowed session (below).
+Reading its alert never confirms it, however it is read: by `ids`, by
+`up_to`, by age or by the record's expiry (§18.3). The session list
+shows it (`good_standing`, and `confirmed_at` and `confirmed_by`, the
+confirming session's id, on a confirmed one; both `null` otherwise).
+Good standing is what lets a session end others, confirm sign-ins,
+mark security alerts read and act on a held address change (§2.6.3).
+The maintainer's decision of 2026-11-02 (`context/notifications.md`)
+separated confirming from reading, so that the bell can be tidied
+without the protection going with it: a session confirmed before then
+by marking its alert read keeps its good standing.
 
 **Who may end which session.**
 
@@ -1773,11 +1782,13 @@ every other session, since it needs the password.
   { "id": "hss-41c0", "current": true, "method": "password",
     "created_at": "2026-10-22T08:02:11Z", "last_seen_at": "2026-10-22T14:01:30Z",
     "expires_at": "2026-11-05T14:01:30Z", "browser": "Firefox", "os": "Linux",
-    "ip": "198.51.100.7", "approved_by": null, "good_standing": true },
+    "ip": "198.51.100.7", "approved_by": null, "good_standing": true,
+    "confirmed_at": null, "confirmed_by": null },
   { "id": "hss-41c7", "current": false, "method": "device_code",
     "created_at": "2026-10-22T14:01:40Z", "last_seen_at": "2026-10-22T14:01:40Z",
     "expires_at": "2026-11-05T14:01:40Z", "browser": "Safari", "os": "iOS",
     "ip": "203.0.113.24", "approved_by": "hss-41c0", "good_standing": false,
+    "confirmed_at": null, "confirmed_by": null,
     "created": { "record": "acr-118", "ip": "203.0.113.24", "browser": "Safari", "os": "iOS" },
     "ended_at": null, "ended_by": null } ] }
 ```
@@ -1825,26 +1836,31 @@ notification of the kind `security` (#160, §18.1), title `New sign-in:
 - **In the dashboard** the `security` notification is always there: it
   has no browser or mail switch that hides it from the bell, and it
   counts in `counts.security` (not in `total`).
-- **Who may mark it read.** A `session_created` item is marked read
-  only from a session that **existed before** the sign-in it reports —
-  never from the session it reports on, and never from any session
-  created after it — and only when that earlier session is itself in
-  good standing (above). It is marked read only through `ids` — the
-  explicit "This was me", or the item in the session list — and never
-  through `up_to`: "mark all read" skips every `security` item, so
-  tidying the bell never confirms a sign-in. A `POST
+- **Who may confirm it, and who may mark it read.** A sign-in is
+  confirmed, and its `session_created` item marked read, only from a
+  session that **existed before** the sign-in it reports — never from
+  the session it reports on, and never from any session created after
+  it — and only when that earlier session is itself in good standing
+  (above). Confirming is the explicit "This was me" (`POST
+  /auth/sessions/{id}/confirm`), on the item, the banner or the session
+  in the session list; it marks the item read as well. Marking the item
+  read without confirming — through `ids`, or through `up_to` with
+  `include_security` (§18.3) — follows the same rule and confirms
+  nothing: the session stays not in good standing, and the session list
+  shows it as not confirmed until "This was me". A `POST
   /me/notifications/read` from a session that may not mark the item
-  skips it as well, and marks the rest. So a session obtained through a mailbox can hide
-  neither its own alert nor that of a second session it obtains next
-  (by another mail sign-in, or by a device code it approves). An item
-  that no session may mark read — the human had no session in good
-  standing at the time — stays listed and unread in the bell until its
-  record expires (90 days). Security items are exempt from the 30-day
-  rule of #160 §18.2 that counts older items as read: they stay listed
-  and unread until an allowed session marks them read or the record
-  expires. Only that marking grants good standing; age, expiry or any
-  other automatic reading never does — a session whose own item
-  expired unread stays out of good standing.
+  skips it, names it in `skipped` (§18.3) and marks the rest. So a
+  session obtained through a mailbox can hide neither its own alert nor
+  that of a second session it obtains next (by another mail sign-in, or
+  by a device code it approves). An item that no session may mark read
+  — the human had no session in good standing at the time — stays
+  listed and unread in the bell until its record expires (90 days).
+  Security items are exempt from the 30-day rule of #160 §18.2 that
+  counts older items as read: they stay listed and unread until an
+  allowed session marks them read or the record expires. Only
+  confirming grants good standing; reading, age, expiry or any other
+  automatic reading never does — a session whose own item expired
+  unconfirmed stays out of good standing.
 - **Every mail sign-in is an alert** — method `email_link` or
   `email_code`, whatever device cookie the browser presented. It is
   shown in **every other session** of the human at once, not only in
@@ -1853,10 +1869,11 @@ notification of the kind `security` (#160, §18.1), title `New sign-in:
   <ip>, <time>" with **End this session** (`DELETE
   /auth/sessions/{id}`, one click, no confirmation dialog; it also ends
   every session the reported one approved by device code, and those
-  approved by them in turn) and, in a session that may mark the item
-  read (above), **This was me**. The banner stays while the item is
-  unread and the reported session, or a session it approved, is still
-  active; a dashboard opened later shows it too. The item carries the
+  approved by them in turn) and, in a session that may confirm it
+  (above), **This was me**. The banner stays while the reported session
+  is not confirmed and it, or a session it approved, is still active —
+  whether its item is read or not, so that tidying the bell never
+  removes it; a dashboard opened later shows it too. The item carries the
   new session's id (`target: {type: "session", id}`); the session it
   reports on shows no banner. So a mail sign-in that an agent with
   mailbox access made cannot be hidden by deleting a mail, from the
@@ -1937,9 +1954,12 @@ event; the accounts design's instance audit log records it (pending).
   now"; the three numbers to pick from, and "Deny" — "Deny" is the
   default button, and there is no plain "Approve".
 - **Profile → Sessions.** The list of §2.6.5 with "End" per session,
-  "End all other sessions", and the ended sessions of the last 30 days.
+  "End all other sessions", and the ended sessions of the last 30 days;
+  a session neither signed in by password nor confirmed is marked "not
+  confirmed", with "This was me" where the current session may confirm
+  it, whether its alert was read or not.
 - **The mail sign-in banner** of §2.6.5 in every other open session,
-  with "This was me" only where that session may mark it read.
+  with "This was me" only where that session may confirm it.
 - **Notification settings** (#160, §18.8) gain the `security` mail switch
   and "Allow sign-in links by mail" (`email.sign_in_link`), with the
   mailbox warning of §2.6.3.
@@ -11610,6 +11630,7 @@ contract; until then nothing else in this section changes.
 | GET, POST | `/mail/sign-in/{token}` (outside the API) | — (the token) | 2.6.3 |
 | GET | `/auth/sessions` | human | 2.6.5 |
 | DELETE | `/auth/sessions/{id}` | human, own sessions; from a session not in good standing never one in good standing, and while it is younger than 1 hour no older one | 2.6.5 |
+| POST | `/auth/sessions/{id}/confirm` | human, own sessions; from a session in good standing that existed before the one it confirms | 2.6.5 |
 | POST | `/auth/reauthenticate` | human with a password | 2.8.1 |
 | GET | `/auth/second-factor` | human | 2.8.1 |
 | POST | `/auth/second-factor/totp`, `/auth/second-factor/totp/confirm`, `/auth/second-factor/recovery-codes` | human, with the password re-given in the last 10 minutes or, without a password, from a session in good standing at least 24 hours old; recovery codes also step-up | 2.8.1 |
@@ -15865,11 +15886,27 @@ no membership.
       "url": "https://maity.team/oliver/maity/inbox/req-0012",
       "read": true, "redacted": false }
   ],
+  "pinned": [],
   "next_cursor": null,
   "next_after": "<opaque position>",
   "server_time": "2026-10-22T13:10:05Z"
 }
 ```
+
+**Pinned.** `pinned` lists every unread `security` item of the human,
+of every kind and any age, newest first, at most 50, in the shape of
+`items` and from the same snapshot; `[]` when there is none. It does
+not depend on `limit`, `cursor`, `unread`, `kind` or `project`, so the
+bell shows the security alerts in a block of their own at the top
+without paging back for them, and an alert in `pinned` may appear in
+`items` as well (the dashboard shows it once, in the block). An answer
+to a request with `after` carries no `pinned`: the long-poll reports
+what is new, and the bell reads `pinned` again with the counts. A
+human with more than 50 unread security items sees the newest 50, and
+`counts.security` the whole number. Open requests addressed to the
+human are not pinned: they have their own inbox and count in
+`counts.inbox` (§18.1). The maintainer's decision of 2026-11-02
+(`context/notifications.md`).
 
 **Positions.** A place in the list is a **position**: an opaque
 string the hub hands out as `next_after` and takes back as `after` and
@@ -16050,9 +16087,9 @@ rules that make a position safe to resume from:
   them reads them (§18.3) or their record expires after 90 days, and
   `registration_pending`, `report_open`, `mail_disabled` and `agents_not_listening`
   items, which stay listed while their matter is open (§18.1), however old, and are read once it
-  is closed. That
-  age-based reading never counts as a marking: it grants no session the
-  good standing of §18.3. `id` is `ntf-<seq>` for an item from an event
+  is closed. No
+  reading — by age or by a marking — grants a session good standing;
+  only confirming its sign-in does (§2.6.5). `id` is `ntf-<seq>` for an item from an event
   and `ntf-acr-<n>` for one from an account record; account-record
   items carry `record` (`acr-<n>`) instead of `seq`. A personal request's
   item has `target: {type: "request", id}`, `project: {slug, name,
@@ -16095,10 +16132,11 @@ Human only, CSRF as every cookie `POST`. Exactly one of:
 - `{"ids": ["ntf-4237", "ntf-4231"]}` — up to 200 ids; an id the human
   has no item for is ignored, not an error (the item may have dropped
   out, §18.1).
-- `{"up_to": "<position>", "kind"?: "mention", "project"?: "maity"}` —
+- `{"up_to": "<position>", "kind"?: "mention", "project"?: "maity", "include_security"?: true}` —
   every item not past that position (§18.2; for "mark all read" the
   `next_after` of the answer the bell shows, passed back unchanged),
-  optionally of one kind or one project. A position the hub cannot
+  optionally of one kind or one project; `security` items only with
+  `include_security: true` (below), default `false`. A position the hub cannot
   open is `invalid` with `details.fields.up_to: "position"` and marks
   nothing; the dashboard does not retry it with a fresh position on
   its own, it refreshes the bell, and only a new "mark all read" by the
@@ -16109,19 +16147,40 @@ item's `seq`, never backwards — the same as reading the conversation
 (§9); an observer has no chat items and moves no mark. `inbox` items
 other than the four open matters below are marked read, and the open
 requests stay open (§18.2). A `kind`
-that is not one of them is `invalid` as in §18.2. A `security` item about a
-new session (`session_created`, #169 §2.6.5) is marked read only from a
-session that existed before that sign-in and is itself in good
-standing (signed in by password, or its own `session_created` item
-already marked read by an allowed session — never read by age, §18.2)
-— never from the session it reports on and never from a
-session created after it. `email_address_changed` follows the same rule, with the change in place of the sign-in. Security items (`session_created` and every
-other `security` kind) are marked read only through `ids`, never through
-`up_to`: "mark all read" skips them, so tidying the bell never confirms
-a sign-in or grants good standing. From a session that may not mark
-such an item it is skipped through `ids` too (ignored as an unknown
-id), and the rest of the call applies. Answers `200` with the counts
-of §18.2. No event: reading is not news to anyone.
+that is not one of them is `invalid` as in §18.2.
+
+**Security items.** Reading a `security` item never confirms anything:
+a sign-in is confirmed only by "This was me" (`POST
+/auth/sessions/{id}/confirm`, §2.6.5), and good standing follows from
+that confirmation, never from a read flag. A `security` item is marked
+read through `ids`, or through `up_to` with `include_security: true`
+("mark all read" after the dashboard's confirm, §18.8); `up_to` without
+it skips every `security` item, as before. An item about a new session
+(`session_created`, #169 §2.6.5) is marked read only from a session
+that existed before that sign-in and is itself in good standing (§2.6.5)
+— never from the session it reports on and never from a session created
+after it; `email_address_changed` follows the same rule, with the
+change in place of the sign-in. The other `security` kinds may be
+marked read from any session of the human. An item the calling session
+may not mark is skipped, the rest of the call applies, and the answer
+names it:
+
+```json
+{ "counts": { "inbox": 0, "chat": 0, "mention": 0, "security": 1, "total": 0 },
+  "skipped": [ { "id": "ntf-acr-118", "reason": "not_earlier" } ] }
+```
+
+`skipped` lists every `security` item the call named or covered and
+did not mark, with `reason` `not_earlier` (the calling session is the
+one the item reports on, or was created after it) or
+`not_in_good_standing` (the calling session is not confirmed and was
+not signed in by password); `[]` when none. The dashboard says which
+alerts are left and why — "confirm this sign-in from a session that is
+older than it" — so a count that does not go to zero is explained
+(the lead's addition of 2026-11-02). An `ids` entry for an item the
+human has no item for, or for an open matter (below), is not listed
+there: it is ignored, as before. Answers `200` with the counts of
+§18.2 and `skipped`. No event: reading is not news to anyone.
 
 The `inbox` items of an open matter, `registration_pending`,
 `report_open`, `mail_disabled` and `agents_not_listening` (§18.1), are
@@ -16482,7 +16541,18 @@ mail.
   /me/notifications?limit=0` for the counts (instead of summing `/me`)
   and shows them on the inbox, the chat list and the bell; the tab
   title is `(<total>) maity`. The bell opens the latest items (`limit=20`),
-  each linking to its `url`, unread ones marked, with "mark all read".
+  each linking to its `url`, unread ones marked, with "mark all read"
+  and a filter "unread only" (`unread=true`, §18.2). Above the list
+  stands the block of `pinned` security items, whatever their age: a
+  sign-in alert with "This was me" where the session may confirm it
+  (§2.6.5), every other one with "Mark read". When unread security
+  items are among what "mark all read" covers, the dashboard first asks,
+  listing each (time, place, browser): "2 sign-in alerts are included.
+  Marking them read does not confirm them. Mark all read anyway?";
+  confirmed, it sends `up_to` with `include_security: true`, declined,
+  nothing. It then shows what `skipped` names, with the reason
+  (§18.3). A sign-in read but not confirmed stays "not confirmed" in
+  Profile → Sessions until "This was me".
 - **Stage 2 — browser notifications.** While a dashboard tab is open,
   also in the background, it long-polls `GET /me/notifications?after=<position>&wait=55`,
   `<position>` being the `next_after` of the previous answer as an

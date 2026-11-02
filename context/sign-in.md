@@ -128,6 +128,9 @@ guards the address.
   the intruding session was an hour old.
 - Letting "mark all read" mark sign-in alerts: one tidy-up of the bell
   would have confirmed an intruding session and given it good standing.
+  That held while reading confirmed; since 2026-11-02 confirming is a
+  call of its own and "mark all read" may include them after a confirm
+  (notifications.md, d01ba62b-7acc-471c-b8d0-65c6d60209cc).
 - Alerting only mail sign-ins from a browser without the device cookie
   (the first round): the cookie a first mail sign-in leaves behind made
   the next one from the same place silent.
