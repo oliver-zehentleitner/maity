@@ -1,7 +1,7 @@
 """A person can keep their online status off the public pages (docs/api.md §16.9).
 
 `human.public_presence` defaults to true: the public pages of the person's projects name them
-as online; off, they are counted and not named.
+as online; off, they are neither named nor counted there.
 
 Revision ID: 20261102120000_public_presence
 Revises: 20261102110000_profiles_public

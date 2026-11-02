@@ -199,7 +199,9 @@ def online_section(world: World) -> str:
     return text[text.index("<h2>Online</h2>") :]
 
 
-def test_with_public_presence_off_a_person_is_counted_and_not_named(world: World, hub: Any) -> None:
+def test_with_public_presence_off_a_person_is_neither_named_nor_counted(
+    world: World, hub: Any
+) -> None:
     seen(world, world.anna_member, clock.now())
     worker = public_snapshot.Worker(world.migrated, hub)
     worker.run_once()
@@ -211,7 +213,7 @@ def test_with_public_presence_off_a_person_is_counted_and_not_named(world: World
     assert switched.json()["member"]["public_presence"] is False
     up = snapshot(world)["online"]  # at once, without the worker's run
     assert all(p["handle"] != "anna" for p in up["named"])
-    assert up["humans"] == before["humans"]  # counted all the same
+    assert up["humans"] == before["humans"] - 1  # a count beside the names would point at them
     assert "(anna)" not in online_section(world)
     worker.run_once()
     assert all(p["handle"] != "anna" for p in snapshot(world)["online"]["named"])

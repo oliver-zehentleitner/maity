@@ -61,7 +61,7 @@ class Person:
         self.handle = handle
         self.name = name
         self.human = human
-        # Named as online on a public page: off by a person's `public_presence` (§16.9).
+        # Named and counted as online on a public page: off by a person's `public_presence` (§16.9).
         self.presence_named = presence_named
 
     @property
