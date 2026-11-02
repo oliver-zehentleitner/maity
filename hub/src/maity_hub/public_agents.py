@@ -129,7 +129,26 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
         content=content,
     )
     digest = hashlib.sha256("\x00".join((path, agent.display_name, content)).encode())
-    return [public_pages.Page(path=path, body=body, inputs=digest.hexdigest(), lastmod=clock.now())]
+    data = {
+        "name": agent.display_name,
+        "handle": agent.handle,
+        "owner": {"name": owner.display_name, "handle": owner.handle, "page": f"/{owner.handle}"},
+        "projects": sorted(
+            ({"name": p.name, "full_name": namespace.full_name(conn, p)} for p, _ in found),
+            key=lambda project: project["full_name"],
+        ),
+        "statistics": totals,
+    }
+    return [
+        public_pages.Page(
+            path=path,
+            body=body,
+            inputs=digest.hexdigest(),
+            lastmod=clock.now(),
+            view="agent",
+            data=data,
+        )
+    ]
 
 
 def targets(conn: Connection) -> list[str]:

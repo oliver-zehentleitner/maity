@@ -14071,7 +14071,7 @@ is served. The rate limit is a bucket of its own, of the badge's size
 page: a `GET` there is the `302` to the public root of §1.1, and its
 sitemap parts are `not_found`.
 
-**What visitors read in the dashboard (not routed yet).** The maintainer's decision of
+**What visitors read in the dashboard.** The maintainer's decision of
 2026-11-01: a public project looks to a visitor as to a member, read-only,
 as on a forge. The dashboard draws its public views from one route and from
 no other:

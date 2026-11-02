@@ -32,6 +32,7 @@ from maity_hub.errors import not_found, rate_limited
 from maity_hub.shell import shell_response
 
 page_router = APIRouter()
+router = APIRouter()  # under the API prefix
 
 LANDING_CSP = (
     "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; "
@@ -141,6 +142,12 @@ def _shell(settings: Any) -> Response:
     if settings.web_dir is None or not (settings.web_dir / "index.html").is_file():
         raise not_found()  # a hub without a dashboard serves the API alone
     return shell_response(settings.web_dir, settings.public_url)
+
+
+@router.get("/public/pages/{path:path}")
+def read_public_page(path: str, request: Request) -> Response:
+    """What a visitor's dashboard reads (§16.9): no caller, the same answer for everyone."""
+    return public_pages.read(request, path)
 
 
 @page_router.api_route("/explore", methods=["GET", "HEAD"], include_in_schema=False)

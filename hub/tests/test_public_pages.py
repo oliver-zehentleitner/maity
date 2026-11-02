@@ -33,6 +33,8 @@ def store(engine: Engine, path: str = PATH, body: str | None = None) -> None:
             body=page,
             inputs="x",
             lastmod=clock.now(),
+            view="organisation_page",
+            data={},
         )
 
 

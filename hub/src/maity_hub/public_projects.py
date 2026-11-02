@@ -272,7 +272,8 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
     team_html = (f"<h2>People</h2><ul>{people}</ul>" if people else "") + (
         f"<h2>Agents</h2><ul>{bots}</ul>{more}" if bots else more
     )
-    statistics_html = _statistics_html(agent_statistics(conn, project.id, agents))
+    statistics = agent_statistics(conn, project.id, agents)
+    statistics_html = _statistics_html(statistics)
     content = (
         f'<p class="eyebrow">{escape(full)}</p><h1>{escape(project.name)}</h1>'
         f'<p class="tag">{escape(project.state)}</p>{about}{repository}{links_html}'
@@ -299,7 +300,44 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
             )
         ).encode()
     )
-    return [public_pages.Page(path=path, body=body, inputs=digest.hexdigest(), lastmod=clock.now())]
+    owners = dict(
+        conn.execute(
+            select(t.human.c.id, t.human.c.handle).where(
+                t.human.c.id.in_({a.owner_id for a in agents})
+            )
+        ).all()
+    )
+    data = {
+        "name": project.name,
+        "full_name": full,
+        "about": project.public_about,
+        "state": project.state,
+        "repository_url": shown_url if shown_url and landing.safe_target(shown_url) else None,
+        "links": [u for u in shown_links if landing.safe_target(u)],
+        "people": [
+            {"name": h.display_name, "handle": h.handle, "page": f"/{h.handle}"} for h in humans
+        ],
+        "agents": [
+            {
+                "name": a.display_name,
+                "handle": a.handle,
+                "page": f"/{owners[a.owner_id]}/agents/{a.handle}",
+            }
+            for a in agents
+        ],
+        "other_agents": others,
+        "statistics": statistics,
+    }
+    return [
+        public_pages.Page(
+            path=path,
+            body=body,
+            inputs=digest.hexdigest(),
+            lastmod=clock.now(),
+            view="project",
+            data=data,
+        )
+    ]
 
 
 def targets(conn: Connection) -> list[str]:
