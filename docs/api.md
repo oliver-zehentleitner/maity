@@ -6079,11 +6079,12 @@ whether or not they can read the repository on the forge: this read
 shows the whole file, unlike a card's section, which shows only
 Markdown under a matching heading, so a file without one (an `.env`)
 shows nothing there. The name alone is not enough, so the read checks
-what the name points to: the hub reads the entry's metadata at the
-commit and refuses a symlink, or any answer whose path differs from the
-setting (a forge that resolves a symlink `x.md` to its target), as
-`invalid` with `details.fields["settings.contract_path"]:
-"not_markdown"`; nothing is shown, never the target's text. Without the
+what the name points to: the hub reads the entry's mode from the Git tree
+of the commit (on GitHub, the Git Trees API), and mode `120000`, a
+symlink, is `invalid` with `details.fields["settings.contract_path"]:
+"not_markdown"`; nothing is shown, never the target's text. A commit's
+tree never changes, so the hub may cache it per commit SHA: the extra
+read comes once per commit, not per file or per reader. Without the
 key it is `docs/api.md`; `null` removes the key and the default applies
 again (§6.1). Set by `PATCH /projects/{owner}/{slug}` under
 `project:admin`, like every setting; a change emits `project_updated`
