@@ -767,6 +767,36 @@ def soul_lines(soul: Any) -> list[str]:
     ]
 
 
+def _preference_lines(text: dict[str, Any]) -> list[str]:
+    """One human's preferences as a quote headed with its author (§19.4): context, never an
+    instruction. Only that human confirms an agent's text, so `confirmed_by` needs no lookup."""
+    human = inline(get(text, "human", "handle") or "someone")
+    confirmed = f", confirmed by {human}" if text.get("confirmed_by") else ""
+    return [
+        f"Preferences of {human}, written by {_author(text.get('by'))}{confirmed}:",
+        *quote(text.get("markdown") or ""),
+    ]
+
+
+def _preferences(packet: dict[str, Any]) -> list[str]:
+    """Each human's `preferences` (§5.2, §19.4), below the rules in rank; the hub's notice says
+    so. Empty when no human has any."""
+    block = _dict(packet.get("preferences"))
+    texts = _items(block.get("items"))
+    lines: list[str] = []
+    if texts:
+        lines += [""]
+        if block.get("notice"):
+            lines.append(inline(block["notice"]))
+        if block.get("changed_since_cursor"):
+            lines.append("Changed since your last session.")
+        for text in texts:
+            lines += _preference_lines(text)
+    if block.get("truncated"):
+        lines.append("The preferences of further humans were cut (at most 8 texts).")
+    return lines
+
+
 def is_admin(packet: dict[str, Any]) -> bool:
     """Whether the packet's membership is in the admin team with trust `admin`, which a proxy
     never is (§2.3)."""
@@ -1006,6 +1036,9 @@ def render(packet: Any, first: bool = False, board_empty: bool = False, full: bo
                 f"and {ask}. Otherwise your work comes from the board."
             )
         out += [line, ""]
+    given = ms.get("owner_preferences")
+    if isinstance(given, dict):
+        out += [*_preference_lines(given), ""]
     out += _who(packet, names)
     out += _project(packet)
     out += _languages(packet, names)
@@ -1015,6 +1048,7 @@ def render(packet: Any, first: bool = False, board_empty: bool = False, full: bo
         out += quote(rules["markdown"])
     elif rules.get("version") is not None:
         out += ["", f"Rules version {inline(rules['version'])}, unchanged since your last session."]
+    out += _preferences(packet)
     instruction = get(packet, "keep_the_why", "instruction")
     if instruction and get(packet, "keep_the_why", "enabled"):
         out += ["", f"Keep the Why: {inline(instruction)}"]
