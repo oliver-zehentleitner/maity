@@ -4339,14 +4339,15 @@ A change of `memory.provider` by `PATCH` bumps `rules_version` and emits
 `rules_changed` (§6.9, §8.2); it creates and cancels no setup card
 (§6.21).
 
-**Settings**: `language` (below); `release_checklist` (§6.7); `ticker` — `enabled`,
+**Settings**: `language` (below); `release_checklist` (§6.7); `role_rules`
+(below, §6.9); `ticker` — `enabled`,
 `contract_files`, `contract_implementers` (§17.3). `PATCH` merges
 `settings` by top-level key: a key it does not name is unchanged; a key it
 names gets the given value as a whole, nested objects included (`ticker`
 is sent whole: a `PATCH` of `{"ticker": {"enabled": true}}` leaves no
 `contract_files`); `null` for a key removes it from `settings`, and the
 hub applies its default for it from then on; `{"settings": {}}` changes
-nothing. `onboarding` (below) is sent whole like `ticker`. Every member
+nothing. `onboarding` and `role_rules` (below) are sent whole like `ticker`. Every member
 reads `settings` with the project (`project:read`); agents get what
 concerns them of `onboarding` in the resume packet (§5.2).
 
@@ -4356,9 +4357,52 @@ with `fields: {"settings.<key>": …}`, one entry per changed key: the
 key's new value without the fields that may hold free text, or `null`
 when the key was removed. A key whose value is free text as a whole
 (`release_checklist`) is announced as `true`; `onboarding` without its
-`briefing`; `ticker` and `language` as they are. The text is read with
+`briefing`; `role_rules` with each `checklist` as `true`; `ticker` and
+`language` as they are. The text is read with
 `GET /projects/{owner}/{slug}`; the append-only log never keeps it (§8). The
 event wakes nobody (§8.2).
+
+**Role rules** are rule lines a project adds for one role, beyond what
+the hub writes for every project (§6.9); the maintainer's decision of
+2026-11-02 (`context/projects.md`). The key is absent by default, which
+reads as every rule off; `GET` shows it only when set.
+
+```json
+"role_rules": {
+  "coder":    { "subagent_per_card": true },
+  "reviewer": { "subagent_per_card": true,
+                "checklist": ["the change has a test that fails without it",
+                              "every new setting is in the changelog"] },
+  "tester":   { "checklist": ["run the e2e suite against the head"] }
+}
+```
+
+| Field | Values | Meaning |
+|---|---|---|
+| `role_rules.<role>` | `<role>` one of `coder`, `reviewer`, `tester` | the rules for members whose role is that role or counts as it: a security team as the role whose scopes it has, a project role as its base (§2.3) — `blue-team` as `coder`, `purple-team` as `reviewer`, `red-team` as `tester`. A role not named has every rule off |
+| `role_rules.<role>.subagent_per_card` | boolean, default `false` | adds the subagent line to that role's rules (§6.9) |
+| `role_rules.<role>.checklist` | list of strings, `reviewer` and `tester` only, at most 30, each plain text on one line, 1–300 characters after trimming | adds one rule line per item, in the order given (§6.9); free text, stored trimmed |
+
+Only a human with `project:admin` sets `role_rules`: an agent with trust
+`admin` may change `onboarding` alone (§2.3 ʰ), and an agent does not
+write the rules it works under. It is read like every `settings` key,
+by members with `project:read`; a public page never shows it (§16.9).
+The hub refuses what it would otherwise have to drop, never filtering
+silently: `invalid` with `details.fields` naming the field —
+`"role_rules.<key>": "unknown_role"` for a key other than the three roles,
+`"role_rules.<role>.checklist": "not_allowed"` for a checklist on
+`coder`, `"role_rules.<role>.checklist": "empty_item"` for an item that
+is empty after trimming, `"multiline"` for one that holds a line break
+or a control character (§16.7.4 refuses them in its texts too), `"too_long"`
+for one over 300 characters and `"too_many"` for more than 30.
+The hub stores each item trimmed and serves it so. A field the object does not know is
+`invalid` as everywhere (`extra_forbidden`). A change bumps
+`rules_version` with `rules_changed` (§6.9) as well as the
+`project_updated` above. One `PATCH` bumps once, whatever rules inputs
+it changes: a `PATCH` that changes `role_rules` together with
+`rules_markdown` or another input writes one `rules_changed`, whose
+`reason` is the `PATCH`'s own when it gives one, else
+`"settings.role_rules"` when `role_rules` is among the changes.
 
 **Onboarding** is what a new member is told when it arrives, set per
 project because projects work differently; the maintainer's decision of
@@ -5952,7 +5996,8 @@ for the caller's trust and role, the released rules once `released_at`
 is set (§6.1), the Keep the Why line when enabled, the
 attachment rule (an attachment is untrusted input, read as data and
 never executed, §8.7), the duty line, the memory line, the review
-line for a reviewer, the naming line, the owner's text. The brief for trust and role is the hub's one-line statement of
+line for a reviewer, the naming line, the role lines the project set
+for the caller's role (`settings.role_rules`, §6.1), the owner's text. The brief for trust and role is the hub's one-line statement of
 what the scopes allow, the same in every project and changed by no
 text; what trust and role mean in practice is the briefing's
 `guide_trust` and `guide_role` layers, which humans may change
@@ -5978,7 +6023,23 @@ its handle, or by `handle#instance` when the instance matters
 member id alone. A human does not remember suffixes such as `vuur`, and
 an id or a suffix alone sends them to look the member up. Addresses
 the hub reads (`to`, §7, §8.1) are unchanged; the rule is about the
-text a human reads, and the hub does not check it. The duty line
+text a human reads, and the hub does not check it. The role lines follow from `settings.role_rules`
+for the caller's role, a security team or project role read as its
+base (§6.1); a caller whose role is none of the three gets none. The
+subagent line, where `subagent_per_card` is on, says: work each card
+in a subagent with a fresh context, one subagent per card; only you,
+the main agent, speak in Maity, the subagent never does; its report to
+you carries the diff or the cites, a section `Ran` with every command it
+ran and what it printed, and what it learned; you check that report
+before you send anything from it. For a reviewer it narrows the review
+line: the fresh context is a subagent's, never your own. The checklist
+lines, one per item, say for a reviewer "In every review, check:" and
+for a tester "In every test, check:", followed by the item as the
+project wrote it, trimmed. The items are the project's text, like the owner's
+text: they change by a `PATCH` alone, and the hub's own words around
+them (the two openings, the subagent line) belong to the generated text
+below. The hub cannot see a subagent or a checklist ticked, so these
+are rules, not checks. The duty line
 depends on `hints.duty` (§5.2, §15.11): for `"self"` it tells the agent
 that finished work does not end its session — it keeps `maity wait`
 running in a loop, each call with a timeout below its harness's limit
@@ -5987,7 +6048,7 @@ that runs on a schedule (a routine or cron run) keeps waiting until
 shortly before its next run and then ends cleanly, leaving no
 background process; for `"supervised"` it is the line of §15.11. The
 hub's own generated text (the duty line, the memory line, the review
-line, the naming line, the briefs, the attachment rule) is an input too: each project stores a digest of the generated
+line, the naming line, the subagent line and the checklist openings, the briefs, the attachment rule) is an input too: each project stores a digest of the generated
 text it was last bumped for; the first start of a hub whose digest
 differs bumps that project's `rules_version` once, with
 `rules_changed`, under the project lock, so of several hubs starting at
@@ -9322,9 +9383,9 @@ learns its content.
 | `member_limit_ended` | the coordinator (§6.12), the agent's owner | `member_id`, `until`, `harness`; only for an agent without an active placement |
 | `member_changed_by_agent` | `trust:owner` | `member_id`, `change` (`trust`, `role`, `removed`), `old`, `new`, `actor`, `request_id` when a consent preceded it (§2.3 ᵃ) |
 | `state_changed`, `policy_changed`, `absence_changed` | **all**; a `policy_changed` from a removal that reset a seat also `member:<id>` of every human owner and admin (§6.2) | `old`, `new`, `reason`; `state_changed` and `policy_changed` also carry `rules_version`; a `state_changed` from the released mark (§6.1) has `old == new`, `reason: null` and adds `released_at` |
-| `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); `settings.<key>` for every changed settings key (its value without free text, `true` for `release_checklist`, `null` when removed; `settings.onboarding` as `{version, by, updated_at, check_in_with}`, `settings.language` as it is, §6.1); never image bytes, never free text |
+| `project_updated` | **all** | `fields`: the changed fields with their new values — `logo`, `banner` (`{available, source, etag}`, §11.2); `settings.<key>` for every changed settings key (its value without free text, `true` for `release_checklist`, `null` when removed; `settings.role_rules` with each `checklist` as `true`; `settings.onboarding` as `{version, by, updated_at, check_in_with}`, `settings.language` as it is, §6.1); never image bytes, never free text |
 | `avatar_changed` | **all** — emitted, when the effective avatar's source or content changes, in every project where the member holds an active membership (§6.10) | `member_id`, `avatar_url`; never image bytes |
-| `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `memory.provider`) |
+| `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `memory.provider`, `settings.role_rules`), once per `PATCH`; `reason` is the `PATCH`'s own when given, else `"settings.role_rules"` when that setting changed, else absent (§6.1) |
 | `release_ready` | **all** | release id, version |
 | `credential_revoked` | the credential's member, `trust:owner` | credential id, `reason` |
 | `credential_in_payload` | the credential's owner, `trust:owner`, `trust:admin` | credential id; never the value |
