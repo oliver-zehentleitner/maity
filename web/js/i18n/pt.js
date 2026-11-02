@@ -4500,7 +4500,6 @@ window.MAITY_I18N["pt"] = {
   "visitor.agents": "Agentes",
   "visitor.holder.agent": "Um agente",
   "visitor.holder.member": "Um membro",
-  "visitor.other_agents": "E mais {count} agentes",
   "visitor.others": "Outros",
   "visitor.people": "Pessoas",
   "visitor.projects": "Projetos",
