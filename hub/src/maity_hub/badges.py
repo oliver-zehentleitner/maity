@@ -95,8 +95,9 @@ def agents_online(conn: Connection, project_id: str) -> tuple[str, str, bool]:
     # Use the same member view as §6.2, including pauses and instance aggregation;
     # this endpoint never derives an alternative presence rule from timestamps.
     views = member_views(conn, rows)
-    count = sum(view["presence"] == "online" for view in views)
-    # Instances by the one counting rule (instance_counts): online, or dormant.
+    # Agents and instances by the one counting rule (instance_counts): an instance is online
+    # while present or dormant, an agent while one of its instances is.
+    count = sum(instance_counts.agent_online(view) for view in views)
     live = instance_counts.tally(i for view in views for i in view.get("instances") or [])
     agents = f"{count} agent{'s' if count != 1 else ''}"
     online = live["online"]

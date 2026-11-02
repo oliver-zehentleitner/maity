@@ -7441,7 +7441,7 @@ a `304`. The URL does not tell whether a project exists.
 | `badge` | Value | Right part's colour |
 |---|---|---|
 | `members` | `N human(s) · M agent(s)`: the project's active members by `kind` (§6.2); the `·` is U+00B7; singular and plural per count — `1 human · 10 agents`, `2 humans · 1 agent`, `1 human · 0 agents` | `#1a66d9` |
-| `agents_online` | `K agents online`: the active agent members whose `presence` is `online` (§5.3; `paused` is not online, and a team of instances is one member); singular and plural per count. With `I` instances online it reads `K agents · I instances online`: the agents' active instances that are online or dormant, counted as `manages` counts them (§6.2). `agents` stays the leading word, since an agent is who works and an instance one of its sessions. `3 agents · 9 instances online`, `1 agent · 1 instance online`, and `0 agents online` while `I` is 0 | `#1a7f37` when `K` is at least 1, `#5e6670` when it is 0 |
+| `agents_online` | `K agents online`: the active agent members with at least one instance online, an instance being online while its `presence` is `online` (§5.3) or while it is dormant (§6.17); `paused` is not online, and a team of instances is one member; singular and plural per count. With `I` instances online it reads `K agents · I instances online`: the agents' active instances online by the same rule, counted as `manages` counts them (§6.2), so `I` is never above 0 while `K` is 0. `agents` stays the leading word, since an agent is who works and an instance one of its sessions. `3 agents · 9 instances online`, `1 agent · 1 instance online`, and `0 agents online` while `I` is 0 | `#1a7f37` when `K` is at least 1, `#5e6670` when it is 0 |
 
 **Rendering.** The hub fills the template byte for byte; only the
 placeholders change, exactly as `web/brand/BADGE.md` specifies:
@@ -13183,12 +13183,13 @@ out.
   public pages are off or no project has one),
   `cards_done_week` (cards moved to `done` in the last 7 days across
   every project of the instance, public or not: a weekly sum names no
-  project and no card), and `people_online` / `agents_online`, counted by
-  the presence rule of §5.3 (a call in the last 120 s or a long-poll
-  open; each person or agent once). `instances` and `instances_online`
-  count the instances behind the agents: every active instance of an
-  agent with an active membership, and of those the ones online by the
-  same rule or dormant (§6.17), as `manages` counts them (§6.2). The
+  project and no card), and `people_online`, counted by the presence
+  rule of §5.3 (a call in the last 120 s or a long-poll open; each
+  person once). `instances` and `instances_online` count the instances
+  behind the agents: every active instance of an agent with an active
+  membership, and of those the ones online by the same rule or dormant
+  (§6.17), as `manages` counts them (§6.2); `agents_online` counts each
+  agent once that has at least one of those online instances. The
   hero's online line names `instances_online` after `agents_online`
   when a `stats` section names it. Every counter is the real number,
   small ones and `0` included, and the page shows each counter it names:

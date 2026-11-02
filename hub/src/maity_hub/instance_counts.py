@@ -3,7 +3,8 @@
 One counting rule for every place that shows it: an instance counts while it is not revoked,
 and it counts as online while its presence is `online` (§5.3) or while it is dormant (§6.17):
 a dormant instance is resting on purpose, not gone. `dormant` is therefore a part of `online`,
-never added to it. Revoked instances never count; a paused one counts, offline.
+never added to it. Revoked instances never count; a paused one counts, offline. An agent
+counts as online while one of its instances does, so a dormant team is an online agent.
 """
 
 from __future__ import annotations
@@ -19,6 +20,13 @@ from maity_hub import tables as t
 def online(instance: Mapping[str, Any]) -> bool:
     """One instance view (§6.17) counted as online: present, or dormant."""
     return instance.get("presence") == "online" or instance.get("dormant") is not None
+
+
+def agent_online(member: Mapping[str, Any]) -> bool:
+    """One agent's member view (§6.2) counted as online: one of its instances is."""
+    return member.get("presence") == "online" or any(
+        online(i) for i in member.get("instances") or []
+    )
 
 
 def tally(instances: Iterable[Mapping[str, Any]]) -> dict[str, int]:

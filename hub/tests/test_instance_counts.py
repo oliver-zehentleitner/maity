@@ -131,9 +131,9 @@ def test_the_badge_names_the_instances_beside_the_agents(
 
     agent = factory.agent(migrated, project_id, owner.id, instance="aaaa")
     assert badge() == "0 agents online"  # no instance online: no instance word at all
-    # A dormant instance alone counts as an online instance, but the agent is not online.
+    # A dormant instance alone is an online instance, and so its agent is online.
     sibling(migrated, agent, "bbbb", dormant=True)
-    assert badge() == "0 agents · 1 instance online"
+    assert badge() == "1 agent · 1 instance online"
     seen(migrated, agent)
     sibling(migrated, agent, "cccc", seen=True, revoked=True)
     assert badge() == "1 agent · 2 instances online"
@@ -143,9 +143,12 @@ def test_the_landing_counts_instances_and_dormant_ones_as_online(
     setup: tuple[flow.Human, TestClient, str], migrated: Engine
 ) -> None:
     owner, _, project_id = setup
-    team(migrated, project_id, owner.id)
+    agents = team(migrated, project_id, owner.id)
+    # solo rests with only a dormant instance besides its offline one: an online agent too.
+    sibling(migrated, agents["solo"], "bbbb", dormant=True)
     with migrated.begin() as conn:
         found: dict[str, Any] = landing_stats.compute(conn)
-    # lead 1, sub 2 (the revoked third not), leaf 1, solo 1; online: sub, its dormant one, leaf.
-    assert (found["instances"], found["instances_online"]) == (5, 3)
-    assert found["agents_online"] == 2  # unchanged: the dormant one does not make an agent
+    # lead 1, sub 2 (the revoked third not), leaf 1, solo 2; online: sub's two, leaf, solo's
+    # dormant one.
+    assert (found["instances"], found["instances_online"]) == (6, 4)
+    assert found["agents_online"] == 3  # sub, leaf and the resting solo

@@ -506,7 +506,7 @@ round would wait for an instance that only its own token wakes.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-5k962zwvnhd5 (the project owner's decision, passed on by the lead, 2026-11-02); docs/api.md §6.2 `manages`, §6.20, §16.7; the implementation (`instance_counts`)
+**Source:** card tsk-5k962zwvnhd5 (the project owner's decision, passed on by the lead, 2026-11-02; the agent count on the same rule, the lead in review, 2026-11-02); docs/api.md §6.2 `manages`, §6.20, §16.7; the implementation (`instance_counts`)
 **Revisit when:** the landing counters read the long-poll as the presence rule of §5.3 does, or a further place shows instance counts
 
 An agent with several instances counted as one agent hid how much work stands behind a member, a lead or
@@ -518,8 +518,10 @@ instances are named beside it, never instead of it.
 One module, `instance_counts`, holds the rule for every place: a revoked instance never counts; one counts
 as online while its presence is `online` or while it is dormant, because a dormant instance rests on purpose
 and comes back when addressed (§6.17); `dormant` is shown as a part of `online`, never added to it. A
-paused instance counts, offline. The landing counters are SQL over the credentials and read the call time
-alone, as `agents_online` there already does, not the long-poll; that difference to §5.3 stays as it was.
+paused instance counts, offline. An agent counts as online while one of its instances does, so the agent
+count and the instance count never contradict each other (no `0 agents · 1 instance online` for a team
+that only rests). The landing counters are SQL over the credentials and read the call time
+alone, as `agents_online` there already did, not the long-poll; that difference to §5.3 stays as it was.
 
 `manages` is in the GET list and the GET single answer only, not in `member_updated`: it changes with every
 member below, and an event per lead for each of those changes would be noise.
@@ -528,4 +530,6 @@ member below, and an event per lead for each of those changes would be noise.
 - Counting dormant instances apart from the online ones (online + dormant): the lead's view would add up
   to more than there are, and a resting instance would look gone.
 - Replacing the agent count with the instance count: "agents" is the signal word on the badge and the page.
+- Keeping the agent count on the member presence alone: a resting team would show online instances and no
+  online agent beside them.
 - `manages` in the member view of every event: see above.
