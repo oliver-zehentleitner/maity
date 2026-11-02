@@ -14176,8 +14176,8 @@ never routes it, §1.1: `not_found`). It answers `200` with the model in
 one language, chosen as the landing page's is: `lang` if the landing page
 has it, else the best match of `Accept-Language` among the landing page's
 languages, else its `default_language`. While the landing page is
-disabled, the choice is among §16.7's languages, and `en` last. An
-unknown `lang` is no error. A label from the operator's page is in that
+disabled, `lang` if it is one of §16.7's languages, else the best match of
+`Accept-Language` among them, else `en`. An unknown `lang` is no error. A label from the operator's page is in that
 page's language; every other word (sign in, register, the column titles,
 the legal pages' names) comes from the hub's catalogue in `language`.
 
@@ -14217,29 +14217,35 @@ the legal pages' names) comes from the hub's catalogue in `language`.
   sections' `links`), `legal` (the legal pages that are set, in the order
   imprint, privacy, terms) and `follow` (`footer.social`, without a GitHub
   link `open_source` already has). A column with no link is left out.
-  `rel` is `"me"` for a Mastodon link, as on the landing page, else `null`.
-  `operator` is `footer.operator`, or `null`. `languages` are the landing
-  page's, default first and then alphabetically (§16.7), each with its
-  name in its own language. A page links each language to itself with
-  `?lang=<tag>`. A page with languages of its own, a legal page, lists
-  those instead.
+  `rel` is `"me"` for a social link whose label contains "mastodon"
+  (case ignored) or whose `href` has a path with `/@`, as on the landing
+  page; every other link has `null`. `operator` is `footer.operator`, or
+  `null`. `languages` are the landing page's, default first and then
+  alphabetically (§16.7), each with its name in its own language, and
+  `[]` when the page has only one, as the landing page shows the switch
+  from two. A page links each language to itself with `?lang=<tag>`. A
+  page with languages of its own, a legal page, lists those instead.
 - **`/login`, `/register` and the legal pages** carry
   `?lang=<language>` in every link of the model, as §16.7.4 says for the
   landing page's links. A `href` the operator wrote (a call to action, an
   `opensource` link, a social link) is as stored, except that a path
   `/login` or `/register` gets the language as well.
 - **Landing page disabled.** `landing` is `false`, `nav` is `[]` and `cta`
-  is `null`: there is no page to link into. The footer keeps the columns
-  that remain: `platform` with sign in and register, `legal`, `follow`
-  and the operator line, which are fields of the setting whether or not
-  the page is enabled (§16.7.1 links the legal pages either way).
-  `languages` is `[]`.
+  is `null`: there is no page to link into, and `GET /landing` answers
+  `{enabled: false}` alone. The footer has `platform` with sign in and
+  register, and `legal` (§16.7.1 links the legal pages either way).
+  `follow` and `operator` are there only while at least one legal page is
+  set, since a legal page already shows them then; with none set they are
+  left out and `operator` is `null`, so a landing page an operator is still
+  preparing publishes nothing. `languages` is `[]`.
 - **Caching.** As `GET /landing`: `Cache-Control: public, max-age=60` and
   an `ETag` over the body, `304` for a matching `If-None-Match`, and
   `Vary: Accept-Language`. The answer depends on the chosen language and
   on the stored landing and legal settings; an edit is visible within 60 s.
-- **Errors.** None for a visitor on the public host: an unknown `lang` is
-  no error. On the join host the route does not exist (`not_found`).
+- **Errors.** An unknown `lang` is no error. On the join host the route
+  does not exist (`not_found`). During a maintenance window it answers
+  `503 maintenance` like every call §16.12 does not name; the dashboard
+  then draws the sign-in and sign-up pages without the frame (§16.7.4).
 
 ### 16.8 Abuse reports
 

@@ -921,7 +921,12 @@ renderer itself.
   copies would disagree sooner or later.
 
 **Consequence:** the model holds only what the public landing page
-already shows. A failed read of it draws the sign-in and sign-up pages
+already shows. While the landing page is disabled, the operator line and
+the social links are in it only if a legal page is set, because only then
+does a page already show them; an operator preparing a landing page
+publishes nothing through the frame. Leaving them out always was
+rejected: the operator's line would then be missing beside the imprint,
+whose frame comes from the same model. A failed read of it draws the sign-in and sign-up pages
 without the frame, so signing in never depends on it. The pages that a
 mail's link opens (§2.7.1) keep their own small frame for now; they come
 later on their own card.
