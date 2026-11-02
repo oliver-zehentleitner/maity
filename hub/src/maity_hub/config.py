@@ -117,6 +117,7 @@ class Settings:
     public_pages: bool = False
     public_pages_render: str = "on_change"
     public_pages_interval_hours: int = 6
+    public_pages_snapshot_minutes: int = 5
 
     @property
     def join_host(self) -> str | None:
@@ -201,6 +202,9 @@ class Settings:
             ),
             public_pages_interval_hours=parse_whole(
                 env, "MAITY_PUBLIC_PAGES_INTERVAL_HOURS", 6, 1, 24
+            ),
+            public_pages_snapshot_minutes=parse_whole(
+                env, "MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES", 5, 1, 60
             ),
             max_agents_per_human=parse_limit(env, "MAITY_MAX_AGENTS_PER_HUMAN"),
             max_orgs_per_human=parse_limit(env, "MAITY_MAX_ORGS_PER_HUMAN"),

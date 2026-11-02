@@ -3414,9 +3414,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(cpPanel().querySelector(".card-body")) === "The REST contract hub, CLI and dashboard build against; ask @agent-b."
     // Its stored mention a link where it stands (the one renderer, review of #860).
     && cpPanel().querySelector(".card-body a.mention") && cpPanel().querySelector(".card-body a.mention").getAttribute("href") === "#/maintainer/maity/members/agt-b"
-    && JSON.stringify(cpNotes()) === JSON.stringify(["@agent-c · " + win.Maity.dom.formatTime("2026-10-21T10:30:00Z") + "The CLI needs --no-code here too."])
-    && cpGets.includes("/projects/maintainer/maity/tasks/tsk-0001/notes?state=open"),
+    && cpNotes()[0] === "@agent-c · " + win.Maity.dom.formatTime("2026-10-21T10:30:00Z") + "The CLI needs --no-code here too."
+    && cpNotes().length === 2 && cpGets.includes("/projects/maintainer/maity/tasks/tsk-0001/notes?state=open"),
     "card panel: the card with its controls (no link to itself, not dragged), the body as Markdown, the open notes only " + JSON.stringify(cpNotes()));
+  // A redacted note (§6.16) keeps its place; its body is §8.5's tombstone, never "[object Object]".
+  const cpRemoved = cpPanel().querySelector(".card-note-removed");
+  expect(cpNotes()[1] === "@agent-b · " + win.Maity.dom.formatTime("2026-10-21T11:30:00Z") + "The note was removed by Maintainer: held a token · "
+    + win.Maity.dom.formatTime("2026-10-21T12:00:00Z") && !!cpRemoved && !cpRemoved.parentNode.querySelector(".md") && !cpNotes()[1].includes("[object"),
+    "card panel: a redacted note shows who removed it, why and when, no Markdown " + JSON.stringify(cpNotes()[1]));
   const cpHist = cpPanel().querySelectorAll(".card-history-list li").map((li) => text(li));
   expect(cpHist.length === 3 && cpHist[0].startsWith("@maintainer changed the description") && cpPanel().querySelector("pre.history-diff").textContent.includes("+The REST contract hub")
     && cpHist[1].startsWith("@maintainer changed the label: fix → feature") && cpHist[2].startsWith("@agent-a created the card"),
@@ -3495,7 +3500,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!cpPosts.length, "card panel: an empty note is not sent");
   byId("card-note-body").value = "Check §6.16 too."; cpPanel().querySelector("form.card-note-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(JSON.stringify(cpPosts[0]) === JSON.stringify(["/projects/maintainer/maity/tasks/tsk-0001/notes", { body: "Check §6.16 too." }])
-    && cpNotes().length === 2 && cpNotes()[1].startsWith("@maintainer") && document.activeElement === byId("card-note-body") && byId("card-note-body").value === "",
+    && cpNotes().length === 3 && cpNotes()[2].startsWith("@maintainer") && document.activeElement === byId("card-note-body") && byId("card-note-body").value === "",
     "card panel: a note is posted and listed, the form ready for the next");
   // A second submit while the first post is on its way sends nothing; a refusal lets it be sent again.
   let cpRelease = null;
@@ -3514,7 +3519,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "card panel: a refused post keeps the text and the button usable again");
   win.Maity.api.post = (p, b) => { if (p.includes("/notes")) cpPosts.push([p, b]); return cpPost(p, b); };
   cpForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
-  expect(cpPosts.length === cpBefore + 2 && cpNotes().length === 3, "card panel: the note is sent again after the refusal");
+  expect(cpPosts.length === cpBefore + 2 && cpNotes().length === 4, "card panel: the note is sent again after the refusal");
   // Escape closes, as Close does: the board again, the card marked, its title focused.
   cpPanel().dispatch("keydown", { key: "Escape" }); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
   expect(win.location.hash === "#/maintainer/maity/board" && !cpPanel() && cpCard().classList.contains("wanted") && document.activeElement === cpCard().querySelector("a.card-open"),
@@ -7737,6 +7742,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "keep the why: no why says the reason; a path out of the repository stays text");
   win.Maity.api.getAll = ktGetAll;
   // Since 2026-10-26 the owner's notice is a personal request in the inbox (§6.23, §18.1): no kind of its own.
+  // A personal request of a project the reader is no member of carries project.member false (§7, §18.2):
+  // its notification leads to /all, also once by_project no longer lists that project.
+  const ntKept = win.Maity.notify.state.byProject;
+  win.Maity.notify.state.byProject = {};
+  const ntItem = (full, member) => ({ kind: "inbox", project: Object.assign({ slug: full.split("/")[1], full_name: full }, member === undefined ? {} : { member }), target: { type: "request", id: "req-x" } });
+  expect(win.Maity.notify.linkOf(ntItem("lv/lasteverlm", false)) === "/all" && win.Maity.notify.linkOf(ntItem("maintainer/maity")) === "/maintainer/maity/inbox/req-x",
+    "notifications: a personal request of a project the reader is no member of leads to /all " + win.Maity.notify.linkOf(ntItem("lv/lasteverlm", false)));
+  win.Maity.notify.state.byProject = ntKept;
   expect(!("keep_the_why" in win.Maity.notify.KIND_WORDS), "keep the why: the owner's notice is a request in the inbox, no notification kind of its own");
   const ktProto = Object.getPrototypeOf(main), ktFocus = ktProto.focus;
   ktProto.focus = function () { document.activeElement = this; };
@@ -9098,7 +9111,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       notes: [{ id: "nte-1", author: "member", body: "A *note* <img src=y onerror=alert(2)>", state: "open", created_at: "2026-11-02T08:00:00Z", redacted: false },
         { id: "nte-2", author: "agent", body: null, state: "dismissed", created_at: "2026-11-02T09:00:00Z", redacted: true }] } },
     "/public/pages/stranger/tool/board": { path: "/stranger/tool/board", kind: "board", data: { columns: [{ status: "open", cards: [{ id: "tsk-1", title: "A <b>card</b>", label: "bug", holder: "member" }] }] } },
-    "/public/pages/stranger/tool": { path: "/stranger/tool", kind: "project", data: { name: "Tool", full_name: "stranger/tool", about: null, state: "active", repository_url: "javascript:alert(1)", links: [], people: [{ name: "Sam", handle: "sam", page: "/sam" }], agents: [], other_agents: 2, statistics: { totals: { cards_done: 3, prs_merged: null } } } },
+    "/public/pages/stranger/tool": { path: "/stranger/tool", kind: "project", data: { name: "Tool", full_name: "stranger/tool", about: null, state: "active", repository_url: "javascript:alert(1)", links: [], people: [{ name: "Sam", handle: "sam", page: "/sam" }], agents: [], other_agents: 2, statistics: { totals: { cards_done: 3, prs_merged: null } },
+      ticker: [{ type: "merge", text: "#1 <b>merged</b>", url: "https://github.com/s/t/pull/1", at: "2026-11-02T08:00:00Z" }, { type: "decision", text: "Decided: tsk-1", url: null, at: "2026-11-02T07:00:00Z" }],
+      online: { humans: 1, agents: 2, named: [{ name: "Sam", handle: "sam", page: "/sam" }], as_of: "2026-11-02T08:05:00Z" } } },
   };
   const viAll = [];
   win.Maity.api.get = (p) => {
@@ -9125,13 +9140,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "visitor: a card's own page, its Markdown drawn without raw HTML, the project's tabs above it, and nothing to press");
   const viNotes = viView().querySelectorAll("li").filter((li) => li.getAttribute("data-note"));
   expect(viNotes.length === 2 && text(viNotes[0]).includes("A member") && text(viNotes[0]).includes("note") && !viNotes[0].querySelector("img")
-    && text(viNotes[1]).includes("Removed.") && text(viNotes[1]).includes("dismissed"),
+    && text(viNotes[1]).includes("Removed.") && text(viNotes[1]).includes("dismissed") && !text(viNotes[0]).includes("open"),
     "visitor: a card's notes under it, their authors named as the holder, a redacted one as removed");
   await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
   expect(viView() && viView().getAttribute("data-kind") === "project" && text(viView()).includes("Sam")
     && !viView().querySelectorAll("a").some((a) => /javascript:/.test(a.getAttribute("href") || "")) && text(viView()).includes("Cards done: 3")
     && !text(viView()).includes("Pull requests merged"),
     "visitor: the overview, no unsafe link and no counter the hub left empty");
+  expect(text(viView()).includes("Recently") && text(viView()).includes("#1 <b>merged</b>") && text(viView()).includes("Decided: tsk-1")
+    && viView().querySelectorAll("a").some((a) => a.getAttribute("href") === "https://github.com/s/t/pull/1")
+    && text(viView()).includes("Humans online: 1") && text(viView()).includes("Agents online: 2") && !viView().querySelector("b"),
+    "visitor: the overview's snapshot, the ticker as text with a merge's link, and who is online");
   expect(!viAll.some((p) => p.startsWith("/projects/stranger")), "visitor: a stranger's public project asks no member route");
   expect(text(header).length && !header.querySelector(".visitor-sign-in"), "visitor: signed in, the reader's own header stays, with no sign-in link");
   expect(win.Maity.api.isPublicPath("/public/pages/stranger/tool"), "visitor: the read works after the session ended here");

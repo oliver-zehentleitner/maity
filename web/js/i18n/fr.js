@@ -961,6 +961,7 @@ window.MAITY_I18N["fr"] = {
   "error.load_failed": "Chargement impossible",
   "error.load_failed_at": "Chargement impossible ({path})",
   "error.mail_not_configured": "Ce hub ne peut pas envoyer d'e-mails.",
+  "error.maintenance": "Le hub est en maintenance. Réessayez une fois la maintenance terminée.",
   "error.memory_full": "Cette mémoire est pleine.",
   "error.method_not_allowed": "Cette action n'est pas disponible ici.",
   "error.namespace_owner": "Le propriétaire de l'espace de noms de ce projet ne peut pas être modifié ni retiré de cette façon.",
@@ -4642,5 +4643,9 @@ window.MAITY_I18N["fr"] = {
     "one": "{count} entrée sans identifiant a été ignorée.",
     "other": "{count} entrées sans identifiant ont été ignorées."
   },
-  "why.title": "Why"
+  "why.title": "Why",
+  "why.type.constraint": "contrainte",
+  "why.type.decision": "décision",
+  "why.type.incident": "incident",
+  "why.type.workaround": "contournement"
 };

@@ -194,6 +194,13 @@ def test_the_switches_are_read_from_the_environment() -> None:
     defaults = Settings.from_env(base)
     assert (defaults.public_pages, defaults.public_pages_render) == (False, "on_change")
     assert defaults.public_pages_interval_hours == 6
+    assert defaults.public_pages_snapshot_minutes == 5
+    assert (
+        Settings.from_env(
+            {**base, "MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES": "60"}
+        ).public_pages_snapshot_minutes
+        == 60
+    )
     on = Settings.from_env(
         {
             **base,
@@ -213,6 +220,8 @@ def test_the_switches_are_read_from_the_environment() -> None:
         ("MAITY_PUBLIC_PAGES_INTERVAL_HOURS", "0"),
         ("MAITY_PUBLIC_PAGES_INTERVAL_HOURS", "25"),
         ("MAITY_PUBLIC_PAGES_INTERVAL_HOURS", "1.5"),
+        ("MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES", "0"),
+        ("MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES", "61"),
     ):
         with pytest.raises(ConfigError):
             Settings.from_env({**base, name: value})

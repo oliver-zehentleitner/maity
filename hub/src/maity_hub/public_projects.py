@@ -294,10 +294,15 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
     )
     statistics = agent_statistics(conn, project.id, agents)
     statistics_html = _statistics_html(statistics)
+    from maity_hub import public_snapshot
+
+    entries = public_snapshot.ticker(conn, project)
+    up = public_snapshot.online(conn, project.id)
+    snapshot_html = public_snapshot.html(entries, up)
     content = (
         f'<p class="eyebrow">{escape(full)}</p><h1>{escape(project.name)}</h1>'
         f'<p class="tag">{escape(project.state)}</p>{about}{repository}{links_html}'
-        f"{team_html}{statistics_html}"
+        f"{team_html}{snapshot_html}{statistics_html}"
     )
     path = f"/{full}"
     body = render.page_document(
@@ -316,6 +321,7 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
                 shown_url or "",
                 "\x00".join(shown_links),
                 team_html,
+                snapshot_html,
                 statistics_html,
             )
         ).encode()
@@ -347,6 +353,10 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
         ],
         "other_agents": others,
         "statistics": statistics,
+        "ticker": entries,
+        # The snapshot's time: `data` is stored on every render, the HTML and the sitemap's
+        # date only change with what the page shows.
+        "online": {**up, "as_of": clock.rfc3339(clock.now())},
     }
     return [
         public_pages.Page(

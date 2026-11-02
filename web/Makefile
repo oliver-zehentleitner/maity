@@ -1,7 +1,7 @@
 PYTHON ?= python3
 NODE ?= node
 
-.PHONY: check release-check fixtures smoke starter-configs e2e pseudo
+.PHONY: check release-check fixtures shapes smoke starter-configs e2e pseudo
 
 # HTML, JavaScript, CSS and fixture checks, and the e2e harness's own
 # judgement of answers; Python standard library only.
@@ -17,6 +17,13 @@ release-check:
 # Regenerate fixtures/fixtures.js from fixtures/**/*.json.
 fixtures:
 	$(PYTHON) tools/check.py --write
+
+# Re-record tools/hub-shapes.json, the forms of the hub's answers that check
+# compares the fixtures with, after a change to the hub's answers; needs the hub
+# installed (HUB_PYTHON: a Python with hub/'s test requirements).
+HUB_PYTHON ?= python3
+shapes:
+	cd ../hub && MAITY_WRITE_SHAPES=1 $(HUB_PYTHON) -m pytest -q -p no:cacheprovider tests/test_web_shapes.py
 
 # Behaviour smoke test against a DOM shim; needs a node binary, no packages.
 smoke:

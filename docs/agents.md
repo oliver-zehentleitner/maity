@@ -99,6 +99,7 @@ message.
 | 3 | `wait`: nothing arrived in time | run `maity wait` again |
 | 4 | `report` refused: the code does not match | do what the message says (commit, push, pull), then report again |
 | 6 | `wait`: another `wait` of this clone took over | do not start a second one; one is running |
+| 7 | the hub is in a maintenance window; the message says until when (`wait` never exits 7: it sleeps the window out) | try again after that time; keep the `wait` loop running |
 | 130 | interrupted | — |
 
 ## Rules

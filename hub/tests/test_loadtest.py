@@ -196,6 +196,28 @@ def test_a_seeded_human_has_no_mail_address_and_no_password(migrated: Engine) ->
     assert not verify_password("loadtest", human.password_hash)
 
 
+def signed_call(
+    client: Any, who: Any, method: str, route: str, query: str = "", **body: Any
+) -> Any:
+    """A request signed with a seeded agent's key, as `run.js` signs it."""
+    text = json.dumps(body).encode() if body else b""
+    stamp, nonce = str(int(time.time())), secrets.token_hex(16)
+    canonical = credentials.canonical_string(
+        method, route.encode(), query.encode(), stamp, nonce, text
+    )
+    headers = {
+        "Authorization": f"Maity-HMAC {who.credential_id}",
+        "Maity-Timestamp": stamp,
+        "Maity-Nonce": nonce,
+        "Maity-Signature": credentials.sign(who.verifier, canonical),
+    }
+    if body:
+        headers |= {"Content-Type": "application/json", "Idempotency-Key": nonce}
+    return client.request(
+        method, route + (f"?{query}" if query else ""), content=text, headers=headers
+    )
+
+
 def test_a_seeded_human_makes_the_calls_of_the_scripts(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
@@ -208,22 +230,7 @@ def test_a_seeded_human_makes_the_calls_of_the_scripts(
     writer, waiter = (SimpleNamespace(**a, value="") for a in one["agents"])
 
     def call(who: Any, method: str, route: str, query: str = "", **body: Any) -> Any:
-        text = json.dumps(body).encode() if body else b""
-        stamp, nonce = str(int(time.time())), secrets.token_hex(16)
-        canonical = credentials.canonical_string(
-            method, route.encode(), query.encode(), stamp, nonce, text
-        )
-        headers = {
-            "Authorization": f"Maity-HMAC {who.credential_id}",
-            "Maity-Timestamp": stamp,
-            "Maity-Nonce": nonce,
-            "Maity-Signature": credentials.sign(who.verifier, canonical),
-        }
-        if body:
-            headers |= {"Content-Type": "application/json", "Idempotency-Key": nonce}
-        return client.request(
-            method, route + (f"?{query}" if query else ""), content=text, headers=headers
-        )
+        return signed_call(client, who, method, route, query, **body)
 
     first = call(waiter, "GET", f"{path}/events", "after=latest")
     assert first.status_code == 200, first.text
