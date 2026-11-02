@@ -55,4 +55,34 @@ meta = check.translation_meta(de, newer, meta)
 expect(check.translation_gaps(de, newer, meta)[1] == [], "a changed translation follows today's English")
 expect(check.translation_meta({"a.gone": "x"}, EN, {"a.gone": {"en": "0", "text": "0"}}) == {}, "a key English dropped leaves the meta")
 
+# The pseudo run's own judgement; the walk itself needs a browser.
+import pseudo_run  # noqa: E402
+
+marked = pseudo_run.pseudo_text("Hello {name}, Agent")
+expect(marked.startswith("⟦") and marked.endswith("⟧") and "{name}" in marked and "Hello" not in marked,
+       "pseudo: the text is marked and accented, its placeholder kept: " + marked)
+forms = pseudo_run.pseudo_catalog({"a.b": {"one": "x", "other": "y"}, "c.d": "z"})
+expect(set(forms["a.b"]) == {"one", "other"} and forms["c.d"].startswith("⟦"), "pseudo: plural forms are kept")
+data = {"Agent D", "member"}
+for text, outside in [
+    ("Save", True),
+    ("(11) All projects · Maity", True),
+    ("Remove the uploaded banner", True),
+    ("Agent D · Sep 14, 2026, 12:05 · online", True),
+    ("⟦Sàvé⟧", False),
+    ("· wàtçhéd bý", False),
+    ("Agent D · member", False),
+    ("Oct 21, 2026, 12:05", False),
+    ("@maintainer/agent-b", False),
+    ("#k3pa", False),
+    ("tsk-0021", False),
+    ("https://example.org/x", False),
+    ("Maity", False),
+    ("Deutsch", False),
+    ("42", False),
+    ("the lab notes today", False),
+]:
+    expect(pseudo_run.unmarked(text, data, "take over the lab notes today, please") is outside, "pseudo: %r outside the catalog: %s" % (text, outside))
+expect(len(pseudo_run.routes_of_smoke()) > 50, "pseudo: the routes come from the smoke test")
+
 raise SystemExit(1 if failures else 0)

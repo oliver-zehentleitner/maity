@@ -848,3 +848,23 @@ context (a descendant selector counts only under its ancestor) and leaves
 out rules inside `@media` and CSS comments: a layout that holds at some
 widths only is no layout for the label.
 
+## The proof that the texts are in the catalog
+
+**Id:** ce9ba9bb-087c-44bd-b1af-3a697a7727d3
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** agreement with the lead on card tsk-ya56x9gx986r, 2026-11-02
+**Revisit when:** the report is empty and `--strict` is on, or a page's texts come only after a click often enough to hide many
+
+`tools/pseudo_run.py` walks the routes of `tools/smoke.js` in a real browser over the fixtures, with a pseudo catalog,
+and reports what carries no mark. `prose()` estimates from the source; this shows what a person actually sees. It runs
+as a report while the texts move to the catalog and turns strict with the last language. It does not replace reviewing
+a translation, and what only a click shows is not walked.
+
+**Rejected alternatives:**
+- The run inside `tools/e2e.py` against a hub: its steps look for English words, so a pseudo language fails them all,
+  and it reaches far fewer pages than the fixtures do.
+- A pseudo language in the repository's catalogs: it would be offered to people and need a marking to keep it out.
+- The routes in a list of its own: it would fall behind; those of the smoke test are already kept up.
+
