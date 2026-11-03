@@ -99,7 +99,8 @@ prompt nobody asked for is what people learn to deny.
 
 **Id:** 4c95abfb-95af-4c4d-85e0-6fb1cddfd79f
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 643600cd-dd61-4291-85d7-025e322f4c81
 **Evidence:** confirmed
 **Source:** docs/api.md §2.6.5 and §18.3 (marking a `session_created` item read gives the reported session good standing); the coordinator's ruling on the review of the dashboard's notifications (PR #194), 2026-10-23
 **Revisit when:** the hub lets the bell confirm a sign-in itself, or §2.6.5 changes who may mark a security item
@@ -125,6 +126,36 @@ human's curiosity.
 included, as the bell did at first: one click on the alert would confirm
 the sign-in.
 
+
+## The bell pins the unread security alerts, and Mark all read takes them only after asking
+
+**Id:** 643600cd-dd61-4291-85d7-025e322f4c81
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.6.5 ("This was me" its own call), §18.2 (`pinned`), §18.3 (`include_security`, `skipped`) and §18.8 (the dashboard's part), contract PR #1230; the bell card tsk-0kz8v1ff5sgf, 2026-11-03
+**Revisit when:** the hub confirms a sign-in by anything but its own call, or `pinned` changes what it holds
+**See:** refresh.md#a-sign-in-or-address-alert-is-never-marked-read-by-opening-it-or-by-mark-all-read — 4c95abfb-95af-4c4d-85e0-6fb1cddfd79f — as of 2026-11-03
+**See:** views.md#sessions-say-what-this-session-may-not-do-and-a-sign-in-is-confirmed-by-its-own-call — 0d50b2d4-2841-4510-a204-90d3aa574927 — as of 2026-11-03
+
+The bell shows the hub's `pinned` block above the latest items: every unread
+security alert, each once, with **This was me** for a sign-in this session may
+confirm (`POST /auth/sessions/{id}/confirm`) and **Mark read** for the rest it may
+mark. The list below leaves the pinned ids out. Opening a security alert still marks
+nothing. **Mark all read** is offered whenever anything is unread; with alerts pinned
+it first asks, listing them and saying that reading confirms nothing, and then sends
+`include_security: true`. What the hub leaves in `skipped` is named with its reason,
+and the panel stays open. A filter button reads the unread ones alone (`unread=true`).
+
+**Reason:** since the confirmation is its own call, reading an alert no longer gives a
+session good standing, so the bell may clear security alerts. A sign-in alert is still
+the one item that must not be missed, so it stands on top whatever the page, and
+clearing it in bulk is a choice the human makes knowingly.
+
+**Rejected alternatives:** keeping security alerts out of Mark all read, as before: they
+could only be cleared one by one, and the bell stayed lit. Marking them without asking:
+one click would clear a sign-in alert nobody looked at. Showing pinned alerts in the list
+as well: the same alert twice in a panel of twenty.
 
 ## A device code is followed with wait=0 every 2 seconds on both devices, not with its long-poll
 

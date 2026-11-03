@@ -492,35 +492,48 @@ causes errors (403 or 429 from the forge for everyone).
 
 **Id:** a70d7269-a0a9-45aa-94c5-54715f112c10
 **Type:** decision
-**Status:** open
-**Evidence:** inferred
-**Source:** `attachment_store.py` (`LocalStore` under `MAITY_ATTACHMENT_DIR`, written whole with `os.replace`), kubernetes.md 9111cb2f (a 10 GiB `ReadWriteOnce` claim, tarred by the backup job), the maintainer's internal deployment planning (2026-10-30) (shared file storage or S3-compatible object storage, the choice left to this card)
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision for object storage instead of a shared `ReadWriteMany` volume (card tsk-enpbgadqgmbr, 2026-11-03), the build plan the coordinator accepted for it (2026-11-03: boto3 at runtime, no presigned URLs, hub and chart in separate pull requests), the maintainer's rule of 2026-11-03 that every setting keeps its single-server default; `attachment_store.py` (`BlobStore`, `LocalStore`, `S3Store`), kubernetes.md 9111cb2f (a 10 GiB `ReadWriteOnce` claim, tarred by the backup job)
 **See:** kubernetes.md — 9111cb2f-89b0-4088-8c92-2fa5c1348ec7 — as of 2026-10-30
-**Revisit when:** the coordinator or the maintainer prefers shared file storage, or the object store's latency shows in the load test of uploads and downloads
+**See:** attachments.md#a-download-past-one-mebibyte-streams-and-holds-its-last-piece-back-until-the-digest-matches — 81f57cb5-f48a-43c7-9729-1d4e4de696b7 — as of 2026-11-03
+**See:** attachments.md#the-blob-is-written-before-the-row-and-removed-when-the-row-never-commits-or-is-gone — 7dcd4850-9dc4-4b4a-9148-e156c8e11718 — as of 2026-11-03
+**Revisit when:** the object store's latency shows in the load test of uploads and downloads
 
-The store gets a second implementation, `S3Store`, behind the same interface
-(`MAITY_ATTACHMENT_STORE=s3`, bucket, endpoint, region, credentials from a Secret), chosen at start.
-Downloads stay behind the hub's access checks: the hub streams the object (or answers with a
-presigned URL of a minute, a choice for the build card); uploads are written by the hub as today.
-The sweep and `remove_stray` keep their project-lock discipline and delete objects instead of files.
-Backups stop tarring a volume: the bucket's versioning (and its replication to a second
-location) replaces the attachment tar, and the dump marker stops requiring it.
-`LocalStore` stays for one replica and for development.
+The store has two implementations behind one interface (`attachment_store.BlobStore`): `LocalStore`,
+the default, for one replica, a laptop or a self-hosted hub, and `S3Store`, opt-in with
+`MAITY_ATTACHMENT_STORE=s3` and the `MAITY_ATTACHMENT_S3_*` settings, chosen at start. Nothing about
+the single-server setup changes: unset, the store is `local`, and `s3` is never a default.
+`attachment_store.shared(settings)` says whether every replica sees the same bytes, true only for
+`s3`; the several-pods check reads it rather than the setting's name.
 
-This is the one entry where the choice is the maintainer's as much as the design's: shared file
-storage (a `ReadWriteMany` volume) would need no code change in the hub, only in the
-chart and the backup job. The recommendation is object storage, for the reasons below.
+`S3Store` talks to the bucket through boto3, one client per process. Downloads stay behind the hub's
+access checks: the hub streams the object in 64 KiB pieces and checks its digest on the way; no
+presigned URL leaves the hub. An upload is one `PutObject`, so a reader sees the old bytes or the new
+ones, written before the upload's transaction and outside the project's lock (attachments.md
+7dcd4850); the sweep and `remove_stray` keep their lock discipline and their grace, and delete
+objects instead of files. Every error of the
+client becomes a `StoreError` that names the operation and the service's error code, never a
+credential, and the client's own loggers are held at `INFO`, since botocore logs each request's
+headers at `DEBUG`. The chart values, the copy of an existing volume into the bucket and the backup
+without the volume's tar follow in a second pull request.
 
-**Reason:** object storage scales and replicates independently of the nodes, a bucket is the
-usual home for off-site backups anyway, and it removes the volume from every node's scheduling. A
-shared file system brings NFS semantics (locking, latency on many small files) and is one more
-piece to keep available; the hub writes files whole and never appends, which fits objects.
+**Reason:** object storage scales and replicates independently of the nodes, a bucket is the usual
+home for off-site backups anyway, and it removes the volume from every node's scheduling. A shared
+file system brings NFS semantics (locking, latency on many small files) and is one more piece to keep
+available; the hub writes files whole and never appends, which fits objects. boto3 is the client
+every S3-compatible service is tested against, and its retries and request signing are not code the
+hub has to keep.
 
 **Rejected alternatives:**
 - **`ReadWriteMany` shared file storage:** no hub change, but an NFS dependency on the hot path of
-  downloads and the tar backup stays.
+  downloads, and the tar backup stays.
 - **Attachments in the database:** one store for everything, but large binary rows in the dump
   and in the WAL, and the database is the resource this design is trying to spare.
+- **A client of the hub's own (SigV4 signing over the HTTP library it has):** no new dependency,
+  but signing, retries and the differences between services become the hub's to get right.
+- **Presigned download URLs:** less traffic through the hub, but a link that works for anyone who
+  holds it for its lifetime, outside the hub's access checks and its digest check.
 
 ## Connections: a per-pod pool sized to the database, PgBouncer only in session mode until prepared statements are off
 
@@ -594,7 +607,8 @@ card, once the load test says the platform holds.
 
 **Id:** 2e7de08a-31ab-40ee-bfb8-7fc362562964
 **Type:** decision
-**Status:** open
+**Status:** superseded
+**Superseded by:** ec91fe03-1e12-4fb6-8c8e-f09ae8528e5d
 **Evidence:** inferred
 **Source:** kubernetes.md 5e42eb26 (`replicas` fixed in the template, the values schema refuses unknown keys), the maintainer's internal deployment planning (2026-10-30) (HorizontalPodAutoscaler on CPU, PodDisruptionBudget, topology spread, an autoscaled node pool), routes/events.py (`WAIT_MAX` 55 s)
 **See:** kubernetes.md — 5e42eb26-9883-49e2-89c0-9fe4e6517c62 — as of 2026-10-30
@@ -740,7 +754,7 @@ interpretation; the scenarios are exactly the behaviours the entries above chang
 4. The `worker_run` claim with its interval and lease, the digest's lock order and the presence
    upsert (24489a9c); the shared forge budget, the forget channel and the stored `probe_via`
    (83da2bfa).
-5. `S3Store` and the backup change (a70d7269), once the storage choice is confirmed.
+5. `S3Store` (a70d7269, built), then the chart values and the backup change.
 6. Chart: replicas, autoscaling, disruption budget, spread, values gate, `RollingUpdate` for
    releases without migrations, pool sizing, the `prepare_threshold` setting, the timeouts on
    the role and `MAITY_DIRECT_DATABASE_URL` (2e7de08a, a83fc8e7); kubernetes.md 5e42eb26 is
@@ -835,3 +849,55 @@ replicas was already per process, so workers needed no new shared state.
   nonces and limits; the refusal keeps the single-server setup on the path that is correct.
 - **The pool per process:** simpler to explain, but the database's connection limit would then
   depend on two settings multiplied, and a raised `MAITY_WORKERS` could exhaust it.
+
+## Several pods: `replicas` in the chart, opt-in, refused where the pods would not share
+
+**Id:** ec91fe03-1e12-4fb6-8c8e-f09ae8528e5d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-fnff0s1n0zpg; the maintainer's rule for the scaling cards (2026-11-03): the single-server hub stays the default and keeps working, every scaling path is opt-in; entries 2e7de08a, 36157878 and a83fc8e7 above; `serving.refusal`, `serving.connections`, `app.warn_on_connection_budget`; `deploy/helm/maity-hub` (`replicas`, `templates/pdb.yaml`); `tests/test_two_processes.py` (two pods, one or two workers each)
+**Revisit when:** attachments get a shared store other than S3 (a `ReadWriteMany` claim), the load test sets requests, limits or the pool per pod, or expand/contract migrations let a release with a migration roll
+
+The chart's `replicas` (default 1) sets the Deployment's pods and `MAITY_REPLICAS`. One replica
+is the hub as before: `Recreate`, no disruption budget, no spread, any database the hub
+supports. More than one:
+
+- **Refused where pods would not share.** The hub refuses to start with `MAITY_REPLICAS` above 1
+  on anything but PostgreSQL, or with a local attachment directory (each pod's volume holds only
+  the files it took). The chart refuses `attachments.existingClaim` with `replicas` above 1
+  before anything is installed. The database URL lives in a Secret the chart never reads, so
+  that refusal is the hub's alone; it can only trust what the deployment states, since nothing
+  off PostgreSQL could count the pods.
+- **Rolled one at a time** (`RollingUpdate`, `maxUnavailable: 0`, `maxSurge: 1`) for a release
+  without a migration. A release with a migration still goes through
+  `deploy/scripts/helm-upgrade.sh`, which scales to 0 and, after a successful upgrade, leaves
+  the replicas the release renders (Helm resets a scaled Deployment to the chart's value, and a
+  changed `replicas` must not be undone), also when the rollout check after Helm fails (the way
+  back is `helm rollback`); when it ends before Helm or Helm fails, it scales back to the
+  replicas it found (entry 36157878), until migrations are expand/contract. A hub found at 0 stays at 0.
+- **A PodDisruptionBudget** with `minAvailable: 1`, rendered only with more than one replica: for
+  one pod it would block every node drain.
+- **Spread over nodes** (`kubernetes.io/hostname`, `maxSkew: 1`, `ScheduleAnyway`), replaceable
+  through `topologySpreadConstraints`; `ScheduleAnyway` so a single-node cluster still starts
+  every pod.
+- **The connection budget** is pods × (workers × (pool share + overflow share + 1) + 1): each
+  worker holds its share of the pod's pool and overflow (`serving.per_worker`, rounded down)
+  plus its LISTEN connection, and each pod one more for the readiness probe. With more than one
+  replica, pods counts the surge pod of a rolling update too (replicas + 1). The chart sets the pool per pod (`database.poolSize`, `.maxOverflow`). At its start the
+  hub warns when the sum exceeds `max_connections` less the reserved connections; only a
+  warning, because behind a pooler the server's limit is not the one that counts.
+
+The opt-in default is the maintainer's rule (confirmed); the shape of each point above is inferred.
+
+**Reason:** the shared state the entries above built is what makes a second pod safe; the
+chart makes that shape one value and the unsafe shapes fail before or at the start, while the
+single-server setup changes in nothing.
+
+**Rejected alternatives:**
+- **The chart deciding from the database URL:** the URL is in a Secret Helm does not read, and
+  reading it in a template would put it into the rendered manifests.
+- **A refusal of the connection budget:** a managed pooler in front reports the pooler's limit,
+  not the server's, and the hub cannot tell which it reached.
+- **An autoscaler in this step** (entry 2e7de08a): left for after the load test, which decides
+  whether CPU tracks load; `replicas` is the manual setting it would later drive.

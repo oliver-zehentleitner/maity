@@ -88,6 +88,9 @@ cluster reaches, so it is refused with an Ingress or a Service that leaves
 the cluster.
 */}}
 {{- define "maity-hub.validate" -}}
+{{- if and (gt (int .Values.replicas) 1) .Values.attachments.existingClaim -}}
+{{- fail "replicas above 1 with attachments.existingClaim: each pod would see only its own files; store attachments on S3, or run one replica" -}}
+{{- end -}}
 {{- if .Values.ingress.enabled -}}
 {{- if not .Values.ingress.host -}}
 {{- fail "ingress.host is required with the Ingress enabled" -}}
@@ -123,6 +126,10 @@ the chart.
     secretKeyRef:
       name: {{ . }}
       key: {{ $.Values.forge.github.key }}
+{{- end }}
+{{- with .Values.forge.github.instanceNamespaces }}
+- name: MAITY_FORGE_INSTANCE_NAMESPACES
+  value: {{ . | quote }}
 {{- end }}
 {{- with .Values.secretKey.existingSecret }}
 - name: MAITY_SECRET_KEY
@@ -179,6 +186,16 @@ the chart.
   value: {{ ternary "1" "0" .Values.config.allowPlainHttp | quote }}
 - name: MAITY_WORKERS
   value: {{ .Values.config.workers | int | toString | quote }}
+- name: MAITY_REPLICAS
+  value: {{ .Values.replicas | int | toString | quote }}
+{{- with .Values.database.poolSize }}
+- name: MAITY_DB_POOL_SIZE
+  value: {{ . | int | toString | quote }}
+{{- end }}
+{{- if not (kindIs "invalid" .Values.database.maxOverflow) }}
+- name: MAITY_DB_MAX_OVERFLOW
+  value: {{ .Values.database.maxOverflow | int | toString | quote }}
+{{- end }}
 {{- if not .Values.config.dashboard }}
 - name: MAITY_WEB_DIR
   value: ""

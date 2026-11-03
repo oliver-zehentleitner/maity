@@ -54,6 +54,7 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("event", "actor_human_id"): True,
     ("handle_register", "owner_id"): True,  # a human's or an organisation's id
     ("human_session", "approved_by"): False,  # the approving session's public id
+    ("human_session", "confirmed_by"): False,  # the confirming session's public id
     ("human_session", "ended_by"): False,  # why: `logout`, `revoked`, …
     ("idempotency_key", "caller"): True,
     ("instance_landing", "updated_by"): True,

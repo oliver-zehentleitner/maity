@@ -426,7 +426,9 @@ def test_only_totp_and_a_recovery_code_give_standing_the_mail_does_not() -> None
     """§2.8.2: the mail is the mailbox and gives no standing of its own."""
 
     def standing(method: str, factor: str | None) -> bool:
-        row = SimpleNamespace(method=method, public_id="ses-x", second_factor=factor)
+        row = SimpleNamespace(
+            method=method, public_id="ses-x", second_factor=factor, confirmed_at=None
+        )
         return sessions.good_standing(row)
 
     assert standing("device_code", "email") is False

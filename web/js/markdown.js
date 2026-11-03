@@ -207,6 +207,11 @@ window.Maity = window.Maity || {};
   // `opts`: {mentions, field, hrefOf, ctx}, the hub's stored mentions of the
   // text (§8.6), the field they are for ("body" by default), the member's
   // address (none: shown, not linked) and the members it knows for aliases.
+  // `opts.anchors`: a Map from a 1-based line of the source to {level,
+  // anchor}, the headings a page of its own gives an `id` (the whole
+  // contract, §6.8): that line is drawn as a real heading of its level,
+  // whatever its own marks say, so the ids are the hub's and never this
+  // renderer's guess. Only at the top level, where a line is the file's.
   M.markdown = function (source, at, opts) {
     const o = opts || {};
     const text = String(source || "");
@@ -225,9 +230,23 @@ window.Maity = window.Maity || {};
       return { said: x.said, href, instance: x.instance, instanceHref, title: x.instance ? M.t("member.instance", { id: x.instance }) : null };
     });
     marked += chars.slice(from).join("");
-    try { return render(marked, at, 0); } finally { marks = []; }
+    try { return render(marked, at, 0, o.anchors); } finally { marks = []; }
   };
-  function render(source, at, depth) {
+  // An ATX heading's text as the hub reads it (§6.8): up to three spaces,
+  // the marks, the title, a closing run of marks dropped.
+  // Its section number, as the hub finds one, is a text of its own.
+  const ATX = /^ {0,3}#{1,6}(?:[ \t]+(.*?))?[ \t]*$/;
+  const NUMBER = /^\d+(?:\.\d+)*\.?$/;
+  function anchored(line, where, at) {
+    const m = ATX.exec(line);
+    const title = m ? (m[1] || "").replace(/[ \t]+#+$/, "").trim() : line.trim();
+    const cut = title.indexOf(" ");
+    const first = cut < 0 ? title : title.slice(0, cut);
+    const numbered = NUMBER.test(first) && cut > 0;
+    return h("h" + where.level, { id: where.anchor, class: "md-anchored" },
+      numbered ? [h("span", { class: "md-number" }, first), " ", inline(title.slice(cut + 1).trim(), at)] : inline(title, at));
+  }
+  function render(source, at, depth, anchors) {
     const level = depth || 0;
     const all = String(source || "").replace(/\r\n?/g, "\n").split("\n");
     const out = [];
@@ -248,6 +267,13 @@ window.Maity = window.Maity || {};
         i += 1;
         while (i < all.length && !close.test(all[i])) { body.push(all[i]); i += 1; }
         out.push(codeBlock(body.join("\n"), lang));
+        i += 1;
+        continue;
+      }
+      const where = anchors && level === 0 ? anchors.get(i + 1) : null;
+      if (where) {
+        flush();
+        out.push(anchored(line, where, at));
         i += 1;
         continue;
       }

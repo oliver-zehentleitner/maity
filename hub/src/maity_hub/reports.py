@@ -393,7 +393,7 @@ def resolve(
     action: Any,
     note: Any,
     fg: Forge,
-    store: attachment_store.LocalStore | None = None,
+    store: attachment_store.BlobStore | None = None,
 ) -> dict[str, Any]:
     """Resolve the report and make its action's change, or replace the action of a
     resolved one (§16.8): its hold is replaced, `dismiss` lifts it."""

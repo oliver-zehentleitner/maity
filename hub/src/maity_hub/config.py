@@ -31,6 +31,20 @@ class ConfigError(ValueError):
     """A setting is present but unusable. The message never contains a credential."""
 
 
+@dataclass(frozen=True)
+class AttachmentS3:
+    """`MAITY_ATTACHMENT_S3_*` (§8.7, §16): the bucket of the `s3` store. The credentials
+    are never logged and never in a repr; unset, the client finds its own (an instance
+    role, a mounted profile)."""
+
+    bucket: str
+    endpoint: str | None = None
+    prefix: str = ""
+    region: str | None = None
+    access_key_id: str | None = field(default=None, repr=False)
+    secret_access_key: str | None = field(default=None, repr=False)
+
+
 # The CLI as published on PyPI (§3.2); a fork points MAITY_CLI_INSTALL at its own.
 DEFAULT_CLI_INSTALL = "pipx install maity"
 
@@ -51,6 +65,9 @@ class Settings:
     # MAITY_FORGE_GITHUB_APP_*: the instance's GitHub App, all five settings or none
     # (§11.4); its key and client secret never in a repr.
     github_app: GitHubApp | None = field(default=None, repr=False)
+    # MAITY_FORGE_INSTANCE_NAMESPACES: the operator's own namespaces, in lower case, the only
+    # ones the instance token reads for (§11.4); empty: it serves no project.
+    forge_instance_namespaces: frozenset[str] = frozenset()
     # MAITY_JOIN_URL: a second hostname that serves the agent join only (§1.1).
     join_url: str | None = None
     # MAITY_CLI_INSTALL: the one line that installs the CLI, wherever the hub tells an
@@ -61,15 +78,21 @@ class Settings:
     avatar_decode_seconds: float = 5.0
     avatar_decode_memory_mb: int = 512
     avatar_decodes: int = 2
-    # MAITY_ATTACHMENT_STORE, MAITY_ATTACHMENT_DIR, MAITY_ATTACHMENT_QUOTA (§8.7, §16):
-    # where an attachment's bytes live and how many a project may store. Only the local
-    # store is built; `attachment_dir` unset leaves attachments unconfigured.
+    # MAITY_ATTACHMENT_STORE, MAITY_ATTACHMENT_DIR, MAITY_ATTACHMENT_S3_*,
+    # MAITY_ATTACHMENT_QUOTA (§8.7, §16): where an attachment's bytes live and how many a
+    # project may store. `local` (the default) with `attachment_dir` unset leaves
+    # attachments unconfigured; `s3` is opt-in, for replicas that share the bytes.
     attachment_store: str = "local"
     attachment_dir: Path | None = None
+    attachment_s3: AttachmentS3 | None = None
     attachment_quota: int = 1024 * 1024 * 1024
     # MAITY_WORKERS: how many serving processes `maity-hub serve` starts, 1–64. More than one
     # only on PostgreSQL, where the processes share what they must (hub/context/replicas.md).
     workers: int = 1
+    # MAITY_REPLICAS: how many hubs the deployment runs on this database, 1–100, as the
+    # deployment says it (the chart sets it from `replicas`); the hub cannot count them. More
+    # than one only on PostgreSQL and without a local attachment directory, which is one pod's.
+    replicas: int = 1
     # MAITY_DB_POOL_SIZE, MAITY_DB_MAX_OVERFLOW: the server database's connection pool
     # (16 + 16; SQLAlchemy's own defaults are 5 + 10, hub/context/persistence.md), for the
     # whole hub: with several workers each process holds its share (`per_worker`).
@@ -157,6 +180,9 @@ class Settings:
             trusted_proxies=parse_networks(env.get("MAITY_TRUSTED_PROXIES", "")),
             forge_github_token=env.get("MAITY_FORGE_GITHUB_TOKEN") or None,
             github_app=parse_github_app(env),
+            forge_instance_namespaces=parse_namespaces(
+                env.get("MAITY_FORGE_INSTANCE_NAMESPACES", "")
+            ),
             allow_plain_http=parse_flag(
                 env.get("MAITY_ALLOW_PLAIN_HTTP", ""), "MAITY_ALLOW_PLAIN_HTTP"
             ),
@@ -171,10 +197,12 @@ class Settings:
             avatar_decodes=int(parse_number(env, "MAITY_AVATAR_DECODES", 2, minimum=1, maximum=64)),
             attachment_store=parse_attachment_store(env),
             attachment_dir=parse_attachment_dir(env),
+            attachment_s3=parse_attachment_s3(env),
             attachment_quota=int(
                 parse_number(env, "MAITY_ATTACHMENT_QUOTA", 1024**3, minimum=1024, maximum=2**50)
             ),
             workers=int(parse_number(env, "MAITY_WORKERS", 1, minimum=1, maximum=64)),
+            replicas=int(parse_number(env, "MAITY_REPLICAS", 1, minimum=1, maximum=100)),
             db_pool_size=int(parse_number(env, "MAITY_DB_POOL_SIZE", 16, minimum=1, maximum=500)),
             db_max_overflow=int(
                 parse_number(env, "MAITY_DB_MAX_OVERFLOW", 16, minimum=0, maximum=500)
@@ -242,14 +270,110 @@ def parse_github_app(env: dict[str, str]) -> GitHubApp | None:
 
 
 def parse_attachment_store(env: dict[str, str]) -> str:
-    """`local` is the one store built; `s3` is documented (§8.7) and stops the hub with a
-    plain statement, as does anything else."""
+    """`local` (the default) or `s3` (§8.7); anything else stops the hub."""
     value = env.get("MAITY_ATTACHMENT_STORE", "").strip() or "local"
-    if value == "s3":
-        raise ConfigError("MAITY_ATTACHMENT_STORE=s3 is not built yet: use local")
-    if value != "local":
+    if value not in ("local", "s3"):
         raise ConfigError(f"MAITY_ATTACHMENT_STORE must be local or s3: {value!r}")
     return value
+
+
+def parse_attachment_s3(env: dict[str, str]) -> AttachmentS3 | None:
+    """The `s3` store's settings, read only when `MAITY_ATTACHMENT_STORE` is `s3`: the
+    bucket is required, the endpoint is https unless `MAITY_ATTACHMENT_S3_ALLOW_HTTP=1`
+    and its host is a loopback or cluster-internal one, and the credentials come as a
+    pair or not at all. No message names a credential's value."""
+    if parse_attachment_store(env) != "s3":
+        return None
+    bucket = env.get("MAITY_ATTACHMENT_S3_BUCKET", "").strip()
+    if not bucket:
+        raise ConfigError("MAITY_ATTACHMENT_STORE=s3 needs MAITY_ATTACHMENT_S3_BUCKET")
+    if any(c.isspace() or c == "/" for c in bucket):
+        raise ConfigError("MAITY_ATTACHMENT_S3_BUCKET must be a bucket name")
+    allow_http = parse_flag(
+        env.get("MAITY_ATTACHMENT_S3_ALLOW_HTTP", ""), "MAITY_ATTACHMENT_S3_ALLOW_HTTP"
+    )
+    endpoint = parse_s3_endpoint(env.get("MAITY_ATTACHMENT_S3_ENDPOINT", ""), allow_http)
+    prefix = env.get("MAITY_ATTACHMENT_S3_PREFIX", "").strip().strip("/")
+    if any(c.isspace() for c in prefix) or {".", ".."} & set(prefix.split("/")):
+        raise ConfigError(
+            "MAITY_ATTACHMENT_S3_PREFIX must be a key prefix such as maity/attachments"
+        )
+    key_id = env.get("MAITY_ATTACHMENT_S3_ACCESS_KEY_ID", "").strip() or None
+    secret = env.get("MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY", "").strip() or None
+    if (key_id is None) != (secret is None):
+        raise ConfigError(
+            "MAITY_ATTACHMENT_S3_ACCESS_KEY_ID and MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY "
+            "are set together or not at all"
+        )
+    return AttachmentS3(
+        bucket=bucket,
+        endpoint=endpoint,
+        prefix=prefix,
+        region=env.get("MAITY_ATTACHMENT_S3_REGION", "").strip() or None,
+        access_key_id=key_id,
+        secret_access_key=secret,
+    )
+
+
+def parse_s3_endpoint(value: str, allow_http: bool) -> str | None:
+    """Unset leaves the endpoint to the client (AWS for the region). Otherwise an https
+    URL; `http` only with the switch and only to a host that does not leave the machine
+    or the cluster (`cluster_internal`)."""
+    value = value.strip()
+    if not value:
+        return None
+    name = "MAITY_ATTACHMENT_S3_ENDPOINT"
+    try:
+        parts = urlsplit(value)
+        _ = parts.port  # a port that is not a number raises here
+    except ValueError:
+        raise ConfigError(f"{name} must be an https URL") from None
+    if (
+        not parts.hostname
+        or any(c.isspace() for c in value)
+        or parts.username is not None
+        or parts.password is not None
+        or parts.query
+        or parts.fragment
+        or parts.path not in ("", "/")
+    ):
+        raise ConfigError(f"{name} must be an https URL without a path, such as https://s3.example")
+    if parts.scheme == "https":
+        return value.rstrip("/")
+    if parts.scheme != "http":
+        raise ConfigError(f"{name} must be an https URL")
+    if not allow_http:
+        raise ConfigError(
+            f"{name} is plain http: set MAITY_ATTACHMENT_S3_ALLOW_HTTP=1, or use https"
+        )
+    if not cluster_internal(parts.hostname):
+        raise ConfigError(
+            f"{name} is plain http to {parts.hostname}: http is only for a loopback or "
+            "cluster-internal host"
+        )
+    return value.rstrip("/")
+
+
+_CLUSTER_SUFFIXES = (".svc", ".svc.cluster.local", ".cluster.local")
+# The private ranges a cluster or a compose network hands out (RFC 1918, the shared space of
+# RFC 6598, unique local IPv6). Not `is_private`, which also counts the documentation ranges.
+_CLUSTER_NETWORKS = tuple(
+    ipaddress.ip_network(n)
+    for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "fc00::/7")
+)
+
+
+def cluster_internal(host: str) -> bool:
+    """A host whose traffic stays on the machine or inside the cluster: a loopback or
+    private address, `localhost`, a name of one label (a service in the same namespace
+    or a compose network) or a Kubernetes service name. Anything that resolves through
+    public DNS is not."""
+    host = host.lower().rstrip(".")
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return host == "localhost" or "." not in host or host.endswith(_CLUSTER_SUFFIXES)
+    return address.is_loopback or any(address in net for net in _CLUSTER_NETWORKS)
 
 
 def parse_attachment_dir(env: dict[str, str]) -> Path | None:
@@ -380,6 +504,12 @@ def parse_join_url(value: str, public_url: str) -> str | None:
 
 
 IPNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
+
+
+def parse_namespaces(value: str) -> frozenset[str]:
+    """`MAITY_FORGE_INSTANCE_NAMESPACES` (§11.4): comma separated namespace names, spaces
+    around a name ignored, compared in lower case."""
+    return frozenset(name.strip().lower() for name in value.split(",") if name.strip())
 
 
 def parse_networks(value: str) -> tuple[IPNetwork, ...]:

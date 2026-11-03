@@ -705,6 +705,47 @@ change only with what the page shows.
 - Rendering on every ticker item and presence change: presence changes all the time, and every agent's heartbeat
   would render a page.
 
+## A card event renders only the project's own page, and only when it may take a ticker item off
+
+**Id:** 721bcdfa-9464-4b57-b885-a1455f5adbb8
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** production incident of 2026-11-03 after the deploy of `634f0f60`: `lock_project` waits on the maity project ended in statement timeouts (57014, 503); the holder was idle in transaction with in_state 0 s while its age grew, its last statement the `moderation_hold` read of a card page's render; the lead's go on this fix the same day; the review of #1277 (the member events as a follow-up, card tsk-2k10yf9w7kzw)
+**See:** public-pages.md#a-public-project-shows-a-snapshot-of-its-ticker-and-who-is-online-rendered-on-a-timer-never-live — 65c0167c-f61c-419a-9506-8d9453edd482 — as of 2026-11-03
+**See:** public-pages.md#a-page-is-rendered-again-in-the-transaction-that-changed-its-input-by-a-registry-of-kinds — b7a13a49-7c56-49d6-bc18-4622b21d0077 — as of 2026-11-03
+**Revisit when:** the API can set the `security` label or move a card out of `done`, or another input of the ticker's card rule appears
+
+`events.emit` holds the project row (`lock_project` is its first statement). For a card event of a public project
+it renders the Board and the card's own page as before, and the project's page only when the event may take a
+ticker item off: a label change, or a status change of a `security` card (`_hides_ticker_entries`, the two inputs
+of `public_cards.shown`; a hold is `moderation.apply`'s). That render is `touch(..., dependents=False)`: the
+project's own page, none of its dependents, since only that page shows the ticker. Everything else reaches the
+page with the snapshot worker. Through the API this render does not happen today: `security` is not a label the
+API sets, and `done` has no way out; the rule guards imported cards and a later change of either.
+
+**Reason:** from the ticker's change on, every card event except a creation called `touch(conn, "project", …)`
+with its default `removal`, which renders the project's page and every dependent at once: the views, the org,
+the agent and person pages, and every card page of the project. On a project with many cards each claim,
+report or edit made hundreds of short queries inside the transaction that holds the project row, and every other
+write to the project waited behind it. Single-server setups are affected the same way; nothing here is opt-in.
+
+**Rejected alternatives:**
+- Rendering the project page with its dependents on every card event (the state before): the incident above.
+- Dropping the at-once render and leaving every card change to the snapshot worker: a removal from a public page
+  never waits for a timer (`docs/api.md` §16.9), and a hold or an imported `security` card still needs it.
+- Rendering after the commit, outside the lock: the removal belongs to the transaction that changed the input
+  (b7a13a49), and a second transaction after the commit could fail and leave the page stale.
+
+The member events take the same path with one filter (tsk-2k10yf9w7kzw): a `member_updated` whose `changed`
+fields are all in `events.UNSHOWN_MEMBER_FIELDS` renders nothing. These are the language (one event per project of
+the person, each under that project's row), the line consent, and a dormant instance or outage policy, which only
+change who is online and so wait for the snapshot. Every other member change, a join, and an update that names no
+`changed` fields still renders the project page with its dependents, since a member's name stands on the card
+pages they hold. Rejected: naming the fields a page shows instead (an allowlist), because a field added later
+would silently leave a stale name on a public page; a field missing from the list only costs a render.
+
 ## A person can keep their online status off the public pages; their projects' pages then neither name nor count them
 
 **Id:** 54823a3a-96be-4484-9689-8059201b1bb3
