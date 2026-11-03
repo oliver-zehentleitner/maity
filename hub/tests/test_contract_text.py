@@ -43,7 +43,9 @@ A badge.
 @pytest.fixture
 def settings(settings: Settings, request: pytest.FixtureRequest) -> Settings:
     if "github" in request.fixturenames:
-        return replace(settings, forge_github_token=TOKEN)
+        return replace(
+            settings, forge_github_token=TOKEN, forge_instance_namespaces=frozenset({"maintainer"})
+        )
     return settings
 
 

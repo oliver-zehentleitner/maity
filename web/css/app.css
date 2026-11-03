@@ -1340,6 +1340,22 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
     radial-gradient(farthest-side at 50% 100%, rgba(0, 0, 0, 0.18), transparent) center bottom / 100% 12px no-repeat scroll; }
 .contract-unresolved code { overflow-wrap: anywhere; }
 .contract-place { margin-top: 6px; }
+/* The whole contract (js/contract.js, §6.8): the table of contents beside
+   the text, which here is the page's own and has no height of its own; on
+   a narrow screen the table above it. A heading opened by its anchor stops
+   below the header. */
+.contract-whole { display: grid; grid-template-columns: minmax(12rem, 18rem) minmax(0, 1fr); gap: 16px; align-items: start; }
+.contract-toc { position: sticky; top: 8px; max-height: calc(100vh - 16px); overflow: auto; font-size: 0.85rem; }
+.contract-toc ol { list-style: none; margin: 0; padding: 0; }
+.contract-toc li { margin: 2px 0; overflow-wrap: anywhere; }
+.contract-toc .contract-toc-3 { padding-left: 12px; }
+.contract-toc .contract-toc-4 { padding-left: 24px; }
+.contract-whole .contract-text { max-height: none; overflow: visible; background: none; }
+.contract-whole .md-anchored { scroll-margin-top: 8px; }
+@media (max-width: 600px) {
+  .contract-whole { grid-template-columns: minmax(0, 1fr); }
+  .contract-toc { position: static; max-height: 40vh; }
+}
 /* Statistics in the admin area (js/statistics.js, §16.6): tiles, one row
    per series with a 2px line in the accent, the days as a table. */
 .statistics-window { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 8px; }

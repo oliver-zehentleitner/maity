@@ -16,6 +16,8 @@ import json
 import re
 import threading
 from collections import OrderedDict
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -31,7 +33,7 @@ _NAME = re.compile(
     r"https://github\.com/([A-Za-z0-9-]{1,39})/([A-Za-z0-9._-]{1,100}?)(?:\.git)?/?", re.ASCII
 )
 IN_FLIGHT_ALL = 16  # §11.5's reads in flight across the hub
-HELD_KEPT = 4096  # when each file and family was last read, for the 30 s hold after a drop
+HELD_KEPT = ktw.HELD_KEPT
 
 
 class Refused(Exception):
@@ -148,7 +150,11 @@ class ForeignCache:
             held = f"{project_id}|{repository}"
             if current is None and _held("family", held):
                 return _Foreign(None, "timeout", ktw._now()), False  # dropped for room
-            found = self._read(reader, repository)  # a spent budget raises: nothing is marked
+            try:
+                with _permits(project_id):  # its forge reads count as one of the project's
+                    found = self._read(reader, repository)  # a spent budget raises, unmarked
+            except ktw.MemberError:
+                raise ktw.Busy from None
             _mark_read("family", held)
             with self.guard:
                 for gone in bounded.put(self.entries, key, found, FOREIGN_KEPT, lambda k: False):
@@ -242,26 +248,59 @@ def _slot(project_id: str) -> threading.BoundedSemaphore:
 
 
 _all = threading.BoundedSemaphore(IN_FLIGHT_ALL)
-# When each file was last read, kept apart from the store, so that a file dropped for room
-# is not read again inside FORCE_INTERVAL (§11.5).
-_read_at: OrderedDict[tuple[str, str], float] = OrderedDict()
 # The error of a file's last read, while it failed: answered again inside the 30 s hold.
 _failed: OrderedDict[tuple[str, str], ktw.MemberError] = OrderedDict()
-_read_at_guard = threading.Lock()
+# One read of one file at a time: a call that finds a read of the same file under way waits
+# for it and answers from it. An entry lives while a call uses it.
+_flights: dict[tuple[str, str], list[Any]] = {}
+_flights_guard = threading.Lock()
 
 
 def _held(kind: str, url: str) -> bool:
-    with _read_at_guard:
-        at = _read_at.get((kind, url))
-    return at is not None and ktw._now() - at < ktw.FORCE_INTERVAL
+    """A read of the file (or family) less than FORCE_INTERVAL ago, whichever read it:
+    these reads or §11.3's (`ktw.RAW` records both), even when the file was dropped since."""
+    return ktw.RAW.held(kind, url)
 
 
 def _mark_read(kind: str, url: str) -> None:
-    with _read_at_guard:
-        _read_at[(kind, url)] = ktw._now()
-        _read_at.move_to_end((kind, url))
-        while len(_read_at) > HELD_KEPT:
-            _read_at.popitem(last=False)
+    ktw.RAW.mark(kind, url)
+
+
+@contextmanager
+def _permits(project_id: str) -> Iterator[None]:
+    """One of the project's ktw.IN_FLIGHT reads and one of the hub's IN_FLIGHT_ALL, for the
+    time of the read; `ktw.MemberError("timeout")` when none frees up in time."""
+    slot = _slot(project_id)
+    if not slot.acquire(timeout=ktw.FAMILY_DEADLINE):
+        raise ktw.MemberError("timeout")
+    try:
+        if not _all.acquire(timeout=ktw.FAMILY_DEADLINE):
+            raise ktw.MemberError("timeout")
+        try:
+            yield
+        finally:
+            _all.release()
+    finally:
+        slot.release()
+
+
+@contextmanager
+def _one_read(key: tuple[str, str]) -> Iterator[None]:
+    with _flights_guard:
+        flight = _flights.setdefault(key, [threading.Lock(), 0])
+        flight[1] += 1
+    try:
+        if not flight[0].acquire(timeout=ktw.FAMILY_DEADLINE):
+            raise ktw.MemberError("timeout")
+        try:
+            yield
+        finally:
+            flight[0].release()
+    finally:
+        with _flights_guard:
+            flight[1] -= 1
+            if flight[1] == 0:
+                _flights.pop(key, None)
 
 
 # --- the reads -------------------------------------------------------------------------------
@@ -340,6 +379,7 @@ def _member(
             raise Refused(
                 404, "not_found", "past the repositories a project may name", reason="family_cap"
             )
+        _spent(others.retry_at())  # its source's budget, not the project's own (§11.5)
         try:
             foreign, _fresh = FOREIGN.get(others, project_id, wanted, max_age)
         except ktw.Busy:
@@ -376,24 +416,13 @@ def _file(
     project_id: str, kind: str, url: str, cap: int, max_age: int, start: float
 ) -> tuple[ktw.Raw, bool]:
     """(file, fresh): `fresh` when it was read since `start`, the request's beginning, by
-    this call or by §11.3's read of the family that the same call made."""
-    kept = ktw.RAW.get(kind, url)
-    if kept is not None and ktw._now() - kept.at < max(max_age, ktw.FORCE_INTERVAL):
-        return kept, kept.at >= start
-    if _held(kind, url):  # a read, or a failed one, less than 30 s ago
-        if kept is not None:
-            return kept, False
-        failed = _failed.get((kind, url))
-        if failed is not None:  # that read failed: its own error again, not read again
-            raise ktw.MemberError(failed.reason, **failed.details)
-        raise ktw.MemberError("timeout")  # it succeeded, and was dropped for room meanwhile
-    slot = _slot(project_id)
-    if not slot.acquire(timeout=ktw.FAMILY_DEADLINE):
-        raise ktw.MemberError("timeout")
-    try:
-        if not _all.acquire(timeout=ktw.FAMILY_DEADLINE):
-            raise ktw.MemberError("timeout")
-        try:
+    this call, by a call it waited for, or by §11.3's read of the family that the same call
+    made."""
+    with _one_read((kind, url)):  # after a read under way, which may answer this call too
+        answered = _answered(kind, url, max_age, start)
+        if answered is not None:
+            return answered
+        with _permits(project_id):
             _mark_read(kind, url)
             try:
                 found = _read(kind, url, cap)
@@ -404,10 +433,22 @@ def _file(
                 raise
             _failed.pop((kind, url), None)
             return found, True
-        finally:
-            _all.release()
-    finally:
-        slot.release()
+
+
+def _answered(kind: str, url: str, max_age: int, start: float) -> tuple[ktw.Raw, bool] | None:
+    """The answer without a read, or None when the file is to be read; `ktw.MemberError`
+    inside the 30 s hold of a read whose file is gone or that failed."""
+    kept = ktw.RAW.get(kind, url)
+    if kept is not None and ktw._now() - kept.at < max(max_age, ktw.FORCE_INTERVAL):
+        return kept, kept.at >= start
+    if _held(kind, url):  # a read, or a failed one, less than 30 s ago
+        if kept is not None:
+            return kept, False
+        failed = _failed.get((kind, url))
+        if failed is not None:  # that read failed: its own error again, not read again
+            raise ktw.MemberError(failed.reason, **failed.details)
+        raise ktw.MemberError("timeout")  # it succeeded, and was dropped for room meanwhile
+    return None
 
 
 def export(

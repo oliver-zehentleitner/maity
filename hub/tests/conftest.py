@@ -15,7 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine, inspect, text
 from sqlalchemy.engine import make_url
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import DBAPIError, OperationalError
 
 from maity_hub.app import create_app
 from maity_hub.config import Settings, normalize_database_url
@@ -121,40 +121,83 @@ def _empty_the_tables(engine: Engine) -> None:
 
     On PostgreSQL a connection a test left in a transaction holds its locks, and the TRUNCATE
     waited for them without end (tsk-xz3bxa5cwv4v). It now gives up after
-    `TRUNCATE_LOCK_TIMEOUT`; the sessions holding locks in this worker's database are named and
-    ended, so this one test fails and the next one runs (hub/context/testing.md)."""
+    `TRUNCATE_LOCK_TIMEOUT`; the suite's own sessions that hold a lock on the tables it empties
+    are named and ended, so this one test fails and the next one runs (hub/context/testing.md
+    210f3def). The test database is the suite's alone (hub/README.md)."""
+    tables = [t for t in inspect(engine).get_table_names() if t != "alembic_version"]
     try:
-        _truncate(engine)
+        _truncate(engine, tables)
     except OperationalError as error:
         if getattr(error.orig, "sqlstate", None) != LOCK_NOT_AVAILABLE:
             raise
-        holders = _end_the_lock_holders(engine)
+        holders = _end_the_lock_holders(engine, _relations(engine, tables))
+        found = (
+            f"ended so the next test runs (unless named otherwise): {holders}"
+            if holders
+            else "no session of this suite holds them: another role's, or a lock outside the"
+            " emptied tables and their sequences, so the next cleanup waits again"
+        )
         raise LeakedConnection(
             f"the cleanup before this test waited {TRUNCATE_LOCK_TIMEOUT} for locks a connection"
-            f" left in a transaction held; ended so the next test runs: {holders or 'none found'}"
+            f" left in a transaction held; {found}"
         ) from error
 
 
-def _end_the_lock_holders(engine: Engine) -> list[str]:
-    """The sessions holding a table lock in this database, other than this one: each named
-    with its state and last statement, then ended."""
+def _relations(engine: Engine, tables: list[str]) -> list[int]:
+    """The ids (`oid`) of the relations the TRUNCATE empties, and of the sequences they own (a
+    `serial` or identity column), which `RESTART IDENTITY` locks too: a session that only drew a
+    number holds the TRUNCATE up as well (pmwg and dzse at #1289). Each name is resolved as the
+    TRUNCATE resolves it, quoted and through `search_path` (`to_regclass`), not in
+    `current_schema()` alone, where a table found further along the path is missed."""
     with engine.connect() as conn:
+        return list(
+            conn.execute(
+                text(
+                    "WITH emptied AS ("
+                    " SELECT to_regclass(quote_ident(n))::oid AS oid"
+                    " FROM unnest(CAST(:names AS text[])) AS n)"
+                    " SELECT oid FROM emptied WHERE oid IS NOT NULL"
+                    " UNION"
+                    " SELECT d.objid FROM pg_depend d JOIN pg_class s ON s.oid = d.objid"
+                    " WHERE d.classid = 'pg_class'::regclass"
+                    " AND d.refclassid = 'pg_class'::regclass AND d.deptype IN ('a', 'i')"
+                    " AND s.relkind = 'S' AND d.refobjid IN (SELECT oid FROM emptied)"
+                ),
+                {"names": tables},
+            ).scalars()
+        )
+
+
+def _end_the_lock_holders(engine: Engine, relations: list[int]) -> list[str]:
+    """The sessions that hold a lock on one of `relations` in this database: client sessions
+    of this role only, other than this one, so neither another database's nor another role's
+    session is touched. Each is named with its state and last statement, then ended; one that
+    cannot be ended is named with the reason, and the others are still ended."""
+    named: list[str] = []
+    with engine.connect() as conn:
+        conn.execution_options(isolation_level="AUTOCOMMIT")  # one refusal aborts no other
         rows = conn.execute(
             text(
                 "SELECT DISTINCT a.pid, a.state, left(a.query, 200) AS query"
                 " FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid"
-                " WHERE l.granted AND l.relation IS NOT NULL"
-                " AND a.datname = current_database() AND a.pid <> pg_backend_pid()"
-            )
+                " WHERE l.granted AND l.relation = ANY(CAST(:relations AS oid[]))"
+                " AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())"
+                " AND a.datname = current_database() AND a.usename = current_user"
+                " AND a.backend_type = 'client backend' AND a.pid <> pg_backend_pid()"
+            ),
+            {"relations": relations},
         ).all()
         for row in rows:
-            conn.execute(text("SELECT pg_terminate_backend(:pid)"), {"pid": row.pid})
-        conn.commit()
-    return [f"pid {row.pid} ({row.state}): {row.query}" for row in rows]
+            holder = f"pid {row.pid} ({row.state}): {row.query}"
+            try:
+                conn.execute(text("SELECT pg_terminate_backend(:pid)"), {"pid": row.pid})
+            except DBAPIError as error:
+                holder += f" (not ended: {error.orig})"
+            named.append(holder)
+    return named
 
 
-def _truncate(engine: Engine) -> None:
-    tables = [t for t in inspect(engine).get_table_names() if t != "alembic_version"]
+def _truncate(engine: Engine, tables: list[str]) -> None:
     with engine.begin() as connection:
         if engine.dialect.name == "postgresql":
             connection.execute(text(f"SET LOCAL lock_timeout = '{TRUNCATE_LOCK_TIMEOUT}'"))
@@ -270,6 +313,15 @@ def _no_outbound_network(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _no_held_instance_names(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A hub started with `MAITY_FORGE_INSTANCE_NAMESPACES` holds its names process-wide
+    (§11.4); the next test starts with none held."""
+    from maity_hub import handles
+
+    monkeypatch.setattr(handles, "_instance_names", frozenset())
+
+
+@pytest.fixture(autouse=True)
 def _no_background_ktw_reads(monkeypatch: pytest.MonkeyPatch) -> None:
     """A project view schedules a Keep the Why read in the background; in tests that
     would race the next test's cache. Tests of the scheduling replace this themselves."""
@@ -348,7 +400,7 @@ def _fresh_process_state() -> Iterator[None]:
 
     ktw_reads.FOREIGN.clear()
     ktw_reads._slots.clear()
-    ktw_reads._read_at.clear()
+    ktw_reads._flights.clear()
     ktw_reads._failed.clear()
     from maity_hub import maintenance
 

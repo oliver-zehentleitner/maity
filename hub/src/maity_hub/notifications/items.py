@@ -403,6 +403,38 @@ def count_items(conn: Connection, where: Scope) -> list[Item]:
     return found
 
 
+def pinned(conn: Connection, where: Scope, limit: int) -> list[Item]:
+    """The newest `limit` unread security items of the human, of every kind and any age
+    while their record lives (§18.2 "Pinned"). They come from account records alone, so no
+    project's events are read. The limit is taken in SQL, so the rows that never become an
+    item (`records_without_item`) are left out there: otherwise they take places, and an
+    older alert drops out of the block while it is still counted in `counts.security`."""
+    now = clock.now()
+    c = t.account_record.c
+    rows = conn.execute(
+        _record_rows(where, now, records.SECURITY)
+        .where(c.read_at.is_(None), ~records_without_item())
+        .order_by(c.at.desc(), c.n.desc())
+        .limit(limit)
+    ).all()
+    found = [i for i in _record_items(conn, where, now, rows) if i.kind == "security"]
+    found.sort(key=lambda item: item.order, reverse=True)
+    return found
+
+
+def records_without_item() -> Any:
+    """The security records `_record_items` gives no item (§18.1): a forge access that went
+    (unlinked, a token removed or refused). Kept in step with the `continue` there."""
+    c = t.account_record.c
+    return and_(
+        c.type == "forge_access_changed",
+        or_(
+            c.data["change"].as_string().is_(None),
+            c.data["change"].as_string().not_in(records.FORGE_ADDED),
+        ),
+    )
+
+
 def _classify(
     look: Lookup, where: Scope, mine: Membership, row: Any, hidden: frozenset[str]
 ) -> Item | None:

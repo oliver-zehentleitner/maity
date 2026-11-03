@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import re
 import secrets
 import time
 from datetime import datetime, timedelta
@@ -60,13 +61,14 @@ SECOND_STEP_CALLS = {
     ("POST", "/auth/second-factor/email"),  # under `via: email` (§2.8.8)
     ("POST", "/auth/logout"),
 }
-# A session that was full before it was held at enrolment keeps the decisions its
-# standing allows, "This was me" on a sign-in alert among them (§2.8.5): the list
-# that shows the alert and the call that marks it.
+# A session in good standing that was full before it was held at enrolment keeps the
+# decisions its standing allows, "This was me" on a sign-in alert among them (§2.8.5): the
+# list that shows the alert, the call that marks it and the confirm itself.
 MOVED_ENROLMENT_CALLS = {
     ("GET", "/me/notifications"),
     ("POST", "/me/notifications/read"),
 }
+MOVED_ENROLMENT_CONFIRM = re.compile(r"/auth/sessions/[^/]+/confirm")
 ENROLMENT_CALLS = {
     ("GET", "/auth/session"),
     ("POST", "/auth/logout"),
@@ -209,10 +211,22 @@ def gate(conn: Connection, hub: Settings, caller: Caller, method: str, path: str
     call = (method, path.removeprefix("/api/v1"))
     if current == "second_factor" and call not in SECOND_STEP_CALLS:
         raise refused("second_factor_required", "this session owes the second factor")
-    if current == "enrolment" and row.sign_in_complete and call in MOVED_ENROLMENT_CALLS:
-        return  # a trusted session moved into enrolment keeps "This was me" (§2.8.5)
+    if current == "enrolment" and _moved_call(row, call):
+        return  # a session in good standing moved into enrolment keeps "This was me" (§2.8.5)
     if current == "enrolment" and call not in ENROLMENT_CALLS:
         raise refused("second_factor_enrolment_required", "set up the second factor first")
+
+
+def _moved_call(row: Any, call: tuple[str, str]) -> bool:
+    """Whether `call` is one a session moved into enrolment keeps (§2.8.5): only a session
+    whose sign-in was complete before it was moved (a fresh enrolment sign-in is not), and
+    only while it is in good standing."""
+    if not row.sign_in_complete or not sessions.good_standing(row):
+        return False
+    method, path = call
+    return call in MOVED_ENROLMENT_CALLS or (
+        method == "POST" and MOVED_ENROLMENT_CONFIRM.fullmatch(path) is not None
+    )
 
 
 def _session(conn: Connection, id_hash: str) -> Any:
@@ -584,8 +598,7 @@ def require_proof(conn: Connection, caller: Caller) -> Any:
         if row.password_at is None or now - row.password_at >= FRESH:
             raise refused("reauthentication_required", "give your password again first")
         return row
-    confirmed = sessions.confirmed_sessions(conn, row.human_id)
-    if not sessions.good_standing(row, confirmed):
+    if not sessions.good_standing(row):
         raise refused("not_in_good_standing", "only a session in good standing may do this")
     if now - row.created_at < TRUSTED_AGE:
         raise refused("session_too_new", "this session is too new for this")

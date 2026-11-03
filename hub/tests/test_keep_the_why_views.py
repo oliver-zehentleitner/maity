@@ -653,7 +653,10 @@ def test_a_lone_surrogate_is_served_escaped_not_a_500(owner: flow.Human, fake: F
     state.content.decode("ascii")  # escaped: the answer is plain ASCII
 
 
-@pytest.mark.parametrize("number", [b"1e400", b"-1e400", b"1" + b"0" * 400 + b".0"])
+@pytest.mark.parametrize(
+    "number",
+    [b"1e400", b"-1e400", b"1" + b"0" * 400 + b".0", b"1" + b"0" * 400, b"-1" + b"0" * 400],
+)
 def test_a_number_too_large_to_be_finite_is_not_json(
     owner: flow.Human, fake: Fake, number: bytes
 ) -> None:
@@ -1106,3 +1109,102 @@ def test_a_childs_retry_at_that_passed_is_read_again(
     fake.files["hub/.keep-the-why"] = child
     now[0] += ktw.FORCE_INTERVAL + 1
     assert owner.get(f"{PATH}/export", params={"root": "hub"}).status_code == 200
+
+
+# --- the third review of #1280: budgets, permits, one read per file, holds, integers ---------
+
+
+def test_a_warm_named_family_is_probe_unavailable_while_its_readers_budget_is_spent(
+    owner: flow.Human, fake: Fake, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, datetime
+
+    fake.family()
+    other_repository(fake)
+    project(owner)
+    assert owner.get(f"{PATH}/export", params={"canonical": OTHER}).status_code == 200
+    etag = owner.get(f"{PATH}/export", params={"canonical": OTHER}).headers["ETag"]
+    when = datetime(2099, 11, 3, 12, 0, tzinfo=UTC)
+    # the anonymous source is spent, the owner's grant is not
+    monkeypatch.setattr(forge.Forge, "retry_at", lambda self: None if self.token else when)
+    answer = owner.get(
+        f"{PATH}/export", params={"canonical": OTHER}, headers={"If-None-Match": etag}
+    )
+    assert answer.status_code == 503
+    assert answer.json()["error"]["code"] == "probe_unavailable"
+    assert set(answer.json()["error"]["details"]) == {"retry_at"}
+    assert owner.get(f"{PATH}/export").status_code == 200, "the project's own source is fine"
+
+
+def test_a_named_familys_reads_wait_for_the_permits(
+    owner: flow.Human, fake: Fake, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake.family()
+    other_repository(fake)
+    project(owner)
+    assert owner.get(f"{PATH}/export").status_code == 200  # the project's own family, warm
+    monkeypatch.setattr(ktw, "FAMILY_DEADLINE", 0.05)
+    taken = [ktw_reads._all.acquire(blocking=False) for _ in range(ktw_reads.IN_FLIGHT_ALL)]
+    assert all(taken)
+    try:
+        answer = owner.get(f"{PATH}/export", params={"canonical": OTHER})
+    finally:
+        for _ in taken:
+            ktw_reads._all.release()
+    assert answer.status_code == 503
+    assert answer.json()["error"]["code"] == "ktw_unavailable"
+    assert "acme/other" not in fake.public_asked, "nothing read without a permit"  # type: ignore[attr-defined]
+    assert not any(r.startswith("acme/other:") for r in fake.file_reads)
+
+
+def test_two_calls_for_one_file_make_one_read(monkeypatch: pytest.MonkeyPatch) -> None:
+    import threading
+    import time
+
+    url = "https://pages.example/ktw/state.body.json"
+    reads: list[str] = []
+
+    def read(kind: str, at: str, cap: int) -> ktw.Raw:
+        reads.append(at)
+        return ktw.RAW.put(kind, at, {"a": {"text": "t"}})
+
+    monkeypatch.setattr(ktw_reads, "_read", read)
+    slot = ktw_reads._slot("p1")
+    held = [slot.acquire(blocking=False) for _ in range(ktw.IN_FLIGHT)]  # both calls queue
+    assert all(held)
+    answers: list[Any] = []
+
+    def call() -> None:
+        start = ktw._now()
+        answers.append(ktw_reads._file("p1", "bodies", url, 1024, 600, start))
+
+    threads = [threading.Thread(target=call) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    time.sleep(0.2)  # both have checked the store and wait
+    for _ in held:
+        slot.release()
+    for thread in threads:
+        thread.join(timeout=10)
+    assert len(answers) == 2 and reads == [url]
+    assert answers[0][0] is answers[1][0]
+
+
+def test_an_export_the_summary_read_is_held_after_a_drop(
+    owner: flow.Human, fake: Fake, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = [1000.0]
+    monkeypatch.setattr(ktw, "_now", lambda: now[0])
+    fake.family()
+    project(owner)
+    owner.get(PATH)  # §11.3 reads every member's export into the store
+    ktw.RAW.files.pop(("state", f"{BASE}/cli/state.json"))  # dropped for room
+    reads = len(fake.state_reads)
+    held = owner.get(f"{PATH}/export", params={"root": "cli"})
+    assert held.status_code == 503
+    assert held.json()["error"]["details"]["reason"] == "timeout"
+    assert len(fake.state_reads) == reads, "not read again inside the 30 s of §11.3's read"
+
+
+def test_a_large_finite_integer_keeps_its_digits() -> None:
+    assert ktw.parse(b"[12345678901234567890123]") == [12345678901234567890123]

@@ -469,7 +469,8 @@ redaction: a contract change that §8.8 already makes unnecessary.
 
 **Id:** 561b77f6-2a12-4352-aa50-36a8aa773fbe
 **Type:** decision
-**Status:** needs-review
+**Status:** superseded
+**Superseded by:** 0d50b2d4-2841-4510-a204-90d3aa574927
 **Evidence:** inferred
 **Source:** docs/api.md §2.6.5 (good standing, who may end which, the banner), §2.6.3 (a held address change), §2.6.7 (the dashboard's part) and §18.3; the coordinator's card for the sessions view (tsk-s5yq94v758g4), 2026-10-23; the dashboard's implementation, 2026-10-23
 **Revisit when:** the hub serves the session list (the view is built against the mock), or the session view gains a field that says what a session may do
@@ -507,6 +508,36 @@ the entry linked above. Putting the held address change under the
 notification settings, where the address lives: those settings carry
 the mail, and the decision needs the standing that the sessions section
 shows.
+
+## Sessions say what this session may not do, and a sign-in is confirmed by its own call
+
+**Id:** 0d50b2d4-2841-4510-a204-90d3aa574927
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.6.5 (`POST /auth/sessions/{id}/confirm`, `confirmed_at`, the banner), §18.2 and §18.3, contract PR #1230; the bell card tsk-0kz8v1ff5sgf, 2026-11-03
+**Revisit when:** the session view gains a field that says what a session may do
+**See:** views.md#sessions-say-what-this-session-may-not-do-before-it-is-tried-and-this-was-me-is-the-only-way-a-sign-in-is-confirmed — 561b77f6-2a12-4352-aa50-36a8aa773fbe — as of 2026-11-03
+**See:** refresh.md#the-bell-pins-the-unread-security-alerts-and-mark-all-read-takes-them-only-after-asking — 643600cd-dd61-4291-85d7-025e322f4c81 — as of 2026-11-03
+
+What the earlier entry says about disabled buttons and their reasons stands. What
+changed: **This was me** posts the session's confirm and is offered on an active
+session that is not in good standing, where this session may confirm it; an ended
+session has none. The unread alerts come from the hub's `pinned` block; one that
+reports no session in the list gets **Mark read**, and an id the hub skips is said
+with its reason, never called read. The mail sign-in banner follows the sessions:
+it stays while the reported session, or one it approved, is live and not in good
+standing, whatever the alert's read flag, and is checked again on each counts round
+while it is shown.
+
+**Reason:** reading an alert no longer confirms anything (§2.6.5), so the session's own
+`good_standing` is what the buttons and the banner must follow. The confirm answers with
+the session, so its result is known without reading the list again.
+
+**Rejected alternatives:** marking the alert read as the confirmation, as before: the
+contract made reading and confirming two acts. Keeping the banner tied to the unread
+alert: marking it read in the bell would take the banner down while the sign-in is still
+unconfirmed. Offering This was me on an ended session: there is nothing left to confirm.
 
 ## The Ticker view reads the listing, not the events, and says each reason in the dashboard's own words
 

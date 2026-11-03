@@ -388,4 +388,88 @@ nobody loses good standing by the change.
   few.
 - Pinning open requests to the human as urgent: they have their own
   inbox and count there; the owner was asked and did not ask for it.
+- Carrying sessions confirmed under the old rule over with
+  `confirmed_at` and `confirmed_by` as `null`: the session list could
+  not say when or by whom they were confirmed, although the read mark
+  holds both; the change takes them from that mark.
 
+
+## The owner's digest also lists instances that stopped while holding cards, with no setting of its own
+
+**Id:** 5327f41c-1e85-449e-9201-f34882ea4ba8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the plan for card tsk-8qs95xq2b2yt as the lead approved it (2026-11-02); docs/api.md §5.3 ("The owner's digest"), §18.1 and §18.4
+**See:** claims.md#a-holder-that-stops-is-told-to-the-member-it-reports-to-and-nothing-is-released — 99ee4554-1f1e-4e21-b751-48481dcd94c0 — as of 2026-11-03
+
+The hourly digest lists, besides instances that are not listening, every *stalled
+holder*: an instance that holds cards and has made no call since its latest session's
+last sign of life for the human's `not_listening.minutes`, whether that session is
+still open or was revoked. Both kinds make one set of away instances, so the same
+rules file, count, refile and withdraw the digest. The request is never rewritten:
+any change to what it shows withdraws it and files a new one. `seen` records, per
+listed instance, what the request showed: its `last_seen_at` and, listed as an
+episode, that episode's `since`. The records are the answering human's. An away
+instance is silenced for its owner while its `last_seen_at` equals a record (no call
+since the request showed it), or, listed as an episode, while that episode's `since`
+is recorded. Records add up; a new request comes only for an instance not silenced
+and lists every away instance. A table in §5.3 lists the cases the review rounds
+raised. Only the latest session counts, so sessions a resume replaced never qualify.
+A pause a human or the manager set excludes an instance, since someone decided to
+stop it; a pause the agent set itself does not, since, like a limit, it is the
+agent's own account of why it stopped and its cards stay blocked all the same. The
+title and the advice follow what the digest holds, in the request and in the bell,
+and the bell's `agents_not_listening` record counts stalled holders in `holding`.
+
+**Reason:** an instance that stopped with cards in hand is often not listening by
+§5.3's rule at all: no event waits for it, or its session ended. A crashed harness
+leaves the session open until the next resume, so a rule for ended sessions alone
+would miss the case that started this, and an owner heard nothing. The digest already
+reaches every owner at the hour, by the mode they chose. `seen` is keyed by the last
+call because that is what the owner saw: as long as the instance has not called
+since, nothing about it is new, whatever its state turns into (its cards moved, as
+the digest advises, or an episode started by the move); once it called, any later
+stop is new, a crash after work included. The record is what the request showed, not
+the state at the answer, because the answer can come hours after the filing and the
+owner did not see calls made in between. A rewrite in place would send no event and
+reach no open page, and pages opened before and after it would show different sets,
+so the request is refiled on every change instead: the answered request is always
+what its page showed, and an answer from a stale page is `request_not_open`. The cost
+is at most one withdrawal and one filing per human and hour. The records belong to
+the human who answered, since a new owner of the profile has seen nothing. A running
+episode also stays silenced by its own start, since a busy instance keeps calling and
+the owner already saw that episode. Eight review rounds each found a transition the
+prose missed, so the rule is now one test with a table of the cases.
+
+**Rejected alternatives:** a setting of its own for this list: it is the same
+question to the owner, whether their agents still work, and one threshold answers it.
+Listing ended sessions only, the first draft of this entry: a crashed harness leaves
+its session open, so the holder that started the card would not have been listed.
+Re-arming `seen` on instances whose stop began after the answer, the second draft: a
+holder that stopped shortly before an answer about another instance would never have
+been filed, the crash case again. Silencing only the entries of the last answered
+request, the third draft: two instances that stay away would have been filed in turns
+every hour. Keying an entry by its kind and start alone, the fourth draft: moving a
+stalled holder's cards turned the same silent instance into a new episode, and the
+owner was asked again. Letting an entry run on until the instance is "back", an
+episode's end counting as back, the fifth draft: a stall after an episode the
+instance had worked through inherited its silence, and the crash went unheard.
+Entries with keys and continuation rules, drafts four and five: each patch to how an
+entry continues reopened another transition; the record of the last call replaces
+them. Recording the state at the answer, the sixth draft: calls between the last
+rewrite and the answer were silenced unseen. Records per instance alone, also the
+sixth draft: a new owner inherited the old owner's silence. Recording the request's
+latest rewrite, the seventh draft: a rewrite in place reaches no open page, so the
+owner answered an older version and an instance added since was silenced unseen. A
+version token in the answer body: a new field on the answer route shared by every
+request for one kind of request, while a new request with the existing
+`request_not_open` refuses a stale answer already. Recording every instance of the
+filing, the eighth draft, with rewrites that only drop instances: a page opened after
+such a rewrite never showed the dropped one, and it was silenced unseen. Recording
+only the instances still listed would have fixed that too, but kept two kinds of
+change; refiling on every change removes the gap between shown and recorded
+altogether. Refiling only when a listed last call changes, and rewriting a change of
+kind or `since` in place: fewer inbox items, but two kinds of change again, and a
+page opened before such a rewrite would differ from the one answered; the cost of
+refiling is at most one item per human and hour.

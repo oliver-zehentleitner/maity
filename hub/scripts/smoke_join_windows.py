@@ -6,7 +6,11 @@ Against a fresh hub on loopback, in each shell:
   2. `maity` missing, the install works: it installs and joins, from pipx's default bin
      directory and from PIPX_BIN_DIR;
   3. `maity` there, the install line would fail: it is not run, and the line joins;
-  4. `maity join <url> --code <code>` alone, with `maity` on the PATH.
+  4. `maity join <url> --code <code>` alone, with `maity` on the PATH;
+  5. `maity` and `pipx` missing: the line installs pipx with `python -m pip install --user`,
+     installs `maity` with `python -m pipx` and joins;
+  6. the line's encodings: after them an `ü` piped into a native command arrives as UTF-8,
+     without a byte order mark.
 
 The install line installs this checkout's CLI, not the published one. Needs Windows, `pipx`, `git`,
 both shells, and the hub in the running Python; `maity` must not be on the PATH yet.
@@ -19,6 +23,7 @@ import base64
 import http.cookiejar
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -40,6 +45,9 @@ CLI = Path(__file__).resolve().parents[2] / "cli"
 GOOD_INSTALL = f"pipx install {CLI}"
 BAD_INSTALL = f"pipx install {CLI / 'no-such-directory'}"
 JOINED = "joined owner/smoke as agt-"
+# Prints the bytes a native command gets on stdin, as hex.
+HEX = re.compile(r"[0-9a-f]+")
+STDIN_HEX = 'python -c "import sys; print(sys.stdin.buffer.read().hex())"'
 # The hub is not made for Windows: `avatar_decode` imports `resource` at the top. This smoke test
 # uploads no avatar, so an empty module lets the rest of the hub start.
 RUN_HUB = (
@@ -124,6 +132,27 @@ class Smoke:
         if JOINED not in output or not self.is_member(handle):
             raise SystemExit(f"smoke: {shell}: {name}: the line did not join")
 
+    def without_pipx(self) -> dict[str, str]:
+        """The environment with every PATH directory that holds `pipx` left out; `python`
+        must stay, or the case tests nothing."""
+        kept = [
+            d for d in self.env["PATH"].split(os.pathsep) if d and not shutil.which("pipx", path=d)
+        ]
+        env = dict(self.env, PATH=os.pathsep.join(kept))
+        if shutil.which("pipx", path=env["PATH"]) or not shutil.which("python", path=env["PATH"]):
+            raise SystemExit("smoke: no PATH with python and without pipx on this machine")
+        return env
+
+    def check_encodings(self, shell: str) -> None:
+        """Case 6: `ü` through a pipe after the line's first statement."""
+        line = f'{join_line.UTF8_POWERSHELL}; "\u00fc" | {STDIN_HEX}'
+        output, _ = self.paste("encodings", shell, line, "\0", self.env)
+        # PowerShell may add a CLIXML progress record after it, so the hex line is looked for.
+        hex_lines = [ln.strip() for ln in output.splitlines() if HEX.fullmatch(ln.strip())]
+        got = hex_lines[-1] if hex_lines else output[-300:]
+        if not got.startswith("c3bc"):  # `?` would be 3f, a mark efbbbf
+            raise SystemExit(f"smoke: {shell}: encodings: stdin was {got!r}, not UTF-8 c3bc")
+
     def run_shell(self, shell: str) -> None:
         default_bin = Path.home() / ".local" / "bin"
         own_bin = self.work / f"bin-{shell}"
@@ -162,6 +191,16 @@ class Smoke:
         assert line is not None
         self.expect_join("maity missing, PIPX_BIN_DIR", shell, line, handle, code)
         self.pipx_clean(self.current_env)
+
+        self.current_env = self.without_pipx()
+        handle, url, code = self.new_join()
+        line = join_line.windows(GOOD_INSTALL, url, code)
+        assert line is not None
+        self.expect_join("maity and pipx missing", shell, line, handle, code)
+        self.current_env = self.env
+        self.pipx_clean(self.env)
+
+        self.check_encodings(shell)
 
 
 def wait_for_hub() -> None:

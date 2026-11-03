@@ -30,6 +30,7 @@ from maity_hub.views import task_view
 router = APIRouter(route_class=ProjectRoute)
 
 LIMIT_DEFAULT, LIMIT_MAX = 20, 50
+PINNED_MAX = 50  # the newest unread security items above the list (§18.2)
 IDS_MAX = 200
 POLL = 0.5  # seconds between looks while a long-poll holds
 # Full answers (and marks) at once per hub process. Each derives every item of 30 days
@@ -261,6 +262,10 @@ def _answer(
         next_position = head
     shared: dict[Any, Any] = {}
     answer["items"] = [items.view(conn, where, item, shared) for item in page]
+    if since is None:
+        # Every unread security item, whatever the filters, the page and its age (§18.2).
+        alerts = items.pinned(conn, where, PINNED_MAX)
+        answer["pinned"] = [items.view(conn, where, item, shared) for item in alerts]
     answer["next_cursor"] = next_cursor
     answer["next_after"] = positions.issue(conn, hub.secret_key, human_id, next_position)
     answer["server_time"] = clock.rfc3339(clock.now())
@@ -282,9 +287,12 @@ async def read_notifications(
     session_hash = _human(caller)
     human_id = caller.principal_id
     given = {"ids", "up_to"} & set(body)
-    extra = set(body) - {"ids", "up_to", "kind", "project"}
-    if len(given) != 1 or extra or ("ids" in body and ({"kind", "project"} & set(body))):
+    extra = set(body) - {"ids", "up_to", "kind", "project", "include_security"}
+    with_up_to = {"kind", "project", "include_security"}
+    if len(given) != 1 or extra or ("ids" in body and (with_up_to & set(body))):
         raise invalid({name: "extra_forbidden" for name in extra} or {"body": "ids_or_up_to"})
+    if not isinstance(body.get("include_security", False), bool):
+        raise invalid({"include_security": "invalid"})
 
     def mark() -> dict[str, Any]:
         """Choose in a snapshot, write the marks at READ COMMITTED, count in a fresh
@@ -300,10 +308,11 @@ async def read_notifications(
             found = items.derive(conn, where)
             chosen = _chosen(conn, request, human_id, where, found, body)
         with engine_of(request).begin() as conn:
-            listing.mark(conn, where, found, chosen, session)
+            skipped = listing.mark(conn, where, found, chosen, session)
         with _snapshot(request) as conn:
             where = items.scope(conn, human_id, settings_of(request).public_url)
-            return listing.counts(conn, where, items.count_items(conn, where))
+            counts = listing.counts(conn, where, items.count_items(conn, where))
+            return {**counts, "skipped": skipped}
 
     return JSONResponse(await _limited(request, mark))
 
@@ -331,9 +340,13 @@ def _chosen(
     kinds = _kinds(kinds)
     project_ids = _project_ids(conn, {body["project"]}) if body.get("project") else None
     chosen = listing.select_items(found, kinds=kinds, projects=project_ids, unread=True)
-    # "Mark all read" never confirms a sign-in or an address change (§18.3).
+    # Security items only when asked for, after the dashboard's confirm; reading one confirms
+    # nothing (§18.3, §18.8).
+    with_security = body.get("include_security") is True
     return [
-        item for item in chosen if item.kind != "security" and listing.behind(item, position, where)
+        item
+        for item in chosen
+        if (with_security or item.kind != "security") and listing.behind(item, position, where)
     ]
 
 

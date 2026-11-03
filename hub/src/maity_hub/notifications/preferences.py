@@ -520,8 +520,7 @@ def _change_address(
                 raise invalid({"current_password": "mismatch"})
         else:
             held = _held(row)
-            confirmed = sessions.confirmed_sessions(conn, human.id)
-            standing = sessions.good_standing(session, confirmed)
+            standing = sessions.good_standing(session)
             if not standing and held is not None:
                 raise _session_forbidden("not_in_good_standing")
             if not standing or clock.now() - session.created_at < APPROVER_AGE:
@@ -770,8 +769,7 @@ def decide_held(
     `step_up` raises when the session owes the second factor (§2.8.4)."""
     row = row_of(conn, human.id, lock=True)
     held = _held(row)
-    confirmed = sessions.confirmed_sessions(conn, human.id)
-    if not sessions.good_standing(session, confirmed):
+    if not sessions.good_standing(session):
         raise _session_forbidden("not_in_good_standing")
     if held is None or held["id"] != change_id or held["address"] != address:
         raise ApiError(409, "conflict", "no held change with that id and address")

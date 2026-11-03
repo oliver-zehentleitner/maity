@@ -793,7 +793,7 @@ def _tombstone(
     row: Any,
     reason: str,
     audience: list[str],
-    store: attachment_store.LocalStore | None = None,
+    store: attachment_store.BlobStore | None = None,
 ) -> None:
     """The one mutation the log allows, itself on record (§8.5); a second redaction of
     the same event changes nothing."""
@@ -817,7 +817,7 @@ def tombstone(
     audience: list[str],
     by: str | None,
     actor: events.Actor,
-    store: attachment_store.LocalStore | None = None,
+    store: attachment_store.BlobStore | None = None,
 ) -> None:
     """`_tombstone` by any actor: moderation redacts as the hub, `by` null (§16.8)."""
     if row.redacted:
@@ -874,7 +874,7 @@ def _redact_in_group(
     caller: Caller,
     row: Any,
     body: RedactIn,
-    store: attachment_store.LocalStore | None = None,
+    store: attachment_store.BlobStore | None = None,
 ) -> idempotency.Outcome:
     """§8.5 in a group chat: any human participant now, no agent; once the chat closed,
     its former human participants, and a human with `members:admin` blind, by `seq`."""

@@ -8,7 +8,7 @@ from datetime import timedelta
 import pytest
 from sqlalchemy import Engine, select
 
-from maity_hub import clock
+from maity_hub import clock, product_line
 from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
@@ -66,9 +66,13 @@ def test_a_join_answers_the_paste_lines_once(owner: flow.Human) -> None:
             f"&& {{ command -v maity >/dev/null 2>&1 || {{ pipx install maity; }}; }} && {join}"
         ),
         "windows": (
+            "$OutputEncoding = [Console]::InputEncoding = [Console]::OutputEncoding = "
+            "New-Object System.Text.UTF8Encoding $false; "
             '$env:Path += ";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR } '
             'else { "$HOME\\.local\\bin" })"; '
-            "if (-not (Get-Command maity -ErrorAction SilentlyContinue)) { pipx install maity }; "
+            "if (-not (Get-Command maity -ErrorAction SilentlyContinue)) { "
+            "if (Get-Command pipx -ErrorAction SilentlyContinue) { pipx install maity } "
+            "else { python -m pip install --user pipx; python -m pipx install maity } }; "
             f"if (Get-Command maity -ErrorAction SilentlyContinue) {{ {join} }}"
         ),
     }  # only the join, or installs when missing and joins, once per platform (§3.2)
@@ -236,7 +240,9 @@ def test_the_page_is_html_for_a_browser_with_no_form(
     created = flow.join(owner, "maity")
     response = make_client().get(f"/join/{_token(created)}", headers={"Accept": "text/html"})
     assert response.headers["content-type"] == "text/html; charset=utf-8"
-    assert response.headers["Content-Security-Policy"] == "default-src 'self'"
+    # The hub's policy, and inline style only for the product line's block (§16.13).
+    assert response.headers["Content-Security-Policy"] == product_line.CSP
+    assert product_line.CSP.startswith("default-src 'self'; ")
     page = response.text.lower()
     assert "<form" not in page and "<script" not in page and "<input" not in page
     assert '<a href="/">' in page

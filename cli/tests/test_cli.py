@@ -649,7 +649,8 @@ def test_a_join_started_off_path_says_how_to_put_maity_on_path(
     err = capsys.readouterr().err
     assert (
         "maity: `maity` is not on PATH (this run is /home/a/.local/bin), so later commands "
-        "will not find it: run `pipx ensurepath` and open a new shell"
+        "will not find it: run `pipx ensurepath` (or `python -m pipx ensurepath`) and open a "
+        "new shell"
     ) in err
 
 

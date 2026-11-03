@@ -339,12 +339,23 @@ def _finite(number: str) -> float:
     return value
 
 
+def _finite_int(number: str) -> int:
+    if math.isinf(float(number)):  # 401 digits: JSON.parse reads Infinity as well
+        raise ValueError("a number too large to be finite")
+    return int(number)
+
+
 def parse(body: bytes) -> Any:
     """A JSON document as a browser's JSON.parse reads it: UTF-8, no NaN or Infinity, no
     number too large to be finite; `MemberError("not_json")` otherwise. A lone surrogate in
     a string is kept; it is written back escaped (`RawStore.put`)."""
     try:
-        return json.loads(body.decode("utf-8"), parse_constant=_no_constant, parse_float=_finite)
+        return json.loads(
+            body.decode("utf-8"),
+            parse_constant=_no_constant,
+            parse_float=_finite,
+            parse_int=_finite_int,
+        )
     except (ValueError, UnicodeDecodeError, RecursionError):  # nesting deep enough to recurse
         raise MemberError("not_json") from None
 
@@ -352,6 +363,7 @@ def parse(body: bytes) -> Any:
 # --- the exports as published, for the views (§11.5) ----------------------------------------
 
 RAW_BUDGET = 64 * 1024 * 1024
+HELD_KEPT = 4096  # when each file was last read, for the 30 s hold after a drop
 
 
 @dataclass
@@ -376,11 +388,29 @@ class RawStore:
     files: OrderedDict[tuple[str, str], Raw] = field(default_factory=OrderedDict)
     size: int = 0
     guard: threading.Lock = field(default_factory=threading.Lock)
+    # When each file was last read, kept apart from `files`, so that a file dropped for room
+    # is not read again inside FORCE_INTERVAL (§11.5), whichever read filled it.
+    read_at: OrderedDict[tuple[str, str], float] = field(default_factory=OrderedDict)
 
     def clear(self) -> None:
         with self.guard:
             self.files.clear()
             self.size = 0
+            self.read_at.clear()
+
+    def mark(self, kind: str, url: str) -> None:
+        """Records a read of the file, made or begun now."""
+        with self.guard:
+            self.read_at[(kind, url)] = _now()
+            self.read_at.move_to_end((kind, url))
+            while len(self.read_at) > HELD_KEPT:
+                self.read_at.popitem(last=False)
+
+    def held(self, kind: str, url: str) -> bool:
+        """Whether the file was read less than FORCE_INTERVAL ago."""
+        with self.guard:
+            at = self.read_at.get((kind, url))
+        return at is not None and _now() - at < FORCE_INTERVAL
 
     def get(self, kind: str, url: str) -> Raw | None:
         with self.guard:
@@ -396,6 +426,10 @@ class RawStore:
             url, body, hashlib.sha256(body).hexdigest(), _now(), clock.rfc3339(clock.now()), bodies
         )
         with self.guard:
+            self.read_at[(kind, url)] = raw.at
+            self.read_at.move_to_end((kind, url))
+            while len(self.read_at) > HELD_KEPT:
+                self.read_at.popitem(last=False)
             old = self.files.pop((kind, url), None)
             if old is not None:
                 self.size -= len(old.body)

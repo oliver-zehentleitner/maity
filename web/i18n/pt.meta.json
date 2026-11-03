@@ -1143,10 +1143,6 @@
     "en": "647e98cce4691499",
     "text": "d78b6130486c3cc2"
   },
-  "bell.security_hint": {
-    "en": "b3bcd94f9fe4e53c",
-    "text": "fe2ed5121f127ca8"
-  },
   "bell.settings": {
     "en": "c749ce622125ec2a",
     "text": "e0bb0b4c1aeb9285"
@@ -2871,6 +2867,10 @@
     "en": "169c766081d782ef",
     "text": "896238bacb3667fc"
   },
+  "contract.meta.whole": {
+    "en": "3cccb13e7824459a",
+    "text": "b523c6ee9cdeb68c"
+  },
   "contract.none": {
     "en": "311ccdabe1e7f8f6",
     "text": "6b0b801cbb0d14f2"
@@ -2918,6 +2918,34 @@
   "contract.unresolved": {
     "en": "df927d470f71b978",
     "text": "0d1f0cdba9c26564"
+  },
+  "contract.whole.reading": {
+    "en": "45d56821f9a79b06",
+    "text": "1edbf27381b8b7be"
+  },
+  "contract.whole.title": {
+    "en": "733e9ab34898e5d7",
+    "text": "1fe53ab540df3a63"
+  },
+  "contract.whole.toc": {
+    "en": "978507cc93df4d03",
+    "text": "db07dd83b0c80933"
+  },
+  "contract.whole.why.not_found_on_forge": {
+    "en": "c6c784efe43c072b",
+    "text": "801df6c6776676be"
+  },
+  "contract.whole.why.not_markdown": {
+    "en": "815d6f4b97ff85d4",
+    "text": "d1a1ae4a23800b9e"
+  },
+  "contract.whole.why.not_text": {
+    "en": "e7937b1a925b74a6",
+    "text": "8e36702a462a6d20"
+  },
+  "contract.whole.why.too_large": {
+    "en": "fe9d8e7479c1d23b",
+    "text": "b724095b44ee98e6"
   },
   "contract.why.ambiguous_in_file": {
     "en": "19ca6c7b6493f149",
@@ -3723,6 +3751,10 @@
     "en": "cb2b69a399606add",
     "text": "66259ee7cba0ef68"
   },
+  "error.upload_expired": {
+    "en": "390ab9fb8bdb7c70",
+    "text": "7a46ce05812c7e6c"
+  },
   "error.version_exists": {
     "en": "d10b17f2f8fdf5cb",
     "text": "750b1b7c303b3960"
@@ -3968,12 +4000,12 @@
     "text": "1f2a0fe1143c56c8"
   },
   "forge.via.instance": {
-    "en": "af99f024da99184a",
-    "text": "52804666177b3816"
+    "en": "213d4401f693e8f9",
+    "text": "400ec5c48f813d25"
   },
   "forge.via.none": {
-    "en": "c8b1997e9d1dc468",
-    "text": "babb10ad23c84285"
+    "en": "f3c21cbf73952d4b",
+    "text": "e496aa329ceb04ac"
   },
   "forge.via.owner_token": {
     "en": "3f7cfca281e0d495",
@@ -9791,6 +9823,10 @@
     "en": "0adf70d5dd00616b",
     "text": "0adf70d5dd00616b"
   },
+  "nav.contract": {
+    "en": "733e9ab34898e5d7",
+    "text": "1fe53ab540df3a63"
+  },
   "nav.inbox": {
     "en": "c2c0b354370cf87a",
     "text": "309c7a425f21386d"
@@ -10750,6 +10786,10 @@
   "overview.project.contract": {
     "en": "733e9ab34898e5d7",
     "text": "1fe53ab540df3a63"
+  },
+  "overview.project.contract_forge": {
+    "en": "1269313bee6567c9",
+    "text": "985951b2609a8be2"
   },
   "overview.project.no_repository": {
     "en": "8c3b5df817eeac05",
@@ -13683,10 +13723,6 @@
     "en": "ceb846c9f1e324a3",
     "text": "60d60319dee63641"
   },
-  "sessions.alert_open": {
-    "en": "2a8a6c218d690279",
-    "text": "749299f840bd33bc"
-  },
   "sessions.banner.approved": {
     "en": "36d355755805147c",
     "text": "962478798f78ef22"
@@ -13714,14 +13750,6 @@
   "sessions.cannot_end.too_new": {
     "en": "130a7b20d904f44c",
     "text": "8ad1406fe33060a3"
-  },
-  "sessions.confirm.refused": {
-    "en": "479112e115109e21",
-    "text": "4fe4355baed014f0"
-  },
-  "sessions.confirm.unknown": {
-    "en": "060ed25d62d1fea1",
-    "text": "12720f9fe7323f61"
   },
   "sessions.confirmed": {
     "en": "38ab47d4615a9c3f",
