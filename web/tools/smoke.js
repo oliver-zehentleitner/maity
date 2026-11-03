@@ -4563,6 +4563,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   jpPanel().querySelector("button.join-close").click(); await tick();
   expect(jpPanel().hidden && document.activeElement === jpButton() && jpPanel().querySelector("button.join-close").getAttribute("aria-label") === "Close",
     "join: the panel's own Close does the same");
+  expect(jpPanel().querySelector("button.join-close svg") && text(jpPanel().querySelector("button.join-close")).trim() === "",
+    "join: the Close button's cross is an icon, no text glyph");
   jpProto.focus = jpFocus; document.activeElement = undefined;
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents/join"); for (let k = 0; k < 4; k++) await tick();
   expect(main.querySelector(".view-agents") && !jpPanel().hidden && main.querySelector(".profiles"), "join: /agents/join opens Agents with the panel open");
@@ -8328,6 +8330,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const addItems = header.querySelectorAll(".menu-box").find((b) => b.querySelector(".add-menu")).querySelectorAll("a").map((a) => text(a) + "=" + a.getAttribute("href"));
   expect(addBtn.getAttribute("aria-label") === "Add an agent or a person" && JSON.stringify(addItems) === JSON.stringify(["Agent=#/agents", "User=#/invite"]),
     "header: the + menu leads to the agents page and the invitations page " + JSON.stringify(addItems));
+  // The + is drawn, not a text glyph: a glyph followed the font's metrics and sat off-centre in Edge (tsk-m9ew7v609fq0).
+  expect(addBtn.querySelector("svg") && text(addBtn).trim() === "",
+    "header: the + is an icon, no text glyph " + JSON.stringify(text(addBtn)));
   addBtn.click(); await tick();
   // The Lead button (the maintainer's decision, req-4rpd7vqb6xe3): Chat stays the way to every chat; Lead reaches
   // the one lead at once (here the owner's own admin agent, on a hub without coordinator data).

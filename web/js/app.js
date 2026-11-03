@@ -1434,7 +1434,7 @@ window.Maity = window.Maity || {};
     const add = ctx.me.kind === "human" ? M.menuButton({
       label: M.t("menu.add.label"),
       class: "add-menu",
-      face: h("span", { class: "add-face", "aria-hidden": "true" }, "+"),
+      face: M.icons.plus(18),
       items: () => [
         { label: M.t("menu.add.agent"), href: "/agents", current: ctx.scope === "agents" },
         { label: M.t("menu.add.user"), href: "/invite", current: ctx.scope === "invitations" },
