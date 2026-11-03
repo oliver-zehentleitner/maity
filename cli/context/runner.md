@@ -1007,14 +1007,14 @@ be done, it stays as a complete workspace and its path is printed. A
 non-empty `--workspace DIR` is refused untouched. Path components get one
 `_` in front when they would be a Windows device name, end in `.` or a
 space, or start with `_`, on every OS. A harness without a command
-allowlist (`codex`) refuses `--allow`. The one Git fetch runs with the
-runner's transport list (https and ssh) before any harness ran in the
-workspace. Whether a workspace may still get it is an empty pending
-record under `maity-local/.pending`, outside the workspace and denied to
-the sandbox, made at `git init` and removed before the first harness
-starts; a start finding it (a kept, `repository_refused` or
-`no_repository` workspace) retries the resume and the fetch with the
-spent credential, and its absence means no Git. For an IPv6 host the
+allowlist (`codex`) refuses `--allow`. The one Git fetch and checkout
+run with the runner's transport list (https and ssh) in the staging
+workspace, before the rename, so a workspace appears only complete. A
+workspace with a credential but no checkout (`repository_refused`,
+`no_repository`, `fetch_failed`, a kept staging) gets no harness; a start
+in it retries in a fresh staging directory beside it, copies only the
+files of `.git/maity` over, removes the old one and renames, so Git never
+runs in a directory that existed before that start. For an IPv6 host the
 directory always carries the port, so `[::1]:80` and `[::1:80]` differ.
 
 The harness gets a runner's adapter context: the adapter files outside
@@ -1045,10 +1045,11 @@ private-directory checks as they are, and keeping the workspaces outside
 the runner's state directory means `gc` and `workspace claim` cannot
 touch them. The adapter files lie outside the workspace because Codex's
 sandbox lets the agent write the clone's `.git`, and anything there
-could be widened for the next run. The pending record lies outside
-`.git` for the same reason, and is a permission rather than a readiness
-flag, so losing it costs a retry, never a Git run in a workspace an agent
-has touched. The sandbox follows what the adapters
+could be widened for the next run. The retry builds a fresh directory
+for the same reason: with no Git in any existing workspace there is no
+permission an agent could forge or a failed rename could leave behind,
+and this holds where the sandbox is off or, on Windows, unverified, not
+only where it denies paths. The sandbox follows what the adapters
 already do on a runner (Claude Code strict or not at all, Codex only
 sandboxed), so local mode adds no third policy. Codex's sandbox is
 required because without it nothing confines Codex at all, while Claude
@@ -1084,6 +1085,11 @@ message says are no boundary.
   again: the agent can write `.git/config` and its hooks, so a later
   start could not tell a never-launched workspace from one a harness
   changed (review of #1294, pmwg).
+- A pending record under `maity-local/.pending` that permits the one Git
+  and its retry: a failed rename could leave one for another join's
+  workspace, and where the sandbox is off a harness could recreate it
+  and get Git run after it changed `.git/config` (review of #1294, pmwg,
+  dzse). Exclusive creation fixes the first, nothing fixes the second.
 - `_<port>` only when the link names one, for IPv6 too: `[::1]:80` and
   `[::1:80]` would both be `___1_80` and share a workspace (review of
   #1294, dzse, pmwg).
