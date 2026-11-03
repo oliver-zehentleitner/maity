@@ -4227,8 +4227,11 @@ owner. The cases, each from the answer on unless the row says otherwise:
 | stalled holder | an event waits for it, an episode starts | stalled holder | yes | 1 |
 | stalled holder | it calls (a resume, any call), then stops again | either | no | — |
 | not listed: stopped before the answer, away only after it | — | either | no | — |
-| episode or stalled holder | it calls after the request's last version and before the answer, then stops again | either | no | — |
-| episode | it ends after the request's last version and before the answer, and a later one starts | episode | no | — |
+| stalled holder | it calls after the request's last version and before the answer, then stops again | either | no | — |
+| episode | it calls after the request's last version and before the answer, and that episode runs on | episode | yes | 2 |
+| episode | it calls after the request's last version and before the answer, then holds a claim past the threshold, or that episode ends and a later one starts | either | no | — |
+| episode | it ends after the request's last version and before the answer, and a later one starts after calls | episode | no | — |
+| episode | it ends after the request's last version and before the answer (a pause), and a later one starts with no call (the pause lifted) | episode | yes | 1 |
 | episode or stalled holder, seen by its owner | the profile's owner changes, the instance stays away | either | no: the new owner has no record | — |
 | X and Y, each listed and seen in its own answer | both stay away as they were | both | yes, both: no new request | 1 or 2 |
 

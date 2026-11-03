@@ -20,4 +20,4 @@
   an instance not silenced and lists every away instance. A table lists the cases: moving a
   stalled holder's cards or assigning one back does not ask again, a crash after work does, and
   an instance that became away only after an answer, one that called between the request's last
-  version and the answer, and one whose profile changed owner are filed.
+  version and the answer and then stopped anew, and one whose profile changed owner are filed.
