@@ -1484,7 +1484,8 @@ window.Maity = window.Maity || {};
       if (self.handle === name) {
         const own = me().projects.map((x) => ({ full_name: x.full_name, name: x.name, shared: true }));
         return Object.assign({ kind: "human", handle: self.handle, display_name: self.display_name, avatar_url: self.avatar_url || null,
-          page_served: !!self.public_profile, public_bio: self.public_bio || null,
+          // Every active account has its page (§16.9), whatever public_profile says; the fixture's caller is active.
+          page_served: true, public_bio: self.public_bio || null,
           website: self.website || null, social: self.social || {} }, listed(own));
       }
       const org = orgsData().items.find((o) => o.handle === name || (o.aliases || []).includes(name));
@@ -1851,6 +1852,7 @@ window.Maity = window.Maity || {};
         if (/[\x00-\x1f\u202a-\u202e\u2066-\u2069]/.test(bio)) fail(400, "invalid", "the request does not validate", path, { fields: { public_bio: "control_character" } });
       }
       if ("public_profile" in body) mm.public_profile = !!body.public_profile;
+      if ("public_presence" in body) mm.public_presence = !!body.public_presence;
       if ("public_bio" in body) mm.public_bio = body.public_bio || null;
       // A person's links (§16.9), as hub/person_links.checked: every failing field is named, nothing is stored.
       if ("website" in body || "social" in body || "links_visible" in body) {
@@ -1878,7 +1880,7 @@ window.Maity = window.Maity || {};
         mm.interface_language = chosen;
         fixtures()["auth-session.json"].member.interface_language = chosen;
       }
-      const profileFields = ["public_profile", "public_bio", "website", "social", "links_visible", "handle", "interface_language"];
+      const profileFields = ["public_profile", "public_presence", "public_bio", "website", "social", "links_visible", "handle", "interface_language"];
       if (Object.keys(body).length && Object.keys(body).every((k) => profileFields.includes(k))) return meView();
       const fields = {};
       const MEAT = ["meat_proxy", "meat_proxy_lead", "meat_proxy_hands"];
@@ -3684,6 +3686,34 @@ window.Maity = window.Maity || {};
         author: { member_id: who.id, handle: who.handle, kind: who.kind }, body: text, mentions: [], state: "open", resolution: null, created_at: nowIso() };
       list.push(note);
       card.notes = { open: list.filter((n) => n.state === "open").length, total: list.length };
+      return note;
+    }],
+    // A note edited in place (§6.16): its author, or a human with events:admin
+    // (owner, admin) with a reason; the old text is gone, `edited` says who and when.
+    ["PATCH", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/notes\/([^/]+)$/, (m, body, path) => {
+      const note = ((fixtures()[m[1] + "/task-notes.json"] || {})[m[2]] || []).find((n) => n.id === m[3]);
+      if (!note) fail(404, "not_found", "Not found", path);
+      if (project(m[1], path).state === "archived") fail(409, "project_closed", "the project is closed", path);
+      const who = me().member;
+      const own = note.author && note.author.member_id === who.id;
+      if (!own && !(who.kind === "human" && ["owner", "admin"].includes(trustIn(m[1])))) fail(403, "forbidden", "not your note", path, { reason: "not_your_note" });
+      if (note.body && typeof note.body === "object") fail(400, "invalid", "the note was removed", path, { reason: "redacted" });
+      const text = String(body.body || "");
+      const reason = typeof body.reason === "string" && body.reason.trim() ? body.reason.trim() : null;
+      if (!text.trim()) fail(400, "invalid", "body: missing", path, { fields: { body: "missing" } });
+      if (utf8Bytes(text) > 4096) fail(400, "invalid", "body: too_long", path, { fields: { body: "too_long" } });
+      if (!own && !reason) fail(400, "invalid", "reason: required", path, { fields: { reason: "required" } });
+      Object.assign(note, { body: text, edited: { by: { member_id: who.id, handle: who.handle, kind: who.kind }, at: nowIso(), reason } });
+      return note;
+    }],
+    // A note removed (§6.16, §8.5): events:admin; its body becomes the tombstone.
+    ["POST", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/notes\/([^/]+)\/redact$/, (m, body, path) => {
+      const note = ((fixtures()[m[1] + "/task-notes.json"] || {})[m[2]] || []).find((n) => n.id === m[3]);
+      if (!note) fail(404, "not_found", "Not found", path);
+      const who = me().member;
+      if (!(who.kind === "human" && ["owner", "admin"].includes(trustIn(m[1])))) fail(403, "forbidden", "events:admin needed", path, { scope: "events:admin" });
+      if (typeof body.reason !== "string" || !body.reason.trim()) fail(400, "invalid", "a reason is required", path, { fields: { reason: "missing" } });
+      Object.assign(note, { body: { redacted: true, reason: body.reason.trim(), by: who.id, at: nowIso() }, mentions: [], edited: null });
       return note;
     }],
     ["GET", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/history$/, (m, body, path) => {

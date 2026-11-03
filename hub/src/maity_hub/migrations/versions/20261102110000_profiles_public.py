@@ -5,6 +5,8 @@ maintainer's decision of 2026-11-02 (tsk-my5gvj4warte), with two accounts at the
 `public_page.indexed` is false for a page search engines must not list (a person whose
 profile is off keeps a page with handle and name, `noindex` and out of the sitemap).
 
+The downgrade restores the old default only: the accounts the upgrade switched on stay on.
+
 Revision ID: 20261102110000_profiles_public
 Revises: 20261102120000_maintenance
 Create Date: 2026-11-02

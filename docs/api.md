@@ -100,7 +100,8 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   (the dashboard, the HTML join page), `Content-Security-Policy:
   default-src 'self'`. The one exception to `no-store` is the images —
   the logo and banner (§11.2) and the avatars (§6.10) — and the
-  attachments (§8.7), which are revalidated by `ETag`, and the project
+  attachments (§8.7) and the whole contract (§6.8), which are revalidated
+  by `ETag`, and the project
   badge (§6.20), the one answer with a public cache (`public,
   max-age=60`), because it carries nothing but a count, and the app
   shell (§16.11), which is `no-cache`: it holds no data and must follow
@@ -2027,7 +2028,8 @@ when either list matches.
 `registration`: `true` while the mode is `allowlist` or `open` and mail
 is complete and enabled, else `false` — also `false` under `allowlist`
 while both lists are empty, since nobody could register then (the admin
-sees it as `missing: ["allowlist"]`, §16.4); and `terms`: `{url, version}` or
+sees it as `missing: ["allowlist"]`, §16.4), and `false` while a
+maintenance window runs, which refuses registration (§16.12); and `terms`: `{url, version}` or
 `null` (§16.4). It says nothing about the lists' entries or any account;
 only whether an allowlist has any entry follows from `registration`. The
 login page shows "Create an account" only with `registration: true`.
@@ -4308,6 +4310,7 @@ around.
 | `DELETE /projects/{owner}/{slug}/logo`, `…/banner` | `project:admin`, human only | remove the uploaded image; the forge's image applies again (§11.2) |
 | `GET /projects/{owner}/{slug}/keep-the-why` | `project:read` | the family's summary and the entries that need attention, per member (§11.3) |
 | `GET /projects/{owner}/{slug}/overview` | `project:read` | board counts, open requests, recent reports, for the overview page (§6.11) |
+| `GET /projects/{owner}/{slug}/contract` | `project:read` | the file `settings.contract_path` names, whole, with its table of contents (§6.8) |
 
 **Public page**: `public_page` and `public_about` (§16.9), set by the
 namespace owner alone (for a project of an organisation, any of its
@@ -4372,7 +4375,9 @@ A change of `memory.provider` by `PATCH` bumps `rules_version` and emits
 
 **Settings**: `language` (below); `release_checklist` (§6.7); `role_rules`
 (below, §6.9); `ticker` — `enabled`,
-`contract_files`, `contract_implementers` (§17.3). `PATCH` merges
+`contract_files`, `contract_implementers` (§17.3); `contract_path` — the
+file the overview links and shows as the project's contract, default
+`docs/api.md` (§6.8). `PATCH` merges
 `settings` by top-level key: a key it does not name is unchanged; a key it
 names gets the given value as a whole, nested objects included (`ticker`
 is sent whole: a `PATCH` of `{"ticker": {"enabled": true}}` leaves no
@@ -5989,7 +5994,7 @@ someone pushes: `probe_not_configured` without a probe,
 `probe_unavailable` when the forge does not answer, `not_found` with
 `details.fields.contract.path: "not_found_on_forge"` when the file is
 not there at that commit. The file is decoded as UTF-8 and read whole
-up to 1 MiB; a larger or undecodable file is `invalid` with
+up to 4 MiB (below, **The cap**); a larger or undecodable file is `invalid` with
 `details.fields.contract.path: "too_large"` or `"not_text"` and nothing
 is shown. **The section** is the ATX heading of level 2, 3 or 4 whose
 first token after the `#` marks is exactly `section` — `## 6.2 Members`
@@ -6017,6 +6022,139 @@ section with the short `ref`, `fetched_at` and the link, and on
 stale text and never a different section — so that a human reads the
 contract where the card is without the repository being a second place
 to keep it.
+
+**The whole contract.** The maintainer's wish of 2026-11-02 (tsk-yhbmz7mjng7n): the overview
+links the project's contract and shows it inside Maity, read-only, so
+that a human reads it without leaving for the forge. The file is the
+project's `settings.contract_path` (§6.1, default `docs/api.md`); the hub
+reads it whole through the same probe read as a card's section, and
+keeps no copy:
+
+| Endpoint | Scope | Notes |
+|---|---|---|
+| `GET /projects/{owner}/{slug}/contract` | `project:read` | `{path, ref, url, size, fetched_at, toc, text}`; `ETag`, `304` on a matching `If-None-Match` |
+
+```json
+{ "path": "docs/api.md", "ref": "c769de86…", "url": "https://github.com/…/blob/c769de86…/docs/api.md",
+  "size": 1230291, "fetched_at": "2026-11-02T20:30:00Z",
+  "toc": [ { "level": 2, "number": "6", "title": "Projects, members, tasks, releases", "anchor": "s-6", "line": 4201 },
+           { "level": 3, "number": "6.8", "title": "Contract cards", "anchor": "s-6.8", "line": 5878 }, "…" ],
+  "text": "# Maity API\n…" }
+```
+
+- **The read** is the one above: the default branch resolved to one
+  commit, the file read at that commit, only from the project's own
+  repository, decoded as UTF-8, with the same errors —
+  `probe_not_configured`, `probe_unavailable`, `not_found` with
+  `details.fields["settings.contract_path"]: "not_found_on_forge"`,
+  `invalid` with `"too_large"` or `"not_text"` under the same key — and
+  nothing shown on any of them, never an older text. `path` is the
+  setting as it was at the call, `ref` the commit, `url` the forge's page
+  for the file at that commit, `size` the file's bytes, `fetched_at` when
+  the hub read it.
+- **The cap** is 4 MiB of the file, for this read and for a card's
+  section alike (it was 1 MiB for the section until then): a project's contract
+  grows with the project, and this project's own passed 1 MiB on
+  2026-11-02. A forge whose contents API answers a large file only in its
+  raw form (GitHub above 1 MB) is read in that form; the cap counts the
+  bytes read, as §11.1 has it. `text` is the whole file, never cut: a file
+  the hub cannot send whole is `too_large`, so a reader never takes a
+  part for the whole.
+- **`toc`** lists the file's headings in file order, as the hub's parser
+  of the card's section finds them: ATX headings of level 2, 3 and 4,
+  fenced code blocks skipped. `level` is the number of `#` marks;
+  `number` the first token after them when it is a section number
+  (digits with `.` between, an optional trailing `.` dropped: `## 8.
+  Events` → `8`), else `null`; `title` the rest of the heading line,
+  Markdown as written, at most 300 characters; `line` the heading's
+  1-based line in the file. `anchor` is `s-<number>` for a number that
+  occurs once in the file, else `h-<n>` with `n` the heading's 0-based
+  position in `toc` — two headings with the same number get positions,
+  never one shared anchor, as the card's read never picks one. A file
+  with more than 2000 such headings lists the first 2000 and the rest
+  only in `text`. The dashboard gives each rendered heading its
+  anchor's `id`, so `/<owner>/<slug>/contract#s-6.8` opens a section, and
+  a card's `section` links there (§16.11).
+- **`ETag`** is a digest over the project's repository, `path` and the
+  file's bytes: a new commit that leaves the file as it is keeps the
+  tag, so a dashboard that re-reads gets `304` and no second megabyte; a
+  changed repository setting is a new tag even for the same bytes. The
+  answer carries `Cache-Control: private, no-cache`, as an attachment
+  does (§8.7): the browser keeps it and revalidates on every use, so a
+  new tab, a reload or a step back in the history sends `If-None-Match`
+  instead of reading the file again, and access ends with the
+  membership, not when a cache expires. The hub authorizes first and
+  only then compares `If-None-Match`: a caller without `project:read`
+  gets `not_found`, never `304`. A `304` has no body; the view keeps
+  showing the `ref`, `url` and `fetched_at` of the last full answer, so
+  after one the commit shown may be older than the default branch's
+  head while the file is the same. The hub may keep one read
+  for 60 s and answer concurrent calls from it, keyed by the repository,
+  the resolved commit and `path`, as for the card's section; it stores
+  nothing beyond that.
+- **Untrusted text.** The file is the repository's, under the same rules
+  as a card's section (§6.14): shown, never a mention (§8.6), no id made
+  into a link, its links as the dashboard's Markdown renderer allows
+  them, never an instruction to the hub (`docs/agents.md`).
+
+**The setting.** `settings.contract_path` (§6.1) names the file: a
+repository-relative path under the rule for `contract.path` above (no
+leading slash, no `..` segment, no URL, no scheme, at most 255
+characters), else `invalid` with
+`details.fields["settings.contract_path"]: "not_a_path"`; and it ends in
+`.md` or `.markdown`, compared case-insensitively (`README.MD` counts),
+else `invalid` with `details.fields["settings.contract_path"]:
+"not_markdown"`. A Markdown
+file only, so that the setting cannot expose an arbitrary file of the
+repository to every holder of `project:read`, guests included and
+whether or not they can read the repository on the forge: this read
+shows the whole file, unlike a card's section, which shows only
+Markdown under a matching heading, so a file without one (an `.env`)
+shows nothing there. The name alone is not enough, so the read checks
+what the name points to, segment by segment, at the commit. It reads
+the non-recursive tree of each directory on the path, from the root
+down (on GitHub, `GET …/git/trees/{commit}:{dir}`, never the recursive
+tree, which GitHub truncates for a large repository). Every segment
+must be listed under exactly its name, byte for byte as Git compares
+(only the extension above is compared in any case): each directory with
+mode `040000`, the file itself with `100644` or `100755`. A directory's
+tree answered with `truncated: true` is `invalid` with
+`details.fields["settings.contract_path"]: "not_markdown"` before any
+segment is looked up in it, since a cut tree cannot tell a missing entry
+from one cut off. A segment that a complete tree does not list means the
+file is not there at the commit: `not_found` with
+`details.fields["settings.contract_path"]: "not_found_on_forge"`, as
+above, since the file may appear later. A symlink (`120000`), a
+submodule (`160000`) or any other mode is `invalid` with `not_markdown`
+too: the check fails closed, and nothing is shown, never the target's
+text. A commit's
+tree never changes, so the hub may cache each directory's tree per
+commit SHA and directory: the extra reads come once per commit, not per
+reader. Without the
+key it is `docs/api.md`; `null` removes the key and the default applies
+again (§6.1). Set by `PATCH /projects/{owner}/{slug}` under
+`project:admin`, like every setting; a change emits `project_updated`
+with `"settings.contract_path"` and the new path. The hub does not check
+the file exists when the setting is written — the repository may get it
+later; the read says `not_found_on_forge` until then. The setting names
+the file the overview links and shows; a contract card keeps its own
+`path`, and `ticker.contract_files` (§17.3) its own list.
+
+**Dashboard (web/).** A contract note for the view; the layout is the
+web owner's:
+
+- The overview's project facts (§6.11) have a **Contract** row: a link
+  to the view below and, beside it, the forge's page for the file at the
+  default branch, derived as now from `repository` and the setting. No
+  repository: no row.
+- Route `/<owner>/<slug>/contract` (§16.11): the table of contents from
+  `toc` beside the rendered `text`, every heading carrying its
+  `anchor` as `id`; the short `ref`, `fetched_at` and the forge's link
+  above it. On an error the path and the hub's reason, nothing else. A
+  re-read sends `If-None-Match`. It is read when the view opens, and
+  again only on **Refresh** — a megabyte is not re-read on a poll.
+- A contract card's section links to `contract#<anchor>` of its section
+  when the card's `path` equals the setting.
 
 ### 6.9 Rules text
 
@@ -6314,6 +6452,7 @@ already read; the page adds no new right and no new stored field.
 | name, state, `state_note`, absence, logo | `GET /projects/{owner}/{slug}` (§6.1) | as in the header |
 | repository link | `repository.url` (§6.1) | `null`: no link. Already validated as a URL on a forge host the operator configured (§11) |
 | Keep the Why dashboard link | `keep_the_why_export.members[]` (§6.1, §11.3), the root's (`path: ""`) `dashboard_url`, and each child's under its `name` | `null` export: no link. The attention counts are next to it (`summary.attention`, `summary.status`) |
+| contract link | `settings.contract_path` (§6.1, default `docs/api.md`), `repository` | the view of the whole contract inside Maity and the forge's page for the file (§6.8); no repository: no link |
 | pull requests link | `repository.url` and `repository.forge` (§6.1) | derived in the browser: GitHub and Gitea `/pulls`, GitLab `/-/merge_requests`, Bitbucket `/pull-requests`; another forge or no repository: no link |
 | issues, wiki, discussions and chat links | the project's `links` (below) | each one set is a button next to the repository link; one not set shows nothing |
 | policy preset | `policy.preset` and the fields it fills (§6.1) | |
@@ -11999,6 +12138,7 @@ contract; until then nothing else in this section changes.
 | GET | `/projects/{owner}/{slug}/members/{id}/briefings` | the agent's owner; `members:admin`, human only | 6.2 |
 | POST | `/projects/{owner}/{slug}/tasks/{id}/move` | `tasks:admin` | 6.4 |
 | GET | `/projects/{owner}/{slug}/tasks/{id}/contract` | `project:read` | 6.8 |
+| GET | `/projects/{owner}/{slug}/contract` | `project:read` | 6.8 |
 | GET | `/projects/{owner}/{slug}/swarm` | `project:read` | 6.22 |
 | GET | `/people/{handle}` | — | 6.27 |
 | GET | `/me/conversations` | human | 9.3 |
@@ -14834,9 +14974,10 @@ maintainer's answer of 2026-11-02). The instance-wide counts stay as
 they are: the landing page's `people_online` (§16.7) still counts
 them, as it names no project and no person; the badge (§6.20) counts
 agents only. On an instance with a single public project that shows
-`people_online`, that number minus the project's `online.humans` is the
-number of people online with the switch off, and with exactly one such
-member it points at them; the maintainer has been asked whether
+`people_online`, that number minus the project's `online.humans` is at
+most the number of people online with the switch off (exactly that when
+every human of the instance is a member of that project), and with
+exactly one such member it can point at them; the maintainer has been asked whether
 `people_online` should leave them out as well. The switch is the person's own and never covers their
 agents: an agent is public work and is named by its handle. It covers
 only who is named and counted under **Online**: what the person does stays on the
@@ -15198,7 +15339,7 @@ names:
 | `/explore` | the public projects, by name, for every visitor with or without a session, under the public pages' `Cache-Control`, `Vary`, policy and `nosniff` (§16.9), without an `ETag`; the shell while the instance serves no public pages |
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
-| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `members/<id>[/<tab>[/<instance>]]` (the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `memory` (§19), `message`; a view added later joins this list |
+| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `contract` (the project's contract, a heading by its anchor as the fragment, §6.8), `members/<id>[/<tab>[/<instance>]]` (the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `memory` (§19), `message`; a view added later joins this list |
 
 **Public pages at their canonical address.** `/<owner>/<slug>`, the
 public views `/<owner>/<slug>/board`, `/members`, `/organisation` and
