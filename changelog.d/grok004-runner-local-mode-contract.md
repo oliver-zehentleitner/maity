@@ -6,7 +6,10 @@
   workspace's `.git/maity` (mode 600, or on Windows an access list for
   the user, `SYSTEM` and `Administrators`), a runner's adapter context
   with the sandbox `maity runner check` reports, the one Git fetch on the
-  runner's transport list, the next run only when work waits, with
+  runner's transport list, allowed only while a pending record outside
+  the workspace exists and retried from it after `repository_refused`,
+  `no_repository` or `staging_kept`, the IPv6 host directory always
+  with its port, the next run only when work waits, with
   backoff, stopping by signal, Ctrl-C or console close, and how it stays
   apart from the full runner.
 

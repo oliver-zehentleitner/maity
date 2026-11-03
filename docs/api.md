@@ -13682,10 +13682,19 @@ own `maity join` writes it, as in a runner's join pickup (§15.9):
      empty is refused (exit 4, reason `workspace_not_empty`) before the
      join page is fetched; nothing in it is changed, so a person's own
      clone is never touched. An empty `DIR`, or a missing one, is used.
-   - **The host.** `<link host>` is the link's host name in lower case
-     (without the brackets of an IPv6 address), followed by `_<port>`
-     when the link names a port. The host name is either a DNS name of
-     labels of `a`–`z`, `0`–`9` and `-`, joined by single dots, or an
+   - **The host.** `<link host>` here is local mode's own directory
+     name, not the `<link host>` of §3.2's state directory: the link's
+     host name in lower case (without the brackets of an IPv6 address),
+     followed by `_<port>` when the link names a port. For an IPv6
+     address the port is always written, the scheme's default (`443`
+     for `https`, `80` for `http`) when the link names none, so
+     `https://[::1]:80` becomes `___1_80` and `https://[::1:80]`
+     becomes `___1_80_443`: the part after the last `_` is always the
+     port, and two different IPv6 authorities never share a directory.
+     A DNS name or IPv4 address holds no `:`, so its name has at most
+     one `_`, before the port, while an IPv6 address holds at least two
+     `:`, so its name has at least three: the forms do not meet either.
+     The host name is either a DNS name of labels of `a`–`z`, `0`–`9` and `-`, joined by single dots, or an
      IPv4 or IPv6 address of digits, `a`–`f`, `.` and `:`; it neither
      starts nor ends with `.`, and nothing else is in it (no `_`, no
      `%` zone, no empty label). A link whose host fails this is refused
@@ -13698,14 +13707,15 @@ own `maity join` writes it, as in a runner's join pickup (§15.9):
      is a Windows device name (`CON`, `PRN`, `AUX`, `NUL`, `COM0`–`COM9`,
      `LPT0`–`LPT9`, and those with a superscript digit, in any case) gets
      one `_` in front. A handle such as `con` thus lives in `_con`, and
-     the IPv6 host `::1` in `___1`. The prefix keeps names apart: a
-     component left without it never starts with `_`, so no prefixed
-     name equals an unprefixed one. Local mode creates the parent
+     the IPv6 host `::1` of `https://[::1]` in `___1_443`. The prefix
+     keeps names apart: a component left without it never starts with
+     `_`, so no prefixed name equals an unprefixed one. Local mode creates the parent
      directories and checks that it can write there before the code is
      spent.
 2. Local mode creates a private staging workspace beside the target,
    `.join-<random>` in the same directory (with `--workspace DIR`, `DIR`
-   itself), runs `git init` in it and then, once,
+   itself), runs `git init` in it, writes its pending record (step 4)
+   and then, once,
    `maity join --join-file - --no-resume --no-pointer
    --client maity-runner/<version>` with `MAITY_STATE_DIR` set to
    `<staging>/.git/maity`, URL and code on standard input. The staging
@@ -13725,16 +13735,20 @@ own `maity join` writes it, as in a runner's join pickup (§15.9):
      credential, to `<handle>#<instance>` with the stored instance id, as
      `maity join` does outside a clone (§6.17). With `--workspace DIR`
      nothing is renamed.
+     The pending record follows the rename: local mode writes the
+     record for the new path, renames, then removes the old one.
    - If the resume named no instance, `<handle>` exists without a
      credential, or the rename fails because the target appeared
-     meanwhile, the staging workspace is kept as it is: it is a complete
-     workspace with the spent credential. Local mode prints its path and
-     the start command without `--join` for it (exit 4, reason
-     `staging_kept`); the link is never redeemed a second time.
+     meanwhile, the staging workspace is kept as it is: it holds the
+     spent credential and its pending record, and no harness ever ran
+     there. Local mode prints its path and the start command without
+     `--join` for it (exit 4, reason `staging_kept`); the link is never
+     redeemed a second time.
    - A refused or spent link (the exchange failed, §3.3) leaves no
      credential: local mode removes the staging workspace, or with
-     `--workspace DIR` the `.git` it created there, and exits with the
-     join's code. Once a credential exists, local mode removes nothing.
+     `--workspace DIR` the `.git` it created there, and its pending
+     record, and exits with the join's code. Once a credential exists,
+     local mode removes nothing but the pending record (step 4).
    - Local mode sets `MAITY_STATE_DIR` from the workspace at every start,
      so nothing stored refers to the staging name.
 3. The credential lands in `<workspace>/.git/maity/credential`. On Linux
@@ -13754,17 +13768,36 @@ own `maity join` writes it, as in a runner's join pickup (§15.9):
    protocol.ssh.allow=always`, the URL after `--`, and no submodules
    (`--no-recurse-submodules`; no submodule update after the checkout).
    This is the only Git local mode runs in a workspace, in the one it
-   initialised itself and before any harness ran there; a later start
-   runs none, since the agent can change `.git/config` and its hooks.
+   initialised itself and before any harness ran there; a start of a
+   ready workspace runs none, since the agent can change `.git/config`
+   and its hooks.
    On Windows local mode also sets `core.longpaths=true` in the
    workspace's Git configuration at `git init`, since under
    `%LOCALAPPDATA%` a deep tree passes 260 characters quickly. Git uses
    the person's own Git setup for the fetch; local mode reads no forge
    credential. A URL the check refuses stops here (exit 4, reason
    `repository_refused`); a project without a repository stops here too
-   (exit 4, reason `no_repository`). Both keep the workspace, and a later
-   start without `--join` continues once the project names a repository
-   the check takes.
+   (exit 4, reason `no_repository`). Both keep the workspace with its
+   credential and its pending record, and a later start without `--join`
+   continues there (the retry below) once the project names a repository
+   the check takes. A `staging_kept` workspace is retried the same way.
+   - **Pending record.** Whether a workspace may still get this Git is
+     decided outside `.git`, by an empty file
+     `<state home>/maity-local/.pending/<key>`, `<key>` as for
+     `.adapters` (below). Local mode creates it right after `git init`,
+     before the code is spent, and removes it once the checkout is done
+     and before the first harness starts; if the removal fails, no
+     harness starts (exit 4, reason `pending_unremoved`). It lies outside
+     every workspace and is denied to the harness's sandbox, as
+     `.adapters` is, so no agent creates it. Its absence means ready and
+     is the safe side: a missing or deleted record makes local mode run
+     no Git, never more.
+   - **Retry.** A start without `--join` in a workspace whose pending
+     record exists runs this step again: the supervised `maity resume`
+     with the spent credential it already holds, the URL check, the
+     fetch and the checkout, with the same flags, in a workspace whose
+     `.git` only `git init` and local mode wrote, since no harness ran
+     there. The link is not needed and never redeemed again.
 
 The credential never appears on a command line, in the environment, in
 local mode's output or log, or in an event. The harness's own model
@@ -13784,7 +13817,8 @@ runner's adapters (§15.3) with the context of a placement in the
   directory: Codex's sandbox lets the agent write the clone's `.git`, so
   files there could be widened for the next run. `.adapters` cannot
   collide with a host's directory: a link whose host starts with `.`
-  is refused (the host, above), and the prefix never adds a `.`.
+  is refused (the host, above), and the prefix never adds a `.`; the
+  same holds for `.pending`.
 - `MAITY_SUPERVISOR` is `maity-runner/<version>`; `MAITY_PLACEMENT` is
   not set, since there is no placement. The Git variables of a runner's
   sessions (`GIT_COMMON_DIR` and the pinned per-session Git
@@ -13796,7 +13830,8 @@ runner's adapters (§15.3) with the context of a placement in the
   directory (`.ssh`, `.gnupg`, the harnesses' and cloud tools' logins,
   the full runner's configuration and state, …), the `.git/maity` of
   every other workspace under `<state home>/maity-local` (for Codex the
-  whole directory, as a runner's workspaces root), and `.adapters`. A
+  whole directory, as a runner's workspaces root), `.adapters` and
+  `.pending`. A
   listing that cannot be completed refuses the start (exit 4, reason
   `private_unlisted`), as on a runner: an unreadable directory could
   hide a credential.
@@ -13871,7 +13906,11 @@ The `maity wait` and `git` that local mode runs are stopped with it.
   init, so every process the run started stays below it, also one that
   left the group (`setsid`). On a stop it finds those outside the group
   by walking its descendants (`/proc/<pid>/task/*/children`) and sends
-  them `SIGTERM` and `SIGKILL` the same way before it exits. The
+  them `SIGTERM` and `SIGKILL` the same way before it exits. That list is
+  exact only for stopped processes, and a running one can fork while it
+  is read, so local mode repeats the walk and the signals until two
+  walks in a row find no new process, within the 10 s; a process forked
+  after the last walk is the limit, and the subreaper still reaps it. The
   harness also gets `SIGKILL` from the kernel if local mode itself is
   killed (`PR_SET_PDEATHSIG`). The limit: after a `kill -9` of local
   mode, the harness's descendants are not reached; they end on their
@@ -13924,7 +13963,7 @@ script that stops it asked for that end, so it must not read it as a
 failure. Exit 4 prints its reason as the first word of its last line
 on standard error (`workspace_not_empty`, `staging_kept`,
 `repository_refused`, `no_repository`, `workspace_locked`,
-`private_unlisted`), so a test or
+`private_unlisted`, `pending_unremoved`), so a test or
 script can tell them apart.
 
 **Relation to the full runner.** Local mode is an ordinary agent session

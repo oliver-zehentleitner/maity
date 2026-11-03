@@ -1009,7 +1009,13 @@ non-empty `--workspace DIR` is refused untouched. Path components get one
 space, or start with `_`, on every OS. A harness without a command
 allowlist (`codex`) refuses `--allow`. The one Git fetch runs with the
 runner's transport list (https and ssh) before any harness ran in the
-workspace.
+workspace. Whether a workspace may still get it is an empty pending
+record under `maity-local/.pending`, outside the workspace and denied to
+the sandbox, made at `git init` and removed before the first harness
+starts; a start finding it (a kept, `repository_refused` or
+`no_repository` workspace) retries the resume and the fetch with the
+spent credential, and its absence means no Git. For an IPv6 host the
+directory always carries the port, so `[::1]:80` and `[::1:80]` differ.
 
 The harness gets a runner's adapter context: the adapter files outside
 the workspace under `maity-local/.adapters`, no `MAITY_PLACEMENT`, the
@@ -1039,7 +1045,10 @@ private-directory checks as they are, and keeping the workspaces outside
 the runner's state directory means `gc` and `workspace claim` cannot
 touch them. The adapter files lie outside the workspace because Codex's
 sandbox lets the agent write the clone's `.git`, and anything there
-could be widened for the next run. The sandbox follows what the adapters
+could be widened for the next run. The pending record lies outside
+`.git` for the same reason, and is a permission rather than a readiness
+flag, so losing it costs a retry, never a Git run in a workspace an agent
+has touched. The sandbox follows what the adapters
 already do on a runner (Claude Code strict or not at all, Codex only
 sandboxed), so local mode adds no third policy. Codex's sandbox is
 required because without it nothing confines Codex at all, while Claude
@@ -1071,6 +1080,13 @@ message says are no boundary.
 - Configuration files for the restart values: the full runner's defaults
   serve one agent in the foreground, and a file would be one more thing
   to find, validate and document for a command meant to need none.
+- A readiness marker in `.git`, or recovering by just running the fetch
+  again: the agent can write `.git/config` and its hooks, so a later
+  start could not tell a never-launched workspace from one a harness
+  changed (review of #1294, pmwg).
+- `_<port>` only when the link names one, for IPv6 too: `[::1]:80` and
+  `[::1:80]` would both be `___1_80` and share a workspace (review of
+  #1294, dzse, pmwg).
 - The adapter files in `<workspace>/.git/maity`: writable from Codex's
   sandbox, so a run could widen the next run's settings.
 - `--code` on the command line, as `maity join` has it: on Linux every
