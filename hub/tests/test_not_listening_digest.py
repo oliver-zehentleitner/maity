@@ -441,6 +441,21 @@ def test_a_stalled_holder_is_listed_with_its_cards_and_reason(
     assert advice == not_listening_digest.HOLDER_ADVICE
 
 
+@pytest.mark.parametrize("status", ["done", "cancelled"])
+def test_a_closed_card_makes_no_holder(
+    inbox_owner: flow.Human, make_client: ClientFactory, migrated: Engine, status: str
+) -> None:
+    """A closed card keeps `claim_holder` and `claim_instance`; it is held by nobody."""
+    owner = inbox_owner
+    agent = _agent(make_client, owner)
+    card = _holding(owner, agent)
+    with migrated.begin() as conn:
+        conn.execute(update(t.card).where(t.card.c.id == card).values(status=status))
+    _silent(migrated, agent, timedelta(hours=2))
+    not_listening_digest.run(migrated)
+    assert _digests(owner) == []
+
+
 def test_an_instance_both_away_and_holding_is_listed_once_as_a_stalled_holder(
     inbox_owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
