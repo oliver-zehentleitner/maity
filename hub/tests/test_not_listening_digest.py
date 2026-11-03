@@ -7,7 +7,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Engine, insert, select, update
 
 from maity_hub import clock, not_listening_digest
 from maity_hub import tables as t
@@ -420,6 +420,42 @@ def _silent(engine: Engine, agent: flow.Agent, ago: timedelta) -> None:
             .where(t.agent_session.c.credential_id == agent.credential_id)
             .values(last_seen_at=clock.now() - ago)
         )
+
+
+def test_only_the_latest_session_is_read_however_long_the_history(
+    inbox_owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The bell reads holders live: the ended sessions before the latest are never fetched,
+    and an ended older one does not make a live holder `session_ended`."""
+    owner = inbox_owner
+    agent = _agent(make_client, owner)
+    _holding(owner, agent)
+    _silent(migrated, agent, timedelta(hours=2))
+    with migrated.begin() as conn:
+        latest = conn.execute(
+            select(t.agent_session).where(t.agent_session.c.credential_id == agent.credential_id)
+        ).one()
+        conn.execute(
+            insert(t.agent_session),
+            [
+                {
+                    **{k: v for k, v in latest._mapping.items() if k != "id"},
+                    "id": f"ses-old{n:05d}",
+                    "live": None,
+                    "started_at": latest.started_at - timedelta(days=1, minutes=n),
+                    "ended_at": latest.started_at - timedelta(days=1),
+                    "not_listening_seq": None,
+                    "not_listening_since": None,
+                    "not_listening_request_id": None,
+                }
+                for n in range(200)
+            ],
+        )
+        rows = not_listening_digest._latest_sessions(conn, {agent.credential_id})
+    assert [r.id for r in rows] == [latest.id]
+    not_listening_digest.run(migrated)
+    [digest] = _digests(owner)
+    assert digest["summary"].partition("\n\n")[0].endswith(", silent")
 
 
 def test_a_stalled_holder_is_listed_with_its_cards_and_reason(

@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Connection, Engine, insert, select, update
+from sqlalchemy import Connection, Engine, func, insert, select, update
 
 from maity_hub import clock, maintenance, worker_runs
 from maity_hub import tables as t
@@ -146,14 +146,9 @@ def _holders(conn: Connection, owner_id: str | None, now: datetime) -> list[Any]
         )
         if (r.membership_id, r.instance) in held
     }
-    sessions: dict[str, Any] = {}
-    if credentials:
-        for r in conn.execute(
-            select(t.agent_session)
-            .where(t.agent_session.c.credential_id.in_({c.id for c in credentials.values()}))
-            .order_by(t.agent_session.c.started_at)
-        ):
-            sessions[r.credential_id] = r  # the latest comes last
+    sessions = {
+        r.credential_id: r for r in _latest_sessions(conn, {c.id for c in credentials.values()})
+    }  # equal starts: the last id wins
     found = []
     for key, entry in held.items():
         row, credential = entry["row"], credentials.get(key)
@@ -172,6 +167,26 @@ def _holders(conn: Connection, owner_id: str | None, now: datetime) -> list[Any]
             )
         )
     return found
+
+
+def _latest_sessions(conn: Connection, credential_ids: set[str]) -> list[Any]:
+    """Each credential's latest session, ended or not, by start, and only that one: the bell
+    reads this live, and the history of ended sessions grows without bound."""
+    if not credential_ids:
+        return []
+    s, older = t.agent_session, t.agent_session.alias("older")
+    latest = (
+        select(func.max(older.c.started_at))
+        .where(older.c.credential_id == s.c.credential_id)
+        .scalar_subquery()
+    )
+    return list(
+        conn.execute(
+            select(s)
+            .where(s.c.credential_id.in_(credential_ids), s.c.started_at == latest)
+            .order_by(s.c.started_at, s.c.id)
+        )
+    )
 
 
 def _reason(member: Any, credential: Any, session: Any, now: datetime) -> str:
