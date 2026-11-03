@@ -4,6 +4,18 @@
 // are not covered. Needs a node binary only, no packages.
 //
 //   node tools/smoke.js .        (from web/; `make smoke`)
+//
+// Every run formats as CI does: English and UTC (tsk-c3qrypstpk5h). Intl's default
+// locale and time zone come from the environment when node starts, and the page
+// formats with them wherever a reader has chosen none; on a German machine the swarm
+// step read "2,4" for CI's "2.4". So a run in any other environment starts itself
+// again in this one. A case that is about another locale sets M.i18n.locale itself.
+const PINNED = { LANG: "en_US.UTF-8", LC_ALL: "en_US.UTF-8", LANGUAGE: "en_US", TZ: "UTC" };
+if (Object.entries(PINNED).some(([k, v]) => process.env[k] !== v)) {
+  const again = require("child_process").spawnSync(process.execPath, [...process.execArgv, __filename, ...process.argv.slice(2)],
+    { stdio: "inherit", env: Object.assign({}, process.env, PINNED) });
+  process.exit(again.status === null ? 1 : again.status);
+}
 const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
