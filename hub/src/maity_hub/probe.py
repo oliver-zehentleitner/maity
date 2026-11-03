@@ -46,6 +46,8 @@ INTERVAL = 300  # seconds between the worker's sweeps
 MERGE_INTERVAL = 120  # seconds between the ticker's merge reads (§17.4)
 REREAD_PER_ROUND = 15  # reports last seen open that one sweep reads again, 4+ requests each
 REPORT_WINDOW = timedelta(days=1)  # closed cards whose report a sweep still tries to observe
+# A commit's complete answer as given, beside its `commit` row (`_kept`); fits `kind`'s 16.
+COMMIT_ANSWER = "commit_answer"
 
 # Each round starts at another project: a round ends at the first read the forge
 # does not answer, so a fixed order would leave the same projects unread each time.
@@ -255,11 +257,12 @@ def observe_commit(
         else:
             head, branch = _branch_head(engine, fg, project, max_age, floor)
             commit = _put(engine, source, project, "commit", sha, observed_at, data)
-            return _composed(project, sha, commit, head, branch)
+            return _kept(engine, project, sha, _composed(project, sha, commit, head, branch))
     if not commit.data.get("found"):
-        return CommitObservation({"sha": sha, "found": False}, commit.observed_at, commit.fresh)
+        answer = CommitObservation({"sha": sha, "found": False}, commit.observed_at, commit.fresh)
+        return _kept(engine, project, sha, answer)
     head, branch = _branch_head(engine, fg, project, max_age, floor)
-    return _composed(project, sha, commit, head, branch)
+    return _kept(engine, project, sha, _composed(project, sha, commit, head, branch))
 
 
 def _branch_head(
@@ -298,18 +301,55 @@ def _composed(
     return CommitObservation(data, min(times), fresh)
 
 
+def _kept(engine: Engine, project: Any, sha: str, answer: CommitObservation) -> CommitObservation:
+    """Store a complete commit answer as it was given, for `details.last` (§11): its own row
+    of kind `COMMIT_ANSWER`, unless a newer one is stored or it is the stored one already. The
+    commit and branch rows alone cannot tell it: a branch the forge refused leaves the older
+    branch row in place, which a join would show as a definite `ahead`."""
+    data = answer.shown()
+    with engine.connect() as conn:
+        stored = _cached(conn, project.id, COMMIT_ANSWER, sha)
+    if stored is not None and (
+        stored.observed_at > answer.observed_at
+        or (stored.observed_at == answer.observed_at and stored.data == data)
+    ):
+        return answer  # nothing newer to keep: no write on a cached read
+    with transaction(engine) as conn:
+        lock_project(conn, project.id)  # one writer per project: delete + insert is the upsert
+        stored = _cached(conn, project.id, COMMIT_ANSWER, sha)
+        if stored is not None and stored.observed_at > answer.observed_at:
+            return answer  # a slower read that started earlier keeps the newer answer
+        conn.execute(
+            delete(t.forge_observation).where(
+                t.forge_observation.c.project_id == project.id,
+                t.forge_observation.c.kind == COMMIT_ANSWER,
+                t.forge_observation.c.ref == sha,
+            )
+        )
+        conn.execute(
+            insert(t.forge_observation).values(
+                project_id=project.id,
+                kind=COMMIT_ANSWER,
+                ref=sha,
+                observed_at=answer.observed_at,
+                data=data,
+            )
+        )
+    return answer
+
+
 def last_commit(engine: Engine, project: Any, sha: str) -> CommitObservation | None:
-    """The last complete commit observation however old, for `details.last`: the stored
-    commit read with the stored default branch head beside it (`null` when none is)."""
-    commit = last(engine, project.id, "commit", sha)
-    if commit is None:
+    """The last complete commit answer however old, for `details.last`: the one `_kept`
+    stored, refused-branch nulls included. `required_check` is taken with the project's
+    current name, as on every read (§6.6)."""
+    with engine.connect() as conn:
+        row = _cached(conn, project.id, COMMIT_ANSWER, sha)
+    if row is None:
         return None
-    if not commit.data.get("found"):
-        return CommitObservation({"sha": sha, "found": False}, commit.observed_at, False)
-    branch = last(engine, project.id, "branch", project.repository_default_branch or "main")
-    found = branch is not None and branch.data.get("found")
-    head = branch.data.get("head_sha") if branch is not None and found else None
-    return _composed(project, sha, commit, head, branch if found else None)
+    data = dict(row.data)
+    if data.get("found"):
+        data["required_check"] = required_check(project, data)
+    return CommitObservation(data, row.observed_at, False)
 
 
 def _announce_for_release(

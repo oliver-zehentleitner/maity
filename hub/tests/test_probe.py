@@ -1337,3 +1337,31 @@ def test_the_last_commit_observation_on_a_spent_budget_has_the_contract_shape(
     assert dropped.status_code == 503
     last = dropped.json()["error"]["details"]["last"]
     assert {k: v for k, v in last.items() if k != "observed_at"} == first
+
+
+def test_review_last_preserves_complete_refused_branch(
+    owner: flow.Human, github: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """nyh5's P2 on #1306: a branch refused without a spent budget is a complete answer with
+    `branch_head_sha`/`ahead` null. `details.last` is that answer, not the commit joined with
+    an older branch read the refusal left in the cache."""
+    monkeypatch.setattr(probe, "FORCED_FLOOR", 0)
+    _name_the_check(owner, "ci-ok")
+    _commit(github, SHA, [("ci-ok", "success")])
+    github.branch("main", head=SHA)
+    first = owner.get(f"/projects/maintainer/maity/probe?commit={SHA}").json()["commit"]
+    assert (first["branch_head_sha"], first["ahead"]) == (SHA, False)
+    branch = "/repos/acme/maity/branches/main"
+    github.answers[branch] = forge.ForgeUnavailableError("refused", status=403)
+    refused = owner.get(f"/projects/maintainer/maity/probe?commit={SHA}&max_age=0")
+    assert refused.status_code == 200, refused.text
+    second = refused.json()["commit"]
+    assert (second["branch_head_sha"], second["ahead"]) == (None, None)
+    commit = f"/repos/acme/maity/git/commits/{SHA}"
+    github.answers[commit] = forge.ForgeUnavailableError("later", status=403, rate_limited=True)
+    dropped = owner.get(f"/projects/maintainer/maity/probe?commit={SHA}&max_age=0")
+    assert dropped.status_code == 503
+    last = dropped.json()["error"]["details"]["last"]
+    assert {k: v for k, v in last.items() if k != "observed_at"} == {
+        k: v for k, v in second.items() if k != "observed_at"
+    }

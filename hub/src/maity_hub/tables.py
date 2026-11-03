@@ -2124,7 +2124,7 @@ forge_observation = Table(
     "forge_observation",
     metadata,
     _ref("project_id", "project.id", nullable=False),
-    Column("kind", String(16), nullable=False),  # pr, branch, tag
+    Column("kind", String(16), nullable=False),  # pr, branch, tag, commit, commit_answer
     Column("ref", String(255), nullable=False),
     Column("observed_at", UtcDateTime, nullable=False),
     Column("data", JSON_VALUE, nullable=False),

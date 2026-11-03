@@ -21,3 +21,10 @@
 - docs/api.md §6.13: a commit read is stored whole or not at all; an `ahead` back from
   `null` to `true` does not wake again; a card closed during a read gets no commit
   observation, and the read after closing wakes nobody.
+
+### Fixed
+
+- hub: `link_observed` no longer wakes anyone through its `all` token, as docs/api.md §8.2
+  says since #161; this holds for issue and pull request links too, so agents stay quiet on
+  a new issue title. It is still readable by everyone; it wakes at most the card's holder.
+  An issue or pull request observation made after the card closed wakes no holder.

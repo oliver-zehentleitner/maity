@@ -936,6 +936,11 @@ def test_ahead_back_from_a_refused_branch_read_wakes_nobody_again(
     fg.head = forge.ForgeUnavailableError("refused", status=403)
     _later(probe.MAX_AGE + 1)
     probe.observe_links(migrated, fg, _project_id(migrated))
+    # dzse's Nit-1: in the null state the stored observation holds `_ahead_known`; the view
+    # must not show it.
+    shown = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()["links"][0]
+    assert shown["observed"]["ahead"] is None
+    assert set(shown["observed"]) == {*links.COMMIT_SHOWN, "observed_at"}
     fg.head = HEAD
     _later(2 * probe.MAX_AGE + 2)
     probe.observe_links(migrated, fg, _project_id(migrated))
