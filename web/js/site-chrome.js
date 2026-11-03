@@ -57,25 +57,28 @@ window.Maity = window.Maity || {};
     if (!local && !M.dom.safeUrl(href)) return h("span", null, item.label);
     const a = h("a", attrs || null, item.label);
     a.setAttribute("href", local && path !== "/" && M.route.isRoute(href.split("#")[0]) ? M.route.href(href.split("#")[0]) : href);
-    // As the hub's own pages: a social link that names its owner's profile is rel=me (§16.7.5).
-    if (!local) a.setAttribute("rel", (item.rel === "me" ? ["noopener", "me"] : ["noopener"]).join(" "));
+    // As every outside link of the dashboard: no referrer, since these pages' addresses can hold an
+    // invitation's token (?next=/invite/…); a social link that names its owner's profile is rel=me (§16.7.5).
+    if (!local) a.setAttribute("rel", (item.rel === "me" ? ["noopener", "noreferrer", "me"] : ["noopener", "noreferrer"]).join(" "));
     return a;
   }
 
-  // The mark as the hub inlines it (landing_assets/mark.svg): its colours are the header's tokens.
+  // The mark as the hub inlines it (landing_assets/mark.svg). Its colours are the header's tokens,
+  // set by classes in app.css: the hub's file says them in style attributes, which the
+  // dashboard's policy (default-src 'self', no inline style) refuses.
   const SVG = "http://www.w3.org/2000/svg";
   function home() {
     const svg = document.createElementNS(SVG, "svg");
     [["viewBox", "0 0 64 64"], ["aria-hidden", "true"], ["focusable", "false"], ["class", "mark"]].forEach(([k, v]) => svg.setAttribute(k, v));
-    const part = (tag, attrs, style) => {
+    const part = (tag, attrs, kind) => {
       const el = document.createElementNS(SVG, tag);
       Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
-      el.setAttribute("style", style);
+      el.setAttribute("class", kind);
       svg.appendChild(el);
     };
-    part("rect", { x: "26", y: "4", width: "12", height: "12", rx: "3" }, "fill:var(--accent)");
-    [[51, 21], [51, 43], [32, 54], [13, 43], [13, 21]].forEach(([cx, cy]) => part("circle", { cx: String(cx), cy: String(cy), r: "6" }, "fill:var(--text)"));
-    part("path", { d: "M23.5 38V31a4.25 4.25 0 0 1 8.5 0v7M32 31a4.25 4.25 0 0 1 8.5 0v7", fill: "none", "stroke-width": "3.5" }, "stroke:var(--text)");
+    part("rect", { x: "26", y: "4", width: "12", height: "12", rx: "3" }, "mark-seat");
+    [[51, 21], [51, 43], [32, 54], [13, 43], [13, 21]].forEach(([cx, cy]) => part("circle", { cx: String(cx), cy: String(cy), r: "6" }, "mark-member"));
+    part("path", { d: "M23.5 38V31a4.25 4.25 0 0 1 8.5 0v7M32 31a4.25 4.25 0 0 1 8.5 0v7", fill: "none", "stroke-width": "3.5" }, "mark-line");
     const a = h("a", { class: "brand" }, svg, "maity");
     // The instance's start page, the hub's own (§16.7): a page load, in fixture mode too.
     a.setAttribute("href", "/");
