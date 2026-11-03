@@ -250,16 +250,18 @@ def mark(
     found: list[Item],
     chosen: Iterable[Item],
     session: Any,
-) -> None:
+) -> list[dict[str, str]]:
     """Mark `chosen` read as this session may (§18.3): a chat item moves the chat's own
-    mark, never backwards; a security item only from a session allowed to."""
+    mark, never backwards; a security item only from a session allowed to. Reading confirms
+    nothing (§2.6.5). Returns the security items it left unread, each with its reason."""
     now = clock.now()
-    confirmed = sessions.confirmed_sessions(conn, where.human_id)
     seqs: list[int] = []
+    skipped: list[dict[str, str]] = []
     for item in chosen:
         if item.read or item.record_type in records.INBOX:
             continue  # an open matter reads as read only once it is closed (§18.3)
-        if item.kind == "security" and not _may_mark(conn, item, session, confirmed):
+        if item.kind == "security" and (reason := refusal(conn, item, session)) is not None:
+            skipped.append({"id": item.id, "reason": reason})
             continue
         if item.record is not None:
             conn.execute(
@@ -277,6 +279,7 @@ def mark(
             [{"human_id": where.human_id, "seq": seq, "at": now} for seq in seqs],
         )
     wakeups.ring(conn, "bell", where.human_id)  # the human's other held bells look again
+    return skipped
 
 
 def ignoring_duplicates(conn: Connection, table: Any) -> Any:
@@ -289,22 +292,35 @@ def ignoring_duplicates(conn: Connection, table: Any) -> Any:
     return insert(table).prefix_with("IGNORE")  # MariaDB / MySQL
 
 
-def _may_mark(conn: Connection, item: Item, session: Any, confirmed: frozenset[str]) -> bool:
-    """A sign-in alert is confirmed only from a session in good standing that existed
-    before the sign-in, never from the session it reports on (§2.6.5); an address change
-    likewise from a session older than the change."""
-    if not sessions.good_standing(session, confirmed):
-        return False
+# The security items that only an earlier session in good standing marks read (§18.3); the
+# other security kinds any session of the human may.
+GUARDED = ("session_created", "email_address_changed")
+
+
+def refusal(conn: Connection, item: Item, session: Any) -> str | None:
+    """Why `session` may not mark the security `item` read, or None (§18.3), checked in the
+    order of "This was me" (§2.6.5): `not_earlier` when it is the session the sign-in
+    reports on or was created after the sign-in (after the change, for an address change),
+    else `not_in_good_standing`."""
+    if item.record_type not in GUARDED:
+        return None
     if item.record_type == "session_created":
         if item.session_id == session.public_id:
-            return False
+            return "not_earlier"
         reported = conn.execute(
             select(t.human_session.c.created_at).where(
                 t.human_session.c.public_id == item.session_id
             )
         ).scalar()
-        return reported is not None and session.created_at < reported
-    return bool(session.created_at < item.at)
+        # A sign-in whose session is gone is judged by the time of its record.
+        since = reported if reported is not None else item.at
+    else:
+        since = item.at
+    if not session.created_at < since:
+        return "not_earlier"
+    if not sessions.good_standing(session):
+        return "not_in_good_standing"
+    return None
 
 
 def _move_chat_mark(conn: Connection, where: Scope, item: Item) -> None:
