@@ -679,6 +679,7 @@ window.MAITY_I18N["en"] = {
   "cardpanel.notes.posting": "Posting…",
   "cardpanel.notes.read_failed": "Could not read the notes: {reason}",
   "cardpanel.notes.remove": "Remove",
+  "cardpanel.notes.remove.already": "Already removed: someone removed the note first.",
   "cardpanel.notes.remove.ask": "Remove this note for everyone? Its text is replaced by a note that it was removed. Say why:",
   "cardpanel.notes.remove.busy": "Removing…",
   "cardpanel.notes.remove.conflict": "Not removed: the note was changed in the meantime. Read it as it is now and remove it again if it still should go.",

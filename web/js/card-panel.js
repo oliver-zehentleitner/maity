@@ -207,7 +207,10 @@ window.Maity = window.Maity || {};
             saving = false;
             save.disabled = false;
             const now = err && err.code === "conflict" && err.details ? err.details.note : null;
-            if (now && removedNote(now)) {
+            // The hub checks a removal before the version (§6.16): a note removed meanwhile
+            // answers `invalid` with `reason: "redacted"`, whatever version the edit names.
+            const gone = !!(err && err.code === "invalid" && err.details && err.details.reason === "redacted");
+            if (gone || (now && removedNote(now))) {
               // Removed meanwhile: nothing left to edit; the list shows the tombstone.
               await notes();
               removeStatus.fail("", { message: M.t("cardpanel.notes.edit.conflict_removed") });
@@ -250,9 +253,12 @@ window.Maity = window.Maity || {};
         await M.api.post(base + "/notes/" + encodeURIComponent(n.id) + "/redact", { reason, base_version: n.version });
       } catch (err) {
         if (err && err.code === "conflict") {
-          // Changed meanwhile: the list shows the text as it is now, nothing was removed.
+          // Changed meanwhile: the list shows the text as it is now, nothing was removed;
+          // or someone removed it first, and the list shows its tombstone.
           await notes();
-          removeStatus.fail("", { message: M.t("cardpanel.notes.remove.conflict") });
+          const now = err.details && err.details.note;
+          if (now && removedNote(now)) removeStatus.busy(M.t("cardpanel.notes.remove.already"));  // a plain line, no failure
+          else removeStatus.fail("", { message: M.t("cardpanel.notes.remove.conflict") });
           return;
         }
         removeStatus.fail(M.t("cardpanel.notes.remove.failed"), err);

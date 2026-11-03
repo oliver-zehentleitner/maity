@@ -3587,7 +3587,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !text(neNote(cpMine).querySelector(".card-note-edited")).includes(": "),
     "note edit: one's own note is saved without a reason, its mark without one");
   // A refusal keeps the form and says why.
-  win.Maity.api.patch = () => Promise.reject(Object.assign(new Error("the note was removed"), { code: "invalid", details: { reason: "redacted" } }));
+  win.Maity.api.patch = () => Promise.reject(Object.assign(new Error("a note is at most 4 KiB"), { code: "invalid", details: { fields: { body: "too_long" } } }));
   btn(neNote(cpMine), "Edit").click(); await tick();
   neNote(cpMine).querySelector("form.card-note-edit-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(neNote(cpMine).querySelector("form.card-note-edit-form") && text(neNote(cpMine)).includes("Not saved") && !btn(neNote(cpMine), "Save").disabled,
@@ -3636,6 +3636,26 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !neNote("nte-0031").querySelector(".card-note-removed") && text(neNote("nte-0031")).includes("Rewritten before the removal.")
     && text(cpPanel()).includes("Not removed: the note was changed in the meantime"),
     "note remove: a stale removal removes nothing, the note as it is now listed " + text(neNote("nte-0031")));
+  // An edit of a note removed meanwhile: the hub answers `invalid`/`redacted` (removal before
+  // version, §6.16); the edit ends, the list shows the tombstone, the message says why.
+  btn(neNote("nte-0031"), "Edit").click(); await tick();
+  await cpPost(neRmPath() + "/redact", { reason: "removed meanwhile", base_version: 6 });
+  byId("card-note-edit-nte-0031").value = "Too late.";
+  byId("card-note-reason-nte-0031").value = "late";
+  neNote("nte-0031").querySelector("form.card-note-edit-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(!neNote("nte-0031").querySelector("form") && neNote("nte-0031").querySelector(".card-note-removed")
+    && text(cpPanel()).includes("Not saved: the note was removed in the meantime."),
+    "note edit: a note removed meanwhile ends the edit, its tombstone listed " + text(neNote("nte-0031")));
+  // A removal that comes second: someone removed the note first; the list shows the tombstone
+  // and the line says so, not "not removed".
+  const neLast = cpPanel().querySelectorAll("li.card-note").filter((li) => !li.querySelector(".card-note-removed")).pop().getAttribute("data-note");
+  const neLastPath = "/projects/maintainer/maity/tasks/tsk-0001/notes/" + neLast;
+  await cpPost(neLastPath + "/redact", { reason: "first", base_version: 1 });
+  win.prompt = () => "second";
+  btn(neNote(neLast), "Remove").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(neNote(neLast).querySelector(".card-note-removed") && text(cpPanel()).includes("Already removed: someone removed the note first.")
+    && !text(cpPanel()).includes("Not removed"),
+    "note remove: a note someone removed first is listed as removed, the line says so " + text(cpPanel().querySelector(".send-status")));
   win.prompt = cpPrompt;
   // A member without events:admin: Edit on their own note only, no Remove; a tombstone
   // without the reason the hub keeps from them (§8.5); a closed project takes no edit.

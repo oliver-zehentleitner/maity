@@ -626,6 +626,7 @@ window.MAITY_I18N["de"] = {
   "cardpanel.notes.posting": "Wird gepostet …",
   "cardpanel.notes.read_failed": "Die Notizen konnten nicht gelesen werden: {reason}",
   "cardpanel.notes.remove": "Entfernen",
+  "cardpanel.notes.remove.already": "Schon entfernt: Jemand hat die Notiz zuerst entfernt.",
   "cardpanel.notes.remove.ask": "Diese Notiz für alle entfernen? Ihr Text wird durch einen Hinweis ersetzt, dass sie entfernt wurde. Sag, warum:",
   "cardpanel.notes.remove.busy": "Wird entfernt …",
   "cardpanel.notes.remove.conflict": "Nicht entfernt: Die Notiz wurde inzwischen geändert. Lies sie in ihrer jetzigen Fassung und entferne sie erneut, wenn sie weiterhin weg soll.",
