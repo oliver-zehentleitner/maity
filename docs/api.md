@@ -13629,23 +13629,52 @@ maity runner <harness> [--workspace DIR] [--allow COMMAND]...
   out of the process list; the help says so.
 - `--allow COMMAND` adds a command to the session's allowlist, as
   `[repository].allow` does on a runner (§15.3). It is not stored: every
-  start names its own.
+  start names its own. Only a harness whose confinement is `allowlist`
+  (§15.3) takes it. `codex` has no command allowlist (`sandbox`), so
+  `codex` with any `--allow` is refused (exit 2) before anything reaches
+  the hub, with a message that names the confinement; local mode never
+  drops a restriction the person asked for.
 
 **Credential.** Local mode never holds the credential itself; the agent's
 own `maity join` writes it, as in a runner's join pickup (§15.9):
 
-1. The workspace is `--workspace DIR`, else
-   `<state home>/maity-local/<link host>/<handle>`. The state home is
+1. The workspace is `--workspace DIR`, which must be missing or empty,
+   else `<state home>/maity-local/<link host>/<handle>`. The state home is
    `$XDG_STATE_HOME` or `~/.local/state` on Linux and macOS and
-   `%LOCALAPPDATA%` on Windows, where `:` in the host becomes `_`. The
-   handle is the one the join page names before the exchange (§3.2). A
-   directory that already holds a credential is another instance of the
-   same agent and gets `<handle>#<instance>` beside it, as `maity join`
-   does outside a clone. A rename of the agent later does not move it.
-2. Local mode runs `git init` in the empty workspace and then
+   `%LOCALAPPDATA%` on Windows. The handle is the one the join page names
+   before the exchange (§3.2). A rename of the agent later does not move
+   the workspace.
+   - **Components.** `<link host>` and `<handle>` (and `<handle>#<instance>`
+     below) are encoded the same way on every OS, so a workspace has one
+     name everywhere: `:` in the host becomes `_`; a component that starts
+     with `_`, ends in `.` or a space, or whose part before the first `.`
+     is a Windows device name (`CON`, `PRN`, `AUX`, `NUL`, `COM0`–`COM9`,
+     `LPT0`–`LPT9`, and those with a superscript digit, in any case) gets
+     one `_` in front. A handle such as `con` thus lives in `_con`. The
+     prefix keeps names apart, because neither a handle (§6.3) nor a host
+     starts with `_`. Local mode creates the parent directories and checks
+     that it can write there before the code is spent.
+2. Local mode creates a private staging workspace beside the target,
+   `.join-<random>` in the same directory (with `--workspace DIR`, `DIR`
+   itself), runs `git init` in it and then, once,
    `maity join --join-file - --no-resume --no-pointer
    --client maity-runner/<version>` with `MAITY_STATE_DIR` set to
-   `<workspace>/.git/maity`, URL and code on standard input.
+   `<staging>/.git/maity`, URL and code on standard input. The staging
+   directory is empty and named by an explicit state directory, so the
+   join's refusal of a clone that already holds a credential (§3.2) does
+   not apply, and no instance id is needed before the exchange.
+   - After the exchange local mode renames the staging workspace in one
+     step on the same file system: to `<handle>` when that holds no
+     credential, else to `<handle>#<instance>` with the instance id the
+     join stored from `Maity-Instance` (§3.3, §6.17), as `maity join`
+     does outside a clone. With `--workspace DIR` nothing is renamed.
+   - If the hub named no instance, or the rename fails because the target
+     appeared meanwhile, the staging workspace is kept as it is: it is a
+     complete workspace with the spent credential. Local mode prints its
+     path and the start command without `--join` for it (exit 4); the
+     link is never redeemed a second time.
+   - Local mode sets `MAITY_STATE_DIR` from the workspace at every start,
+     so nothing stored refers to the staging name.
 3. The credential lands in `<workspace>/.git/maity/credential`. On Linux
    and macOS the directory is mode 700 and the files in it 600. On
    Windows mode bits mean nothing: the directory gets a protected access

@@ -997,6 +997,14 @@ restart defaults. It stops on a signal, Ctrl-C, Ctrl-Break or a closed
 console; on Windows a Job Object takes the harness with it. It is the one
 `maity runner` command that runs natively on Windows.
 
+The join runs once into a private staging workspace beside the target and
+is renamed afterwards, to `<handle>` or, when that already holds a
+credential, to `<handle>#<instance>`; if that cannot be done, the staging
+workspace stays as a complete one and its path is printed. Path components
+get one `_` in front when they would be a Windows device name, end in `.`
+or a space, or start with `_`, on every OS. A harness without a command
+allowlist (`codex`) refuses `--allow`.
+
 **Reason:** people who want one agent on their own laptop should not need
 a paired runner, a service and a placement for it. Everything Windows
 lacked for the full runner (tmux, systemd, OS users) belongs to `serve`;
@@ -1014,3 +1022,10 @@ directory means `gc` and `workspace claim` cannot touch them.
   on runs with nothing to do.
 - `stub` as a local-mode harness: it is already the name of an internal
   action, so action names win and no harness id may take one.
+- Picking `<handle>#<instance>` before the join: the instance id comes
+  only with the single-use exchange (§3.3), so the second join would have
+  to guess it or spend the link twice (review of #1294).
+- The handle verbatim as a directory name: valid handles such as `con`,
+  `nul` or `com1` are device names Windows refuses as directory names.
+- Ignoring `--allow` for `codex`: the person would believe a restriction
+  applied that nothing enforces (§15.3 refuses such placements too).
