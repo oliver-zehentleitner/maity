@@ -656,7 +656,10 @@ too.
    and a **Copy** button (and a warning for invisible characters in it), inline code (a click, Enter
    or Space copies it, "Copied" beside it; a click that ends a selection copies nothing), strong and em, and links only when plain
    `https`; raw HTML stays visible as text. **Quote** under a message puts
-   it into the composer as a quote. Chats are also reachable from inbox entries and agent cards. The human's own messages say "not
+   it into the composer as a quote. Chats are also reachable from inbox entries and agent cards. Every
+   message, in a group chat too, shows its seq after its time (`19:04 · #54306`), small and muted, so
+   that a message an agent cites by its seq can be found; the "#" is the stylesheet's, so selecting
+   the number copies the number alone. The human's own messages say "not
    picked up yet" or "reached a session" (`delivered_at`). No event
    announces a delivery, so while one is pending, the agent's next event
    in the feed, or the window getting the focus back, re-reads the
