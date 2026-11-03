@@ -10271,6 +10271,45 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "notifications: an id the hub skips is said and the row stays unread " + JSON.stringify(waitWrites));
   win.Maity.api.get = waitGet; win.Maity.api.post = waitPost;
 
+  // A project whose only unread item is a mention (tsk-xb7bf1x0h3cy, the owner's report): the pill counts it,
+  // no tab does, so a link beside the tabs leads to the project's mentions on /notifications (§18.2 kind, project).
+  const mnGets = [], mnWrites = [];
+  const mnMention = { id: "ntf-4300", seq: 4300, kind: "mention", at: "2026-10-22T13:40:00Z",
+    project: { slug: "maity", full_name: "maintainer/maity", name: "Maity" }, actor: { member_id: "agt-b" },
+    title: "Agent B mentioned you", target: { type: "message", id: "evt-4300" }, url: "https://maity.team/maintainer/maity/messages", read: false, redacted: false };
+  const mnOnly = (a) => {
+    const by = Object.assign({}, a.by_project);
+    by["maintainer/maity"] = { member: true, inbox: 0, chat: 0, mention: 1, total: 1 };
+    by["maintainer/sample"] = { member: true, inbox: 0, chat: 0, mention: 0, total: 0 };
+    return Object.assign({}, a, { by_project: by });
+  };
+  win.Maity.api.get = (p) => {
+    mnGets.push(p);
+    if (p === "/me/notifications?limit=0") return waitGet(p).then(mnOnly);
+    if (p.startsWith("/me/notifications?limit=50")) return waitGet(p).then((r) => Object.assign({}, mnOnly(r), { items: [mnMention], next_cursor: null }));
+    return waitGet(p);
+  };
+  win.Maity.api.post = (p, b) => { if (p === "/me/notifications/read") mnWrites.push(b); return waitPost(p, b); };
+  await go("#/maintainer/sample/inbox"); await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
+  const mnTab = (label) => header.querySelectorAll("nav.views a").find((a) => a.textContent.startsWith(label));
+  expect(chipCount("Maity") === "1" && !mnTab("Inbox").querySelector(".count") && !mnTab("Chat").querySelector(".count"),
+    "mention count: the pill counts the one unread mention, the Inbox and Chat tabs count nothing");
+  const mnLink = () => header.querySelectorAll(".mention-note a").find((a) => a.textContent === "1 unread mention");
+  expect(mnLink() && mnLink().getAttribute("href") === "#/notifications?kind=mention&project=maintainer%2Fmaity",
+    "mention count: beside the tabs, a link to the project's mentions on /notifications");
+  await go("#/notifications?kind=mention&project=maintainer%2Fmaity"); for (let k = 0; k < 6; k++) await tick();
+  const mnList = mnGets.filter((p) => p.startsWith("/me/notifications?limit=50"));
+  expect(mnList.length && mnList[mnList.length - 1].includes("&kind=mention") && mnList[mnList.length - 1].includes("&project=maintainer%2Fmaity"),
+    "mention count: /notifications asks the hub for that kind and project only " + JSON.stringify(mnList));
+  expect(text(main).includes("Mentions in Maity") && main.querySelectorAll("a").some((a) => a.textContent === "All notifications" && a.getAttribute("href") === "#/notifications"),
+    "mention count: the page names its filter and leads back to all notifications");
+  btn(main, "Mark all read").click(); for (let k = 0; k < 8; k++) await tick();
+  expect(mnWrites.length === 1 && "up_to" in mnWrites[0] && mnWrites[0].kind === "mention" && mnWrites[0].project === "maintainer/maity",
+    "mention count: Mark all read there marks that kind and project only (§18.3) " + JSON.stringify(mnWrites));
+  await go("#/maintainer/sample/inbox"); for (let k = 0; k < 6; k++) await tick();
+  expect(!header.querySelectorAll(".mention-note a").length, "mention count: a project without unread mentions has no such link");
+  win.Maity.api.get = waitGet; win.Maity.api.post = waitPost;
+
   // Languages: project writes are human-admin only; personal language is not mail-gated.
   const languageGet = win.Maity.api.get;
   const languagePatch = win.Maity.api.patch;
