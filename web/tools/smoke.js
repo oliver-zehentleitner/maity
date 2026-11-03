@@ -6130,8 +6130,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && frLinks(frHead().querySelector("nav.site-nav")) === "/?lang=de#s2=So geht's"
     && frHead().querySelector("a.btn.btn-primary").getAttribute("href") === "#/register?lang=de"
     && frFollow.querySelectorAll("a").length === 1 && frFollow.querySelector("a").getAttribute("rel") === "noopener noreferrer me" && text(frFollow).includes("Bad")
-    && text(frFoot().querySelector("p.operator")) === "Wien" && frLinks(frFoot().querySelector("p.langs")) === "?lang=de=Deutsch,?lang=en=English",
+    && text(frFoot().querySelector("p.operator")) === "Wien" && frLinks(frFoot().querySelector("p.langs")) === "#/login?lang=de=Deutsch,#/login?lang=en=English",
     "frame: the model's words carry its language, a section link loads the landing page, a social link is rel=me without a referrer, an unsafe address no link");
+  // A language of the footer is this page's address, its next kept, never a bare query (the shell's <base href="/assets/">),
+  // and a click chooses the language, which the page reads only when it loads.
+  await go("#/login?next=%2Fall"); for (let k = 0; k < 6; k++) await tick();
+  const frChose = [], frChoose = win.Maity.i18n.choose;
+  win.Maity.i18n.choose = (tag) => { frChose.push(tag); return Promise.resolve(); };
+  const frDe = frFoot().querySelector("p.langs").querySelectorAll("a")[0];
+  const frDeHref = frDe.getAttribute("href");
+  frDe.click(); for (let k = 0; k < 6; k++) await tick();
+  win.Maity.i18n.choose = frChoose;
+  expect(frDeHref === "#/login?next=%2Fall&lang=de" && JSON.stringify(frChose) === '["de"]' && win.location.hash === "#/login?next=%2Fall&lang=de",
+    "frame: a footer language keeps the page's address and next, and a click chooses it " + frDeHref + " " + win.location.hash);
   // The dashboard's policy refuses inline style (default-src 'self'): the mark's colours come from public-pages.css.
   const frMark = frHead().all().filter((x) => ["RECT", "CIRCLE", "PATH"].includes(x.tagName));
   expect(frMark.length === 7 && frMark.every((x) => !("style" in x.attrs)), "frame: the mark's seven parts carry no style attribute");
@@ -6143,6 +6154,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const frAnswers = [await frFirst, await frSecond];
   expect(JSON.stringify(frAnswers) === "[false,true]" && body.childNodes.filter((x) => x.tagName === "HEADER").length === 2 && !frHead().getAttribute("lang"),
     "frame: an earlier drawing's late answer draws nothing, the later one draws once " + JSON.stringify(frAnswers));
+  // A model without its footer is no frame: the one standing goes, the app's bar comes back.
+  win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.resolve(Object.assign(frModel({}), { footer: null })) : frGet(p));
+  const frHalf = await win.Maity.siteChrome.enter("/login");
+  expect(frHalf === false && !frHead() && !frFoot() && header.hidden === false, "frame: a model without its footer draws none and takes down the one standing");
   // A failed read (a hub in maintenance answers 503): the page without the frame, the app's bar back, the legal pages
   // linked under the form as before; the door layout keeps its stylesheet.
   win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.reject(Object.assign(new Error("maintenance"), { status: 503, code: "maintenance" })) : frGet(p));

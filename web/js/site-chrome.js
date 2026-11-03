@@ -110,16 +110,28 @@ window.Maity = window.Maity || {};
     return button;
   }
 
-  // The full footer: its columns, the operator's line and the languages, each linked to this page.
+  // A language of the footer: this page's own address with ?lang=<tag>, its query kept (a sign-in's
+  // next). A path, never a bare query, which under the shell's <base href="/assets/"> would lead into
+  // /assets/ (routing.md). The dashboard reads ?lang= only when it loads, so a click chooses the
+  // language itself (as the page's own picker does) and draws the page again at that address.
+  function language(one) {
+    const at = M.route.current();
+    const query = new URLSearchParams(at.query);
+    query.set("lang", one.tag);
+    const address = at.path + "?" + query.toString();
+    if (!M.route.isRoute(address)) return h("span", { lang: one.tag }, one.name);
+    return h("a", { lang: one.tag, href: address, onclick: (e) => {
+      e.preventDefault();
+      M.i18n.choose(one.tag).then(() => { if (!M.route.go(address, { replace: true }) && M.redraw) M.redraw(); });
+    } }, one.name);
+  }
+
+  // The full footer: its columns, the operator's line and the languages.
   function siteFooter(model) {
     const foot = model.footer || {};
     const columns = (foot.columns || []).filter((c) => c && (c.links || []).length).map((c) => h("nav", { class: "foot-col", "aria-label": c.title },
       h("h3", null, c.title), h("ul", null, c.links.map((item) => h("li", null, link(item))))));
-    const languages = (foot.languages || []).map((one) => {
-      const a = h("a", { lang: one.tag }, one.name);
-      a.setAttribute("href", "?lang=" + encodeURIComponent(one.tag));
-      return a;
-    });
+    const languages = (foot.languages || []).map(language);
     return h("footer", { class: "site-footer", id: "site-footer" }, h("div", { class: "wrap" },
       h("div", { class: "foot-cols" }, columns),
       foot.operator ? h("p", { class: "operator" }, foot.operator) : null,
@@ -145,7 +157,9 @@ window.Maity = window.Maity || {};
       if (mine === round) drop();
       return false;
     }
-    if (mine !== round || !model || !model.header || !model.footer) return false;
+    if (mine !== round) return false;
+    // A model without its header or footer is no frame: the page stands as it would without one.
+    if (!model || !model.header || !model.footer) { drop(); return false; }
     drop();
     const app = bar;
     const main = document.getElementById("main");

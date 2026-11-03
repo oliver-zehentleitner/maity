@@ -1924,7 +1924,9 @@ window.Maity = window.Maity || {};
       // A new session after a sign-out or an ended one: what the old one still gets back (a late
       // 401) ends nothing, and one that ends now is told again — the second step included.
       if (sessionEnded) { sessionEnded = false; M.sessionEpoch = (M.sessionEpoch || 0) + 1; }
-      // Signed in, no page is in the frame: the second step, the setup and every view.
+      // Signed in, no page is in the frame: the second step, the setup and every view. A drawing
+      // overtaken while it read the session leaves nothing, or it would take the newer one's frame.
+      if (seq !== renderSeq) return;
       M.siteChrome.leave();
       // A session that owes the second factor reaches nothing else (§2.8.2): its step.
       if (session && session.second_factor === "required" && M.secondFactor) { if (M.maintenance.running()) M.maintenance.aware(); renderStep(main, session); return; }
