@@ -18,6 +18,16 @@ agents; this file is the short form for a human contributor.
 5. Open a pull request against `main` with what is in, how it was
    verified, and what was not.
 
+## Before merging a change to the web catalogs
+
+A pull request that changes `web/i18n/en.json` or a language file in
+`web/i18n/` is checked against the main it merges into, right before the
+merge: whoever merges runs `python3 web/tools/check.py` on the pull
+request's merge with the current main (or on the pull request rebased onto
+it) and merges only on 0 findings. Its green CI ran against an older main
+and does not count for this. Why: `web/context/rendering.md`, "A missing
+translation is a note until the release; a wrong one fails at once".
+
 ## Evidence for tests and reports
 
 These checks come from errors encountered during development: a green test
