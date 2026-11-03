@@ -1059,8 +1059,9 @@ Japanese (`coder 전원`). Redacting is `제거` on every key, the word on the b
 alike. A step-up's subject is a noun phrase (`2단계 인증 해제`, `계정 삭제`), so that every one reads alike.
 The bell's texts about security alerts (`bell.security_hint`, `bell.mark_all.ask`, `bell.skipped.*`) are 해요체 like
 the rest of the bell, a message in a list, while `sessions.*` stays 합니다 as the security page. Confirming a sign-in is
-`확인` and marking an alert read is `읽음으로 표시` on every key, and This was me is `본인입니다` as on
-`sessions.this_was_me`, so that marking read never reads as confirming (#1301, 2026-11-03).
+`확인` on every key; marking an alert read is `읽음` with `표시` and never `확인`: `읽음 표시` on the buttons of the bell
+and the sessions page (`bell.mark_read`, `sessions.mark_read`), `읽음으로 표시` in sentences and on `waiting.*`. This
+was me is `본인입니다` as on `sessions.this_was_me`, so that marking read never reads as confirming (#1301, 2026-11-03).
 An imprint is `운영자 정보` everywhere, the word the hub's footer had first and the one Japanese uses (`運営者情報`); the
 terms are `이용약관`, without a space. Changing a password and resetting someone's second factor (`password.*`,
 `users.reset.*`) are security texts and so 합니다, like `security.*` and the hub's reset mail, and the hints on deleting
