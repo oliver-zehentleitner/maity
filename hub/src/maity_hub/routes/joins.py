@@ -1035,7 +1035,7 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
         if row.placement_id is None:  # a rejoin's instance is revoked already (§15.9),
             # and `_recheck_instance` checked it: nothing to revoke, no second revocation
             old = instances.require_active(conn, member, row.replaces, "replaces")
-            revoke(conn, old.id, "replaced", by=row.created_by)
+            revoke(conn, old.id, "replaced", by=row.created_by, holder_moves=True)
             emit(
                 conn,
                 row.project_id,

@@ -495,9 +495,11 @@ both. Nothing changes an agent's owner yet, so `owner_id` holds the rule for whe
 **Revisit when:** a fourth way for a holder to stop appears, or the hub starts releasing claims itself
 
 `holder_stalled` is emitted in `hub/src/maity_hub/holder_stalled.py` from three hooks:
-`auth.leaks.revoke`, the one function every revocation passes, when its update won and the reason
-is neither `replaced` (the claims move to the new instance) nor `member_removed` (the removal
-releases them in the same transaction, so nobody is left to re-route);
+`auth.leaks.revoke`, the one function every revocation passes, when its update won and its
+caller does not say `holder_moves`: a replacement (the claims move to the new instance) and a
+member's removal (it releases them in the same transaction, so nobody is left to re-route) say
+so. The removal is the hub's reading of §6.5, which names only the replacement. The reason text
+never decides: the revoke route passes the human's own words, which can be `replaced` too;
 `availability.set_agent_limit`, only when no limit ran before (a moved `until` is no start);
 and `not_listening.check`, in the transaction that starts the episode. `claim_expired` is a pass
 the not-listening worker runs after its sweep, under the same worker claim: one event per holder
@@ -520,6 +522,8 @@ restarts and replicas without a table.
 
 **Rejected alternatives:**
 - Hooking each revoke route: a new path to revoke would forget it; `leaks.revoke` is where all end.
+- Deciding the silence by the reason (`replaced`, `member_removed`): a human revoking by hand can
+  write either word, and the holder then stops unreported.
 - A table of reported expiries: more than one row per card is never needed.
 - Reporting every expired lease on the first pass after the deploy: a burst of old news.
 

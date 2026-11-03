@@ -86,11 +86,25 @@ def test_a_revocation_reports_the_holder_with_every_card_and_releases_nothing(
     assert setup.holder(first).claim_holder is not None  # nothing released
 
 
-def test_a_replacement_says_nothing(setup: Setup) -> None:
+def test_a_caller_that_moves_the_claims_says_nothing(setup: Setup) -> None:
+    """A replacement and a removal move or release the claims themselves and say so."""
     setup.claim()
     with transaction(setup.engine) as conn:
-        holder_stalled.revoked(conn, setup.agent.credential_id, "replaced")
+        assert leaks.revoke(conn, setup.agent.credential_id, "replaced", by=None, holder_moves=True)
     assert setup.events("holder_stalled") == []
+
+
+@pytest.mark.parametrize("reason", ["replaced", "member_removed"])
+def test_a_revocation_whose_reason_looks_internal_still_reports(setup: Setup, reason: str) -> None:
+    """The reason is the revoking human's free text: only the caller's word silences."""
+    card = setup.claim()
+    revoked = setup.owner.post(
+        f"{BASE}/credentials/{setup.agent.credential_id}/revoke", {"reason": reason}
+    )
+    assert revoked.status_code == 200, revoked.text
+    [event] = setup.events("holder_stalled")
+    assert event.payload["reason"] == "session_ended"
+    assert setup.holder(card).claim_holder is not None
 
 
 def test_without_a_boss_the_admins_read_it(setup: Setup) -> None:

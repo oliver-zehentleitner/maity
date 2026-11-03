@@ -81,10 +81,19 @@ def revoke_leaked(conn: Connection, found: list[credentials.Presented]) -> list[
     return revoked
 
 
-def revoke(conn: Connection, credential_id: str, reason: str, by: str | None) -> bool:
+def revoke(
+    conn: Connection,
+    credential_id: str,
+    reason: str,
+    by: str | None,
+    *,
+    holder_moves: bool = False,
+) -> bool:
     """Revoke a credential and end its live session; True when this call revoked it
     (a conditional UPDATE decides between two at once), False when it was revoked
-    already."""
+    already. `holder_moves`: the caller moves or releases the instance's claims in the same
+    transaction (a replacement, a member's removal), so no `holder_stalled` is said; it is
+    the caller's word, never read from `reason`, which a revoking human writes freely."""
     now = clock.now()
     won = conn.execute(
         update(t.credential)
@@ -104,10 +113,10 @@ def revoke(conn: Connection, credential_id: str, reason: str, by: str | None) ->
         ).one()
         environment.refresh(conn, member.project_id, member.id)
     _lead_revoked(conn, credential_id, announce=reason != "member_removed")
-    if won == 1:  # a holder that stops (§6.5); a replacement or a removal says nothing
+    if won == 1 and not holder_moves:  # a holder that stops (§6.5)
         from maity_hub import holder_stalled
 
-        holder_stalled.revoked(conn, credential_id, reason)
+        holder_stalled.revoked(conn, credential_id)
     # Every path ends here (the leak, §10's revoke, member removal): a placement that
     # names the credential stops in the same transaction (§15.5).
     placements.credential_revoked(conn, credential_id, by)

@@ -126,11 +126,12 @@ def _excluded(session: Any, member: Any, credential: Any) -> str | None:
     return None
 
 
-def audience_of(conn: Connection, member: Any) -> list[str]:
+def audience_of(conn: Connection, member: Any, *, admins_always: bool = True) -> list[str]:
     """The member the agent reports to, the admins, and the profile's owner when a
-    member (§8.2)."""
-    audience = ["trust:admin"]
+    member (§8.2). Without `admins_always` the admins read only when there is no member to
+    report to (`holder_stalled`, `claim_expired`)."""
     boss = routing_boss(conn, member.reports_to)
+    audience = [] if boss is not None and not admins_always else ["trust:admin"]
     if boss is not None:
         audience.insert(0, f"member:{boss}")
     owner = conn.execute(

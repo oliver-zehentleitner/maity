@@ -6,10 +6,10 @@ the holding instance through its `instance:` token, which these two kinds never 
 (`events.wakes`). Only open cards count: a closed card keeps its holder's columns.
 
 `holder_stalled` comes from three places: a limit that starts (`availability.set_agent_limit`),
-a revocation that is neither a replacement nor a member's removal, which moves or releases
-the claims itself (`auth.leaks.revoke`), and the start of a not-listening
-episode (`not_listening.check`). `claim_expired` comes from the minute worker: one event per
-holder and pass for the claims whose `lease_until` passed since it last looked
+a revocation that is neither a replacement nor a member's removal, which move or release the
+claims themselves and say so to `auth.leaks.revoke` (`holder_moves`), and the start of a
+not-listening episode (`not_listening.check`). `claim_expired` comes from the minute worker: one
+event per holder and pass for the claims whose `lease_until` passed since it last looked
 (`card.lease_expiry_reported` holds the `lease_until` it named).
 """
 
@@ -25,7 +25,6 @@ from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.cards import CLOSED as CLOSED_CARDS
 from maity_hub.events import emit, lock_project, transaction
-from maity_hub.views import routing_boss
 
 log = logging.getLogger(__name__)
 
@@ -110,7 +109,9 @@ def _payload(
 def _emit(
     conn: Connection, member: Any, instance: str | None, kind: str, cards: list[Any], cause: str
 ) -> None:
-    audience = _audience(conn, member)
+    from maity_hub.not_listening import audience_of
+
+    audience = audience_of(conn, member, admins_always=False)  # §8.2: admins without a boss
     if instance is not None:
         audience.append(f"instance:{member.agent_id}#{instance}")
     emit(
@@ -121,26 +122,6 @@ def _emit(
         _payload(conn, member, instance, cards, cause),
         subject=("member", member.agent_id),
     )
-
-
-def _audience(conn: Connection, member: Any) -> list[str]:
-    """The member the agent reports to, else `trust:admin`; the profile's owner when a
-    member (§8.2)."""
-    boss = routing_boss(conn, member.reports_to)
-    audience = [f"member:{boss}"] if boss is not None else ["trust:admin"]
-    owner = conn.execute(
-        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == member.agent_id)
-    ).scalar()
-    owner_member = conn.execute(
-        select(t.membership.c.id).where(
-            t.membership.c.project_id == member.project_id,
-            t.membership.c.human_id == owner,
-            t.membership.c.active.is_(True),
-        )
-    ).first()
-    if owner_member is not None and f"member:{owner}" not in audience:
-        audience.append(f"member:{owner}")
-    return audience
 
 
 def _member(conn: Connection, membership_id: int) -> Any:
@@ -172,12 +153,10 @@ def limit_started(conn: Connection, membership_id: int) -> None:
         stalled(conn, membership_id, instance, "limit")
 
 
-def revoked(conn: Connection, credential_id: str, reason: str) -> None:
-    """The instance's session ended by a revocation (§6.5). A replacement (`replaced`) moves
-    the claims to the new instance, and a removal (`member_removed`) releases them in the same
-    transaction: neither leaves a holder to report."""
-    if reason in ("replaced", "member_removed"):
-        return
+def revoked(conn: Connection, credential_id: str) -> None:
+    """The instance's session ended by a revocation (§6.5). A replacement moves the claims to
+    the new instance and a removal releases them in the same transaction: both say so to
+    `auth.leaks.revoke` (`holder_moves`), which then does not call this."""
     row = conn.execute(
         select(t.credential.c.membership_id, t.credential.c.instance).where(
             t.credential.c.id == credential_id
