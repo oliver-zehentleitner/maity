@@ -80,7 +80,7 @@ def _repository(url: str | None) -> str | None:
     if not isinstance(url, str):
         return None
     match = _NAME.fullmatch(url)
-    if match is None or match.group(2) in (".", ".."):
+    if match is None or match.group(2) in (".", "..", ".git"):
         return None
     return f"{match.group(1)}/{match.group(2)}".lower()  # ASCII only: ASCII case folding
 
@@ -92,7 +92,7 @@ def named(members: list[ktw.Member], own: str) -> list[str]:
     for member in members:
         candidates: list[str | None] = []
         if (member.error or {}).get("reason") == "location_not_followed":
-            candidates.append(member.path)
+            candidates.append(member.location)
         candidates.append(member.parent)
         for url in candidates:
             repository = _repository(url)
@@ -142,7 +142,7 @@ class ForeignCache:
         try:
             with self.guard:
                 current = self.entries.get(key)
-            if current is not None and ktw._now() - current.at < max(max_age, ktw.FORCE_INTERVAL):
+            if current is not None and ktw._now() - current.at < _refresh(max_age):
                 return current, False
             held = f"{project_id}|{repository}"
             if current is None and _held("family", held):
@@ -171,6 +171,15 @@ class ForeignCache:
         return _Foreign(family, None, now)
 
 
+VISIBILITY_SECONDS = 600  # a named repository's visibility, read again at least this often
+
+
+def _refresh(max_age: int) -> float:
+    """How long a named repository's family and visibility answer: `max_age` (at least
+    FORCE_INTERVAL), never more than VISIBILITY_SECONDS (§11.5)."""
+    return min(max(max_age, ktw.FORCE_INTERVAL), VISIBILITY_SECONDS)
+
+
 def _visibility(reader: forge.Forge, repository: str) -> str | None:
     """None when the forge reports the repository public; else why it is not served:
     `repository_moved` for a redirect (never followed, §11.4), `not_public` for a private
@@ -194,8 +203,15 @@ _slots: dict[str, threading.BoundedSemaphore] = {}
 _slots_guard = threading.Lock()
 
 
+SLOTS_KEPT = 1024
+
+
 def _slot(project_id: str) -> threading.BoundedSemaphore:
     with _slots_guard:
+        if project_id not in _slots and len(_slots) >= SLOTS_KEPT:
+            # forget the projects with no read in flight; one in use is kept
+            for idle in [p for p, sem in _slots.items() if sem._value == ktw.IN_FLIGHT]:
+                del _slots[idle]
         return _slots.setdefault(project_id, threading.BoundedSemaphore(ktw.IN_FLIGHT))
 
 

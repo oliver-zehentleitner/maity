@@ -399,12 +399,14 @@ def test_named_repositories_keep_the_family_order(fake: Fake) -> None:
         ktw.Member(path="", name=None, parent="https://github.com/acme/up"),
         ktw.Member(
             path="https://github.com/acme/kid",
+            location="https://github.com/acme/kid",
             name="kid",
             error={"code": "ktw_unavailable", "reason": "location_not_followed"},
         ),
         ktw.Member(path="hub", name="hub", parent="https://github.com/ACME/up"),
         ktw.Member(
             path="https://gitlab.example/a/b",
+            location="https://gitlab.example/a/b",
             name="x",
             error={"code": "ktw_unavailable", "reason": "location_not_followed"},
         ),
@@ -497,6 +499,9 @@ def test_the_answer_splices_the_kept_bytes_as_valid_json() -> None:
         ("git@github.com:acme/other.git", None),
         ("../other", None),
         ("https://github.com/acme/other\n", None),
+        ("https://github.com/acme/.git", None),
+        ("https://github.com/acme/.git/", None),
+        ("https://github.com/ac\u200bme/other", None),  # zero-width space
         ("https://github.com/\u043ewner/repo", None),  # Cyrillic о
         ("https://github.com/owner/r\u0435po", None),  # Cyrillic е
         ("https://github.com/owner/r\u0130po", None),  # dotted capital I, which lower() changes
@@ -513,6 +518,7 @@ def test_a_name_in_another_form_takes_no_place(fake: Fake) -> None:
     def child(path: str) -> ktw.Member:
         return ktw.Member(
             path=path,
+            location=path,
             name="x",
             error={"code": "ktw_unavailable", "reason": "location_not_followed"},
         )
@@ -596,3 +602,131 @@ def test_a_spent_budget_is_probe_unavailable_with_retry_at(
     assert error["code"] == "probe_unavailable"
     assert error["details"]["retry_at"].startswith("2026-11-03T12:00:00")
     assert fake.state_reads == []
+
+
+# --- the review of #1280: surrogates, finite numbers, raw names, visibility -------------------
+
+
+def test_a_lone_surrogate_is_served_escaped_not_a_500(owner: flow.Human, fake: Fake) -> None:
+    fake.family()
+    fake.states[f"{BASE}/state.json"] = (
+        b'{"state-json": 2, "entries": [{"id": "a", "title": "x\\ud800y", "status": "open"}],'
+        b' "bodies": "state.body.json"}'
+    )
+    fake.states[f"{BASE}/state.body.json"] = b'{"bodies": {"a": {"text": "t\\udc00"}}}'
+    project(owner)
+    summary = owner.get(PATH).json()
+    root = next(m for m in summary["members"] if m["path"] == "")
+    assert root["error"] is None, "§11.3 reads it as before"
+    state = owner.get(f"{PATH}/export")
+    assert state.status_code == 200
+    assert (
+        b"\\ud800" in state.content and state.json()["state"]["entries"][0]["title"] == "x\ud800y"
+    )
+    bodies = owner.get(f"{PATH}/bodies")
+    assert bodies.status_code == 200
+    assert bodies.json()["bodies"]["a"]["text"] == "t\udc00"
+    state.content.decode("ascii")  # escaped: the answer is plain ASCII
+
+
+@pytest.mark.parametrize("number", [b"1e400", b"-1e400", b"1" + b"0" * 400 + b".0"])
+def test_a_number_too_large_to_be_finite_is_not_json(
+    owner: flow.Human, fake: Fake, number: bytes
+) -> None:
+    fake.family()
+    fake.states[f"{BASE}/cli/state.json"] = (
+        b'{"state-json": 2, "entries": [], "x": ' + number + b"}"
+    )
+    project(owner)
+    answer = owner.get(f"{PATH}/export", params={"root": "cli"})
+    assert answer.status_code == 503
+    assert answer.json()["error"]["details"]["reason"] == "not_json"
+
+
+def test_a_name_is_checked_as_written_before_cleaning(owner: flow.Human, fake: Fake) -> None:
+    fake.files[".keep-the-why"] = kfile(
+        f"{BASE}/state.json", "acme---widget", ["- other: https://github.com/ac\u200bme/other — x"]
+    ).replace(b"- context:", "- parent: https://github.com/acme/oth\u200ber\n- context:".encode())
+    fake.states[f"{BASE}/state.json"] = export(entry(1))
+    other_repository(fake)
+    project(owner)
+    answer = owner.get(f"{PATH}/export", params={"canonical": OTHER})
+    assert answer.status_code == 404
+    assert answer.json()["error"]["details"]["reason"] == "not_in_family"
+
+
+def test_the_visibility_is_read_again_within_600_seconds_whatever_max_age(
+    owner: flow.Human, fake: Fake, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = [1000.0]
+    monkeypatch.setattr(ktw, "_now", lambda: now[0])
+    fake.family()
+    other_repository(fake)
+    project(owner)
+    params = {"canonical": OTHER, "max_age": 86400}
+    assert owner.get(f"{PATH}/export", params=params).status_code == 200
+    asked = len(fake.public_asked)  # type: ignore[attr-defined]
+    now[0] += 599
+    assert owner.get(f"{PATH}/export", params=params).status_code == 200
+    assert len(fake.public_asked) == asked  # type: ignore[attr-defined]
+    fake.public.clear()  # type: ignore[attr-defined]
+    now[0] += 2
+    gone = owner.get(f"{PATH}/export", params=params)
+    assert gone.status_code == 404 and gone.json()["error"]["details"]["reason"] == "not_public"
+
+
+class _Reader:
+    """A forge reader whose `_get` answers as told (§11.5's `_visibility` against it)."""
+
+    def __init__(self, answer: Any) -> None:
+        self.answer = answer
+        self.asked: list[tuple[str, bool]] = []
+
+    def _get(self, path: str, *, uncached: bool = False) -> Any:
+        self.asked.append((path, uncached))
+        if isinstance(self.answer, BaseException):
+            raise self.answer
+        return self.answer
+
+
+@pytest.mark.parametrize(
+    ("answer", "expected"),
+    [
+        ({"private": False}, None),
+        ({"private": True}, "not_public"),  # also when the token can read it: never served
+        ({}, "not_public"),
+        ({"private": None}, "not_public"),
+        ({"private": "false"}, "not_public"),
+        (None, "not_public"),  # 404
+        ([], "not_public"),
+        (forge.NotCoveredError("no_grant"), "not_public"),
+        (forge.NotCoveredError("private_without_grant"), "not_public"),
+        (forge.NotCoveredError("repository_moved"), "repository_moved"),
+        (forge.ForgeUnavailableError("down"), "not_public"),
+    ],
+)
+def test_the_real_visibility_check(answer: Any, expected: str | None) -> None:
+    reader = _Reader(answer)
+    assert ktw_reads._visibility(reader, "acme/other") == expected  # type: ignore[arg-type]
+    assert reader.asked == [("/repos/acme/other", True)], "asks the forge itself, by the name"
+
+
+def test_the_visibility_check_passes_a_spent_budget_on() -> None:
+    from datetime import UTC, datetime
+
+    spent = forge.ForgeUnavailableError("rate limited")
+    spent.retry_at = datetime(2026, 11, 3, 12, 0, tzinfo=UTC)
+    with pytest.raises(forge.ForgeUnavailableError):
+        ktw_reads._visibility(_Reader(spent), "acme/other")  # type: ignore[arg-type]
+
+
+def test_the_project_slots_stay_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ktw_reads, "SLOTS_KEPT", 3)
+    busy = ktw_reads._slot("busy")
+    busy.acquire()
+    try:
+        for n in range(10):
+            ktw_reads._slot(f"p{n}")
+        assert len(ktw_reads._slots) <= 4 and ktw_reads._slots["busy"] is busy
+    finally:
+        busy.release()

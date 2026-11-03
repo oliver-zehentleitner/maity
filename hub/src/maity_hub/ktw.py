@@ -17,6 +17,7 @@ import hashlib
 import ipaddress
 import json
 import logging
+import math
 import re
 import threading
 import time
@@ -324,11 +325,19 @@ def _no_constant(name: str) -> Any:
     raise ValueError(f"{name} is not JSON")
 
 
+def _finite(number: str) -> float:
+    value = float(number)
+    if math.isinf(value):  # 1e400: JSON.parse reads Infinity, which JSON cannot write back
+        raise ValueError("a number too large to be finite")
+    return value
+
+
 def parse(body: bytes) -> Any:
-    """A JSON document as a browser's JSON.parse reads it: UTF-8, no NaN or Infinity;
-    `MemberError("not_json")` otherwise."""
+    """A JSON document as a browser's JSON.parse reads it: UTF-8, no NaN or Infinity, no
+    number too large to be finite; `MemberError("not_json")` otherwise. A lone surrogate in
+    a string is kept; it is written back escaped (`RawStore.put`)."""
     try:
-        return json.loads(body.decode("utf-8"), parse_constant=_no_constant)
+        return json.loads(body.decode("utf-8"), parse_constant=_no_constant, parse_float=_finite)
     except (ValueError, UnicodeDecodeError, RecursionError):  # nesting deep enough to recurse
         raise MemberError("not_json") from None
 
@@ -374,7 +383,8 @@ class RawStore:
             return found
 
     def put(self, kind: str, url: str, data: Any, bodies: str | None = None) -> Raw:
-        body = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode()
+        # ASCII with escapes: a lone surrogate, which UTF-8 cannot encode, stays `\ud800`
+        body = json.dumps(data, ensure_ascii=True, separators=(",", ":")).encode()
         raw = Raw(
             url, body, hashlib.sha256(body).hexdigest(), _now(), clock.rfc3339(clock.now()), bodies
         )
@@ -411,6 +421,7 @@ class Member:
     read: Read | None = None
     error: dict[str, Any] | None = None
     parent: str | None = None  # the config block's `parent:` line, as written (§11.5)
+    location: str | None = None  # a location not followed, as written (§11.5)
 
     def view(self) -> dict[str, Any]:
         return {
@@ -460,7 +471,8 @@ def walk(reader: forge.Forge, repository: str, deadline: float | None = None) ->
             path=path,
             name=name,
             id=text(settings.get("id"), 200),
-            parent=text(settings.get("parent"), 2048),
+            # as written: §11.5 checks a repository's name before anything is removed from it
+            parent=settings.get("parent", "")[:2048] or None,
         )
         state = settings.get("dashboard-state")
         if not state:
@@ -482,7 +494,12 @@ def walk(reader: forge.Forge, repository: str, deadline: float | None = None) ->
                     continue  # nothing left to show, or listed already: never a second ""
                 seen.add(shown)
                 members.append(
-                    Member(path=shown, name=clean_name, error=_error("location_not_followed"))
+                    Member(
+                        path=shown,
+                        name=clean_name,
+                        error=_error("location_not_followed"),
+                        location=location[:2048],
+                    )
                 )
                 continue
             if target in seen:
