@@ -1837,6 +1837,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const whyTab = () => header.querySelectorAll("nav.views a").find((a) => a.textContent === "Why");
   expect(whyTab() && whyTab().getAttribute("href") === "#/maintainer/maity/why", "why: a tab where the hub has the export");
   const ktwLoaded = [];
+  let ktwGraphFailed = false;
   const ktwCalls = [];
   let ktwNav = null;
   const fakeKtw = {
@@ -1870,7 +1871,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     if (src && src.startsWith("vendor/keep-the-why/")) {
       ktwLoaded.push(src.slice("vendor/keep-the-why/".length));
       if (src.endsWith("ktw-pages.js")) win.KeepTheWhy = fakeKtw;
-      if (el.tagName === "SCRIPT") Promise.resolve().then(() => el.dispatch("load"));
+      // the first try of ktw-graph.js fails: the next visit loads only what is missing
+      const failNow = src.endsWith("ktw-graph.js") && !ktwGraphFailed;
+      if (failNow) ktwGraphFailed = true;
+      if (el.tagName === "SCRIPT") Promise.resolve().then(() => el.dispatch(failNow ? "error" : "load"));
     }
     return el;
   };
@@ -1880,8 +1884,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!win.KeepTheWhy, "why: the library is not loaded before the first visit to Why");
   await go("#/maintainer/maity/why"); for (let k = 0; k < 15; k++) await tick();
   const manifest = JSON.parse(fs.readFileSync(path.join(WEB, "vendor/keep-the-why/ktw-views.json"), "utf8"));
-  expect(JSON.stringify(ktwLoaded) === JSON.stringify(manifest.styles.concat(manifest.scripts)),
-    "why: the first visit loads the vendored files once, the stylesheet and the scripts in the manifest's order");
+  expect(main.querySelector(".error") && btn(main, "Read again") && !text(main).includes("overview page"),
+    "why: a file of the library that fails to load is said, with Read again");
+  btn(main, "Read again").click(); for (let k = 0; k < 20; k++) await tick();
+  const ktwOnce = [...new Set(ktwLoaded)];
+  expect(JSON.stringify(ktwOnce) === JSON.stringify(manifest.styles.concat(manifest.scripts))
+    && ktwLoaded.length === ktwOnce.length + 1 && ktwLoaded.filter((f) => f === "ktw-graph.js").length === 2,
+    "why: the files load in the manifest's order, the stylesheet once; after a failure only what is missing loads again");
   expect(text(main).includes("overview page") && whyGets.includes("/projects/maintainer/maity/keep-the-why/export"),
     "why: the overview, from the hub's export (§11.5)");
   const ktwMain = main.querySelector(".why-main");
@@ -1891,7 +1900,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(places.length === 5 && places[1].getAttribute("href") === "#/maintainer/maity/why/graph"
     && places[0].getAttribute("aria-current") === "page", "why: the places as paths below Why, the current one marked");
   await go("#/maintainer/maity/board"); await go("#/maintainer/maity/why/topic/api.md"); for (let k = 0; k < 6; k++) await tick();
-  expect(ktwLoaded.length === 11 && whyGets.filter((p) => p.includes("/keep-the-why/export")).length === 1,
+  expect(ktwLoaded.length === 12 && whyGets.filter((p) => p.includes("/keep-the-why/export")).length === 1,
     "why: a second visit loads nothing again and reads no export again");
   expect(text(main).includes("topic api.md") && ktwCalls.some((c) => c[0] === "topic" && c[1] === "api.md"),
     "why: a path below Why is the library's place (topic/api.md)");
@@ -1905,6 +1914,29 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "why: a repository outside the family is the library's error, in Maity's words");
   const inline = await P.bodies({ entries: [] });
   expect(inline.state && !inline.error, "why: an export with its bodies inline asks for nothing");
+  // The export unreadable: the hub's last good read with the reason, or the reason and Read again.
+  const ktwExport = await realGet6("/projects/maintainer/maity/keep-the-why/export");
+  const ktwRefuse = (code, details) => { win.Maity.api.get = (p) => (p.includes("/keep-the-why/export")
+    ? Promise.reject(new win.Maity.api.ApiError("refused", 503, p, code, details)) : realGet6(p)); };
+  ktwRefuse("ktw_unavailable", { reason: "timeout", last: Object.assign({}, ktwExport, { fresh: false }) });
+  btn(main, "Read again").click(); for (let k = 0; k < 10; k++) await tick();
+  expect(text(main).includes("shown is its last good read") && main.querySelector(".why-main"),
+    "why: the export unreadable, its last good read is shown and said so");
+  ktwRefuse("ktw_unavailable", { reason: "timeout" });
+  btn(main, "Read again").click(); for (let k = 0; k < 10; k++) await tick();
+  expect(!main.querySelector(".why-main") && main.querySelector(".flag") && btn(main, "Read again"),
+    "why: no last read, the reason and Read again");
+  ktwRefuse("probe_unavailable", { retry_at: "2026-11-03T12:00:00Z" });
+  btn(main, "Read again").click(); for (let k = 0; k < 10; k++) await tick();
+  expect(text(main).includes("rate limit is spent until"), "why: a spent forge budget says until when");
+  const ktwLinked = JSON.parse(JSON.stringify(ktwExport));
+  ktwLinked.state.entries[0].see = [{ remote: "http://plain.example/x" }, { remote: "https://ok.example/y" }];
+  win.Maity.api.get = (p) => (p.includes("/keep-the-why/export") ? Promise.resolve(ktwLinked) : realGet6(p));
+  const ktwSeen = await P.exportState("", "");
+  expect(!("remote" in ktwSeen.state.entries[0].see[0]) && ktwSeen.state.entries[0].see[1].remote === "https://ok.example/y",
+    "why: a link from an export that is not plain https is dropped before the library sees it");
+  win.Maity.api.get = realGet6;
+  btn(main, "Read again").click(); for (let k = 0; k < 10; k++) await tick();
   win.Maity.api.get = realGet6;
   head.appendChild = headAppend;
   await go("#/maintainer/sample/why"); for (let k = 0; k < 6; k++) await tick();

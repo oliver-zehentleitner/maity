@@ -932,6 +932,12 @@ def check_vendor():
             loaded = re.findall(r'"([^"]+)"', found.group(1)) if found else None
             if loaded != listed:
                 finding(host, 1, "%s is not the vendored manifest's %s in its order" % (name, name.lower()))
+        # loaded from the vendored copy alone, by the one loader
+        if 'const DIR = "vendor/keep-the-why/";' not in src:
+            finding(host, 1, 'DIR is not "vendor/keep-the-why/": the library loads from its vendored copy only')
+        for what in ('h("script"', 'h("link"'):
+            if src.count(what) != 1:
+                finding(host, 1, "%s appears %d times: only load() inserts the library's files" % (what, src.count(what)))
     for name in sorted(os.listdir(VENDOR)):
         if not name.endswith((".js", ".css")):
             continue

@@ -3897,7 +3897,12 @@ window.Maity = window.Maity || {};
       if (query.get("canonical") || query.get("root")) {
         fail(404, "not_found", "not a repository of this project's family", path, { reason: "not_in_family" });
       }
-      return JSON.parse(JSON.stringify(file(m[1], "keep-the-why-export.json", path)));
+      const answer = JSON.parse(JSON.stringify(file(m[1], "keep-the-why-export.json", path)));
+      if (fixtureKtw === "unavailable") {
+        fail(503, "ktw_unavailable", "the Keep the Why export could not be read", path,
+          { reason: "forge_unavailable", last: Object.assign(answer, { fresh: false }) });
+      }
+      return answer;
     }],
     ["GET", /^\/projects\/([^/]+)\/keep-the-why\/bodies$/, (m, body, path) => {
       fail(404, "not_found", "this export carries its bodies inline", path, { reason: "no_bodies_file" });

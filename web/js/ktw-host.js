@@ -26,21 +26,34 @@ window.Maity = window.Maity || {};
 
   // --- loading: once per page, on the first visit to Why ------------------------------------
 
+  // Loaded only when every file is: a file that failed leaves the library incomplete, and the
+  // next visit appends just the files still missing (the stylesheet once).
   let loading = null;
+  let ready = false;
+  let styled = false;
+  const done = new Set();
   function load() {
-    if (window.KeepTheWhy) return Promise.resolve(window.KeepTheWhy);
+    if (ready) return Promise.resolve(window.KeepTheWhy);
     if (loading) return loading;
     loading = new Promise((resolve, reject) => {
-      for (const name of STYLES) append(document.head, h("link", { rel: "stylesheet", href: DIR + name }));
+      if (!styled) {
+        for (const name of STYLES) append(document.head, h("link", { rel: "stylesheet", href: DIR + name }));
+        styled = true;
+      }
       // In order, one after the other: each file uses the ones before it.
       const next = (i) => {
+        if (i < SCRIPTS.length && done.has(SCRIPTS[i])) { next(i + 1); return; }
         if (i >= SCRIPTS.length) {
-          if (window.KeepTheWhy) resolve(window.KeepTheWhy);
-          else reject(new Error(M.t("why.lib.not_loaded")));
+          loading = null;
+          if (window.KeepTheWhy && window.KeepTheWhy.views && window.KeepTheWhy.views.pages) {
+            ready = true;
+            resolve(window.KeepTheWhy);
+          } else reject(new Error(M.t("why.lib.not_loaded")));
           return;
         }
-        const s = h("script", { src: DIR + SCRIPTS[i], onload: () => next(i + 1),
-          onerror: () => { loading = null; reject(new Error(M.t("why.lib.not_loaded"))); } });
+        const s = h("script", { src: DIR + SCRIPTS[i],
+          onload: () => { done.add(SCRIPTS[i]); next(i + 1); },
+          onerror: () => { s.remove(); loading = null; reject(new Error(M.t("why.lib.not_loaded"))); } });
         append(document.head, s);
       };
       next(0);
@@ -53,13 +66,27 @@ window.Maity = window.Maity || {};
   // A refusal in Maity's words, as the library shows it beside what it could not read.
   function failure(err) {
     const reason = err && err.details && err.details.reason;
-    if (err && err.code === "probe_unavailable") return M.t("why.lib.error.budget");
+    if (err && err.code === "probe_unavailable") {
+      const at = err.details && err.details.retry_at;
+      return at ? M.t("why.lib.error.budget_until", { time: M.dom.formatTime(at) }) : M.t("why.lib.error.budget");
+    }
     if (err && err.code === "probe_not_configured") return M.t("why.lib.error.no_access");
     if (reason === "not_in_family") return M.t("why.lib.error.not_in_family");
     if (reason === "not_public") return M.t("why.lib.error.not_public");
     if (reason === "family_cap") return M.t("why.lib.error.family_cap");
     if (reason) return M.why.reasonText({ reason, status: err.details.status, version: err.details.version });
     return (err && err.message) || M.t("why.reason.unavailable");
+  }
+
+  // A link the library takes from an export (a See into another repository) is used only
+  // when plain https (context/rendering.md); any other is dropped before the library sees it.
+  function httpsOnly(raw) {
+    for (const e of (raw && Array.isArray(raw.entries) ? raw.entries : [])) {
+      for (const see of (e && Array.isArray(e.see) ? e.see : [])) {
+        if (see && typeof see === "object" && "remote" in see && !M.dom.safeUrl(see.remote)) delete see.remote;
+      }
+    }
+    return raw;
   }
 
   function provider(base) {
@@ -72,12 +99,17 @@ window.Maity = window.Maity || {};
       return s ? "?" + s : "";
     };
     async function exportState(canonical = "", root = "") {
-      try {
-        const r = await M.api.get(base + "/keep-the-why/export" + query(canonical, root));
-        const state = window.KeepTheWhy.core.normalizeState(r.state);
+      const read = (r) => {
+        const state = window.KeepTheWhy.core.normalizeState(httpsOnly(r.state));
         origin.set(state, { canonical: canonical ? r.canonical : "", root: r.root });
         return { state, url: r.url, canonical: r.canonical, root: r.root, raw: null };
+      };
+      try {
+        return read(await M.api.get(base + "/keep-the-why/export" + query(canonical, root)));
       } catch (err) {
+        const last = err && err.code === "ktw_unavailable" && err.details && err.details.last;
+        // the hub's last good read of it (§11.5), said as such beside it
+        if (last && last.state) return Object.assign(read(last), { stale: failure(err), at: last.observed_at });
         return { error: failure(err), code: err && err.code, canonical, root, raw: null };
       }
     }
@@ -90,7 +122,7 @@ window.Maity = window.Maity || {};
         try {
           const r = await M.api.get(base + "/keep-the-why/bodies" + query(from.canonical, from.root));
           for (const e of state.entries) {
-            const b = r.bodies[e.id];
+            const b = Object.hasOwn(r.bodies, e.id) ? r.bodies[e.id] : null;
             if (b != null) e.body = b && typeof b === "object" ? b : { text: String(b), reason: "" };
           }
           state.bodiesLoaded = true;
@@ -117,11 +149,11 @@ window.Maity = window.Maity || {};
 
   let host = null;
 
-  // The path of Why in this project: what the address has up to and with /why.
+  // The path of Why in this project: /<owner>/<slug>/why, from the address's first two segments
+  // (a project's address, app.js parseRoute), never by searching the text for "/why".
   function whyPath() {
-    const path = M.route.current().path;
-    const at = path.indexOf("/why");
-    return at < 0 ? path.replace(/\/$/, "") + "/why" : path.slice(0, at + 4);
+    const parts = M.route.current().path.split("/").filter(Boolean);
+    return "/" + parts.slice(0, 2).join("/") + "/why";
   }
 
   function routeOf(args) {
@@ -136,6 +168,7 @@ window.Maity = window.Maity || {};
     const first = await P.state();
     if (first.error) return { error: first.error, code: first.code };
     const state = first.state;
+    const stale = first.stale ? { reason: first.stale, at: first.at } : null;
     const prefix = whyPath();
     let current = { view: "overview" };
     const pathOf = (route) => prefix + "/" + K.core.routes.format(route).slice(1); // the format's leading hash dropped
@@ -154,7 +187,7 @@ window.Maity = window.Maity || {};
     let G = null;
     const graphOf = () => (G ||= Object.assign({ scale: 1, ox: 0, oy: 0, showEntries: true, showLabels: true, alpha: 1 },
       graphView.assemble(state.topics, state.entries)));
-    return { K, P, state, nav, scene, family, search, thoughts, pages, graphView, timeline, graphOf, slug: prefix,
+    return { K, P, state, stale, nav, scene, family, search, thoughts, pages, graphView, timeline, graphOf, slug: prefix,
       setRoute: (r) => { current = r; } };
   }
 
@@ -222,10 +255,16 @@ window.Maity = window.Maity || {};
     place(x, route, main, aside);
   }
 
-  function toolbar(x, route) {
-    return h("nav", { class: "why-places", "aria-label": M.t("why.lib.places") },
-      Object.keys(PLACES).map((view) => h("a", { href: x.slug + (view === "overview" ? "" : "/" + view),
-        "aria-current": route.view === view ? "page" : null }, PLACES[view]())));
+  // Read again drops what this page holds of the project and reads its export anew.
+  const readAgain = (ctx) => h("button", { type: "button", class: "small", onclick: () => { host = null; ctx.refresh(); } }, M.t("why.lib.read_again"));
+
+  function toolbar(x, route, ctx) {
+    const again = readAgain(ctx);
+    return h("div", { class: "toolbar why-toolbar" },
+      h("nav", { class: "why-places", "aria-label": M.t("why.lib.places") },
+        Object.keys(PLACES).map((view) => h("a", { href: x.slug + (view === "overview" ? "" : "/" + view),
+          "aria-current": route.view === view ? "page" : null }, PLACES[view]()))),
+      again);
   }
 
   M.views.why = async function (ctx, root, args) {
@@ -235,26 +274,32 @@ window.Maity = window.Maity || {};
     try {
       await load();
     } catch (err) {
-      append(clear(root), M.errorBox(err));
+      append(clear(root), M.errorBox(err), readAgain(ctx));
       return;
     }
-    if (!host || host.base !== ctx.base) {
+    // Kept per project and per reader: another project, or another person signed in in this
+    // tab, reads anew.
+    const key = ctx.base + "|" + ((ctx.me && ctx.me.id) || "");
+    if (!host || host.key !== key) {
+      host = null;
       const made = await makeHost(ctx);
       if (made.code === "ktw_not_configured") {
         append(clear(root), M.why.emptyState(ctx));
         return;
       }
       if (made.error) {
-        append(clear(root), h("h2", null, M.t("why.title")), h("p", { class: "flag" }, made.error));
+        append(clear(root), h("h2", null, M.t("why.title")), h("p", { class: "flag" }, made.error), readAgain(ctx));
         return;
       }
-      host = Object.assign(made, { base: ctx.base });
+      host = Object.assign(made, { key });
     }
     const route = routeOf(args);
     host.setRoute(route);
     const main = h("div", { class: "ktw-root why-main", translate: "no" });
     const aside = h("aside", { class: "ktw-root ktw-aside why-aside", translate: "no" });
-    append(clear(root), toolbar(host, route), h("div", { class: "why-layout" }, main, aside));
+    const note = host.stale ? h("p", { class: "flag" }, M.t("why.lib.stale", { reason: host.stale.reason,
+      ago: host.stale.at ? M.dom.formatAgo(host.stale.at) : "" })) : null;
+    append(clear(root), toolbar(host, route, ctx), note, h("div", { class: "why-layout" }, main, aside));
     draw(host, route, main, aside);
   };
 

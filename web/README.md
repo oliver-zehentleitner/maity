@@ -805,7 +805,9 @@ too.
    where the library would show it. Its colours are Maity's (`--ktw-*` in `css/app.css`), its
    settings kept in the browser (`maity-ktw-<key>`). The library's own words are English for now
    and marked `translate="no"` (`context/views.md`); entry text is the repository's and shown
-   as text. When the project publishes no export (`ktw_not_configured`) the view says what the
+   as text. When the hub cannot read the export, its last good read is shown with the reason;
+   **Read again** drops what the page holds and reads anew; a link from an export is used only
+   when plain https. When the project publishes no export (`ktw_not_configured`) the view says what the
    hub reads (the root `.keep-the-why`'s `dashboard-state` line). The family's summary as the
    hub reads it (§11.3) stays on **All projects → Why**.
 9. **Runners** (`/<owner>/<slug>/runners`, owner and admin, no tab of its
