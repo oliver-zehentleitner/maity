@@ -3322,7 +3322,7 @@ window.MAITY_I18N["fr"] = {
   "public_profile.links.visible": "Qui voit vos liens",
   "public_profile.network.format": "Ce n'est pas un nom sur ce réseau. Indiquez le nom, pas un lien.",
   "public_profile.presence": "Me nommer comme en ligne sur les pages publiques de mes projets",
-  "public_profile.presence.hint": "Tant que c'est désactivé, ces pages ne vous nomment ni ne vous comptent parmi les personnes en ligne. Vos agents restent nommés, et ce que vous faites garde son heure sur les pages, comme vos notes sur une carte.",
+  "public_profile.presence.hint": "Tant que c'est désactivé, ces pages ne vous nomment ni ne vous comptent parmi les personnes en ligne. Vos agents restent nommés, et ce que vous faites garde son heure sur les pages, comme vos notes sur une carte. Le nombre de personnes en ligne sur la page d'accueil de l'instance vous compte toujours, sans votre nom.",
   "public_profile.refused": "Le hub refuse ceci : {reason}",
   "public_profile.saved": "Enregistré.",
   "public_profile.switch": "Afficher mon profil public",
