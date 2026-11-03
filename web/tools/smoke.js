@@ -10992,6 +10992,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(mtBanner() && mtBanner().className === "maintenance-banner running" && mtSection() && text(mtSection()).includes("Running since")
     && byId("maintenance-from").disabled && text(main).includes("Back to Maity") && !header.querySelector("nav.switcher"),
   "maintenance: running, the admin keeps the window's section alone, its start fixed");
+  expect(header.querySelector("button.maintenance-sign-out") && header.querySelector("button.maintenance-sign-out").textContent === "Sign out",
+    "maintenance: the admin's own window has a way to sign out too");
   const mtRefused = await win.Maity.api.get("/projects").then(() => null, (err) => err);
   expect(mtRefused && mtRefused.status === 503 && mtRefused.code === "maintenance" && mtRefused.details.text === "Moving the database"
     && mtRefused.details.retry_after > 0, "maintenance: the fixture hub refuses other calls with 503 maintenance, the window in its details");
@@ -11023,11 +11025,53 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(main.querySelector(".maintenance-page") && !mtSection() && !btn(main, "End maintenance now") && header.querySelector("button.maintenance-sign-out")
     && header.querySelector("button.maintenance-sign-out").textContent === "Sign out",
   "maintenance: a signed-in non-admin gets the full page at /admin/maintenance too, and a way to sign out");
+  // The way out works: POST /auth/logout, and what follows is the visitor's full page.
+  {
+    const soPost = win.Maity.api.post, soEnd = win.Maity.api.endSession, soGet = win.Maity.api.get;
+    let soOut = false;
+    win.Maity.api.post = (p, b) => (p === "/auth/logout" ? (soOut = true, Promise.resolve({})) : soPost(p, b));
+    win.Maity.api.endSession = () => {};
+    win.Maity.api.get = (p) => (soOut && (p === "/auth/session" || p === "/me") ? Promise.reject(new win.Maity.api.ApiError("signed out", 401, p, "unauthenticated")) : soGet(p));
+    header.querySelector("button.maintenance-sign-out").click(); await mtSettle(); await mtSettle();
+    expect(soOut && main.querySelector(".maintenance-page") && main.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/login")
+      && !header.querySelector("button.maintenance-sign-out"), "maintenance: Sign out posts /auth/logout during a window, and the visitor's full page follows");
+    win.Maity.api.post = soPost; win.Maity.api.endSession = soEnd; win.Maity.api.get = soGet;
+    if (win.Maity.notify && win.Maity.notify.resume) win.Maity.notify.resume();
+  }
   // A visitor without a session: the full page through the drawing itself, with the way to the sign-in.
   win.Maity.api.get = (p) => (p === "/auth/session" ? Promise.reject(new win.Maity.api.ApiError("x", 401, p, "unauthenticated", {})) : mtMeGet(p));
   await go("#/all"); await mtSettle();
-  expect(main.querySelector(".maintenance-page") && main.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/login") && !byId("login-handle"),
-    "maintenance: a visitor without a session gets the full page, not the public page or the sign-in");
+  expect(main.querySelector(".maintenance-page") && main.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/login") && !byId("login-handle")
+    && !header.querySelector("button.maintenance-sign-out"), "maintenance: a visitor without a session gets the full page, not the public page or the sign-in, and no Sign out");
+  // The sign-in page draws itself again on a change of language, not through `render`: the banner follows it there too.
+  {
+    const i18n = win.Maity.i18n, storage = win.localStorage, kept = {};
+    win.localStorage = { getItem: (k) => kept[k] ?? null, setItem: (k, v) => { kept[k] = v; }, removeItem: (k) => { delete kept[k]; } };
+    win.MAITY_I18N.de = { "maintenance.banner": "Wartung {from}–{until}: {text}" };
+    i18n.available.push("de");
+    await go("#/login"); await mtSettle();
+    const mtPicker = byId("login-interface");
+    // Only the sign-in page's own handler may draw the banner here. A refused read draws it too
+    // (`GET /legal` is refused during a window: `M.onMaintenance`), and so would a drawing still
+    // under way (`fresh`, `know`); either would hide whether the handler does.
+    const mtM = win.Maity.maintenance, mtFresh = mtM.fresh, mtKnow = mtM.know, mtTold = win.Maity.onMaintenance;
+    mtM.fresh = async () => mtM.current(); mtM.know = () => {}; win.Maity.onMaintenance = () => {};
+    const mtBefore = mtBanner() && mtBanner().textContent;
+    if (mtPicker) { mtPicker.value = "de"; mtPicker.dispatch("change"); await mtSettle(); }
+    mtM.fresh = mtFresh; mtM.know = mtKnow; win.Maity.onMaintenance = mtTold;
+    expect(mtPicker && i18n.language === "de" && byId("login-handle") && mtBefore && mtBefore.startsWith("Maintenance ")
+      && mtBanner() && mtBanner().textContent.startsWith("Wartung "),
+      "maintenance: on the sign-in page a change of language reaches the banner " + JSON.stringify([mtBefore, mtBanner() && mtBanner().textContent]));
+    i18n.available.length = 1;
+    delete win.MAITY_I18N.de;
+    win.localStorage = storage;
+    await i18n.follow(null);
+  }
+  // A session that must set up its second factor first (§2.8.5): the full page as well, with the same way out.
+  win.Maity.api.get = (p) => (p === "/auth/session" ? mtMeGet(p).then((s) => ({ ...s, second_factor: "enrolment_required" })) : mtMeGet(p));
+  await go("#/all"); await mtSettle();
+  expect(main.querySelector(".maintenance-page") && header.querySelector("button.maintenance-sign-out") && !main.querySelector(".security-enrol"),
+    "maintenance: a session that must set up its second factor gets the full page and a way to sign out");
   win.Maity.api.get = mtMeGet;
   // A banner left in other words (a change of language) is drawn again by the next drawing, even from a recent read.
   mtBanner().textContent = "stale words";
