@@ -456,7 +456,8 @@ def _inbox(conn: Connection, owner_id: str, now: datetime | None) -> None:
     shown = lines(away)
     found = open_digest(conn, owner_id)
     if found is not None:
-        if _shown(found.not_listening) == _shown(shown):
+        # A request filed before the lines were stored has none, and counts as changed.
+        if found.not_listening is not None and _shown(found.not_listening) == _shown(shown):
             return
         close_request(conn, found.id, "withdrawn", None, reason=CHANGED if away else NONE_LEFT)
     seen = _seen(conn, owner_id)

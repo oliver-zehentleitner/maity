@@ -312,6 +312,26 @@ def test_the_hub_withdraws_it_when_none_is_away(
     assert owner.get("/me/notifications", params={"limit": 0}).json()["counts"]["inbox"] == 0
 
 
+def test_a_request_from_before_the_stored_lines_is_withdrawn_when_none_is_away(
+    inbox_owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A digest filed before the migration stored no lines: with nobody away the hour's lines
+    are empty too, and the request must still go, as the migration says."""
+    owner = inbox_owner
+    agent = _agent(make_client, owner)
+    _episode(migrated, agent, timedelta(hours=2))
+    not_listening_digest.run(migrated)
+    [digest] = _digests(owner)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.request).where(t.request.c.id == digest["id"]).values(not_listening=None)
+        )
+    _episode(migrated, agent, None)
+    not_listening_digest.run(migrated)
+    [digest] = _digests(owner)
+    assert digest["status"] == "withdrawn"
+
+
 def test_after_seen_only_a_later_episode_files_a_new_one(
     inbox_owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
@@ -459,20 +479,27 @@ def test_a_revoked_holder_is_listed_as_session_ended(
     assert digest["summary"].partition("\n\n")[0].endswith(", session_ended")
 
 
+@pytest.mark.parametrize("on", ["membership", "credential"])
 @pytest.mark.parametrize("by_itself", [True, False])
 def test_a_pause_by_someone_else_leaves_a_holder_out_its_own_does_not(
-    inbox_owner: flow.Human, make_client: ClientFactory, migrated: Engine, by_itself: bool
+    inbox_owner: flow.Human, make_client: ClientFactory, migrated: Engine, by_itself: bool, on: str
 ) -> None:
     owner = inbox_owner
     agent = _agent(make_client, owner)
     _holding(owner, agent)
     _silent(migrated, agent, timedelta(hours=2))
+    paused = {"paused_since": clock.now(), "paused_by": agent.id if by_itself else owner.id}
     with migrated.begin() as conn:
-        conn.execute(
-            update(t.membership)
-            .where(t.membership.c.agent_id == agent.id)
-            .values(paused_since=clock.now(), paused_by=agent.id if by_itself else owner.id)
-        )
+        if on == "membership":
+            conn.execute(
+                update(t.membership).where(t.membership.c.agent_id == agent.id).values(**paused)
+            )
+        else:
+            conn.execute(
+                update(t.credential)
+                .where(t.credential.c.id == agent.credential_id)
+                .values(**paused)
+            )
     not_listening_digest.run(migrated)
     found = _digests(owner)
     if by_itself:
