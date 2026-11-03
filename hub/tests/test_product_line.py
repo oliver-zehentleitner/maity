@@ -13,9 +13,18 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, update
 
-from maity_hub import catalog, clock, maintenance, product_line, render
+from maity_hub import (
+    catalog,
+    clock,
+    landing,
+    landing_files,
+    legal,
+    maintenance,
+    product_line,
+    render,
+)
 from maity_hub import tables as t
-from maity_hub.routes import email_sign_in, register_page
+from maity_hub.routes import register_page
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_email_sign_in import ask, mail, setup
@@ -140,8 +149,7 @@ def test_the_maintenance_page_ends_with_the_line_and_sends_no_referrer() -> None
     assert response.headers["Retry-After"]
 
 
-def test_the_link_pages_end_with_the_line() -> None:
-    strict(email_sign_in._dead())
+def test_the_registration_link_page_ends_with_the_line() -> None:
     page = bytes(register_page._dead().body).decode()
     assert 'class="product-line"' in page
     # Its policy allows its stylesheet: the line centred and muted, the mark follows a dark
@@ -175,16 +183,95 @@ def test_a_page_whose_words_the_language_lacks_has_an_english_line(
     assert "Einen Fehler gefunden?" in product_line.html("de", "sign_in")
 
 
-def test_the_sign_in_link_page_ends_with_the_line_in_the_humans_language(
+def framed(response: Any) -> str:
+    """A sign-in link page in the frame (§16.7.5): the landing page's header, door and footer
+    under the landing page's stylesheets, no script, no inline style, no product line, and its
+    policy and no referrer (the token is in the address)."""
+    page = str(response.text)
+    assert response.headers["Content-Security-Policy"] == render.DOOR_CSP
+    assert response.headers["Referrer-Policy"] == "no-referrer"
+    assert page.count('<header class="site-header') + page.count("<header lang=") == 1
+    assert page.count('class="site-footer"') == 1 and 'class="door-page"' in page
+    for sheet in ("landing.css", "public-pages.css"):
+        assert f'href="/assets/landing/{sheet}?v=' in page
+    assert "<script" not in page and "<style" not in page
+    # The frame's footer stands in the line's place, as on the framed /login (req-5k1gvfsmcg9k).
+    assert "product-line" not in page and "Found a bug?" not in page
+    return page
+
+
+def test_the_sign_in_link_page_stands_in_the_frame_in_the_humans_language(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
     client, human = setup(make_client, migrated)
     with migrated.begin() as conn:
-        conn.execute(update(t.human).where(t.human.c.id == human).values(interface_language="de"))
+        conn.execute(
+            update(t.human)
+            .where(t.human.c.id == human)
+            .values(interface_language="de", display_name='<b>Ada & "Co"</b>')
+        )
     ask(client)
     url, _ = mail(migrated)
-    page = strict(client.get(url))
-    assert "Einen Fehler gefunden?" in page
+    page = framed(client.get(url, headers={"accept-language": "fr"}))
+    assert '<html lang="de">' in page
+    title = "Bei Maity anmelden als &lt;b&gt;Ada &amp; &quot;Co&quot;&lt;/b&gt; (ada)"
+    assert f"<title>{title}</title>" in page and f"<h1>{title}</h1>" in page
+    assert "<b>Ada" not in page
+    # One explicit button, the GET's form field next to its cookie (§2.6.3).
+    assert page.count("<button") == 1 and page.count("<form") == 1
+    assert '<form method="post">' in page
+    assert ">Auf diesem Gerät anmelden</button>" in page
+    form = re.search(r'name="form" value="([^"]+)"', page)
+    assert form is not None and form[1] == client.cookies.get("maity_form")
+
+
+def test_the_dead_sign_in_link_stands_in_the_frame_in_the_browsers_language(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client, _ = setup(make_client, migrated)
+    dead = client.get("/mail/sign-in/garbage", headers={"accept-language": "de, en;q=0.5"})
+    assert dead.status_code == 404
+    page = framed(dead)
+    assert '<html lang="de">' in page and "<h1>Dieser Link funktioniert nicht mehr.</h1>" in page
+    assert "<form" not in page and "<button" not in page
+    english = framed(client.get("/mail/sign-in/garbage"))
+    assert "<h1>This link no longer works.</h1>" in english
+    # A used link is the same page (never which reason).
+    ask(client)
+    url, _ = mail(migrated)
+    form = re.search(r'name="form" value="([^"]+)"', client.get(url).text)
+    assert form is not None
+    done = client.post(
+        url,
+        data={"form": form[1]},
+        headers={"sec-fetch-site": "same-origin"},
+        follow_redirects=False,
+    )
+    assert done.status_code == 303
+    again = client.get(url)
+    assert again.status_code == 404 and "<h1>This link no longer works.</h1>" in framed(again)
+
+
+def test_a_door_page_without_the_stylesheets_carries_the_style_its_policy_allows(
+    monkeypatch: pytest.MonkeyPatch, migrated: Engine
+) -> None:
+    digest = base64.b64encode(hashlib.sha256(render.STYLE.encode()).digest()).decode()
+    assert f"style-src 'self' 'sha256-{digest}';" in render.DOOR_CSP
+    assert "unsafe-inline" not in render.DOOR_CSP and "script-src" not in render.DOOR_CSP
+    assert "form-action 'self'" in render.DOOR_CSP
+    monkeypatch.setattr(landing_files, "url", lambda name: None)
+    with migrated.connect() as conn:
+        setting, served = landing.stored(conn), legal.public(legal.stored(conn))
+    page = render.door_document(
+        lang="en",
+        title="t",
+        content="<h1>t</h1>",
+        setting=setting,
+        legal=served,
+        stats=None,
+        accept_language=None,
+    )
+    assert f"<style>{render.STYLE}</style>" in page and "<link" not in page
 
 
 def test_the_join_page_in_a_browser_ends_with_the_line_and_sends_no_referrer(

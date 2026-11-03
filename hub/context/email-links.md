@@ -56,3 +56,42 @@ full session directly would instead bypass an enrolled human's second factor.
 **Rejected alternatives:** retaining the placeholder after implementation, or
 creating sessions directly from a valid mailed proof instead of entering the
 existing second-factor flow.
+
+## The sign-in link page and its dead-link page stand in the frame of the pages without a session, with no product line
+
+**Id:** 89e8318d-c18e-46a6-8617-97f0c600ade0
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-qez5k81hnkjc (the maintainer found the page bare, 2026-11-03) and lotse#wtwy's answers on it (2026-11-04): the frame's footer instead of the product line, as on the framed `/login` (req-5k1gvfsmcg9k); `render.door_document`, `routes/email_sign_in.py`. The policy's shape is this entry's reading of the legal pages' entry (landing.md, dde46a41)
+**Revisit when:** the page needs a script, the dashboard takes the link over, the dashboard's `/login` gets the product line back, or anything a user stores can be answered under the public host's origin as a stylesheet or a font
+
+`GET /mail/sign-in/{token}` and every dead link of it (`404`, never which reason) are drawn by
+`render.door_document`: the landing page's header and footer from the frame's model (§16.7.5),
+and between them the door of `public-pages.css`, the dark panel with its art and the form's column,
+as the dashboard draws `/login`. The link page is in the person's text language; the dead-link
+page, where nobody is known, in the browser's (`Accept-Language` among §16.7's languages, else
+English). The frame's model is chosen with the page's language first; where the landing page does
+not have it, header and footer carry their own `lang`. The footer has no language switch: the
+page's language is the person's, and a `?lang=` on the address would change nothing. The
+behaviour is as before: the `GET` changes nothing but the form cookie, one explicit button posts.
+
+The answers carry `default-src 'none'; style-src 'self' '<hash of the fallback style>';
+font-src 'self'; img-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`
+and `Referrer-Policy: no-referrer`. There is no script and no `'unsafe-inline'`: the only
+inline style is the legal pages' old `STYLE`, drawn when the landing stylesheets are missing,
+and the policy allows exactly that block by its hash.
+
+**Reason:** the page is the step after the mail on the way into `/login`'s design, so it should
+look like the pages around it. The landing page's files carry no risk for a page with a token in
+its address, for the reasons the legal pages' entry gives: they are first-party, served under their
+digest, `nosniff`, never from the database. Nothing is loaded from elsewhere, and no referrer
+leaves the page. `form-action 'self'` is new: the old policy did not restrict where the form posts.
+
+**Rejected alternatives:**
+- The registration link page's shell (`render.form_document`, mail.md f63430e9): it looks like the
+  old legal pages, not like `/login`, which the card asked for.
+- The product line under the frame's footer, as the card first said: superseded by lotse#wtwy,
+  so that every page without a session ends the same way as the framed `/login`.
+- `'unsafe-inline'` for the fallback, as the legal pages have: it would allow every inline style on
+  a page with a token in its address, where a hash allows the one block the hub writes.
