@@ -7,3 +7,5 @@
 ### Fixed
 
 - web: zh-Hans `bell.security_hint` names the This was me button by its own word, `是我`.
+- web: Spanish `forge.via.instance` names the repository in its last limit: "y solo mientras el
+  repositorio sea público".
