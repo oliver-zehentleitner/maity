@@ -11962,8 +11962,8 @@ and by nothing else:
 
 `{owner}` is 1 to 39 ASCII characters from `A`–`Z`, `a`–`z`, `0`–`9`
 and `-`; `{repo}` 1 to 100 ASCII characters from `A`–`Z`, `a`–`z`,
-`0`–`9`, `.`, `_` and `-`, not `.`, `..` or `.git`, without the `.git`
-the form allows after it. Any other character — a non-ASCII letter or digit
+`0`–`9`, `.`, `_` and `-`, not `.` or `..`, not ending in `.git`, without
+the `.git` the form allows after it. Any other character — a non-ASCII letter or digit
 included — makes the text no name. No query, no fragment, no user info,
 no port, no further path segment, no percent-encoding, no whitespace.
 Two names are the same repository when their `{owner}/{repo}` match
@@ -11996,11 +11996,14 @@ The hub serves:
    only, depth 4, 32 members), never a repository *it* names: one hop,
    so a family cannot pull in the forge.
 
-The second kind is read only where the forge reports the repository
-public, with the grant §11.4 picks for the project's own repository
-(the instance token only for a project in the operator's own
-namespaces), checked as §11.4 checks visibility, before the first read
-and on every refresh of its family (at most every `max_age`, below, and
+The second kind is never read with the project's owner's grant (§11.4:
+the App installation or the owner's token act on the project's own
+repository alone). It is read with the instance token
+(`MAITY_FORGE_GITHUB_TOKEN`) where the operator set one, else without
+any token, and only where the forge reports the repository public: a
+repository the instance token could read although it is private is
+`not_public` all the same. The visibility is read as §11.4 reads it,
+before the first read and on every refresh of its family (at most every `max_age`, below, and
 at least every 600 s whatever `max_age` asks); a
 private one, or one whose visibility cannot be read, is refused with
 reason `not_public`, and what the hub held of it is dropped then. A
@@ -12009,8 +12012,12 @@ is not followed, as §11.4 does for the project's own: it is
 `ktw_unavailable` with reason `repository_moved` until the family file
 names its new place. Its `.keep-the-why` is read through the forge's
 contents API like the project's own (64 KiB), never from a raw or Pages
-host. These reads count against the budget of the grant that makes them
-(§11.4, **Rate limits**). Any other `canonical` or `root` — a
+host. These reads count against the hub-wide budget of the instance
+token, or of reads without a token, which every serving process shares
+(§11.4, **Rate limits**), never against an owner's grant; without a
+token GitHub allows 60 reads an hour per egress address, so the cache
+above carries the load. A spent budget is `probe_unavailable` with
+`details.retry_at`. Any other `canonical` or `root` — a
 repository named only inside an export (a See into another repository,
 `Superseded by`), a path that is not a member — is `not_found` with
 `details.reason: not_in_family`; the library then shows the reference as
@@ -12044,8 +12051,9 @@ fork from the export itself (its `exportVerdict`), the hub does not.
 file beside it that holds its entries' texts (`"bodies":
 "state.body.json"`). The hub reads it only when the export it holds for
 that member names one, and only at the state URL's own directory: the
-value must be one path segment (letters, digits, `.`, `_`, `-`, ending
-in `.json`, at most 100 characters), resolved against the state URL with
+value must be one path segment (ASCII letters and digits, `A`–`Z`,
+`a`–`z`, `0`–`9`, and `.`, `_`, `-`, ending in `.json`, at most 100
+characters), resolved against the state URL with
 its last segment replaced — same scheme, host and port, no query, no
 fragment; anything else is reason `bodies_url_invalid`. The read follows
 §11.1. The answer is `{canonical, root, url, observed_at, fresh, bodies}`
