@@ -172,6 +172,8 @@ jobs:
             sudo apt-get install -y -qq --no-install-recommends libnss3 libnspr4 libasound2t64
           fi
           if ldd "$shell" | grep "not found"; then exit 1; fi
+      # The vendored Keep the Why views mounted under the hub's `default-src 'self'` (web/context/stack.md).
+      - run: python web/tools/vendor_csp.py
       - run: python web/tools/e2e.py --artifacts e2e-screenshots
       # Fails on any text outside the catalog (web/README.md, "Texts outside the catalog").
       - if: "!cancelled()"

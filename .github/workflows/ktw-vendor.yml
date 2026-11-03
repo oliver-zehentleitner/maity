@@ -1,0 +1,81 @@
+name: ktw-vendor
+
+# A new release of the Keep the Why views library on PyPI becomes a pull request that vendors
+# it (web/tools/vendor_ktw.py, web/context/stack.md): the version, the wheel's sha256, every
+# file's sha256 and the changelog link in its description. Nothing merges by itself; the pull
+# request is reviewed like any other.
+#
+# A pull request opened with the workflow's own token starts no workflow, so its CI does not
+# run until someone closes and reopens it (or pushes to it); the description says so.
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "the keep-the-why-dashboard version to vendor (empty: the newest)"
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ktw-vendor
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Vendor the release, when it is new
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WANTED: ${{ inputs.version }}
+        run: |
+          current="$(python3 -c 'import json; print(json.load(open("web/vendor/keep-the-why/VENDOR.json"))["version"])')"
+          version="${WANTED:-$(python3 web/tools/vendor_ktw.py --latest)}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then echo "not a release version: $version"; exit 1; fi
+          if [ "$version" = "$current" ]; then echo "vendored $current is current"; exit 0; fi
+          branch="ktw-vendor/$version"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+            echo "$branch exists already; its pull request is open or was declined"; exit 0
+          fi
+          python3 web/tools/vendor_ktw.py --version "$version"
+          (cd web && python3 tools/check.py)
+          topic="ktw-vendor-${version//./-}"
+          printf '### Changed\n- web: the vendored Keep the Why views library is keep-the-why-dashboard %s (was %s).\n' \
+            "$version" "$current" > "changelog.d/$topic.md"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add web/vendor/keep-the-why "changelog.d/$topic.md"
+          git commit -m "web: vendor keep-the-why-dashboard $version"
+          git push origin "$branch"
+          body="$(mktemp)"
+          python3 - "$current" > "$body" <<'PY'
+          import json, sys
+          lock = json.load(open("web/vendor/keep-the-why/VENDOR.json"))
+          print("Vendors **%s %s** (was %s), written by `web/tools/vendor_ktw.py`." % (lock["package"], lock["version"], sys.argv[1]))
+          print()
+          print("- Changelog: %s" % lock["changelog"])
+          print("- Wheel: `%s`, sha256 `%s` (checked against PyPI)" % (lock["wheel"], lock["wheel_sha256"]))
+          print("- Manifest: api %s, state %s" % (lock["api"], lock["state"]))
+          print()
+          print("| File | sha256 |")
+          print("|---|---|")
+          for name, digest in lock["files"].items():
+              print("| `%s` | `%s` |" % (name, digest))
+          print()
+          print("Opened by the ktw-vendor workflow, whose pull requests start no CI: close and reopen it to run the checks.")
+          PY
+          gh pr create --base main --head "$branch" --title "web: vendor keep-the-why-dashboard $version" --body-file "$body"

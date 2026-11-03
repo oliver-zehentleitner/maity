@@ -1475,6 +1475,28 @@ both. The browser end-to-end test below covers one path through them;
 what else a change looked like in a browser is stated in its pull
 request.
 
+## Vendored Keep the Why views
+
+`vendor/keep-the-why/` holds the Keep the Why views library (timeline, graph, family, search, thoughts, pages:
+classic scripts on `globalThis.KeepTheWhy` and one stylesheet) that the Why view mounts. They are copies, never edited
+here (`context/stack.md`):
+
+```sh
+python3 tools/vendor_ktw.py --version 0.11.39   # take that release of keep-the-why-dashboard from PyPI
+python3 tools/vendor_ktw.py --check             # the files on disk against VENDOR.json, offline
+python3 tools/vendor_ktw.py --latest            # the newest release on PyPI
+python3 tools/vendor_csp.py                     # the views in Chromium under the hub's policy (Playwright)
+```
+
+`vendor_ktw.py` refuses a wheel whose sha256 is not PyPI's and writes only the files the wheel's `ktw-views.json`
+lists, the manifest and the licence; `VENDOR.json` records the version and every sha256. `make check` fails when a
+vendored file differs from its hash, when a file there is not in the manifest, or when a script uses a markup- or
+code-evaluating call or sets a style attribute (an inline style through the element's style object is fine under the
+policy). `vendor_csp.py` serves the files with `Content-Security-Policy: default-src 'self'`, mounts every view on
+`tools/ktw-fixture-state.json` (Keep the Why's own test fixture) and fails on a policy violation, an error, an empty
+view or an empty graph; CI runs it in `web-e2e`. The `ktw-vendor` workflow checks PyPI daily and opens a pull request
+for a newer release with its hashes and changelog link; that pull request's CI starts when it is closed and reopened.
+
 ## Texts outside the catalog
 
 `make pseudo` (`tools/pseudo_run.py`, Playwright, no hub) opens every route `tools/smoke.js` visits, in the fixtures,
