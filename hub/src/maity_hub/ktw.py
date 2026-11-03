@@ -75,7 +75,14 @@ class NotConfigured(Exception):
 
 
 class RootUnavailable(Exception):
-    """The root `.keep-the-why` could not be read; the whole export fails."""
+    """The root `.keep-the-why` could not be read; the whole export fails. `not_covered`
+    is the reason when no source covers the repository (§11.4), `retry_at` when the
+    source's budget is spent; §11.5 answers those as the probe does."""
+
+    def __init__(self, not_covered: str | None = None, retry_at: datetime | None = None) -> None:
+        super().__init__(not_covered or "forge_unavailable")
+        self.not_covered = not_covered
+        self.retry_at = retry_at
 
 
 class MemberError(Exception):
@@ -458,8 +465,10 @@ def walk(reader: forge.Forge, repository: str, deadline: float | None = None) ->
         file = f"{path}/.keep-the-why" if path else ".keep-the-why"
         try:
             data = reader.file(repository, file, CONFIG_CAP)
-        except forge.ForgeUnavailableError:
-            raise MemberError("forge_unavailable") from None
+        except forge.NotCoveredError as error:
+            raise MemberError("forge_unavailable", not_covered=error.reason) from None
+        except forge.ForgeUnavailableError as error:
+            raise MemberError("forge_unavailable", retry_at=error.retry_at) from None
         except ValueError:
             raise MemberError("too_large") from None
         return None if data is None else data.decode("utf-8", errors="replace")
@@ -523,8 +532,10 @@ def walk(reader: forge.Forge, repository: str, deadline: float | None = None) ->
 
     try:
         root = read_config("")
-    except MemberError:
-        raise RootUnavailable from None
+    except MemberError as failed:
+        raise RootUnavailable(
+            failed.details.get("not_covered"), failed.details.get("retry_at")
+        ) from None
     if root is None or not config(root).get("dashboard-state"):
         raise NotConfigured
     seen.add("")
@@ -615,6 +626,10 @@ class Snapshot:
     members: list[Member]
     family_truncated: bool
     error: dict[str, Any] | None = None
+    # Why the root could not be read, for §11.5 alone (never in §11.3's answers): the
+    # reason no source covers it (§11.4), or when the source's budget is there again.
+    not_covered: str | None = None
+    retry_at: datetime | None = None
 
     def answer(self, member: str | None = None, fresh: bool = True) -> dict[str, Any]:
         members = self.members
@@ -786,13 +801,22 @@ class Cache:
             family = walk(reader, repository, deadline)
         except NotConfigured:
             return _Entry(None, now, repository_url)
-        except RootUnavailable:
+        except RootUnavailable as failed:
             previous = last.snapshot if last and last.repository_url == repository_url else None
             error = _error("forge_unavailable")
             if previous is None:
-                return _Entry(Snapshot(observed, [], False, error), now, repository_url)
+                return _Entry(
+                    Snapshot(observed, [], False, error, failed.not_covered, failed.retry_at),
+                    now,
+                    repository_url,
+                )
             kept = Snapshot(
-                previous.observed_at, previous.members, previous.family_truncated, error
+                previous.observed_at,
+                previous.members,
+                previous.family_truncated,
+                error,
+                failed.not_covered,
+                failed.retry_at,
             )
             return _Entry(kept, now, repository_url)
         _read_exports(family, deadline)

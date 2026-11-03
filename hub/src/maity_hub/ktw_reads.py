@@ -80,7 +80,7 @@ def _repository(url: str | None) -> str | None:
     if not isinstance(url, str):
         return None
     match = _NAME.fullmatch(url)
-    if match is None or match.group(2) in (".", "..", ".git"):
+    if match is None or match.group(2) in (".", "..") or match.group(2).lower().endswith(".git"):
         return None
     return f"{match.group(1)}/{match.group(2)}".lower()  # ASCII only: ASCII case folding
 
@@ -166,7 +166,11 @@ class ForeignCache:
             family = ktw.walk(reader, repository, ktw._now() + ktw.FAMILY_DEADLINE)
         except ktw.NotConfigured:
             return _Foreign(None, "config_missing", now)
-        except ktw.RootUnavailable:
+        except ktw.RootUnavailable as failed:
+            if failed.retry_at is not None:  # the source's budget is spent: probe_unavailable
+                raise forge.ForgeUnavailableError(
+                    "the forge's rate limit is spent", rate_limited=True, retry_at=failed.retry_at
+                ) from None
             return _Foreign(None, "forge_unavailable", now)
         return _Foreign(family, None, now)
 
@@ -185,8 +189,10 @@ def _visibility(reader: forge.Forge, repository: str) -> str | None:
     `repository_moved` for a redirect (never followed, §11.4), `not_public` for a private
     repository or one whose visibility cannot be read. A spent budget is `forge.
     ForgeUnavailableError` with `retry_at`, for the caller to answer `probe_unavailable`."""
+    path = f"/repos/{repository}"
     try:
-        found = reader._get(f"/repos/{repository}", uncached=True)
+        # without a token the hub asks anonymously: `_get` needs a token
+        found = reader._get(path, uncached=True) if reader.token else reader._send(path)
     except forge.NotCoveredError as error:
         return "repository_moved" if error.reason == "repository_moved" else "not_public"
     except forge.ForgeUnavailableError as error:
@@ -197,6 +203,26 @@ def _visibility(reader: forge.Forge, repository: str) -> str | None:
 
 
 FOREIGN = ForeignCache()
+
+
+def named_reader(instance: forge.Forge) -> forge.Forge:
+    """The reader of a named repository (§11.5): the operator's instance token where one is
+    set, else none; never a project owner's grant, and bound to no project, so no source of
+    §11.4 is chosen for it. Its reads count against that source's hub-wide budget."""
+    return forge.Forge(instance.token)
+
+
+def require_covered(reader: forge.Forge, repository: str) -> None:
+    """The project's own repository is still covered by the source `for_project` chose, on
+    every call and not only when the cache is refreshed, so no export held in memory is
+    served after a grant is gone or the repository turned private. With the instance token
+    this is §11.4's visibility check (kept for 10 minutes); an owner's grant is re-chosen by
+    `for_project` itself. `forge.NotCoveredError` or `forge.ForgeUnavailableError` else."""
+    if reader.refused is not None:
+        raise forge.NotCoveredError(reader.refused)
+    if reader.granted is None and reader.token is not None:
+        reader._require_public(repository)
+
 
 # At most ktw.IN_FLIGHT of one project's §11.5 reads at once.
 _slots: dict[str, threading.BoundedSemaphore] = {}
@@ -253,6 +279,7 @@ def _unavailable(reason: str, last: Served | None = None, **details: Any) -> Ref
 
 def _member(
     reader: forge.Forge,
+    others: forge.Forge,
     project_id: str,
     repository_url: str,
     canonical: str | None,
@@ -271,6 +298,12 @@ def _member(
             409,
             "ktw_not_configured",
             "the repository names no Keep the Why export (.keep-the-why, dashboard-state)",
+        )
+    if snapshot.not_covered is not None:
+        raise forge.NotCoveredError(snapshot.not_covered)
+    if snapshot.retry_at is not None:
+        raise forge.ForgeUnavailableError(
+            "the forge's rate limit is spent", rate_limited=True, retry_at=snapshot.retry_at
         )
     if snapshot.error is not None:
         raise _unavailable(snapshot.error["reason"])
@@ -294,7 +327,7 @@ def _member(
                 404, "not_found", "past the repositories a project may name", reason="family_cap"
             )
         try:
-            foreign, _fresh = FOREIGN.get(reader, project_id, wanted, max_age)
+            foreign, _fresh = FOREIGN.get(others, project_id, wanted, max_age)
         except ktw.Busy:
             raise _unavailable("forge_unavailable") from None
         if foreign.error == "not_public":
@@ -325,12 +358,18 @@ def _read(kind: str, url: str, cap: int) -> ktw.Raw:
     return ktw.RAW.put("bodies", url, data["bodies"])
 
 
-def _file(project_id: str, kind: str, url: str, cap: int, max_age: int) -> tuple[ktw.Raw, bool]:
+def _file(
+    project_id: str, kind: str, url: str, cap: int, max_age: int, start: float
+) -> tuple[ktw.Raw, bool]:
+    """(file, fresh): `fresh` when it was read since `start`, the request's beginning, by
+    this call or by §11.3's read of the family that the same call made."""
     kept = ktw.RAW.get(kind, url)
     if kept is not None and ktw._now() - kept.at < max(max_age, ktw.FORCE_INTERVAL):
-        return kept, False
-    if kept is None and _held(kind, url):
-        raise ktw.MemberError("timeout")  # dropped for room, and read less than 30 s ago
+        return kept, kept.at >= start
+    if _held(kind, url):  # a read, or a failed one, less than 30 s ago
+        if kept is not None:
+            return kept, False
+        raise ktw.MemberError("timeout")  # dropped for room meanwhile
     slot = _slot(project_id)
     if not slot.acquire(timeout=ktw.FAMILY_DEADLINE):
         raise ktw.MemberError("timeout")
@@ -348,13 +387,17 @@ def _file(project_id: str, kind: str, url: str, cap: int, max_age: int) -> tuple
 
 def export(
     reader: forge.Forge,
+    others: forge.Forge,
     project_id: str,
     repository_url: str,
     canonical: str | None,
     root: str,
     max_age: int,
 ) -> Served:
-    canonical_url, member = _member(reader, project_id, repository_url, canonical, root, max_age)
+    start = ktw._now()
+    canonical_url, member = _member(
+        reader, others, project_id, repository_url, canonical, root, max_age
+    )
     if member.error is not None or not member.state_url:
         error = member.error or {"reason": "no_state_url"}
         extra = {k: v for k, v in error.items() if k in ("status", "version")}
@@ -362,7 +405,7 @@ def export(
         last = Served(canonical_url, root, kept, False) if kept is not None else None
         raise _unavailable(error["reason"], last, **extra)
     try:
-        raw, fresh = _file(project_id, "state", member.state_url, ktw.STATE_CAP, max_age)
+        raw, fresh = _file(project_id, "state", member.state_url, ktw.STATE_CAP, max_age, start)
     except ktw.MemberError as failed:
         kept = ktw.RAW.get("state", member.state_url)
         last = Served(canonical_url, root, kept, False) if kept is not None else None
@@ -379,13 +422,15 @@ def bodies_url(state_url: str, name: Any) -> str | None:
 
 def bodies(
     reader: forge.Forge,
+    others: forge.Forge,
     project_id: str,
     repository_url: str,
     canonical: str | None,
     root: str,
     max_age: int,
 ) -> Served:
-    state = export(reader, project_id, repository_url, canonical, root, max_age)
+    start = ktw._now()
+    state = export(reader, others, project_id, repository_url, canonical, root, max_age)
     if state.raw.bodies is None:
         raise Refused(
             404, "not_found", "this export carries its bodies inline", reason="no_bodies_file"
@@ -394,7 +439,7 @@ def bodies(
     if url is None:
         raise _unavailable("bodies_url_invalid")
     try:
-        raw, fresh = _file(project_id, "bodies", url, BODIES_CAP, max_age)
+        raw, fresh = _file(project_id, "bodies", url, BODIES_CAP, max_age, start)
     except ktw.MemberError as failed:
         raise _unavailable(failed.reason, **failed.details) from None
     return Served(state.canonical, root, raw, fresh)

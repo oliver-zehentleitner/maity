@@ -32,8 +32,11 @@ def fake(monkeypatch: pytest.MonkeyPatch) -> Fake:
     found.public = {"acme/other"}  # type: ignore[attr-defined]
     found.public_asked = []  # type: ignore[attr-defined]
 
+    found.readers = []  # type: ignore[attr-defined]
+
     def file(self: forge.Forge, repository: str, path: str, cap: int) -> bytes | None:
         found.file_reads.append(f"{repository}:{path}")
+        found.readers.append((repository, self.token, self.granted))  # type: ignore[attr-defined]
         source = (
             found.files
             if repository.lower() == "acme/widget"
@@ -48,19 +51,35 @@ def fake(monkeypatch: pytest.MonkeyPatch) -> Fake:
 
     def visibility(reader: forge.Forge, repository: str) -> str | None:
         found.public_asked.append(repository)  # type: ignore[attr-defined]
+        found.readers.append((repository, reader.token, reader.granted))  # type: ignore[attr-defined]
         if repository in found.moved:  # type: ignore[attr-defined]
             return "repository_moved"
         return None if repository in found.public else "not_public"  # type: ignore[attr-defined]
 
     monkeypatch.setattr(forge.Forge, "file", file)
     monkeypatch.setattr(ktw_reads, "_visibility", visibility)
-    # A source that covers the project (§11.4); the refusal is its own test below.
+    # A source that covers the project (§11.4): the owner's grant, or with `instance` the
+    # operator's token, whose visibility check `own_private` fails; refusals are tests below.
     found.refused = None  # type: ignore[attr-defined]
-    monkeypatch.setattr(
-        forge.Forge,
-        "for_project",
-        lambda self, project_id: forge.Forge("token", refused=found.refused),  # type: ignore[attr-defined]
-    )
+    found.instance = False  # type: ignore[attr-defined]
+    found.own_private = False  # type: ignore[attr-defined]
+
+    def for_project(self: forge.Forge, project_id: str) -> forge.Forge:
+        if found.instance:  # type: ignore[attr-defined]
+            return forge.Forge("instance-token", refused=found.refused)  # type: ignore[attr-defined]
+        return forge.Forge(
+            "owner-grant",
+            granted="owner_token",
+            repository="acme/widget",
+            refused=found.refused,  # type: ignore[attr-defined]
+        )
+
+    def require_public(self: forge.Forge, repository: str) -> None:
+        if found.own_private:  # type: ignore[attr-defined]
+            raise forge.NotCoveredError("private_without_grant")
+
+    monkeypatch.setattr(forge.Forge, "for_project", for_project)
+    monkeypatch.setattr(forge.Forge, "_require_public", require_public)
     return found
 
 
@@ -500,6 +519,8 @@ def test_the_answer_splices_the_kept_bytes_as_valid_json() -> None:
         ("../other", None),
         ("https://github.com/acme/other\n", None),
         ("https://github.com/acme/.git", None),
+        ("https://github.com/acme/other.git.git", None),
+        ("https://github.com/acme/other.GIT.git", None),
         ("https://github.com/acme/.git/", None),
         ("https://github.com/ac\u200bme/other", None),  # zero-width space
         ("https://github.com/\u043ewner/repo", None),  # Cyrillic о
@@ -678,6 +699,8 @@ def test_the_visibility_is_read_again_within_600_seconds_whatever_max_age(
 class _Reader:
     """A forge reader whose `_get` answers as told (§11.5's `_visibility` against it)."""
 
+    token = "instance"
+
     def __init__(self, answer: Any) -> None:
         self.answer = answer
         self.asked: list[tuple[str, bool]] = []
@@ -730,3 +753,179 @@ def test_the_project_slots_stay_bounded(monkeypatch: pytest.MonkeyPatch) -> None
         assert len(ktw_reads._slots) <= 4 and ktw_reads._slots["busy"] is busy
     finally:
         busy.release()
+
+
+# --- be2n's review and the ruling on named repositories ---------------------------------------
+
+
+def test_a_removed_grant_ends_the_cached_export_at_once(owner: flow.Human, fake: Fake) -> None:
+    fake.family()
+    project(owner)
+    first = owner.get(f"{PATH}/export")
+    assert first.status_code == 200
+    fake.refused = "no_grant"  # type: ignore[attr-defined]  # the owner unlinked the App
+    for kind in ("export", "bodies"):
+        answer = owner.get(f"{PATH}/{kind}", headers={"If-None-Match": first.headers["ETag"]})
+        assert answer.status_code == 409, "never the export held in memory, never a 304"
+        error = answer.json()["error"]
+        assert error["code"] == "probe_not_configured" and error["details"]["reason"] == "no_grant"
+        assert b"hub.md#e1" not in answer.content
+
+
+def test_a_repository_turned_private_ends_the_cached_export_at_once(
+    owner: flow.Human, fake: Fake
+) -> None:
+    fake.instance = True  # type: ignore[attr-defined]
+    fake.family()
+    project(owner)
+    first = owner.get(f"{PATH}/export")
+    assert first.status_code == 200
+    fake.own_private = True  # type: ignore[attr-defined]
+    answer = owner.get(f"{PATH}/export", headers={"If-None-Match": first.headers["ETag"]})
+    assert answer.status_code == 409
+    assert answer.json()["error"]["details"]["reason"] == "private_without_grant"
+
+
+def test_the_reason_is_for_a_project_admin_only(
+    owner: flow.Human, fake: Fake, make_client: ClientFactory
+) -> None:
+    fake.family()
+    project(owner)
+    member = flow.agent(make_client, owner, "widget")
+    fake.refused = "unconfirmed"  # type: ignore[attr-defined]
+    answer = member.get(f"{PATH}/export")
+    assert answer.status_code == 409
+    assert answer.json()["error"]["code"] == "probe_not_configured"
+    assert answer.json()["error"]["details"] == {}
+    assert owner.get(f"{PATH}/export").json()["error"]["details"]["reason"] == "unconfirmed"
+
+
+def test_a_refusal_while_reading_the_family_is_probe_not_configured(
+    owner: flow.Human, fake: Fake
+) -> None:
+    fake.family()
+    fake.files[".keep-the-why"] = forge.NotCoveredError("repository_moved")
+    project(owner)
+    answer = owner.get(f"{PATH}/export")
+    assert answer.status_code == 409
+    error = answer.json()["error"]
+    assert error["code"] == "probe_not_configured"
+    assert error["details"]["reason"] == "repository_moved"
+    summary = owner.get(PATH)  # §11.3 answers as before
+    assert summary.json()["error"]["code"] == "ktw_unavailable"
+
+
+def _spent() -> forge.ForgeUnavailableError:
+    from datetime import UTC, datetime
+
+    return forge.ForgeUnavailableError(
+        "rate limited", 403, rate_limited=True, retry_at=datetime(2026, 11, 3, 12, 0, tzinfo=UTC)
+    )
+
+
+def test_a_budget_spent_while_reading_the_family_is_probe_unavailable(
+    owner: flow.Human, fake: Fake
+) -> None:
+    fake.family()
+    fake.files[".keep-the-why"] = _spent()
+    project(owner)
+    answer = owner.get(f"{PATH}/export")
+    assert answer.status_code == 503
+    error = answer.json()["error"]
+    assert error["code"] == "probe_unavailable"
+    assert error["details"]["retry_at"].startswith("2026-11-03T12:00:00")
+
+
+def test_a_budget_spent_reading_a_named_repository_is_probe_unavailable(
+    owner: flow.Human, fake: Fake
+) -> None:
+    fake.family()
+    other_repository(fake)
+    fake.foreign["acme/other"][".keep-the-why"] = _spent()  # type: ignore[attr-defined]
+    project(owner)
+    answer = owner.get(f"{PATH}/export", params={"canonical": OTHER})
+    assert answer.status_code == 503
+    assert answer.json()["error"]["code"] == "probe_unavailable"
+
+
+def test_named_repositories_are_never_read_with_the_owners_grant(
+    owner: flow.Human, fake: Fake
+) -> None:
+    fake.family()
+    other_repository(fake)
+    project(owner)
+    assert (
+        owner.get(f"{PATH}/export", params={"canonical": OTHER, "root": "lib"}).status_code == 200
+    )
+    theirs = [r for r in fake.readers if r[0] == "acme/other"]  # type: ignore[attr-defined]
+    ours = [r for r in fake.readers if r[0] == "acme/widget"]  # type: ignore[attr-defined]
+    assert theirs and all(
+        token != "owner-grant" and granted is None for _r, token, granted in theirs
+    )
+    assert ours and all(token == "owner-grant" for _r, token, _g in ours)
+
+
+def test_a_cold_read_is_fresh_and_the_next_is_not(owner: flow.Human, fake: Fake) -> None:
+    fake.family()
+    lean(fake, f"{BASE}/state.json", entry(1))
+    project(owner)
+    assert owner.get(f"{PATH}/export").json()["fresh"] is True
+    assert owner.get(f"{PATH}/export").json()["fresh"] is False
+    assert owner.get(f"{PATH}/bodies").json()["fresh"] is True
+    assert owner.get(f"{PATH}/bodies").json()["fresh"] is False
+
+
+def test_a_stale_file_whose_refresh_failed_is_not_read_again_within_30_seconds(
+    owner: flow.Human, fake: Fake, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    now = [1000.0]
+    monkeypatch.setattr(ktw, "_now", lambda: now[0])
+    fake.family()
+    lean(fake, f"{BASE}/state.json", entry(1))
+    project(owner)
+    assert owner.get(f"{PATH}/bodies").status_code == 200
+    fake.states[f"{BASE}/state.body.json"] = (502, b"")
+    now[0] += ktw.DEFAULT_MAX_AGE + 1
+    failed = owner.get(f"{PATH}/bodies")
+    assert failed.status_code == 503
+    reads = len(fake.state_reads)
+    now[0] += 5
+    held = owner.get(f"{PATH}/bodies")
+    assert held.status_code == 200 and held.json()["fresh"] is False, "the last good, held"
+    assert len(fake.state_reads) == reads, "no upstream read inside the 30 s"
+    now[0] += ktw.FORCE_INTERVAL
+    owner.get(f"{PATH}/bodies")
+    assert len(fake.state_reads) > reads
+
+
+class _Anonymous:
+    """A reader without a token: `_visibility` asks the forge anonymously (`_send`)."""
+
+    token = None
+
+    def __init__(self, answer: Any) -> None:
+        self.answer = answer
+        self.sent: list[str] = []
+
+    def _get(self, path: str, *, uncached: bool = False) -> Any:
+        raise AssertionError("_get needs a token")
+
+    def _send(self, path: str) -> Any:
+        self.sent.append(path)
+        return self.answer
+
+
+def test_the_visibility_is_read_anonymously_without_a_token() -> None:
+    reader = _Anonymous({"private": False})
+    assert ktw_reads._visibility(reader, "acme/other") is None  # type: ignore[arg-type]
+    assert reader.sent == ["/repos/acme/other"]
+    assert ktw_reads._visibility(_Anonymous({"private": True}), "acme/other") == "not_public"  # type: ignore[arg-type]
+
+
+def test_the_named_reader_is_the_instance_token_or_none() -> None:
+    grant = forge.Forge("owner-grant", granted="owner_token", repository="acme/widget")
+    assert ktw_reads.named_reader(forge.Forge("instance")).token == "instance"
+    assert ktw_reads.named_reader(forge.Forge(None)).token is None
+    reader = ktw_reads.named_reader(forge.Forge("instance", access=object()))
+    assert reader.granted is None and reader.access is None and reader.project_id is None
+    assert grant.granted == "owner_token"  # the grant is never what named_reader is given

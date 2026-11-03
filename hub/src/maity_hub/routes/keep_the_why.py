@@ -87,22 +87,44 @@ def _views_read(
             "ktw_not_configured",
             "the repository names no Keep the Why export (.keep-the-why, dashboard-state)",
         )
-    fg = reader_of(request).for_project(project.id)
-    if fg.refused is not None:
-        raise probe_not_configured(fg.refused if mine.may("project:admin") else None)
-    held = fg.retry_at()
-    if held is not None:
-        raise ApiError(
-            503, "probe_unavailable", "the forge budget is spent", {"retry_at": clock.rfc3339(held)}
-        )
+    base = reader_of(request)
+    fg = base.for_project(project.id)
+    admin = mine.may("project:admin")
     read = ktw_reads.export if which == "state" else ktw_reads.bodies
     try:
+        if not fg.configured_for(project.repository_url):
+            raise forge.NotCoveredError(fg.refused or "no_grant")
+        if fg.retry_at() is not None:
+            raise forge.ForgeUnavailableError(
+                "the forge's rate limit is spent", rate_limited=True, retry_at=fg.retry_at()
+            )
+        # every call: no export held in memory outlives the grant or the visibility (§11.5)
+        ktw_reads.require_covered(fg, forge.repository_of(project.repository_url))
         served = read(
-            fg, project.id, project.repository_url, canonical or None, root or "", max_age
+            fg,
+            ktw_reads.named_reader(base),
+            project.id,
+            project.repository_url,
+            canonical or None,
+            root or "",
+            max_age,
         )
-    except forge.ForgeUnavailableError as error:  # the budget ran out during the read
-        details = {"retry_at": clock.rfc3339(error.retry_at)} if error.retry_at else None
-        raise ApiError(503, "probe_unavailable", "the forge did not answer", details) from None
+    except forge.NotCoveredError as error:
+        raise probe_not_configured(error.reason if admin else None) from None
+    except forge.ForgeUnavailableError as error:
+        if error.retry_at is None:
+            raise ApiError(
+                503,
+                "ktw_unavailable",
+                "the Keep the Why export could not be read",
+                {"reason": "forge_unavailable"},
+            ) from None
+        raise ApiError(
+            503,
+            "probe_unavailable",
+            "the forge's rate limit is spent",
+            {"retry_at": clock.rfc3339(error.retry_at)},
+        ) from None
     except ktw_reads.Refused as refused:
         raise ApiError(
             refused.status, refused.code, refused.message, refused.details or None
