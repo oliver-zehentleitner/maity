@@ -220,7 +220,7 @@ A worker thread, started when a store is configured, runs every five
 minutes (`attachments.SWEEP_EVERY`). One pass deletes pending uploads older
 than 24 hours with their bytes, removes the bytes of a tombstoned row that
 are still there (a removal that failed after a commit), and removes a blob no
-row names. That last rule only touches a blob older than ten minutes
+row names. That last rule only touches a blob older than 30 minutes
 (`BLOB_GRACE`): an upload writes the blob before its row is committed, so a
 younger blob without a row may belong to a transaction still open. A removed
 member's pending uploads are deleted as rows in the removal's transaction and
@@ -238,6 +238,12 @@ older than `BLOB_GRACE` before the look, with no row at the look, can no longer 
 bound is not a reservation the database holds: it rests on the store's write time and the
 hub's clock agreeing to within a few minutes (half the grace, less the write's own duration). A message cannot name an upload past its 24
 hours either (`unknown`), so the two cannot disagree about the same row.
+A folder no project row has is left alone, named once per process in the log, and checked
+before its keys are read: the look at a blob's row needs that project's lock, which no row
+can give, and before, the pass stopped there and never reached the blobs after it. Checking
+the folder first also skips one the hub cannot read (`lost+found` on an ext4 volume, owned
+by root), whose listing failed the pass under `local`, and costs one query a pass instead of
+a lookup and a lock for each of its blobs.
 
 **Reason:** the write order of the contract leaves exactly one kind of
 leftover, a blob without a row, and every clean-up that cannot run in the

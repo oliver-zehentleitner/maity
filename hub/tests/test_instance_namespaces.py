@@ -415,3 +415,36 @@ def test_a_transfer_out_between_the_look_and_the_write_turns_the_page_off(
     assert changed.status_code == 200, changed.text
     assert fake.sent == [(OPERATOR, f"/repos/{REPO}")]  # the look that raced
     assert changed.json()["public_page"] == "off"
+
+
+# --- §11.5: the repositories a project's Keep the Why family names -----------------------------
+
+
+def test_a_listed_namespace_reads_its_named_repositories_with_the_instance_token(
+    make_client: ClientFactory, migrated: Engine, fake: FakeForge
+) -> None:
+    from maity_hub import ktw_reads
+
+    owner = flow.human(make_client, migrated)
+    flow.project(owner, "thing", repository={"url": URL})
+    base = forge.Forge(OPERATOR)
+    named = ktw_reads.named_reader(base, _reader(migrated))
+    assert (named.token, named.granted, named.project_id) == (OPERATOR, None, None)
+
+
+def test_a_project_outside_the_namespaces_gets_no_instance_reader_for_named_repositories(
+    make_client: ClientFactory, migrated: Engine, fake: FakeForge
+) -> None:
+    """§11.5 follows §11.4's list: outside it the instance token reads no named repository
+    either; they are read without a token."""
+    from maity_hub import ktw_reads
+
+    owner = flow.human(make_client, migrated)
+    flow.project(owner, "thing", repository={"url": URL})
+    base = forge.Forge(OPERATOR)
+    own = _reader(migrated, frozenset({"someone-else"}))
+    assert own.via is None
+    named = ktw_reads.named_reader(base, own)
+    assert named.token is None and named.granted is None
+    granted = forge.Forge("owner-grant", granted="owner_token", repository=REPO.lower())
+    assert ktw_reads.named_reader(base, granted).token is None, "an owner's project: anonymous"

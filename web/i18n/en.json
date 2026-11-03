@@ -1296,6 +1296,10 @@
     "one": "{count} mention",
     "other": "{count} mentions"
   },
+  "header.mentions.unread": {
+    "one": "{count} unread mention",
+    "other": "{count} unread mentions"
+  },
   "header.count.open": "{count} open",
   "header.count.unread": "{count} unread",
   "header.count.unread_chats": "{count} unread in chats",
@@ -3386,6 +3390,9 @@
   "prefs.versions.older": "Older versions",
   "prefs.versions.reading": "Reading…",
   "prefs.versions.title": "Earlier versions",
+  "product.bug": "Found a bug?",
+  "product.love": "love",
+  "product.made_by": "Made with {heart} by {name} on {github} & {maity}",
   "profile_delete.busy": "Deleting…",
   "profile_delete.done": "The profile @{handle} was deleted.",
   "profile_delete.done_ended": "The profile @{handle} was deleted; its memberships ended.",
@@ -4741,6 +4748,8 @@
   "waiting.read_failed": "Could not read notifications: ",
   "waiting.removed": "Removed",
   "waiting.title": "Notifications",
+  "waiting.title.in": "Notifications in {project}",
+  "waiting.title.kind_in": "{kind} in {project}",
   "waiting.unread": "(unread)",
   "waiting.untitled": "Notification",
   "watch.changed": "What waits for you changed ({count} open).",

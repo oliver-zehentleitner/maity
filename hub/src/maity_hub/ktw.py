@@ -13,9 +13,11 @@ directory below the file that lists it.
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import json
 import logging
+import math
 import re
 import threading
 import time
@@ -33,7 +35,7 @@ from maity_hub import bounded, clock, forge, outbound
 log = logging.getLogger(__name__)
 
 CONFIG_CAP = 64 * 1024
-STATE_CAP = 1024 * 1024
+STATE_CAP = 2 * 1024 * 1024  # §11.3, §11.5
 MAX_DEPTH = 4
 MAX_MEMBERS = 32
 MAX_ATTENTION = 200
@@ -73,7 +75,14 @@ class NotConfigured(Exception):
 
 
 class RootUnavailable(Exception):
-    """The root `.keep-the-why` could not be read; the whole export fails."""
+    """The root `.keep-the-why` could not be read; the whole export fails. `not_covered`
+    is the reason when no source covers the repository (§11.4), `retry_at` when the
+    source's budget is spent; §11.5 answers those as the probe does."""
+
+    def __init__(self, not_covered: str | None = None, retry_at: datetime | None = None) -> None:
+        super().__init__(not_covered or "forge_unavailable")
+        self.not_covered = not_covered
+        self.retry_at = retry_at
 
 
 class MemberError(Exception):
@@ -313,11 +322,131 @@ def read_state(url: str) -> Read:
         raise MemberError(_REFUSALS.get(refused.reason, "unavailable")) from None
     if answer.status != 200:
         raise MemberError("http_status", status=answer.status)
+    data = parse(answer.body)
+    found = digest(data, dashboard_url(url))
+    RAW.keep_state(url, data)
+    return found
+
+
+def _no_constant(name: str) -> Any:
+    raise ValueError(f"{name} is not JSON")
+
+
+def _finite(number: str) -> float:
+    value = float(number)
+    if math.isinf(value):  # 1e400: JSON.parse reads Infinity, which JSON cannot write back
+        raise ValueError("a number too large to be finite")
+    return value
+
+
+def _finite_int(number: str) -> int:
+    if math.isinf(float(number)):  # 401 digits: JSON.parse reads Infinity as well
+        raise ValueError("a number too large to be finite")
+    return int(number)
+
+
+def parse(body: bytes) -> Any:
+    """A JSON document as a browser's JSON.parse reads it: UTF-8, no NaN or Infinity, no
+    number too large to be finite; `MemberError("not_json")` otherwise. A lone surrogate in
+    a string is kept; it is written back escaped (`RawStore.put`)."""
     try:
-        data = json.loads(answer.body)
+        return json.loads(
+            body.decode("utf-8"),
+            parse_constant=_no_constant,
+            parse_float=_finite,
+            parse_int=_finite_int,
+        )
     except (ValueError, UnicodeDecodeError, RecursionError):  # nesting deep enough to recurse
         raise MemberError("not_json") from None
-    return digest(data, dashboard_url(url))
+
+
+# --- the exports as published, for the views (§11.5) ----------------------------------------
+
+RAW_BUDGET = 64 * 1024 * 1024
+HELD_KEPT = 4096  # when each file was last read, for the 30 s hold after a drop
+
+
+@dataclass
+class Raw:
+    """A file as published, written again as compact JSON, with when it was read."""
+
+    url: str
+    body: bytes
+    digest: str
+    at: float  # _now() of the read
+    observed_at: str
+    bodies: str | None = None  # a lean state's `bodies` value, as published
+
+
+@dataclass
+class RawStore:
+    """The published files the views read (§11.5), keyed by their URL: a read carries no
+    credential (§11.1), so a URL's bytes are the same for every project, and which project
+    may be answered with them is decided before the store is asked. At most RAW_BUDGET bytes,
+    the least recently used dropped first."""
+
+    files: OrderedDict[tuple[str, str], Raw] = field(default_factory=OrderedDict)
+    size: int = 0
+    guard: threading.Lock = field(default_factory=threading.Lock)
+    # When each file was last read, kept apart from `files`, so that a file dropped for room
+    # is not read again inside FORCE_INTERVAL (§11.5), whichever read filled it.
+    read_at: OrderedDict[tuple[str, str], float] = field(default_factory=OrderedDict)
+
+    def clear(self) -> None:
+        with self.guard:
+            self.files.clear()
+            self.size = 0
+            self.read_at.clear()
+
+    def mark(self, kind: str, url: str) -> None:
+        """Records a read of the file, made or begun now."""
+        with self.guard:
+            self.read_at[(kind, url)] = _now()
+            self.read_at.move_to_end((kind, url))
+            while len(self.read_at) > HELD_KEPT:
+                self.read_at.popitem(last=False)
+
+    def held(self, kind: str, url: str) -> bool:
+        """Whether the file was read less than FORCE_INTERVAL ago."""
+        with self.guard:
+            at = self.read_at.get((kind, url))
+        return at is not None and _now() - at < FORCE_INTERVAL
+
+    def get(self, kind: str, url: str) -> Raw | None:
+        with self.guard:
+            found = self.files.get((kind, url))
+            if found is not None:
+                self.files.move_to_end((kind, url))
+            return found
+
+    def put(self, kind: str, url: str, data: Any, bodies: str | None = None) -> Raw:
+        # ASCII with escapes: a lone surrogate, which UTF-8 cannot encode, stays `\ud800`
+        body = json.dumps(data, ensure_ascii=True, separators=(",", ":")).encode()
+        raw = Raw(
+            url, body, hashlib.sha256(body).hexdigest(), _now(), clock.rfc3339(clock.now()), bodies
+        )
+        with self.guard:
+            self.read_at[(kind, url)] = raw.at
+            self.read_at.move_to_end((kind, url))
+            while len(self.read_at) > HELD_KEPT:
+                self.read_at.popitem(last=False)
+            old = self.files.pop((kind, url), None)
+            if old is not None:
+                self.size -= len(old.body)
+            if len(body) <= RAW_BUDGET:
+                self.files[(kind, url)] = raw
+                self.size += len(body)
+            while self.size > RAW_BUDGET and self.files:
+                _key, gone = self.files.popitem(last=False)
+                self.size -= len(gone.body)
+        return raw
+
+    def keep_state(self, url: str, data: Any) -> Raw:
+        bodies = data.get("bodies") if isinstance(data, dict) else None
+        return self.put("state", url, data, bodies if isinstance(bodies, str) else None)
+
+
+RAW = RawStore()
 
 
 # --- the family ------------------------------------------------------------------------------
@@ -332,6 +461,10 @@ class Member:
     observed_at: str | None = None
     read: Read | None = None
     error: dict[str, Any] | None = None
+    parent: str | None = None  # the config block's `parent:` line, as written (§11.5)
+    location: str | None = None  # a location not followed, as written (§11.5)
+    # when the source's budget is there again, if its config read found it spent (§11.5 only)
+    retry_at: datetime | None = None
 
     def view(self) -> dict[str, Any]:
         return {
@@ -368,8 +501,10 @@ def walk(reader: forge.Forge, repository: str, deadline: float | None = None) ->
         file = f"{path}/.keep-the-why" if path else ".keep-the-why"
         try:
             data = reader.file(repository, file, CONFIG_CAP)
-        except forge.ForgeUnavailableError:
-            raise MemberError("forge_unavailable") from None
+        except forge.NotCoveredError as error:
+            raise MemberError("forge_unavailable", not_covered=error.reason) from None
+        except forge.ForgeUnavailableError as error:
+            raise MemberError("forge_unavailable", retry_at=error.retry_at) from None
         except ValueError:
             raise MemberError("too_large") from None
         return None if data is None else data.decode("utf-8", errors="replace")
@@ -377,7 +512,13 @@ def walk(reader: forge.Forge, repository: str, deadline: float | None = None) ->
     def visit(path: str, name: str | None, source: str, depth: int) -> None:
         nonlocal truncated
         settings = config(source)
-        member = Member(path=path, name=name, id=text(settings.get("id"), 200))
+        member = Member(
+            path=path,
+            name=name,
+            id=text(settings.get("id"), 200),
+            # as written: §11.5 checks a repository's name before anything is removed from it
+            parent=settings.get("parent", "")[:2048] or None,
+        )
         state = settings.get("dashboard-state")
         if not state:
             member.error = _error("no_state_url")
@@ -398,7 +539,12 @@ def walk(reader: forge.Forge, repository: str, deadline: float | None = None) ->
                     continue  # nothing left to show, or listed already: never a second ""
                 seen.add(shown)
                 members.append(
-                    Member(path=shown, name=clean_name, error=_error("location_not_followed"))
+                    Member(
+                        path=shown,
+                        name=clean_name,
+                        error=_error("location_not_followed"),
+                        location=location[:2048],
+                    )
                 )
                 continue
             if target in seen:
@@ -413,7 +559,14 @@ def walk(reader: forge.Forge, repository: str, deadline: float | None = None) ->
             try:
                 child_source = read_config(target)
             except MemberError as failed:
-                members.append(Member(path=target, name=clean_name, error=_error(failed.reason)))
+                members.append(
+                    Member(
+                        path=target,
+                        name=clean_name,
+                        error=_error(failed.reason),
+                        retry_at=failed.details.get("retry_at"),
+                    )
+                )
                 continue
             if child_source is None:
                 members.append(Member(path=target, name=clean_name, error=_error("config_missing")))
@@ -422,8 +575,10 @@ def walk(reader: forge.Forge, repository: str, deadline: float | None = None) ->
 
     try:
         root = read_config("")
-    except MemberError:
-        raise RootUnavailable from None
+    except MemberError as failed:
+        raise RootUnavailable(
+            failed.details.get("not_covered"), failed.details.get("retry_at")
+        ) from None
     if root is None or not config(root).get("dashboard-state"):
         raise NotConfigured
     seen.add("")
@@ -514,6 +669,10 @@ class Snapshot:
     members: list[Member]
     family_truncated: bool
     error: dict[str, Any] | None = None
+    # Why the root could not be read, for §11.5 alone (never in §11.3's answers): the
+    # reason no source covers it (§11.4), or when the source's budget is there again.
+    not_covered: str | None = None
+    retry_at: datetime | None = None
 
     def answer(self, member: str | None = None, fresh: bool = True) -> dict[str, Any]:
         members = self.members
@@ -685,13 +844,22 @@ class Cache:
             family = walk(reader, repository, deadline)
         except NotConfigured:
             return _Entry(None, now, repository_url)
-        except RootUnavailable:
+        except RootUnavailable as failed:
             previous = last.snapshot if last and last.repository_url == repository_url else None
             error = _error("forge_unavailable")
             if previous is None:
-                return _Entry(Snapshot(observed, [], False, error), now, repository_url)
+                return _Entry(
+                    Snapshot(observed, [], False, error, failed.not_covered, failed.retry_at),
+                    now,
+                    repository_url,
+                )
             kept = Snapshot(
-                previous.observed_at, previous.members, previous.family_truncated, error
+                previous.observed_at,
+                previous.members,
+                previous.family_truncated,
+                error,
+                failed.not_covered,
+                failed.retry_at,
             )
             return _Entry(kept, now, repository_url)
         _read_exports(family, deadline)

@@ -16,9 +16,6 @@ NOT_ROUTED = {
     ("GET", "/openapi.json"),
     # Answered ahead of the router, as it carries no credential and no CSRF token (§17.4).
     ("POST", "/projects/{}/{}/forge/webhook"),
-    # Contract without a route yet: tsk-nzhv3kgaxmpe (KTW M2, the Keep the Why views' reads).
-    ("GET", "/projects/{}/{}/keep-the-why/export"),
-    ("GET", "/projects/{}/{}/keep-the-why/bodies"),
     # Contract without a route yet: tsk-4xqfxezvz0dh.
     ("DELETE", "/projects/{}/{}/tasks/{}/objection-hold"),
     # Contract without a route yet: tsk-r97n4e6v4kaz.

@@ -97,6 +97,7 @@ class El extends Node_ {
 const header = new El("header"); header.id = "header";
 const head = new El("head");
 const main = new El("main"); main.id = "main";
+const productLine = new El("footer"); productLine.id = "product-line";
 const docListeners = {};
 const document = {
   createElement: (t) => new El(t),
@@ -104,7 +105,7 @@ const document = {
   createTextNode: (t) => new Text_(t),
   head,
   documentElement: new El("html"),
-  getElementById: (id) => ({ header, main })[id],
+  getElementById: (id) => ({ header, main, "product-line": productLine })[id],
   querySelector: (s) => header.querySelector(s) || main.querySelector(s),
   addEventListener: (t, f) => { docListeners[t] = f; },
   removeEventListener: (t, f) => { if (docListeners[t] === f) delete docListeners[t]; },
@@ -233,6 +234,29 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const plainTitle = () => document.title.replace(/^\(\d+\) /, "");
   expect(win.location.hash === "#/all", "empty hash with two projects lands on #/all");
   expect(!main.querySelector(".error"), "cross-project inbox renders");
+  // The product line (docs/api.md §16.13) after <main>: the year, the issues, the credit with two icon links.
+  {
+    const links = productLine.querySelectorAll("a");
+    const hrefs = links.map((a) => a.getAttribute("href"));
+    expect(text(productLine) === " Maity " + new Date().getFullYear() + " · Found a bug? · Made with ♥ by Oliver Zehentleitner on & ",
+      "product line: Maity and the year, Found a bug?, the credit with the name as plain text");
+    expect(JSON.stringify(hrefs) === JSON.stringify(["https://github.com/oliver-zehentleitner/maity/issues",
+      "https://github.com/oliver-zehentleitner", "https://maity.team/oliver-zehentleitner"]),
+      "product line: three absolute links, the same on every instance, the Maity page without @");
+    expect(links.every((a) => a.getAttribute("rel") === "noopener noreferrer" && a.getAttribute("target") === "_blank"),
+      "product line: every link in a new tab with rel=noopener noreferrer");
+    expect(links[1].getAttribute("aria-label") === "GitHub" && links[2].getAttribute("aria-label") === "Maity"
+      && productLine.querySelectorAll("svg").every((svg) => svg.getAttribute("aria-hidden") === "true"),
+      "product line: the icon links named GitHub and Maity, every icon aria-hidden");
+    const heart = productLine.querySelector(".product-heart");
+    expect(heart && heart.getAttribute("role") === "img" && heart.getAttribute("aria-label") === "love", "product line: the heart is a symbol named love");
+    expect(productLine.all().every((e) => e.attrs.style === undefined && e.tagName !== "STYLE" && e.tagName !== "USE" && e.tagName !== "TITLE"),
+      "product line: the icons use presentation attributes only, no style, <style>, <use> or <title>");
+    const wf = win.Maity.productLine.wellFormed;
+    expect(wf("Made with {heart} by {name} on {github} & {maity}") && wf("{maity} {github} {name} {heart}")
+      && !wf("Made with {heart} by {name} on {github}") && !wf("{heart} {name} {github} & {github} {maity}") && !wf("{heart} {name} {github} {maity} {x}"),
+      "product line: a sentence names each of the four placeholders exactly once, and no other");
+  }
   expect(gets.some((p) => p.startsWith("/requests")) && !main.querySelector(".lead-projects") && !header.querySelector(".lead-chat"),
     "#/all renders requests; no lead strip (the lead is behind the header's Chat button)");
   expect(!text(main).includes("null") && !text(header).includes("null"), "no stray 'null' text");
@@ -3243,13 +3267,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const oldNavigator = win.navigator, oldStorage = win.localStorage, oldSearch = win.location.search;
     const kept = {};
     win.localStorage = { getItem: (k) => kept[k] ?? null, setItem: (k, v) => { kept[k] = v; }, removeItem: (k) => { delete kept[k]; } };
-    win.MAITY_I18N.de = { "chat.instance.label": "Senden an" };
+    win.MAITY_I18N.de = { "chat.instance.label": "Senden an", "product.bug": "Einen Fehler gefunden?",
+      "product.made_by": "Mit {heart} von {name} auf {github} & {maity}" };
     win.MAITY_I18N["zh-Hans"] = {};
     i18n.available.push("de", "zh-Hans");
     win.navigator = { languages: ["de-AT", "en"] };
     await i18n.follow(null);
     expect(i18n.language === "de" && tr("chat.instance.label") === "Senden an" && tr("account.title") !== "account.title",
       "language: de-AT reads de, a key without a translation reads in English");
+    // The product line follows the language when it arrives, outside every view (§16.13).
+    expect(text(productLine).includes("Einen Fehler gefunden?") && text(productLine).includes("Mit ♥ von Oliver Zehentleitner auf"),
+      "product line: drawn again in the page's language when the language changes");
+    win.MAITY_I18N.de["product.made_by"] = "Mit {heart} von {name} auf {github} & {github}";
+    win.navigator = { languages: ["en"] };
+    await i18n.follow(null);
+    win.navigator = { languages: ["de-AT", "en"] };
+    await i18n.follow(null);
+    expect(text(productLine).includes("Einen Fehler gefunden?") && text(productLine).includes("Made with ♥ by Oliver Zehentleitner on"),
+      "product line: a translated sentence not naming each placeholder once is drawn in English, the rest stays translated");
     win.navigator = { languages: ["zh-TW", "fr"] };
     await i18n.follow(null);
     expect(i18n.language === "en", "language: Traditional Chinese does not fall to Simplified, and with nothing close the page is English");
@@ -6140,7 +6175,21 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = lpGet;
   // An invitation (docs/api.md §3.4) without a session: who invites to what, and the ways in this hub offers.
   const ivPage = () => main.querySelector("article.invite");
+  // An in-app move to an invitation, the window's read a minute old: no request leaves before the
+  // page's no-referrer policy stands (§16.13), GET /maintenance included.
+  const ivNoRef = () => head.querySelectorAll("meta").some((m) => m.getAttribute("name") === "referrer" && m.getAttribute("content") === "no-referrer");
+  const ivRefGet = win.Maity.api.get, ivRealNow = Date.now, ivRefAsked = [];
+  expect(!ivNoRef(), "invite: no referrer policy before the first invitation (the check below means something)");
+  Date.now = () => ivRealNow() + 120000;
+  win.Maity.api.get = (p) => { if (win.Maity.route.current().path.startsWith("/invite/")) ivRefAsked.push(p + "=" + ivNoRef()); return ivRefGet(p); };
   await go("#/invite/open-xxxxxxxxxxxxxxxx1"); for (let k = 0; k < 4; k++) await tick();
+  win.Maity.api.get = ivRefGet; Date.now = ivRealNow;
+  expect(ivRefAsked.includes("/maintenance=true") && ivRefAsked.every((a) => a.endsWith("=true")),
+    "invite: an in-app move sets the no-referrer policy before any request, GET /maintenance included " + JSON.stringify(ivRefAsked));
+  // The token is in the path: the page sends no Referer (docs/api.md §16.13), and still ends with the product line.
+  expect(head.querySelectorAll("meta").filter((m) => m.getAttribute("name") === "referrer" && m.getAttribute("content") === "no-referrer").length === 1,
+    "invite: the page sets <meta name=referrer content=no-referrer>, once");
+  expect(productLine.querySelectorAll("a").length === 3, "invite: the page ends with the product line");
   // The rule's selector meets the pages it is for (tsk-swr1bywv3agq): here the header is the bar alone; a project's header is never.
   const hdOnly = () => header.childNodes.filter((x) => x.tagName).length === 1 && header.childNodes.find((x) => x.tagName).className === "bar";
   expect(hdOnly(), "header: an invitation's header is the bar alone, so the bar's own room below applies");
@@ -9794,6 +9843,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && viView().querySelectorAll("a").some((a) => a.getAttribute("href") === "https://github.com/s/t/pull/1")
     && text(viView()).includes("Humans online: 1") && text(viView()).includes("Agents online: 2") && !viView().querySelector("b"),
     "visitor: the overview's snapshot, the ticker as text with a merge's link, and who is online");
+  // §16.13, "Where it is": a public address the dashboard draws ends with the product line; a
+  // stored public page the hub put into <main> stands without it, the next view has it again.
+  expect(productLine.querySelectorAll("a").length === 3, "product line: under a public address the dashboard draws");
+  main.hasAttribute = (k) => k in main.attrs;
+  main.setAttribute("data-public-page", "");
+  await go("#/stranger/tool/board"); for (let k = 0; k < 4; k++) await tick();
+  expect(!productLine.querySelectorAll("a").length, "product line: not under a stored public page the hub served");
+  await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
+  expect(productLine.querySelectorAll("a").length === 3, "product line: back with the next view");
+  delete main.hasAttribute;
   expect(!viAll.some((p) => p.startsWith("/projects/stranger")), "visitor: a stranger's public project asks no member route");
   expect(text(header).length && !header.querySelector(".visitor-sign-in"), "visitor: signed in, the reader's own header stays, with no sign-in link");
   expect(win.Maity.api.isPublicPath("/public/pages/stranger/tool"), "visitor: the read works after the session ended here");
@@ -10083,6 +10142,45 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(waitWrites[waitWrites.length - 1]) === JSON.stringify({ ids: ["ntf-sfc-9"] }) && waitRow("ntf-sfc-9").classList.contains("unread")
     && waitMark("ntf-sfc-9") && text(main).includes("only a session older than it may mark it"),
     "notifications: an id the hub skips is said and the row stays unread " + JSON.stringify(waitWrites));
+  win.Maity.api.get = waitGet; win.Maity.api.post = waitPost;
+
+  // A project whose only unread item is a mention (tsk-xb7bf1x0h3cy, the owner's report): the pill counts it,
+  // no tab does, so a link beside the tabs leads to the project's mentions on /notifications (§18.2 kind, project).
+  const mnGets = [], mnWrites = [];
+  const mnMention = { id: "ntf-4300", seq: 4300, kind: "mention", at: "2026-10-22T13:40:00Z",
+    project: { slug: "maity", full_name: "maintainer/maity", name: "Maity" }, actor: { member_id: "agt-b" },
+    title: "Agent B mentioned you", target: { type: "message", id: "evt-4300" }, url: "https://maity.team/maintainer/maity/messages", read: false, redacted: false };
+  const mnOnly = (a) => {
+    const by = Object.assign({}, a.by_project);
+    by["maintainer/maity"] = { member: true, inbox: 0, chat: 0, mention: 1, total: 1 };
+    by["maintainer/sample"] = { member: true, inbox: 0, chat: 0, mention: 0, total: 0 };
+    return Object.assign({}, a, { by_project: by });
+  };
+  win.Maity.api.get = (p) => {
+    mnGets.push(p);
+    if (p === "/me/notifications?limit=0") return waitGet(p).then(mnOnly);
+    if (p.startsWith("/me/notifications?limit=50")) return waitGet(p).then((r) => Object.assign({}, mnOnly(r), { items: [mnMention], next_cursor: null }));
+    return waitGet(p);
+  };
+  win.Maity.api.post = (p, b) => { if (p === "/me/notifications/read") mnWrites.push(b); return waitPost(p, b); };
+  await go("#/maintainer/sample/inbox"); await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
+  const mnTab = (label) => header.querySelectorAll("nav.views a").find((a) => a.textContent.startsWith(label));
+  expect(chipCount("Maity") === "1" && !mnTab("Inbox").querySelector(".count") && !mnTab("Chat").querySelector(".count"),
+    "mention count: the pill counts the one unread mention, the Inbox and Chat tabs count nothing");
+  const mnLink = () => header.querySelectorAll(".mention-note a").find((a) => a.textContent === "1 unread mention");
+  expect(mnLink() && mnLink().getAttribute("href") === "#/notifications?kind=mention&project=maintainer%2Fmaity",
+    "mention count: beside the tabs, a link to the project's mentions on /notifications");
+  await go("#/notifications?kind=mention&project=maintainer%2Fmaity"); for (let k = 0; k < 6; k++) await tick();
+  const mnList = mnGets.filter((p) => p.startsWith("/me/notifications?limit=50"));
+  expect(mnList.length && mnList[mnList.length - 1].includes("&kind=mention") && mnList[mnList.length - 1].includes("&project=maintainer%2Fmaity"),
+    "mention count: /notifications asks the hub for that kind and project only " + JSON.stringify(mnList));
+  expect(text(main).includes("Mentions in Maity") && main.querySelectorAll("a").some((a) => a.textContent === "All notifications" && a.getAttribute("href") === "#/notifications"),
+    "mention count: the page names its filter and leads back to all notifications");
+  btn(main, "Mark all read").click(); for (let k = 0; k < 8; k++) await tick();
+  expect(mnWrites.length === 1 && "up_to" in mnWrites[0] && mnWrites[0].kind === "mention" && mnWrites[0].project === "maintainer/maity",
+    "mention count: Mark all read there marks that kind and project only (§18.3) " + JSON.stringify(mnWrites));
+  await go("#/maintainer/sample/inbox"); for (let k = 0; k < 6; k++) await tick();
+  expect(!header.querySelectorAll(".mention-note a").length, "mention count: a project without unread mentions has no such link");
   win.Maity.api.get = waitGet; win.Maity.api.post = waitPost;
 
   // Languages: project writes are human-admin only; personal language is not mail-gated.
