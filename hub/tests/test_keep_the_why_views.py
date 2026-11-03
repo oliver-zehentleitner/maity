@@ -1013,8 +1013,15 @@ def test_a_repository_turned_private_ends_within_the_ten_minutes_of_the_real_che
 # --- be2n's second review ----------------------------------------------------------------------
 
 
-def test_the_visibility_verdict_is_dropped_whatever_the_case_of_the_name() -> None:
+def test_the_visibility_verdict_is_dropped_whatever_the_case_of_the_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """`_require_public` keys its verdict as `_forget` drops it: lower case (forge.py)."""
+
+    def asked(self: forge.Forge, path: str, *args: Any, **kwargs: Any) -> Any:
+        raise AssertionError(f"the verdict was not found under its key: the forge asked for {path}")
+
+    monkeypatch.setattr(forge.Forge, "_send", asked)
     reader = forge.Forge("instance")
     key = (forge.hashlib.sha256(b"instance").hexdigest(), "acme/widget")  # type: ignore[attr-defined]
     forge._public[key] = (forge.time.monotonic(), None)  # type: ignore[attr-defined]
