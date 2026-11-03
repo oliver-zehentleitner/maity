@@ -1,6 +1,6 @@
 ### Added
 
-- web: the dashboard and the hub's texts in Simplified Chinese (`zh-Hans`): 4459 web keys and 130
+- web: the dashboard and the hub's texts in Simplified Chinese (`zh-Hans`): 4460 web keys and 130
   hub words, the reader addressed as `你`; redacting is `移除` on every key, the button's word
   (tsk-ya56x9gx986r).
 

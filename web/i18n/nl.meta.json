@@ -2875,6 +2875,10 @@
     "en": "169c766081d782ef",
     "text": "92ccb72963cedbd1"
   },
+  "contract.meta.whole": {
+    "en": "3cccb13e7824459a",
+    "text": "6bc6e3343d03c9a2"
+  },
   "contract.none": {
     "en": "311ccdabe1e7f8f6",
     "text": "b82e6707e9015165"
@@ -2922,6 +2926,34 @@
   "contract.unresolved": {
     "en": "df927d470f71b978",
     "text": "47876e96c3f96098"
+  },
+  "contract.whole.reading": {
+    "en": "45d56821f9a79b06",
+    "text": "bafdb2557e5ae27f"
+  },
+  "contract.whole.title": {
+    "en": "733e9ab34898e5d7",
+    "text": "733e9ab34898e5d7"
+  },
+  "contract.whole.toc": {
+    "en": "978507cc93df4d03",
+    "text": "6151ef83244a761f"
+  },
+  "contract.whole.why.not_found_on_forge": {
+    "en": "c6c784efe43c072b",
+    "text": "f4bafb1de102f888"
+  },
+  "contract.whole.why.not_markdown": {
+    "en": "815d6f4b97ff85d4",
+    "text": "bfe5b8c20b19a3cf"
+  },
+  "contract.whole.why.not_text": {
+    "en": "e7937b1a925b74a6",
+    "text": "cf926bc2bffcb45e"
+  },
+  "contract.whole.why.too_large": {
+    "en": "fe9d8e7479c1d23b",
+    "text": "a7766c30b6998068"
   },
   "contract.why.ambiguous_in_file": {
     "en": "19ca6c7b6493f149",
@@ -3968,12 +4000,12 @@
     "text": "14971c3cd5f348d1"
   },
   "forge.via.instance": {
-    "en": "af99f024da99184a",
-    "text": "8053a0102a94039c"
+    "en": "213d4401f693e8f9",
+    "text": "dc249760472937cd"
   },
   "forge.via.none": {
-    "en": "c8b1997e9d1dc468",
-    "text": "42c991e02a19c8f7"
+    "en": "f3c21cbf73952d4b",
+    "text": "60e97cf8a73f3f38"
   },
   "forge.via.owner_token": {
     "en": "3f7cfca281e0d495",
@@ -9791,6 +9823,10 @@
     "en": "0adf70d5dd00616b",
     "text": "0adf70d5dd00616b"
   },
+  "nav.contract": {
+    "en": "733e9ab34898e5d7",
+    "text": "733e9ab34898e5d7"
+  },
   "nav.inbox": {
     "en": "c2c0b354370cf87a",
     "text": "c2c0b354370cf87a"
@@ -10750,6 +10786,10 @@
   "overview.project.contract": {
     "en": "733e9ab34898e5d7",
     "text": "733e9ab34898e5d7"
+  },
+  "overview.project.contract_forge": {
+    "en": "1269313bee6567c9",
+    "text": "bc29d8b63379015b"
   },
   "overview.project.no_repository": {
     "en": "8c3b5df817eeac05",

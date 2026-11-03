@@ -655,7 +655,7 @@ the session themselves. A catalog per language keeps nine languages off every pa
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-ya56x9gx986r, 2026-11-01; docs/api.md §6.2 (a key without a translation reads in English)
+**Source:** card tsk-ya56x9gx986r, 2026-11-01; docs/api.md §6.2 (a key without a translation reads in English); main after #1285 and #1284, fixed in #1296 (2026-11-03)
 **Revisit when:** the release workflow of the hub runs `make release-check` itself, or a language with other plural rules joins the ten
 
 Placeholders that differ, a key English lacks and impossible plural forms fail `make check`, since
@@ -663,6 +663,12 @@ they break a sentence on screen. A missing or out-of-date key fails only `make r
 English text a PR adds would otherwise have to arrive in ten languages in that PR. Which English a
 translation follows is kept per key as two hashes in `i18n/<lang>.meta.json`, its own text beside the
 English: when the translation's text changes it follows today's English, with no step to remember.
+
+The other side of this: a key English drops fails `make check` in every language that still has it. A
+translation PR tested against an older main can therefore turn main red when it lands after the PR
+that dropped the key; on 2026-11-03 zh-Hans (#1284) landed right after #1285 had dropped three
+`sessions.*` keys, and #1296 removed them again. A language PR's keys are therefore compared with the
+`en.json` of the main it merges into, just before the merge; a clean `git merge-tree` does not show this.
 
 **Rejected alternatives:**
 - Finding out-of-date keys from `git log`: shallow CI clones have no history, and a reformat of the

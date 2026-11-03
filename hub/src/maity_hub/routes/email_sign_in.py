@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Connection, Engine, select
 
-from maity_hub import catalog, clock, paths
+from maity_hub import catalog, clock, paths, product_line
 from maity_hub import tables as t
 from maity_hub.auth import email_links as links
 from maity_hub.auth import second_factor, sessions, sign_in_settings
@@ -284,9 +284,9 @@ def _token(hub: Settings, token: str) -> dict[str, Any] | None:
 
 def _dead() -> HTMLResponse:
     return HTMLResponse(
-        "<h1>This link no longer works.</h1>",
+        f"{product_line.HEAD}<h1>This link no longer works.</h1>{product_line.html('en')}",
         status_code=404,
-        headers={"Referrer-Policy": "no-referrer"},
+        headers=product_line.HEADERS,
     )
 
 
@@ -318,10 +318,11 @@ def link_page(token: str, request: Request) -> HTMLResponse:
     response = HTMLResponse(
         '<!doctype html><html><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width">'
-        f"<title>{escape(title)}</title></head><body><h1>{escape(title)}</h1>"
+        f"<title>{escape(title)}</title>{product_line.HEAD}</head><body><h1>{escape(title)}</h1>"
         f'<form method="post"><input type="hidden" name="form" value="{form}">'
-        f'<button type="submit">{button}</button></form></body></html>',
-        headers={"Referrer-Policy": "no-referrer"},
+        f'<button type="submit">{button}</button></form>'
+        f"{product_line.html(language, 'sign_in')}</body></html>",
+        headers=product_line.HEADERS,
     )
     response.set_cookie(
         FORM_COOKIE,

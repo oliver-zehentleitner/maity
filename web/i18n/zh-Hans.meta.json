@@ -3195,6 +3195,10 @@
     "en": "169c766081d782ef",
     "text": "1e1b6004605613a3"
   },
+  "contract.meta.whole": {
+    "en": "3cccb13e7824459a",
+    "text": "9797dad67a46dec3"
+  },
   "contract.none": {
     "en": "311ccdabe1e7f8f6",
     "text": "06eee8da7fac5736"
@@ -3242,6 +3246,34 @@
   "contract.unresolved": {
     "en": "df927d470f71b978",
     "text": "a7b07b40b0729cd8"
+  },
+  "contract.whole.reading": {
+    "en": "45d56821f9a79b06",
+    "text": "c671739c76cc07a5"
+  },
+  "contract.whole.title": {
+    "en": "733e9ab34898e5d7",
+    "text": "d3f295abfa69cc53"
+  },
+  "contract.whole.toc": {
+    "en": "978507cc93df4d03",
+    "text": "2a2f0430ad057c65"
+  },
+  "contract.whole.why.not_found_on_forge": {
+    "en": "c6c784efe43c072b",
+    "text": "a2b0aab9b38297e9"
+  },
+  "contract.whole.why.not_markdown": {
+    "en": "815d6f4b97ff85d4",
+    "text": "8613a6cd41a84ba0"
+  },
+  "contract.whole.why.not_text": {
+    "en": "e7937b1a925b74a6",
+    "text": "93119ff312b173eb"
+  },
+  "contract.whole.why.too_large": {
+    "en": "fe9d8e7479c1d23b",
+    "text": "665e0e7868307867"
   },
   "contract.why.ambiguous_in_file": {
     "en": "19ca6c7b6493f149",
@@ -4297,7 +4329,7 @@
   },
   "forge.via.instance": {
     "en": "213d4401f693e8f9",
-    "text": "9f5cc6ef1875b23a"
+    "text": "e992a7057389b79b"
   },
   "forge.via.none": {
     "en": "f3c21cbf73952d4b",
@@ -10443,6 +10475,10 @@
     "en": "0adf70d5dd00616b",
     "text": "db21a9335d1213e6"
   },
+  "nav.contract": {
+    "en": "733e9ab34898e5d7",
+    "text": "d3f295abfa69cc53"
+  },
   "nav.inbox": {
     "en": "c2c0b354370cf87a",
     "text": "0427b78a5b0d16bf"
@@ -11402,6 +11438,10 @@
   "overview.project.contract": {
     "en": "733e9ab34898e5d7",
     "text": "d3f295abfa69cc53"
+  },
+  "overview.project.contract_forge": {
+    "en": "1269313bee6567c9",
+    "text": "8f674e98abbb21c2"
   },
   "overview.project.no_repository": {
     "en": "8c3b5df817eeac05",

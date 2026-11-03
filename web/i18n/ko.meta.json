@@ -2875,6 +2875,10 @@
     "en": "169c766081d782ef",
     "text": "b8ce1a3d3e129905"
   },
+  "contract.meta.whole": {
+    "en": "3cccb13e7824459a",
+    "text": "7adf7dee62ddaf51"
+  },
   "contract.none": {
     "en": "311ccdabe1e7f8f6",
     "text": "70e186748dc01ba6"
@@ -2922,6 +2926,34 @@
   "contract.unresolved": {
     "en": "df927d470f71b978",
     "text": "6c44377663246323"
+  },
+  "contract.whole.reading": {
+    "en": "45d56821f9a79b06",
+    "text": "d88328621c7a0605"
+  },
+  "contract.whole.title": {
+    "en": "733e9ab34898e5d7",
+    "text": "0959b1be46e54d30"
+  },
+  "contract.whole.toc": {
+    "en": "978507cc93df4d03",
+    "text": "e8843a74440e0ab5"
+  },
+  "contract.whole.why.not_found_on_forge": {
+    "en": "c6c784efe43c072b",
+    "text": "808a9beb8830f71e"
+  },
+  "contract.whole.why.not_markdown": {
+    "en": "815d6f4b97ff85d4",
+    "text": "7df1c59547a6c7b8"
+  },
+  "contract.whole.why.not_text": {
+    "en": "e7937b1a925b74a6",
+    "text": "233190fd931b2d74"
+  },
+  "contract.whole.why.too_large": {
+    "en": "fe9d8e7479c1d23b",
+    "text": "b213e7ba6573136a"
   },
   "contract.why.ambiguous_in_file": {
     "en": "19ca6c7b6493f149",
@@ -3976,12 +4008,12 @@
     "text": "00f1f732b44e27fc"
   },
   "forge.via.instance": {
-    "en": "af99f024da99184a",
-    "text": "447a0b6782591920"
+    "en": "213d4401f693e8f9",
+    "text": "f863643a219d522b"
   },
   "forge.via.none": {
-    "en": "c8b1997e9d1dc468",
-    "text": "1744421db8e6e7ef"
+    "en": "f3c21cbf73952d4b",
+    "text": "c64a0ecbbcc0f5bb"
   },
   "forge.via.owner_token": {
     "en": "3f7cfca281e0d495",
@@ -10075,6 +10107,10 @@
     "en": "0adf70d5dd00616b",
     "text": "7512bd5f420eb83f"
   },
+  "nav.contract": {
+    "en": "733e9ab34898e5d7",
+    "text": "0959b1be46e54d30"
+  },
   "nav.inbox": {
     "en": "c2c0b354370cf87a",
     "text": "32a5571358f9dab3"
@@ -11034,6 +11070,10 @@
   "overview.project.contract": {
     "en": "733e9ab34898e5d7",
     "text": "0959b1be46e54d30"
+  },
+  "overview.project.contract_forge": {
+    "en": "1269313bee6567c9",
+    "text": "1d454ef80a1a5dfe"
   },
   "overview.project.no_repository": {
     "en": "8c3b5df817eeac05",

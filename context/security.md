@@ -151,6 +151,35 @@ Keeping the projects' record keeps other members' history readable.
 - Deleting at once on the first call: a session left open on a shared
   computer would be enough to destroy an account.
 
+## The pages without inline style allow the product line's one block by its hash
+
+**Id:** 32f18f7d-91c7-40c3-898f-6137cac6969a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's ruling in the review of the hub's product line (2026-11-03), on the reviewers' point that the line was neither centred nor muted on the link, join and maintenance pages; `hub/src/maity_hub/product_line.py`
+**See:** scope.md#every-page-of-the-platforms-own-interface-ends-with-one-product-line-also-on-a-self-hosted-instance — ba8583f2-7a56-4435-8c4c-6ab2c9bf7378 — as of 2026-11-03
+
+The hub's pages under its default policy `default-src 'self'` (the mail
+link pages, the sign-in link page, the join page in a browser, the
+`503` maintenance page) carry one fixed `<style>` block for the product
+line and answer with `default-src 'self'; style-src 'sha256-…'`, the
+hash of exactly that block. A test checks that the hash in the header
+is the block's.
+
+**Reason:** the contract asks for a centred, muted line on every page,
+and these pages allowed no style at all. A hash source admits that one
+block and nothing else: an injected `<style>` or `style` attribute
+still does not apply. The test keeps an edit to the block from silently
+dropping it.
+
+**Rejected alternatives:**
+- `style-src 'unsafe-inline'`: any injected style would apply on pages
+  whose path holds a token.
+- An exception in the contract for pages without a stylesheet: the line
+  would look different on exactly the pages a newcomer sees first.
+- A stylesheet file: the join host serves no assets (§1.1).
+
 ## A page with a token in its path sends no referrer; its outgoing links say so too
 
 **Id:** 4a01739c-d565-4384-b806-3662f935e0a5
