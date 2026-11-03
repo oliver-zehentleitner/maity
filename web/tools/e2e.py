@@ -3228,10 +3228,18 @@ def project_links_step(run: Run, page: Page) -> None:
     page.set_viewport_size({"width": 360, "height": 780})
     tops = page.evaluate("Array.from(document.querySelectorAll('header .project-links > a')).map((a) => Math.round(a.getBoundingClientRect().top))")
     assert len(set(tops)) == 1, f"the project's links wrap at 360 px: {tops}"
-    # The absence set in the state step is still on: beside the state it needs more room than the
-    # row leaves, so it wraps under the row; the row keeps a usable width and nothing scrolls the page
-    # sideways (spq4 at #1271).
+    # With an absence beside the state it needs more room than the row leaves, so it wraps under
+    # the row; the row keeps a usable width and nothing scrolls the page sideways (spq4 at #1271).
+    # The absence is set here and ended after the check, so the steps after see none.
+    page.set_viewport_size({"width": 1280, "height": 900})
+    until = page.evaluate("""() => { const d = new Date(); d.setDate(d.getDate() + 7); d.setHours(10, 0, 0, 0);
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T10:00`; }""")
+    page.locator("#absence-until").fill(until)
+    page.locator("#absence-scope").fill("e2e: links beside an absence")
+    page.get_by_role("button", name="Set absence", exact=True).click()
     expect(page.locator("header .project-state > .state.away")).to_have_count(1)
+    page.set_viewport_size({"width": 360, "height": 780})
     row = page.locator("header .project-links").bounding_box()
     assert row and row["width"] >= 140, f"the link row is squeezed to {row} at 360 px"
     width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
@@ -3242,6 +3250,8 @@ def project_links_step(run: Run, page: Page) -> None:
         assert parts and all(left >= 0 and right <= 361 for _, left, right in parts), f"the state leaves the screen at scroll {end}: {parts}"
     run.shot(page, "project-links-phone")
     page.set_viewport_size({"width": 1280, "height": 900})
+    page.get_by_role("button", name="I am back", exact=True).click()
+    expect(page.locator("header .project-state > .state.away")).to_have_count(0)
     run.shot(page, "project-links")
     run.a11y(page, "project links")
     no_problems(run, "project links")
