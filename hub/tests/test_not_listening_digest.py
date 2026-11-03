@@ -7,7 +7,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Engine, insert, select, update
 
 from maity_hub import clock, not_listening_digest
 from maity_hub import tables as t
@@ -312,6 +312,26 @@ def test_the_hub_withdraws_it_when_none_is_away(
     assert owner.get("/me/notifications", params={"limit": 0}).json()["counts"]["inbox"] == 0
 
 
+def test_a_request_from_before_the_stored_lines_is_withdrawn_when_none_is_away(
+    inbox_owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A digest filed before the migration stored no lines: with nobody away the hour's lines
+    are empty too, and the request must still go, as the migration says."""
+    owner = inbox_owner
+    agent = _agent(make_client, owner)
+    _episode(migrated, agent, timedelta(hours=2))
+    not_listening_digest.run(migrated)
+    [digest] = _digests(owner)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.request).where(t.request.c.id == digest["id"]).values(not_listening=None)
+        )
+    _episode(migrated, agent, None)
+    not_listening_digest.run(migrated)
+    [digest] = _digests(owner)
+    assert digest["status"] == "withdrawn"
+
+
 def test_after_seen_only_a_later_episode_files_a_new_one(
     inbox_owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
@@ -402,6 +422,42 @@ def _silent(engine: Engine, agent: flow.Agent, ago: timedelta) -> None:
         )
 
 
+def test_only_the_latest_session_is_read_however_long_the_history(
+    inbox_owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The bell reads holders live: the ended sessions before the latest are never fetched,
+    and an ended older one does not make a live holder `session_ended`."""
+    owner = inbox_owner
+    agent = _agent(make_client, owner)
+    _holding(owner, agent)
+    _silent(migrated, agent, timedelta(hours=2))
+    with migrated.begin() as conn:
+        latest = conn.execute(
+            select(t.agent_session).where(t.agent_session.c.credential_id == agent.credential_id)
+        ).one()
+        conn.execute(
+            insert(t.agent_session),
+            [
+                {
+                    **{k: v for k, v in latest._mapping.items() if k != "id"},
+                    "id": f"ses-old{n:05d}",
+                    "live": None,
+                    "started_at": latest.started_at - timedelta(days=1, minutes=n),
+                    "ended_at": latest.started_at - timedelta(days=1),
+                    "not_listening_seq": None,
+                    "not_listening_since": None,
+                    "not_listening_request_id": None,
+                }
+                for n in range(200)
+            ],
+        )
+        rows = not_listening_digest._latest_sessions(conn, {agent.credential_id})
+    assert [r.id for r in rows] == [latest.id]
+    not_listening_digest.run(migrated)
+    [digest] = _digests(owner)
+    assert digest["summary"].partition("\n\n")[0].endswith(", silent")
+
+
 def test_a_stalled_holder_is_listed_with_its_cards_and_reason(
     inbox_owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
@@ -419,6 +475,21 @@ def test_a_stalled_holder_is_listed_with_its_cards_and_reason(
     assert f"({agent.instance}) in maintainer/maity holds {card}, last seen " in line
     assert line.endswith(" (UTC), silent")
     assert advice == not_listening_digest.HOLDER_ADVICE
+
+
+@pytest.mark.parametrize("status", ["done", "cancelled"])
+def test_a_closed_card_makes_no_holder(
+    inbox_owner: flow.Human, make_client: ClientFactory, migrated: Engine, status: str
+) -> None:
+    """A closed card keeps `claim_holder` and `claim_instance`; it is held by nobody."""
+    owner = inbox_owner
+    agent = _agent(make_client, owner)
+    card = _holding(owner, agent)
+    with migrated.begin() as conn:
+        conn.execute(update(t.card).where(t.card.c.id == card).values(status=status))
+    _silent(migrated, agent, timedelta(hours=2))
+    not_listening_digest.run(migrated)
+    assert _digests(owner) == []
 
 
 def test_an_instance_both_away_and_holding_is_listed_once_as_a_stalled_holder(
@@ -459,20 +530,27 @@ def test_a_revoked_holder_is_listed_as_session_ended(
     assert digest["summary"].partition("\n\n")[0].endswith(", session_ended")
 
 
+@pytest.mark.parametrize("on", ["membership", "credential"])
 @pytest.mark.parametrize("by_itself", [True, False])
 def test_a_pause_by_someone_else_leaves_a_holder_out_its_own_does_not(
-    inbox_owner: flow.Human, make_client: ClientFactory, migrated: Engine, by_itself: bool
+    inbox_owner: flow.Human, make_client: ClientFactory, migrated: Engine, by_itself: bool, on: str
 ) -> None:
     owner = inbox_owner
     agent = _agent(make_client, owner)
     _holding(owner, agent)
     _silent(migrated, agent, timedelta(hours=2))
+    paused = {"paused_since": clock.now(), "paused_by": agent.id if by_itself else owner.id}
     with migrated.begin() as conn:
-        conn.execute(
-            update(t.membership)
-            .where(t.membership.c.agent_id == agent.id)
-            .values(paused_since=clock.now(), paused_by=agent.id if by_itself else owner.id)
-        )
+        if on == "membership":
+            conn.execute(
+                update(t.membership).where(t.membership.c.agent_id == agent.id).values(**paused)
+            )
+        else:
+            conn.execute(
+                update(t.credential)
+                .where(t.credential.c.id == agent.credential_id)
+                .values(**paused)
+            )
     not_listening_digest.run(migrated)
     found = _digests(owner)
     if by_itself:
