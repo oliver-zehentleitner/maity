@@ -23,10 +23,11 @@ from maity_hub import bounded, forge, ktw, outbound
 
 BODIES_CAP = 4 * 1024 * 1024
 MAX_NAMED = 8
-_BODIES_NAME = re.compile(r"^[A-Za-z0-9._-]{1,95}\.json$")
+_BODIES_NAME = re.compile(r"[A-Za-z0-9._-]{1,95}\.json", re.ASCII)  # fullmatch
 # §11.5 "A repository's name": the one accepted form, and nothing else.
+# ASCII only (explicit ranges), matched whole with fullmatch: `$` would admit a final newline.
 _NAME = re.compile(
-    r"^https://github\.com/([A-Za-z0-9-]{1,39})/([A-Za-z0-9._-]{1,100}?)(?:\.git)?/?$"
+    r"https://github\.com/([A-Za-z0-9-]{1,39})/([A-Za-z0-9._-]{1,100}?)(?:\.git)?/?", re.ASCII
 )
 IN_FLIGHT_ALL = 16  # §11.5's reads in flight across the hub
 HELD_KEPT = 4096  # when each file and family was last read, for the 30 s hold after a drop
@@ -78,10 +79,10 @@ def _repository(url: str | None) -> str | None:
     Every read of a named repository is built from this value alone."""
     if not isinstance(url, str):
         return None
-    match = _NAME.match(url)
+    match = _NAME.fullmatch(url)
     if match is None or match.group(2) in (".", ".."):
         return None
-    return f"{match.group(1)}/{match.group(2)}".lower()
+    return f"{match.group(1)}/{match.group(2)}".lower()  # ASCII only: ASCII case folding
 
 
 def named(members: list[ktw.Member], own: str) -> list[str]:
@@ -355,7 +356,7 @@ def export(
 
 def bodies_url(state_url: str, name: Any) -> str | None:
     """The bodies file beside the state, or None when `name` is not one plain segment."""
-    if not isinstance(name, str) or not _BODIES_NAME.match(name) or name in (".json", "..json"):
+    if not isinstance(name, str) or not _BODIES_NAME.fullmatch(name) or name in (".json", "..json"):
         return None
     return ktw.dashboard_url(state_url) + name
 

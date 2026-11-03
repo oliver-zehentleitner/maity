@@ -240,6 +240,8 @@ def test_an_export_with_its_bodies_inline_has_no_bodies_file(owner: flow.Human, 
         ".json",
         "%2e%2e/x.json",
         "x" * 200 + ".json",
+        "state.body.json\n",
+        "st\u0430te.json",
     ],
 )
 def test_a_bodies_file_is_one_segment_beside_the_state(
@@ -494,6 +496,13 @@ def test_the_answer_splices_the_kept_bytes_as_valid_json() -> None:
         ("https://gitlab.com/acme/other", None),
         ("git@github.com:acme/other.git", None),
         ("../other", None),
+        ("https://github.com/acme/other\n", None),
+        ("https://github.com/\u043ewner/repo", None),  # Cyrillic о
+        ("https://github.com/owner/r\u0435po", None),  # Cyrillic е
+        ("https://github.com/owner/r\u0130po", None),  # dotted capital I, which lower() changes
+        ("https://github.com/owner/\uff52epo", None),  # fullwidth r
+        ("https://github.com/" + "a" * 39 + "/" + "b" * 100, "a" * 39 + "/" + "b" * 100),
+        ("https://github.com/acme/" + "b" * 101, None),
     ],
 )
 def test_a_repository_is_named_in_exactly_one_form(url: str, repository: str | None) -> None:
@@ -508,7 +517,8 @@ def test_a_name_in_another_form_takes_no_place(fake: Fake) -> None:
             error={"code": "ktw_unavailable", "reason": "location_not_followed"},
         )
 
-    members = [child(f"https://github.com/acme/r{n}/tree/main") for n in range(8)]
+    members = [child(f"https://github.com/acme/r{n}/tree/main") for n in range(4)]
+    members += [child(f"https://github.com/acme/r\u0435po{n}") for n in range(4)]  # Cyrillic е
     members.append(child("https://github.com/acme/real"))
     assert ktw_reads.named(members, "acme/widget") == ["acme/real"]
 
