@@ -15279,7 +15279,7 @@ sections named say; a path under one of them that names nothing is
 | Path | What | § |
 |---|---|---|
 | `/api/…` | the API (`/api/v1/…`, including `/help`, `/openapi.json`, `/health`) | 1.1 |
-| `/assets/…` | the dashboard's static files: scripts, stylesheets, `brand/` | below |
+| `/assets/…` | the dashboard's static files: scripts, stylesheets, `brand/`, vendored libraries (`vendor/`) | below |
 | `/join/{token}` | the join page | 3.2 |
 | `/r/{token}` | always `not_found`: there is no pairing page | 15.2 |
 | `/mail/…` | the pages behind the links in mails | 2.6.3, 2.7.1, 2.9, 18.6 |
