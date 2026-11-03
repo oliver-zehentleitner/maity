@@ -428,9 +428,7 @@ def apply(
             public_pages.touch(conn, "person", account, removal=False)
             public_projects.touch_owned(conn, account, removal=False)
         if report.target_type == "project":
-            public_pages.touch(
-                conn, "project", str(report.project_id), removal=False, dependents=False
-            )
+            public_pages.touch(conn, "project", str(report.project_id), removal=False)
         if report.target_type == "card":  # a card a hold stood on is on the Board again
             public_pages.touch(conn, "project_views", str(report.project_id), removal=False)
             public_pages.touch(conn, "card", target_key(report)[1], removal=False)
