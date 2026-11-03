@@ -7,10 +7,10 @@
   the user, `SYSTEM` and `Administrators`), a runner's adapter context
   with the sandbox `maity runner check` reports, the one Git fetch on the
   runner's transport list, only in a staging directory local mode just
-  created, and a retry after `repository_refused`, `no_repository`,
-  `fetch_failed` or `staging_kept` in a fresh one, the IPv6 host
-  directory always
-  with its port, the next run only when work waits, with
+  created, a harness only in a workspace marked `checked-out` after a
+  complete checkout, a retry in a fresh one for any workspace without
+  the mark that moves the old one aside instead of deleting it, the IPv6
+  host directory always with its port, the next run only when work waits, with
   backoff, stopping by signal, Ctrl-C or console close, and how it stays
   apart from the full runner.
 

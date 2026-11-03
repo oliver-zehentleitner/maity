@@ -1009,12 +1009,15 @@ non-empty `--workspace DIR` is refused untouched. Path components get one
 space, or start with `_`, on every OS. A harness without a command
 allowlist (`codex`) refuses `--allow`. The one Git fetch and checkout
 run with the runner's transport list (https and ssh) in the staging
-workspace, before the rename, so a workspace appears only complete. A
-workspace with a credential but no checkout (`repository_refused`,
-`no_repository`, `fetch_failed`, a kept staging) gets no harness; a start
-in it retries in a fresh staging directory beside it, copies only the
-files of `.git/maity` over, removes the old one and renames, so Git never
-runs in a directory that existed before that start. For an IPv6 host the
+workspace, before the rename, so a workspace appears only complete. Only
+after both exit 0 does local mode write `.git/maity/checked-out`, and only
+a workspace with that file gets a harness. One with a credential but
+without it (`repository_refused`, `no_repository`, `fetch_failed`, a
+partial checkout, a crash) gets a retry: a fresh staging directory beside
+it, only the regular files of `.git/maity` copied over, then the old one
+renamed aside to `.replaced-<time>-<name>` and kept whole, and the fresh
+one renamed into its place. Git never runs in a directory that existed
+before that start, and nothing in it is deleted. For an IPv6 host the
 directory always carries the port, so `[::1]:80` and `[::1:80]` differ.
 
 The harness gets a runner's adapter context: the adapter files outside
@@ -1049,7 +1052,12 @@ could be widened for the next run. The retry builds a fresh directory
 for the same reason: with no Git in any existing workspace there is no
 permission an agent could forge or a failed rename could leave behind,
 and this holds where the sandbox is off or, on Windows, unverified, not
-only where it denies paths. The sandbox follows what the adapters
+only where it denies paths. The mark says "ready", not "Git may run": a test of the work tree
+cannot tell a partial checkout from a complete one, since checkout is
+not atomic, and a forged or removed mark leads only to a harness in a
+tree an agent already wrote or to a fresh clone. The old workspace is
+moved aside, not deleted, because an almost empty `.git` can still hold
+branches, objects and reflogs with unique work. The sandbox follows what the adapters
 already do on a runner (Claude Code strict or not at all, Codex only
 sandboxed), so local mode adds no third policy. Codex's sandbox is
 required because without it nothing confines Codex at all, while Claude
@@ -1081,10 +1089,18 @@ message says are no boundary.
 - Configuration files for the restart values: the full runner's defaults
   serve one agent in the foreground, and a file would be one more thing
   to find, validate and document for a command meant to need none.
-- A readiness marker in `.git`, or recovering by just running the fetch
-  again: the agent can write `.git/config` and its hooks, so a later
-  start could not tell a never-launched workspace from one a harness
-  changed (review of #1294, pmwg).
+- A readiness marker in `.git` that permits Git, or recovering by just
+  running the fetch again: the agent can write `.git/config` and its
+  hooks, so a later start could not tell a never-launched workspace from
+  one a harness changed (review of #1294, pmwg). The `checked-out` mark
+  permits only the harness, never Git.
+- Reading "no checkout" from the work tree (nothing but `.git`, `HEAD`
+  on an unborn branch): a failing required smudge filter leaves files
+  and an unborn `HEAD`, so a partial checkout passed as ready (review of
+  #1294, pmwg).
+- Removing the old workspace after copying `.git/maity`: an unborn
+  `HEAD` does not mean the rest of `.git` holds no unique work (review
+  of #1294, pmwg).
 - A pending record under `maity-local/.pending` that permits the one Git
   and its retry: a failed rename could leave one for another join's
   workspace, and where the sandbox is off a harness could recreate it

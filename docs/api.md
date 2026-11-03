@@ -13747,8 +13747,8 @@ own `maity join` writes it, as in a runner's join pickup (§15.9):
    - A refused or spent link (the exchange failed, §3.3) leaves no
      credential: local mode removes the staging workspace, or with
      `--workspace DIR` the `.git` it created there, and exits with the
-     join's code. Once a credential exists, local mode removes nothing
-     but what the retry (step 4) replaces.
+     join's code. Once a credential exists, local mode removes nothing;
+     the retry (step 4) moves the workspace it replaces aside.
    - Local mode sets `MAITY_STATE_DIR` from the workspace at every start,
      so nothing stored refers to the staging name.
 3. The credential lands in `<workspace>/.git/maity/credential`. On Linux
@@ -13785,29 +13785,46 @@ own `maity join` writes it, as in a runner's join pickup (§15.9):
    staging workspace (with `--workspace DIR`, `DIR`) with its credential
    and prints its path, as `staging_kept` does, and a later start
    without `--join` in it takes the retry below.
-   - **Not checked out.** A workspace whose work tree holds nothing
-     but `.git` and whose `.git/HEAD` names a branch with neither a
-     ref file nor a `packed-refs` line has no checkout. Local mode
-     reads these as files and runs no Git to decide it. No harness
-     starts in such a workspace: a start takes the retry instead.
+   - **Checked out.** Only after a fetch and checkout that both exited 0
+     does local mode write the plain file `.git/maity/checked-out`, as
+     the last step in the staging workspace before the rename. A start
+     without `--join` runs the harness only in a workspace that holds
+     this file; local mode reads it as a file and runs no Git to decide.
+     A workspace with a credential but without it (a refusal, a failed or
+     partial checkout, a crash, or an agent that removed it) gets no
+     harness: the start takes the retry instead. Checkout is not atomic,
+     so no test of the work tree could tell a complete one from a
+     partial one. A forged file only starts the harness in a tree an
+     agent already wrote; a removed one only causes a fresh clone. Neither
+     ever makes local mode run Git in an existing workspace.
    - **Retry.** A start without `--join` in a workspace `W` that holds a
-     credential and has no checkout never runs Git in `W`. Under `W`'s
-     lock (`workspace_locked` below) it creates a fresh `.join-<random>`
-     beside `W` (with `--workspace DIR`, beside `DIR`), runs `git init`
-     there, the supervised `maity resume` with `W`'s spent credential
-     (`MAITY_STATE_DIR` still `W/.git/maity`), the URL check, and the
-     fetch and checkout with the flags above, all in the fresh directory.
-     It then copies the files of `W/.git/maity` other than `local.lock`
-     (the credential and the session's state, never `.git/config` or
-     hooks) into the fresh `.git/maity`, with the permissions of step 3,
-     removes `W` (the lock file last, after releasing it, since Windows
-     deletes no open file) and renames the fresh directory to `W`'s path.
-     A rename that fails because the path was taken meanwhile keeps the
-     fresh directory (`staging_kept`); a refusal or failed fetch keeps `W`
-     as it was, with its reason. The link is not needed and never redeemed
-     again. An agent that empties a workspace it ran in only gets a fresh
-     clone and loses nothing it had not already removed; its `.git` is
-     deleted, never run.
+     credential but no `checked-out` never runs Git in `W` and deletes
+     nothing of it. Under `W`'s lock (`workspace_locked` below) it creates
+     a fresh `.join-<random>` beside `W` (with `--workspace DIR`, beside
+     `DIR`), runs `git init` there, the supervised `maity resume` with
+     `W`'s spent credential (`MAITY_STATE_DIR` still `W/.git/maity`), the
+     URL check, and the fetch and checkout with the flags above, all in
+     the fresh directory. It then copies the regular files of
+     `W/.git/maity` other than `local.lock` and `checked-out` (the
+     credential and the session's state, never `.git/config` or hooks,
+     and following no symbolic link or junction) into the fresh
+     `.git/maity`, with the permissions of step 3, and writes
+     `checked-out` there last. It releases the lock (Windows renames no
+     directory that holds an open file), renames `W` to
+     `.replaced-<UTC time>-<name>` beside it, where `<name>` is `W`'s last
+     component, prints that path, and renames the fresh directory to
+     `W`'s path. `W` is kept whole, its `.git` included, so branches,
+     objects and reflogs a harness left there can still be recovered;
+     local mode never deletes it, and never runs Git in it. A start that
+     takes a workspace's lock checks afterwards that the path still names
+     the locked file and starts over if not, so a lock taken in a
+     directory renamed meanwhile counts for nothing. A refusal or failed
+     fetch removes the fresh directory, which holds no credential, and
+     keeps `W` as it was, with its reason. A rename of `W` that fails
+     keeps both as they are; a rename of the fresh directory that fails
+     because the path was taken meanwhile keeps it (`staging_kept`), and
+     `W` stays at its printed path. The link is not needed and never
+     redeemed again.
 
 The credential never appears on a command line, in the environment, in
 local mode's output or log, or in an event. The harness's own model
