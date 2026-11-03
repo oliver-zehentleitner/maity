@@ -251,6 +251,8 @@ All settings come from the environment.
 | `MAITY_SIGN_IN_DEVICE_CODE`, `MAITY_SIGN_IN_EMAIL_LINK` | unset | `1` or `0`: switch a sign-in method on or off for good (`docs/api.md` §2.6.6); unset leaves it to the instance admin (default on). The password cannot be switched off. |
 | `MAITY_WEB_DIR` | `web/` beside `hub/` in a checkout; the dashboard the package carries (`maity_hub/web`) when installed | The static dashboard. When set explicitly it must exist; otherwise a missing directory means the API is served alone. Dotfiles, paths under `/api`, and web/'s `fixtures/` and `tools/` are never served from it. |
 
+Moving a volume's files into the bucket: `maity-hub attachments copy-to-s3` copies every file under `MAITY_ATTACHMENT_DIR` into the bucket of the `s3` settings, under the same key, and skips an object the bucket already holds with the same SHA-256; without `--apply` it only counts, and it never changes the files. Run it with `MAITY_ATTACHMENT_STORE=s3` before switching the store, and once more after (`deploy/helm/maity-hub/README.md`, *Moving attachments to S3*). With the bucket's versioning on, a deletion is final only once a lifecycle rule expires the noncurrent versions.
+
 ### Settings for a public instance
 
 What an instance needs before strangers can register, in the order of

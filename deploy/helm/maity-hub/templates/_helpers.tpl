@@ -204,13 +204,59 @@ capabilities:
 
 {{/*
 The attachment store's settings, for the hub alone: the migrate Job has no use for the store, and
-a ReadWriteOnce claim in the Job would have to land on the hub's node.
+a ReadWriteOnce claim in the Job would have to land on the hub's node. With `store: s3` the claim
+may stay mounted while `maity-hub attachments copy-to-s3` reads it; the hub serves from the bucket.
+The bucket's settings are rendered whenever a bucket is set: the hub reads them only under `s3`,
+and with `local` they are there for the copy, which runs before the store is switched.
 */}}
 {{- define "maity-hub.attachmentEnv" -}}
-{{- if .Values.attachments.existingClaim }}
+{{- $a := .Values.attachments -}}
+{{- $s3 := eq ($a.store | default "local") "s3" -}}
+{{- if and $s3 (not $a.s3.bucket) -}}
+{{- fail "attachments.s3.bucket is required with attachments.store: s3" -}}
+{{- end -}}
+{{- if $s3 }}
+- name: MAITY_ATTACHMENT_STORE
+  value: "s3"
+{{- end }}
+{{- if $a.s3.bucket }}
+- name: MAITY_ATTACHMENT_S3_BUCKET
+  value: {{ $a.s3.bucket | quote }}
+{{- with $a.s3.endpoint }}
+- name: MAITY_ATTACHMENT_S3_ENDPOINT
+  value: {{ . | quote }}
+{{- end }}
+{{- with $a.s3.region }}
+- name: MAITY_ATTACHMENT_S3_REGION
+  value: {{ . | quote }}
+{{- end }}
+{{- with $a.s3.prefix }}
+- name: MAITY_ATTACHMENT_S3_PREFIX
+  value: {{ . | quote }}
+{{- end }}
+{{- if $a.s3.allowHttp }}
+- name: MAITY_ATTACHMENT_S3_ALLOW_HTTP
+  value: "1"
+{{- end }}
+{{- with $a.s3.existingSecret }}
+- name: MAITY_ATTACHMENT_S3_ACCESS_KEY_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ . | quote }}
+      key: {{ $a.s3.accessKeyIdKey | quote }}
+- name: MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ . | quote }}
+      key: {{ $a.s3.secretAccessKeyKey | quote }}
+{{- end }}
+{{- end }}
+{{- if $a.existingClaim }}
 - name: MAITY_ATTACHMENT_DIR
-  value: {{ .Values.attachments.mountPath | quote }}
-{{- with .Values.attachments.quotaBytes }}
+  value: {{ $a.mountPath | quote }}
+{{- end }}
+{{- if or $s3 $a.existingClaim }}
+{{- with $a.quotaBytes }}
 - name: MAITY_ATTACHMENT_QUOTA
   value: {{ . | int64 | toString | quote }}
 {{- end }}

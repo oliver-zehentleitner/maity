@@ -190,6 +190,9 @@ silently ignored. These are the values that matter:
 | `database.existingSecret`, `.key` | required, `database-url` | the Secret holding `MAITY_DATABASE_URL` |
 | `forge.github.existingSecret`, `.key` | none, `github-token` | the Secret holding `MAITY_FORGE_GITHUB_TOKEN` |
 | `attachments.existingClaim`, `.mountPath`, `.quotaBytes` | none, `/var/lib/maity/attachments`, hub default (1 GiB per project) | the PersistentVolumeClaim of the local attachment store (docs/api.md §8.7), mounted into the hub, not the migrate Job, and `MAITY_ATTACHMENT_DIR`/`_QUOTA`. A directory the hub cannot write stops the new hub at its start: with `Recreate` the old pod is already gone, so the hub is down, and the migration has already run. The way back is forward: fix the volume or `attachments.mountPath` and run `helm upgrade` again with the same image. `helm rollback` to the old image works only if the upgrade did not move the schema (see Rollback below); otherwise the old image needs the dump restored; empty claim: attachments off. The files are not in the database: back the volume up with it |
+| `attachments.store` | `local` | `MAITY_ATTACHMENT_STORE`: `local` keeps the files on the claim, for one replica; `s3` keeps them in a bucket that several replicas share (below, and *Moving attachments to S3*) |
+| `attachments.s3.bucket`, `.endpoint`, `.region`, `.prefix`, `.allowHttp` | none (bucket required with `s3`), AWS, none, none, `false` | `MAITY_ATTACHMENT_S3_BUCKET`, `_ENDPOINT` (an https URL without a path), `_REGION`, `_PREFIX`, `_ALLOW_HTTP` (plain http only to a host inside the cluster) |
+| `attachments.s3.existingSecret`, `.accessKeyIdKey`, `.secretAccessKeyKey` | none, `MAITY_ATTACHMENT_S3_ACCESS_KEY_ID`, `MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY` | the Secret holding the bucket's credentials, by reference; none: the client's own chain (an instance role) |
 | `secretKey.existingSecret`, `.key` | none, `secret-key` | the Secret holding `MAITY_SECRET_KEY`, the instance key for stored secrets; moving it from `extraEnv`: drop it there in the same upgrade, the chart does not dedupe; a Secret created with the first README holds the key as `MAITY_SECRET_KEY`, then set `secretKey.key: MAITY_SECRET_KEY` |
 | `mail.signingKeySecret.existingSecret`, `.key` | none, `mail-signing-key` | the Secret holding `MAITY_MAIL_SIGNING_KEY` (32 bytes or more, base64); without it the hub sends no mail |
 | `mail.host`, `.port`, `.tls` | none, `587`, `starttls` | `MAITY_SMTP_HOST`, `_PORT`, `_TLS` (`starttls`, `implicit` or `none`); empty host: no SMTP env, the admin settings apply; with a host, port and TLS always come from here. Moving these from `extraEnv`: drop them from `extraEnv` in the same upgrade, the chart does not dedupe |
@@ -270,6 +273,27 @@ cluster should use a maintained controller. The chart's Ingress is a plain
 annotations, and set `null` for the nginx keys if they bother you. A
 controller that only speaks Gateway API needs an HTTPRoute the chart does
 not ship yet (`hub/context/kubernetes.md`).
+
+## Moving attachments to S3
+
+The files on the claim are copied into the bucket by the hub itself, under the same key
+(`<prefix>/<project id>/<attachment id>`). `maity-hub attachments copy-to-s3` skips an object
+that is already there with the same SHA-256, so it can run as often as needed, and it never
+changes the files on the claim. Without `--apply` it only counts.
+
+1. Upgrade to a hub version that has the `s3` store, still with `attachments.store: local`, and
+   with the `attachments.s3.*` values set: the chart renders them whenever a bucket is set, and
+   the hub reads them only under `s3`.
+2. In the hub pod: `MAITY_ATTACHMENT_STORE=s3 maity-hub attachments copy-to-s3`, then the same
+   with `--apply`. The store setting is the command's alone; the hub keeps serving from the claim.
+3. `helm upgrade` with `attachments.store: s3`, the claim still set: the hub now serves from the bucket, and the claim stays mounted for the next step.
+4. In the new pod: `maity-hub attachments copy-to-s3 --apply` once more, for the uploads between
+   steps 2 and 3; it should copy only those.
+5. `helm upgrade` with `attachments.existingClaim` empty. Keep the volume until the backups no
+   longer need it.
+
+With the bucket's versioning on, a deletion by the hub leaves a noncurrent version behind: a
+lifecycle rule that expires noncurrent versions is what makes a deleted attachment gone.
 
 ## Behaviour worth knowing
 

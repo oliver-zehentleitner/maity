@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import contextlib
 import functools
+import hashlib
 import logging
 import os
 import secrets
@@ -143,6 +144,10 @@ class LocalStore:
         return [f"{project}/{p.name}" for p in folder.iterdir() if not p.name.startswith(".")]
 
 
+# The object metadata the hub writes with every blob (`x-amz-meta-sha256`): a copy compares it
+# instead of downloading the object again.
+SHA256 = "sha256"
+
 # The S3 client's own errors, by code, that mean "there is no such object".
 _MISSING = {"NoSuchKey", "404", "NotFound"}
 
@@ -190,10 +195,26 @@ class S3Store:
 
     def put(self, key: str, data: bytes) -> None:
         name = self._object(key)
+        digest = hashlib.sha256(data).hexdigest()
         try:
-            self.client.put_object(Bucket=self.bucket, Key=name, Body=data)
+            self.client.put_object(
+                Bucket=self.bucket, Key=name, Body=data, Metadata={SHA256: digest}
+            )
         except Exception as error:
             raise self._fail("store a blob", error) from None
+
+    def digest(self, key: str) -> str | None:
+        """The SHA-256 the hub wrote with the object, or None when it is gone or was written
+        without one (by another tool)."""
+        name = self._object(key)
+        try:
+            answer = self.client.head_object(Bucket=self.bucket, Key=name)
+        except Exception as error:
+            if _code(error) in _MISSING:
+                return None
+            raise self._fail("look at a blob", error) from None
+        found = answer.get("Metadata", {}).get(SHA256)
+        return str(found) if found else None
 
     def open(self, key: str) -> Blob | None:
         name = self._object(key)
@@ -334,3 +355,27 @@ def shared(settings: Settings) -> bool:
     `local` is one directory, shared only when the operator mounts the same one in
     every replica, which the hub cannot see."""
     return settings.attachment_s3 is not None
+
+
+def copy_local_to_s3(source: LocalStore, target: S3Store, *, apply: bool) -> dict[str, int]:
+    """Copy every blob of the local store into the bucket, under the same key; the migration from
+    a volume to `s3` (hub/context/replicas.md a70d7269). A blob the bucket already holds with the
+    same SHA-256 is skipped, so the copy can run again until it reports nothing to copy; the
+    local files are never changed. Without `apply` it only counts."""
+    done = {"copied": 0, "present": 0, "failed": 0}
+    for project in sorted(source.projects()):
+        for key in sorted(source.keys(project)):
+            data = source.get(key)
+            if data is None:  # removed since it was listed
+                continue
+            try:
+                if target.digest(key) == hashlib.sha256(data).hexdigest():
+                    done["present"] += 1
+                    continue
+                if apply:
+                    target.put(key, data)
+                done["copied"] += 1
+            except StoreError as error:
+                logging.getLogger(__name__).error("%s: %s", key, error)
+                done["failed"] += 1
+    return done

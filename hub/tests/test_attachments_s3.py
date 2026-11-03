@@ -317,3 +317,75 @@ def test_cluster_internal_hosts() -> None:
         assert cluster_internal(host), host
     for host in ("s3.example", "203.0.113.9", "s3.amazonaws.com", "8.8.8.8"):
         assert not cluster_internal(host), host
+
+
+# --- the copy from a volume into the bucket ----------------------------------------------------
+
+
+def test_the_copy_to_s3_is_idempotent_and_counts_first_without_apply(
+    config: AttachmentS3, tmp_path: Path
+) -> None:
+    source = attachment_store.LocalStore(tmp_path)
+    for key, data in (("prj-1/att-1", b"one"), ("prj-1/att-2", b"two"), ("prj-2/att-3", b"3")):
+        source.put(key, data)
+    target = S3Store(config)
+    counted = attachment_store.copy_local_to_s3(source, target, apply=False)
+    assert counted == {"copied": 3, "present": 0, "failed": 0}
+    assert raw(config).list_objects_v2(Bucket=config.bucket).get("Contents") is None
+    first = attachment_store.copy_local_to_s3(source, target, apply=True)
+    assert first == {"copied": 3, "present": 0, "failed": 0}
+    assert target.get("prj-1/att-2") == b"two" and target.get("prj-2/att-3") == b"3"
+    again = attachment_store.copy_local_to_s3(source, target, apply=True)
+    assert again == {"copied": 0, "present": 3, "failed": 0}
+    source.put("prj-1/att-1", b"changed")  # other bytes under the same key are copied again
+    assert attachment_store.copy_local_to_s3(source, target, apply=True)["copied"] == 1
+    assert target.get("prj-1/att-1") == b"changed"
+    assert sorted(p.name for p in tmp_path.glob("*/*")) == ["att-1", "att-2", "att-3"]
+
+
+def test_a_blob_without_the_hubs_digest_is_copied_again(
+    config: AttachmentS3, tmp_path: Path
+) -> None:
+    source = attachment_store.LocalStore(tmp_path)
+    source.put("prj-1/att-1", b"one")
+    raw(config).put_object(Bucket=config.bucket, Key="prj-1/att-1", Body=b"one")  # no metadata
+    target = S3Store(config)
+    assert target.digest("prj-1/att-1") is None and target.digest("prj-1/nope") is None
+    assert attachment_store.copy_local_to_s3(source, target, apply=True)["copied"] == 1
+    assert target.digest("prj-1/att-1") == hashlib.sha256(b"one").hexdigest()
+
+
+def test_the_copy_command_needs_both_stores_and_fails_on_a_failed_copy(
+    config: AttachmentS3,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from maity_hub import cli
+
+    attachment_store.LocalStore(tmp_path).put("prj-1/att-1", b"one")
+    env = {
+        "MAITY_DATABASE_URL": f"sqlite:///{tmp_path / 'x.db'}",
+        "MAITY_ATTACHMENT_STORE": "s3",
+        "MAITY_ATTACHMENT_S3_BUCKET": config.bucket,
+        "MAITY_ATTACHMENT_S3_ENDPOINT": str(config.endpoint),
+        "MAITY_ATTACHMENT_S3_ALLOW_HTTP": "1",
+        "MAITY_ATTACHMENT_S3_REGION": "us-east-1",
+        "MAITY_ATTACHMENT_S3_ACCESS_KEY_ID": KEY_ID,
+        "MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY": SECRET,
+    }
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.delenv("MAITY_ATTACHMENT_DIR", raising=False)
+    assert cli.main(["attachments", "copy-to-s3", "--apply"]) == cli.EXIT_CONFIG  # no source
+    monkeypatch.setenv("MAITY_ATTACHMENT_DIR", str(tmp_path))
+    assert cli.main(["attachments", "copy-to-s3"]) == 0
+    assert "to copy: 1, already there: 0, failed: 0" in capsys.readouterr().out
+    assert cli.main(["attachments", "copy-to-s3", "--apply"]) == 0
+    assert "copied: 1" in capsys.readouterr().out
+    monkeypatch.setenv("MAITY_ATTACHMENT_S3_BUCKET", "no-such-bucket-here")
+    assert cli.main(["attachments", "copy-to-s3", "--apply"]) == cli.EXIT_FAILURE
+    out = capsys.readouterr()
+    assert "failed: 1" in out.out and SECRET not in out.out + out.err
+    monkeypatch.setenv("MAITY_ATTACHMENT_STORE", "local")
+    assert cli.main(["attachments", "copy-to-s3"]) == cli.EXIT_CONFIG  # no target

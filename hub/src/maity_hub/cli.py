@@ -1,5 +1,5 @@
-"""`maity-hub serve` and `maity-hub migrate`, the operator's account commands, and the load test's
-seed."""
+"""`maity-hub serve` and `maity-hub migrate`, the operator's account commands, the copy of the
+attachments into a bucket, and the load test's seed."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from maity_hub import (
     __version__,
+    attachment_store,
     clock,
     handle_register,
     handles,
@@ -81,6 +82,15 @@ def main(argv: list[str] | None = None) -> int:
         "purge", help="delete every row of the lt-<n> accounts; without --apply only count"
     )
     purge.add_argument("--apply", action="store_true")
+    files = commands.add_parser("attachments", help="the attachment store (docs/api.md §8.7)")
+    files_commands = files.add_subparsers(dest="attachments_command", required=True)
+    copy = files_commands.add_parser(
+        "copy-to-s3",
+        help="copy the files under MAITY_ATTACHMENT_DIR into the bucket of the s3 store",
+    )
+    copy.add_argument(
+        "--apply", action="store_true", help="copy; without it only count what would be copied"
+    )
     quick = commands.add_parser(
         "quickstart",
         help="a personal hub on SQLite: set up a new database, the first account, then serve",
@@ -108,11 +118,30 @@ def main(argv: list[str] | None = None) -> int:
         return _unsuspend(settings, args.handle)
     if args.command == "quickstart":
         return _quickstart(settings, args.handle, args.display_name)
+    if args.command == "attachments":
+        return _copy_to_s3(settings, apply=args.apply)
     if args.command == "loadtest" and args.load_command == "purge":
         return _loadtest_purge(settings, apply=args.apply)
     if args.command == "loadtest":
         return _loadtest_seed(settings, args.humans, Path(args.out))
     return _serve(settings)
+
+
+def _copy_to_s3(settings: Settings, *, apply: bool) -> int:
+    """From the volume to the bucket, before the hub runs on `s3` alone; idempotent, so it runs
+    once while the hub still serves from the volume and once more after it stopped."""
+    if settings.attachment_dir is None:
+        return _fail("MAITY_ATTACHMENT_DIR is not set: the files to copy are there", EXIT_CONFIG)
+    if settings.attachment_s3 is None:
+        return _fail(
+            "MAITY_ATTACHMENT_STORE is not s3: set it and MAITY_ATTACHMENT_S3_BUCKET", EXIT_CONFIG
+        )
+    source = attachment_store.LocalStore(settings.attachment_dir)
+    target = attachment_store.S3Store(settings.attachment_s3)
+    done = attachment_store.copy_local_to_s3(source, target, apply=apply)
+    verb = "copied" if apply else "to copy"
+    print(f"{verb}: {done['copied']}, already there: {done['present']}, failed: {done['failed']}")
+    return EXIT_FAILURE if done["failed"] else 0
 
 
 def _loadtest_refusal(settings: Settings) -> str | None:

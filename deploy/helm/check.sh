@@ -91,6 +91,23 @@ out_ee="$(render -f "$minimal" --set attachments.existingClaim=c --set attachmen
 grep -q "MAITY_ATTACHMENT\|claimName\|name: attachments" <<<"$(render -f "$minimal" --set attachments.existingClaim=c --show-only templates/migrate-job.yaml)" \
     && bad "the migrate Job has the attachment volume or its settings" || ok "the migrate Job has no attachment volume or settings"
 grep -q "MAITY_ATTACHMENT_QUOTA" <<<"$out_att" && bad "no quota set but MAITY_ATTACHMENT_QUOTA rendered" || ok "no quota unless set"
+out_s3="$(render -f "$minimal" --set attachments.store=s3 --set attachments.s3.bucket=b --set attachments.s3.endpoint=https://s3.example \
+    --set attachments.s3.region=r --set attachments.s3.existingSecret=maity-s3 --show-only templates/deployment.yaml)"
+expect "s3: the store, the bucket, the endpoint and the credentials by reference" "$out_s3" \
+    'value: "s3"' 'value: "b"' 'value: "https://s3.example"' 'value: "r"' 'name: "maity-s3"' \
+    'key: "MAITY_ATTACHMENT_S3_ACCESS_KEY_ID"' 'key: "MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY"'
+grep -q "MAITY_ATTACHMENT_DIR\|claimName\|MAITY_ATTACHMENT_S3_ALLOW_HTTP\|MAITY_ATTACHMENT_S3_PREFIX" <<<"$out_s3" \
+    && bad "s3 without a claim still renders the volume, the directory or unset options" || ok "s3 without a claim: no volume, no directory"
+out_s3c="$(render -f "$minimal" --set attachments.store=s3 --set attachments.s3.bucket=b --set attachments.existingClaim=c --show-only templates/deployment.yaml)"
+expect "s3 with the claim kept for the copy: both" "$out_s3c" 'value: "s3"' "name: MAITY_ATTACHMENT_DIR" 'claimName: "c"'
+grep -q "secretKeyRef" <<<"$out_s3c" && bad "s3 without existingSecret renders a secret reference" || ok "s3 without existingSecret: the client's own credentials"
+render -f "$minimal" --set attachments.store=s3 >/dev/null 2>&1 && bad "s3 without a bucket is accepted" || ok "s3 without a bucket is refused"
+out_pre="$(render -f "$minimal" --set attachments.s3.bucket=b --set attachments.existingClaim=c --show-only templates/deployment.yaml)"
+expect "local with a bucket set, for the copy: its settings, not the store" "$out_pre" 'value: "b"' "name: MAITY_ATTACHMENT_DIR"
+grep -q "name: MAITY_ATTACHMENT_STORE" <<<"$out_pre" && bad "a bucket alone switches the store" || ok "a bucket alone does not switch the store"
+render -f "$minimal" --set attachments.store=tape >/dev/null 2>&1 && bad "an unknown attachments.store is accepted" || ok "an unknown attachments.store is refused by the schema"
+grep -q "MAITY_ATTACHMENT" <<<"$(render -f "$minimal" --set attachments.store=s3 --set attachments.s3.bucket=b --show-only templates/migrate-job.yaml)" \
+    && bad "the migrate Job has the s3 settings" || ok "the migrate Job has no s3 settings"
 render -f "$minimal" --set attachments.mountPath=relative >/dev/null 2>&1 && bad "a relative attachments.mountPath is accepted" || ok "a relative attachments.mountPath is refused by the schema"
 render -f "$minimal" --set attachments.quotaBytes=10 >/dev/null 2>&1 && bad "a quota below 1024 bytes is accepted" || ok "a quota below 1024 bytes is refused by the schema"
 out_nopw="$(render -f "$ingress" --set mail.passwordSecret.existingSecret=)"
