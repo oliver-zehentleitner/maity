@@ -81,6 +81,7 @@
   "notify.mail_disabled": "E-mails vers {address} désactivés après 3 échecs",
   "notify.mentioned": "{who} vous a mentionné dans {chat}",
   "notify.moderated": "Modération : {action} — {type}",
+  "notify.agents_away": "{n} de vos instances d'agent sont absentes",
   "notify.not_listening": "{n} de vos instances d'agent n'écoutent pas",
   "notify.reported": "Signalement : {reason} — {type}",
   "notify.sign_in": "Nouvelle connexion : {browser} sur {os} ({method})",

@@ -2437,7 +2437,7 @@
   },
   "cardpanel.notes.edit.hint": {
     "en": "e511e3013311068b",
-    "text": "7a7ef538553df907"
+    "text": "d3d4d6a2595a5d3d"
   },
   "cardpanel.notes.edit.label_of": {
     "en": "74df97e9f8116256",
@@ -12566,6 +12566,18 @@
   "prefs.versions.title": {
     "en": "d946eb551f1d6a44",
     "text": "f216dd09012b978c"
+  },
+  "product.bug": {
+    "en": "191903c61492ea38",
+    "text": "7e7a7b963fd7c444"
+  },
+  "product.love": {
+    "en": "96fa5228627bef6a",
+    "text": "c08bfff45504b443"
+  },
+  "product.made_by": {
+    "en": "3c4acf7ac90b37e1",
+    "text": "5208863f7cc47b36"
   },
   "profile_delete.busy": {
     "en": "c0ca40456b38f753",

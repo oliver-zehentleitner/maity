@@ -977,3 +977,388 @@ operator's config would admit every owner's project with that slug.
   lost at every rename and transfer.
 - Reading a bare slug in the config as "any owner": an operator who
   allowed `shop` for one owner would run every owner's `shop`.
+
+## Local mode: one agent in the foreground, no pairing, also on Windows
+
+**Id:** dd77eab8-46a3-45dd-9f08-bde11f926942
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-qe0ka9e341gh, the lead's assignment of 2026-11-03; the reviews of #1294 (pmwg, dzse), lotse's request for a state table (2026-11-03); the review lead's scope decision for #1294 of 2026-11-03 (only the parts settled across reviewers, the run's lifetime to card tsk-3tzhegcrr48h); the review lead's order of 2026-11-03 for the next fixes (pmwg, dzse on 83b3a7ca); the review lead's order of 2026-11-03 for the fixes on 6b564a86 (nyh5, dzse); the manager's order of 2026-11-03 for a last text round on 9ebbdcd1 (wtwy; dzse, nyh5); the manager's order of 2026-11-03 for a text round on 1a77bbdc (wtwy; dzse); `docs/api.md` §15.13, §5.3
+**See:** credentials.md — 116c5330-8dab-42ed-af06-74b6f02cee89 — as of 2026-11-03
+**See:** runner.md — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-03
+**See:** runner.md — c2acd907-0f26-4850-8272-063390f1d6a7 — as of 2026-11-03
+**Revisit when:** a harness signals its provider limit; someone asks local mode for an interactive session; the deny rules or a harness's sandbox are verified on Windows; the hub should tell a stopped local session from a busy one; card tsk-3tzhegcrr48h settles how a run that outlives local mode is found and taken over
+
+`maity runner <harness> --join <url>` redeems the link into a new workspace
+under `<state home>/maity-local/<link host>/<handle>`, lets the agent's own
+`maity join` write the credential into its `.git/maity`, and runs the
+supervised loop in the foreground. The next run starts only when an event
+waits or the last run left its work unacknowledged, with the full runner's
+restart defaults. It stops on a signal, Ctrl-C, Ctrl-Break or a closed
+console; on Windows a Job Object takes the harness with it. It is the one
+`maity runner` command that runs natively on Windows.
+
+The join runs once into a private staging workspace beside the target,
+followed by local mode's own supervised `maity resume`, which stores the
+instance id; then the staging workspace is renamed to `<handle>` or, when
+that already holds a credential, to `<handle>#<instance>`; if that cannot
+be done, it stays as a complete workspace and its path is printed. A
+non-empty `--workspace DIR` is refused untouched. Path components get one
+`_` in front when they would be a Windows device name, end in `.` or a
+space, or start with `_`, on every OS. A harness without a command
+allowlist (`codex`) refuses `--allow`. The one Git fetch and checkout
+run with the runner's transport list (https and ssh) in the staging
+workspace, before the rename, so a workspace appears only complete. Only
+after both exit 0 does local mode write `.git/maity/checked-out`, and only
+a workspace with that file gets a harness. One with a credential but
+without it (`repository_refused`, `no_repository`, `fetch_failed`, a
+partial checkout, a crash) gets a retry: a fresh staging directory beside
+it, only the regular files of `.git/maity` copied over, then the old one
+renamed aside to `.replaced-<time>-<name>` and kept whole, and the fresh
+one renamed into its place (for a kept `.join-*`, to
+`<handle>#<instance>`). Git never runs in a directory that existed
+before that start, and nothing in it is deleted. For an IPv6 host the
+directory always carries the port, so `[::1]:80` and `[::1:80]` differ.
+
+One lock per workspace path, `maity-local/.locks/<key>`, keyed like the
+adapter files, is taken before anything in the workspace is read and
+held until local mode exits, across both renames and the harness's
+start; a start that finds it held is refused at once. The key takes
+every component as its parent's listing names it, so two spellings on a
+file system that ignores case, or an 8.3 short name, take one lock.
+Only local mode holds it: the descriptor is never inherited, so it lasts
+as long as local mode. At most one harness per path is guaranteed only
+while local mode lives; a run that outlives a crashed local mode (the
+harness on macOS, its descendants on Linux) and a start that takes the
+path over meanwhile are not covered yet and are card tsk-3tzhegcrr48h;
+until then a person who restarts after a crash (a `kill -9` or the OOM
+killer) first checks that no process still works in the workspace
+(`lsof +D` on Linux and macOS).
+Every use of `.git/maity`, local mode's and that of every
+`maity` command in a local-mode session, opens the workspace, `.git` and
+`.git/maity` without following a link and refuses any link, junction or
+hard-linked file (`workspace_link`). The retry copies the credential
+into the fresh directory first and resumes there; from the first file
+copied, the fresh directory counts as possibly holding a secret. The
+fresh directory gets a `retry-of` mark first, naming the one path it
+may run at: the old one's, or for a kept `.join-*` `<handle>#<instance>`
+once its resume named the instance, and the old one gets a mark naming
+its own path before it is moved aside. A start anywhere else is refused
+(`retry_leftover`) every time, so at any one time only the copy at that
+path starts. That holds at a moment, not over time: once a copy has
+arrived its mark is removed, and when the person later moves it on, a
+leftover that was not removed can be renamed onto the freed path and
+start; the contract names that and does not cover it. The mark is
+compared with the workspace by identity, not spelling, and removed once
+the copy is at its path. When its path holds another instance or
+nothing, the person may remove it by hand after checking that no other
+copy of the credential exists; when it holds this instance, never. The
+staging and the retry's fresh directory are printed when they are
+created, the fresh directory with the path its mark names, which is
+printed again when it is rewritten to `<handle>#<instance>`, and a
+start names every `.join-*` beside it with what it holds. A `.replaced-*` directory is never started
+(`workspace_replaced`); its time is `YYYYMMDDTHHMMSSZ`. §15.13 lists
+the states of a workspace path in one table; each review finding maps
+to a row (the one under `running` is named as the limit, not fixed):
+
+- `replacing` and `between`: the lock released before the renames, so a
+  second retry could move away the tree a harness had just started in
+  (pmwg, dzse on `a228f3ea`).
+- `kept`: a partial checkout taken as ready (pmwg on `a0b0e809`).
+- `replaced`: the old workspace deleted with unique work in its `.git`
+  (pmwg on `a0b0e809`).
+- `staging` and `placing`: a marker for the destination left by a failed
+  rename, and one a harness could forge (pmwg on `c629ded4`).
+- `orphaned` and `stranded`: a complete fresh directory whose path nobody
+  printed after a crash or a failed rename (dzse on `a228f3ea`).
+- `placing` from a kept `.join-*`: a retried staging workspace that kept
+  its random name (dzse on `a228f3ea`).
+- Every row that reads a workspace: `.git/maity` swapped for a link to
+  another workspace's, whose credential the retry would copy (dzse on
+  `a228f3ea`), and the same swap during a run, which a check at the
+  start alone missed: local mode's next `maity wait` would follow the
+  link with the other agent's credential (dzse on `3d34a8a3`).
+- `running`: a harness or its descendants outliving a killed local
+  mode (macOS `kill -9`, Linux descendants), so the next start took the
+  free lock and launched a second harness (pmwg on `3d34a8a3`). The
+  answer on `1d09396a` (an inherited lock and a run record) left gaps
+  (pmwg, dzse on `1d09396a`), so the contract now names this as its limit
+  and card tsk-3tzhegcrr48h takes it up with those findings.
+- `abandoned`, `unfinished` and `orphaned`: one `orphaned` row for every
+  crash while the fresh directory is built, though only a complete one
+  fits it (pmwg on `3d34a8a3`); and an `F` with only the credential's
+  temporary file, which the leftovers called free of secrets (pmwg on
+  `1d09396a`).
+- `unfinished` and `orphaned` at `F`: a start in a retry's leftover
+  while the original could still be started ran the same credential and
+  instance in two workspaces, and the `unfinished` row promised a retry
+  in an `F` without the credential, which the entry rule refuses (pmwg,
+  dzse on `83b3a7ca`).
+- `between`, `orphaned` and `stranded` at `F`: the gate let a leftover
+  start whenever the original's path held no credential, which a
+  second, successful retry leaves for a moment, and from a kept
+  `.join-*` for good, so two copies ran one instance (nyh5, dzse on
+  `6b564a86`); and a stale, forged or differently spelled mark refused
+  every start of a workspace with no way out and advice to delete it
+  (dzse on `6b564a86`).
+- `staging` to `kept` after a crash: a staging directory with the spent
+  credential that nothing named (dzse on `3d34a8a3`).
+- Every row with a lock: two spellings of one path on a file system that
+  ignores case took two locks (dzse on `3d34a8a3`), and a missing name,
+  which has no stored spelling yet, could still take two through a
+  `--workspace` under `maity-local` (dzse on `1d09396a`), also while
+  `maity-local` itself did not exist yet (dzse on `9ebbdcd1`).
+- `orphaned`, `stranded` and `replaced` at `F` and at `.replaced-*`: the
+  one-copy claim read as holding over time, though a leftover can take
+  the path once the copy there moved on; the way out read as removing
+  any mark, also one whose path holds this instance, after checking only
+  that no copy runs; the advice to rename onto an empty path followed a
+  path a harness could have written; and the old tree, restored under
+  another name, started beside the admitted copy (dzse on `9ebbdcd1`).
+  The first is named as a limit; the others are fixed.
+
+The harness gets a runner's adapter context: the adapter files outside
+the workspace under `maity-local/.adapters`, no `MAITY_PLACEMENT`, the
+hub's and the repository's hosts, the paths a runner denies, and the
+sandbox `maity runner check` reports: Claude Code's strict sandbox on
+Linux with `bwrap` and `socat`, else off and said so; Codex only with its
+sandbox, refused without; opencode the allowlist alone.
+
+The hub's not-listening rule leaves out a supervised session only while
+an active placement names its credential, so a stopped local mode shows
+as an agent that is not listening. That needs a hub change (card
+tsk-mcd2xwwa2fzv, marked "Not built yet" in §5.3); until it lands, a
+stopped local mode stays silent apart from its presence going `away`
+and `offline`. Local mode also refuses a link whose host is not a plain
+DNS name or IP address (`..`, `.adapters`, a trailing dot), because the
+host names a directory under `maity-local`.
+
+**Reason:** people who want one agent on their own laptop should not need
+a paired runner, a service and a placement for it. Everything Windows
+lacked for the full runner (tmux, systemd, OS users) belongs to `serve`;
+a foreground loop needs a process group, which Windows has as a console
+group and a Job Object. The not-listening rule left supervised sessions
+out because their runner reports a stopped run (§15.7); local mode has
+no runner to report it, so the exemption has to follow the placement, not
+the `supervisor` value. Keeping the credential in the clone reuses the
+private-directory checks as they are, and keeping the workspaces outside
+the runner's state directory means `gc` and `workspace claim` cannot
+touch them. The adapter files lie outside the workspace because Codex's
+sandbox lets the agent write the clone's `.git`, and anything there
+could be widened for the next run. The retry builds a fresh directory
+for the same reason: with no Git in any existing workspace there is no
+permission an agent could forge or a failed rename could leave behind,
+and this holds where the sandbox is off or, on Windows, unverified, not
+only where it denies paths. The mark says "ready", not "Git may run":
+a test of the work tree cannot tell a partial checkout from a complete
+one, since checkout is not atomic, and a forged or removed mark leads
+only to a harness in a tree an agent already wrote or to a fresh clone.
+The old workspace is moved aside, not deleted, because an almost empty
+`.git` can still hold branches, objects and reflogs with unique work.
+The lock lies outside every renamed directory because a lock inside one
+guards the tree, not the path: once the tree is renamed, a second start
+locks whatever new tree the path names, and Windows renames no
+directory with an open file, so a lock inside had to be released before
+the rename. Outside, nothing is released before the rename it guards,
+and no check after taking it is needed. The lock is local mode's alone
+and never passed on, because a descriptor the run inherits can be
+closed or unlocked by any process of the run, which then frees local
+mode's lock too. The run is what must be alone on a path, and local mode
+can die without it (macOS has no parent-death signal, and on Linux the
+subreaper dies with local mode), but each way tried in review to make
+the lock outlast local mode left a gap: a run record written after the
+harness started, and a path left unlocked between runs once a process of
+the run had unlocked it. Rather than ship a guarantee with known holes,
+the contract states the one it keeps, at most one harness per path
+while local mode lives, and leaves the rest to card tsk-3tzhegcrr48h.
+A copied credential's temporary name makes its final name atomic, not
+the directory free of secrets, so the leftovers count any file in
+`.git/maity` as a possible secret. A retry's leftover is gated, not
+only warned about, because the table itself offered the start in it and
+nothing about a duplicate instance needs a surviving run: two live
+local modes on two paths are enough. The gate cannot ask whether the
+original's path holds a credential, because a second, successful retry
+empties that path for a moment, and from a kept `.join-*` for good,
+while its own copy runs; it asks where this copy is instead, since a
+path names one directory at a time, so at any one time only one copy can
+be at the path the mark names. Over time the path binds a copy only until
+it arrives: its mark is removed then, so that a workspace moved later is
+not refused, and a leftover left beside it can follow onto the freed
+path. Closing that would need local mode to know every directory a copy
+was ever moved to, which it cannot, so the contract names the gap
+instead of claiming more. The ways on for a mark whose path holds
+another instance or nothing ask the person first to check that no other
+copy exists; the ways that rename a copy to the path its mark names
+(when that path holds this instance, `orphaned`, `stranded`) do not,
+since the copy goes where the mark puts it. That is
+also why a retry from a kept `.join-*`
+goes to `<handle>#<instance>`, which the instance alone decides, and not
+to `<handle>` when that happens to be free: every retry of one staging
+workspace meets at one path. The mark is compared by identity, as the
+lock's key is, because a name retyped in another case on APFS or NTFS
+still names the same directory; it is removed once the copy is at its
+path, so a workspace moved later is not refused. Local mode never moves
+a leftover itself, because the mark is a file a harness can write, and
+a forged one may only refuse its own workspace's starts; the way out of
+a mark whose path holds another instance or nothing is the person's,
+removing the file after checking that no other copy exists, not only
+that none runs, since every copy that exists can be started. When the
+path holds this instance there is no such way out: the copy there and
+this one would both exist and start. The advice to rename a workspace
+onto an empty path asks for the same check and only for the path the
+retry printed for the mark, when it wrote it at the creation and again
+when it rewrote it to `<handle>#<instance>`, since the path comes from a
+file a harness can write, and local mode does not move workspaces to
+such a path either. The old tree gets a mark before the retry moves it
+aside, so restoring that `.replaced-*` under another name than its path
+is refused like any copy. A `.replaced-*` the person makes by hand
+carries no mark (the copy at the path lost its own when it arrived), so
+restoring it under another name is not refused: part of the gap over
+time, named, not covered.
+Local mode creates `maity-local` before it decides whether a
+`--workspace` lies inside it, because a directory that does not exist
+yet has no identity to compare with. The message reads the instance at
+the named path only to say which way on fits. The key comes from the listing
+because only the name the file system stores is one per directory; the
+parents' real path alone left the last component's case open. The
+no-link opening is there because Codex may write `.git`, and a link
+needs no read access to its target; it runs at every use because
+local mode keeps using `.git/maity` after the harness has run, through
+handles so nothing can be swapped between the check and the use. The
+retry resumes against the fresh directory's copy because that one no
+harness ever reached. Every directory that may come to hold a
+credential is printed before it does, and starts name the leftovers,
+because a crash prints nothing, and a person who does not find a spent
+credential would redeem a spent link. The sandbox follows what the adapters
+already do on a runner (Claude Code strict or not at all, Codex only
+sandboxed), so local mode adds no third policy. Codex's sandbox is
+required because without it nothing confines Codex at all, while Claude
+Code without its sandbox still has its permission rules, which the start
+message says are no boundary.
+
+**Rejected alternatives:**
+- A paired runner on the laptop: a runner credential, a row and a
+  placement for one agent, and still no Windows.
+- Restarting after every exit: an idle agent would spend model tokens
+  on runs with nothing to do.
+- `stub` as a local-mode harness: it is already the name of an internal
+  action, so action names win and no harness id may take one.
+- Picking `<handle>#<instance>` before the join: the instance id comes
+  only with the single-use exchange (§3.3), so the second join would have
+  to guess it or spend the link twice (review of #1294).
+- The handle verbatim as a directory name: valid handles such as `con`,
+  `nul` or `com1` are device names Windows refuses as directory names.
+- Ignoring `--allow` for `codex`: the person would believe a restriction
+  applied that nothing enforces (§15.3 refuses such placements too).
+- "The hub needs no change", leaving supervised sessions out as before:
+  a local mode stopped by Ctrl-C, a closed console or a crash would hold
+  a session that never counts as not listening, and the lead would not
+  learn of it (review of #1294).
+- A supervisor value of its own (`maity-local/<version>`) that the hub
+  treats as a self-waiting session: also a hub change, the `supervisor`
+  pattern would have to widen, and the supervised wake set and rules
+  would need a second name for the same behaviour.
+- Configuration files for the restart values: the full runner's defaults
+  serve one agent in the foreground, and a file would be one more thing
+  to find, validate and document for a command meant to need none.
+- A readiness marker in `.git` that permits Git, or recovering by just
+  running the fetch again: the agent can write `.git/config` and its
+  hooks, so a later start could not tell a never-launched workspace from
+  one a harness changed (review of #1294, pmwg). The `checked-out` mark
+  permits only the harness, never Git.
+- Reading "no checkout" from the work tree (nothing but `.git`, `HEAD`
+  on an unborn branch): a failing required smudge filter leaves files
+  and an unborn `HEAD`, so a partial checkout passed as ready (review of
+  #1294, pmwg).
+- Removing the old workspace after copying `.git/maity`: an unborn
+  `HEAD` does not mean the rest of `.git` holds no unique work (review
+  of #1294, pmwg).
+- A pending record under `maity-local/.pending` that permits the one Git
+  and its retry: a failed rename could leave one for another join's
+  workspace, and where the sandbox is off a harness could recreate it
+  and get Git run after it changed `.git/config` (review of #1294, pmwg,
+  dzse). Exclusive creation fixes the first, nothing fixes the second.
+- `_<port>` only when the link names one, for IPv6 too: `[::1]:80` and
+  `[::1:80]` would both be `___1_80` and share a workspace (review of
+  #1294, dzse, pmwg).
+- The adapter files in `<workspace>/.git/maity`: writable from Codex's
+  sandbox, so a run could widen the next run's settings.
+- `--code` on the command line, as `maity join` has it: on Linux every
+  user can read another's command line, and could redeem the link first.
+- A process-id lock file: after a `kill -9` it stays, and a reused id
+  would block the workspace for good; an operating-system lock ends with
+  its process.
+- The lock in `.git/maity/local.lock`, released before the renames and
+  checked against the path after taking it: the check sees only renames
+  before it, so a retry could still move away a tree a harness had just
+  started in (review of #1294, pmwg, dzse).
+- Waiting for a held lock: two starts each holding one lock and waiting
+  for the other's would never end; a start refused at once can be run
+  again.
+- Following links in `.git` as before: an agent could point
+  `.git/maity` at another workspace's (review of #1294, dzse).
+- The no-link check at the start only: the harness can swap
+  `.git/maity` during a run, and local mode's next `maity wait` runs
+  outside any sandbox (review of #1294, dzse).
+- The harness inheriting the lock, so it lasts as long as the run, and a
+  run record under `maity-local/.runs` that refuses a start
+  (`harness_running`) while a recorded run lives: the record came only
+  after the harness had started, so a run that unlocked what it inherited
+  left a window without lock or record, and after a run the path stayed
+  unlocked while local mode waited, so a second local mode could take it
+  over (review of #1294, pmwg, dzse). Moved to card tsk-3tzhegcrr48h with
+  those findings and the proposals made (a launch gate, a second lock
+  file only the harness inherits); this contract keeps only the
+  guarantee while local mode lives.
+- The lock keyed by the directory's inode: it would follow the tree
+  through the renames, which is what the path lock replaced.
+- Only the parents resolved, and `normcase` on Windows: two spellings of
+  the last component on APFS, or an 8.3 short name, took two locks
+  (review of #1294, dzse).
+- One `orphaned` state for every crash while the fresh directory is
+  built: an incomplete one cannot be started, and one without a
+  credential holds nothing to recover (review of #1294, pmwg).
+- Naming a start in a retry's leftover as one more limit: the table
+  would still offer a start that runs one agent instance twice, with no
+  run outliving local mode needed (review of #1294, pmwg, dzse).
+- Case-folding a missing name for the lock's key: local mode cannot
+  tell whether the file system will ignore case, and folding everywhere
+  would give two real directories on a case-sensitive one one lock;
+  refusing a `--workspace` under `maity-local` with `--join` leaves only
+  names local mode spells itself (review of #1294, dzse).
+- The gate only while the original's path holds a credential (as on
+  `6b564a86`): a second, successful retry leaves that path empty in its
+  rename window, and from a kept `.join-*` for good once its copy runs
+  at the handle, so a leftover started beside it (review of #1294,
+  nyh5, dzse).
+- Taking the original path's lock in that gate as well: it closes the
+  rename window but not a staging workspace's copy that already runs at
+  its handle (review of #1294, nyh5, dzse).
+- Local mode renaming a leftover into its mark's path itself, with
+  `RENAME_NOREPLACE` (proposed in review of #1294, dzse): the mark is a
+  file a harness can write, so local mode would move a workspace,
+  credential included, to a path an agent chose, outside any sandbox.
+  The person's rename is as safe, since a path names one directory at a
+  time and the start checks what it finds there.
+- Refusing only while the named path holds the same instance (proposed
+  in review of #1294, dzse): another instance there says nothing about
+  where the other copies run; the instance only picks the message's
+  advice.
+- Comparing the mark by spelling: a name retyped in another case on
+  APFS or NTFS refused the workspace itself at every start (review of
+  #1294, dzse).
+- A retry from a kept `.join-*` to `<handle>` when that is free: a copy
+  that crashed after picking it and a later retry that found it taken
+  would end on two paths.
+- Refusing a copy's arrival while a leftover beside the path holds its
+  instance and names that path (proposed in review of #1294, dzse): it
+  sees only leftovers beside the path, never a copy moved elsewhere, so
+  the one-copy claim would still not hold over time; the contract names
+  the gap and asks for the check before every rename onto a path.
+- Removing the mark as the way out of every mark that does not fit (as
+  on `9ebbdcd1`): with this instance at the named path, both copies
+  would start (review of #1294, dzse; the manager's order).
+- Checking only that no other copy runs before removing a mark (as on
+  `9ebbdcd1`): a copy that is not running now can be started later
+  (review of #1294, dzse).
