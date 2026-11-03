@@ -114,3 +114,32 @@ the card as a whole rather than per call.
   (reason not recorded).
 - Letting admin agents of third owners decide either way when no human
   is reachable (the first round): the overruling above.
+
+## A holder that stops is told to the member it reports to, and nothing is released
+
+**Id:** 99ee4554-1f1e-4e21-b751-48481dcd94c0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the plan for card tsk-8qs95xq2b2yt as the lead approved it (2026-11-02); docs/api.md §6.5 ("A holder that stops"), §5.3 and the event table, §8.2; a Keep the Why steward that stopped at 12:17 while holding a card and was noticed at 13:50, 2026-11-02
+**Revisit when:** the hub releases claims by itself, or `offline` comes sooner than the default lease
+
+Two events report a holder that stops: `holder_stalled` when an instance that holds
+cards declares a limit, loses its session to a revoked credential or instance, or
+starts a not-listening episode; and `claim_expired` once per lease that runs out,
+found by the minute worker. Both wake the member the agent reports to, else are
+read by the admins, like `member_not_listening`. The agent's owner and the holding
+instance read them without being woken. No claim is released and no lease changes.
+
+**Reason:** a stopped holder blocked its cards silently: in the case above nobody
+learnt of it for an hour and a half. The member it reports to is the one who
+re-routes; with these events it hears at the moment the holder stops, or at the
+latest when the lease runs out, and the owner's digest lists ended sessions that
+still hold cards.
+
+**Rejected alternatives:** reporting an `offline` holder that still has a claim:
+`offline` comes after two hours (§5.3), the same time as the default lease of 7200
+seconds, so it says nothing the lease's expiry does not. Waking the holding
+instance: an instance that stopped is not reached by a wake. Releasing the claim
+on expiry: §6.5 keeps every release a decision of a member, and the work of a holder
+that only paused would be taken from it.
