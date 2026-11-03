@@ -86,5 +86,6 @@
 .site-header .mark rect{fill:var(--accent)}
 .site-header .mark circle{fill:var(--text)}
 .site-header .mark path{stroke:var(--text)}
-/* Narrow and no pitch (the default delivery, second factor, mail sent, closed): no empty dark band. */
-@media (max-width:959.98px){.door-panel:not(:has(.subline)):not(:has(li)){display:none}}
+/* Narrow and no pitch (the default delivery, second factor, mail sent, closed): no empty dark band.
+   A panel holding any of the pitch's parts (subline, points, note) stays. */
+@media (max-width:959.98px){.door-panel:not(:has(.subline)):not(:has(li)):not(:has(.note)){display:none}}

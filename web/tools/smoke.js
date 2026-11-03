@@ -10972,6 +10972,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     for (let k = 0; k < 4; k++) await tick();
     win.Maity.api.get = apGet;
     expect(apFailed.title.textContent === "Sign in" && !apFailed.panel.querySelector("ul") && apFailed.panel.childNodes.length === 1, "pitch: a failed read leaves the heading, with no message");
+    // On a phone public-pages.css hides a panel without the pitch's parts; a panel with only a note still shows it
+    // (every key of §16.7.4 is optional). The rule's :has() parts are read from the stylesheet and met against the panel.
+    await win.Maity.api.patch("/admin/settings/auth-pages", { default_language: "en", pages: { sign_in: { en: { note: "Only a note" } }, sign_up: {} } });
+    const apNote = win.Maity.authPages.pitch("sign_in", "Sign in");
+    for (let k = 0; k < 4; k++) await tick();
+    const apRule = /@media \(max-width:[^)]*\)\{\.door-panel((?::not\(:has\([^)]*\)\))+)\{display:none\}\}/.exec(fs.readFileSync(path.join(WEB, "../hub/src/maity_hub/landing_assets/public-pages.css"), "utf8"));
+    const apKept = apRule ? [...apRule[1].matchAll(/:has\(([^)]*)\)/g)].map((m) => m[1]) : [];
+    const apShown = (panel) => apKept.some((sel) => !!panel.querySelector(sel));
+    expect(apRule && !!apNote.panel.querySelector(".note") && apShown(apNote.panel) && !apShown(apFailed.panel),
+      "pitch: on a phone a panel with only a note stays, one with the seat alone is hidden " + JSON.stringify(apKept));
     btn(main.querySelector("nav.admin-subnav"), "Landing pages").click(); await tick();
     expect(JSON.stringify(subShown()) === JSON.stringify(["admin-landing-page"]), "pages: a sub-tab switches the part " + subShown());
     await go("#/admin/pages/site"); for (let k = 0; k < 6; k++) await tick();
