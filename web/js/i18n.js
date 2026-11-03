@@ -194,5 +194,11 @@ window.Maity = window.Maity || {};
   i18n.follow = (tag) => use(closest(tag) || browserChoice());
   // A choice made on a page before sign-in.
   i18n.choose = (tag) => { remember(tag); return use(tag); };
+  // A key's English text, for a translation that may not be used (the product line's
+  // sentence with a placeholder missing or twice, docs/api.md §16.13).
+  i18n.english = (key) => {
+    const en = catalogs.en || {};
+    return Object.hasOwn(en, key) ? en[key] : undefined;
+  };
   M.i18n = i18n;
 })(window.Maity);

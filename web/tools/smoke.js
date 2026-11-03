@@ -97,6 +97,7 @@ class El extends Node_ {
 const header = new El("header"); header.id = "header";
 const head = new El("head");
 const main = new El("main"); main.id = "main";
+const productLine = new El("footer"); productLine.id = "product-line";
 const docListeners = {};
 const document = {
   createElement: (t) => new El(t),
@@ -104,7 +105,7 @@ const document = {
   createTextNode: (t) => new Text_(t),
   head,
   documentElement: new El("html"),
-  getElementById: (id) => ({ header, main })[id],
+  getElementById: (id) => ({ header, main, "product-line": productLine })[id],
   querySelector: (s) => header.querySelector(s) || main.querySelector(s),
   addEventListener: (t, f) => { docListeners[t] = f; },
   removeEventListener: (t, f) => { if (docListeners[t] === f) delete docListeners[t]; },
@@ -233,6 +234,29 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const plainTitle = () => document.title.replace(/^\(\d+\) /, "");
   expect(win.location.hash === "#/all", "empty hash with two projects lands on #/all");
   expect(!main.querySelector(".error"), "cross-project inbox renders");
+  // The product line (docs/api.md §16.13) after <main>: the year, the issues, the credit with two icon links.
+  {
+    const links = productLine.querySelectorAll("a");
+    const hrefs = links.map((a) => a.getAttribute("href"));
+    expect(text(productLine) === " Maity " + new Date().getFullYear() + " · Found a bug? · Made with ♥ by Oliver Zehentleitner on & ",
+      "product line: Maity and the year, Found a bug?, the credit with the name as plain text");
+    expect(JSON.stringify(hrefs) === JSON.stringify(["https://github.com/oliver-zehentleitner/maity/issues",
+      "https://github.com/oliver-zehentleitner", "https://maity.team/oliver-zehentleitner"]),
+      "product line: three absolute links, the same on every instance, the Maity page without @");
+    expect(links.every((a) => a.getAttribute("rel") === "noopener noreferrer" && a.getAttribute("target") === "_blank"),
+      "product line: every link in a new tab with rel=noopener noreferrer");
+    expect(links[1].getAttribute("aria-label") === "GitHub" && links[2].getAttribute("aria-label") === "Maity"
+      && productLine.querySelectorAll("svg").every((svg) => svg.getAttribute("aria-hidden") === "true"),
+      "product line: the icon links named GitHub and Maity, every icon aria-hidden");
+    const heart = productLine.querySelector(".product-heart");
+    expect(heart && heart.getAttribute("role") === "img" && heart.getAttribute("aria-label") === "love", "product line: the heart is a symbol named love");
+    expect(productLine.all().every((e) => e.attrs.style === undefined && e.tagName !== "STYLE" && e.tagName !== "USE" && e.tagName !== "TITLE"),
+      "product line: the icons use presentation attributes only, no style, <style>, <use> or <title>");
+    const wf = win.Maity.productLine.wellFormed;
+    expect(wf("Made with {heart} by {name} on {github} & {maity}") && wf("{maity} {github} {name} {heart}")
+      && !wf("Made with {heart} by {name} on {github}") && !wf("{heart} {name} {github} & {github} {maity}") && !wf("{heart} {name} {github} {maity} {x}"),
+      "product line: a sentence names each of the four placeholders exactly once, and no other");
+  }
   expect(gets.some((p) => p.startsWith("/requests")) && !main.querySelector(".lead-projects") && !header.querySelector(".lead-chat"),
     "#/all renders requests; no lead strip (the lead is behind the header's Chat button)");
   expect(!text(main).includes("null") && !text(header).includes("null"), "no stray 'null' text");
@@ -6099,6 +6123,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // An invitation (docs/api.md §3.4) without a session: who invites to what, and the ways in this hub offers.
   const ivPage = () => main.querySelector("article.invite");
   await go("#/invite/open-xxxxxxxxxxxxxxxx1"); for (let k = 0; k < 4; k++) await tick();
+  // The token is in the path: the page sends no Referer (docs/api.md §16.13), and still ends with the product line.
+  expect(head.querySelectorAll("meta").filter((m) => m.getAttribute("name") === "referrer" && m.getAttribute("content") === "no-referrer").length === 1,
+    "invite: the page sets <meta name=referrer content=no-referrer>, once");
+  expect(productLine.querySelectorAll("a").length === 3, "invite: the page ends with the product line");
   // The rule's selector meets the pages it is for (tsk-swr1bywv3agq): here the header is the bar alone; a project's header is never.
   const hdOnly = () => header.childNodes.filter((x) => x.tagName).length === 1 && header.childNodes.find((x) => x.tagName).className === "bar";
   expect(hdOnly(), "header: an invitation's header is the bar alone, so the bar's own room below applies");

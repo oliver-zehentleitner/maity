@@ -150,3 +150,35 @@ Keeping the projects' record keeps other members' history readable.
   the operator in the middle of every exit.
 - Deleting at once on the first call: a session left open on a shared
   computer would be enough to destroy an account.
+
+## A page with a token in its path sends no referrer; its outgoing links say so too
+
+**Id:** 4a01739c-d565-4384-b806-3662f935e0a5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's ruling in the review of the product-line contract (2026-11-03), on the reviewer's point that the line ends pages with a token in their path; contract `docs/api.md` §1.1 and §16.13
+**See:** scope.md#every-page-of-the-platforms-own-interface-ends-with-one-product-line-also-on-a-self-hosted-instance — ba8583f2-7a56-4435-8c4c-6ab2c9bf7378 — as of 2026-11-03
+
+The pages the hub renders with a token in their path (the join page in a
+browser, the `/mail/…/{token}` link pages) answer with
+`Referrer-Policy: no-referrer`. The dashboard's invitation page,
+`/invite/{token}`, is the app shell, which has no header of its own
+for it, so the page sets `<meta name="referrer" content="no-referrer">`
+itself. The product line's links carry `rel="noopener noreferrer"` on
+every page.
+
+**Reason:** the product line puts links to github.com and maity.team on
+exactly the pages whose address is a secret, and a click would send that
+address on in the `Referer` under a browser's default policy. The
+policy on the page covers every link and request on it, not only the
+line's; `noreferrer` on the links keeps them safe where a page has no
+policy yet.
+
+**Rejected alternatives:**
+- `noreferrer` on the line's links alone: any other link or request on
+  the page would still send the token, depending on the browser's
+  default.
+- Relying on the browsers' default policy
+  (`strict-origin-when-cross-origin`): it is a default, not a promise,
+  and an older or configured browser sends the whole path.

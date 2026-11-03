@@ -1038,3 +1038,10 @@ name another account.
   phone on every page.
 - The line on the landing and legal pages as well: they are the
   operator's site and already end with the operator's footer.
+- A stylesheet or an inline `<style>` for the icons' dark variant on the
+  join page: its policy is `default-src 'self'`, which blocks inline
+  styles, and the join host serves no files, so the join page shows the
+  light mark in either theme and the icons use presentation attributes
+  only (`fill`), never a `style` attribute.
+- Loading the icons as image files: the link pages allow no image source
+  at all, so the icons are inline SVG on every page.

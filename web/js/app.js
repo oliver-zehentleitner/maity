@@ -1874,6 +1874,8 @@ window.Maity = window.Maity || {};
     let where = { scope: "unknown" };
     let ctx;
     await M.i18n.ready;
+    // The product line after <main> (§16.13), in the language this view is drawn in.
+    if (M.productLine) M.productLine.draw();
     // §16.12: the window as the hub has it, read at most once a minute; while it runs, the
     // full page stands instead of the view (heldPage), the sign-in and its step excepted.
     M.maintenance.drawing();
@@ -2119,6 +2121,8 @@ window.Maity = window.Maity || {};
   }
 
   M.redraw = render;
+  // The path of a forge's 16 × 16 mark, for js/product-line.js (§16.13).
+  M.forgeMarkPath = (forge) => FORGE_MARKS[forge] || FORGE_MARKS.other;
   M.errorBox = errorBox;
   M.withMembers = withMembers;
   M.logout = logout;
