@@ -3622,8 +3622,6 @@
   "sessions.banner.new": "メールによる新しいサインイン: {device}、{ip}、{when}。",
   "sessions.cannot_end.confirm_first": "先に、別のセッションから、このセッションのサインインを確認してください。",
   "sessions.cannot_end.too_new": "このセッションは新しすぎるため、古いセッションを終了できません。",
-  "sessions.confirm.refused": "ハブは、このセッションからの確認を受け付けませんでした。",
-  "sessions.confirm.unknown": "送信しましたが、一覧を再取得できませんでした。確認されたかどうかは不明です。",
   "sessions.confirmed": "確認しました: {what} はあなたのものです。",
   "sessions.confirmed_badge": "確認済み",
   "sessions.confirming": "確認しています…",

@@ -3706,8 +3706,6 @@ window.MAITY_I18N["it"] = {
   "sessions.banner.new": "Nuovo accesso per email: {device}, {ip}, {when}.",
   "sessions.cannot_end.confirm_first": "Conferma prima l'accesso di questa sessione da un'altra sessione.",
   "sessions.cannot_end.too_new": "Questa sessione è troppo recente per terminare quelle più vecchie.",
-  "sessions.confirm.refused": "L'hub non l'ha confermato da questa sessione.",
-  "sessions.confirm.unknown": "Inviato, ma non è stato possibile rileggere l'elenco: non si sa se sia stato confermato.",
   "sessions.confirmed": "Confermato: {what} è opera tua.",
   "sessions.confirmed_badge": "confermata",
   "sessions.confirming": "Conferma in corso…",

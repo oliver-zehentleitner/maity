@@ -3706,8 +3706,6 @@ window.MAITY_I18N["nl"] = {
   "sessions.banner.new": "Nieuwe login per e-mail: {device}, {ip}, {when}.",
   "sessions.cannot_end.confirm_first": "Bevestig eerst de login van deze sessie vanuit een andere sessie.",
   "sessions.cannot_end.too_new": "Deze sessie is te nieuw om oudere te beëindigen.",
-  "sessions.confirm.refused": "De hub heeft het niet bevestigd vanuit deze sessie.",
-  "sessions.confirm.unknown": "Verzonden, maar de lijst kon niet opnieuw worden gelezen: of het is bevestigd, is niet bekend.",
   "sessions.confirmed": "Bevestigd: {what} is van jou.",
   "sessions.confirmed_badge": "bevestigd",
   "sessions.confirming": "Bevestigen…",

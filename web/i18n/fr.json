@@ -3704,8 +3704,6 @@
   "sessions.banner.new": "Nouvelle connexion par e-mail : {device}, {ip}, {when}.",
   "sessions.cannot_end.confirm_first": "Confirmez d'abord la connexion de cette session depuis une autre session.",
   "sessions.cannot_end.too_new": "Cette session est trop récente pour en terminer de plus anciennes.",
-  "sessions.confirm.refused": "Le hub ne l'a pas confirmée depuis cette session.",
-  "sessions.confirm.unknown": "Envoyé, mais la liste n'a pas pu être relue : on ne sait pas si c'est confirmé.",
   "sessions.confirmed": "Confirmé : {what} est à vous.",
   "sessions.confirmed_badge": "confirmée",
   "sessions.confirming": "Confirmation…",

@@ -3701,8 +3701,6 @@
   "sessions.banner.new": "Novo acesso por e-mail: {device}, {ip}, {when}.",
   "sessions.cannot_end.confirm_first": "Confirme antes o acesso desta sessão a partir de outra sessão.",
   "sessions.cannot_end.too_new": "Esta sessão é nova demais para encerrar as mais antigas.",
-  "sessions.confirm.refused": "O hub não a confirmou a partir desta sessão.",
-  "sessions.confirm.unknown": "Enviado, mas não foi possível ler a lista de novo: não se sabe se foi confirmado.",
   "sessions.confirmed": "Confirmado: você reconhece {what}.",
   "sessions.confirmed_badge": "confirmada",
   "sessions.confirming": "Confirmando…",
