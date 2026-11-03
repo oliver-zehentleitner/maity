@@ -155,7 +155,10 @@ def observe(
         observation = Observation(data, observed_at, fresh=True)
         observation.changed = stored is None or _state(stored.data) != _state(data)
         if observation.changed:
-            _announce_for_release(conn, fg, project.id, kind, ref, observation)
+            # Announced only where a reader would act: a mergeable state that settles from
+            # `unknown` to `mergeable`, or back, is stored and rechecked but wakes nobody.
+            if stored is None or _waking(stored.data) != _waking(data):
+                _announce_for_release(conn, fg, project.id, kind, ref, observation)
             releases.recheck(conn, project.id, fg)
     return observation
 
@@ -316,14 +319,17 @@ def observe_report(engine: Engine, fg: forge.Forge, card_id: str, max_age: int =
         merged.observed(conn, card_id, pr.data.get("merge_sha") if pr else None)
         if _seen(current.report) == _seen(stored):
             return True  # only the time moved on: stored, not announced again
-        emit(
-            conn,
-            card.project_id,
-            "probe_observed",
-            _report_audience(conn, card_id, mismatch, observed["pr_state"] == "merged"),
-            {"task": card_id, "observed": observed, "mismatch": mismatch},
-            subject=("task", card_id),
-        )
+        # A new report starts with `observed: null`; its first observation is announced
+        # only when it differs from what the card's last one said (§8.2).
+        if _seen(stored) != _last_announced(conn, card.project_id, card_id):
+            emit(
+                conn,
+                card.project_id,
+                "probe_observed",
+                _report_audience(conn, card_id, mismatch, observed["pr_state"] == "merged"),
+                {"task": card_id, "observed": observed, "mismatch": mismatch},
+                subject=("task", card_id),
+            )
         releases.recheck(conn, card.project_id, fg)
     return True
 
@@ -349,6 +355,33 @@ def _seen(report: dict[str, Any]) -> tuple[Any, Any]:
     observed = dict(report.get("observed") or {})
     observed.pop("observed_at", None)
     return observed, report.get("mismatch")
+
+
+ANNOUNCED_LOOKBACK = 20  # a card's latest `probe_observed` events read for its last report one
+
+
+def _last_announced(conn: Connection, project_id: str, card_id: str) -> tuple[Any, Any] | None:
+    """What the card's last announced report observation said, as `_seen` reads it, or None.
+    A release card's own events carry `observations` instead and are passed over; a redacted
+    event says nothing."""
+    e = t.event.c
+    rows = conn.execute(
+        select(e.payload)
+        .where(
+            e.project_id == project_id,
+            e.subject_type == "task",
+            e.subject_id == card_id,
+            e.kind == "probe_observed",
+            e.redacted.is_(False),
+        )
+        .order_by(e.seq.desc())
+        .limit(ANNOUNCED_LOOKBACK)
+    ).all()
+    for row in rows:
+        payload = row.payload or {}
+        if "observed" in payload:
+            return _seen(payload)
+    return None
 
 
 # --- the open release (§6.7) ------------------------------------------------------------------
@@ -384,9 +417,16 @@ def observe_release(
 
 
 def _state(data: dict[str, Any]) -> tuple[Any, ...]:
-    """The parts whose change is worth an event; the observation time is not."""
+    """The parts whose change is stored and rechecked; the observation time is not."""
     keys = ("found", "state", "head_sha", "checks", "mergeable", "merged_at", "sha")
     return tuple(data.get(k) for k in keys)
+
+
+def _waking(data: dict[str, Any]) -> tuple[Any, ...]:
+    """The parts whose change is announced (§8.2): as `_state`, but of `mergeable` only
+    whether the pull request conflicts. The forge computes it lazily, so `unknown` and
+    `mergeable` take turns on an unchanged pull request."""
+    return (*_state(data)[:4], data.get("mergeable") == "conflicting", *_state(data)[5:])
 
 
 # --- the worker --------------------------------------------------------------------------------

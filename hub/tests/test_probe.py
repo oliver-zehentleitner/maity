@@ -676,6 +676,128 @@ def test_only_a_changed_verdict_is_announced_again(
     assert len(reported) == 1
 
 
+def _reported_events(engine: Engine, card_id: str) -> list[Any]:
+    return [e for e in _events(engine, "probe_observed") if e.payload.get("task") == card_id]
+
+
+def _report_again(agent: flow.Human, card_id: str) -> None:
+    again = agent.post(f"/projects/maintainer/maity/tasks/{card_id}/report", _report())
+    assert again.status_code == 200, again.text
+    assert again.json()["report"]["observed"] is None
+
+
+def test_a_new_report_on_an_unchanged_pull_request_wakes_nobody(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """The agent reports again; the forge says what it said for the last report: stored on
+    the new report, not announced (req-658tp9mj77ny)."""
+    github.pull(7)
+    github.branch("agent-b/probe")
+    agent, card_id = _reported_card(owner, make_client)
+    assert probe.observe_report(migrated, READER, card_id) is True
+    _report_again(agent, card_id)
+    assert probe.observe_report(migrated, READER, card_id, max_age=0) is True
+    report = owner.get(f"/projects/maintainer/maity/tasks/{card_id}").json()["report"]
+    assert report["observed"]["pr_head_sha"] == SHA and report["mismatch"] is False
+    assert len(_reported_events(migrated, card_id)) == 1
+
+
+@pytest.mark.parametrize(
+    "change",
+    ["checks", "pr_state", "pr_head_sha", "branch_head_sha"],
+)
+def test_a_new_report_wakes_when_the_pull_request_changed(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    github: FakeGitHub,
+    change: str,
+) -> None:
+    """Each part of the observation, changed since the last report's, is announced."""
+    github.pull(7)
+    github.branch("agent-b/probe")
+    agent, card_id = _reported_card(owner, make_client)
+    assert probe.observe_report(migrated, READER, card_id) is True
+    _report_again(agent, card_id)
+    if change == "checks":
+        github.runs(SHA, [("ci / sqlite", "failure")])
+    elif change == "pr_state":
+        github.pull(7, merged=True)
+    elif change == "pr_head_sha":
+        github.pull(7, head=OTHER)
+    else:
+        github.branch("agent-b/probe", head=OTHER)
+    assert probe.observe_report(migrated, READER, card_id, max_age=0) is True
+    first, second = _reported_events(migrated, card_id)
+    assert first.payload["observed"][change] != second.payload["observed"][change]
+
+
+def test_a_report_after_its_announced_one_was_redacted_is_announced(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """A redacted event says nothing: the next report's observation is told again."""
+    github.pull(7)
+    github.branch("agent-b/probe")
+    agent, card_id = _reported_card(owner, make_client)
+    assert probe.observe_report(migrated, READER, card_id) is True
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.event).where(t.event.c.kind == "probe_observed").values(redacted=True)
+        )
+    _report_again(agent, card_id)
+    assert probe.observe_report(migrated, READER, card_id, max_age=0) is True
+    assert len(_reported_events(migrated, card_id)) == 2
+
+
+def _release_with_pull(owner: flow.Human, migrated: Engine, github: FakeGitHub) -> str:
+    release = owner.post(
+        "/projects/maintainer/maity/tasks",
+        {"title": "0.1.0", "kind": "release", "release": {"version": "0.1.0"}},
+    ).json()
+    owner.patch(
+        f"/projects/maintainer/maity/tasks/{release['id']}",
+        {"release": {"pull_requests_typed": [{"number": 1}]}},
+    )
+    github.pull(1)
+    github.tag("v0.1.0")
+    project_id = str(_project(migrated).id)
+    assert probe.observe_release(migrated, READER, project_id) is True
+    return project_id
+
+
+def test_a_mergeable_state_settling_wakes_nobody(
+    owner: flow.Human, migrated: Engine, github: FakeGitHub
+) -> None:
+    """The forge computes `mergeable` lazily: `unknown` and `mergeable` take turns on an
+    unchanged pull request. Stored, but not announced."""
+    project_id = _release_with_pull(owner, migrated, github)
+    before = len(_events(migrated, "probe_observed"))
+    for mergeable in (None, True, None):
+        github.pull(
+            1, mergeable=mergeable, mergeable_state="unknown" if mergeable is None else "clean"
+        )
+        assert probe.observe_release(migrated, READER, project_id, max_age=0) is True
+    stored = probe.last(migrated, project_id, "pr", "1")
+    assert stored is not None and stored.data["mergeable"] == "unknown"
+    assert len(_events(migrated, "probe_observed")) == before
+
+
+def test_a_pull_request_that_starts_or_stops_conflicting_wakes(
+    owner: flow.Human, migrated: Engine, github: FakeGitHub
+) -> None:
+    project_id = _release_with_pull(owner, migrated, github)
+    before = len(_events(migrated, "probe_observed"))
+    github.pull(1, mergeable=False, mergeable_state="dirty")
+    assert probe.observe_release(migrated, READER, project_id, max_age=0) is True
+    github.pull(1, mergeable=None, mergeable_state="unknown")  # out of the conflict
+    assert probe.observe_release(migrated, READER, project_id, max_age=0) is True
+    events = _events(migrated, "probe_observed")[before:]
+    assert [e.payload["observations"]["pr:1"]["mergeable"] for e in events] == [
+        "conflicting",
+        "unknown",
+    ]
+
+
 def test_a_round_ends_at_the_first_read_the_forge_does_not_answer(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
 ) -> None:
