@@ -4432,8 +4432,9 @@ silently: `invalid` with `details.fields` naming the field —
 `"settings.role_rules.<key>": "unknown_role"` for a key other than the three roles,
 `"settings.role_rules.<role>.checklist": "not_allowed"` for a checklist on
 `coder`, `"settings.role_rules.<role>.checklist": "empty_item"` for an item that
-is empty after trimming, `"multiline"` for one that holds a line break
-or a control character (§16.7.4 refuses them in its texts too), `"too_long"`
+is empty after trimming, `"multiline"` for one that holds a line break,
+a control character or an invisible one that hides or turns text (zero-width
+characters, bidi controls, a byte order mark; §16.7.4 refuses control characters in its texts too), `"too_long"`
 for one over 300 characters and `"too_many"` for more than 30.
 The hub stores each item trimmed and serves it so. A field the object does not know is
 `invalid` as everywhere (`extra_forbidden`). A change bumps
@@ -4442,7 +4443,11 @@ The hub stores each item trimmed and serves it so. A field the object does not k
 it changes: a `PATCH` that changes `role_rules` together with
 `rules_markdown` or another input writes one `rules_changed`, whose
 `reason` is the `PATCH`'s own when it gives one, else
-`"settings.role_rules"` when `role_rules` is among the changes.
+`"settings.role_rules"` when `role_rules` is among the changes. When the
+same `PATCH` changes the state or the policy, its `state_changed` or
+`policy_changed` marks the new version and no `rules_changed` is written;
+one that changes both writes both events, carrying the same
+`rules_version`.
 
 **Onboarding** is what a new member is told when it arrives, set per
 project because projects work differently; the maintainer's decision of

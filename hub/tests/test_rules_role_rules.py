@@ -195,6 +195,38 @@ def test_one_patch_with_other_rules_inputs_bumps_once_with_its_own_reason(
     assert changed[-1].payload == {"version": before + 1, "reason": "tighter reviews"}
 
 
+@pytest.mark.parametrize(
+    ("body", "marks"),
+    [
+        ({"settings": {"role_rules": SET}, "state": "review"}, ["state_changed"]),
+        (
+            {"settings": {"role_rules": SET}, "policy": {"done_authority": "tester"}},
+            ["policy_changed"],
+        ),
+        (
+            {"state": "review", "policy": {"done_authority": "tester"}, "rules_markdown": "new"},
+            ["state_changed", "policy_changed"],
+        ),
+    ],
+)
+def test_a_patch_with_its_own_rules_event_still_bumps_once(
+    owner: flow.Human, migrated: Engine, body: dict[str, Any], marks: list[str]
+) -> None:
+    """A state_changed or policy_changed marks the PATCH's one new version; the rules inputs
+    beside it write no rules_changed of their own (§6.1)."""
+    before = _version(migrated)
+    count = len(_events(migrated, "rules_changed"))
+    response = owner.patch(BASE, {**body, "reason": "both"})
+    assert response.status_code == 200, response.text
+    assert _version(migrated) == before + 1
+    assert len(_events(migrated, "rules_changed")) == count
+    for kind in marks:
+        assert _events(migrated, kind)[-1].payload["rules_version"] == before + 1
+    with migrated.connect() as conn:
+        marker = conn.execute(select(t.project.c.rules_changed_seq)).scalar_one()
+    assert marker == _events(migrated, marks[-1])[-1].seq
+
+
 def test_items_are_stored_trimmed_up_to_the_limits(owner: flow.Human) -> None:
     longest = "x" * 300
     items = [f"  {longest}  ", *(f"item {n}" for n in range(29))]
@@ -214,6 +246,10 @@ def test_items_are_stored_trimmed_up_to_the_limits(owner: flow.Human) -> None:
         ("tester", {"checklist": ["a\nb"]}, ".checklist", "multiline"),
         ("tester", {"checklist": ["a\tb"]}, ".checklist", "multiline"),
         ("tester", {"checklist": ["a\u2028b"]}, ".checklist", "multiline"),
+        ("tester", {"checklist": ["a\u202eb"]}, ".checklist", "multiline"),
+        ("tester", {"checklist": ["a\u200bb"]}, ".checklist", "multiline"),
+        ("tester", {"checklist": ["a\u2066b"]}, ".checklist", "multiline"),
+        ("tester", {"checklist": ["\ufeffab"]}, ".checklist", "multiline"),
         ("reviewer", {"checklist": ["x" * 301]}, ".checklist", "too_long"),
         ("reviewer", {"checklist": ["x"] * 31}, ".checklist", "too_many"),
         ("coder", {"tone": "kind"}, ".tone", "extra_forbidden"),

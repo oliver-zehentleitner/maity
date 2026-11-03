@@ -364,19 +364,19 @@ def bump(
     *,
     actor: Actor | None,
     subject: tuple[str, str] | None = None,
+    again: bool = False,
 ) -> int:
-    """Bump `rules_version`, emitting `kind` as the marking event; returns the new version."""
+    """Bump `rules_version`, emitting `kind` as the marking event; returns the new version.
+    `again` when the same request bumped already: `kind` marks the version that bump wrote,
+    so one request moves the version once (§6.1), its events each still written."""
     lock_project(conn, project.id)
-    version = (
-        int(
-            conn.execute(
-                t.project.select()
-                .with_only_columns(t.project.c.rules_version)
-                .where(t.project.c.id == project.id)
-            ).scalar_one()
-        )
-        + 1
-    )
+    version = int(
+        conn.execute(
+            t.project.select()
+            .with_only_columns(t.project.c.rules_version)
+            .where(t.project.c.id == project.id)
+        ).scalar_one()
+    ) + (0 if again else 1)
     seq = emit(
         conn,
         project.id,

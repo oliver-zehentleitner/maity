@@ -142,8 +142,9 @@ class RoleRuleIn(Strict):
 
 CHECKLIST_MAX = 30
 CHECKLIST_ITEM_MAX = 300
-# A line break or another control character: an item is one plain line (§6.1, §16.7.4).
-CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
+# A line break, another control character or an invisible one that turns or hides text
+# (zero-width, bidi controls, BOM): an item is one plain line as it reads (§6.1, §16.7.4).
+CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]")
 
 
 def _checked_role_rules(given: dict[str, RoleRuleIn]) -> dict[str, Any]:
@@ -766,6 +767,7 @@ def patch_project(
         owner_id = _owner_id(conn, project.id)
         values: dict[str, Any] = {}
         rules_inputs_changed = False
+        bumped = False  # one PATCH moves `rules_version` once (§6.1)
         settings_changed: dict[str, Any] = {}
         if "name" in given and body.name is not None and body.name != project.name:
             values["name"] = body.name
@@ -936,6 +938,7 @@ def patch_project(
                 {"old": project.state, "new": body.state, "reason": body.reason},
                 actor=actor,
             )
+            bumped = True
             if body.state == "archived":  # its placements close the uniform way (§15.5)
                 placements.project_archived(conn, project.id, actor, mine.principal_id)
         elif "state_note" in given and body.state_note != project.state_note:
@@ -974,7 +977,9 @@ def patch_project(
                     "reason": body.reason,
                 },
                 actor=actor,
+                again=bumped,
             )
+            bumped = True
         if new_policy is not None:
             conn.execute(
                 update(t.project)
@@ -988,7 +993,9 @@ def patch_project(
                 BROADCAST,
                 {"old": policy.of(project), "new": new_policy, "reason": body.reason},
                 actor=actor,
+                again=bumped,
             )
+            bumped = True
         if "absence" in given:
             if body.absence is not None and body.absence.until > clock.now() + ABSENCE_AHEAD:
                 raise invalid({"absence": "too_far"}, "an absence ends within 90 days")
@@ -1038,7 +1045,8 @@ def patch_project(
         # The name, a note without a state change, the owner's text, the Keep the Why line
         # and the role rules are rules inputs without an event of their own: one
         # rules_changed, whose reason names the role rules when the PATCH gives none (§6.1).
-        if rules_inputs_changed:
+        # A state_changed or policy_changed of the same PATCH already marks the new version.
+        if rules_inputs_changed and not bumped:
             if body.reason:
                 payload = {"reason": body.reason}
             elif "settings.role_rules" in settings_changed:
