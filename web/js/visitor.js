@@ -162,16 +162,34 @@ window.Maity = window.Maity || {};
     if (where.scope !== "project") return false;
     if (parts[1] === "agents") return parts.length === 3;
     if (parts[2] === "tasks") return parts.length === 4;
+    if (parts[2] === "overview") return parts.length === 3 || (parts.length === 4 && ["project", "swarm"].includes(parts[3]));
     return parts.length === 2 || (parts.length === 3 && ["board", "members", "organisation", "why"].includes(parts[2]));
+  }
+
+  // The member Overview's addresses (§16.11) read the project's own page, the public overview
+  // (§16.9, the maintainer's decision of 2026-11-01): the badge links to /overview (§6.20). Its swarm
+  // tab is the members' alone; null there, where the caller decides.
+  function storedPath(path) {
+    const parts = path.split("/").filter(Boolean);
+    if (parts[2] !== "overview") return path;
+    return parts[3] === "swarm" ? null : "/" + parts.slice(0, 2).join("/");
   }
 
   // Draws the page of `path` when the hub stores one; false when it stores none, for the
   // caller's own answer (the login, or not_found).
   async function page(main, header, where, path, { signedIn, brand, tools, head, live }) {
     if (!canBePublic(where, path)) return false;
+    const stored = storedPath(path);
+    if (stored === null) {
+      // The swarm: a visitor keeps the login, which goes on here after the sign-in (§16.11); a
+      // signed-in non-member is taken to the overview instead of being told they are none.
+      if (!signedIn) return false;
+      M.route.go(path.replace(/\/swarm\/?$/, ""), { replace: true });
+      return true;
+    }
     let answer;
     try {
-      answer = await M.api.get("/public/pages/" + path.replace(/^\/+/, ""));
+      answer = await M.api.get("/public/pages/" + stored.replace(/^\/+/, ""));
     } catch (err) {
       // No page: the caller's answer stands. Signed out, so does a failed read: the login is
       // still a way on. Signed in, it is said as any failed page is.

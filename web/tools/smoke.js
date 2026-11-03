@@ -9856,6 +9856,31 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!viAll.some((p) => p.startsWith("/projects/stranger")), "visitor: a stranger's public project asks no member route");
   expect(text(header).length && !header.querySelector(".visitor-sign-in"), "visitor: signed in, the reader's own header stays, with no sign-in link");
   expect(win.Maity.api.isPublicPath("/public/pages/stranger/tool"), "visitor: the read works after the session ended here");
+  // The member Overview's own address (§6.20's badge links there) shows the public overview at that
+  // address, its Overview tab current (§16.9, the maintainer's decision of 2026-11-01); its swarm tab is
+  // the members' alone, a non-member is taken to the overview.
+  const viOverview = (label) => {
+    const tab = viView() && viView().querySelectorAll("a.view-tab").find((a) => a.getAttribute("aria-current") === "page");
+    expect(viView() && viView().getAttribute("data-kind") === "project" && viAsked[viAsked.length - 1] === "/public/pages/stranger/tool"
+      && tab && (tab.getAttribute("href") || "").replace(/^#/, "") === "/stranger/tool" && !text(main).includes("You are not a member"),
+      label + " " + JSON.stringify([viView() && viView().getAttribute("data-kind"), viAsked.slice(-2), tab && tab.getAttribute("href")]));
+  };
+  for (const at of ["overview", "overview/project"]) {
+    await go("#/stranger/tool/" + at); for (let k = 0; k < 4; k++) await tick();
+    viOverview("visitor: signed in, /" + at + " of a public project one is no member of is its public overview");
+    expect(win.Maity.route.current().path === "/stranger/tool/" + at, "visitor: signed in, /" + at + " keeps its address");
+  }
+  await go("#/stranger/tool/overview/swarm"); for (let k = 0; k < 4; k++) await tick();
+  viOverview("visitor: signed in, a non-member's /overview/swarm shows the public overview");
+  expect(win.Maity.route.current().path === "/stranger/tool/overview", "visitor: signed in, a non-member's /overview/swarm is replaced by /overview");
+  const viSoGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/auth/session" || p === "/me" ? Promise.reject(new win.Maity.api.ApiError("signed out", 401, p, "unauthenticated")) : viSoGet(p));
+  await go("#/stranger/tool/overview"); for (let k = 0; k < 4; k++) await tick();
+  viOverview("visitor: without a session, /overview of a public project is its public overview, not the login");
+  expect(header.querySelector(".visitor-sign-in") && !byId("login-handle"), "visitor: without a session, /overview has the way to the sign-in in its header");
+  await go("#/stranger/tool/overview/swarm"); for (let k = 0; k < 4; k++) await tick();
+  expect(!viView() && byId("login-handle"), "visitor: without a session, /overview/swarm stays the login (members only, it goes on there after the sign-in)");
+  win.Maity.api.get = viSoGet;
   await go("#/stranger/none"); for (let k = 0; k < 4; k++) await tick();
   expect(!viView() && text(main).includes("You are not a member"), "visitor: no public page: a non-member's error stays");
   win.Maity.api.get = viGet;

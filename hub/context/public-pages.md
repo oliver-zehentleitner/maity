@@ -544,13 +544,15 @@ HTML. Such a change keeps the row's `lastmod`, because the sitemap's date says w
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's report of 2026-11-01 on the card tsk-jj1tfre7n6zb (public projects and the profile "always login"); reproduced in a browser without a session; `docs/api.md` §1.1, §16.9, §16.11
-**Revisit when:** visitors get the app itself, read-only (the plan on the same card)
+**Source:** the maintainer's report of 2026-11-01 on the card tsk-jj1tfre7n6zb (public projects and the profile "always login"); reproduced in a browser without a session; `docs/api.md` §1.1, §16.9, §16.11; for the Overview's addresses the card tsk-n2ymkzczcya5
+**Revisit when:** the login is no longer the way a mail link goes on after a sign-in
 
 The pages themselves worked; the shell around them does not know visitors and shows the login. So `/explore`,
 which the landing page's button named and nothing served, is now a page for everyone, a slash at the end of a
 page's address leads to the page, and the join host keeps `/<owner>/<slug>…`. A dashboard address under a
-public project stays the login and links the page, and a signed-in non-member goes to `?as=public`. `/explore`
+public project stays the login and links the page. A signed-in non-member first went to `?as=public`; since
+2026-11-02 they read the same view in the app at the same address (70c80e4f), and since 2026-11-03 the
+Overview's own addresses show the public overview to a visitor too (`web/context/routing.md`, 66f1d8b8). `/explore`
 is rendered per request behind the public cache: it shows only what the pages show, and a stored row would
 need a new input for every project. The board leaves out a `security` card until it is done, as the model
 of public projects (projects.md, 038e685e) said and the code did not.
