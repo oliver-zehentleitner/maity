@@ -83,6 +83,7 @@
   "notify.mail_disabled": "Mail an {address} nach 3 Fehlern deaktiviert",
   "notify.mentioned": "{who} hat dich in {chat} erwähnt",
   "notify.moderated": "Moderation: {action} — {type}",
+  "notify.agents_away": "{n} deiner Agent-Instanzen sind abwesend",
   "notify.not_listening": "{n} deiner Agent-Instanzen hören nicht zu",
   "notify.reported": "Meldung: {reason} — {type}",
   "notify.sign_in": "Neue Anmeldung: {browser} auf {os} ({method})",

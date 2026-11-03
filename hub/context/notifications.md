@@ -809,7 +809,8 @@ state of its own to lose.
 
 **Id:** ef2d4f8a-084f-4d43-ab7d-d79ef140a5b6
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 284b887f-71d9-4de1-9b66-c7a06e4cb1a2
 **Evidence:** inferred
 **Source:** `docs/api.md` §5.3 "The owner's digest" and §7 (contract #627); implementation of the `inbox` mode (tsk-9cft0j3wz3tz), 2026-10-30
 **See:** notifications.md — 5e46712b-271b-4b43-ba30-8017f745184e — as of 2026-10-30
@@ -848,3 +849,47 @@ contract's wording and needs no stored list of seen instances.
   when the episode started.
 - A new request each hour instead of rewriting: one more unread item per hour for the same
   instances.
+
+## The digest request stores the lines it shows and is refiled when they change; `seen` keeps one row per human and instance
+
+**Id:** 284b887f-71d9-4de1-9b66-c7a06e4cb1a2
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** `docs/api.md` §5.3 "The owner's digest", "Silence after `seen`" (contract #1292, tsk-8qs95xq2b2yt); implementation, tsk-2yjhgg3cv1gm, 2026-11-03
+**See:** notifications.md — ef2d4f8a-084f-4d43-ab7d-d79ef140a5b6 — as of 2026-11-03
+**Revisit when:** a second kind of request needs lines of its own, or a record per instance stops being enough because `last_seen_at` can move backwards
+
+Under `not_listening.mode: inbox` the digest request is never rewritten. It stores the
+lines it shows in `request.not_listening`: per listed instance its membership id,
+instance, kind (`episode` or `stalled_holder`), the episode's `since`, its `last_seen_at`,
+a stalled holder's cards and reason. The hourly pass computes the lines the hour would
+show and compares them with the stored ones, an episode's `last_seen_at` left out, since
+its line does not show it and it moves while a busy instance keeps calling. When they
+differ, the open request is withdrawn and, while an away instance is not silenced, a new
+one filed with the new lines. Answering `seen` copies the stored lines into
+`not_listening_seen`, one row per human, membership and instance with the latest
+`last_seen_at` and the latest episode `since` a request they answered showed; an episode's
+`since` stays when the instance is listed as a stalled holder the next time. An instance
+is silenced when its `last_seen_at` equals the row's, or, listed as an episode, its
+`since` does. The request is still found by its shape (hub, no project, no organisation).
+Stalled holders are read from the cards' claims (`claim_holder`, `claim_instance`), the
+credential of that instance and its latest session by `started_at`; claims without an
+instance (a bridge's) and instances under a pause someone else set are left out. The
+bell's record carries `holding` beside `instances` when it opens; its title is read live
+like its count.
+
+**Reason:** the contract records what the answered request showed, not the state at the
+answer, so the lines must be kept with the request; the request table already carries such
+per-kind JSON (`proposal`, `jour_fixe`, `cover`). Since `last_seen_at` only grows and a
+later episode starts later, an older record can never match again, so one row per instance
+holds every record that still matters, and the table stays as small as the set of
+instances an owner ever saw.
+
+**Rejected alternatives:**
+- A table of listed lines per request: the same data as the JSON column, with a join on
+  every comparison and a second table to delete with the account.
+- An append-only row per answer and instance: exact to "records add up", but every row but
+  the newest is dead, and the silence check would read them all.
+- Recomputing at the answer what the request showed: the state moves between the hour and
+  the answer, which is the gap the contract closes.

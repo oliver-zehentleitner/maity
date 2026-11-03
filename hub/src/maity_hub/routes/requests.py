@@ -2217,6 +2217,10 @@ def answer_personal(
         if done != 1:
             _refuse_unless_open(_row(conn, row.id))
         moved = _unblock(conn, row)
+        if row.not_listening and caller.human_id is not None:  # the owner's digest (§5.3)
+            from maity_hub import not_listening_digest
+
+            not_listening_digest.record_seen(conn, row, caller.human_id)
         actor = caller.actor(member.id) if member is not None else None
         outcome = "go" if body.reply_id == "go" else "no"
         proposals.settle(
@@ -2352,11 +2356,14 @@ def file_hub_notice(
     return request_id
 
 
-def file_hub_digest(conn: Connection, human_id: str, title_text: str, summary: str) -> str:
-    """The owner's digest of agent instances that are not listening (§5.3): a personal
-    request to the human in person, `filed_by: hub`, class `info`, one option `seen`, with
-    no asker, no project and no organisation. Without a project it has no events; the
-    human hears of it through its record, as of an organisation's invitation."""
+def file_hub_digest(
+    conn: Connection, human_id: str, title_text: str, summary: str, lines: list[dict[str, Any]]
+) -> str:
+    """The owner's digest of agent instances that are away (§5.3): a personal request to the
+    human in person, `filed_by: hub`, class `info`, one option `seen`, with no asker, no
+    project and no organisation, and the lines it shows (`not_listening`), which `seen`
+    records. Without a project it has no events; the human hears of it through its record,
+    as of an organisation's invitation."""
     request_id = new_id("request")
     conn.execute(
         insert(t.request).values(
@@ -2378,6 +2385,7 @@ def file_hub_digest(conn: Connection, human_id: str, title_text: str, summary: s
                 "asked_session_id": None,
                 "while_open": "wait",
                 "status": "open",
+                "not_listening": lines,
                 "created_at": clock.now(),
             }
         )
