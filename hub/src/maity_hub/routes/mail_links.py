@@ -15,7 +15,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import Connection, select
 
-from maity_hub import account_deletion, catalog, clock, events
+from maity_hub import account_deletion, catalog, clock, events, product_line
 from maity_hub import tables as t
 from maity_hub.auth import second_factor_reset
 from maity_hub.db import retrying
@@ -36,6 +36,7 @@ def _page(
     more: tuple[str, ...] = (),
     link: tuple[str, str] | None = None,
     quote: str | None = None,
+    language: str = "en",
 ) -> HTMLResponse:
     form = (
         f'<form method="post"><button type="submit">{escape(button)}</button></form>'
@@ -50,7 +51,8 @@ def _page(
         '<!doctype html><html><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width">'
         f"<title>{escape(title)}</title></head><body>"
-        f"<h1>{escape(title)}</h1>{paragraphs}{quoted}{form}</body></html>"
+        f"<h1>{escape(title)}</h1>{paragraphs}{quoted}{form}"
+        f"{product_line.html(language)}</body></html>"
     )
     # The token is in the address: no page that carries it may leak it in a `Referer`.
     return HTMLResponse(html, status_code=status, headers={"Referrer-Policy": "no-referrer"})
@@ -65,16 +67,17 @@ def _language(conn: Connection, request: Request, token: str) -> str:
     return preferences.text_language(conn, str(payload.get("h")))
 
 
-def _dead(words: dict[str, str]) -> HTMLResponse:
+def _dead(words: dict[str, str], language: str) -> HTMLResponse:
     """Invalid, expired or used: one page, `not_found`, never which (§18.6)."""
-    return _page(words["dead"], words["dead"], status=404)
+    return _page(words["dead"], words["dead"], status=404, language=language)
 
 
 @page_router.get("/mail/verify/{token}")
 def verify_page(token: str, request: Request) -> HTMLResponse:
     hub = settings_of(request)
     with engine_of(request).begin() as conn:
-        words = catalog.section("mail_links", _language(conn, request, token))
+        language = _language(conn, request, token)
+        words = catalog.section("mail_links", language)
         payload = tokens.read(hub.mail.signing_key, token) or {}
         row = None
         if payload.get("p") == "verify":
@@ -91,9 +94,9 @@ def verify_page(token: str, request: Request) -> HTMLResponse:
             and clock.now() < row.pending_expires_at
         )
         if not alive:
-            return _dead(words)
+            return _dead(words, language)
         text = words["verify_text"].format(address=payload.get("a"))
-        return _page(words["verify_title"], text, button=words["verify_button"])
+        return _page(words["verify_title"], text, button=words["verify_button"], language=language)
 
 
 @page_router.post("/mail/verify/{token}")
@@ -101,22 +104,24 @@ def verify_confirm(token: str, request: Request) -> HTMLResponse:
     hub = settings_of(request)
     addresses.prepare(engine_of(request), hub.secret_key)  # before the lock's transaction
     with engine_of(request).begin() as conn:
-        words = catalog.section("mail_links", _language(conn, request, token))
+        language = _language(conn, request, token)
+        words = catalog.section("mail_links", language)
         if not preferences.verify(
             conn, token, hub.mail.signing_key, hub.public_url, secret_key=hub.secret_key
         ):
-            return _dead(words)
-        return _page(words["verify_title"], words["verify_done"])
+            return _dead(words, language)
+        return _page(words["verify_title"], words["verify_done"], language=language)
 
 
 @page_router.get("/mail/unsubscribe/{token}")
 def unsubscribe_page(token: str, request: Request) -> HTMLResponse:
     hub = settings_of(request)
     with engine_of(request).begin() as conn:
-        words = catalog.section("mail_links", _language(conn, request, token))
+        language = _language(conn, request, token)
+        words = catalog.section("mail_links", language)
         payload = tokens.read(hub.mail.signing_key, token)
         if payload is None or payload.get("p") != "unsubscribe":
-            return _dead(words)
+            return _dead(words, language)
         # The row itself, not the defaults a read falls back to: a human with no stored
         # settings has no link that works, and a `GET` writes nothing.
         row = conn.execute(
@@ -125,9 +130,9 @@ def unsubscribe_page(token: str, request: Request) -> HTMLResponse:
             )
         ).first()
         if row is None or payload.get("e") != row.epoch or payload.get("k") not in KINDS:
-            return _dead(words)
+            return _dead(words, language)
         text = words["unsub_text"].format(kind=payload["k"])
-        return _page(words["unsub_title"], text, button=words["unsub_button"])
+        return _page(words["unsub_title"], text, button=words["unsub_button"], language=language)
 
 
 @page_router.post("/mail/unsubscribe/{token}")
@@ -136,11 +141,12 @@ def unsubscribe_confirm(token: str, request: Request) -> HTMLResponse:
     alike; the body is not read."""
     hub = settings_of(request)
     with engine_of(request).begin() as conn:
-        words = catalog.section("mail_links", _language(conn, request, token))
+        language = _language(conn, request, token)
+        words = catalog.section("mail_links", language)
         kind = preferences.unsubscribe(conn, token, hub.mail.signing_key)
         if kind is None:
-            return _dead(words)
-        return _page(words["unsub_title"], words["unsub_done"].format(kind=kind))
+            return _dead(words, language)
+        return _page(words["unsub_title"], words["unsub_done"].format(kind=kind), language=language)
 
 
 @page_router.get("/mail/second-factor-reset/{token}")
@@ -149,8 +155,10 @@ def reset_page(token: str, request: Request) -> HTMLResponse:
     with engine_of(request).begin() as conn:
         shown = second_factor_reset.page(conn, hub, token)
         if shown is None:
-            return _dead(catalog.section("mail_links", _language(conn, request, token)))
-        words = catalog.section("mail_links", shown["language"])
+            language = _language(conn, request, token)
+            return _dead(catalog.section("mail_links", language), language)
+        language = shown["language"]
+        words = catalog.section("mail_links", language)
         text = words["reset_text"].format(
             admin=shown["admin"], name=shown["display_name"], handle=shown["handle"]
         )
@@ -159,6 +167,7 @@ def reset_page(token: str, request: Request) -> HTMLResponse:
             f"{text} {words['reset_reason']}",
             button=words["reset_button"],
             quote=shown["reason"],
+            language=language,
         )
 
 
@@ -166,10 +175,11 @@ def reset_page(token: str, request: Request) -> HTMLResponse:
 def reset_confirm(token: str, request: Request) -> HTMLResponse:
     hub = settings_of(request)
     with engine_of(request).begin() as conn:
-        words = catalog.section("mail_links", _language(conn, request, token))
+        language = _language(conn, request, token)
+        words = catalog.section("mail_links", language)
         if not second_factor_reset.take_effect(conn, hub, token):
-            return _dead(words)
-        return _page(words["reset_title"], words["reset_done"])
+            return _dead(words, language)
+        return _page(words["reset_title"], words["reset_done"], language=language)
 
 
 @page_router.get("/mail/account-deletion/{token}")
@@ -178,16 +188,18 @@ def account_deletion_page(token: str, request: Request) -> HTMLResponse:
     on the dashboard's account page, and the button. Writes nothing."""
     hub = settings_of(request)
     with engine_of(request).begin() as conn:
-        words = catalog.section("mail_links", _language(conn, request, token))
+        language = _language(conn, request, token)
+        words = catalog.section("mail_links", language)
         human = account_deletion.page(conn, hub.mail.signing_key, token)
         if human is None:
-            return _dead(words)
+            return _dead(words, language)
         return _page(
             words["delete_title"],
             words["delete_text"].format(handle=human.handle),
             more=(words["delete_removes"], words["delete_keeps"]),
             link=(words["delete_export"], account_deletion.export_url(hub.public_url)),
             button=words["delete_button"],
+            language=language,
         )
 
 
@@ -197,7 +209,8 @@ def account_deletion_confirm(token: str, request: Request) -> HTMLResponse:
     hub = settings_of(request)
     with engine_of(request).begin() as conn:
         # Read before the deletion removes the human's settings, the language with them.
-        words = catalog.section("mail_links", _language(conn, request, token))
+        language = _language(conn, request, token)
+        words = catalog.section("mail_links", language)
 
     def run() -> str | None:
         with events.transaction(engine_of(request)) as conn:
@@ -207,9 +220,9 @@ def account_deletion_confirm(token: str, request: Request) -> HTMLResponse:
     # (`db.retrying`), so it is never left half done or failed by a transient conflict.
     outcome = retrying(run)
     if outcome is None:
-        return _dead(words)
+        return _dead(words, language)
     if (
         outcome != "deleted"
     ):  # `namespace_owner`, `org_last_owner`, `last_instance_admin`: nothing changed
-        return _page(words["delete_title"], words[outcome], status=409)
-    return _page(words["delete_title"], words["delete_done"])
+        return _page(words["delete_title"], words[outcome], status=409, language=language)
+    return _page(words["delete_title"], words["delete_done"], language=language)

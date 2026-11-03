@@ -127,7 +127,7 @@ PAGE = (
     '<!doctype html><html lang="en"><head><meta charset="utf-8">'
     '<meta name="viewport" content="width=device-width"><meta name="robots" '
     'content="noindex"><title>Maintenance</title></head><body><main><h1>Maintenance</h1>'
-    "<p>Back at {until} UTC.</p><p>{text}</p></main></body></html>"
+    "<p>Back at {until} UTC.</p><p>{text}</p></main>{product}</body></html>"
 )
 
 
@@ -137,7 +137,11 @@ def refusal_page(found: dict[str, Any]) -> Any:
 
     from starlette.responses import HTMLResponse
 
-    page = PAGE.format(until=escape(found["until"]), text=escape(found["text"]))
+    from maity_hub import product_line
+
+    page = PAGE.format(
+        until=escape(found["until"]), text=escape(found["text"]), product=product_line.html("en")
+    )
     return HTMLResponse(page, status_code=503, headers={"Retry-After": str(retry_after(found))})
 
 

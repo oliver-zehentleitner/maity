@@ -102,5 +102,17 @@
   "frame.you": {
     "en": "9d1a4d7e2b6e1f5d",
     "text": "7239450b723d7187"
+  },
+  "product.bug": {
+    "en": "191903c61492ea38",
+    "text": "23559cc5ea4cfa56"
+  },
+  "product.love": {
+    "en": "96fa5228627bef6a",
+    "text": "f693dd139913a023"
+  },
+  "product.made_by": {
+    "en": "3c4acf7ac90b37e1",
+    "text": "ddca2521a770ef59"
   }
 }

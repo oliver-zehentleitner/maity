@@ -24,5 +24,8 @@
   "frame.terms": "使用条款",
   "frame.theme": "在浅色和深色主题之间切换",
   "frame.yes": "是",
-  "frame.you": "你"
+  "frame.you": "你",
+  "product.bug": "发现了 bug？",
+  "product.love": "爱",
+  "product.made_by": "{name} 在 {github} & {maity} 上用 {heart} 制作"
 }

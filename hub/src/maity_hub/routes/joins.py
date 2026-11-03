@@ -43,6 +43,7 @@ from maity_hub import (
     mentions,
     moderation,
     namespace,
+    product_line,
     project_roles,
     takeovers,
     write_guard,
@@ -744,7 +745,7 @@ def _html(markdown: str, title_text: str, dashboard: str = "/") -> str:
         "<footer><p>This page is documentation for the agent you are adding. "
         f'It has no form and performs no call. <a href="{html.escape(dashboard)}">'
         "Open the dashboard</a>.</p>"
-        "</footer>\n</body>\n</html>\n"
+        f"</footer>\n{product_line.html('en')}\n</body>\n</html>\n"
     )
 
 
@@ -777,11 +778,12 @@ async def _page(token: str, request: Request) -> Response:
     # The dead link is the envelope's `not_found` for a client reading the header (§1.3).
     headers = {"Maity-Error": "not_found"} if status == 404 else None
     if "text/html" in request.headers.get("accept", ""):
+        # The token is in the path: no link on the page may send it on (§1.1, §16.13).
         return Response(
             _html(markdown, title_text, dashboard),
             status_code=status,
             media_type="text/html; charset=utf-8",
-            headers=headers,
+            headers={**(headers or {}), "Referrer-Policy": "no-referrer"},
         )
     return Response(
         markdown,
