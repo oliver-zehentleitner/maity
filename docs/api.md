@@ -237,7 +237,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 503 | `maintenance` | the hub is in a maintenance window (§16.12); `Retry-After` is the seconds until its `until`, `details` is `{from, until, text}`; every caller, every route but the few §16.12 names |
 | 503 | `forge_unavailable` | the forge did not answer while linking a GitHub App installation (§11.4) |
 | 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any; `details.retry_at` while the forge's rate limit for the source is spent: no read before that time (§11) |
-| 503 | `ktw_unavailable` | the root `.keep-the-why` of the Keep the Why family could not be read (§11.3); `details.reason`, `details.last` holds the last good answer if any; a family member's own failure is reported on that member, not as this error |
+| 503 | `ktw_unavailable` | the root `.keep-the-why` of the Keep the Why family could not be read (§11.3); `details.reason`, `details.last` holds the last good answer if any; a family member's own failure is reported on that member, not as this error. For the views' reads (§11.5) also the export or bodies file asked for could not be read, with that member's reason, `repository_moved` or `bodies_url_invalid` |
 | 503 | `database_unavailable` | the database cannot be reached (`/health`, and any call that needs it); `details` is `{}`, the message carries no driver text |
 | 503 | `schema_outdated` | the database is not at the migration head (`/health`); `details.revision`, `details.head` |
 
@@ -11518,7 +11518,9 @@ the exports are cached together for `max_age` seconds (default 600). A
 `max_age` below 30 is taken as 30: a fresh read of the whole family
 happens at most once per project every 30 seconds, and a closer request
 answers from the cache with `fresh: false`.
-A failed read keeps the member's last good answer until the hub restarts.
+A failed read keeps the member's last good answer until the hub restarts
+or drops the project's answers for room (the 256 projects read most
+recently are kept).
 
 **What the hub relies on**, per export. Unknown keys are ignored, at
 every level; `bodies`, `authors`, `project` (the hub takes the family
@@ -11941,13 +11943,33 @@ rules hold: the hub reads only what a repository publishes, finds a
 state URL only through the forge (the `dashboard-state:` line of a
 `.keep-the-why`, read with the grant §11.4 picks), reads it under §11.1,
 keeps it in memory only and never in its database, and never reads or
-writes `context/`. There is no other fetch path: no URL from a request,
-from an export or from a project setting is ever read, and no host is
-allowed because of its name.
+writes `context/`. There is no other fetch path: no URL from a request
+or from a project setting is read; from an export only the one bodies
+file beside its state URL is (below); and no host is allowed because of
+its name.
 
-**Which repositories.** `canonical` names a repository by its URL
-(`https://`, on a configured forge host, normalised as §6.1 normalises
-`repository.url`); empty or absent is the project's own repository.
+**A repository's name.** A repository is named — in `canonical`, in a
+URL-form child location, in a `parent:` line — by exactly this form,
+and by nothing else:
+
+| Forge | Accepted form |
+|---|---|
+| GitHub | `https://github.com/{owner}/{repo}`, optionally followed by `.git`, then optionally by one `/` |
+
+`{owner}` is 1 to 39 letters, digits and `-`; `{repo}` 1 to 100
+letters, digits, `.`, `_` and `-`, not `.` or `..`, without the `.git`
+the form allows after it. No query, no fragment, no user info, no port,
+no further path segment, no percent-encoding, no whitespace. Two names
+are the same repository when their `{owner}/{repo}` match ignoring case.
+A text that does not have this form names no repository: it is skipped
+where it stands, takes none of the 8 places below, and a `canonical` in
+another form is `not_found` with `not_in_family`. Every forge read of a
+named repository builds its API path from the validated `{owner}` and
+`{repo}` alone, never from the text it was given. A `canonical` that
+names the project's own repository (its `repository.url`, compared the
+same way) is the first kind below, as an empty one is. A path-form
+`parent:` (a directory of the same repository) names no repository.
+
 The hub serves:
 
 1. **the project's own repository**, the root (`root` empty) and every
@@ -11955,9 +11977,10 @@ The hub serves:
 2. **a repository the project's family names**: a URL-form location in
    a `keep-the-why:children` block, or the `parent:` line of a config
    block, of a `.keep-the-why` that §11.3 reads in the project's own
-   repository — at most 8 such repositories per project, the first 8 in
-   the order §11.3 lists the members; a later one is refused with reason
-   `family_cap`. Of such a repository the hub serves its root and the
+   repository, each in the form above — at most 8 such repositories per
+   project, the first 8 distinct ones in the order §11.3 lists the
+   members (a member's children before its `parent:`); a later one is
+   refused with reason `family_cap`. Of such a repository the hub serves its root and the
    members of its own family by the rules of §11.3 (directory locations
    only, depth 4, 32 members), never a repository *it* names: one hop,
    so a family cannot pull in the forge.
@@ -11966,10 +11989,16 @@ The second kind is read only where the forge reports the repository
 public, with the grant §11.4 picks for the project's own repository
 (the instance token only for a project in the operator's own
 namespaces), checked as §11.4 checks visibility, before the first read
-and on every refresh; a private one, or one whose visibility cannot be
-read, is refused with reason `not_public`. Its `.keep-the-why` is read
-through the forge's contents API like the project's own (64 KiB), never
-from a raw or Pages host. Any other `canonical` or `root` — a
+and on every refresh of its family (at most every `max_age`, below); a
+private one, or one whose visibility cannot be read, is refused with
+reason `not_public`, and what the hub held of it is dropped then. A
+named repository the forge answers with a redirect (renamed or moved)
+is not followed, as §11.4 does for the project's own: it is
+`ktw_unavailable` with reason `repository_moved` until the family file
+names its new place. Its `.keep-the-why` is read through the forge's
+contents API like the project's own (64 KiB), never from a raw or Pages
+host. These reads count against the budget of the grant that makes them
+(§11.4, **Rate limits**). Any other `canonical` or `root` — a
 repository named only inside an export (a See into another repository,
 `Superseded by`), a path that is not a member — is `not_found` with
 `details.reason: not_in_family`; the library then shows the reference as
@@ -12018,43 +12047,58 @@ MiB is raised to 2 MiB for both; this project's own root export is
 first byte past (`too_large`). The exports, the `.keep-the-why` files and
 the bodies files are cached together with §11.3's, one entry per
 repository, member and file: what one call or §11.3 read is what the
-next answers, so a project's tabs share it. `max_age` as in §11.3
-(default 600 s, below 30 taken as 30); a fresh read of one repository's
-family happens at most once per 30 s per project, a closer call answers
-from the cache with `fresh: false`. At most 4 reads of one project in
-flight at once, its own repository and the named ones together. The hub
-keeps at most 64 MiB of these reads across all projects, the least
-recently used dropped first; a dropped read is read again on the next
-call. The cost of a call does not grow with the history: it is one
-answer from the cache, or at most one `.keep-the-why` and one file read.
+next answers, so a project's tabs share it. Both calls take `max_age`
+as §11.3 does (`?max_age=`, default 600 s, below 30 taken as 30); a
+fresh read of one repository's family happens at most once per 30 s per
+project, and a closer call answers from the cache with `fresh: false`.
+The 30 s also hold for a read dropped for room: the hub remembers when
+it last read each file and each family, and reads a dropped one again
+no sooner than 30 s after that; a call in between answers
+`ktw_unavailable` with reason `timeout`. At most 4 reads of one project in flight at once,
+its own repository and the named ones together, and at most 16 of
+§11.5's reads in flight across the hub. The hub keeps at most 64 MiB of
+these reads across all projects, the least recently used dropped first.
+
+The cost of a call does not grow with its project's history beyond the
+size of the files themselves. Warm, a call is one answer from memory.
+Cold, the first call for a project reads what §11.3 reads — up to 32
+`.keep-the-why` files and 32 exports — and the first call for a named
+repository reads its visibility and its family the same way (up to 1 +
+32 + 32 reads), each within §11.3's deadline of 30 s per family; a
+bodies call adds one file. Nothing is read per entry, per tab or per
+viewer.
 
 **Revalidation.** Both answers carry an `ETag`, a digest over
 `canonical`, `root`, `url` and the bytes as read, and `Cache-Control:
 private, no-cache`, as a contract file does (§6.8): the browser keeps
 the answer and sends `If-None-Match`, and a `304` costs no second
-megabyte. The hub authorizes first and only then compares
-`If-None-Match`: a caller without `project:read` gets `not_found`,
-never `304`.
+megabyte. Every refusal comes before `If-None-Match` is compared: a
+caller without `project:read`, a repository no longer in the family, no
+longer public or past the cap, and a member that failed get their
+error, never `304`.
 
 **Untrusted.** Everything in `state` and `bodies` is the repository's
 text: the hub passes it through unchanged and the dashboard hands it to
 the library, which renders entry text as text and never as HTML
 (keep-the-why `docs/dashboard-views.md`, "Rendering safety";
 `web/context/rendering.md`). No string from an export becomes a URL the
-hub reads.
+hub reads, except the one bodies file name beside the state URL, under
+the rule above.
 
 Errors: `ktw_not_configured` (the project's repository has no
 `.keep-the-why` or no `dashboard-state:` line, as in §11.3);
-`probe_not_configured` with `details.reason` `no_grant` or
-`unconfirmed` (§11.4); `not_found` with `details.reason`
-`not_in_family`, `family_cap`, `no_bodies_file` or `not_public`;
-`ktw_unavailable` with `details.reason` one of §11.3's member reasons
-(`forge_unavailable`, `config_missing`, `no_state_url`,
+`probe_not_configured` (§11.4), `details.reason` (`no_grant`,
+`unconfirmed`, …) for a `project:admin` only, every other reader gets
+`details: {}`; `probe_unavailable` with `details.retry_at` while the
+grant's forge budget is spent (§11.4, **Rate limits**); `not_found`
+with `details.reason` `not_in_family`, `family_cap`, `no_bodies_file`
+or `not_public`; `ktw_unavailable` with `details.reason` one of §11.3's
+member reasons (`forge_unavailable`, `config_missing`, `no_state_url`,
 `state_url_invalid`, `address_refused`, `redirect_refused`,
 `unavailable`, `timeout`, `http_status` with `status`, `too_large`,
-`not_json`, `state_json_version` with `version`, `shape`) or
-`bodies_url_invalid`; with `details.last`, the last good answer in the
-shape above, when the hub holds one. The dashboard's provider turns
+`not_json`, `state_json_version` with `version`, `shape`),
+`repository_moved` or `bodies_url_invalid`; with `details.last`, the
+last good answer in the shape above, when the hub holds one. The dashboard's provider turns
 each into the library's `{ error }`, so a view says why it has nothing
 instead of failing.
 
