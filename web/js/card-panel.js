@@ -87,8 +87,32 @@ window.Maity = window.Maity || {};
       before: h("span", { class: "history-before" }, fieldValue(e.field, e.before)), after: h("span", { class: "history-after" }, fieldValue(e.field, e.after)) }), when);
   }
 
+  // A commit's checks and its required check's status (§6.13, §6.6), in words.
+  const CHECK_WORDS = {
+    success: () => M.t("board.checks.success"), failure: () => M.t("board.checks.failure"), pending: () => M.t("board.checks.pending"),
+    none: () => M.t("board.checks.none"), unknown: () => M.t("board.checks.unknown"),
+    cancelled: () => M.t("board.checks.cancelled"), missing: () => M.t("board.checks.missing"),
+  };
+  const checkWord = (value) => (Object.hasOwn(CHECK_WORDS, value) ? CHECK_WORDS[value]() : String(value));
+
+  // A commit (§6.13): its short sha, the checks and required check the hub observed on it,
+  // and whether the default branch has moved past it.
+  function commitWords(l, url) {
+    const ref = l.repository && typeof l.sha === "string" ? l.repository + "@" + l.sha.slice(0, 7) : String(url);
+    let words = M.t("cardpanel.link.commit", { ref });
+    const o = l.observed;
+    if (!o) return words;
+    if (o.found === false) return M.t("cardpanel.link.commit_missing", { link: words });
+    if (o.checks) words = M.t("cardpanel.link.commit_checks", { link: words, checks: checkWord(o.checks) });
+    const rc = o.required_check;
+    if (rc) words = M.t("cardpanel.link.required_check", { link: words, name: rc.name, status: checkWord(rc.status) });
+    if (o.ahead === true) words = M.t("cardpanel.link.ahead", { link: words });
+    return words;
+  }
+
   // A pull request or an issue: its reference, with the title and state the hub observed.
   function forgeWords(l, url) {
+    if (l.kind === "commit") return commitWords(l, url);
     const ref = l.repository ? l.repository + "#" + l.number : String(url);
     let words = l.kind === "pr" ? M.t("cardpanel.link.pr", { ref }) : M.t("cardpanel.link.issue", { ref });
     if (l.observed && l.observed.title) words = M.t("cardpanel.link.titled", { link: words, title: l.observed.title });

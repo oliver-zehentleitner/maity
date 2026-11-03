@@ -1,4 +1,4 @@
-"""Card links (docs/api.md §6.13): forge issues and pull requests, and plain URLs.
+"""Card links (docs/api.md §6.13): forge issues, pull requests and commits, and plain URLs.
 
 The hub parses a forge URL itself and never takes a title or state from the client;
 it observes only links that name the project's own repository.
@@ -25,18 +25,20 @@ from maity_hub.models import Strict
 MAX_LINKS = 20
 URL_MAX = 2048
 LABEL_MAX = 200
-KINDS = ("issue", "pr", "url")
-FORGE_KINDS = ("issue", "pr")
+KINDS = ("issue", "pr", "commit", "url")
+FORGE_KINDS = ("issue", "pr", "commit")
 # GitHub, the one forge of V1 (§11): the path segment that names each kind.
-_PATHS = {"issues": "issue", "pull": "pr"}
+_PATHS = {"issues": "issue", "pull": "pr", "commit": "commit"}
+# A commit by its full sha: heads are compared whole, never as a prefix (§6.13).
+_SHA = re.compile(r"[0-9a-fA-F]{40}")
 _SEGMENT = re.compile(r"[A-Za-z0-9._-]{1,100}")
 _NUMBER = re.compile(r"[1-9][0-9]{0,9}")
 NUMBER_MAX = 2**31 - 1  # what the forge's API takes as a number
 
 
 class LinkIn(Strict):
-    """A link as a request names it: `{kind: issue|pr, forge_url}` or `{kind: url, url,
-    label?}`."""
+    """A link as a request names it: `{kind: issue|pr|commit, forge_url}` or `{kind: url,
+    url, label?}`."""
 
     kind: str
     forge_url: str | None = Field(default=None, max_length=URL_MAX)
@@ -66,9 +68,10 @@ class LinkError(ValueError):
 class ForgeRef:
     forge: str
     repository: str  # owner/name
-    number: int
-    kind: str  # issue or pr
-    url: str  # normalised: no trailing slash
+    number: int | None  # None for a commit, named by `sha`
+    kind: str  # issue, pr or commit
+    url: str  # normalised: no trailing slash, a commit's sha in lower case
+    sha: str | None = None  # a commit's, lower case
 
 
 def _plain_https(url: str, field: str) -> urllib.parse.SplitResult:
@@ -102,13 +105,13 @@ def parse_forge(url: str, kind: str, repository_url: str | None) -> ForgeRef:
     if forge_kind is None or len(segments) != 5 or segments[0] != "":
         raise LinkError("forge_url", "not_a_forge_url")
     _, owner, name, what, number = segments
-    if (
-        not _SEGMENT.fullmatch(owner)
-        or not _SEGMENT.fullmatch(name)
-        or what not in _PATHS
-        or not _NUMBER.fullmatch(number)
-        or int(number) > NUMBER_MAX
-    ):
+    if what == "commit":
+        good = bool(_SHA.fullmatch(number))
+    else:
+        good = bool(_NUMBER.fullmatch(number)) and int(number) <= NUMBER_MAX
+    if not _SEGMENT.fullmatch(owner) or not _SEGMENT.fullmatch(name) or what not in _PATHS:
+        good = False
+    if not good:
         raise LinkError("forge_url", "not_a_forge_url")
     if _PATHS[what] != kind:
         raise LinkError("forge_url", "kind_mismatch")
@@ -117,13 +120,20 @@ def parse_forge(url: str, kind: str, repository_url: str | None) -> ForgeRef:
     project_owner = forge.repository_of(repository_url).split("/")[0]
     if owner.lower() != project_owner.lower():
         raise LinkError("forge_url", "foreign_repository")
+    sha = number.lower() if what == "commit" else None
     return ForgeRef(
         forge=forge_kind,
         repository=f"{owner}/{name}",
-        number=int(number),
+        number=None if sha else int(number),
         kind=kind,
-        url=f"https://{host}/{owner}/{name}/{what}/{number}",
+        url=f"https://{host}/{owner}/{name}/{what}/{sha or number}",
+        sha=sha,
     )
+
+
+def sha_of(row: Any) -> str:
+    """A stored commit link's sha: the last segment of its URL, stored in lower case."""
+    return str(row.url).rsplit("/", 1)[-1]
 
 
 def check_url(url: str) -> str:
@@ -154,13 +164,12 @@ def view(row: Any, members: dict[int, str]) -> dict[str, Any]:
     """A link as §6.13 shows it; `members` maps membership rows to member ids."""
     shown: dict[str, Any] = {"id": row.id, "kind": row.kind}
     if row.kind in FORGE_KINDS:
-        shown.update(
-            forge_url=row.url,
-            forge=row.forge,
-            repository=row.repository,
-            number=row.number,
-            observed=row.observed,
-        )
+        shown.update(forge_url=row.url, forge=row.forge, repository=row.repository)
+        if row.kind == "commit":
+            shown.update(sha=sha_of(row))
+        else:
+            shown.update(number=row.number)
+        shown.update(observed=row.observed)
     else:
         shown.update(url=row.url, label=row.label)
     shown.update(added_by=members[row.added_by], added_at=clock.rfc3339(row.added_at))
@@ -289,16 +298,30 @@ def observed(link_kind: str, item: dict[str, Any] | None, at: str) -> dict[str, 
     return {"found": True, "title": item["title"][:TITLE_MAX], "state": state, "observed_at": at}
 
 
-def _shown(observation: dict[str, Any] | None) -> dict[str, Any] | None:
-    """What `link_observed` compares and carries: `{found, title, state}`."""
+COMMIT_SHOWN = ("found", "sha", "checks", "required_check", "branch_head_sha", "ahead")
+
+
+def _shown(observation: dict[str, Any] | None, kind: str = "issue") -> dict[str, Any] | None:
+    """What `link_observed` compares and carries: `{found, title, state}`, on a `commit` link
+    `{found, sha, checks, required_check, branch_head_sha, ahead}` (§8.2)."""
     if observation is None:
         return None
-    return {k: observation.get(k) for k in ("found", "title", "state")}
+    keys = COMMIT_SHOWN if kind == "commit" else ("found", "title", "state")
+    return {k: observation.get(k) for k in keys}
+
+
+def _wakes_holder(kind: str, old: dict[str, Any] | None, new: dict[str, Any]) -> bool:
+    """Whether a change wakes the card's holder: its `state`, or a commit link's `ahead`
+    turning `true` (§6.13); an `ahead` that stays `true` wakes nobody again."""
+    if kind == "commit":
+        return new.get("ahead") is True and (old or {}).get("ahead") is not True
+    return (old or {}).get("state") != new.get("state")
 
 
 def due(conn: Connection, project_id: str) -> list[Any]:
     """The project's forge links to read now: on cards not closed, and on a closed card
-    once more after it closed, then never (§6.13)."""
+    once more after it closed, then never; a commit link only while its card is not closed
+    (§6.13)."""
     rows = conn.execute(
         select(t.card_link, t.card.c.closed_at, t.card.c.claim_holder)
         .join(t.card, t.card.c.id == t.card_link.c.card_id)
@@ -308,6 +331,8 @@ def due(conn: Connection, project_id: str) -> list[Any]:
     found = []
     for row in rows:
         if row.closed_at is not None:
+            if row.kind == "commit":
+                continue
             seen = (row.observed or {}).get("observed_at")
             if seen is not None and seen >= clock.rfc3339(row.closed_at):
                 continue
@@ -319,7 +344,7 @@ def observe(engine: Engine, fg: forge.Forge, project_id: str) -> int:
     """Read the project's due links of its own repository, batched, and store what the
     forge said; `link_observed` on a change. A read that fails keeps every observation
     as it was (`forge.ForgeUnavailableError` goes to the caller). Returns the reads."""
-    from maity_hub.events import emit, lock_project, transaction
+    from maity_hub.events import lock_project, transaction
 
     with engine.connect() as conn:
         project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
@@ -328,7 +353,9 @@ def observe(engine: Engine, fg: forge.Forge, project_id: str) -> int:
         own = forge.repository_of(project.repository_url).lower()
         wanted = [r for r in due(conn, project_id) if (r.repository or "").lower() == own]
     fg = fg.for_project(project_id)  # the source that covers this project (§11.4)
-    reads = 0
+    commits = [r for r in wanted if r.kind == "commit"]
+    wanted = [r for r in wanted if r.kind != "commit"]
+    reads = _observe_commits(engine, fg, project, commits)
     for start in range(0, len(wanted), BATCH):
         batch = wanted[start : start + BATCH]
         at = clock.rfc3339(clock.now())  # when the read started
@@ -345,34 +372,76 @@ def observe(engine: Engine, fg: forge.Forge, project_id: str) -> int:
                 if current is None:  # removed meanwhile
                     continue
                 new = observed(row.kind, answer.get(row.number), at)
-                conn.execute(
-                    update(t.card_link).where(t.card_link.c.id == row.id).values(observed=new)
-                )
-                old_shown, new_shown = _shown(current.observed), _shown(new) or {}
-                if old_shown == new_shown:
-                    continue
-                audience = ["all"]
-                if (old_shown or {}).get("state") != new_shown["state"] and row.claim_holder:
-                    from maity_hub.views import principal_id
-
-                    audience.append(f"member:{principal_id(conn, row.claim_holder)}")
-                emit(
-                    conn,
-                    project_id,
-                    "link_observed",
-                    audience,
-                    {
-                        "task_id": row.card_id,
-                        "link_id": row.id,
-                        "forge_url": row.url,
-                        "old": old_shown,
-                        "new": new_shown,
-                        # Whether the read itself found the repository public, and which source
-                        # read it: a page without sign-in counts a merge the read found public,
-                        # whichever source read it (§11.4).
-                        "public": public,
-                        "read_via": fg.via,
-                    },
-                    subject=("task", row.card_id),
-                )
+                _store(conn, project_id, row, current, new, public, fg.via)
     return reads
+
+
+def _store(
+    conn: Connection,
+    project_id: str,
+    row: Any,
+    current: Any,
+    new: dict[str, Any],
+    public: bool,
+    via: str | None,
+) -> None:
+    """Store one link's observation; `link_observed` when what it shows changed (§8.2)."""
+    from maity_hub.events import emit
+
+    conn.execute(update(t.card_link).where(t.card_link.c.id == row.id).values(observed=new))
+    old_shown, new_shown = _shown(current.observed, row.kind), _shown(new, row.kind) or {}
+    if old_shown == new_shown:
+        return
+    audience = ["all"]
+    if _wakes_holder(row.kind, old_shown, new_shown) and row.claim_holder:
+        from maity_hub.views import principal_id
+
+        audience.append(f"member:{principal_id(conn, row.claim_holder)}")
+    emit(
+        conn,
+        project_id,
+        "link_observed",
+        audience,
+        {
+            "task_id": row.card_id,
+            "link_id": row.id,
+            "forge_url": row.url,
+            "old": old_shown,
+            "new": new_shown,
+            # Whether the read itself found the repository public, and which source read it:
+            # a page without sign-in counts a merge the read found public, whichever source
+            # read it (§11.4).
+            "public": public,
+            "read_via": via,
+        },
+        subject=("task", row.card_id),
+    )
+
+
+def _observe_commits(engine: Engine, fg: forge.Forge, project: Any, rows: list[Any]) -> int:
+    """The project's due commit links (§6.13): one composite read per distinct sha, through
+    the probe's cache, so two cards linking one commit and all commits sharing the default
+    branch's head cost one read each. A read dropped as a whole (a spent budget, no answer)
+    goes to the caller with every observation kept as it was. Returns the shas read."""
+    from maity_hub import probe  # the probe reads this module for its links
+    from maity_hub.events import lock_project, transaction
+
+    by_sha: dict[str, list[Any]] = {}
+    for row in rows:
+        by_sha.setdefault(sha_of(row), []).append(row)
+    for sha, linked in by_sha.items():
+        read = probe.observe_commit(engine, fg, project, sha)
+        new = read.link()
+        with transaction(engine) as conn:
+            lock_project(conn, project.id)
+            for row in linked:
+                current = conn.execute(
+                    select(t.card_link).where(t.card_link.c.id == row.id)
+                ).first()
+                if current is None:  # removed meanwhile
+                    continue
+                if current.observed == new:  # the same cached read: nothing to store
+                    continue
+                # A commit link's events are not a merge the public page counts (§11.4).
+                _store(conn, project.id, row, current, new, False, fg.via)
+    return len(by_sha)

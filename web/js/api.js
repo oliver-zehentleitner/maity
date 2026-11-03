@@ -2737,8 +2737,8 @@ window.Maity = window.Maity || {};
         aliases: [],
         name: body.name, state: "build", state_note: null, state_changed_at: nowIso(),
         repository: url === null ? null : {
-          url, default_branch: body.repository.default_branch || "main", forge: "github", probe_configured: false,
-          probe_via: null, owner_confirmed: false, confirmed_by: null,
+          url, default_branch: body.repository.default_branch || "main", required_check: body.repository.required_check ?? null,
+          forge: "github", probe_configured: false, probe_via: null, owner_confirmed: false, confirmed_by: null,
         },
         memory: { provider }, setup,
         policy: Object.assign({}, PRESETS[preset], {
@@ -2892,6 +2892,15 @@ window.Maity = window.Maity || {};
           // A changed URL is unconfirmed again and read with the instance token alone (§11.4).
           : url ? (same ? Object.assign({}, p.repository)
             : { url, default_branch: "main", forge: "github", probe_configured: false, probe_via: null, owner_confirmed: false, confirmed_by: null }) : null;
+        if (p.repository) {
+          // §6.1: left out on the same URL it stays; another URL starts without one.
+          const named = body.repository && "required_check" in body.repository;
+          const check = named ? body.repository.required_check : same ? (p.repository.required_check ?? null) : null;
+          if (check !== null && (typeof check !== "string" || !check.length || check.length > 200)) {
+            fail(400, "invalid", "the request does not validate", path, { fields: { "repository.required_check": check === "" ? "string_too_short" : "string_too_long" } });
+          }
+          p.repository.required_check = check;
+        }
         if (!same && "keep_the_why_export" in p) p.keep_the_why_export = back ? back.export : null;
         // The repository first set: the setup cards chosen at creation (§6.21).
         if (url && p.setup.cards === null && p.state !== "archived") makeSetupCards(m[1], p.setup, me().member.id, url);

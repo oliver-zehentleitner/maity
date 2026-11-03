@@ -563,6 +563,8 @@ project = Table(
     Column("released_at", UtcDateTime),
     Column("repository_url", String(255)),
     Column("repository_default_branch", String(255)),
+    # The one check that says a commit is good (§6.1 `repository.required_check`), or null.
+    Column("repository_required_check", String(200)),
     # The project's own links (§6.11): issues, wiki, discussions, chat, each an https URL.
     Column("links", JSON_VALUE),
     # The project's public page and the text on it (§16.9): both belong to the namespace
@@ -1455,7 +1457,7 @@ card_link = Table(
     metadata,
     _id(primary_key=True),
     _ref("card_id", "card.id", nullable=False, index=True),
-    Column("kind", String(16), nullable=False),  # issue, pr, url
+    Column("kind", String(16), nullable=False),  # issue, pr, commit, url
     Column("url", String(2048), nullable=False),  # forge_url or url, as shown
     Column("label", String(TITLE)),
     Column("forge", String(32)),

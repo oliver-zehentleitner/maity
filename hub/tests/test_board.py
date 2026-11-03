@@ -656,3 +656,171 @@ def test_a_link_the_card_was_created_with_is_removed_twice_like_any_other(
     assert (removed.status_code, removed.json()) == (200, initial)
     again = owner.delete(path.removeprefix("/api/v1"))
     assert (again.status_code, again.json()) == (200, initial)
+
+
+# --- commit links (§6.13) -------------------------------------------------------------------
+
+SHA = "d91e294c" + "0" * 32
+HEAD = "a" * 40
+COMMIT = f"{REPOSITORY}/commit/{SHA}"
+
+
+class CommitForge(FakeForge):
+    """A forge with commits and a default branch head; it counts the reads of each."""
+
+    def __init__(self, head: str | Exception | None = SHA) -> None:
+        super().__init__({})
+        self.head = head
+        self.commits: dict[str, tuple[str, list[dict[str, str]]] | Exception | None] = {
+            SHA: ("success", [{"name": "ci-ok", "status": "success"}])
+        }
+        self.calls: list[str] = []
+
+    def commit(self, repository: str, sha: str) -> dict[str, Any]:
+        self.calls.append(f"commit:{sha}")
+        known = self.commits.get(sha)
+        if isinstance(known, Exception):
+            raise known
+        if known is None:
+            return {"sha": sha, "found": False}
+        checks, detail = known
+        return {"sha": sha, "found": True, "checks": checks, "checks_detail": detail}
+
+    def branch(self, repository: str, name: str) -> dict[str, Any]:
+        self.calls.append(f"branch:{name}")
+        if isinstance(self.head, Exception):
+            raise self.head
+        return {"name": name, "head_sha": self.head, "found": self.head is not None}
+
+
+def _project_id(engine: Engine) -> str:
+    with engine.connect() as conn:
+        return str(conn.execute(select(t.project.c.id)).scalar_one())
+
+
+def _later(seconds: int) -> None:
+    moment = datetime.now(UTC) + timedelta(seconds=seconds)
+    clock.set_source(lambda: moment)
+
+
+def test_a_commit_link_names_its_full_sha_in_lower_case(owner: flow.Human) -> None:
+    card = task(owner)
+    response = link(owner, card, kind="commit", forge_url=f"{REPOSITORY}/commit/{SHA.upper()}")
+    assert response.status_code == 201, response.text
+    shown = response.json()
+    assert {k: v for k, v in shown.items() if k not in ("id", "added_at", "added_by")} == {
+        "kind": "commit",
+        "forge_url": COMMIT,
+        "forge": "github",
+        "repository": "oliver-zehentleitner/maity",
+        "sha": SHA,
+        "observed": None,
+    }
+    again = link(owner, card, kind="commit", forge_url=COMMIT)
+    assert again.status_code == 409 and again.json()["error"]["code"] == "already_linked"
+
+
+@pytest.mark.parametrize(
+    ("body", "fields"),
+    [
+        ({"kind": "commit", "forge_url": f"{REPOSITORY}/commit/d91e294"}, "not_a_forge_url"),
+        ({"kind": "commit", "forge_url": f"{REPOSITORY}/commit/{'g' * 40}"}, "not_a_forge_url"),
+        ({"kind": "commit", "forge_url": f"{REPOSITORY}/commit/{SHA}0"}, "not_a_forge_url"),
+        ({"kind": "commit", "forge_url": PULL}, "kind_mismatch"),
+        ({"kind": "pr", "forge_url": COMMIT}, "kind_mismatch"),
+    ],
+)
+def test_a_commit_link_takes_only_a_full_sha_of_its_kind(
+    owner: flow.Human, body: dict[str, Any], fields: str
+) -> None:
+    assert fields_of(link(owner, task(owner), **body)) == {"forge_url": fields}
+
+
+def test_a_commit_link_is_observed_and_wakes_the_holder_once_it_falls_behind(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    holder = flow.agent(make_client, owner)
+    card = task(owner)
+    holder.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
+    added = link(owner, card, kind="commit", forge_url=COMMIT).json()
+    fg = CommitForge(head=SHA)
+    probe.observe_links(migrated, fg, _project_id(migrated))
+    [first] = events(migrated, "link_observed")
+    assert first.payload["new"] == {
+        "found": True,
+        "sha": SHA,
+        "checks": "success",
+        "required_check": None,
+        "branch_head_sha": SHA,
+        "ahead": False,
+    }
+    assert first.audience == ["all"]  # not ahead: the holder sleeps on
+    assert first.payload["public"] is False
+    observed = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()["links"][0]
+    assert observed["id"] == added["id"]
+    assert set(observed["observed"]) == {*links.COMMIT_SHOWN, "observed_at"}
+    # The branch moves on: `ahead` turns true and wakes the holder, once.
+    fg.head = HEAD
+    _later(probe.MAX_AGE + 1)
+    probe.observe_links(migrated, fg, _project_id(migrated))
+    ahead = events(migrated, "link_observed")[-1]
+    assert ahead.payload["new"]["ahead"] is True
+    assert ahead.audience == ["all", f"member:{holder.id}"]
+    fg.head = "b" * 40
+    _later(2 * probe.MAX_AGE + 2)
+    probe.observe_links(migrated, fg, _project_id(migrated))
+    still = events(migrated, "link_observed")[-1]
+    assert still.payload["new"]["branch_head_sha"] == "b" * 40
+    assert still.audience == ["all"]  # still ahead: nobody woken again
+
+
+def test_a_spent_budget_keeps_the_last_commit_observation(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    card = task(owner)
+    link(owner, card, kind="commit", forge_url=COMMIT)
+    fg = CommitForge(head=SHA)
+    probe.observe_links(migrated, fg, _project_id(migrated))
+    before = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()["links"][0]
+    fg.head = forge.ForgeUnavailableError("spent", status=403, rate_limited=True)
+    _later(probe.MAX_AGE + 1)
+    with pytest.raises(forge.ForgeUnavailableError):
+        probe.observe_links(migrated, fg, _project_id(migrated))
+    after = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()["links"][0]
+    assert after["observed"] == before["observed"]
+    assert len(events(migrated, "link_observed")) == 1
+
+
+def test_a_commit_the_forge_lacks_is_found_false_and_a_refused_branch_null(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    card = task(owner)
+    missing = "c" * 40
+    link(owner, card, kind="commit", forge_url=f"{REPOSITORY}/commit/{missing}")
+    link(owner, card, kind="commit", forge_url=COMMIT)
+    fg = CommitForge(head=forge.ForgeUnavailableError("refused", status=403))
+    probe.observe_links(migrated, fg, _project_id(migrated))
+    shown = {
+        lnk["sha"]: lnk["observed"]
+        for lnk in owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()["links"]
+    }
+    assert set(shown[missing]) == {"found", "observed_at"} and shown[missing]["found"] is False
+    assert (shown[SHA]["branch_head_sha"], shown[SHA]["ahead"]) == (None, None)
+
+
+def test_commit_links_are_read_once_per_sha_and_never_on_a_closed_card(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    one, two = task(owner), task(owner)
+    link(owner, one, kind="commit", forge_url=COMMIT)
+    link(owner, two, kind="commit", forge_url=COMMIT)
+    fg = CommitForge(head=SHA)
+    probe.observe_links(migrated, fg, _project_id(migrated))
+    assert fg.calls == [f"commit:{SHA}", "branch:main"]  # one read for both cards
+    assert len(events(migrated, "link_observed")) == 2
+    owner.patch(f"/projects/maintainer/maity/tasks/{one['id']}", {"status": "cancelled"})
+    owner.patch(f"/projects/maintainer/maity/tasks/{two['id']}", {"status": "cancelled"})
+    _later(probe.MAX_AGE + 1)
+    fg.calls.clear()
+    probe.observe_links(migrated, fg, _project_id(migrated))
+    assert fg.calls == []  # a commit link is read only while its card is not closed

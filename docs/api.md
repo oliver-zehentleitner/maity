@@ -5991,9 +5991,12 @@ beside it ("head `d91e294` · ci-ok success · 3 min ago"). A change of
 `probe_observed` that wakes as §8.2 says; it never sets `mismatch`. A
 `required_check` that appears for the first time (an observation stored
 before the field existed, or the project first naming a check) or that
-changes only its `name` (a `PATCH` of `repository.required_check`) is
-stored and emitted with an empty audience: it wakes nobody, since
-nothing changed on the forge.
+changes only its `name` (a `PATCH` of `repository.required_check`), and
+one cleared to `null` (the project naming no check anymore), is stored
+and emitted with an empty audience: it wakes nobody, since nothing
+changed on the forge. Only a new `status` under the `name` last told
+wakes; after a rename the first observation under the new name is the
+one later ones are compared with.
 
 `revision` is set by the hub: 1 for the card's first report, plus 1 for
 every report that replaces it, including a report on a `done` card
@@ -9900,7 +9903,7 @@ learns its content.
 | `credential_revoked` | the credential's member, `trust:owner` | credential id, `reason` |
 | `credential_in_payload` | the credential's owner, `trust:owner`, `trust:admin` | credential id; never the value |
 | `event_redacted` | the redacted event's own audience, never wider; for a conversation's message the conversation's audience instead: the two parties of a direct one, the current participants of a group chat, in a closed one also its former human participants and the redacting admin (§8.5) | `seq`, `reason`; `note_id` too when a note was redacted (§6.16); `history_id` and `task_id` instead of `seq` when a card history entry was (§6.15) |
-| `probe_observed` | on a report: the holder of the affected card, with `mismatch: true` also `trust:admin`; nobody on a `done` or `cancelled` card without a mismatch or with its pull request merged, and the report keeps `observed` and `mismatch` to read; on the open release: its card's holder, `trust:admin`. Wakes only when something the reader acts on changed: on a report, `observed` without its `observed_at`, or `mismatch`, against the card's last `probe_observed` that reached all of these readers (a new report's first observation included; one that contradicts the new report always wakes), where a `required_check` that appears for the first time or changes only its `name` counts as no change (§6.6); otherwise a report's observation is emitted with an empty audience, for the views that read every event; on the open release, a ref's `found`, `state`, `head_sha`, `checks`, `merged_at` or `sha`, or whether its `mergeable` is `conflicting` — `unknown` and `mergeable` taking turns is stored and wakes nobody | the observation: on a report `{task, observed, mismatch}`, `observed` being `{pr_state, pr_head_sha, checks, required_check, branch_head_sha, observed_at}` (§6.6); on the open release `{task, observations}` |
+| `probe_observed` | on a report: the holder of the affected card, with `mismatch: true` also `trust:admin`; nobody on a `done` or `cancelled` card without a mismatch or with its pull request merged, and the report keeps `observed` and `mismatch` to read; on the open release: its card's holder, `trust:admin`. Wakes only when something the reader acts on changed: on a report, `observed` without its `observed_at`, or `mismatch`, against the card's last `probe_observed` that reached all of these readers (a new report's first observation included; one that contradicts the new report always wakes), where a `required_check` that appears for the first time, changes only its `name` or is cleared to `null` counts as no change (§6.6); otherwise a report's observation is emitted with an empty audience, for the views that read every event; on the open release, a ref's `found`, `state`, `head_sha`, `checks`, `merged_at` or `sha`, or whether its `mergeable` is `conflicting` — `unknown` and `mergeable` taking turns is stored and wakes nobody | the observation: on a report `{task, observed, mismatch}`, `observed` being `{pr_state, pr_head_sha, checks, required_check, branch_head_sha, observed_at}` (§6.6); on the open release `{task, observations}` |
 | `task_merged` | the card's done authority as §6.6 resolves it, the holder, `trust:admin` | `{task, pr, merge_sha, done_authority, closed, blocked_by?}` (§6.6); wakes the done authority only, and nobody when `closed` is true |
 | `placement_created`, `placement_updated` | `runner:<id>` of the placement's runner once the placement is approved (a pending proposal never names the runner), the creator, the owner of the agent profile | `placement_id`, `generation`, `desired`, `harness`, `target`, `approval.status`, `closed_reason`; never `briefing`, `session_hint` or `logs_hint` (§15.10) |
 | `placement_reported` | the creator, the owner of the agent profile | `placement_id`, `state`, `reason`, `detail`, `exit_code`, `observed_generation`, `restarts`, `retry_at` |

@@ -135,7 +135,7 @@ operator's own projects.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the project lead's decisions on card tsk-d1n4g1sp305j, 2026-11-02, on the coder's plan; the reviews of PR #1295, 2026-11-03 (cancelled, branch reads, wakes, re-runs, PATCH); contract `docs/api.md` §6.1, §6.6, §6.13, §11, §11.4
+**Source:** the project lead's decisions on card tsk-d1n4g1sp305j, 2026-11-02, on the coder's plan; the reviews of PR #1295, 2026-11-03 (cancelled, branch reads, wakes, re-runs, PATCH, a cleared name); card tsk-trxeyz1n78be (the hub implementation); contract `docs/api.md` §6.1, §6.6, §6.13, §11, §11.4
 **Revisit when:** a deploy needs more than one required check, a second forge kind comes, or the commit links' reads strain a source's budget
 
 "Is the commit we deploy green on its required check, and is it still
@@ -175,9 +175,12 @@ share one cached default-branch read per project and one read per
 linked commit.
 
 A `required_check` that first appears, after the rollout or when a
-project first names its check, or that only changes its name, wakes
-nobody: nothing changed on the forge, and otherwise every holder of an
-open reported card would be woken once.
+project first names its check, that only changes its name, or that is
+cleared to `null`, wakes nobody: nothing changed on the forge, and
+otherwise every holder of an open reported card would be woken once.
+Only a new `status` under the name last told wakes. After a rename that
+woke nobody the hub compares with the stored observation under the new
+name, so the next change of its status wakes as usual.
 
 **Reason:** a deploy is a moment, not a lifecycle, and it already lives
 on an ordinary card. A link reuses everything a forge link has: the
@@ -210,6 +213,9 @@ not report something false when the forge stops answering.
   predates the field would erase the name with every repository edit.
 - Waking `trust:admin` on `ahead: true`: too many woken for one person's
   decision.
+- Waking on a `required_check` cleared to `null`: the maintainer
+  removed the name on purpose, and every holder of a reported card
+  would be woken for a setting, not for anything on the forge.
 - Keeping the parts of a read that succeeded when the budget ran out
   partway: an `ahead: false` from a stale branch read is false, not
   unknown.
