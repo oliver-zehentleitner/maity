@@ -91,6 +91,46 @@
 :root[data-theme="light"] { color-scheme: light; }
 :root[data-theme="dark"] { color-scheme: dark; }
 
+/* The Keep the Why views (js/ktw-host.js, vendor/keep-the-why/) read their colours, radius
+   and fonts from --ktw-* tokens; here they are Maity's, so both themes carry over. */
+:root {
+  --ktw-bg: var(--bg);
+  --ktw-surface: var(--surface);
+  --ktw-surface2: var(--surface-2);
+  --ktw-fg: var(--text);
+  --ktw-fg2: var(--muted);
+  --ktw-fg3: var(--seat);
+  --ktw-muted: var(--muted);
+  --ktw-line: var(--border);
+  --ktw-accent: var(--accent);
+  --ktw-accent2: var(--plan);
+  --ktw-info: var(--accent);
+  --ktw-ok: var(--ok);
+  --ktw-warn: var(--warn);
+  --ktw-bad: var(--bad);
+  --ktw-confirmed: var(--ok);
+  --ktw-inferred: var(--warn);
+  --ktw-unknown: var(--seat);
+  --ktw-status-active: var(--ok);
+  --ktw-status-open: var(--accent);
+  --ktw-status-needs-review: var(--warn);
+  --ktw-status-pending-confirmation: var(--plan);
+  --ktw-status-superseded: var(--seat);
+  --ktw-radius: var(--radius);
+  --ktw-font: var(--font);
+  --ktw-mono: var(--mono);
+}
+
+.why-places { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 var(--gap); }
+.why-places a[aria-current="page"] { font-weight: 600; text-decoration: none; color: var(--text); }
+.why-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 320px); gap: var(--gap); align-items: start; }
+.why-aside:empty { display: none; }
+.why-graph { height: 70vh; min-height: 360px; }
+.why-graph canvas { width: 100%; height: 100%; display: block; }
+@media (max-width: 900px) {
+  .why-layout { grid-template-columns: minmax(0, 1fr); }
+}
+
 * { box-sizing: border-box; }
 
 /* A member's picture (js/avatar.js). */
@@ -671,9 +711,6 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
   .member-manage .member-remove { justify-content: stretch; }
   .member-manage button { flex: 1 1 100%; }
 }
-.why-members { width: 100%; border-collapse: collapse; font-size: 0.9rem; display: block; overflow-x: auto; }
-.why-members th, .why-members td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
-.why-members tr.failed td:first-child { border-left: 3px solid var(--warn); }
 .view-why > h3 { margin: 20px 0 6px; }
 .why-group h3 { margin: 12px 0 4px; font-size: 0.95rem; }
 .why-entries { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }

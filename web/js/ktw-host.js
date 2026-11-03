@@ -18,7 +18,11 @@ window.Maity = window.Maity || {};
     "ktw-family.js", "ktw-search.js", "ktw-thoughts.js", "ktw-pages.js"];
   const STYLES = ["ktw-views.css"];
   // The places offered in the view's own row of links; the library links to the others.
-  const PLACES = ["overview", "graph", "timeline", "thoughts", "family"];
+  const PLACES = {
+    overview: () => M.t("why.lib.place.overview"), graph: () => M.t("why.lib.place.graph"),
+    timeline: () => M.t("why.lib.place.timeline"), thoughts: () => M.t("why.lib.place.thoughts"),
+    family: () => M.t("why.lib.place.family"),
+  };
 
   // --- loading: once per page, on the first visit to Why ------------------------------------
 
@@ -134,7 +138,7 @@ window.Maity = window.Maity || {};
     const state = first.state;
     const prefix = whyPath();
     let current = { view: "overview" };
-    const pathOf = (route) => prefix + "/" + K.core.routes.format(route).replace(/^#/, "");
+    const pathOf = (route) => prefix + "/" + K.core.routes.format(route).slice(1); // the format's leading hash dropped
     const nav = {
       href: (route) => M.route.href(pathOf(route)),
       go(route, opts) { current = route; M.route.go(pathOf(route), { replace: !!(opts && opts.replace) }); },
@@ -162,7 +166,7 @@ window.Maity = window.Maity || {};
       live: () => false, published: () => true, project: () => null, provider: () => x.P,
       inline: (md) => K.markdown.renderInline(document, md, { topicHref }),
       renderBody: (md) => K.markdown.render(document, md, { topicHref }),
-      shareUrl: (r) => ({ url: new URL(x.slug + "/" + K.core.routes.format(r).replace(/^#/, ""), window.location.origin).href, where: "Maity" }),
+      shareUrl: (r) => ({ url: new URL(x.slug + "/" + K.core.routes.format(r).slice(1), window.location.origin).href, where: "Maity" }),
       details: () => aside, miniGraph: () => {},
       entryThoughts: () => [], thoughts, memberLink: (m, href) => href,
       authorLink: (n) => document.createTextNode(n || "-"),
@@ -220,9 +224,8 @@ window.Maity = window.Maity || {};
 
   function toolbar(x, route) {
     return h("nav", { class: "why-places", "aria-label": M.t("why.lib.places") },
-      PLACES.map((view) => h("a", { href: x.slug + (view === "overview" ? "" : "/" + view),
-        class: route.view === view ? "active" : null, "aria-current": route.view === view ? "page" : null },
-      M.t("why.lib.place." + view))));
+      Object.keys(PLACES).map((view) => h("a", { href: x.slug + (view === "overview" ? "" : "/" + view),
+        "aria-current": route.view === view ? "page" : null }, PLACES[view]())));
   }
 
   M.views.why = async function (ctx, root, args) {

@@ -16907,53 +16907,9 @@
     "en": "90e38ea91c09727b",
     "text": "6086e0bc04e87983"
   },
-  "why.intro": {
-    "en": "41317daaeede1c23",
-    "text": "fbc1c81ac1eba1e4"
-  },
   "why.no_read": {
     "en": "f5124f350b2f5ae8",
     "text": "b660986eaed7f6cf"
-  },
-  "why.parts.attention": {
-    "en": "e3d6fb4893f7a468",
-    "text": "e3d6fb4893f7a468"
-  },
-  "why.parts.entries": {
-    "en": "624b7cc419e8a076",
-    "text": "325e92ce33b43dee"
-  },
-  "why.parts.exported": {
-    "en": "21358db2a7cfb07e",
-    "text": "1ce2b267ba45fbb9"
-  },
-  "why.parts.failed": {
-    "en": "32b5e6e294d19d2f",
-    "text": "d0ebfca7d84284c4"
-  },
-  "why.parts.failed_last": {
-    "en": "dfa0709c52d24e3a",
-    "text": "fab7c5bc75fbdfd2"
-  },
-  "why.parts.label": {
-    "en": "6c36892f420ae550",
-    "text": "bc909d54e4a69984"
-  },
-  "why.parts.linter": {
-    "en": "1001dd9ba957f69a",
-    "text": "1001dd9ba957f69a"
-  },
-  "why.parts.part": {
-    "en": "0c247e29568efc7a",
-    "text": "9bc61eb0df11acb0"
-  },
-  "why.parts.title": {
-    "en": "cef99ea7cc43a7e8",
-    "text": "b110d33817fe786e"
-  },
-  "why.read_again": {
-    "en": "74de2bec5fe97008",
-    "text": "11205d5e2fcdfb3e"
   },
   "why.reason.address_refused": {
     "en": "08b4f2457f53cf79",

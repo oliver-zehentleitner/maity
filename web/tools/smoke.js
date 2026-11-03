@@ -1831,74 +1831,84 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = trGet; win.Maity.api.patch = trPatch;
   await go("#/maintainer/maity/inbox");
 
-  // Why: the Keep the Why export (docs/api.md §11.3), from the published maity.dev family.
+  // Why: the project's Why view mounts the Keep the Why views (js/ktw-host.js), loaded on the first
+  // visit. The library itself stands in as a small fake here (the real one runs in the browser tests):
+  // its files are counted as the host appends them, and the last one defines it.
   const whyTab = () => header.querySelectorAll("nav.views a").find((a) => a.textContent === "Why");
   expect(whyTab() && whyTab().getAttribute("href") === "#/maintainer/maity/why", "why: a tab where the hub has the export");
+  const ktwLoaded = [];
+  const ktwCalls = [];
+  let ktwNav = null;
+  const fakeKtw = {
+    core: {
+      normalizeState: (s) => s,
+      routes: {
+        format: (r) => "#" + [r.view, r.file, r.uuid].filter((x) => x != null).map(encodeURIComponent).join("/"),
+        parse: (h) => { const [view, a] = h.slice(1).split("/").map(decodeURIComponent);
+          return view === "topic" ? { view, file: a } : view === "entry" ? { view, uuid: a } : { view: view || "overview" }; },
+      },
+    },
+    markdown: { render: () => [], renderInline: () => [] },
+    scene: { create: (o) => o },
+    views: {
+      family: { create: (o) => { ktwNav = o.nav; return { view: (box) => box.appendChild(document.createTextNode("family view")), bodies: (s) => Promise.resolve(s), publicState: () => Promise.resolve({}) }; } },
+      search: { create: () => ({ view: (box, scope, q) => box.appendChild(document.createTextNode("search " + q)) }) },
+      thoughts: { create: () => ({ page: (box) => box.appendChild(document.createTextNode("thoughts page")), reader: () => {} }) },
+      pages: { create: () => ({
+        overview: (box, H) => { ktwCalls.push(["overview", H.provider()]); box.appendChild(document.createTextNode("overview page")); },
+        topic: (box, file) => { ktwCalls.push(["topic", file]); box.appendChild(document.createTextNode("topic " + file)); },
+        entry: (box, uuid) => { ktwCalls.push(["entry", uuid]); box.appendChild(document.createTextNode("entry " + uuid)); },
+        entryRow: () => null, queuesPage: () => {}, findings: () => {}, authors: () => {}, remoteEntry: () => {} }) },
+      graph: { create: () => ({ assemble: () => ({}), run: () => { ktwCalls.push(["graph"]); }, lightThought: () => {} }) },
+      timeline: { create: () => ({ view: (box) => box.appendChild(document.createTextNode("timeline view")) }) },
+    },
+  };
+  const headAppend = head.appendChild.bind(head);
+  head.appendChild = (el) => {
+    headAppend(el);
+    const src = el.getAttribute && (el.getAttribute("src") || el.getAttribute("href"));
+    if (src && src.startsWith("vendor/keep-the-why/")) {
+      ktwLoaded.push(src.slice("vendor/keep-the-why/".length));
+      if (src.endsWith("ktw-pages.js")) win.KeepTheWhy = fakeKtw;
+      if (el.tagName === "SCRIPT") Promise.resolve().then(() => el.dispatch("load"));
+    }
+    return el;
+  };
   const whyGets = [];
   const realGet6 = win.Maity.api.get;
   win.Maity.api.get = (p) => { whyGets.push(p); return realGet6(p); };
-  await go("#/maintainer/maity/why");
-  expect(plainTitle() === "Why · Maity · Maity" && text(main).includes("1 entry needs attention · 71 entries in 4 parts of the project")
-    && text(main).includes("Linter: 0 errors, 0 warnings."), "why: the family's summary");
-  const rows = main.querySelectorAll(".why-members tbody tr");
-  expect(rows.length === 4 && rows[0].textContent.startsWith("the project root") && rows[1].textContent.startsWith("hub · hub/")
-    && rows[1].querySelector("a").getAttribute("href") === "https://maity.dev/keep-the-why-dashboard/hub/", "why: one row per part, linking to its dashboard");
-  const entryLink = main.querySelectorAll(".why-entries a").find((a) => a.textContent === "Platforms changed underneath the build");
-  expect(entryLink && entryLink.getAttribute("href") === "https://maity.dev/keep-the-why-dashboard/#entry/f3bec014-28b7-4bfe-9ca8-304f1481fceb"
-    && text(main.querySelector(".why-group")).includes("open") && text(main).includes("Incidents of the build · incident"),
-    "why: the entry that needs attention, grouped by part, linking into the published dashboard");
-  btn(main, "Read again").click(); await tick(); await tick();
-  expect(whyGets.includes("/projects/maintainer/maity/keep-the-why?max_age=0"), "why: Read again asks for a fresh read");
-  // A member that fails, a root that cannot be read, strings and links from the export.
-  const baseAnswer = await realGet6("/projects/maintainer/maity/keep-the-why");
-  const withFailed = JSON.parse(JSON.stringify(baseAnswer));
-  withFailed.members[3].error = { code: "ktw_unavailable", reason: "timeout" };
-  withFailed.summary.failed = 1;
-  withFailed.attention.push({ member: "web", id: "x", uuid: null, title: "<b>not markup</b>", type: ["question"], status: "needs-review",
-    file: "views.md", topic: null, link: "javascript:alert(1)" });
-  win.Maity.api.get = (p) => (p.startsWith("/projects/maintainer/maity/keep-the-why") ? Promise.resolve(withFailed) : realGet6(p));
-  await go("#/maintainer/maity/board"); await go("#/maintainer/maity/why");
-  const webRow = main.querySelectorAll(".why-members tbody tr")[3];
-  expect(webRow.className === "failed" && text(webRow).includes("Could not be read: its state.json did not answer in time. Shown is its last good read.")
-    && text(main).includes("· 1 could not be read"), "why: a part that fails is named with its reason and its last good read");
-  const odd = main.querySelectorAll(".why-entries li").find((li) => li.textContent.includes("<b>not markup</b>"));
-  expect(odd && !odd.querySelector("a") && !odd.querySelector("b"), "why: an export's strings are text, a link that is not https is none");
-  win.Maity.api.get = (p) => (p.startsWith("/projects/maintainer/maity/keep-the-why")
-    ? Promise.reject(new win.Maity.api.ApiError("root unreadable", 503, p, "ktw_unavailable", { reason: "forge_unavailable", last: Object.assign({}, baseAnswer, { fresh: false }) }))
-    : realGet6(p));
-  await go("#/maintainer/maity/board"); await go("#/maintainer/maity/why");
-  expect(text(main).includes("The hub could not read the project's root .keep-the-why just now (the forge did not give the hub the repository's root .keep-the-why). Shown is its last good read")
-    && main.querySelectorAll(".why-members tbody tr").length === 4, "why: the root unreadable, the last good read is shown and said so");
-  win.Maity.api.get = (p) => (p.startsWith("/projects/maintainer/maity/keep-the-why")
-    ? Promise.reject(new win.Maity.api.ApiError("root unreadable", 503, p, "ktw_unavailable", { reason: "forge_unavailable" })) : realGet6(p));
-  await go("#/maintainer/maity/board"); await go("#/maintainer/maity/why");
-  expect(text(main).includes("could not read the project's root .keep-the-why") && !main.querySelector(".why-members") && btn(main, "Read again"),
-    "why: no last read, only the note, and Read again");
-  win.Maity.api.get = (p) => (p.startsWith("/projects/maintainer/maity/keep-the-why") ? Promise.reject(new win.Maity.api.ApiError("boom", 500, p, "internal")) : realGet6(p));
-  await go("#/maintainer/maity/board"); await go("#/maintainer/maity/why");
-  expect(main.querySelector(".error") && btn(main, "Read again"), "why: any other error, with Read again");
-  // Read again is off while its read runs.
-  let release;
-  win.Maity.api.get = (p) => (p.startsWith("/projects/maintainer/maity/keep-the-why?max_age=0") ? new Promise((r) => { release = () => r(baseAnswer); }) : realGet6(p));
-  const again = btn(main, "Read again"); again.click(); await tick();
-  expect(again.disabled === true, "why: Read again is disabled while a read runs");
-  release(); await tick(); await tick();
-  expect(btn(main, "Read again") && !btn(main, "Read again").disabled, "why: and on again after it");
-  // Linter counts per field; an entry link outside its part's dashboard is no link.
-  const odd2 = JSON.parse(JSON.stringify(baseAnswer));
-  odd2.members[1].summary.findings = { errors: 2, warnings: null };
-  odd2.members[2].summary.findings = { errors: 1, warnings: 1 };
-  odd2.attention.push({ member: "hub", id: "y", uuid: "u", title: "Elsewhere", type: [], status: "open", file: "a.md", topic: null,
-    link: "https://maity.dev/keep-the-why-dashboard/#entry/u" });
-  win.Maity.api.get = (p) => (p.startsWith("/projects/maintainer/maity/keep-the-why") ? Promise.resolve(odd2) : realGet6(p));
-  await go("#/maintainer/maity/board"); await go("#/maintainer/maity/why");
-  expect(text(main.querySelectorAll(".why-members tbody tr")[1]).includes("2 errors, — warnings"), "why: a missing linter count is shown as such, per field");
-  expect(text(main.querySelectorAll(".why-members tbody tr")[2]).includes("1 error, 1 warning"), "why: a linter count of one reads in the singular");
-  const elsewhere = main.querySelectorAll(".why-entries li").find((li) => li.textContent.includes("Elsewhere"));
-  expect(elsewhere && !elsewhere.querySelector("a"), "why: an entry link that leaves its part's dashboard is no link");
+  expect(!win.KeepTheWhy, "why: the library is not loaded before the first visit to Why");
+  await go("#/maintainer/maity/why"); for (let k = 0; k < 15; k++) await tick();
+  const manifest = JSON.parse(fs.readFileSync(path.join(WEB, "vendor/keep-the-why/ktw-views.json"), "utf8"));
+  expect(JSON.stringify(ktwLoaded) === JSON.stringify(manifest.styles.concat(manifest.scripts)),
+    "why: the first visit loads the vendored files once, the stylesheet and the scripts in the manifest's order");
+  expect(text(main).includes("overview page") && whyGets.includes("/projects/maintainer/maity/keep-the-why/export"),
+    "why: the overview, from the hub's export (§11.5)");
+  const ktwMain = main.querySelector(".why-main");
+  expect(ktwMain && ktwMain.className.includes("ktw-root") && ktwMain.getAttribute("translate") === "no"
+    && main.querySelector(".why-aside").className.includes("ktw-aside"), "why: the mounts carry ktw-root, ktw-aside and translate=\"no\"");
+  const places = main.querySelectorAll("nav.why-places a");
+  expect(places.length === 5 && places[1].getAttribute("href") === "#/maintainer/maity/why/graph"
+    && places[0].getAttribute("aria-current") === "page", "why: the places as paths below Why, the current one marked");
+  await go("#/maintainer/maity/board"); await go("#/maintainer/maity/why/topic/api.md"); for (let k = 0; k < 6; k++) await tick();
+  expect(ktwLoaded.length === 11 && whyGets.filter((p) => p.includes("/keep-the-why/export")).length === 1,
+    "why: a second visit loads nothing again and reads no export again");
+  expect(text(main).includes("topic api.md") && ktwCalls.some((c) => c[0] === "topic" && c[1] === "api.md"),
+    "why: a path below Why is the library's place (topic/api.md)");
+  expect(ktwNav.href({ view: "entry", uuid: "u 1" }) === "#/maintainer/maity/why/entry/u%201",
+    "why: the library's links are the dashboard's paths");
+  ktwNav.go({ view: "entry", uuid: "u1" }); if (win.onhashchange) win.onhashchange(); for (let k = 0; k < 6; k++) await tick();
+  expect(win.location.hash === "#/maintainer/maity/why/entry/u1" && text(main).includes("entry u1"), "why: the library moves by the dashboard's paths");
+  const P = ktwCalls.find((c) => c[0] === "overview")[1];
+  const ktwForeign = await P.exportState("https://github.com/acme/elsewhere", "");
+  expect(ktwForeign.error === "Not a repository of this project's family." && !ktwForeign.state,
+    "why: a repository outside the family is the library's error, in Maity's words");
+  const inline = await P.bodies({ entries: [] });
+  expect(inline.state && !inline.error, "why: an export with its bodies inline asks for nothing");
   win.Maity.api.get = realGet6;
-  await go("#/maintainer/sample/why");
-  expect(text(main).includes("This project publishes no Keep the Why dashboard yet.") && text(main).includes("dashboard-state line") && btn(main, "Read again"),
+  head.appendChild = headAppend;
+  await go("#/maintainer/sample/why"); for (let k = 0; k < 6; k++) await tick();
+  expect(text(main).includes("This project publishes no Keep the Why dashboard yet.") && text(main).includes("dashboard-state line"),
     "why: not configured, said so with what the hub reads");
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/organisation"); for (let k = 0; k < 4; k++) await tick();
   const tree = main.querySelector(".org-tree");
@@ -11333,7 +11343,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   let noContent = "unset";
   try { noContent = await win.Maity.api.del("/orgs/oz-team/members/invitations/oinv-1"); } catch (err) { noContent = err; }
   expect(noContent === null, "API mode: a 204 answer is a success without a body, not a failure");
-  expect(!head.querySelector("script"), "API mode never loads the fixture bundle");
+  expect(!head.querySelectorAll("script").find((s) => /fixtures/.test(s.getAttribute("src") || "")), "API mode never loads the fixture bundle");
   expect(calls.filter((c) => c.method === "GET").every((c) => !("X-CSRF-Token" in c.headers)), "no CSRF header on GET");
   const ps = byId("inbox-sort"); ps.value = "priority"; ps.dispatch("change"); await tick();
   btn(main.querySelector(".current"), "SHA-256 + pepper").click(); await tick();

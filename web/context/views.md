@@ -4587,3 +4587,19 @@ would see it changed.
 
 **Known limit:** a mode changed and later set back to the default stays set; the contract has no
 reset.
+
+## The project's Why view mounts the Keep the Why views, loaded on the first visit; their own words stay English for now
+
+**Id:** 9e70b2ab-5fbf-44ad-9d4e-7e1b54319519
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** tsk-9kns2as984et (KTW M3), 2026-11-03: the proposal on the card and the lead's ruling on its two open points (the library's language, loading)
+**See:** stack.md#the-keep-the-why-views-are-vendored-from-the-pinned-pypi-wheel-by-their-manifest-and-hashes-not-taken-as-a-package-dependency — f3b6fe34-f86e-490c-afe6-f03ee3263ab3 — as of 2026-11-03
+**Revisit when:** the Keep the Why library takes its UI words from its host (a words hook), or a second view needs the library
+
+The project's Why tab is Keep the Why's own dashboard views, mounted by `js/ktw-host.js` from the vendored library: the overview, graph, timeline, thoughts, family, topics, entries and search, at paths below `/<owner>/<slug>/why`. The library reads through a provider over the hub's §11.5 reads, moves through the dashboard's paths (`js/route.js`), keeps its settings in the browser and takes Maity's colours through its `--ktw-*` tokens. Its scripts and stylesheet are loaded on the first visit to Why, in the manifest's order (checked by `make check`), and stay for the page's life. Its own UI words are English and the mounts carry `translate="no"`: an interim step until the library takes words from its host; entry text is the repository's data either way. The digest view the tab showed before (the hub's §11.3 summary per member) remains on All projects → Why.
+
+**Reason:** one update of Keep the Why reaches Maity unchanged, so the project's decision record looks and behaves as in its own dashboard; Maity adds only the host (provider, paths, settings, colours). Loading on the first visit keeps about 350 KB of scripts off every other page. Marking the library's words `translate="no"` keeps the pseudo-locale check strict for Maity's own words without pretending Maity translates text it does not hold.
+
+**Rejected alternatives:** the library in `index.html` for every page: its weight on pages that never show it. Its ~200 words copied into Maity's catalog: a second copy that drifts from the library's on every release; the words hook in Keep the Why is the lasting answer. Keeping the digest view and the library side by side in the tab: two answers to one question, the digest the poorer one.
