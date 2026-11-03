@@ -1298,7 +1298,9 @@ language, the sign-in and public pages included. While the window runs
 the page shows a full page instead of the view: when the hub is back, the
 text, and for the instance admin **End maintenance now** and the way to
 change the window; a visitor gets the way to sign in, which the hub keeps
-open. The window is read from `GET /maintenance`, from `/me` and from any
+open, and a signed-in session **Sign out** in the header, the admin's own
+window and a session that must still set up its second factor included.
+The window is read from `GET /maintenance`, from `/me` and from any
 `503 maintenance`; the full page asks again every 30 seconds and goes
 when the window does. In fixture mode `?maintenance=upcoming` or
 `?maintenance=running` starts with a window, and the fixture hub refuses

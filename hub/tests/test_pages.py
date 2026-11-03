@@ -402,7 +402,9 @@ def test_the_footer_links_the_legal_pages_that_are_set(
     owner.patch(LEGAL, {"imprint": IMPRINT})
     owner.patch(LEGAL, {"privacy": IMPRINT})
     page = make_client().get("/").text
-    assert 'href="/impressum">Imprint</a>' in page and 'href="/privacy">Privacy</a>' in page
+    # The links of the frame's model say the language (§16.7.5).
+    assert 'href="/impressum?lang=en">Imprint</a>' in page
+    assert 'href="/privacy?lang=en">Privacy</a>' in page
     assert "/terms" not in page
     assert 'href="/impressum">Imprint</a>' in make_client().get("/privacy").text
 

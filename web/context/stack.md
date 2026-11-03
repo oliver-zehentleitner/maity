@@ -92,7 +92,9 @@ Vienna, Los Angeles and Kiritimati, every run was green.
 (as #1225 does for one line) — it holds only for the lines someone has
 already seen fail, and every new number or date check has to remember it.
 Setting the environment in the Makefile — `node tools/smoke.js .` run by
-hand, as reviewers do, would still use the machine's. Pinning
+hand, as reviewers do, would still use the machine's. Setting
+`M.i18n.locale = "en"` in each affected case, as the other thousands checks
+do — the same gap: only the lines already seen failing. Pinning
 `M.i18n.locale` in the shim — it would not cover `toLocaleDateString`
 with an undefined locale, nor the time zone the page reads from Intl.
 

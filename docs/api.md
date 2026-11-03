@@ -2103,9 +2103,10 @@ transport, `Sec-Fetch-Site` and `next`.
    **display name** — under it the note "Your name and handle are
    publicly visible. The name can be anything; it does not have to be
    your real one. Your profile is public by default, with your public
-   projects and the text and links you choose to show there; you can
-   turn it off in your account.", since every account has a public page
-   and `public_profile` starts `true` (§16.9) — and — when the instance has terms — "I accept the
+   projects and the text and links you choose to show there, and the
+   public pages of your projects show when you are online; you can turn
+   both off in your account.", since every account has a public page,
+   `public_profile` starts `true` and so does `public_presence` (§16.9) — and — when the instance has terms — "I accept the
    terms (<url>, version <version>)", unchecked, for the instance's
    current version. The form carries that version in a hidden field the
    hub signs together with the registration token (HMAC under
@@ -14984,8 +14985,9 @@ agents only. On an instance with a single public project that shows
 `people_online`, that number minus the project's `online.humans` is at
 most the number of people online with the switch off (exactly that when
 every human of the instance is a member of that project), and with
-exactly one such member it can point at them; the maintainer has been asked whether
-`people_online` should leave them out as well. The switch is the person's own and never covers their
+exactly one such member it can point at them; the maintainer decided on
+2026-11-03 that `people_online` keeps counting them, and Your account
+says so under the switch. The switch is the person's own and never covers their
 agents: an agent is public work and is named by its handle. It covers
 only who is named and counted under **Online**: what the person does stays on the
 pages with its time, as a note's `created_at` on a card's page or an
