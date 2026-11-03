@@ -23,6 +23,7 @@ from uvicorn.supervisors import multiprocess
 from maity_hub import (
     __version__,
     attachment_store,
+    attachments,
     clock,
     handle_register,
     handles,
@@ -160,6 +161,11 @@ def _copy_to_s3(settings: Settings, *, apply: bool) -> int:
             live=lambda project: _live_attachments(engine, project),
             still=lambda key: _still_live(engine, key),
         )
+        # The bucket's objects whose attachment was deleted since an earlier run (the hub
+        # still on the volume deletes only there), as the hub's sweep under `s3` removes them.
+        cleaned = (
+            _clean_bucket(engine, target) if apply else {"tombstoned": 0, "orphans": 0, "failed": 0}
+        )
     except SchemaNotCurrentError as error:
         return _fail(str(error), EXIT_FAILURE)
     except (SQLAlchemyError, ImportError) as error:
@@ -168,9 +174,23 @@ def _copy_to_s3(settings: Settings, *, apply: bool) -> int:
     print(
         f"{verb}: {done['copied']}, already there: {done['present']}, "
         f"different in the bucket: {done['differs']}, "
-        f"deleted, not copied: {done['skipped_deleted']}, failed: {done['failed']}"
+        f"deleted, not copied: {done['skipped_deleted']}, "
+        f"deleted, removed from the bucket: {cleaned['tombstoned'] + cleaned['orphans']}, "
+        f"failed: {done['failed'] + cleaned['failed']}"
     )
-    return EXIT_FAILURE if done["failed"] or done["differs"] else 0
+    return EXIT_FAILURE if done["failed"] or cleaned["failed"] or done["differs"] else 0
+
+
+def _clean_bucket(engine: Any, target: attachment_store.S3Store) -> dict[str, int]:
+    """The sweep's removals against the bucket, without expiring rows: a tombstone's object,
+    and an object no row names once it is older than `BLOB_GRACE` (an upload in flight under
+    `s3` is younger). A failure is logged and counted; the copy itself stands."""
+    try:
+        done = attachments.sweep(engine, target, expiring=False)
+    except attachment_store.StoreError as error:
+        logging.getLogger(__name__).error("cleaning the bucket: %s", error)
+        return {"tombstoned": 0, "orphans": 0, "failed": 1}
+    return {"tombstoned": done["tombstoned"], "orphans": done["orphans"], "failed": 0}
 
 
 def _live_attachments(engine: Any, project: str) -> set[str]:

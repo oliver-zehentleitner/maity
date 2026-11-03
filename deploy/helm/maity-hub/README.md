@@ -294,7 +294,10 @@ overwritten: it is reported as different, and the command ends with exit 1. Keys
 attachment ids, so treat the file on the claim as the suspect one: compare it with the object
 (`sha256sum` against the object's `x-amz-meta-sha256`), and keep the object. A file whose
 attachment is deleted, or has no row, is not copied: under `s3` the hub deletes only in the
-bucket, and a redacted attachment must not come back. After each copy it checks the object's
+bucket, and a redacted attachment must not come back. With `--apply` it then removes from the
+bucket what was deleted since an earlier run: while the hub serves from the claim, its
+deletions reach only the claim. The object of a deleted attachment goes at once, an object no
+row names once it is older than 30 minutes. After each copy it checks the object's
 size and the SHA-256 it wrote as metadata (the bytes themselves are protected in transit by the
 client's checksum). A folder it cannot read (`lost+found`) counts as failed, the rest is copied.
 Without `--apply` it only counts.
@@ -306,7 +309,8 @@ Without `--apply` it only counts.
 2. In the hub pod: `MAITY_ATTACHMENT_STORE=s3 maity-hub attachments copy-to-s3`, then the same
    with `--apply`. The store setting is the command's alone; the hub keeps serving from the claim,
    and an attachment it deletes from now on is removed from the claim only: its copy stays in
-   the bucket. Go on with step 3 right after this one.
+   the bucket until the next run with `--apply` or the first sweep under `s3`. Go on with step 3
+   right after this one.
 3. `helm upgrade` with `attachments.store: s3`, the claim still set: the hub now serves from the bucket, and the claim stays mounted for the next step. Its first attachment sweep under `s3`, within five minutes, removes from the bucket what was deleted since step 2: a deleted attachment's object at once, an object no row names once it is 30 minutes old.
 4. In the new pod: `maity-hub attachments copy-to-s3 --apply` once more, for the uploads between
    steps 2 and 3; it should copy only those. Run it right away: until it has run, the hub
@@ -314,14 +318,18 @@ Without `--apply` it only counts.
 5. `helm upgrade` with `attachments.existingClaim` empty. Keep the volume until the backups no
    longer need it.
 
+Between the last run of step 2 and step 3, a deletion leaves its object in the bucket; after
+step 3 the hub's sweep removes it within minutes.
+
 There is no copy back. Going back to `local` (a `helm rollback`, or `attachments.store: local`)
 works only while the claim is still mounted, and the uploads since step 3 are then only in the
 bucket.
 
 A move given up before step 3, or rolled back to `local`, leaves objects in the bucket that may
-belong to deleted attachments, since no sweep under `s3` runs to remove them: empty the bucket's
-prefix, or delete the bucket. After a rollback from step 3 on, the uploads since then are only
-there: take what is still needed first.
+belong to attachments deleted since the last run, since no sweep under `s3` runs to remove them:
+run step 2 with `--apply` once more, which removes them, or empty the bucket's prefix or delete
+the bucket. After a rollback from step 3 on, the uploads since then are only there: take what is
+still needed before emptying it.
 
 With the bucket's versioning on, a deletion by the hub leaves a noncurrent version behind: a
 lifecycle rule that expires noncurrent versions is what makes a deleted attachment gone.
