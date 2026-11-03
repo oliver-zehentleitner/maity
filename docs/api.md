@@ -108,6 +108,10 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   a deploy. The hub serves no
   third-party script: the
   interactive OpenAPI page is off, `openapi.json` is the machine form.
+- A page the hub renders with a token in its path (`/join/{token}` as
+  HTML, the `/mail/…/{token}` link pages) also carries
+  `Referrer-Policy: no-referrer`, so no link or request on it sends that
+  path on (§16.13).
 - The hub writes its own request log: method, path and status, then `ms=`
   (how long the hub took) and `route=` (the pattern the answering route was
   declared with, such as `/api/v1/tasks/{id}`, holding nothing from the request, or `-`
@@ -15549,6 +15553,122 @@ deletion's confirmation — and of a self-set limit or absence (§6.12).
 They are security deadlines or ones that end something the person
 chose; whoever runs into one during a window signs in or asks again
 afterwards.
+
+### 16.13 The product line
+
+The maintainer's decision of 2026-11-03 (`context/scope.md`): every page
+of the platform's own interface ends with one small line about Maity
+itself. It is part of the product, not of an instance's content: it is
+always shown, on a self-hosted instance as well, with no setting to turn
+it off, and it is no part of the landing setting or of the frame of
+§16.7.5.
+
+```
+[Maity icon] Maity 2026 · Found a bug? · Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity icon]
+```
+
+**The parts**, in this order, separated by ` · `:
+
+- the Maity icon, followed by `Maity` and the current year. The icon is
+  decorative (`aria-hidden="true"`). The year is never stored or built
+  in: the hub takes it from its clock (UTC) when it renders the page, the
+  dashboard from the browser's clock when it draws it;
+- **Found a bug?**, a link to
+  `https://github.com/oliver-zehentleitner/maity/issues`;
+- **Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity
+  icon]**. The name is plain text, no link. The heart is a symbol with
+  the accessible name "love" (`role="img"`, `aria-label`). Each of the
+  two icons is a link of its own:
+  - the GitHub icon to `https://github.com/oliver-zehentleitner`, with
+    the accessible name `GitHub`;
+  - the Maity icon to `https://maity.team/oliver-zehentleitner`, the
+    maintainer's page on maity.team (a person's page is `GET /{handle}`,
+    §16.9, with no `@`), with the accessible name `Maity`.
+
+  The accessible name is the link's `aria-label`, and the icon inside it
+  is `aria-hidden="true"`. `GitHub` and `Maity` are names and are not
+  translated.
+
+Every link is absolute and the same on every instance. The Maity link
+names maity.team, not the instance's own host: the maintainer's page
+exists only there, and a relative `/oliver-zehentleitner` would be a dead
+link, or another account's page, on any other instance. No link carries a
+query or a campaign of its own. Each opens in a new tab with
+`rel="noopener noreferrer"`, as the dashboard's other external links do
+(§6.11): the line also ends pages with a token in their path
+(`/mail/…/{token}`, `/join/{token}`), and `noreferrer` keeps that path
+out of the `Referer` a click would send to github.com or maity.team.
+Those pages also answer with `Referrer-Policy: no-referrer`, which covers
+every link and request on them, not only the line's, whatever the
+browser's default referrer policy is.
+
+**The icons.** All three are written into the page as inline `<svg>`
+and load no file. They therefore need no change to a page's
+`Content-Security-Policy` (the link pages allow no image source at all,
+§2.7.1), and they show on the join host, which serves no assets (§1.1).
+They use presentation attributes only (`fill`, `stroke`, …): no `style`
+attribute, no `<style>` element and no `<use>` of another file in the
+SVG. A page whose policy has no `style-src` would drop those, so the
+icons must not need them. The dark variant comes from the page's own
+stylesheet, overriding `fill`, where the page's policy allows one. The
+join page in a browser has none: its policy is `default-src 'self'`
+(§1.1), which allows no inline `<style>`, and the join host serves no
+stylesheet. It shows the light mark in either theme, on either host, so
+that it looks the same wherever it is opened. The Maity icons are the small mark of
+`web/brand/maity-mark-small.svg` (its dark variant,
+`maity-mark-small-dark.svg`, under a dark theme where a stylesheet can
+switch it). They are written without the file's `role="img"`,
+`aria-label` and `<title>`: the icon is `aria-hidden` and its link
+already has its name, and a `<title>` would add a tooltip. The GitHub
+icon is GitHub's mark from Octicons (MIT), the same path the dashboard
+already draws for a GitHub repository, in `currentColor`, so it follows
+the line's text colour on every page.
+
+**Words.** "Found a bug?", the sentence "Made with ♥ by … on … & …" and
+"love" are translated as the rest of the page is, in every language each
+catalogue has, under the same keys in the dashboard's
+(`web/i18n/<lang>.json`, with its metadata) and the hub's
+(`hub/src/maity_hub/words/<lang>.json`): `product.bug` ("Found a bug?"),
+`product.made_by` ("Made with {heart} by {name} on {github} & {maity}")
+and `product.love` ("love"). The word `on` and the `&` are part of the
+translated sentence, so a language uses its natural preposition and may
+put the placeholders in its own order. `Maity`, `GitHub` and the name are
+never translated. The line is in the language of the page it ends.
+
+The translated sentence is always text and is escaped. Only its
+placeholders become something else: `{name}` the name as text, and
+`{heart}`, `{github}` and `{maity}` the fixed elements above, never
+markup from the catalogue. A sentence in which one of the four is
+missing, or that names any other placeholder, is not used: the line falls
+back to the English sentence.
+
+**Where it is.**
+
+| Page | Line |
+|---|---|
+| every page the dashboard draws (`web/`): the signed-in views, `/login`, `/register`, the invitation and enrolment steps, the full maintenance page (§16.12); also `/explore` and a public address (§16.9) while the hub answers it with the app shell, as it does for one with no stored page | yes |
+| the hub's `503 maintenance` page (§16.12) | yes |
+| the pages behind the links in mails, `/mail/…` (§2.6.3, §2.7.1, §2.9, §18.6) | yes |
+| the join page in a browser, `/join/{token}` as HTML on either host (§3.2), below its own note | yes |
+| the join page for an agent, the Markdown answer (§3.2) | no |
+| the landing page and its variants (§16.7, §16.7.2), the legal pages (§16.7.1), and their previews for an admin (§16.7, §16.7.1) | no: the operator's site, with the operator's footer |
+| `/explore` and the stored public pages (§16.9), as the hub answers them from what it stored | no |
+
+On `/login` and `/register` the line comes after the frame of §16.7.5,
+below the landing page's footer. It does not depend on the frame: a page
+drawn without it (a failed `GET /site/chrome`, a maintenance window)
+still ends with the line.
+
+**How it looks.** At the end of the page's content, never sticky or
+fixed, so it takes no room on a phone. Small and muted. At phone width it
+stays one line where it fits and wraps between its parts where a
+language is longer, never scrolling sideways.
+
+**Beyond the decision.** The card leaves these open, and the contract
+settles them: the line is centred, the year's icon is decorative, the
+links carry no query of their own, the icons' accessible names are
+`GitHub` and `Maity`, and on `/login` and `/register` the line comes below
+the frame of §16.7.5.
 
 ## 17. The change ticker
 
