@@ -435,6 +435,8 @@ I18N_KEY = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$")
 PLURAL_FORMS = {"zero", "one", "two", "few", "many", "other"}
 I18N_META = ".meta.json"
 PLACEHOLDER = re.compile(r"\{([a-z][a-z0-9_]*)\}")
+# Keys whose placeholders become fixed elements, each exactly once in every language.
+EACH_PLACEHOLDER_ONCE = {"product.made_by"}
 STRINGS_BASELINE = os.path.join(ROOT, "tools", "strings-baseline.json")
 # The fixture hub speaks for the hub, the catalog code is the catalog.
 STRINGS_EXEMPT = {"api.js", "i18n.js"}
@@ -480,6 +482,12 @@ def translation_problems(lang, data, english):
         if placeholders(entry) != placeholders(english[key]):
             problems.append("key %r: placeholders %s, English has %s" % (
                 key, sorted(placeholders(entry)), sorted(placeholders(english[key]))))
+        if key in EACH_PLACEHOLDER_ONCE and placeholder_counts(entry) != placeholder_counts(english[key]):
+            # The same names, but one twice where English has it once: a node (a link) placed
+            # twice would move, a hub page would draw it twice (docs/api.md §16.13). A text
+            # placeholder may stand twice elsewhere ("{name}" in a question and its answer).
+            problems.append("key %r: placeholders %s, English has %s" % (
+                key, placeholder_counts(entry), placeholder_counts(english[key])))
         texts = [entry] if isinstance(entry, str) else list(entry.values())
         if not all(text.strip() for text in texts):
             problems.append("key %r: empty; leave a key out until it is translated" % key)
@@ -639,6 +647,14 @@ def list_gaps(lang):
     return 0
 
 
+def placeholder_counts(text):
+    """How often each placeholder stands in a text, sorted by name."""
+    counts = {}
+    for name in PLACEHOLDER.findall(text):
+        counts[name] = counts.get(name, 0) + 1
+    return sorted(counts.items())
+
+
 def placeholders(entry):
     texts = [entry] if isinstance(entry, str) else list(entry.values())
     return set(name for t in texts for name in PLACEHOLDER.findall(t))
@@ -666,7 +682,9 @@ def load_catalog(path):
 NOT_PROSE = {"use strict", " · Maity", "Codex", "Hermes", "Kimi Code", "Cline", "Claude Code",
              "⌘+Enter", "Ctrl+Enter", "Strg+Enter", "Control+Enter Meta+Enter",
              "Maity", "GitHub", "GitLab", "Gitea", "HTTP ", "SHA-256 ", "[U+", "?c=", "XXXX-XXXX-XXXX", "de", "staging",
-             "badge ok", "reply primary", "nofollow ugc"}
+             "badge ok", "reply primary", "nofollow ugc",
+             # The maintainer's name in the product line, never translated (docs/api.md §16.13).
+             "Oliver Zehentleitner"}
 
 
 # What comes before a literal that is code whatever it reads like: a class, an

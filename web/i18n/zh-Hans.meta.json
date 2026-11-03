@@ -1349,7 +1349,7 @@
   },
   "bell.skipped.not_in_good_standing": {
     "en": "04b3f48eb85a82ff",
-    "text": "e7e99f2f94abfb52"
+    "text": "69b08a9d1e6b5d82"
   },
   "bell.title": {
     "en": "bf6b93906d73e810",
@@ -12566,6 +12566,18 @@
   "prefs.versions.title": {
     "en": "d946eb551f1d6a44",
     "text": "9b07907e0aa1e8f3"
+  },
+  "product.bug": {
+    "en": "191903c61492ea38",
+    "text": "23559cc5ea4cfa56"
+  },
+  "product.love": {
+    "en": "96fa5228627bef6a",
+    "text": "f693dd139913a023"
+  },
+  "product.made_by": {
+    "en": "3c4acf7ac90b37e1",
+    "text": "ddca2521a770ef59"
   },
   "profile_delete.busy": {
     "en": "c0ca40456b38f753",
