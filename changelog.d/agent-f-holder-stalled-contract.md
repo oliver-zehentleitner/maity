@@ -8,19 +8,17 @@
   nothing.
 - docs/api.md §5.3, §6.2, §18.1, §18.4: the owner's hourly digest also lists stalled holders,
   instances that hold cards and have made no call for `not_listening.minutes`, a crashed harness
-  included; they count for filing, rewriting, withdrawal and `seen` like episodes; the bell's
+  included; they count for filing, refiling, withdrawal and `seen` like episodes; the bell's
   `agents_not_listening` record gains `holding`, and its title follows the request's.
 
 ### Changed
 
 - docs/api.md §5.3: answering the digest's `seen` records, for the answering human, what the
-  request showed at its filing of each instance it still lists: its `last_seen_at` and the `since` of a
-  listed episode; an away instance stays silenced for its owner while it has made no call since
+  request showed of each listed instance: its `last_seen_at` and the `since` of a listed episode; an away instance stays silenced for its owner while it has made no call since
   such a record, or while that episode runs. Records add up; a new request comes only for
   an instance not silenced and lists every away instance. A table lists the cases: moving a
   stalled holder's cards or assigning one back does not ask again, a crash after work does, and
   an instance that became away only after an answer, one that called between the filing and the
-  answer and then stopped anew, and one whose profile changed owner are filed. A rewrite in place
-  only drops instances or changes cards and reasons; a new instance, or another kind, `since` or
-  last call, withdraws the request and files a new one, so an answer from a stale page is
-  `request_not_open`; an instance dropped before the answer is not recorded.
+  answer and then stopped anew, and one whose profile changed owner are filed. The digest request
+  is no longer rewritten in place: any change to what it shows withdraws it and files a new one,
+  so an answer from a stale page is `request_not_open`.
