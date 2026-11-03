@@ -1,0 +1,888 @@
+/* Keep the Why dashboard — the pure part of the page: no DOM, no fetch,
+   no state. A classic script, not a module, so that a page opened from
+   file:// can load it too (browsers refuse module scripts there): it puts
+   its functions on globalThis.KeepTheWhy.core and nothing else on the
+   global object. Loaded before app.js, inlined into an export, listed in
+   ktw-views.json, unit-tested with node:test (tests/web/core.test.mjs). */
+
+(function (root) {
+"use strict";
+
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+const plural = (n, w) => `${n} ${n === 1 ? w : /[^aeiou]y$/.test(w) ? w.slice(0, -1) + "ies" : w + "s"}`; // entry → entries, repository → repositories
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+const isUuid = (s) => UUID_RE.test(s || "");
+
+// Raw-file URL of a repository file at HEAD, per host — the second and last
+// place host grammar lives (the first is hostFileLink below). Public mode
+// reads one file this way: a family member's .keep-the-why, for its
+// dashboard-state line.
+function rawFileUrl(canonical, root, path) {
+  const base = canonical.replace(/\/$/, "");
+  const rel = `${root ? root.replace(/\/$/, "") + "/" : ""}${path}`;
+  const gh = base.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)$/);
+  if (gh) return `https://raw.githubusercontent.com/${gh[1]}/${gh[2]}/HEAD/${rel}`;
+  // GitLab: the repository files API — it sends Access-Control-Allow-Origin, the /-/raw/ path does not,
+  // and this page reads the file from another site. Same rule as the registry's raw_url.
+  const gl = base.match(/^(https:\/\/gitlab\.[^/]+)\/(.+)$/);
+  if (gl) return `${gl[1]}/api/v4/projects/${encodeURIComponent(gl[2])}/repository/files/${encodeURIComponent(rel)}/raw?ref=HEAD`;
+  if (/^https:\/\/bitbucket\.org/.test(base)) return `${base}/raw/HEAD/${rel}`;
+  return `${base}/raw/branch/HEAD/${rel}`; // Codeberg, Gitea, Forgejo
+}
+
+const configLine = (text, key) => { const m = text.match(new RegExp(`^-\\s*${key}\\s*:\\s*(.+?)\\s*$`, "m")); return m ? m[1].replace(/^`|`$/g, "") : ""; };
+
+// A state document from anywhere: whatever this page did not produce may be
+// older or newer than it — unknown keys are ignored, missing ones blank.
+function normalizeState(s) {
+  s = s && typeof s === "object" ? s : {};
+  s.project = s.project && typeof s.project === "object" ? s.project : {};
+  s.project.config ||= {}; s.project.children ||= []; s.project.context ||= "context/"; s.project.schema ||= "?";
+  s.topics = Array.isArray(s.topics) ? s.topics : []; s.entries = Array.isArray(s.entries) ? s.entries : []; s.authors = Array.isArray(s.authors) ? s.authors : [];
+  s.findings = s.findings && typeof s.findings === "object" ? s.findings : {}; s.findings.errors ||= 0; s.findings.warnings ||= 0; s.findings.items ||= [];
+  for (const t of s.topics) { t.refs_out ||= []; t.refs_in ||= []; t.status ||= {}; t.evidence ||= {}; t.entries ||= 0; }
+  for (const e of s.entries) { e.type ||= []; e.refs ||= []; e.see ||= []; e.findings ||= []; e.body = e.body && typeof e.body === "object" ? e.body : { text: String(e.body || ""), reason: "" }; e.body.text ||= ""; e.id ||= `${e.file || "?"}#${slug(e.title || "")}`; }
+  return s;
+}
+
+// A heading's anchor as the host renders it — GitHub's rule, which GitLab shares, the same as the linter's
+// ktw_lint.entries.anchor (the vectors in lint/tests/anchors.json hold both to it): the heading's text as the
+// host shows it — a code span as written, a link as its text, an image as nothing, underscore emphasis without
+// its underscores, an inline HTML tag's markup left out (another tag stays as text, as GitHub shows it) — then
+// lowercase, everything but letters, digits, `_`, `-` and spaces dropped, each space a hyphen. It is an entry's
+// id after its file (state.py) and a link into the host. A repeated heading's `-1` suffix is not reproduced.
+const INLINE_TAGS = new Set("a abbr b bdi bdo big br cite code del dfn em font i img ins kbd mark q rp rt ruby s samp small span strike strong sub sup time tt u var wbr".split(" "));
+function headingText(title) {
+  const plain = (part) => part
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/(?<![\p{L}\p{N}_])(__?)(?=\S)(.+?)(?<=\S)\1(?![\p{L}\p{N}_])/gu, "$2") // a word character as Python's \w: any letter or digit, not ASCII only
+    .replace(/<\/?([A-Za-z][A-Za-z0-9]*)(?:\s[^<>]*)?\/?>/g, (m, tag) => (INLINE_TAGS.has(tag.toLowerCase()) ? "" : m));
+  let out = "", pos = 0;
+  for (const m of String(title || "").matchAll(/(`+)(.+?)\1/g)) { out += plain(title.slice(pos, m.index)) + m[2]; pos = m.index + m[0].length; }
+  return out + plain(String(title || "").slice(pos));
+}
+const hostAnchor = (title) => headingText(title).trim().toLowerCase().replace(/[^\p{L}\p{N}_\- ]/gu, "").replace(/ /g, "-");
+const slug = hostAnchor; // the fallback id of an entry a state carries without one
+
+// The one place host URL grammar lives: a file (and heading anchor) of a
+// repository as its host renders it. Everything else in Keep the Why keeps
+// canonical + file + anchor apart and never bakes a host into a field.
+function hostFileLink(canonical, branch, contextDir, file, anchor) {
+  if (!canonical) return null;
+  const base = canonical.replace(/\/$/, "");
+  const ref = encodeURIComponent(branch && branch !== "HEAD" ? branch : "HEAD");
+  const path = `${contextDir ?? "context/"}${file}`; // "" is a file at the repository root, such as .keep-the-why
+  let seg;
+  if (/^https:\/\/gitlab\./.test(base) || /\/-\//.test(base)) seg = `/-/blob/${ref}/`;
+  else if (/^https:\/\/(codeberg\.org|gitea\.|forgejo\.)/.test(base)) seg = `/src/branch/${ref}/`;
+  else if (/^https:\/\/bitbucket\.org/.test(base)) seg = `/src/${ref}/`;
+  else seg = `/blob/${ref}/`; // GitHub and most GitHub-shaped forges
+  return `${base}${seg}${path}${anchor ? "#" + anchor : ""}`;
+}
+
+// A directory of the repository as its host lists it — the context directory
+// of a project, under its root in a mono repository. Same grammars as the file.
+function hostTreeLink(canonical, branch, dir) {
+  if (!canonical) return null;
+  const base = canonical.replace(/\/$/, "");
+  const ref = encodeURIComponent(branch && branch !== "HEAD" ? branch : "HEAD");
+  const path = String(dir || "").replace(/^\/+|\/+$/g, "");
+  let seg;
+  if (/^https:\/\/gitlab\./.test(base) || /\/-\//.test(base)) seg = `/-/tree/${ref}/`;
+  else if (/^https:\/\/(codeberg\.org|gitea\.|forgejo\.)/.test(base)) seg = `/src/branch/${ref}/`;
+  else if (/^https:\/\/bitbucket\.org/.test(base)) seg = `/src/${ref}/`;
+  else seg = `/tree/${ref}/`; // GitHub and most GitHub-shaped forges
+  return `${base}${seg}${path}`;
+}
+
+// The platform a repository lives on, read from its URL alone — one row per
+// platform, matched against the host name; the first match wins. A host no
+// row matches gets no mark: a self-hosted instance under its own name cannot
+// be told apart, and the page does not guess. New platforms come in as a row
+// here, by pull request. Marks: Simple Icons 16.34.0 (CC0), 24×24, one path
+// each, drawn in the text colour — nothing is fetched from the platforms.
+const HOSTS = [
+  { name: "GitHub", match: /^github\.com$/, path: "M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" },
+  { name: "GitLab", match: /^gitlab\./, path: "m23.6004 9.5927-.0337-.0862L20.3.9814a.851.851 0 0 0-.3362-.405.8748.8748 0 0 0-.9997.0539.8748.8748 0 0 0-.29.4399l-2.2055 6.748H7.5375l-2.2057-6.748a.8573.8573 0 0 0-.29-.4412.8748.8748 0 0 0-.9997-.0537.8585.8585 0 0 0-.3362.4049L.4332 9.5015l-.0325.0862a6.0657 6.0657 0 0 0 2.0119 7.0105l.0113.0087.03.0213 4.976 3.7264 2.462 1.8633 1.4995 1.1321a1.0085 1.0085 0 0 0 1.2197 0l1.4995-1.1321 2.4619-1.8633 5.006-3.7489.0125-.01a6.0682 6.0682 0 0 0 2.0094-7.003z" },
+  { name: "Codeberg", match: /^codeberg\.org$/, path: "M11.999.747A11.974 11.974 0 0 0 0 12.75c0 2.254.635 4.465 1.833 6.376L11.837 6.19c.072-.092.251-.092.323 0l4.178 5.402h-2.992l.065.239h3.113l.882 1.138h-3.674l.103.374h3.86l.777 1.003h-4.358l.135.483h4.593l.695.894h-5.038l.165.589h5.326l.609.785h-5.717l.182.65h6.038l.562.727h-6.397l.183.65h6.717A12.003 12.003 0 0 0 24 12.75 11.977 11.977 0 0 0 11.999.747zm3.654 19.104.182.65h5.326c.173-.204.353-.433.513-.65zm.385 1.377.18.65h3.563c.233-.198.485-.428.712-.65zm.383 1.377.182.648h1.203c.356-.204.685-.412 1.042-.648zz" },
+  { name: "Bitbucket", match: /^bitbucket\.org$/, path: "M.778 1.213a.768.768 0 00-.768.892l3.263 19.81c.084.5.515.868 1.022.873H19.95a.772.772 0 00.77-.646l3.27-20.03a.768.768 0 00-.768-.891zM14.52 15.53H9.522L8.17 8.466h7.561z" },
+  { name: "Gitea", match: /^gitea\./, path: "M4.209 4.603c-.247 0-.525.02-.84.088-.333.07-1.28.283-2.054 1.027C-.403 7.25.035 9.685.089 10.052c.065.446.263 1.687 1.21 2.768 1.749 2.141 5.513 2.092 5.513 2.092s.462 1.103 1.168 2.119c.955 1.263 1.936 2.248 2.89 2.367 2.406 0 7.212-.004 7.212-.004s.458.004 1.08-.394c.535-.324 1.013-.893 1.013-.893s.492-.527 1.18-1.73c.21-.37.385-.729.538-1.068 0 0 2.107-4.471 2.107-8.823-.042-1.318-.367-1.55-.443-1.627-.156-.156-.366-.153-.366-.153s-4.475.252-6.792.306c-.508.011-1.012.023-1.512.027v4.474l-.634-.301c0-1.39-.004-4.17-.004-4.17-1.107.016-3.405-.084-3.405-.084s-5.399-.27-5.987-.324c-.187-.011-.401-.032-.648-.032zm.354 1.832h.111s.271 2.269.6 3.597C5.549 11.147 6.22 13 6.22 13s-.996-.119-1.641-.348c-.99-.324-1.409-.714-1.409-.714s-.73-.511-1.096-1.52C1.444 8.73 2.021 7.7 2.021 7.7s.32-.859 1.47-1.145c.395-.106.863-.12 1.072-.12zm8.33 2.554c.26.003.509.127.509.127l.868.422-.529 1.075a.686.686 0 0 0-.614.359.685.685 0 0 0 .072.756l-.939 1.924a.69.69 0 0 0-.66.527.687.687 0 0 0 .347.763.686.686 0 0 0 .867-.206.688.688 0 0 0-.069-.882l.916-1.874a.667.667 0 0 0 .237-.02.657.657 0 0 0 .271-.137 8.826 8.826 0 0 1 1.016.512.761.761 0 0 1 .286.282c.073.21-.073.569-.073.569-.087.29-.702 1.55-.702 1.55a.692.692 0 0 0-.676.477.681.681 0 1 0 1.157-.252c.073-.141.141-.282.214-.431.19-.397.515-1.16.515-1.16.035-.066.218-.394.103-.814-.095-.435-.48-.638-.48-.638-.467-.301-1.116-.58-1.116-.58s0-.156-.042-.27a.688.688 0 0 0-.148-.241l.516-1.062 2.89 1.401s.48.218.583.619c.073.282-.019.534-.069.657-.24.587-2.1 4.317-2.1 4.317s-.232.554-.748.588a1.065 1.065 0 0 1-.393-.045l-.202-.08-4.31-2.1s-.417-.218-.49-.596c-.083-.31.104-.691.104-.691l2.073-4.272s.183-.37.466-.497a.855.855 0 0 1 .35-.077z" },
+  { name: "Forgejo", match: /^forgejo\./, path: "M16.7773 0c1.6018 0 2.9004 1.2986 2.9004 2.9005s-1.2986 2.9004-2.9004 2.9004c-1.0854 0-2.0315-.596-2.5288-1.4787H12.91c-2.3322 0-4.2272 1.8718-4.2649 4.195l-.0007 2.1175a7.0759 7.0759 0 0 1 4.148-1.4205l.1176-.001 1.3385.0002c.4973-.8827 1.4434-1.4788 2.5288-1.4788 1.6018 0 2.9004 1.2986 2.9004 2.9005s-1.2986 2.9004-2.9004 2.9004c-1.0854 0-2.0315-.596-2.5288-1.4787H12.91c-2.3322 0-4.2272 1.8718-4.2649 4.195l-.0007 2.319c.8827.4973 1.4788 1.4434 1.4788 2.5287 0 1.602-1.2986 2.9005-2.9005 2.9005-1.6018 0-2.9004-1.2986-2.9004-2.9005 0-1.0853.596-2.0314 1.4788-2.5287l-.0002-9.9831c0-3.887 3.1195-7.0453 6.9915-7.108l.1176-.001h1.3385C14.7458.5962 15.692 0 16.7773 0ZM7.2227 19.9052c-.6596 0-1.1943.5347-1.1943 1.1943s.5347 1.1943 1.1943 1.1943 1.1944-.5347 1.1944-1.1943-.5348-1.1943-1.1944-1.1943Zm9.5546-10.4644c-.6596 0-1.1944.5347-1.1944 1.1943s.5348 1.1943 1.1944 1.1943c.6596 0 1.1943-.5347 1.1943-1.1943s-.5347-1.1943-1.1943-1.1943Zm0-7.7346c-.6596 0-1.1944.5347-1.1944 1.1943s.5348 1.1943 1.1944 1.1943c.6596 0 1.1943-.5347 1.1943-1.1943s-.5347-1.1943-1.1943-1.1943Z" },
+];
+function hostOf(url) {
+  const m = String(url || "").trim().match(/^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?([^/:]+)/i);
+  if (!m) return null;
+  const host = m[1].toLowerCase();
+  return HOSTS.find((h) => h.match.test(host)) || null;
+}
+
+const canonicalOf = (p) => p?.canonical || (p?.git?.remote ? `https://${p.git.remote}` : "");
+
+// The owner of a repository, from its canonical URL or remote: everything before the repository's own name —
+// `github.com/acme` for github.com/acme/widget, `gitlab.com/acme/tools` for a GitLab subgroup. {key, label, url},
+// the key compared without case; null when the address names no owner (a host alone, a single path segment).
+function ownerOf(canonical) {
+  const r = String(canonical || "").trim().replace(/^[a-z+]+:\/\//i, "").replace(/^[^@/]+@/, "").replace(/^([^/:]+):(?!\d)/, "$1/").replace(/\.git$/, "").replace(/\/+$/, "");
+  const parts = r.split("/").filter(Boolean);
+  if (parts.length < 3) return null;
+  const owner = parts.slice(0, -1);
+  return { key: owner.join("/").toLowerCase(), label: owner.slice(1).join("/"), url: `https://${owner.join("/")}` };
+}
+
+// `owner/repo` from canonical, else the remote; without either, the id — `project_label` in export.py
+function projectLabel(p) {
+  const r = (p?.canonical || p?.git?.remote || "").trim().replace(/^[a-z+]+:\/\//, "").replace(/^[^@/]+@/, "").replace(/^([^/:]+):/, "$1/").replace(/\/+$/, "").replace(/\.git$/, "");
+  const i = r.indexOf("/");
+  return (i > 0 && r.slice(i + 1)) || p?.id || p?.name || "";
+}
+
+// an entry's references to other entries — its See lines and its Superseded by — each with the Id it names, the
+// repository when it is another one (remote), and its kind
+const entryRefs = (e) => [...(e.see || []).map((x) => x && { uuid: x.uuid, remote: x.remote, kind: "see" }), e.superseded_by ? { ...parseSupersededBy(e.superseded_by), kind: "superseded" } : null].filter((x) => x?.uuid);
+
+function parseSupersededBy(value) {
+  if (!value) return null;
+  const v = value.trim();
+  if (isUuid(v)) return { uuid: v };
+  const m = v.match(/^(\S+)\s+[—–-]\s+([0-9a-f-]{36})\s+[—–-]\s+as of\s+(\d{4}-\d{2}-\d{2})$/);
+  if (m) return { remote: m[1].startsWith("https://") ? m[1] : null, file: m[1].startsWith("https://") ? null : m[1].split("#")[0], locator: m[1], uuid: m[2], date: m[3] };
+  const n = v.match(/^none\s*[—–-]\s*(.*)$/);
+  if (n) return { none: n[1] };
+  return { text: v };
+}
+
+// A Type value as a name: `undefined — <reason>` is counted and shown as
+// `undefined`; the reason stays on the entry (the pill's tooltip, the details pane).
+const typeName = (t) => String(t ?? "").split(/\s+[—–-]\s+/)[0].trim();
+
+const kindLabel = (k) => k === "cache" ? "cache, read only" : k === "repository" ? "repository, read and write" : k === "public" ? "published export" : "not available here";
+
+// A family member's place among its siblings: this project first, the ancestors from the top, then
+// parent, siblings, children and the rest of the tree.
+const familyRank = (m) => (m.role === "self" ? -100 : m.role === "ancestor" || m.role === "grandparent" ? -(m.depth || 2) : { parent: 0, sibling: 2, child: 3, relative: 4 }[m.role] ?? 5);
+
+// A family tree in reading order, as [member, depth]: every member under the
+// one whose children block lists it (`up` names that member's `node`), the
+// root first, siblings by rank, then by name. For the Family view's rows and
+// an export's project menu alike; a cycle drops no row.
+function familyOrder(members) {
+  const ids = new Set(members.map((m) => m.node));
+  const kids = new Map(); const roots = [];
+  for (const m of members) {
+    if (m.up && ids.has(m.up) && m.up !== m.node) { if (!kids.has(m.up)) kids.set(m.up, []); kids.get(m.up).push(m); }
+    else roots.push(m);
+  }
+  const out = []; const seen = new Set();
+  const walk = (m, d) => {
+    if (seen.has(m.node)) return; seen.add(m.node);
+    out.push([m, d]);
+    for (const c of (kids.get(m.node) || []).sort((a, b) => familyRank(a) - familyRank(b) || String(a.name).localeCompare(String(b.name)))) walk(c, d + 1);
+  };
+  for (const r of roots) walk(r, 0);
+  for (const m of members) walk(m, 0);
+  return out;
+}
+
+// Families in a project list: every row with its depth, a parent first and
+// its children under it. A child names its parent by canonical (the parent's
+// working tree wins over its cache) or by a path relative to its own
+// directory; a row whose parent is not in the list is a root.
+function groupByFamily(list) {
+  const parentOf = (p) => {
+    if (!p.parent || !p.path) return null;
+    if (p.parent.startsWith("https://")) return list.find((x) => x.path && x.canonical === p.parent && x.kind === "repository") || list.find((x) => x.path && x.canonical === p.parent) || null;
+    const abs = new URL(p.parent + "/", "file://" + p.path.replace(/\/?$/, "/")).pathname.replace(/\/$/, "");
+    return list.find((x) => x.path === abs) || null;
+  };
+  const kids = new Map(); const tops = [];
+  for (const p of list) { const par = parentOf(p); if (par && par.key !== p.key) { if (!kids.has(par.key)) kids.set(par.key, []); kids.get(par.key).push(p); } else tops.push(p); }
+  const flat = []; const seen = new Set();
+  const walk = (p, d) => { if (seen.has(p.key)) return; seen.add(p.key); flat.push([p, d]); for (const c of kids.get(p.key) || []) walk(c, d + 1); };
+  for (const p of tops) walk(p, 0);
+  for (const p of list) walk(p, 0); // a cycle would otherwise drop rows
+  return flat;
+}
+
+// A list in random order, the input untouched (Fisher–Yates). `rnd` returns [0, 1), Math.random by default.
+function shuffled(list, rnd = Math.random) {
+  const out = [...list];
+  for (let i = out.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [out[i], out[j]] = [out[j], out[i]]; }
+  return out;
+}
+
+// Search. A query is a set of terms, all of which must occur somewhere in the
+// entry: its title, body, Revisit when, Source, Id, file, type, status or
+// evidence. The hit says how strong it is (terms in the title, occurrences in
+// total) and where the snippet comes from: the first field after the title
+// that carries a term, or the title when no other field does.
+const searchTerms = (query) => String(query || "").toLowerCase().split(/\s+/).filter(Boolean);
+// Projects of the registry's index that a query names: every term somewhere in the name, the canonical URL
+// or the id. Name hits first, then by name — the list is short (the index is one file), the order is for the eye.
+function registryMatches(projects, query) {
+  const terms = searchTerms(query);
+  if (!terms.length) return [];
+  const rows = [];
+  for (const p of projects || []) {
+    const name = String(p.name || "").toLowerCase(); const url = String(p.canonical || "").toLowerCase(); const id = String(p.id || "").toLowerCase();
+    if (!terms.every((t) => name.includes(t) || url.includes(t) || id.includes(t))) continue;
+    rows.push({ p, inName: terms.filter((t) => name.includes(t)).length });
+  }
+  return rows.sort((a, b) => b.inName - a.inName || String(a.p.name || "").localeCompare(String(b.p.name || ""))).map((r) => r.p);
+}
+// the body without its field lines: those are searched as their own fields
+const FIELD_LINE = /^\*\*(Id|Type|Status|Evidence|Source|Verification|Revisit when|See|Superseded by):\*\*/;
+const bodyProse = (text) => String(text || "").split("\n").filter((l) => !FIELD_LINE.test(l.trim())).join("\n").trim();
+function searchHit(e, query) {
+  const terms = searchTerms(query);
+  if (!terms.length) return null;
+  const fields = [["title", e.title || ""], ["body", bodyProse(e.body?.text)], ["revisit when", e.revisit_when || ""], ["source", e.source || ""],
+    ["verification", e.verification || ""], ["superseded by", e.superseded_by || ""],
+    ["id", e.uuid || ""], ["file", e.file || ""], ["type", (e.type || []).join(" ")], ["status", e.status || ""], ["evidence", e.evidence || ""]]
+    .map(([name, text]) => ({ name, text, low: text.toLowerCase() }));
+  if (!terms.every((t) => fields.some((f) => f.low.includes(t)))) return null;
+  let count = 0;
+  for (const t of terms) for (const f of fields) for (let i = f.low.indexOf(t); i >= 0; i = f.low.indexOf(t, i + t.length)) count++;
+  const inTitle = terms.filter((t) => fields[0].low.includes(t)).length;
+  let where = null;
+  for (const f of [...fields.slice(1), fields[0]]) {
+    const at = terms.map((t) => [f.low.indexOf(t), t]).filter(([i]) => i >= 0).sort((a, b) => a[0] - b[0])[0];
+    if (at) { where = { field: f.name, text: f.text, i: at[0], len: at[1].length }; break; }
+  }
+  return { terms, count, inTitle, where };
+}
+// best first: more terms in the title, then more occurrences
+const compareHits = (a, b) => (b.inTitle - a.inTitle) || (b.count - a.count);
+// the text around a hit, whitespace collapsed, cut marks where it was cut
+function snippetAt(text, i, len, before = 60, after = 160) {
+  const from = Math.max(0, i - before); const to = Math.min(text.length, i + len + after);
+  return (from > 0 ? "…" : "") + text.slice(from, to).replace(/\s+/g, " ").trim() + (to < text.length ? "…" : "");
+}
+// HTML-escaped text with every term marked, case-insensitively
+// a text cut where search terms match, longest term first, case-insensitive:
+// [{ text, mark }] — the page makes a <mark> of each marked part, text of the rest
+function highlightParts(text, terms) {
+  const ts = (terms || []).filter(Boolean);
+  const s = String(text ?? "");
+  if (!ts.length) return s ? [{ text: s, mark: false }] : [];
+  const re = new RegExp([...ts].sort((a, b) => b.length - a.length).map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "gi");
+  const out = []; let at = 0;
+  for (const m of s.matchAll(re)) { if (m.index > at) out.push({ text: s.slice(at, m.index), mark: false }); out.push({ text: m[0], mark: true }); at = m.index + m[0].length; }
+  if (at < s.length) out.push({ text: s.slice(at), mark: false });
+  return out;
+}
+
+// A published export, judged by what it says — the provider fetches, this decides what came back.
+// Two addresses name the same repository whatever their case and trailing slashes.
+const sameCanonical = (a, b) => String(a || "").replace(/\/+$/, "").toLowerCase() === String(b || "").replace(/\/+$/, "").toLowerCase();
+// From a repository's published .keep-the-why: the address of its export, or why there is none.
+function exportStateUrl(configText, raw) {
+  const url = configLine(String(configText ?? ""), "dashboard-state");
+  if (!url) return { error: `no dashboard-state line in the published .keep-the-why (${raw}) — this project has no published export yet`, missingLine: true };
+  if (!/^https:\/\//.test(url)) return { error: `dashboard-state is not an https URL: ${url}` };
+  return { url };
+}
+// An export fetched for `canonical`: shown as that repository, as a fork of the one it names, or refused.
+// A fork's export was made in a checkout whose origin is the cited repository, and declares the
+// repository it was forked from as its canonical; an export that claims another repository otherwise
+// is not shown as this one.
+function exportVerdict(state, canonical, url) {
+  const claimed = state?.project?.canonical;
+  const origin = state?.project?.git?.remote ? `https://${state.project.git.remote}` : "";
+  if (claimed && !sameCanonical(claimed, canonical) && origin && sameCanonical(origin, canonical)) return { forkOf: claimed };
+  if (claimed && !sameCanonical(claimed, canonical)) return { error: `the export at ${url} belongs to ${claimed}, not to ${canonical}` };
+  return {};
+}
+// A See into another repository, resolved the way the page shows it: the project the live server knows
+// carries the Id first (`known`, a provider resolveEntry result, absent outside live mode), else the
+// repository's published export (`published`, a provider exportState result). Returns { entry, via } —
+// via "live" or "export", the host makes the link — or { error } with the reason to show.
+function resolveSee(uuid, { known = null, published = null } = {}) {
+  if (known && !known.error) return { entry: known.entry || {}, via: "live", project: known.project };
+  if (!published) return { error: "not known here, and no published export was asked for" };
+  if (!published.state) return { error: published.error || "its published export could not be read" }; // a host's result with neither is still a failure
+  const entry = (published.state.entries || []).find((e) => e.uuid === uuid);
+  if (!entry) return { error: `its published export (generated ${published.state.generated || "?"}) has no entry with this Id — the reference may be newer than the export, or the entry lives below the repository's top level` };
+  return { entry, via: "export" };
+}
+// A family location as the published side reads it: an https URL is another
+// repository (its own root), a relative path is a directory in the same
+// repository, resolved against the root the location was read from.
+function resolveLocation(location, canonical, root = "") {
+  if (!location) return null;
+  if (/^https:\/\//.test(location)) return { canonical: location.replace(/\/+$/, ""), root: "" };
+  if (!canonical) return null;
+  const parts = [];
+  for (const seg of `${root}/${location}`.split("/")) {
+    if (!seg || seg === ".") continue;
+    if (seg === "..") { if (!parts.length) return null; parts.pop(); } else parts.push(seg);
+  }
+  return { canonical, root: parts.join("/") };
+}
+
+// Friends: the repositories that `entries` cite by a cross-project See or
+// Superseded by, minus the canonicals in `exclude` (this project, its
+// family). One row per repository with the Ids cited there, sorted by
+// canonical. Derived from the entries alone — nothing is fetched here.
+// The registry's backlink file for a repository: `<registry>/backlinks/<host>/<owner>/<repo>.json`,
+// lowercase — the path the registry build writes (tools/registry/build.py, backlink_path), so only for
+// a URL of exactly three plain segments; anything else has no file, and null says so.
+function backlinksUrl(registryIndexUrl, canonical) {
+  const m = String(canonical || "").trim().replace(/\/+$/, "").replace(/\.git$/, "").match(/^https:\/\/([^/]+)\/([^/]+)\/([^/]+)$/);
+  if (!m) return null;
+  const parts = m.slice(1).map((x) => x.toLowerCase());
+  if (parts.some((x) => !/^[a-z0-9._-]+$/.test(x) || x === "." || x === "..")) return null;
+  return `${String(registryIndexUrl).replace(/[^/]*$/, "")}backlinks/${parts.join("/")}.json`;
+}
+// Who cites this project, from a backlink file: one item per citing repository — its canonical and the Ids
+// of its entries that cite here — in the friends' shape, so it loads and draws like one. Only citations of
+// an Id this project holds count (a repository's file covers every project in it; a cited entry may be gone);
+// the rest is counted apart. Repositories in `exclude` (this project, its family) are drawn already.
+function citingOf(file, ownUuids, exclude = []) {
+  const norm = (c) => String(c || "").replace(/\/+$/, "").toLowerCase();
+  const skip = new Set(exclude.filter(Boolean).map(norm));
+  const own = new Set(ownUuids || []);
+  const out = new Map(); let elsewhere = 0;
+  for (const c of (file && Array.isArray(file.cited_by) ? file.cited_by : [])) {
+    if (!c || typeof c.from !== "string" || !c.from.startsWith("https://") || !c.entry || skip.has(norm(c.from))) continue;
+    if (!own.has(c.to)) { elsewhere++; continue; }
+    const k = norm(c.from);
+    if (!out.has(k)) out.set(k, { canonical: c.from.replace(/\/+$/, ""), uuids: [] });
+    const f = out.get(k); if (!f.uuids.includes(c.entry)) f.uuids.push(c.entry);
+  }
+  return { citing: [...out.values()].sort((a, b) => norm(a.canonical).localeCompare(norm(b.canonical))), elsewhere };
+}
+function friendsOf(entries, exclude = []) {
+  const norm = (c) => String(c || "").replace(/\/+$/, "").toLowerCase();
+  const skip = new Set(exclude.filter(Boolean).map(norm));
+  const out = new Map();
+  const add = (canonical, uuid) => {
+    if (!canonical || !uuid || skip.has(norm(canonical))) return;
+    const k = norm(canonical);
+    if (!out.has(k)) out.set(k, { canonical: String(canonical).replace(/\/+$/, ""), uuids: [] });
+    const f = out.get(k); if (!f.uuids.includes(uuid)) f.uuids.push(uuid);
+  };
+  for (const e of entries || []) {
+    for (const r of e.see || []) if (r?.remote) add(r.remote, r.uuid);
+    const s = e.superseded_by ? parseSupersededBy(e.superseded_by) : null;
+    if (s?.remote) add(s.remote, s.uuid);
+  }
+  return [...out.values()].sort((a, b) => a.canonical.localeCompare(b.canonical));
+}
+
+// Thoughts: chains of linked entries through the graph. `edges` are [from, to]
+// pairs of entry ids, one per See or Superseded by: `from` cites `to`, so
+// `to` came first. A thought is a
+// longest chain of such citations with at least `min` entries, returned in
+// reading order (origin first), never a part of a longer one. Enumeration
+// stops at `cap` chains, so a dense web cannot hang the page.
+function thoughtsOf(edges, min = 4, cap = 2000) {
+  const out = new Map();
+  for (const [a, b] of edges) { if (a === b) continue; if (!out.has(a)) out.set(a, new Set()); out.get(a).add(b); }
+  const cited = new Set(edges.map(([, b]) => b));
+  const found = []; let budget = cap;
+  const walk = (n, path, seen) => {
+    if (budget <= 0) return;
+    let longer = false;
+    for (const m of out.get(n) || []) if (!seen.has(m)) { longer = true; seen.add(m); path.push(m); walk(m, path, seen); path.pop(); seen.delete(m); }
+    if (!longer && path.length >= min) { found.push([...path].reverse()); budget--; }
+  };
+  // start where nothing cites the entry (the newest end); a web that is all cycles starts everywhere
+  const starts = [...out.keys()].filter((n) => !cited.has(n));
+  for (const n of starts.length ? starts : [...out.keys()]) walk(n, [n], new Set([n]));
+  const key = (p) => "\u0000" + p.join("\u0000") + "\u0000";
+  const keys = found.map(key);
+  const kept = found.filter((p, i) => !keys.some((k, j) => j !== i && k.length > keys[i].length && k.includes(keys[i])));
+  const uniq = [...new Map(kept.map((p) => [key(p), p])).values()];
+  return uniq.sort((a, b) => b.length - a.length || a.join().localeCompare(b.join()));
+}
+
+// A chain's first entry, its steps in question, and how it grew. `steps` are its entries in reading
+// order (origin first), `kinds[i]` the link from step i to step i + 1 ("see":
+// the later cites the earlier; "superseded": the later replaced it).
+// - weakOrigin: the first entry's Evidence when it is `inferred` or `unknown`
+//   — where later entries depend on it, they depend on an unconfirmed reason;
+// - shaky: steps in question that later ones are linked after — open,
+//   needs-review, pending-confirmation — or superseded yet still cited (a See
+//   to a replaced decision; a Superseded by is how an evolution goes on);
+// - affected: every step after the first shaky one — linked after it, not
+//   necessarily depending on it (a See says related, not always follows from);
+// - from, to: the first and last day a step was created (Git), when known.
+const SHAKY = ["open", "needs-review", "pending-confirmation"];
+function thoughtInsights(steps, kinds = []) {
+  const weakOrigin = ["inferred", "unknown"].includes(steps[0]?.evidence) ? steps[0].evidence : null;
+  const shaky = [];
+  steps.forEach((e, i) => {
+    if (SHAKY.includes(e?.status)) shaky.push({ i, why: e.status });
+    else if (e?.status === "superseded" && i < steps.length - 1 && kinds[i] === "see") shaky.push({ i, why: "superseded, still cited" });
+  });
+  const affected = shaky.length ? steps.map((_, i) => i).filter((i) => i > shaky[0].i) : [];
+  const days = steps.map((e) => e?.git?.created?.date || "").filter(Boolean).sort();
+  return { weakOrigin, shaky, affected, from: days[0] || "", to: days[days.length - 1] || "" };
+}
+
+// The family graph's structure. `groups` are the projects in it, each
+// { key, canonical, root, role, state }. Returns
+//   parentOf: key -> the key of the project its parent line names (when that
+//             project is in the graph), from canonical and root; the roles
+//             self/parent/child are the fallback when a canonical is missing
+//   xrefs:    every See and Superseded by between two entries in the graph,
+//             across projects or within one, found by Id
+function linkFamily(groups) {
+  const norm = (c) => String(c || "").replace(/\.git$/, "").replace(/\/+$/, "");
+  const at = new Map(groups.filter((g) => g.canonical).map((g) => [`${norm(g.canonical)}|${g.root || ""}`, g.key]));
+  const parentOf = {};
+  for (const g of groups) {
+    const p = g.state?.project?.parent;
+    if (!p) continue;
+    const loc = resolveLocation(p, norm(g.canonical), g.root || "");
+    const hit = loc ? at.get(`${norm(loc.canonical)}|${loc.root}`) : undefined;
+    if (hit && hit !== g.key) parentOf[g.key] = hit;
+  }
+  const self = groups.find((g) => g.role === "self");
+  const parent = groups.find((g) => g.role === "parent");
+  if (self && parent && !parentOf[self.key]) parentOf[self.key] = parent.key;
+  if (self) for (const g of groups) if (g.role === "child" && !parentOf[g.key]) parentOf[g.key] = self.key;
+  const byUuid = new Map();
+  for (const g of groups) for (const e of g.state?.entries || []) if (e.uuid) byUuid.set(e.uuid, { key: g.key, id: e.id });
+  const xrefs = []; const seen = new Set();
+  const push = (from, uuid, kind) => {
+    const to = uuid && byUuid.get(uuid);
+    if (!to || (to.key === from.key && to.id === from.id)) return;
+    const k = `${from.key}|${from.id}|${to.key}|${to.id}|${kind}`;
+    if (seen.has(k)) return; seen.add(k);
+    xrefs.push({ from, to, kind });
+  };
+  for (const g of groups) for (const e of g.state?.entries || []) {
+    const from = { key: g.key, id: e.id };
+    for (const r of e.see || []) push(from, r?.uuid, "see");
+    if (e.superseded_by) push(from, parseSupersededBy(e.superseded_by)?.uuid, "superseded");
+  }
+  return { parentOf, xrefs };
+}
+
+// A Git author's profile on the host, looked up from one of their commits:
+// the host's API names the account behind a commit, which the name and email
+// in Git do not. Returns { api, pick(json) -> profile URL | null, fallback }
+// — the fallback is the commit's own page, where the host links the author.
+// null when the canonical names no host this knows or there is no commit.
+function authorLookup(canonical, sha) {
+  const m = String(canonical || "").replace(/\.git$/, "").replace(/\/+$/, "").match(/^https:\/\/([^/]+)\/(.+?)\/([^/]+)$/);
+  if (!m || !sha || !/^[0-9a-f]{4,40}$/.test(sha)) return null;
+  const [, host, owner, repo] = m;
+  const base = `https://${host}/${owner}/${repo}`;
+  if (host === "github.com") return { api: `https://api.github.com/repos/${owner}/${repo}/commits/${sha}`, pick: (j) => j?.author?.html_url || null, fallback: `${base}/commit/${sha}` };
+  if (host === "bitbucket.org") return { api: `https://api.bitbucket.org/2.0/repositories/${owner}/${repo}/commit/${sha}`, pick: (j) => j?.author?.user?.links?.html?.href || null, fallback: `${base}/commits/${sha}` };
+  if (/^gitlab\./.test(host)) return { api: null, pick: () => null, fallback: `${base}/-/commit/${sha}` }; // GitLab's commit API names no account
+  return { api: `https://${host}/api/v1/repos/${owner}/${repo}/git/commits/${sha}`, pick: (j) => (j?.author?.login ? `https://${host}/${j.author.login}` : null), fallback: `${base}/commit/${sha}` }; // Codeberg, Gitea, Forgejo
+}
+
+// The family as one state: every member's topics and entries, authors and
+// linter findings in one document the page renders like a single project.
+// `groups` are [{ member, state }], this project first; its files and ids
+// keep their names, a member's are prefixed with the member's name, so the
+// same `history.md` in two projects stays two topics. Every topic and entry
+// carries `project` (null for this project) and `origin` (its group).
+function mergeStates(groups) {
+  const self = groups[0]?.state || {};
+  const pre = (P, f) => (P ? `${P}/${f}` : f);
+  const out = { ...self, merged: true, family: groups.map((G) => ({ name: G.member.name, role: G.member.role, project: G.member.role === "self" ? null : G.member.name })), topics: [], entries: [], authors: [], findings: { errors: 0, warnings: 0, items: [] } };
+  const authors = new Map();
+  for (const G of groups) {
+    const st = G.state || {}; const P = G.member.role === "self" ? null : G.member.name;
+    for (const t of st.topics || []) out.topics.push({ ...t, file: pre(P, t.file), refs_out: (t.refs_out || []).map((f) => pre(P, f)), refs_in: (t.refs_in || []).map((f) => pre(P, f)), project: P, origin: G, localFile: t.file });
+    for (const e of st.entries || []) out.entries.push({ ...e, id: pre(P, e.id), file: pre(P, e.file), refs: (e.refs || []).map((f) => pre(P, f)), project: P, origin: G, localId: e.id, localFile: e.file });
+    for (const a of st.authors || []) {
+      const cur = authors.get(a.name);
+      if (!cur) { authors.set(a.name, { ...a, evidence: { ...(a.evidence || {}) }, projects: [P] }); continue; }
+      for (const k of ["created", "touched", "superseded"]) cur[k] = (cur[k] || 0) + (a[k] || 0);
+      for (const [k, v] of Object.entries(a.evidence || {})) cur.evidence[k] = (cur.evidence[k] || 0) + v;
+      if (a.first && (!cur.first || a.first < cur.first)) cur.first = a.first;
+      if (a.last && (!cur.last || a.last > cur.last)) cur.last = a.last;
+      cur.projects.push(P);
+    }
+    const f = st.findings || {};
+    out.findings.errors += f.errors || 0; out.findings.warnings += f.warnings || 0;
+    for (const x of f.items || []) out.findings.items.push({ ...x, path: pre(P, x.path), project: P, localPath: x.path });
+  }
+  out.authors = [...authors.values()].sort((a, b) => (b.created || 0) - (a.created || 0) || String(a.name).localeCompare(String(b.name)));
+  out.anonymized = groups.some((G) => G.state?.anonymized);
+  return out;
+}
+
+// The clock: what the project looked like on a day. Every date is a Git
+// date, `YYYY-MM-DD`, or — from an export that carries Git's `time` beside
+// the day — the moment, `YYYY-MM-DDTHH:MM:SSZ`; comparing the strings
+// compares them, a bare day standing for its first moment. An entry
+// exists from the day its heading first appeared in Git; its status on a day
+// is the last status change up to that day; a See exists from its `as of`
+// day (never before the citing entry), a Superseded by from the day the old
+// entry's status became superseded. An entry not yet committed has no
+// date — whether Git knows the file and not the entry, or not the file at
+// all — it exists today only; `repo` false (a project without a repository)
+// means there are no days to go by and everything simply is. Without a
+// clock (null) everything is as it is.
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const nowISO = () => isoAt(Date.now());
+const isMoment = (s) => typeof s === "string" && s.length > 10;
+const msOf = (s) => Date.parse(isMoment(s) ? s : `${s}T00:00:00Z`);
+const isoAt = (ms) => new Date(ms).toISOString().replace(/\.\d+Z$/, "Z");
+// a day stays a day, a moment a moment; between two days whole days, otherwise the fraction
+const addDays = (iso, n) => { if (isMoment(iso)) return isoAt(msOf(iso) + n * 86400000); const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const dayDiff = (a, b) => { const d = (msOf(b) - msOf(a)) / 86400000; return isMoment(a) || isMoment(b) ? d : Math.round(d); };
+const when = (x) => x?.time || x?.date || "";
+const createdOn = (e) => when(e?.git?.created);
+function existsAt(e, day, repo = true) {
+  if (!day || !repo) return true;
+  const c = createdOn(e);
+  return c ? c <= day : day >= todayISO();
+}
+function statusAt(e, day, repo = true) {
+  if (!day || !e?.git) return e?.status;
+  const h = (e.git.status_history || []).filter((x) => when(x) && when(x) <= day);
+  if (h.length) return h[h.length - 1].status;
+  return existsAt(e, day, repo) ? e.status : null;
+}
+// the day a link came to be: a See from `from`'s reference `ref`, a Superseded by from the old entry `from`
+function seeDay(from, ref) { const c = createdOn(from); const d = ref?.date || ""; return d && c ? (d > c ? d : c) : d || c; }
+function supersededDay(from) {
+  const h = (from?.git?.status_history || []).find((x) => x.status === "superseded" && when(x));
+  return when(h) || when(from?.git?.last_touched) || createdOn(from);
+}
+const linkExistsAt = (day, linkDay) => !day || !linkDay || linkDay <= day;
+// the first and last day the entries span: the earliest creation, today — or, when the entries carry Git's moments,
+// the earliest moment and now; `timed` says which
+function daySpan(entries) {
+  const days = entries.map(createdOn).filter(Boolean).sort();
+  if (!days.length) return null;
+  const timed = days.some(isMoment);
+  return timed ? { from: isMoment(days[0]) ? days[0] : `${days[0]}T00:00:00Z`, to: nowISO(), timed } : { from: days[0], to: todayISO(), timed };
+}
+// the timeline's grid: the step a playhead moves by — an hour when the moments span two weeks or less, else a day —
+// and the moment each step shows, its last second (what existed by then), never past the span's end. Without moments
+// the steps are the days themselves, as before.
+function timeGrid(span) {
+  if (!span?.timed) return { unit: 1, hours: false, steps: Math.max(1, dayDiff(span.from, span.to)), at: (k) => addDays(span.from, k), stepOf: (d) => dayDiff(span.from, d), toClock: (d) => d, label: (d) => d, url: (d) => d };
+  const hours = dayDiff(span.from, span.to) <= 14; const U = (hours ? 3600 : 86400) * 1000; const g0 = Math.floor(msOf(span.from) / U) * U; const end = msOf(span.to);
+  const at = (k) => isoAt(Math.min(g0 + (k + 1) * U - 1000, end));
+  const stepOf = (d) => Math.max(0, Math.floor((msOf(d) - g0) / U));
+  // an hour's step shows as its start, a moment off the grid (the entry speed stops on one) as itself
+  const label = (d) => { if (!hours) return d.slice(0, 10); const ms = msOf(d); return stampLabel(isoAt((ms + 1000) % U === 0 ? ms + 1000 - U : ms)); };
+  return { unit: U / 86400000, hours, steps: Math.max(1, stepOf(span.to)), at, stepOf, label,
+    toClock: (d) => (!d ? d : d.length === 10 ? `${d}T23:59:59Z` : d.length === 13 ? `${d}:59:59Z` : d), // a bare day or hour: all of it
+    url: (d) => (hours ? d.slice(0, 13) : d.slice(0, 10)) };
+}
+// a moment for a person: the day, and the time of day in the reader's zone when there is one
+function stampLabel(d) {
+  if (!isMoment(d)) return d || "";
+  const t = new Date(msOf(d)); const pad = (n) => String(n).padStart(2, "0");
+  return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())} ${pad(t.getHours())}:${pad(t.getMinutes())}`;
+}
+
+// ---------------------------------------------------------------- the stage (timeline)
+// The scene the stage draws, built from the graph's entry nodes: a card per entry, the links between cards by Id,
+// which foreign cards a chain of links joins to this project's, and the lanes by topic. Pure — nodes in, a scene
+// out — so it can be tested without a canvas. A node is { id, entry, ext?, fam?, proj?, href?, state? } as the
+// graph builds it; `ext` marks a friend's or the path's entry, `fam` a family member's.
+const TYPE_KINDS = ["decision", "constraint", "workaround", "incident"];
+// colours are CSS custom properties the host defines (style.css :root); the pure part names them only
+const TYPE_TOKENS = { decision: "--ktw-type-decision", constraint: "--ktw-type-constraint", workaround: "--ktw-type-workaround", incident: "--ktw-type-incident" };
+const PALETTE_SIZE = 10;
+const paletteToken = (i) => `--ktw-palette-${((Math.trunc(i) % PALETTE_SIZE) + PALETTE_SIZE) % PALETTE_SIZE}`;
+// Every token the views read, with the value a host that sets none gets: the dashboard's dark theme. ktw-views.css
+// carries the same values as its var() fallbacks, the dashboard's style.css as its literals (test_views.py holds
+// the three equal). readToken reads one from a computed style, falling back here, so a canvas is never drawn in "".
+const TOKEN_DEFAULTS = Object.freeze({
+  "--ktw-bg": "#1e1e22",
+  "--ktw-surface": "#26262b",
+  "--ktw-surface2": "#2f2f36",
+  "--ktw-line": "#3a3a43",
+  "--ktw-fg": "#dcdce3",
+  "--ktw-fg2": "#a2a2ad",
+  "--ktw-fg3": "#6f6f7a",
+  "--ktw-accent": "#835bec",
+  "--ktw-accent2": "#a98cf5",
+  "--ktw-ok": "#4fbf7a",
+  "--ktw-warn": "#e0a83a",
+  "--ktw-bad": "#e0574f",
+  "--ktw-info": "#4aa3df",
+  "--ktw-muted": "#8b8b98",
+  "--ktw-confirmed": "#4fbf7a",
+  "--ktw-inferred": "#e0a83a",
+  "--ktw-unknown": "#e0574f",
+  "--ktw-status-active": "#835bec",
+  "--ktw-status-superseded": "#6f6f7a",
+  "--ktw-status-open": "#4aa3df",
+  "--ktw-status-needs-review": "#e0a83a",
+  "--ktw-status-pending-confirmation": "#d66fd6",
+  "--ktw-radius": "8px",
+  "--ktw-font": "-apple-system, \"Segoe UI\", Inter, Roboto, \"Helvetica Neue\", sans-serif",
+  "--ktw-mono": "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+  "--ktw-type-decision": "#835bec",
+  "--ktw-type-constraint": "#4aa3df",
+  "--ktw-type-workaround": "#e0a83a",
+  "--ktw-type-incident": "#e0574f",
+  "--ktw-palette-0": "#835bec",
+  "--ktw-palette-1": "#4aa3df",
+  "--ktw-palette-2": "#4fbf7a",
+  "--ktw-palette-3": "#e0a83a",
+  "--ktw-palette-4": "#e0574f",
+  "--ktw-palette-5": "#d66fd6",
+  "--ktw-palette-6": "#3fbfbf",
+  "--ktw-palette-7": "#b0b04a",
+  "--ktw-palette-8": "#ff8c5a",
+  "--ktw-palette-9": "#8b8b98",
+});
+const readToken = (style, name) => style.getPropertyValue(name).trim() || TOKEN_DEFAULTS[name] || "";
+// a Status or an Evidence value as a CSS colour: var(--ktw-status-open, …), var(--ktw-confirmed, …)
+const valueColor = (v) => { const t = TOKEN_DEFAULTS[`--ktw-status-${v}`] ? `--ktw-status-${v}` : `--ktw-${v}`; return `var(${t}, ${TOKEN_DEFAULTS[t] || "currentColor"})`; };
+// the first of the four kinds an entry's Type names; null when none
+const typeKind = (e) => (e.type || []).map((t) => typeName(t)).find((t) => TYPE_KINDS.includes(t)) || null;
+// the Monday that starts the week of a day
+const weekStart = (day) => { const d = new Date(`${day.slice(0, 10)}T00:00:00Z`); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return d.toISOString().slice(0, 10); };
+const SHELF = [-0.3, 1.0]; // the rows' base height on the lower and the upper shelf, in plane units
+
+// a card per entry node; a foreign card (a friend's, a family member's) knows its repository and its export's state
+function stageCards(entryNodes, { today, selfState = null }) {
+  const cards = []; const byId = {};
+  for (const n of entryNodes) {
+    const e = n.entry; if (!e) continue;
+    const foreign = !!(n.ext || n.fam); const proj = foreign ? (n.proj || "") : (e.project || "");
+    const c = { e, nid: n.id, ext: foreign, href: n.href, state: foreign ? n.state : selfState, proj, laneKey: `${proj}|${e.file}`, day: createdOn(e) || today, x: 0, y: 0, dz: 0, ox: 0, oy: 0, lane: null, linked: !foreign };
+    cards.push(c); if (!foreign) byId[e.id] = c; if (e.uuid) byId[e.uuid] = c;
+  }
+  return { cards, byId };
+}
+// the links between cards: a See from its as-of day, a Superseded by from the day the old entry's status changed
+function stageLinks(cards, byId) {
+  const links = [];
+  for (const c of cards) {
+    for (const r of c.e.see || []) { const t = r?.uuid && byId[r.uuid]; if (t && t !== c) links.push({ a: c, b: t, kind: "see", day: seeDay(c.e, r) }); }
+    const sb = c.e.superseded_by ? parseSupersededBy(c.e.superseded_by)?.uuid : null; const t = sb && byId[sb]; if (t && t !== c) links.push({ a: c, b: t, kind: "superseded", day: supersededDay(c.e) });
+  }
+  return links;
+}
+// `linked` on every card: this project's always; a foreign one when a chain of links, in either direction, joins it to ours
+function markLinked(cards, links) {
+  const adj = new Map(); const add = (a, b) => { (adj.get(a) || adj.set(a, []).get(a)).push(b); };
+  for (const l of links) { add(l.a, l.b); add(l.b, l.a); }
+  const seen = new Set(cards.filter((c) => !c.ext)); const queue = [...seen];
+  while (queue.length) { const c = queue.pop(); for (const d of adj.get(c) || []) if (!seen.has(d)) { seen.add(d); queue.push(d); } }
+  for (const c of cards) c.linked = !c.ext || seen.has(c);
+  return cards;
+}
+// the lanes by topic among the cards that show: one per topic per repository, the oldest on the left, alternating
+// between two shelves; within a lane the entries of one calendar week take three rows and two columns in turn, and
+// the entries of one day a step of depth each, so a busy week stacks up instead of on top of itself
+function stageLanes(cards, { show = () => true, topicTitle = (file) => file } = {}) {
+  const byLane = new Map();
+  for (const c of cards) {
+    if (!show(c)) continue;
+    if (!byLane.has(c.laneKey)) byLane.set(c.laneKey, { key: c.laneKey, file: c.e.file, project: c.proj, title: (c.proj ? `${c.proj} · ` : "") + (topicTitle(c.e.file, c) || c.e.file).replace(/`/g, ""), items: [], first: "" });
+    byLane.get(c.laneKey).items.push(c);
+  }
+  const lanes = [...byLane.values()];
+  for (const L of lanes) { L.items.sort((a, b) => (a.day < b.day ? -1 : 1)); L.first = L.items[0]?.day || "9"; }
+  lanes.sort((a, b) => (a.first < b.first ? -1 : a.first > b.first ? 1 : a.title.localeCompare(b.title)));
+  const cols = Math.ceil((lanes.length || 1) / 2);
+  lanes.forEach((L, li) => {
+    L.x = Math.floor(li / 2) - (cols - 1) / 2; L.shelf = li % 2;
+    const sameWeek = {}, sameDay = {};
+    for (const c of L.items) {
+      const w = (sameWeek[weekStart(c.day)] = (sameWeek[weekStart(c.day)] || 0) + 1) - 1; const dk = c.day.slice(0, 10); const k = (sameDay[dk] = (sameDay[dk] || 0) + 1) - 1;
+      Object.assign(c, { lane: L, x: L.x + ((Math.floor(w / 3) % 2) - 0.5) * 0.34, y: SHELF[L.shelf] + ((w % 3) - 1) * 0.44, dz: (k % 4) * 0.1 });
+    }
+  });
+  return { lanes, cols };
+}
+// depth is logarithmic in days and scaled to the span: `days` back is `far` deep at the span's end, so the last days
+// spread out where the eye is and the oldest entry stands at the same depth whether the span is months or years
+const logDepth = (days, spanDays, far) => far * Math.log1p(Math.max(0, days) / 10) / Math.log1p(Math.max(14, spanDays) / 10);
+// the box from the `lo` to the `hi` percentile of the points, so a few outliers do not squeeze the rest; null below two points
+function percentileBox(xs, ys, lo = 0.04, hi = 0.96) {
+  if (xs.length < 2) return null;
+  const sx = [...xs].sort((a, b) => a - b), sy = [...ys].sort((a, b) => a - b); const at = (arr, q) => arr[Math.round(q * (arr.length - 1))];
+  const box = { x0: at(sx, lo), x1: at(sx, hi), y0: at(sy, lo), y1: at(sy, hi) };
+  return box.x0 < box.x1 && box.y0 < box.y1 ? box : null;
+}
+// Cards keep apart: two items at about one depth whose boxes overlap push each other off, half the overlap each, along
+// the axis of the smaller overlap; a card at its bound gives its half to the other, both at theirs stay. `items` come
+// far to near, each { c, z, box: { x0, y0, x1, y1, cx, cy, s } }; the push lands on c.ox / c.oy in plane units
+// (px, py: pixels per unit for the card across and up) and on the box in pixels; `room(c)` bounds the offsets.
+// Returns whether anything was pushed. Screen y grows downward: a push "down" lowers oy.
+function pushApart(items, { px, py, room, slice = 1.4 }) {
+  let pushed = false;
+  for (let i = 0; i < items.length; i++) {
+    const A = items[i], a = A.box;
+    for (let j = i + 1; j < items.length; j++) {
+      const B = items[j]; if (A.z - B.z > slice) break; // the rest are nearer still
+      const b = B.box;
+      const dx = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0), dy = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
+      if (dx <= 2 || dy <= 2) continue;
+      const sx = Math.sign(a.cx - b.cx) || (i & 1 ? 1 : -1), sy = Math.sign(a.cy - b.cy) || (j & 1 ? 1 : -1);
+      const ra = room(A.c), rb = room(B.c);
+      if (dx < dy) {
+        const u = dx * 0.5, pa0 = px(A.c), pb0 = px(B.c); let ua = u / pa0, ub = u / pb0;
+        const fa = sx > 0 ? Math.max(0, ra.xhi - A.c.ox) : Math.max(0, A.c.ox - ra.xlo), fb = sx > 0 ? Math.max(0, B.c.ox - rb.xlo) : Math.max(0, rb.xhi - B.c.ox);
+        if (fa < ua) { ub = Math.min(ub + (ua - fa) * (pa0 / pb0), fb); ua = fa; } else if (fb < ub) { ua = Math.min(ua + (ub - fb) * (pb0 / pa0), fa); ub = fb; }
+        if (ua + ub <= 1e-4) continue;
+        pushed = true; const pa = ua * pa0, pb = ub * pb0;
+        A.c.ox += sx * ua; B.c.ox -= sx * ub; a.x0 += sx * pa; a.x1 += sx * pa; a.cx += sx * pa; b.x0 -= sx * pb; b.x1 -= sx * pb; b.cx -= sx * pb;
+      } else {
+        const u = dy * 0.5, pa0 = py(A.c), pb0 = py(B.c); let ua = u / pa0, ub = u / pb0;
+        const fa = sy > 0 ? Math.max(0, A.c.oy - ra.ylo) : Math.max(0, ra.yhi - A.c.oy), fb = sy > 0 ? Math.max(0, rb.yhi - B.c.oy) : Math.max(0, B.c.oy - rb.ylo);
+        if (fa < ua) { ub = Math.min(ub + (ua - fa) * (pa0 / pb0), fb); ua = fa; } else if (fb < ub) { ua = Math.min(ua + (ub - fb) * (pb0 / pa0), fa); ub = fb; }
+        if (ua + ub <= 1e-4) continue;
+        pushed = true; const pa = ua * pa0, pb = ub * pb0;
+        A.c.oy -= sy * ua; B.c.oy += sy * ub; a.y0 += sy * pa; a.y1 += sy * pa; a.cy += sy * pa; b.y0 -= sy * pb; b.y1 -= sy * pb; b.cy -= sy * pb;
+      }
+    }
+  }
+  return pushed;
+}
+// the stage's box: as tall as the plane needs (`base`), up to twice that where the window has the room, never less
+const stageHeight = (base, roomLeft) => Math.round(Math.max(220, Math.min(1400, Math.max(base, Math.min(2 * base, roomLeft)))));
+
+// ---------------------------------------------------------------- authors across the loaded projects
+// The Authors view over every project the page holds: this one, the family, the friends, the path. `groups` are
+// [{ name, canonical, anonymized, authors }] — a project's name, its address, whether its export anonymized the
+// names, and its authors as the state carries them. A Git author's name that recurs across projects is one row
+// with the sums, its projects listed with their own numbers; an anonymized name (author-1) is a stand-in that says
+// nothing across projects, so it stays one row per project, labelled with the project. Sorted A–Z by name.
+function mergeAuthors(groups) {
+  const rows = new Map();
+  for (const G of groups) {
+    for (const a of G.authors || []) {
+      const key = G.anonymized ? `${a.name}\u0000${G.name}` : a.name;
+      const per = { project: G.name, canonical: G.canonical || "", created: a.created || 0, touched: a.touched || 0, superseded: a.superseded || 0, first: a.first || "", last: a.last || "" };
+      const cur = rows.get(key);
+      if (!cur) { rows.set(key, { name: a.name, label: G.anonymized ? `${a.name} (${G.name})` : a.name, anonymized: !!G.anonymized, created: per.created, touched: per.touched, superseded: per.superseded, first: per.first, last: per.last, evidence: { ...(a.evidence || {}) }, per: [per] }); continue; }
+      cur.created += per.created; cur.touched += per.touched; cur.superseded += per.superseded;
+      for (const [k, v] of Object.entries(a.evidence || {})) cur.evidence[k] = (cur.evidence[k] || 0) + v;
+      if (per.first && (!cur.first || per.first < cur.first)) cur.first = per.first;
+      if (per.last && (!cur.last || per.last > cur.last)) cur.last = per.last;
+      cur.per.push(per);
+    }
+  }
+  return sortAuthors([...rows.values()], "author", "asc");
+}
+
+// The Authors view's columns that sort, and the way each one sorts first: names A–Z, counts and dates from the most.
+const AUTHOR_SORTS = { author: "asc", projects: "desc", created: "desc", touched: "desc", superseded: "desc", first: "desc", last: "desc" };
+// Authors rows (mergeAuthors) sorted by one column, ties by name A–Z; a row without a date sorts last either way.
+function sortAuthors(rows, key, dir) {
+  const byName = (a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }) || a.label.localeCompare(b.label);
+  const sign = dir === "desc" ? -1 : 1;
+  const value = (r) => key === "projects" ? r.per.length : r[key];
+  const cmp = (a, b) => {
+    if (key === "author") return sign * byName(a, b);
+    const x = value(a), y = value(b);
+    if (key === "first" || key === "last") { if (!x !== !y) return x ? -1 : 1; return (x === y ? 0 : sign * (x < y ? -1 : 1)) || byName(a, b); }
+    return sign * ((x || 0) - (y || 0)) || byName(a, b);
+  };
+  return [...rows].sort(cmp);
+}
+
+// The page's places, as a route object, and the hash grammar the dashboard
+// writes them in. Views name places by route ({ view: "entry", uuid }); the
+// host's nav turns a route into a URL and back — the dashboard's nav writes
+// this grammar into the page's hash, another host maps routes into its own router.
+// The grammar is the one every link and bookmark already uses:
+// #entry/<uuid>, #topic/<file>, #timeline/<day>, #search/<scope>/<q>,
+// #thought/<a,b,…>, #ref/<canonical>/<uuid>, a page by its name (#graph),
+// and #graph/family, an old link to the family graph (alias: "family").
+const PAGES = ["overview", "graph", "globe", "timeline", "authors", "queues", "findings", "family", "projects", "friends", "thoughts"];
+const decodePart = (s) => { try { return decodeURIComponent(s); } catch { return s; } }; // a malformed escape stays as written
+function parseRoute(hash) {
+  const r = String(hash || "").replace(/^#/, "");
+  if (!r) return { view: "overview" };
+  if (PAGES.includes(r)) return { view: r };
+  if (r === "graph/family") return { view: "graph", alias: "family" };
+  if (r.startsWith("timeline/")) return { view: "timeline", day: r.slice(9) || null };
+  if (r.startsWith("topic/")) return { view: "topic", file: r.slice(6) };
+  if (r.startsWith("entry/")) return { view: "entry", uuid: decodePart(r.slice(6)) };
+  if (r.startsWith("thought/")) return { view: "thought", refs: r.slice(8).split(",").filter(Boolean).map(decodePart) };
+  if (r.startsWith("ref/")) { const cut = r.lastIndexOf("/"); return { view: "ref", canonical: decodePart(r.slice(4, cut)), uuid: r.slice(cut + 1) }; }
+  if (r.startsWith("search/")) { const [, scope, ...q] = r.split("/"); return { view: "search", scope, q: decodePart(q.join("/")) }; }
+  return { view: "overview", unknown: r }; // a hash no place answers to shows the overview, as it always has
+}
+function formatRoute(route) {
+  const v = route?.view || "overview";
+  if (v === "timeline") return route.day ? `#timeline/${route.day}` : "#timeline";
+  if (v === "graph" && route.alias === "family") return "#graph/family";
+  if (v === "topic") return `#topic/${route.file}`;
+  if (v === "entry") return `#entry/${encodeURIComponent(route.uuid)}`;
+  if (v === "thought") return `#thought/${(route.refs || []).map(encodeURIComponent).join(",")}`;
+  if (v === "ref") return `#ref/${encodeURIComponent(route.canonical)}/${route.uuid}`;
+  if (v === "search") return `#search/${route.scope}/${encodeURIComponent(route.q)}`;
+  return PAGES.includes(v) ? `#${v}` : "#overview";
+}
+const routes = Object.freeze({ PAGES, parse: parseRoute, format: formatRoute });
+
+// The graph's layout, one step at a time and without a canvas: repulsion between the shown nodes, springs
+// along the shown links, a pull to the centre, then the velocities applied and damped. `alpha` is how much
+// the step may still move things; the step returns the next one. `visible(n)` and `linkOn(l)` are the view's:
+// what the clock and the switches show. The page runs a step per frame; settleLayout runs them all at once,
+// for a view that needs the positions with no graph drawn.
+function layoutTick(nodes, links, alpha, { visible = () => true, linkOn = () => true } = {}) {
+  const ns = nodes.filter(visible);
+  const k = alpha;
+  // repulsion
+  for (let i = 0; i < ns.length; i++) for (let j = i + 1; j < ns.length; j++) {
+    const a = ns[i], b = ns[j]; let dx = b.x - a.x, dy = b.y - a.y; let d2 = dx * dx + dy * dy + 0.01;
+    const hubs = a.kind === "project" && b.kind === "project";
+    const apart = (a.unit || "") !== (b.unit || "") && !(a.owner && a.owner === b.owner); // this graph and a friend, or two friends: a family keeps together, strangers keep their distance — and so do projects bundled under one owner
+    if (d2 > (hubs ? (apart ? 9000000 : 4000000) : apart ? 640000 : 250000)) continue;
+    const base = hubs ? (apart ? 70000 : 22000) : a.kind === "entry" && b.kind === "entry" ? 260 : a.kind === "entry" || b.kind === "entry" ? 900 : 2600;
+    const rep = (apart && !hubs ? base * 2.5 : base) / d2; const d = Math.sqrt(d2);
+    const fx = (dx / d) * rep * k, fy = (dy / d) * rep * k;
+    if (!a.fixed) { a.vx -= fx; a.vy -= fy; } if (!b.fixed) { b.vx += fx; b.vy += fy; }
+  }
+  // springs
+  for (const l of links) { if (!linkOn(l)) continue; const a = nodes[l.s], b = nodes[l.t]; const dx = b.x - a.x, dy = b.y - a.y; const d = Math.hypot(dx, dy) || 0.01; const f = (d - l.len) * (l.kind === "member" || l.kind === "hub" || l.kind === "owner" ? 0.05 : l.kind === "family" ? 0.03 : 0.02) * k; const fx = (dx / d) * f, fy = (dy / d) * f; if (!a.fixed) { a.vx += fx; a.vy += fy; } if (!b.fixed) { b.vx -= fx; b.vy -= fy; } }
+  // gravity + integrate
+  for (const n of ns) { if (n.fixed) continue; const gr = n.ext ? 0.0015 : 0.004; n.vx -= n.x * gr * k; n.vy -= n.y * gr * k; n.vx *= 0.82; n.vy *= 0.82; n.x += n.vx; n.y += n.vy; }
+  return alpha * 0.985;
+}
+// every step until the layout has settled (alpha at or under `until`), or `maxTicks`; returns the alpha left
+function settleLayout(nodes, links, { alpha = 1, until = 0.003, maxTicks = 2000, visible, linkOn } = {}) {
+  let a = alpha, t = 0;
+  while (a > until && t++ < maxTicks) a = layoutTick(nodes, links, a, { visible, linkOn });
+  return a;
+}
+
+// The sidebar's filter — status, evidence, author, each empty for any — and whether an entry passes it.
+// An entry's author is who created it, or who touched it last when no creation is known; either matches.
+const NO_FILTER = Object.freeze({ status: "", evidence: "", author: "" });
+const filterActive = (f) => !!(f && (f.status || f.evidence || f.author));
+const entryMatches = (e, f) => {
+  if (!f) return true;
+  const author = e.git?.created?.author || e.git?.last_touched?.author || "";
+  return (!f.status || e.status === f.status) && (!f.evidence || e.evidence === f.evidence) && (!f.author || author === f.author || e.git?.last_touched?.author === f.author);
+};
+// a repository's address as a key: case and trailing slashes do not make another one
+const fkey = (c) => String(c || "").replace(/\/+$/, "").toLowerCase();
+// a repository's short name: owner/name on the platforms the page knows, the URL without its scheme elsewhere
+const repoLabel = (canonical) => canonical.replace(/^https:\/\/(github\.com|gitlab\.com|codeberg\.org|bitbucket\.org)\//, "").replace(/^https:\/\//, "");
+// a topic's title in a state, its file name when the state has no such topic
+const topicTitle = (st, file) => st.topics?.find((t) => t.file === file)?.title || file;
+
+const KTW = (root.KeepTheWhy = root.KeepTheWhy || {});
+KTW.core = Object.freeze({
+  TOKEN_DEFAULTS, readToken, valueColor,
+  sameCanonical, exportStateUrl, exportVerdict, resolveSee, layoutTick, settleLayout, NO_FILTER, filterActive, entryMatches, fkey, repoLabel, topicTitle,
+  esc, plural, UUID_RE, isUuid, rawFileUrl, configLine, normalizeState, slug,
+  hostAnchor, hostFileLink, hostTreeLink, HOSTS, hostOf, canonicalOf, ownerOf, projectLabel,
+  parseSupersededBy, entryRefs, typeName, kindLabel, familyRank, familyOrder, groupByFamily, shuffled, searchTerms,
+  registryMatches, bodyProse, searchHit, compareHits, snippetAt, highlightParts, resolveLocation, backlinksUrl,
+  citingOf, friendsOf, thoughtsOf, SHAKY, thoughtInsights, linkFamily, authorLookup, mergeStates,
+  todayISO, nowISO, isMoment, msOf, isoAt, addDays, dayDiff, createdOn,
+  existsAt, statusAt, seeDay, supersededDay, linkExistsAt, daySpan, timeGrid, stampLabel,
+  TYPE_KINDS, TYPE_TOKENS, PALETTE_SIZE, paletteToken, typeKind, weekStart, SHELF, stageCards,
+  stageLinks, markLinked, stageLanes, logDepth, percentileBox, pushApart, stageHeight, mergeAuthors,
+  AUTHOR_SORTS, sortAuthors, routes,
+});
+})(globalThis);

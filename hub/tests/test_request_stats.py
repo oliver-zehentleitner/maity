@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 import threading
 import time
@@ -133,7 +134,8 @@ def test_the_stats_line_is_key_value_and_names_the_pool_of_a_server_database() -
     assert request_stats.lines(window, engine, 60, request_stats.LoadWindow()) == [
         "stats window=60s requests=2 5xx=1 max_ms=80 slow_routes=0 "
         "pool_open=0 pool_checked_out=0 pool_max=8 loop_late_avg_ms=0 loop_late_max_ms=0 "
-        "threads_busy_avg=0.0 threads_busy_max=0 threads_waiting_max=0 threads_limit=0"
+        "threads_busy_avg=0.0 threads_busy_max=0 threads_waiting_max=0 threads_limit=0 "
+        f"pid={os.getpid()}"
     ]
 
 

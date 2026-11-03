@@ -45,10 +45,16 @@ What is checked:
   most 10 KiB, the rules above, and no request (fetch, XMLHttpRequest,
   WebSocket, EventSource, sendBeacon, import(), setting a src or href).
 - css: balanced braces; every var(--x) is defined.
+- vendor: vendor/keep-the-why/ holds exactly what VENDOR.json records,
+  each file with its sha256 (tools/vendor_ktw.py); its scripts and its
+  stylesheet use none of the HTML-parsing or code-evaluating calls and set
+  no inline style, so they load under the hub's `default-src 'self'`
+  (context/stack.md).
 - all text files: no tabs, no trailing whitespace, final newline.
 """
 
 import hashlib
+import importlib.util
 import html.parser
 import json
 import os
@@ -890,6 +896,49 @@ def check_css():
                 finding(path, lineno, "undefined custom property %s" % name)
 
 
+# ---- vendor -----------------------------------------------------------------
+
+VENDOR = os.path.join(ROOT, "vendor", "keep-the-why")
+# The calls of FORBIDDEN_JS that turn text into markup or code, and a style attribute written
+# as markup, which `default-src 'self'` refuses (the element's style object, the CSSOM, is not); the vendored files are not held to the dashboard's own style
+# rules (var, console, Maity.dom).
+MARKUP_OR_CODE = {"innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "createContextualFragment",
+                  "DOMParser", "eval", "new Function"}
+VENDOR_FORBIDDEN = [(p, what) for p, what in FORBIDDEN_JS if what in MARKUP_OR_CODE]  # on the code, strings blanked
+VENDOR_FORBIDDEN_TEXT = [(p, what) for p, what in FORBIDDEN_JS if what.startswith("string passed")] + [  # as written
+    (r"setAttribute\(\s*['\"]style['\"]", "setAttribute(\"style\")"),
+    (r"\bstyle\s*=\s*['\"]", "a style= attribute"),
+    (r"\bnew\s+Worker\b|\bimportScripts\b|\bimport\s*\(", "a script loaded at run time"),
+]
+
+
+def check_vendor():
+    spec = importlib.util.spec_from_file_location("vendor_ktw", os.path.join(ROOT, "tools", "vendor_ktw.py"))
+    vendor = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(vendor)
+    if not os.path.isdir(VENDOR):
+        finding(VENDOR, 1, "missing: run tools/vendor_ktw.py --version X")
+        return
+    for problem in vendor.problems(VENDOR):
+        finding(os.path.join(VENDOR, "VENDOR.json"), 1, problem)
+    for name in sorted(os.listdir(VENDOR)):
+        if not name.endswith((".js", ".css")):
+            continue
+        path = os.path.join(VENDOR, name)
+        src = read(path)
+        if name.endswith(".css"):
+            if re.search(r"@import|url\(\s*['\"]?(https?:|//)", src):
+                finding(path, 1, "loads from another origin")
+            continue
+        code, error = strip_js(src)
+        if error:
+            finding(path, error[0], error[1])
+        for text, patterns in ((code, VENDOR_FORBIDDEN), (src, VENDOR_FORBIDDEN_TEXT)):
+            for pattern, what in patterns:
+                for m in re.finditer(pattern, text):
+                    finding(path, text.count("\n", 0, m.start()) + 1, "uses %s" % what)
+
+
 # ---- whitespace -------------------------------------------------------------
 
 def check_whitespace():
@@ -1039,6 +1088,7 @@ def main(argv):
     check_landing_js(node)
     check_fixture_shapes(node, write, notes)
     check_css()
+    check_vendor()
     check_whitespace()
     for f in findings:
         print(f)

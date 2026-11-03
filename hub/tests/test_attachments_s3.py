@@ -64,6 +64,43 @@ def raw(config: AttachmentS3) -> Any:
 # --- the store ----------------------------------------------------------------------------------
 
 
+class _Headed:
+    """A client whose HEAD answers with a fixed LastModified and `Date`."""
+
+    def __init__(self, written: float, date: str | None) -> None:
+        self.written, self.date = written, date
+
+    def head_object(self, **_: Any) -> dict[str, Any]:
+        import datetime
+
+        answer: dict[str, Any] = {
+            "LastModified": datetime.datetime.fromtimestamp(self.written, datetime.UTC)
+        }
+        if self.date is not None:
+            answer["ResponseMetadata"] = {"HTTPHeaders": {"date": self.date}}
+        return answer
+
+
+def test_a_blobs_age_in_the_bucket_is_read_from_the_stores_clock_alone(
+    config: AttachmentS3, caplog: pytest.LogCaptureFixture
+) -> None:
+    """LastModified and the answer's `Date` are both the store's: the hub's clock, an hour
+    off here, plays no part (hub/context/attachments.md 7dcd4850)."""
+    written = 1_800_000_000.0  # 2027-01-15T08:00:00Z
+    date = "Fri, 15 Jan 2027 08:02:00 GMT"  # 120 s later on the store's clock
+    store = S3Store(config, client=_Headed(written, date))
+    assert store.age("prj-1/att-1", written + 3600) == 120.0
+    assert store.age("prj-1/att-1", written - 3600) == 120.0
+    without = S3Store(config, client=_Headed(written, None))  # no Date: the hub's clock
+    assert without.age("prj-1/att-1", written + 50) == 50.0
+    odd = S3Store(config, client=_Headed(written, "not a date"))
+    assert odd.age("prj-1/att-1", written + 7) == 7.0
+    with caplog.at_level(logging.WARNING, logger="maity_hub.attachment_store"):
+        early = S3Store(config, client=_Headed(written + 600, date))
+        assert early.age("prj-1/att-1", written) == -480.0
+    assert "negative" in caplog.text
+
+
 def test_the_s3_store_keeps_blobs_whole_and_refuses_odd_keys(config: AttachmentS3) -> None:
     store = S3Store(config)
     store.put("prj-1/att-1", b"one")

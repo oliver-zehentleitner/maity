@@ -5813,7 +5813,12 @@ the card's `approvals` stay. Every replacement clears `approvals`
   the probe is configured it then reads the branch head (`?branch=`) and,
   with `pr` set, the pull request (§11), fills `observed`, sets `mismatch`
   (true when the observed PR head differs from `pr.head`, or the observed
-  branch head differs from `remote_head`) and emits `probe_observed`. A
+  branch head differs from `remote_head`) and emits `probe_observed`. It
+  wakes its readers (§8.2) unless `observed` (but its `observed_at`) and
+  `mismatch` are what the card's last `probe_observed` to all of those
+  readers said, for this report or an earlier one, and this report's first
+  observation is no mismatch: then it is emitted to nobody, and only the
+  views that read every event (owners, admins) see the report filled. A
   branch the forge no longer has (deleted, as after a merge) is not a
   mismatch: `observed.branch_head_sha` is null and only the PR head is
   compared. A pull request the forge does not have is: `observed.pr_state`
@@ -9585,7 +9590,7 @@ learns its content.
 | `credential_revoked` | the credential's member, `trust:owner` | credential id, `reason` |
 | `credential_in_payload` | the credential's owner, `trust:owner`, `trust:admin` | credential id; never the value |
 | `event_redacted` | the redacted event's own audience, never wider; for a conversation's message the conversation's audience instead: the two parties of a direct one, the current participants of a group chat, in a closed one also its former human participants and the redacting admin (§8.5) | `seq`, `reason`; `note_id` too when a note was redacted (§6.16); `history_id` and `task_id` instead of `seq` when a card history entry was (§6.15) |
-| `probe_observed` | on a report: the holder of the affected card, with `mismatch: true` also `trust:admin`; nobody on a `done` or `cancelled` card without a mismatch or with its pull request merged, and the report keeps `observed` and `mismatch` to read; on the open release: its card's holder, `trust:admin` | the observation |
+| `probe_observed` | on a report: the holder of the affected card, with `mismatch: true` also `trust:admin`; nobody on a `done` or `cancelled` card without a mismatch or with its pull request merged, and the report keeps `observed` and `mismatch` to read; on the open release: its card's holder, `trust:admin`. Wakes only when something the reader acts on changed: on a report, `observed` without its `observed_at`, or `mismatch`, against the card's last `probe_observed` that reached all of these readers (a new report's first observation included; one that contradicts the new report always wakes); otherwise a report's observation is emitted with an empty audience, for the views that read every event; on the open release, a ref's `found`, `state`, `head_sha`, `checks`, `merged_at` or `sha`, or whether its `mergeable` is `conflicting` — `unknown` and `mergeable` taking turns is stored and wakes nobody | the observation |
 | `task_merged` | the card's done authority as §6.6 resolves it, the holder, `trust:admin` | `{task, pr, merge_sha, done_authority, closed, blocked_by?}` (§6.6); wakes the done authority only, and nobody when `closed` is true |
 | `placement_created`, `placement_updated` | `runner:<id>` of the placement's runner once the placement is approved (a pending proposal never names the runner), the creator, the owner of the agent profile | `placement_id`, `generation`, `desired`, `harness`, `target`, `approval.status`, `closed_reason`; never `briefing`, `session_hint` or `logs_hint` (§15.10) |
 | `placement_reported` | the creator, the owner of the agent profile | `placement_id`, `state`, `reason`, `detail`, `exit_code`, `observed_generation`, `restarts`, `retry_at` |
@@ -11303,8 +11308,8 @@ the same shape as `release.tag`. Errors: `probe_not_configured`,
 exists). The same reads feed `report.observed`,
 `release.pull_requests` and the forge links on cards (§6.13, read
 through the forge's issue endpoint for `kind: issue`), in the background after a report and on the
-hub's own interval; an observation that changes a card's state emits
-`probe_observed`. With the change ticker enabled the probe also reads
+hub's own interval; an observation that changes what a card shows emits
+`probe_observed`, which wakes only where §8.2 says. With the change ticker enabled the probe also reads
 the merged pull requests of the default branch, their files and, for a
 contract file, its text at the merge and the base (§17.4); a forge
 webhook only makes it look sooner.
@@ -14060,7 +14065,10 @@ same header and footer (§16.7.5).
   of a `works_with` section under `/assets/landing/agents/` (above). Their URLs carry
   `?v=<digest>` of the file and are answered with `Cache-Control:
   public, max-age=31536000, immutable`. The hero's rings and other
-  pictures of the design are inline SVG in the template. The page is
+  pictures of the design are inline SVG in the template. The frame's
+  stylesheet `/assets/landing/public-pages.css` (§16.7.5) is served the
+  same way, and the two pictures it names under
+  `/assets/landing/brand/` without a digest, answered `no-cache`. The page is
   complete without the script: all text is in the HTML, every section
   shows its end state, and the FAQ opens without it. The stylesheet
   animates the hero's rings, the band's loader and the `works_with`
@@ -14082,10 +14090,14 @@ same header and footer (§16.7.5).
   hub's own origin and loads nothing from elsewhere; `img-src 'self'`
   covers the instance's logo and favicon and the agent logos of a
   `works_with` section; the design's own pictures are inline SVG. The preview of a draft (below) answers with the same
-  policy. The legal pages (§16.7.1) carry no script and
-  answer with §16.9's policy, `default-src 'none'; style-src
-  'unsafe-inline'`. Both replace §1.1's `default-src 'self'` for these
-  documents only.
+  policy. The legal pages (§16.7.1) and their preview carry no script
+  and answer with `default-src 'none'; style-src 'self' 'unsafe-inline';
+  font-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors
+  'none'`: they load the landing page's
+  `landing.css`, `public-pages.css` and fonts under `/assets/landing/`
+  for the frame (§16.7.5), and `img-src 'self'` covers the favicon and
+  the pictures `public-pages.css` names; the page's text has no image.
+  Both replace §1.1's `default-src 'self'` for these documents only.
 - **Changes** are recorded on the setting itself — `updated_at`,
   `updated_by` — which is the record in this version; they emit no
   project event and wake nobody.
@@ -15287,7 +15299,7 @@ sections named say; a path under one of them that names nothing is
 | Path | What | § |
 |---|---|---|
 | `/api/…` | the API (`/api/v1/…`, including `/help`, `/openapi.json`, `/health`) | 1.1 |
-| `/assets/…` | the dashboard's static files: scripts, stylesheets, `brand/` | below |
+| `/assets/…` | the dashboard's static files: scripts, stylesheets, `brand/`, vendored libraries (`vendor/`) | below |
 | `/join/{token}` | the join page | 3.2 |
 | `/r/{token}` | always `not_found`: there is no pairing page | 15.2 |
 | `/mail/…` | the pages behind the links in mails | 2.6.3, 2.7.1, 2.9, 18.6 |

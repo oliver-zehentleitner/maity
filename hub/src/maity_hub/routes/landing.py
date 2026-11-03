@@ -168,11 +168,7 @@ def get_site_chrome(request: Request, lang: str | None = None) -> Response:
     one language (§16.7.5). Unauthenticated, on the public host only; cached as `GET /landing`."""
     with engine_of(request).begin() as conn:
         setting = landing.stored(conn)
-        stats = (
-            landing_stats.current(conn)
-            if setting["enabled"] and landing_stats.named(setting)
-            else None
-        )
+        stats = landing_stats.for_frame(conn, setting)
         body = render.chrome(
             setting,
             legal.public(legal.stored(conn)),

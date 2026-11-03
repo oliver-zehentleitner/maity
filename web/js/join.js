@@ -614,7 +614,7 @@ window.Maity = window.Maity || {};
     return [
       h("div", { class: "join-head" },
         h("h3", { id: "join-title" }, own ? M.t("join.title.own") : M.t("join.title")),
-        h("button", { type: "button", class: "icon-button join-close", "aria-label": M.t("join.close"), title: M.t("join.close"), onclick: onClose }, "×")),
+        h("button", { type: "button", class: "icon-button join-close", "aria-label": M.t("join.close"), title: M.t("join.close"), onclick: onClose }, M.icons.close(16))),
       h("p", { class: "muted" }, M.t("join.intro")),
     ];
   }

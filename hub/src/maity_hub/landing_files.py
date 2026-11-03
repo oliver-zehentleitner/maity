@@ -1,6 +1,7 @@
 """The files of the landing page's progressive enhancement (docs/api.md §16.7).
 
-`/assets/landing/landing.css`, `landing.js` and the self-hosted fonts under `fonts/` belong to
+`/assets/landing/landing.css`, `landing.js`, `public-pages.css` (the frame of the legal pages and of
+the dashboard's sign-in pages, §16.7.5) and the self-hosted fonts under `fonts/` belong to
 the hub's code, the same for every instance, and are never read from the database. They live in
 this package (`landing_assets/`), so a hub answers them whether or not it has a dashboard
 directory. The page names each with `?v=<digest>` of the file; a request that carries the
@@ -88,6 +89,16 @@ def _assets() -> dict[str, Asset]:
             return f"fonts/{found_font.group(1)}" + (f"?v={asset.digest}" if asset else "")
 
         add("landing.css", FONT.sub(font_url, sheet.read_text(encoding="utf-8")).encode())
+    # The pictures `public-pages.css` names by a relative `url(brand/…)`: the sign-in panel's art
+    # and the "check your mail" icon (§16.7.5).
+    brand = ROOT / "brand"
+    if brand.is_dir():
+        for path in sorted(brand.glob("*.svg")):
+            add(f"brand/{path.name}", path.read_bytes())
+    # The pages without a session beside the landing page, on top of its stylesheet (§16.7.5).
+    pages = ROOT / "public-pages.css"
+    if pages.is_file():
+        add("public-pages.css", pages.read_bytes())
     return found
 
 

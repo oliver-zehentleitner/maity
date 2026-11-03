@@ -354,20 +354,26 @@ def test_an_upload_whose_slug_names_another_project_under_the_lock_is_refused(
     from maity_hub.routes import attachments as route
 
     real = access.membership
-    calls: list[int] = []
+    real_lock = events.lock_project
+    locked: list[str] = []
+
+    def lock(conn: Any, project_id: str) -> Any:
+        found = real_lock(conn, project_id)
+        locked.append(project_id)
+        return found
 
     def moved(conn: Any, caller: Any, slug: str) -> Any:
         found = real(conn, caller, slug)
-        calls.append(1)
-        if len(calls) <= 3:  # the first look, the check before the write, the lock
+        if not locked:  # every look before the lock sees the project the upload is for
             return found
         other = types.SimpleNamespace(**{**found.project._mapping, "id": "prj-another"})
         return dataclasses.replace(found, project=other)
 
     monkeypatch.setattr(route, "membership", moved)
+    monkeypatch.setattr(route, "lock_project", lock)
     refused = put(owner, "a.txt", b"moved")
     assert refused.status_code == 404 and refused.json()["error"]["code"] == "not_found"
-    assert list(blobs.glob("*/*")) == []
+    assert list(blobs.glob("*/*")) == [] and len(locked) >= 1
 
 
 def test_a_membership_holds_a_bounded_number_of_pending_uploads(

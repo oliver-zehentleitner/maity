@@ -924,3 +924,16 @@ def test_a_legal_page_carries_the_banner_while_the_window_runs(
     running(now)
     got = make_client().get("/impressum")
     assert got.status_code == 200 and BANNER in got.text
+
+
+def test_the_frame_of_the_public_pages_is_refused_too(
+    make_client: ClientFactory, admin: flow.Human, now: Clock
+) -> None:
+    """§16.7.5: during a window `GET /site/chrome` answers `503 maintenance`, and the dashboard
+    draws sign-in and sign-up without the frame."""
+    visitor = make_client()
+    assert visitor.get("/api/v1/site/chrome").status_code == 200
+    put(admin, text="Upgrade")
+    running(now)
+    refused = visitor.get("/api/v1/site/chrome")
+    assert refused.status_code == 503 and refused.json()["error"]["code"] == "maintenance"

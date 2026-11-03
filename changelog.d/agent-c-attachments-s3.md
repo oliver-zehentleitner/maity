@@ -16,6 +16,6 @@
   are checked before the write as well. A refusal or a failure after the write began keeps the upload
   counted against the rate. The row is committed only within 5 minutes of the start of the write;
   a slower upload is refused with the new error `503 upload_expired`, and may be sent again. When the transaction does not commit, the bytes are removed
-  afterwards; if that fails, the sweep removes them after 30 minutes (until now ten, now with room
-  for the store's clock to differ from the hub's). The sweep likewise asks the store outside the
+  afterwards; if that fails, the sweep removes them after 30 minutes (until now ten). Under `s3` the
+  sweep reads a blob's age from the store's own clock, so the hub's clock may differ from it. The sweep likewise asks the store outside the
   lock.

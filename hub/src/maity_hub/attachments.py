@@ -425,10 +425,11 @@ SWEEP_EVERY = 300  # seconds between sweeps
 # An upload inserts its row only while less than this has passed since its write began
 # (`upload_clock`, taken before the write): a write and a lock wait together never take longer.
 UPLOAD_FRESH = 5 * 60
-# The sweep reads a blob's age from two clocks: the store's (for `s3` the object's
-# LastModified) against the hub's `time.time()`. S3 and MinIO refuse a signed request whose
-# time is more than 15 minutes off their own (SigV4, `RequestTimeTooSkewed`), so while the
-# hub can write at all the two differ by less than this (hub/context/attachments.md 7dcd4850).
+# The sweep reads a blob's age from one clock: `local` has only the hub's, `s3` takes both
+# times from the store (the answer's `Date` against the object's LastModified). Only an `s3`
+# answer without a `Date` falls back to the hub's `time.time()`; for that case S3 and MinIO
+# refuse a signed request whose time is more than 15 minutes off their own (SigV4,
+# `RequestTimeTooSkewed`), the margin here (hub/context/attachments.md 7dcd4850).
 CLOCK_SKEW = 15 * 60
 # A blob younger than this may still get its row. Older by the sweep's look means, with the
 # skew taken off, more than `UPLOAD_FRESH` since the write began: no row may come any more.

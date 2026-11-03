@@ -43,6 +43,10 @@ expect "minimal: hub pods selected by component, version label from the tag" "$o
     "app.kubernetes.io/component: hub" 'app.kubernetes.io/version: "ci"'
 selector="$(sed -n '/^kind: Service$/,/^---/p' <<<"$out" | sed -n '/selector:/,$p')"
 expect "minimal: the Service selects only the hub" "$selector" "app.kubernetes.io/component: hub"
+expect "minimal: one serving process unless set" "$out" "name: MAITY_WORKERS" 'value: "1"'
+expect "workers: the setting reaches the hub" "$(render -f "$minimal" --set config.workers=4)" 'value: "4"'
+render -f "$minimal" --set config.workers=0 >/dev/null 2>&1 && bad "config.workers=0 accepted" \
+    || ok "config.workers below 1 refused"
 expect "minimal: every probe field rendered" "$out" "timeoutSeconds: 5" "failureThreshold: 30"
 expect "minimal: a NetworkPolicy by default, open to ingress-nginx and the test pod" "$out" \
     "kind: NetworkPolicy" "kubernetes.io/metadata.name: ingress-nginx" "app.kubernetes.io/component: test"
