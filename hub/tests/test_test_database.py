@@ -102,6 +102,32 @@ def test_a_session_that_only_drew_from_a_sequence_is_ended(
         leaked.close()
 
 
+def test_the_relations_are_the_ones_the_truncate_sees_along_the_search_path(
+    migrated: Engine,
+) -> None:
+    """The inspector and the unqualified TRUNCATE see the tables through `search_path`; the lock
+    lookup resolves them the same way. With an empty schema ahead of the tables' own one,
+    `current_schema()` is that empty schema, and a lookup there found nothing (pmwg at #1289)."""
+    if migrated.dialect.name != "postgresql":
+        pytest.skip("the lock lookup is PostgreSQL's")
+    with migrated.begin() as conn:
+        home = conn.execute(text("SELECT current_schema()")).scalar_one()
+        conn.execute(text("CREATE SCHEMA IF NOT EXISTS ahead_of_it"))
+        expected = conn.execute(text("SELECT 'presence_minute'::regclass::oid")).scalar_one()
+    shifted = create_engine(
+        migrated.url,
+        connect_args={"options": f"-c search_path=ahead_of_it,{home}"},
+    )
+    try:
+        with shifted.connect() as conn:
+            assert conn.execute(text("SELECT current_schema()")).scalar_one() == "ahead_of_it"
+        assert expected in conftest._relations(shifted, ["presence_minute"])
+    finally:
+        shifted.dispose()
+        with migrated.begin() as conn:
+            conn.execute(text("DROP SCHEMA ahead_of_it"))
+
+
 def test_a_session_in_another_database_is_not_ended(migrated: Engine) -> None:
     """The holders are looked up in this database alone: a session of another database with a
     lock on a relation of the same id is not ended (dzse at #1264)."""

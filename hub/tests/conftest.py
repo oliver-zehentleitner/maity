@@ -144,23 +144,24 @@ def _empty_the_tables(engine: Engine) -> None:
 
 
 def _relations(engine: Engine, tables: list[str]) -> list[int]:
-    """The ids (`oid`) of `tables` in this database's current schema, and of the sequences they
-    own (a `serial` or identity column): `RESTART IDENTITY` locks those too, so a session that
-    only drew a number holds the TRUNCATE up as well (dzse at #1289)."""
+    """The ids (`oid`) of the relations the TRUNCATE empties, and of the sequences they own (a
+    `serial` or identity column), which `RESTART IDENTITY` locks too: a session that only drew a
+    number holds the TRUNCATE up as well (pmwg and dzse at #1289). Each name is resolved as the
+    TRUNCATE resolves it, quoted and through `search_path` (`to_regclass`), not in
+    `current_schema()` alone, where a table found further along the path is missed."""
     with engine.connect() as conn:
         return list(
             conn.execute(
                 text(
-                    "SELECT c.oid FROM pg_class c"
-                    " WHERE c.relnamespace = current_schema()::regnamespace"
-                    " AND c.relname = ANY(:names)"
+                    "WITH emptied AS ("
+                    " SELECT to_regclass(quote_ident(n))::oid AS oid"
+                    " FROM unnest(CAST(:names AS text[])) AS n)"
+                    " SELECT oid FROM emptied WHERE oid IS NOT NULL"
                     " UNION"
-                    " SELECT s.oid FROM pg_class s"
-                    " JOIN pg_depend d ON d.classid = 'pg_class'::regclass AND d.objid = s.oid"
+                    " SELECT d.objid FROM pg_depend d JOIN pg_class s ON s.oid = d.objid"
+                    " WHERE d.classid = 'pg_class'::regclass"
                     " AND d.refclassid = 'pg_class'::regclass AND d.deptype IN ('a', 'i')"
-                    " JOIN pg_class c ON c.oid = d.refobjid"
-                    " WHERE s.relkind = 'S' AND c.relnamespace = current_schema()::regnamespace"
-                    " AND c.relname = ANY(:names)"
+                    " AND s.relkind = 'S' AND d.refobjid IN (SELECT oid FROM emptied)"
                 ),
                 {"names": tables},
             ).scalars()

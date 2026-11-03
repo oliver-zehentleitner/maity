@@ -127,7 +127,7 @@ once per engine.
 **Type:** incident
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-xz3bxa5cwv4v; hub-postgresql run 41477804762 cancelled after hours at 99 %; review on #1256 (reproduction with `pg_stat_activity` and `pg_blocking_pids`); faulthandler stacks of the diagnosis run on #1255 (job 125615090292), 2026-11-03; `hub/tests/test_test_database.py`; review on #1264 (the first holder lookup ended any session with a table lock in the database), 2026-11-03; review on #1289 (a lock on an owned sequence alone was no longer found), 2026-11-03
+**Source:** card tsk-xz3bxa5cwv4v; hub-postgresql run 41477804762 cancelled after hours at 99 %; review on #1256 (reproduction with `pg_stat_activity` and `pg_blocking_pids`); faulthandler stacks of the diagnosis run on #1255 (job 125615090292), 2026-11-03; `hub/tests/test_test_database.py`; review on #1264 (the first holder lookup ended any session with a table lock in the database), 2026-11-03; review on #1289 (a lock on an owned sequence alone was no longer found; the tables were looked up only in `current_schema()`), 2026-11-03
 **Revisit when:** the test database stops being the suite's alone (hub/README.md), the per-worker databases go, or the cleanup stops using `TRUNCATE`
 **See:** testing.md#the-suite-runs-in-parallel-one-database-per-worker-and-the-wheel-job-runs-a-marked-subset — 081792e2-758e-4202-84f7-c2957459665e — as of 2026-11-03
 
@@ -139,7 +139,8 @@ passed `migrated.connect()` as an argument). `_empty_the_tables` therefore sets 
 (`TRUNCATE_LOCK_TIMEOUT`, 60 s) for the `TRUNCATE`; when it runs out, it names the sessions that
 hold a lock on one of the tables it empties or on a sequence those tables own (`serial` or
 identity, through `pg_depend`: `RESTART IDENTITY` locks them too, and a session that only drew a
-number holds the `TRUNCATE` up), with state and last statement from `pg_stat_activity`, ends them
+number holds the `TRUNCATE` up; the tables resolved as the unqualified `TRUNCATE` resolves them,
+quoted and through `search_path`, not only in `current_schema()`), with state and last statement from `pg_stat_activity`, ends them
 with `pg_terminate_backend` and fails that one test with `LeakedConnection`. When it finds none,
 the message says so instead of claiming an end, since the next cleanup will wait again. Only client
 sessions of the suite's own role in this database count; one that cannot be ended is named with
