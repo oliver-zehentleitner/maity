@@ -4167,10 +4167,16 @@ and below them, when there is an episode, `Their harness may have
 stopped its wait loop, or the agent is busy without waiting; start the
 loops again or end the sessions.`, and when there is a stalled holder,
 `Instances that stopped while holding cards: start them again, or have
-their cards moved.` There is at most one such request per human: an open one is
-rewritten in place (same id, `summary` and `title` replaced, no new
-request event) when the set of away instances changed, and the hub
-withdraws it itself when none is away any more. Answering `seen`
+their cards moved.` There is at most one such request per human. When the set of away
+instances changes, an open one is rewritten in place (same id,
+`summary` and `title` replaced, no new request event) as long as the
+change only drops instances or changes a line's cards or reason. When
+the set gains an instance, or a listed instance would show another
+kind, `since` or `last seen`, the hub withdraws the open request and,
+when an away instance is not silenced (below), files a new one in the
+same pass, so an answer from a page that has not
+seen the change is `request_not_open` (409) and the owner reads the new
+one. The hub withdraws it itself when none is away any more. Answering `seen`
 closes it; what it silences is set out below ("Silence after `seen`").
 The next hour files a new request only when an away instance is not
 silenced, and that request, like every rewrite of it, lists every away
@@ -4193,13 +4199,16 @@ to re-route. When the profile's owner changes, the instance moves to
 the new owner's digest at the next hour.
 
 **Silence after `seen`.** Answering `seen` records, for every instance
-the request listed, what the request showed in its last version (its
-filing or latest rewrite): the instance's `last_seen_at` at that
-version and, when it was listed as an episode, that episode's `since`.
-The state at the answer, which may come up to an hour later, is not
-recorded. Records are the answering human's and add up over every
-answer of theirs; an instance that moves to another owner's digest
-starts there without any. An away instance is *silenced* for its owner
+the request listed when it was filed, what it showed then: the
+instance's `last_seen_at` at the filing and, when it was listed as an
+episode, that episode's `since`. A rewrite in place only drops
+instances or changes cards and reasons, so the filing holds everything
+the owner was shown, instances dropped since included; the state at
+the answer, which may come hours later, is not recorded. Records are
+the answering human's and add up over every answer of theirs; an
+instance that moves to another owner's digest starts there without the
+previous owner's records, and the owner's own records count again if it
+moves back. An away instance is *silenced* for its owner
 when
 
 1. its `last_seen_at` equals one the owner recorded for it: it has made
@@ -4227,11 +4236,14 @@ owner. The cases, each from the answer on unless the row says otherwise:
 | stalled holder | an event waits for it, an episode starts | stalled holder | yes | 1 |
 | stalled holder | it calls (a resume, any call), then stops again | either | no | — |
 | not listed: stopped before the answer, away only after it | — | either | no | — |
-| stalled holder | it calls after the request's last version and before the answer, then stops again | either | no | — |
-| episode | it calls after the request's last version and before the answer, and that episode runs on | episode | yes | 2 |
-| episode | it calls after the request's last version and before the answer, then holds a claim past the threshold, or that episode ends and a later one starts | either | no | — |
-| episode | it ends after the request's last version and before the answer, and a later one starts after calls | episode | no | — |
-| episode | it ends after the request's last version and before the answer (a pause), and a later one starts with no call (the pause lifted) | episode | yes | 1 |
+| stalled holder | it calls after the filing and before the answer, then stops again | either | no | — |
+| episode | it calls after the filing and before the answer, and that episode runs on | episode | yes | 2 |
+| episode | it calls after the filing and before the answer, then holds a claim past the threshold, or that episode ends and a later one starts | either | no | — |
+| episode | it ends after the filing and before the answer, and a later one starts after calls | episode | no | — |
+| episode | it ends after the filing and before the answer (a pause), and a later one starts with no call (the pause lifted) | episode | yes | 1 |
+| stalled holder | its cards are moved before the answer and it drops out (a rewrite); after the answer it is away again with no call | either | yes | 1 |
+| listed, never answered | it drops out and the request is withdrawn (none away), then it is away again | either | no: no answer, no record | — |
+| not listed | it becomes away while the owner has the request open, the hub refiles, the owner answers the old one | — | no: `request_not_open`, the new request lists it | — |
 | episode or stalled holder, seen by its owner | the profile's owner changes, the instance stays away | either | no: the new owner has no record | — |
 | X and Y, each listed and seen in its own answer | both stay away as they were | both | yes, both: no new request | 1 or 2 |
 

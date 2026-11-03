@@ -14,10 +14,13 @@
 ### Changed
 
 - docs/api.md §5.3: answering the digest's `seen` records, for the answering human, what the
-  request's last version showed of each listed instance: its `last_seen_at` and the `since` of a
+  request showed of each listed instance when it was filed: its `last_seen_at` and the `since` of a
   listed episode; an away instance stays silenced for its owner while it has made no call since
   such a record, or while that episode runs. Records add up; a new request comes only for
   an instance not silenced and lists every away instance. A table lists the cases: moving a
   stalled holder's cards or assigning one back does not ask again, a crash after work does, and
-  an instance that became away only after an answer, one that called between the request's last
-  version and the answer and then stopped anew, and one whose profile changed owner are filed.
+  an instance that became away only after an answer, one that called between the filing and the
+  answer and then stopped anew, and one whose profile changed owner are filed. A rewrite in place
+  only drops instances or changes cards and reasons; a new instance, or another kind, `since` or
+  last call, withdraws the request and files a new one, so an answer from a stale page is
+  `request_not_open`.
