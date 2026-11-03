@@ -395,12 +395,12 @@ one rule for the field instead of one per option value.
 **Evidence:** confirmed
 **Source:** tsk-nzhv3kgaxmpe (KTW M2), 2026-11-03: the contract (docs/api.md §11.5), the arbiter's corrected ruling on named repositories, and the review rounds of the hub's pull request
 **See:** https://github.com/oliver-zehentleitner/maity — 14288e6a-141e-4f93-8200-b879252c8ccd — as of 2026-11-03
-**Revisit when:** §11.4's `MAITY_FORGE_INSTANCE_NAMESPACES` is implemented in the source choice (then named repositories follow it with no change here), or the hub keeps these reads outside each process
+**Revisit when:** §11.4 lets the instance token serve a project by anything but its namespace, or the hub keeps these reads outside each process
 
 `ktw_reads.py` serves §11.5 on top of §11.3's walk and cache. Four choices are the hub's own:
 
 - **The source is checked on every call** (`Forge.require_covered`), not only when the cache refreshes: a grant removed in the hub ends what is held at once, a repository the instance token finds private within §11.4's ten minutes, with the owner's reason and the project told as a read would.
-- **A named repository is read by `named_reader`**: the instance token when the project's own source is the instance (`via == "instance"`), else no token; never the owner's grant, and bound to no project. The contract names `MAITY_FORGE_INSTANCE_NAMESPACES`; the hub follows the source §11.4 chooses, which today does not yet check that list, so until it does a project whose own repository the instance token reads also has its named repositories read with it.
+- **A named repository is read by `named_reader`**: the instance token when the project's own source is the instance (`via == "instance"`), else no token; never the owner's grant, and bound to no project. The hub follows the source §11.4 chooses, which checks `MAITY_FORGE_INSTANCE_NAMESPACES`: a project outside the operator's namespaces gets no instance reader for its own repository, and so none for the repositories its family names.
 - **A spent budget is remembered with its time** (`retry_at` on the snapshot and on a child) and answered `probe_unavailable` only while it lies ahead; one that passed reads again at once rather than repeating the 503 until the cache expires.
 - **A failed file read is held for 30 s with its own error**, and a read dropped for room is not read again inside 30 s; the files themselves sit in one store per process (`ktw.RAW`, 64 MiB), keyed by URL, shared with §11.3's reads.
 
