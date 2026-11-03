@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Runs a command in one of a few run slots shared by everyone on this machine:
+# Runs a command in one of a few run slots shared by every run of this account (the slots are
+# files under its home, so another account has slots of its own):
 #
 #   tools/run_slot.sh make -C web smoke
 #
@@ -29,8 +30,8 @@ fi
 
 slots="${MAITY_RUN_SLOTS:-2}"
 case "$slots" in
-  '' | *[!0-9]* | 0)
-    echo "$0: MAITY_RUN_SLOTS must be a whole number of 1 or more, not '$slots'" >&2
+  '' | *[!0-9]* | 0*)
+    echo "$0: MAITY_RUN_SLOTS must be a whole number of 1 or more without a leading 0, not '$slots'" >&2
     exit 2
     ;;
 esac

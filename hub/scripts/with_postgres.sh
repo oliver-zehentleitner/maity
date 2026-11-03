@@ -2,14 +2,14 @@
 # Runs a command against a local PostgreSQL, in a database of its own:
 #
 #   scripts/with_postgres.sh pytest -n 2 tests/test_board.py
-#   scripts/with_postgres.sh --start    # a server that stays up for everyone on the machine
+#   scripts/with_postgres.sh --start    # a server that stays up for every run of this account
 #   scripts/with_postgres.sh --stop     # stops it, unless a run still uses it
 #
 # Several runs can share one server. The last run to end stops it, and only if a run of this
 # script started it: a server that was already up, or started with --start, keeps running.
 # MAITY_TEST_DATABASE_URL is set for the command. MAITY_PG_DIR is the data directory (created
 # when missing), MAITY_PG_BIN the directory of pg_ctl when it is not on the path. A run holds
-# one of the machine's run slots (tools/run_slot.sh) while it runs; MAITY_RUN_NAME names it,
+# one of the account's run slots (tools/run_slot.sh) while it runs; MAITY_RUN_NAME names it,
 # and the run's database (maity_test_<name>_<pid>).
 set -euo pipefail
 
@@ -48,6 +48,20 @@ exec 8>"$locks/state" 9>"$locks/users"
 # whose wrapper was killed (a memory reap sends SIGKILL) still counts as a run, and --stop or the
 # last run's cleanup leaves the server up under it.
 flock -x 8
+# --stop comes first: it neither creates a cluster in a mistyped MAITY_PG_DIR nor starts a stopped
+# server only to stop it again.
+if [ "$mode" = stop ]; then
+  if ! flock -x -n 9; then
+    echo "$0: a run still uses the server; it keeps running" >&2
+    exit 1
+  fi
+  if [ -f "$dir/PG_VERSION" ] && pg_ctl -D "$dir" status >/dev/null 2>&1; then
+    pg_ctl -D "$dir" -m fast stop >/dev/null 7>&- 8>&- 9>&-
+  fi
+  rm -f "$started"
+  echo "PostgreSQL is stopped"
+  exit 0
+fi
 if [ ! -f "$dir/PG_VERSION" ]; then
   initdb -D "$dir" -U postgres -A trust >/dev/null 7>&- 8>&- 9>&-
 fi
@@ -60,18 +74,6 @@ fi
 if [ "$mode" = start ]; then
   rm -f "$started" # a server started for everyone outlives the runs, also one a run started
   echo "PostgreSQL is up: postgresql://postgres@/<database>?host=$dir"
-  exit 0
-fi
-if [ "$mode" = stop ]; then
-  if ! flock -x -n 9; then
-    echo "$0: a run still uses the server; it keeps running" >&2
-    exit 1
-  fi
-  if pg_ctl -D "$dir" status >/dev/null 2>&1; then
-    pg_ctl -D "$dir" -m fast stop >/dev/null 8>&- 9>&-
-  fi
-  rm -f "$started"
-  echo "PostgreSQL is stopped"
   exit 0
 fi
 flock -s 9

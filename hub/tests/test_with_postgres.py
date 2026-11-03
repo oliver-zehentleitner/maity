@@ -244,3 +244,22 @@ def test_stop_leaves_the_server_up_under_a_command_whose_wrapper_was_killed(
         assert time.monotonic() < deadline, "the server stays held after the command ended"
         time.sleep(0.05)
     assert len(calls(run, "stop")) == 1
+
+
+def test_stop_on_a_stopped_server_starts_nothing(run: dict[str, str]) -> None:
+    """Neither a stopped server nor a missing data directory (a mistyped MAITY_PG_DIR) is started
+    or created by --stop just to be stopped again."""
+    subprocess.run([SCRIPT, "--stop"], env=run, check=True)
+    (Path(run["MAITY_PG_DIR"]) / "PG_VERSION").touch()
+    subprocess.run([SCRIPT, "--stop"], env=run, check=True)
+    log = Path(run["FAKE_LOG"]).read_text() if Path(run["FAKE_LOG"]).exists() else ""
+    assert "initdb" not in log and calls(run, "start") == [] and calls(run, "stop") == []
+
+
+def test_the_cleanup_matches_its_own_databases_only(run: dict[str, str]) -> None:
+    """`_` in the run's name is a wildcard in LIKE; the cleanup compares the prefix instead."""
+    subprocess.run([SCRIPT, "true"], env={**run, "MAITY_RUN_NAME": "a_b"}, check=True)
+    lines = Path(run["FAKE_LOG"]).read_text().splitlines()
+    (query,) = [line for line in lines if line.startswith("psql") and "select datname" in line]
+    assert " like " not in query.lower()
+    assert "left(datname, length('maity_test_a_b_" in query

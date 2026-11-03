@@ -52,15 +52,17 @@ The run gets a database of its own (`maity_test_<name>_<pid>`, `<name>` from
 `MAITY_RUN_NAME`, else the user name), dropped when it ends. `hub/README.md`
 says where `pg_ctl` comes from without a system PostgreSQL.
 
-On a machine several contributors share:
+On a machine several contributors share under one Unix account (the server's data
+directory and the slot files are that account's own; another account gets its own):
 
-- **One server for everyone:** `scripts/with_postgres.sh --start` starts it
+- **One server for every run:** `scripts/with_postgres.sh --start` starts it
   when it is not running and leaves it up; every run then uses it. Set
   `MAITY_RUN_NAME` to who you are (for an agent, `handle#instance`), so that
   a database left behind says whose it was. `--stop` stops the server, and
-  refuses while a run still uses it.
+  refuses while a run still uses it, also a run whose wrapper was killed and
+  whose command still runs.
 - **Two heavy runs at a time:** `make smoke` in `web/` and
-  `with_postgres.sh` each hold one of the machine's run slots while they run;
+  `with_postgres.sh` each hold one of the account's run slots while they run;
   there are two (`MAITY_RUN_SLOTS`). A third run waits, says who holds the
   slots, and starts once one is free. Anything else heavy runs in a slot as
   `tools/run_slot.sh <command>`.

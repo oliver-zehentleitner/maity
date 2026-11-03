@@ -101,12 +101,13 @@ class RunSlotTest(unittest.TestCase):
         self.assertEqual(result.returncode, 5)
 
     def test_a_slot_count_that_is_no_number_is_refused(self) -> None:
-        for value in ("0", "x", ""):
+        for value in ("0", "x", "08", "010", ""):
             result = subprocess.run(
                 [SCRIPT, "true"],
                 env={**self.env, "MAITY_RUN_SLOTS": value},
                 capture_output=True,
                 text=True,
+                timeout=30,  # 08 once passed the check and then waited forever
             )
             if value == "":
                 self.assertEqual(result.returncode, 0, "empty means the default")
