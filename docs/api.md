@@ -4346,11 +4346,18 @@ contexts of the commit statuses on a commit (§11). The hub builds no name
 in. With it set, every read of a commit's checks also reports
 `required_check` (§6.6, §6.13, §11); with `null` that field is `null`.
 It is part of the `repository` object a `PATCH` sends, beside `url` and
-`default_branch`: a `repository` without `required_check` keeps the
-current value, `null` clears it, and an empty or longer string is
-`invalid` (`details.fields["repository.required_check"]`). Changing it
-starts no read of its own; the next observation of each target reports
-the new name.
+`default_branch`, with a rule of its own: a `repository` without
+`required_check` keeps the current value as long as its `url` is the
+project's current one, `null` clears it, and an empty or longer string
+is `invalid` (`details.fields["repository.required_check"]`). A
+`repository` with another `url` and no `required_check` sets it to
+`null`, and `repository: null` clears it with the rest: a check name is
+a convention of one repository. This differs from `default_branch`,
+which a `repository` without it sets to `main`, on purpose: a client
+that predates the field and sends `{url, default_branch}` must not
+erase the name. Changing it starts no read of its own; the next
+observation of each target reports the new name, and that change wakes
+nobody (§6.6).
 
 **Logo** and **banner** say what the dashboard may ask for instead of
 drawing a monogram: `available` — `GET …/logo` (`…/banner`) has an
@@ -5789,19 +5796,40 @@ forge request of its own. `status` is one of:
 |---|---|
 | `success` | the check ran on this commit and passed |
 | `failure` | it ran and did not pass: `failure`, `timed_out`, `action_required`, `startup_failure`, `error`, and also `neutral` and `skipped`, since a check that did not pass is not green |
-| `cancelled` | its run was cancelled. On the default branch that means superseded by a newer merge, not red: a commit that merged while a run was waiting has its waiting run cancelled by GitHub (`context/process.md`); the dashboard says "superseded", never "failed" |
+| `cancelled` | its latest run was cancelled: by hand, by a timeout (which GitHub Actions ends as `cancelled`, `context/process.md`) or by a concurrency group. It says nothing about why and is neither green nor "superseded": the dashboard says "cancelled", and only `success` is green |
 | `pending` | queued, in progress, or `stale` |
 | `missing` | the checks were all read and none carries the name |
 | `unknown` | the checks could not all be read (more than the probe pages through, no permission for them) |
 
-When several runs or statuses on the commit carry the name, the worst
-counts, in the order `failure`, `pending`, `cancelled`, `success`. The
-summary `checks` stays as it is (a `cancelled` run still counts as
-`failure` there); `required_check` is the field that tells "superseded"
-from "red". The board and `maity task show` show the watched head
+Only the current result of each check is read: for a check run the
+latest run of that name on the commit (GitHub's `filter=latest`, what
+the probe reads today), for a commit status the latest status of that
+context. A re-run therefore replaces the earlier attempt: while it runs
+the status is `pending`, and an earlier `failure` does not outlast a
+later `success`. When several current results carry the name, such as a
+check run and a commit status, or check runs of two apps, the worst
+counts, in the order `failure`, `pending`, `cancelled`, `success`.
+Earlier attempts are never read.
+
+No check status says "superseded". With Maity's own CI a commit on the
+default branch whose waiting run a newer one replaced has no `ci-ok` at
+all (`missing`), and a pull request's run cancelled by a newer push
+still ends `ci-ok` as `failure` (its `if: always()`). That a commit was
+superseded is read from the branch, not from its checks: on a commit
+link it is `ahead: true` (§6.13); on a report it is `mismatch` or a new
+`pr_head_sha`. The summary `checks` stays as it is (a `cancelled` run
+still counts as `failure` there); `required_check` keeps `cancelled`
+apart, so a cancelled run is not shown as "failed" either.
+
+The board and `maity task show` show the watched head
 beside it ("head `d91e294` · ci-ok success · 3 min ago"). A change of
-`required_check` alone is a change of the observation and emits
-`probe_observed` (§8.2); it never sets `mismatch`.
+`required_check.status` is a change of the observation and emits
+`probe_observed` that wakes as §8.2 says; it never sets `mismatch`. A
+`required_check` that appears for the first time (an observation stored
+before the field existed, or the project first naming a check) or that
+changes only its `name` (a `PATCH` of `repository.required_check`) is
+stored and emitted with an empty audience: it wakes nobody, since
+nothing changed on the forge.
 
 `revision` is set by the hub: 1 for the card's first report, plus 1 for
 every report that replaces it, including a report on a `done` card
@@ -7010,7 +7038,8 @@ can make the hub read a private repository's issue titles, states or
 bodies onto the board by naming it in a link or an import.
 
 A change of an observation's `state` or `title` emits `link_observed`
-(§8.2). The hub never writes to the forge: a link is not a GitHub
+(§8.2); on a `commit` link, a change of `found`, `checks`,
+`required_check`, `branch_head_sha` or `ahead` does. The hub never writes to the forge: a link is not a GitHub
 "linked issue", and closing a card closes nothing on the forge.
 
 **Commit links** (`kind: commit`) are how a deploy is observed. A
@@ -7041,7 +7070,13 @@ budget, §11.4) and stores:
   `null` when the branch could not be read.
 
 A read of a commit link costs at most one read of the commit, the reads
-of its check runs and statuses (§11) and one read of the default branch.
+of its check runs and statuses (§11) and one read of the default
+branch's head. The branch read is head-only: it reads no checks of the
+branch's head, and it is the same cached branch observation as §11's
+(per project and branch, within `max_age`), so all commit links of a
+project share it. The commit's reads are cached by its sha the same
+way, so two cards linking one commit cost one read. A report and a
+forge link of another kind cost exactly what they cost before.
 The observation is one read or none: when a part cannot be read because
 the source's budget is spent (§11.4), the read is dropped as a whole and
 the last observation stays, with its `observed_at`. A part the forge
@@ -9699,7 +9734,7 @@ learns its content.
 | `credential_revoked` | the credential's member, `trust:owner` | credential id, `reason` |
 | `credential_in_payload` | the credential's owner, `trust:owner`, `trust:admin` | credential id; never the value |
 | `event_redacted` | the redacted event's own audience, never wider; for a conversation's message the conversation's audience instead: the two parties of a direct one, the current participants of a group chat, in a closed one also its former human participants and the redacting admin (§8.5) | `seq`, `reason`; `note_id` too when a note was redacted (§6.16); `history_id` and `task_id` instead of `seq` when a card history entry was (§6.15) |
-| `probe_observed` | on a report: the holder of the affected card, with `mismatch: true` also `trust:admin`; nobody on a `done` or `cancelled` card without a mismatch or with its pull request merged, and the report keeps `observed` and `mismatch` to read; on the open release: its card's holder, `trust:admin`. Wakes only when something the reader acts on changed: on a report, `observed` without its `observed_at`, or `mismatch`, against the card's last `probe_observed` that reached all of these readers (a new report's first observation included; one that contradicts the new report always wakes); otherwise a report's observation is emitted with an empty audience, for the views that read every event; on the open release, a ref's `found`, `state`, `head_sha`, `checks`, `merged_at` or `sha`, or whether its `mergeable` is `conflicting` — `unknown` and `mergeable` taking turns is stored and wakes nobody | the observation: on a report `{task, observed, mismatch}`, `observed` being `{pr_state, pr_head_sha, checks, required_check, branch_head_sha, observed_at}` (§6.6); on the open release `{task, observations}` |
+| `probe_observed` | on a report: the holder of the affected card, with `mismatch: true` also `trust:admin`; nobody on a `done` or `cancelled` card without a mismatch or with its pull request merged, and the report keeps `observed` and `mismatch` to read; on the open release: its card's holder, `trust:admin`. Wakes only when something the reader acts on changed: on a report, `observed` without its `observed_at`, or `mismatch`, against the card's last `probe_observed` that reached all of these readers (a new report's first observation included; one that contradicts the new report always wakes), where a `required_check` that appears for the first time or changes only its `name` counts as no change (§6.6); otherwise a report's observation is emitted with an empty audience, for the views that read every event; on the open release, a ref's `found`, `state`, `head_sha`, `checks`, `merged_at` or `sha`, or whether its `mergeable` is `conflicting` — `unknown` and `mergeable` taking turns is stored and wakes nobody | the observation: on a report `{task, observed, mismatch}`, `observed` being `{pr_state, pr_head_sha, checks, required_check, branch_head_sha, observed_at}` (§6.6); on the open release `{task, observations}` |
 | `task_merged` | the card's done authority as §6.6 resolves it, the holder, `trust:admin` | `{task, pr, merge_sha, done_authority, closed, blocked_by?}` (§6.6); wakes the done authority only, and nobody when `closed` is true |
 | `placement_created`, `placement_updated` | `runner:<id>` of the placement's runner once the placement is approved (a pending proposal never names the runner), the creator, the owner of the agent profile | `placement_id`, `generation`, `desired`, `harness`, `target`, `approval.status`, `closed_reason`; never `briefing`, `session_hint` or `logs_hint` (§15.10) |
 | `placement_reported` | the creator, the owner of the agent profile | `placement_id`, `state`, `reason`, `detail`, `exit_code`, `observed_generation`, `restarts`, `retry_at` |
@@ -11416,16 +11451,19 @@ to the forge.
 `mergeable: conflicting` with `checks: none`), `unknown`. A pull request
 the forge does not have is `{number, found: false}` and nothing else; it
 is an answer, not an error. For `branch`:
-`{name, head_sha, found, required_check}`, `head_sha` null when not
-found; `required_check` is the project's required check on `head_sha`
-(§6.6), `null` when the project names none or the branch is not found,
-and reading it costs the check reads of that commit. For `tag`: `{name, sha, found, observed_at}`,
+`{name, head_sha, found}`, `head_sha` null when not found, as before:
+a branch read reads no checks, neither here nor where it feeds
+`report.observed` or a commit link's `branch_head_sha`, since every
+reported card reads its branch each round and no card shows a branch's
+check; the required check on a branch's head is read with
+`?commit=<head_sha>`. For `tag`: `{name, sha, found, observed_at}`,
 the same shape as `release.tag`. For `commit` (`?commit=` takes the full
 40 hex sha): `{sha, found, checks, checks_detail, required_check,
 branch_head_sha, ahead}`, the shape of a commit link's observation
 (§6.13); `{sha, found: false}` when the forge does not have it, and a
 sha that is not 40 hex is `invalid`. `required_check` on `pr` is read
-from its `checks_detail`, at no extra cost. Only the project's own
+from its `checks_detail`, at no extra cost; only `pr` and `commit`
+carry `required_check`. Only the project's own
 repository is read, as everywhere here. Errors: `probe_not_configured`,
 `probe_unavailable` (with the last observation in `details.last` when one
 exists). The same reads feed `report.observed`,
