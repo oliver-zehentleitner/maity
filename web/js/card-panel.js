@@ -161,10 +161,14 @@ window.Maity = window.Maity || {};
         : h("div", { class: "md" }, M.markdown(n.body, where, { mentions: n.mentions, hrefOf: (id) => ctx.link("members", id), ctx }));
     }
 
+    // A note's author as the byline says it (@handle), as plain text for a button's label,
+    // so a screen reader's list of buttons tells one note's Edit from the next.
+    const whoOf = (n) => { const b = byline(ctx, n.author); return typeof b === "string" ? b : b.textContent; };
+
     function noteLine(n) {
       const actions = mayEdit(n) || mayRemove(n) ? h("span", { class: "card-note-actions" },
-        mayEdit(n) ? h("button", { type: "button", class: "small card-note-edit", "aria-label": M.t("cardpanel.notes.edit.label"), onclick: () => editNote(n) }, M.t("cardpanel.notes.edit")) : null,
-        mayRemove(n) ? h("button", { type: "button", class: "small card-note-remove", "aria-label": M.t("cardpanel.notes.remove.label"), onclick: () => removeNote(n) }, M.t("cardpanel.notes.remove")) : null) : null;
+        mayEdit(n) ? h("button", { type: "button", class: "small card-note-edit", "aria-label": M.t("cardpanel.notes.edit.label_of", { who: whoOf(n), when: formatTime(n.created_at) }), onclick: () => editNote(n) }, M.t("cardpanel.notes.edit")) : null,
+        mayRemove(n) ? h("button", { type: "button", class: "small card-note-remove", "aria-label": M.t("cardpanel.notes.remove.label_of", { who: whoOf(n), when: formatTime(n.created_at) }), onclick: () => removeNote(n) }, M.t("cardpanel.notes.remove")) : null) : null;
       return h("li", { class: "card-note", "data-note": n.id },
         h("p", { class: "muted" }, byline(ctx, n.author), " · " + formatTime(n.created_at)),
         !removedNote(n) && n.edited ? noteEdited(ctx, n.edited) : null,
@@ -180,19 +184,28 @@ window.Maity = window.Maity || {};
       const fieldId = "card-note-edit-" + n.id, reasonId = "card-note-reason-" + n.id;
       const text = M.dom.sendOnCtrlEnter(h("textarea", { id: fieldId, rows: "4", maxlength: "4096" }));
       text.value = n.body;
-      const reason = h("input", { type: "text", id: reasonId, maxlength: "500", required: own ? null : "required" });
+      const reasonError = h("p", { class: "field-error", id: reasonId + "-error", hidden: "" });
+      const reason = h("input", { type: "text", id: reasonId, maxlength: "500", required: own ? null : "required", "aria-describedby": reasonId + "-error" });
       const save = h("button", { type: "submit" }, M.t("cardpanel.notes.edit.save"));
       const editStatus = M.statusLine();
       let saving = false;
       const back = () => { notes().then(() => { const b = noteItem(n.id) && noteItem(n.id).querySelector("button.card-note-edit"); if (b) b.focus(); }); };
       const form = h("form", {
         class: "card-note-edit-form",
-        onkeydown: (e) => { if (e.key === "Escape") { e.preventDefault(); back(); } },
+        onkeydown: (e) => { if (e.key === "Escape" && !e.defaultPrevented) { e.preventDefault(); back(); } },
         onsubmit: async (e) => {
           e.preventDefault();
           if (saving) return;
           if (!text.value.trim()) { text.focus(); return; }
-          if (!own && !reason.value.trim()) { editStatus.fail("", { message: M.t("cardpanel.notes.edit.reason_needed") }); reason.focus(); return; }
+          if (!own && !reason.value.trim()) {
+            reasonError.textContent = M.t("cardpanel.notes.edit.reason_needed");
+            reasonError.hidden = false;
+            reason.setAttribute("aria-invalid", "true");
+            reason.focus();
+            return;
+          }
+          reasonError.hidden = true;
+          reason.removeAttribute("aria-invalid");
           saving = true;
           save.disabled = true;
           editStatus.busy(M.t("cardpanel.notes.edit.saving"));
@@ -210,7 +223,7 @@ window.Maity = window.Maity || {};
         },
       },
       h("label", { for: fieldId }, M.t("cardpanel.notes.edit.field")), text, M.projectMentionPicker(ctx, text),
-      h("label", { for: reasonId }, own ? M.t("cardpanel.notes.edit.reason") : M.t("cardpanel.notes.edit.reason_required")), reason,
+      h("label", { for: reasonId }, own ? M.t("cardpanel.notes.edit.reason") : M.t("cardpanel.notes.edit.reason_required")), reason, reasonError,
       h("p", { class: "hint" }, M.t("cardpanel.notes.edit.hint")),
       h("span", { class: "card-note-edit-actions" }, save,
         h("button", { type: "button", class: "secondary", onclick: () => back() }, M.t("cardpanel.notes.edit.cancel"))),
@@ -239,6 +252,7 @@ window.Maity = window.Maity || {};
     }
 
     async function notes() {
+      const draft = noteField ? noteField.value : "";
       clear(notesBox);
       let list;
       try {
@@ -252,6 +266,7 @@ window.Maity = window.Maity || {};
         : h("p", { class: "muted" }, M.t("cardpanel.notes.none")), removeStatus.el);
       if (closed()) return;
       const text = noteField = M.dom.sendOnCtrlEnter(h("textarea", { id: "card-note-body", rows: "3", maxlength: "4096", placeholder: M.t("cardpanel.notes.placeholder") }));
+      text.value = draft;
       const status = M.statusLine();
       const submit = h("button", { type: "submit" }, M.t("cardpanel.notes.post"));
       // One post at a time: a second tap or Ctrl+Enter while the first is
@@ -274,6 +289,7 @@ window.Maity = window.Maity || {};
             status.fail(M.t("cardpanel.notes.not_posted"), M.boardEdit ? M.boardEdit.said(err) : err);
             return;
           }
+          text.value = "";
           await notes();
           if (noteField) noteField.focus();
         },

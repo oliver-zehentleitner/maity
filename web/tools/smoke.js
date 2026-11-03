@@ -3567,6 +3567,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const neNote = (id) => cpPanel().querySelectorAll("li.card-note").find((li) => li.getAttribute("data-note") === id);
   const cpPatches = [], cpPatch = win.Maity.api.patch;
   win.Maity.api.patch = (p, b) => { cpPatches.push([p, b]); return cpPatch(p, b); };
+  // Each button names its note, so a screen reader's list of buttons tells them apart.
+  const cpEditLabels = cpPanel().querySelectorAll("button.card-note-edit").map((b) => b.getAttribute("aria-label"));
+  expect(cpEditLabels.length >= 2 && cpEditLabels.every((l) => /^Edit the note by @\S+ from /.test(l)) && cpEditLabels[0] !== cpEditLabels[1]
+    && cpPanel().querySelectorAll("button.card-note-remove").every((b) => /^Remove the note by @\S+ from .+ for everyone$/.test(b.getAttribute("aria-label"))),
+    "note edit: Edit and Remove name the note's author and date in their labels " + JSON.stringify(cpEditLabels));
+  // A draft in Add a note outlives an edit being saved or cancelled (the list is drawn again).
+  byId("card-note-body").value = "A draft, not sent yet.";
   btn(neNote("nte-0031"), "Edit").click(); await tick();
   const cpEditText = byId("card-note-edit-nte-0031"), cpEditReason = byId("card-note-reason-nte-0031");
   expect(cpEditText && cpEditText.value === "The CLI needs `--no-code` here too." && document.activeElement === cpEditText && !neNote("nte-0031").querySelector(".card-note-actions")
@@ -3574,8 +3581,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "note edit: the text in a field, focused, the reason asked for another's note");
   cpEditText.value = "The CLI needs `--no-code` and `--quiet`.";
   neNote("nte-0031").querySelector("form.card-note-edit-form").dispatch("submit"); await tick();
-  expect(!cpPatches.length && text(neNote("nte-0031")).includes("Say why you change someone else's note.") && document.activeElement === cpEditReason,
-    "note edit: another's note is not sent without a reason");
+  const cpReasonError = byId("card-note-reason-nte-0031-error");
+  expect(!cpPatches.length && text(cpReasonError) === "Say why you change someone else's note." && !cpReasonError.hidden && document.activeElement === cpEditReason
+    && cpEditReason.getAttribute("aria-invalid") === "true" && cpEditReason.getAttribute("aria-describedby") === "card-note-reason-nte-0031-error",
+    "note edit: another's note is not sent without a reason, said at the field");
   cpEditReason.value = "  scope  ";
   neNote("nte-0031").querySelector("form.card-note-edit-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(JSON.stringify(cpPatches[0]) === JSON.stringify(["/projects/maintainer/maity/tasks/tsk-0001/notes/nte-0031", { body: "The CLI needs `--no-code` and `--quiet`.", reason: "scope" }])
@@ -3583,6 +3592,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(neNote("nte-0031")).includes("The CLI needs --no-code and --quiet.") && !text(neNote("nte-0031")).includes("here too")
     && document.activeElement === btn(neNote("nte-0031"), "Edit"),
     "note edit: sent with the reason, the new text and the mark shown, the focus back on Edit " + text(neNote("nte-0031")));
+  expect(byId("card-note-body").value === "A draft, not sent yet.", "note edit: a draft in Add a note is kept when the list is drawn again");
+  byId("card-note-body").value = "";
   // One's own note: no reason needed; Cancel and Escape leave it as it was.
   const cpMine = cpPanel().querySelectorAll("li.card-note")[2].getAttribute("data-note");
   btn(neNote(cpMine), "Edit").click(); await tick();
@@ -3603,6 +3614,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   neNote(cpMine).querySelector("form.card-note-edit-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(neNote(cpMine).querySelector("form.card-note-edit-form") && text(neNote(cpMine)).includes("Not saved") && !btn(neNote(cpMine), "Save").disabled,
     "note edit: a refusal keeps the form and says so");
+  // An Escape the mention picker took (preventDefault) closes the picker only, not the edit.
+  neNote(cpMine).querySelector("form.card-note-edit-form").dispatch("keydown", { key: "Escape", defaultPrevented: true }); for (let k = 0; k < 4; k++) await tick();
+  expect(neNote(cpMine).querySelector("form.card-note-edit-form"), "note edit: an Escape already taken by the mention picker leaves the edit open");
   neNote(cpMine).querySelector("form.card-note-edit-form").dispatch("keydown", { key: "Escape" }); for (let k = 0; k < 4; k++) await tick();
   expect(!neNote(cpMine).querySelector("form") && cpPanel(), "note edit: Escape in the form leaves the edit, not the card");
   win.Maity.api.patch = cpPatch;
@@ -9373,8 +9387,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const viGet = win.Maity.api.get;
   const viPages = {
     "/public/pages/stranger/tool/tasks/tsk-1": { path: "/stranger/tool/tasks/tsk-1", kind: "card", data: { id: "tsk-1", title: "A <b>card</b>", status: "in_progress", label: "bug", holder: "agent", body: "## Steps\n\n<img src=x onerror=alert(1)> [x](javascript:alert(1))",
-      notes: [{ id: "nte-1", author: "member", body: "A *note* <img src=y onerror=alert(2)>", state: "open", created_at: "2026-11-02T08:00:00Z", redacted: false },
-        { id: "nte-2", author: "agent", body: null, state: "dismissed", created_at: "2026-11-02T09:00:00Z", redacted: true }] } },
+      notes: [{ id: "nte-1", author: "member", body: "A *note* <img src=y onerror=alert(2)>", state: "open", created_at: "2026-11-02T08:00:00Z", redacted: false,
+          edited: { by: "agent", at: "2026-11-02T08:30:00Z", reason: "a <b>typo</b>" } },
+        { id: "nte-2", author: "agent", body: null, state: "dismissed", created_at: "2026-11-02T09:00:00Z", redacted: true, edited: null }] } },
     "/public/pages/stranger/tool/board": { path: "/stranger/tool/board", kind: "board", data: { columns: [{ status: "open", cards: [{ id: "tsk-1", title: "A <b>card</b>", label: "bug", holder: "member" }] }] } },
     "/public/pages/stranger/tool": { path: "/stranger/tool", kind: "project", data: { name: "Tool", full_name: "stranger/tool", about: null, state: "active", repository_url: "javascript:alert(1)", links: [], people: [{ name: "Sam", handle: "sam", page: "/sam" }], agents: [], statistics: { totals: { cards_done: 3, prs_merged: null } },
       ticker: [{ type: "merge", text: "#1 <b>merged</b>", url: "https://github.com/s/t/pull/1", at: "2026-11-02T08:00:00Z" }, { type: "decision", text: "Decided: tsk-1", url: null, at: "2026-11-02T07:00:00Z" }],
@@ -9407,6 +9422,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(viNotes.length === 2 && text(viNotes[0]).includes("A member") && text(viNotes[0]).includes("note") && !viNotes[0].querySelector("img")
     && text(viNotes[1]).includes("Removed.") && text(viNotes[1]).includes("dismissed") && !text(viNotes[0]).includes("open"),
     "visitor: a card's notes under it, their authors named as the holder, a redacted one as removed");
+  expect(text(viNotes[0]).includes("edited by An agent") && text(viNotes[0]).includes(": a <b>typo</b>") && !viNotes[0].querySelector("b")
+    && !text(viNotes[1]).includes("edited"), "visitor: an edited note says who edited it, when and why, the reason as text; a removed one no mark " + JSON.stringify(text(viNotes[0])));
   await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
   expect(viView() && viView().getAttribute("data-kind") === "project" && text(viView()).includes("Sam")
     && !viView().querySelectorAll("a").some((a) => /javascript:/.test(a.getAttribute("href") || "")) && text(viView()).includes("Cards done: 3")

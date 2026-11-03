@@ -2179,9 +2179,9 @@
     "en": "e511e3013311068b",
     "text": "95ae7347d1e2f256"
   },
-  "cardpanel.notes.edit.label": {
-    "en": "f3e2eae8127990db",
-    "text": "a625a75d9f5f8bf1"
+  "cardpanel.notes.edit.label_of": {
+    "en": "74df97e9f8116256",
+    "text": "d9bfaf4885aec351"
   },
   "cardpanel.notes.edit.not_saved": {
     "en": "ae6ac2366f27b54c",
@@ -2259,9 +2259,9 @@
     "en": "3f9a5f41ede9b7a3",
     "text": "6f33dba2ce8e8268"
   },
-  "cardpanel.notes.remove.label": {
-    "en": "b4e1a24685c8066e",
-    "text": "64440111f95b031f"
+  "cardpanel.notes.remove.label_of": {
+    "en": "85ee23a6985e10e2",
+    "text": "90680fae47b12db5"
   },
   "cardpanel.notes.remove.reason_needed": {
     "en": "dab0775f0a6e599c",
