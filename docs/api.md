@@ -12002,26 +12002,36 @@ The hub serves:
 
 The second kind is never read with the project's owner's grant (§11.4:
 the App installation or the owner's token act on the project's own
-repository alone). It is read with the instance token
-(`MAITY_FORGE_GITHUB_TOKEN`) where the operator set one, else without
-any token, and only where the forge reports the repository public: a
-repository the instance token could read although it is private is
-`not_public` all the same. The visibility is read as §11.4 reads it,
+repository alone). For a project in one of the operator's own
+namespaces (§11.4, `MAITY_FORGE_INSTANCE_NAMESPACES`) it is read with
+the instance token (`MAITY_FORGE_GITHUB_TOKEN`), for every other project
+without any token: the instance token serves the operator's projects
+only, here as everywhere. It is read only where the forge reports the
+repository public: a repository the instance token could read although
+it is private is `not_public` all the same. The visibility is read as §11.4 reads it,
 before the first read and on every refresh of its family (at most every `max_age`, below, and
 at least every 600 s whatever `max_age` asks); a
-private one, or one whose visibility cannot be read, is refused with
-reason `not_public`, and what the hub held of it is dropped then. A
+private one, or one whose visibility cannot be read for any reason but
+a spent budget, is refused with reason `not_public`, and what the hub
+held of it is dropped then; a spent budget keeps what the hub holds
+(below). A
 named repository the forge answers with a redirect (renamed or moved)
 is not followed, as §11.4 does for the project's own: it is
 `ktw_unavailable` with reason `repository_moved` until the family file
 names its new place. Its `.keep-the-why` is read through the forge's
 contents API like the project's own (64 KiB), never from a raw or Pages
-host. These reads count against the hub-wide budget of the instance
-token, or of reads without a token, which every serving process shares
-(§11.4, **Rate limits**), never against an owner's grant; without a
-token GitHub allows 60 reads an hour per egress address, so the cache
-above carries the load. A spent budget is `probe_unavailable` with
-`details.retry_at`. Any other `canonical` or `root` — a
+host. These reads count against the budget of their source — the
+instance token's, or that of reads without a token — never against an
+owner's grant (§11.4, **Rate limits**; the hub keeps one budget per
+source, shared by its serving processes where its database is
+PostgreSQL). Without a token GitHub allows 60 reads an hour per egress
+address: a project outside the operator's namespaces that names large
+families will see some of them answered `probe_unavailable` until the
+budget is back, and the cache only spreads those reads, it does not
+remove them. A spent budget, whenever it is found, is
+`probe_unavailable` with `details.retry_at`, never `not_public`; what the
+hub holds of the repository is kept and served again once the budget
+is back, and a `retry_at` that has passed answers nothing. Any other `canonical` or `root` — a
 repository named only inside an export (a See into another repository,
 `Superseded by`), a path that is not a member — is `not_found` with
 `details.reason: not_in_family`; the library then shows the reference as
@@ -12099,7 +12109,12 @@ viewer.
 `canonical`, `root`, `url` and the bytes as read, and `Cache-Control:
 private, no-cache`, as a contract file does (§6.8): the browser keeps
 the answer and sends `If-None-Match`, and a `304` costs no second
-megabyte. Every refusal comes before `If-None-Match` is compared: a
+megabyte. The project's own repository is checked on every call against
+the source §11.4 chooses for it, so an export held in memory is not
+served once that source no longer covers it: a removed grant ends it at
+once, a repository the instance token finds private within §11.4's 10
+minutes of visibility, in each serving process. Every refusal comes
+before `If-None-Match` is compared: a
 caller without `project:read`, a repository no longer in the family, no
 longer public or past the cap, and a member that failed get their
 error, never `304`.
