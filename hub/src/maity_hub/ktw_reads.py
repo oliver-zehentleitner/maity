@@ -17,9 +17,10 @@ import re
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
-from maity_hub import bounded, forge, ktw, outbound
+from maity_hub import bounded, clock, forge, ktw, outbound
 
 BODIES_CAP = 4 * 1024 * 1024
 MAX_NAMED = 8
@@ -277,6 +278,15 @@ def _unavailable(reason: str, last: Served | None = None, **details: Any) -> Ref
     )
 
 
+def _spent(retry_at: datetime | None) -> None:
+    """`probe_unavailable` while `retry_at` is ahead; a time already past says nothing (the
+    read that found the budget spent is answered again only until then, §11.5)."""
+    if retry_at is not None and retry_at > clock.now():
+        raise forge.ForgeUnavailableError(
+            "the forge's rate limit is spent", rate_limited=True, retry_at=retry_at
+        )
+
+
 def _member(
     reader: forge.Forge,
     others: forge.Forge,
@@ -290,6 +300,10 @@ def _member(
     own = forge.repository_of(repository_url).lower()
     try:
         entry, _fresh = ktw.CACHE.get(reader, project_id, repository_url, max_age)
+        held = entry.snapshot
+        if held is not None and held.retry_at is not None and held.retry_at <= clock.now():
+            # the budget is back: the read that found it spent stands for nothing now
+            entry, _fresh = ktw.CACHE.get(reader, project_id, repository_url, 0)
     except ktw.Busy:
         raise _unavailable("forge_unavailable") from None
     snapshot = entry.snapshot
@@ -302,9 +316,7 @@ def _member(
     if snapshot.not_covered is not None:
         raise forge.NotCoveredError(snapshot.not_covered)
     if snapshot.retry_at is not None:
-        raise forge.ForgeUnavailableError(
-            "the forge's rate limit is spent", rate_limited=True, retry_at=snapshot.retry_at
-        )
+        _spent(snapshot.retry_at)
     if snapshot.error is not None:
         raise _unavailable(snapshot.error["reason"])
     wanted = own if not canonical else _repository(canonical)
@@ -398,6 +410,7 @@ def export(
     canonical_url, member = _member(
         reader, others, project_id, repository_url, canonical, root, max_age
     )
+    _spent(member.retry_at)
     if member.error is not None or not member.state_url:
         error = member.error or {"reason": "no_state_url"}
         extra = {k: v for k, v in error.items() if k in ("status", "version")}

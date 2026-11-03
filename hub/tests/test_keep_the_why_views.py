@@ -615,13 +615,13 @@ def test_a_spent_budget_is_probe_unavailable_with_retry_at(
 
     fake.family()
     project(owner)
-    when = datetime(2026, 11, 3, 12, 0, tzinfo=UTC)
+    when = datetime(2099, 11, 3, 12, 0, tzinfo=UTC)
     monkeypatch.setattr(forge.Forge, "retry_at", lambda self: when)
     answer = owner.get(f"{PATH}/export")
     assert answer.status_code == 503
     error = answer.json()["error"]
     assert error["code"] == "probe_unavailable"
-    assert error["details"]["retry_at"].startswith("2026-11-03T12:00:00")
+    assert error["details"]["retry_at"].startswith("2099-11-03T12:00:00")
     assert fake.state_reads == []
 
 
@@ -738,7 +738,7 @@ def test_the_visibility_check_passes_a_spent_budget_on() -> None:
     from datetime import UTC, datetime
 
     spent = forge.ForgeUnavailableError("rate limited")
-    spent.retry_at = datetime(2026, 11, 3, 12, 0, tzinfo=UTC)
+    spent.retry_at = datetime(2099, 11, 3, 12, 0, tzinfo=UTC)
     with pytest.raises(forge.ForgeUnavailableError):
         ktw_reads._visibility(_Reader(spent), "acme/other")  # type: ignore[arg-type]
 
@@ -819,7 +819,7 @@ def _spent() -> forge.ForgeUnavailableError:
     from datetime import UTC, datetime
 
     return forge.ForgeUnavailableError(
-        "rate limited", 403, rate_limited=True, retry_at=datetime(2026, 11, 3, 12, 0, tzinfo=UTC)
+        "rate limited", 403, rate_limited=True, retry_at=datetime(2099, 11, 3, 12, 0, tzinfo=UTC)
     )
 
 
@@ -833,7 +833,7 @@ def test_a_budget_spent_while_reading_the_family_is_probe_unavailable(
     assert answer.status_code == 503
     error = answer.json()["error"]
     assert error["code"] == "probe_unavailable"
-    assert error["details"]["retry_at"].startswith("2026-11-03T12:00:00")
+    assert error["details"]["retry_at"].startswith("2099-11-03T12:00:00")
 
 
 def test_a_budget_spent_reading_a_named_repository_is_probe_unavailable(
@@ -929,3 +929,38 @@ def test_the_named_reader_is_the_instance_token_or_none() -> None:
     reader = ktw_reads.named_reader(forge.Forge("instance", access=object()))
     assert reader.granted is None and reader.access is None and reader.project_id is None
     assert grant.granted == "owner_token"  # the grant is never what named_reader is given
+
+
+def test_a_budget_spent_reading_a_childs_config_is_probe_unavailable(
+    owner: flow.Human, fake: Fake
+) -> None:
+    fake.family()
+    fake.files["hub/.keep-the-why"] = _spent()
+    project(owner)
+    answer = owner.get(f"{PATH}/export", params={"root": "hub"})
+    assert answer.status_code == 503
+    error = answer.json()["error"]
+    assert error["code"] == "probe_unavailable" and error["details"]["retry_at"].startswith("2099")
+    assert owner.get(f"{PATH}/export", params={"root": "cli"}).status_code == 200
+
+
+def test_a_retry_at_that_passed_is_read_again_not_repeated(
+    owner: flow.Human, fake: Fake, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, datetime
+
+    now = [1000.0]
+    monkeypatch.setattr(ktw, "_now", lambda: now[0])
+    fake.family()
+    root = fake.files[".keep-the-why"]
+    past = forge.ForgeUnavailableError(
+        "rate limited", 403, rate_limited=True, retry_at=datetime(2000, 1, 1, tzinfo=UTC)
+    )
+    fake.files[".keep-the-why"] = past
+    project(owner)
+    first = owner.get(f"{PATH}/export")
+    assert first.status_code == 503  # the walk found the budget spent; its time is long past
+    fake.files[".keep-the-why"] = root  # the forge answers again
+    now[0] += ktw.FORCE_INTERVAL + 1
+    again = owner.get(f"{PATH}/export")
+    assert again.status_code == 200, "not the same 503 until the cached snapshot expires"

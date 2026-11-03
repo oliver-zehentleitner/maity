@@ -6,4 +6,4 @@
 
 ### Changed
 - hub: §11.3 takes a `state.json` up to 2 MiB (was 1 MiB) and reads it as a browser does: UTF-8, no `NaN` or
-  `Infinity` (`not_json`).
+  `Infinity`, no number too large to be finite such as `1e400` (`not_json`).

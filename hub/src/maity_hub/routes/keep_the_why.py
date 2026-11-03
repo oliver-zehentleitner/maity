@@ -94,9 +94,10 @@ def _views_read(
     try:
         if not fg.configured_for(project.repository_url):
             raise forge.NotCoveredError(fg.refused or "no_grant")
-        if fg.retry_at() is not None:
+        spent = fg.retry_at()  # read once: on PostgreSQL each read is a query
+        if spent is not None:
             raise forge.ForgeUnavailableError(
-                "the forge's rate limit is spent", rate_limited=True, retry_at=fg.retry_at()
+                "the forge's rate limit is spent", rate_limited=True, retry_at=spent
             )
         # every call: no export held in memory outlives the grant or the visibility (§11.5)
         ktw_reads.require_covered(fg, forge.repository_of(project.repository_url))

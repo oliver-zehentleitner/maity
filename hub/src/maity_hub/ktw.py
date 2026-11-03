@@ -429,6 +429,8 @@ class Member:
     error: dict[str, Any] | None = None
     parent: str | None = None  # the config block's `parent:` line, as written (§11.5)
     location: str | None = None  # a location not followed, as written (§11.5)
+    # when the source's budget is there again, if its config read found it spent (§11.5 only)
+    retry_at: datetime | None = None
 
     def view(self) -> dict[str, Any]:
         return {
@@ -523,7 +525,14 @@ def walk(reader: forge.Forge, repository: str, deadline: float | None = None) ->
             try:
                 child_source = read_config(target)
             except MemberError as failed:
-                members.append(Member(path=target, name=clean_name, error=_error(failed.reason)))
+                members.append(
+                    Member(
+                        path=target,
+                        name=clean_name,
+                        error=_error(failed.reason),
+                        retry_at=failed.details.get("retry_at"),
+                    )
+                )
                 continue
             if child_source is None:
                 members.append(Member(path=target, name=clean_name, error=_error("config_missing")))
