@@ -236,6 +236,84 @@ through the probe gives that without a second source of truth.
 - Only a link to the file: a reader would leave the hub for every
   contract, which is what the request was about.
 
+## The whole contract is read inside Maity from a project setting, whole or not at all
+
+**Id:** 7f6ed086-6faf-44f1-81d8-c25ffaa4011a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish in the Maity chat, 2026-11-02, that the overview link the contract and better show it rendered inside Maity (card tsk-yhbmz7mjng7n); the coordinator's go the same day for the implementer to write the contract; the arbiter's ruling on #1235, 2026-11-02; the contract review of #1235 and the arbiter's ruling on its findings the same day (Markdown only, `private, no-cache`, the repository in the `ETag`), and the arbiter's rulings on the delta reviews the same day (a symlink refused, told by the tree's mode, each directory's tree read and the check failing closed, a missing segment `not_found_on_forge`); contract in `docs/api.md` §6.8, §6.1, §6.11, §16.11
+**Revisit when:** a project's contract outgrows 4 MiB, or a project keeps its contract in more than one file
+**See:** cards.md#a-contracts-text-stays-in-the-repository-the-card-shows-the-section-read-from-it — f29e3cb3-12ab-4af6-83f1-9b04dbaeb578 — as of 2026-11-02
+
+The overview links the project's contract and shows it in a view of its
+own, read-only: the hub reads the file a project setting names
+(`settings.contract_path`, default `docs/api.md`) through the probe at
+the default branch's commit and answers it whole, with a table of
+contents and an anchor per heading, under an `ETag` over the
+repository, the path and the file's bytes. The setting names a Markdown
+file only (`not_markdown` otherwise, the extension in any case), which
+keeps it from exposing arbitrary repository files to every
+`project:read` holder, guests included; a symlink is refused too, since
+the name says nothing about the file it points to: the hub reads the
+non-recursive tree of each directory on the path at the commit, every
+segment must be listed under exactly its name as a directory (`040000`)
+or, last, a regular file (`100644`, `100755`); a tree answered with
+`truncated: true` is `not_markdown` before any segment is looked up in
+it, a segment missing from a complete tree is `not_found_on_forge`, as
+for any file not there at the commit, and any other mode is
+`not_markdown`: the check fails closed. The
+tree of a commit never changes, so it is cached per commit SHA and
+directory. The file cap for this read and for a card's section is
+4 MiB instead of 1 MiB; a larger file is refused, never cut.
+
+**Reason:** a setting is the one place that says which file is the
+contract when no card names one. The whole file in one answer keeps the browser's search
+over the entire contract and costs one read, which the `ETag` makes
+cheap to repeat while the file does not change. The cap moved because
+this project's own contract passed 1 MiB on 2026-11-02, so a card's
+section read already refused it; cutting instead would show part of a
+contract as if it were all of it. The answer is `private, no-cache`, as
+attachments are, so a new tab or a reload revalidates instead of
+reading up to 4 MiB again; after a `304` the view keeps the `ref`,
+`url` and `fetched_at` of the last full answer.
+
+**Rejected alternatives:**
+- The table of contents plus one section per request: smaller answers,
+  but no search across the contract, and every jump a new read.
+- The first of `ticker.contract_files` as the file: ties the view to an
+  opt-in ticker and to a list whose order means nothing.
+- The file taken from the contract cards' `path`: no card, no contract;
+  several paths, no answer.
+- The 1 MiB cap kept, with the text cut: a cut contract reads as whole.
+- Any file of the repository as the contract: the whole-file read shows
+  everything, unlike a card's section, which shows only Markdown under a
+  matching heading; so the setting names a Markdown file (`.md`,
+  `.markdown`), lest a committed secret reach every `project:read`
+  holder, guests included.
+- The name rule alone: a committed symlink `x.md` to a non-Markdown
+  file resolves on the forge to the target's bytes, so the hub refuses a
+  symlink (`not_markdown`) instead of trusting the name.
+- Comparing the answer's `path` with the setting to catch a symlink:
+  GitHub's contents answer names the requested path, not the target's,
+  so the comparison never fires there.
+- Comparing the Git blob hash of the bytes with the answer's `sha`: the
+  raw form that §6.8 prescribes above 1 MB carries no `sha`, so large
+  files would slip through, and the hash only infers what the tree's
+  mode states directly.
+- One read of the recursive tree, a missing entry taken as no symlink:
+  GitHub truncates that tree for a large repository (torvalds/linux
+  lists nothing under `scripts/`), so a symlink there would pass; each
+  directory's own tree is read instead, and one answered truncated fails
+  closed.
+- A missing segment as `not_markdown`: a complete directory tree lists
+  every entry, so a missing one means the file is not there, which the
+  read already answers with `not_found_on_forge`; two codes for one case
+  would depend on the order of the reads, and the file may appear later,
+  which that code says. Nothing is shown either way.
+- `no-store` like the other API answers: every tab and reload would
+  read the whole file again, so the load would grow with tabs.
+
 ## Agents watch cards too: a status change or an update message wakes everyone waiting on the card
 
 **Id:** 95001efe-eb05-4bd0-af03-ffa42b6dbe9e
