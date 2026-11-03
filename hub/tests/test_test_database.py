@@ -62,6 +62,46 @@ def test_a_session_without_a_lock_on_the_emptied_tables_is_not_ended(
             conn.close()
 
 
+def test_a_session_that_only_drew_from_a_sequence_is_ended(
+    migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`RESTART IDENTITY` also locks the sequences the tables own: a session whose only lock is
+    on one, after a `nextval`, holds the TRUNCATE up and is ended like any other (dzse at #1289:
+    "none found", and every later cleanup waited again)."""
+    if migrated.dialect.name != "postgresql":
+        pytest.skip("the lock timeout guards the TRUNCATE on PostgreSQL")
+    monkeypatch.setattr(conftest, "TRUNCATE_LOCK_TIMEOUT", "1s")
+    with migrated.connect() as conn:
+        sequence = conn.execute(
+            text(
+                "SELECT s.relname FROM pg_class s JOIN pg_depend d"
+                " ON d.classid = 'pg_class'::regclass AND d.objid = s.oid"
+                " AND d.deptype IN ('a', 'i')"
+                " WHERE s.relkind = 'S' AND s.relnamespace = current_schema()::regnamespace"
+                " ORDER BY s.relname LIMIT 1"
+            )
+        ).scalar_one()
+    leaked = migrated.connect()
+    try:
+        leaked.execute(text("SELECT nextval(CAST(:name AS regclass))"), {"name": sequence})
+        held = leaked.execute(
+            text(
+                "SELECT c.relkind FROM pg_locks l JOIN pg_class c ON c.oid = l.relation"
+                " WHERE l.pid = pg_backend_pid()"
+                " AND c.relnamespace = current_schema()::regnamespace"
+            )
+        ).scalars()
+        assert set(held) == {"S"}  # a lock on the sequence alone, none on a table
+        with pytest.raises(conftest.LeakedConnection, match="ended so the next test runs"):
+            conftest._empty_the_tables(migrated)
+        with pytest.raises(OperationalError):
+            leaked.execute(select(1))  # ended
+        conftest._empty_the_tables(migrated)  # the next cleanup is not held
+    finally:
+        leaked.invalidate()
+        leaked.close()
+
+
 def test_a_session_in_another_database_is_not_ended(migrated: Engine) -> None:
     """The holders are looked up in this database alone: a session of another database with a
     lock on a relation of the same id is not ended (dzse at #1264)."""

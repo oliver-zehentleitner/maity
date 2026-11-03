@@ -131,20 +131,35 @@ def _empty_the_tables(engine: Engine) -> None:
         if getattr(error.orig, "sqlstate", None) != LOCK_NOT_AVAILABLE:
             raise
         holders = _end_the_lock_holders(engine, _relations(engine, tables))
+        found = (
+            f"ended so the next test runs (unless named otherwise): {holders}"
+            if holders
+            else "no session of this suite holds them: another role's, or a lock outside the"
+            " emptied tables and their sequences, so the next cleanup waits again"
+        )
         raise LeakedConnection(
             f"the cleanup before this test waited {TRUNCATE_LOCK_TIMEOUT} for locks a connection"
-            f" left in a transaction held; ended so the next test runs: {holders or 'none found'}"
+            f" left in a transaction held; {found}"
         ) from error
 
 
 def _relations(engine: Engine, tables: list[str]) -> list[int]:
-    """The ids (`oid`) of `tables` in this database's current schema."""
+    """The ids (`oid`) of `tables` in this database's current schema, and of the sequences they
+    own (a `serial` or identity column): `RESTART IDENTITY` locks those too, so a session that
+    only drew a number holds the TRUNCATE up as well (dzse at #1289)."""
     with engine.connect() as conn:
         return list(
             conn.execute(
                 text(
                     "SELECT c.oid FROM pg_class c"
                     " WHERE c.relnamespace = current_schema()::regnamespace"
+                    " AND c.relname = ANY(:names)"
+                    " UNION"
+                    " SELECT s.oid FROM pg_class s"
+                    " JOIN pg_depend d ON d.classid = 'pg_class'::regclass AND d.objid = s.oid"
+                    " AND d.refclassid = 'pg_class'::regclass AND d.deptype IN ('a', 'i')"
+                    " JOIN pg_class c ON c.oid = d.refobjid"
+                    " WHERE s.relkind = 'S' AND c.relnamespace = current_schema()::regnamespace"
                     " AND c.relname = ANY(:names)"
                 ),
                 {"names": tables},
