@@ -248,8 +248,13 @@ def test_stop_leaves_the_server_up_under_a_command_whose_wrapper_was_killed(
 
 def test_stop_on_a_stopped_server_starts_nothing(run: dict[str, str]) -> None:
     """Neither a stopped server nor a missing data directory (a mistyped MAITY_PG_DIR) is started
-    or created by --stop just to be stopped again."""
-    subprocess.run([SCRIPT, "--stop"], env=run, check=True)
+    or created by --stop just to be stopped again; on a directory without a cluster it says so,
+    and leaves no lock directory beside it."""
+    missing = subprocess.run(
+        [SCRIPT, "--stop"], env=run, check=True, capture_output=True, text=True
+    )
+    assert "no PostgreSQL in" in missing.stderr and "is stopped" not in missing.stdout
+    assert not Path(run["MAITY_PG_DIR"] + ".locks").exists()
     (Path(run["MAITY_PG_DIR"]) / "PG_VERSION").touch()
     subprocess.run([SCRIPT, "--stop"], env=run, check=True)
     log = Path(run["FAKE_LOG"]).read_text() if Path(run["FAKE_LOG"]).exists() else ""
@@ -269,17 +274,26 @@ def test_the_last_run_leaves_the_server_up_while_something_it_started_still_runs
     run: dict[str, str], tmp_path: Path
 ) -> None:
     """A command that leaves a process behind (a server of its own, a daemon) ends normally; the
-    process still holds the server lock, so the run's cleanup does not stop the server under it."""
+    process still holds the server lock, so the run's cleanup does not stop the server under it,
+    --stop refuses, and other runs still get the server instead of waiting for the process."""
     child_pid = tmp_path / "child"
     subprocess.run(
         [SCRIPT, "sh", "-c", f"sleep 60 >/dev/null 2>&1 & echo $! > {child_pid}"],
         env=run,
         check=True,
+        timeout=30,
     )
     child = int(child_pid.read_text())
     try:
         os.kill(child, 0)  # still running after the run ended
         assert len(calls(run, "start")) == 1 and calls(run, "stop") == []
+        # A lock the cleanup converted on the shared file would now be the process's alone.
+        subprocess.run([SCRIPT, "true"], env=run, check=True, timeout=30)
+        refused = subprocess.run(
+            [SCRIPT, "--stop"], env=run, capture_output=True, text=True, timeout=30
+        )
+        assert refused.returncode == 1 and "still uses the server" in refused.stderr
+        assert calls(run, "stop") == []
     finally:
         os.kill(child, signal.SIGKILL)
     deadline = time.monotonic() + 30

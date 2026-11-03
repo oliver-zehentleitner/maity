@@ -60,7 +60,8 @@ directory and the slot files are that account's own; another account gets its ow
   `MAITY_RUN_NAME` to who you are (for an agent, `handle#instance`), so that
   a database left behind says whose it was. `--stop` stops the server, and
   refuses while a run still uses it, also a run whose wrapper was killed and
-  whose command still runs.
+  whose command still runs, or a process a run left running. Other runs go
+  on meanwhile; the slot files' `.who` names the run the process came from.
 - **Two heavy runs at a time:** `make smoke` in `web/` and
   `with_postgres.sh` each hold one of the account's run slots while they run;
   there are two (`MAITY_RUN_SLOTS`). A third run waits, says who holds the

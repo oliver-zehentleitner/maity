@@ -37,6 +37,12 @@ for tool in pg_ctl initdb psql flock; do
   fi
 done
 
+# --stop on a directory without a cluster (a mistyped MAITY_PG_DIR) touches nothing and says so:
+# the server it meant may still be running.
+if [ "$mode" = stop ] && [ ! -f "$dir/PG_VERSION" ]; then
+  echo "$0: no PostgreSQL in $dir; nothing stopped (MAITY_PG_DIR)" >&2
+  exit 0
+fi
 locks="$dir.locks"
 mkdir -p "$locks"
 started="$locks/started-by-script" # the process id of a server this script started
@@ -45,8 +51,9 @@ exec 8>"$locks/state" 9>"$locks/users"
 # The state lock covers looking at the server and starting or stopping it. Fd 9 is held shared
 # for as long as a run uses the server. A process that inherits a lock holds it: neither lock
 # reaches the server, and fd 7, the run slot, does not either. The command keeps fd 9, so a command
-# whose wrapper was killed (a memory reap sends SIGKILL) still counts as a run, and --stop or the
-# last run's cleanup leaves the server up under it.
+# whose wrapper was killed (a memory reap sends SIGKILL), or a process it left running, still counts
+# as a run: --stop refuses and the last run's cleanup leaves the server up under it, while other
+# runs go on sharing it.
 flock -x 8
 # --stop comes first: it neither creates a cluster in a mistyped MAITY_PG_DIR nor starts a stopped
 # server only to stop it again.
@@ -55,7 +62,7 @@ if [ "$mode" = stop ]; then
     echo "$0: a run still uses the server; it keeps running" >&2
     exit 1
   fi
-  if [ -f "$dir/PG_VERSION" ] && pg_ctl -D "$dir" status >/dev/null 2>&1; then
+  if pg_ctl -D "$dir" status >/dev/null 2>&1; then
     pg_ctl -D "$dir" -m fast stop >/dev/null 7>&- 8>&- 9>&-
   fi
   rm -f "$started"
@@ -72,7 +79,7 @@ if ! pg_ctl -D "$dir" status >/dev/null 2>&1; then
   fi
 fi
 if [ "$mode" = start ]; then
-  rm -f "$started" # a server started for everyone outlives the runs, also one a run started
+  rm -f "$started" # a server started with --start outlives the runs, also one a run started
   echo "PostgreSQL is up: postgresql://postgres@/<database>?host=$dir"
   exit 0
 fi

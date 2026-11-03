@@ -3,8 +3,9 @@
 - `tools/run_slot.sh` runs a command in one of the account's run slots: at most two (`MAITY_RUN_SLOTS`)
   at a time, a further one waits and says who holds them. In a slot, `pytest -n auto` starts two workers.
 - hub: `scripts/with_postgres.sh --start` starts the shared PostgreSQL and leaves it up, `--stop`
-  stops it once no run uses it, also not under a command whose wrapper was killed; it never starts
-  or creates a server. `CONTRIBUTING.md` has the rules for PostgreSQL runs on a shared machine.
+  stops it once no run uses it, also not under a command whose wrapper was killed or a process a
+  run left running, which never blocks other runs; it never starts or creates a server and says
+  when `MAITY_PG_DIR` has none. `CONTRIBUTING.md` has the rules for PostgreSQL runs on a shared machine.
 
 ### Changed
 
