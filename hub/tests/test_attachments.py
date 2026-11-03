@@ -255,6 +255,44 @@ def test_a_refused_upload_leaves_no_blob(
     assert [p.name for p in blobs.glob("*/*")] == [first["id"]]
 
 
+def test_a_refusal_after_the_write_keeps_the_rate_charged_and_the_quota_is_checked_before_it(
+    stored: ClientFactory, migrated: Engine, blobs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refusal before the store is written costs no write; after it, the write happened, and
+    the rate stays charged (a refusal cannot buy writes past the rate)."""
+    owner = flow.human(lambda **kw: stored(attachment_quota=1024, **kw), migrated)
+    flow.project(owner, "maity")
+    writes: list[str] = []
+    real = attachment_store.LocalStore.put
+
+    def counted(self: Any, key: str, data: bytes) -> None:
+        writes.append(key)
+        real(self, key, data)
+
+    monkeypatch.setattr(attachment_store.LocalStore, "put", counted)
+    given_back: list[Any] = []
+    real_give_back = attachments.give_back
+
+    def give_back(key: str, charged: Any) -> None:
+        given_back.append(charged)
+        real_give_back(key, charged)
+
+    monkeypatch.setattr(attachments, "give_back", give_back)
+    for _ in range(attachments.RATE_UPLOADS + 5):  # past the rate, were the refusals counted
+        over = put(owner, "big.bin", b"x" * 2048, "application/octet-stream")
+        assert over.status_code == 409 and over.json()["error"]["code"] == "attachment_quota"
+    assert writes == []  # refused before the store was written
+    assert len(given_back) == attachments.RATE_UPLOADS + 5  # and given back: nothing was written
+    assert put(owner, "ok.txt", b"x").status_code == 201
+    # A refusal only the second look finds (here: past the bound for its row) comes after the
+    # write: the charge stays, and the blob goes again.
+    monkeypatch.setattr(attachments, "UPLOAD_FRESH", -1.0)
+    late = put(owner, "late.txt", b"y")
+    assert late.status_code == 503 and late.json()["error"]["code"] == "database_unavailable"
+    assert len(writes) == 2 and not (blobs / writes[1]).exists()
+    assert len(given_back) == attachments.RATE_UPLOADS + 5
+
+
 def test_a_membership_holds_a_bounded_number_of_pending_uploads(
     owner: flow.Human, monkeypatch: pytest.MonkeyPatch
 ) -> None:

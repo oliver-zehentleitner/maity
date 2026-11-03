@@ -35,11 +35,16 @@ that has not yet added the volume.
 **Revisit when:** the time from an upload's write to its commit can come near `BLOB_GRACE`, or the contract changes the write order
 **See:** replicas.md#attachments-move-to-s3-compatible-object-storage — a70d7269-a0a9-45aa-94c5-54715f112c10 — as of 2026-11-03
 
-The upload writes the bytes before the transaction that inserts the row begins,
-outside the project's lock: one `PutObject` for `s3`, a file of its own moved
-into place for `local` (`os.replace`, after an `fsync`), so a reader never sees
-half a blob and no row names a missing one. The transaction then takes the lock
-and checks the quota, the right to post and the project's state again. When it
+The upload checks the project's quota and the membership's pending bounds in a
+short read without the lock, so that a refusal costs no write, and then writes
+the bytes before the transaction that inserts the row begins, outside the
+project's lock: one `PutObject` for `s3`, a file of its own moved into place for
+`local` (`os.replace`, after an `fsync`), so a reader never sees half a blob and
+no row names a missing one. The transaction then takes the lock and checks the
+quota, the right to post and the project's state again, and inserts the row only
+while the write is younger than `UPLOAD_FRESH` (half of `BLOB_GRACE`); past it
+the upload is refused with `database_unavailable`. From the write on, the rate
+stays charged whatever follows, so refusals cannot buy writes past the rate. When it
 does not commit (a refusal, a failure, or a concurrent call with the same
 idempotency key that won), the route removes the blob afterwards, outside the
 lock; when that removal fails too, or the process dies before it, the blob is
@@ -64,6 +69,13 @@ without bytes, impossible; the leftover blob is the harmless one.
 - Removing the blob in `on_rollback`: the idempotent run may retry the
   transaction, and a retry after the removal would insert a row whose bytes are
   gone.
+- A reservation the sweep honours (a row written before the write, or a
+  tombstone set under the lock and the store asked after): a durable bound, but
+  one more transaction and write per upload and per stray, and a table to keep
+  in step with the store; the freshness bound needs neither.
+- Giving the rate back on every refusal, as before the write moved: a refusal
+  found under the lock comes after the write, and a caller could buy writes
+  past the rate with uploads that are refused each time.
 
 ## A pending upload is its uploader's alone, and the rate counts 64 KiB units
 
@@ -178,9 +190,14 @@ their bytes go by this last rule.
 The sweep takes the project's lock for each expired candidate and deletes it with its
 conditions repeated (still pending, not deleted, still past the cutoff), and removes the bytes
 only of a row that this delete removed: a message that named the upload since the sweep
-chose it has bound it, the delete finds nothing, and the file stays. A stray blob is removed under the project's lock, held from the look at its row
-to the unlink, the lock under which an upload inserts its row; the grace covers the time from the
-upload's write, before its transaction, to that commit. A message cannot name an upload past its 24
+chose it has bound it, the delete finds nothing, and the file stays. A stray blob is asked for
+its age outside every transaction; only the look at its row is under the project's lock, the
+lock under which an upload inserts its row; the removal follows after the lock is released.
+Neither store call waits under the lock, since for `s3` both are network calls. That is safe
+because an upload inserts its row only while its write is younger than `UPLOAD_FRESH`: a blob
+older than `BLOB_GRACE` before the look, with no row at the look, can no longer get one. The
+bound is not a reservation the database holds: it rests on the store's write time and the
+hub's clock agreeing to within a few minutes (half the grace, less the write's own duration). A message cannot name an upload past its 24
 hours either (`unknown`), so the two cannot disagree about the same row.
 
 **Reason:** the write order of the contract leaves exactly one kind of
@@ -252,6 +269,9 @@ so a mismatch is still a plain `500`. Past it they stream with the row's
 `Content-Length`, hashed as they pass, and the last piece is held back until
 the digest is known: when it does not match, the answer ends short of its
 length and the hub logs it, so no client takes the bytes for the attachment.
+Its status line is still `200`: a client that ignores a body shorter than its
+`Content-Length` would keep a partial file. Uploads are not streamed: the body
+is read whole within the upload limit, as before, and written in one piece.
 
 **Reason:** the contract forbids serving bytes that do not match their
 digest, and a whole file in memory per download does not hold for large files

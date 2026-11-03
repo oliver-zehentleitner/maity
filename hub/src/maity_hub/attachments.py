@@ -322,7 +322,7 @@ def bind(
     deleted ones and other members' alike) or `already_attached`."""
     if not ids:
         return []
-    if settings is None or settings.attachment_dir is None:
+    if not attachment_store.configured(settings):
         raise ApiError(
             409,
             "attachments_not_configured",
@@ -423,6 +423,9 @@ def drop_pending(conn: Connection, membership_id: int) -> None:
 log = logging.getLogger(__name__)
 SWEEP_EVERY = 300  # seconds between sweeps
 BLOB_GRACE = 600  # a blob younger than this may belong to a transaction still open
+# An upload inserts its row only while its blob is younger than this: half the grace, so the
+# sweep never removes the blob of a row that may still be inserted (`remove_stray`).
+UPLOAD_FRESH = BLOB_GRACE / 2
 
 
 def expire(
@@ -451,22 +454,26 @@ def expire(
 
 
 def remove_stray(engine: Engine, store: attachment_store.BlobStore, key: str) -> bool:
-    """Remove a blob no row names, if it is older than `BLOB_GRACE`. An upload writes its blob
-    before its transaction and inserts the row under the project's lock; this holds the same lock
-    from the look at the row to the removal, so a row that commits meanwhile is seen and its file
-    stays, and the grace covers the time from the write to that commit."""
+    """Remove a blob no row names, if it is older than `BLOB_GRACE`. The store is asked
+    outside every transaction: for `s3` its answers are network calls, and none may wait
+    under the project's lock (hub/context/attachments.md 7dcd4850).
+
+    Under the lock only the row is looked at. An upload inserts its row under the same lock
+    and only while its blob is younger than `UPLOAD_FRESH` (`routes/attachments`): a blob
+    older than `BLOB_GRACE` before the look, with no row at the look, can no longer get one,
+    so its removal after the lock is released cannot take the bytes of a row."""
     project_id, _, attachment_id = key.partition("/")
+    age = store.age(key, time.time())
+    if age is None or age <= BLOB_GRACE:
+        return False
     with engine.begin() as conn:
         events.lock_project(conn, project_id)
         named = conn.execute(
             select(t.attachment.c.id).where(t.attachment.c.id == attachment_id)
         ).first()
-        if named is not None:
-            return False
-        age = store.age(key, time.time())
-        if age is None or age <= BLOB_GRACE:
-            return False
-        store.delete(key)
+    if named is not None:
+        return False
+    store.delete(key)
     return True
 
 

@@ -205,6 +205,23 @@ def test_bytes_that_do_not_match_their_digest_are_never_served_whole(
     assert longer.status_code == 500 and longer.json()["error"]["code"] == "internal"
 
 
+def test_an_s3_only_hub_sends_a_message_that_names_an_attachment(
+    make_client: ClientFactory, migrated: Engine, config: AttachmentS3
+) -> None:
+    from tests.test_attachments_sent import send, upload
+
+    def stored(**overrides: Any) -> Any:
+        return make_client(attachment_store="s3", attachment_s3=config, **overrides)
+
+    owner = flow.human(stored, migrated)
+    flow.project(owner, "maity")
+    agent = flow.agent(stored, owner)
+    named = upload(agent, "a.txt", b"sent through s3")
+    sent = send(agent, owner.id, [named])  # no MAITY_ATTACHMENT_DIR: still a store
+    assert [a["id"] for a in sent["payload"]["attachments"]] == [named], sent
+    assert _content(owner, named).content == b"sent through s3"
+
+
 # --- the settings -------------------------------------------------------------------------------
 
 BASE = {"MAITY_ATTACHMENT_STORE": "s3", "MAITY_ATTACHMENT_S3_BUCKET": "maity-files"}

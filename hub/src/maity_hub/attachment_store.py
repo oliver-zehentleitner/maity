@@ -329,6 +329,14 @@ def store_of(settings: Settings) -> BlobStore:
     return store
 
 
+def configured(settings: Settings | None) -> bool:
+    """Whether the hub has an attachment store, without building one (no client, no network):
+    `s3`, or `local` with its directory."""
+    return settings is not None and (
+        settings.attachment_s3 is not None or settings.attachment_dir is not None
+    )
+
+
 def shared(settings: Settings) -> bool:
     """Whether every replica sees the same bytes without a shared volume: true for `s3`.
     `local` is one directory, shared only when the operator mounts the same one in

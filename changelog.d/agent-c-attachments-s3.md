@@ -12,6 +12,7 @@
   SHA-256 is checked on the way, and bytes that do not match end the answer short of its
   `Content-Length`. Smaller files are still checked before the answer starts.
 - hub: an upload now writes its bytes before its database transaction and outside the project's
-  lock, so a slow store never holds the lock or a database connection. When the transaction does
-  not commit, the bytes are removed afterwards. If that removal fails as well, the sweep removes
-  them after ten minutes.
+  lock, so a slow store never holds the lock or a database connection. The quota and pending bounds
+  are checked before the write as well. A refusal after the write keeps the upload counted against
+  the rate. When the transaction does not commit, the bytes are removed afterwards; if that fails,
+  the sweep removes them after ten minutes. The sweep likewise asks the store outside the lock.
