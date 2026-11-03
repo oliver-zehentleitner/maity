@@ -109,7 +109,8 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   third-party script: the
   interactive OpenAPI page is off, `openapi.json` is the machine form.
 - A page the hub renders with a token in its path (`/join/{token}` as
-  HTML, the `/mail/…/{token}` link pages) also carries
+  HTML, the `/mail/…/{token}` link pages, the dashboard's shell under
+  `/invite/`) also carries
   `Referrer-Policy: no-referrer`, so no link or request on it sends that
   path on (§16.13).
 - The hub writes its own request log: method, path and status, then `ms=`
@@ -15596,7 +15597,7 @@ link, or another account's page, on any other instance. No link carries a
 query or a campaign of its own. Each opens in a new tab with
 `rel="noopener noreferrer"`, as the dashboard's other external links do
 (§6.11): the line also ends pages with a token in their path
-(`/mail/…/{token}`, `/join/{token}`), and `noreferrer` keeps that path
+(`/mail/…/{token}`, `/join/{token}`, `/invite/{token}`), and `noreferrer` keeps that path
 out of the `Referer` a click would send to github.com or maity.team.
 Those pages also answer with `Referrer-Policy: no-referrer`, which covers
 every link and request on them, not only the line's, whatever the

@@ -93,6 +93,9 @@ window.Maity = window.Maity || {};
     if (!loaded || mine !== asked) return;  // the last one asked for wins
     i18n.language = tag;
     if (window.document && window.document.documentElement) window.document.documentElement.lang = tag;
+    // The product line is outside every view: it follows the language itself, also when the
+    // session's interface_language arrives after the view began (docs/api.md §16.13).
+    if (M.productLine) M.productLine.draw();
   }
 
   // Own keys only: a key like "constructor" is no text of the catalog.

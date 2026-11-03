@@ -288,5 +288,5 @@ window.Maity = window.Maity || {};
     return box;
   }
 
-  M.invite = { page, membersPanel, stateOf };
+  M.invite = { page, membersPanel, stateOf, noReferrer };
 })(window.Maity);

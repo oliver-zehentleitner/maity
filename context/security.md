@@ -163,9 +163,11 @@ Keeping the projects' record keeps other members' history readable.
 The pages the hub renders with a token in their path (the join page in a
 browser, the `/mail/…/{token}` link pages) answer with
 `Referrer-Policy: no-referrer`. The dashboard's invitation page,
-`/invite/{token}`, is the app shell, which has no header of its own
-for it, so the page sets `<meta name="referrer" content="no-referrer">`
-itself. The product line's links carry `rel="noopener noreferrer"` on
+`/invite/{token}`, is the app shell: the hub sends the same header on
+the shell under `/invite/`, and the page sets
+`<meta name="referrer" content="no-referrer">` as well, also when a
+maintenance window stands instead of the invitation, for a tab that
+reached the page without loading the shell there. The product line's links carry `rel="noopener noreferrer"` on
 every page.
 
 **Reason:** the product line puts links to github.com and maity.team on

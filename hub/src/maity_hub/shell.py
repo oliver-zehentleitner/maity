@@ -43,6 +43,8 @@ class AssetFiles(StaticFiles):
         return await super().get_response(path, scope)
 
 
+# The dashboard's invitation page, `/invite/{token}` (§16.11): the token is in its path.
+INVITE = "/invite/"
 BASE = b'<base href="/assets/">'
 _HEAD = re.compile(rb"<head(?:\s[^>]*)?>", re.IGNORECASE)
 _SOCIAL_IMAGE = re.compile(rb'(property="og:image" content=")(brand/[^"]+")')
@@ -131,6 +133,10 @@ class ShellRoute(BaseRoute):
             )
             if response is None:
                 response = shell_response(self.web_dir, self.public_url)
+            if scope.get("path", "").startswith(INVITE):
+                # The invitation's token is in the path: from the shell's first request on,
+                # nothing sends it on in a `Referer` (§16.13), maintenance window or not.
+                response.headers["Referrer-Policy"] = "no-referrer"
         else:
             response = error_response(404, "not_found", "no such resource")
         await response(scope, receive, send)

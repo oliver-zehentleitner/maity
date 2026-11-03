@@ -77,9 +77,9 @@ window.Maity = window.Maity || {};
     const heart = h("span", { class: "product-heart", role: "img", "aria-label": M.t("product.love") }, "♥");
     const values = {
       heart,
-      name: NAME,
-      github: external(GITHUB, { class: "product-icon", "aria-label": "GitHub" }, githubMark()),
-      maity: external(PROFILE, { class: "product-icon", "aria-label": "Maity" }, maityMark()),
+      name: M.dom.h("span", { translate: "no" }, NAME),
+      github: external(GITHUB, { class: "product-icon", "aria-label": "GitHub", translate: "no" }, githubMark()),
+      maity: external(PROFILE, { class: "product-icon", "aria-label": "Maity", translate: "no" }, maityMark()),
     };
     return [
       h("span", { class: "product-part" }, maityMark(), " ", h("span", { translate: "no" }, "Maity"), " ", String(new Date().getFullYear())),
@@ -90,12 +90,22 @@ window.Maity = window.Maity || {};
     ];
   }
 
+  // Whether this view ends with the line: render() says so for each view, a language
+  // switch draws it again only where it stands.
+  let shown = true;
+
   function draw() {
     const footer = document.getElementById("product-line");
     if (!footer) return;
     const { append, clear } = M.dom;
-    append(clear(footer), line());
+    clear(footer);
+    if (shown) append(footer, line());
   }
 
-  M.productLine = { draw, wellFormed };
+  function show(on) {
+    shown = !!on;
+    draw();
+  }
+
+  M.productLine = { draw, show, wellFormed };
 })(window.Maity);

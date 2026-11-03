@@ -3225,13 +3225,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const oldNavigator = win.navigator, oldStorage = win.localStorage, oldSearch = win.location.search;
     const kept = {};
     win.localStorage = { getItem: (k) => kept[k] ?? null, setItem: (k, v) => { kept[k] = v; }, removeItem: (k) => { delete kept[k]; } };
-    win.MAITY_I18N.de = { "chat.instance.label": "Senden an" };
+    win.MAITY_I18N.de = { "chat.instance.label": "Senden an", "product.bug": "Einen Fehler gefunden?",
+      "product.made_by": "Mit {heart} von {name} auf {github} & {maity}" };
     win.MAITY_I18N["zh-Hans"] = {};
     i18n.available.push("de", "zh-Hans");
     win.navigator = { languages: ["de-AT", "en"] };
     await i18n.follow(null);
     expect(i18n.language === "de" && tr("chat.instance.label") === "Senden an" && tr("account.title") !== "account.title",
       "language: de-AT reads de, a key without a translation reads in English");
+    // The product line follows the language when it arrives, outside every view (§16.13).
+    expect(text(productLine).includes("Einen Fehler gefunden?") && text(productLine).includes("Mit ♥ von Oliver Zehentleitner auf"),
+      "product line: drawn again in the page's language when the language changes");
+    win.MAITY_I18N.de["product.made_by"] = "Mit {heart} von {name} auf {github} & {github}";
+    win.navigator = { languages: ["en"] };
+    await i18n.follow(null);
+    win.navigator = { languages: ["de-AT", "en"] };
+    await i18n.follow(null);
+    expect(text(productLine).includes("Einen Fehler gefunden?") && text(productLine).includes("Made with ♥ by Oliver Zehentleitner on"),
+      "product line: a translated sentence not naming each placeholder once is drawn in English, the rest stays translated");
     win.navigator = { languages: ["zh-TW", "fr"] };
     await i18n.follow(null);
     expect(i18n.language === "en", "language: Traditional Chinese does not fall to Simplified, and with nothing close the page is English");
@@ -9676,6 +9687,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && viView().querySelectorAll("a").some((a) => a.getAttribute("href") === "https://github.com/s/t/pull/1")
     && text(viView()).includes("Humans online: 1") && text(viView()).includes("Agents online: 2") && !viView().querySelector("b"),
     "visitor: the overview's snapshot, the ticker as text with a merge's link, and who is online");
+  // §16.13, "Where it is": a public address the dashboard draws ends with the product line; a
+  // stored public page the hub put into <main> stands without it, the next view has it again.
+  expect(productLine.querySelectorAll("a").length === 3, "product line: under a public address the dashboard draws");
+  main.hasAttribute = (k) => k in main.attrs;
+  main.setAttribute("data-public-page", "");
+  await go("#/stranger/tool/board"); for (let k = 0; k < 4; k++) await tick();
+  expect(!productLine.querySelectorAll("a").length, "product line: not under a stored public page the hub served");
+  await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
+  expect(productLine.querySelectorAll("a").length === 3, "product line: back with the next view");
+  delete main.hasAttribute;
   expect(!viAll.some((p) => p.startsWith("/projects/stranger")), "visitor: a stranger's public project asks no member route");
   expect(text(header).length && !header.querySelector(".visitor-sign-in"), "visitor: signed in, the reader's own header stays, with no sign-in link");
   expect(win.Maity.api.isPublicPath("/public/pages/stranger/tool"), "visitor: the read works after the session ended here");

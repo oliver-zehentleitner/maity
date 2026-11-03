@@ -1874,8 +1874,10 @@ window.Maity = window.Maity || {};
     let where = { scope: "unknown" };
     let ctx;
     await M.i18n.ready;
-    // The product line after <main> (§16.13), in the language this view is drawn in.
-    if (M.productLine) M.productLine.draw();
+    // The product line after <main> (§16.13), in the language this view is drawn in; i18n
+    // draws it again when the session's language arrives. Not under a stored public page
+    // the hub put into <main> (§16.13, "Where it is"), which stands for this view.
+    if (M.productLine) M.productLine.show(!hubPage);
     // §16.12: the window as the hub has it, read at most once a minute; while it runs, the
     // full page stands instead of the view (heldPage), the sign-in and its step excepted.
     M.maintenance.drawing();
@@ -1884,6 +1886,8 @@ window.Maity = window.Maity || {};
     try {
       where = parseRoute();
       const held = M.maintenance.running();
+      // The invitation's token is in its path: no referrer, maintenance window or not (§16.13).
+      if (where.scope === "invite" && M.invite) M.invite.noReferrer();
       if (where.scope === "invite" && M.invite && !held) { await M.invite.page(main, document.getElementById("header"), where.token); return; }
       if (where.scope === "register" && M.register && !held) { await M.register.page(main, document.getElementById("header"), routeNext()); return; }
       let session;
