@@ -6,5 +6,6 @@
 
 ### Fixed
 
-- hub: the attachment sweep no longer stops at a blob in the folder of a project the database
-  does not know; it leaves that folder alone and logs it once.
+- hub: the attachment sweep no longer stops at a folder of a project the database does not
+  know, also one it cannot read (`lost+found` on the volume); it leaves the folder alone and
+  names it once in the log.

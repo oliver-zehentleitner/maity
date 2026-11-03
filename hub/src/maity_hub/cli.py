@@ -104,7 +104,8 @@ def main(argv: list[str] | None = None) -> int:
     copy.add_argument(
         "--apply",
         action="store_true",
-        help="copy, and remove from the bucket what was deleted since; without it only count",
+        help="copy, and remove from the bucket what was deleted since an earlier run; without it "
+        "only count",
     )
     quick = commands.add_parser(
         "quickstart",

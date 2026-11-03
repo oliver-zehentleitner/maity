@@ -603,6 +603,9 @@ def test_the_copy_command_needs_both_stores_skips_what_was_deleted_and_fails_on_
     keys = {o["Key"] for o in raw(config).list_objects_v2(Bucket=config.bucket)["Contents"]}
     assert keys == {f"{folder.name}/{kept}", f"{folder.name}/{dropped}"}  # too young a stray
     monkeypatch.setattr(attachments, "BLOB_GRACE", -60)  # as if older than the grace
+    assert cli.main(["attachments", "copy-to-s3"]) == 0  # the stray counted, and left
+    assert "deleted, to remove from the bucket: 1," in capsys.readouterr().out
+    assert {o["Key"] for o in raw(config).list_objects_v2(Bucket=config.bucket)["Contents"]} == keys
     assert cli.main(["attachments", "copy-to-s3", "--apply"]) == 0
     assert "deleted, removed from the bucket: 1," in capsys.readouterr().out  # no row: a stray
     # A project the database does not know (data the hub did not write): left alone, and the

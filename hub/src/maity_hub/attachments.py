@@ -472,6 +472,16 @@ def expire(
 _UNKNOWN_PROJECTS: set[str] = set()  # logged once per process, not on every pass
 
 
+def _left_alone(project_id: str) -> None:
+    """Log a store folder no project row has, once per process: the hub did not write it
+    (`lost+found` on an ext4 volume, other data in the bucket), so it is not the sweep's."""
+    if project_id not in _UNKNOWN_PROJECTS:
+        _UNKNOWN_PROJECTS.add(project_id)
+        log.warning(
+            "the attachment store holds a folder no project has, left alone: %r", project_id
+        )
+
+
 def remove_stray(
     engine: Engine, store: attachment_store.BlobStore, key: str, *, apply: bool = True
 ) -> bool:
@@ -486,7 +496,8 @@ def remove_stray(
     so its removal after the lock is released cannot take the bytes of a row. A key whose
     project has no row (data the hub did not write there, a database older than the store)
     is left alone and logged once: no lock decides it, and one such key must not stop the
-    pass for every other."""
+    pass for every other. Without `apply` the look takes the same lock, for one SELECT: a count
+    follows the path of the removal it stands for."""
     project_id, _, attachment_id = key.partition("/")
     age = store.age(key, time.time())
     if age is None or age <= BLOB_GRACE:
@@ -505,9 +516,7 @@ def remove_stray(
             else None
         )
     if not known:
-        if project_id not in _UNKNOWN_PROJECTS:
-            _UNKNOWN_PROJECTS.add(project_id)
-            log.warning("the attachment store holds blobs of an unknown project; left alone")
+        _left_alone(project_id)
         return False
     if named is not None:
         return False
@@ -562,6 +571,13 @@ def sweep(
                 store.delete(key)
             done["tombstoned"] += 1
     for project in store.projects():
+        # A folder no project has is skipped before its keys are read: its blobs are not the
+        # hub's, and one the hub cannot read (`lost+found`, 0700 root) would fail the pass.
+        with engine.connect() as conn:
+            known = conn.execute(select(t.project.c.id).where(t.project.c.id == project)).first()
+        if known is None:
+            _left_alone(project)
+            continue
         for key in store.keys(project):
             if stop is not None and stop.is_set():
                 return done

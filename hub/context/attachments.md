@@ -218,9 +218,12 @@ older than `BLOB_GRACE` before the look, with no row at the look, can no longer 
 bound is not a reservation the database holds: it rests on the store's write time and the
 hub's clock agreeing to within a few minutes (half the grace, less the write's own duration). A message cannot name an upload past its 24
 hours either (`unknown`), so the two cannot disagree about the same row.
-A blob in the folder of a project the database has no row for is left alone, and logged
-once per process: the look at its row needs that project's lock, which no row can give, and
-before, the pass stopped there and never reached the blobs after it.
+A folder no project row has is left alone, named once per process in the log, and checked
+before its keys are read: the look at a blob's row needs that project's lock, which no row
+can give, and before, the pass stopped there and never reached the blobs after it. Checking
+the folder first also skips one the hub cannot read (`lost+found` on an ext4 volume, owned
+by root), whose listing failed the pass under `local`, and costs one query a pass instead of
+a lookup and a lock for each of its blobs.
 
 **Reason:** the write order of the contract leaves exactly one kind of
 leftover, a blob without a row, and every clean-up that cannot run in the
