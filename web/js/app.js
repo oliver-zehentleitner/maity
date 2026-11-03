@@ -1785,7 +1785,9 @@ window.Maity = window.Maity || {};
       document.title = M.t("admin.maintenance.title") + " · Maity";
       return true;
     }
-    return M.maintenance.fullPage(main, header, { me, brand: brandTitle(true) });
+    // `POST /auth/logout` stays open in a window (§16.12): on a shared computer the way out.
+    const signOut = h("button", { type: "button", class: "maintenance-sign-out", onclick: () => logout() }, M.t("menu.sign_out"));
+    return M.maintenance.fullPage(main, header, { me, brand: brandTitle(true), tools: [themeMenu(), signOut] });
   }
 
   let renderSeq = 0;

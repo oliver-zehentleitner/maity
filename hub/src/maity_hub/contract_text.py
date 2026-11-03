@@ -1,13 +1,16 @@
-"""A contract card's text, read from the project's repository (docs/api.md §6.8).
+"""A contract card's text, and the project's whole contract, read from the project's
+repository (docs/api.md §6.8).
 
 The hub keeps no copy: `path` and `section` name a section of a file, read through the
-probe at the default branch's commit and cut out by the hub's own heading parser. One
-read is kept for `MAX_AGE` seconds and answers concurrent calls, keyed so that a changed
-selection, repository or commit is never answered from an older read.
+probe at the default branch's commit and cut out by the hub's own heading parser; the
+whole contract is the file `settings.contract_path` names, with its table of contents.
+One read is kept for `MAX_AGE` seconds and answers concurrent calls, keyed so that a
+changed selection, repository or commit is never answered from an older read.
 """
 
 from __future__ import annotations
 
+import hashlib
 import re
 import threading
 import time
@@ -19,7 +22,15 @@ from typing import Any
 from maity_hub import clock, forge
 
 DEFAULT_PATH = "docs/api.md"
-FILE_CAP = 1024 * 1024  # bytes of the file read at all
+FILE_CAP = 4 * 1024 * 1024  # bytes of the file read at all, for a section and the whole file
+SETTING = "settings.contract_path"
+MARKDOWN = (".md", ".markdown")  # compared case-insensitively
+TOC_MAX = 2000  # headings listed in `toc`
+TITLE_MAX = 300  # characters of a heading's `title`
+TREES_KEPT = 512  # directory trees kept, per commit and directory
+DIRECTORY = "040000"
+FILE_MODES = ("100644", "100755")
+NUMBER = re.compile(r"\d+(?:\.\d+)*")
 TEXT_CAP = 64 * 1024  # bytes of the section shown
 MAX_AGE = 60  # seconds one read answers (§6.8, as the observation cache of §11)
 PATH_MAX = 255
@@ -48,6 +59,17 @@ def path_error(path: str) -> str | None:
         return "not_a_path"
     if any(part in ("", ".", "..") for part in path.split("/")):
         return "not_a_path"
+    return None
+
+
+def setting_error(path: str) -> str | None:
+    """Why `settings.contract_path` cannot name `path` (§6.8 "The setting"): `not_a_path`
+    under the rule of a card's `path`, `not_markdown` unless it ends in `.md` or
+    `.markdown` in any case; None when it can."""
+    if path_error(path) is not None:
+        return "not_a_path"
+    if not path.lower().endswith(MARKDOWN):
+        return "not_markdown"
     return None
 
 
@@ -125,6 +147,39 @@ def find_section(markdown: str, section: str) -> Section:
     return Section(lines[start].rstrip("\r\n"), text, truncated)
 
 
+def _numbered(title: str) -> tuple[str | None, str]:
+    """A heading's section number and the rest: `8. Events` → (`8`, `Events`); a heading
+    whose first token is no section number has none (`None`, the whole title)."""
+    first, _, rest = title.partition(" ")
+    bare = first[:-1] if first.endswith(".") else first
+    if NUMBER.fullmatch(bare):
+        return bare, rest.strip()
+    return None, title
+
+
+def toc(markdown: str) -> list[dict[str, Any]]:
+    """The file's ATX headings of level 2 to 4 in file order, as the section's parser finds
+    them, at most `TOC_MAX` (§6.8 `toc`). A number that occurs once anchors as `s-<number>`;
+    a heading without one, or with a number another heading shares, as `h-<position>`."""
+    found = [h for h in _headings(markdown.splitlines(keepends=True)) if 2 <= h[1] <= 4]
+    found = found[:TOC_MAX]
+    numbered = [(index, level, *_numbered(title)) for index, level, title in found]
+    counts: dict[str, int] = {}
+    for _, _, number, _ in numbered:
+        if number is not None:
+            counts[number] = counts.get(number, 0) + 1
+    return [
+        {
+            "level": level,
+            "number": number,
+            "title": title[:TITLE_MAX],
+            "anchor": f"s-{number}" if number is not None and counts[number] == 1 else f"h-{n}",
+            "line": index + 1,
+        }
+        for n, (index, level, number, title) in enumerate(numbered)
+    ]
+
+
 def blob_url(repository: str, ref: str, path: str) -> str:
     return f"https://github.com/{repository}/blob/{ref}/{urllib.parse.quote(path)}"
 
@@ -182,10 +237,53 @@ def _once(key: Key, read: Callable[[], dict[str, Any]]) -> dict[str, Any]:
 
 
 def forget() -> None:
-    """Drop every kept read (tests)."""
+    """Drop every kept read and tree (tests)."""
     with _lock:
         _reads.clear()
         _pending.clear()
+        _trees.clear()
+
+
+# --- what the setting's name points to ----------------------------------------------------
+
+_trees: dict[tuple[str, str, str], dict[str, Any] | None] = {}
+
+
+def _tree(fg: forge.Forge, repository: str, ref: str, directory: str) -> dict[str, Any] | None:
+    """A directory's tree at a commit, which never changes: kept per commit and directory,
+    the oldest dropped beyond `TREES_KEPT`."""
+    key = (repository, ref, directory)
+    with _lock:
+        if key in _trees:
+            return _trees[key]
+    found = fg.tree(repository, ref, directory)
+    with _lock:
+        while len(_trees) >= TREES_KEPT:
+            del _trees[next(iter(_trees))]
+        _trees[key] = found
+    return found
+
+
+def check_file(fg: forge.Forge, repository: str, ref: str, path: str) -> None:
+    """That `path` is a regular file down every segment at `ref` (§6.8 "The setting"):
+    each directory's non-recursive tree from the root down; a tree answered truncated is
+    `not_markdown` before any segment is looked up in it, a segment a complete tree does
+    not list `not_found_on_forge`, a directory not `040000` or a file not `100644` or
+    `100755` (a symlink, a submodule) `not_markdown`. Names compare byte for byte."""
+    segments = path.split("/")
+    for depth, name in enumerate(segments):
+        directory = "/".join(segments[:depth])
+        tree = _tree(fg, repository, ref, directory)
+        if tree is None:
+            raise ContractTextError(SETTING, "not_found_on_forge")
+        if tree["truncated"]:
+            raise ContractTextError(SETTING, "not_markdown")
+        entry = next((e for e in tree["entries"] if e["path"] == name), None)
+        if entry is None:
+            raise ContractTextError(SETTING, "not_found_on_forge")
+        last = depth == len(segments) - 1
+        if entry["mode"] not in (FILE_MODES if last else (DIRECTORY,)):
+            raise ContractTextError(SETTING, "not_markdown")
 
 
 def read(fg: forge.Forge, repository: str, branch: str, path: str, section: str) -> dict[str, Any]:
@@ -223,3 +321,51 @@ def read(fg: forge.Forge, repository: str, branch: str, path: str, section: str)
         }
 
     return _once((repository, ref, path, section), fetch)
+
+
+WHOLE = "\0whole"  # the section key of a whole read: no card's section is ever this
+
+
+def read_whole(fg: forge.Forge, repository: str, branch: str, path: str) -> dict[str, Any]:
+    """The file `path` names, whole, at the default branch's commit: `{path, ref, url,
+    size, fetched_at, toc, text}` and its `etag` (§6.8 "The whole contract"), a digest
+    over the repository, `path` and the bytes. `forge.ForgeUnavailableError` when the
+    forge does not answer; `ContractTextError` under `settings.contract_path` when there
+    is nothing to show."""
+    reason = setting_error(path)
+    if reason is not None:  # a setting stored before the rule: the read checks it too
+        raise ContractTextError(SETTING, reason)
+    head = fg.branch(repository, branch)
+    if not head["found"]:
+        raise ContractTextError(SETTING, "not_found_on_forge")
+    ref: str = head["head_sha"]
+
+    def fetch() -> dict[str, Any]:
+        check_file(fg, repository, ref, path)
+        try:
+            data = fg.file_at(repository, path, ref, FILE_CAP)
+        except ValueError as error:
+            if str(error) == "too large":
+                raise ContractTextError(SETTING, "too_large") from None
+            raise ContractTextError(SETTING, "not_found_on_forge") from None
+        if data is None:
+            raise ContractTextError(SETTING, "not_found_on_forge")
+        try:
+            markdown = data.decode("utf-8")
+        except UnicodeDecodeError:
+            raise ContractTextError(SETTING, "not_text") from None
+        digest = hashlib.sha256()
+        for part in (repository.encode(), path.encode(), data):
+            digest.update(len(part).to_bytes(8, "big") + part)
+        return {
+            "path": path,
+            "ref": ref,
+            "url": blob_url(repository, ref, path),
+            "size": len(data),
+            "fetched_at": clock.rfc3339(clock.now()),
+            "toc": toc(markdown),
+            "text": markdown,
+            "etag": f'"{digest.hexdigest()[:32]}"',
+        }
+
+    return _once((repository, ref, path, WHOLE), fetch)

@@ -4,4 +4,4 @@
 
 ### Removed
 
-- web: the shapes baseline entry `.items[].manages` of the member list, which the fixture now sends (#1189).
+- web: the shapes baseline entry `GET /me: .maintenance`, which the fixture now sends.

@@ -1,10 +1,10 @@
 """The public views of a project (docs/api.md §16.9): Board, Members and Organisation, each a
 page of its own at `/{owner}/{slug}/<view>` while the project's page is served.
 
-Who is named follows the project page: a human whose own profile is public, an agent whose
-owner's is. Everybody else is a count or a box with a role, never a name, and a card under a
-moderation hold is on no board. Whatever changes one of these inputs calls
-`public_pages.touch` for the kind `project_views`.
+Who is named follows the project page: every active member and every agent that is not
+isolated, by handle, whatever their profile says; only a moderation hold on a profile makes
+them a count or a box with a role, never a name, and a card under a hold is on no board.
+Whatever changes one of these inputs calls `public_pages.touch` for the kind `project_views`.
 """
 
 from __future__ import annotations
@@ -51,6 +51,7 @@ class Person:
         name: str | None,
         human: bool,
         address: str | None = None,
+        presence_named: bool = True,
     ) -> None:
         self.address = address  # the member's own page: a person's, or the agent's under its owner
         self.id = row.id
@@ -60,6 +61,8 @@ class Person:
         self.handle = handle
         self.name = name
         self.human = human
+        # Named and counted as online on a public page: off by a person's `public_presence` (§16.9).
+        self.presence_named = presence_named
 
     @property
     def shown(self) -> bool:
@@ -111,6 +114,7 @@ def members(
                 human.display_name,
                 True,
                 f"/{human.handle}" if ok else None,
+                bool(human.public_presence),
             )
         else:
             agent = agents[row.agent_id]
