@@ -345,6 +345,8 @@ window.Maity = window.Maity || {};
       keptHandle = handle.value;
       await M.i18n.choose(site.value);
       renderLogin(main, note);
+      // The page is drawn here, not through `render`: the banner of a window follows the language too.
+      M.maintenance.drawBanner();
     });
     const password = h("input", { id: "login-password", name: "password", type: "password", autocomplete: "current-password", required: true });
     const status = statusLine();
@@ -1772,11 +1774,17 @@ window.Maity = window.Maity || {};
 
   // §16.12 While a window runs, for a signed-in caller (`me`: /me's member): the full page; the
   // instance admin's own window alone at /admin/maintenance, the one admin section the hub still answers.
+  // `POST /auth/logout` stays open in a window (§16.12): on a shared computer the way out, on every
+  // page a window holds a signed-in session on.
+  function maintenanceSignOut() {
+    return h("button", { type: "button", class: "maintenance-sign-out", onclick: () => logout() }, M.t("menu.sign_out"));
+  }
+
   function heldPage(main, me, where) {
     const header = document.getElementById("header");
     if (me.instance_admin && where.scope === "instance-admin" && where.section === "maintenance" && M.adminMaintenance) {
       M.maintenance.aware();
-      append(clear(header), h("div", { class: "bar" }, brandTitle(true)));
+      append(clear(header), h("div", { class: "bar" }, brandTitle(true), themeMenu(), maintenanceSignOut()));
       const root = h("section", { class: "view view-instance-admin" }, h("p", null, h("a", { href: "/all" }, M.t("maintenance.back"))));
       const part = h("section", { class: "panel admin-section", id: "admin-maintenance", "aria-label": M.t("admin.maintenance.title") });
       append(root, part);
@@ -1785,9 +1793,7 @@ window.Maity = window.Maity || {};
       document.title = M.t("admin.maintenance.title") + " · Maity";
       return true;
     }
-    // `POST /auth/logout` stays open in a window (§16.12): on a shared computer the way out.
-    const signOut = h("button", { type: "button", class: "maintenance-sign-out", onclick: () => logout() }, M.t("menu.sign_out"));
-    return M.maintenance.fullPage(main, header, { me, brand: brandTitle(true), tools: [themeMenu(), signOut] });
+    return M.maintenance.fullPage(main, header, { me, brand: brandTitle(true), tools: [themeMenu(), maintenanceSignOut()] });
   }
 
   let renderSeq = 0;
@@ -1886,7 +1892,7 @@ window.Maity = window.Maity || {};
       // So does one that must set the factor up first (§2.8.5): the setup is its page.
       if (session && session.second_factor === "enrolment_required" && M.security) {
         if (seq !== renderSeq) return;
-        if (M.maintenance.running()) M.maintenance.fullPage(main, document.getElementById("header"), { me: null, brand: brandTitle(true) });
+        if (M.maintenance.running()) M.maintenance.fullPage(main, document.getElementById("header"), { me: null, brand: brandTitle(true), tools: [themeMenu(), maintenanceSignOut()] });
         else renderEnrolment(main);
         return;
       }

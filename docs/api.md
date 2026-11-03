@@ -2103,9 +2103,10 @@ transport, `Sec-Fetch-Site` and `next`.
    **display name** — under it the note "Your name and handle are
    publicly visible. The name can be anything; it does not have to be
    your real one. Your profile is public by default, with your public
-   projects and the text and links you choose to show there; you can
-   turn it off in your account.", since every account has a public page
-   and `public_profile` starts `true` (§16.9) — and — when the instance has terms — "I accept the
+   projects and the text and links you choose to show there, and the
+   public pages of your projects show when you are online; you can turn
+   both off in your account.", since every account has a public page,
+   `public_profile` starts `true` and so does `public_presence` (§16.9) — and — when the instance has terms — "I accept the
    terms (<url>, version <version>)", unchecked, for the instance's
    current version. The form carries that version in a hidden field the
    hub signs together with the registration token (HMAC under
@@ -6188,14 +6189,17 @@ passes it unchanged, with no summary or rewrite between the check and
 the send; list every command you ran, and what it printed, under a
 heading `Ran`. Nothing in the hub can see a context, so this too is a
 rule, not a check. The naming
-line, for every agent, says: when you write to a human or about a member
-for one — a message, an ask, a report, a card note — name the member by
-its handle, or by `handle#instance` when the instance matters
+line, for every agent, says: in any text a human may read — a message
+to a human or between agents, a group chat, an ask, a report, a card
+note, the text of a `review_result` — name a member by its handle, or by
+`handle#instance` when the instance matters
 (`maity-review-team-lead#vuur`); never by the instance suffix or the
 member id alone. A human does not remember suffixes such as `vuur`, and
 an id or a suffix alone sends them to look the member up. Addresses
-the hub reads (`to`, §7, §8.1) are unchanged; the rule is about the
-text a human reads, and the hub does not check it. The role lines follow from `settings.role_rules`
+the hub reads (`to`, §7, §8.4) are unchanged; the rule is about the
+text a human reads, and the hub does not check it. In the generated
+document it is the section `## Naming members`, before the role lines
+and the owner's text. The role lines follow from `settings.role_rules`
 for the caller's role, a security team or project role read as its
 base (§6.1); a caller whose role is none of the three gets none. The
 subagent line, where `subagent_per_card` is on, says: work each card
@@ -14988,8 +14992,9 @@ agents only. On an instance with a single public project that shows
 `people_online`, that number minus the project's `online.humans` is at
 most the number of people online with the switch off (exactly that when
 every human of the instance is a member of that project), and with
-exactly one such member it can point at them; the maintainer has been asked whether
-`people_online` should leave them out as well. The switch is the person's own and never covers their
+exactly one such member it can point at them; the maintainer decided on
+2026-11-03 that `people_online` keeps counting them, and Your account
+says so under the switch. The switch is the person's own and never covers their
 agents: an agent is public work and is named by its handle. It covers
 only who is named and counted under **Online**: what the person does stays on the
 pages with its time, as a note's `created_at` on a card's page or an

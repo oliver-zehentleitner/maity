@@ -214,20 +214,18 @@ def stop(*, every: bool = False) -> None:
         return
     if thread is not None and thread.is_alive():
         # This writer's own signal ends it; the `None` only wakes it. A writer still busy after
-        # the join (a write held by a lock) ends after that write and leaves the rest of the
-        # queue to the next; the `None` it leaves ends no other writer (tsk-xz3bxa5cwv4v).
+        # the join (a write held by a lock) ends after that write without taking another, so
+        # the `None` it leaves ends no other writer (tsk-xz3bxa5cwv4v).
         if stopping is not None:
             stopping.set()
         _writes.put(None)
         thread.join(timeout=STOP_SECONDS)
         if thread.is_alive():
             log.warning("the listening writer is still in a write; it ends after that write")
-        else:
-            # What it left is this app's and goes with its rows below; the next app's writer
-            # would write it into its own database (dzse at #1256).
-            _discard_queued()
-    else:
-        _discard_queued()
+    # What is still queued is this app's and goes with its rows below, whether or not its
+    # writer has ended; the next app's writer would write it into its own database (dzse at
+    # #1256, hub/context/replicas.md 387c2409 point 4).
+    _discard_queued()
     _engine[0], _thread[0], _stopping[0] = None, None, None
     with _lock:
         _rows.clear()

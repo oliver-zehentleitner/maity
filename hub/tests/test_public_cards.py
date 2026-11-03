@@ -101,7 +101,8 @@ def test_a_redacted_note_shows_as_removed_without_its_text_or_reason(world: Worl
     note = world.owner.post(f"{TASKS}/{card_id}/notes", {"body": "canary-secret-words"}).json()
     assert "canary-secret-words" in (page(world, card_id) or "")
     redacted = world.owner.post(
-        f"{TASKS}/{card_id}/notes/{note['id']}/redact", {"reason": "canary-reason-words"}
+        f"{TASKS}/{card_id}/notes/{note['id']}/redact",
+        {"reason": "canary-reason-words", "base_version": note["version"]},
     )
     assert redacted.status_code == 200, redacted.text
     text = page(world, card_id) or ""
@@ -119,7 +120,7 @@ def test_an_edited_note_shows_its_mark_and_reason_never_the_old_text(world: Worl
     assert "canary-old-words" in (page(world, card_id) or "")
     edited = world.owner.patch(
         f"{TASKS}/{card_id}/notes/{note['id']}",
-        {"body": "canary-new-words", "reason": "canary-reason-words"},
+        {"body": "canary-new-words", "reason": "canary-reason-words", "base_version": 1},
     )
     assert edited.status_code == 200, edited.text
     text = page(world, card_id) or ""
@@ -137,7 +138,9 @@ def test_an_edit_renders_the_page_at_once_also_under_interval(world: World, sett
     note = world.anna.post(f"{TASKS}/{card_id}/notes", {"body": "canary-old-words"}).json()
     assert "canary-old-words" in (page(world, card_id) or "")
     public_pages.configure(replace(settings, public_pages=True, public_pages_render="interval"))
-    edited = world.anna.patch(f"{TASKS}/{card_id}/notes/{note['id']}", {"body": "canary-new"})
+    edited = world.anna.patch(
+        f"{TASKS}/{card_id}/notes/{note['id']}", {"body": "canary-new", "base_version": 1}
+    )
     assert edited.status_code == 200, edited.text
     text = page(world, card_id) or ""
     assert "canary-old-words" not in text and "canary-new" in text
@@ -151,7 +154,8 @@ def test_the_editor_of_anothers_note_is_named_whatever_their_profile_and_a_hold_
     note = world.anna.post(f"{TASKS}/{card_id}/notes", {"body": "from anna"}).json()
     world.owner.patch("/me", {"public_profile": False})  # off is not invisible (§16.9)
     edited = world.owner.patch(
-        f"{TASKS}/{card_id}/notes/{note['id']}", {"body": "from anna, cleaned", "reason": "typo"}
+        f"{TASKS}/{card_id}/notes/{note['id']}",
+        {"body": "from anna, cleaned", "reason": "typo", "base_version": 1},
     )
     assert edited.status_code == 200, edited.text
     handle = edited.json()["edited"]["by"]["handle"]

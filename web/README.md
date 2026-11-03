@@ -342,7 +342,10 @@ too.
    in place; a reason is required for another's note) and **Remove** for an
    owner or admin (`POST …/notes/{note_id}/redact`, a reason asked first; the
    tombstone with the reason only for those the hub gives it, §8.5; still
-   allowed in a closed project, Edit not), and the history (`GET …/tasks/{id}/history`, newest first,
+   allowed in a closed project, Edit not); both send the note's `version` as
+   `base_version`, and on `conflict` nothing changes: Edit shows the note as
+   it is now above the writer's own text and saves again on that version,
+   Remove lists the note as it is now (§6.16), and the history (`GET …/tasks/{id}/history`, newest first,
    a title's or description's change as its diff). **Watch** in the bar
    (`PUT` or `DELETE …/tasks/{id}/watch`) marks the card **Watching** on the
    board; while it is on, **Updates** lists the card's `update` messages from
@@ -1295,7 +1298,9 @@ language, the sign-in and public pages included. While the window runs
 the page shows a full page instead of the view: when the hub is back, the
 text, and for the instance admin **End maintenance now** and the way to
 change the window; a visitor gets the way to sign in, which the hub keeps
-open. The window is read from `GET /maintenance`, from `/me` and from any
+open, and a signed-in session **Sign out** in the header, the admin's own
+window and a session that must still set up its second factor included.
+The window is read from `GET /maintenance`, from `/me` and from any
 `503 maintenance`; the full page asks again every 30 seconds and goes
 when the window does. In fixture mode `?maintenance=upcoming` or
 `?maintenance=running` starts with a window, and the fixture hub refuses

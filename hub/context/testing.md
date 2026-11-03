@@ -119,3 +119,45 @@ once per engine.
 - A template database per engine (`CREATE DATABASE … TEMPLATE` on PostgreSQL)
   to skip migrating on the servers too — not tried: it differs per engine and
   could only be checked in CI; the parallel workers come first.
+
+## A cleanup held by a leaked connection fails one test and ends the holder, instead of hanging
+
+**Id:** 210f3def-e846-4f72-ad22-2ad911ec3bf2
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-xz3bxa5cwv4v; hub-postgresql run 41477804762 cancelled after hours at 99 %; review on #1256 (reproduction with `pg_stat_activity` and `pg_blocking_pids`); faulthandler stacks of the diagnosis run on #1255 (job 125615090292), 2026-11-03; `hub/tests/test_test_database.py`
+**Revisit when:** the per-worker databases go (a shared database would make ending other sessions' locks harmful), or the cleanup stops using `TRUNCATE`
+**See:** testing.md#the-suite-runs-in-parallel-one-database-per-worker-and-the-wheel-job-runs-a-marked-subset — 081792e2-758e-4202-84f7-c2957459665e — as of 2026-11-03
+
+A test connection is closed by its test (`with engine.connect() as conn:`, or `close()` in a
+`finally`). On PostgreSQL a connection left open stays *idle in transaction* and keeps its locks,
+and the `TRUNCATE` that empties a worker's database before the next test waited for them without
+end: the hub-postgresql job hung at 99 % until GitHub cancelled it (a test in `test_swarm.py`
+passed `migrated.connect()` as an argument). `_empty_the_tables` therefore sets `lock_timeout`
+(`TRUNCATE_LOCK_TIMEOUT`, 60 s) for the `TRUNCATE`; when it runs out, it names the sessions that
+hold table locks in this worker's database (state and last statement from `pg_stat_activity`),
+ends them with `pg_terminate_backend` and fails that one test with `LeakedConnection`. The next
+test's cleanup goes through.
+
+**Reason:** a hang shows nothing: no failing test, no message, only a cancelled job hours later.
+Failing one test with the leaked statement in the message points at the test that leaked it.
+Ending the holder is safe because each worker has its own database, so every session holding
+locks there belongs to this worker.
+
+**Rejected alternatives:**
+- Only a time limit on the CI job (`timeout-minutes`): a hang still costs the whole limit and
+  ends without a stack or a failing test.
+- `lock_timeout` alone, as first built on #1256: the cleanup no longer hangs, but the leaked
+  connection stays, so every later test of that worker fails again after 60 s, and a worker with
+  many tests left runs into the job's limit anyway; the error names neither the lock nor its
+  holder.
+- `idle_in_transaction_session_timeout` on the test engine: it would end a leaked connection
+  without naming the test or failing it; whether a shorter timeout would also cut legitimate
+  long transactions in tests was not examined.
+
+Which reasons are confirmed and which inferred: the hang, its cause and the second alternative's
+weakness are confirmed (reproduced in review, stacks from CI, counter-checks in
+`test_test_database.py`); the weighing of the first and third alternatives is the author's
+reasoning, not measured.

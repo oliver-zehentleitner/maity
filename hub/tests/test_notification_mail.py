@@ -21,8 +21,14 @@ PUBLIC = "https://hub.example"
 
 @pytest.fixture
 def at() -> Any:
-    """Move the hub's clock: `at(minutes=3)` is three minutes after the test began."""
-    start = clock.now().replace(minute=10, second=0, microsecond=0)
+    """Move the hub's clock: `at(minutes=3)` is three minutes after the test began.
+
+    The test begins at 12:10 UTC of today, whenever it runs: the digests go out at a time of day
+    (`daily_at`, by default 08:00), so a start at the real hour let a test that moves the clock
+    by an hour cross 08:00 when CI ran shortly before it, and its "nothing yet" failed
+    (tsk-vhzhg5zpvxxf). 12:10 is far from the default; a test that needs another time of day
+    sets `daily_at` from `clock.now()`."""
+    start = clock.now().replace(hour=12, minute=10, second=0, microsecond=0)
     clock.set_source(lambda: start)
 
     def move(**delta: float) -> datetime:
