@@ -137,7 +137,7 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     try:
         store.put(key, data)
         if attachments.upload_clock() - started > attachments.UPLOAD_FRESH:
-            raise blobs.StoreError("the attachment store took too long to store a blob")
+            raise ApiError(503, "upload_expired", "the upload took too long; send it again")
     except BaseException:
         _discard(store, key)
         raise
@@ -157,7 +157,7 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
             # The database did not take the row in time (a lock wait, retries); the sweep may
             # already count the blob as a stray, so no row may name it now (§8.7).
             log.warning("an upload waited too long for its row; refused, its blob removed")
-            raise ApiError(503, "database_unavailable", "the database did not take the row in time")
+            raise ApiError(503, "upload_expired", "the upload took too long; send it again")
         conn.execute(
             insert(t.attachment).values(
                 id=attachment_id,

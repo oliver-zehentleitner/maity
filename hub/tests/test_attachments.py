@@ -298,7 +298,7 @@ def test_a_refusal_after_the_write_keeps_the_rate_charged_and_the_quota_is_check
 
     monkeypatch.setattr(route, "lock_project", slow_lock)
     late = put(owner, "late.txt", b"y")
-    assert late.status_code == 503 and late.json()["error"]["code"] == "database_unavailable"
+    assert late.status_code == 503 and late.json()["error"]["code"] == "upload_expired"
     assert len(writes) == 2 and not (blobs / writes[1]).exists()
     assert len(given_back) == attachments.RATE_UPLOADS + 5
 
@@ -328,7 +328,10 @@ def test_a_write_that_fails_or_outlasts_the_bound_keeps_the_rate_charged_and_lea
         now[0] += attachments.UPLOAD_FRESH + 1
 
     monkeypatch.setattr(attachment_store.LocalStore, "put", slow)
-    assert put(owner, "b.txt", b"slow").status_code == 500
+    slow_answer = put(owner, "b.txt", b"slow")
+    assert (
+        slow_answer.status_code == 503 and slow_answer.json()["error"]["code"] == "upload_expired"
+    )
     assert list(blobs.glob("*/*")) == [] and given_back == []
 
 

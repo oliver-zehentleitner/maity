@@ -44,8 +44,8 @@ no row names a missing one. The transaction then takes the lock and checks the
 quota, the right to post and the project's state again, and inserts the row only
 while less than `UPLOAD_FRESH` (5 minutes) has passed since the write began, on a
 clock that keeps counting while the host is suspended; past it the upload is
-refused, after a slow write as a store failure, after a slow wait for the row with
-`database_unavailable`. The sweep compares the store's clock (an object's
+refused with `503 upload_expired`, a code of its own: the database was reached, so
+`database_unavailable` would name the wrong cause. The sweep compares the store's clock (an object's
 LastModified) with the hub's. A store that checks request signatures refuses a
 request whose time is more than 15 minutes (`CLOCK_SKEW`) off its own, so while the
 hub can write the two clocks are closer than that. `BLOB_GRACE` (30 minutes) is
