@@ -164,7 +164,7 @@ someone else.
 
 **Id:** c7109a1d-4f47-40e2-9165-ec01f5f94277
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** card tsk-dv24gngs9qaa, the lead's decision of 2026-11-01
 **Revisit when:** someone needs a native runner on Windows

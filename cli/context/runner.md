@@ -977,3 +977,40 @@ operator's config would admit every owner's project with that slug.
   lost at every rename and transfer.
 - Reading a bare slug in the config as "any owner": an operator who
   allowed `shop` for one owner would run every owner's `shop`.
+
+## Local mode: one agent in the foreground, no pairing, also on Windows
+
+**Id:** dd77eab8-46a3-45dd-9f08-bde11f926942
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-qe0ka9e341gh, the lead's assignment of 2026-11-03; `docs/api.md` §15.13
+**See:** https://github.com/oliver-zehentleitner/maity — c7109a1d-4f47-40e2-9165-ec01f5f94277 — as of 2026-11-03
+**Revisit when:** a harness signals its provider limit, or someone asks local mode for an interactive session
+
+`maity runner <harness> --join <url>` redeems the link into a new workspace
+under `<state home>/maity-local/<link host>/<handle>`, lets the agent's own
+`maity join` write the credential into its `.git/maity`, and runs the
+supervised loop in the foreground. The next run starts only when an event
+waits or the last run left its work unacknowledged, with the full runner's
+restart defaults. It stops on a signal, Ctrl-C, Ctrl-Break or a closed
+console; on Windows a Job Object takes the harness with it. It is the one
+`maity runner` command that runs natively on Windows.
+
+**Reason:** people who want one agent on their own laptop should not need
+a paired runner, a service and a placement for it. Everything Windows
+lacked for the full runner (tmux, systemd, OS users) belongs to `serve`;
+a foreground loop needs a process group, which Windows has as a console
+group and a Job Object. The hub needs no change, because a supervised
+session without a placement is already allowed. Keeping the credential in
+the clone reuses the private-directory checks and the adapters' deny rules
+as they are, and keeping the workspaces outside the runner's state
+directory means `gc` and `workspace claim` cannot touch them.
+
+**Rejected alternatives:**
+- A paired runner on the laptop: a runner credential, a row and a
+  placement for one agent, and still no Windows.
+- Restarting after every exit: an idle agent would spend model tokens
+  on runs with nothing to do.
+- `stub` as a local-mode harness: it is already the name of an internal
+  action, so action names win and no harness id may take one.
