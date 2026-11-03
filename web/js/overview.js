@@ -63,15 +63,15 @@ window.Maity = window.Maity || {};
     return href ? h("a", { href, rel: "noopener noreferrer", target: "_blank", "data-key": key }, text) : text;
   }
 
-  const CONTRACT_PATH = "docs/api.md";
   // A file's page on the forge at the default branch: GitHub and GitLab
   // only, whose path shapes are known; anything else gets no link.
-  function contractUrl(repo) {
+  function contractUrl(repo, path) {
     const base = repo && safeUrl(repo.url) ? String(repo.url).replace(/\.git$/, "").replace(/\/+$/, "") : null;
     if (!base || !repo.default_branch) return null;
     const branch = encodeURIComponent(repo.default_branch);
-    if (repo.forge === "github") return base + "/blob/" + branch + "/" + CONTRACT_PATH;
-    if (repo.forge === "gitlab") return base + "/-/blob/" + branch + "/" + CONTRACT_PATH;
+    const file = path.split("/").map(encodeURIComponent).join("/");
+    if (repo.forge === "github") return base + "/blob/" + branch + "/" + file;
+    if (repo.forge === "gitlab") return base + "/-/blob/" + branch + "/" + file;
     return null;
   }
 
@@ -100,10 +100,16 @@ window.Maity = window.Maity || {};
           "data-link": x.key, title: x.url }, x.label)]))];
     rows.push(h("dt", null, M.t("overview.project.state")), h("dd", null, ctx.stateBadge(p.state, p.state_note), p.released_at ? [" ", ctx.releasedMark(p)] : null));
     if (p.policy && p.policy.preset) rows.push(h("dt", null, M.t("overview.project.policy")), h("dd", null, p.policy.preset));
-    // The contract on the forge at the default branch (the maintainer's
-    // wish, tsk-yhbmz7mjng7n step 1); read inside Maity once the hub serves it.
-    const contract = contractUrl(p.repository);
-    if (contract) rows.push(h("dt", null, M.t("overview.project.contract")), h("dd", null, out(contract, CONTRACT_PATH, "contract")));
+    // The contract (§6.8, §6.11): the view that reads it whole inside Maity
+    // and, beside it, the file on the forge at the default branch, both for
+    // the file `settings.contract_path` names. No repository: no row.
+    if (repo) {
+      const path = M.contractView.pathOf(p);
+      const forgePage = contractUrl(p.repository, path);
+      rows.push(h("dt", null, M.t("overview.project.contract")), h("dd", null,
+        h("a", { href: ctx.link("contract"), "data-key": "contract" }, path),
+        forgePage ? [" · ", out(forgePage, M.t("overview.project.contract_forge"), "contract-forge")] : null));
+    }
     rows.push(h("dt", null, M.t("overview.project.why")));
     if (!exp) {
       rows.push(h("dd", null, M.t("overview.project.no_why"),

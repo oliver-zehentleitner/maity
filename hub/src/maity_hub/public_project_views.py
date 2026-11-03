@@ -1,10 +1,10 @@
 """The public views of a project (docs/api.md §16.9): Board, Members and Organisation, each a
 page of its own at `/{owner}/{slug}/<view>` while the project's page is served.
 
-Who is named follows the project page: a human whose own profile is public, an agent whose
-owner's is. Everybody else is a count or a box with a role, never a name, and a card under a
-moderation hold is on no board. Whatever changes one of these inputs calls
-`public_pages.touch` for the kind `project_views`.
+Who is named follows the project page: every active member and every agent that is not
+isolated, by handle, whatever their profile says; only a moderation hold on a profile makes
+them a count or a box with a role, never a name, and a card under a hold is on no board.
+Whatever changes one of these inputs calls `public_pages.touch` for the kind `project_views`.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from maity_hub import (
     cards,
     clock,
     forge,
+    forge_access,
     ktw,
     moderation,
     namespace,
@@ -51,6 +52,7 @@ class Person:
         name: str | None,
         human: bool,
         address: str | None = None,
+        presence_named: bool = True,
     ) -> None:
         self.address = address  # the member's own page: a person's, or the agent's under its owner
         self.id = row.id
@@ -60,6 +62,8 @@ class Person:
         self.handle = handle
         self.name = name
         self.human = human
+        # Named and counted as online on a public page: off by a person's `public_presence` (§16.9).
+        self.presence_named = presence_named
 
     @property
     def shown(self) -> bool:
@@ -111,6 +115,7 @@ def members(
                 human.display_name,
                 True,
                 f"/{human.handle}" if ok else None,
+                bool(human.public_presence),
             )
         else:
             agent = agents[row.agent_id]
@@ -333,12 +338,13 @@ def organisation_html(who: dict[int, Person]) -> str:
     return "<ul>" + "".join(node(p, frozenset({p.id})) for p in roots) + "</ul>" if roots else ""
 
 
-def why_data(conn: Connection, project: Any, path: str) -> dict[str, Any]:
+def why_data(conn: Connection, project: Any, path: str, served: bool = True) -> dict[str, Any]:
     """What the page shows of the Keep the Why export: the counts, the family's links and the
-    attention entries, read beforehand. Nothing while the repository is not public. Each
-    process holds its own read: a render with none, with a failed one or with one older than
-    the stored view keeps that view (hub/context/public-pages.md)."""
-    if project.repository_public is not True:
+    attention entries, read beforehand. Nothing while the repository is not public, nor for a
+    project outside the operator's own namespaces (`served` False, §11.4), a stored view
+    included. Each process holds its own read: a render with none, with a failed one or with
+    one older than the stored view keeps that view (hub/context/public-pages.md)."""
+    if project.repository_public is not True or not served:
         return {"readable": False}
     row = public_pages.get(conn, path)
     stored = row.data if row is not None and row.view == "why" and row.data["readable"] else None
@@ -396,15 +402,22 @@ def why_html(data: dict[str, Any]) -> str:
 
 def prepare_why(engine: Engine, hub: Settings) -> None:
     """Read the exports of the projects whose repository the hub last found public, with the
-    instance's token and no grant, for the renders that follow."""
+    instance's token and no grant, for the renders that follow: only those in the operator's
+    own namespaces, the only ones that token serves (§11.4, §16.9)."""
+    if hub.forge_github_token is None or not hub.forge_instance_namespaces:
+        return
     with engine.connect() as conn:
         rows = conn.execute(
-            select(t.project.c.id, t.project.c.repository_url).where(
-                t.project.c.public_page == "on", t.project.c.repository_public.is_(True)
-            )
+            namespace.join_owner(
+                select(
+                    t.project.c.id, t.project.c.repository_url, namespace.owner_handle()
+                ).select_from(t.project)
+            ).where(t.project.c.public_page == "on", t.project.c.repository_public.is_(True))
         ).all()
     reader = forge.Forge(hub.forge_github_token)
     for row in rows:
+        if not forge_access.serves(hub.forge_instance_namespaces, row[2]):
+            continue
         try:
             WHY_CACHE.get(reader, row.id, row.repository_url, 0)
         except ktw.Busy:
@@ -418,7 +431,10 @@ def render_views(conn: Connection, hub: Settings, project_id: str) -> list[publi
     full = namespace.full_name(conn, project)
     who = members(conn, project_id)
     columns, gone = board_rows(conn, project_id, who)
-    why = why_data(conn, project, f"/{full}/why")
+    by_instance = hub.forge_github_token is not None and forge_access.serves(
+        hub.forge_instance_namespaces, full.split("/", 1)[0]
+    )
+    why = why_data(conn, project, f"/{full}/why", by_instance)
     views = (
         ("board", "Board", board_html(columns, who, gone, full), board_data(columns, who, gone)),
         ("members", "Members", members_html(who), members_data(who)),

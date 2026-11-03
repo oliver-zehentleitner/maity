@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Connection, Engine, select
+from sqlalchemy import Connection, Engine, insert, select, update
 
 from maity_hub import clock, public_pages
 from maity_hub import tables as t
@@ -215,6 +215,44 @@ def test_startup_renders_every_page_again_before_any_is_served(
     off = replace(settings, public_pages=False)
     public_pages.startup(migrated, off)  # off: nothing is rendered or deleted
     assert set(rows(migrated)) == {"/a"}
+
+
+def test_startup_replaces_a_page_in_place_and_never_clears_first(
+    migrated: Engine, settings: Settings, shown: Shown, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A sibling process or pod keeps serving while one starts: each page is replaced where it
+    stands, so a read finds the old page or the new one, never none. Same inputs with other
+    HTML (a new version) is replaced; same inputs and same HTML keeps its ETag."""
+    config = hub(settings)
+    at = clock.now()
+    shown.targets["a"] = ("A", True, at)
+    shown.targets["b"] = ("B", True, at)
+    public_pages.render_all(migrated, config)
+    with migrated.begin() as conn:  # rendered by an earlier version from the same inputs
+        conn.execute(
+            update(t.public_page).where(t.public_page.c.path == "/b").values(body="old", etag="e")
+        )
+        conn.execute(
+            insert(t.public_page).values(
+                path="/gone-kind", kind="retired", target_id="x", body="x", etag="x",
+                inputs="x", lastmod=at, rendered_at=at, view=None, data=None,
+            )
+        )  # fmt: skip
+    kept = rows(migrated)["/a"].etag
+    seen: list[set[str]] = []
+    real = public_pages.refresh
+
+    def watching(conn: Connection, *args: Any, **kwargs: Any) -> None:
+        # Before each page's render: what is committed then, all another process could read.
+        seen.append(set(conn.execute(select(t.public_page.c.path)).scalars()))
+        real(conn, *args, **kwargs)
+
+    monkeypatch.setattr(public_pages, "refresh", watching)
+    public_pages.startup(migrated, config)
+    assert all({"/a", "/b"} <= paths for paths in seen), seen
+    after = rows(migrated)
+    assert set(after) == {"/a", "/b"}
+    assert after["/a"].etag == kept and after["/b"].body != "old"
 
 
 def test_the_worker_renders_again_on_its_interval(

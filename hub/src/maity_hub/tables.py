@@ -113,9 +113,12 @@ human = Table(
     # The switch `meat_proxy` is derived: on while a part is.
     Column("meat_proxy_lead", Boolean, nullable=False, server_default=false()),
     Column("meat_proxy_hands", Boolean, nullable=False, server_default=false()),
-    # Whether the person has a public page, and the plain text on it (§16.9); a person is
-    # private until they choose.
+    # What the person's page shows beyond name, handle and agents, and the plain text on it
+    # (§16.9); every active account has a page, and the profile is public until they choose.
     Column("public_profile", Boolean, nullable=False, server_default=true()),
+    # Whether the public pages of the person's projects name them as online (§16.9); off,
+    # they are neither named nor counted.
+    Column("public_presence", Boolean, nullable=False, server_default=true()),
     Column("public_bio", String(280)),
     # The person's website and their names on the networks of §16.9 (never URLs), and who
     # sees them; the links are built from the names when shown.
@@ -388,6 +391,10 @@ human_session = Table(
     Column("ip", String(64)),
     Column("approved_by", String(ID)),
     Column("ended_by", String(32)),
+    # "This was me" (§2.6.5): when and from which session (its public id) the sign-in was
+    # confirmed; null while it is not. Reading its alert never sets them.
+    Column("confirmed_at", UtcDateTime),
+    Column("confirmed_by", String(ID)),
     # Two-factor sign-in (docs/api.md §2.8): `full`, `second_factor` (the first factor is
     # done, the code is not) or `enrolment` (the policy wants a factor first);
     # `sign_in_complete` is false until the second step makes the sign-in count;
@@ -1505,6 +1512,8 @@ card_note = Table(
     Column("redacted", Boolean, nullable=False),
     Column("redaction", JSON_VALUE),
     Column("edited", JSON_VALUE),  # {by, at, reason} of the latest edit; no earlier text is kept
+    # 1 when posted, +1 per edit and per redaction: the `base_version` a write names (§6.16).
+    Column("version", Integer, nullable=False, server_default="1"),
     Index("ix_card_note_card_created", "card_id", "created_at", "id"),
     Index("ix_card_note_author_created", "author", "created_at"),
     **MYSQL_TABLE,

@@ -469,7 +469,8 @@ redaction: a contract change that §8.8 already makes unnecessary.
 
 **Id:** 561b77f6-2a12-4352-aa50-36a8aa773fbe
 **Type:** decision
-**Status:** needs-review
+**Status:** superseded
+**Superseded by:** 0d50b2d4-2841-4510-a204-90d3aa574927
 **Evidence:** inferred
 **Source:** docs/api.md §2.6.5 (good standing, who may end which, the banner), §2.6.3 (a held address change), §2.6.7 (the dashboard's part) and §18.3; the coordinator's card for the sessions view (tsk-s5yq94v758g4), 2026-10-23; the dashboard's implementation, 2026-10-23
 **Revisit when:** the hub serves the session list (the view is built against the mock), or the session view gains a field that says what a session may do
@@ -507,6 +508,36 @@ the entry linked above. Putting the held address change under the
 notification settings, where the address lives: those settings carry
 the mail, and the decision needs the standing that the sessions section
 shows.
+
+## Sessions say what this session may not do, and a sign-in is confirmed by its own call
+
+**Id:** 0d50b2d4-2841-4510-a204-90d3aa574927
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.6.5 (`POST /auth/sessions/{id}/confirm`, `confirmed_at`, the banner), §18.2 and §18.3, contract PR #1230; the bell card tsk-0kz8v1ff5sgf, 2026-11-03
+**Revisit when:** the session view gains a field that says what a session may do
+**See:** views.md#sessions-say-what-this-session-may-not-do-before-it-is-tried-and-this-was-me-is-the-only-way-a-sign-in-is-confirmed — 561b77f6-2a12-4352-aa50-36a8aa773fbe — as of 2026-11-03
+**See:** refresh.md#the-bell-pins-the-unread-security-alerts-and-mark-all-read-takes-them-only-after-asking — 643600cd-dd61-4291-85d7-025e322f4c81 — as of 2026-11-03
+
+What the earlier entry says about disabled buttons and their reasons stands. What
+changed: **This was me** posts the session's confirm and is offered on an active
+session that is not in good standing, where this session may confirm it; an ended
+session has none. The unread alerts come from the hub's `pinned` block; one that
+reports no session in the list gets **Mark read**, and an id the hub skips is said
+with its reason, never called read. The mail sign-in banner follows the sessions:
+it stays while the reported session, or one it approved, is live and not in good
+standing, whatever the alert's read flag, and is checked again on each counts round
+while it is shown.
+
+**Reason:** reading an alert no longer confirms anything (§2.6.5), so the session's own
+`good_standing` is what the buttons and the banner must follow. The confirm answers with
+the session, so its result is known without reading the list again.
+
+**Rejected alternatives:** marking the alert read as the confirmation, as before: the
+contract made reading and confirming two acts. Keeping the banner tied to the unread
+alert: marking it read in the bell would take the banner down while the sign-in is still
+unconfirmed. Offering This was me on an ended session: there is nothing left to confirm.
 
 ## The Ticker view reads the listing, not the events, and says each reason in the dashboard's own words
 
@@ -1249,6 +1280,62 @@ lose the board's filter and scroll. Expanding the card inside its
 column: a column is too narrow for a description and a history, and
 every board reload would close it again. A modal dialog: on a phone the
 same as the panel, on a desktop it hides the board the card belongs to.
+
+## A note is edited in place in the card panel; Remove asks its reason as a chat removal does
+
+**Id:** 5260ca07-539c-40fb-bdcb-5cd21d3c181e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** PR #1227 (tsk-bj9yb4d8f2cg), part 3 of editing a note, and its review; PR #1243 (`base_version` and the conflict in the panel); the follow-up PR (tsk-dprnjakk3ykh); contract in `docs/api.md` §6.16, §8.5
+**Revisit when:** the dashboard gets a dialog of its own for reasons
+**See:** https://github.com/oliver-zehentleitner/maity — 0e6b3b31-1656-4744-841d-d48f1899a7fd — as of 2026-11-03
+**See:** https://github.com/oliver-zehentleitner/maity — 09c47db5-75b7-4636-8c49-0cc46c8c9d46 — as of 2026-11-03
+
+Edit stands under a note for its author and for an owner or admin, Remove
+for an owner or admin only; neither under a tombstone, and Edit not in an
+archived project, where removal stays allowed. The edit replaces the text in
+place; the reason field is required for someone else's note, optional for
+one's own, and sent only when it holds text; a missing reason is said at the
+field. Remove asks its reason with the same prompt loop as removing a chat
+message. The tombstone says who and when, and the reason only when the hub
+gives it. Each button names the note's author and date in its label, an
+Escape the mention picker has taken leaves the edit open, and Add a note
+is drawn once per panel and stays while the list above it is drawn
+again: the field keeps its text, focus and caret, a post's busy state and a
+refusal stay in sight, also after a failed read. The list stays as drawn
+while it is read, only the latest read replaces it, and its Edit and Remove
+wait meanwhile (`aria-busy`). On a post's success exactly the text sent
+leaves the field; anything typed since stays. After an edit, a removal or a
+post the focus moves on only if it is still where that action left it. An edit and a removal name the
+version they were made on (`base_version`); a conflict shows the note as it
+is now and keeps the writer's text for the next save, and a note removed
+meanwhile ends the edit, says the text was not kept, and puts the focus on
+its tombstone, as a removal of one's own does. The public card page shows an
+edited note's mark as the hub's own page does (§16.9): the editor named as a
+holder, the date and the reason, never the old text, none on a removed note.
+
+**Reason:** the buttons follow who the hub lets act, so nobody meets a
+refusal for a button that should not have been there; an empty reason is not
+sent, so the edit mark of one's own note stays without one, as §6.16 has it;
+one way of asking a removal's reason in the whole dashboard; a note is posted
+once, however the list is drawn again around its post.
+
+**Rejected alternatives:**
+- Showing Edit to every reader and letting the hub refuse: a button that
+  always fails for most readers.
+- Clearing Add a note after every post whatever it holds: text typed while
+  the post was on its way would be lost.
+- Drawing Add a note again with the list and carrying its text over: each
+  variant reviewed on #1268 lost something, the text sent came back into a
+  free form (a second post one click away), the focus and caret went, a
+  refusal vanished with a failed read. A form drawn once has none of it.
+- Keeping an edit begun on the list being read: the list drawn after the read
+  would have to merge it in; Edit and Remove waiting for the read is simpler.
+- Always sending `reason`, empty for one's own note: an empty reason would
+  read as a given one.
+- A dialog of its own for the removal's reason: a second pattern beside the
+  chat's prompt for the same act.
 
 ## The header gets a "+" menu to bring someone in; invitations get their own page; Runners lose their tab
 
@@ -2126,6 +2213,53 @@ list would have no way in from the header outside a project.
 and All chats when there are several (asked as B): a second click to
 every chat, and one button meaning two things. Keeping the strip: it took
 the room above the tabs on every page of a project.
+
+## On a phone the Lead stands on the Chats page, not in the header
+
+**Id:** 6abce868-55e7-4f64-b3c4-3984bda22965
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's card tsk-m9ew7v609fq0, 2026-11-03 (on a phone the header's buttons wrapped under the logo; hide the Lead there, its function reachable another way, the menu or settings named as an example); the dashboard's implementation the same day
+**Revisit when:** the header gets room for the Lead at phone width again, or the Chat button stops leading to `/chats`
+**See:** views.md#the-lead-is-reached-by-a-lead-button-left-of-chat-not-by-chat-itself-or-a-strip — 0ff66bde-7c26-412a-a856-069b52764910 — as of 2026-11-03
+
+At phone width (≤ 600 px) the header hides the Lead button, so Chat, +, the gear, the bell and
+the profile fit in the logo's row from 360 px (narrower, they still go under it). The same control (one lead opened at once, several a menu with
+their group chat) stands on the Chats page under its heading, at the left edge, with its word, at
+phone width only; its menu opens from that edge.
+
+**Reason:** Chat leads to `/chats`, so the lead is one tap further than before, and the control
+keeps everything it does. Hiding it was the maintainer's call; where it went instead is the
+author's.
+
+**Rejected alternative:** an entry in the gear or profile menu, as the card suggested. A menu
+item is one action, and several leads with a group chat would need a second menu inside the
+first.
+
+## On a phone the project's links are one row that scrolls; the state stands beside it
+
+**Id:** df210b31-e55a-47c9-93da-2d139e9ded89
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's card tsk-m9ew7v609fq0, 2026-11-03 (on a phone the project's links wrapped into two rows; one row that scrolls sideways, the state always in sight); review on #1271 (with Review, Released and an absence the first version squeezed the row to 0 px and scrolled the page sideways)
+**Revisit when:** a project gets so many state parts that they leave no usable row beside them on a phone, or the header gives the links a row of their own
+**See:** views.md#a-projects-own-links-stand-beside-the-repository-which-reads-repository-whatever-the-forge-the-form-sends-only-what-changed — 10a77061-c980-4990-b44b-cb7f518cd4eb — as of 2026-11-03
+
+At phone width (≤ 600 px) the repository, Pull Requests, the project's own links and Why are one
+row of their own (`.project-links`) that scrolls sideways, with the fade cue of the tab rows.
+The state, the released mark and the absence stand beside it, outside the row, so a scroll
+never moves them away. The row keeps about one link's width (9rem); the state parts that do not
+fit beside it wrap under it.
+
+**Reason:** two rows of links took the room above the tabs, and the state is the part the
+maintainer asked to keep in sight. A row allowed to shrink to nothing hid the links and pushed
+the page sideways once an absence stood beside the state.
+
+**Rejected alternative:** the links wrapping as before (two rows or more on a phone), which the
+card asked to end. The state parts never wrapping: with an absence they need more than a phone's
+width.
 
 ## Runners in the gear menu, not in the projects' row
 
@@ -4003,6 +4137,7 @@ so it was dropped.
 **Source:** the card tsk-ayaav7naskbe, taken over from #846 with its review; the maintainer's decision recorded with 11b7e786, relayed by the coordinator (the repository button reads "Repository"), 2026-10-31; docs/api.md §6.11
 **See:** https://github.com/oliver-zehentleitner/maity — 11b7e786-ecf7-4971-ae04-48760fd1fd41 — as of 2026-10-31
 **Revisit when:** a fifth kind of link is added, or the header row has no room for the buttons on a phone
+**See:** views.md#on-a-phone-the-projects-links-are-one-row-that-scrolls-the-state-stands-beside-it — df210b31-e55a-47c9-93da-2d139e9ded89 — as of 2026-11-03
 
 The header's row shows the repository, then Pull Requests, then the
 project's own links that are set (issues, wiki, discussions, chat, each
@@ -4411,7 +4546,7 @@ view registers `ctx.followRoute`, and the pane is drawn into a detached
 holder and put in place once it is ready. Meanwhile the list already
 marks the new chat and the pane being left stands dimmed and inert. Direct chats take
 their unread count, newest message and one's own participant entry from the list as last read; what
-came since is the forward read's, and a chat left before that read is not marked read by it. The list is read again after the pane
+came since is the forward read's, and a chat left before that read starts is not marked read by it. The list is read again after the pane
 is drawn, and nothing waits for it. A project or chat not in the list as last read,
 or a failed read, still draws the page anew, which reads it or says what is wrong.
 A chat's timers and listeners are the pane's own, ended when it is left.

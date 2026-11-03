@@ -460,7 +460,10 @@ there at the head or at the tip of the default branch; a file and line
 only at the head. Addresses, hub ids, UUIDs, placeholders and words
 outside ASCII in a code span are skipped, and a hash is any object in
 the clone, bounded so that the groups of a UUID do not count (both
-found in review of #1224, the lead's ruling). Commands and their output go under a heading `Ran`,
+found in review of #1224, the lead's ruling). A path in a code span that is no
+file still passes as text in a file, so that routes and parts of URLs
+are not refused, and a hash needs a digit, so that English words made
+of `a`–`f` are not taken for one (the lead's rulings after #1224). Commands and their output go under a heading `Ran`,
 which is not checked. A reviewer's rules (the review line, §6.9) add a
 fresh context per review, the text sent as that context wrote it and
 the check passed it, and everything run listed under `Ran`.
@@ -562,7 +565,8 @@ one from prose.
 **Revisit when:** the dashboard renders an instance suffix or a member id as the member's handle wherever a human reads it, so that the text no longer has to
 
 Every agent's rules carry the naming line: in what a human reads — a
-message, an ask, a report, a card note — a member is named by its
+message to a human or between agents, a group chat, an ask, a report,
+a card note, the text of a `review_result` — a member is named by its
 handle, or by `handle#instance` when the instance matters, never by the
 instance suffix or the member id alone. It is part of the hub's own
 generated text in §6.9, so a change reaches running agents through the
@@ -576,3 +580,8 @@ member up.
 - Putting the rule in the hub's default guides, a briefing layer
   (§6.28): a human may replace a guide, and the rule would go with it,
   though the maintainer wants it for every agent.
+- Limiting the rule to text written to a human, or about a member for
+  one: project messages between agents, group chats and the text of a
+  `review_result` are read by the maintainer too, so the lead ruled
+  that the rule covers everything a human reads, with the addresses the
+  hub reads left out (2026-11-02, seq 39831).

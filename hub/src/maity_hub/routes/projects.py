@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import replace
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -21,7 +22,9 @@ from maity_hub import (
     bridges,
     clock,
     commitment,
+    contract_text,
     forge,
+    forge_access,
     handles,
     idempotency,
     images,
@@ -132,13 +135,85 @@ def _check_ticker(settings: TickerSettingsIn) -> None:
         raise invalid(errors)
 
 
+class RoleRuleIn(Strict):
+    """One role's rule lines (§6.1 "Role rules")."""
+
+    subagent_per_card: bool | None = None
+    checklist: list[str] | None = None
+
+
+CHECKLIST_MAX = 30
+CHECKLIST_ITEM_MAX = 300
+# A line break, another control character or an invisible format character that turns or
+# hides text (Unicode Cc, Cf, Zl, Zp: zero-width, bidi controls and marks, BOM, soft hyphen):
+# an item is one plain line as it reads (§6.1, §16.7.4). By category, not a list of code
+# points, so a format character nobody named (U+061C, U+180E) is refused as well.
+NOT_PLAIN = frozenset({"Cc", "Cf", "Zl", "Zp"})
+
+
+def _not_plain(item: str) -> bool:
+    return any(unicodedata.category(ch) in NOT_PLAIN for ch in item)
+
+
+def _checked_role_rules(given: dict[str, RoleRuleIn]) -> dict[str, Any]:
+    """`settings.role_rules` as stored (§6.1): every refusal named, nothing dropped silently,
+    each checklist item trimmed; a field a role does not name stays absent."""
+    errors: dict[str, str] = {}
+    stored: dict[str, Any] = {}
+    for role, rules_in in given.items():
+        field = f"settings.role_rules.{role}"
+        if role not in rules.RULE_ROLES:
+            errors[field] = "unknown_role"
+            continue
+        entry = rules_in.model_dump(exclude_unset=True, exclude_none=True)
+        if "checklist" in entry:
+            items = [item.strip() for item in entry["checklist"]]
+            error = _checklist_error(role, items)
+            if error is not None:
+                errors[f"{field}.checklist"] = error
+            entry["checklist"] = items
+        stored[role] = entry
+    if errors:
+        raise invalid(errors)
+    return stored
+
+
+def _checklist_error(role: str, items: list[str]) -> str | None:
+    if role == "coder":
+        return "not_allowed"
+    if len(items) > CHECKLIST_MAX:
+        return "too_many"
+    for item in items:
+        if not item:
+            return "empty_item"
+        if _not_plain(item):
+            return "multiline"
+        if len(item) > CHECKLIST_ITEM_MAX:
+            return "too_long"
+    return None
+
+
+def _announced_role_rules(stored: dict[str, Any] | None) -> dict[str, Any] | None:
+    """`settings.role_rules` as `project_updated` names it: each checklist as `true`, since
+    the log never keeps a project's free text (§6.1, §8)."""
+    if stored is None:
+        return None
+    return {
+        role: {**entry, **({"checklist": True} if "checklist" in entry else {})}
+        for role, entry in stored.items()
+    }
+
+
 class SettingsIn(Strict):
     """Top-level keys (§6.1): a key named replaces its whole value, `null` removes it."""
 
     release_checklist: list[str] | None = Field(default=None, max_length=50)
     ticker: TickerSettingsIn | None = None
     onboarding: OnboardingIn | None = None
+    role_rules: dict[str, RoleRuleIn] | None = None
     language: str | None = None
+    # The file the overview links and shows as the project's contract (§6.8).
+    contract_path: str | None = None
 
     @field_validator("language", mode="before")
     @classmethod
@@ -264,13 +339,75 @@ def _repository_columns(repository: RepositoryIn | None) -> dict[str, Any]:
     return {"repository_url": url, "repository_default_branch": repository.default_branch}
 
 
-def _looks_public(request: Request, repository: RepositoryIn | None) -> bool | None:
+def _looks_public(request: Request, repository: RepositoryIn | None, served: bool) -> bool | None:
     """The hub's first look at a repository: whether the forge reports it public. One it has not
-    looked at, cannot read or finds private is not (§16.9, §11.4); None when there is none."""
+    looked at, cannot read or finds private is not (§16.9, §11.4); None when there is none. The
+    look is the operator's token's, so only where `served` says the token serves the project's
+    namespace and the caller's change could keep a page on (`_create_served`, `_patch_served`)."""
     if repository is None:
         return None
+    if not served:
+        return False  # nothing reads it before the owner confirms it (§11.4)
     url = _repository_columns(repository)["repository_url"]
     return reader_of(request).repository_public(forge.repository_of(url))
+
+
+def _listed(request: Request, conn: Connection, owner_id: str) -> bool:
+    """Whether the namespace of `owner_id`, by its current handle, is one of the operator's own
+    (§11.4)."""
+    names = settings_of(request).forge_instance_namespaces
+    return bool(names) and forge_access.serves(names, namespace.current_handle(conn, owner_id))
+
+
+def _create_served(request: Request, owner: str | None, human_id: str) -> bool:
+    """Whether a creation may look at its repository with the operator's token: only one whose
+    page can start `on` — in the creator's own namespace, or by an owner of an organisation that
+    is not suspended (§6.1, §6.26) — and in a listed namespace. Before the transaction, so that
+    nobody makes the token read a URL by naming a namespace they cannot publish in; the
+    transaction checks the creator's right again under its lock."""
+    if not settings_of(request).forge_instance_namespaces:
+        return False
+    with engine_of(request).connect() as conn:
+        owner_id = human_id if owner is None else namespace.resolve_owner(conn, owner)
+        if owner_id is None:
+            return False
+        if owner_id != human_id:
+            role = conn.execute(
+                select(t.org_member.c.role)
+                .join(t.org, t.org.c.id == t.org_member.c.org_id)
+                .where(
+                    t.org_member.c.org_id == owner_id,
+                    t.org_member.c.human_id == human_id,
+                    t.org.c.deleted_at.is_(None),
+                )
+            ).scalar()
+            if role != "owner":  # anyone else's project starts `off`: nothing to look for
+                return False
+            held = moderation.hold(conn, "org", owner_id)
+            if held is not None and held.action == "suspend":  # no new project (§6.26)
+                return False
+        return _listed(request, conn, owner_id)
+
+
+def _patch_served(request: Request, caller: Any, slug: str, body: Any, given: set[str]) -> bool:
+    """Whether a `PATCH` naming a repository may look at it with the operator's token: a cheap
+    check first that the caller may make the whole change, with the transaction's own checks,
+    since otherwise anyone signed in could make the token read any URL by naming a project in a
+    listed namespace (§11.4); then only when the page would stay on, and only for the project's
+    namespace by its owner now — never by the path, which may be an alias the project kept
+    from a listed namespace it was transferred out of. The transaction checks again under its
+    lock."""
+    try:
+        with engine_of(request).connect() as conn:
+            mine = membership(conn, caller, slug)
+            _refuse_for_agents(mine, body, given)
+            _authorise_patch(mine, body, given)
+            if given & PUBLIC_FIELDS:
+                _namespace_owner_only(conn, mine)
+            page = body.public_page if "public_page" in given else mine.project.public_page
+            return page == "on" and _listed(request, conn, mine.project.owner_id)
+    except ApiError:
+        return False
 
 
 def _refuse_outside_roles(
@@ -540,7 +677,13 @@ def create_project(body: ProjectCreate, request: Request, caller: HumanCaller) -
     words = namespace.app_words(request.app)
     assert caller.human_id is not None  # a human caller
     # Before the transaction, which waits for no forge: a page asked for `off` needs no look.
-    seen_public = _looks_public(request, body.repository) if body.public_page != "off" else None
+    seen_public = (
+        _looks_public(
+            request, body.repository, _create_served(request, body.owner, caller.human_id)
+        )
+        if body.public_page != "off"
+        else None
+    )
 
     def action(conn: Connection) -> idempotency.Outcome:
         # The creator is the namespace owner, or an organisation they may create in:
@@ -670,7 +813,11 @@ def patch_project(
     words = namespace.app_words(request.app)
     # The look at a new repository is the hub's own call to the forge, made before the
     # transaction (§6.1): the page stays on only for one the hub sees public.
-    seen_public = _looks_public(request, body.repository) if "repository" in given else None
+    seen_public = (
+        _looks_public(request, body.repository, _patch_served(request, caller, slug, body, given))
+        if "repository" in given
+        else None
+    )
 
     def action(conn: Connection) -> idempotency.Outcome:
         if "setup" in given:
@@ -700,6 +847,7 @@ def patch_project(
         owner_id = _owner_id(conn, project.id)
         values: dict[str, Any] = {}
         rules_inputs_changed = False
+        bumped = False  # one PATCH moves `rules_version` once (§6.1)
         settings_changed: dict[str, Any] = {}
         if "name" in given and body.name is not None and body.name != project.name:
             values["name"] = body.name
@@ -727,10 +875,13 @@ def patch_project(
                 values["repository_owner_confirmed"] = False
                 values["repository_confirmed_by"] = None
                 values["repository_public"] = None  # the forge has not said anything of this one
+                # The look counts only while the project is still in a listed namespace: a
+                # transfer may have taken it out since (§11.4).
+                looked = bool(seen_public) and _listed(request, conn, project.owner_id)
                 if (
                     columns["repository_url"] is not None
                     and values.get("public_page", project.public_page) == "on"
-                    and not seen_public
+                    and not looked
                 ):
                     # A repository the hub finds private or cannot read turns the page off, and
                     # the namespace owner turns it on again if they want (§6.1, §16.9).
@@ -748,7 +899,13 @@ def patch_project(
             named = body.settings.model_fields_set
             if body.settings.ticker is not None:
                 _check_ticker(body.settings.ticker)
+            if body.settings.contract_path is not None:
+                reason = contract_text.setting_error(body.settings.contract_path)
+                if reason is not None:
+                    raise invalid({"settings.contract_path": reason})
             dumped = body.settings.model_dump()
+            if body.settings.role_rules is not None:
+                dumped["role_rules"] = _checked_role_rules(body.settings.role_rules)
             if "onboarding" in named:
                 changed, stored, announcement = onboarding.replace_setting(
                     conn, project, body.settings.onboarding, mine.id
@@ -762,6 +919,10 @@ def patch_project(
                     effective = dumped[key] or "en"
                     if effective != (merged.get(key) or "en"):
                         settings_changed["settings.language"] = effective
+                elif key == "role_rules":
+                    if merged.get(key) != dumped[key]:
+                        settings_changed["settings.role_rules"] = _announced_role_rules(dumped[key])
+                        rules_inputs_changed = True
                 elif key != "onboarding" and merged.get(key) != dumped[key]:
                     settings_changed[f"settings.{key}"] = (
                         True
@@ -860,6 +1021,7 @@ def patch_project(
                 {"old": project.state, "new": body.state, "reason": body.reason},
                 actor=actor,
             )
+            bumped = True
             if body.state == "archived":  # its placements close the uniform way (§15.5)
                 placements.project_archived(conn, project.id, actor, mine.principal_id)
         elif "state_note" in given and body.state_note != project.state_note:
@@ -898,7 +1060,9 @@ def patch_project(
                     "reason": body.reason,
                 },
                 actor=actor,
+                again=bumped,
             )
+            bumped = True
         if new_policy is not None:
             conn.execute(
                 update(t.project)
@@ -912,7 +1076,9 @@ def patch_project(
                 BROADCAST,
                 {"old": policy.of(project), "new": new_policy, "reason": body.reason},
                 actor=actor,
+                again=bumped,
             )
+            bumped = True
         if "absence" in given:
             if body.absence is not None and body.absence.until > clock.now() + ABSENCE_AHEAD:
                 raise invalid({"absence": "too_far"}, "an absence ends within 90 days")
@@ -959,10 +1125,17 @@ def patch_project(
                     update(t.project).where(t.project.c.id == project.id).values({name: new_value})
                 )
                 rules_inputs_changed = True
-        # The name, a note without a state change, the owner's text and the Keep the
-        # Why line are rules inputs without an event of their own: one rules_changed.
-        if rules_inputs_changed:
-            payload = {"reason": body.reason} if body.reason else {}
+        # The name, a note without a state change, the owner's text, the Keep the Why line
+        # and the role rules are rules inputs without an event of their own: one
+        # rules_changed, whose reason names the role rules when the PATCH gives none (§6.1).
+        # A state_changed or policy_changed of the same PATCH already marks the new version.
+        if rules_inputs_changed and not bumped:
+            if body.reason:
+                payload = {"reason": body.reason}
+            elif "settings.role_rules" in settings_changed:
+                payload = {"reason": "settings.role_rules"}
+            else:
+                payload = {}
             rules.bump(conn, project, "rules_changed", BROADCAST, payload, actor=actor)
         if new_policy is not None or explicit_changes or provider is not None:
             # An instance owes nothing once the policy is `optional` or the provider `none`.
@@ -1123,6 +1296,9 @@ def _refuse_for_agents(mine: Membership, body: Any, given: set[str]) -> None:
         raise humans_only("a project is renamed by a human")
     if body.settings is not None and "language" in body.settings.model_fields_set:
         raise humans_only("the project's language is set by a human")
+    if body.settings is not None and "role_rules" in body.settings.model_fields_set:
+        # An agent does not write the rules it works under (§6.1 "Role rules").
+        raise humans_only("the role rules are set by a human")
     policy = body.policy.model_fields_set if "policy" in given and body.policy else set()
     if policy & HUMANS_ONLY_POLICY or "rules_markdown" in given or body.state == "archived":
         raise humans_only("no agent changes this, whatever its role")

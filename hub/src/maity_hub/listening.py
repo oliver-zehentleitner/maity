@@ -18,6 +18,7 @@ import queue
 import secrets
 import socket
 import threading
+import time
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -55,6 +56,7 @@ _lock = threading.Lock()
 _engine: list[Engine | None] = [None]
 _writes: queue.Queue[tuple[str, str, str] | None] = queue.Queue()
 _thread: list[threading.Thread | None] = [None]
+_stopping: list[threading.Event | None] = [None]  # the running writer's own signal to end
 _starts = [0]  # apps that started the registry in this process and have not stopped it
 
 
@@ -110,6 +112,15 @@ def closed(key: str, wait_id: str) -> None:
             _writes.put(("close", wait_id, key))
 
 
+def written() -> None:
+    """For tests: return once the writer has handled every open and close queued so far
+    (PostgreSQL), so a read of the registry right after `closed` does not still find the
+    wait's row. A write that failed is handled too (logged); with no writer, `TimeoutError`
+    after `DRAIN_SECONDS` instead of a hang."""
+    if _engine[0] is not None:
+        _drained()
+
+
 def reset() -> None:
     """Forget every wait of this process, in memory and, once what was queued is written, in
     the database: a test that makes an agent stop listening."""
@@ -119,10 +130,40 @@ def reset() -> None:
     engine = _engine[0]
     if engine is None:
         return
-    _writes.join()
+    _drained()
     with engine.begin() as conn:
         write_guard.exempt(conn)
         conn.execute(delete(t.long_poll).where(t.long_poll.c.pod == POD))
+
+
+DRAIN_SECONDS = 30.0  # how long `reset` waits for the writer before it fails instead of hanging
+STOP_SECONDS = 5.0  # how long `stop` waits for the writer to end
+
+
+def _drained(seconds: float | None = None) -> None:
+    """Return once the writer has handled everything queued; raise `TimeoutError` after
+    `DRAIN_SECONDS` instead of waiting for ever when no writer runs (tsk-xz3bxa5cwv4v)."""
+    deadline = time.monotonic() + (DRAIN_SECONDS if seconds is None else seconds)
+    with _writes.all_tasks_done:
+        while _writes.unfinished_tasks:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                alive = _thread[0] is not None and _thread[0].is_alive()
+                raise TimeoutError(
+                    f"the listening writer left {_writes.unfinished_tasks} write(s) undone"
+                    f" (writer alive: {alive})"
+                )
+            _writes.all_tasks_done.wait(left)
+
+
+def _discard_queued() -> None:
+    """Drop what no writer will handle, so a later wait for the queue does not hang."""
+    while True:
+        try:
+            _writes.get_nowait()
+        except queue.Empty:
+            return
+        _writes.task_done()
 
 
 # --- the writer and the heartbeat (PostgreSQL) ----------------------------------------------
@@ -136,12 +177,28 @@ def start(engine: Engine) -> None:
         return
     with _lock:
         _starts[0] += 1
+        # A second app returns here at once, before the first's heartbeat is through: should
+        # that fail, the second goes on with the waits of this process alone, in memory. One
+        # app per process outside the tests, so only tests can see it (dzse at #1256).
         if _engine[0] is not None:
             return
         _engine[0] = engine
-    _heartbeat(engine)
-    thread = threading.Thread(target=_write, args=(engine,), name="maity-listening", daemon=True)
-    _thread[0] = thread
+    try:
+        _heartbeat(engine)
+    except BaseException:
+        # No writer will run: the registry is left as if never started, or a later
+        # `reset` would wait for writes nobody makes (tsk-xz3bxa5cwv4v).
+        with _lock:
+            _engine[0] = None
+            _starts[0] = max(0, _starts[0] - 1)
+            _rows.clear()
+        _discard_queued()
+        raise
+    stopping = threading.Event()
+    thread = threading.Thread(
+        target=_write, args=(engine, stopping), name="maity-listening", daemon=True
+    )
+    _thread[0], _stopping[0] = thread, stopping
     thread.start()
 
 
@@ -152,13 +209,24 @@ def stop(*, every: bool = False) -> None:
         _starts[0] = 0 if every else max(0, _starts[0] - 1)
         if _starts[0] > 0:
             return
-    engine, thread = _engine[0], _thread[0]
+    engine, thread, stopping = _engine[0], _thread[0], _stopping[0]
     if engine is None:
         return
-    _writes.put(None)
-    if thread is not None:
-        thread.join(timeout=5)
-    _engine[0], _thread[0] = None, None
+    if thread is not None and thread.is_alive():
+        # This writer's own signal ends it; the `None` only wakes it. A writer still busy after
+        # the join (a write held by a lock) ends after that write without taking another, so
+        # the `None` it leaves ends no other writer (tsk-xz3bxa5cwv4v).
+        if stopping is not None:
+            stopping.set()
+        _writes.put(None)
+        thread.join(timeout=STOP_SECONDS)
+        if thread.is_alive():
+            log.warning("the listening writer is still in a write; it ends after that write")
+    # What is still queued is this app's and goes with its rows below, whether or not its
+    # writer has ended; the next app's writer would write it into its own database (dzse at
+    # #1256, hub/context/replicas.md 387c2409 point 4).
+    _discard_queued()
+    _engine[0], _thread[0], _stopping[0] = None, None, None
     with _lock:
         _rows.clear()
     try:
@@ -170,9 +238,9 @@ def stop(*, every: bool = False) -> None:
         log.warning("the listening registry could not remove this process's rows")
 
 
-def _write(engine: Engine) -> None:
+def _write(engine: Engine, stopping: threading.Event) -> None:
     due = _now() + HEARTBEAT  # when the next heartbeat is owed, on this process's clock
-    while True:
+    while not stopping.is_set():
         try:
             item = _writes.get(timeout=max(0.0, (due - _now()).total_seconds()))
             queued = True
@@ -185,7 +253,7 @@ def _write(engine: Engine) -> None:
             due = _now() + HEARTBEAT
         try:
             if item is None:
-                return
+                continue  # a wake: the loop ends only on this writer's own `stopping`
             if beat:
                 _heartbeat(engine)
             if item[0] in ("open", "close"):

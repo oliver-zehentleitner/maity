@@ -59,6 +59,8 @@ window.Maity = window.Maity || {};
     lease_active: () => M.tOwn("error.lease_active"),
     mail_not_configured: () => M.tOwn("error.mail_not_configured"),
     maintenance: () => M.tOwn("error.maintenance"),
+    maintenance_not_running: () => M.tOwn("error.maintenance_not_running"),
+    maintenance_running: () => M.tOwn("error.maintenance_running"),
     memory_full: () => M.tOwn("error.memory_full"),
     method_not_allowed: () => M.tOwn("error.method_not_allowed"),
     namespace_owner: () => M.tOwn("error.namespace_owner"),
@@ -101,6 +103,7 @@ window.Maity = window.Maity || {};
     timestamp_skew: () => M.tOwn("error.timestamp_skew"),
     too_few: () => M.tOwn("error.too_few"),
     unauthenticated: () => M.tOwn("error.unauthenticated"),
+    upload_expired: () => M.tOwn("error.upload_expired"),
     version_exists: () => M.tOwn("error.version_exists"),
     webhook_signature: () => M.tOwn("error.webhook_signature"),
   };

@@ -10,14 +10,15 @@ window.Maity = window.Maity || {};
 
   // One item: its link, and Mark read where a read mark can be set from
   // here (§18.3): not on an open matter, which reads as read once it is
-  // closed, and on a sign-in or address alert only where this session may
-  // confirm it (§2.6.5, M.sessions.mayConfirm), else the hub would skip it.
+  // closed, and on a security alert only where this session may mark it
+  // (M.sessions.mayMark, as the bell does): a sign-in or address alert from
+  // a confirmed session older than it, every other kind from any session.
   function row(ctx, x, mark, sessions) {
     let li = null;
     const title = x.redacted ? M.t("waiting.removed") : x.title || M.notify.KIND_WORDS[x.kind] || M.t("waiting.untitled");
     const security = x.kind === "security";
     const reported = security && sessions && (x.target || {}).type === "session" ? sessions.list.find((s) => s.id === x.target.id) || null : null;
-    const markable = !x.read && (security ? !!(sessions && M.sessions && M.sessions.mayConfirm(sessions.current, x, reported)) : !M.notify.keepsUnread(x));
+    const markable = !x.read && (security ? !!(sessions && M.sessions && M.sessions.mayMark(sessions.current, x, reported)) : !M.notify.keepsUnread(x));
     const link = h("a", { href: M.notify.linkOf(x), onclick: () => {
       if (x.read || M.notify.keepsUnread(x)) return; // Read with This was me, or once the matter is closed.
       mark({ ids: [x.id] });
@@ -59,10 +60,18 @@ window.Maity = window.Maity || {};
     // True once the hub took it; the counts follow. Mark all read reads
     // the list again, since it reaches items on pages not shown.
     async function mark(body) {
+      let answer;
       try {
-        await M.api.post("/me/notifications/read", body);
+        answer = await M.api.post("/me/notifications/read", body);
       } catch (err) {
         status.fail(M.t("waiting.not_marked"), err);
+        return false;
+      }
+      // An id the hub left unread (§18.3 `skipped`, e.g. an address change made
+      // from this session, which the page cannot see) is said, not shown read.
+      const left = body.ids ? ((answer && answer.skipped) || []).find((y) => body.ids.includes(y.id)) : null;
+      if (left) {
+        status.fail(M.t("waiting.not_marked"), Object.assign(new Error(M.notify.skippedWhy(left.reason)), { details: {} }));
         return false;
       }
       M.notify.changed();

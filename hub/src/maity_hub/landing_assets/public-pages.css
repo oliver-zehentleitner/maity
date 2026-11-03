@@ -1,0 +1,83 @@
+/* Draft: pages without a session (sign in, sign up, legal) inside the landing's own header and footer.
+   Uses landing.css tokens (--bg, --surface, --text, --muted, --border, --accent ...). */
+.door-page{display:grid;grid-template-columns:minmax(0,44fr) minmax(0,56fr);min-height:calc(100vh - 65px)}
+.door-panel{position:relative;overflow:hidden;background-color:#0b0f14;
+  background-image:radial-gradient(ellipse 70% 55% at 70% 18%,rgba(76,141,255,.26),transparent 70%),radial-gradient(ellipse 60% 50% at 0% 100%,rgba(26,102,217,.20),transparent 70%),radial-gradient(rgba(156,194,255,.07) 1px,transparent 1px);
+  background-size:100% 100%,100% 100%,22px 22px;padding:clamp(48px,9vh,112px) clamp(32px,4.5vw,72px) 0;color:#e6e9ec}
+.door-panel::after{content:"";position:absolute;left:18%;right:-12%;bottom:-28%;aspect-ratio:1;background:url(brand/door-art.svg) center/contain no-repeat;opacity:.7;pointer-events:none}
+.door-panel .seat{display:block;width:14px;height:14px;border-radius:4px;background:#4c8dff;box-shadow:0 0 18px rgba(76,141,255,.85);margin-bottom:28px}
+.door-panel .subline{position:relative;z-index:1;font:700 clamp(2rem,3.1vw,3.1rem)/1.08 var(--font-display);letter-spacing:-.025em;color:#fff;margin:0 0 28px;max-width:16ch;text-wrap:balance}
+.door-panel ul{position:relative;z-index:1;list-style:none;padding:0;margin:0;display:grid;gap:12px;font-size:1.05rem}
+.door-panel li{position:relative;padding-left:28px}
+.door-panel li::before{content:"";position:absolute;left:4px;top:.48em;width:11px;height:11px;border-radius:3px;background:#4c8dff;box-shadow:0 0 12px rgba(76,141,255,.75)}
+.door-panel .note{position:relative;z-index:1;color:#a7b0b9;font-size:.9rem;margin-top:24px}
+.door-panel .note a{color:#9cc2ff}
+.door-form{padding:clamp(48px,9vh,112px) clamp(24px,5vw,80px) 64px;display:flex;justify-content:center}
+.door-form>div{width:100%;max-width:420px}
+.door-form h1{font:700 2rem/1.12 var(--font-display);letter-spacing:-.025em;margin:0 0 6px}
+.door-form .intro{color:var(--muted);margin:0 0 6px;font-size:.95rem}
+.door-form form{display:grid;gap:4px}
+.door-form label{font-size:.875rem;font-weight:600;margin-top:12px}
+.door-form input,.door-form select{height:46px;padding:0 14px;border:1px solid var(--field,#8a939d);border-radius:10px;background:var(--surface);color:var(--text);font:inherit;font-size:1rem;width:100%}
+:root[data-theme="dark"] .door-form{--field:#6b747e}
+.door-form input:focus-visible,.door-form select:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-glow)}
+.door-form .btn{width:100%;justify-content:center;margin-top:20px;min-height:48px;border:0;font:inherit;font-weight:600;cursor:pointer}
+.door-form .btn-secondary{margin-top:12px;border:1px solid var(--border)}
+.door-form .hint{font-size:.85rem;color:var(--muted);margin:2px 0 0}
+.door-form .or{display:grid;gap:14px;margin-top:28px;padding-top:22px;border-top:1px solid var(--border)}
+.door-form .or h2{font:700 1.1rem var(--font-display);margin:0}
+.door-form .alt{text-align:center;margin:18px 0 0;color:var(--muted)}
+.door-form .alt a{color:var(--accent)}
+.legal-page{padding:72px 0 96px}
+.legal-page .wrap{max-width:760px}
+.legal-page h1{font:700 clamp(2.2rem,4vw,3.2rem)/1.08 var(--font-display);letter-spacing:-.03em;margin:0 0 10px}
+.legal-page .eyebrow{color:var(--muted);font-size:.9rem;margin:0 0 32px}
+.legal-page h3{font:700 1.25rem var(--font-display);margin:36px 0 10px}
+.legal-page p,.legal-page li{color:var(--text);line-height:1.7}
+.legal-page li{margin-bottom:8px}
+.legal-page a{color:var(--accent)}
+.legal-toc{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 36px}
+.legal-toc a{padding:6px 12px;border:1px solid var(--border);border-radius:999px;text-decoration:none;color:var(--text);font-size:.9rem}
+.legal-toc a[aria-current]{background:var(--accent);border-color:var(--accent);color:var(--accent-text)}
+@media (max-width:959.98px){
+  .door-page{grid-template-columns:1fr}
+  .door-panel{padding:32px 20px 36px;border-radius:0 0 24px 24px}
+  .door-panel::after{display:none}
+  .door-panel .seat{margin-bottom:18px}
+  .door-panel .subline{font-size:1.6rem;margin-bottom:18px}
+  .door-panel ul{font-size:.95rem}
+  .door-form{padding:28px 16px 48px}
+}
+/* on these pages the header is solid: no dark hero behind it to blur */
+.site-header{background:#0b0f14}
+
+/* ---- states inside .door-form (the dashboard's existing elements) ---------------- */
+.door-form .send-status{font-size:.9rem;margin:6px 0 0;min-height:0}
+.door-form .send-status:empty{display:none}
+.door-form .send-status.failed{background:var(--error-bg,#fde8e7);color:var(--bad,#b42318);border-radius:10px;padding:10px 12px}
+:root[data-theme="dark"] .door-form .send-status.failed{--error-bg:#3a1716;--bad:#ff7b72}
+/* "Your session has ended" */
+.door-form .flag.session-ended{position:relative;margin:0 0 20px;padding:12px 14px 12px 40px;border-radius:12px;background:var(--flag-bg,#fff6dd);font-size:.92rem;border:0}
+:root[data-theme="dark"] .door-form .flag.session-ended{--flag-bg:#2d2610}
+.door-form .flag.session-ended::before{content:"";position:absolute;left:16px;top:1.05em;width:10px;height:10px;border-radius:50%;background:#d29922;box-shadow:0 0 0 4px rgba(210,153,34,.25)}
+/* code fields: easy to read and compare */
+.door-form #device-code,.door-form #sf-code,.door-form #sign-in-mail-code{font-family:var(--font-mono);font-size:1.15rem;letter-spacing:.12em}
+/* the other ways in */
+.door-form .sign-in-code>.link-button{width:100%;min-height:48px;border:1px solid var(--border);border-radius:11px;background:var(--surface);color:var(--text);font-weight:600;text-decoration:none;cursor:pointer}
+.door-form .sign-in-code>.link-button:hover{border-color:var(--accent);color:var(--accent)}
+.door-form .sign-in-code h3,.door-form .sign-in-mail h3{font:700 1.1rem var(--font-display);margin:0}
+.door-form .device-waiting{text-align:center;display:grid;gap:6px}
+.door-form .match-number{font:700 4rem/1 var(--font-display);margin:8px auto;padding:18px 28px;border-radius:20px;background:var(--chip);color:var(--text);letter-spacing:.04em}
+/* second factor */
+.door-form .sf-resend{width:100%;min-height:44px;margin-top:12px;border:1px solid var(--border);border-radius:11px;background:var(--surface);color:var(--text);font-weight:600}
+.door-form .sf-sign-out{justify-self:center;margin-top:6px}
+/* "Check your mail" after registering */
+.door-form .sent-icon{display:block;width:56px;height:56px;margin-bottom:20px;background:var(--accent);-webkit-mask:url(brand/door-mail.svg) center/contain no-repeat;mask:url(brand/door-mail.svg) center/contain no-repeat}
+/* the panel without a pitch (second factor, mail sent, registration closed): the art large */
+.door-panel:not(:has(.subline))::after{left:10%;right:10%;top:50%;bottom:auto;transform:translateY(-50%);opacity:1}
+/* Japanese, Korean, Chinese */
+:is(:lang(ja),:lang(ko),:lang(zh)) :is(.door-panel .subline,.door-form h1,.legal-page h1){letter-spacing:0;line-height:1.3}
+:lang(ja),:lang(zh){line-break:strict}
+:lang(ko){word-break:keep-all}
+:lang(ja) :is(.door-panel .subline,.door-form h1){word-break:auto-phrase}
+@media (prefers-reduced-motion:reduce){.door-form *{transition:none!important}}

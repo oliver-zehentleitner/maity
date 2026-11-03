@@ -22,7 +22,7 @@ from typing import Any
 from sqlalchemy import Connection, delete, func, insert, select, true, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock, mentions, paths
+from maity_hub import clock, mentions, namespace, paths
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid, not_found, rate_limited
 
@@ -31,6 +31,37 @@ RENAME_LIMIT = 3
 RENAME_WINDOW = timedelta(hours=24)
 HUMANS = "human"  # the scope of every human's handle
 FORMAT = re.compile(r"^[a-z0-9][a-z0-9-]{1,30}$")
+# MAITY_FORGE_INSTANCE_NAMESPACES (§11.4), set when the hub starts: a listed name nobody carries
+# is held for the operator, so that nobody else can register it and be read with its token.
+_instance_names: frozenset[str] = frozenset()
+
+
+def hold_instance_names(names: frozenset[str]) -> None:
+    """The operator's own namespaces, from the settings (§11.4)."""
+    global _instance_names
+    _instance_names = names
+
+
+def held_for_instance(conn: Connection, handle: str) -> bool:
+    """Whether a human's or an organisation's `handle` is a listed name that is neither the
+    handle nor an alias of any id (§11.4): `reserved` while it is listed. An alias needs no
+    hold, it is never another's (§6.24), and its own id may take it back."""
+    return handle in _instance_names and holder(conn, HUMANS, handle) is None
+
+
+def unserved_instance_names(conn: Connection, names: frozenset[str]) -> tuple[list[str], list[str]]:
+    """The listed `names` the hub warns about at start (§11.4): those held because nobody has
+    them, and those that are only an alias, whose namespace is not served under that name. Given
+    from the settings, not the held set: the parent of several workers checks before any app
+    (and so `hold_instance_names`) exists."""
+    held, aliases = [], []
+    for name in sorted(names):
+        found = holder(conn, HUMANS, name)
+        if found is None:
+            held.append(name)
+        elif namespace.current_handle(conn, found) != name:
+            aliases.append(name)
+    return held, aliases
 
 
 def _alias_id() -> Any:
@@ -169,6 +200,8 @@ def ensure_free(
     it (itself)."""
     scope = scope_of(owner_id)
     if paths.handle_reserved(handle, of_agent=owner_id is not None):
+        raise invalid({field: "reserved"})
+    if owner_id is None and held_for_instance(conn, handle):
         raise invalid({field: "reserved"})
     lock(conn, scope, handle)
     taken = holder(conn, scope, handle)

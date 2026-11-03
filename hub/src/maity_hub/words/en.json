@@ -114,7 +114,7 @@
   "register_page.legal_privacy": "Privacy notice",
   "register_page.legal_terms": "Terms of use",
   "register_page.password": "The password you chose when you asked for the account",
-  "register_page.public": "Your name and handle are publicly visible. The name can be anything; it does not have to be your real one.",
+  "register_page.public": "Your name and handle are publicly visible. The name can be anything; it does not have to be your real one. Your profile is public by default, with your public projects and the text and links you choose to show there, and the public pages of your projects show when you are online; you can turn both off in your account.",
   "register_page.terms": "I accept the terms ({url}, version {version})",
   "register_page.terms_changed": "The terms changed while this page was open. Read them again and confirm.",
   "register_page.title": "Create your Maity account",

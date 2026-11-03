@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
@@ -136,8 +137,6 @@ def test_a_failing_heartbeat_waits_its_interval_instead_of_spinning(
 ) -> None:
     """c47w at #903: with the database gone (a failover) a failed beat was retried at once, in
     a loop without a pause, on every pod."""
-    import threading
-
     beats: list[float] = []
 
     def failing(_engine: Engine) -> None:
@@ -146,10 +145,165 @@ def test_a_failing_heartbeat_waits_its_interval_instead_of_spinning(
 
     monkeypatch.setattr(listening, "_heartbeat", failing)
     monkeypatch.setattr(listening, "HEARTBEAT", timedelta(seconds=0.2))
-    writer = threading.Thread(target=listening._write, args=(migrated,), daemon=True)
+    stopping = threading.Event()
+    writer = threading.Thread(target=listening._write, args=(migrated, stopping), daemon=True)
     writer.start()
     time.sleep(1.0)
+    stopping.set()
     listening._writes.put(None)
     writer.join(timeout=5)
     assert not writer.is_alive()
     assert 2 <= len(beats) <= 7  # one per interval, not thousands
+
+
+# --- a writer that never ran or is gone (tsk-xz3bxa5cwv4v) ----------------------------------
+
+
+class _PgLike:
+    """Enough of an engine for `start` to take the PostgreSQL path; writes are stubbed."""
+
+    class dialect:  # noqa: N801
+        name = "postgresql"
+
+    def begin(self) -> None:
+        raise RuntimeError("no database here")
+
+
+def _broken(engine: object) -> None:
+    raise RuntimeError("the database went away")
+
+
+def test_a_start_whose_heartbeat_fails_leaves_no_registry_behind(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Way C: the first heartbeat fails; nothing stays started, so nothing waits for a writer."""
+    monkeypatch.setattr(listening, "_heartbeat", _broken)
+    with pytest.raises(RuntimeError):
+        listening.start(_PgLike())  # type: ignore[arg-type]
+    assert listening._engine[0] is None and listening._starts[0] == 0
+    listening.stop(every=True)
+    assert listening._writes.empty() and listening._writes.unfinished_tasks == 0
+
+
+def test_the_next_writer_runs_after_a_failed_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Way D: a stop while no writer ran (a failed start, a writer that died) left the
+    sentinel, which ended the next writer at once; `reset` then waited for ever. The next
+    writer now runs and handles the queue."""
+    listening._engine[0] = _PgLike()  # type: ignore[call-overload]
+    listening._thread[0] = None
+    listening.stop(every=True)
+    assert listening._writes.empty()
+    handled: list[str] = []
+    monkeypatch.setattr(listening, "_heartbeat", lambda engine: None)
+    monkeypatch.setattr(
+        listening, "_apply", lambda engine, kind, wait_id, key: handled.append(kind)
+    )
+    listening.start(_PgLike())  # type: ignore[arg-type]
+    try:
+        wait = listening.opened("ses-next")
+        listening.closed("ses-next", wait)
+        listening._drained(5)
+        assert handled == ["open", "close"]
+        assert listening._thread[0] is not None and listening._thread[0].is_alive()
+    finally:
+        listening.stop(every=True)
+
+
+def test_a_wait_for_a_gone_writer_fails_instead_of_hanging(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Way E (a writer that died): the wait for the queue ends with an error, not never;
+    the same for `written()`, which tests call after `closed`."""
+    monkeypatch.setattr(listening, "_engine", [_PgLike()])
+    monkeypatch.setattr(listening, "_thread", [None])
+    monkeypatch.setattr(listening, "DRAIN_SECONDS", 0.2)
+    listening.opened("ses-gone")
+    try:
+        with pytest.raises(TimeoutError, match="1 write"):
+            listening._drained()
+        with pytest.raises(TimeoutError, match="writer alive: False"):
+            listening.written()
+    finally:
+        listening._discard_queued()
+        listening._open.clear()
+        listening._rows.clear()
+
+
+def test_a_writer_still_busy_after_the_stop_ends_no_later_writer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A writer still in a write when `stop` gives up (a write held by a lock) left its `None`
+    for the next app's writer, which ended at once, while the old one went on writing to the
+    old engine (dzse at #1256). It now ends after that write; what was queued behind it goes
+    with the stopped app, and the next writer handles only the next app's writes."""
+    monkeypatch.setattr(listening, "STOP_SECONDS", 0.1)
+    monkeypatch.setattr(listening, "_heartbeat", lambda engine: None)
+    gate = threading.Event()
+    handled: list[tuple[object, str]] = []
+
+    def apply(engine: object, kind: str, wait_id: str, key: str) -> None:
+        if not handled:
+            gate.wait(10)  # the first write is held
+        handled.append((engine, key))
+
+    monkeypatch.setattr(listening, "_apply", apply)
+    old, new = _PgLike(), _PgLike()
+    listening.start(old)  # type: ignore[arg-type]
+    first = listening._thread[0]
+    assert first is not None
+    try:
+        listening.opened("ses-held")
+        assert _until(lambda: listening._writes.empty() and listening._writes.unfinished_tasks == 1)
+        listening.opened("ses-behind-1")  # queued behind the held write
+        listening.opened("ses-behind-2")
+        listening.stop(every=True)
+        assert first.is_alive()  # still in its write
+        listening.start(new)  # type: ignore[arg-type]
+        second = listening._thread[0]
+        assert second is not None
+        gate.set()
+        assert _until(lambda: not first.is_alive())
+        listening.opened("ses-next")
+        listening._drained(5)
+        assert second.is_alive()
+        assert handled == [(old, "ses-held"), (new, "ses-next")]
+    finally:
+        gate.set()
+        listening.stop(every=True)
+        listening._open.clear()
+        listening._rows.clear()
+
+
+def test_what_a_stopped_writer_left_is_not_written_by_the_next(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stop ends the writer after its current write; the opens still queued are the stopped
+    app's and go with its rows, not into the next app's database (dzse at #1256)."""
+    monkeypatch.setattr(listening, "_heartbeat", lambda engine: None)
+    gate = threading.Event()
+    handled: list[tuple[object, str]] = []
+
+    def apply(engine: object, kind: str, wait_id: str, key: str) -> None:
+        if not handled:
+            gate.wait(10)  # the first write is slow; two more wait behind it
+        handled.append((engine, key))
+
+    monkeypatch.setattr(listening, "_apply", apply)
+    old, new = _PgLike(), _PgLike()
+    listening.start(old)  # type: ignore[arg-type]
+    try:
+        for key in ("ses-1", "ses-2", "ses-3"):
+            listening.opened(key)
+        assert _until(lambda: listening._writes.qsize() == 2)  # the first is being written
+        threading.Timer(0.2, gate.set).start()
+        listening.stop(every=True)
+        assert listening._writes.unfinished_tasks == 0
+        listening.start(new)  # type: ignore[arg-type]
+        listening.opened("ses-4")
+        listening._drained(5)
+        assert handled == [(old, "ses-1"), (new, "ses-4")]
+    finally:
+        gate.set()
+        listening.stop(every=True)
+        listening._open.clear()
+        listening._rows.clear()

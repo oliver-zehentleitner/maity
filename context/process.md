@@ -197,6 +197,35 @@ run names.
 - Cancelling runs on main as well: each merge's own result is the
   record a deploy is decided on.
 
+## A change to the contract alone runs a light `hub-contract` part, not the database jobs
+
+**Id:** 5b0f7a42-3c1e-4d68-9a15-e2c7d4f1b903
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's request of 2026-11-02 (review lead's finding that #1235, a pull request changing only `docs/api.md`, left main red with 2 failed tests); `.github/workflows/ci.yml`
+**Revisit when:** a test opens `docs/api.md` in a way the grep does not find, or the gap below is closed, or the hub's database jobs get fast enough to take the contract path too
+
+Three hub test files (`test_contract_routes.py`, `test_guide.py`, `test_paths.py`) read `docs/api.md`, but the `hub` part of the `changes` job
+did not list it, so a pull request that changed only the contract got a green `ci-ok` and main went red after the merge. A new
+part `contract` (`docs/api.md` and `hub/*`) starts the job `hub-contract`: `make install` and every test file that builds
+the path `"docs" / "api.md"` (found by `grep` in the job, not listed; today `test_contract_routes`, `test_guide` and
+`test_paths`) on SQLite, a few minutes. It is in `ci-ok`. A change under `hub/` starts it too, beside the hub jobs that run the same files: it answers in a few minutes, while the database
+jobs take about an hour, and the coordinator asked for the filter `contract:docs/api.md` and `contract:hub/*`; a push to main and a change
+to the workflow start it like every other part.
+
+**Known gap (review of 2026-11-02):** hub tests also read files outside `hub/` and `docs/` (`web/tools/hub-shapes.json`,
+`web/tools/site-fixture.json`, `deploy/Dockerfile`, `cli/src/maity/__init__.py`, `README.md`); a pull request that changes only
+one of them starts neither the hub jobs nor this one. Not solved here; its own task.
+
+**Rejected alternatives:**
+- `docs/api.md` in the `hub` part: every contract pull request would run the PostgreSQL and SQLite suites, about an
+  hour, for a few files that need neither a database server nor the rest of the suite.
+- A fixed list of the test files: the first version listed two and missed `test_guide.py`, found in review; the job now
+  selects them by the path they build.
+- Moving the tests to the join-page gate or a script outside pytest: the tests stay where the hub's other tests are, and
+  CI only chooses when to run them.
+
 ## Every agent uses Keep the Why: implementers record each decision in the same pull request, reviewers gate on it
 
 **Id:** e534e9f3-a419-4a09-8054-117150592490
@@ -997,6 +1026,34 @@ for the newest run to finish.
 - `cancel-in-progress: true` on main: a streak of merges would cancel each run before it finishes, so main could stay without a
   green run for as long as the streak lasts, and a deploy needs a green one.
 - A group per commit, as before: nothing is ever replaced, so a merge streak queues one run per merge.
+
+## Every CI job has a timeout, 90 minutes for the database jobs and 30 for the rest; a hang no longer holds main for six hours
+
+**Id:** 97f338fd-9f05-4376-ac74-1649931c9945
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's decision, 2026-11-02, after main's ci run of `2246df68` hung in `hub-postgresql` at 99 % from 17:08 UTC until GitHub's six-hour limit cancelled it at 22:22 UTC (no ci run on main finished from 14:43 UTC on; the search for the hanging test is card tsk-xz3bxa5cwv4v); job durations read from the run history
+**Revisit when:** a green database job runs longer than about 70 minutes or another job longer than about 20, or the jobs move to slower runners
+
+`hub-sqlite`, `hub-postgresql` (`ci.yml`) and `hub-mariadb` (`hub-mariadb.yml`) carry `timeout-minutes: 90`; every other job
+`ci-ok` waits for carries 30 (`web-e2e` keeps its 15). Without it a job runs to GitHub's limit of six hours; while main's one
+running ci run hangs, every newer push only replaces the waiting run (the entry above), so nothing on main finishes and the
+MariaDB start from `ci` never comes. Green runs of the last day took up to 42 minutes (SQLite), 64 (PostgreSQL) and 29
+(MariaDB, on the rented runners); the other jobs up to 17 (`cli-windows`), most of them under 10. 90 and 30 leave room for a
+slow runner and still fail a hang the same evening.
+
+A timeout ends the job as `cancelled`, not `failure`, and the run shows as cancelled in the run list, like a run GitHub
+replaced while it waited; `ci-ok` counts only `success` and `skipped`, so it is red. In `hub-mariadb.yml` the report treats
+`cancelled` like `failure` and opens or comments on the `ci-red` issue, since nothing there cancels a running job; before, a
+hung MariaDB run ended without a word.
+
+**Rejected alternatives:**
+- A per-test timeout (`pytest-timeout`): names the hanging test, which the job timeout does not, but is a new dependency in the
+  locks and a choice of a limit per test; it belongs to the search for the hang, not to keeping the queue moving.
+- Cancelling a hung run by hand: needs someone to notice it, and here nobody did for five hours.
+- The timeout on the three database jobs only: a hang in any job `ci-ok` waits for holds main the same six hours, and
+  GitHub has no timeout for a whole workflow.
 
 ## MariaDB checks main after every ci run and every hour, not every pull request; PostgreSQL and SQLite stay in the gate
 

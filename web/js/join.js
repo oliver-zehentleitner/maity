@@ -62,8 +62,9 @@ window.Maity = window.Maity || {};
     return who ? M.tn("join.takes_over.who", { who }) : M.tn("join.takes_over.handover_only", { handover: handoverRef(ctx, x.handover) });
   }
 
-  // A card id as typed, or a message's seq as a number (§3.1).
-  const handoverValue = (v) => (/^[0-9]+$/.test(v) ? Number(v) : v);
+  // A card id as typed, or a message's seq as a number (§3.1), also written as the page
+  // shows it ("message #6001").
+  const handoverValue = (v) => (/^#?[0-9]+$/.test(v) ? Number(v.startsWith("#") ? v.slice(1) : v) : v);
   const BRIEFING_CHARS = 16 * 1024; // docs/api.md §3: 16 KiB, in characters as the hub counts
 
   // A join's state from GET /joins (docs/api.md §3.1), in the hub's order:
@@ -613,7 +614,7 @@ window.Maity = window.Maity || {};
     return [
       h("div", { class: "join-head" },
         h("h3", { id: "join-title" }, own ? M.t("join.title.own") : M.t("join.title")),
-        h("button", { type: "button", class: "icon-button join-close", "aria-label": M.t("join.close"), title: M.t("join.close"), onclick: onClose }, "×")),
+        h("button", { type: "button", class: "icon-button join-close", "aria-label": M.t("join.close"), title: M.t("join.close"), onclick: onClose }, M.icons.close(16))),
       h("p", { class: "muted" }, M.t("join.intro")),
     ];
   }

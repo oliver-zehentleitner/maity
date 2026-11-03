@@ -314,7 +314,9 @@ def test_with_a_token_the_custom_social_preview_is_the_banner(
     make_client: ClientFactory, migrated: Engine, fake_forge: FakeForge
 ) -> None:
     human_id = factory.human(migrated, "maintainer")
-    client = make_client(forge_github_token="ghp_test_token")
+    client = make_client(
+        forge_instance_namespaces=frozenset({"maintainer"}), forge_github_token="ghp_test_token"
+    )
     login = client.post(
         "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
     )

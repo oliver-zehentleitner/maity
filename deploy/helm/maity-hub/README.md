@@ -9,7 +9,8 @@ What it installs:
 | Object | Purpose |
 |---|---|
 | Job `<release>-maity-hub-migrate` | `maity-hub migrate`, as a `pre-install,pre-upgrade` hook before the Deployment changes |
-| Deployment `<release>-maity-hub` | one pod, `Recreate` on upgrade, non-root, read-only root filesystem |
+| Deployment `<release>-maity-hub` | one pod (`Recreate`) unless `replicas` says more (rolled one at a time), non-root, read-only root filesystem |
+| PodDisruptionBudget (with `replicas` above 1) | keeps one hub pod up through a node drain |
 | Service `<release>-maity-hub` | ClusterIP, port 80 → 8080 |
 | Ingress (optional) | TLS, with ingress-nginx annotations for the event long-poll |
 | NetworkPolicy (on by default) | only the ingress controller's namespace and the release's test pod reach the hub |
@@ -93,7 +94,10 @@ example; any cluster with the same pieces works.
 
    **Forge token (optional).** It is for the forge probe, which comes with a
    later hub version: with it, releases can become ready. Read access to
-   pull requests, contents and checks is enough.
+   pull requests, contents and checks is enough. It reads only for projects
+   in the namespaces you list in `forge.github.instanceNamespaces` (your
+   own); every other project connects its repository with its owner's
+   GitHub App installation or token.
 
    ```sh
    kubectl -n maity create secret generic maity-hub-forge --from-file=github-token=./github-token
@@ -130,6 +134,7 @@ example; any cluster with the same pieces works.
    forge:
      github:
        existingSecret: maity-hub-forge
+       instanceNamespaces: your-handle  # the token reads only your own projects
    config:
      # The ingress controller's pods: the cluster's pod network.
      trustedProxies: 10.244.0.0/16
@@ -188,8 +193,16 @@ silently ignored. These are the values that matter:
 | `image.tag` / `image.digest` | appVersion / none | a digest wins over the tag |
 | `imagePullSecrets` | `[]` | `[{name: …}]` |
 | `database.existingSecret`, `.key` | required, `database-url` | the Secret holding `MAITY_DATABASE_URL` |
+| `database.poolSize`, `.maxOverflow` | hub default (16, 16) | `MAITY_DB_POOL_SIZE`, `MAITY_DB_MAX_OVERFLOW`: each pod's connections, shared by its workers (see Several pods) |
+| `replicas` | `1` | hub pods and `MAITY_REPLICAS`; above 1 only with PostgreSQL and without `attachments.existingClaim` (see Several pods) |
+| `config.workers` | `1` | `MAITY_WORKERS`, serving processes per pod; above 1 only with PostgreSQL |
+| `topologySpreadConstraints` | `[]` | with more than one replica: spread over nodes by default; set to replace it |
 | `forge.github.existingSecret`, `.key` | none, `github-token` | the Secret holding `MAITY_FORGE_GITHUB_TOKEN` |
+| `forge.github.instanceNamespaces` | empty | `MAITY_FORGE_INSTANCE_NAMESPACES`: the operator's own namespaces, comma separated, the only ones the token reads for (public repositories only); empty, it serves no project |
 | `attachments.existingClaim`, `.mountPath`, `.quotaBytes` | none, `/var/lib/maity/attachments`, hub default (1 GiB per project) | the PersistentVolumeClaim of the local attachment store (docs/api.md §8.7), mounted into the hub, not the migrate Job, and `MAITY_ATTACHMENT_DIR`/`_QUOTA`. A directory the hub cannot write stops the new hub at its start: with `Recreate` the old pod is already gone, so the hub is down, and the migration has already run. The way back is forward: fix the volume or `attachments.mountPath` and run `helm upgrade` again with the same image. `helm rollback` to the old image works only if the upgrade did not move the schema (see Rollback below); otherwise the old image needs the dump restored; empty claim: attachments off. The files are not in the database: back the volume up with it |
+| `attachments.store` | `local` | `MAITY_ATTACHMENT_STORE`: `local` keeps the files on the claim, for one replica; `s3` keeps them in a bucket that several replicas share (below, and *Moving attachments to S3*) |
+| `attachments.s3.bucket`, `.endpoint`, `.region`, `.prefix`, `.allowHttp` | none (bucket required with `s3`), AWS, none, none, `false` | `MAITY_ATTACHMENT_S3_BUCKET`, `_ENDPOINT` (an https URL without a path), `_REGION`, `_PREFIX`, `_ALLOW_HTTP` (plain http only to a host inside the cluster) |
+| `attachments.s3.existingSecret`, `.accessKeyIdKey`, `.secretAccessKeyKey` | none, `MAITY_ATTACHMENT_S3_ACCESS_KEY_ID`, `MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY` | the Secret holding the bucket's credentials, by reference; none: the client's own chain (an instance role) |
 | `secretKey.existingSecret`, `.key` | none, `secret-key` | the Secret holding `MAITY_SECRET_KEY`, the instance key for stored secrets; moving it from `extraEnv`: drop it there in the same upgrade, the chart does not dedupe; a Secret created with the first README holds the key as `MAITY_SECRET_KEY`, then set `secretKey.key: MAITY_SECRET_KEY` |
 | `mail.signingKeySecret.existingSecret`, `.key` | none, `mail-signing-key` | the Secret holding `MAITY_MAIL_SIGNING_KEY` (32 bytes or more, base64); without it the hub sends no mail |
 | `mail.host`, `.port`, `.tls` | none, `587`, `starttls` | `MAITY_SMTP_HOST`, `_PORT`, `_TLS` (`starttls`, `implicit` or `none`); empty host: no SMTP env, the admin settings apply; with a host, port and TLS always come from here. Moving these from `extraEnv`: drop them from `extraEnv` in the same upgrade, the chart does not dedupe |
@@ -271,13 +284,53 @@ annotations, and set `null` for the nginx keys if they bother you. A
 controller that only speaks Gateway API needs an HTTPRoute the chart does
 not ship yet (`hub/context/kubernetes.md`).
 
+## Moving attachments to S3
+
+The files on the claim are copied into the bucket by the hub itself, under the same key
+(`<prefix>/<project id>/<attachment id>`). `maity-hub attachments copy-to-s3` skips an object
+that is already there with the same SHA-256, so it can run as often as needed, and it never
+changes the files on the claim. An object the hub wrote with another SHA-256 is never
+overwritten: it is reported as different, and the command ends with exit 1. Keys are immutable
+attachment ids, so treat the file on the claim as the suspect one: compare it with the object
+(`sha256sum` against the object's `x-amz-meta-sha256`), and keep the object. A file whose
+attachment is deleted, or has no row, is not copied: under `s3` the hub deletes only in the
+bucket, and a redacted attachment must not come back. After each copy it checks the object's
+size and the SHA-256 it wrote as metadata (the bytes themselves are protected in transit by the
+client's checksum). A folder it cannot read (`lost+found`) counts as failed, the rest is copied.
+Without `--apply` it only counts.
+
+1. Upgrade to a hub version that has the `s3` store, still with `attachments.store: local`, and
+   with the `attachments.s3.*` values set: the chart renders them whenever a bucket is set, and
+   the hub reads them only under `s3`. The Secret named in `attachments.s3.existingSecret` must
+   exist first: the pod does not start without it, even under `local`.
+2. In the hub pod: `MAITY_ATTACHMENT_STORE=s3 maity-hub attachments copy-to-s3`, then the same
+   with `--apply`. The store setting is the command's alone; the hub keeps serving from the claim,
+   and an attachment it deletes from now on is removed from the claim only: its copy stays in
+   the bucket. Go on with step 3 right after this one.
+3. `helm upgrade` with `attachments.store: s3`, the claim still set: the hub now serves from the bucket, and the claim stays mounted for the next step. Its first attachment sweep under `s3`, within five minutes, removes from the bucket what was deleted since step 2: a deleted attachment's object at once, an object no row names once it is 30 minutes old.
+4. In the new pod: `maity-hub attachments copy-to-s3 --apply` once more, for the uploads between
+   steps 2 and 3; it should copy only those. Run it right away: until it has run, the hub
+   cannot serve those uploads.
+5. `helm upgrade` with `attachments.existingClaim` empty. Keep the volume until the backups no
+   longer need it.
+
+There is no copy back. Going back to `local` (a `helm rollback`, or `attachments.store: local`)
+works only while the claim is still mounted, and the uploads since step 3 are then only in the
+bucket.
+
+A move given up before step 3, or rolled back to `local`, leaves objects in the bucket that may
+belong to deleted attachments, since no sweep under `s3` runs to remove them: empty the bucket's
+prefix, or delete the bucket. After a rollback from step 3 on, the uploads since then are only
+there: take what is still needed first.
+
+With the bucket's versioning on, a deletion by the hub leaves a noncurrent version behind: a
+lifecycle rule that expires noncurrent versions is what makes a deleted attachment gone.
+
 ## Behaviour worth knowing
 
-- **One pod, always.** The long-poll notifier, the request-signing nonce
-  window, the rate limits and the probe worker live in the process. A
-  second pod, even during a rolling update, is not safe yet. Upgrades
-  therefore use `Recreate`, and there is no replica value
-  (`hub/context/kubernetes.md`).
+- **One pod by default.** With `replicas: 1` the pod is replaced with
+  `Recreate`: SQLite and a local attachment volume are one pod's. More pods
+  are opt-in, see Several pods below.
 - **The schema and the running pod.** A hub serves only on exactly the
   schema head of its own version. Once the hook has migrated, the old pod's
   `/api/v1/health` answers 503 `schema_outdated`. It leaves the Service, and
@@ -290,9 +343,12 @@ not ship yet (`hub/context/kubernetes.md`).
   project namespace, did). The old pod answers 503 as soon as the schema has
   moved, so stopping it first costs almost no extra downtime:
   `deploy/scripts/helm-upgrade.sh -f values.yaml [helm arguments]` scales the
-  Deployment to 0, runs `helm upgrade` (the hook migrates alone), and scales
-  back to the replicas it had on any exit, a failed upgrade and Ctrl-C
-  included. Helm only starts once the hub's pods are verifiably gone; a failed
+  Deployment to 0, runs `helm upgrade` (the hook migrates alone), and then
+  runs the replicas the release renders (Helm sets them, so a changed
+  `replicas` takes effect), also when the rollout check after Helm fails
+  (exit 4; the way back is `helm rollback`). When it ends before Helm or Helm
+  fails, Ctrl-C included, it scales back to the replicas it had; a hub found
+  at 0 stays at 0. Helm only starts once the hub's pods are verifiably gone; a failed
   scale-down or pods still there after `STOP_TIMEOUT` end the script first.
   The exit status is Helm's own when the upgrade failed, 3 when scaling back
   failed, 4 when the hub did not become ready, 0 only when everything worked.
@@ -310,6 +366,32 @@ not ship yet (`hub/context/kubernetes.md`).
   database is down or behind the migration head. Liveness and startup use
   `/api/v1/help`, which needs no database, so a database outage takes the
   pod out of the Service without restarting it.
+
+## Several pods
+
+`replicas` above 1 runs several hub pods against one PostgreSQL. They share
+wake-ups, request nonces, rate limits, worker passes and the forge budget
+through the database (`hub/context/replicas.md`).
+
+- **Needs:** PostgreSQL, and attachments off the pod's volume (S3) or off
+  altogether. The chart refuses `attachments.existingClaim` with more than one
+  replica; the hub refuses to start on another database or with a local
+  attachment directory.
+- **Upgrades:** a release without a migration rolls one pod at a time
+  (`maxUnavailable: 0`, `maxSurge: 1`). A release with a migration still goes
+  through `deploy/scripts/helm-upgrade.sh`, which stops every pod and starts
+  the replicas the release renders (as many as it found when Helm fails).
+- **Drains and nodes:** a PodDisruptionBudget keeps one pod up; the pods
+  spread over nodes where they can (`topologySpreadConstraints` replaces it).
+- **Connections:** the hub asks up to
+  pods × (`config.workers` × (pool share + overflow share + 1) + 1)
+  connections: each worker its share of `database.poolSize` and
+  `database.maxOverflow` (divided by the workers, rounded down) and one
+  listener, each pod one more for the readiness probe. With more than one
+  replica, pods is replicas + 1, for the surge pod of a rolling update. Keep
+  that under the database's `max_connections` less its reserved connections;
+  the hub warns at its start when it is not. Example: 3 replicas with 2
+  workers and the default 16 + 16 ask 4 × (2 × (8 + 8 + 1) + 1) = 140.
 
 ## When an install or upgrade fails
 

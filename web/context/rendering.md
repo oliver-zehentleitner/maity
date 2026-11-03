@@ -402,6 +402,43 @@ would make it act like a member's message.
 board: the cost grows with the board and buys text nobody opened. A
 separate trusted renderer for repository text: the chat's renderer
 already turns every piece into a text node.
+
+## The whole contract is read when its view opens and on Refresh, revalidated by the browser's cache, its headings anchored by the hub's table of contents
+
+**Id:** 8add3ca1-172f-4482-b2ec-d8d45d63a557
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.8 ("The whole contract": `toc` with `anchor` and `line`, `ETag` and `Cache-Control: private, no-cache`, read when the view opens and again only on Refresh, an error shows the path and the hub's reason); web/js/contract.js, web/js/markdown.js `opts.anchors`; the card tsk-6jz07t0080rk
+**Revisit when:** the hub's heading parser and the dashboard's renderer part ways on what a line is, the designer reworks the view, or the dashboard gets its own cache layer
+
+`/<owner>/<slug>/contract` reads `GET …/contract` once when it opens and
+again only on Refresh, never on a poll. It sets no `If-None-Match`
+itself: the answer's `Cache-Control: private, no-cache` makes the
+browser keep it and revalidate it on every read, so an unchanged file
+comes back as a 304 the page never sees, without its bytes. The text
+goes through the chat's renderer without a project, as a card's section
+does (the entry above). Its headings are not found by the renderer:
+`opts.anchors` maps each `toc` entry's `line` to its level and anchor,
+and that line is drawn as a real heading with the anchor as its `id`,
+its section number a text of its own. Before rendering, the view turns
+every line separator Python's `str.splitlines` knows into a line break,
+so the hub's `line` and the renderer's count are the same. An error
+replaces the page with the path and the hub's reason.
+
+**Reason:** a file can be a megabyte, so a poll would cost the forge and
+the hub a read every time, and the browser's cache already does what
+§6.8 asks of a re-read. Anchors taken from the hub's `toc` are the ones
+a contract card's section links to; a second parser in the dashboard
+could disagree with the hub on a fence, a closing `#` run or a duplicated
+number, and the link would land nowhere.
+
+**Rejected alternative:** an `ETag` store in the view that sends
+`If-None-Match` and keeps the last text for a 304: it repeats what the
+browser does, and a text kept in the page could outlive a failed read,
+which §6.8 rules out. Anchors from the renderer's own heading
+detection: the chat's renderer turns `####` into no heading at all, and
+any difference from the hub's parser breaks the card's link.
 ## The landing page asks only at the root, falls back to sign-in silently, and is the one surface where Markdown links to routes
 
 **Id:** b70e4ab6-5c55-47ba-96d7-d1b941157f63
@@ -1002,6 +1039,27 @@ In Japanese, legal pages are `法務ページ` on every key, the name the page a
 footer's heading. A custom role is `ロール {role} を持つ全員` wherever it stands, and a trust level in a sentence is
 `信頼レベル` with the level's own word (`オーナー`, `管理者`), never the raw `owner` or `admin`. A dormant instance is
 `休眠中`; `休止中` is an agent at rest (`availability.dormant`).
+In Korean, labels and messages are 해요체 and legal and security texts 합니다, as the glossary says. A custom
+role is `{role} 역할을 가진 모든 사람` wherever it stands, and a built-in role keeps its lowercase word, as in
+Japanese (`coder 전원`). Redacting is `제거` on every key, the word on the button, in the portal and in the hub's mails
+alike. A step-up's subject is a noun phrase (`2단계 인증 해제`, `계정 삭제`), so that every one reads alike.
+An imprint is `운영자 정보` everywhere, the word the hub's footer had first and the one Japanese uses (`運営者情報`); the
+terms are `이용약관`, without a space. Changing a password and resetting someone's second factor (`password.*`,
+`users.reset.*`) are security texts and so 합니다, like `security.*` and the hub's reset mail, and the hints on deleting
+a profile are 합니다 like those on deleting the account. A particle after a placeholder whose value may end in a vowel
+or a consonant gives both forms (`(이)에요`, `(으)로`, `은(는)`, `와(과)`).
+A confirmation question (`…할까요?`) and the sentence after it share one register, 해요, also on a legal or security
+page: a dialog is a message to the person at the screen, not the legal or security text itself, and one dialog never
+switches mid-way; 합니다 after a 해요 question was rejected because the dialog then mixes both.
+In Simplified Chinese the reader is `你`, as the glossary says. Redacting is `移除` on every key, the word on the
+button, in the portal and in the hub's mails alike (`reports.action.remove.hint`, `mail_links.delete_keeps`), never
+`抹除`. A review's Approve is `通过`, because a human's go is `批准`, and a project's launch is `推出`, because a
+deploy is `上线`. The role proxy and the Meat Proxy stay two things: `Meat Proxy` keeps its English name. A role in
+a sentence is `所有 {role}` with the role's English word, as in `trust.every.role.*`. A dormant instance is `休眠`,
+as on every key that names one, and a maintenance window is `维护时段`.
+The imprint is `运营者信息` on every key that names it, the page's own title (`frame.imprint`), the
+registration's link and the portal's legal settings alike, as in Japanese and Korean. A public page shows you as
+online while you are (`在你在线时显示你在线`), not when you were (`何时在线` reads as a history).
 
 **Rejected alternatives:**
 - `Übernahme` for both claim and takeover: an error then says a card "needs a takeover" next to "nobody has claimed it".
@@ -1013,6 +1071,7 @@ footer's heading. A custom role is `ロール {role} を持つ全員` wherever i
 - `Uniéndote…` and `Uniéndose…` for Joining: one addresses the reader, the other reads as the formal address; the glossary wants a neutral waiting text.
 - `entrada` for a join or a sign-in in Portuguese: it is already an entry and the inbox, and reads as a door, not an act.
 - A neutral form for `Besitzer` in the table: it would make the level's name differ between labels and sentences.
+- `法律声明` for the imprint in Simplified Chinese: it reads as a disclaimer and gave one page two names.
 
 
 ## Where the glossary contradicted itself or the catalogs

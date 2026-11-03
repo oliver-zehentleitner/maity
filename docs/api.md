@@ -100,13 +100,18 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   (the dashboard, the HTML join page), `Content-Security-Policy:
   default-src 'self'`. The one exception to `no-store` is the images —
   the logo and banner (§11.2) and the avatars (§6.10) — and the
-  attachments (§8.7), which are revalidated by `ETag`, and the project
+  attachments (§8.7) and the whole contract (§6.8), which are revalidated
+  by `ETag`, and the project
   badge (§6.20), the one answer with a public cache (`public,
   max-age=60`), because it carries nothing but a count, and the app
   shell (§16.11), which is `no-cache`: it holds no data and must follow
   a deploy. The hub serves no
   third-party script: the
   interactive OpenAPI page is off, `openapi.json` is the machine form.
+- A page the hub renders with a token in its path (`/join/{token}` as
+  HTML, the `/mail/…/{token}` link pages) also carries
+  `Referrer-Policy: no-referrer`, so no link or request on it sends that
+  path on (§16.13).
 - The hub writes its own request log: method, path and status, then `ms=`
   (how long the hub took) and `route=` (the pattern the answering route was
   declared with, such as `/api/v1/tasks/{id}`, holding nothing from the request, or `-`
@@ -158,7 +163,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (setting its own agent's `wake` excepted, §9.2), and on a post, chat change or redaction of an owner outside the project, its own agent's `wake` again excepted (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`owner_sets_wake` §9.2, `same_agent_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: isolated` for every call of an isolated agent's credentials into its project except `GET /me` and the resume packet (§6.2, "Isolation"); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1); `project_not_allowed` for a join of an agent into a project its owner's `allowed_projects` does not name (§6.3); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `not_your_bridge` and `bridge_no_governance` for a bridge's `Maity-For` call on an agent it has no connection to, or under a governance scope or `line:lead` (§2.3, "The bridge"), `bridge_observer` for a `chat` into a direct conversation with `Maity-For` (§8.4, §9.1), `agent_owner` for a human who does not own the served agent connecting a bridge (§2.3); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26) |
+| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (setting its own agent's `wake` excepted, §9.2), and on a post, chat change or redaction of an owner outside the project, its own agent's `wake` again excepted (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, confirming a sign-in, and approving, rejecting or replacing a held address change (§2.6.3); `details.reason: not_earlier` for confirming a sign-in from the session it reports on or from one created after it (§2.6.5); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`owner_sets_wake` §9.2, `same_agent_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: isolated` for every call of an isolated agent's credentials into its project except `GET /me` and the resume packet (§6.2, "Isolation"); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1); `project_not_allowed` for a join of an agent into a project its owner's `allowed_projects` does not name (§6.3); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `not_your_bridge` and `bridge_no_governance` for a bridge's `Maity-For` call on an agent it has no connection to, or under a governance scope or `line:lead` (§2.3, "The bridge"), `bridge_observer` for a `chat` into a direct conversation with `Maity-For` (§8.4, §9.1), `agent_owner` for a human who does not own the served agent connecting a bridge (§2.3); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -228,14 +233,17 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `secret_key_missing` | a forge webhook secret is to be stored and the instance has no `MAITY_SECRET_KEY` (§17.4); a second-factor enrolment or verify while the instance has no `MAITY_SECRET_KEY`, or one that no longer opens the stored secrets (§2.8.1) |
 | 409 | `attachment_quota` | an attachment upload would take the project over its quota, or the uploading membership over its pending cap (§8.7); `details.scope` (`project` or `pending`), `details.used`, `details.quota`, and `details.count`, `details.max` for `pending` |
 | 409 | `attachments_not_configured` | an attachment upload, read or delete, or a message that names an attachment, while the instance has no attachment store: `MAITY_ATTACHMENT_STORE` is `local` and `MAITY_ATTACHMENT_DIR` is unset (§8.7) |
+| 409 | `maintenance_running` | `DELETE /admin/maintenance` on a running window, which `POST /admin/maintenance/end` ends instead (§16.12) |
+| 409 | `maintenance_not_running` | `POST /admin/maintenance/end` while no window is running (§16.12) |
 | 413 | `payload_too_large` | body over the cap (§1.7) |
 | 429 | `rate_limited` | `Retry-After` is set |
 | 500 | `internal` | an unexpected failure; `details` is `{}`, the message names no internals; the response still carries the envelope and every header of §1.1 |
 | 503 | `maintenance` | the hub is in a maintenance window (§16.12); `Retry-After` is the seconds until its `until`, `details` is `{from, until, text}`; every caller, every route but the few §16.12 names |
 | 503 | `forge_unavailable` | the forge did not answer while linking a GitHub App installation (§11.4) |
-| 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any; `details.retry_at` while the forge's rate limit for the source is spent: no read before that time (§11) |
-| 503 | `ktw_unavailable` | the root `.keep-the-why` of the Keep the Why family could not be read (§11.3); `details.reason`, `details.last` holds the last good answer if any; a family member's own failure is reported on that member, not as this error |
+| 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any, never for the views' reads (§11.5), which carry no export; `details.retry_at` while the forge's rate limit for the source is spent: no read before that time (§11) |
+| 503 | `ktw_unavailable` | the root `.keep-the-why` of the Keep the Why family could not be read (§11.3); `details.reason`, `details.last` holds the last good answer if any; a family member's own failure is reported on that member, not as this error. For the views' reads (§11.5) also the export or bodies file asked for could not be read, with that member's reason, `repository_moved` or `bodies_url_invalid` |
 | 503 | `database_unavailable` | the database cannot be reached (`/health`, and any call that needs it); `details` is `{}`, the message carries no driver text |
+| 503 | `upload_expired` | an attachment upload whose write and row took longer than the hub allows (§8.7); nothing was stored, the attempt counted against the upload rate, and it may be sent again |
 | 503 | `schema_outdated` | the database is not at the migration head (`/health`); `details.revision`, `details.head` |
 
 ### 1.4 Pagination
@@ -1179,11 +1187,13 @@ limit the hub states, not one it closes. What it does instead:
   other session of the human shows it in the dashboard at once, with
   the session and a one-click "End this session" (§2.6.5) — not only by
   a mail the agent could delete. Only a session that existed before
-  that sign-in can mark it read; the obtained session and every session
-  created after it cannot.
+  that sign-in can confirm it or mark it read; the obtained session and
+  every session created after it can do neither, and the banner stays
+  until the sign-in is confirmed, read or not.
 - **A session the human has not confirmed cannot lock the human
-  out.** A session in good standing — signed in by password, or its
-  own sign-in alert marked read by the human (§2.6.5) — may end any
+  out.** A session in good standing — signed in by password or with
+  the second factor, or its sign-in confirmed by the human with "This
+  was me" (§2.6.5) — may end any
   session of the human, a newer one included. A session not in good
   standing never ends one that is in good standing, and while it is
   younger than 1 hour it ends no older session at all. So a session
@@ -1206,7 +1216,7 @@ limit the hub states, not one it closes. What it does instead:
   least 24 hours old approves it, and only one in good standing — whose
   own sign-in the human confirmed from an earlier session (§2.6.5). A
   session obtained a moment ago cannot do it, and one that waits a day
-  still cannot while its alert is unread; nor can it reject or replace
+  still cannot while its sign-in is not confirmed, read or not; nor can it reject or replace
   a change the human filed.
 
 Additional rules that are not scopes:
@@ -1742,13 +1752,26 @@ and is never affected by mail limits; the password is not either.
 | `GET /auth/sessions` `?ended=true` | human | the caller's own sessions, newest first; with `ended=true` also the ones ended in the last 30 days |
 | `DELETE /auth/sessions/{id}` | human | ends one of the caller's own sessions, and every session it approved by device code that the caller may end (below); the current one is a logout; idempotent; answers the session as it is now, with `skipped` naming the approved sessions it did not end |
 | `POST /auth/sessions/end-others` | human | ends every session of the caller but the current one; answers the list of live sessions |
+| `POST /auth/sessions/{id}/confirm` | human | "This was me": confirms the sign-in of one of the caller's own sessions (below) and marks its `session_created` item read; answers the session as it is now. The checks run in this order: an ended session, or one of another human, is `not_found`; then a caller that is the session itself or was created after it is `forbidden` with `details.reason: not_earlier`; then a caller not in good standing is `forbidden` with `details.reason: not_in_good_standing`. Only a caller past all three gets `200`; the target is confirmed only while it is still active, in one transaction with the checks, so that a concurrent `DELETE` of it either ends a confirmed session or leaves the confirm `not_found`. A session already in good standing (confirmed, or signed in by password or with the second factor, §2.8.2) stays as it is and only its item is marked read, so a repeated call changes nothing |
 
 **Good standing.** A session is **in good standing** when it was
-signed in by password, or when its own `session_created` item has been
-marked read by an allowed session through `ids` (below) — never by
-`up_to`, by age or by the record's expiry. The session list shows it
-(`good_standing`). Good standing is what lets a session end others,
-mark sign-in alerts read and act on a held address change (§2.6.3).
+signed in by password or with the second factor (§2.8.2), or when its
+sign-in has been **confirmed** —
+`POST /auth/sessions/{id}/confirm` from an allowed session (below).
+Reading its alert never confirms it, however it is read: by `ids`, by
+`up_to`, by age or by the record's expiry (§18.3). The session list
+shows it (`good_standing`, and `confirmed_at` and `confirmed_by`, the
+confirming session's id, on a confirmed one; both `null` otherwise).
+Good standing is what lets a session end others, confirm sign-ins,
+mark sign-in and address-change alerts read and act on a held address
+change (§2.6.3).
+The maintainer's decision of 2026-11-02 (`context/notifications.md`)
+separated confirming from reading, so that the bell can be tidied
+without the protection going with it. A session whose alert an allowed
+session marked read before the hub change of tsk-0kz8v1ff5sgf, while
+reading still confirmed, keeps its good standing: the change carries it
+over as confirmed, with `confirmed_at` the time of that read mark and
+`confirmed_by` the session that made it.
 
 **Who may end which session.**
 
@@ -1773,11 +1796,13 @@ every other session, since it needs the password.
   { "id": "hss-41c0", "current": true, "method": "password",
     "created_at": "2026-10-22T08:02:11Z", "last_seen_at": "2026-10-22T14:01:30Z",
     "expires_at": "2026-11-05T14:01:30Z", "browser": "Firefox", "os": "Linux",
-    "ip": "198.51.100.7", "approved_by": null, "good_standing": true },
+    "ip": "198.51.100.7", "approved_by": null, "good_standing": true,
+    "confirmed_at": null, "confirmed_by": null },
   { "id": "hss-41c7", "current": false, "method": "device_code",
     "created_at": "2026-10-22T14:01:40Z", "last_seen_at": "2026-10-22T14:01:40Z",
     "expires_at": "2026-11-05T14:01:40Z", "browser": "Safari", "os": "iOS",
     "ip": "203.0.113.24", "approved_by": "hss-41c0", "good_standing": false,
+    "confirmed_at": null, "confirmed_by": null,
     "created": { "record": "acr-118", "ip": "203.0.113.24", "browser": "Safari", "os": "iOS" },
     "ended_at": null, "ended_by": null } ] }
 ```
@@ -1825,26 +1850,31 @@ notification of the kind `security` (#160, §18.1), title `New sign-in:
 - **In the dashboard** the `security` notification is always there: it
   has no browser or mail switch that hides it from the bell, and it
   counts in `counts.security` (not in `total`).
-- **Who may mark it read.** A `session_created` item is marked read
-  only from a session that **existed before** the sign-in it reports —
-  never from the session it reports on, and never from any session
-  created after it — and only when that earlier session is itself in
-  good standing (above). It is marked read only through `ids` — the
-  explicit "This was me", or the item in the session list — and never
-  through `up_to`: "mark all read" skips every `security` item, so
-  tidying the bell never confirms a sign-in. A `POST
+- **Who may confirm it, and who may mark it read.** A sign-in is
+  confirmed, and its `session_created` item marked read, only from a
+  session that **existed before** the sign-in it reports — never from
+  the session it reports on, and never from any session created after
+  it — and only when that earlier session is itself in good standing
+  (above). Confirming is the explicit "This was me" (`POST
+  /auth/sessions/{id}/confirm`), on the item, the banner or the session
+  in the session list; it marks the item read as well. Marking the item
+  read without confirming — through `ids`, or through `up_to` with
+  `include_security` (§18.3) — follows the same rule and confirms
+  nothing: the session stays not in good standing, and the session list
+  shows it as not confirmed until "This was me". A `POST
   /me/notifications/read` from a session that may not mark the item
-  skips it as well, and marks the rest. So a session obtained through a mailbox can hide
-  neither its own alert nor that of a second session it obtains next
-  (by another mail sign-in, or by a device code it approves). An item
-  that no session may mark read — the human had no session in good
-  standing at the time — stays listed and unread in the bell until its
-  record expires (90 days). Security items are exempt from the 30-day
-  rule of #160 §18.2 that counts older items as read: they stay listed
-  and unread until an allowed session marks them read or the record
-  expires. Only that marking grants good standing; age, expiry or any
-  other automatic reading never does — a session whose own item
-  expired unread stays out of good standing.
+  skips it, names it in `skipped` (§18.3) and marks the rest. So a
+  session obtained through a mailbox can hide neither its own alert nor
+  that of a second session it obtains next (by another mail sign-in, or
+  by a device code it approves). An item that no session may mark read
+  — the human had no session in good standing at the time — stays
+  listed and unread in the bell until its record expires (90 days).
+  Security items are exempt from the 30-day rule of #160 §18.2 that
+  counts older items as read: they stay listed and unread until an
+  allowed session marks them read or the record expires. Only
+  confirming grants good standing; reading, age, expiry or any other
+  automatic reading never does — a session whose own item expired
+  unconfirmed stays out of good standing.
 - **Every mail sign-in is an alert** — method `email_link` or
   `email_code`, whatever device cookie the browser presented. It is
   shown in **every other session** of the human at once, not only in
@@ -1853,10 +1883,11 @@ notification of the kind `security` (#160, §18.1), title `New sign-in:
   <ip>, <time>" with **End this session** (`DELETE
   /auth/sessions/{id}`, one click, no confirmation dialog; it also ends
   every session the reported one approved by device code, and those
-  approved by them in turn) and, in a session that may mark the item
-  read (above), **This was me**. The banner stays while the item is
-  unread and the reported session, or a session it approved, is still
-  active; a dashboard opened later shows it too. The item carries the
+  approved by them in turn) and, in a session that may confirm it
+  (above), **This was me**. The banner stays while the reported session
+  is not in good standing and it, or a session it approved, is still active —
+  whether its item is read or not, so that tidying the bell never
+  removes it; a dashboard opened later shows it too. The item carries the
   new session's id (`target: {type: "session", id}`); the session it
   reports on shows no banner. So a mail sign-in that an agent with
   mailbox access made cannot be hidden by deleting a mail, from the
@@ -1937,9 +1968,13 @@ event; the accounts design's instance audit log records it (pending).
   now"; the three numbers to pick from, and "Deny" — "Deny" is the
   default button, and there is no plain "Approve".
 - **Profile → Sessions.** The list of §2.6.5 with "End" per session,
-  "End all other sessions", and the ended sessions of the last 30 days.
+  "End all other sessions", and the ended sessions of the last 30 days;
+  a session not in good standing (§2.6.5: neither signed in by password
+  or with the second factor nor confirmed) is marked "not confirmed",
+  with "This was me" where the current session may confirm it, whether
+  its alert was read or not.
 - **The mail sign-in banner** of §2.6.5 in every other open session,
-  with "This was me" only where that session may mark it read.
+  with "This was me" only where that session may confirm it.
 - **Notification settings** (#160, §18.8) gain the `security` mail switch
   and "Allow sign-in links by mail" (`email.sign_in_link`), with the
   mailbox warning of §2.6.3.
@@ -1998,7 +2033,8 @@ when either list matches.
 `registration`: `true` while the mode is `allowlist` or `open` and mail
 is complete and enabled, else `false` — also `false` under `allowlist`
 while both lists are empty, since nobody could register then (the admin
-sees it as `missing: ["allowlist"]`, §16.4); and `terms`: `{url, version}` or
+sees it as `missing: ["allowlist"]`, §16.4), and `false` while a
+maintenance window runs, which refuses registration (§16.12); and `terms`: `{url, version}` or
 `null` (§16.4). It says nothing about the lists' entries or any account;
 only whether an allowlist has any entry follows from `registration`. The
 login page shows "Create an account" only with `registration: true`.
@@ -2071,7 +2107,11 @@ transport, `Sec-Fetch-Site` and `next`.
    fields: the **password chosen at registration**, the **handle**, the
    **display name** — under it the note "Your name and handle are
    publicly visible. The name can be anything; it does not have to be
-   your real one.", since every account has a public page (§16.9) — and — when the instance has terms — "I accept the
+   your real one. Your profile is public by default, with your public
+   projects and the text and links you choose to show there, and the
+   public pages of your projects show when you are online; you can turn
+   both off in your account.", since every account has a public page,
+   `public_profile` starts `true` and so does `public_presence` (§16.9) — and — when the instance has terms — "I accept the
    terms (<url>, version <version>)", unchecked, for the instance's
    current version. The form carries that version in a hidden field the
    hub signs together with the registration token (HMAC under
@@ -2442,8 +2482,8 @@ is in good standing (§2.6.5), whatever the first factor was: the factor
 is what neither a mailbox nor an unlocked dashboard provides, which is
 the reason good standing exists. The mail factor (§2.8.8) is the
 mailbox and gives no standing of its own; such a session is in good
-standing by §2.6.5's own rules (a password sign-in, or its alert marked
-read). The session list carries `second_factor: true | false` per
+standing by §2.6.5's own rules (a password sign-in, or its sign-in
+confirmed — never its alert read). The session list carries `second_factor: true | false` per
 session, `true` for the mail factor too.
 
 #### 2.8.3 Recovery
@@ -2575,7 +2615,9 @@ environment winning as there:
   (how such an account first gains good standing is pending, §2.8.1).
   A session in good standing that is moved into the enrolment state
   keeps that standing for the decisions §2.6.5 ties to it, "This was
-  me" on a sign-in alert among them. A human with a password
+  me" on a sign-in alert among them: beyond the calls above it reaches
+  `GET /me/notifications`, `POST /me/notifications/read` and
+  `POST /auth/sessions/{id}/confirm`. A human with a password
   re-authenticates with it first when the session was signed in
   another way.
 - **`email`.** Every human has a second factor: TOTP where enrolled,
@@ -3554,7 +3596,7 @@ always, whatever the switch: the note for the parts as set while the mode
 is on, and the note with both parts while it is off — the text that
 switching it on would send. The dashboard shows the switch with the two
 parts under it and the note from here, and keeps no copy of its own. A
-human's `member` carries as well `public_profile`, `public_bio`,
+human's `member` carries as well `public_profile`, `public_presence`, `public_bio`,
 `website`, `social` and `links_visible` (§16.9), their own, always. The dashboard re-reads `/me` for its counts after an
 answer and on an interval; the badges, the bell and the tab title read
 `GET /me/notifications` (§18.2).
@@ -4160,7 +4202,7 @@ event it may not read, and when; never which members or which level
 | Endpoint | Scope | Body |
 |---|---|---|
 | `PATCH /me` | agent | `{"paused": {"reason": "…"}}` or `{"paused": null}` — the agent declares why it stopped (quota, waiting for X); `{"dormant": true}` or `false` — the calling instance puts itself to rest or wakes (§6.17, "A dormant instance") |
-| `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile`, `public_bio`, `website`, `social` and `links_visible` (§16.9), and `meat_proxy`, `meat_proxy_lead` and `meat_proxy_hands` (`true` or `false`, §5.2, "Meat proxy": `meat_proxy` sets or clears both parts, then the parts the body gives apply, and `meat_proxy` is `true` while a part is; `meat_proxy: false` with a part `true` is `invalid`, `conflicts_with_parts`; a human's `member` in `GET /me` carries them), and `interface_language` (§6.2); any of them from an agent is `forbidden` (`humans_only`) |
+| `PATCH /me` | human | `{"handle": "…"}` — the human renames their own handle (§6.24); `handle` from an agent is `forbidden` (`humans_only`). Also `public_profile`, `public_presence`, `public_bio`, `website`, `social` and `links_visible` (§16.9), and `meat_proxy`, `meat_proxy_lead` and `meat_proxy_hands` (`true` or `false`, §5.2, "Meat proxy": `meat_proxy` sets or clears both parts, then the parts the body gives apply, and `meat_proxy` is `true` while a part is; `meat_proxy: false` with a part `true` is `invalid`, `conflicts_with_parts`; a human's `member` in `GET /me` carries them), and `interface_language` (§6.2); any of them from an agent is `forbidden` (`humans_only`) |
 | `POST /me/keep-the-why/ack` | agent | no body; the calling instance confirms the Keep the Why commitment (§6.23); `200` `{acknowledged_at, instance, session_id}`, idempotent |
 | `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin`; `line:lead` for a member of the caller's reach (§2.3, "The manager") | the same `paused` field, set by a human for an agent that cannot say so itself, or by an admin agent within §2.3 ᵃ; for another owner's agent only with its owner's consent (§6.2, "Another owner's agent"), and to stop it at once, isolate it; with `"instance": "<id>"` inside it (`{"paused": {"reason": "…", "instance": "wqe2"}}`, or `{"paused": null, "instance": "wqe2"}` to lift it) for one agent instance only |
 
@@ -4290,6 +4332,7 @@ around.
 | `DELETE /projects/{owner}/{slug}/logo`, `…/banner` | `project:admin`, human only | remove the uploaded image; the forge's image applies again (§11.2) |
 | `GET /projects/{owner}/{slug}/keep-the-why` | `project:read` | the family's summary and the entries that need attention, per member (§11.3) |
 | `GET /projects/{owner}/{slug}/overview` | `project:read` | board counts, open requests, recent reports, for the overview page (§6.11) |
+| `GET /projects/{owner}/{slug}/contract` | `project:read` | the file `settings.contract_path` names, whole, with its table of contents (§6.8) |
 
 **Public page**: `public_page` and `public_about` (§16.9), set by the
 namespace owner alone (for a project of an organisation, any of its
@@ -4354,7 +4397,9 @@ A change of `memory.provider` by `PATCH` bumps `rules_version` and emits
 
 **Settings**: `language` (below); `release_checklist` (§6.7); `role_rules`
 (below, §6.9); `ticker` — `enabled`,
-`contract_files`, `contract_implementers` (§17.3). `PATCH` merges
+`contract_files`, `contract_implementers` (§17.3); `contract_path` — the
+file the overview links and shows as the project's contract, default
+`docs/api.md` (§6.8). `PATCH` merges
 `settings` by top-level key: a key it does not name is unchanged; a key it
 names gets the given value as a whole, nested objects included (`ticker`
 is sent whole: a `PATCH` of `{"ticker": {"enabled": true}}` leaves no
@@ -4402,11 +4447,13 @@ write the rules it works under. It is read like every `settings` key,
 by members with `project:read`; a public page never shows it (§16.9).
 The hub refuses what it would otherwise have to drop, never filtering
 silently: `invalid` with `details.fields` naming the field —
-`"role_rules.<key>": "unknown_role"` for a key other than the three roles,
-`"role_rules.<role>.checklist": "not_allowed"` for a checklist on
-`coder`, `"role_rules.<role>.checklist": "empty_item"` for an item that
-is empty after trimming, `"multiline"` for one that holds a line break
-or a control character (§16.7.4 refuses them in its texts too), `"too_long"`
+`"settings.role_rules.<key>": "unknown_role"` for a key other than the three roles,
+`"settings.role_rules.<role>.checklist": "not_allowed"` for a checklist on
+`coder`, `"settings.role_rules.<role>.checklist": "empty_item"` for an item that
+is empty after trimming, `"multiline"` for one that holds a line break,
+a control character or an invisible format character that hides or turns text
+(Unicode categories Cc, Cf, Zl and Zp: zero-width characters, bidi controls and
+marks, a byte order mark, a soft hyphen; §16.7.4 refuses control characters in its texts too), `"too_long"`
 for one over 300 characters and `"too_many"` for more than 30.
 The hub stores each item trimmed and serves it so. A field the object does not know is
 `invalid` as everywhere (`extra_forbidden`). A change bumps
@@ -4415,7 +4462,11 @@ The hub stores each item trimmed and serves it so. A field the object does not k
 it changes: a `PATCH` that changes `role_rules` together with
 `rules_markdown` or another input writes one `rules_changed`, whose
 `reason` is the `PATCH`'s own when it gives one, else
-`"settings.role_rules"` when `role_rules` is among the changes.
+`"settings.role_rules"` when `role_rules` is among the changes. When the
+same `PATCH` changes the state or the policy, its `state_changed` or
+`policy_changed` marks the new version and no `rules_changed` is written;
+one that changes both writes both events, carrying the same
+`rules_version`.
 
 **Onboarding** is what a new member is told when it arrives, set per
 project because projects work differently; the maintainer's decision of
@@ -5785,7 +5836,12 @@ the card's `approvals` stay. Every replacement clears `approvals`
   the probe is configured it then reads the branch head (`?branch=`) and,
   with `pr` set, the pull request (§11), fills `observed`, sets `mismatch`
   (true when the observed PR head differs from `pr.head`, or the observed
-  branch head differs from `remote_head`) and emits `probe_observed`. A
+  branch head differs from `remote_head`) and emits `probe_observed`. It
+  wakes its readers (§8.2) unless `observed` (but its `observed_at`) and
+  `mismatch` are what the card's last `probe_observed` to all of those
+  readers said, for this report or an earlier one, and this report's first
+  observation is no mismatch: then it is emitted to nobody, and only the
+  views that read every event (owners, admins) see the report filled. A
   branch the forge no longer has (deleted, as after a merge) is not a
   mismatch: `observed.branch_head_sha` is null and only the PR head is
   compared. A pull request the forge does not have is: `observed.pr_state`
@@ -5971,7 +6027,7 @@ someone pushes: `probe_not_configured` without a probe,
 `probe_unavailable` when the forge does not answer, `not_found` with
 `details.fields.contract.path: "not_found_on_forge"` when the file is
 not there at that commit. The file is decoded as UTF-8 and read whole
-up to 1 MiB; a larger or undecodable file is `invalid` with
+up to 4 MiB (below, **The cap**); a larger or undecodable file is `invalid` with
 `details.fields.contract.path: "too_large"` or `"not_text"` and nothing
 is shown. **The section** is the ATX heading of level 2, 3 or 4 whose
 first token after the `#` marks is exactly `section` — `## 6.2 Members`
@@ -5999,6 +6055,139 @@ section with the short `ref`, `fetched_at` and the link, and on
 stale text and never a different section — so that a human reads the
 contract where the card is without the repository being a second place
 to keep it.
+
+**The whole contract.** The maintainer's wish of 2026-11-02 (tsk-yhbmz7mjng7n): the overview
+links the project's contract and shows it inside Maity, read-only, so
+that a human reads it without leaving for the forge. The file is the
+project's `settings.contract_path` (§6.1, default `docs/api.md`); the hub
+reads it whole through the same probe read as a card's section, and
+keeps no copy:
+
+| Endpoint | Scope | Notes |
+|---|---|---|
+| `GET /projects/{owner}/{slug}/contract` | `project:read` | `{path, ref, url, size, fetched_at, toc, text}`; `ETag`, `304` on a matching `If-None-Match` |
+
+```json
+{ "path": "docs/api.md", "ref": "c769de86…", "url": "https://github.com/…/blob/c769de86…/docs/api.md",
+  "size": 1230291, "fetched_at": "2026-11-02T20:30:00Z",
+  "toc": [ { "level": 2, "number": "6", "title": "Projects, members, tasks, releases", "anchor": "s-6", "line": 4201 },
+           { "level": 3, "number": "6.8", "title": "Contract cards", "anchor": "s-6.8", "line": 5878 }, "…" ],
+  "text": "# Maity API\n…" }
+```
+
+- **The read** is the one above: the default branch resolved to one
+  commit, the file read at that commit, only from the project's own
+  repository, decoded as UTF-8, with the same errors —
+  `probe_not_configured`, `probe_unavailable`, `not_found` with
+  `details.fields["settings.contract_path"]: "not_found_on_forge"`,
+  `invalid` with `"too_large"` or `"not_text"` under the same key — and
+  nothing shown on any of them, never an older text. `path` is the
+  setting as it was at the call, `ref` the commit, `url` the forge's page
+  for the file at that commit, `size` the file's bytes, `fetched_at` when
+  the hub read it.
+- **The cap** is 4 MiB of the file, for this read and for a card's
+  section alike (it was 1 MiB for the section until then): a project's contract
+  grows with the project, and this project's own passed 1 MiB on
+  2026-11-02. A forge whose contents API answers a large file only in its
+  raw form (GitHub above 1 MB) is read in that form; the cap counts the
+  bytes read, as §11.1 has it. `text` is the whole file, never cut: a file
+  the hub cannot send whole is `too_large`, so a reader never takes a
+  part for the whole.
+- **`toc`** lists the file's headings in file order, as the hub's parser
+  of the card's section finds them: ATX headings of level 2, 3 and 4,
+  fenced code blocks skipped. `level` is the number of `#` marks;
+  `number` the first token after them when it is a section number
+  (digits with `.` between, an optional trailing `.` dropped: `## 8.
+  Events` → `8`), else `null`; `title` the rest of the heading line,
+  Markdown as written, at most 300 characters; `line` the heading's
+  1-based line in the file. `anchor` is `s-<number>` for a number that
+  occurs once in the file, else `h-<n>` with `n` the heading's 0-based
+  position in `toc` — two headings with the same number get positions,
+  never one shared anchor, as the card's read never picks one. A file
+  with more than 2000 such headings lists the first 2000 and the rest
+  only in `text`. The dashboard gives each rendered heading its
+  anchor's `id`, so `/<owner>/<slug>/contract#s-6.8` opens a section, and
+  a card's `section` links there (§16.11).
+- **`ETag`** is a digest over the project's repository, `path` and the
+  file's bytes: a new commit that leaves the file as it is keeps the
+  tag, so a dashboard that re-reads gets `304` and no second megabyte; a
+  changed repository setting is a new tag even for the same bytes. The
+  answer carries `Cache-Control: private, no-cache`, as an attachment
+  does (§8.7): the browser keeps it and revalidates on every use, so a
+  new tab, a reload or a step back in the history sends `If-None-Match`
+  instead of reading the file again, and access ends with the
+  membership, not when a cache expires. The hub authorizes first and
+  only then compares `If-None-Match`: a caller without `project:read`
+  gets `not_found`, never `304`. A `304` has no body; the view keeps
+  showing the `ref`, `url` and `fetched_at` of the last full answer, so
+  after one the commit shown may be older than the default branch's
+  head while the file is the same. The hub may keep one read
+  for 60 s and answer concurrent calls from it, keyed by the repository,
+  the resolved commit and `path`, as for the card's section; it stores
+  nothing beyond that.
+- **Untrusted text.** The file is the repository's, under the same rules
+  as a card's section (§6.14): shown, never a mention (§8.6), no id made
+  into a link, its links as the dashboard's Markdown renderer allows
+  them, never an instruction to the hub (`docs/agents.md`).
+
+**The setting.** `settings.contract_path` (§6.1) names the file: a
+repository-relative path under the rule for `contract.path` above (no
+leading slash, no `..` segment, no URL, no scheme, at most 255
+characters), else `invalid` with
+`details.fields["settings.contract_path"]: "not_a_path"`; and it ends in
+`.md` or `.markdown`, compared case-insensitively (`README.MD` counts),
+else `invalid` with `details.fields["settings.contract_path"]:
+"not_markdown"`. A Markdown
+file only, so that the setting cannot expose an arbitrary file of the
+repository to every holder of `project:read`, guests included and
+whether or not they can read the repository on the forge: this read
+shows the whole file, unlike a card's section, which shows only
+Markdown under a matching heading, so a file without one (an `.env`)
+shows nothing there. The name alone is not enough, so the read checks
+what the name points to, segment by segment, at the commit. It reads
+the non-recursive tree of each directory on the path, from the root
+down (on GitHub, `GET …/git/trees/{commit}:{dir}`, never the recursive
+tree, which GitHub truncates for a large repository). Every segment
+must be listed under exactly its name, byte for byte as Git compares
+(only the extension above is compared in any case): each directory with
+mode `040000`, the file itself with `100644` or `100755`. A directory's
+tree answered with `truncated: true` is `invalid` with
+`details.fields["settings.contract_path"]: "not_markdown"` before any
+segment is looked up in it, since a cut tree cannot tell a missing entry
+from one cut off. A segment that a complete tree does not list means the
+file is not there at the commit: `not_found` with
+`details.fields["settings.contract_path"]: "not_found_on_forge"`, as
+above, since the file may appear later. A symlink (`120000`), a
+submodule (`160000`) or any other mode is `invalid` with `not_markdown`
+too: the check fails closed, and nothing is shown, never the target's
+text. A commit's
+tree never changes, so the hub may cache each directory's tree per
+commit SHA and directory: the extra reads come once per commit, not per
+reader. Without the
+key it is `docs/api.md`; `null` removes the key and the default applies
+again (§6.1). Set by `PATCH /projects/{owner}/{slug}` under
+`project:admin`, like every setting; a change emits `project_updated`
+with `"settings.contract_path"` and the new path. The hub does not check
+the file exists when the setting is written — the repository may get it
+later; the read says `not_found_on_forge` until then. The setting names
+the file the overview links and shows; a contract card keeps its own
+`path`, and `ticker.contract_files` (§17.3) its own list.
+
+**Dashboard (web/).** A contract note for the view; the layout is the
+web owner's:
+
+- The overview's project facts (§6.11) have a **Contract** row: a link
+  to the view below and, beside it, the forge's page for the file at the
+  default branch, derived as now from `repository` and the setting. No
+  repository: no row.
+- Route `/<owner>/<slug>/contract` (§16.11): the table of contents from
+  `toc` beside the rendered `text`, every heading carrying its
+  `anchor` as `id`; the short `ref`, `fetched_at` and the forge's link
+  above it. On an error the path and the hub's reason, nothing else. A
+  re-read sends `If-None-Match`. It is read when the view opens, and
+  again only on **Refresh** — a megabyte is not re-read on a poll.
+- A contract card's section links to `contract#<anchor>` of its section
+  when the card's `path` equals the setting.
 
 ### 6.9 Rules text
 
@@ -6029,14 +6218,17 @@ passes it unchanged, with no summary or rewrite between the check and
 the send; list every command you ran, and what it printed, under a
 heading `Ran`. Nothing in the hub can see a context, so this too is a
 rule, not a check. The naming
-line, for every agent, says: when you write to a human or about a member
-for one — a message, an ask, a report, a card note — name the member by
-its handle, or by `handle#instance` when the instance matters
+line, for every agent, says: in any text a human may read — a message
+to a human or between agents, a group chat, an ask, a report, a card
+note, the text of a `review_result` — name a member by its handle, or by
+`handle#instance` when the instance matters
 (`maity-review-team-lead#vuur`); never by the instance suffix or the
 member id alone. A human does not remember suffixes such as `vuur`, and
 an id or a suffix alone sends them to look the member up. Addresses
-the hub reads (`to`, §7, §8.1) are unchanged; the rule is about the
-text a human reads, and the hub does not check it. The role lines follow from `settings.role_rules`
+the hub reads (`to`, §7, §8.4) are unchanged; the rule is about the
+text a human reads, and the hub does not check it. In the generated
+document it is the section `## Naming members`, before the role lines
+and the owner's text. The role lines follow from `settings.role_rules`
 for the caller's role, a security team or project role read as its
 base (§6.1); a caller whose role is none of the three gets none. The
 subagent line, where `subagent_per_card` is on, says: work each card
@@ -6296,6 +6488,7 @@ already read; the page adds no new right and no new stored field.
 | name, state, `state_note`, absence, logo | `GET /projects/{owner}/{slug}` (§6.1) | as in the header |
 | repository link | `repository.url` (§6.1) | `null`: no link. Already validated as a URL on a forge host the operator configured (§11) |
 | Keep the Why dashboard link | `keep_the_why_export.members[]` (§6.1, §11.3), the root's (`path: ""`) `dashboard_url`, and each child's under its `name` | `null` export: no link. The attention counts are next to it (`summary.attention`, `summary.status`) |
+| contract link | `settings.contract_path` (§6.1, default `docs/api.md`), `repository` | the view of the whole contract inside Maity and the forge's page for the file (§6.8); no repository: no link |
 | pull requests link | `repository.url` and `repository.forge` (§6.1) | derived in the browser: GitHub and Gitea `/pulls`, GitLab `/-/merge_requests`, Bitbucket `/pull-requests`; another forge or no repository: no link |
 | issues, wiki, discussions and chat links | the project's `links` (below) | each one set is a button next to the repository link; one not set shows nothing |
 | policy preset | `policy.preset` and the fields it fills (§6.1) | |
@@ -9420,7 +9613,7 @@ learns its content.
 | `credential_revoked` | the credential's member, `trust:owner` | credential id, `reason` |
 | `credential_in_payload` | the credential's owner, `trust:owner`, `trust:admin` | credential id; never the value |
 | `event_redacted` | the redacted event's own audience, never wider; for a conversation's message the conversation's audience instead: the two parties of a direct one, the current participants of a group chat, in a closed one also its former human participants and the redacting admin (§8.5) | `seq`, `reason`; `note_id` too when a note was redacted (§6.16); `history_id` and `task_id` instead of `seq` when a card history entry was (§6.15) |
-| `probe_observed` | on a report: the holder of the affected card, with `mismatch: true` also `trust:admin`; nobody on a `done` or `cancelled` card without a mismatch or with its pull request merged, and the report keeps `observed` and `mismatch` to read; on the open release: its card's holder, `trust:admin` | the observation |
+| `probe_observed` | on a report: the holder of the affected card, with `mismatch: true` also `trust:admin`; nobody on a `done` or `cancelled` card without a mismatch or with its pull request merged, and the report keeps `observed` and `mismatch` to read; on the open release: its card's holder, `trust:admin`. Wakes only when something the reader acts on changed: on a report, `observed` without its `observed_at`, or `mismatch`, against the card's last `probe_observed` that reached all of these readers (a new report's first observation included; one that contradicts the new report always wakes); otherwise a report's observation is emitted with an empty audience, for the views that read every event; on the open release, a ref's `found`, `state`, `head_sha`, `checks`, `merged_at` or `sha`, or whether its `mergeable` is `conflicting` — `unknown` and `mergeable` taking turns is stored and wakes nobody | the observation |
 | `task_merged` | the card's done authority as §6.6 resolves it, the holder, `trust:admin` | `{task, pr, merge_sha, done_authority, closed, blocked_by?}` (§6.6); wakes the done authority only, and nobody when `closed` is true |
 | `placement_created`, `placement_updated` | `runner:<id>` of the placement's runner once the placement is approved (a pending proposal never names the runner), the creator, the owner of the agent profile | `placement_id`, `generation`, `desired`, `harness`, `target`, `approval.status`, `closed_reason`; never `briefing`, `session_hint` or `logs_hint` (§15.10) |
 | `placement_reported` | the creator, the owner of the agent profile | `placement_id`, `state`, `reason`, `detail`, `exit_code`, `observed_generation`, `restarts`, `retry_at` |
@@ -9707,12 +9900,13 @@ there is not sent:
    character outside ASCII (a word in another script); one with `#`,
    `@`, `{`, `}`, `<` or `>` (an address such as a handle with its
    instance, a pull request, a placeholder); one shaped like an id the
-   hub issues (lowercase letters, `-` and twelve characters of `0`–`9`
-   and `a`–`z`) or a UUID; one that is only digits and punctuation; and
+   hub issues (`[a-z]+-[0-9a-z]{12}`, the whole span) or a UUID; one that is only digits and punctuation; and
    an object hash or a range `a..b` of them (form 3). A span with a `/`
    names a path: it is a file or a directory, and with a `*` the part
    before the first `*` begins one (`hub/tests/test_public_*`); anything
-   after a `:` is left out. Any other span names an identifier or a key:
+   after a `:` is left out. A path that is no file or directory still
+   passes as text in some file, verbatim, so that a route such as
+   `/api/v1/events` or a part of a URL is not refused. Any other span names an identifier or a key:
    its core, the longest run that starts with a letter or `_` and goes
    on with letters, digits, `_`, `.`, `/` and `-` (three characters or
    more), is text in some file or the name of a file; failing that, each
@@ -9724,7 +9918,8 @@ there is not sent:
    a file and line (form 1) does not get that fallback. A name the review
    says is missing, or proposes, is therefore written without backticks.
 3. **An object**, anywhere in the text: 7 to 40 lowercase hexadecimal
-   characters with at least one of `a`–`f`, as a word bounded by
+   characters with at least one of `a`–`f` and at least one digit (so
+   an English word such as `defaced` is no hash), as a word bounded by
    anything but letters, digits, `_` and `-` (so the groups of a UUID
    are no hash), and either end of `a..b` alike, is an object in the
    clone: a commit, or a tree or blob such as `git merge-tree` and a
@@ -10201,9 +10396,16 @@ and never hands out a presigned URL — the read rule is checked on every
 request, which a link to the store would bypass. On upload the blob is
 written first and the metadata committed after it, so a row never points
 at a missing blob; a blob without a row (a crash between the two) is
-removed by the hub's sweep. On read the hub checks the digest of what the
+removed by the hub's sweep. The row is committed only within 5 minutes of
+the start of the write. Past that the upload answers `503
+upload_expired` and the hub removes the blob. The upload may be sent
+again, and the attempt counts against the upload rate. On read the hub checks the digest of what the
 store returned against the stored one and answers `internal` on a
-mismatch rather than serve other bytes. A deletion tombstones the row in
+mismatch rather than serve other bytes. A file larger than 1 MiB is
+streamed with its `Content-Length` and checked as it passes; its last
+piece is held back until the digest is known, and on a mismatch the
+answer ends short of that length, so no client receives the bytes whole.
+A deletion tombstones the row in
 its transaction and removes the blob after the commit; a blob removal
 that fails is retried by the sweep, and the tombstoned row is never
 served again either way. The database stays small and portable across
@@ -11129,8 +11331,8 @@ the same shape as `release.tag`. Errors: `probe_not_configured`,
 exists). The same reads feed `report.observed`,
 `release.pull_requests` and the forge links on cards (§6.13, read
 through the forge's issue endpoint for `kind: issue`), in the background after a report and on the
-hub's own interval; an observation that changes a card's state emits
-`probe_observed`. With the change ticker enabled the probe also reads
+hub's own interval; an observation that changes what a card shows emits
+`probe_observed`, which wakes only where §8.2 says. With the change ticker enabled the probe also reads
 the merged pull requests of the default branch, their files and, for a
 contract file, its text at the merge and the base (§17.4); a forge
 webhook only makes it look sooner.
@@ -11350,13 +11552,15 @@ gives it (`null` for the root). Members are listed depth-first in the
 order of the blocks, the root first.
 
 **The read.** The transport rule of §11.1 for every read, each
-`state.json` at most 1 MiB, `Accept: application/json`; at most 4 reads
+`state.json` at most 2 MiB (§11.5), `Accept: application/json`; at most 4 reads
 of one project's family in flight at once. The `.keep-the-why` files and
 the exports are cached together for `max_age` seconds (default 600). A
 `max_age` below 30 is taken as 30: a fresh read of the whole family
 happens at most once per project every 30 seconds, and a closer request
 answers from the cache with `fresh: false`.
-A failed read keeps the member's last good answer until the hub restarts.
+A failed read keeps the member's last good answer until the hub restarts
+or drops the project's answers for room (the 256 projects read most
+recently are kept).
 
 **What the hub relies on**, per export. Unknown keys are ignored, at
 every level; `bodies`, `authors`, `project` (the hub takes the family
@@ -11752,6 +11956,242 @@ confirmed it (above). Whether an installation on a forge organisation
 may serve a Maity organisation's projects is open for its own
 contract; until then nothing else in this section changes.
 
+### 11.5 The Keep the Why views' reads
+
+```
+GET /projects/{owner}/{slug}/keep-the-why/export
+GET /projects/{owner}/{slug}/keep-the-why/export?root=hub
+GET /projects/{owner}/{slug}/keep-the-why/export?canonical=https://github.com/acme/platform&root=
+GET /projects/{owner}/{slug}/keep-the-why/bodies?canonical=…&root=…
+```
+
+Scope `project:read`. The project's Why view mounts Keep the Why's own
+views (timeline, graph, family, search, thoughts, pages; the library
+`web/` vendors, `web/context/stack.md`). They read through a provider the
+host gives them (keep-the-why `docs/dashboard-views.md`, "provider"), and
+the dashboard's provider reads here: `exportState(canonical, root)` from
+`…/export`, `bodies(state)` from `…/bodies`, `state()` as `…/export`
+without parameters. The library walks a family itself, one export at a
+time, from what each export declares (`project.parent`,
+`project.children`); the hub serves one export per call and never merges
+them. `family`, `memberState` and `resolveEntry` are not offered: they
+need a Keep the Why server, and the library works without them (the
+family search scope then covers what the exports reach).
+
+This is §11.3's read, served whole instead of summarised. The same
+rules hold: the hub reads only what a repository publishes, finds a
+state URL only through the forge (the `dashboard-state:` line of a
+`.keep-the-why`, read with the grant §11.4 picks), reads it under §11.1,
+keeps it in memory only and never in its database, and never reads or
+writes `context/`. There is no other fetch path: no URL from a request
+or from a project setting is read; from an export only the one bodies
+file beside its state URL is (below); and no host is allowed because of
+its name.
+
+The limits below — reads in flight, the memory budget, the 30 s hold —
+are per serving process: a hub run as several processes or pods holds
+them in each, and their caches apart.
+
+**A repository's name.** A repository is named — in `canonical`, in a
+URL-form child location, in a `parent:` line — by exactly this form,
+and by nothing else:
+
+| Forge | Accepted form |
+|---|---|
+| GitHub | `https://github.com/{owner}/{repo}`, optionally followed by `.git`, then optionally by one `/` |
+
+`{owner}` is 1 to 39 ASCII characters from `A`–`Z`, `a`–`z`, `0`–`9`
+and `-`; `{repo}` 1 to 100 ASCII characters from `A`–`Z`, `a`–`z`,
+`0`–`9`, `.`, `_` and `-`, not `.` or `..`, not ending in `.git`, without
+the `.git` the form allows after it. Any other character — a non-ASCII letter or digit
+included — makes the text no name. No query, no fragment, no user info,
+no port, no further path segment, no percent-encoding, no whitespace.
+Two names are the same repository when their `{owner}/{repo}` match
+with ASCII `A`–`Z` and `a`–`z` compared ignoring case. The form decides
+what the hub reads; it is not a complete check of the forge's own
+naming rules, and a name the forge does not have is simply not found.
+The text is checked as written in the file: the file is split into lines
+at LF or CRLF, the value taken as the line's grammar gives it (a child's
+location between `: ` and ` — `, a `parent:` line's value after `: `,
+spaces around it dropped), and nothing else is removed from it before
+the check; a control or zero-width character left in it makes it no
+name. A text
+that does not have this form names no repository: it is skipped
+where it stands, takes none of the 8 places below, and a `canonical` in
+another form is `not_found` with `not_in_family`. Every forge read of a
+named repository builds its API path from the validated `{owner}` and
+`{repo}` alone, never from the text it was given. A `canonical` that
+names the project's own repository (its `repository.url`, compared the
+same way) is the first kind below, as an empty one is. A path-form
+`parent:` (a directory of the same repository) names no repository.
+
+The hub serves:
+
+1. **the project's own repository**, the root (`root` empty) and every
+   member of its family that §11.3 reads (`root` the member's `path`), and
+2. **a repository the project's family names**: a URL-form location in
+   a `keep-the-why:children` block, or the `parent:` line of a config
+   block, of a `.keep-the-why` that §11.3 reads in the project's own
+   repository, each in the form above — at most 8 such repositories per
+   project, the first 8 distinct ones in the order §11.3 lists the
+   members (a member's children before its `parent:`); a later one is
+   refused with reason `family_cap`. Of such a repository the hub serves its root and the
+   members of its own family by the rules of §11.3 (directory locations
+   only, depth 4, 32 members), never a repository *it* names: one hop,
+   so a family cannot pull in the forge.
+
+The second kind is never read with the project's owner's grant (§11.4:
+the App installation or the owner's token act on the project's own
+repository alone). For a project in one of the operator's own
+namespaces (§11.4, `MAITY_FORGE_INSTANCE_NAMESPACES`) it is read with
+the instance token (`MAITY_FORGE_GITHUB_TOKEN`), for every other project
+without any token: the instance token serves the operator's projects
+only, here as everywhere. It is read only where the forge reports the
+repository public: a repository the instance token could read although
+it is private is `not_public` all the same. The visibility is read as §11.4 reads it,
+before the first read and on every refresh of its family (at most every `max_age`, below, and
+at least every 600 s whatever `max_age` asks); a
+private one, or one whose visibility cannot be read for any reason but
+a spent budget, is refused with reason `not_public`, and what the hub
+held of it is dropped then; a spent budget keeps what the hub holds
+(below). A
+named repository the forge answers with a redirect (renamed or moved)
+is not followed, as §11.4 does for the project's own: it is
+`ktw_unavailable` with reason `repository_moved` until the family file
+names its new place. Its `.keep-the-why` is read through the forge's
+contents API like the project's own (64 KiB), never from a raw or Pages
+host. These reads count against the budget of their source — the
+instance token's, or that of reads without a token — never against an
+owner's grant (§11.4, **Rate limits**; the hub keeps one budget per
+source, shared by its serving processes where its database is
+PostgreSQL). Without a token GitHub allows 60 reads an hour per egress
+address: a project outside the operator's namespaces that names large
+families will see some of them answered `probe_unavailable` until the
+budget is back, and the cache only spreads those reads, it does not
+remove them. A spent budget, whenever it is found, is
+`probe_unavailable` with `details.retry_at`, never `not_public`; what the
+hub holds of the repository is kept, not served meanwhile, and served
+again once the budget is back; a `retry_at` already past refuses
+nothing, the hub reads again. Any other `canonical` or `root` — a
+repository named only inside an export (a See into another repository,
+`Superseded by`), a path that is not a member — is `not_found` with
+`details.reason: not_in_family`; the library then shows the reference as
+not resolved, with the reason, as it does on any host without the read.
+
+**`…/export`.** `?canonical=&root=` as above. The answer:
+
+```json
+{
+  "canonical": "https://github.com/oliver-zehentleitner/maity",
+  "root": "hub",
+  "url": "https://maity.dev/keep-the-why-dashboard/hub/state.json",
+  "observed_at": "2026-11-03T09:00:00Z",
+  "fresh": true,
+  "fork_of": null,
+  "state": { "state-json": 2, "project": { "…": "…" }, "entries": [ "…" ], "bodies": "state.body.json" }
+}
+```
+
+`state` is the member's `state.json` as published, parsed and written
+again as JSON with every non-ASCII character escaped, nothing removed or
+added; a file that is not UTF-8 JSON as a browser reads it — `NaN`,
+`Infinity` or a number too large to be finite included — is `not_json`.
+Beyond that the hub checks only that it is a JSON object with `state-json` major `2` and an `entries` array (§11.3's
+`state_json_version` and `shape`), and nothing else of it. `url` is the
+state URL it was read from; the library resolves a lean state's
+`bodies` file against it. `fork_of` is `null`; the library judges a
+fork from the export itself (its `exportVerdict`), the hub does not.
+
+**`…/bodies`.** `?canonical=&root=` as above. A lean export names a
+file beside it that holds its entries' texts (`"bodies":
+"state.body.json"`). The hub reads it only when the export it holds for
+that member names one, and only at the state URL's own directory: the
+value must be one path segment (ASCII letters and digits, `A`–`Z`,
+`a`–`z`, `0`–`9`, and `.`, `_`, `-`, ending in `.json`, at most 100
+characters), resolved against the state URL with
+its last segment replaced — same scheme, host and port, no query, no
+fragment; anything else is reason `bodies_url_invalid`. The read follows
+§11.1. The answer is `{canonical, root, url, observed_at, fresh, bodies}`
+with `bodies` the file's `bodies` object as published (an object of
+entry `id` to body); the provider fills the state it holds and sets
+`bodiesLoaded` (keep-the-why `docs/dashboard-views.md`). An export with
+its bodies inline (no `bodies` field) is `not_found` with
+`details.reason: no_bodies_file`; the library asks only for a lean state.
+
+**Caps and cache.** Per read: a `state.json` at most 2 MiB (§11.3's 1
+MiB is raised to 2 MiB for both; this project's own root export is
+0.45 MiB), a bodies file at most 4 MiB, decoded bytes, refused at the
+first byte past (`too_large`). The exports, the `.keep-the-why` files and
+the bodies files are cached together with §11.3's, one entry per
+repository, member and file: what one call or §11.3 read is what the
+next answers, so a project's tabs share it. Both calls take `max_age`
+as §11.3 does (`?max_age=`, default 600 s, below 30 taken as 30); a
+fresh read of one repository's family happens at most once per 30 s per
+project, and a closer call answers from the cache with `fresh: false`.
+The 30 s also hold for a read dropped for room: the hub remembers when
+it last read each file and each family, and reads a dropped one again
+no sooner than 30 s after that; a call in between answers
+`ktw_unavailable` with reason `timeout`. At most 4 reads of one project in flight at once,
+its own repository and the named ones together, and at most 16 of
+§11.5's reads in flight in each serving process, which keeps at most 64
+MiB of these reads for all projects, the least recently used dropped
+first.
+
+The cost of a call does not grow with its project's history beyond the
+size of the files themselves. Warm, a call is one answer from memory.
+Cold, the first call for a project reads what §11.3 reads — up to 32
+`.keep-the-why` files and 32 exports — and the first call for a named
+repository reads its visibility and its family the same way (up to 1 +
+32 + 32 reads), each within §11.3's deadline of 30 s per family; a
+bodies call adds one file. Nothing is read per entry, per tab or per
+viewer.
+
+**Revalidation.** Both answers carry an `ETag`, a digest over
+`canonical`, `root`, `url` and the bytes as read, and `Cache-Control:
+private, no-cache`, as a contract file does (§6.8): the browser keeps
+the answer and sends `If-None-Match`, and a `304` costs no second
+megabyte. The project's own repository is checked on every call against
+the source §11.4 chooses for it, so an export held in memory is not
+served once that source no longer covers it: a grant removed in the
+hub ends it at once, one revoked at the forge within §11.4's refresh of
+the source, and a repository the instance token finds private within
+§11.4's 10 minutes of visibility, in each serving process. Every refusal comes
+before `If-None-Match` is compared: a
+caller without `project:read`, a repository no longer in the family, no
+longer public or past the cap, and a member that failed get their
+error, never `304`.
+
+**Untrusted.** Everything in `state` and `bodies` is the repository's
+text: the hub passes it through unchanged and the dashboard hands it to
+the library, which renders entry text as text and never as HTML
+(keep-the-why `docs/dashboard-views.md`, "Rendering safety";
+`web/context/rendering.md`). No string from an export becomes a URL the
+hub reads, except the one bodies file name beside the state URL, under
+the rule above.
+
+Errors: `ktw_not_configured` (the project's repository has no
+`.keep-the-why` or no `dashboard-state:` line, as in §11.3);
+`probe_not_configured` (§11.4), `details.reason` (`no_grant`,
+`unconfirmed`, …) for a `project:admin` only, every other reader gets
+`details: {}`; `probe_unavailable` with `details.retry_at` while the
+source's forge budget is spent (§11.4, **Rate limits**); `not_found`
+with `details.reason` `not_in_family`, `family_cap`, `no_bodies_file`
+or `not_public`; `ktw_unavailable` with `details.reason` one of §11.3's
+member reasons (`forge_unavailable`, `config_missing`, `no_state_url`,
+`state_url_invalid`, `address_refused`, `redirect_refused`,
+`unavailable`, `timeout`, `http_status` with `status`, `too_large`,
+`not_json`, `state_json_version` with `version`, `shape`),
+`repository_moved` or `bodies_url_invalid`, and only this code with
+`details.last`, the last good answer in the shape above, when the hub
+holds one: `probe_unavailable`, `probe_not_configured` and `not_found`
+from §11.5 never carry an export. The dashboard's provider turns
+each into the library's `{ error }`, so a view says why it has nothing
+instead of failing.
+
+Out of scope here: private repositories of other owners and a member's
+or owner's token for them (step 2 of the card), `family`, `memberState`
+and `resolveEntry`, and any write.
+
 ## 12. Endpoint index
 
 | Method | Path | Scope | § |
@@ -11777,6 +12217,7 @@ contract; until then nothing else in this section changes.
 | GET, POST | `/mail/sign-in/{token}` (outside the API) | — (the token) | 2.6.3 |
 | GET | `/auth/sessions` | human | 2.6.5 |
 | DELETE | `/auth/sessions/{id}` | human, own sessions; from a session not in good standing never one in good standing, and while it is younger than 1 hour no older one | 2.6.5 |
+| POST | `/auth/sessions/{id}/confirm` | human, own sessions; from a session in good standing that existed before the one it confirms | 2.6.5 |
 | POST | `/auth/reauthenticate` | human with a password | 2.8.1 |
 | GET | `/auth/second-factor` | human | 2.8.1 |
 | POST | `/auth/second-factor/totp`, `/auth/second-factor/totp/confirm`, `/auth/second-factor/recovery-codes` | human, with the password re-given in the last 10 minutes or, without a password, from a session in good standing at least 24 hours old; recovery codes also step-up | 2.8.1 |
@@ -11908,6 +12349,7 @@ contract; until then nothing else in this section changes.
 | GET | `/projects/{owner}/{slug}/logo`, `/projects/{owner}/{slug}/banner` | `project:read` | 11.2 |
 | PUT, DELETE | `/projects/{owner}/{slug}/logo`, `/projects/{owner}/{slug}/banner` | `project:admin`, human only | 11.2 |
 | GET | `/projects/{owner}/{slug}/keep-the-why` | `project:read` | 11.3 |
+| GET | `/projects/{owner}/{slug}/keep-the-why/export`, `/projects/{owner}/{slug}/keep-the-why/bodies` | `project:read` | 11.5 |
 | GET | `/projects/{owner}/{slug}/overview` | `project:read` | 6.11 |
 | GET | `/badge/{owner}/{slug}.svg` (outside the API) | — (served only while `policy.badge` is not `off`) | 6.20 |
 | GET | `/{owner}/{slug}`, `/{handle}` (outside the API) | — (the page inside the app shell without a valid session, the bare page with `?as=public`, each with `MAITY_PUBLIC_PAGES` on and the page chosen public; otherwise the app shell) | 16.9, 16.11 |
@@ -11978,6 +12420,7 @@ contract; until then nothing else in this section changes.
 | GET | `/projects/{owner}/{slug}/members/{id}/briefings` | the agent's owner; `members:admin`, human only | 6.2 |
 | POST | `/projects/{owner}/{slug}/tasks/{id}/move` | `tasks:admin` | 6.4 |
 | GET | `/projects/{owner}/{slug}/tasks/{id}/contract` | `project:read` | 6.8 |
+| GET | `/projects/{owner}/{slug}/contract` | `project:read` | 6.8 |
 | GET | `/projects/{owner}/{slug}/swarm` | `project:read` | 6.22 |
 | GET | `/people/{handle}` | — | 6.27 |
 | GET | `/me/conversations` | human | 9.3 |
@@ -13884,7 +14327,10 @@ same header and footer (§16.7.5).
   of a `works_with` section under `/assets/landing/agents/` (above). Their URLs carry
   `?v=<digest>` of the file and are answered with `Cache-Control:
   public, max-age=31536000, immutable`. The hero's rings and other
-  pictures of the design are inline SVG in the template. The page is
+  pictures of the design are inline SVG in the template. The frame's
+  stylesheet `/assets/landing/public-pages.css` (§16.7.5) is served the
+  same way, and the two pictures it names under
+  `/assets/landing/brand/` without a digest, answered `no-cache`. The page is
   complete without the script: all text is in the HTML, every section
   shows its end state, and the FAQ opens without it. The stylesheet
   animates the hero's rings, the band's loader and the `works_with`
@@ -13906,10 +14352,14 @@ same header and footer (§16.7.5).
   hub's own origin and loads nothing from elsewhere; `img-src 'self'`
   covers the instance's logo and favicon and the agent logos of a
   `works_with` section; the design's own pictures are inline SVG. The preview of a draft (below) answers with the same
-  policy. The legal pages (§16.7.1) carry no script and
-  answer with §16.9's policy, `default-src 'none'; style-src
-  'unsafe-inline'`. Both replace §1.1's `default-src 'self'` for these
-  documents only.
+  policy. The legal pages (§16.7.1) and their preview carry no script
+  and answer with `default-src 'none'; style-src 'self' 'unsafe-inline';
+  font-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors
+  'none'`: they load the landing page's
+  `landing.css`, `public-pages.css` and fonts under `/assets/landing/`
+  for the frame (§16.7.5), and `img-src 'self'` covers the favicon and
+  the pictures `public-pages.css` names; the page's text has no image.
+  Both replace §1.1's `default-src 'self'` for these documents only.
 - **Changes** are recorded on the setting itself — `updated_at`,
   `updated_by` — which is the record in this version; they emit no
   project event and wake nobody.
@@ -14670,7 +15120,10 @@ reload shows what changed.
   (a hold, `security`) takes its items off at once.
 - **Online** — the members whose presence (§5.3) is `online` at the
   snapshot, humans and agents: the number of each, and those named as
-  the Board names a holder. Never `away`, `paused` or an instance.
+  the Board names a holder. A person whose `public_presence` is `false`
+  (below) is neither named nor counted; their agents are named and
+  counted as before.
+  Never `away`, `paused` or an instance.
 
 A transfer (§6.25) sets `public_page` to `off`, and its consent request
 says so: the receiver decides whether the project is public under their
@@ -14781,8 +15234,9 @@ second segment (§16.11), so the address never meets a project.
 is under no moderation hold: an open project names its members, so the
 name leads somewhere (the maintainer's decision of 2026-11-02). Private
 projects never appear on it. `PATCH /me` (human only) sets
-`public_profile` (default `true`; the accounts that existed on
-2026-11-02 were switched to `true`) and `public_bio` (`null` or plain
+`public_profile` (default `true`; the upgrade that brings this
+switches every account existing at that moment to `true`, so an
+operator tells their users first) and `public_bio` (`null` or plain
 text, at most 280 characters; every C0 control character and the
 bidirectional overrides U+202A–U+202E and U+2066–U+2069 are `invalid`
 with `details.fields.public_bio: "control_character"`).
@@ -14797,6 +15251,34 @@ it out; the person is still named on the public pages of their projects
 (above), and the members of a project they share read the rest in the
 dashboard (§6.27). No address, no session, no presence, no image: a
 visitor sees the placeholder avatar.
+
+**Online on public pages.** `PATCH /me` (human only) also sets
+`public_presence` (`true` or `false`, anything else `null` included
+`invalid`; default `true`; the maintainer's decision of
+2026-11-02, `hub/context/public-pages.md`). While it is `false` no
+public page names the person as online: the snapshot's **Online**
+(above) leaves them out, neither named nor counted, in the page and in
+its `online.humans` and `online.named` (below), since a count beside
+the names would point at the one person who is missing (the
+maintainer's answer of 2026-11-02). The instance-wide counts stay as
+they are: the landing page's `people_online` (§16.7) still counts
+them, as it names no project and no person; the badge (§6.20) counts
+agents only. On an instance with a single public project that shows
+`people_online`, that number minus the project's `online.humans` is at
+most the number of people online with the switch off (exactly that when
+every human of the instance is a member of that project), and with
+exactly one such member it can point at them; the maintainer decided on
+2026-11-03 that `people_online` keeps counting them, and Your account
+says so under the switch. The switch is the person's own and never covers their
+agents: an agent is public work and is named by its handle. It covers
+only who is named and counted under **Online**: what the person does stays on the
+pages with its time, as a note's `created_at` on a card's page or an
+item under **Recently**. Switching
+it to `false` takes them off the person's project pages at once,
+also under `MAITY_PUBLIC_PAGES_RENDER=interval` (below), though a cache
+outside the hub may keep the old page for up to 60 seconds
+(`max-age=60`, below); switching it to `true` shows them with the next
+snapshot.
 
 **A person's links.** `PATCH /me` (human only) also sets `website`
 (`null` or an `https` URL, below) and `social`, an object with any of
@@ -14857,7 +15339,7 @@ value does not admit gets neither field. Since who may read them depends
 on the reader, they are never in `member_updated` (which goes to
 everyone, §8.2): a change is `changed: ["links"]` only, and each reader
 reads the member again. The person reads their own fields always in
-`GET /me` (§5.1): `public_profile`, `public_bio`, `website`, `social` as
+`GET /me` (§5.1): `public_profile`, `public_presence`, `public_bio`, `website`, `social` as
 stored and `links_visible`, whatever the value and whether or not they
 are in a project.
 
@@ -14905,7 +15387,10 @@ Removing something is never left to the interval. Under either
 setting, a change that takes anything off a page — a page that stops
 being public (above), a member or agent owner who makes their profile
 private (which no longer takes their agents' pages with it, "An
-agent's page" above), an organisation's page turned off, a person suspended or hidden, a
+agent's page" above), a person who turns `public_presence` off (their
+name and their count under **Online** on their projects' pages, and in
+`online.humans` and `online.named`),
+an organisation's page turned off, a person suspended or hidden, a
 repository that turns private, a member removed from a project or an
 agent profile deleted (off the project's views and the person's page;
 an agent's page goes when its last public project does), `links_visible`
@@ -15001,7 +15486,7 @@ project reads the same route.
 **The dashboard** offers `public_page` and `public_about` in the
 project's settings to its namespace owner (to an organisation's owners
 for its projects), `public_page` in an organisation's settings to its
-owners, and `public_profile`, `public_bio`, `website`, `social` and `links_visible` in Your account, each with a link to the page and the
+owners, and `public_profile`, `public_presence`, `public_bio`, `website`, `social` and `links_visible` in Your account, each with a link to the page and the
 note that it is public to everyone; on a project's pages and an
 account's or organisation's own view the dashboard offers **View public
 page** while the page is served. That link opens the address with
@@ -15076,7 +15561,7 @@ sections named say; a path under one of them that names nothing is
 | Path | What | § |
 |---|---|---|
 | `/api/…` | the API (`/api/v1/…`, including `/help`, `/openapi.json`, `/health`) | 1.1 |
-| `/assets/…` | the dashboard's static files: scripts, stylesheets, `brand/` | below |
+| `/assets/…` | the dashboard's static files: scripts, stylesheets, `brand/`, vendored libraries (`vendor/`) | below |
 | `/join/{token}` | the join page | 3.2 |
 | `/r/{token}` | always `not_found`: there is no pairing page | 15.2 |
 | `/mail/…` | the pages behind the links in mails | 2.6.3, 2.7.1, 2.9, 18.6 |
@@ -15145,7 +15630,7 @@ names:
 | `/explore` | the public projects, by name, for every visitor with or without a session, under the public pages' `Cache-Control`, `Vary`, policy and `nosniff` (§16.9), without an `ETag`; the shell while the instance serves no public pages |
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below) |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
-| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `members/<id>[/<tab>[/<instance>]]` (the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `memory` (§19), `message`; a view added later joins this list |
+| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `contract` (the project's contract, a heading by its anchor as the fragment, §6.8), `members/<id>[/<tab>[/<instance>]]` (the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `organisation`, `runners`, `why`, `settings` (one view with two tabs: the project's settings at `settings`, shown to callers with `project:admin`, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `memory` (§19), `message`; a view added later joins this list |
 
 **Public pages at their canonical address.** `/<owner>/<slug>`, the
 public views `/<owner>/<slug>/board`, `/members`, `/organisation` and
@@ -15245,7 +15730,9 @@ while the window runs they answer `503` with `Retry-After`
 and a small page saying the same, a stored public page inside the app
 shell too; the legal pages (§16.7.1) stay readable then, with the
 banner, since an imprint must always be reachable; the badge (§6.20) answers `503` with no
-image.
+image. A page served without an `ETag`, such as `/explore`, may be kept by
+a reader's cache for its `max-age=60`, so its banner can appear or vanish
+up to a minute late.
 
 **Agents: the notice.** Creating or changing a window posts
 `maintenance_scheduled` (wakes), cancelling an upcoming one
@@ -15277,7 +15764,9 @@ Not refused:
   §2.6 (`POST /auth/email-link`, `POST /auth/email-code` and the link's
   page `/mail/sign-in/{token}`), the second-factor step of §2.8.2
   (`POST /auth/second-factor/verify`, `POST /auth/second-factor/email`),
-  `POST /auth/logout` and `GET /auth/session`; every other call of such
+  `POST /auth/logout` and `GET /auth/session`, and the two reads the
+  sign-in page is drawn from, `GET /auth/methods` (§2.6.1) and
+  `GET /auth/pages/sign_in` (§16.7.4); every other call of such
   a session is refused like anyone's, and registration (§2.7) is
   refused;
 - `GET /me` (§5.1), read only, so the web knows who looks at the full
@@ -15330,6 +15819,122 @@ deletion's confirmation — and of a self-set limit or absence (§6.12).
 They are security deadlines or ones that end something the person
 chose; whoever runs into one during a window signs in or asks again
 afterwards.
+
+### 16.13 The product line
+
+The maintainer's decision of 2026-11-03 (`context/scope.md`): every page
+of the platform's own interface ends with one small line about Maity
+itself. It is part of the product, not of an instance's content: it is
+always shown, on a self-hosted instance as well, with no setting to turn
+it off, and it is no part of the landing setting or of the frame of
+§16.7.5.
+
+```
+[Maity icon] Maity 2026 · Found a bug? · Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity icon]
+```
+
+**The parts**, in this order, separated by ` · `:
+
+- the Maity icon, followed by `Maity` and the current year. The icon is
+  decorative (`aria-hidden="true"`). The year is never stored or built
+  in: the hub takes it from its clock (UTC) when it renders the page, the
+  dashboard from the browser's clock when it draws it;
+- **Found a bug?**, a link to
+  `https://github.com/oliver-zehentleitner/maity/issues`;
+- **Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity
+  icon]**. The name is plain text, no link. The heart is a symbol with
+  the accessible name "love" (`role="img"`, `aria-label`). Each of the
+  two icons is a link of its own:
+  - the GitHub icon to `https://github.com/oliver-zehentleitner`, with
+    the accessible name `GitHub`;
+  - the Maity icon to `https://maity.team/oliver-zehentleitner`, the
+    maintainer's page on maity.team (a person's page is `GET /{handle}`,
+    §16.9, with no `@`), with the accessible name `Maity`.
+
+  The accessible name is the link's `aria-label`, and the icon inside it
+  is `aria-hidden="true"`. `GitHub` and `Maity` are names and are not
+  translated.
+
+Every link is absolute and the same on every instance. The Maity link
+names maity.team, not the instance's own host: the maintainer's page
+exists only there, and a relative `/oliver-zehentleitner` would be a dead
+link, or another account's page, on any other instance. No link carries a
+query or a campaign of its own. Each opens in a new tab with
+`rel="noopener noreferrer"`, as the dashboard's other external links do
+(§6.11): the line also ends pages with a token in their path
+(`/mail/…/{token}`, `/join/{token}`), and `noreferrer` keeps that path
+out of the `Referer` a click would send to github.com or maity.team.
+Those pages also answer with `Referrer-Policy: no-referrer`, which covers
+every link and request on them, not only the line's, whatever the
+browser's default referrer policy is.
+
+**The icons.** All three are written into the page as inline `<svg>`
+and load no file. They therefore need no change to a page's
+`Content-Security-Policy` (the link pages allow no image source at all,
+§2.7.1), and they show on the join host, which serves no assets (§1.1).
+They use presentation attributes only (`fill`, `stroke`, …): no `style`
+attribute, no `<style>` element and no `<use>` of another file in the
+SVG. A page whose policy has no `style-src` would drop those, so the
+icons must not need them. The dark variant comes from the page's own
+stylesheet, overriding `fill`, where the page's policy allows one. The
+join page in a browser has none: its policy is `default-src 'self'`
+(§1.1), which allows no inline `<style>`, and the join host serves no
+stylesheet. It shows the light mark in either theme, on either host, so
+that it looks the same wherever it is opened. The Maity icons are the small mark of
+`web/brand/maity-mark-small.svg` (its dark variant,
+`maity-mark-small-dark.svg`, under a dark theme where a stylesheet can
+switch it). They are written without the file's `role="img"`,
+`aria-label` and `<title>`: the icon is `aria-hidden` and its link
+already has its name, and a `<title>` would add a tooltip. The GitHub
+icon is GitHub's mark from Octicons (MIT), the same path the dashboard
+already draws for a GitHub repository, in `currentColor`, so it follows
+the line's text colour on every page.
+
+**Words.** "Found a bug?", the sentence "Made with ♥ by … on … & …" and
+"love" are translated as the rest of the page is, in every language each
+catalogue has, under the same keys in the dashboard's
+(`web/i18n/<lang>.json`, with its metadata) and the hub's
+(`hub/src/maity_hub/words/<lang>.json`): `product.bug` ("Found a bug?"),
+`product.made_by` ("Made with {heart} by {name} on {github} & {maity}")
+and `product.love` ("love"). The word `on` and the `&` are part of the
+translated sentence, so a language uses its natural preposition and may
+put the placeholders in its own order. `Maity`, `GitHub` and the name are
+never translated. The line is in the language of the page it ends.
+
+The translated sentence is always text and is escaped. Only its
+placeholders become something else: `{name}` the name as text, and
+`{heart}`, `{github}` and `{maity}` the fixed elements above, never
+markup from the catalogue. A sentence in which one of the four is
+missing, or that names any other placeholder, is not used: the line falls
+back to the English sentence.
+
+**Where it is.**
+
+| Page | Line |
+|---|---|
+| every page the dashboard draws (`web/`): the signed-in views, `/login`, `/register`, the invitation and enrolment steps, the full maintenance page (§16.12); also `/explore` and a public address (§16.9) while the hub answers it with the app shell, as it does for one with no stored page | yes |
+| the hub's `503 maintenance` page (§16.12) | yes |
+| the pages behind the links in mails, `/mail/…` (§2.6.3, §2.7.1, §2.9, §18.6) | yes |
+| the join page in a browser, `/join/{token}` as HTML on either host (§3.2), below its own note | yes |
+| the join page for an agent, the Markdown answer (§3.2) | no |
+| the landing page and its variants (§16.7, §16.7.2), the legal pages (§16.7.1), and their previews for an admin (§16.7, §16.7.1) | no: the operator's site, with the operator's footer |
+| `/explore` and the stored public pages (§16.9), as the hub answers them from what it stored | no |
+
+On `/login` and `/register` the line comes after the frame of §16.7.5,
+below the landing page's footer. It does not depend on the frame: a page
+drawn without it (a failed `GET /site/chrome`, a maintenance window)
+still ends with the line.
+
+**How it looks.** At the end of the page's content, never sticky or
+fixed, so it takes no room on a phone. Small and muted. At phone width it
+stays one line where it fits and wraps between its parts where a
+language is longer, never scrolling sideways.
+
+**Beyond the decision.** The card leaves these open, and the contract
+settles them: the line is centred, the year's icon is decorative, the
+links carry no query of their own, the icons' accessible names are
+`GitHub` and `Maity`, and on `/login` and `/register` the line comes below
+the frame of §16.7.5.
 
 ## 17. The change ticker
 
@@ -16149,11 +16754,27 @@ no membership.
       "url": "https://maity.team/oliver/maity/inbox/req-0012",
       "read": true, "redacted": false }
   ],
+  "pinned": [],
   "next_cursor": null,
   "next_after": "<opaque position>",
   "server_time": "2026-10-22T13:10:05Z"
 }
 ```
+
+**Pinned.** `pinned` lists every unread `security` item of the human,
+of every kind and any age, newest first, at most 50, in the shape of
+`items` and from the same snapshot; `[]` when there is none. It does
+not depend on `limit`, `cursor`, `unread`, `kind` or `project`, so the
+bell shows the security alerts in a block of their own at the top
+without paging back for them, and an alert in `pinned` may appear in
+`items` as well (the dashboard shows it once, in the block). An answer
+to a request with `after` carries no `pinned`: the long-poll reports
+what is new, and the bell reads `pinned` again with the counts. A
+human with more than 50 unread security items sees the newest 50, and
+`counts.security` the whole number. Open requests addressed to the
+human are not pinned: they have their own inbox and count in
+`counts.inbox` (§18.1). The maintainer's decision of 2026-11-02
+(`context/notifications.md`).
 
 **Positions.** A place in the list is a **position**: an opaque
 string the hub hands out as `next_after` and takes back as `after` and
@@ -16334,9 +16955,9 @@ rules that make a position safe to resume from:
   them reads them (§18.3) or their record expires after 90 days, and
   `registration_pending`, `report_open`, `mail_disabled` and `agents_not_listening`
   items, which stay listed while their matter is open (§18.1), however old, and are read once it
-  is closed. That
-  age-based reading never counts as a marking: it grants no session the
-  good standing of §18.3. `id` is `ntf-<seq>` for an item from an event
+  is closed. No
+  reading — by age or by a marking — grants a session good standing;
+  only confirming its sign-in does (§2.6.5). `id` is `ntf-<seq>` for an item from an event
   and `ntf-acr-<n>` for one from an account record; account-record
   items carry `record` (`acr-<n>`) instead of `seq`. A personal request's
   item has `target: {type: "request", id}`, `project: {slug, name,
@@ -16379,10 +17000,11 @@ Human only, CSRF as every cookie `POST`. Exactly one of:
 - `{"ids": ["ntf-4237", "ntf-4231"]}` — up to 200 ids; an id the human
   has no item for is ignored, not an error (the item may have dropped
   out, §18.1).
-- `{"up_to": "<position>", "kind"?: "mention", "project"?: "maity"}` —
+- `{"up_to": "<position>", "kind"?: "mention", "project"?: "maity", "include_security"?: true}` —
   every item not past that position (§18.2; for "mark all read" the
   `next_after` of the answer the bell shows, passed back unchanged),
-  optionally of one kind or one project. A position the hub cannot
+  optionally of one kind or one project; `security` items only with
+  `include_security: true` (below), default `false`. A position the hub cannot
   open is `invalid` with `details.fields.up_to: "position"` and marks
   nothing; the dashboard does not retry it with a fresh position on
   its own, it refreshes the bell, and only a new "mark all read" by the
@@ -16393,19 +17015,41 @@ item's `seq`, never backwards — the same as reading the conversation
 (§9); an observer has no chat items and moves no mark. `inbox` items
 other than the four open matters below are marked read, and the open
 requests stay open (§18.2). A `kind`
-that is not one of them is `invalid` as in §18.2. A `security` item about a
-new session (`session_created`, #169 §2.6.5) is marked read only from a
-session that existed before that sign-in and is itself in good
-standing (signed in by password, or its own `session_created` item
-already marked read by an allowed session — never read by age, §18.2)
-— never from the session it reports on and never from a
-session created after it. `email_address_changed` follows the same rule, with the change in place of the sign-in. Security items (`session_created` and every
-other `security` kind) are marked read only through `ids`, never through
-`up_to`: "mark all read" skips them, so tidying the bell never confirms
-a sign-in or grants good standing. From a session that may not mark
-such an item it is skipped through `ids` too (ignored as an unknown
-id), and the rest of the call applies. Answers `200` with the counts
-of §18.2. No event: reading is not news to anyone.
+that is not one of them is `invalid` as in §18.2.
+
+**Security items.** Reading a `security` item never confirms anything:
+a sign-in is confirmed only by "This was me" (`POST
+/auth/sessions/{id}/confirm`, §2.6.5), and good standing follows from
+that confirmation, never from a read flag. A `security` item is marked
+read through `ids`, or through `up_to` with `include_security: true`
+("mark all read" after the dashboard's confirm, §18.8); `up_to` without
+it skips every `security` item, as before. An item about a new session
+(`session_created`, #169 §2.6.5) is marked read only from a session
+that existed before that sign-in and is itself in good standing (§2.6.5)
+— never from the session it reports on and never from a session created
+after it; `email_address_changed` follows the same rule, with the
+change in place of the sign-in. The other `security` kinds may be
+marked read from any session of the human. An item the calling session
+may not mark is skipped, the rest of the call applies, and the answer
+names it:
+
+```json
+{ "counts": { "inbox": 0, "chat": 0, "mention": 0, "security": 1, "total": 0 },
+  "skipped": [ { "id": "ntf-acr-118", "reason": "not_earlier" } ] }
+```
+
+`skipped` lists every `security` item the call named or covered and
+did not mark, with one `reason`, checked in the order of `POST
+/auth/sessions/{id}/confirm` (§2.6.5): `not_earlier` (the calling
+session is the one the item reports on, or was created after it), else
+`not_in_good_standing` (the calling session is not in good standing,
+§2.6.5); `[]` when none. The dashboard says which
+alerts are left and why — "confirm this sign-in from a session that is
+older than it" — so a count that does not go to zero is explained
+(the lead's addition of 2026-11-02). An `ids` entry for an item the
+human has no item for, or for an open matter (below), is not listed
+there: it is ignored, as before. Answers `200` with the counts of
+§18.2 and `skipped`. No event: reading is not news to anyone.
 
 The `inbox` items of an open matter, `registration_pending`,
 `report_open`, `mail_disabled` and `agents_not_listening` (§18.1), are
@@ -16547,8 +17191,8 @@ device; the browser's own permission is per browser and is not stored.
   password. For a human without a password the guard is an age gate
   plus good standing: only a session in good standing and at least 24
   hours old approves the change, so a session obtained a moment ago
-  cannot, and one that waits a day still cannot while its own sign-in
-  alert is unread (#169 §2.6.5); nor can it reject or replace a change
+  cannot, and one that waits a day still cannot while its sign-in is
+  not confirmed, read or not (#169 §2.6.5); nor can it reject or replace a change
   the human filed. `address_status`:
   `none`, `pending` (an address, never verified), `verified`,
   `disabled` (§18.7). Setting the address again, also the same one,
@@ -16766,7 +17410,21 @@ mail.
   /me/notifications?limit=0` for the counts (instead of summing `/me`)
   and shows them on the inbox, the chat list and the bell; the tab
   title is `(<total>) maity`. The bell opens the latest items (`limit=20`),
-  each linking to its `url`, unread ones marked, with "mark all read".
+  each linking to its `url`, unread ones marked, with "mark all read"
+  and a filter "unread only" (`unread=true`, §18.2). Above the list
+  stands the block of `pinned` security items, whatever their age: a
+  sign-in alert with "This was me" while its session is active and not
+  in good standing and the current session may confirm it (§2.6.5);
+  every other one — a sign-in already in good standing or ended, and
+  every other kind — with "Mark read", which the sessions of §18.3 may
+  use. When unread security
+  items are among what "mark all read" covers, the dashboard first asks,
+  listing each (time, place, browser): "2 sign-in alerts are included.
+  Marking them read does not confirm them. Mark all read anyway?";
+  confirmed, it sends `up_to` with `include_security: true`, declined,
+  nothing. It then shows what `skipped` names, with the reason
+  (§18.3). A sign-in read but not confirmed stays "not confirmed" in
+  Profile → Sessions until "This was me".
 - **Stage 2 — browser notifications.** While a dashboard tab is open,
   also in the background, it long-polls `GET /me/notifications?after=<position>&wait=55`,
   `<position>` being the `next_after` of the previous answer as an

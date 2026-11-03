@@ -12,6 +12,7 @@ from sqlalchemy import Connection
 from maity_hub import instance_settings as store
 from maity_hub.auth import device_codes, email_links, mail_factor
 from maity_hub.config import SECOND_FACTOR_POLICIES, Settings
+from maity_hub.db import xact_lock
 from maity_hub.errors import invalid, rate_limited
 from maity_hub.mail import settings as mail
 
@@ -152,7 +153,9 @@ def _settled(conn: Connection, hub: Settings, by: str) -> None:
 def note_second_factor(conn: Connection, hub: Settings, by: str) -> None:
     """Tell every enrolled human once when the policy has become `off` since the hub
     last looked: after an admin's `PATCH` (`by` the admin) and at startup (`by`
-    `environment` when the environment set it)."""
+    `environment` when the environment set it). Under a lock, so pods starting together tell
+    once."""
+    xact_lock(conn, "sign_in.second_factor_seen")
     current = second_factor_policy(conn, hub)
     seen = store.stored(conn, "sign_in").get(SEEN)
     if current == "off" and seen != "off":

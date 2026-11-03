@@ -296,6 +296,7 @@ def test_only_a_session_in_good_standing_decides_or_replaces_a_held_change(
         method="device_code",
         second_factor=None,  # a sign-in without the second factor (§2.8.2)
         created_at=clock.now() - timedelta(days=3),
+        confirmed_at=None,
     )
     with migrated.begin() as conn:
         strong = conn.execute(select(t.human_session)).first()

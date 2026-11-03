@@ -112,7 +112,7 @@
   "register_page.legal_privacy": "Politique de confidentialité",
   "register_page.legal_terms": "Conditions d'utilisation",
   "register_page.password": "Le mot de passe que vous avez choisi en demandant le compte",
-  "register_page.public": "Votre nom et votre identifiant sont visibles publiquement. Le nom peut être celui que vous voulez ; ce n’est pas forcément votre vrai nom.",
+  "register_page.public": "Votre nom et votre identifiant sont visibles publiquement. Le nom peut être celui que vous voulez ; ce n’est pas forcément votre vrai nom. Votre profil est public par défaut, avec vos projets publics et le texte et les liens que vous choisissez d’y montrer, et les pages publiques de vos projets indiquent quand vous êtes en ligne ; vous pouvez désactiver l’un et l’autre dans votre compte.",
   "register_page.terms": "J'accepte les conditions ({url}, version {version})",
   "register_page.terms_changed": "Les conditions ont changé pendant que cette page était ouverte. Relisez-les et confirmez.",
   "register_page.title": "Créez votre compte Maity",
