@@ -26,11 +26,14 @@ class FakeOpener:
 
     def __init__(self) -> None:
         self.answers: dict[str, Any] = {}
+        self.raw: dict[str, bytes] = {}  # a file's bytes, for a request in the raw media type
         self.requests: list[urllib.request.Request] = []
 
     def open(self, request: urllib.request.Request, timeout: float) -> Any:
         self.requests.append(request)
         path = request.full_url.removeprefix(f"https://{forge.API_HOST}")
+        if request.get_header("Accept") == "application/vnd.github.raw" and path in self.raw:
+            return io.BytesIO(self.raw[path])
         answer = self.answers.get(path, self.answers.get(path.split("?")[0]))
         if isinstance(answer, BaseException):
             raise answer
@@ -728,3 +731,53 @@ def test_a_visibility_cache_drops_stale_entries_and_keeps_at_most_the_bound(
         forge._keep(cache, (f"more-{n}", "a/b"), value(now), now, seconds)
     assert len(cache) == 10
     assert set(cache) == {(f"more-{n}", "a/b") for n in range(20, 30)}
+
+
+# --- a raw read takes the same route as every read (§6.8, §11.4) ---------------------------
+
+BIG = b"## 1 Big\n" + b"x" * 2000
+CONTENTS = f"/repos/a/b/contents/docs/api.md?ref={SHA}"
+
+
+def _without_content(size: int) -> dict[str, Any]:
+    return {"type": "file", "size": size, "encoding": "none", "content": ""}
+
+
+def test_a_file_the_api_answers_without_content_is_read_raw_up_to_the_cap(
+    opener: FakeOpener,
+) -> None:
+    opener.answers[CONTENTS] = _without_content(len(BIG))
+    opener.raw[CONTENTS] = BIG
+    assert READER.file_at("a/b", "docs/api.md", SHA, len(BIG)) == BIG
+    raw = opener.requests[-1]
+    assert raw.get_header("Accept") == "application/vnd.github.raw"
+    assert raw.get_header("Authorization") == f"Bearer {TOKEN}"
+    opener.raw[CONTENTS] = BIG + b"more"  # the forge sends more than its `size` said
+    with pytest.raises(ValueError, match="too large"):
+        READER.file_at("a/b", "docs/api.md", SHA, len(BIG))
+
+
+def test_a_raw_read_of_a_private_repository_is_never_made_with_the_token(
+    seen: FakeOpener,
+) -> None:
+    seen.answers["/repos/a/b"] = {"private": True}
+    seen.raw[CONTENTS] = BIG
+    with pytest.raises(forge.NotCoveredError) as raised:
+        READER._get(CONTENTS, raw_cap=len(BIG))
+    assert raised.value.reason == "private_without_grant"
+    assert _paths(seen) == ["/repos/a/b"]  # the visibility check, never the file
+
+
+def test_a_raw_read_under_a_grant_reads_another_repository_without_the_token(
+    seen: FakeOpener,
+) -> None:
+    granted = forge.Forge(TOKEN, granted="app", repository="a/b")
+    other = f"/repos/c/d/contents/docs/api.md?ref={SHA}"
+    seen.answers[other] = _without_content(len(BIG))
+    seen.raw[other] = BIG
+    assert granted.file_at("c/d", "docs/api.md", SHA, len(BIG)) == BIG
+    assert [r.get_header("Accept") for r in seen.requests] == [
+        "application/vnd.github+json",
+        "application/vnd.github.raw",
+    ]
+    assert all(r.get_header("Authorization") is None for r in seen.requests)
