@@ -129,6 +129,11 @@ window.Maity = window.Maity || {};
     drawWatch();
     // The note field as last drawn: it gets the focus back after a post.
     let noteField = null;
+    // A post from Add a note on its way, kept across the list being drawn again
+    // (an edit saved or cancelled meanwhile): the text sent, and the form's button
+    // and status line as last drawn, so the redrawn form stays busy and the text
+    // is cleared from the field shown when the post succeeds.
+    let posting = null, noteForm = null;
     const box = h("aside", { class: "card-panel", "aria-labelledby": "card-panel-title" },
       h("div", { class: "card-panel-head" }, h("span", { class: "card-id" }, c.id),
         h("span", { class: "card-panel-actions" }, watchButton,
@@ -309,27 +314,30 @@ window.Maity = window.Maity || {};
       text.value = draft;
       const status = M.statusLine();
       const submit = h("button", { type: "submit" }, M.t("cardpanel.notes.post"));
+      noteForm = { submit, status };
+      if (posting !== null) { submit.disabled = true; status.busy(M.t("cardpanel.notes.posting")); }
       // One post at a time: a second tap or Ctrl+Enter while the first is
       // on its way sends nothing; a refusal makes the button usable again.
-      let posting = false;
       append(notesBox, h("form", {
         class: "card-note-form",
         onsubmit: async (e) => {
           e.preventDefault();
-          if (posting) return;
+          if (posting !== null) return;
           if (!text.value.trim()) { text.focus(); return; }
-          posting = true;
-          submit.disabled = true;
-          status.busy(M.t("cardpanel.notes.posting"));
+          const sent = posting = text.value;
+          noteForm.submit.disabled = true;
+          noteForm.status.busy(M.t("cardpanel.notes.posting"));
           try {
-            await M.api.post(base + "/notes", { body: text.value });
+            await M.api.post(base + "/notes", { body: sent });
           } catch (err) {
-            posting = false;
-            submit.disabled = false;
-            status.fail(M.t("cardpanel.notes.not_posted"), M.boardEdit ? M.boardEdit.said(err) : err);
+            posting = null;
+            noteForm.submit.disabled = false;
+            noteForm.status.fail(M.t("cardpanel.notes.not_posted"), M.boardEdit ? M.boardEdit.said(err) : err);
             return;
           }
-          text.value = "";
+          posting = null;
+          // The text sent leaves the field as drawn now; anything typed since stays.
+          if (noteField && noteField.value === sent) noteField.value = "";
           await notes();
           if (noteField) noteField.focus();
         },

@@ -3595,6 +3595,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "note edit: sent with the reason, the new text and the mark shown, the focus back on Edit " + text(neNote("nte-0031")));
   expect(byId("card-note-body").value === "A draft, not sent yet.", "note edit: a draft in Add a note is kept when the list is drawn again");
   byId("card-note-body").value = "";
+  // A post on its way when the list is drawn again (an edit cancelled meanwhile): the redrawn form
+  // stays busy, and on success the text sent leaves the field shown, so it is not posted twice.
+  const cpRacePosts = [], cpRaceWas = win.Maity.api.post;
+  let cpRaceDone = null;
+  win.Maity.api.post = (p, b) => {
+    if (!p.endsWith("/notes")) return cpRaceWas(p, b);
+    cpRacePosts.push(b);
+    return new Promise((resolve) => { cpRaceDone = () => resolve(cpPost(p, b)); });
+  };
+  byId("card-note-body").value = "A race post";
+  cpForm().dispatch("submit"); await tick();
+  btn(neNote("nte-0031"), "Edit").click(); await tick();
+  btn(neNote("nte-0031"), "Cancel").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(byId("card-note-body").value === "A race post" && btn(cpForm(), "Post the note").disabled,
+    "card panel: a list drawn again while a note is being posted keeps the form busy");
+  cpForm().dispatch("submit"); await tick();
+  cpRaceDone(); for (let k = 0; k < 6; k++) await tick();
+  expect(cpRacePosts.length === 1 && byId("card-note-body").value === "" && !btn(cpForm(), "Post the note").disabled
+    && cpNotes().filter((n) => n.includes("A race post")).length === 1,
+    "card panel: the text posted leaves the field drawn meanwhile, so it is not sent twice " + JSON.stringify([cpRacePosts.length, byId("card-note-body").value]));
+  win.Maity.api.post = cpRaceWas;
   // One's own note: no reason needed; Cancel and Escape leave it as it was.
   const cpMine = cpPanel().querySelectorAll("li.card-note")[2].getAttribute("data-note");
   btn(neNote(cpMine), "Edit").click(); await tick();
@@ -10754,6 +10775,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   main.querySelector("form.admin-mail-test").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(JSON.stringify(testWrites[1]) === JSON.stringify(["/admin/settings/mail/test", {}]) && text(main.querySelector("form.admin-mail-test").parentNode).includes("Test mail sent."),
     "admin: an empty recipient sends no `to`, the fixture hub mails the verified address " + JSON.stringify(testWrites));
+  expect(await adminPost("/admin/settings/mail/test", { to: "" }).then(() => "sent", (err) => err.code + ":" + err.details.fields.to) === "invalid:invalid",
+    "admin: the fixture hub refuses an empty `to` as the hub does; only an absent one defaults");
   win.Maity.api.post = async (path) => { throw new win.Maity.api.ApiError("the request does not validate", 400, path, "invalid", { fields: { to: "no_verified_address" } }); };
   main.querySelector("form.admin-mail-test").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(text(main.querySelector("form.admin-mail-test .send-status")).includes("to: enter a recipient address"), "admin: a test without a recipient or a verified address is said for the field");

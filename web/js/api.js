@@ -2437,8 +2437,10 @@ window.Maity = window.Maity || {};
     ["POST", /^\/admin\/settings\/mail\/test$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
       // §16.3: without `to` the admin's own verified address, else no_verified_address.
-      if (!body.to && fixtures()["notifications.json"].settings.email.address_status !== "verified")
+      // An empty `to` is no address, as the hub has it; only an absent or null one defaults.
+      if (body.to == null && fixtures()["notifications.json"].settings.email.address_status !== "verified")
         fail(400, "invalid", "the request does not validate", path, { fields: { to: "no_verified_address" } });
+      if (body.to != null && !String(body.to).trim()) fail(400, "invalid", "the request does not validate", path, { fields: { to: "invalid" } });
       const value = fixtures()["admin-mail.json"];
       value.last_test = { ok: true, stage: null, smtp_code: 250, detail: null, at: nowIso() }; return value.last_test;
     }],
