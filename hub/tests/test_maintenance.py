@@ -217,6 +217,11 @@ def test_a_running_window_refuses_the_api_with_retry_after(
     badge = fresh.get("/badge/maintainer/maity.svg")
     assert badge.status_code == 503 and badge.content == b""
     assert fresh.get("/settings").status_code == 200
+    # signing out stays open: on a shared computer the way out of a session the window holds
+    csrf = fresh.get("/api/v1/auth/session").json()["csrf_token"]
+    out = fresh.post("/api/v1/auth/logout", headers={"X-CSRF-Token": csrf})
+    assert out.status_code == 200, out.text
+    assert fresh.get("/api/v1/auth/session").status_code == 401
     # the window ends by itself at `until`
     now.set(UNTIL)
     maintenance.forget()

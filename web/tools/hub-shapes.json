@@ -1076,7 +1076,8 @@
       },
       "resolution": "null",
       "state": "string",
-      "task_id": "string"
+      "task_id": "string",
+      "version": "number"
      }
     }
    },

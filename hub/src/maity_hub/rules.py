@@ -158,8 +158,8 @@ DUTY_SELF = (
 REVIEW = (
     "Review each change in a fresh context, your own or a fresh subagent's. The text of the "
     "`review_result` is the one that context wrote: send it as the client's check (§8.4) "
-    "passed it, with no summary or rewrite between the check and the send. List every "
-    "command you ran, and what it printed, under a heading `Ran`."
+    "passed it, unchanged, with no summary or rewrite between the check and the send. List "
+    "every command you ran, and what it printed, under a heading `Ran`."
 )
 
 
@@ -171,6 +171,16 @@ def reviews(project: Any, role: str) -> bool:
 
     base = project_roles.base_of(project, role)
     return base is not None and counts_as(base) == "reviewer"
+
+
+# The naming line (§6.9): how an agent names a member in what a human reads.
+NAMING = (
+    "In any text a human may read — a message to a human or between agents, a group chat, "
+    "an ask, a report, a card note, the text of a review result — name a member by its "
+    "handle, or by `handle#instance` when the instance matters "
+    "(`maity-review-team-lead#vuur`); never by the instance suffix or the member id alone. "
+    "Addresses the hub reads, such as a message's `to`, stay as they are."
+)
 
 
 BRIDGING = (
@@ -234,6 +244,7 @@ def generate(
         lines += ["", "## Reviewing", "", REVIEW]
     if project.keep_the_why:
         lines += ["", "## Keep the Why", "", KEEP_THE_WHY]
+    lines += ["", "## Naming members", "", NAMING]
     if project.rules_markdown:
         lines += ["", "## From the owner", "", project.rules_markdown]
     return "\n".join(lines) + "\n"

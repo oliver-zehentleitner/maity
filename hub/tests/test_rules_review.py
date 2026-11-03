@@ -48,4 +48,21 @@ def test_a_project_role_on_reviewer_gets_it_and_one_on_coder_does_not() -> None:
 def test_the_review_line_says_what_the_contract_says() -> None:
     for kept in ("fresh context", "fresh subagent", "`review_result`", "§8.4", "`Ran`"):
         assert kept in rules.REVIEW
-    assert "no summary or rewrite" in rules.REVIEW
+    assert "unchanged, with no summary or rewrite" in rules.REVIEW
+
+
+def test_the_review_line_sits_between_duty_and_keep_the_why() -> None:
+    project = _project()
+    project.keep_the_why = True
+    project.rules_markdown = "owner text"
+    text = rules.generate(project, "member", "reviewer", "the owner")
+    order = ["## On duty", "## Reviewing", "## Keep the Why", "## Naming members", "## From"]
+    assert [text.index(h) for h in order] == sorted(text.index(h) for h in order)
+
+
+def test_the_digest_renders_the_reviewer_document(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The review line is in the digest through the rendered reviewer document, not only as a
+    constant: a review line dropped from `generate` changes the digest too."""
+    digest = rules.text_digest()
+    monkeypatch.setattr(rules, "reviews", lambda project, role: False)
+    assert rules.text_digest() != digest

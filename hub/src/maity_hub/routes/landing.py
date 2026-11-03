@@ -160,3 +160,29 @@ def campaign_statistics(
             headers={"Content-Disposition": 'attachment; filename="campaigns.csv"'},
         )
     return JSONResponse(found)
+
+
+@router.get("/site/chrome")
+def get_site_chrome(request: Request, lang: str | None = None) -> Response:
+    """The header and footer of every page a visitor sees without a session, as one model in
+    one language (§16.7.5). Unauthenticated, on the public host only; cached as `GET /landing`."""
+    with engine_of(request).begin() as conn:
+        setting = landing.stored(conn)
+        stats = (
+            landing_stats.current(conn)
+            if setting["enabled"] and landing_stats.named(setting)
+            else None
+        )
+        body = render.chrome(
+            setting,
+            legal.public(legal.stored(conn)),
+            lang=lang,
+            accept_language=request.headers.get("accept-language"),
+            stats=stats,
+        )
+    tag = landing.etag(body)
+    headers = {"Cache-Control": "public, max-age=60", "ETag": tag, "Vary": "Accept-Language"}
+    wanted = request.headers.get("if-none-match", "")
+    if tag in [part.strip() for part in wanted.split(",")]:
+        return Response(status_code=304, headers=headers)
+    return JSONResponse(body, headers=headers)

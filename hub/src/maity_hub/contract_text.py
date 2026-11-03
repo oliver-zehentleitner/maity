@@ -162,12 +162,14 @@ def toc(markdown: str) -> list[dict[str, Any]]:
     them, at most `TOC_MAX` (§6.8 `toc`). A number that occurs once anchors as `s-<number>`;
     a heading without one, or with a number another heading shares, as `h-<position>`."""
     found = [h for h in _headings(markdown.splitlines(keepends=True)) if 2 <= h[1] <= 4]
-    found = found[:TOC_MAX]
     numbered = [(index, level, *_numbered(title)) for index, level, title in found]
+    # Counted over every heading of the file, before the cut: a number that occurs again
+    # past `TOC_MAX` is not unique, as the card's section read would find two.
     counts: dict[str, int] = {}
     for _, _, number, _ in numbered:
         if number is not None:
             counts[number] = counts.get(number, 0) + 1
+    numbered = numbered[:TOC_MAX]
     return [
         {
             "level": level,
@@ -246,17 +248,20 @@ def forget() -> None:
 
 # --- what the setting's name points to ----------------------------------------------------
 
-_trees: dict[tuple[str, str, str], dict[str, Any] | None] = {}
+_trees: dict[tuple[str, str, str], dict[str, Any]] = {}
 
 
 def _tree(fg: forge.Forge, repository: str, ref: str, directory: str) -> dict[str, Any] | None:
     """A directory's tree at a commit, which never changes: kept per commit and directory,
-    the oldest dropped beyond `TREES_KEPT`."""
+    the oldest dropped beyond `TREES_KEPT`. A tree the forge did not answer is not kept:
+    a 404 may be a refusal, and the next read asks again."""
     key = (repository, ref, directory)
     with _lock:
         if key in _trees:
             return _trees[key]
     found = fg.tree(repository, ref, directory)
+    if found is None:
+        return None
     with _lock:
         while len(_trees) >= TREES_KEPT:
             del _trees[next(iter(_trees))]
