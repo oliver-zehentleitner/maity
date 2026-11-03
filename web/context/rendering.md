@@ -656,8 +656,8 @@ the session themselves. A catalog per language keeps nine languages off every pa
 **Type:** workaround
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-ya56x9gx986r, 2026-11-01; docs/api.md §6.2 (a key without a translation reads in English); main after #1285 and #1284, fixed in #1296 (2026-11-03)
-**Revisit when:** the release workflow of the hub runs `make release-check` itself, or a language with other plural rules joins the ten
+**Source:** card tsk-ya56x9gx986r, 2026-11-01; docs/api.md §6.2 (a key without a translation reads in English); main after #1285 and #1284, fixed in #1296 (2026-11-03); the merge-time check from the reviews of #1298 and #1300 (2026-11-03)
+**Revisit when:** the release workflow of the hub runs `make release-check` itself, a language with other plural rules joins the ten, or CI checks a pull request's merge with the current main (the workaround then goes)
 
 Placeholders that differ, a key English lacks and impossible plural forms fail `make check`, since
 they break a sentence on screen. A missing or out-of-date key fails only `make release-check`: every
@@ -665,16 +665,18 @@ English text a PR adds would otherwise have to arrive in ten languages in that P
 translation follows is kept per key as two hashes in `i18n/<lang>.meta.json`, its own text beside the
 English: when the translation's text changes it follows today's English, with no step to remember.
 
-The other side of this: a key English drops fails `make check` in every language that still has it. A
-translation PR tested against an older main can therefore turn main red when it lands after the PR
-that dropped the key; on 2026-11-03 zh-Hans (#1284) landed right after #1285 had dropped three
-`sessions.*` keys, and #1296 removed them again. A language PR's keys are therefore compared with the
-`en.json` of the main it merges into, just before the merge; a clean `git merge-tree` does not show this.
+The other side of this: a key English drops fails `make check` in every language that still has it.
+Two PRs that each pass against an older main can therefore turn main red together, in either order: a
+translation PR that lands after the PR that dropped the key, or a PR that drops a key from `en.json`
+after a translation PR added it to a language the dropping PR did not know. On 2026-11-03 zh-Hans
+(#1284) landed right after #1285 had dropped three `sessions.*` keys, and #1296 removed them again. A
+clean `git merge-tree` does not show this.
 
-**Workaround:** until CI checks a PR's merge with the current main, whoever merges a language PR first
-runs `python3 web/tools/check.py` on that merge (or on the PR rebased onto current main) and merges
-only on 0 findings. The PR's green CI ran against the older main, so it does not count. Keeping a
-dropped key in the languages does not help either: a key English lacks is a finding by design.
+**Workaround:** until CI checks a PR's merge with the current main, a PR that changes `web/i18n/en.json`
+or a language file is checked against the main it merges into, just before the merge; `CONTRIBUTING.md`
+("Before merging a change to the web catalogs") says how. The PR's green CI ran against the older main,
+so it does not count. Keeping a dropped key in the languages does not help either: a key English lacks
+is a finding by design.
 
 **Rejected alternatives:**
 - Finding out-of-date keys from `git log`: shallow CI clones have no history, and a reformat of the
@@ -1055,6 +1057,10 @@ In Korean, labels and messages are 해요체 and legal and security texts 합니
 role is `{role} 역할을 가진 모든 사람` wherever it stands, and a built-in role keeps its lowercase word, as in
 Japanese (`coder 전원`). Redacting is `제거` on every key, the word on the button, in the portal and in the hub's mails
 alike. A step-up's subject is a noun phrase (`2단계 인증 해제`, `계정 삭제`), so that every one reads alike.
+The bell's texts about security alerts (`bell.security_hint`, `bell.mark_all.ask`, `bell.skipped.*`) are 해요체 like
+the rest of the bell, a message in a list, while `sessions.*` stays 합니다 as the security page. Confirming a sign-in is
+`확인` and marking an alert read is `읽음으로 표시` on every key, and This was me is `본인입니다` as on
+`sessions.this_was_me`, so that marking read never reads as confirming (#1301, 2026-11-03).
 An imprint is `운영자 정보` everywhere, the word the hub's footer had first and the one Japanese uses (`運営者情報`); the
 terms are `이용약관`, without a space. Changing a password and resetting someone's second factor (`password.*`,
 `users.reset.*`) are security texts and so 합니다, like `security.*` and the hub's reset mail, and the hints on deleting
