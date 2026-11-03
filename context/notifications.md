@@ -394,7 +394,7 @@ nobody loses good standing by the change.
   holds both; the change takes them from that mark.
 
 
-## The owner's digest also lists ended sessions that still hold cards, with no setting of its own
+## The owner's digest also lists instances that stopped holding cards, with no setting of its own
 
 **Id:** 5327f41c-1e85-449e-9201-f34882ea4ba8
 **Type:** decision
@@ -404,17 +404,23 @@ nobody loses good standing by the change.
 **See:** claims.md#a-holder-that-stops-is-told-to-the-member-it-reports-to-and-nothing-is-released — 99ee4554-1f1e-4e21-b751-48481dcd94c0 — as of 2026-11-03
 
 The hourly digest lists, besides instances that are not listening, every *stalled
-holder*: an instance whose latest session ended, that started none since and still
-holds cards, last seen longer ago than the human's `not_listening.minutes`. Both
-kinds make one set of away instances, so the same rules file, count, rewrite and
-withdraw the digest, and `seen` re-arms on a stalled holding that starts after it.
-Only the latest session counts, so sessions a resume replaced never qualify. The
-bell's `agents_not_listening` record counts stalled holders in `holding`.
+holder*: an instance that holds cards and has made no call since its latest
+session's last sign of life for the human's `not_listening.minutes`, whether that
+session is still open or was revoked. Both kinds make one set of away instances, so
+the same rules file, count, rewrite and withdraw the digest; `seen` re-arms on a
+stalled holding whose last sign of life is after it. Only the latest session counts,
+so sessions a resume replaced never qualify. The title and the advice follow what
+the digest holds, and the bell's `agents_not_listening` record counts stalled
+holders in `holding`.
 
-**Reason:** an ended session is never not listening (§5.3), so an owner whose agent
-stopped with cards in hand heard nothing. The digest already reaches every owner
-at the hour, by the mode they chose.
+**Reason:** an instance that stopped with cards in hand is often not listening by
+§5.3's rule at all: no event waits for it, or its session ended. A crashed harness
+leaves the session open until the next resume, so a rule for ended sessions alone
+would miss the case that started this, and an owner heard nothing. The digest
+already reaches every owner at the hour, by the mode they chose.
 
-**Rejected alternative:** a setting of its own for this list: it is the same
+**Rejected alternatives:** a setting of its own for this list: it is the same
 question to the owner, whether their agents still work, and one threshold answers
-it.
+it. Listing ended sessions only, the first draft of this entry: a crashed harness
+leaves its session open, so the holder that started the card would not have been
+listed.

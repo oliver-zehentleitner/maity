@@ -4126,36 +4126,48 @@ project (§6.2, "A member's own settings in a project") or else their
 personal `not_listening.minutes` (§18.4, default 60) — or longer:
 
 - an episode (above);
-- a *stalled holder*: the instance's latest session has ended, the
-  instance has started no session since, and it still holds at least one
-  claim in the project (§6.5). It starts when that session ends and its
-  length is counted from the session's `last_seen_at`; it ends when the
-  instance starts a session again (a resume, §5.2) or holds no claim any
-  more. Only the instance's latest session counts: sessions that a
-  resume replaced never make an instance away, and an instance that runs
-  a live session is judged by its episodes alone.
+- a *stalled holder*: the instance holds at least one claim in the
+  project (§6.5) and has made no call since its latest session's
+  `last_seen_at`, whether that session is still open — a harness that
+  crashed or was closed leaves it open until the next resume or a
+  revocation (above) — or ended by a revocation. Its length is counted
+  from that `last_seen_at`, the last sign of life; it ends when the
+  instance calls again (a resume included, §5.2) or holds no claim any
+  more. Only the instance's latest session counts, so a session that a
+  resume replaced never makes it away; an instance or membership under
+  any pause (§6.17) is not a stalled holder, as it is never not
+  listening.
 
 Both kinds make up one set of away instances, for every rule below:
-filing, the count `<n>`, rewriting, withdrawal and the answer `seen`.
+filing, the count `<n>`, rewriting, withdrawal and the answer `seen`. An
+instance that is both is one entry, a stalled holder, since its line
+names the cards.
 Once an hour, on the hour (UTC), the hub's worker looks at every such
 instance of the human's profiles across all projects and, when there is
 at least one and the human's `not_listening.mode` (§18.4) is
 `inbox`, keeps one personal request (§7) open to the human (`to:
 "human:<id>"`): class `info`, one option `seen`, `asked_by` `null`,
 `filed_by: "hub"`, no `task_id`, no project; `title` `<n> of your agent
-instances are not listening`, `summary` one line per instance —
+instances are not listening` when every entry is an episode, else `<n>
+of your agent instances are away`; `summary` one line per episode —
 `<agent handle> (<instance>) in <owner>/<slug>, since <time> (UTC)` —
 then one line per stalled holder —
 `<agent handle> (<instance>) in <owner>/<slug> holds <card ids>, last
-seen <time> (UTC), <reason>`, `<reason>` `limit` while the instance's
-stored limit runs (§6.12), else `session_ended` — and below them `Their harness may
-have stopped its wait loop, or the agent is busy without waiting; start the loops again or end the
-sessions.` There is at most one such request per human: an open one is
+seen <time> (UTC), <reason>`, `<reason>` `limit` while the agent's
+stored limit runs (§6.12), else `session_ended` when the session was
+revoked, else `not_listening` — and below them, when there is an
+episode, `Their harness may have stopped its wait loop, or the agent is
+busy without waiting; start the loops again or end the sessions.`, and
+when there is a stalled holder, `Instances that stopped holding cards:
+start them again, or have their cards moved.` There is at most one such request per human: an open one is
 rewritten in place (same id, `summary` and `title` replaced, no new
 request event) when the set of away instances changed, and the hub
 withdraws it itself when none is away any more. Answering `seen`
 closes it; the next hour files a new one only for an instance whose
-episode or stalled holding started after that answer. With `bell` the hub keeps, at the
+episode started after that answer, or whose stalled holding did, a
+stalled holding starting at its `last_seen_at`: an instance still
+stalled since before the answer is not filed again, and one that calls
+and stops again is. With `bell` the hub keeps, at the
 same hours and by the same rules, one account record
 `agents_not_listening` `{instances: <n>, holding: <n>}` instead of a
 request (`holding`: how many of those instances are stalled holders,
@@ -5236,7 +5248,7 @@ one:
 
 | Setting | Values | Personal default |
 |---|---|---|
-| `not_listening.minutes` | `null` or 10–1440 | `not_listening.minutes` in the notification settings (§18.4); how long an episode of one of the human's agent instances in this project lasts before it counts as away (§5.3) |
+| `not_listening.minutes` | `null` or 10–1440 | `not_listening.minutes` in the notification settings (§18.4); how long an episode of one of the human's agent instances in this project lasts, or how long a stalled holder has made no call, before it counts as away (§5.3) |
 
 ### 6.3 Agent profiles
 
@@ -5742,29 +5754,53 @@ cards, and its leases then run out unnoticed. The hub says so; it
 releases nothing and changes no lease:
 
 - `holder_stalled` (§8.2) when an instance that holds at least one claim
-  stops: it declares a limit (`POST /me/limit` from the agent, or a
-  runner's `rate_limited` report, §6.12; `reason: limit`, with `limit:
-  {reason, until}`), its session ends because its credential or the
-  instance is revoked (`session_ended`; a session that ends any other
-  way, or is replaced by a new one of the same instance, says nothing,
-  since the claim moves on with the instance), or a not-listening
-  episode of its session starts (§5.3, `not_listening`). Payload
-  `{member_id, instance, session_id, tasks: [{id, title, lease_until}],
-  reason, limit?, last_seen_at}`, one event per start, naming every card
-  the instance holds in the project.
-- `claim_expired` (§8.2) once per expiry, when the hub's worker (every
-  minute) finds a claim whose `lease_until` has passed: `{task_id, title,
-  member_id, instance, lease_until, reason, limit?, last_seen_at}`, with
-  `reason: lease_expired`, or `limit` while the holder's stored limit
-  runs (with `limit: {reason, until}`). A renewal of the lease makes the
-  next expiry count again.
+  in the project stops, for one of three causes:
+  - a limit starts for the agent (`POST /me/limit` from the agent, or a
+    runner's `rate_limited` report, §6.12): a limit is the member's, so
+    the hub emits one event for each of the agent's instances that holds
+    a claim in the project, whichever instance declared it. Only the
+    start counts: a declaration while a limit already runs, which only
+    moves `until`, and a cleared limit emit nothing;
+  - its session ends because its credential or the instance is revoked
+    (`session_ended`). Not a replacement: a join with `replaces`
+    (`revoked_reason: replaced`, §6.17) and a runner's rejoin (§15.9)
+    move the claims to the new instance, and a session that ends any
+    other way, or is replaced by a new one of the same instance, says
+    nothing either, since the claim moves on with the instance;
+  - a not-listening episode of its session starts (§5.3,
+    `not_listening`). It comes together with that episode's
+    `member_not_listening`, to the same member: both stand for one
+    episode, and the member re-routes once.
 
-Both wake the member the agent reports to (§6.2), or, when `reports_to`
-is `null`, are read by `trust:admin` without waking it, as
-`member_not_listening` does; the agent's human owner, when a member,
-and the holding instance read them and are not woken. The holder is
-named so that its next resume shows why its cards were taken; waking it
-would not reach an instance that stopped.
+  Payload `{member_id, instance, session_id, tasks: [{id, title,
+  lease_until}], reason, limit?, last_seen_at}`, naming every card the
+  instance holds in the project.
+- `claim_expired` (§8.2) when the hub's worker (every minute) finds
+  claims whose `lease_until` has passed: one event per instance and pass,
+  since an instance's leases are renewed together (§2.4) and run out in
+  the same minute, naming each such claim once — `{member_id, instance,
+  session_id, tasks: [{id, title, lease_until}], reason, limit?,
+  last_seen_at}`. A claim counts once per expiry; a renewal of its lease
+  makes the next expiry count again.
+
+`reason` is `limit`, with `limit: {reason, until}`, whenever the agent's
+stored limit runs at the moment of the event, whatever the cause, since
+the declared reason says most (§6.12); otherwise it is the cause:
+`session_ended` or `not_listening` for `holder_stalled`, `lease_expired`
+for `claim_expired`.
+
+Both wake the member the agent reports to (§6.2) when it is an agent;
+when `reports_to` is `null` they are read by `trust:admin` without
+waking them, as `member_not_listening` does. A human the agent reports
+to reads them in the project's events and is not notified, since an
+agent's outage as such is no notification (§18.1); when they own the
+agent, the digest (§5.3) tells them. The agent's human owner, when a
+member, reads them too. The holding instance reads them through its
+`instance:` token, which is not wake-relevant for these two kinds: such
+an event never waits for the holder (§5.3), so it never starts an
+episode of its own. The holder is named so that its next resume shows
+why it was reported; waking it would not reach an instance that
+stopped.
 
 ### 6.6 Completion report
 
@@ -9630,8 +9666,8 @@ learns its content.
 | `session_started` | nobody; readable by owner and admins | session fields |
 | `session_model_changed` | `member:` of the member the agent reports to, `trust:admin`, the human owner of the agent when a member | `{member_id, instance, from: {harness, model}, to: {harness, model}, session_id}` (§5.3); wakes the reports-to member only |
 | `member_not_listening` | `member:` of the member the agent reports to, `trust:admin`, the human owner of the agent when a member | `{member_id, instance, session_id, since, ended}` (§5.3); `since` is the episode's start; `ended: false` when it starts (wakes the reports-to member only, nobody when `reports_to` is `null`), `ended: true` when it ends (wakes nobody) |
-| `holder_stalled` | `member:` of the member the agent reports to, else `trust:admin`; the human owner of the agent when a member; `instance:` of the holder | `{member_id, instance, session_id, tasks: [{id, title, lease_until}], reason, limit?, last_seen_at}` (§6.5); `reason` `limit`, `session_ended` or `not_listening`; `limit: {reason, until}` with `limit`. Wakes the reports-to member only; with `reports_to` `null` nobody; never the holding instance |
-| `claim_expired` | as `holder_stalled` | `{task_id, title, member_id, instance, lease_until, reason, limit?, last_seen_at}` (§6.5), once per expiry; `reason` `lease_expired` or `limit`. Wakes as `holder_stalled` |
+| `holder_stalled` | `member:` of the member the agent reports to, else `trust:admin`; the human owner of the agent when a member; `instance:` of the holder | `{member_id, instance, session_id, tasks: [{id, title, lease_until}], reason, limit?, last_seen_at}` (§6.5); `reason` `limit` (with `limit: {reason, until}`, whenever the agent's stored limit runs), `session_ended` or `not_listening`. Wakes the reports-to member when it is an agent; with `reports_to` `null` nobody; never the holding instance, for which it is not wake-relevant |
+| `claim_expired` | as `holder_stalled` | `{member_id, instance, session_id, tasks: [{id, title, lease_until}], reason, limit?, last_seen_at}` (§6.5), one per instance and worker pass, each claim once per expiry; `reason` `lease_expired` or `limit`. Wakes as `holder_stalled` |
 | `keep_the_why_reminder` | `instance:<member>#<id>` of the instance that has not confirmed (§6.23); readable as any instance-addressed event, by its agent (§8.4) | `{project, instance, session_id, acknowledge_by}`; once per outstanding commitment, at `acknowledge_by` or at the instance's next resume after it; wakes the instance |
 | `keep_the_why_acknowledged` | the agent's owner when a member, `trust:admin` | `{member_id, instance, session_id, acknowledged_at}`; never wakes anyone |
 | `session_paused` | the member itself, its `reports_to` (across owners too, §6.2), `trust:admin` | session fields, `paused` (`null` when a human lifts it) |
@@ -17155,9 +17191,9 @@ device; the browser's own permission is per browser and is not stored.
   (default), `bell` or `off`; `minutes` 10–1440 (default 60), how long
   an instance's episode lasts before it counts as away, the personal
   default that a project's own setting may override (§6.2); the same
-  threshold decides when a stalled holder, an instance whose latest
-  session ended while it holds cards, is away (§5.3), with no setting of
-  its own. A `PATCH` may
+  threshold decides when a stalled holder, an instance that holds cards
+  and has made no call since, is away (§5.3), with no setting of its
+  own. A `PATCH` may
   name either field. Any other value is `invalid` with
   `details.fields["not_listening.mode"]` or
   `["not_listening.minutes"]` `"invalid"`.
