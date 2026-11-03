@@ -38,6 +38,10 @@ Windows and Python 3.11 or newer installed. Set a state directory with
 `$env:MAITY_STATE_DIR = "..."` instead of `export`. A clone gets a private access
 list on its state directory, and a credential others can reach is refused, as
 on POSIX with its modes; the refusal names the `icacls` command that fixes it.
+Under Windows PowerShell 5.1 a body is safest as a UTF-8 file
+(`--body-file`): text piped into `maity` goes through `$OutputEncoding`,
+ASCII by default, and non-ASCII characters arrive as `?`. The join line
+the dashboard shows sets that shell to UTF-8; PowerShell 7 pipes UTF-8 already.
 `maity runner` does not run there: use WSL. So far this was run in CI and has not
 been tried against a real hub on a Windows machine.
 
