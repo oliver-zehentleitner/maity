@@ -1155,3 +1155,41 @@ each command is checked only once.
   ten pages need.
 - Linking only to the Markdown on GitHub: no navigation of its own, and
   `docs/api.md` as one page of 17,000 lines.
+
+## On a shared development machine, PostgreSQL runs share one server, and at most two smoke or PostgreSQL runs go at a time
+
+**Id:** c9165811-5049-4d24-9564-49669ad385a1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decisions at the jour fixe of 2026-11-03 (a PostgreSQL run before review for every hub change with a migration or raw SQL; one shared server and a cap on parallel runs), card tsk-7f9064s936kf
+**Revisit when:** contributors no longer share one machine, the shared machine gets enough memory for more parallel runs, or CI checks a pull request's merge with the current main on PostgreSQL before review
+
+A hub change that adds or changes an Alembic migration or raw SQL runs the tests it affects on
+PostgreSQL before it asks for review, and the reviewers run them there too or say that they checked
+on SQLite only. On a machine several contributors share, those runs use one server, which
+`hub/scripts/with_postgres.sh --start` leaves up. Each run gets a throwaway database of its own,
+named after whoever runs it. `make smoke` and `with_postgres.sh` each hold one of two run slots
+(`tools/run_slot.sh`, a lock file per slot), so a third run waits instead of starting. The commands
+are in `CONTRIBUTING.md`, "PostgreSQL runs and a shared machine".
+
+**Reason:**
+- SQLite does not show PostgreSQL's errors, and CI as the first PostgreSQL run finds them only
+  after the review.
+- Each contributor starting a server of their own, or running beside everyone else, pushed the
+  shared machine into memory reaps. The reaps ended other members' long-running processes without
+  their noticing.
+- A database per run keeps runs from seeing each other's tables on the one server.
+- A slot is held by an inherited file descriptor, so it lasts exactly as long as the command and
+  everything the command starts. The server itself is started with that descriptor closed, or it
+  would hold a slot for as long as it runs.
+
+**Rejected alternatives:**
+- A server per contributor: what was done before, and what used the memory.
+- A new tool around the `pgserver` package: `with_postgres.sh` already shared one server between
+  runs and stopped only a server it started. It needed a start for everyone, the run slot and the
+  database name, not a second way to do the same.
+- A third run that fails: the run would have to be started again by hand, so it waits and says
+  who holds the slots.
+- A cap in CI: each CI runner already has its own limits (the runner entries above), and the card
+  left CI out.
