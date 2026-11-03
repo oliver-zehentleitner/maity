@@ -4841,5 +4841,15 @@
   "why.type.constraint": "constraint",
   "why.type.decision": "decision",
   "why.type.incident": "incident",
-  "why.type.workaround": "workaround"
+  "why.type.workaround": "workaround",
+  "nav.contract": "Contract",
+  "contract.whole.title": "Contract",
+  "contract.whole.toc": "Contents",
+  "contract.whole.reading": "Reading the contract from the repository…",
+  "contract.whole.why.not_found_on_forge": "the file is not in the repository's default branch",
+  "contract.whole.why.not_markdown": "the name is no Markdown file in the repository (a directory, a link or a submodule), or the repository's tree is too large to check",
+  "contract.whole.why.too_large": "the file is larger than 4 MiB",
+  "contract.whole.why.not_text": "the file is not UTF-8 text",
+  "contract.meta.whole": "in the whole contract",
+  "overview.project.contract_forge": "on the forge"
 }

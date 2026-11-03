@@ -124,3 +124,36 @@ closed and unknown matches its uniform `not_found`.
 (the earlier `#/s/<slug>`, shown to everyone there, members included):
 §16.11 removes it, and `?as=public` gives members the same view at the
 one address.
+
+## A place on a page is a route and one checked anchor, written by `M.route` alone; in fixture mode it follows the route after a second `#`
+
+**Id:** e5a0c394-947a-4c7c-b830-09c655befa44
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.8 ("The whole contract": `/<owner>/<slug>/contract#s-6.8` opens a section, a contract card's section links there), §16.11; web/js/route.js `isAnchored`, `anchoredHref`, `jump`; the card tsk-6jz07t0080rk
+**Revisit when:** a second view needs places on its page, or fixture mode stops carrying the route in the fragment
+
+`M.route.isAnchored` accepts a route followed by one `#` and an anchor
+of a letter and then letters, digits, `.`, `_` or `-`, at most 100
+characters; `h()` writes it through `M.route.anchoredHref`, so in
+fixture mode it becomes `#/<owner>/<slug>/contract#s-6.8` and
+`M.route.current()` gives back the path and that `fragment`. `isRoute`
+itself still refuses every `#`, so a sign-in's `next` never carries one.
+A click on such a link to the page one is on only scrolls (`jump`) and,
+over http(s), names the place in the address with `replaceState`;
+nothing is drawn or read again. To another page it is a new history
+entry, and that view jumps once its text is drawn.
+
+**Reason:** §6.8 links sections by a fragment, and under the shell's
+`<base href="/assets/">` a bare `#anchor` leads into `/assets/` (the
+`index.html` entry above), so a place has to be written as its route
+plus the anchor. The anchor's characters are the hub's (`s-<number>`,
+`h-<n>`), so the check stays narrow.
+
+**Rejected alternative:** a query (`contract?section=6.8`): the
+contract names the fragment, and a query is part of the route, so each
+jump in the table of contents would be a new address the view draws
+again, re-reading a file of up to 4 MiB. Letting `isRoute` take a
+fragment: it is also the boundary for a sign-in's `next`, which the
+hub's own check refuses with a `#`.
