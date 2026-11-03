@@ -2171,6 +2171,14 @@
     "en": "c0774c185060fc13",
     "text": "ad1a123c94de0d8a"
   },
+  "cardpanel.notes.edit.conflict": {
+    "en": "73c22115d9adf50c",
+    "text": "7d1bf4141ccc5ab1"
+  },
+  "cardpanel.notes.edit.conflict_removed": {
+    "en": "1bca3c8bfd9a68d7",
+    "text": "4f508c169c290ca1"
+  },
   "cardpanel.notes.edit.field": {
     "en": "8399952d32486b55",
     "text": "e8264c715c8feb71"
@@ -2186,6 +2194,10 @@
   "cardpanel.notes.edit.not_saved": {
     "en": "ae6ac2366f27b54c",
     "text": "56c2abc24df04978"
+  },
+  "cardpanel.notes.edit.now": {
+    "en": "ad9fafb3a8b06ea8",
+    "text": "86f2c1b5f6cd80c5"
   },
   "cardpanel.notes.edit.reason": {
     "en": "8b25fce709d602f8",
@@ -2247,6 +2259,10 @@
     "en": "9469a102f04ea196",
     "text": "1050589a96b5a37d"
   },
+  "cardpanel.notes.remove.already": {
+    "en": "f3dcfb0722aee6d5",
+    "text": "770dacd974424696"
+  },
   "cardpanel.notes.remove.ask": {
     "en": "95b35bc6708d27a3",
     "text": "ce84ba13f9d737b6"
@@ -2254,6 +2270,10 @@
   "cardpanel.notes.remove.busy": {
     "en": "e58493ed3baaf9ae",
     "text": "115fa7b0eb602987"
+  },
+  "cardpanel.notes.remove.conflict": {
+    "en": "ba29805a8bce5620",
+    "text": "4ceabeebeeaa3cf8"
   },
   "cardpanel.notes.remove.failed": {
     "en": "3f9a5f41ede9b7a3",

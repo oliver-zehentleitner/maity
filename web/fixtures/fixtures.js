@@ -4163,7 +4163,8 @@ window.MAITY_FIXTURES = {
         "mentions": [],
         "resolution": null,
         "state": "open",
-        "task_id": "tsk-0001"
+        "task_id": "tsk-0001",
+        "version": 2
       },
       {
         "author": {
@@ -4182,7 +4183,8 @@ window.MAITY_FIXTURES = {
           "reason": "covered"
         },
         "state": "dismissed",
-        "task_id": "tsk-0001"
+        "task_id": "tsk-0001",
+        "version": 1
       },
       {
         "author": {
@@ -4202,7 +4204,8 @@ window.MAITY_FIXTURES = {
         "mentions": [],
         "resolution": null,
         "state": "open",
-        "task_id": "tsk-0001"
+        "task_id": "tsk-0001",
+        "version": 2
       }
     ]
   },

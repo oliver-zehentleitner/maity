@@ -51,6 +51,8 @@ class NoteIn(Written):
 class NoteEditIn(Written):
     body: str = markdown(min_length=1)
     reason: str | None = Field(default=None, max_length=notes.REASON_MAX)
+    # Required, refused as `"required"` after the caller's right to the note (§6.16).
+    base_version: int | None = Field(default=None, ge=0)
 
 
 class ResolveIn(Strict):
@@ -60,6 +62,10 @@ class ResolveIn(Strict):
 
 class RedactIn(Strict):
     reason: str = markdown(min_length=1)
+
+
+class NoteRedactIn(RedactIn):
+    base_version: int | None = Field(default=None, ge=0)
 
 
 # --- shared --------------------------------------------------------------------------------
@@ -329,6 +335,31 @@ def _note(conn: Connection, card: Any, note_id: str) -> Any:
     return row
 
 
+def _precondition(conn: Connection, mine: Membership, row: Any, base_version: int | None) -> None:
+    """An edit or a redaction names the note's `version` it was made on (§6.16): without one
+    `invalid`, on another `conflict` with the note as the caller reads it now."""
+    if base_version is None:
+        raise invalid({"base_version": "required"}, "name the note's version you read")
+    if base_version != row.version:
+        raise _conflict(conn, mine, row, base_version)
+
+
+def _conflict(conn: Connection, mine: Membership, row: Any, base_version: int) -> ApiError:
+    """`conflict` with the note as `mine` reads it now (§6.16). Also what a write gets that
+    passed the precondition and then lost the conditional UPDATE to another write on the
+    same version: always an error, never a silent success."""
+    return ApiError(
+        409,
+        "conflict",
+        "the note changed since you read it; read it and decide again",
+        {
+            "current_version": row.version,
+            "base_version": base_version,
+            "note": load_note(conn, row.id, mine),
+        },
+    )
+
+
 def _task_ref(card: Any) -> dict[str, Any]:
     return {"id": card.id, "title": card.title, "status": card.status}
 
@@ -447,9 +478,9 @@ def edit_note(
     slug: str, card_id: str, note_id: str, body: NoteEditIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     """The author edits their own note, a human with `events:admin` anyone's with a reason;
-    the old text is rewritten out of every event that carried it (§6.16)."""
-    if len(body.body.encode()) > notes.BODY_MAX:
-        raise invalid({"body": "too_long"}, "a note is at most 4 KiB")
+    the old text is rewritten out of every event that carried it (§6.16). The order of the
+    checks is the contract's: the right to the note, a redaction, the version, then the
+    rules of the body."""
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
@@ -469,6 +500,9 @@ def edit_note(
                 raise invalid({"reason": "required"}, "say why you edit someone else's note")
         if row.redacted:
             raise ApiError(400, "invalid", "a redacted note is not edited", {"reason": "redacted"})
+        _precondition(conn, mine, row, body.base_version)
+        if len(body.body.encode()) > notes.BODY_MAX:
+            raise invalid({"body": "too_long"}, "a note is at most 4 KiB")
         _refuse_closed(mine)
         key = str(mine.id)
         wait, mark = notes.POSTED.place(key)
@@ -478,7 +512,13 @@ def edit_note(
         found = mentions.resolve(conn, mine.project.id, body.body, "body")
         edited = {"by": mine.id, "at": clock.rfc3339(clock.now()), "reason": body.reason or None}
         if not notes.edit(conn, row, body.body, found, edited):
-            raise ApiError(400, "invalid", "a redacted note is not edited", {"reason": "redacted"})
+            # Another write won the row after it was read: say what it was.
+            now = _note(conn, card, note_id)
+            if now.redacted:
+                raise ApiError(
+                    400, "invalid", "a redacted note is not edited", {"reason": "redacted"}
+                )
+            raise _conflict(conn, mine, now, row.version)
         shown = load_note(conn, row.id)
         for event in notes.carriers(conn, mine.project.id, row):
             notes.rewrite(conn, event, shown)
@@ -555,14 +595,18 @@ def resolve_note(
 
 @router.post("/projects/{owner}/{slug}/tasks/{card_id}/notes/{note_id}/redact")
 def redact_note(
-    slug: str, card_id: str, note_id: str, body: RedactIn, request: Request, caller: AnyCaller
+    slug: str, card_id: str, note_id: str, body: NoteRedactIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
+    """A redaction names the version it was made on, so an admin never redacts a text it
+    has not seen (§6.16); repeating one on the version it left changes nothing."""
+
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         _redactor(mine, caller)
         mine = _locked(conn, mine)
         card = _card(conn, mine, card_id)
         row = _note(conn, card, note_id)
+        _precondition(conn, mine, row, body.base_version)
         if notes.redact(
             conn, mine.project.id, row, history.tombstone(body.reason, mine.principal_id)
         ):
@@ -575,6 +619,10 @@ def redact_note(
                 actor=caller.actor(mine.id),
                 subject=("task", card.id),
             )
+        elif not row.redacted:
+            # Another write won the row after it was read, an edit or a redaction: of two
+            # writes on one version one wins, the other gets `conflict` (§6.16).
+            raise _conflict(conn, mine, _note(conn, card, note_id), row.version)
         return idempotency.Outcome(200, "note", row.id, load_note(conn, row.id, mine))
 
     return idempotency.run(engine_of(request), request, caller, action)

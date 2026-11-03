@@ -342,7 +342,10 @@ too.
    in place; a reason is required for another's note) and **Remove** for an
    owner or admin (`POST …/notes/{note_id}/redact`, a reason asked first; the
    tombstone with the reason only for those the hub gives it, §8.5; still
-   allowed in a closed project, Edit not), and the history (`GET …/tasks/{id}/history`, newest first,
+   allowed in a closed project, Edit not); both send the note's `version` as
+   `base_version`, and on `conflict` nothing changes: Edit shows the note as
+   it is now above the writer's own text and saves again on that version,
+   Remove lists the note as it is now (§6.16), and the history (`GET …/tasks/{id}/history`, newest first,
    a title's or description's change as its diff). **Watch** in the bar
    (`PUT` or `DELETE …/tasks/{id}/watch`) marks the card **Watching** on the
    board; while it is on, **Updates** lists the card's `update` messages from
