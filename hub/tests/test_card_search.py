@@ -191,6 +191,8 @@ def test_a_redacted_note_is_not_searched(owner: flow.Human) -> None:
     assert owner.get("/projects/maintainer/maity/tasks?q=s3cret").json()["items"][0]["match"] == [
         "note"
     ]
-    redacted = owner.post(f"{path}/{posted['id']}/redact", {"reason": "secret"})
+    redacted = owner.post(
+        f"{path}/{posted['id']}/redact", {"reason": "secret", "base_version": posted["version"]}
+    )
     assert redacted.status_code == 200, redacted.text
     assert owner.get("/projects/maintainer/maity/tasks?q=s3cret").json()["items"] == []

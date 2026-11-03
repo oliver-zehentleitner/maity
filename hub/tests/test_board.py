@@ -394,7 +394,7 @@ def test_a_redacted_note_keeps_its_place_and_its_event_is_redacted(
     posted = note(owner, card, "token: hunter2 @maintainer").json()
     done = owner.post(
         f"/projects/maintainer/maity/tasks/{card['id']}/notes/{posted['id']}/redact",
-        {"reason": "secret"},
+        {"reason": "secret", "base_version": posted["version"]},
     )
     assert done.status_code == 200, done.text
     assert done.json()["body"]["redacted"] is True and done.json()["mentions"] == []

@@ -3564,6 +3564,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   cpForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(cpPosts.length === cpBefore + 2 && cpNotes().length === 4, "card panel: the note is sent again after the refusal");
   // Edit and Remove (§6.16): the owner edits another's note with a reason, the old text gone, "edited" shown; Remove leaves the tombstone.
+  const neRmPath = () => "/projects/maintainer/maity/tasks/tsk-0001/notes/nte-0031";
   const neNote = (id) => cpPanel().querySelectorAll("li.card-note").find((li) => li.getAttribute("data-note") === id);
   const cpPatches = [], cpPatch = win.Maity.api.patch;
   win.Maity.api.patch = (p, b) => { cpPatches.push([p, b]); return cpPatch(p, b); };
@@ -3578,7 +3579,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "note edit: another's note is not sent without a reason");
   cpEditReason.value = "  scope  ";
   neNote("nte-0031").querySelector("form.card-note-edit-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
-  expect(JSON.stringify(cpPatches[0]) === JSON.stringify(["/projects/maintainer/maity/tasks/tsk-0001/notes/nte-0031", { body: "The CLI needs `--no-code` and `--quiet`.", reason: "scope" }])
+  expect(JSON.stringify(cpPatches[0]) === JSON.stringify(["/projects/maintainer/maity/tasks/tsk-0001/notes/nte-0031", { body: "The CLI needs `--no-code` and `--quiet`.", base_version: 2, reason: "scope" }])
     && text(neNote("nte-0031")).includes("Edited by @maintainer") && text(neNote("nte-0031")).includes(": scope")
     && text(neNote("nte-0031")).includes("The CLI needs --no-code and --quiet.") && !text(neNote("nte-0031")).includes("here too")
     && document.activeElement === btn(neNote("nte-0031"), "Edit"),
@@ -3594,17 +3595,37 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(neNote(cpMine), "Edit").click(); await tick();
   byId("card-note-edit-" + cpMine).value = "Check §6.16 and §8.5.";
   neNote(cpMine).querySelector("form.card-note-edit-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
-  expect(JSON.stringify(cpPatches[1][1]) === JSON.stringify({ body: "Check §6.16 and §8.5." }) && text(neNote(cpMine)).includes("Edited by @maintainer")
+  expect(JSON.stringify(cpPatches[1][1]) === JSON.stringify({ body: "Check §6.16 and §8.5.", base_version: 1 }) && text(neNote(cpMine)).includes("Edited by @maintainer")
     && !text(neNote(cpMine).querySelector(".card-note-edited")).includes(": "),
     "note edit: one's own note is saved without a reason, its mark without one");
   // A refusal keeps the form and says why.
-  win.Maity.api.patch = () => Promise.reject(Object.assign(new Error("the note was removed"), { code: "invalid", details: { reason: "redacted" } }));
+  win.Maity.api.patch = () => Promise.reject(Object.assign(new Error("a note is at most 4 KiB"), { code: "invalid", details: { fields: { body: "too_long" } } }));
   btn(neNote(cpMine), "Edit").click(); await tick();
   neNote(cpMine).querySelector("form.card-note-edit-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(neNote(cpMine).querySelector("form.card-note-edit-form") && text(neNote(cpMine)).includes("Not saved") && !btn(neNote(cpMine), "Save").disabled,
     "note edit: a refusal keeps the form and says so");
   neNote(cpMine).querySelector("form.card-note-edit-form").dispatch("keydown", { key: "Escape" }); for (let k = 0; k < 4; k++) await tick();
   expect(!neNote(cpMine).querySelector("form") && cpPanel(), "note edit: Escape in the form leaves the edit, not the card");
+  win.Maity.api.patch = cpPatch;
+  // A stale edit (§6.16): the note changed after the form opened; the hub's conflict shows the
+  // text as it is now, keeps the writer's own, says "not saved", and the next save names the new version.
+  const nePath = "/projects/maintainer/maity/tasks/tsk-0001/notes/nte-0031";
+  win.Maity.api.patch = (p, b) => { cpPatches.push([p, b]); return cpPatch(p, b); };
+  btn(neNote("nte-0031"), "Edit").click(); await tick();
+  await cpPatch(nePath, { body: "Changed by someone else.", base_version: 3, reason: "meanwhile" });
+  byId("card-note-edit-nte-0031").value = "My correction.";
+  byId("card-note-reason-nte-0031").value = "mine";
+  neNote("nte-0031").querySelector("form.card-note-edit-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  const neNow = neNote("nte-0031").querySelector(".card-note-now");
+  expect(cpPatches[cpPatches.length - 1][1].base_version === 3 && neNote("nte-0031").querySelector("form.card-note-edit-form")
+    && neNow && text(neNow).includes("The note now reads:") && text(neNow).includes("Changed by someone else.")
+    && byId("card-note-edit-nte-0031").value === "My correction." && text(neNote("nte-0031")).includes("changed in the meantime")
+    && !btn(neNote("nte-0031"), "Save").disabled,
+    "note edit: a stale edit is not saved, the note as it is now shown above the writer's own text " + text(neNote("nte-0031")));
+  neNote("nte-0031").querySelector("form.card-note-edit-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(cpPatches[cpPatches.length - 1][1].base_version === 4 && !neNote("nte-0031").querySelector("form")
+    && text(neNote("nte-0031")).includes("My correction.") && !text(neNote("nte-0031")).includes("someone else"),
+    "note edit: saved again on the version it was shown, the writer's text replaces it");
   win.Maity.api.patch = cpPatch;
   // Remove: a reason asked for (again when empty), the tombstone in place and focused; cancelled sends nothing.
   const cpPrompt = win.prompt, cpAsks = [];
@@ -3614,10 +3635,39 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.prompt = (q) => { cpAsks.push(q); return cpAsks.length === 1 ? "  " : "posted twice"; };
   btn(neNote(cpMine), "Remove").click(); for (let k = 0; k < 6; k++) await tick();
   expect(cpAsks.length === 2 && cpAsks[1].startsWith("A reason is needed")
-    && JSON.stringify(cpPosts[cpPosts.length - 1]) === JSON.stringify(["/projects/maintainer/maity/tasks/tsk-0001/notes/" + cpMine + "/redact", { reason: "posted twice" }])
+    && JSON.stringify(cpPosts[cpPosts.length - 1]) === JSON.stringify(["/projects/maintainer/maity/tasks/tsk-0001/notes/" + cpMine + "/redact", { reason: "posted twice", base_version: 2 }])
     && text(neNote(cpMine)).includes("The note was removed by Maintainer: posted twice") && !neNote(cpMine).querySelector(".md, .card-note-actions, .card-note-edited")
     && document.activeElement === neNote(cpMine).querySelector(".card-note-removed"),
     "note remove: asked for a reason, the tombstone in place, no buttons, the focus on it " + text(neNote(cpMine)));
+  // A stale removal: the note changed after the list was read; nothing is removed and the
+  // list shows the text as it is now.
+  await cpPatch(neRmPath(), { body: "Rewritten before the removal.", base_version: 5, reason: "meanwhile" });
+  win.prompt = () => "stale";
+  btn(neNote("nte-0031"), "Remove").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(cpPosts[cpPosts.length - 1]) === JSON.stringify([neRmPath() + "/redact", { reason: "stale", base_version: 5 }])
+    && !neNote("nte-0031").querySelector(".card-note-removed") && text(neNote("nte-0031")).includes("Rewritten before the removal.")
+    && text(cpPanel()).includes("Not removed: the note was changed in the meantime"),
+    "note remove: a stale removal removes nothing, the note as it is now listed " + text(neNote("nte-0031")));
+  // An edit of a note removed meanwhile: the hub answers `invalid`/`redacted` (removal before
+  // version, §6.16); the edit ends, the list shows the tombstone, the message says why.
+  btn(neNote("nte-0031"), "Edit").click(); await tick();
+  await cpPost(neRmPath() + "/redact", { reason: "removed meanwhile", base_version: 6 });
+  byId("card-note-edit-nte-0031").value = "Too late.";
+  byId("card-note-reason-nte-0031").value = "late";
+  neNote("nte-0031").querySelector("form.card-note-edit-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(!neNote("nte-0031").querySelector("form") && neNote("nte-0031").querySelector(".card-note-removed")
+    && text(cpPanel()).includes("Not saved: the note was removed in the meantime."),
+    "note edit: a note removed meanwhile ends the edit, its tombstone listed " + text(neNote("nte-0031")));
+  // A removal that comes second: someone removed the note first; the list shows the tombstone
+  // and the line says so, not "not removed".
+  const neLast = cpPanel().querySelectorAll("li.card-note").filter((li) => !li.querySelector(".card-note-removed")).pop().getAttribute("data-note");
+  const neLastPath = "/projects/maintainer/maity/tasks/tsk-0001/notes/" + neLast;
+  await cpPost(neLastPath + "/redact", { reason: "first", base_version: 1 });
+  win.prompt = () => "second";
+  btn(neNote(neLast), "Remove").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(neNote(neLast).querySelector(".card-note-removed") && text(cpPanel()).includes("Already removed: someone removed the note first.")
+    && !text(cpPanel()).includes("Not removed"),
+    "note remove: a note someone removed first is listed as removed, the line says so " + text(cpPanel().querySelector(".send-status")));
   win.prompt = cpPrompt;
   // A member without events:admin: Edit on their own note only, no Remove; a tombstone
   // without the reason the hub keeps from them (§8.5); a closed project takes no edit.

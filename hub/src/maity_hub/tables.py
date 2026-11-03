@@ -1508,6 +1508,8 @@ card_note = Table(
     Column("redacted", Boolean, nullable=False),
     Column("redaction", JSON_VALUE),
     Column("edited", JSON_VALUE),  # {by, at, reason} of the latest edit; no earlier text is kept
+    # 1 when posted, +1 per edit and per redaction: the `base_version` a write names (§6.16).
+    Column("version", Integer, nullable=False, server_default="1"),
     Index("ix_card_note_card_created", "card_id", "created_at", "id"),
     Index("ix_card_note_author_created", "author", "created_at"),
     **MYSQL_TABLE,
