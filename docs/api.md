@@ -4146,9 +4146,14 @@ Both kinds make up one set of away instances, for every rule below:
 filing, the count `<n>`, rewriting, withdrawal and the answer `seen`. An
 instance that is both is one entry, a stalled holder, since its line
 names the cards. An entry is known by its instance and its start: an
-episode by its `since`, a stalled holding by its `last_seen_at`; an
-episode that starts while the instance is a stalled holder does not
-change the entry, since its `last_seen_at` stays.
+episode by its `since`, a stalled holding by its `last_seen_at`. An
+entry lasts until the instance is back, not until its kind changes:
+an episode until it ends (above), a stalled holding until the instance
+calls again. While the instance is not back, an episode that runs on
+after a stalled holding ends (its cards moved, as the digest advises), a
+stalled holding that starts again (a card assigned back, §6.5) and a
+stalled holding that follows an episode are the same entry, keyed by
+the first one's start, and keep its silence below.
 
 Once an hour, on the hour (UTC), the hub's worker looks at every such
 instance of the human's profiles across all projects and, when there is
@@ -4174,7 +4179,8 @@ rewritten in place (same id, `summary` and `title` replaced, no new
 request event) when the set of away instances changed, and the hub
 withdraws it itself when none is away any more. Answering `seen`
 closes it and silences every entry it listed, for as long as that
-entry lasts; silences add up over every answered request. The next hour
+entry lasts (above), so a silence ends only when the instance is back;
+silences add up over every answered request. The next hour
 files a new request only when an away instance has an entry that no
 answered request silenced, and that request, like every rewrite of it,
 lists every away instance, silenced entries included, so the owner sees

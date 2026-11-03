@@ -411,7 +411,10 @@ the same rules file, count, rewrite and withdraw the digest. `seen` silences the
 entries it listed for as long as each lasts, and silences add up; a new request
 comes only for an entry no answer silenced, and lists every away instance, so two
 instances that stay away never take turns. An instance that became away only after
-the answer is a new entry, even when it stopped before it. Only the latest session
+the answer is a new entry, even when it stopped before it. An entry lasts until the
+instance is back (its episode ended, or it called again), whatever kind it turns into: a holder whose cards were moved,
+as the digest advises, and whose session now counts as not listening has not come
+back, and asking its owner again would answer the advice with the same question. Only the latest session
 counts, so sessions a resume replaced never qualify. A pause a human or the manager
 set excludes an instance, since someone decided to stop it; a pause the agent set
 itself does not, since, like a limit, it is the agent's own account of why it
@@ -433,4 +436,6 @@ listed. Re-arming `seen` on instances whose stop began after the answer, the
 second draft: a holder that stopped shortly before an answer about another instance
 would never have been filed, the crash case again. Silencing only the entries of the
 last answered request, the third draft: two instances that stay away would have been
-filed in turns every hour.
+filed in turns every hour. Keying an entry by its kind and start alone, the fourth
+draft: moving a stalled holder's cards turned the same silent instance into a new
+episode, and the owner was asked again.
