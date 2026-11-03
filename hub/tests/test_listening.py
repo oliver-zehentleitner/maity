@@ -234,7 +234,8 @@ def test_a_writer_still_busy_after_the_stop_ends_no_later_writer(
 ) -> None:
     """A writer still in a write when `stop` gives up (a write held by a lock) left its `None`
     for the next app's writer, which ended at once, while the old one went on writing to the
-    old engine (dzse at #1256). It now ends after that write; the next writer handles the rest."""
+    old engine (dzse at #1256). It now ends after that write; what was queued behind it goes
+    with the stopped app, and the next writer handles only the next app's writes."""
     monkeypatch.setattr(listening, "STOP_SECONDS", 0.1)
     monkeypatch.setattr(listening, "_heartbeat", lambda engine: None)
     gate = threading.Event()
@@ -243,7 +244,7 @@ def test_a_writer_still_busy_after_the_stop_ends_no_later_writer(
     def apply(engine: object, kind: str, wait_id: str, key: str) -> None:
         if not handled:
             gate.wait(10)  # the first write is held
-        handled.append((engine, kind))
+        handled.append((engine, key))
 
     monkeypatch.setattr(listening, "_apply", apply)
     old, new = _PgLike(), _PgLike()
@@ -253,6 +254,8 @@ def test_a_writer_still_busy_after_the_stop_ends_no_later_writer(
     try:
         listening.opened("ses-held")
         assert _until(lambda: listening._writes.empty() and listening._writes.unfinished_tasks == 1)
+        listening.opened("ses-behind-1")  # queued behind the held write
+        listening.opened("ses-behind-2")
         listening.stop(every=True)
         assert first.is_alive()  # still in its write
         listening.start(new)  # type: ignore[arg-type]
@@ -263,7 +266,7 @@ def test_a_writer_still_busy_after_the_stop_ends_no_later_writer(
         listening.opened("ses-next")
         listening._drained(5)
         assert second.is_alive()
-        assert handled == [(old, "open"), (new, "open")]
+        assert handled == [(old, "ses-held"), (new, "ses-next")]
     finally:
         gate.set()
         listening.stop(every=True)

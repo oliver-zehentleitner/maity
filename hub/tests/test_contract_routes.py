@@ -32,8 +32,6 @@ NOT_ROUTED = {
     ("GET", "/me/soul/versions"),
     ("POST", "/agents/{}/soul/rollback"),
     ("PATCH", "/me/preferences"),
-    # Contract without a route yet: tsk-74rvy49kbv6s (the frame of the public pages, §16.7.5).
-    ("GET", "/site/chrome"),
 }
 
 # Routes the contract no longer names, removed with the hub change of the same card. Remove an

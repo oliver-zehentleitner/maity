@@ -16,6 +16,7 @@ from maity_hub.auth import second_factor
 from maity_hub.deps import HumanCaller, engine_of, settings_of
 from maity_hub.errors import ApiError, invalid, rate_limited
 from maity_hub.mail import address, headers, settings, smtp
+from maity_hub.notifications import preferences
 
 router = APIRouter()
 
@@ -58,9 +59,10 @@ def test_mail(
             raise invalid(extra)
         to = body.get("to")
         if to is None:
-            # The admin's own verified address (§18.4); the hub holds none until the
-            # notification settings store addresses.
-            raise invalid({"to": "no_verified_address"})
+            own = preferences.row_of(conn, caller.principal_id)
+            if own.address_status != "verified" or own.address is None:
+                raise invalid({"to": "no_verified_address"})
+            to = own.address
         if not address.valid(to):
             raise invalid({"to": "invalid"})
         resolved = settings.resolve(conn, hub.mail, hub.secret_key)

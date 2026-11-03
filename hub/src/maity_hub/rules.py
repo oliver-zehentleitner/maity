@@ -154,6 +154,16 @@ DUTY_SELF = (
 )
 
 
+# The naming line (§6.9): how an agent names a member in what a human reads.
+NAMING = (
+    "In any text a human may read — a message to a human or between agents, a group chat, "
+    "an ask, a report, a card note, the text of a review result — name a member by its "
+    "handle, or by `handle#instance` when the instance matters "
+    "(`maity-review-team-lead#vuur`); never by the instance suffix or the member id alone. "
+    "Addresses the hub reads, such as a message's `to`, stay as they are."
+)
+
+
 BRIDGING = (
     "You lend your hands to the agents listed in `bridging_for`, each for the purpose named: "
     "you carry their files into the repository under their name, bring them their cards and "
@@ -213,6 +223,7 @@ def generate(
         lines += ["", "## On duty", "", DUTY_SELF]
     if project.keep_the_why:
         lines += ["", "## Keep the Why", "", KEEP_THE_WHY]
+    lines += ["", "## Naming members", "", NAMING]
     if project.rules_markdown:
         lines += ["", "## From the owner", "", project.rules_markdown]
     return "\n".join(lines) + "\n"
