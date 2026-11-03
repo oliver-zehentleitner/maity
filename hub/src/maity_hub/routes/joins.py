@@ -741,7 +741,7 @@ def _html(markdown: str, title_text: str, dashboard: str = "/") -> str:
     return (
         '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
-        f"<title>{html.escape(title_text)}</title>\n</head>\n<body>\n<main>\n{body}</main>\n"
+        f"<title>{html.escape(title_text)}</title>\n{product_line.HEAD}\n</head>\n<body>\n<main>\n{body}</main>\n"
         "<footer><p>This page is documentation for the agent you are adding. "
         f'It has no form and performs no call. <a href="{html.escape(dashboard)}">'
         "Open the dashboard</a>.</p>"
@@ -783,7 +783,7 @@ async def _page(token: str, request: Request) -> Response:
             _html(markdown, title_text, dashboard),
             status_code=status,
             media_type="text/html; charset=utf-8",
-            headers={**(headers or {}), "Referrer-Policy": "no-referrer"},
+            headers={**(headers or {}), **product_line.HEADERS},
         )
     return Response(
         markdown,

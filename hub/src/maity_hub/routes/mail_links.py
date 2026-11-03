@@ -50,12 +50,13 @@ def _page(
     html = (
         '<!doctype html><html><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width">'
-        f"<title>{escape(title)}</title></head><body>"
+        f"<title>{escape(title)}</title>{product_line.HEAD}</head><body>"
         f"<h1>{escape(title)}</h1>{paragraphs}{quoted}{form}"
-        f"{product_line.html(language)}</body></html>"
+        f"{product_line.html(language, 'mail_links')}</body></html>"
     )
-    # The token is in the address: no page that carries it may leak it in a `Referer`.
-    return HTMLResponse(html, status_code=status, headers={"Referrer-Policy": "no-referrer"})
+    # The token is in the address: no page that carries it may leak it in a `Referer`; the
+    # policy allows the product line's style block and nothing else inline.
+    return HTMLResponse(html, status_code=status, headers=product_line.HEADERS)
 
 
 def _language(conn: Connection, request: Request, token: str) -> str:

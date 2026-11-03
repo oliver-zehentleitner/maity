@@ -969,7 +969,7 @@ def form_document(*, lang: str, title: str, content: str, footer: str) -> str:
             + product_line.html(lang)
         ),
         languages=[],
-        style=STYLE + FORM_STYLE + product_line.STYLE,
+        style=STYLE + FORM_STYLE + product_line.STYLE + product_line.DARK,
     )
 
 

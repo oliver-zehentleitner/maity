@@ -4,15 +4,19 @@ of the platform's own interface, on the hub's own pages as on the dashboard's, a
     [Maity icon] Maity 2026 · Found a bug? ·
     Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity icon]
 
-The hub's pages load no file and many allow no style (`default-src 'self'`, the link pages'
-`default-src 'none'`), so the icons are inline SVG with presentation attributes only and the
-line needs no stylesheet: `<small>` keeps it small. A page whose policy allows a stylesheet
-centres and mutes the line and switches the Maity mark's fill under a dark theme with
-`STYLE`; every other page shows the light mark in either theme.
+The hub's pages load no file, so the icons are inline SVG with presentation attributes only.
+The line's look is one fixed block, `STYLE`: centred and muted. A page whose policy allows
+inline style (the registration page) puts it into its own stylesheet, with `DARK` for its
+dark theme. The pages whose policy is the hub's `default-src 'self'` (the mail link pages,
+the sign-in link page, the join page, the `503` maintenance page) put `HEAD` into their
+`<head>` and answer with `HEADERS`: that policy allows exactly this block by its hash, never
+`'unsafe-inline'`, and those pages have no dark theme, so the mark keeps its light fill.
 """
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import re
 from html import escape
 
@@ -50,16 +54,27 @@ _GITHUB_MARK = (
     ' .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>'
 )
 
-# For a page whose policy allows its own stylesheet: the line centred and muted, as the
-# dashboard draws it (§16.13, "How it looks"), and the dark mark's colours
-# (brand/maity-mark-small-dark.svg) over the presentation attributes.
+# The line centred and muted, as the dashboard draws it (§16.13, "How it looks"). A page
+# without a `--muted` of its own gets the dashboard's light muted colour.
 STYLE = (
-    ".product-line{text-align:center;color:var(--muted,inherit);margin:1.5rem 0;padding:0 1rem}"
-    ".product-line p{margin:0}.product-line a{color:inherit}"
+    ".product-line{text-align:center;color:var(--muted,#5f6b76);margin:1.5rem 0;padding:0 1rem;"
+    "border:0}.product-line p{margin:0}.product-line a{color:inherit;margin:0}"
     ".product-line svg{vertical-align:-2px}"
+)
+# A page with a dark theme: the dark mark's colours (brand/maity-mark-small-dark.svg) over
+# the presentation attributes.
+DARK = (
     "@media (prefers-color-scheme: dark){.product-mark-t{fill:#4c8dff}"
     ".product-mark-seat{fill:#e6e9ec}}"
 )
+# For a page whose policy allows no inline style: the block, and the policy that allows
+# this block and no other (CSP 3, a hash source over the element's exact text). A change to
+# `STYLE` changes the hash with it; tests/test_product_line.py checks they agree.
+HEAD = f"<style>{STYLE}</style>"
+STYLE_HASH = "sha256-" + base64.b64encode(hashlib.sha256(STYLE.encode()).digest()).decode()
+CSP = f"default-src 'self'; style-src '{STYLE_HASH}'"
+# The token, where one is in the path, goes on in no `Referer` (§1.1, §16.13).
+HEADERS = {"Content-Security-Policy": CSP, "Referrer-Policy": "no-referrer"}
 
 
 def _link(href: str, inner: str, label: str | None = None) -> str:
@@ -94,13 +109,18 @@ def _sentence(language: str) -> str:
     return "".join(out)
 
 
-def html(language: str) -> str:
+def html(language: str, section: str | None = None) -> str:
     """The line as a `<footer>`, in the language of the page it ends; the year from the hub's
-    clock, in UTC, when the page is rendered."""
+    clock, in UTC, when the page is rendered. `section` names the page's own words: where
+    the language has none for it yet, the page is English and so is its line."""
+    if section is not None and not catalog.speaks(section, language):
+        language = "en"
     bug = catalog.section("product", language)["bug"]
     parts = (
         f"{_MAITY_MARK} Maity {clock.now().year}",
         _link(ISSUES, escape(bug)),
         _sentence(language),
     )
-    return f'<footer class="product-line"><p><small>{" · ".join(parts)}</small></p></footer>'
+    # The separators are drawn, not read, as on the dashboard.
+    dot = '<span aria-hidden="true"> · </span>'
+    return f'<footer class="product-line"><p><small>{dot.join(parts)}</small></p></footer>'

@@ -284,9 +284,9 @@ def _token(hub: Settings, token: str) -> dict[str, Any] | None:
 
 def _dead() -> HTMLResponse:
     return HTMLResponse(
-        f"<h1>This link no longer works.</h1>{product_line.html('en')}",
+        f"{product_line.HEAD}<h1>This link no longer works.</h1>{product_line.html('en')}",
         status_code=404,
-        headers={"Referrer-Policy": "no-referrer"},
+        headers=product_line.HEADERS,
     )
 
 
@@ -318,11 +318,11 @@ def link_page(token: str, request: Request) -> HTMLResponse:
     response = HTMLResponse(
         '<!doctype html><html><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width">'
-        f"<title>{escape(title)}</title></head><body><h1>{escape(title)}</h1>"
+        f"<title>{escape(title)}</title>{product_line.HEAD}</head><body><h1>{escape(title)}</h1>"
         f'<form method="post"><input type="hidden" name="form" value="{form}">'
         f'<button type="submit">{button}</button></form>'
-        f"{product_line.html(language)}</body></html>",
-        headers={"Referrer-Policy": "no-referrer"},
+        f"{product_line.html(language, 'sign_in')}</body></html>",
+        headers=product_line.HEADERS,
     )
     response.set_cookie(
         FORM_COOKIE,
