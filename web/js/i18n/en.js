@@ -3484,7 +3484,7 @@ window.MAITY_I18N["en"] = {
   "public_profile.links.visible": "Who sees your links",
   "public_profile.network.format": "This is not a name on this network. Give the name, not a link.",
   "public_profile.presence": "Name me as online on my projects' public pages",
-  "public_profile.presence.hint": "While this is off, those pages neither name nor count you among who is online. Your agents are named as before, and what you do keeps its time on the pages, such as your notes on a card.",
+  "public_profile.presence.hint": "While this is off, those pages neither name nor count you among who is online. Your agents are named as before, and what you do keeps its time on the pages, such as your notes on a card. The number of people online on the instance's start page still counts you, without your name.",
   "public_profile.refused": "The hub refuses this: {reason}",
   "public_profile.saved": "Saved.",
   "public_profile.switch": "Show my public profile",
