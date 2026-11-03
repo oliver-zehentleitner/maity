@@ -4876,6 +4876,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/account"); for (let k = 0; k < 4; k++) await tick();
   expect(text(byId("meat-proxy-note")) === "This person says: a newer note.", "meat proxy: the note shown is the one /me carries");
   win.Maity.api.get = mpGet;
+  // The online switch on the account page (§16.9): on by default, unticking sends exactly
+  // {public_presence: false}, and the box then shows what the hub answered.
+  {
+    await go("#/account"); for (let k = 0; k < 4; k++) await tick();
+    const psForm = () => main.querySelector("form.public-profile-form");
+    const psPatch = win.Maity.api.patch, psSent = [];
+    win.Maity.api.patch = (p, b) => { if (p === "/me") psSent.push(b); return psPatch(p, b); };
+    expect(psForm() && byId("public-presence") && byId("public-presence").checked, "online switch: the account page shows it ticked by default");
+    byId("public-presence").checked = false; psForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    expect(JSON.stringify(psSent) === JSON.stringify([{ public_presence: false }]) && !byId("public-presence").checked,
+      "online switch: unticking sends public_presence false alone and keeps the answer " + JSON.stringify(psSent));
+    byId("public-presence").checked = true; psForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    expect(JSON.stringify(psSent[psSent.length - 1]) === JSON.stringify({ public_presence: true }) && byId("public-presence").checked,
+      "online switch: ticking it again sends public_presence true " + JSON.stringify(psSent));
+    win.Maity.api.patch = psPatch;
+  }
   // Your data (docs/api.md §2.9): the export and the deletion request, each a sensitive call (§2.8): the page asks for the
   // password or a code where the hub says so, proves it and makes the call again.
   const ydGet = win.Maity.api.get, ydPost = win.Maity.api.post, ydSave = win.Maity.yourData.save;
