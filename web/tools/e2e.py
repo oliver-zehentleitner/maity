@@ -2830,6 +2830,17 @@ def notifications_step(run: Run, page: Page) -> None:
     if lead:  # on a phone the Chats page carries the Lead the header hides there
         page.set_viewport_size({"width": 390, "height": 844})
         expect(page.locator("main .chats-lead .lead-button")).to_be_visible()
+        # Several leads are a menu; under the heading at the left edge it opens from that edge, on
+        # screen (e5kk at #1271). Drawn with a second lead beside the real one.
+        box = page.evaluate("""() => new Promise((ok) => {
+          const ctx = document.getElementById('header').chatCtx; const t = ctx.chatFound.list[0];
+          const two = { list: [t, { ...t, member: { ...t.member, id: t.member.id + '-2', display_name: 'Second lead' } }], multiProject: false };
+          const slot = document.querySelector('main .chats-lead');
+          const before = slot.firstChild; slot.replaceChildren(window.Maity.leadChat.leadControl(ctx, two));
+          slot.querySelector('button').click();
+          setTimeout(() => { const r = slot.querySelector('.menu').getBoundingClientRect(); slot.replaceChildren(before); ok([r.left, r.right, innerWidth]); }, 100);
+        })""")
+        assert box[0] >= 0 and box[1] <= box[2], f"the Chats page's lead menu leaves the screen at 390 px: {box}"
         page.set_viewport_size({"width": 1280, "height": 900})
         expect(page.locator("main .chats-lead .lead-button")).to_be_hidden()
     run.a11y(page, "chats across projects")
@@ -3217,10 +3228,18 @@ def project_links_step(run: Run, page: Page) -> None:
     page.set_viewport_size({"width": 360, "height": 780})
     tops = page.evaluate("Array.from(document.querySelectorAll('header .project-links > a')).map((a) => Math.round(a.getBoundingClientRect().top))")
     assert len(set(tops)) == 1, f"the project's links wrap at 360 px: {tops}"
+    # The absence set in the state step is still on: beside the state it needs more room than the
+    # row leaves, so it wraps under the row; the row keeps a usable width and nothing scrolls the page
+    # sideways (spq4 at #1271).
+    expect(page.locator("header .project-state > .state.away")).to_have_count(1)
+    row = page.locator("header .project-links").bounding_box()
+    assert row and row["width"] >= 140, f"the link row is squeezed to {row} at 360 px"
+    width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+    assert width[0] <= width[1], f"the page is {width[0]} px wide at {width[1]} px with an absence"
     for end in (0, 9999):
         page.locator("header .project-links").evaluate("(e, x) => { e.scrollLeft = x; }", end)
-        state = page.locator("header .project-state > .state").first.bounding_box()
-        assert state and state["x"] >= 0 and state["x"] + state["width"] <= 361, f"the state leaves the screen at scroll {end}: {state}"
+        parts = page.evaluate("Array.from(document.querySelectorAll('header .project-state > :not(.project-links)')).map((e) => { const r = e.getBoundingClientRect(); return [e.className, r.left, r.right]; })")
+        assert parts and all(left >= 0 and right <= 361 for _, left, right in parts), f"the state leaves the screen at scroll {end}: {parts}"
     run.shot(page, "project-links-phone")
     page.set_viewport_size({"width": 1280, "height": 900})
     run.shot(page, "project-links")

@@ -5,4 +5,4 @@
 ### Changed
 
 - web: on a phone the top bar's buttons stay in the logo's row: the Lead button is hidden there and stands on the Chats page instead, where the Chat button leads.
-- web: on a phone the project's links (Repository, Pull Requests, Issues, …) are one row that scrolls sideways, and the project's state beside them stays in sight.
+- web: on a phone the project's links (Repository, Pull Requests, Issues, …) are one row that scrolls sideways, and the project's state beside them stays in sight; a released mark or an absence that does not fit beside the row wraps under it, and on a tablet-wide screen the state block no longer pushes the page sideways.

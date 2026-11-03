@@ -253,7 +253,7 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
    screen that block goes under the chips. */
 .switcher-row { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; }
 .switcher-row .switcher { flex: 1 1 18rem; min-width: 0; }
-.project-state { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding-inline-start: 12px; border-inline-start: 1px solid var(--border); flex: none; }
+.project-state { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; padding-inline-start: 12px; border-inline-start: 1px solid var(--border); flex: none; max-width: 100%; }
 /* The project's repository and Keep the Why dashboard beside its state (js/app.js projectLinks). */
 .header-link { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 2px 8px; border: 1px solid var(--border);
   border-radius: 999px; color: var(--text); text-decoration: none; font-size: 0.85rem; }
@@ -946,15 +946,18 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 
 @media (max-width: 600px) {
   main { padding: 12px; }
-  .project-state { border-inline-start: none; padding-inline-start: 0; flex-basis: 100%; min-width: 0; }
-  /* One row of links that scrolls; the state and the absence keep their place beside it. */
-  .project-links { flex: 0 1 auto; min-width: 0; overflow-x: auto; }
+  .project-state { border-inline-start: none; padding-inline-start: 0; flex-wrap: wrap; row-gap: 6px; flex-basis: 100%; min-width: 0; }
+  /* One row of links that scrolls, never narrower than about one link; the state, the released
+     mark and the absence stand beside it and wrap under it where they need more room. */
+  .project-links { flex: 1 1 0; min-width: min(9rem, 100%); overflow-x: auto; }
   .project-links .header-link { flex: none; white-space: nowrap; }
   .project-state > :not(.project-links) { flex: none; white-space: nowrap; }
   /* No room for the Lead beside the logo: it stands on the Chats page, where Chat leads. */
   .me > .lead-button, .me > .lead-button-box { display: none; }
   .chats-lead { display: inline-flex; }
   .chats-lead .lead-button-label { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
+  /* Under the heading at the left edge: its menu (several leads) opens from that edge, not off screen. */
+  .chats-lead .menu { inset-inline-end: auto; inset-inline-start: 0; }
   .me-name { display: none; }
   .lead-button-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   /* On a phone the buttons of a form or a row stack, full width. */
@@ -1603,7 +1606,6 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .handle-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0.4rem 0; }
 .handle-form .field-error { flex-basis: 100%; margin: 0; }
 .handle-at { color: var(--muted, inherit); }
-/* The header's "+" menu (an agent, a person): a bold plus as its face. */
 /* The meat-proxy switch of a chat (js/meat-proxy.js): the designer's icons as a mask, so they take the colour. */
 .meat-chat { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .meat-chat .send-status:empty { display: none; }

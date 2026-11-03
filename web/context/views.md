@@ -2138,8 +2138,9 @@ the room above the tabs on every page of a project.
 **See:** views.md#the-lead-is-reached-by-a-lead-button-left-of-chat-not-by-chat-itself-or-a-strip — 0ff66bde-7c26-412a-a856-069b52764910 — as of 2026-11-03
 
 At phone width (≤ 600 px) the header hides the Lead button, so Chat, +, the gear, the bell and
-the profile fit in the logo's row. The same control (one lead opened at once, several a menu with
-their group chat) stands on the Chats page beside its heading, with its word, at phone width only.
+the profile fit in the logo's row from 360 px (narrower, they still go under it). The same control (one lead opened at once, several a menu with
+their group chat) stands on the Chats page under its heading, at the left edge, with its word, at
+phone width only; its menu opens from that edge.
 
 **Reason:** Chat leads to `/chats`, so the lead is one tap further than before, and the control
 keeps everything it does. Hiding it was the maintainer's call; where it went instead is the
@@ -2148,6 +2149,30 @@ author's.
 **Rejected alternative:** an entry in the gear or profile menu, as the card suggested. A menu
 item is one action, and several leads with a group chat would need a second menu inside the
 first.
+
+## On a phone the project's links are one row that scrolls; the state stands beside it
+
+**Id:** df210b31-e55a-47c9-93da-2d139e9ded89
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's card tsk-m9ew7v609fq0, 2026-11-03 (on a phone the project's links wrapped into two rows; one row that scrolls sideways, the state always in sight); review on #1271 (with Review, Released and an absence the first version squeezed the row to 0 px and scrolled the page sideways)
+**Revisit when:** a project gets so many state parts that they leave no usable row beside them on a phone, or the header gives the links a row of their own
+**See:** views.md#a-projects-own-links-stand-beside-the-repository-which-reads-repository-whatever-the-forge-the-form-sends-only-what-changed — 10a77061-c980-4990-b44b-cb7f518cd4eb — as of 2026-11-03
+
+At phone width (≤ 600 px) the repository, Pull Requests, the project's own links and Why are one
+row of their own (`.project-links`) that scrolls sideways, with the fade cue of the tab rows.
+The state, the released mark and the absence stand beside it, outside the row, so a scroll
+never moves them away. The row keeps about one link's width (9rem); the state parts that do not
+fit beside it wrap under it.
+
+**Reason:** two rows of links took the room above the tabs, and the state is the part the
+maintainer asked to keep in sight. A row allowed to shrink to nothing hid the links and pushed
+the page sideways once an absence stood beside the state.
+
+**Rejected alternative:** the links wrapping as before (two rows or more on a phone), which the
+card asked to end. The state parts never wrapping: with an absence they need more than a phone's
+width.
 
 ## Runners in the gear menu, not in the projects' row
 
@@ -4025,6 +4050,7 @@ so it was dropped.
 **Source:** the card tsk-ayaav7naskbe, taken over from #846 with its review; the maintainer's decision recorded with 11b7e786, relayed by the coordinator (the repository button reads "Repository"), 2026-10-31; docs/api.md §6.11
 **See:** https://github.com/oliver-zehentleitner/maity — 11b7e786-ecf7-4971-ae04-48760fd1fd41 — as of 2026-10-31
 **Revisit when:** a fifth kind of link is added, or the header row has no room for the buttons on a phone
+**See:** views.md#on-a-phone-the-projects-links-are-one-row-that-scrolls-the-state-stands-beside-it — df210b31-e55a-47c9-93da-2d139e9ded89 — as of 2026-11-03
 
 The header's row shows the repository, then Pull Requests, then the
 project's own links that are set (issues, wiki, discussions, chat, each
