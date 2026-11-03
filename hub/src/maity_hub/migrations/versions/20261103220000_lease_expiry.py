@@ -29,11 +29,17 @@ def upgrade() -> None:
         "card",
         sa.column("lease_until", UtcDateTime()),
         sa.column("claim_holder", sa.Integer()),
+        sa.column("status", sa.String(20)),
         sa.column("lease_expiry_reported", UtcDateTime()),
     )
+    # Open cards only: a closed card keeps its holder's columns, and the pass never reads it.
     op.execute(
         card.update()
-        .where(card.c.claim_holder.is_not(None), card.c.lease_until < datetime.now(UTC))
+        .where(
+            card.c.claim_holder.is_not(None),
+            card.c.status.notin_(("done", "cancelled")),
+            card.c.lease_until < datetime.now(UTC),
+        )
         .values(lease_expiry_reported=card.c.lease_until)
     )
 

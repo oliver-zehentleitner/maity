@@ -254,17 +254,19 @@ def test_the_minute_worker_runs_the_pass(setup: Setup) -> None:
 
 def test_the_migration_marks_the_leases_expired_before_it_as_reported(setup: Setup) -> None:
     """The first pass after the deploy reports no old lease; a running one counts later."""
-    old, running = setup.claim(), setup.claim()
+    old, running, closed = setup.claim(), setup.claim(), setup.claim()
     downgrade(setup.engine, "20261103210000_digest_seen")
     with setup.engine.begin() as conn:
         conn.execute(
             update(t.card)
-            .where(t.card.c.id == old)
+            .where(t.card.c.id.in_([old, closed]))
             .values(lease_until=clock.now() - timedelta(minutes=5))
         )
+        conn.execute(update(t.card).where(t.card.c.id == closed).values(status="done"))
     migrate(setup.engine)
     assert setup.holder(old).lease_expiry_reported == setup.holder(old).lease_until
     assert setup.holder(running).lease_expiry_reported is None
+    assert setup.holder(closed).lease_expiry_reported is None  # never read by the pass
     holder_stalled.expire(setup.engine)
     assert setup.events("claim_expired") == []
     _expire(setup, running, timedelta(minutes=1))
