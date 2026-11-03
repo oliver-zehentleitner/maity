@@ -43,8 +43,10 @@ started="$locks/started-by-script" # the process id of a server this script star
 exec 8>"$locks/state" 9>"$locks/users"
 
 # The state lock covers looking at the server and starting or stopping it. Fd 9 is held shared
-# for as long as a run uses the server. Neither reaches the server or the command: a process
-# that inherits a lock holds it. Fd 7, the run slot, does not reach the server either.
+# for as long as a run uses the server. A process that inherits a lock holds it: neither lock
+# reaches the server, and fd 7, the run slot, does not either. The command keeps fd 9, so a command
+# whose wrapper was killed (a memory reap sends SIGKILL) still counts as a run, and --stop or the
+# last run's cleanup leaves the server up under it.
 flock -x 8
 if [ ! -f "$dir/PG_VERSION" ]; then
   initdb -D "$dir" -U postgres -A trust >/dev/null 7>&- 8>&- 9>&-
@@ -105,14 +107,14 @@ status=0
 # command to end, since bash runs a trap only between commands; it never cleans up under it.
 if [ -t 0 ]; then
   trap : TERM HUP
-  "$@" 8>&- 9>&- || status=$?
+  "$@" 8>&- || status=$?
   exit "$status"
 fi
 
 # Otherwise in a process group of its own, so that a signal reaches all of it (pytest -n has
 # workers) and the database is only dropped once the command has ended.
 set -m
-"$@" 8>&- 9>&- &
+"$@" 8>&- &
 child=$!
 set +m
 for signal in INT TERM HUP; do

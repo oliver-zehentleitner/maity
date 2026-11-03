@@ -216,3 +216,31 @@ def test_the_run_holds_a_slot_and_the_server_does_not(run: dict[str, str]) -> No
     ).stdout
     assert out.strip() == "slot=0"
     assert "server holds fd 7" not in Path(run["FAKE_LOG"]).read_text()
+
+
+def test_stop_leaves_the_server_up_under_a_command_whose_wrapper_was_killed(
+    run: dict[str, str], tmp_path: Path
+) -> None:
+    """A memory reap kills the wrapper with SIGKILL; its command lives on and uses the server."""
+    subprocess.run([SCRIPT, "--start"], env=run, check=True)
+    child_pid = tmp_path / "child"
+    wrapper = subprocess.Popen(
+        [SCRIPT, "sh", "-c", f"echo $$ > {child_pid}; exec sleep 60"], env=run
+    )
+    while not child_pid.exists() or not child_pid.read_text().strip():
+        assert wrapper.poll() is None
+    child = int(child_pid.read_text())
+    try:
+        wrapper.kill()
+        wrapper.wait(timeout=30)
+        os.kill(child, 0)  # the command outlived its wrapper
+        refused = subprocess.run([SCRIPT, "--stop"], env=run, capture_output=True, text=True)
+        assert refused.returncode == 1 and "still uses the server" in refused.stderr
+        assert calls(run, "stop") == []
+    finally:
+        os.kill(child, signal.SIGKILL)
+    deadline = time.monotonic() + 30
+    while subprocess.run([SCRIPT, "--stop"], env=run, capture_output=True).returncode != 0:
+        assert time.monotonic() < deadline, "the server stays held after the command ended"
+        time.sleep(0.05)
+    assert len(calls(run, "stop")) == 1
