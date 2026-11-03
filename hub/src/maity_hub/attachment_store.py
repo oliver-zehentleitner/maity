@@ -25,7 +25,7 @@ import hashlib
 import logging
 import os
 import secrets
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, BinaryIO, Protocol
 
@@ -391,7 +391,13 @@ def shared(settings: Settings) -> bool:
     return settings.attachment_s3 is not None
 
 
-def copy_local_to_s3(source: LocalStore, target: S3Store, *, apply: bool) -> dict[str, int]:
+def copy_local_to_s3(
+    source: LocalStore,
+    target: S3Store,
+    *,
+    apply: bool,
+    live: Callable[[str], set[str]] | None = None,
+) -> dict[str, int]:
     """Copy every blob of the local store into the bucket, under the same key; the migration from
     a volume to `s3` (hub/context/replicas.md 99360a7a). A blob the bucket already holds with the
     same SHA-256 is skipped, so the copy can run again until it reports nothing to copy; the
@@ -399,9 +405,14 @@ def copy_local_to_s3(source: LocalStore, target: S3Store, *, apply: bool) -> dic
     overwritten: keys are immutable, so the file changed, and it is counted as `differs`. After
     each put one HEAD checks size and digest. A file is read whole (at most `FILE_CAP`, like an
     upload). A folder or file the hub cannot read counts as failed, the rest goes on. Without
-    `apply` it only counts."""
+    `apply` it only counts.
+
+    `live(project)` names the attachments of a project that have a row and are not deleted. A
+    file without one is skipped (`skipped_deleted`): under `s3` the hub deletes only in the
+    bucket, so a redacted or expired attachment's file stays on the volume and must not go back
+    (a file whose upload has not committed its row yet is skipped too; the next run takes it)."""
     log = logging.getLogger(__name__)
-    done = {"copied": 0, "present": 0, "differs": 0, "failed": 0}
+    done = {"copied": 0, "present": 0, "differs": 0, "skipped_deleted": 0, "failed": 0}
     try:
         projects = sorted(source.projects())
     except OSError as error:
@@ -415,7 +426,11 @@ def copy_local_to_s3(source: LocalStore, target: S3Store, *, apply: bool) -> dic
             log.error("%s: %s", project, error.strerror or type(error).__name__)
             done["failed"] += 1
             continue
+        alive = live(project) if live is not None else None
         for key in keys:
+            if alive is not None and key.partition("/")[2] not in alive:
+                done["skipped_deleted"] += 1
+                continue
             try:
                 data = source.get(key)
             except OSError as error:

@@ -280,9 +280,14 @@ The files on the claim are copied into the bucket by the hub itself, under the s
 (`<prefix>/<project id>/<attachment id>`). `maity-hub attachments copy-to-s3` skips an object
 that is already there with the same SHA-256, so it can run as often as needed, and it never
 changes the files on the claim. An object the hub wrote with another SHA-256 is never
-overwritten: it is reported as different, and the command ends with exit 1. After each copy it
-checks the object's size and digest. A folder it cannot read (`lost+found`) counts as failed,
-the rest is copied. Without `--apply` it only counts.
+overwritten: it is reported as different, and the command ends with exit 1. Keys are immutable
+attachment ids, so treat the file on the claim as the suspect one: compare it with the object
+(`sha256sum` against the object's `x-amz-meta-sha256`), and keep the object. A file whose
+attachment is deleted, or has no row, is not copied: under `s3` the hub deletes only in the
+bucket, and a redacted attachment must not come back. After each copy it checks the object's
+size and the SHA-256 it wrote as metadata (the bytes themselves are protected in transit by the
+client's checksum). A folder it cannot read (`lost+found`) counts as failed, the rest is copied.
+Without `--apply` it only counts.
 
 1. Upgrade to a hub version that has the `s3` store, still with `attachments.store: local`, and
    with the `attachments.s3.*` values set: the chart renders them whenever a bucket is set, and

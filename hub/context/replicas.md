@@ -547,7 +547,7 @@ hub has to keep.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the card's scope (tsk-enpbgadqgmbr: "a command or documented step that copies the existing files from the volume into the bucket, idempotent"), the coordinator's request of 2026-11-03 for a one-off copy that checks the digest, the operator's question of 2026-11-03 whether the hub would read through instead, the review of #1282 on 2026-11-03 (an overwritten object, an unreadable folder); `attachment_store.copy_local_to_s3`, `cli._copy_to_s3`
+**Source:** the card's scope (tsk-enpbgadqgmbr: "a command or documented step that copies the existing files from the volume into the bucket, idempotent"), the coordinator's request of 2026-11-03 for a one-off copy that checks the digest, the operator's question of 2026-11-03 whether the hub would read through instead, the reviews of #1282 on 2026-11-03 (an overwritten object, an unreadable folder, deleted attachments copied back, what the check after a put compares); `attachment_store.copy_local_to_s3`, `cli._copy_to_s3`
 **Revisit when:** a deployment's volume is too large to copy while the hub serves, or a second migration (between buckets) is needed
 **See:** replicas.md#attachments-move-to-s3-compatible-object-storage — a70d7269-a0a9-45aa-94c5-54715f112c10 — as of 2026-11-03
 
@@ -557,8 +557,12 @@ each object with its SHA-256 as metadata (`x-amz-meta-sha256`), and the copy ski
 metadata matches the file, so it runs as often as needed: once while the hub still serves from the
 volume, once more after the store is switched, for the uploads in between. It never changes the
 volume. An object the hub wrote with another SHA-256 is not overwritten but counted as different
-(exit 1); only a missing object or one without the metadata is written. After each put one HEAD
-compares size and digest. Each file is read whole, at most `FILE_CAP` like an upload. A folder or
+(exit 1); only a missing object or one without the metadata is written. A file whose attachment
+has no row, or a deleted one, is skipped: under `s3` the hub deletes only in the bucket, so the
+volume still holds the files of redacted and expired attachments, and a later run would put them
+back (with versioning on, as one more noncurrent version each time). After each put one HEAD
+compares the size and the metadata the put wrote, not the bytes: reading every object back would
+double the traffic. Each file is read whole, at most `FILE_CAP` like an upload. A folder or
 file the pod cannot read (`lost+found` on an ext4 volume) counts as failed, and the copy goes on.
 There is no copy back: after the switch, uploads exist only in the bucket. The chart renders the bucket's settings whenever a bucket is set, also with `local`, so the
 command finds them in the pod before the switch, and the claim may stay mounted under `s3` for the
@@ -575,6 +579,12 @@ bucket is what the hub serves.
   path of every download, for as long as the volume is mounted, and a volume still pinned to one node.
 - **Overwriting an object whose digest differs from the file:** the first version of the copy did,
   and a file changed on the volume after the first run replaced good bytes in the bucket.
+- **Copying every file and leaving deleted ones to the sweep:** the first version did. The sweep
+  removes them again, but with the bucket's versioning on each run leaves the redacted bytes
+  behind as one more noncurrent version.
+- **Checking the bytes after each put** (reading the object back, or the store's own SHA-256
+  checksum on the put): reading back doubles the traffic of the move, and not every
+  S3-compatible store takes the newer checksum headers. The client checks the transfer itself.
 - **Comparing by the ETag:** it is an MD5 of the bytes only for a single-part upload without
   server-side encryption by a managed key, which not every bucket guarantees.
 

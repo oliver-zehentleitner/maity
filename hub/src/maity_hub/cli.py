@@ -149,13 +149,34 @@ def _copy_to_s3(settings: Settings, *, apply: bool) -> int:
         )
     source = attachment_store.LocalStore(settings.attachment_dir)
     target = attachment_store.S3Store(settings.attachment_s3)
-    done = attachment_store.copy_local_to_s3(source, target, apply=apply)
+    try:
+        engine = make_engine(settings.database_url)
+        require_current_schema(engine)
+        done = attachment_store.copy_local_to_s3(
+            source, target, apply=apply, live=lambda project: _live_attachments(engine, project)
+        )
+    except SchemaNotCurrentError as error:
+        return _fail(str(error), EXIT_FAILURE)
+    except (SQLAlchemyError, ImportError) as error:
+        return _database_error(settings, error)
     verb = "copied" if apply else "to copy"
     print(
         f"{verb}: {done['copied']}, already there: {done['present']}, "
-        f"different in the bucket: {done['differs']}, failed: {done['failed']}"
+        f"different in the bucket: {done['differs']}, "
+        f"deleted, not copied: {done['skipped_deleted']}, failed: {done['failed']}"
     )
     return EXIT_FAILURE if done["failed"] or done["differs"] else 0
+
+
+def _live_attachments(engine: Any, project: str) -> set[str]:
+    """The attachments of a project that have a row and are not deleted, for the copy."""
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(t.attachment.c.id).where(
+                t.attachment.c.project_id == project, t.attachment.c.deleted_at.is_(None)
+            )
+        )
+        return {str(row.id) for row in rows}
 
 
 def _loadtest_refusal(settings: Settings) -> str | None:
