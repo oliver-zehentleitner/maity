@@ -1,4 +1,5 @@
-"""`scripts/with_postgres.sh`, with stand-ins for PostgreSQL's tools: it stops what it started."""
+"""`scripts/with_postgres.sh`, with stand-ins for PostgreSQL's tools: it stops what it started,
+keeps a server started with --start, and runs in a run slot that the server does not hold."""
 
 from __future__ import annotations
 
@@ -20,7 +21,9 @@ FAKE = """#!/bin/sh
 echo "$(basename "$0") $*" >> "$FAKE_LOG"
 case "$(basename "$0") $*" in
   "pg_ctl -D "*" status") [ -f "$FAKE_UP" ] ;;
-  "pg_ctl "*" start") touch "$FAKE_UP"; echo "$$" > "$MAITY_PG_DIR/postmaster.pid" ;;
+  "pg_ctl "*" start")
+    touch "$FAKE_UP"; echo "$$" > "$MAITY_PG_DIR/postmaster.pid"
+    if [ -e /proc/$$/fd/7 ]; then echo "server holds fd 7" >> "$FAKE_LOG"; fi ;;
   "pg_ctl "*" stop") rm -f "$FAKE_UP" "$MAITY_PG_DIR/postmaster.pid" ;;
   initdb*) touch "$3/PG_VERSION" ;;
 esac
@@ -38,8 +41,10 @@ def run(tmp_path: Path) -> dict[str, str]:
     data.mkdir()
     (bin_dir / "initdb").write_text(FAKE.replace('touch "$3/PG_VERSION"', 'touch "$2/PG_VERSION"'))
     (bin_dir / "initdb").chmod(0o755)
+    env = {key: value for key, value in os.environ.items() if key != "MAITY_RUN_SLOT"}
     return {
-        **os.environ,
+        **env,
+        "MAITY_RUN_SLOTS_DIR": str(tmp_path / "slots"),
         "MAITY_PG_BIN": str(bin_dir),
         "MAITY_PG_DIR": str(data),
         "FAKE_LOG": str(tmp_path / "log"),
@@ -148,3 +153,151 @@ def test_at_a_terminal_ctrl_c_ends_the_command_and_cleans_up(run: dict[str, str]
 
 def test_the_commands_exit_status_is_kept(run: dict[str, str]) -> None:
     assert subprocess.run([SCRIPT, "false"], env=run).returncode == 1
+
+
+def test_start_leaves_the_server_up_for_every_run(run: dict[str, str]) -> None:
+    subprocess.run([SCRIPT, "--start"], env=run, check=True)
+    subprocess.run([SCRIPT, "true"], env=run, check=True)
+    assert len(calls(run, "start")) == 1 and calls(run, "stop") == []
+    assert Path(run["FAKE_UP"]).exists()
+
+
+def test_start_keeps_a_server_a_running_run_started(run: dict[str, str]) -> None:
+    gate = Path(run["FAKE_LOG"]).parent / "gate"
+    first = subprocess.Popen(
+        [SCRIPT, "sh", "-c", f"until [ -f {gate} ]; do sleep 0.05; done"], env=run
+    )
+    while not Path(run["FAKE_UP"]).exists():
+        assert first.poll() is None
+    subprocess.run([SCRIPT, "--start"], env=run, check=True)
+    gate.touch()
+    assert first.wait(timeout=30) == 0
+    assert calls(run, "stop") == []
+
+
+def test_stop_waits_for_no_run_and_refuses_while_one_runs(run: dict[str, str]) -> None:
+    subprocess.run([SCRIPT, "--start"], env=run, check=True)
+    gate = Path(run["FAKE_LOG"]).parent / "gate"
+    ready = Path(run["FAKE_LOG"]).parent / "ready"
+    first = subprocess.Popen(
+        [SCRIPT, "sh", "-c", f"touch {ready}; until [ -f {gate} ]; do sleep 0.05; done"], env=run
+    )
+    while not ready.exists():
+        assert first.poll() is None
+    refused = subprocess.run([SCRIPT, "--stop"], env=run, capture_output=True, text=True)
+    assert refused.returncode == 1 and "still uses the server" in refused.stderr
+    assert calls(run, "stop") == []
+    gate.touch()
+    assert first.wait(timeout=30) == 0
+    subprocess.run([SCRIPT, "--stop"], env=run, check=True)
+    assert len(calls(run, "stop")) == 1 and not Path(run["FAKE_UP"]).exists()
+
+
+def test_the_database_is_named_after_who_runs_it(run: dict[str, str]) -> None:
+    run = {**run, "MAITY_RUN_NAME": "Coder-7#ab12"}
+    out = subprocess.run(
+        [SCRIPT, "sh", "-c", 'echo "$MAITY_TEST_DATABASE_URL"'],
+        env=run,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert out.startswith("postgresql://postgres@/maity_test_coder_7_ab12_")
+
+
+@pytest.mark.skipif(not Path("/proc/self/fd").is_dir(), reason="needs /proc")
+def test_the_run_holds_a_slot_and_the_server_does_not(run: dict[str, str]) -> None:
+    out = subprocess.run(
+        [SCRIPT, "sh", "-c", 'echo "slot=$MAITY_RUN_SLOT"'],
+        env=run,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert out.strip() == "slot=0"
+    assert "server holds fd 7" not in Path(run["FAKE_LOG"]).read_text()
+
+
+def test_stop_leaves_the_server_up_under_a_command_whose_wrapper_was_killed(
+    run: dict[str, str], tmp_path: Path
+) -> None:
+    """A memory reap kills the wrapper with SIGKILL; its command lives on and uses the server."""
+    subprocess.run([SCRIPT, "--start"], env=run, check=True)
+    child_pid = tmp_path / "child"
+    wrapper = subprocess.Popen(
+        [SCRIPT, "sh", "-c", f"echo $$ > {child_pid}; exec sleep 60"], env=run
+    )
+    while not child_pid.exists() or not child_pid.read_text().strip():
+        assert wrapper.poll() is None
+    child = int(child_pid.read_text())
+    try:
+        wrapper.kill()
+        wrapper.wait(timeout=30)
+        os.kill(child, 0)  # the command outlived its wrapper
+        refused = subprocess.run([SCRIPT, "--stop"], env=run, capture_output=True, text=True)
+        assert refused.returncode == 1 and "still uses the server" in refused.stderr
+        assert calls(run, "stop") == []
+    finally:
+        os.kill(child, signal.SIGKILL)
+    deadline = time.monotonic() + 30
+    while subprocess.run([SCRIPT, "--stop"], env=run, capture_output=True).returncode != 0:
+        assert time.monotonic() < deadline, "the server stays held after the command ended"
+        time.sleep(0.05)
+    assert len(calls(run, "stop")) == 1
+
+
+def test_stop_on_a_stopped_server_starts_nothing(run: dict[str, str]) -> None:
+    """Neither a stopped server nor a missing data directory (a mistyped MAITY_PG_DIR) is started
+    or created by --stop just to be stopped again; on a directory without a cluster it says so,
+    and leaves no lock directory beside it."""
+    missing = subprocess.run(
+        [SCRIPT, "--stop"], env=run, check=True, capture_output=True, text=True
+    )
+    assert "no PostgreSQL in" in missing.stderr and "is stopped" not in missing.stdout
+    assert not Path(run["MAITY_PG_DIR"] + ".locks").exists()
+    (Path(run["MAITY_PG_DIR"]) / "PG_VERSION").touch()
+    subprocess.run([SCRIPT, "--stop"], env=run, check=True)
+    log = Path(run["FAKE_LOG"]).read_text() if Path(run["FAKE_LOG"]).exists() else ""
+    assert "initdb" not in log and calls(run, "start") == [] and calls(run, "stop") == []
+
+
+def test_the_cleanup_matches_its_own_databases_only(run: dict[str, str]) -> None:
+    """`_` in the run's name is a wildcard in LIKE; the cleanup compares the prefix instead."""
+    subprocess.run([SCRIPT, "true"], env={**run, "MAITY_RUN_NAME": "a_b"}, check=True)
+    lines = Path(run["FAKE_LOG"]).read_text().splitlines()
+    (query,) = [line for line in lines if line.startswith("psql") and "select datname" in line]
+    assert " like " not in query.lower()
+    assert "left(datname, length('maity_test_a_b_" in query
+
+
+def test_the_last_run_leaves_the_server_up_while_something_it_started_still_runs(
+    run: dict[str, str], tmp_path: Path
+) -> None:
+    """A command that leaves a process behind (a server of its own, a daemon) ends normally; the
+    process still holds the server lock, so the run's cleanup does not stop the server under it,
+    --stop refuses, and other runs still get the server instead of waiting for the process."""
+    child_pid = tmp_path / "child"
+    subprocess.run(
+        [SCRIPT, "sh", "-c", f"sleep 60 >/dev/null 2>&1 & echo $! > {child_pid}"],
+        env=run,
+        check=True,
+        timeout=30,
+    )
+    child = int(child_pid.read_text())
+    try:
+        os.kill(child, 0)  # still running after the run ended
+        assert len(calls(run, "start")) == 1 and calls(run, "stop") == []
+        # A lock the cleanup converted on the shared file would now be the process's alone.
+        subprocess.run([SCRIPT, "true"], env=run, check=True, timeout=30)
+        refused = subprocess.run(
+            [SCRIPT, "--stop"], env=run, capture_output=True, text=True, timeout=30
+        )
+        assert refused.returncode == 1 and "still uses the server" in refused.stderr
+        assert calls(run, "stop") == []
+    finally:
+        os.kill(child, signal.SIGKILL)
+    deadline = time.monotonic() + 30
+    while calls(run, "stop") == []:  # the next run's cleanup stops the server this run started
+        assert time.monotonic() < deadline, "the server stays held after the process ended"
+        subprocess.run([SCRIPT, "true"], env=run, check=True)
+    assert len(calls(run, "start")) == 1
