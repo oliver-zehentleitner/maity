@@ -3670,8 +3670,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("card-note-reason-nte-0031").value = "late";
   neNote("nte-0031").querySelector("form.card-note-edit-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(!neNote("nte-0031").querySelector("form") && neNote("nte-0031").querySelector(".card-note-removed")
-    && text(cpPanel()).includes("Not saved: the note was removed in the meantime."),
-    "note edit: a note removed meanwhile ends the edit, its tombstone listed " + text(neNote("nte-0031")));
+    && text(cpPanel()).includes("Not saved: the note was removed in the meantime. Your text was not kept.")
+    && document.activeElement === neNote("nte-0031").querySelector(".card-note-removed"),
+    "note edit: a note removed meanwhile ends the edit, its tombstone listed and focused, the line says the text is not kept " + text(neNote("nte-0031")));
   // A removal that comes second: someone removed the note first; the list shows the tombstone
   // and the line says so, not "not removed".
   const neLast = cpPanel().querySelectorAll("li.card-note").filter((li) => !li.querySelector(".card-note-removed")).pop().getAttribute("data-note");
@@ -3681,7 +3682,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(neNote(neLast), "Remove").click(); for (let k = 0; k < 6; k++) await tick();
   expect(neNote(neLast).querySelector(".card-note-removed") && text(cpPanel()).includes("Already removed: someone removed the note first.")
     && !text(cpPanel()).includes("Not removed"),
-    "note remove: a note someone removed first is listed as removed, the line says so " + text(cpPanel().querySelector(".send-status")));
+    "note remove: a note someone removed first is listed as removed, the line says so " + text(cpPanel().querySelector(".card-note-list").nextSibling));
   win.prompt = cpPrompt;
   // A member without events:admin: Edit on their own note only, no Remove; a tombstone
   // without the reason the hub keeps from them (§8.5); a closed project takes no edit.
@@ -10744,6 +10745,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("mail-test-to").value = "admin@example.org";
   main.querySelector("form.admin-mail-test").dispatch("submit"); await tick(); await tick();
   expect(JSON.stringify(testWrites) === JSON.stringify([["/admin/settings/mail/test", { to: "admin@example.org" }]]) && text(main).includes("Stage: auth") && text(main).includes("535 Credentials … rejected") && text(main).includes("Test mail failed."), "admin: test uses only recipient and shows unsuccessful200 stage/redacted reply");
+  // §16.3: the recipient is optional; empty, the body has no `to` and the fixture hub sends to the
+  // admin's own verified address. Its refusal without one is said for the field.
+  expect(!byId("mail-test-to").attrs.required && byId("mail-test-to").attrs["aria-describedby"] === "mail-test-to-hint"
+    && text(byId("mail-test-to-hint")).includes("your own verified address"), "admin: the test recipient is optional, the hint says where an empty one goes");
+  win.Maity.api.post = (path, body) => { testWrites.push([path, body]); return adminPost(path, body); };
+  byId("mail-test-to").value = "";
+  main.querySelector("form.admin-mail-test").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(testWrites[1]) === JSON.stringify(["/admin/settings/mail/test", {}]) && text(main.querySelector("form.admin-mail-test").parentNode).includes("Test mail sent."),
+    "admin: an empty recipient sends no `to`, the fixture hub mails the verified address " + JSON.stringify(testWrites));
+  win.Maity.api.post = async (path) => { throw new win.Maity.api.ApiError("the request does not validate", 400, path, "invalid", { fields: { to: "no_verified_address" } }); };
+  main.querySelector("form.admin-mail-test").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main.querySelector("form.admin-mail-test .send-status")).includes("to: enter a recipient address"), "admin: a test without a recipient or a verified address is said for the field");
+  win.Maity.api.post = adminPost;
   win.Maity.api.get = (path) => path === "/health" ? Promise.reject(new win.Maity.api.ApiError("outdated", 503, path, "schema_outdated", { revision: "old", head: "new" })) : adminGet(path);
   await go("#/all"); await go("#/admin");
   expect(text(main).includes("Database reachable, migration required.") && text(main).includes("Revision: old · head: new"), "admin: outdated schema is shown with both revisions");

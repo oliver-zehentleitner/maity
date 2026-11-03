@@ -224,9 +224,12 @@ window.Maity = window.Maity || {};
             // answers `invalid` with `reason: "redacted"`, whatever version the edit names.
             const gone = !!(err && err.code === "invalid" && err.details && err.details.reason === "redacted");
             if (gone || (now && removedNote(now))) {
-              // Removed meanwhile: nothing left to edit; the list shows the tombstone.
+              // Removed meanwhile: nothing left to edit; the list shows the tombstone,
+              // the line says the writer's text is gone with the form, and the focus
+              // goes to the tombstone, as after a removal of one's own.
               await notes();
               removeStatus.fail("", { message: M.t("cardpanel.notes.edit.conflict_removed") });
+              focusStone(n.id);
               return;
             }
             if (now) {
@@ -280,7 +283,11 @@ window.Maity = window.Maity || {};
       await notes();
       removeStatus.done();
       // The button that had the focus is gone with the text.
-      const stone = noteItem(n.id) && noteItem(n.id).querySelector(".card-note-removed");
+      focusStone(n.id);
+    }
+
+    function focusStone(id) {
+      const stone = noteItem(id) && noteItem(id).querySelector(".card-note-removed");
       if (stone) stone.focus();
     }
 

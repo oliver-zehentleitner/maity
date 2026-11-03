@@ -1256,8 +1256,8 @@ same as the panel, on a desktop it hides the board the card belongs to.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** PR #1227 (tsk-bj9yb4d8f2cg), part 3 of editing a note, and its review; the follow-up PR (tsk-dprnjakk3ykh); contract in `docs/api.md` §6.16, §8.5
-**Revisit when:** the dashboard sends a note's `base_version` (#1243 makes it required), or the dashboard gets a dialog of its own for reasons
+**Source:** PR #1227 (tsk-bj9yb4d8f2cg), part 3 of editing a note, and its review; PR #1243 (`base_version` and the conflict in the panel); the follow-up PR (tsk-dprnjakk3ykh); contract in `docs/api.md` §6.16, §8.5
+**Revisit when:** the dashboard gets a dialog of its own for reasons
 **See:** https://github.com/oliver-zehentleitner/maity — 0e6b3b31-1656-4744-841d-d48f1899a7fd — as of 2026-11-03
 **See:** https://github.com/oliver-zehentleitner/maity — 09c47db5-75b7-4636-8c49-0cc46c8c9d46 — as of 2026-11-03
 
@@ -1270,7 +1270,11 @@ field. Remove asks its reason with the same prompt loop as removing a chat
 message. The tombstone says who and when, and the reason only when the hub
 gives it. Each button names the note's author and date in its label, an
 Escape the mention picker has taken leaves the edit open, and a draft in Add
-a note outlives the list being drawn again.
+a note outlives the list being drawn again. An edit and a removal name the
+version they were made on (`base_version`); a conflict shows the note as it
+is now and keeps the writer's text for the next save, and a note removed
+meanwhile ends the edit, says the text was not kept, and puts the focus on
+its tombstone, as a removal of one's own does.
 
 **Reason:** the buttons follow who the hub lets act, so nobody meets a
 refusal for a button that should not have been there; an empty reason is not

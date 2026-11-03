@@ -2176,8 +2176,8 @@
     "text": "7d1bf4141ccc5ab1"
   },
   "cardpanel.notes.edit.conflict_removed": {
-    "en": "1bca3c8bfd9a68d7",
-    "text": "4f508c169c290ca1"
+    "en": "2b0b0c5372c5fffa",
+    "text": "1e9795a9475a16f0"
   },
   "cardpanel.notes.edit.field": {
     "en": "8399952d32486b55",
@@ -8418,6 +8418,10 @@
   "mail.test.recipient": {
     "en": "b2eab682cd738bf6",
     "text": "0a4781ab225b3274"
+  },
+  "mail.test.recipient_hint": {
+    "en": "2c4450c19633aa3d",
+    "text": "4873501dd649f769"
   },
   "mail.test.send": {
     "en": "ca5bc8a2fe244917",
