@@ -155,7 +155,9 @@ def test_a_legal_draft_says_draft_where_the_page_says_as_of_and_lists_no_version
     page = owner.client.get(path)
     assert page.status_code == 200
     assert (
-        page.headers["content-security-policy"] == "default-src 'none'; style-src 'unsafe-inline'"
+        page.headers["content-security-policy"]
+        == "default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; "
+        "img-src 'self'; base-uri 'none'; frame-ancestors 'none'"
     )
     assert page.headers["cache-control"] == "no-store" and page.headers["x-robots-tag"] == "noindex"
     assert (

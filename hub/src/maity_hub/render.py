@@ -585,15 +585,7 @@ def landing_document(
         if preview
         else ""
     )
-    header = (
-        '<header class="site-header dz"><div class="wrap">'
-        f'<a class="brand" href="/">{landing_files.svg("mark.svg")}maity</a>'
-        f'<nav class="site-nav">{nav}</nav>'
-        f'<button type="button" class="theme-toggle" data-lp-theme hidden aria-pressed="false" '
-        f'aria-label="{escape(words["theme"], quote=True)}">◐</button>'
-        f'<a class="signin" href="{escape(model["header"]["sign_in"]["href"], quote=True)}">'
-        f'{escape(model["header"]["sign_in"]["label"])}</a>{cta}</div></header>'
-    )
+    header = _site_header(model, nav, cta, words["theme"])
     body = "".join(html for _, _, html in drawn)
     footer = _landing_footer(model)
     sheet, script = landing_files.url("landing.css"), landing_files.url("landing.js")
@@ -651,17 +643,38 @@ def _column(title: str, items: list[str]) -> str:
     return f'<nav class="foot-col" aria-label="{escape(title, quote=True)}"><h3>{escape(title)}</h3><ul>{rows}</ul></nav>'
 
 
-def _landing_footer(model: dict[str, Any]) -> str:
+def _site_header(model: dict[str, Any], nav: str, cta: str, theme: str | None) -> str:
+    """The landing page's header from the frame's model (§16.7.5); the theme switch only on a page
+    with the landing page's script."""
+    switch = (
+        f'<button type="button" class="theme-toggle" data-lp-theme hidden aria-pressed="false" '
+        f'aria-label="{escape(theme, quote=True)}">◐</button>'
+        if theme is not None
+        else ""
+    )
+    sign_in = model["header"]["sign_in"]
+    return (
+        '<header class="site-header dz"><div class="wrap">'
+        f'<a class="brand" href="/">{landing_files.svg("mark.svg")}maity</a>'
+        f'<nav class="site-nav">{nav}</nav>{switch}'
+        f'<a class="signin" href="{escape(sign_in["href"], quote=True)}">'
+        f"{escape(sign_in['label'])}</a>{cta}</div></header>"
+    )
+
+
+def _landing_footer(model: dict[str, Any], *, on_landing: bool = True) -> str:
     """Columns as the design has them, drawn from the frame's model (§16.7.5): the platform,
     open source, the legal pages and the social links; below them the operator's line and the
-    language switch (§16.7)."""
+    language switch (§16.7). On the landing page itself a link to one of its sections is its
+    fragment alone; on any other page it leads to the landing page."""
     footer = model["footer"]
+    local = _on_page if on_landing else (lambda href: href)
     columns = "".join(
         _column(
             column["title"],
             [
                 (
-                    f'<a href="{escape(_on_page(item["href"]), quote=True)}">{escape(item["label"])}</a>'
+                    f'<a href="{escape(local(item["href"]), quote=True)}">{escape(item["label"])}</a>'
                     if column["key"] in ("platform", "legal")
                     else _link(item["label"], item["href"], me=item["rel"] == "me")
                 )
@@ -843,45 +856,6 @@ def chrome(
     return _frame(setting, legal, chosen, drawn, tags)
 
 
-def _footer(
-    setting: dict[str, Any],
-    words: dict[str, str],
-    legal: dict[str, Any],
-    lang: str,
-    tags: list[str],
-) -> str:
-    links = []
-    for key, address in LEGAL_ADDRESS.items():
-        if legal["pages"].get(key):
-            links.append(f'<a href="/{address}">{escape(words[key])}</a>')
-    footer = setting["footer"]
-    parts = []
-    if footer.get("operator"):
-        parts.append(f"<p>{escape(footer['operator'])}</p>")
-    social = "".join(
-        _link(
-            item["label"],
-            item["href"],
-            me=_is_me(item),
-        )
-        + " "
-        for item in footer.get("social", [])
-    )
-    switch = " ".join(_language_link(tag) for tag in tags) if len(tags) > 1 else ""
-    # With a space between them the links can wrap on a phone.
-    row = " ".join(
-        [
-            *links,
-            f'<a href="/login">{escape(words["sign_in"])}</a>',
-            f'<a href="/register">{escape(words["register"])}</a>',
-        ]
-    )
-    return (
-        f'<footer><div class="wrap"><p>{row}</p>{"".join(parts)}'
-        f'{"<p>" + social + "</p>" if social else ""}{"<p>" + switch + "</p>" if switch else ""}</div></footer>'
-    )
-
-
 def legal_document(
     *,
     page: str,
@@ -894,9 +868,13 @@ def legal_document(
     legal: dict[str, Any],
     setting: dict[str, Any],
     public_url: str,
+    stats: dict[str, Any] | None = None,
 ) -> str:
     """One legal page in one language: its text and its version; no list of earlier versions.
-    `version` is `None` for a draft; `current` is the served version when this is an earlier one."""
+    `version` is `None` for a draft; `current` is the served version when this is an earlier one.
+    Header and footer are the landing page's, from the frame's model (§16.7.5), in the design of
+    `landing_assets/public-pages.css`; the footer lists the page's own languages. `stats` are the
+    landing page's counters, which decide whether a `stats` section is a header link."""
     words = catalog.section("frame", lang)
     stamp = words["draft"] if version is None else words["as_of"].format(version=version)
     address = f"/{LEGAL_ADDRESS[page]}"
@@ -905,23 +883,46 @@ def legal_document(
         if current is not None and version is not None and version != current
         else ""
     )
-    header = (
-        '<header class="top"><div class="wrap"><a class="mark" href="/">Maity</a>'
-        f'<a href="/login">{escape(words["sign_in"])}</a></div></header>'
+    model = chrome(setting, legal, lang=lang, accept_language=None, stats=stats)
+    model["footer"]["languages"] = (
+        [{"tag": tag, "name": LANGUAGE_NAMES.get(tag, tag)} for tag in languages]
+        if len(languages) > 1
+        else []
+    )
+    nav = "".join(
+        f'<a href="{escape(item["href"], quote=True)}">{escape(item["label"])}</a>'
+        for item in model["header"]["nav"]
+    )
+    cta = _button(model["header"]["cta"], "btn-primary") if model["header"]["cta"] else ""
+    # The legal pages that are set, this one marked; a draft's own page is there before it is set.
+    toc = "".join(
+        f'<a href="/{target}?lang={escape(lang, quote=True)}"'
+        + (' aria-current="page"' if key == page else "")
+        + f">{escape(words[key])}</a>"
+        for key, target in LEGAL_ADDRESS.items()
+        if legal["pages"].get(key) or key == page
     )
     banner = f'<p class="note">{escape(words["preview"])}</p>' if version is None else ""
     body = (
-        f'{header}<main><section><div class="wrap">{banner}<h1>{escape(title)}</h1>'
-        f'<p class="eyebrow">{escape(stamp)}</p>{older}{markdown(source)}</div></section></main>'
-        + _footer(setting, words, legal, lang, languages)
+        _site_header(model, nav, cta, None) + f'<main><div class="legal-page"><div class="wrap">'
+        f'<nav class="legal-toc" aria-label="{escape(words["legal"], quote=True)}">{toc}</nav>'
+        f"{banner}<h1>{escape(title)}</h1>"
+        f'<p class="eyebrow">{escape(stamp)}</p>{older}{markdown(source)}</div></div></main>'
+        + _landing_footer(model, on_landing=False)
+    )
+    head = f'<link rel="canonical" href="{escape(public_url.rstrip("/"), quote=True)}{address}">'
+    sheets = [landing_files.url("landing.css"), landing_files.url("public-pages.css")]
+    head += "".join(
+        f'<link rel="stylesheet" href="{escape(sheet, quote=True)}">' for sheet in sheets if sheet
     )
     return _document(
         lang=lang,
         title=title,
         description="",
-        head=f'<link rel="canonical" href="{escape(public_url.rstrip("/"), quote=True)}{address}">',
+        head=head,
         body=body,
         languages=languages,
+        style="" if all(sheets) else STYLE,
     )
 
 
