@@ -28,6 +28,7 @@ from maity_hub import (
     foreign_agent,  # noqa: F401  (registers the consent for another owner's agent)
     forge,
     forge_access,
+    handles,
     images,
     join_line,
     landing_files,
@@ -177,6 +178,19 @@ def check_startup(engine: Engine, settings: Settings) -> None:
         holders = namespace.reserved_holders(conn)
         if holders:  # `maity-hub migrate` refuses these; a hub started past it says so
             log.error("words that docs/api.md §16.11 reserves are held: %s", ", ".join(holders))
+        held, aliases = handles.unserved_instance_names(conn, settings.forge_instance_namespaces)
+        for name in held:
+            log.warning(
+                "MAITY_FORGE_INSTANCE_NAMESPACES lists %r, which nobody has: it is held for "
+                "the operator until it is created or taken off the list (§11.4)",
+                name,
+            )
+        for name in aliases:
+            log.warning(
+                "MAITY_FORGE_INSTANCE_NAMESPACES lists %r, a former name: its namespace is "
+                "served only under its current handle (§11.4)",
+                name,
+            )
         try:
             mail.check_at_startup(conn, settings.mail, settings.secret_key)
         except MailConfigError as error:
@@ -348,8 +362,9 @@ def create_app(
     app.state.health_engine = health_engine or engine
     # Read once: it loads every migration file, and the files do not change under a running hub.
     app.state.schema_head = head_revision(engine)
+    handles.hold_instance_names(settings.forge_instance_namespaces)
     app.state.forge_access = forge_access.ForgeAccess(
-        engine, settings.github_app, settings.secret_key
+        engine, settings.github_app, settings.secret_key, settings.forge_instance_namespaces
     )
     app.state.probe = None  # the worker, from startup on when a forge token is set
     errors.install(app)
