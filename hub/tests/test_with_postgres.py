@@ -263,3 +263,27 @@ def test_the_cleanup_matches_its_own_databases_only(run: dict[str, str]) -> None
     (query,) = [line for line in lines if line.startswith("psql") and "select datname" in line]
     assert " like " not in query.lower()
     assert "left(datname, length('maity_test_a_b_" in query
+
+
+def test_the_last_run_leaves_the_server_up_while_something_it_started_still_runs(
+    run: dict[str, str], tmp_path: Path
+) -> None:
+    """A command that leaves a process behind (a server of its own, a daemon) ends normally; the
+    process still holds the server lock, so the run's cleanup does not stop the server under it."""
+    child_pid = tmp_path / "child"
+    subprocess.run(
+        [SCRIPT, "sh", "-c", f"sleep 60 >/dev/null 2>&1 & echo $! > {child_pid}"],
+        env=run,
+        check=True,
+    )
+    child = int(child_pid.read_text())
+    try:
+        os.kill(child, 0)  # still running after the run ended
+        assert len(calls(run, "start")) == 1 and calls(run, "stop") == []
+    finally:
+        os.kill(child, signal.SIGKILL)
+    deadline = time.monotonic() + 30
+    while calls(run, "stop") == []:  # the next run's cleanup stops the server this run started
+        assert time.monotonic() < deadline, "the server stays held after the process ended"
+        subprocess.run([SCRIPT, "true"], env=run, check=True)
+    assert len(calls(run, "start")) == 1

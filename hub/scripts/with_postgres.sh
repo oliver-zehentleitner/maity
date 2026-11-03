@@ -91,10 +91,14 @@ finish() {
     sql "drop database if exists \"$name\" with (force)" || true
   done
   flock -x 8
-  if flock -x -n 9 && [ -f "$started" ]; then # no other run holds the server
+  # This run's fd 9 is the open file the command and anything it left running share: a lock on it
+  # would only convert theirs. So it is closed, and a file of its own asks whether anyone still
+  # holds the server, a process this run left behind included.
+  exec 9>&- 6>"$locks/users"
+  if flock -x -n 6 && [ -f "$started" ]; then # no run and nothing a run started holds the server
     # The same process as the one started: a mark left by a killed run names no later server.
     if [ "$(head -n 1 "$dir/postmaster.pid" 2>/dev/null)" = "$(cat "$started")" ]; then
-      pg_ctl -D "$dir" -m fast stop >/dev/null 7>&- 8>&- 9>&- || true
+      pg_ctl -D "$dir" -m fast stop >/dev/null 6>&- 7>&- 8>&- || true
     fi
     rm -f "$started"
   fi
