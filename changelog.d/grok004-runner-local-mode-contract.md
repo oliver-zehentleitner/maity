@@ -9,10 +9,13 @@
   runner's transport list, only in a staging directory local mode just
   created, a harness only in a workspace marked `checked-out` after a
   complete checkout, a retry in a fresh one for any workspace without
-  the mark that moves the old one aside instead of deleting it, the IPv6
-  host directory always with its port, the next run only when work waits, with
-  backoff, stopping by signal, Ctrl-C or console close, and how it stays
-  apart from the full runner.
+  the mark that moves the old one aside instead of deleting it, one lock
+  per workspace path outside every renamed directory, held across the
+  renames and the harness's start, with a table of a workspace path's
+  states, no link followed into `.git/maity`, the IPv6 host directory
+  always with its port, the next run only when work waits, with backoff,
+  stopping by signal, Ctrl-C or console close, and how it stays apart
+  from the full runner.
 
 ### Changed
 

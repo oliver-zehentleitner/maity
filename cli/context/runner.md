@@ -984,7 +984,7 @@ operator's config would admit every owner's project with that slug.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-qe0ka9e341gh, the lead's assignment of 2026-11-03; the reviews of #1294 (pmwg, dzse); `docs/api.md` §15.13, §5.3
+**Source:** card tsk-qe0ka9e341gh, the lead's assignment of 2026-11-03; the reviews of #1294 (pmwg, dzse), lotse's request for a state table (2026-11-03); `docs/api.md` §15.13, §5.3
 **See:** credentials.md — 116c5330-8dab-42ed-af06-74b6f02cee89 — as of 2026-11-03
 **See:** runner.md — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-03
 **See:** runner.md — c2acd907-0f26-4850-8272-063390f1d6a7 — as of 2026-11-03
@@ -1016,9 +1016,35 @@ without it (`repository_refused`, `no_repository`, `fetch_failed`, a
 partial checkout, a crash) gets a retry: a fresh staging directory beside
 it, only the regular files of `.git/maity` copied over, then the old one
 renamed aside to `.replaced-<time>-<name>` and kept whole, and the fresh
-one renamed into its place. Git never runs in a directory that existed
+one renamed into its place (for a kept `.join-*`, to `<handle>` or
+`<handle>#<instance>`). Git never runs in a directory that existed
 before that start, and nothing in it is deleted. For an IPv6 host the
 directory always carries the port, so `[::1]:80` and `[::1:80]` differ.
+
+One lock per workspace path, `maity-local/.locks/<key>`, keyed like the
+adapter files, is taken before anything in the workspace is read and
+held until local mode exits, across both renames and the harness's
+start; a start that finds it held is refused at once. A start opens the
+workspace, `.git` and `.git/maity` without following a link and refuses
+any link or junction (`workspace_link`). A `.replaced-*` directory is
+never started (`workspace_replaced`). §15.13 lists the states of a
+workspace path in one table; each review finding maps to a row:
+
+- `replacing` and `between`: the lock released before the renames, so a
+  second retry could move away the tree a harness had just started in
+  (pmwg, dzse on `a228f3ea`).
+- `kept`: a partial checkout taken as ready (pmwg on `a0b0e809`).
+- `replaced`: the old workspace deleted with unique work in its `.git`
+  (pmwg on `a0b0e809`).
+- `staging` and `placing`: a marker for the destination left by a failed
+  rename, and one a harness could forge (pmwg on `c629ded4`).
+- `orphaned` and `stranded`: a complete fresh directory whose path nobody
+  printed after a crash or a failed rename (dzse on `a228f3ea`).
+- `placing` from a kept `.join-*`: a retried staging workspace that kept
+  its random name (dzse on `a228f3ea`).
+- Every row that reads a workspace: `.git/maity` swapped for a link to
+  another workspace's, whose credential the retry would copy (dzse on
+  `a228f3ea`).
 
 The harness gets a runner's adapter context: the adapter files outside
 the workspace under `maity-local/.adapters`, no `MAITY_PLACEMENT`, the
@@ -1052,12 +1078,20 @@ could be widened for the next run. The retry builds a fresh directory
 for the same reason: with no Git in any existing workspace there is no
 permission an agent could forge or a failed rename could leave behind,
 and this holds where the sandbox is off or, on Windows, unverified, not
-only where it denies paths. The mark says "ready", not "Git may run": a test of the work tree
-cannot tell a partial checkout from a complete one, since checkout is
-not atomic, and a forged or removed mark leads only to a harness in a
-tree an agent already wrote or to a fresh clone. The old workspace is
-moved aside, not deleted, because an almost empty `.git` can still hold
-branches, objects and reflogs with unique work. The sandbox follows what the adapters
+only where it denies paths. The mark says "ready", not "Git may run":
+a test of the work tree cannot tell a partial checkout from a complete
+one, since checkout is not atomic, and a forged or removed mark leads
+only to a harness in a tree an agent already wrote or to a fresh clone.
+The old workspace is moved aside, not deleted, because an almost empty
+`.git` can still hold branches, objects and reflogs with unique work.
+The lock lies outside every renamed directory because a lock inside one
+guards the tree, not the path: once the tree is renamed, a second start
+locks whatever new tree the path names, and Windows renames no
+directory with an open file, so a lock inside had to be released before
+the rename. Outside, nothing is released before the rename it guards,
+and no check after taking it is needed. The no-link opening is there
+because Codex may write `.git`, and a link needs no read access to its
+target. The sandbox follows what the adapters
 already do on a runner (Claude Code strict or not at all, Codex only
 sandboxed), so local mode adds no third policy. Codex's sandbox is
 required because without it nothing confines Codex at all, while Claude
@@ -1116,3 +1150,12 @@ message says are no boundary.
 - A process-id lock file: after a `kill -9` it stays, and a reused id
   would block the workspace for good; an operating-system lock ends with
   its process.
+- The lock in `.git/maity/local.lock`, released before the renames and
+  checked against the path after taking it: the check sees only renames
+  before it, so a retry could still move away a tree a harness had just
+  started in (review of #1294, pmwg, dzse).
+- Waiting for a held lock: two starts each holding one lock and waiting
+  for the other's would never end; a start refused at once can be run
+  again.
+- Following links in `.git` as before: an agent could point
+  `.git/maity` at another workspace's (review of #1294, dzse).
