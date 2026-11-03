@@ -12030,8 +12030,9 @@ families will see some of them answered `probe_unavailable` until the
 budget is back, and the cache only spreads those reads, it does not
 remove them. A spent budget, whenever it is found, is
 `probe_unavailable` with `details.retry_at`, never `not_public`; what the
-hub holds of the repository is kept and served again once the budget
-is back, and a `retry_at` that has passed answers nothing. Any other `canonical` or `root` — a
+hub holds of the repository is kept, not served meanwhile, and served
+again once the budget is back; a `retry_at` already past refuses
+nothing, the hub reads again. Any other `canonical` or `root` — a
 repository named only inside an export (a See into another repository,
 `Superseded by`), a path that is not a member — is `not_found` with
 `details.reason: not_in_family`; the library then shows the reference as
@@ -12111,9 +12112,10 @@ private, no-cache`, as a contract file does (§6.8): the browser keeps
 the answer and sends `If-None-Match`, and a `304` costs no second
 megabyte. The project's own repository is checked on every call against
 the source §11.4 chooses for it, so an export held in memory is not
-served once that source no longer covers it: a removed grant ends it at
-once, a repository the instance token finds private within §11.4's 10
-minutes of visibility, in each serving process. Every refusal comes
+served once that source no longer covers it: a grant removed in the
+hub ends it at once, one revoked at the forge within §11.4's refresh of
+the source, and a repository the instance token finds private within
+§11.4's 10 minutes of visibility, in each serving process. Every refusal comes
 before `If-None-Match` is compared: a
 caller without `project:read`, a repository no longer in the family, no
 longer public or past the cap, and a member that failed get their
@@ -12139,8 +12141,10 @@ member reasons (`forge_unavailable`, `config_missing`, `no_state_url`,
 `state_url_invalid`, `address_refused`, `redirect_refused`,
 `unavailable`, `timeout`, `http_status` with `status`, `too_large`,
 `not_json`, `state_json_version` with `version`, `shape`),
-`repository_moved` or `bodies_url_invalid`; with `details.last`, the
-last good answer in the shape above, when the hub holds one. The dashboard's provider turns
+`repository_moved` or `bodies_url_invalid`, and only this code with
+`details.last`, the last good answer in the shape above, when the hub
+holds one: `probe_unavailable`, `probe_not_configured` and `not_found`
+from §11.5 never carry an export. The dashboard's provider turns
 each into the library's `{ error }`, so a view says why it has nothing
 instead of failing.
 
