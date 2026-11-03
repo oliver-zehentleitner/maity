@@ -98,9 +98,12 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
 - Every response carries `Cache-Control: no-store`,
   `X-Content-Type-Options: nosniff` and, on documents the hub renders
   (the dashboard, the HTML join page), `Content-Security-Policy:
-  default-src 'self'`; a page that carries the product line (§16.13)
-  adds `style-src 'sha256-…'`, the hash of that line's one `<style>`
-  block and of no other. The one exception to `no-store` is the images —
+  default-src 'self'`; a page the hub renders whole with the product
+  line in its head (§16.13: the join page, the mail link pages, the
+  sign-in link page, the `503` page) adds
+  `style-src 'sha256-…'`, the hash of that line's one `<style>` block
+  and of no other. The dashboard draws the line with its own stylesheet
+  and sends no hash. The one exception to `no-store` is the images —
   the logo and banner (§11.2) and the avatars (§6.10) — and the
   attachments (§8.7) and the whole contract (§6.8), which are revalidated
   by `ETag`, and the project
@@ -15932,7 +15935,8 @@ there (§6.20); `…/overview/swarm` is the members' alone and stays the login. 
 signed-in reader who is no member of a project with a public page reads the
 same read-only view at the same address, under the dashboard's own header
 (§16.9); at `…/overview/swarm` they are taken to `…/overview`, the address
-replaced.
+replaced. A project without a public page, and an earlier address of one,
+answers there as at any other address.
 
 **The dashboard's paths.** The dashboard routes with the History API
 (`pushState`, `popstate`); a link inside it is an ordinary `href` to a

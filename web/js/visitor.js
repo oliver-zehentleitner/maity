@@ -168,10 +168,11 @@ window.Maity = window.Maity || {};
 
   // The member Overview's addresses (§16.11) read the project's own page, the public overview
   // (§16.9, the maintainer's decision of 2026-11-01): the badge links to /overview (§6.20). Its swarm
-  // tab is the members' alone; null there, where the caller decides.
+  // tab is the members' alone; null there, where the caller decides. An agent's page is its own:
+  // `overview` is a handle an agent may hold (hub/src/maity_hub/paths.py, `handle_reserved`).
   function storedPath(path) {
     const parts = path.split("/").filter(Boolean);
-    if (parts[2] !== "overview") return path;
+    if (parts[1] === "agents" || parts[2] !== "overview") return path;
     return parts[3] === "swarm" ? null : "/" + parts.slice(0, 2).join("/");
   }
 
@@ -182,9 +183,17 @@ window.Maity = window.Maity || {};
     const stored = storedPath(path);
     if (stored === null) {
       // The swarm: a visitor keeps the login, which goes on here after the sign-in (§16.11); a
-      // signed-in non-member is taken to the overview instead of being told they are none.
+      // signed-in non-member is taken to the overview instead of being told they are none, but
+      // only where the project has a page: an earlier address (a rename, a transfer) has none, and
+      // the caller then leads a member on to the current one, the tab kept.
       if (!signedIn) return false;
-      M.route.go(path.replace(/\/swarm\/?$/, ""), { replace: true });
+      try {
+        await M.api.get("/public/pages/" + path.split("/").filter(Boolean).slice(0, 2).join("/"));
+      } catch (err) {
+        if (err.status === 404) return false;
+        throw err;
+      }
+      if (live()) M.route.go(path.replace(/\/swarm\/?$/, ""), { replace: true });
       return true;
     }
     let answer;

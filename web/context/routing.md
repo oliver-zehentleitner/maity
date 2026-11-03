@@ -173,7 +173,10 @@ for them and draws it read-only, for a visitor and for a signed-in
 non-member alike, at the address they opened. `…/overview/swarm` has no
 stored page: a visitor keeps the login, which goes on there after the
 sign-in, and a signed-in non-member is taken to `…/overview` with the
-address replaced, so that Back does not return to a dead end.
+address replaced, so that Back does not return to a dead end. That
+happens only once the hub answers the project's page: an earlier
+address of a project (a rename, a transfer) has none, so a member who
+follows an old swarm link is led on to the current one, the tab kept.
 
 **Reason:** the badge (§6.20) links to `/overview`, and before this the
 link ended on the login for a visitor and on `not_member` for a
