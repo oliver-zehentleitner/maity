@@ -4171,7 +4171,9 @@ their cards moved.` There is at most one such request per human, and it is never
 rewritten: when anything it shows changes (an instance comes or goes,
 or a line's kind, `since`, `last seen`, cards or reason), the hub
 withdraws it and, when an away instance is not silenced (below), files
-a new one in the same pass. An answer from a page that has not seen the
+a new one in the same pass — a change of kind or `since` without a
+call too, although it would be silenced after an answer, at the cost of
+at most one more inbox item per hour. An answer from a page that has not seen the
 change is then `request_not_open` (409), so an answered request is
 always exactly what its page showed; a client that gets it on a digest
 request reloads the inbox (`GET /requests`), where the new one stands.
