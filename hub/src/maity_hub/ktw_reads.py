@@ -148,8 +148,8 @@ class ForeignCache:
             held = f"{project_id}|{repository}"
             if current is None and _held("family", held):
                 return _Foreign(None, "timeout", ktw._now()), False  # dropped for room
+            found = self._read(reader, repository)  # a spent budget raises: nothing is marked
             _mark_read("family", held)
-            found = self._read(reader, repository)
             with self.guard:
                 for gone in bounded.put(self.entries, key, found, FOREIGN_KEPT, lambda k: False):
                     self.locks.pop(gone, None)
@@ -221,10 +221,7 @@ def require_covered(reader: forge.Forge, repository: str) -> None:
     served after a grant is gone or the repository turned private. With the instance token
     this is §11.4's visibility check (kept for 10 minutes); an owner's grant is re-chosen by
     `for_project` itself. `forge.NotCoveredError` or `forge.ForgeUnavailableError` else."""
-    if reader.refused is not None:
-        raise forge.NotCoveredError(reader.refused)
-    if reader.granted is None and reader.token is not None:
-        reader._require_public(repository)
+    reader.require_covered(repository)
 
 
 # At most ktw.IN_FLIGHT of one project's §11.5 reads at once.
@@ -248,6 +245,8 @@ _all = threading.BoundedSemaphore(IN_FLIGHT_ALL)
 # When each file was last read, kept apart from the store, so that a file dropped for room
 # is not read again inside FORCE_INTERVAL (§11.5).
 _read_at: OrderedDict[tuple[str, str], float] = OrderedDict()
+# The error of a file's last read, while it failed: answered again inside the 30 s hold.
+_failed: OrderedDict[tuple[str, str], ktw.MemberError] = OrderedDict()
 _read_at_guard = threading.Lock()
 
 
@@ -383,7 +382,10 @@ def _file(
     if _held(kind, url):  # a read, or a failed one, less than 30 s ago
         if kept is not None:
             return kept, False
-        raise ktw.MemberError("timeout")  # dropped for room meanwhile
+        failed = _failed.get((kind, url))
+        if failed is not None:  # that read failed: its own error again, not read again
+            raise ktw.MemberError(failed.reason, **failed.details)
+        raise ktw.MemberError("timeout")  # it succeeded, and was dropped for room meanwhile
     slot = _slot(project_id)
     if not slot.acquire(timeout=ktw.FAMILY_DEADLINE):
         raise ktw.MemberError("timeout")
@@ -392,7 +394,15 @@ def _file(
             raise ktw.MemberError("timeout")
         try:
             _mark_read(kind, url)
-            return _read(kind, url, cap), True
+            try:
+                found = _read(kind, url, cap)
+            except ktw.MemberError as error:
+                _failed[(kind, url)] = error
+                while len(_failed) > HELD_KEPT:
+                    _failed.popitem(last=False)
+                raise
+            _failed.pop((kind, url), None)
+            return found, True
         finally:
             _all.release()
     finally:

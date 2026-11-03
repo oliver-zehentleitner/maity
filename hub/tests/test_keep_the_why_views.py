@@ -1006,3 +1006,65 @@ def test_a_repository_turned_private_ends_within_the_ten_minutes_of_the_real_che
     assert after.status_code == 409
     assert after.json()["error"]["details"]["reason"] == "private_without_grant"
     assert sent.count("/repos/acme/widget") == 2
+
+
+# --- be2n's second review ----------------------------------------------------------------------
+
+
+def test_the_visibility_verdict_is_dropped_whatever_the_case_of_the_name() -> None:
+    """`_require_public` keys its verdict as `_forget` drops it: lower case (forge.py)."""
+    reader = forge.Forge("instance")
+    key = (forge.hashlib.sha256(b"instance").hexdigest(), "acme/widget")  # type: ignore[attr-defined]
+    forge._public[key] = (forge.time.monotonic(), None)  # type: ignore[attr-defined]
+    reader.require_covered("Acme/Widget")  # the verdict found under its lower-case key
+    reader._forget("Acme/Widget")
+    assert key not in forge._public
+
+
+def test_an_owners_reason_is_given_and_the_project_told(monkeypatch: pytest.MonkeyPatch) -> None:
+    told: list[str] = []
+
+    class Access:
+        def not_covered(self, project_id: str) -> None:
+            told.append(project_id)
+
+    def refuse(self: forge.Forge, repository: str) -> None:
+        raise forge.NotCoveredError("private_without_grant")
+
+    monkeypatch.setattr(forge.Forge, "_require_public", refuse)
+    reader = forge.Forge("instance", project_id="p1", owner_reason="unconfirmed", access=Access())
+    with pytest.raises(forge.NotCoveredError) as error:
+        reader.require_covered("acme/widget")
+    assert error.value.reason == "unconfirmed" and told == ["p1"]
+    plain = forge.Forge("instance", project_id="p1", access=Access())
+    with pytest.raises(forge.NotCoveredError) as error:
+        plain.require_covered("acme/widget")
+    assert error.value.reason == "private_without_grant"
+    forge.Forge("grant", granted="app").require_covered("acme/widget")  # nothing to check
+
+
+def test_a_cold_named_repository_with_a_spent_budget_stays_probe_unavailable(
+    owner: flow.Human, fake: Fake
+) -> None:
+    fake.family()
+    other_repository(fake)
+    fake.foreign["acme/other"][".keep-the-why"] = _spent()  # type: ignore[attr-defined]
+    project(owner)
+    for _ in range(2):  # the second inside 30 s: still the budget, not a timeout
+        answer = owner.get(f"{PATH}/export", params={"canonical": OTHER})
+        assert answer.status_code == 503
+        assert answer.json()["error"]["code"] == "probe_unavailable"
+
+
+def test_a_failed_read_answers_its_own_error_inside_the_hold(owner: flow.Human, fake: Fake) -> None:
+    fake.family()
+    lean(fake, f"{BASE}/state.json", entry(1))
+    fake.states[f"{BASE}/state.body.json"] = (502, b"")
+    project(owner)
+    first = owner.get(f"{PATH}/bodies")
+    reads = len(fake.state_reads)
+    second = owner.get(f"{PATH}/bodies")
+    for answer in (first, second):
+        assert answer.status_code == 503
+        assert answer.json()["error"]["details"] == {"reason": "http_status", "status": 502}
+    assert len(fake.state_reads) == reads, "not read again inside the 30 s"
