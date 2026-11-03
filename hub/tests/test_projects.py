@@ -109,7 +109,9 @@ def test_probe_configured_says_whether_the_hub_holds_a_token(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
     owner = flow.human(make_client, migrated)
-    client = make_client(forge_github_token="ghp_not_real")
+    client = make_client(
+        forge_instance_namespaces=frozenset({"maintainer"}), forge_github_token="ghp_not_real"
+    )
     client.cookies.update(owner.client.cookies)
     response = client.post(
         "/api/v1/projects",

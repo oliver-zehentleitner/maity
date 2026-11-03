@@ -2981,7 +2981,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(ctBody().querySelector(".contract-text")).includes("Every event has a kind.") && ctBody().querySelector(".contract-text code"),
     "contract: opened, the section as Markdown with the short commit, when it was read, and the file on the forge");
   expect(!ctBody().querySelector("a.mention") && !ctBody().querySelector("a.id-ref") && text(ctBody()).includes("Ask @agent-a about tsk-0123456789ab")
-    && ctLinks.length === 2, "contract: the repository's text is untrusted: no mention, no id link, only its own link and the forge's");
+    && ctLinks.length === 3, "contract: the repository's text is untrusted: no mention, no id link, only its own link, the forge's and the whole contract's");
+  const ctWhole = ctBody().querySelector("a.contract-whole-link");
+  expect(ctWhole && text(ctWhole) === "in the whole contract" && ctWhole.getAttribute("href") === "#/maintainer/maity/contract#s-8.2",
+    "contract: a card on the setting's file links its section in the whole contract (§6.8)");
   // Refresh is a text button in the line that says what was read; the source's form waits behind Change source.
   const ctChange = btn(ctBox(), "Change source");
   expect(btn(ctBody().querySelector(".contract-meta"), "Refresh") && !ctBox().querySelector(".contract-bar")
@@ -3018,6 +3021,45 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await ctSave("/etc/passwd", "1");
   expect(text(ctBox().querySelector(".send-status")).startsWith("Not saved: contract.path: not_a_path"), "contract: the hub's refusal of a path is said");
   win.Maity.api.get = ctGet; win.Maity.api.patch = ctPatch;
+  // The whole contract (js/contract.js, docs/api.md §6.8): the overview's Contract row leads to it,
+  // it is read when it opens and on Refresh only, its headings carry the hub's anchors, an error is
+  // the path and the hub's reason only.
+  const wcGets = [];
+  const wcGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => { if (p === "/projects/maintainer/maity/contract") wcGets.push(p); return wcGet(p); };
+  await go("#/maintainer/maity/overview/project"); for (let k = 0; k < 4; k++) await tick();
+  const wcRow = main.querySelectorAll("a").find((a) => a.attrs["data-key"] === "contract");
+  const wcForge = main.querySelectorAll("a").find((a) => a.attrs["data-key"] === "contract-forge");
+  expect(wcRow && text(wcRow) === "docs/api.md" && wcRow.getAttribute("href") === "#/maintainer/maity/contract"
+    && wcForge && text(wcForge) === "on the forge" && wcForge.getAttribute("href") === "https://github.com/oliver-zehentleitner/maity/blob/main/docs/api.md"
+    && !wcGets.length, "contract view: the overview's Contract row links the view and the file on the forge, nothing read");
+  await go("#/maintainer/maity/contract"); for (let k = 0; k < 4; k++) await tick();
+  const wcToc = main.querySelectorAll(".contract-toc a");
+  const wcHeads = main.querySelectorAll(".contract-text .md-anchored");
+  const wcWant = [["H2", "s-6", "6 Cards and their states"], ["H3", "s-6.4", "6.4 Creating a card"], ["H4", "s-6.4.1", "6.4.1 Labels"], ["H3", "s-6.8", "6.8 Contracts"],
+    ["H2", "h-4", "8 Events"], ["H2", "h-5", "Notes on reading this file"], ["H2", "h-6", "8 Events again"]];
+  expect(wcGets.length === 1 && text(main.querySelector(".contract-meta")).startsWith("docs/api.md at 0e5f7a1 · read ")
+    && main.querySelectorAll(".contract-meta a").some((a) => text(a) === "the file on the forge"), "contract view: read once when it opens, with the short commit and the forge's link");
+  expect(wcToc.length === 7 && wcToc.every((a, n) => text(a) === wcWant[n][2] && a.getAttribute("href") === "#/maintainer/maity/contract#" + wcWant[n][1]),
+    "contract view: the table of contents, one link per heading to its anchor");
+  // The heading's own line, its number as written ("8." stays "8."): the anchor sits on the heading, not a line beside it.
+  const wcHeadText = wcWant.map((w) => w[2]).map((t, n) => (n === 4 ? "8. Events" : t));
+  expect(wcHeads.length === 7 && wcHeads.every((x, n) => x.tagName === wcWant[n][0] && x.id === wcWant[n][1] && text(x) === wcHeadText[n]),
+    "contract view: every heading of the table drawn at its level with the hub's anchor as its id");
+  expect(!main.querySelectorAll(".contract-text .md-anchored").some((x) => text(x).includes("Not a heading"))
+    && text(main.querySelector(".contract-text")).includes("## 9 Not a heading: inside a fence") && !main.querySelector(".contract-text a.mention"),
+    "contract view: a heading inside a fence stays code; the text is untrusted");
+  btn(main.querySelector(".contract-meta"), "Refresh").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(wcGets.length === 2, "contract view: Refresh reads again");
+  await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+  expect(wcGets.length === 2, "contract view: no poll reads the file again");
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/contract"
+    ? Promise.reject(new win.Maity.api.ApiError("the contract file is not there", 404, p, "not_found", { fields: { "settings.contract_path": "not_found_on_forge" } })) : wcGet(p));
+  btn(main.querySelector(".contract-meta"), "Refresh").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(!main.querySelector(".contract-text") && !main.querySelector(".contract-toc")
+    && text(main.querySelector(".contract-page")) === "docs/api.md is not shown: the file is not in the repository's default branch (not_found_on_forge). Refresh",
+    "contract view: an error shows the path and the hub's reason, never the older text");
+  win.Maity.api.get = wcGet;
   // Where the agents run (js/placements.js, docs/api.md §15.5–§15.7): one row per placement in Agents,
   // with Stop, Start and Restart for whoever may; a refusal as the hub words it; placement events read again.
   const plPosts = [], plPatches = [];
@@ -5385,7 +5427,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     // A project's settings: which grant reads its repository, and the namespace owner's confirmation for their grants.
     await go("#/maintainer/maity/settings"); for (let k = 0; k < 6; k++) await tick();
     const fgRepo = () => main.querySelector(".forge-repository");
-    expect(fgRepo() && text(fgRepo()).includes("read with the instance's token, so only while it is public") && text(fgRepo()).includes("Not confirmed by the namespace owner")
+    expect(fgRepo() && text(fgRepo()).includes("read with the instance's token, which serves only the operator's own namespaces, and only while it is public") && text(fgRepo()).includes("Not confirmed by the namespace owner")
       && fgRepo().querySelectorAll("a").some((a) => a.getAttribute("href") === "#/settings/forge"),
       "forge: the project's settings say which grant reads the repository, unconfirmed, with a link to Forge access");
     const fgConfirms = [];
@@ -7727,8 +7769,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(whyItems[0]).includes("the project · 1 entry needs attention") && text(whyItems[1]).startsWith("hub")
     && text(ovPart("overview-links")).includes("hierarchical"), "overview: each Keep the Why dashboard with its attention, and the policy preset");
   const ovContract = ovPart("overview-links").querySelectorAll("a").find((a) => text(a) === "docs/api.md");
-  expect(ovContract && ovContract.getAttribute("href") === "https://github.com/oliver-zehentleitner/maity/blob/main/docs/api.md" && ovContract.getAttribute("target") === "_blank",
-    "overview: the contract on the forge at the default branch, beside Keep the Why");
+  const ovContractForge = ovPart("overview-links").querySelectorAll("a").find((a) => text(a) === "on the forge");
+  expect(ovContract && ovContract.getAttribute("href") === "#/maintainer/maity/contract" && !ovContract.getAttribute("target")
+    && ovContractForge && ovContractForge.getAttribute("href") === "https://github.com/oliver-zehentleitner/maity/blob/main/docs/api.md" && ovContractForge.getAttribute("target") === "_blank",
+    "overview: the contract read inside Maity, and beside it the file on the forge at the default branch, beside Keep the Why");
   // The README badge as it stands: off here, said so, the snippet with Copy; an owner is sent to Settings to change it.
   const ovBadge = ovPart("overview-badge");
   expect(ovBadge && text(ovBadge).includes("Off: the badge address answers 'not found'.") && !ovBadge.querySelector("img.badge-preview")
@@ -11559,6 +11603,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "/a\u0007b", "/a\u007fb", "/a\u0085b", "/a\u202eb", "/a\u200bb", "/a\ufeffb", "/a\u2066b", "/a\u00adb"].every((x) => !R.isRoute(x))
     && R.isRoute("/a/\u00e4\u00f6\u00fc-caf\u00e9"),
   "route: a dashboard path is a route, letters of any script included; another origin, a backslash, a doubled slash, a fragment, a hub path, a space, a control or a format character is not");
+  // A place on a page (§6.8, contract#s-6.8): a route and one anchor of the hub's characters; never a route itself.
+  expect(R.isAnchored("/maintainer/maity/contract#s-6.8") && R.isAnchored("/maintainer/maity/contract#h-12")
+    && R.anchoredHref("/maintainer/maity/contract#s-6.8") === "/maintainer/maity/contract#s-6.8"
+    && ["/a#", "/a#6.8", "/a#s 6", "/a#s-1#b", "/a#<x>", "/a#s-\u202e", "//evil#s-1", "/api/v1/me#s-1", "/a\\b#s-1", "#s-1", "/a#" + "s".repeat(101), "https://x/a#s-1"]
+      .every((x) => !R.isAnchored(x) && R.anchoredHref(x) === null)
+    && !R.isRoute("/maintainer/maity/contract#s-6.8"),
+  "route: a route with one anchor of letters, digits, '.', '_' and '-' is a place; another origin, a hub path, a second '#', a space, a control character or a bare anchor is not, and no place is a route");
   R.dropFragment();
   expect(rtPushed.length === 1 && rtPushed[0][0] === "replace" && rtPushed[0][1] === "/maintainer/maity/board?q=x" && R.current().fragment === "",
     "route: the device code's fragment is dropped with replaceState, path and query kept");

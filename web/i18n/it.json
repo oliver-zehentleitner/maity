@@ -1007,6 +1007,7 @@
   "error.timestamp_skew": "L'orologio di questo dispositivo è troppo distante da quello dell'hub.",
   "error.too_few": "Verrebbero invitati troppo pochi membri a questo turno.",
   "error.unauthenticated": "Non hai effettuato l'accesso.",
+  "error.upload_expired": "Il caricamento ha richiesto troppo tempo. Invia di nuovo il file.",
   "error.version_exists": "Esiste già una release con questa versione.",
   "error.webhook_signature": "La consegna della forge non ha una firma valida.",
   "forge.app.hint": "Installa l'App sul tuo account GitHub e scegli i repository che può leggere. Poi serve ogni progetto di tua proprietà il cui repository è incluso.",

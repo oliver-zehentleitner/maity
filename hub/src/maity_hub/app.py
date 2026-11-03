@@ -12,7 +12,7 @@ from string import Template
 
 from fastapi import APIRouter, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
-from sqlalchemy import Engine
+from sqlalchemy import Engine, text
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.routing import Mount
 
@@ -28,6 +28,7 @@ from maity_hub import (
     foreign_agent,  # noqa: F401  (registers the consent for another owner's agent)
     forge,
     forge_access,
+    handles,
     images,
     join_line,
     landing_files,
@@ -177,6 +178,19 @@ def check_startup(engine: Engine, settings: Settings) -> None:
         holders = namespace.reserved_holders(conn)
         if holders:  # `maity-hub migrate` refuses these; a hub started past it says so
             log.error("words that docs/api.md §16.11 reserves are held: %s", ", ".join(holders))
+        held, aliases = handles.unserved_instance_names(conn, settings.forge_instance_namespaces)
+        for name in held:
+            log.warning(
+                "MAITY_FORGE_INSTANCE_NAMESPACES lists %r, which nobody has: it is held for "
+                "the operator until it is created or taken off the list (§11.4)",
+                name,
+            )
+        for name in aliases:
+            log.warning(
+                "MAITY_FORGE_INSTANCE_NAMESPACES lists %r, a former name: its namespace is "
+                "served only under its current handle (§11.4)",
+                name,
+            )
         try:
             mail.check_at_startup(conn, settings.mail, settings.secret_key)
         except MailConfigError as error:
@@ -220,6 +234,39 @@ def check_web_dir(settings: Settings) -> None:
     web_dir = settings.web_dir
     if settings.web_dir_required and (web_dir is None or not web_dir.is_dir()):
         raise ConfigError(f"MAITY_WEB_DIR {web_dir} is not a directory")
+
+
+def warn_on_connection_budget(engine: Engine, settings: Settings) -> None:
+    """Say at the start when the deployment may ask more connections than PostgreSQL gives
+    ordinary roles (hub/context/replicas.md, "Several pods"). Not a refusal: behind a pooler the
+    server's own limit is not the one that counts. `settings` are the hub's, before any split
+    among workers."""
+    from maity_hub import serving
+
+    if engine.dialect.name != "postgresql":
+        return
+    try:
+        with engine.connect() as conn:
+            limits = {
+                name: int(value)
+                for name, value in conn.execute(
+                    text(
+                        "SELECT name, setting FROM pg_settings WHERE name IN ('max_connections', "
+                        "'superuser_reserved_connections', 'reserved_connections')"
+                    )
+                )
+            }
+    except SQLAlchemyError as error:  # a warning never stops the hub; the start says the rest
+        log.info("the connection budget was not checked: %s", type(error).__name__)
+        return
+    if "max_connections" not in limits:
+        return
+    reserved = limits.get("superuser_reserved_connections", 0) + limits.get(
+        "reserved_connections", 0
+    )
+    warning = serving.budget_warning(settings, limits["max_connections"], reserved)
+    if warning:
+        log.warning("%s", warning)
 
 
 def create_app(
@@ -348,8 +395,9 @@ def create_app(
     app.state.health_engine = health_engine or engine
     # Read once: it loads every migration file, and the files do not change under a running hub.
     app.state.schema_head = head_revision(engine)
+    handles.hold_instance_names(settings.forge_instance_namespaces)
     app.state.forge_access = forge_access.ForgeAccess(
-        engine, settings.github_app, settings.secret_key
+        engine, settings.github_app, settings.secret_key, settings.forge_instance_namespaces
     )
     app.state.probe = None  # the worker, from startup on when a forge token is set
     errors.install(app)

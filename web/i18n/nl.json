@@ -1007,6 +1007,7 @@
   "error.timestamp_skew": "De klok van dit apparaat wijkt te veel af van die van de hub.",
   "error.too_few": "Er zouden te weinig leden voor deze ronde worden uitgenodigd.",
   "error.unauthenticated": "Je bent niet ingelogd.",
+  "error.upload_expired": "Het uploaden duurde te lang. Stuur het bestand opnieuw.",
   "error.version_exists": "Er bestaat al een release met deze versie.",
   "error.webhook_signature": "De bezorging van de forge heeft geen geldige handtekening.",
   "forge.app.hint": "Installeer de App op je GitHub-account en kies de repositories die ze mag lezen. Ze bedient dan elk project van jou waarvan de repository erbij hoort.",

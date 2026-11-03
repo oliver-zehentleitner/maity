@@ -1,0 +1,16 @@
+{{- if gt (int .Values.replicas) 1 }}
+# With several pods one stays up through a node drain (hub/context/replicas.md, "Several pods").
+# One pod gets none: a budget that forbids its only eviction would block every drain.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "maity-hub.fullname" . }}
+  labels:
+    {{- include "maity-hub.labels" . | nindent 4 }}
+    app.kubernetes.io/component: hub
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "maity-hub.hubSelectorLabels" . | nindent 6 }}
+{{- end }}

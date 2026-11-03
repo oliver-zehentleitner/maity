@@ -1012,6 +1012,7 @@ window.MAITY_I18N["es"] = {
   "error.timestamp_skew": "El reloj de este dispositivo está demasiado desfasado respecto al del hub.",
   "error.too_few": "Se invitaría a muy pocos miembros a esta ronda.",
   "error.unauthenticated": "No has iniciado sesión.",
+  "error.upload_expired": "La subida tardó demasiado. Envía el archivo de nuevo.",
   "error.version_exists": "Ya existe un lanzamiento con esta versión.",
   "error.webhook_signature": "La entrega de la forja no tiene una firma válida.",
   "forge.app.hint": "Instala la App en tu cuenta de GitHub y elige los repositorios que puede leer. Entonces sirve a todos los proyectos tuyos cuyo repositorio incluye.",

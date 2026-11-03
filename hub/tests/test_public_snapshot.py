@@ -8,7 +8,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, update
+from sqlalchemy import Engine, select, update
 
 from maity_hub import clock, events, public_pages, public_snapshot
 from maity_hub import tables as t
@@ -190,6 +190,47 @@ def test_a_card_event_renders_no_other_card_s_page_under_the_project_lock(
         assert got.status_code == 200, got.text
         assert sorted(rendered) == sorted(board + own_page), change
     assert not {target for _, target in rendered} & set(others)
+
+
+def test_a_member_change_no_page_shows_renders_nothing_under_the_project_lock(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A language change emits a `member_updated` into every project of the person, each under
+    its project's row (dzse at #1277): it renders no page. A change a page shows still renders
+    the project with its dependents."""
+    for n in range(5):
+        world.card(title=f"Card {n}")
+    rendered: list[tuple[str, str]] = []
+    real = public_pages.refresh
+
+    def counted(conn: Any, hub: Any, kind: str, target_id: str) -> None:
+        rendered.append((kind, target_id))
+        real(conn, hub, kind, target_id)
+
+    monkeypatch.setattr(public_pages, "refresh", counted)
+    got = world.owner.patch("/me/notification-settings", {"email": {"language": "de"}})
+    assert got.status_code == 200, got.text
+    assert rendered == []
+    with world.migrated.connect() as conn:
+        human_id = conn.execute(
+            select(t.membership.c.human_id).where(t.membership.c.id == world.anna_member)
+        ).scalar_one()
+    for changed, renders in ((["availability_policy"], False), (["links"], True), (None, True)):
+        rendered.clear()
+        with events.transaction(world.migrated) as conn:
+            payload: dict[str, Any] = {"id": human_id}
+            if changed is not None:
+                payload["changed"] = changed
+            events.emit(
+                conn,
+                world.project_id,
+                "member_updated",
+                ["all"],
+                payload,
+                subject=("member", human_id),
+            )
+        assert (("project", world.project_id) in rendered) is renders, changed
+        assert (len(rendered) > 1) is renders, changed  # with its dependents
 
 
 def seen(world: World, membership_id: int, when: Any) -> None:

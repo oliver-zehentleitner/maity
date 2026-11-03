@@ -20,6 +20,7 @@ dependencies = [
     "markdown-it-py>=3.0",
     "pillow>=13.0,<14",  # avatars: decoded and re-encoded (docs/api.md §6.10)
     "cryptography>=50.0.2,<51",  # AES-256-GCM for stored secrets (docs/api.md §16.2, §17.4)
+    "boto3>=1.40,<2",  # the `s3` attachment store (docs/api.md §8.7, hub/context/replicas.md)
 ]
 
 [project.optional-dependencies]
@@ -31,6 +32,11 @@ dev = [
     "pytest-xdist>=3.6",  # CI runs the suite in parallel; each worker has its own database
     "httpx2>=2.16",
     "starlette>=1.2",  # the TestClient on httpx2
+    # A local S3 for the `s3` store's tests, on loopback: the S3 backend and the server's
+    # own two packages, not `moto[server]`, which brings every service's dependencies.
+    "moto[s3]>=5.1",
+    "flask>=3.1",
+    "flask-cors>=6.0",
 ]
 
 [project.scripts]
@@ -68,7 +74,7 @@ files = ["src", "tests", "scripts"]
 mypy_path = "src"
 
 [[tool.mypy.overrides]]
-module = ["pymysql.*"]
+module = ["pymysql.*", "boto3.*", "botocore.*", "moto.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
