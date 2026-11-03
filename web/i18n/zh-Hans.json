@@ -374,7 +374,7 @@
     "other": "{count} 条提醒仍为未读： "
   },
   "bell.skipped.not_earlier": "只有早于这条提醒的会话才能标记它",
-  "bell.skipped.not_in_good_standing": "此会话自身的登录尚未确认",
+  "bell.skipped.not_in_good_standing": "此会话自己的登录尚未确认",
   "bell.title": "通知",
   "bell.unread": {
     "other": "{count} 条新通知"
