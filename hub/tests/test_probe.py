@@ -303,7 +303,7 @@ def test_an_unanswering_forge_is_probe_unavailable_with_the_last_observation(
 
 def test_a_probe_read_needs_a_ref(owner: flow.Human, github: FakeGitHub) -> None:
     response = owner.get("/projects/maintainer/maity/probe")
-    assert response.json()["error"]["details"]["fields"] == {"pr": "one_of_pr_branch_tag"}
+    assert response.json()["error"]["details"]["fields"] == {"pr": "one_of_pr_branch_tag_commit"}
     assert (
         owner.get("/projects/maintainer/maity/probe?branch=a%20b").json()["error"]["code"]
         == "invalid"
@@ -1269,3 +1269,71 @@ def test_a_required_check_cleared_or_named_first_wakes_nobody(
     *_, first = _reported_events(migrated, card_id)
     assert first.payload["observed"]["required_check"] == {"name": "lint", "status": "success"}
     assert first.audience == []
+
+
+def test_a_required_check_renamed_back_is_compared_with_the_last_observation(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """nyh5's P2 on #1306: A, B, A again; the baseline is the last stored observation, so the
+    second rename is a silent new baseline too, whatever the status under A meanwhile."""
+    _, card_id = _checked_card(owner, make_client, migrated, github)
+    _name_the_check(owner, "lint")
+    github.runs(SHA, [("ci-ok", "success"), ("lint", "success")])
+    assert probe.observe_report(migrated, READER, card_id, max_age=0) is True
+    github.runs(SHA, [("ci-ok", "skipped"), ("lint", "success")])
+    _name_the_check(owner, "ci-ok")
+    assert probe.observe_report(migrated, READER, card_id, max_age=0) is True
+    *_, back = _reported_events(migrated, card_id)
+    assert back.payload["observed"]["required_check"] == {"name": "ci-ok", "status": "failure"}
+    assert back.audience == []
+
+
+def test_a_status_change_after_a_rename_and_a_new_report_wakes_the_holder(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """e5kk's P2 on #1306: after a silent rename and a new report, the first status change
+    under the new name is news, also on the first read for the new report: compared with the
+    last observation whatever its audience, not with the last one told."""
+    agent, card_id = _checked_card(owner, make_client, migrated, github)
+    _name_the_check(owner, "lint")
+    github.runs(SHA, [("ci-ok", "success"), ("lint", "success")])
+    assert probe.observe_report(migrated, READER, card_id, max_age=0) is True
+    _report_again(agent, card_id)  # `report.observed` is null again
+    github.runs(SHA, [("ci-ok", "success"), ("lint", "skipped")])  # the summary stays
+    assert probe.observe_report(migrated, READER, card_id, max_age=0) is True
+    *_, failed = _reported_events(migrated, card_id)
+    assert failed.payload["observed"]["checks"] == "success"
+    assert failed.payload["observed"]["required_check"] == {"name": "lint", "status": "failure"}
+    assert failed.audience != []
+
+
+def test_a_commit_read_is_stored_whole_or_not_at_all(owner: flow.Human, github: FakeGitHub) -> None:
+    """e5kk's P1 on #1306: a branch read refused by a spent budget stores no commit row,
+    so no later read finds a commit observation without `branch_head_sha`/`ahead`."""
+    _commit(github, SHA, [("ci-ok", "success")])
+    branch = "/repos/acme/maity/branches/main"
+    github.answers[branch] = forge.ForgeUnavailableError("later", status=403, rate_limited=True)
+    dropped = owner.get(f"/projects/maintainer/maity/probe?commit={SHA}")
+    assert dropped.status_code == 503
+    assert "last" not in dropped.json()["error"]["details"]
+    github.answers.pop(branch)
+    github.branch("main", head=OTHER)
+    body = owner.get(f"/projects/maintainer/maity/probe?commit={SHA}").json()
+    assert (body["commit"]["branch_head_sha"], body["commit"]["ahead"]) == (OTHER, True)
+
+
+def test_the_last_commit_observation_on_a_spent_budget_has_the_contract_shape(
+    owner: flow.Human, github: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """e5kk's P1 on #1306: `details.last` is the §6.13 shape, not the stored row."""
+    monkeypatch.setattr(probe, "FORCED_FLOOR", 0)
+    _name_the_check(owner, "ci-ok")
+    _commit(github, SHA, [("ci-ok", "success")])
+    github.branch("main", head=OTHER)
+    first = owner.get(f"/projects/maintainer/maity/probe?commit={SHA}").json()["commit"]
+    for path in [p for p in github.answers if SHA in p or p.endswith("/branches/main")]:
+        github.answers[path] = forge.ForgeUnavailableError("later", status=403, rate_limited=True)
+    dropped = owner.get(f"/projects/maintainer/maity/probe?commit={SHA}&max_age=0")
+    assert dropped.status_code == 503
+    last = dropped.json()["error"]["details"]["last"]
+    assert {k: v for k, v in last.items() if k != "observed_at"} == first

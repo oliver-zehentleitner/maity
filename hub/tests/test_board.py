@@ -824,3 +824,143 @@ def test_commit_links_are_read_once_per_sha_and_never_on_a_closed_card(
     fg.calls.clear()
     probe.observe_links(migrated, fg, _project_id(migrated))
     assert fg.calls == []  # a commit link is read only while its card is not closed
+
+
+class DuringBranchRead(CommitForge):
+    """A forge whose branch read runs `meanwhile` once, as if the API was called while the
+    probe waited for the forge (the read holds no lock)."""
+
+    def __init__(self, meanwhile: Any) -> None:
+        super().__init__(head=HEAD)
+        self.meanwhile = meanwhile
+
+    def branch(self, repository: str, name: str) -> dict[str, Any]:
+        if self.meanwhile is not None:
+            act, self.meanwhile = self.meanwhile, None
+            act()
+        return super().branch(repository, name)
+
+
+def test_link_observed_is_read_by_everyone_and_wakes_only_its_member_token(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """e5kk's P1 on #1306: `all` lets everyone read a link observation, it wakes nobody
+    (§8.2); only the holder's `member:` token wakes, when `ahead` turned `true`."""
+    from maity_hub import events as hub_events
+
+    holder, bystander = flow.agent(make_client, owner), flow.agent(make_client, owner)
+    card = task(owner)
+    holder.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
+    link(owner, card, kind="commit", forge_url=COMMIT)
+    probe.observe_links(migrated, CommitForge(head=HEAD), _project_id(migrated))
+    [seen] = events(migrated, "link_observed")
+    assert seen.audience == ["all", f"member:{holder.id}"]
+
+    def membership_of(principal: str) -> Any:
+        with migrated.connect() as conn:
+            return conn.execute(
+                select(t.membership).where(t.membership.c.agent_id == principal)
+            ).one()
+
+    assert hub_events.readable_by(seen, membership_of(bystander.id), bystander.id)
+    assert not hub_events.wakes(seen, membership_of(bystander.id), bystander.id)
+    assert hub_events.wakes(seen, membership_of(holder.id), holder.id)
+
+
+def test_a_card_cancelled_during_the_commit_read_gets_no_observation(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """e5kk, nyh5 and dzse on #1306: the card is read again under the project lock."""
+    holder = flow.agent(make_client, owner)
+    card = task(owner)
+    holder.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
+    link(owner, card, kind="commit", forge_url=COMMIT)
+    cancel = DuringBranchRead(
+        lambda: owner.patch(
+            f"/projects/maintainer/maity/tasks/{card['id']}", {"status": "cancelled"}
+        )
+    )
+    probe.observe_links(migrated, cancel, _project_id(migrated))
+    assert events(migrated, "link_observed") == []
+    shown = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()
+    assert shown["status"] == "cancelled" and shown["links"][0]["observed"] is None
+
+
+def test_a_card_claimed_anew_during_the_commit_read_wakes_its_new_holder(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    first, second = flow.agent(make_client, owner), flow.agent(make_client, owner)
+    card = task(owner)
+    first.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
+    link(owner, card, kind="commit", forge_url=COMMIT)
+
+    def hand_over() -> None:
+        released = first.post(f"/projects/maintainer/maity/tasks/{card['id']}/release", {})
+        assert released.status_code == 200, released.text
+        claimed = second.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
+        assert claimed.status_code == 200, claimed.text
+
+    probe.observe_links(migrated, DuringBranchRead(hand_over), _project_id(migrated))
+    [seen] = events(migrated, "link_observed")
+    assert seen.payload["new"]["ahead"] is True
+    assert seen.audience == ["all", f"member:{second.id}"]
+
+
+def test_the_read_after_a_card_closed_wakes_nobody(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """vuur on #1306: the one read after the card closed is stored and shown, no wake."""
+    holder = flow.agent(make_client, owner)
+    card = task(owner)
+    holder.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
+    link(owner, card, kind="pr", forge_url=PULL)
+    closed = owner.patch(f"/projects/maintainer/maity/tasks/{card['id']}", {"status": "cancelled"})
+    assert closed.status_code == 200, closed.text
+    answer = {"type": "PullRequest", "title": "A PR", "state": "closed", "merged": True}
+    probe.observe_links(migrated, FakeForge({7: answer}), _project_id(migrated))
+    [seen] = events(migrated, "link_observed")
+    assert seen.payload["new"]["state"] == "merged"
+    assert seen.audience == ["all"]
+
+
+def test_ahead_back_from_a_refused_branch_read_wakes_nobody_again(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """dzse's P3-2 on #1306: `true`, `null` (refused), `true` wakes the holder once."""
+    holder = flow.agent(make_client, owner)
+    card = task(owner)
+    holder.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
+    link(owner, card, kind="commit", forge_url=COMMIT)
+    fg = CommitForge(head=HEAD)
+    probe.observe_links(migrated, fg, _project_id(migrated))
+    fg.head = forge.ForgeUnavailableError("refused", status=403)
+    _later(probe.MAX_AGE + 1)
+    probe.observe_links(migrated, fg, _project_id(migrated))
+    fg.head = HEAD
+    _later(2 * probe.MAX_AGE + 2)
+    probe.observe_links(migrated, fg, _project_id(migrated))
+    seen = events(migrated, "link_observed")
+    assert [e.payload["new"]["ahead"] for e in seen] == [True, None, True]
+    assert [e.audience for e in seen] == [["all", f"member:{holder.id}"], ["all"], ["all"]]
+    shown = owner.get(f"/projects/maintainer/maity/tasks/{card['id']}").json()["links"][0]
+    assert set(shown["observed"]) == {*links.COMMIT_SHOWN, "observed_at"}
+
+
+def test_a_refused_commit_read_still_reads_the_rounds_other_links(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    """dzse's N2 on #1306: a spent budget on a commit leaves the issue and PR links read."""
+    card = task(owner)
+    link(owner, card, kind="commit", forge_url=COMMIT)
+    link(owner, card, kind="pr", forge_url=PULL)
+
+    class Spent(FakeForge):
+        def commit(self, repository: str, sha: str) -> dict[str, Any]:
+            raise forge.ForgeUnavailableError("spent", status=403, rate_limited=True)
+
+    fg = Spent({7: {"type": "PullRequest", "title": "A PR", "state": "open", "merged": False}})
+    with pytest.raises(forge.ForgeUnavailableError):
+        probe.observe_links(migrated, fg, _project_id(migrated))
+    assert len(fg.reads) == 1
+    [seen] = events(migrated, "link_observed")
+    assert seen.payload["new"]["state"] == "open"

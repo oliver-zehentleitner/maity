@@ -37,7 +37,7 @@ def read_probe(
         mine.require("project:read")
     project = mine.project
     if pr is None and branch is None and tag is None and commit is None:
-        raise invalid({"pr": "one_of_pr_branch_tag"})
+        raise invalid({"pr": "one_of_pr_branch_tag_commit"})
     if commit is not None:
         if not SHA.fullmatch(commit):
             raise invalid({"commit": "not_a_sha"}, "a commit is named by its full 40 hex sha")
@@ -68,8 +68,18 @@ def read_probe(
                 error.reason if mine.may("project:admin") else None
             ) from None
         except forge.ForgeUnavailableError as error:
-            stored = probe.last(engine, project.id, kind, ref)
-            details: dict[str, Any] = {"last": stored.stamped()} if stored is not None else {}
+            details: dict[str, Any] = {}
+            # The last complete observation in the shape the answer has (§11).
+            if kind == "commit":
+                last_commit = probe.last_commit(engine, project, ref)
+                if last_commit is not None:
+                    at = clock.rfc3339(last_commit.observed_at)
+                    details["last"] = {**last_commit.shown(), "observed_at": at}
+            else:
+                stored = probe.last(engine, project.id, kind, ref)
+                if stored is not None:
+                    at = clock.rfc3339(stored.observed_at)
+                    details["last"] = {**probe.shown(project, kind, stored), "observed_at": at}
             # A spent budget says when the forge is read again (§11.4).
             if error.retry_at is not None:
                 details["retry_at"] = clock.rfc3339(error.retry_at)

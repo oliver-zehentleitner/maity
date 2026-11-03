@@ -122,18 +122,41 @@ def observe(
     Raises `forge.ForgeUnavailableError` when the forge must be asked and
     does not answer; the caller decides what the last observation is worth.
     """
-    with engine.connect() as conn:
-        row = _cached(conn, project.id, kind, ref)
-    now = clock.now()
-    # `floor`: a reader's forced fresh read (`max_age=0`) still waits FORCED_FLOOR, since
-    # one source serves all of an owner's projects and its budget at the forge (§11.4).
-    if row is not None and now - row.observed_at < timedelta(seconds=max(max_age, floor)):
-        return Observation(dict(row.data), row.observed_at, fresh=False)
+    cached = _young(engine, project.id, kind, ref, max_age, floor)
+    if cached is not None:
+        return cached
     # The time the read started: a slow read that began before a fast one is the
     # older observation, whenever it ends.
     observed_at = clock.now()
     fg = fg.for_project(project.id)  # the source that covers this project (§11.4)
     data = _read(fg, forge.repository_of(project.repository_url), kind, ref)
+    return _put(engine, fg, project, kind, ref, observed_at, data)
+
+
+def _young(
+    engine: Engine, project_id: str, kind: str, ref: str, max_age: int, floor: int
+) -> Observation | None:
+    """The stored observation when younger than `max_age`, else `None`."""
+    with engine.connect() as conn:
+        row = _cached(conn, project_id, kind, ref)
+    now = clock.now()
+    # `floor`: a reader's forced fresh read (`max_age=0`) still waits FORCED_FLOOR, since
+    # one source serves all of an owner's projects and its budget at the forge (§11.4).
+    if row is not None and now - row.observed_at < timedelta(seconds=max(max_age, floor)):
+        return Observation(dict(row.data), row.observed_at, fresh=False)
+    return None
+
+
+def _put(
+    engine: Engine,
+    fg: forge.Forge,
+    project: Any,
+    kind: str,
+    ref: str,
+    observed_at: datetime,
+    data: dict[str, Any],
+) -> Observation:
+    """Store one read that started at `observed_at`, unless a newer one is stored."""
     with transaction(engine) as conn:
         lock_project(conn, project.id)  # one writer per project: delete + insert is the upsert
         stored = _cached(conn, project.id, kind, ref)
@@ -217,14 +240,35 @@ def observe_commit(
 
     A spent budget (or a forge that does not answer) on either part raises, so the caller keeps
     the last observation: never `ahead: false` or `missing` from a partial read. A branch the
-    forge refuses without the budget being spent reads as `branch_head_sha`/`ahead` null."""
-    commit = observe(engine, fg, project, "commit", sha, max_age, floor)
+    forge refuses without the budget being spent reads as `branch_head_sha`/`ahead` null.
+
+    The commit's own read is stored only once the branch read is in too: a read dropped
+    after the commit part leaves no stored commit behind that `details.last` or a later
+    round could take for a complete observation."""
+    commit = _young(engine, project.id, "commit", sha, max_age, floor)
+    if commit is None:
+        observed_at = clock.now()
+        source = fg.for_project(project.id)  # the source that covers this project (§11.4)
+        data = _read(source, forge.repository_of(project.repository_url), "commit", sha)
+        if not data.get("found"):  # nothing more to read: complete as it is
+            commit = _put(engine, source, project, "commit", sha, observed_at, data)
+        else:
+            head, branch = _branch_head(engine, fg, project, max_age, floor)
+            commit = _put(engine, source, project, "commit", sha, observed_at, data)
+            return _composed(project, sha, commit, head, branch)
     if not commit.data.get("found"):
         return CommitObservation({"sha": sha, "found": False}, commit.observed_at, commit.fresh)
+    head, branch = _branch_head(engine, fg, project, max_age, floor)
+    return _composed(project, sha, commit, head, branch)
+
+
+def _branch_head(
+    engine: Engine, fg: forge.Forge, project: Any, max_age: int, floor: int
+) -> tuple[str | None, Observation | None]:
+    """The default branch's head for a commit read, with its observation; `(None, None)` when
+    the forge refuses the branch without the budget being spent. A spent budget or no answer
+    raises: the commit read is dropped as a whole."""
     default = project.repository_default_branch or "main"
-    head: str | None
-    times = [commit.observed_at]
-    fresh = commit.fresh
     try:
         branch = observe(engine, fg, project, "branch", default, max_age, floor)
     except forge.NotCoveredError:
@@ -232,11 +276,16 @@ def observe_commit(
     except forge.ForgeUnavailableError as error:
         if error.rate_limited or error.status is None:
             raise  # a spent budget or no answer at all: the read is dropped as a whole
-        head = None  # refused (§6.13): null, never `ahead: false`
-    else:
-        head = branch.data.get("head_sha") if branch.data.get("found") else None
-        times.append(branch.observed_at)
-        fresh = fresh and branch.fresh
+        return None, None  # refused (§6.13): null, never `ahead: false`
+    return (branch.data.get("head_sha") if branch.data.get("found") else None), branch
+
+
+def _composed(
+    project: Any, sha: str, commit: Observation, head: str | None, branch: Observation | None
+) -> CommitObservation:
+    """A found commit with the default branch's head beside it, at the older read's time."""
+    times = [commit.observed_at] + ([branch.observed_at] if branch is not None else [])
+    fresh = commit.fresh and (branch is None or branch.fresh)
     data = {
         "sha": sha,
         "found": True,
@@ -247,6 +296,20 @@ def observe_commit(
         "ahead": None if head is None else head != sha,
     }
     return CommitObservation(data, min(times), fresh)
+
+
+def last_commit(engine: Engine, project: Any, sha: str) -> CommitObservation | None:
+    """The last complete commit observation however old, for `details.last`: the stored
+    commit read with the stored default branch head beside it (`null` when none is)."""
+    commit = last(engine, project.id, "commit", sha)
+    if commit is None:
+        return None
+    if not commit.data.get("found"):
+        return CommitObservation({"sha": sha, "found": False}, commit.observed_at, False)
+    branch = last(engine, project.id, "branch", project.repository_default_branch or "main")
+    found = branch is not None and branch.data.get("found")
+    head = branch.data.get("head_sha") if branch is not None and found else None
+    return _composed(project, sha, commit, head, branch if found else None)
 
 
 def _announce_for_release(
@@ -414,7 +477,8 @@ def observe_report(engine: Engine, fg: forge.Forge, card_id: str, max_age: int =
         # owners' and admins' views read every event and show the report's new state (§8.2).
         first = current.report.get("observed") is None
         told = _last_announced(conn, card.project_id, card_id, audience)
-        if not (_news(stored, told, current.report) or (first and mismatch)):
+        baseline = _last_observed(conn, card.project_id, card_id)
+        if not (_news(stored, told, baseline) or (first and mismatch)):
             audience = []
         emit(
             conn,
@@ -451,13 +515,16 @@ def _seen(report: dict[str, Any]) -> tuple[Any, Any]:
     return observed, report.get("mismatch")
 
 
-def _news(stored: dict[str, Any], told: tuple[Any, Any] | None, previous: dict[str, Any]) -> bool:
+def _news(
+    stored: dict[str, Any], told: tuple[Any, Any] | None, baseline: dict[str, Any] | None
+) -> bool:
     """Whether the observation in `stored` tells the readers something `told` did not (§6.6,
-    §8.2). A `required_check` counts only by its `status` under the same `name`: one whose name
-    differs from the one told (it appears for the first time, a `PATCH` renamed it or cleared it
-    to `null`) changes nothing on the forge and wakes nobody, whatever its status. Its status
-    under a name told is compared with that told; under a new name, with the card's previous
-    observation when that carried the same name, so a status change after a rename still wakes."""
+    §8.2). A `required_check` counts only by its `status` under the same `name`, compared with
+    `baseline`, the card's last stored observation whoever it woke: one whose name differs
+    from the baseline's (it appears for the first time, a `PATCH` renamed it, also back to an
+    earlier name, or cleared it to `null`) changes nothing on the forge and wakes nobody,
+    whatever its status, and is the baseline for the next. So a status change after a rename,
+    or after a new report on the same head, still wakes."""
     if told is None:
         return True
     seen, mismatch = _seen(stored)
@@ -469,12 +536,35 @@ def _news(stored: dict[str, Any], told: tuple[Any, Any] | None, previous: dict[s
     if rest != {k: v for k, v in told_seen.items() if k != "required_check"}:
         return True
     new = seen.get("required_check")
-    if new is None:
+    earlier = (baseline or {}).get("required_check")
+    if new is None or earlier is None or earlier.get("name") != new.get("name"):
         return False
-    for earlier in (told_seen.get("required_check"), _seen(previous)[0].get("required_check")):
-        if earlier is not None and earlier.get("name") == new.get("name"):
-            return bool(earlier.get("status") != new.get("status"))
-    return False
+    return bool(earlier.get("status") != new.get("status"))
+
+
+def _last_observed(conn: Connection, project_id: str, card_id: str) -> dict[str, Any] | None:
+    """The card's last stored report observation, as `_seen` reads it, whoever it woke (an
+    event to nobody included); None when none is within ANNOUNCED_LOOKBACK. Every change of
+    what an observation shows is emitted, so this is the observation before the one stored."""
+    e = t.event.c
+    rows = conn.execute(
+        select(e.payload)
+        .where(
+            e.project_id == project_id,
+            e.subject_type == "task",
+            e.subject_id == card_id,
+            e.kind == "probe_observed",
+            e.redacted.is_(False),
+        )
+        .order_by(e.seq.desc())
+        .limit(ANNOUNCED_LOOKBACK)
+    ).all()
+    for row in rows:
+        payload = row.payload or {}
+        if "observed" in payload:
+            seen: dict[str, Any] = _seen(payload)[0]
+            return seen
+    return None
 
 
 # A card's latest `probe_observed` events read for the last one told to a report's readers. Past

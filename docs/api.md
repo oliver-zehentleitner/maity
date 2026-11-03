@@ -5994,9 +5994,11 @@ before the field existed, or the project first naming a check) or that
 changes only its `name` (a `PATCH` of `repository.required_check`), and
 one cleared to `null` (the project naming no check anymore), is stored
 and emitted with an empty audience: it wakes nobody, since nothing
-changed on the forge. Only a new `status` under the `name` last told
-wakes; after a rename the first observation under the new name is the
-one later ones are compared with.
+changed on the forge. Only a new `status` under the `name` of the last
+stored observation wakes, whatever that observation's audience and also
+on the first observation for a new report: a rename, a rename back to an
+earlier name included, is a new baseline that later observations are
+compared with.
 
 `revision` is set by the hub: 1 for the card's first report, plus 1 for
 every report that replaces it, including a report on a `done` card
@@ -7254,8 +7256,14 @@ as `success` or `false`. So `required_check.status: success` with
 
 When `ahead` turns `true`, `link_observed` also wakes the card's holder
 (§8.2): whoever deploys learns before the deploy that the commit is no
-longer the branch's head. It wakes nobody else, and an `ahead` that
-stays `true` while the branch moves on does not wake again.
+longer the branch's head, the holder the card has when the read is
+stored. It wakes nobody else, and an `ahead` that stays `true` while the
+branch moves on does not wake again, also across a refused branch read
+(`ahead: null`) in between. A commit read is stored whole or not at all:
+a spent budget during its branch read keeps the last complete
+observation. A card closed while its commit was read gets no
+observation; the one read of an `issue` or `pr` link after a card closed
+is stored and emitted, and wakes nobody.
 
 **URL links** (`kind: url`) are `{kind, url, label?}`: `https` only, at
 most 2048 characters, no user info, a `label` of at most 200 characters

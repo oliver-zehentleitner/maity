@@ -169,7 +169,7 @@ def view(row: Any, members: dict[int, str]) -> dict[str, Any]:
             shown.update(sha=sha_of(row))
         else:
             shown.update(number=row.number)
-        shown.update(observed=row.observed)
+        shown.update(observed=public_observed(row.observed))
     else:
         shown.update(url=row.url, label=row.label)
     shown.update(added_by=members[row.added_by], added_at=clock.rfc3339(row.added_at))
@@ -300,6 +300,25 @@ def observed(link_kind: str, item: dict[str, Any] | None, at: str) -> dict[str, 
 
 COMMIT_SHOWN = ("found", "sha", "checks", "required_check", "branch_head_sha", "ahead")
 
+# Kept with a commit link's stored observation, never shown: the last `ahead` a read could
+# tell, so a refused branch read (`ahead: null`) between two `true` is no new transition.
+AHEAD_KNOWN = "_ahead_known"
+
+
+def public_observed(observation: dict[str, Any] | None) -> dict[str, Any] | None:
+    """A stored observation as §6.13 shows it: without the hub's own bookkeeping keys."""
+    if observation is None:
+        return None
+    return {k: v for k, v in observation.items() if not k.startswith("_")}
+
+
+def _ahead_known(observation: dict[str, Any] | None) -> Any:
+    """The last `ahead` a read could tell (`true` or `false`), `None` when none could yet."""
+    observation = observation or {}
+    if observation.get("ahead") is not None:
+        return observation.get("ahead")
+    return observation.get(AHEAD_KNOWN)
+
 
 def _shown(observation: dict[str, Any] | None, kind: str = "issue") -> dict[str, Any] | None:
     """What `link_observed` compares and carries: `{found, title, state}`, on a `commit` link
@@ -312,9 +331,11 @@ def _shown(observation: dict[str, Any] | None, kind: str = "issue") -> dict[str,
 
 def _wakes_holder(kind: str, old: dict[str, Any] | None, new: dict[str, Any]) -> bool:
     """Whether a change wakes the card's holder: its `state`, or a commit link's `ahead`
-    turning `true` (§6.13); an `ahead` that stays `true` wakes nobody again."""
+    turning `true` (§6.13); an `ahead` that stays `true` wakes nobody again, also across a
+    refused branch read (`null`) in between: `old` is the stored observation, compared by
+    its last known `ahead`."""
     if kind == "commit":
-        return new.get("ahead") is True and (old or {}).get("ahead") is not True
+        return new.get("ahead") is True and _ahead_known(old) is not True
     return (old or {}).get("state") != new.get("state")
 
 
@@ -355,7 +376,13 @@ def observe(engine: Engine, fg: forge.Forge, project_id: str) -> int:
     fg = fg.for_project(project_id)  # the source that covers this project (§11.4)
     commits = [r for r in wanted if r.kind == "commit"]
     wanted = [r for r in wanted if r.kind != "commit"]
-    reads = _observe_commits(engine, fg, project, commits)
+    # A commit read that is refused (a spent budget) leaves the round's issue and pull
+    # request links still read; the refusal goes to the caller after them.
+    refused: forge.ForgeUnavailableError | None = None
+    try:
+        reads = _observe_commits(engine, fg, project, commits)
+    except forge.ForgeUnavailableError as error:
+        refused, reads = error, 0
     for start in range(0, len(wanted), BATCH):
         batch = wanted[start : start + BATCH]
         at = clock.rfc3339(clock.now())  # when the read started
@@ -371,9 +398,24 @@ def observe(engine: Engine, fg: forge.Forge, project_id: str) -> int:
                 ).first()
                 if current is None:  # removed meanwhile
                     continue
+                card = _card_now(conn, row.card_id)
+                if card is None:
+                    continue
                 new = observed(row.kind, answer.get(row.number), at)
-                _store(conn, project_id, row, current, new, public, fg.via)
+                # The one read after the card closed is stored and shown, and wakes nobody.
+                holder = card.claim_holder if card.closed_at is None else None
+                _store(conn, project_id, row, current, new, public, fg.via, holder)
+    if refused is not None:
+        raise refused
     return reads
+
+
+def _card_now(conn: Connection, card_id: str) -> Any | None:
+    """The card's closure and holder as they are now, read under the project lock: the
+    forge read ran without it, and the card may have closed or changed hands meanwhile."""
+    return conn.execute(
+        select(t.card.c.closed_at, t.card.c.claim_holder).where(t.card.c.id == card_id)
+    ).first()
 
 
 def _store(
@@ -384,8 +426,11 @@ def _store(
     new: dict[str, Any],
     public: bool,
     via: str | None,
+    holder: int | None,
 ) -> None:
-    """Store one link's observation; `link_observed` when what it shows changed (§8.2)."""
+    """Store one link's observation; `link_observed` when what it shows changed (§8.2),
+    read by everyone and waking only `holder` (the card's current one, `None` on a closed
+    card) when the change is one that wakes."""
     from maity_hub.events import emit
 
     conn.execute(update(t.card_link).where(t.card_link.c.id == row.id).values(observed=new))
@@ -393,10 +438,10 @@ def _store(
     if old_shown == new_shown:
         return
     audience = ["all"]
-    if _wakes_holder(row.kind, old_shown, new_shown) and row.claim_holder:
+    if _wakes_holder(row.kind, current.observed, new_shown) and holder:
         from maity_hub.views import principal_id
 
-        audience.append(f"member:{principal_id(conn, row.claim_holder)}")
+        audience.append(f"member:{principal_id(conn, holder)}")
     emit(
         conn,
         project_id,
@@ -431,7 +476,6 @@ def _observe_commits(engine: Engine, fg: forge.Forge, project: Any, rows: list[A
         by_sha.setdefault(sha_of(row), []).append(row)
     for sha, linked in by_sha.items():
         read = probe.observe_commit(engine, fg, project, sha)
-        new = read.link()
         with transaction(engine) as conn:
             lock_project(conn, project.id)
             for row in linked:
@@ -440,8 +484,14 @@ def _observe_commits(engine: Engine, fg: forge.Forge, project: Any, rows: list[A
                 ).first()
                 if current is None:  # removed meanwhile
                     continue
+                card = _card_now(conn, row.card_id)
+                if card is None or card.closed_at is not None:
+                    continue  # closed meanwhile: commit links are read on open cards only
+                new = read.link()
+                if new.get("ahead") is None and _ahead_known(current.observed) is not None:
+                    new[AHEAD_KNOWN] = _ahead_known(current.observed)
                 if current.observed == new:  # the same cached read: nothing to store
                     continue
                 # A commit link's events are not a merge the public page counts (§11.4).
-                _store(conn, project.id, row, current, new, False, fg.via)
+                _store(conn, project.id, row, current, new, False, fg.via, card.claim_holder)
     return len(by_sha)
