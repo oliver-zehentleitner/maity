@@ -2827,8 +2827,24 @@ def notifications_step(run: Run, page: Page) -> None:
     page.locator("header a.chat-button").click()
     expect(page).to_have_url(re.compile(r"/chats$"))
     expect(page.locator("main section.view-chats h2")).to_have_text("Chats")
-    if lead:  # on a phone the Chats page carries the Lead the header hides there
+    # On a phone the Chats page carries the Lead the header hides there. The scenario's agents are
+    # members, so no project has a lead to reach: the members list of E2E Alpha is answered with its
+    # agents as admins for this check alone, which gives the header a Lead (spq4 at #1271).
+    members = re.compile(r"/api/v1/projects/owner/e2e-alpha/members(\?|$)")
+
+    def as_admins(route) -> None:
+        body = route.fetch().json()
+        for item in body.get("items", []):
+            if item.get("kind") == "agent" and item.get("role") != "proxy":
+                item["trust"] = "admin"
+        route.fulfill(json=body)
+
+    page.route(members, as_admins)
+    try:
+        page.reload()
+        expect(page.locator("header .me .lead-button")).to_be_visible()
         page.set_viewport_size({"width": 390, "height": 844})
+        expect(page.locator("header .me .lead-button")).to_be_hidden()
         expect(page.locator("main .chats-lead .lead-button")).to_be_visible()
         # Several leads are a menu; under the heading at the left edge it opens from that edge, on
         # screen (e5kk at #1271). Drawn with a second lead beside the real one.
@@ -2843,6 +2859,10 @@ def notifications_step(run: Run, page: Page) -> None:
         assert box[0] >= 0 and box[1] <= box[2], f"the Chats page's lead menu leaves the screen at 390 px: {box}"
         page.set_viewport_size({"width": 1280, "height": 900})
         expect(page.locator("main .chats-lead .lead-button")).to_be_hidden()
+    finally:
+        page.unroute(members, as_admins)
+    page.reload()
+    expect(page.locator("main section.view-chats h2")).to_have_text("Chats")
     run.a11y(page, "chats across projects")
     run.step("all projects: Inbox, Chats and Agents lead its pages; Inbox leads back to the requests")
     pages = page.locator("header nav.views a")
