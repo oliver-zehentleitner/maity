@@ -27,6 +27,7 @@ from maity_hub import clock, worker_runs
 from maity_hub import tables as t
 from maity_hub.auth import caller as auth_caller
 from maity_hub.config import Settings
+from maity_hub.db import xact_lock
 from maity_hub.deps import engine_of, origin_of, settings_of
 from maity_hub.errors import not_found, rate_limited
 from maity_hub.ratelimit import Limiter
@@ -257,7 +258,9 @@ def refresh(
     changed is replaced; one that is no longer rendered is deleted. A render that fails takes
     the target's pages off: nothing stale is served for the sake of a bug. `fresh`: also
     replaced when only the HTML differs, as after a new version rendering the same inputs
-    (`startup`)."""
+    (`startup`). Under a lock per target, so two processes rendering it together (every pod
+    at its start, a change and the worker) write it one after the other."""
+    xact_lock(conn, f"public_page:{kind}:{target_id}")
     existing = {
         row.path: row
         for row in conn.execute(

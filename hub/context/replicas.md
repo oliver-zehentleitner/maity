@@ -785,15 +785,35 @@ sense the entries above use: its own `listening.POD`, its own LISTEN connection,
 only about processes.
 
 - **The pool is the hub's total.** `MAITY_DB_POOL_SIZE` and `MAITY_DB_MAX_OVERFLOW` keep their
-  meaning for the operator; each process holds its share (at least one pooled connection), so
-  raising the workers does not multiply the connections asked of the database (entry on
-  connections above). The listener connections do grow with the processes.
-- **The startup checks run once, in the parent**, before any worker is spawned (schema, secrets,
-  mail, reserved holders). A worker that still fails its start makes the supervisor stop and
-  `serve` exit non-zero, instead of uvicorn restarting it in a loop.
+  meaning for the operator; each process holds its share, rounded down, so raising the workers
+  never adds to the connections asked of the database (entry on connections above). A share
+  below two pooled connections is refused at the start: a request may hold its transaction's
+  connection while a shared count or the forge budget takes a second from the same pool (entry
+  2bd65fec), and a process with one waits on itself until the pool's timeout. The listener
+  connections (one per process) and the readiness probe's come on top.
+- **The checks and the one-time work of a start run in the parent** before any worker is
+  spawned: the startup checks (schema, secrets, mail, reserved holders, a required dashboard
+  directory), then `app.start_once` (the generated text, the public pages, the sign-in
+  switches). Each worker checks again at its own start but does no one-time work, so N
+  processes starting together do not race each other. Pods starting together still run
+  `start_once` each: its steps take a lock (`db.xact_lock`, a transaction-level advisory lock
+  that works behind PgBouncer in any mode) or are claimed under one, and the public pages are
+  rendered again page by page, never cleared first, so a sibling serving meanwhile finds the
+  old page or the new one. A worker that fails to build its app exits with uvicorn's start
+  failure, so the supervisor stops and `serve` exits non-zero instead of starting it again and
+  again.
 - **A stop releases the open waits** in every worker, as in one process: the supervisor's
   processes use the hub's own `Server`, which hands the release to the loop on SIGTERM.
 - The request stats line names its process (`pid=`), since each process counts its own.
+- **What stays per process** is what stays per pod (the "Weaker" list at the top): caches,
+  `registration.DROPPED`, the forge budget's in-flight count, the stats. An isolation ends the
+  isolated agent's waits at once in the process that ran it; a wait held by another process
+  ends at its next read, within the two-second fallback.
+- A worker that dies leaves its `hub_pod` row until it goes stale, as a dead pod does; the
+  supervisor starts a new one. uvicorn's SIGTTIN adds a process past `MAITY_WORKERS` and past
+  the pool's split: not a way to scale the hub.
+- **Memory** grows with the processes (about 130 MB each when idle): the chart's memory limit
+  has to grow with `config.workers`.
 
 The opt-in default is the maintainer's rule (confirmed); the reasons below are inferred.
 

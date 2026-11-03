@@ -36,26 +36,49 @@ def refusal(settings: Settings) -> str | None:
             f"MAITY_WORKERS={settings.workers} needs PostgreSQL: on {backend} the processes "
             "would not share wake-ups, nonces and limits; set MAITY_WORKERS=1"
         )
+    if settings.db_pool_size // settings.workers < MIN_POOL_PER_WORKER:
+        return (
+            f"MAITY_WORKERS={settings.workers} needs MAITY_DB_POOL_SIZE of at least "
+            f"{MIN_POOL_PER_WORKER * settings.workers} (it is {settings.db_pool_size}): each "
+            f"process holds its share and needs {MIN_POOL_PER_WORKER}, since a request may hold "
+            "one connection while a shared count takes another"
+        )
     return None
 
 
+# A request may hold its transaction's connection while a shared count or the forge budget takes
+# a second one from the same pool (hub/context/replicas.md, "Rate limits"): a process with fewer
+# waits on itself.
+MIN_POOL_PER_WORKER = 2
+
+
 def per_worker(settings: Settings) -> Settings:
-    """The settings of one worker: its share of the pool, at least one connection, the overflow
-    divided alike. One worker keeps the pool as it is."""
+    """The settings of one worker: its share of the pool and of the overflow, rounded down, so
+    the processes together never hold more than the settings name (`refusal` makes sure the
+    share is enough). One worker keeps the pool as it is."""
     n = settings.workers
     if n == 1:
         return settings
     return replace(
         settings,
-        db_pool_size=max(1, settings.db_pool_size // n),
+        db_pool_size=settings.db_pool_size // n,
         db_max_overflow=settings.db_max_overflow // n,
     )
 
 
 def app() -> FastAPI:
-    """The app of one worker process, uvicorn's factory (`maity_hub.serving:app`)."""
+    """The app of one worker process, uvicorn's factory (`maity_hub.serving:app`). The parent ran
+    the checks and the one-time work of a start already (`cli._serve_workers`). A worker that
+    cannot build its app exits with uvicorn's start failure, so the supervisor stops instead of
+    starting it again and again."""
+    from uvicorn.config import STARTUP_FAILURE
+
     from maity_hub.app import create_app, serving_engine
 
     configure_logging()
-    settings = per_worker(Settings.from_env())
-    return create_app(settings, serving_engine(settings))
+    try:
+        settings = per_worker(Settings.from_env())
+        return create_app(settings, serving_engine(settings), started=True)
+    except Exception:
+        logging.getLogger(__name__).exception("a worker could not build its app")
+        raise SystemExit(STARTUP_FAILURE) from None

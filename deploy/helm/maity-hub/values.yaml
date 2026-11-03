@@ -53,9 +53,10 @@ config:
   # API only.
   dashboard: true
   # MAITY_WORKERS: serving processes per pod, 1 to 64. The default 1 is the
-  # single-process hub. More than 1 only with PostgreSQL (the hub refuses to
-  # start otherwise); the pool (MAITY_DB_POOL_SIZE) is split among them, and
-  # resources.requests.cpu should grow with them.
+  # single-process hub. More than 1 only with PostgreSQL and at least two pool
+  # connections per process (the hub refuses to start otherwise); the pool
+  # (MAITY_DB_POOL_SIZE) is split among them. resources must grow with them:
+  # about 150Mi of memory and a share of CPU per process.
   workers: 1
 
 database:

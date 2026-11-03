@@ -37,9 +37,11 @@ from maity_hub import tables as t
 from maity_hub.app import (
     SchemaNotCurrentError,
     check_startup,
+    check_web_dir,
     create_app,
     require_current_schema,
     serving_engine,
+    start_once,
 )
 from maity_hub.auth import second_factor_reset
 from maity_hub.auth.passwords import MIN_LENGTH, hash_password
@@ -462,9 +464,11 @@ def _serve_workers(settings: Settings, banner: list[str] | None) -> int:
     as one process does (`_Server`). The parent checks the database and the schema once, so a hub
     that cannot start says so once, not once per worker, and holds no connection itself."""
     try:
+        check_web_dir(settings)
         engine = serving_engine(serving.per_worker(settings))
         try:
             check_startup(engine, settings)
+            start_once(engine, settings)
         finally:
             engine.dispose()
     except SchemaNotCurrentError as error:
