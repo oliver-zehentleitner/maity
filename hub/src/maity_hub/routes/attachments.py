@@ -220,9 +220,17 @@ def _discard_unless_committed(
 ) -> None:
     """Remove the upload's blob only when a fresh read finds no row with its id. When the row
     is there, the blob is its bytes and stays; when the read fails, the blob stays too, and
-    the sweep removes it after `BLOB_GRACE` if no row names it by then."""
+    the sweep removes it after `BLOB_GRACE` if no row names it by then.
+
+    The read waits for the project's lock first. The upload's transaction inserts its row
+    under that lock and holds it until the server has ended it, also when the client has
+    already given up on the answer (a dropped connection, a timeout): read without the lock,
+    a COMMIT the server is still running would not be visible yet, and the blob of a row it
+    then commits would go."""
+    project_id = key.partition("/")[0]
     try:
-        with engine.connect() as conn:
+        with engine.begin() as conn:
+            lock_project(conn, project_id)
             found = conn.execute(
                 select(t.attachment.c.id).where(t.attachment.c.id == attachment_id)
             ).first()

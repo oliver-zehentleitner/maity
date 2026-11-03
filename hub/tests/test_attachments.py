@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 from PIL import Image, PngImagePlugin
-from sqlalchemy import Engine, select, text, update
+from sqlalchemy import Engine, insert, select, text, update
 
 from maity_hub import attachment_store, attachments, avatars, events, idempotency, middleware
 from maity_hub import tables as t
@@ -382,6 +382,40 @@ def test_an_upload_whose_commit_answer_is_lost_keeps_the_blob_its_row_names(
     monkeypatch.setattr(route, "select", unreadable)  # the fresh read fails too
     assert unavailable(put(owner, "unknown.txt", b"unknown"))
     assert len(list(blobs.glob("*/*"))) == 2  # left to the sweep, not removed blindly
+
+
+def test_the_read_before_the_removal_waits_for_a_commit_still_running(
+    owner: flow.Human, migrated: Engine, blobs: Path
+) -> None:
+    """The client may have given up on a COMMIT the server still runs: the read waits for the
+    project's lock, which that transaction holds until it ends, and then finds the row."""
+    import threading
+
+    from maity_hub.ids import new_id
+    from maity_hub.routes import attachments as route
+
+    first = put(owner, "first.txt", b"first").json()["id"]
+    with migrated.connect() as conn:
+        row = conn.execute(select(t.attachment).where(t.attachment.c.id == first)).one()
+    late = new_id("attachment")
+    key = attachment_store.key_of(row.project_id, late)
+    store = attachment_store.LocalStore(blobs)
+    store.put(key, b"late")
+    done = threading.Event()
+
+    def discard() -> None:
+        route._discard_unless_committed(migrated, store, key, late)
+        done.set()
+
+    with migrated.begin() as conn:  # the upload's transaction, its COMMIT not through yet
+        events.lock_project(conn, row.project_id)
+        conn.execute(insert(t.attachment).values({**row._asdict(), "id": late}))
+        worker = threading.Thread(target=discard)
+        worker.start()
+        assert not done.wait(0.5)  # the read waits for the lock
+    worker.join(timeout=30)
+    assert done.is_set()
+    assert store.get(key) == b"late"  # the row committed: its bytes stay
 
 
 def test_the_sweeps_grace_outlasts_the_upload_bound_by_the_clock_skew() -> None:
