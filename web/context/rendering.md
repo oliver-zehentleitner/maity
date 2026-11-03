@@ -1020,6 +1020,9 @@ button, in the portal and in the hub's mails alike (`reports.action.remove.hint`
 deploy is `上线`. The role proxy and the Meat Proxy stay two things: `Meat Proxy` keeps its English name. A role in
 a sentence is `所有 {role}` with the role's English word, as in `trust.every.role.*`. A dormant instance is `休眠`,
 as on every key that names one, and a maintenance window is `维护时段`.
+The imprint is `运营者信息` on every key that names it, the page's own title (`frame.imprint`), the
+registration's link and the portal's legal settings alike, as in Japanese and Korean. A public page shows you as
+online while you are (`在你在线时显示你在线`), not when you were (`何时在线` reads as a history).
 
 **Rejected alternatives:**
 - `Übernahme` for both claim and takeover: an error then says a card "needs a takeover" next to "nobody has claimed it".
@@ -1031,6 +1034,7 @@ as on every key that names one, and a maintenance window is `维护时段`.
 - `Uniéndote…` and `Uniéndose…` for Joining: one addresses the reader, the other reads as the formal address; the glossary wants a neutral waiting text.
 - `entrada` for a join or a sign-in in Portuguese: it is already an entry and the inbox, and reads as a door, not an act.
 - A neutral form for `Besitzer` in the table: it would make the level's name differ between labels and sentences.
+- `法律声明` for the imprint in Simplified Chinese: it reads as a disclaimer and gave one page two names.
 
 
 ## Where the glossary contradicted itself or the catalogs
