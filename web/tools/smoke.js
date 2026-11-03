@@ -10966,6 +10966,31 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!mtBanner() && !main.querySelector(".maintenance-page"), "maintenance: (a window the page has not read yet)");
   await win.Maity.api.get("/projects").catch(() => null); await mtSettle();
   expect(main.querySelector(".maintenance-page") && text(main).includes("Told by a refusal") && mtBanner(), "maintenance: a 503 maintenance shows the full page at once");
+  // Someone other than the instance admin, signed in: the full page at /admin/maintenance too, with a way out.
+  const mtMeGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/me" ? mtMeGet(p).then((v) => ({ ...v, member: { ...v.member, instance_admin: false } })) : mtMeGet(p));
+  await go("#/admin/maintenance"); await mtSettle();
+  expect(main.querySelector(".maintenance-page") && !mtSection() && !btn(main, "End maintenance now") && header.querySelector("button.maintenance-sign-out")
+    && header.querySelector("button.maintenance-sign-out").textContent === "Sign out",
+  "maintenance: a signed-in non-admin gets the full page at /admin/maintenance too, and a way to sign out");
+  // A visitor without a session: the full page through the drawing itself, with the way to the sign-in.
+  win.Maity.api.get = (p) => (p === "/auth/session" ? Promise.reject(new win.Maity.api.ApiError("x", 401, p, "unauthenticated", {})) : mtMeGet(p));
+  await go("#/all"); await mtSettle();
+  expect(main.querySelector(".maintenance-page") && main.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/login") && !byId("login-handle"),
+    "maintenance: a visitor without a session gets the full page, not the public page or the sign-in");
+  win.Maity.api.get = mtMeGet;
+  // A banner left in other words (a change of language) is drawn again by the next drawing, even from a recent read.
+  mtBanner().textContent = "stale words";
+  await win.Maity.maintenance.fresh();
+  expect(mtBanner() && mtBanner().textContent !== "stale words" && mtBanner().textContent.includes("Told by a refusal"),
+    "maintenance: a drawing redraws the banner from a recent read, so a change of language reaches it");
+  // The window ends at `until` by itself: past it, nothing is known to run and the banner goes.
+  const mtClock = win.Maity.api.now;
+  win.Maity.api.now = () => Date.now() + 601000;
+  win.Maity.maintenance.drawBanner();
+  expect(win.Maity.maintenance.current() === null && !win.Maity.maintenance.running() && !mtBanner(), "maintenance: past `until` the window is over by itself, the banner gone");
+  win.Maity.api.now = mtClock;
+  win.Maity.maintenance.drawBanner();
   await win.Maity.api.post("/admin/maintenance/end");
   win.Maity.maintenance.know(null); await mtSettle();
   expect(!main.querySelector(".maintenance-page") && !mtBanner(), "maintenance: a window gone takes the full page with it");
