@@ -3621,7 +3621,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   let cpOverHold = false, cpOverOld = null;
   win.Maity.api.getAll = (p) => {
     if (!cpOverHold || !p.endsWith("/notes?state=open")) return cpOverGets(p);
-    return new Promise((resolve) => { cpOverOld = () => resolve(cpOverGets(p)); });
+    // The answer as the hub had it when the read was asked: a stale snapshot when released late.
+    const asked = cpOverGets(p);
+    return new Promise((resolve) => { cpOverOld = () => resolve(asked); });
   };
   cpRacePosts.length = 0;
   win.Maity.api.post = (p, b) => {
@@ -3645,7 +3647,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Every read held, the older one released first: it draws nothing, the form shown meanwhile holds
   // no text already posted (a submit sends nothing), and the latest read draws one empty form.
   const cpHeld = [];
-  win.Maity.api.getAll = (p) => (p.endsWith("/notes?state=open") ? new Promise((resolve) => cpHeld.push(() => resolve(cpOverGets(p)))) : cpOverGets(p));
+  win.Maity.api.getAll = (p) => {
+    if (!p.endsWith("/notes?state=open")) return cpOverGets(p);
+    const asked = cpOverGets(p);
+    return new Promise((resolve) => cpHeld.push(() => resolve(asked)));
+  };
   cpRacePosts.length = 0;
   byId("card-note-body").value = "A held post";
   cpForm().dispatch("submit"); await tick();
@@ -3661,6 +3667,66 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(cpHeldShown && cpRacePosts.length === 1 && cpPanel().querySelectorAll("form.card-note-form").length === 1 && byId("card-note-body").value === ""
     && cpNotes().filter((n) => n.includes("A held post")).length === 1,
     "card panel: the list stays while it is read; reads held and the older released first bring back no posted text and draw one form " + JSON.stringify([cpHeldShown, cpHeldMid, cpRacePosts.length]));
+  // Typing in Add a note while an edit's Cancel reads the list: the field is the same element after the
+  // read (focus, caret and text stay), and the Cancel's completion leaves the focus where the writer put it.
+  const cpTyping = [];
+  win.Maity.api.getAll = (p) => {
+    if (!p.endsWith("/notes?state=open")) return cpOverGets(p);
+    const asked = cpOverGets(p);
+    return new Promise((resolve) => cpTyping.push(() => resolve(asked)));
+  };
+  const cpField = byId("card-note-body");
+  btn(neNote("nte-0031"), "Edit").click(); await tick();
+  btn(neNote("nte-0031"), "Cancel").click(); await tick();
+  cpField.focus(); cpField.value = "typed during the read";
+  while (cpTyping.length) { cpTyping.shift()(); for (let k = 0; k < 4; k++) await tick(); }
+  for (let k = 0; k < 4; k++) await tick();
+  expect(byId("card-note-body") === cpField && document.activeElement === cpField && cpField.value === "typed during the read"
+    && !neNote("nte-0031").querySelector("form") && cpPanel().querySelectorAll("form.card-note-form").length === 1,
+    "card panel: the field typed in during a read is the same after it, the focus stays there, not on Edit "
+      + JSON.stringify([byId("card-note-body") === cpField, document.activeElement === cpField, document.activeElement && document.activeElement.className]));
+  cpField.value = "";
+  // While the list is read, its Edit and Remove wait (aria-busy): an edit begun on the old list would
+  // go with it, its text too.
+  const cpLock = [];
+  win.Maity.api.getAll = (p) => {
+    if (!p.endsWith("/notes?state=open")) return cpOverGets(p);
+    const asked = cpOverGets(p);
+    return new Promise((resolve) => cpLock.push(() => resolve(asked)));
+  };
+  btn(neNote("nte-0031"), "Edit").click(); await tick();
+  btn(neNote("nte-0031"), "Cancel").click(); await tick();
+  const cpLockList = cpPanel().querySelector(".card-note-items");
+  // Another note of the old list, its Edit still shown while the read runs.
+  const cpLockId = cpLockList.querySelectorAll("li.card-note").find((li) => li.getAttribute("data-note") !== "nte-0031" && li.querySelector("button.card-note-edit")).getAttribute("data-note");
+  const cpLockEdit = btn(neNote(cpLockId), "Edit");
+  cpLockEdit.click(); await tick();
+  const cpLockMid = [cpLockList.getAttribute("aria-busy"), cpLockEdit.disabled, !!neNote(cpLockId).querySelector("form.card-note-edit-form")];
+  while (cpLock.length) { cpLock.shift()(); for (let k = 0; k < 4; k++) await tick(); }
+  expect(JSON.stringify(cpLockMid) === JSON.stringify(["true", true, false]) && !cpLockList.getAttribute("aria-busy")
+    && !btn(neNote(cpLockId), "Edit").disabled && !neNote(cpLockId).querySelector("form.card-note-edit-form"),
+    "card panel: while the list is read its Edit waits, no edit begins on the old list; after the read it is free "
+      + JSON.stringify([cpLockMid, cpLockList.getAttribute("aria-busy"), neNote(cpLockId) && btn(neNote(cpLockId), "Edit") && btn(neNote(cpLockId), "Edit").disabled, cpLock.length]));
+  // A failed read and then a failed post: Add a note stays, with the text and the refusal in it.
+  let cpFailRead = null;
+  win.Maity.api.getAll = (p) => (p.endsWith("/notes?state=open")
+    ? new Promise((resolve, reject) => { cpFailRead = () => reject(new win.Maity.api.ApiError("read failed", 503, p, "unavailable")); })
+    : cpOverGets(p));
+  win.Maity.api.post = (p, b) => (p.endsWith("/notes") ? Promise.reject(new win.Maity.api.ApiError("boom", 503, p, "unavailable")) : cpRaceWas(p, b));
+  byId("card-note-body").value = "Kept through two failures";
+  btn(neNote("nte-0031"), "Edit").click(); await tick();
+  btn(neNote("nte-0031"), "Cancel").click(); await tick();
+  cpFailRead(); for (let k = 0; k < 4; k++) await tick();
+  if (cpForm()) { cpForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick(); }
+  expect(text(cpPanel()).includes("Could not read the notes") && cpForm() && byId("card-note-body").value === "Kept through two failures"
+    && text(cpForm()).includes("Not posted") && !btn(cpForm(), "Post the note").disabled,
+    "card panel: after a failed read a failed post keeps the form, its text and its refusal in sight " + text(cpPanel().querySelector(".card-notes")));
+  // The list comes back with the next post.
+  // Posted past the counting stub: the removal cases below count the posts they make.
+  win.Maity.api.getAll = cpOverGets; win.Maity.api.post = (p, b) => (p.endsWith("/notes") ? cpPost(p, b) : cpRaceWas(p, b));
+  if (cpForm()) { cpForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick(); }
+  expect(byId("card-note-body") && byId("card-note-body").value === "" && cpNotes().filter((n) => n.includes("Kept through two failures")).length === 1,
+    "card panel: the text kept is posted once the hub answers again");
   win.Maity.api.getAll = cpOverGets;
   win.Maity.api.post = cpRaceWas;
   // One's own note: no reason needed; Cancel and Escape leave it as it was.
@@ -3715,7 +3781,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(neNote(cpMine), "Remove").click(); for (let k = 0; k < 4; k++) await tick();
   expect(cpPosts.length === cpBefore + 2 && !neNote(cpMine).querySelector(".card-note-removed"), "note remove: cancelled, nothing sent");
   win.prompt = (q) => { cpAsks.push(q); return cpAsks.length === 1 ? "  " : "posted twice"; };
-  btn(neNote(cpMine), "Remove").click(); for (let k = 0; k < 6; k++) await tick();
+  // A click focuses the button it is on, as a browser does; the shim's click does not.
+  btn(neNote(cpMine), "Remove").focus(); btn(neNote(cpMine), "Remove").click(); for (let k = 0; k < 6; k++) await tick();
   expect(cpAsks.length === 2 && cpAsks[1].startsWith("A reason is needed")
     && JSON.stringify(cpPosts[cpPosts.length - 1]) === JSON.stringify(["/projects/maintainer/maity/tasks/tsk-0001/notes/" + cpMine + "/redact", { reason: "posted twice", base_version: 2 }])
     && text(neNote(cpMine)).includes("The note was removed by Maintainer: posted twice") && !neNote(cpMine).querySelector(".md, .card-note-actions, .card-note-edited")

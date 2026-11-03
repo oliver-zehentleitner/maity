@@ -127,16 +127,15 @@ window.Maity = window.Maity || {};
       append(clear(watchButton), watching ? M.t("cardpanel.watch.on") : M.t("cardpanel.watch.off"));
     };
     drawWatch();
-    // The note field as last drawn: it gets the focus back after a post.
-    let noteField = null;
-    // A post from Add a note on its way, kept across the list being drawn again
-    // (an edit saved or cancelled meanwhile): the text sent, and the form's button
-    // and status line as last drawn, so the redrawn form stays busy and the text
-    // is cleared from the field shown when the post succeeds.
-    let posting = null, noteForm = null;
+    // Add a note is drawn once per panel, below the list, and stays while the list
+    // is drawn again: whoever types in it keeps the field, its focus, caret and text.
+    // `posting` is the text of a post on its way (null when none).
+    let noteField = null, noteFormEl = null, posting = null;
     // Each read of the list counts; only the latest draws it, so an older read that
-    // ends later neither adds a second form nor brings back a draft already posted.
+    // ends later draws nothing and says so to its caller (false).
     let notesRead = 0;
+    const notesList = h("div", { class: "card-note-items" });
+    append(notesBox, notesList);
     const box = h("aside", { class: "card-panel", "aria-labelledby": "card-panel-title" },
       h("div", { class: "card-panel-head" }, h("span", { class: "card-id" }, c.id),
         h("span", { class: "card-panel-actions" }, watchButton,
@@ -160,7 +159,16 @@ window.Maity = window.Maity || {};
     const mine = (n) => !!(ctx.me && n.author && n.author.member_id === ctx.me.id);
     const mayEdit = (n) => !removedNote(n) && !closed() && (mine(n) || !!ctx.canAdmin);
     const mayRemove = (n) => !removedNote(n) && !!ctx.canAdmin;
+    const reading = () => notesList.getAttribute("aria-busy") === "true";
     const noteItem = (id) => Array.from(notesBox.querySelectorAll("li.card-note")).find((li) => li.getAttribute("data-note") === id);
+    // After an edit, removal or post, the focus moves on only when it is still where
+    // that action left it: inside `from` (the edit form, the note's line, the Add a note
+    // form, kept even once the list is drawn again), on nothing, or on an element gone
+    // from the page. Someone who moved on, say into Add a note, keeps it.
+    const focusFree = (from) => {
+      const a = document.activeElement;
+      return !a || a === document.body || a.isConnected === false || from.contains(a);
+    };
     // What a removal says, below the list.
     const removeStatus = M.statusLine();
 
@@ -186,6 +194,7 @@ window.Maity = window.Maity || {};
     // Edit in place: the text and, for someone else's note, the reason the hub
     // asks for (§6.16); Cancel or Escape leaves the note as it was.
     function editNote(n) {
+      if (reading()) return;
       const li = noteItem(n.id);
       // The note as the edit was made on: its version is the edit's base_version
       // (§6.16); a conflict replaces it with the note as it is now.
@@ -200,7 +209,12 @@ window.Maity = window.Maity || {};
       const save = h("button", { type: "submit" }, M.t("cardpanel.notes.edit.save"));
       const editStatus = M.statusLine();
       let saving = false;
-      const back = () => { notes().then(() => { const b = noteItem(n.id) && noteItem(n.id).querySelector("button.card-note-edit"); if (b) b.focus(); }); };
+      const back = () => {
+        notes().then((drawn) => {
+          const b = drawn && noteItem(n.id) && noteItem(n.id).querySelector("button.card-note-edit");
+          if (b && focusFree(form)) b.focus();
+        });
+      };
       const form = h("form", {
         class: "card-note-edit-form",
         onkeydown: (e) => { if (e.key === "Escape" && !e.defaultPrevented) { e.preventDefault(); back(); } },
@@ -237,7 +251,7 @@ window.Maity = window.Maity || {};
               // goes to the tombstone, as after a removal of one's own.
               await notes();
               removeStatus.fail("", { message: M.t("cardpanel.notes.edit.conflict_removed") });
-              focusStone(n.id);
+              focusStone(n.id, form);
               return;
             }
             if (now) {
@@ -270,6 +284,9 @@ window.Maity = window.Maity || {};
 
     // Remove for everyone (§8.5): the text becomes the tombstone, the note keeps its place.
     async function removeNote(n) {
+      if (reading()) return;
+      // The note's line as it is now: Remove, which had the focus, is in it.
+      const line = noteItem(n.id);
       const reason = askRemoveReason();
       if (reason === null) return;
       removeStatus.busy(M.t("cardpanel.notes.remove.busy"));
@@ -291,69 +308,79 @@ window.Maity = window.Maity || {};
       await notes();
       removeStatus.done();
       // The button that had the focus is gone with the text.
-      focusStone(n.id);
+      focusStone(n.id, line);
     }
 
-    function focusStone(id) {
+    function focusStone(id, from) {
       const stone = noteItem(id) && noteItem(id).querySelector(".card-note-removed");
-      if (stone) stone.focus();
+      if (stone && focusFree(from)) stone.focus();
     }
 
     async function notes() {
       // The list stays as drawn while it is read; the latest read alone replaces it.
+      // Meanwhile its Edit and Remove wait: an edit begun on it would go with it.
       const read = ++notesRead;
+      notesList.setAttribute("aria-busy", "true");
+      notesList.querySelectorAll("button.card-note-edit, button.card-note-remove").forEach((b) => { b.disabled = true; });
       let list;
       try {
         list = (await M.api.getAll(base + "/notes?state=open")).items;
       } catch (err) {
-        if (read !== notesRead) return;
-        append(clear(notesBox), h("p", { class: "send-status failed" }, M.t("cardpanel.notes.read_failed", { reason: err.message })));
-        return;
+        if (read !== notesRead) return false;
+        notesList.removeAttribute("aria-busy");
+        append(clear(notesList), h("p", { class: "send-status failed" }, M.t("cardpanel.notes.read_failed", { reason: err.message })));
+        return true;
       }
-      if (read !== notesRead) return;
-      // The draft as the field drawn last holds it now, after the read: a post that
-      // succeeded meanwhile has cleared what it sent, and text typed meanwhile stays.
-      const draft = noteField ? noteField.value : "";
-      clear(notesBox);
-      append(notesBox, list.length
+      if (read !== notesRead) return false;
+      notesList.removeAttribute("aria-busy");
+      append(clear(notesList), list.length
         ? h("ul", { class: "card-note-list" }, list.map(noteLine))
         : h("p", { class: "muted" }, M.t("cardpanel.notes.none")), removeStatus.el);
-      if (closed()) return;
+      if (closed()) {
+        if (noteFormEl) noteFormEl.remove();
+        noteFormEl = noteField = null;
+      } else if (!noteFormEl) {
+        append(notesBox, noteFormEl = noteForm());
+      }
+      return true;
+    }
+
+    // One post at a time: a second tap or Ctrl+Enter while the first is on its way
+    // sends nothing; a refusal makes the button usable again. On success exactly the
+    // text sent leaves the field; anything typed since stays.
+    function noteForm() {
       const text = noteField = M.dom.sendOnCtrlEnter(h("textarea", { id: "card-note-body", rows: "3", maxlength: "4096", placeholder: M.t("cardpanel.notes.placeholder") }));
-      text.value = draft;
       const status = M.statusLine();
       const submit = h("button", { type: "submit" }, M.t("cardpanel.notes.post"));
-      noteForm = { submit, status };
-      if (posting !== null) { submit.disabled = true; status.busy(M.t("cardpanel.notes.posting")); }
-      // One post at a time: a second tap or Ctrl+Enter while the first is
-      // on its way sends nothing; a refusal makes the button usable again.
-      append(notesBox, h("form", {
+      const form = h("form", {
         class: "card-note-form",
         onsubmit: async (e) => {
           e.preventDefault();
           if (posting !== null) return;
           if (!text.value.trim()) { text.focus(); return; }
           const sent = posting = text.value;
-          noteForm.submit.disabled = true;
-          noteForm.status.busy(M.t("cardpanel.notes.posting"));
+          submit.disabled = true;
+          status.busy(M.t("cardpanel.notes.posting"));
           try {
             await M.api.post(base + "/notes", { body: sent });
           } catch (err) {
             posting = null;
-            noteForm.submit.disabled = false;
-            noteForm.status.fail(M.t("cardpanel.notes.not_posted"), M.boardEdit ? M.boardEdit.said(err) : err);
+            submit.disabled = false;
+            status.fail(M.t("cardpanel.notes.not_posted"), M.boardEdit ? M.boardEdit.said(err) : err);
             return;
           }
           posting = null;
-          // The text sent leaves the field as drawn now; anything typed since stays.
-          if (noteField && noteField.value === sent) noteField.value = "";
+          submit.disabled = false;
+          status.done();
+          if (text.value === sent) text.value = "";
           await notes();
-          if (noteField) noteField.focus();
+          if (focusFree(form)) text.focus();
         },
       },
       h("label", { for: "card-note-body" }, M.t("cardpanel.notes.add")), text, M.projectMentionPicker(ctx, text),
       h("p", { class: "hint" }, M.t("cardpanel.notes.hint")),
-      submit, status.el));
+      submit, status.el);
+      return form;
     }
 
     async function toggleWatch() {

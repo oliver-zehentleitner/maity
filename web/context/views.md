@@ -1269,11 +1269,14 @@ one's own, and sent only when it holds text; a missing reason is said at the
 field. Remove asks its reason with the same prompt loop as removing a chat
 message. The tombstone says who and when, and the reason only when the hub
 gives it. Each button names the note's author and date in its label, an
-Escape the mention picker has taken leaves the edit open, and a draft in Add
-a note outlives the list being drawn again. A note being posted outlives it
-too: the form drawn meanwhile stays busy, the list stays as drawn while it
-is read and only the latest read replaces it, the draft is taken after that read, and on success exactly the text
-sent leaves the field while anything typed since stays. An edit and a removal name the
+Escape the mention picker has taken leaves the edit open, and Add a note
+is drawn once per panel and stays while the list above it is drawn
+again: the field keeps its text, focus and caret, a post's busy state and a
+refusal stay in sight, also after a failed read. The list stays as drawn
+while it is read, only the latest read replaces it, and its Edit and Remove
+wait meanwhile (`aria-busy`). On a post's success exactly the text sent
+leaves the field; anything typed since stays. After an edit, a removal or a
+post the focus moves on only if it is still where that action left it. An edit and a removal name the
 version they were made on (`base_version`); a conflict shows the note as it
 is now and keeps the writer's text for the next save, and a note removed
 meanwhile ends the edit, says the text was not kept, and puts the focus on
@@ -1291,9 +1294,13 @@ once, however the list is drawn again around its post.
 - Showing Edit to every reader and letting the hub refuse: a button that
   always fails for most readers.
 - Clearing Add a note after every post whatever it holds: text typed while
-  the post was on its way would be lost. Keeping the draft without tying it
-  to the post in flight brought the text sent back into a free form, a
-  second post one click away (#1268 review).
+  the post was on its way would be lost.
+- Drawing Add a note again with the list and carrying its text over: each
+  variant reviewed on #1268 lost something, the text sent came back into a
+  free form (a second post one click away), the focus and caret went, a
+  refusal vanished with a failed read. A form drawn once has none of it.
+- Keeping an edit begun on the list being read: the list drawn after the read
+  would have to merge it in; Edit and Remove waiting for the read is simpler.
 - Always sending `reason`, empty for one's own note: an empty reason would
   read as a given one.
 - A dialog of its own for the removal's reason: a second pattern beside the
