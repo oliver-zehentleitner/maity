@@ -4771,5 +4771,7 @@
   "why.type.decision": "Entscheidung",
   "why.type.workaround": "Workaround",
   "why.type.incident": "Vorfall",
-  "why.type.constraint": "Randbedingung"
+  "why.type.constraint": "Randbedingung",
+  "frame.panel": "Über diesen Hub",
+  "frame.theme": "Zwischen hellem und dunklem Farbschema wechseln"
 }

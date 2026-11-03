@@ -4593,3 +4593,36 @@ would see it changed.
 
 **Known limit:** a mode changed and later set back to the default stays set; the contract has no
 reset.
+
+## The frame's stylesheets are switched on under /login and /register only, its header and footer beside the app's
+
+**Id:** e9ddc07e-71c0-47c7-bd12-6a7e4d2c35f0
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-74rvy49kbv6s and the designer's approved draft (`public-pages.css`, 2026-11-02); the agreement with the hub's side that the dashboard links the hub's two stylesheets rather than copying them (2026-11-02); `web/js/site-chrome.js`, 2026-11-03
+**See:** https://github.com/oliver-zehentleitner/maity — 41837936-d085-4592-88d7-b1708a8b4b3a — as of 2026-11-03
+**Revisit when:** `landing.css` scopes its rules to the frame, or the dashboard gets a second page in the frame (the form pages of mail links)
+
+Signed out, `/login` and `/register` draw their form into gj6k's door layout, then ask
+`GET /site/chrome` in the page's language. While the page stands, the hub's
+`/assets/landing/landing.css` and `public-pages.css` are linked (without `?v`, so the hub answers
+the current file with an ETag), and `html` carries `public-frame`. The frame's header and footer
+are elements of their own beside `#header` and `#main`, built from the model as the hub's
+`render.py` builds them; the app's bar is hidden meanwhile and comes back where the read fails.
+`render()` turns the frame off for every other drawing: any other address, any signed-in drawing,
+the maintenance page and a failed page. Under `/login` and `/register` signed out it is kept, so a
+page drawn again (another language) does not lose its frame in between.
+
+**Reason:** `landing.css` sets `:root`'s tokens, `body`, headings and links for the whole
+document, so it may not stay on under the app. Turning it off by route in one place catches every
+view without each one knowing about the frame. The app's `#header` rules (sticky, its own
+background and padding) would beat `.site-header` by specificity, so the frame does not reuse
+that element.
+
+**Rejected alternatives:** copying the landing's rules into `app.css`, scoped to the frame: a
+second copy of the design that drifts from the hub's, which the agreement ruled out. Drawing the
+frame's header into `#header`: the specificity fight above, and an override per rule. Watching
+`#main` with a MutationObserver and leaving the frame when its page is gone: it needs no rule in
+`render()`, but the smoke test's DOM has no observer, so it would ship untested. Waiting with the
+form until the frame is read: sign-in may never depend on that call (§16.7.4).

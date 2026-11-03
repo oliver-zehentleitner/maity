@@ -97,12 +97,17 @@ class El extends Node_ {
 const header = new El("header"); header.id = "header";
 const head = new El("head");
 const main = new El("main"); main.id = "main";
+// The page's body holds the two: the frame of the pages without a session (js/site-chrome.js)
+// puts its header and footer beside them.
+const body = new El("body");
+body.append(header, main);
 const docListeners = {};
 const document = {
   createElement: (t) => new El(t),
   createElementNS: (ns, t) => new El(t),
   createTextNode: (t) => new Text_(t),
   head,
+  body,
   documentElement: new El("html"),
   getElementById: (id) => ({ header, main })[id],
   querySelector: (s) => header.querySelector(s) || main.querySelector(s),
@@ -6091,10 +6096,63 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const lpGet = win.Maity.api.get, lpReads = [];
   win.Maity.api.get = (p) => { if (p === "/landing" || p === "/legal") lpReads.push(p); return lpGet(p); };
   await go("#/all"); await go(""); for (let k = 0; k < 6; k++) await tick();
-  const lpLegal = main.querySelector(".legal-links");
+  // The frame (§16.7.5, js/site-chrome.js): the landing page's header and footer from GET /site/chrome beside the
+  // app's header and main, the hub's two stylesheets on, the app's bar hidden; the footer names the legal pages.
+  const frHead = () => body.childNodes.find((x) => x.tagName === "HEADER" && x.className === "site-header dz") || null;
+  const frFoot = () => body.childNodes.find((x) => x.tagName === "FOOTER" && x.className === "site-footer") || null;
+  const frSheets = () => head.childNodes.filter((x) => x.tagName === "LINK" && /^\/assets\/landing\//.test(x.getAttribute("href") || ""));
+  const frOn = () => (document.documentElement.className || "").split(" ").includes("public-frame");
+  const frLinks = (el) => el.querySelectorAll("a").map((a) => a.getAttribute("href") + "=" + text(a)).join();
+  const frCols = () => frFoot().querySelectorAll("nav.foot-col").map((n) => n.getAttribute("aria-label") + ":" + frLinks(n)).join(" | ");
   expect(byId("login-handle") && !main.querySelector("article.landing") && !lpReads.includes("/landing") && lpReads.includes("/legal")
+    && frHead() && frFoot() && body.childNodes.indexOf(frHead()) === body.childNodes.indexOf(header) + 1 && body.childNodes.indexOf(frFoot()) === body.childNodes.indexOf(main) + 1
+    && frCols() === "Platform:#/login?lang=en=Sign in,#/register?lang=en=Create your account | Legal:/impressum?lang=en=Imprint | Follow:https://social.example/@example=Mastodon"
+    && !main.querySelector(".legal-links"),
+    "landing: the root without a session is the login page, the landing never read here; the frame's footer names the legal pages set " + (frFoot() ? frCols() : null));
+  expect(header.hidden === true && frOn() && frSheets().map((l) => l.getAttribute("href") + ":" + l.disabled).join() === "/assets/landing/landing.css:false,/assets/landing/public-pages.css:false"
+    && frHead().querySelector("a.signin").getAttribute("aria-current") === "page" && frHead().querySelector("a.brand").getAttribute("href") === "/"
+    && !frHead().querySelector(".btn-primary") && frHead().querySelector("button.theme-toggle"),
+    "frame: the hub's two stylesheets on, the app's bar hidden, sign in marked as this page, no call to action without a hero");
+  // The page's one h1 is the form's heading: the lockup in the hidden bar is none.
+  expect(main.all().filter((x) => x.tagName === "H1").length === 1 && main.querySelector(".door-page") && main.querySelector(".door-page").firstChild.matches("aside.door-panel") && main.querySelector(".door-form").all().some((x) => x.tagName === "H1")
+    && !header.all().some((x) => x.tagName === "H1") && main.querySelector(".door-form form.login button.btn.btn-primary"),
+    "frame: the login in the door layout, its h1 the only one, the button the landing's");
+  // A model in another language marks its words; an address that is neither a path nor https is no link.
+  const frGet = win.Maity.api.get;
+  const frModel = (over) => Object.assign({ language: "de", landing: true,
+    header: { nav: [{ label: "So geht's", href: "/?lang=de#s2" }], sign_in: { label: "Anmelden", href: "/login?lang=de" }, cta: { label: "Konto anlegen", href: "/register?lang=de" } },
+    footer: { columns: [{ key: "follow", title: "Folgen", links: [{ label: "Mastodon", href: "https://social.example/@x", rel: "me" }, { label: "Bad", href: "javascript:alert(1)", rel: null }] }],
+      operator: "Wien", languages: [{ tag: "de", name: "Deutsch" }, { tag: "en", name: "English" }] } }, over || {});
+  win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.resolve(frModel()) : frGet(p));
+  await go("#/all"); await go("#/login"); for (let k = 0; k < 6; k++) await tick();
+  const frFollow = frFoot() && frFoot().querySelector("nav.foot-col");
+  expect(frHead() && frHead().getAttribute("lang") === "de" && frFoot().getAttribute("lang") === "de"
+    && frLinks(frHead().querySelector("nav.site-nav")) === "/?lang=de#s2=So geht's"
+    && frHead().querySelector("a.btn.btn-primary").getAttribute("href") === "#/register?lang=de"
+    && frFollow.querySelectorAll("a").length === 1 && frFollow.querySelector("a").getAttribute("rel") === "noopener me" && text(frFollow).includes("Bad")
+    && text(frFoot().querySelector("p.operator")) === "Wien" && frLinks(frFoot().querySelector("p.langs")) === "?lang=de=Deutsch,?lang=en=English",
+    "frame: the model's words carry its language, a section link loads the landing page, a social link is rel=me, an unsafe address no link");
+  // Two drawings in a row: only the later answer draws, once.
+  let frHeld = [];
+  win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? new Promise((r) => frHeld.push(r)) : frGet(p));
+  const frFirst = win.Maity.siteChrome.enter("/login"), frSecond = win.Maity.siteChrome.enter("/login");
+  frHeld[1](frModel({ language: "en" })); frHeld[0](frModel({ language: "fr" }));
+  const frAnswers = [await frFirst, await frSecond];
+  expect(JSON.stringify(frAnswers) === "[false,true]" && body.childNodes.filter((x) => x.tagName === "HEADER").length === 2 && !frHead().getAttribute("lang"),
+    "frame: an earlier drawing's late answer draws nothing, the later one draws once " + JSON.stringify(frAnswers));
+  // A failed read (a hub in maintenance answers 503): the page without the frame, the app's bar back, the legal pages
+  // linked under the form as before; the door layout keeps its stylesheet.
+  win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.reject(Object.assign(new Error("maintenance"), { status: 503, code: "maintenance" })) : frGet(p));
+  await go("#/all"); await go("#/login"); for (let k = 0; k < 6; k++) await tick();
+  const lpLegal = main.querySelector(".legal-links");
+  expect(!frHead() && !frFoot() && header.hidden === false && frOn() && byId("login-handle")
     && lpLegal && lpLegal.querySelectorAll("a").map((a) => a.getAttribute("href") + "=" + text(a)).join() === "/impressum=Imprint",
-    "landing: the root without a session is the login page, the landing never read here; the legal pages set are linked");
+    "frame: a failed read draws the login without it, the app's bar shown, the legal pages linked under the form");
+  win.Maity.api.get = frGet;
+  // Another view leaves it: stylesheets off, the class gone, the frame's elements gone.
+  await go("#/invite/open-xxxxxxxxxxxxxxxx1"); for (let k = 0; k < 4; k++) await tick();
+  expect(!frHead() && !frFoot() && !frOn() && frSheets().length === 2 && frSheets().every((l) => l.disabled === true) && header.hidden === false,
+    "frame: an invitation's page has none, its stylesheets off");
   win.Maity.api.get = lpGet;
   // An invitation (docs/api.md §3.4) without a session: who invites to what, and the ways in this hub offers.
   const ivPage = () => main.querySelector("article.invite");
@@ -6206,6 +6264,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.post = rgPost;
   await go("#/register"); for (let k = 0; k < 6; k++) await tick();
   expect(!rgForm() && text(main).includes("This hub does not create new accounts on request."), "register: a hub that does not register says so, with the way to sign in");
+  expect(frHead() && frFoot() && frOn() && main.querySelector(".door-page") && main.querySelector(".door-page").firstChild.matches("aside.door-panel[aria-hidden=\"true\"]") && main.all().filter((x) => x.tagName === "H1").length === 1
+    && frHead().querySelectorAll("a").every((a) => !a.getAttribute("aria-current")) && !main.querySelector(".legal-links"),
+    "frame: registration closed stands in it too, the panel with the art alone, the page's one h1");
   // A hub that registers on request (§2.7, GET /auth/methods): the form, and its terms named with their version.
   const rgGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/auth/methods"
@@ -6237,6 +6298,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("login-password").value = "a long new password";
   main.querySelector("form").dispatch("submit"); await tick(); await tick(); await tick();
   expect(!byId("login-handle") && !main.querySelector(".error"), "sign in with the new password returns to the dashboard");
+  expect(!frHead() && !frFoot() && !frOn() && frSheets().every((l) => l.disabled === true) && header.hidden === false,
+    "frame: signed in, the frame and its stylesheets are gone, the app's header back");
 
   // Sign-in without a password (§2.6): the code, its QR, the approval by number; the code on the new device; a link by mail.
   const ds = win.Maity.deviceSignIn;
@@ -10706,25 +10769,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(/extra_forbidden/.test(text(apBox)) && byId("ap-sign_in-title").value === "Welcome", "auth pages: a key not listed is refused, the editor stays");
     apIo(JSON.stringify({ en: { title: "Loaded", note: "A note" } })); for (let k = 0; k < 6; k++) await tick();
     expect(byId("ap-sign_in-title").value === "Loaded" && byId("ap-sign_in-note").value === "A note", "auth pages: a checked file loads into the editor");
-    // The head of /login: the catalogue's heading at once, the pitch once read, and a failed read leaves the heading.
+    // The pitch of /login: the catalogue's heading (the form's h1) at once, subline, points and note in the panel
+    // once read, and a failed read leaves the heading and a panel with the seat alone.
     await win.Maity.api.patch("/admin/settings/auth-pages", { default_language: "en", pages: { sign_in: { en: { title: "Welcome", point_1: "One", note: "A **note**" } }, sign_up: {} } });
     const apHead = win.Maity.authPages.pitch("sign_in", "Sign in");
-    expect(apHead.querySelector(".door-title").textContent === "Sign in", "pitch: the heading is there before the hub answers");
+    expect(apHead.title.tagName === "H1" && apHead.title.textContent === "Sign in" && apHead.panel.matches("aside.door-panel") && !apHead.panel.querySelector("li"),
+      "pitch: the heading is there before the hub answers, the panel without words");
     for (let k = 0; k < 4; k++) await tick();
-    expect(apHead.querySelector(".door-title").textContent === "Welcome" && apHead.querySelectorAll(".door-points li").length === 1 && !!apHead.querySelector(".door-note"),
-      "pitch: the hub's words replace the heading and add what is set");
+    expect(apHead.title.textContent === "Welcome" && apHead.panel.querySelectorAll("ul li").length === 1 && !!apHead.panel.querySelector(".note") && !apHead.panel.querySelector(".subline"),
+      "pitch: the hub's words replace the heading and add to the panel what is set");
     // After a sign-out or an ended session, the commonest way to /login: the call is public, so it still goes out.
     win.Maity.api.endSession();
     const apAfter = win.Maity.authPages.pitch("sign_in", "Sign in");
     for (let k = 0; k < 4; k++) await tick();
-    expect(apAfter.querySelector(".door-title").textContent === "Welcome", "pitch: shown after the session ended, too");
+    expect(apAfter.title.textContent === "Welcome", "pitch: shown after the session ended, too");
     await win.Maity.api.get("/auth/session");
     const apGet = win.Maity.api.get;
     win.Maity.api.get = () => Promise.reject(new Error("offline"));
     const apFailed = win.Maity.authPages.pitch("sign_in", "Sign in");
     for (let k = 0; k < 4; k++) await tick();
     win.Maity.api.get = apGet;
-    expect(apFailed.querySelector(".door-title").textContent === "Sign in" && !apFailed.querySelector(".door-points"), "pitch: a failed read leaves the heading, with no message");
+    expect(apFailed.title.textContent === "Sign in" && !apFailed.panel.querySelector("ul") && apFailed.panel.childNodes.length === 1, "pitch: a failed read leaves the heading, with no message");
     btn(main.querySelector("nav.admin-subnav"), "Landing pages").click(); await tick();
     expect(JSON.stringify(subShown()) === JSON.stringify(["admin-landing-page"]), "pages: a sub-tab switches the part " + subShown());
     await go("#/admin/pages/site"); for (let k = 0; k < 6; k++) await tick();

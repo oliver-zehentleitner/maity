@@ -163,10 +163,12 @@ window.Maity = window.Maity || {};
   // picked in the menu switches it too. It is the way home: signed in to
   // everything waiting (/all), without a session to the instance's start
   // page (/); the link carries the name, the pictures none of their own.
-  function brandTitle(signedIn) {
+  // A page of the frame (js/site-chrome.js) has its own h1, its form's heading: there the lockup
+  // is no heading (tag "div").
+  function brandTitle(signedIn, tag) {
     const home = signedIn === undefined ? !!M.api.session() : signedIn;
     const label = home ? M.t("header.brand.signed_in") : M.t("header.brand.signed_out");
-    return h("h1", { class: "brand" },
+    return h(tag || "h1", { class: "brand" },
       h("a", { class: "brand-home", href: home ? "/all" : "/", "aria-label": label, title: label },
         h("img", { class: "brand-lockup brand-light", src: "brand/maity-lockup.svg", alt: "", width: "94", height: "28" }),
         h("img", { class: "brand-lockup brand-dark", src: "brand/maity-lockup-dark.svg", alt: "", width: "94", height: "28" })));
@@ -337,8 +339,9 @@ window.Maity = window.Maity || {};
   let keptHandle = "";
   function renderLogin(main, note) {
     document.title = M.t("login.page_title");
+    // The app's bar stands where the frame cannot be read (§16.7.4); js/site-chrome.js hides it meanwhile.
     append(clear(document.getElementById("header")), h("div", { class: "bar" },
-      brandTitle(false),
+      brandTitle(false, "div"),
       M.api.source === "fixtures" ? h("span", { class: "source" }, M.t("login.fixtures")) : null,
       themeMenu()));
     const handle = h("input", { id: "login-handle", name: "handle", autocomplete: "username", required: true });
@@ -355,8 +358,9 @@ window.Maity = window.Maity || {};
     });
     const password = h("input", { id: "login-password", name: "password", type: "password", autocomplete: "current-password", required: true });
     const status = statusLine();
+    const pitch = M.authPages.pitch("sign_in", M.t("login.title"));
     const form = h("form", {
-      class: "login door",
+      class: "login",
       onsubmit: async (e) => {
         e.preventDefault();
         status.busy(M.t("login.busy"));
@@ -371,11 +375,10 @@ window.Maity = window.Maity || {};
         }
       },
     },
-    M.authPages.pitch("sign_in", M.t("login.title")),
     h("label", { for: "login-handle" }, M.t("login.handle")), handle,
     h("label", { for: "login-password" }, M.t("login.password")), password,
     site ? h("label", { for: "login-interface" }, M.t("language.interface.label")) : null, site,
-    h("button", { type: "submit" }, M.t("login.title")),
+    h("button", { type: "submit", class: "btn btn-primary" }, M.t("login.title")),
     status.el);
     // A code from another device or a link by mail, as the hub offers them
     // (js/device-sign-in.js), on this page's own timers.
@@ -390,9 +393,13 @@ window.Maity = window.Maity || {};
           if (r.ok && r.headers.get("etag")) { append(publicLink, h("a", { href: address }, M.t("login.public_page"))); publicLink.hidden = false; }
         }).catch(() => {});
     }
-    append(clear(main), note ? h("p", { class: "flag session-ended", role: "status" }, note) : null, form, publicLink,
+    // The legal pages that are set (§16.7.1), until the frame's footer names them.
+    const legal = M.legal ? M.legal.links() : null;
+    append(clear(main), M.authPages.door(pitch.panel, [
+      note ? h("p", { class: "flag session-ended", role: "status" }, note) : null, pitch.title, form, publicLink,
       M.deviceSignIn ? M.deviceSignIn.loginOptions((ms, fn) => { timers.push(window.setInterval(fn, ms)); }, () => render()) : null,
-      M.legal ? M.legal.links() : null);
+      legal]));
+    M.siteChrome.enter("/login", () => { if (legal) legal.remove(); });
   }
 
   // The second step of a sign-in (js/second-factor.js, §2.8.2): the session reaches
@@ -1871,6 +1878,10 @@ window.Maity = window.Maity || {};
     const hubPage = !!(main.hasAttribute && main.hasAttribute("data-public-page"));
     if (hubPage) main.removeAttribute("data-public-page");
     else Array.from(main.childNodes).forEach((n) => { if (n.setAttribute) n.setAttribute("inert", ""); });
+    // The frame of the pages without a session (js/site-chrome.js) stands under /login and
+    // /register alone, and only signed out; kept meanwhile there, so a page drawn again in it
+    // does not lose it in between. Every other drawing below leaves it first.
+    if (!/^\/(login|register)$/.test(M.route.current().path) || M.api.session()) M.siteChrome.leave();
     let where = { scope: "unknown" };
     let ctx;
     await M.i18n.ready;
@@ -1898,6 +1909,7 @@ window.Maity = window.Maity || {};
           if (M.maintenance.running()) {
             if (seq !== renderSeq) return;
             if (where.scope === "login") { M.maintenance.aware(); renderLogin(main); return; }
+            M.siteChrome.leave();
             M.maintenance.fullPage(main, document.getElementById("header"), { brand: brandTitle(false), tools: themeMenu(), signIn: true });
             return;
           }
@@ -1912,6 +1924,8 @@ window.Maity = window.Maity || {};
       // A new session after a sign-out or an ended one: what the old one still gets back (a late
       // 401) ends nothing, and one that ends now is told again — the second step included.
       if (sessionEnded) { sessionEnded = false; M.sessionEpoch = (M.sessionEpoch || 0) + 1; }
+      // Signed in, no page is in the frame: the second step, the setup and every view.
+      M.siteChrome.leave();
       // A session that owes the second factor reaches nothing else (§2.8.2): its step.
       if (session && session.second_factor === "required" && M.secondFactor) { if (M.maintenance.running()) M.maintenance.aware(); renderStep(main, session); return; }
       // So does one that must set the factor up first (§2.8.5): the setup is its page.
@@ -1970,6 +1984,7 @@ window.Maity = window.Maity || {};
       if (seq !== renderSeq) return;
       // The page could not load: the header with the lockup stays, the
       // failure stands where the loader stood, with a way to try again.
+      M.siteChrome.leave();
       append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle()));
       append(clear(main), pageFailed(err));
       return;

@@ -14519,9 +14519,10 @@ one language, chosen as the landing page's is: `lang` if the landing page
 has it, else the best match of `Accept-Language` among the landing page's
 languages, else its `default_language`. While the landing page is
 disabled, `lang` if it is one of §16.7's languages, else the best match of
-`Accept-Language` among them, else `en`. An unknown `lang` is no error. A label from the operator's page is in that
-page's language; every other word (sign in, register, the column titles,
-the legal pages' names) comes from the hub's catalogue in `language`.
+`Accept-Language` among them, else `en`. An unknown `lang` is no error.
+A label from the operator's page is in that page's language; every other
+word (sign in, register, the column titles, the legal pages' names) comes
+from the hub's catalogue in `language`.
 
 ```json
 { "language": "de",

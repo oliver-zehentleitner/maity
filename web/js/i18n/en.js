@@ -1161,6 +1161,8 @@ window.MAITY_I18N["en"] = {
   "forge.via.instance": "The repository is read with the instance's token, so only while it is public.",
   "forge.via.none": "No grant reads the repository now. The namespace owner's Forge access shows whether an installation or a token needs attention.",
   "forge.via.owner_token": "The repository is read with the namespace owner's own token.",
+  "frame.panel": "About this hub",
+  "frame.theme": "Switch between the light and the dark theme",
   "group.back": "← Conversations",
   "group.closed_flag": "closed",
   "group.compose.failed": "Not sent: ",

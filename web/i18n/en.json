@@ -4841,5 +4841,7 @@
   "why.type.constraint": "constraint",
   "why.type.decision": "decision",
   "why.type.incident": "incident",
-  "why.type.workaround": "workaround"
+  "why.type.workaround": "workaround",
+  "frame.panel": "About this hub",
+  "frame.theme": "Switch between the light and the dark theme"
 }
