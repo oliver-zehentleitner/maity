@@ -67,7 +67,7 @@ files = ["src", "tests", "scripts"]
 mypy_path = "src"
 
 [[tool.mypy.overrides]]
-module = ["pymysql.*"]
+module = ["pymysql.*", "boto3.*", "botocore.*", "moto.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
