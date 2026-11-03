@@ -99,7 +99,7 @@
   --ktw-surface2: var(--surface-2);
   --ktw-fg: var(--text);
   --ktw-fg2: var(--muted);
-  --ktw-fg3: var(--seat);
+  --ktw-fg3: var(--muted); /* text too (headings, notes): --seat is 2.5:1 on white, --muted passes AA */
   --ktw-muted: var(--muted);
   --ktw-line: var(--border);
   --ktw-accent: var(--accent);
@@ -110,12 +110,12 @@
   --ktw-bad: var(--bad);
   --ktw-confirmed: var(--ok);
   --ktw-inferred: var(--warn);
-  --ktw-unknown: var(--seat);
+  --ktw-unknown: var(--muted);
   --ktw-status-active: var(--ok);
   --ktw-status-open: var(--accent);
   --ktw-status-needs-review: var(--warn);
   --ktw-status-pending-confirmation: var(--plan);
-  --ktw-status-superseded: var(--seat);
+  --ktw-status-superseded: var(--muted);
   --ktw-radius: var(--radius);
   --ktw-font: var(--font);
   --ktw-mono: var(--mono);

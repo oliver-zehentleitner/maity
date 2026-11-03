@@ -48,7 +48,11 @@ window.Maity = window.Maity || {};
           if (window.KeepTheWhy && window.KeepTheWhy.views && window.KeepTheWhy.views.pages) {
             ready = true;
             resolve(window.KeepTheWhy);
-          } else reject(new Error(M.t("why.lib.not_loaded")));
+          } else {
+            // loaded but not complete (a file that threw as it ran): the last file is tried again
+            done.delete(SCRIPTS[SCRIPTS.length - 1]);
+            reject(new Error(M.t("why.lib.not_loaded")));
+          }
           return;
         }
         const s = h("script", { src: DIR + SCRIPTS[i],
@@ -303,5 +307,5 @@ window.Maity = window.Maity || {};
     draw(host, route, main, aside);
   };
 
-  M.ktwHost = { SCRIPTS, STYLES, routeOf, failure, provider, load };
+  M.ktwHost = { SCRIPTS, STYLES, routeOf, failure, provider, load, whyPath };
 })(window.Maity);

@@ -1937,6 +1937,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "why: a link from an export that is not plain https is dropped before the library sees it");
   win.Maity.api.get = realGet6;
   btn(main, "Read again").click(); for (let k = 0; k < 10; k++) await tick();
+  // Another person signed in in this tab reads the export anew; the same one does not.
+  const exportReads = () => whyGets.filter((p) => p.includes("/keep-the-why/export")).length;
+  win.Maity.api.get = (p) => { whyGets.push(p); return realGet6(p); };
+  const readsBefore = exportReads();
+  await go("#/maintainer/maity/board"); await go("#/maintainer/maity/why"); for (let k = 0; k < 8; k++) await tick();
+  expect(exportReads() === readsBefore, "why: the same reader in the same project reads no export again");
+  const meReal = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/me" ? meReal(p).then((m) => Object.assign({}, m, { member: Object.assign({}, m.member, { id: "hum-other" }) })) : meReal(p));
+  await go("#/maintainer/maity/board"); await go("#/maintainer/maity/why"); for (let k = 0; k < 8; k++) await tick();
+  expect(exportReads() === readsBefore + 1, "why: another signed-in reader reads the export anew");
+  win.Maity.api.get = realGet6;
+  // The prefix is the project's address, whatever its owner or slug begins with.
+  for (const [at, want] of [["#/why-co/whyproj/why/graph", "/why-co/whyproj/why"], ["#/whyorg/why/why/topic/why.md", "/whyorg/why/why"]]) {
+    const keep = win.location.hash; win.location.hash = at;
+    expect(win.Maity.ktwHost.whyPath() === want, "why: the prefix of " + at + " is " + want);
+    win.location.hash = keep;
+  }
   win.Maity.api.get = realGet6;
   head.appendChild = headAppend;
   await go("#/maintainer/sample/why"); for (let k = 0; k < 6; k++) await tick();
