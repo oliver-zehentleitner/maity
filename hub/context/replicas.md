@@ -560,7 +560,14 @@ volume. An object the hub wrote with another SHA-256 is not overwritten but coun
 (exit 1); only a missing object or one without the metadata is written. A file whose attachment
 has no row, or a deleted one, is skipped: under `s3` the hub deletes only in the bucket, so the
 volume still holds the files of redacted and expired attachments, and a later run would put them
-back (with versioning on, as one more noncurrent version each time). After each put one HEAD
+back (with versioning on, as one more noncurrent version each time). The live ids are read once
+per project, and right before and right after each put the copy asks again for that one row.
+Before, it saves the write when the attachment was deleted since the ids were read, the usual
+case. After, it closes the race: the hub commits a deletion before it removes the bytes, so a
+deletion during the put is either seen there and the object removed again, or its own removal
+comes after the put. In a versioned bucket that race leaves one noncurrent version, which the
+lifecycle rule for noncurrent versions expires (a70d7269). A pending upload past its 24 hours that the sweep has not removed yet still
+has its row and is copied; the next sweep removes it from the bucket, and it was never sent. After each put one HEAD
 compares the size and the metadata the put wrote, not the bytes: reading every object back would
 double the traffic. Each file is read whole, at most `FILE_CAP` like an upload. A folder or
 file the pod cannot read (`lost+found` on an ext4 volume) counts as failed, and the copy goes on.

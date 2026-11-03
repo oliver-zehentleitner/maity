@@ -153,7 +153,11 @@ def _copy_to_s3(settings: Settings, *, apply: bool) -> int:
         engine = make_engine(settings.database_url)
         require_current_schema(engine)
         done = attachment_store.copy_local_to_s3(
-            source, target, apply=apply, live=lambda project: _live_attachments(engine, project)
+            source,
+            target,
+            apply=apply,
+            live=lambda project: _live_attachments(engine, project),
+            still=lambda key: _still_live(engine, key),
         )
     except SchemaNotCurrentError as error:
         return _fail(str(error), EXIT_FAILURE)
@@ -177,6 +181,20 @@ def _live_attachments(engine: Any, project: str) -> set[str]:
             )
         )
         return {str(row.id) for row in rows}
+
+
+def _still_live(engine: Any, key: str) -> bool:
+    """Whether the attachment of a blob key still has a row that is not deleted."""
+    project, _, attachment_id = key.partition("/")
+    with engine.connect() as conn:
+        found = conn.execute(
+            select(t.attachment.c.id).where(
+                t.attachment.c.id == attachment_id,
+                t.attachment.c.project_id == project,
+                t.attachment.c.deleted_at.is_(None),
+            )
+        ).first()
+    return found is not None
 
 
 def _loadtest_refusal(settings: Settings) -> str | None:

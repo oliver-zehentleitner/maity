@@ -397,20 +397,27 @@ def copy_local_to_s3(
     *,
     apply: bool,
     live: Callable[[str], set[str]] | None = None,
+    still: Callable[[str], bool] | None = None,
 ) -> dict[str, int]:
     """Copy every blob of the local store into the bucket, under the same key; the migration from
     a volume to `s3` (hub/context/replicas.md 99360a7a). A blob the bucket already holds with the
     same SHA-256 is skipped, so the copy can run again until it reports nothing to copy; the
     local files are never changed. An object the hub wrote with another SHA-256 is never
     overwritten: keys are immutable, so the file changed, and it is counted as `differs`. After
-    each put one HEAD checks size and digest. A file is read whole (at most `FILE_CAP`, like an
-    upload). A folder or file the hub cannot read counts as failed, the rest goes on. Without
-    `apply` it only counts.
+    each put one HEAD checks the size and the SHA-256 the put wrote as metadata. A file is read
+    whole (at most `FILE_CAP`, like an upload). A folder or file the hub cannot read counts as
+    failed, the rest goes on. Without `apply` it only counts.
 
     `live(project)` names the attachments of a project that have a row and are not deleted. A
     file without one is skipped (`skipped_deleted`): under `s3` the hub deletes only in the
     bucket, so a redacted or expired attachment's file stays on the volume and must not go back
-    (a file whose upload has not committed its row yet is skipped too; the next run takes it)."""
+    (a file whose upload has not committed its row yet is skipped too; the next run takes it).
+    `still(key)` asks again right before and right after each put. Before, it saves the write
+    in the usual case; after, it closes the race: the hub commits a deletion first and removes
+    the bytes after, so an attachment deleted during the put is removed from the bucket again
+    here and counted as skipped (in a versioned bucket one noncurrent version remains, which its
+    lifecycle rule expires). A pending upload past its 24 hours that the sweep has not
+    removed yet still has its row and is copied; the next sweep removes it from the bucket."""
     log = logging.getLogger(__name__)
     done = {"copied": 0, "present": 0, "differs": 0, "skipped_deleted": 0, "failed": 0}
     try:
@@ -450,9 +457,16 @@ def copy_local_to_s3(
                     done["differs"] += 1
                     continue
                 if apply:
+                    if still is not None and not still(key):  # deleted since the live ids
+                        done["skipped_deleted"] += 1
+                        continue
                     target.put(key, data)
                     if target.stat(key) != (len(data), digest):
                         raise StoreError("the attachment store did not keep a blob whole")
+                    if still is not None and not still(key):  # deleted while this ran
+                        target.delete(key)
+                        done["skipped_deleted"] += 1
+                        continue
                 done["copied"] += 1
             except StoreError as error:
                 log.error("%s: %s", key, error)

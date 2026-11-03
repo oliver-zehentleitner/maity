@@ -15,9 +15,10 @@ from typing import Any
 import boto3
 import pytest
 from moto.server import ThreadedMotoServer
-from sqlalchemy import Engine
+from sqlalchemy import Engine, update
 
-from maity_hub import attachment_store
+from maity_hub import attachment_store, clock
+from maity_hub import tables as t
 from maity_hub.attachment_store import S3Store, StoreError
 from maity_hub.config import AttachmentS3, ConfigError, Settings, cluster_internal
 from tests import flow
@@ -463,6 +464,44 @@ def test_the_copy_skips_a_file_whose_attachment_is_deleted_or_unknown(
     ]
 
 
+def test_an_attachment_deleted_while_the_copy_runs_leaves_the_bucket_again(
+    config: AttachmentS3, tmp_path: Path
+) -> None:
+    """The hub commits a deletion first and removes the bytes after: the copy asks again after
+    each put, so a deletion it missed when it read the live ids does not stay in the bucket."""
+    source = attachment_store.LocalStore(tmp_path)
+    for key in ("prj-1/att-1", "prj-1/att-2", "prj-1/att-3"):
+        source.put(key, b"x")
+    target = S3Store(config)
+    puts: list[str] = []
+    real_put = target.put
+
+    def put_counted(key: str, data: bytes) -> None:
+        puts.append(key)
+        real_put(key, data)
+
+    target.put = put_counted  # type: ignore[method-assign]
+    asked: list[str] = []
+
+    def still(key: str) -> bool:
+        asked.append(key)
+        if key == "prj-1/att-2":  # deleted after the live ids were read, before its turn
+            return False
+        if key == "prj-1/att-3":  # deleted during its put: alive before, gone after
+            return asked.count(key) == 1
+        return True
+
+    done = attachment_store.copy_local_to_s3(
+        source, target, apply=True, live=lambda project: {"att-1", "att-2", "att-3"}, still=still
+    )
+    assert done == {"copied": 1, "present": 0, "differs": 0, "skipped_deleted": 2, "failed": 0}
+    assert puts == ["prj-1/att-1", "prj-1/att-3"]  # no write for the one deleted before
+    assert asked == ["prj-1/att-1", "prj-1/att-1", "prj-1/att-2", "prj-1/att-3", "prj-1/att-3"]
+    assert [o["Key"] for o in raw(config).list_objects_v2(Bucket=config.bucket)["Contents"]] == [
+        "prj-1/att-1"
+    ]
+
+
 def test_the_copy_command_needs_both_stores_skips_what_was_deleted_and_fails_on_a_failure(
     config: AttachmentS3,
     tmp_path: Path,
@@ -482,7 +521,12 @@ def test_the_copy_command_needs_both_stores_skips_what_was_deleted_and_fails_on_
     flow.project(owner, "maity")
     kept = put(owner, "a.txt", b"one").json()["id"]
     gone = put(owner, "b.txt", b"two").json()["id"]
+    redacted = put(owner, "c.txt", b"three").json()["id"]
     assert owner.delete(f"/projects/maintainer/maity/attachments/{gone}").status_code == 200
+    with migrated.begin() as conn:  # a tombstone, as a redaction or moderation leaves it
+        conn.execute(
+            update(t.attachment).where(t.attachment.c.id == redacted).values(deleted_at=clock.now())
+        )
     (folder,) = [p.parent for p in volume.glob(f"*/{kept}")]
     (folder / gone).write_bytes(b"two")  # the file the hub under `s3` would have left behind
     (folder / "att-noroworphan").write_bytes(b"x")  # a file no row names
@@ -504,13 +548,17 @@ def test_the_copy_command_needs_both_stores_skips_what_was_deleted_and_fails_on_
     capsys.readouterr()
     assert cli.main(["attachments", "copy-to-s3"]) == 0
     assert (
-        "to copy: 1, already there: 0, different in the bucket: 0, deleted, not copied: 2, "
+        "to copy: 1, already there: 0, different in the bucket: 0, deleted, not copied: 3, "
         "failed: 0" in capsys.readouterr().out
     )
     assert cli.main(["attachments", "copy-to-s3", "--apply"]) == 0
     assert "copied: 1" in capsys.readouterr().out
     listed = raw(config).list_objects_v2(Bucket=config.bucket)["Contents"]
     assert [o["Key"] for o in listed] == [f"{folder.name}/{kept}"]
+    assert cli._live_attachments(migrated, folder.name) == {kept}  # the tombstone is not live
+    assert cli._still_live(migrated, f"{folder.name}/{kept}")
+    for dead in (gone, redacted, "att-noroworphan"):
+        assert not cli._still_live(migrated, f"{folder.name}/{dead}"), dead
     (folder / kept).write_bytes(b"changed")  # other bytes than the bucket's: reported, exit 1
     assert cli.main(["attachments", "copy-to-s3", "--apply"]) == cli.EXIT_FAILURE
     assert "different in the bucket: 1" in capsys.readouterr().out
