@@ -1256,8 +1256,8 @@ same as the panel, on a desktop it hides the board the card belongs to.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** PR #1227 (tsk-bj9yb4d8f2cg), part 3 of editing a note, and its review; PR #1243 (`base_version` and the conflict in the panel); the follow-up PR (tsk-dprnjakk3ykh); contract in `docs/api.md` §6.16, §8.5
-**Revisit when:** the dashboard gets a dialog of its own for reasons
+**Source:** PR #1227 (tsk-bj9yb4d8f2cg), part 3 of editing a note, and its review; PR #1243 (`base_version` and the conflict in the panel); PR #1268 (tsk-dprnjakk3ykh) and its four review rounds; contract in `docs/api.md` §6.16, §8.5
+**Revisit when:** the dashboard gets a dialog of its own for reasons, the list is drawn per note, or an open edit has to outlive the list being drawn again
 **See:** https://github.com/oliver-zehentleitner/maity — 0e6b3b31-1656-4744-841d-d48f1899a7fd — as of 2026-11-03
 **See:** https://github.com/oliver-zehentleitner/maity — 09c47db5-75b7-4636-8c49-0cc46c8c9d46 — as of 2026-11-03
 
@@ -1272,11 +1272,15 @@ gives it. Each button names the note's author and date in its label, an
 Escape the mention picker has taken leaves the edit open, and Add a note
 is drawn once per panel and stays while the list above it is drawn
 again: the field keeps its text, focus and caret, a post's busy state and a
-refusal stay in sight, also after a failed read. The list stays as drawn
-while it is read, only the latest read replaces it, and its Edit and Remove
-wait meanwhile (`aria-busy`). On a post's success exactly the text sent
-leaves the field; anything typed since stays. After an edit, a removal or a
-post the focus moves on only if it is still where that action left it. An edit and a removal name the
+refusal stay in sight, also after a later read fails (when the first read
+fails there is no form yet, as before). The list stays as drawn while it is
+read, only the latest read replaces it, and its Edit and Remove wait
+meanwhile (`aria-busy`). On a post's success exactly the text sent leaves
+the field; anything typed since stays. After an edit, a removal or a post
+the focus moves on only if it is still where that action left it. Known
+gap: an edit opened before another action draws the list again (a post, a
+removal, a second edit ending) goes with the list, its text too; that was
+so before and waits for its own card (tsk-wvf8s7f44vz7). An edit and a removal name the
 version they were made on (`base_version`); a conflict shows the note as it
 is now and keeps the writer's text for the next save, and a note removed
 meanwhile ends the edit, says the text was not kept, and puts the focus on
@@ -1301,6 +1305,8 @@ once, however the list is drawn again around its post.
   refusal vanished with a failed read. A form drawn once has none of it.
 - Keeping an edit begun on the list being read: the list drawn after the read
   would have to merge it in; Edit and Remove waiting for the read is simpler.
+  This covers only an edit begun during a read, not one already open (the
+  known gap above).
 - Always sending `reason`, empty for one's own note: an empty reason would
   read as a given one.
 - A dialog of its own for the removal's reason: a second pattern beside the
