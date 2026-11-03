@@ -3691,8 +3691,6 @@ window.MAITY_I18N["ko"] = {
   "sessions.banner.new": "메일로 새 로그인: {device}, {ip}, {when}.",
   "sessions.cannot_end.confirm_first": "먼저 다른 세션에서 이 세션의 로그인을 확인하세요.",
   "sessions.cannot_end.too_new": "이 세션은 너무 새로 만들어져서 이전 세션을 종료할 수 없습니다.",
-  "sessions.confirm.refused": "허브가 이 세션에서 확인을 받아들이지 않았습니다.",
-  "sessions.confirm.unknown": "전송했지만 목록을 다시 읽지 못했습니다. 확인되었는지 알 수 없습니다.",
   "sessions.confirmed": "확인됨: {what}은(는) 내 것입니다.",
   "sessions.confirmed_badge": "확인됨",
   "sessions.confirming": "확인하는 중…",
