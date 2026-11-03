@@ -984,7 +984,7 @@ operator's config would admit every owner's project with that slug.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-qe0ka9e341gh, the lead's assignment of 2026-11-03; the reviews of #1294 (pmwg, dzse), lotse's request for a state table (2026-11-03); the review lead's scope decision for #1294 of 2026-11-03 (only the parts settled across reviewers, the run's lifetime to card tsk-3tzhegcrr48h); the review lead's order of 2026-11-03 for the next fixes (pmwg, dzse on 83b3a7ca); `docs/api.md` §15.13, §5.3
+**Source:** card tsk-qe0ka9e341gh, the lead's assignment of 2026-11-03; the reviews of #1294 (pmwg, dzse), lotse's request for a state table (2026-11-03); the review lead's scope decision for #1294 of 2026-11-03 (only the parts settled across reviewers, the run's lifetime to card tsk-3tzhegcrr48h); the review lead's order of 2026-11-03 for the next fixes (pmwg, dzse on 83b3a7ca); the review lead's order of 2026-11-03 for the fixes on 6b564a86 (nyh5, dzse); `docs/api.md` §15.13, §5.3
 **See:** credentials.md — 116c5330-8dab-42ed-af06-74b6f02cee89 — as of 2026-11-03
 **See:** runner.md — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-03
 **See:** runner.md — c2acd907-0f26-4850-8272-063390f1d6a7 — as of 2026-11-03
@@ -1029,7 +1029,7 @@ every component as its parent's listing names it, so two spellings on a
 file system that ignores case, or an 8.3 short name, take one lock.
 Only local mode holds it: the descriptor is never inherited, so it lasts
 as long as local mode. At most one harness per path is guaranteed only
-while local mode lives; a run that outlives a killed local mode (the
+while local mode lives; a run that outlives a crashed local mode (the
 harness on macOS, its descendants on Linux) and a start that takes the
 path over meanwhile are not covered yet and are card tsk-3tzhegcrr48h;
 until then a person who restarts after a crash (a `kill -9` or the OOM
@@ -1041,10 +1041,13 @@ Every use of `.git/maity`, local mode's and that of every
 hard-linked file (`workspace_link`). The retry copies the credential
 into the fresh directory first and resumes there; from the first file
 copied, the fresh directory counts as possibly holding a secret. The
-fresh directory gets a `retry-of` mark with the old one's path first,
-and a start in it is refused (`retry_leftover`) while that path holds
-a credential, so a leftover copy never runs as the same agent instance
-beside the original. The
+fresh directory gets a `retry-of` mark first, naming the one path it
+may run at: the old one's, or for a kept `.join-*` `<handle>#<instance>`
+once its resume named the instance. A start anywhere else is refused
+(`retry_leftover`) every time, so of all copies of one credential only
+the one at that path starts. The mark is compared with the workspace by
+identity, not spelling, removed once the copy is at its path, and a
+stale or forged one is left by removing the file. The
 staging and the retry's fresh directory are printed when they are
 created, and a start names every `.join-*` beside it with what it
 holds. A `.replaced-*` directory is never started
@@ -1085,6 +1088,13 @@ to a row (the one under `running` is named as the limit, not fixed):
   instance in two workspaces, and the `unfinished` row promised a retry
   in an `F` without the credential, which the entry rule refuses (pmwg,
   dzse on `83b3a7ca`).
+- `between`, `orphaned` and `stranded` at `F`: the gate let a leftover
+  start whenever the original's path held no credential, which a
+  second, successful retry leaves for a moment, and from a kept
+  `.join-*` for good, so two copies ran one instance (nyh5, dzse on
+  `6b564a86`); and a stale, forged or differently spelled mark refused
+  every start of a workspace with no way out and advice to delete it
+  (dzse on `6b564a86`).
 - `staging` to `kept` after a crash: a staging directory with the spent
   credential that nothing named (dzse on `3d34a8a3`).
 - Every row with a lock: two spellings of one path on a file system that
@@ -1151,10 +1161,23 @@ the directory free of secrets, so the leftovers count any file in
 `.git/maity` as a possible secret. A retry's leftover is gated, not
 only warned about, because the table itself offered the start in it and
 nothing about a duplicate instance needs a surviving run: two live
-local modes on two paths are enough. The mark names `W`'s path rather
-than its tree, so the gate lifts exactly when recovery moved `W` away
-or renamed `F` into its place, and a forged mark can only refuse a
-start. The key comes from the listing
+local modes on two paths are enough. The gate cannot ask whether the
+original's path holds a credential, because a second, successful retry
+empties that path for a moment, and from a kept `.join-*` for good,
+while its own copy runs; it asks where this copy is instead, since a
+path names one directory at a time, so of all copies only one can be at
+the path the mark names. That is also why a retry from a kept `.join-*`
+goes to `<handle>#<instance>`, which the instance alone decides, and not
+to `<handle>` when that happens to be free: every retry of one staging
+workspace meets at one path. The mark is compared by identity, as the
+lock's key is, because a name retyped in another case on APFS or NTFS
+still names the same directory; it is removed once the copy is at its
+path, so a workspace moved later is not refused. Local mode never moves
+a leftover itself, because the mark is a file a harness can write, and
+a forged one may only refuse its own workspace's starts; the way out of
+any mark that does not fit is the person's, removing the file after
+checking that no other copy runs. The message reads the instance at the
+named path only to say which way on fits. The key comes from the listing
 because only the name the file system stores is one per directory; the
 parents' real path alone left the last component's case open. The
 no-link opening is there because Codex may write `.git`, and a link
@@ -1262,3 +1285,27 @@ message says are no boundary.
   would give two real directories on a case-sensitive one one lock;
   refusing a `--workspace` under `maity-local` with `--join` leaves only
   names local mode spells itself (review of #1294, dzse).
+- The gate only while the original's path holds a credential (as on
+  `6b564a86`): a second, successful retry leaves that path empty in its
+  rename window, and from a kept `.join-*` for good once its copy runs
+  at the handle, so a leftover started beside it (review of #1294,
+  nyh5, dzse).
+- Taking the original path's lock in that gate as well: it closes the
+  rename window but not a staging workspace's copy that already runs at
+  its handle (review of #1294, nyh5, dzse).
+- Local mode renaming a leftover into its mark's path itself, with
+  `RENAME_NOREPLACE` (proposed in review of #1294, dzse): the mark is a
+  file a harness can write, so local mode would move a workspace,
+  credential included, to a path an agent chose, outside any sandbox.
+  The person's rename is as safe, since a path names one directory at a
+  time and the start checks what it finds there.
+- Refusing only while the named path holds the same instance (proposed
+  in review of #1294, dzse): another instance there says nothing about
+  where the other copies run; the instance only picks the message's
+  advice.
+- Comparing the mark by spelling: a name retyped in another case on
+  APFS or NTFS refused the workspace itself at every start (review of
+  #1294, dzse).
+- A retry from a kept `.join-*` to `<handle>` when that is free: a copy
+  that crashed after picking it and a later retry that found it taken
+  would end on two paths.

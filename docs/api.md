@@ -13650,13 +13650,15 @@ maity runner <harness> [--workspace DIR] [--model MODEL] [--allow COMMAND]...
   secret (any other file in its `.git/maity` but `retry-of`: a
   credential, a copy of one still under its temporary name, or the
   session's state) or as holding no secret (no file in its `.git/maity`
-  but `retry-of`), each also as in use while its lock (**Restart**
-  below) is held, so the person sees which one a running start or join
-  still builds; one that holds no secret and is not in use can be
-  removed. It names every `.replaced-*-<name>` for its name too, so
-  whatever a crash or an interrupted join or retry left (`kept`,
-  `unfinished`, `orphaned`, `stranded` in the lifecycle below) is found
-  and the person does not redeem a spent link. A directory whose name
+  but `retry-of`), each with the path its `retry-of` names when it has
+  one, and each also as in use while its lock (**Restart** below) is
+  held, tested by taking it without waiting and releasing it at once,
+  so the person sees which one a running start or join still builds;
+  one that holds no secret and is not in use can be removed. It names
+  every `.replaced-*-<name>` for its name too, so whatever a crash or
+  an interrupted join or retry left (`kept`, `unfinished`, `orphaned`,
+  `stranded` in the lifecycle below) is found and the person does not
+  redeem a spent link. A directory whose name
   starts with
   `.replaced-` is refused (exit 4, reason `workspace_replaced`): it is a
   workspace moved aside for the person to recover from, and no start
@@ -13702,7 +13704,13 @@ own `maity join` writes it, as in a runner's join pickup (§15.9):
      With `--join`, a `DIR` inside `<state home>/maity-local` is refused
      (exit 2): there local mode names the directories itself, and a
      second start could spell a missing name in another case (**Restart**
-     below).
+     below). Inside is decided by identity, not by spelling: local mode
+     resolves `DIR`'s nearest existing directory (`DIR` itself, else its
+     nearest existing parent) to its real path and refuses when that
+     directory or one of its parents is `maity-local` (the same device and
+     inode; on Windows the same volume serial number and file id), so no
+     symbolic link, other case on APFS or NTFS, or 8.3 short name leads
+     past the refusal.
    - **The host.** `<link host>` here is local mode's own directory
      name, not the `<link host>` of §3.2's state directory: the link's
      host name in lower case (without the brackets of an IPv6 address),
@@ -13753,9 +13761,16 @@ own `maity join` writes it, as in a runner's join pickup (§15.9):
      and names the repository (step 4). The join's `--no-resume` exists
      for this: the join alone would resume without `MAITY_SUPERVISOR`
      only if the person's shell happened to set it.
-   - The join holds the staging workspace's lock (the workspace lock
-     under **Restart**) from its creation. After the checkout (step 4)
-     it takes the target's lock without waiting and, holding both,
+   - The join creates the staging workspace empty and then takes its
+     lock (the workspace lock under **Restart**): the key needs the
+     directory, so the creation comes first. A start that names the
+     leftovers may hold that lock for a moment to see whether it is in
+     use, so on a directory it has just created, and only there, local
+     mode waits for the lock, up to 5 s (found in review, not
+     reproduced). If it still cannot take it, local mode removes the
+     still empty directory and exits 4, reason `workspace_locked`, before
+     the exchange. From then on the join holds it. After the checkout
+     (step 4) it takes the target's lock without waiting and, holding both,
      renames the staging workspace in one step on the same file system:
      to `<handle>` when that does not exist or is empty (an empty one is
      removed first), else, when `<handle>` holds a credential or its lock
@@ -13866,12 +13881,13 @@ own `maity join` writes it, as in a runner's join pickup (§15.9):
      credential does, so the `F` of an earlier interrupted retry is found
      (`abandoned`, `unfinished`, `orphaned` below). It creates a fresh
      `.join-<random>` `F` beside `W` (with `--workspace DIR`, beside
-     `DIR`), holds `F`'s lock too and prints `F`'s path. In `F` it runs
-     `git init`, writes the plain file `F/.git/maity/retry-of` with `W`'s
-     path as the lock's key reads it (**Restart** below), and then copies
-     the regular files of `W/.git/maity` other than `checked-out` and
-     `retry-of` (the credential and the session's state,
-     never `.git/config` or hooks) into `F/.git/maity` through the two
+     `DIR`), takes `F`'s lock as the join takes its staging's (step 2) and
+     prints `F`'s path. In `F` it runs `git init`, writes the plain file
+     `F/.git/maity/retry-of`, the mark, with the one path `F` may run at,
+     as the lock's key reads it (**Restart** below), at first `W`'s path,
+     and then copies the regular files of `W/.git/maity` other than
+     `checked-out` and `retry-of` (the credential and the session's
+     state, never `.git/config` or hooks) into `F/.git/maity` through the two
      directories' handles, as **No links** says, with the permissions of
      step 3; the credential comes last, under a temporary name renamed
      into place, so its own name in `F` names the whole credential or
@@ -13880,47 +13896,86 @@ own `maity join` writes it, as in a runner's join pickup (§15.9):
      first file copied on, `F` counts as possibly holding a secret
      (`unfinished` below), whatever its names. Only then
      does it run the supervised `maity resume` with `MAITY_STATE_DIR`
-     set to `F/.git/maity`, a directory no harness ever reached, then the
-     URL check and the fetch and checkout with the flags above, and it
-     writes `checked-out` last.
+     set to `F/.git/maity`, a directory no harness ever reached. When
+     `W` is itself a `.join-*` (a staging workspace kept by step 2 or 4),
+     `F` is to go to `<handle>#<instance>` with the instance this resume
+     names, never to `<handle>`: the instance alone decides that path, so
+     every retry of one staging workspace meets at one path. Local mode
+     takes that path's lock without waiting and replaces `F`'s mark with
+     it (written under a temporary name and renamed over the mark), all
+     before the fetch, so an `F` with `checked-out` always names its final
+     path. A resume that names no instance, or a lock that is held, ends
+     like a refusal (`F` removed, `W` kept; `staging_kept` or
+     `workspace_locked`). Then come the URL check and the fetch and
+     checkout with the flags above, and it writes `checked-out` last.
    - Before any rename it prints `F`'s path again and how to go on if it
      is interrupted: while `W` is still in place, remove `F` and start in
-     `W` again; once `W` was moved, rename `F` to `W`'s path and start
-     there. Then it renames `W` to `.replaced-<UTC time>-<name>` beside
-     it, where `<UTC time>` is the ISO 8601 basic form
+     `W` again; once `W` was moved, rename `F` to the path its mark names
+     and start there. Then it renames `W` to `.replaced-<UTC time>-<name>`
+     beside it, where `<UTC time>` is the ISO 8601 basic form
      `YYYYMMDDTHHMMSSZ` (no `:`, which Windows refuses in a name) and
-     `<name>` is `W`'s last component, prints that path, and
-     renames `F` to `W`'s path. Neither rename replaces an existing
-     target (`renameat2` with `RENAME_NOREPLACE` on Linux, `renamex_np`
-     with `RENAME_EXCL` on macOS, `MoveFileExW` without
-     `MOVEFILE_REPLACE_EXISTING` on Windows). When `W` is itself a
-     `.join-*` (a staging workspace kept by step 2 or 4), `F` goes not to
-     `W`'s path but where step 2 would put it, `<handle>` or
-     `<handle>#<instance>`, under that target's lock taken before the
-     renames, so a workspace keeps no random name. Holding the lock of
-     the path `F` now has, it releases the others and starts the harness.
+     `<name>` is `W`'s last component, prints that path, and renames `F`
+     to the path its mark names: `W`'s, or for a `.join-*` `W`
+     `<handle>#<instance>`, so a workspace keeps no random name. Neither
+     rename replaces an existing target (`renameat2` with
+     `RENAME_NOREPLACE` on Linux, `renamex_np` with `RENAME_EXCL` on
+     macOS, `MoveFileExW` without `MOVEFILE_REPLACE_EXISTING` on
+     Windows). Holding the lock of the path `F` now has, it removes the
+     mark there (**Retry leftovers**), releases the others and starts the
+     harness.
    - `W` is kept whole, its `.git` included, so branches, objects and
      reflogs a harness left there can still be recovered; local mode never
      deletes it, and never runs Git in it. A refusal or failed fetch
      removes `F` and the copy in it, and keeps `W` as it was, with its
      reason. A rename of `W` that fails keeps both as they are and exits
      4, reason `replace_failed`, with both paths; a rename of `F` that
-     fails keeps it (`staging_kept`) and names `W`'s new path. The link
-     is not needed and never redeemed again.
+     fails keeps it (`staging_kept`) with its mark and names `W`'s new
+     path, so it runs only once renamed to the path its mark names
+     (`stranded` below). The link is not needed and never redeemed
+     again.
    - **Retry leftovers.** An `F` holds a copy of `W`'s credential and
-     session, so a start in it while `W` can still be started would run
-     the same agent instance in two workspaces. A start without `--join`
-     in a workspace whose `.git/maity` holds `retry-of` is therefore
-     refused (exit 4, reason `retry_leftover`) while that mark names a
-     path other than the workspace's own and a directory there holds
-     `.git/maity/credential`. The message names both paths and the ways
-     on: remove `F` and start in `W`, or move `W` aside and rename `F`
-     to `W`'s path. Local mode reads the mark as a file and looks at `W`
-     as **No links** says; a `W` it cannot look at counts as holding a
-     credential. The mark names a path, not a tree: once `F` has `W`'s
-     path, or nothing with a credential is at `W`'s path (`stranded`
-     below), it refuses nothing. A mark a harness forges in its own
-     workspace only refuses that workspace's next start.
+     session, so two copies started on two paths would run the same
+     agent instance twice. Whether anything is at `W`'s path says
+     nothing about the other copies: a second, successful retry leaves
+     it empty for a moment (`between`), and from a kept `.join-*` for
+     good, while its own copy runs. The mark therefore names the one path
+     where a copy may run, and a path names one directory at a time, so
+     of all copies only one can be there. A start without `--join` in a
+     workspace whose `.git/maity` holds `retry-of` (after the entry rule,
+     which refuses one without the credential under its own name, exit
+     2) reads the mark as a file and goes on only at that path:
+     - **The mark names this workspace.** Local mode opens the mark's path
+       as **No links** says and compares the directory it reaches with
+       the workspace it holds open: the same device and inode (on Windows
+       the same volume serial number and file id), the identity the
+       lock's key is built from, never the spelling, so a name typed in
+       another case on APFS or NTFS, or an 8.3 short name, still names
+       it. Then, holding the workspace's lock, local mode removes the
+       mark and goes on as for a workspace without one: the copy has its
+       path, and a later move of the workspace is not refused.
+     - **Anything else** (another directory, nothing, or a path local
+       mode cannot open that way) refuses the start (exit 4, reason
+       `retry_leftover`), and every later one, until the person acts;
+       local mode changes nothing and moves no workspace, since the mark
+       is a file a harness can write. The message names the workspace,
+       the mark's path and what is there: a credential with this
+       workspace's instance (`me.instance`, §5.2), one with another
+       instance, or none. It names the ways on that fit. When the mark's
+       path holds this instance, this workspace is a copy: remove it,
+       or, to keep this tree instead, rename the one at that path, while
+       no local mode runs it, to a `.replaced-<UTC time>-<name>` name
+       beside it and rename this workspace to the path. When nothing is
+       there, rename this workspace to the path and start there. When
+       another instance or something else is there, the mark is stale or
+       forged: once the person has checked that no other copy of this
+       workspace's credential runs (the leftovers and `.replaced-*`
+       beside both paths name them), removing the file
+       `.git/maity/retry-of` makes it an ordinary workspace again. That
+       is the way out of every mark that does not fit; the instance read
+       at the mark's path picks the advice and never admits a start.
+     - A mark a harness forges in its own workspace refuses every start
+       of that workspace until the person removes it; it moves nothing
+       and reaches no other workspace.
 
 **Lifecycle of a workspace path.** The lock is keyed by the path, not by
 the directory at it (**Restart** below), so it guards the path across
@@ -13928,7 +13983,9 @@ every rename. `W` is the path a start names, `F` a retry's fresh
 directory, `T` the target of a rename. Every use of `.git/maity` first
 does the **No links** check. A crash is any end of local mode without
 its own exit, a `kill -9` or the OOM killer included; what it leaves is
-found as the leftovers a start names (the options above).
+found as the leftovers a start names (the options above). A workspace
+with a `retry-of` mark runs only at the path its mark names (**Retry
+leftovers**).
 
 | State | Lock of the path | What the path names | A start there meanwhile | Next |
 |---|---|---|---|---|
@@ -13938,12 +13995,12 @@ found as the leftovers a start names (the options above).
 | `placing` | at `T` and at the staging, both the join's | `T`: nothing or an empty directory until the rename, then the checked-out tree | `workspace_locked` at `T` and at the staging | `running`; when the rename fails or both targets' locks are held, the staging stays checked out (`staging_kept`): `stopped` at its path |
 | `stopped` | none | a tree with a credential and `checked-out` | takes the lock: `running` | `running` |
 | `running` | local mode's alone | the tree the harness works in | `workspace_locked` | `stopped` once local mode has ended; a run that outlives a crashed local mode is not covered yet (**The limit** under **Restart**) |
-| `replacing` | at `W` and at `F`, both the retry's | `W`: the old tree, unchanged, while `F` is built; `F`'s path printed at its creation | `workspace_locked` at `W` and at `F` | `between`; `kept` on a refusal or failed fetch (`F` removed); on a crash, `abandoned` before the first file is copied from `W/.git/maity`, `unfinished` after it and before `checked-out`, `orphaned` after `checked-out` |
-| `between` | at `W` and at `F` (and at `T` when `W` is a `.join-*`), all the retry's | `W`: nothing, the old tree is at `.replaced-…`; `F` not yet renamed | `workspace_locked` | `running` at `W` (or `T`); `stranded` on a crash or a failed rename of `F` |
-| `abandoned` | none | `W`: the old tree (`kept`); beside it an `F` with no file in its `.git/maity` but `retry-of` | at `W`: `replacing` again with a new `F`, naming the old one as holding no secret | the person removes `F` |
-| `unfinished` | none | `W`: the old tree (`kept`); beside it an `F` with files copied from `W/.git/maity` (the credential whole, partly or wholly under its temporary name, or not yet), a partial checkout or none, and no `checked-out` | at `W`: `replacing` again with a new `F`, naming the old one as incomplete and possibly holding a secret; at `F`: with the credential under its own name, `retry_leftover` while `W` holds a credential, else `replacing` from a kept `.join-*`; without it, refused (exit 2), naming `F` among the leftovers | the person removes `F`: `W` still holds the credential, and no harness ran in `F` |
-| `orphaned` | none | `W`: the old tree (`kept`); beside it a complete `F` with `checked-out`, its path printed at its creation and the way on printed before the renames, or by the next start at `W` when the crash came first | at `W`: `replacing` again with a new `F`, naming the old one as complete; at `F`: `retry_leftover` while `W` holds a credential, naming both ways on, else `stopped` | the person removes `F` and starts at `W`, or moves `W` aside and renames `F` to `W`'s path |
-| `stranded` | none | `W`: nothing; `F` complete beside it and the old tree at `.replaced-…`, both printed | at `W`: `absent`, naming `F`; at `F`: `stopped` (`W`'s path holds no credential, so `retry-of` refuses nothing) | the person renames `F` to `W`'s path: `stopped` |
+| `replacing` | at `W` and at `F`, both the retry's (and at `<handle>#<instance>` from the resume on when `W` is a `.join-*`) | `W`: the old tree, unchanged, while `F` is built; `F`'s path printed at its creation, its mark naming `W`'s path, for a `.join-*` `W` then `<handle>#<instance>` | `workspace_locked` at `W` and at `F` | `between`; `kept` on a refusal or failed fetch (`F` removed); on a crash, `abandoned` before the first file is copied from `W/.git/maity`, `unfinished` after it and before `checked-out`, `orphaned` after `checked-out` |
+| `between` | at `W` and at `F` (and at `T` when `W` is a `.join-*`), all the retry's | `W`: nothing, the old tree is at `.replaced-…`; `F` not yet renamed | `workspace_locked`; in any other leftover whose mark names `W` or `T`: `retry_leftover` | `running` at `W` (or `T`), the mark removed there; `stranded` on a crash or a failed rename of `F` |
+| `abandoned` | none | `W`: the old tree (`kept`); beside it an `F` with no file in its `.git/maity` but `retry-of` | at `W`: `replacing` again with a new `F`, naming the old one as holding no secret; at `F`: refused (exit 2), naming it as holding no secret | the person removes `F` |
+| `unfinished` | none | `W`: the old tree (`kept`); beside it an `F` with files copied from `W/.git/maity` (the credential whole, partly or wholly under its temporary name, or not yet), a partial checkout or none, and no `checked-out` | at `W`: `replacing` again with a new `F`, naming the old one as incomplete and possibly holding a secret; at `F`: with the credential under its own name, `retry_leftover` at every start, its mark naming `W`'s path or, after the resume of a `.join-*` `W`, `<handle>#<instance>`; without it, refused (exit 2), naming `F` among the leftovers | the person removes `F`: `W` still holds the credential, and no harness ran in `F` |
+| `orphaned` | none | `W`: the old tree (`kept`); beside it a complete `F` with `checked-out`, its path printed at its creation and the way on printed before the renames, or by the next start at `W` when the crash came first | at `W`: `replacing` again with a new `F`, naming the old one as complete; at `F`: `retry_leftover` at every start, naming the ways on | the person removes `F` and starts at `W`, or renames `W` to a `.replaced-` name and renames `F` to the path its mark names: `stopped` there |
+| `stranded` | none | `W`: nothing; `F` complete beside it and the old tree at `.replaced-…`, both printed | at `W`: `absent`, naming `F`; at `F`: `retry_leftover` at every start, since `F` is not at the path its mark names | the person renames `F` to the path its mark names (`W`'s, or `<handle>#<instance>`): `stopped` there, and its next start removes the mark |
 | `replaced` | none, ever | a `.replaced-*`: the old tree | refused, `workspace_replaced` | the person's |
 
 The credential never appears on a command line, in the environment, in
