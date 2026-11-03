@@ -120,10 +120,11 @@ FOREIGN_KEPT = ktw.PROJECTS_KEPT * MAX_NAMED
 @dataclass
 class ForeignCache:
     """The family of each named repository, per project and repository, read at most once
-    per FORCE_INTERVAL; one read of one at a time."""
+    per FORCE_INTERVAL; one read of one at a time. A repository's lock lives while a call
+    holds or waits for it: counted, so no exit leaves one behind."""
 
     entries: OrderedDict[tuple[str, str], _Foreign] = field(default_factory=OrderedDict)
-    locks: dict[tuple[str, str], threading.Lock] = field(default_factory=dict)
+    locks: dict[tuple[str, str], list[Any]] = field(default_factory=dict)  # [lock, callers]
     guard: threading.Lock = field(default_factory=threading.Lock)
 
     def clear(self) -> None:
@@ -136,32 +137,44 @@ class ForeignCache:
     ) -> tuple[_Foreign, bool]:
         key = (project_id, repository)
         with self.guard:
-            lock = self.locks.setdefault(key, threading.Lock())
+            slot = self.locks.setdefault(key, [threading.Lock(), 0])
+            slot[1] += 1
             current = self.entries.get(key)
-        if not lock.acquire(timeout=ktw.LOCK_WAIT):
-            if current is not None:
-                return current, False
-            raise ktw.Busy
         try:
-            with self.guard:
-                current = self.entries.get(key)
-            if current is not None and ktw._now() - current.at < _refresh(max_age):
-                return current, False
-            held = f"{project_id}|{repository}"
-            if current is None and _held("family", held):
-                return _Foreign(None, "timeout", ktw._now()), False  # dropped for room
+            if not slot[0].acquire(timeout=ktw.LOCK_WAIT):
+                if current is not None:
+                    return current, False
+                raise ktw.Busy
             try:
-                with _permits(project_id):  # its forge reads count as one of the project's
-                    found = self._read(reader, repository)  # a spent budget raises, unmarked
-            except ktw.MemberError:
-                raise ktw.Busy from None
-            _mark_read("family", held)
-            with self.guard:
-                for gone in bounded.put(self.entries, key, found, FOREIGN_KEPT, lambda k: False):
-                    self.locks.pop(gone, None)
-            return found, True
+                return self._locked(reader, project_id, repository, max_age)
+            finally:
+                slot[0].release()
         finally:
-            lock.release()
+            with self.guard:
+                slot[1] -= 1
+                if slot[1] == 0 and self.locks.get(key) is slot:
+                    del self.locks[key]
+
+    def _locked(
+        self, reader: forge.Forge, project_id: str, repository: str, max_age: int
+    ) -> tuple[_Foreign, bool]:
+        key = (project_id, repository)
+        with self.guard:
+            current = self.entries.get(key)
+        if current is not None and ktw._now() - current.at < _refresh(max_age):
+            return current, False
+        held = f"{project_id}|{repository}"
+        if current is None and _held("family", held):
+            return _Foreign(None, "timeout", ktw._now()), False  # dropped for room
+        try:
+            with _permits(project_id):  # its forge reads count as one of the project's
+                found = self._read(reader, repository)  # a spent budget raises, unmarked
+        except ktw.MemberError:
+            raise ktw.Busy from None
+        _mark_read("family", held)
+        with self.guard:
+            bounded.put(self.entries, key, found, FOREIGN_KEPT, lambda k: False)
+        return found, True
 
     @staticmethod
     def _read(reader: forge.Forge, repository: str) -> _Foreign:

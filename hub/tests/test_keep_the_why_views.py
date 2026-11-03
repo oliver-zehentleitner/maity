@@ -1155,6 +1155,7 @@ def test_a_named_familys_reads_wait_for_the_permits(
     assert answer.json()["error"]["code"] == "ktw_unavailable"
     assert "acme/other" not in fake.public_asked, "nothing read without a permit"  # type: ignore[attr-defined]
     assert not any(r.startswith("acme/other:") for r in fake.file_reads)
+    assert ktw_reads.FOREIGN.locks == {}, "a permit timeout leaves no lock behind"
 
 
 def test_two_calls_for_one_file_make_one_read(monkeypatch: pytest.MonkeyPatch) -> None:
