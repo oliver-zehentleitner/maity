@@ -2163,6 +2163,58 @@
     "en": "812dc04ddbc07d9e",
     "text": "f0fb4ede566fdaec"
   },
+  "cardpanel.notes.edit": {
+    "en": "f7e6729d30cf78fb",
+    "text": "5b09b12c2a03d8b3"
+  },
+  "cardpanel.notes.edit.cancel": {
+    "en": "c0774c185060fc13",
+    "text": "ad1a123c94de0d8a"
+  },
+  "cardpanel.notes.edit.field": {
+    "en": "8399952d32486b55",
+    "text": "e8264c715c8feb71"
+  },
+  "cardpanel.notes.edit.hint": {
+    "en": "e511e3013311068b",
+    "text": "95ae7347d1e2f256"
+  },
+  "cardpanel.notes.edit.label": {
+    "en": "f3e2eae8127990db",
+    "text": "a625a75d9f5f8bf1"
+  },
+  "cardpanel.notes.edit.not_saved": {
+    "en": "ae6ac2366f27b54c",
+    "text": "56c2abc24df04978"
+  },
+  "cardpanel.notes.edit.reason": {
+    "en": "8b25fce709d602f8",
+    "text": "1482b9712161127b"
+  },
+  "cardpanel.notes.edit.reason_needed": {
+    "en": "7e7dafee0da8b8ce",
+    "text": "f0e14ad494fa498a"
+  },
+  "cardpanel.notes.edit.reason_required": {
+    "en": "8b58467a6b4e27dd",
+    "text": "7abd043eb30fa92b"
+  },
+  "cardpanel.notes.edit.save": {
+    "en": "c1db83d165ed908a",
+    "text": "821eaaa21d2d681e"
+  },
+  "cardpanel.notes.edit.saving": {
+    "en": "4e65400e023b52a3",
+    "text": "8efa38438f5e434b"
+  },
+  "cardpanel.notes.edited": {
+    "en": "70d1504e53846254",
+    "text": "d3757e25fcd68d48"
+  },
+  "cardpanel.notes.edited_reason": {
+    "en": "45996c2b1653c94c",
+    "text": "63bcc0b69b4b7730"
+  },
   "cardpanel.notes.hint": {
     "en": "77f2631beb566124",
     "text": "aa1252a227ba18a5"
@@ -2191,13 +2243,45 @@
     "en": "017079eacd7f007c",
     "text": "65ed7e67cdc80bbd"
   },
+  "cardpanel.notes.remove": {
+    "en": "9469a102f04ea196",
+    "text": "1050589a96b5a37d"
+  },
+  "cardpanel.notes.remove.ask": {
+    "en": "95b35bc6708d27a3",
+    "text": "ce84ba13f9d737b6"
+  },
+  "cardpanel.notes.remove.busy": {
+    "en": "e58493ed3baaf9ae",
+    "text": "115fa7b0eb602987"
+  },
+  "cardpanel.notes.remove.failed": {
+    "en": "3f9a5f41ede9b7a3",
+    "text": "6f33dba2ce8e8268"
+  },
+  "cardpanel.notes.remove.label": {
+    "en": "b4e1a24685c8066e",
+    "text": "64440111f95b031f"
+  },
+  "cardpanel.notes.remove.reason_needed": {
+    "en": "dab0775f0a6e599c",
+    "text": "40afe7186c4ba7b1"
+  },
   "cardpanel.notes.removed": {
     "en": "52898b6ba030c660",
     "text": "fca5391bee7986d1"
   },
+  "cardpanel.notes.removed.unsaid": {
+    "en": "3f919b7dc894f176",
+    "text": "b89d3e9725e5074f"
+  },
   "cardpanel.notes.removed_by": {
     "en": "c2765c6a0d21da56",
     "text": "93bbc6e7435d79b6"
+  },
+  "cardpanel.notes.removed_by.unsaid": {
+    "en": "a8faba3d209ae4da",
+    "text": "862956b8cebbca43"
   },
   "cardpanel.updates": {
     "en": "940bff6368ac60d9",
@@ -3526,6 +3610,14 @@
   "error.maintenance": {
     "en": "b1f1ef269b21aacf",
     "text": "b15eee66340e68c1"
+  },
+  "error.maintenance_not_running": {
+    "en": "58e52c5607e41459",
+    "text": "e78f7a28364ec0e2"
+  },
+  "error.maintenance_running": {
+    "en": "6215abdad2c9c05f",
+    "text": "e1774a1eee957770"
   },
   "error.memory_full": {
     "en": "1d443815d36c4d47",
@@ -12508,8 +12600,8 @@
     "text": "6f9be6b59eae48f9"
   },
   "public_profile.hint": {
-    "en": "b9c7adc490cdec63",
-    "text": "80073f5c8f8a2ac3"
+    "en": "bdc3c71606e891f1",
+    "text": "75dfa8f6a0ed0fa5"
   },
   "public_profile.links": {
     "en": "5b3bd4bf0fd959d5",
@@ -12546,6 +12638,14 @@
   "public_profile.network.format": {
     "en": "86d6d20cf41e43d7",
     "text": "edcdbab67c6b25aa"
+  },
+  "public_profile.presence": {
+    "en": "13fd36440a3dfcb7",
+    "text": "de979073bfb8a03b"
+  },
+  "public_profile.presence.hint": {
+    "en": "d7d86055c25b4c25",
+    "text": "b283800d5fe231fe"
   },
   "public_profile.refused": {
     "en": "eefc90bc95b7b6cc",

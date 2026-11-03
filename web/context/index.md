@@ -49,6 +49,7 @@ Why the Maity dashboard (`web/`) is built the way it is. Family-wide decisions a
 ## L
 
 ## M
+- [maintenance.md](maintenance.md) — the maintenance banner above the header, outside what a drawing replaces; the full page decided in render after /me; the window learnt from GET /maintenance, /me and every 503, the fixture hub refusing like the hub
 
 ## N
 

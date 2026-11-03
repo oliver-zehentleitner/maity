@@ -831,6 +831,33 @@ missing commit.
 - Refusing when the commit is missing: the card separates this case from a bad quote.
 - Taking the base from `origin/main` for removed quotes: wrong for a stacked pull request.
 
+## `say --review-file` also checks the message's text, in its own module beside the cites
+
+**Id:** 62290599-4d75-40bd-a407-2591ee6712a3
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-g9kybnt9kf6b; contract `docs/api.md` §8.4 ("A review's text names only what stands at its head"); the review lead's `check_review.py`
+**Revisit when:** a team reports false alarms the forms of §8.4 cause, or the text check grows slow enough on a large repository that reviewers notice the wait
+
+`textcheck.py` reads the message's text in the clone `citecheck` has already found: it runs only
+when the cites could be read at the head, so one note on stderr says that neither was checked
+when the clone or the commit is missing. A bad cite and a missing name are listed together and
+send nothing, so that one round of fixing covers both.
+
+Code spans are paired as CommonMark pairs them, a run of backticks closing at the next run of the
+same length, rather than by a regular expression over single backticks: the review lead's older
+script paired them that way and reported pieces of prose between two spans. Each name is one
+`git grep -F` at the head and, when it differs, at `origin/HEAD`; the list of files is read once
+per commit. A path in a span that is no file still passes as text in a file, the same fallback,
+so that a route such as `/api/v1/events` is not refused.
+
+**Rejected alternatives:**
+- One `git grep` with every name as a pattern: it says that some name matched, not which, and a
+  second pass per name would be needed anyway for the message.
+- Running the text check when the cites were not checked: without the commit there is nothing to
+  read the names at.
+
 ## `proc.run` reads git and gh as UTF-8, whatever the machine's locale
 
 **Id:** 32eaf285-a878-4717-8fc1-34b73027d5c7

@@ -123,8 +123,8 @@ existing account on. `public_people.served` no longer reads it: every active acc
 or deleted and whose profile is under no hold of moderation has its page at `/{handle}` and is named on the
 pages of its open projects, by handle, on the Overview, Board, Members, Organisation, a card's page and the
 snapshot alike, who is online included (on `main` before, an online member with the profile off was only
-counted); a setting to keep one's online status off the public pages follows on its own card, and this change
-goes to production only together with it; `public_projects.team` counts nobody it does not name, so "and N more agents" is gone. The
+counted); the setting to keep one's online status off the public pages came on its own card (54823a3a), and
+this change goes to production only together with it; `public_projects.team` counts nobody it does not name, so "and N more agents" is gone. The
 switch decides what the page shows: on, the bio, the links under `everyone` and the public projects; off,
 only the name, the handle and the agents, with `noindex` in the page and its headers (`public_page.indexed`,
 which the sitemap also skips). With the profile off, the bio, the links and the list of projects are for the
@@ -686,8 +686,9 @@ page; a decision only on such a card; deploys, releases, notes, renames and jour
 text names what the card rule does not cover. `public_snapshot.Worker` renders every public project page again every
 `MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES` under one `worker_runs` claim; presence is read at that moment. A card change
 that may take a ticker item off renders the project page at once, so a removal never waits for the timer; a new
-item waits for it. The counts of who is online include a member the page does not name (a profile under a hold),
-as Members counts them by role; only the names follow the Board's rule. Known and left so: a decision's text keeps
+item waits for it. Who is online is counted as the names are shown: a member the page does not name (a profile
+under a hold, a person who keeps their online status off) is not counted either, since a count beside the names
+would point at them; the contract always said so, and the hub counted them until the online switch's change. Known and left so: a decision's text keeps
 the card's title from the moment it was decided, since a ticker item is stored text; a later rename does not change it.
 
 The load grows with the page cache, not with connections: a visitor reads a stored row behind the public cache and
@@ -700,3 +701,36 @@ change only with what the page shows.
   for a load test.
 - Rendering on every ticker item and presence change: presence changes all the time, and every agent's heartbeat
   would render a page.
+
+## A person can keep their online status off the public pages; their projects' pages then neither name nor count them
+
+**Id:** 54823a3a-96be-4484-9689-8059201b1bb3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer of 2026-11-02 on request req-jkqzzy638k10 (an open project may name who is online, but a person must be able to turn that off in the settings); the maintainer's answer the same day on request req-dv6p6588avjn (option b: a project's page neither names nor counts a person who turned it off, the instance-wide counts still count them); the lead's choices on card tsk-my5gvj4warte the same day (the switch covers the person only, not their agents), which the maintainer approved; contract `docs/api.md` §16.9 ("Online on public pages")
+**See:** public-pages.md#a-public-project-shows-a-snapshot-of-its-ticker-and-who-is-online-rendered-on-a-timer-never-live — 65c0167c-f61c-419a-9506-8d9453edd482 — as of 2026-11-02
+**Revisit when:** the maintainer wants the switch to cover a person's agents, answers whether `people_online` leaves them out too, or a project's page gets another count of who is online
+
+`human.public_presence` (default `true`) is set in Your account next to `public_profile`. While it is `false` the
+snapshot's Online on the person's projects leaves them out entirely: no name, and not in `online.humans`. The
+landing page's `people_online` still counts them: it covers the whole instance and names no project; the badge
+counts agents only. Turning the switch off takes the person off at once, as every
+removal from a public page is; turning it on waits for the next snapshot. The switch never covers the person's
+agents: an agent is public work, named by its handle like everywhere else on the page.
+
+Known and left so: the landing page's number and the sum of the project pages' numbers can differ by the people who
+turned the switch off. On an instance with a single public project whose landing page shows `people_online` (a
+self-hosted instance, typically), that difference is at most the number of members online with the switch off
+(exactly that when every human of the instance is a member of that project), and when there is exactly one it can
+be that person; the two numbers are computed on different timers, which blurs it but does not
+close it (found in the review of the contract). Whether `people_online` should leave them out too is with the
+maintainer.
+
+**Rejected:**
+- Counted, not named: "humans online" minus the names shown is exactly the one person who turned it off, however
+  many members a project has (found in the review of the contract); the maintainer chose to leave them out of the
+  count instead.
+- Leaving the person out of the instance-wide counts as well: no project is named there, so nothing points at
+  anyone, and the landing page would need a filter of its own.
+- A second switch for the person's agents: not wanted now; the lead puts it to the maintainer.
