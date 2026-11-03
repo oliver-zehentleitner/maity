@@ -4193,13 +4193,20 @@ to re-route. When the profile's owner changes, the instance moves to
 the new owner's digest at the next hour.
 
 **Silence after `seen`.** Answering `seen` records, for every instance
-the request listed, its `last_seen_at` at that moment and, when an
-episode of it runs, that episode's `since`. Records add up over every
-answer. An away instance is *silenced* when
+the request listed, what the request showed in its last version (its
+filing or latest rewrite): the instance's `last_seen_at` at that
+version and, when it was listed as an episode, that episode's `since`.
+The state at the answer, which may come up to an hour later, is not
+recorded. Records are the answering human's and add up over every
+answer of theirs; an instance that moves to another owner's digest
+starts there without any. An away instance is *silenced* for its owner
+when
 
-1. its `last_seen_at` equals one recorded for it: it has made no call,
-   a resume included, since the owner saw it; or
-2. it is listed as an episode and that episode's `since` is recorded:
+1. its `last_seen_at` equals one the owner recorded for it: it has made
+   no call, a resume included, since the request the owner answered
+   showed it; or
+2. it is listed as an episode and the owner recorded that episode's
+   `since`:
    the owner saw this episode, however the instance called meanwhile.
 
 A stalled holder is silenced by 1 alone, since its stop is its last
@@ -4207,7 +4214,7 @@ call. A record matters until the instance calls past it (1) or the
 episode ends (2). Nothing else moves `last_seen_at` — not the end of an
 episode by a revocation or a pause, not a card moved or assigned back —
 so none of them lifts a silence by 1. Everything not silenced is new to the
-owner. The cases, each from the answer on:
+owner. The cases, each from the answer on unless the row says otherwise:
 
 | Listed and seen as | Then | Away as | Silenced | By |
 |---|---|---|---|---|
@@ -4220,6 +4227,9 @@ owner. The cases, each from the answer on:
 | stalled holder | an event waits for it, an episode starts | stalled holder | yes | 1 |
 | stalled holder | it calls (a resume, any call), then stops again | either | no | — |
 | not listed: stopped before the answer, away only after it | — | either | no | — |
+| episode or stalled holder | it calls after the request's last version and before the answer, then stops again | either | no | — |
+| episode | it ends after the request's last version and before the answer, and a later one starts | episode | no | — |
+| episode or stalled holder, seen by its owner | the profile's owner changes, the instance stays away | either | no: the new owner has no record | — |
 | X and Y, each listed and seen in its own answer | both stay away as they were | both | yes, both: no new request | 1 or 2 |
 
 **Shared environment.** The session keeps the `environment` its resume

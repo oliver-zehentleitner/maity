@@ -13,9 +13,11 @@
 
 ### Changed
 
-- docs/api.md §5.3: answering the digest's `seen` records each listed instance's `last_seen_at`
-  and the `since` of a running episode; an away instance stays silenced while it has made no call
-  since such a record, or while that episode runs. Records add up; a new request comes only for
+- docs/api.md §5.3: answering the digest's `seen` records, for the answering human, what the
+  request's last version showed of each listed instance: its `last_seen_at` and the `since` of a
+  listed episode; an away instance stays silenced for its owner while it has made no call since
+  such a record, or while that episode runs. Records add up; a new request comes only for
   an instance not silenced and lists every away instance. A table lists the cases: moving a
   stalled holder's cards or assigning one back does not ask again, a crash after work does, and
-  an instance that became away only after an answer is filed.
+  an instance that became away only after an answer, one that called between the request's last
+  version and the answer, and one whose profile changed owner are filed.
