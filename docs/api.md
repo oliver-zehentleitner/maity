@@ -12371,13 +12371,15 @@ The hub serves:
 
 The second kind is never read with the project's owner's grant (§11.4:
 the App installation or the owner's token act on the project's own
-repository alone). For a project in one of the operator's own
-namespaces (§11.4, `MAITY_FORGE_INSTANCE_NAMESPACES`) it is read with
-the instance token (`MAITY_FORGE_GITHUB_TOKEN`), for every other project
-without any token: the instance token serves the operator's projects
-only, here as everywhere. It is read only where the forge reports the
-repository public: a repository the instance token could read although
-it is private is `not_public` all the same. The visibility is read as §11.4 reads it,
+repository alone). For a project whose own repository the instance
+token reads (§11.4: in one of the operator's own namespaces,
+`MAITY_FORGE_INSTANCE_NAMESPACES`, and with no owner's grant that
+covers it) it is read with the instance token
+(`MAITY_FORGE_GITHUB_TOKEN`), for every other project without any
+token: the instance token serves the operator's projects only, here as
+everywhere, and §11.4's one choice of source decides which those are.
+It is read only where the forge reports the repository public: a
+repository the instance token could read although it is private is `not_public` all the same. The visibility is read as §11.4 reads it,
 before the first read and on every refresh of its family (at most every `max_age`, below, and
 at least every 600 s whatever `max_age` asks); a
 private one, or one whose visibility cannot be read for any reason but

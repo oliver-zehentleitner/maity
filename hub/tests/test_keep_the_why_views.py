@@ -1209,3 +1209,20 @@ def test_an_export_the_summary_read_is_held_after_a_drop(
 
 def test_a_large_finite_integer_keeps_its_digits() -> None:
     assert ktw.parse(b"[12345678901234567890123]") == [12345678901234567890123]
+
+
+def test_the_route_reads_named_repositories_with_the_projects_chosen_source(
+    owner: flow.Human, fake: Fake, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The route hands `named_reader` the reader §11.4 chose for the project, never the
+    operator's unbound one: with the owner's grant, a named repository is read anonymously."""
+    from maity_hub.routes import keep_the_why as route
+
+    # an operator's token on the hub, whose unbound reader would read as the instance
+    monkeypatch.setattr(route, "reader_of", lambda request: forge.Forge("operator-token"))
+    fake.family()
+    other_repository(fake)
+    project(owner)
+    assert owner.get(f"{PATH}/export", params={"canonical": OTHER}).status_code == 200
+    named = [(token, granted) for repo, token, granted in fake.readers if repo == "acme/other"]  # type: ignore[attr-defined]
+    assert named and all(token is None and granted is None for token, granted in named), named
