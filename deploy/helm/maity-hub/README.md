@@ -295,8 +295,10 @@ not ship yet (`hub/context/kubernetes.md`).
   `deploy/scripts/helm-upgrade.sh -f values.yaml [helm arguments]` scales the
   Deployment to 0, runs `helm upgrade` (the hook migrates alone), and then
   runs the replicas the release renders (Helm sets them, so a changed
-  `replicas` takes effect). On any other exit, a failed upgrade and Ctrl-C
-  included, it scales back to the replicas it had; a hub found at 0 stays at 0. Helm only starts once the hub's pods are verifiably gone; a failed
+  `replicas` takes effect), also when the rollout check after Helm fails
+  (exit 4; the way back is `helm rollback`). When it ends before Helm or Helm
+  fails, Ctrl-C included, it scales back to the replicas it had; a hub found
+  at 0 stays at 0. Helm only starts once the hub's pods are verifiably gone; a failed
   scale-down or pods still there after `STOP_TIMEOUT` end the script first.
   The exit status is Helm's own when the upgrade failed, 3 when scaling back
   failed, 4 when the hub did not become ready, 0 only when everything worked.

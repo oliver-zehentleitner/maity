@@ -98,4 +98,6 @@ RENDERED=3 run more_replicas none 1 0 yes 3
 RENDERED=1 run fewer_replicas none 3 0 yes 1
 RENDERED=3 run helm_fails_keeps_old helm 1 7 yes 1
 RENDERED=2 run initial0_rendered none 0 0 yes 0
+# Helm succeeded, the rollout check then fails: the rendered count stays (the release's), exit 4.
+RENDERED=3 run rollout_rendered rollout 1 4 yes 3
 [ "$failures" = 0 ] && echo "all scenarios pass" || { echo "$failures scenario(s) failed"; exit 1; }

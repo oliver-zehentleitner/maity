@@ -853,8 +853,9 @@ supports. More than one:
   without a migration. A release with a migration still goes through
   `deploy/scripts/helm-upgrade.sh`, which scales to 0 and, after a successful upgrade, leaves
   the replicas the release renders (Helm resets a scaled Deployment to the chart's value, and a
-  changed `replicas` must not be undone); after a failure it scales back to the replicas it
-  found (entry 36157878), until migrations are expand/contract. A hub found at 0 stays at 0.
+  changed `replicas` must not be undone), also when the rollout check after Helm fails (the way
+  back is `helm rollback`); when it ends before Helm or Helm fails, it scales back to the
+  replicas it found (entry 36157878), until migrations are expand/contract. A hub found at 0 stays at 0.
 - **A PodDisruptionBudget** with `minAvailable: 1`, rendered only with more than one replica: for
   one pod it would block every node drain.
 - **Spread over nodes** (`kubernetes.io/hostname`, `maxSkew: 1`, `ScheduleAnyway`), replaceable

@@ -4,5 +4,6 @@
   at a time, gets a PodDisruptionBudget and spreads over nodes (`topologySpreadConstraints`);
   one replica keeps `Recreate`. `database.poolSize` and `.maxOverflow` set each pod's pool.
 - Hub: `MAITY_REPLICAS` (set by the chart) refuses more than one replica off PostgreSQL or with a
-  local attachment directory, and the hub warns at its start when replicas × (pool + overflow +
-  workers + 1) exceeds what PostgreSQL gives ordinary roles.
+  local attachment directory, and the hub warns at its start when the connections it may ask
+  (per worker its pool and overflow share and a listener, per pod one for the probe, for
+  replicas + 1 pods during a rolling update) exceed what PostgreSQL gives ordinary roles.

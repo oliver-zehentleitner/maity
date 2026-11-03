@@ -14,8 +14,9 @@
 # refuses to start otherwise, and the chart refuses attachments.existingClaim): the pods then
 # roll one at a time (RollingUpdate, maxUnavailable 0), a PodDisruptionBudget keeps one up and
 # they spread over nodes. A release with a migration still stops the hub
-# (deploy/scripts/helm-upgrade.sh). Database connections: replicas × (pool + overflow +
-# config.workers + 1) must fit the database's max_connections (README.md, "Several pods").
+# (deploy/scripts/helm-upgrade.sh). Database connections: pods × (config.workers × (pool share +
+# overflow share + 1) + 1), pods being replicas + 1 during a rolling update, must fit the
+# database's max_connections (README.md, "Several pods").
 replicas: 1
 
 image:

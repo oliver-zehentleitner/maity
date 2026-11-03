@@ -15,9 +15,12 @@
 #   pods to be gone, 180), KUBECONFIG as usual.
 #
 # helm upgrade only runs when the hub is verifiably stopped: a failed scale-down or pods still
-# there after STOP_TIMEOUT end the script before Helm. After a successful upgrade the hub runs the
-# replicas the release renders (Helm sets them; `replicas` may have changed); on any other exit it
-# is scaled back to the replicas it had. A hub found at 0 stays at 0 either way.
+# there after STOP_TIMEOUT end the script before Helm. Once Helm succeeded the hub keeps the
+# replicas the release renders (Helm sets them; `replicas` may have changed), even when the
+# rollout check after it fails (exit 4): going back to the old count would make the live
+# Deployment differ from the release again, and `--wait` already saw the new pods ready, so fewer
+# pods of the same new image would fix nothing. Only when the script ends before Helm or Helm
+# fails is the hub scaled back to the replicas it had. A hub found at 0 stays at 0 either way.
 # Exit status: Helm's own when the upgrade failed; otherwise 3 when scaling back failed, 4 when the
 # hub did not become ready, 1 for the steps before Helm, 0 only when everything worked.
 set -uo pipefail
