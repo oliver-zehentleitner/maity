@@ -31,8 +31,8 @@ that has not yet added the volume.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** implementation session, 2026-10-27 (`docs/api.md` §8.7 fixes "the blob first, the metadata after"; the way to undo it is the implementer's); the coordinator's ruling of 2026-11-03 for the `s3` store: the blob outside the project's lock, an orphan after a failed transaction left to the sweep
-**Revisit when:** the time from an upload's write to its commit can come near `BLOB_GRACE`, or the contract changes the write order
+**Source:** implementation session, 2026-10-27 (`docs/api.md` §8.7 fixes "the blob first, the metadata after"; the way to undo it is the implementer's); the coordinator's ruling of 2026-11-03 for the `s3` store: the blob outside the project's lock, an orphan after a failed transaction left to the sweep; the reviews of #1281 on 2026-11-03 (the clocks the sweep compares, a write whose answer is lost); the 15-minute limit on a request's time is the SigV4 rule of AWS S3 and MinIO
+**Revisit when:** the time from an upload's write to its commit can come near `BLOB_GRACE`, a store is used that does not refuse requests with a skewed clock, or the contract changes the write order
 **See:** replicas.md#attachments-move-to-s3-compatible-object-storage — a70d7269-a0a9-45aa-94c5-54715f112c10 — as of 2026-11-03
 
 The upload checks the project's quota and the membership's pending bounds in a
@@ -42,9 +42,17 @@ project's lock: one `PutObject` for `s3`, a file of its own moved into place for
 `local` (`os.replace`, after an `fsync`), so a reader never sees half a blob and
 no row names a missing one. The transaction then takes the lock and checks the
 quota, the right to post and the project's state again, and inserts the row only
-while the write is younger than `UPLOAD_FRESH` (half of `BLOB_GRACE`); past it
-the upload is refused with `database_unavailable`. From the write on, the rate
-stays charged whatever follows, so refusals cannot buy writes past the rate. When it
+while less than `UPLOAD_FRESH` (5 minutes) has passed since the write began, on a
+clock that keeps counting while the host is suspended; past it the upload is
+refused with `503 upload_expired`, a code of its own: the database was reached, so
+`database_unavailable` would name the wrong cause. The sweep compares the store's clock (an object's
+LastModified) with the hub's. A store that checks request signatures refuses a
+request whose time is more than 15 minutes (`CLOCK_SKEW`) off its own, so while the
+hub can write the two clocks are closer than that. `BLOB_GRACE` (30 minutes) is
+larger than both together: a blob the sweep sees older than the grace can no longer
+get its row. From the write on, even a write that failed, the rate stays charged
+whatever follows: a write whose answer was lost may still have stored the bytes, so
+refusals and failures cannot buy writes past the rate. When it
 does not commit (a refusal, a failure, or a concurrent call with the same
 idempotency key that won), the route removes the blob afterwards, outside the
 lock; when that removal fails too, or the process dies before it, the blob is
@@ -72,7 +80,11 @@ without bytes, impossible; the leftover blob is the harmless one.
 - A reservation the sweep honours (a row written before the write, or a
   tombstone set under the lock and the store asked after): a durable bound, but
   one more transaction and write per upload and per stray, and a table to keep
-  in step with the store; the freshness bound needs neither.
+  in step with the store; the freshness bound needs neither. It rests on the
+  stores' own limit on clock skew instead, which holds for the stores the hub
+  supports (`local` has one clock).
+- Timing the bound from the end of the write: a write that returns late (a slow
+  answer, a suspended process) could find its blob already counted as a stray.
 - Giving the rate back on every refusal, as before the write moved: a refusal
   found under the lock comes after the write, and a caller could buy writes
   past the rate with uploads that are refused each time.

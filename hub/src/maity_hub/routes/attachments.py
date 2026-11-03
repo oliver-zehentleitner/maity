@@ -12,7 +12,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import time
 from collections.abc import Iterator
 from typing import Any
 
@@ -130,15 +129,18 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     # The blob first, the row after (§8.7), and the blob outside every transaction: for `s3`
     # the write is a network call, and none may wait under the project's lock or hold a
     # database connection. The sweep leaves a blob without a row alone for `BLOB_GRACE`; the
-    # row is inserted only while the blob is younger than `UPLOAD_FRESH`, half of it.
-    # From the write on, the rate stays charged, whatever follows: the write happened.
+    # row is inserted only while less than `UPLOAD_FRESH` has passed since the write began.
+    # From the write on, the rate stays charged, whatever follows: even a write that failed
+    # may have stored the bytes (a lost answer), so it is not given back.
     key = blobs.key_of(mine.project.id, attachment_id)
+    started = attachments.upload_clock()
     try:
         store.put(key, data)
+        if attachments.upload_clock() - started > attachments.UPLOAD_FRESH:
+            raise ApiError(503, "upload_expired", "the upload took too long; send it again")
     except BaseException:
-        attachments.give_back(rate_key, charged)  # nothing was stored: not counted
+        _discard(store, key)
         raise
-    written = time.monotonic()
 
     def action(conn: Connection) -> idempotency.Outcome:
         project = lock_project(conn, membership(conn, caller, slug).project.id)
@@ -151,10 +153,11 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
         if project.state in CLOSED_STATES:
             raise ApiError(409, "project_closed", f"the project is {project.state}")
         _check_room(conn, locked, settings, len(data))
-        if time.monotonic() - written > attachments.UPLOAD_FRESH:
-            # The sweep may already count the blob as a stray: no row may name it now.
+        if attachments.upload_clock() - started > attachments.UPLOAD_FRESH:
+            # The database did not take the row in time (a lock wait, retries); the sweep may
+            # already count the blob as a stray, so no row may name it now (§8.7).
             log.warning("an upload waited too long for its row; refused, its blob removed")
-            raise ApiError(503, "database_unavailable", "the database is unreachable")
+            raise ApiError(503, "upload_expired", "the upload took too long; send it again")
         conn.execute(
             insert(t.attachment).values(
                 id=attachment_id,

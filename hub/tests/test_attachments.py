@@ -286,11 +286,60 @@ def test_a_refusal_after_the_write_keeps_the_rate_charged_and_the_quota_is_check
     assert put(owner, "ok.txt", b"x").status_code == 201
     # A refusal only the second look finds (here: past the bound for its row) comes after the
     # write: the charge stays, and the blob goes again.
-    monkeypatch.setattr(attachments, "UPLOAD_FRESH", -1.0)
+    from maity_hub.routes import attachments as route
+
+    now = [0.0]
+    monkeypatch.setattr(attachments, "upload_clock", lambda: now[0])
+    real_lock = events.lock_project
+
+    def slow_lock(conn: Any, project_id: str) -> Any:
+        now[0] += attachments.UPLOAD_FRESH + 1  # the lock wait outlasts the bound
+        return real_lock(conn, project_id)
+
+    monkeypatch.setattr(route, "lock_project", slow_lock)
     late = put(owner, "late.txt", b"y")
-    assert late.status_code == 503 and late.json()["error"]["code"] == "database_unavailable"
+    assert late.status_code == 503 and late.json()["error"]["code"] == "upload_expired"
     assert len(writes) == 2 and not (blobs / writes[1]).exists()
     assert len(given_back) == attachments.RATE_UPLOADS + 5
+
+
+def test_a_write_that_fails_or_outlasts_the_bound_keeps_the_rate_charged_and_leaves_no_blob(
+    owner: flow.Human, blobs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed write may still have stored the bytes (its answer lost): the charge stays, and
+    the blob is removed. A write that took longer than `UPLOAD_FRESH` gets no row: the sweep
+    may already count its blob as a stray."""
+    given_back: list[Any] = []
+    monkeypatch.setattr(attachments, "give_back", lambda key, charged: given_back.append(1))
+    real = attachment_store.LocalStore.put
+
+    def lost(self: Any, key: str, data: bytes) -> None:
+        real(self, key, data)
+        raise attachment_store.StoreError("the attachment store could not store a blob (x)")
+
+    monkeypatch.setattr(attachment_store.LocalStore, "put", lost)
+    assert put(owner, "a.txt", b"lost").status_code == 500
+    assert list(blobs.glob("*/*")) == [] and given_back == []
+    now = [0.0]
+    monkeypatch.setattr(attachments, "upload_clock", lambda: now[0])
+
+    def slow(self: Any, key: str, data: bytes) -> None:
+        real(self, key, data)
+        now[0] += attachments.UPLOAD_FRESH + 1
+
+    monkeypatch.setattr(attachment_store.LocalStore, "put", slow)
+    slow_answer = put(owner, "b.txt", b"slow")
+    assert (
+        slow_answer.status_code == 503 and slow_answer.json()["error"]["code"] == "upload_expired"
+    )
+    assert list(blobs.glob("*/*")) == [] and given_back == []
+
+
+def test_the_sweeps_grace_outlasts_the_upload_bound_by_the_clock_skew() -> None:
+    """A blob the sweep sees older than `BLOB_GRACE` is, with the clocks up to `CLOCK_SKEW`
+    apart, older than `UPLOAD_FRESH`: its upload can no longer insert the row."""
+    assert attachments.BLOB_GRACE - attachments.CLOCK_SKEW > attachments.UPLOAD_FRESH
+    assert attachments.upload_clock() <= attachments.upload_clock()
 
 
 def test_an_upload_whose_slug_names_another_project_under_the_lock_is_refused(

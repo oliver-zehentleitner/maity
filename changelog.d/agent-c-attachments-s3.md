@@ -13,6 +13,9 @@
   `Content-Length`. Smaller files are still checked before the answer starts.
 - hub: an upload now writes its bytes before its database transaction and outside the project's
   lock, so a slow store never holds the lock or a database connection. The quota and pending bounds
-  are checked before the write as well. A refusal after the write keeps the upload counted against
-  the rate. When the transaction does not commit, the bytes are removed afterwards; if that fails,
-  the sweep removes them after ten minutes. The sweep likewise asks the store outside the lock.
+  are checked before the write as well. A refusal or a failure after the write began keeps the upload
+  counted against the rate. The row is committed only within 5 minutes of the start of the write;
+  a slower upload is refused with the new error `503 upload_expired`, and may be sent again. When the transaction does not commit, the bytes are removed
+  afterwards; if that fails, the sweep removes them after 30 minutes (until now ten, now with room
+  for the store's clock to differ from the hub's). The sweep likewise asks the store outside the
+  lock.
