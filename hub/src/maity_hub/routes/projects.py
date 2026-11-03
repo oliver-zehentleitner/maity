@@ -133,12 +133,75 @@ def _check_ticker(settings: TickerSettingsIn) -> None:
         raise invalid(errors)
 
 
+class RoleRuleIn(Strict):
+    """One role's rule lines (§6.1 "Role rules")."""
+
+    subagent_per_card: bool | None = None
+    checklist: list[str] | None = None
+
+
+CHECKLIST_MAX = 30
+CHECKLIST_ITEM_MAX = 300
+# A line break or another control character: an item is one plain line (§6.1, §16.7.4).
+CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
+
+
+def _checked_role_rules(given: dict[str, RoleRuleIn]) -> dict[str, Any]:
+    """`settings.role_rules` as stored (§6.1): every refusal named, nothing dropped silently,
+    each checklist item trimmed; a field a role does not name stays absent."""
+    errors: dict[str, str] = {}
+    stored: dict[str, Any] = {}
+    for role, rules_in in given.items():
+        field = f"settings.role_rules.{role}"
+        if role not in rules.RULE_ROLES:
+            errors[field] = "unknown_role"
+            continue
+        entry = rules_in.model_dump(exclude_unset=True, exclude_none=True)
+        if "checklist" in entry:
+            items = [item.strip() for item in entry["checklist"]]
+            error = _checklist_error(role, items)
+            if error is not None:
+                errors[f"{field}.checklist"] = error
+            entry["checklist"] = items
+        stored[role] = entry
+    if errors:
+        raise invalid(errors)
+    return stored
+
+
+def _checklist_error(role: str, items: list[str]) -> str | None:
+    if role == "coder":
+        return "not_allowed"
+    if len(items) > CHECKLIST_MAX:
+        return "too_many"
+    for item in items:
+        if not item:
+            return "empty_item"
+        if CONTROL.search(item):
+            return "multiline"
+        if len(item) > CHECKLIST_ITEM_MAX:
+            return "too_long"
+    return None
+
+
+def _announced_role_rules(stored: dict[str, Any] | None) -> dict[str, Any] | None:
+    """`settings.role_rules` as `project_updated` names it: each checklist as `true`, since
+    the log never keeps a project's free text (§6.1, §8)."""
+    if stored is None:
+        return None
+    return {
+        role: {**entry, **({"checklist": True} if "checklist" in entry else {})}
+        for role, entry in stored.items()
+    }
+
+
 class SettingsIn(Strict):
     """Top-level keys (§6.1): a key named replaces its whole value, `null` removes it."""
 
     release_checklist: list[str] | None = Field(default=None, max_length=50)
     ticker: TickerSettingsIn | None = None
     onboarding: OnboardingIn | None = None
+    role_rules: dict[str, RoleRuleIn] | None = None
     language: str | None = None
     # The file the overview links and shows as the project's contract (§6.8).
     contract_path: str | None = None
@@ -756,6 +819,8 @@ def patch_project(
                 if reason is not None:
                     raise invalid({"settings.contract_path": reason})
             dumped = body.settings.model_dump()
+            if body.settings.role_rules is not None:
+                dumped["role_rules"] = _checked_role_rules(body.settings.role_rules)
             if "onboarding" in named:
                 changed, stored, announcement = onboarding.replace_setting(
                     conn, project, body.settings.onboarding, mine.id
@@ -769,6 +834,10 @@ def patch_project(
                     effective = dumped[key] or "en"
                     if effective != (merged.get(key) or "en"):
                         settings_changed["settings.language"] = effective
+                elif key == "role_rules":
+                    if merged.get(key) != dumped[key]:
+                        settings_changed["settings.role_rules"] = _announced_role_rules(dumped[key])
+                        rules_inputs_changed = True
                 elif key != "onboarding" and merged.get(key) != dumped[key]:
                     settings_changed[f"settings.{key}"] = (
                         True
@@ -966,10 +1035,16 @@ def patch_project(
                     update(t.project).where(t.project.c.id == project.id).values({name: new_value})
                 )
                 rules_inputs_changed = True
-        # The name, a note without a state change, the owner's text and the Keep the
-        # Why line are rules inputs without an event of their own: one rules_changed.
+        # The name, a note without a state change, the owner's text, the Keep the Why line
+        # and the role rules are rules inputs without an event of their own: one
+        # rules_changed, whose reason names the role rules when the PATCH gives none (§6.1).
         if rules_inputs_changed:
-            payload = {"reason": body.reason} if body.reason else {}
+            if body.reason:
+                payload = {"reason": body.reason}
+            elif "settings.role_rules" in settings_changed:
+                payload = {"reason": "settings.role_rules"}
+            else:
+                payload = {}
             rules.bump(conn, project, "rules_changed", BROADCAST, payload, actor=actor)
         if new_policy is not None or explicit_changes or provider is not None:
             # An instance owes nothing once the policy is `optional` or the provider `none`.
@@ -1130,6 +1205,9 @@ def _refuse_for_agents(mine: Membership, body: Any, given: set[str]) -> None:
         raise humans_only("a project is renamed by a human")
     if body.settings is not None and "language" in body.settings.model_fields_set:
         raise humans_only("the project's language is set by a human")
+    if body.settings is not None and "role_rules" in body.settings.model_fields_set:
+        # An agent does not write the rules it works under (§6.1 "Role rules").
+        raise humans_only("the role rules are set by a human")
     policy = body.policy.model_fields_set if "policy" in given and body.policy else set()
     if policy & HUMANS_ONLY_POLICY or "rules_markdown" in given or body.state == "archived":
         raise humans_only("no agent changes this, whatever its role")

@@ -4428,9 +4428,9 @@ write the rules it works under. It is read like every `settings` key,
 by members with `project:read`; a public page never shows it (§16.9).
 The hub refuses what it would otherwise have to drop, never filtering
 silently: `invalid` with `details.fields` naming the field —
-`"role_rules.<key>": "unknown_role"` for a key other than the three roles,
-`"role_rules.<role>.checklist": "not_allowed"` for a checklist on
-`coder`, `"role_rules.<role>.checklist": "empty_item"` for an item that
+`"settings.role_rules.<key>": "unknown_role"` for a key other than the three roles,
+`"settings.role_rules.<role>.checklist": "not_allowed"` for a checklist on
+`coder`, `"settings.role_rules.<role>.checklist": "empty_item"` for an item that
 is empty after trimming, `"multiline"` for one that holds a line break
 or a control character (§16.7.4 refuses them in its texts too), `"too_long"`
 for one over 300 characters and `"too_many"` for more than 30.
