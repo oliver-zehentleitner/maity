@@ -11956,11 +11956,16 @@ and by nothing else:
 |---|---|
 | GitHub | `https://github.com/{owner}/{repo}`, optionally followed by `.git`, then optionally by one `/` |
 
-`{owner}` is 1 to 39 letters, digits and `-`; `{repo}` 1 to 100
-letters, digits, `.`, `_` and `-`, not `.` or `..`, without the `.git`
-the form allows after it. No query, no fragment, no user info, no port,
-no further path segment, no percent-encoding, no whitespace. Two names
-are the same repository when their `{owner}/{repo}` match ignoring case.
+`{owner}` is 1 to 39 ASCII characters from `A`–`Z`, `a`–`z`, `0`–`9`
+and `-`; `{repo}` 1 to 100 ASCII characters from `A`–`Z`, `a`–`z`,
+`0`–`9`, `.`, `_` and `-`, not `.` or `..`, without the `.git` the form
+allows after it. Any other character — a non-ASCII letter or digit
+included — makes the text no name. No query, no fragment, no user info,
+no port, no further path segment, no percent-encoding, no whitespace.
+Two names are the same repository when their `{owner}/{repo}` match
+with ASCII `A`–`Z` and `a`–`z` compared ignoring case. The form decides
+what the hub reads; it is not a complete check of the forge's own
+naming rules, and a name the forge does not have is simply not found.
 A text that does not have this form names no repository: it is skipped
 where it stands, takes none of the 8 places below, and a `canonical` in
 another form is `not_found` with `not_in_family`. Every forge read of a
