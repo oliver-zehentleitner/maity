@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, create_engine, select, text
 from sqlalchemy.exc import OperationalError
 
 from maity_hub import tables as t
@@ -35,3 +35,46 @@ def test_a_connection_left_in_a_transaction_fails_one_cleanup_and_is_ended(
     finally:
         leaked.invalidate()
         leaked.close()
+
+
+def test_a_session_without_a_lock_on_the_emptied_tables_is_not_ended(
+    migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only the sessions that hold the TRUNCATE up are ended: one in the same database whose
+    locks are on a table the cleanup does not empty goes on (dzse at #1264)."""
+    if migrated.dialect.name != "postgresql":
+        pytest.skip("the lock timeout guards the TRUNCATE on PostgreSQL")
+    monkeypatch.setattr(conftest, "TRUNCATE_LOCK_TIMEOUT", "1s")
+    leaked, bystander = migrated.connect(), migrated.connect()
+    try:
+        bystander.execute(text("CREATE TEMPORARY TABLE elsewhere (id int)"))
+        bystander.execute(text("LOCK TABLE elsewhere IN ACCESS EXCLUSIVE MODE"))
+        leaked.execute(select(t.presence_minute).limit(1))
+        with pytest.raises(conftest.LeakedConnection, match="presence_minute") as raised:
+            conftest._empty_the_tables(migrated)
+        assert "elsewhere" not in str(raised.value)
+        assert (
+            bystander.execute(select(1)).scalar_one() == 1
+        )  # still there, still in its transaction
+    finally:
+        for conn in (leaked, bystander):
+            conn.invalidate()
+            conn.close()
+
+
+def test_a_session_in_another_database_is_not_ended(migrated: Engine) -> None:
+    """The holders are looked up in this database alone: a session of another database with a
+    lock on a relation of the same id is not ended (dzse at #1264)."""
+    if migrated.dialect.name != "postgresql":
+        pytest.skip("the lock timeout guards the TRUNCATE on PostgreSQL")
+    other = create_engine(migrated.url.set(database="postgres"))
+    try:
+        with other.connect() as conn:
+            conn.execute(text("CREATE TEMPORARY TABLE elsewhere (id int)"))
+            conn.execute(text("LOCK TABLE elsewhere IN ACCESS EXCLUSIVE MODE"))
+            oid = conn.execute(text("SELECT 'elsewhere'::regclass::oid")).scalar_one()
+            assert conftest._end_the_lock_holders(migrated, [oid]) == []
+            assert conn.execute(select(1)).scalar_one() == 1  # not ended
+            conn.rollback()
+    finally:
+        other.dispose()

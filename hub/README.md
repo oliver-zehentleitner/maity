@@ -303,7 +303,9 @@ The tests run on a fresh SQLite file per test, a copy of a schema migrated
 once. `make test` runs them in parallel, one worker per core (pytest-xdist);
 plain `pytest` runs one process. To run them against a server database, point
 `MAITY_TEST_DATABASE_URL` at an empty database the suite may create and drop
-tables in:
+tables in. It is the suite's alone and disposable: the suite empties it before
+every test, and on PostgreSQL a session of the same role that still holds a lock
+on its tables when that cleanup times out is ended (hub/context/testing.md):
 
 ```sh
 MAITY_TEST_DATABASE_URL=postgresql://maity:<password>@127.0.0.1/maity_test pytest

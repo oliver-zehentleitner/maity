@@ -15,7 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine, inspect, text
 from sqlalchemy.engine import make_url
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import DBAPIError, OperationalError
 
 from maity_hub.app import create_app
 from maity_hub.config import Settings, normalize_database_url
@@ -121,40 +121,67 @@ def _empty_the_tables(engine: Engine) -> None:
 
     On PostgreSQL a connection a test left in a transaction holds its locks, and the TRUNCATE
     waited for them without end (tsk-xz3bxa5cwv4v). It now gives up after
-    `TRUNCATE_LOCK_TIMEOUT`; the sessions holding locks in this worker's database are named and
-    ended, so this one test fails and the next one runs (hub/context/testing.md)."""
+    `TRUNCATE_LOCK_TIMEOUT`; the suite's own sessions that hold a lock on the tables it empties
+    are named and ended, so this one test fails and the next one runs (hub/context/testing.md
+    210f3def). The test database is the suite's alone (hub/README.md)."""
+    tables = [t for t in inspect(engine).get_table_names() if t != "alembic_version"]
     try:
-        _truncate(engine)
+        _truncate(engine, tables)
     except OperationalError as error:
         if getattr(error.orig, "sqlstate", None) != LOCK_NOT_AVAILABLE:
             raise
-        holders = _end_the_lock_holders(engine)
+        holders = _end_the_lock_holders(engine, _relations(engine, tables))
         raise LeakedConnection(
             f"the cleanup before this test waited {TRUNCATE_LOCK_TIMEOUT} for locks a connection"
             f" left in a transaction held; ended so the next test runs: {holders or 'none found'}"
         ) from error
 
 
-def _end_the_lock_holders(engine: Engine) -> list[str]:
-    """The sessions holding a table lock in this database, other than this one: each named
-    with its state and last statement, then ended."""
+def _relations(engine: Engine, tables: list[str]) -> list[int]:
+    """The ids (`oid`) of `tables` in this database's current schema."""
     with engine.connect() as conn:
+        return list(
+            conn.execute(
+                text(
+                    "SELECT c.oid FROM pg_class c"
+                    " WHERE c.relnamespace = current_schema()::regnamespace"
+                    " AND c.relname = ANY(:names)"
+                ),
+                {"names": tables},
+            ).scalars()
+        )
+
+
+def _end_the_lock_holders(engine: Engine, relations: list[int]) -> list[str]:
+    """The sessions that hold a lock on one of `relations` in this database: client sessions
+    of this role only, other than this one, so neither another database's nor another role's
+    session is touched. Each is named with its state and last statement, then ended; one that
+    cannot be ended is named with the reason, and the others are still ended."""
+    named: list[str] = []
+    with engine.connect() as conn:
+        conn.execution_options(isolation_level="AUTOCOMMIT")  # one refusal aborts no other
         rows = conn.execute(
             text(
                 "SELECT DISTINCT a.pid, a.state, left(a.query, 200) AS query"
                 " FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid"
-                " WHERE l.granted AND l.relation IS NOT NULL"
-                " AND a.datname = current_database() AND a.pid <> pg_backend_pid()"
-            )
+                " WHERE l.granted AND l.relation = ANY(CAST(:relations AS oid[]))"
+                " AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())"
+                " AND a.datname = current_database() AND a.usename = current_user"
+                " AND a.backend_type = 'client backend' AND a.pid <> pg_backend_pid()"
+            ),
+            {"relations": relations},
         ).all()
         for row in rows:
-            conn.execute(text("SELECT pg_terminate_backend(:pid)"), {"pid": row.pid})
-        conn.commit()
-    return [f"pid {row.pid} ({row.state}): {row.query}" for row in rows]
+            holder = f"pid {row.pid} ({row.state}): {row.query}"
+            try:
+                conn.execute(text("SELECT pg_terminate_backend(:pid)"), {"pid": row.pid})
+            except DBAPIError as error:
+                holder += f" (not ended: {error.orig})"
+            named.append(holder)
+    return named
 
 
-def _truncate(engine: Engine) -> None:
-    tables = [t for t in inspect(engine).get_table_names() if t != "alembic_version"]
+def _truncate(engine: Engine, tables: list[str]) -> None:
     with engine.begin() as connection:
         if engine.dialect.name == "postgresql":
             connection.execute(text(f"SET LOCAL lock_timeout = '{TRUNCATE_LOCK_TIMEOUT}'"))
