@@ -3642,6 +3642,25 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && cpNotes().filter((n) => n.includes("An overlap post")).length === 1,
     "card panel: an older read of the notes ending last draws no second form and brings back no posted text "
       + JSON.stringify([cpOverForms.length, cpOverForms.map((f) => f.querySelector("textarea").value), cpRacePosts.length]));
+  // Every read held, the older one released first: it draws nothing, the form shown meanwhile holds
+  // no text already posted (a submit sends nothing), and the latest read draws one empty form.
+  const cpHeld = [];
+  win.Maity.api.getAll = (p) => (p.endsWith("/notes?state=open") ? new Promise((resolve) => cpHeld.push(() => resolve(cpOverGets(p)))) : cpOverGets(p));
+  cpRacePosts.length = 0;
+  byId("card-note-body").value = "A held post";
+  cpForm().dispatch("submit"); await tick();
+  btn(neNote("nte-0031"), "Edit").click(); await tick();
+  btn(neNote("nte-0031"), "Cancel").click(); await tick();
+  // The list stays as drawn while it is read: the form is still there to type in.
+  const cpHeldShown = !!cpForm() && byId("card-note-body").value === "A held post";
+  cpRaceDone(); for (let k = 0; k < 4; k++) await tick();
+  cpHeld.shift()(); for (let k = 0; k < 4; k++) await tick();
+  if (cpForm()) { cpForm().dispatch("submit"); await tick(); }
+  const cpHeldMid = [cpRacePosts.length, cpPanel().querySelectorAll("form.card-note-form").map((f) => f.querySelector("textarea").value)];
+  cpHeld.shift()(); for (let k = 0; k < 6; k++) await tick();
+  expect(cpHeldShown && cpRacePosts.length === 1 && cpPanel().querySelectorAll("form.card-note-form").length === 1 && byId("card-note-body").value === ""
+    && cpNotes().filter((n) => n.includes("A held post")).length === 1,
+    "card panel: the list stays while it is read; reads held and the older released first bring back no posted text and draw one form " + JSON.stringify([cpHeldShown, cpHeldMid, cpRacePosts.length]));
   win.Maity.api.getAll = cpOverGets;
   win.Maity.api.post = cpRaceWas;
   // One's own note: no reason needed; Cancel and Escape leave it as it was.

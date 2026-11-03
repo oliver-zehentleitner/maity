@@ -1271,8 +1271,8 @@ message. The tombstone says who and when, and the reason only when the hub
 gives it. Each button names the note's author and date in its label, an
 Escape the mention picker has taken leaves the edit open, and a draft in Add
 a note outlives the list being drawn again. A note being posted outlives it
-too: the form drawn meanwhile stays busy, only the latest read of the list
-draws it, the draft is taken after that read, and on success exactly the text
+too: the form drawn meanwhile stays busy, the list stays as drawn while it
+is read and only the latest read replaces it, the draft is taken after that read, and on success exactly the text
 sent leaves the field while anything typed since stays. An edit and a removal name the
 version they were made on (`base_version`); a conflict shows the note as it
 is now and keeps the writer's text for the next save, and a note removed

@@ -300,19 +300,19 @@ window.Maity = window.Maity || {};
     }
 
     async function notes() {
+      // The list stays as drawn while it is read; the latest read alone replaces it.
       const read = ++notesRead;
-      clear(notesBox);
       let list;
       try {
         list = (await M.api.getAll(base + "/notes?state=open")).items;
       } catch (err) {
         if (read !== notesRead) return;
-        append(notesBox, h("p", { class: "send-status failed" }, M.t("cardpanel.notes.read_failed", { reason: err.message })));
+        append(clear(notesBox), h("p", { class: "send-status failed" }, M.t("cardpanel.notes.read_failed", { reason: err.message })));
         return;
       }
       if (read !== notesRead) return;
-      // The draft as the field last drawn holds it now, after the read: a post that
-      // succeeded meanwhile has cleared what it sent.
+      // The draft as the field drawn last holds it now, after the read: a post that
+      // succeeded meanwhile has cleared what it sent, and text typed meanwhile stays.
       const draft = noteField ? noteField.value : "";
       clear(notesBox);
       append(notesBox, list.length
