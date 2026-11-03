@@ -72,7 +72,7 @@ them; the unit tests of each piece stand in for the other process.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** `events.transaction` and `Notifier` (events.py:45-110), `longpoll.Registry` (longpoll.py:35-79), `routes/events.py` (`FALLBACK_SECONDS = 2.0`), `routes/notifications.py` (polled `listing.stamp` every 0.5 s; on PostgreSQL now held by `wakeups.held`, at the latest every 2 s), `listening.py`; PostgreSQL documentation of `NOTIFY` (delivered at commit, never for a rolled-back transaction, payload under 8000 bytes); points 1 and 2 built in `events.emit`, `wakeups` and `MAITY_DIRECT_DATABASE_URL` (card tsk-kckyhv9vdrrp), 2026-10-31; point 3 built in `wakeups.opened` and `wakeups.supersede` (card tsk-ywss353vk5q2), 2026-10-31; point 4 built in `listening` and migration `20261031125530_long_polls` (card tsk-5mspd6ftkacq), 2026-10-31; point 5 built in `wakeups.held` and `wakeups.ring` (card tsk-az67x29mc2yg), 2026-10-31
+**Source:** `events.transaction` and `Notifier` (events.py:45-110), `longpoll.Registry` (longpoll.py:35-79), `routes/events.py` (`FALLBACK_SECONDS = 2.0`), `routes/notifications.py` (polled `listing.stamp` every 0.5 s; on PostgreSQL now held by `wakeups.held`, at the latest every 2 s), `listening.py`; PostgreSQL documentation of `NOTIFY` (delivered at commit, never for a rolled-back transaction, payload under 8000 bytes); points 1 and 2 built in `events.emit`, `wakeups` and `MAITY_DIRECT_DATABASE_URL` (card tsk-kckyhv9vdrrp), 2026-10-31; point 3 built in `wakeups.opened` and `wakeups.supersede` (card tsk-ywss353vk5q2), 2026-10-31; point 4 built in `listening` and migration `20261031125530_long_polls` (card tsk-5mspd6ftkacq), 2026-10-31, its stop dropping the queue in `listening.stop` (card tsk-xz3bxa5cwv4v, review on #1256), 2026-11-03; point 5 built in `wakeups.held` and `wakeups.ring` (card tsk-az67x29mc2yg), 2026-10-31
 **Revisit when:** NOTIFY throughput or the listener connection shows up as a limit in the load test (a transaction that notified takes a database-wide lock on the notification queue at commit, so notifying writers serialise there; the load test measures commit latency for it), or a wake-up is measured late across pods, or `pg_notification_queue_usage()` climbs
 
 Today a commit wakes only the waiters of the process that committed (`notifier.notify` after
@@ -154,6 +154,13 @@ design:
      closes many times an hour per agent.
    - SQLite and MariaDB, which run one replica, create the tables as ordinary ones and never
      write them; the registry stays in the process there.
+   - **A stop drops what is still queued** (tsk-xz3bxa5cwv4v, #1256 and its follow-up): each
+     writer ends on its own signal, after the write it is in, and the opens and closes still in
+     the queue are dropped, since the stop deletes the pod's rows right after anyway. Rejected:
+     working the queue off before the writer ends, which makes a stop wait for a database that
+     may be the very thing holding the writer (a lock, a failover); and leaving the rest to the
+     next writer, which in tests wrote one app's waits into the next app's database. In
+     production a stop only comes with a pod's shutdown.
 5. **The bell and the device-code waits** (0.5 s and 0.25 s polls of the database per open wait)
    move onto the wake-ups on PostgreSQL (`wakeups.held`, `Held.pause`): a held wait sleeps until
    something wakes it, at the latest `FALLBACK_SECONDS` (2 s), and then compares its stamp or

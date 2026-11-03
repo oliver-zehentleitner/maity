@@ -314,6 +314,33 @@ reading up to 4 MiB again; after a `304` the view keeps the `ref`,
 - `no-store` like the other API answers: every tab and reload would
   read the whole file again, so the load would grow with tabs.
 
+## A large contract file is read as JSON first, and raw only when the forge leaves the content out
+
+**Id:** bb11fd25-ec47-47ca-923d-063b0beafd0e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the hub change of tsk-zd9es4kp51w1 (#1261), `Forge.file_at` in `hub/src/maity_hub/forge.py`; the review of #1261 and the coordinator's go for this entry, 2026-11-03; contract in `docs/api.md` §6.8 "The cap", §11.1
+**Verification:** corroborated — GitHub's contents API answered `docs/api.md` (1253728 bytes) with `encoding: none` and empty content, and the raw media type with the bytes and no redirect, 2026-11-03
+**See:** cards.md#the-whole-contract-is-read-inside-maity-from-a-project-setting-whole-or-not-at-all — 7f6ed086-6faf-44f1-81d8-c25ffaa4011a — as of 2026-11-03
+
+The hub asks the contents API for JSON first. Only when the answer is a
+file with `encoding: none` and a `size` within the cap does it ask again
+in the raw media type, reading at most cap + 1 bytes, so a file over the
+cap is told apart without the forge sending the rest. The raw read takes
+the same route as every read (`_get`, `_call`), so the visibility check
+and the grant binding hold for it too.
+
+**Reason:** the JSON answer says what the path is (`type`) and how large
+(`size`) before any byte of the file is read; the raw form says neither,
+and §6.8 counts the cap in bytes read.
+
+**Rejected alternatives:**
+- Always the raw form, one request fewer: no `type` and no `size` up
+  front, so the cap would rest only on the cut read.
+- A separate raw reader beside `_get`: a second route to the forge that
+  could skip the visibility check and the grant binding.
+
 ## Agents watch cards too: a status change or an update message wakes everyone waiting on the card
 
 **Id:** 95001efe-eb05-4bd0-af03-ffa42b6dbe9e

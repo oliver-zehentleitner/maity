@@ -125,6 +125,9 @@ def test_built_files_are_served_under_assets(client: TestClient, web_dir: Path) 
     (web_dir / "brand" / "logo.svg").write_text("<svg/>")
     assert client.get("/assets/js/app.js").text == "// dashboard"
     assert client.get("/assets/brand/logo.svg").status_code == 200
+    (web_dir / "vendor" / "keep-the-why").mkdir(parents=True)
+    (web_dir / "vendor" / "keep-the-why" / "ktw-core.js").write_text("// library")
+    assert client.get("/assets/vendor/keep-the-why/ktw-core.js").text == "// library"
     # The old place of a file is not a file any more: it is a dashboard path, the shell.
     old = client.get("/js/app.js")
     assert old.status_code == 200 and "<title>dashboard</title>" in old.text
