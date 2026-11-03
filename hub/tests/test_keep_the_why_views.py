@@ -1070,3 +1070,32 @@ def test_a_failed_read_answers_its_own_error_inside_the_hold(owner: flow.Human, 
         assert answer.status_code == 503
         assert answer.json()["error"]["details"] == {"reason": "http_status", "status": 502}
     assert len(fake.state_reads) == reads, "not read again inside the 30 s"
+
+
+def test_spent_compares_retry_at_with_now() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    with pytest.raises(forge.ForgeUnavailableError):
+        ktw_reads._spent(datetime.now(UTC) + timedelta(minutes=5))
+    ktw_reads._spent(datetime.now(UTC) - timedelta(seconds=1))  # past: refuses nothing
+    ktw_reads._spent(None)
+
+
+def test_a_childs_retry_at_that_passed_is_read_again(
+    owner: flow.Human, fake: Fake, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, datetime
+
+    now = [1000.0]
+    monkeypatch.setattr(ktw, "_now", lambda: now[0])
+    fake.family()
+    child = fake.files["hub/.keep-the-why"]
+    fake.files["hub/.keep-the-why"] = forge.ForgeUnavailableError(
+        "rate limited", 403, rate_limited=True, retry_at=datetime(2000, 1, 1, tzinfo=UTC)
+    )
+    project(owner)
+    first = owner.get(f"{PATH}/export", params={"root": "hub"})
+    assert first.status_code == 503 and first.json()["error"]["code"] == "ktw_unavailable"
+    fake.files["hub/.keep-the-why"] = child
+    now[0] += ktw.FORCE_INTERVAL + 1
+    assert owner.get(f"{PATH}/export", params={"root": "hub"}).status_code == 200

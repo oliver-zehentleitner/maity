@@ -302,7 +302,8 @@ def _member(
     try:
         entry, _fresh = ktw.CACHE.get(reader, project_id, repository_url, max_age)
         held = entry.snapshot
-        if held is not None and held.retry_at is not None and held.retry_at <= clock.now():
+        passed = [held.retry_at] + [m.retry_at for m in held.members] if held is not None else []
+        if any(at is not None and at <= clock.now() for at in passed):
             # the budget is back: the read that found it spent stands for nothing now
             entry, _fresh = ktw.CACHE.get(reader, project_id, repository_url, 0)
     except ktw.Busy:
