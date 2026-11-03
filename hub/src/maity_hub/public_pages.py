@@ -309,19 +309,23 @@ def refresh(
         conn.execute(delete(t.public_page).where(t.public_page.c.path.in_(gone)))
 
 
-def touch(conn: Connection, kind: str, target_id: str, *, removal: bool = True) -> None:
+def touch(
+    conn: Connection, kind: str, target_id: str, *, removal: bool = True, dependents: bool = True
+) -> None:
     """An input of the target's pages changed, in the transaction that changed it. A change
     that takes anything off a page (`removal`, the default) renders it again at once under
     either mode; under `on_change` so does every other change; under `interval` a new entry or
     a count waits for the next run (§16.9). Nothing happens while the instance serves no
-    pages."""
+    pages. `dependents=False` renders the target's own pages only, for a change that no other
+    page shows: a project's dependents are every card page of the project, too many to render
+    while the caller holds the project row (hub/context/public-pages.md 721bcdfa)."""
     hub = _hub
     if hub is None or not hub.public_pages:
         return
     if removal or hub.public_pages_render == "on_change":
         refresh(conn, hub, kind, target_id)
-        dependents = KINDS[kind].dependents
-        for other, other_id in dependents(conn, target_id) if dependents else []:
+        others = KINDS[kind].dependents if dependents else None
+        for other, other_id in others(conn, target_id) if others else []:
             refresh(conn, hub, other, other_id)
 
 
