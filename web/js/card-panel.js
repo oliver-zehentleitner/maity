@@ -175,6 +175,9 @@ window.Maity = window.Maity || {};
     // asks for (§6.16); Cancel or Escape leaves the note as it was.
     function editNote(n) {
       const li = noteItem(n.id);
+      // The note as the edit was made on: its version is the edit's base_version
+      // (§6.16); a conflict replaces it with the note as it is now.
+      let read = n;
       if (!li || li.querySelector("form.card-note-edit-form")) return;
       const own = mine(n);
       const fieldId = "card-note-edit-" + n.id, reasonId = "card-note-reason-" + n.id;
@@ -196,13 +199,31 @@ window.Maity = window.Maity || {};
           saving = true;
           save.disabled = true;
           editStatus.busy(M.t("cardpanel.notes.edit.saving"));
-          const body = { body: text.value };
+          const body = { body: text.value, base_version: read.version };
           if (reason.value.trim()) body.reason = reason.value.trim();
           try {
             await M.api.patch(base + "/notes/" + encodeURIComponent(n.id), body);
           } catch (err) {
             saving = false;
             save.disabled = false;
+            const now = err && err.code === "conflict" && err.details ? err.details.note : null;
+            if (now && removedNote(now)) {
+              // Removed meanwhile: nothing left to edit; the list shows the tombstone.
+              await notes();
+              removeStatus.fail("", { message: M.t("cardpanel.notes.edit.conflict_removed") });
+              return;
+            }
+            if (now) {
+              // Changed meanwhile: show the text as it is now, keep the writer's own,
+              // and the next save is made on the version just read.
+              read = now;
+              const shown = form.querySelector(".card-note-now");
+              if (shown) shown.remove();
+              form.insertBefore(h("div", { class: "card-note-now" },
+                h("p", { class: "muted" }, M.t("cardpanel.notes.edit.now")), noteBody(now)), form.firstChild);
+              editStatus.fail("", { message: M.t("cardpanel.notes.edit.conflict") });
+              return;
+            }
             editStatus.fail(M.t("cardpanel.notes.edit.not_saved"), M.boardEdit ? M.boardEdit.said(err) : err);
             return;
           }
@@ -226,8 +247,14 @@ window.Maity = window.Maity || {};
       if (reason === null) return;
       removeStatus.busy(M.t("cardpanel.notes.remove.busy"));
       try {
-        await M.api.post(base + "/notes/" + encodeURIComponent(n.id) + "/redact", { reason });
+        await M.api.post(base + "/notes/" + encodeURIComponent(n.id) + "/redact", { reason, base_version: n.version });
       } catch (err) {
+        if (err && err.code === "conflict") {
+          // Changed meanwhile: the list shows the text as it is now, nothing was removed.
+          await notes();
+          removeStatus.fail("", { message: M.t("cardpanel.notes.remove.conflict") });
+          return;
+        }
         removeStatus.fail(M.t("cardpanel.notes.remove.failed"), err);
         return;
       }

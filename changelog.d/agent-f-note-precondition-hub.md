@@ -7,6 +7,8 @@
   reads it now. Nothing changes in that case (§6.16). Notes posted before have the version 1;
   their earlier `note_added`/`note_edited` events carry no `version` until an edit or a
   redaction rewrites them.
-  Breaking for clients: an edit or a redaction from an older client is refused. Deploy the hub
-  together with the dashboard that sends `base_version` (the web part of the card); the CLI
-  neither edits nor redacts notes.
+  Breaking for clients: an edit or a redaction from an older client is refused. The hub and
+  the dashboard below ship in the same deploy; the CLI neither edits nor redacts notes.
+- web: editing and removing a note on the card panel send the note's `version` as
+  `base_version`. On `conflict` nothing is saved: Edit shows the note as it is now above your own
+  text and saves again on that version, Remove lists the note as it is now and removes nothing.

@@ -151,7 +151,7 @@ def _seed(make_client: ClientFactory, migrated: Any) -> tuple[flow.Human, dict[s
     _ok(owner.post(f"{base}/conversations/{group['id']}/messages", {"body": "Go? @agent-a"}))
     first = _ok(owner.post(f"{base}/tasks", {"title": "A card", "body": "For @agent-a."}))
     note = _ok(owner.post(f"{base}/tasks/{first['id']}/notes", {"body": "A note for @agent-a."}))
-    edit = {"body": "A note for @agent-a, edited.", "reason": "typo"}
+    edit = {"body": "A note for @agent-a, edited.", "reason": "typo", "base_version": 1}
     _ok(owner.patch(f"{base}/tasks/{first['id']}/notes/{note['id']}", edit))
     _ok(
         owner.post(
