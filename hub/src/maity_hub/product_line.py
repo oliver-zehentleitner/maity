@@ -7,8 +7,8 @@ of the platform's own interface, on the hub's own pages as on the dashboard's, a
 The hub's pages load no file and many allow no style (`default-src 'self'`, the link pages'
 `default-src 'none'`), so the icons are inline SVG with presentation attributes only and the
 line needs no stylesheet: `<small>` keeps it small. A page whose policy allows a stylesheet
-switches the Maity mark's fill under a dark theme with `DARK_STYLE`; every other page shows
-the light mark in either theme.
+centres and mutes the line and switches the Maity mark's fill under a dark theme with
+`STYLE`; every other page shows the light mark in either theme.
 """
 
 from __future__ import annotations
@@ -50,9 +50,13 @@ _GITHUB_MARK = (
     ' .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>'
 )
 
-# For a page whose policy allows its own stylesheet: the dark mark's colours
+# For a page whose policy allows its own stylesheet: the line centred and muted, as the
+# dashboard draws it (§16.13, "How it looks"), and the dark mark's colours
 # (brand/maity-mark-small-dark.svg) over the presentation attributes.
-DARK_STYLE = (
+STYLE = (
+    ".product-line{text-align:center;color:var(--muted,inherit);margin:1.5rem 0;padding:0 1rem}"
+    ".product-line p{margin:0}.product-line a{color:inherit}"
+    ".product-line svg{vertical-align:-2px}"
     "@media (prefers-color-scheme: dark){.product-mark-t{fill:#4c8dff}"
     ".product-mark-seat{fill:#e6e9ec}}"
 )

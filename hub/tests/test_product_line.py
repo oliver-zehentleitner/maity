@@ -113,8 +113,10 @@ def test_the_link_pages_end_with_the_line() -> None:
     assert 'class="product-line"' in bytes(email_sign_in._dead().body).decode()
     page = bytes(register_page._dead().body).decode()
     assert 'class="product-line"' in page
-    # Its policy allows its stylesheet: the mark follows a dark theme there.
-    assert product_line.DARK_STYLE in page
+    # Its policy allows its stylesheet: the line centred and muted, the mark follows a dark
+    # theme there (§16.13).
+    assert product_line.STYLE in page
+    assert ".product-line{text-align:center;color:var(--muted" in product_line.STYLE
     assert 'class="product-line"' in render.form_document(
         lang="de", title="t", content="", footer=""
     )
