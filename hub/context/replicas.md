@@ -766,3 +766,45 @@ SQLite, the later arrival still takes over.
 **Rejected alternatives:**
 - Entering before the announcement, so that arrival and start share an order: the start comes from the database, and the wait
   would have to hold a key it has no start for.
+
+## Several workers per pod: uvicorn's supervisor, each process a replica of its own
+
+**Id:** 4e24abd8-ab64-4844-897b-629bfa211f6d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-hnp19jx1ajvx; the maintainer's rule for the scaling cards (2026-11-03): the single-server hub (one process, SQLite, local attachments) stays the default and keeps working, every scaling path is opt-in; `serving.py`, `cli._serve_workers`, `tests/test_workers.py`; uvicorn 0.54 `supervisors.multiprocess`
+**Revisit when:** uvicorn's `Multiprocess` changes how it builds a worker's `Server`, or the load test shows that more workers per pod buy less than more pods
+
+`MAITY_WORKERS` (chart: `config.workers`) sets how many processes `maity-hub serve` runs on one
+socket. The default is 1, and 1 is the hub as it always was: one process, no supervisor, any
+database. More than one is refused at start on anything but PostgreSQL, since the processes share
+wake-ups, nonces, limits and worker passes only through it. Each process is a replica in every
+sense the entries above use: its own `listening.POD`, its own LISTEN connection, its own
+`hub_pod` row, its own claims in `worker_run`. Nothing in the coordination knows about pods,
+only about processes.
+
+- **The pool is the hub's total.** `MAITY_DB_POOL_SIZE` and `MAITY_DB_MAX_OVERFLOW` keep their
+  meaning for the operator; each process holds its share (at least one pooled connection), so
+  raising the workers does not multiply the connections asked of the database (entry on
+  connections above). The listener connections do grow with the processes.
+- **The startup checks run once, in the parent**, before any worker is spawned (schema, secrets,
+  mail, reserved holders). A worker that still fails its start makes the supervisor stop and
+  `serve` exit non-zero, instead of uvicorn restarting it in a loop.
+- **A stop releases the open waits** in every worker, as in one process: the supervisor's
+  processes use the hub's own `Server`, which hands the release to the loop on SIGTERM.
+- The request stats line names its process (`pid=`), since each process counts its own.
+
+The opt-in default is the maintainer's rule (confirmed); the reasons below are inferred.
+
+**Reason:** a pod with several cores served one event loop; a second process per pod uses them
+without a second pod, its own scheduling and its own share of node memory. The coordination for
+replicas was already per process, so workers needed no new shared state.
+
+**Rejected alternatives:**
+- **Gunicorn with uvicorn workers:** a second server to install and configure for what uvicorn's
+  own supervisor does, and one more dependency in the image.
+- **Several workers on SQLite:** each process would wake only its own waits and count its own
+  nonces and limits; the refusal keeps the single-server setup on the path that is correct.
+- **The pool per process:** simpler to explain, but the database's connection limit would then
+  depend on two settings multiplied, and a raised `MAITY_WORKERS` could exhaust it.

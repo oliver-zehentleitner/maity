@@ -52,6 +52,11 @@ config:
   # Serve the dashboard from the image's web/ (MAITY_WEB_DIR=/app/web). Off:
   # API only.
   dashboard: true
+  # MAITY_WORKERS: serving processes per pod, 1 to 64. The default 1 is the
+  # single-process hub. More than 1 only with PostgreSQL (the hub refuses to
+  # start otherwise); the pool (MAITY_DB_POOL_SIZE) is split among them, and
+  # resources.requests.cpu should grow with them.
+  workers: 1
 
 database:
   # Required. The name of a Secret in the release namespace whose `key` holds

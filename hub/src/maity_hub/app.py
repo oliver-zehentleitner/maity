@@ -167,6 +167,29 @@ def serving_engine(settings: Settings) -> Engine:
     )
 
 
+def check_startup(engine: Engine, settings: Settings) -> None:
+    """What stops a hub before it serves: the schema, the mail settings, the secrets. Raised as
+    `SchemaNotCurrentError` or `ConfigError`. Run by every process at its start, and by the
+    parent of several workers before it starts them, so a hub that cannot start says so once
+    instead of each worker failing and being started again."""
+    require_current_schema(engine)
+    with engine.connect() as conn:
+        holders = namespace.reserved_holders(conn)
+        if holders:  # `maity-hub migrate` refuses these; a hub started past it says so
+            log.error("words that docs/api.md §16.11 reserves are held: %s", ", ".join(holders))
+        try:
+            mail.check_at_startup(conn, settings.mail, settings.secret_key)
+        except MailConfigError as error:
+            raise ConfigError(str(error)) from None
+        # The environment's `email` takes effect at once, so it may not lock out every
+        # human without TOTP at the start (§2.8.8).
+        if settings.sign_in_second_factor == "email" and not mail_factor.mail_ready(conn, settings):
+            raise ConfigError(
+                "MAITY_SIGN_IN_SECOND_FACTOR=email needs complete, enabled mail settings"
+            )
+    check_secrets(engine, settings.secret_key)
+
+
 def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
     engine = engine if engine is not None else serving_engine(settings)
     health_engine = make_health_engine(engine)  # the probe's own connection, outside the pool
@@ -176,24 +199,7 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        require_current_schema(engine)
-        with engine.connect() as conn:
-            holders = namespace.reserved_holders(conn)
-            if holders:  # `maity-hub migrate` refuses these; a hub started past it says so
-                log.error("words that docs/api.md §16.11 reserves are held: %s", ", ".join(holders))
-            try:
-                mail.check_at_startup(conn, settings.mail, settings.secret_key)
-            except MailConfigError as error:
-                raise ConfigError(str(error)) from None
-            # The environment's `email` takes effect at once, so it may not lock out every
-            # human without TOTP at the start (§2.8.8).
-            if settings.sign_in_second_factor == "email" and not mail_factor.mail_ready(
-                conn, settings
-            ):
-                raise ConfigError(
-                    "MAITY_SIGN_IN_SECOND_FACTOR=email needs complete, enabled mail settings"
-                )
-        check_secrets(engine, settings.secret_key)
+        check_startup(engine, settings)
         with transaction(engine) as conn:  # an event wakes the long-polls once it commits
             # The hub's own generated text is a rules input: a start with other text bumps
             # every project that has not counted it, once (§6.9).
