@@ -96,6 +96,20 @@ def test_a_blobs_age_in_the_bucket_is_read_from_the_stores_clock_alone(
     assert without.age("prj-1/att-1", written + 50) == 50.0
     odd = S3Store(config, client=_Headed(written, "not a date"))
     assert odd.age("prj-1/att-1", written + 7) == 7.0
+    asctime = S3Store(config, client=_Headed(written, "Fri Jan 15 08:02:00 2027"))
+    zoneless = S3Store(config, client=_Headed(written, "Fri, 15 Jan 2027 08:02:00 -0000"))
+    old = os.environ.get("TZ")
+    os.environ["TZ"] = "America/Los_Angeles"  # a date without a zone is UTC, not the hub's zone
+    time.tzset()
+    try:
+        assert asctime.age("prj-1/att-1", written) == 120.0
+        assert zoneless.age("prj-1/att-1", written) == 120.0
+    finally:
+        if old is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = old
+        time.tzset()
     with caplog.at_level(logging.WARNING, logger="maity_hub.attachment_store"):
         early = S3Store(config, client=_Headed(written + 600, date))
         assert early.age("prj-1/att-1", written) == -480.0

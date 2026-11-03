@@ -328,11 +328,15 @@ def test_a_write_that_fails_or_outlasts_the_bound_keeps_the_rate_charged_and_lea
         now[0] += attachments.UPLOAD_FRESH + 1
 
     monkeypatch.setattr(attachment_store.LocalStore, "put", slow)
+    from maity_hub.routes import attachments as route
+
+    locked: list[str] = []
+    monkeypatch.setattr(route, "lock_project", lambda conn, project_id: locked.append(project_id))
     slow_answer = put(owner, "b.txt", b"slow")
     assert (
         slow_answer.status_code == 503 and slow_answer.json()["error"]["code"] == "upload_expired"
     )
-    assert list(blobs.glob("*/*")) == [] and given_back == []
+    assert list(blobs.glob("*/*")) == [] and given_back == [] and locked == []  # no lock taken
 
 
 def test_the_sweeps_grace_outlasts_the_upload_bound_by_the_clock_skew() -> None:

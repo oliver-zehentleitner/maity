@@ -46,9 +46,12 @@ while less than `UPLOAD_FRESH` (5 minutes) has passed since the write began, on 
 clock that keeps counting while the host is suspended; past it the upload is
 refused with `503 upload_expired`, a code of its own: the database was reached, so
 `database_unavailable` would name the wrong cause. The sweep measures a blob's age
-on one clock. For `local` that is the hub's; for `s3` both times come from the store,
-the `Date` header of its HEAD answer against the object's LastModified, so the hub's
-clock may be off by any amount. A negative age is logged. Only an answer without a
+on one clock. For `local` that is the hub's wall clock (the file's mtime against
+`time.time()`), while the upload's bound runs on boot time, so a jump of the wall clock
+acts like a skew of that size; for `s3` both times come from the store, the `Date`
+header of its HEAD answer against the object's LastModified, so the hub's clock may
+be off by any amount. A `Date` without a zone (asctime, `-0000`) is read as UTC, as
+HTTP dates are. A negative age is logged. Only an answer without a
 `Date` falls back to the hub's clock. For that case, a store that checks request
 signatures refuses a request whose time is more than 15 minutes (`CLOCK_SKEW`) off
 its own. `BLOB_GRACE` (30 minutes) is larger than both together: a blob the sweep
