@@ -107,11 +107,17 @@ def _downgrade_emptied(engine: Engine) -> None:
     downgrade(engine)
 
 
+TRUNCATE_LOCK_TIMEOUT = "60s"
+
+
 def _empty_the_tables(engine: Engine) -> None:
     """Delete every row of a server database at head, keeping the schema and the revision."""
     tables = [t for t in inspect(engine).get_table_names() if t != "alembic_version"]
     with engine.begin() as connection:
         if engine.dialect.name == "postgresql":
+            # A connection a test left in a transaction holds its locks: the TRUNCATE fails
+            # after this long, naming the lock, instead of waiting without end (tsk-xz3bxa5cwv4v).
+            connection.execute(text(f"SET LOCAL lock_timeout = '{TRUNCATE_LOCK_TIMEOUT}'"))
             quoted = ", ".join(f'"{t}"' for t in tables)
             connection.execute(text(f"TRUNCATE {quoted} RESTART IDENTITY CASCADE"))
             if "nonce_epoch" in tables:

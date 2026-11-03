@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
@@ -136,8 +137,6 @@ def test_a_failing_heartbeat_waits_its_interval_instead_of_spinning(
 ) -> None:
     """c47w at #903: with the database gone (a failover) a failed beat was retried at once, in
     a loop without a pause, on every pod."""
-    import threading
-
     beats: list[float] = []
 
     def failing(_engine: Engine) -> None:
@@ -146,9 +145,11 @@ def test_a_failing_heartbeat_waits_its_interval_instead_of_spinning(
 
     monkeypatch.setattr(listening, "_heartbeat", failing)
     monkeypatch.setattr(listening, "HEARTBEAT", timedelta(seconds=0.2))
-    writer = threading.Thread(target=listening._write, args=(migrated,), daemon=True)
+    stopping = threading.Event()
+    writer = threading.Thread(target=listening._write, args=(migrated, stopping), daemon=True)
     writer.start()
     time.sleep(1.0)
+    stopping.set()
     listening._writes.put(None)
     writer.join(timeout=5)
     assert not writer.is_alive()
@@ -224,5 +225,47 @@ def test_a_wait_for_a_gone_writer_fails_instead_of_hanging(
             listening.written()
     finally:
         listening._discard_queued()
+        listening._open.clear()
+        listening._rows.clear()
+
+
+def test_a_writer_still_busy_after_the_stop_ends_no_later_writer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A writer still in a write when `stop` gives up (a write held by a lock) left its `None`
+    for the next app's writer, which ended at once, while the old one went on writing to the
+    old engine (dzse at #1256). It now ends after that write; the next writer handles the rest."""
+    monkeypatch.setattr(listening, "STOP_SECONDS", 0.1)
+    monkeypatch.setattr(listening, "_heartbeat", lambda engine: None)
+    gate = threading.Event()
+    handled: list[tuple[object, str]] = []
+
+    def apply(engine: object, kind: str, wait_id: str, key: str) -> None:
+        if not handled:
+            gate.wait(10)  # the first write is held
+        handled.append((engine, kind))
+
+    monkeypatch.setattr(listening, "_apply", apply)
+    old, new = _PgLike(), _PgLike()
+    listening.start(old)  # type: ignore[arg-type]
+    first = listening._thread[0]
+    assert first is not None
+    try:
+        listening.opened("ses-held")
+        assert _until(lambda: listening._writes.empty() and listening._writes.unfinished_tasks == 1)
+        listening.stop(every=True)
+        assert first.is_alive()  # still in its write
+        listening.start(new)  # type: ignore[arg-type]
+        second = listening._thread[0]
+        assert second is not None
+        gate.set()
+        assert _until(lambda: not first.is_alive())
+        listening.opened("ses-next")
+        listening._drained(5)
+        assert second.is_alive()
+        assert handled == [(old, "open"), (new, "open")]
+    finally:
+        gate.set()
+        listening.stop(every=True)
         listening._open.clear()
         listening._rows.clear()
