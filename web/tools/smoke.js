@@ -6288,6 +6288,28 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = frGet;
   expect(JSON.stringify(frPickWait) === "[true,0,1]" && frFoot() && !productLine.querySelectorAll("a").length,
     "frame: picked again after a failed read, no product line while its read waits nor once the frame stands " + JSON.stringify(frPickWait));
+  // The sign-in stands in the frame wherever it is drawn without a session (lotse#wtwy on #1287): an address of the app
+  // and the root after a sign-out too. From a view without the frame to #/all, the read held open: no product line
+  // while it waits; the frame then stands (review of #1287 by maity-review-team-grok#dzse).
+  await go("#/invite/open-xxxxxxxxxxxxxxxx1"); for (let k = 0; k < 4; k++) await tick();
+  const frDeepHeld = [];
+  win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? new Promise((r) => frDeepHeld.push(r)) : frGet(p));
+  await go("#/all"); for (let k = 0; k < 6; k++) await tick();
+  const frDeepWait = [!!frFoot(), productLine.querySelectorAll("a").length, frDeepHeld.length, !!byId("login-handle")];
+  frDeepHeld.forEach((r) => r(frModel({}))); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(frDeepWait) === "[false,0,1,true]" && frFoot() && frOn() && !productLine.querySelectorAll("a").length,
+    "frame: the sign-in at an address of the app, no product line while the read waits, the frame after " + JSON.stringify(frDeepWait));
+  // Drawn again at the root (as after a sign-out), the read held: the frame standing stays, no product line meanwhile.
+  const frRootHeld = [], frRootFoot = frFoot();
+  win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? new Promise((r) => frRootHeld.push(r)) : frGet(p));
+  await go("#/"); for (let k = 0; k < 6; k++) await tick();
+  const frRootWait = [frFoot() === frRootFoot, productLine.querySelectorAll("a").length, frRootHeld.length];
+  frRootHeld.forEach((r) => r(frModel({}))); for (let k = 0; k < 6; k++) await tick();
+  win.Maity.api.get = frGet;
+  expect(JSON.stringify(frRootWait) === "[true,0,1]" && frFoot() && !productLine.querySelectorAll("a").length,
+    "frame: the sign-in drawn again at the root keeps the frame meanwhile, no product line " + JSON.stringify(frRootWait));
+  head.querySelectorAll("meta").filter((m) => m.getAttribute("name") === "referrer").forEach((m) => m.remove());
+  await go("#/login"); for (let k = 0; k < 6; k++) await tick();
   frLangs.length = 0; frLangsWere.forEach((t) => frLangs.push(t));
   // A failed read (a hub in maintenance answers 503): the page without the frame, the app's bar back, the legal pages
   // linked under the form as before; the door layout keeps its stylesheet.
@@ -9984,6 +10006,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // §16.13, "Where it is": a public address the dashboard draws ends with the product line; a
   // stored public page the hub put into <main> stands without it, the next view has it again.
   expect(productLine.querySelectorAll("a").length === 3, "product line: under a public address the dashboard draws");
+  // From the framed sign-in to a public address: the frame goes once the public page is drawn, the line with it.
+  // Signed out for this step, as a visitor is: the sign-in in the frame first.
+  const viChromeGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.resolve(frModel({}))
+    : p === "/auth/session" && viSignedOut ? Promise.reject(new win.Maity.api.ApiError("signed out", 401, p, "unauthenticated")) : viChromeGet(p));
+  let viSignedOut = true;
+  win.Maity.api.endSession();
+  await go("#/login"); for (let k = 0; k < 6; k++) await tick();
+  const viFramed = !!frFoot();
+  await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
+  const viAfter = [!!viView(), !!frFoot(), header.hidden, productLine.querySelectorAll("a").length];
+  viSignedOut = false;
+  win.Maity.api.get = viChromeGet;
+  await win.Maity.api.get("/auth/session");
+  expect(viFramed && JSON.stringify(viAfter) === "[true,false,false,3]",
+    "product line: from the framed sign-in to a public address, the frame gone, the line back " + viFramed + JSON.stringify(viAfter));
   main.hasAttribute = (k) => k in main.attrs;
   main.setAttribute("data-public-page", "");
   await go("#/stranger/tool/board"); for (let k = 0; k < 4; k++) await tick();

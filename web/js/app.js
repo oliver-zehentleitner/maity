@@ -1900,10 +1900,13 @@ window.Maity = window.Maity || {};
     const hubPage = !!(main.hasAttribute && main.hasAttribute("data-public-page"));
     if (hubPage) main.removeAttribute("data-public-page");
     else Array.from(main.childNodes).forEach((n) => { if (n.setAttribute) n.setAttribute("inert", ""); });
-    // The frame of the pages without a session (js/site-chrome.js) stands under /login and
-    // /register alone, and only signed out; kept meanwhile there, so a page drawn again in it
-    // does not lose it in between. Every other drawing below leaves it first.
-    if (!/^\/(login|register)$/.test(M.route.current().path) || M.api.session()) M.siteChrome.leave();
+    // The frame of the pages without a session (js/site-chrome.js) stands wherever the sign-in
+    // or the registration is drawn signed out: /login, /register, the root after a sign-out, an
+    // address of the app without a session. Kept meanwhile while no session is known, so a page
+    // drawn again in it does not lose it in between; every view below that is not the sign-in
+    // leaves it itself (the invitation, the mail's second step, a public page, the maintenance
+    // page, a failed page, every signed-in drawing).
+    if (M.api.session()) M.siteChrome.leave();
     let where = { scope: "unknown" };
     let ctx;
     // The invitation's token is in its path: no referrer before this drawing asks anything
@@ -1914,9 +1917,10 @@ window.Maity = window.Maity || {};
     // The product line after <main> (§16.13), in the language this view is drawn in; i18n
     // draws it again when the session's language arrives. Not under a stored public page
     // the hub put into <main> (§16.13, "Where it is"), which stands for this view.
-    // Through the frame: a drawing of /login or /register signed out holds the line back until
-    // the frame's read decides, its footer standing in the line's place (req-5k1gvfsmcg9k).
-    M.siteChrome.line(!hubPage, /^\/(login|register)$/.test(M.route.current().path) && !M.api.session());
+    // Through the frame: a drawing without a known session holds the line back until the view
+    // decides, the frame's footer standing in its place (req-5k1gvfsmcg9k), every other view
+    // letting it go when it leaves the frame.
+    M.siteChrome.line(!hubPage, !M.api.session());
     // §16.12: the window as the hub has it, read at most once a minute; while it runs, the
     // full page stands instead of the view (heldPage), the sign-in and its step excepted.
     M.maintenance.drawing();
@@ -1925,14 +1929,14 @@ window.Maity = window.Maity || {};
     try {
       where = parseRoute();
       const held = M.maintenance.running();
-      if (where.scope === "invite" && M.invite && !held) { await M.invite.page(main, document.getElementById("header"), where.token); return; }
+      if (where.scope === "invite" && M.invite && !held) { M.siteChrome.leave(); await M.invite.page(main, document.getElementById("header"), where.token); return; }
       if (where.scope === "register" && M.register && !held) { await M.register.page(main, document.getElementById("header"), routeNext()); return; }
       let session;
       try {
         session = await M.api.get("/auth/session");
       } catch (err) {
         // The mail's second-factor link in a browser without the session it was sent for (§2.8.8).
-        if (err.status === 401 && M.secondFactor && M.secondFactor.isMailLink()) { renderStepElsewhere(main, false); return; }
+        if (err.status === 401 && M.secondFactor && M.secondFactor.isMailLink()) { M.siteChrome.leave(); renderStepElsewhere(main, false); return; }
         // Without a session the login page; the landing page at the root
         // is the hub's own static page (§16.7), never drawn here.
         if (err.status === 401) {
@@ -1946,7 +1950,11 @@ window.Maity = window.Maity || {};
             return;
           }
           // A public page of this address, read-only (§16.9); otherwise the login.
-          if (M.visitor && await M.visitor.page(main, document.getElementById("header"), where, M.route.current().path, { signedIn: false, brand: brandTitle(false), tools: themeMenu(), live: () => seq === renderSeq })) return;
+          // A frame of the sign-in drawn before stays until the page is known, then goes.
+          if (M.visitor && await M.visitor.page(main, document.getElementById("header"), where, M.route.current().path, { signedIn: false, brand: brandTitle(false), tools: themeMenu(), live: () => seq === renderSeq })) {
+            if (seq === renderSeq) M.siteChrome.leave();
+            return;
+          }
           // The hub's own page in <main> stands when its data could not be read.
           if (seq === renderSeq && !hubPage) renderLogin(main);
           return;

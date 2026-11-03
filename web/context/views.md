@@ -4656,25 +4656,32 @@ would see it changed.
 **Known limit:** a mode changed and later set back to the default stays set; the contract has no
 reset.
 
-## The frame's stylesheets are switched on under /login and /register only, its header and footer beside the app's
+## The frame's stylesheets are switched on only where the sign-in or registration stands signed out, its header and footer beside the app's
 
 **Id:** e9ddc07e-71c0-47c7-bd12-6a7e4d2c35f0
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-74rvy49kbv6s and the designer's approved draft (`public-pages.css`, 2026-11-02); the agreement with the hub's side that the dashboard links the hub's two stylesheets rather than copying them (2026-11-02); `web/js/site-chrome.js`, 2026-11-03
+**Source:** card tsk-74rvy49kbv6s and the designer's approved draft (`public-pages.css`, 2026-11-02); the agreement with the hub's side that the dashboard links the hub's two stylesheets rather than copying them (2026-11-02); `web/js/site-chrome.js`, 2026-11-03; lotse#wtwy's decision on #1287 (message seq 65368, 2026-11-03)
 **See:** https://github.com/oliver-zehentleitner/maity — 41837936-d085-4592-88d7-b1708a8b4b3a — as of 2026-11-03
 **Revisit when:** `landing.css` scopes its rules to the frame, or the dashboard gets a second page in the frame (the form pages of mail links)
 
-Signed out, `/login` and `/register` draw their form into gj6k's door layout, then ask
+Signed out, the sign-in and `/register` draw their form into gj6k's door layout, then ask
 `GET /site/chrome` in the page's language. While the page stands, the hub's
 `/assets/landing/landing.css` and `public-pages.css` are linked (without `?v`, so the hub answers
 the current file with an ETag), and `html` carries `public-frame`. The frame's header and footer
 are elements of their own beside `#header` and `#main`, built from the model as the hub's
 `render.py` builds them; the app's bar is hidden meanwhile and comes back where the read fails.
-`render()` turns the frame off for every other drawing: any other address, any signed-in drawing,
-the maintenance page and a failed page. Under `/login` and `/register` signed out it is kept, so a
-page drawn again (another language) does not lose its frame in between.
+The sign-in stands in the frame wherever it is drawn without a session: `/login`, the root after a
+sign-out, an address of the app opened without a session and without a stored public page, and
+the sign-in drawn when a session ends. While no session is known, `render()` keeps a frame that
+stands, so a page drawn again (another language, the same address) does not lose it in between.
+Every view that is not the sign-in takes it down itself: the invitation, the mail's second step
+without a session, a public page once it is drawn, the maintenance page, a failed page, and every
+drawing once a session is known. The scope is confirmed: lotse#wtwy decided it on 2026-11-03 (on
+#1287, after the review found the frame at those addresses). It was chosen over drawing the
+frame at `/login` and `/register` alone; why it lost is inferred, not stated: that choice would show
+the same form in two designs depending on the address.
 
 **Reason:** `landing.css` sets `:root`'s tokens, `body`, headings and links for the whole
 document, so it may not stay on under the app. Turning it off by route in one place catches every
@@ -4701,3 +4708,8 @@ reason is not recorded. Inferred: two footers on one page would both name the pr
 showed it under the landing footer for one round trip on every drawing in the frame, and under the
 form on the way in (#1287 review, `b5142212`). Also rejected: a route check in `product-line.js`,
 which does not know whether the frame stands or its read failed.
+**Known gap:** `M.api.get` has no timeout. A `GET /site/chrome` that never answers leaves the
+page without the frame and without the line, as §16.13 says for a read that waits. A timeout was
+not added: it would put a second clock beside the API's own error handling, and a hub that does
+not answer leaves the sign-in itself unusable anyway (review of #1287 by
+maity-review-team-grok#dzse).
