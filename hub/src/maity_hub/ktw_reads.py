@@ -1,0 +1,317 @@
+"""The Keep the Why views' reads (docs/api.md §11.5): a published export whole, and a lean
+export's entry texts, for the project's family and the public repositories it names.
+
+Nothing here reads a URL of its own: a state URL comes from a `.keep-the-why` that §11.3's
+walk read through the forge, a bodies file is one segment beside it, and a repository other
+than the project's own is served only when the project's own `.keep-the-why` files name it
+(a URL-form child or a `parent:` line), it is public, and it is among the first MAX_NAMED.
+The files are read under §11.1 by `outbound`, kept in `ktw.RAW` (shared with §11.3's reads),
+and never stored.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import threading
+from collections import OrderedDict
+from dataclasses import dataclass, field
+from typing import Any
+
+from maity_hub import bounded, forge, ktw, outbound
+
+BODIES_CAP = 4 * 1024 * 1024
+MAX_NAMED = 8
+_BODIES_NAME = re.compile(r"^[A-Za-z0-9._-]{1,95}\.json$")
+
+
+class Refused(Exception):
+    """An answer of §11.5's error list: `status`, `code`, and `details`."""
+
+    def __init__(self, http_status: int, code: str, message: str, **details: Any) -> None:
+        super().__init__(message)
+        self.status = http_status
+        self.code = code
+        self.message = message
+        self.details = details
+
+
+@dataclass
+class Served:
+    canonical: str
+    root: str
+    raw: ktw.Raw
+    fresh: bool
+
+    @property
+    def etag(self) -> str:
+        key = "\n".join((self.canonical, self.root, self.raw.url, self.raw.digest))
+        return '"' + hashlib.sha256(key.encode()).hexdigest()[:32] + '"'
+
+    def document(self, field_name: str) -> bytes:
+        """The answer's bytes: the fields, then the file as kept, spliced in unparsed."""
+        head = {
+            "canonical": self.canonical,
+            "root": self.root,
+            "url": self.raw.url,
+            "observed_at": self.raw.observed_at,
+            "fresh": self.fresh,
+        }
+        if field_name == "state":
+            head["fork_of"] = None
+        start = json.dumps(head, ensure_ascii=False, separators=(",", ":")).encode()
+        return start[:-1] + b',"' + field_name.encode() + b'":' + self.raw.body + b"}"
+
+
+# --- which repositories ----------------------------------------------------------------------
+
+
+def _repository(url: str | None) -> str | None:
+    """`owner/name`, lower case, of a URL on a configured forge; None for anything else."""
+    if not url or forge.kind_of(url) != "github" or not url.startswith("https://"):
+        return None
+    try:
+        found = forge.repository_of(url)
+    except (IndexError, ValueError):
+        return None
+    owner, _, name = found.partition("/")
+    if not owner or not name or not all(re.match(r"^[A-Za-z0-9._-]+$", p) for p in (owner, name)):
+        return None
+    return found.lower()
+
+
+def named(members: list[ktw.Member], own: str) -> list[str]:
+    """The repositories the project's own `.keep-the-why` files name, in the order §11.3
+    lists the members: a URL-form child location, then each member's `parent:` line."""
+    found: list[str] = []
+    for member in members:
+        candidates = []
+        if (member.error or {}).get("reason") == "location_not_followed":
+            candidates.append(member.path)
+        candidates.append(member.parent)
+        for url in candidates:
+            repository = _repository(url)
+            if repository and repository != own and repository not in found:
+                found.append(repository)
+    return found
+
+
+# --- the families of named repositories -------------------------------------------------------
+
+
+@dataclass
+class _Foreign:
+    family: ktw.Family | None  # None: not configured
+    error: str | None
+    at: float
+
+
+FOREIGN_KEPT = ktw.PROJECTS_KEPT * MAX_NAMED
+
+
+@dataclass
+class ForeignCache:
+    """The family of each named repository, per project and repository, read at most once
+    per FORCE_INTERVAL; one read of one at a time."""
+
+    entries: OrderedDict[tuple[str, str], _Foreign] = field(default_factory=OrderedDict)
+    locks: dict[tuple[str, str], threading.Lock] = field(default_factory=dict)
+    guard: threading.Lock = field(default_factory=threading.Lock)
+
+    def clear(self) -> None:
+        with self.guard:
+            self.entries.clear()
+            self.locks.clear()
+
+    def get(
+        self, reader: forge.Forge, project_id: str, repository: str, max_age: int
+    ) -> tuple[_Foreign, bool]:
+        key = (project_id, repository)
+        with self.guard:
+            lock = self.locks.setdefault(key, threading.Lock())
+            current = self.entries.get(key)
+        if not lock.acquire(timeout=ktw.LOCK_WAIT):
+            if current is not None:
+                return current, False
+            raise ktw.Busy
+        try:
+            with self.guard:
+                current = self.entries.get(key)
+            if current is not None and ktw._now() - current.at < max(max_age, ktw.FORCE_INTERVAL):
+                return current, False
+            found = self._read(reader, repository)
+            with self.guard:
+                for gone in bounded.put(self.entries, key, found, FOREIGN_KEPT, lambda k: False):
+                    self.locks.pop(gone, None)
+            return found, True
+        finally:
+            lock.release()
+
+    @staticmethod
+    def _read(reader: forge.Forge, repository: str) -> _Foreign:
+        now = ktw._now()
+        if not reader.repository_public(repository):
+            return _Foreign(None, "not_public", now)
+        try:
+            family = ktw.walk(reader, repository, ktw._now() + ktw.FAMILY_DEADLINE)
+        except ktw.NotConfigured:
+            return _Foreign(None, "config_missing", now)
+        except ktw.RootUnavailable:
+            return _Foreign(None, "forge_unavailable", now)
+        return _Foreign(family, None, now)
+
+
+FOREIGN = ForeignCache()
+
+# At most ktw.IN_FLIGHT of one project's §11.5 reads at once.
+_slots: dict[str, threading.BoundedSemaphore] = {}
+_slots_guard = threading.Lock()
+
+
+def _slot(project_id: str) -> threading.BoundedSemaphore:
+    with _slots_guard:
+        return _slots.setdefault(project_id, threading.BoundedSemaphore(ktw.IN_FLIGHT))
+
+
+# --- the reads -------------------------------------------------------------------------------
+
+
+def _unavailable(reason: str, last: Served | None = None, **details: Any) -> Refused:
+    if last is not None:
+        details["last"] = json.loads(last.document("state"))
+    return Refused(503, "ktw_unavailable", "the Keep the Why export could not be read",
+                   reason=reason, **details)
+
+
+def _member(
+    reader: forge.Forge,
+    project_id: str,
+    repository_url: str,
+    canonical: str | None,
+    root: str,
+    max_age: int,
+) -> tuple[str, ktw.Member]:
+    """(canonical URL, member) for the request, or `Refused`."""
+    own = forge.repository_of(repository_url).lower()
+    try:
+        entry, _fresh = ktw.CACHE.get(reader, project_id, repository_url, max_age)
+    except ktw.Busy:
+        raise _unavailable("forge_unavailable") from None
+    snapshot = entry.snapshot
+    if snapshot is None:
+        raise Refused(409, "ktw_not_configured",
+                      "the repository names no Keep the Why export (.keep-the-why, dashboard-state)")
+    if snapshot.error is not None:
+        raise _unavailable(snapshot.error["reason"])
+    wanted = own if not canonical else _repository(canonical)
+    if wanted is None:
+        raise Refused(404, "not_found", "not a repository of this project's family",
+                      reason="not_in_family")
+    members = snapshot.members
+    if wanted != own:
+        names = named(snapshot.members, own)
+        if wanted not in names:
+            raise Refused(404, "not_found", "not a repository of this project's family",
+                          reason="not_in_family")
+        if names.index(wanted) >= MAX_NAMED:
+            raise Refused(404, "not_found", "past the repositories a project may name",
+                          reason="family_cap")
+        try:
+            foreign, _fresh = FOREIGN.get(reader, project_id, wanted, max_age)
+        except ktw.Busy:
+            raise _unavailable("forge_unavailable") from None
+        if foreign.error == "not_public":
+            raise Refused(404, "not_found", "the repository is not public", reason="not_public")
+        if foreign.error is not None or foreign.family is None:
+            raise _unavailable(foreign.error or "config_missing")
+        members = foreign.family.members
+    for member in members:
+        if member.path == root and (member.error or {}).get("reason") != "location_not_followed":
+            return f"https://github.com/{wanted}", member
+    raise Refused(404, "not_found", "not a member of this family", reason="not_in_family")
+
+
+def _read(kind: str, url: str, cap: int) -> ktw.Raw:
+    """Reads a published file under §11.1 and keeps it; `ktw.MemberError` on failure."""
+    try:
+        answer = outbound.read(url, cap=cap, headers={"Accept": "application/json"})
+    except outbound.Refused as refused:
+        raise ktw.MemberError(ktw._REFUSALS.get(refused.reason, "unavailable")) from None
+    if answer.status != 200:
+        raise ktw.MemberError("http_status", status=answer.status)
+    data = ktw.parse(answer.body)
+    if kind == "state":
+        ktw.digest(data, ktw.dashboard_url(url))  # §11.3's checks: version and shape
+        return ktw.RAW.keep_state(url, data)
+    if not isinstance(data, dict) or not isinstance(data.get("bodies"), dict):
+        raise ktw.MemberError("shape")
+    return ktw.RAW.put("bodies", url, data["bodies"])
+
+
+def _file(project_id: str, kind: str, url: str, cap: int, max_age: int) -> tuple[ktw.Raw, bool]:
+    kept = ktw.RAW.get(kind, url)
+    if kept is not None and ktw._now() - kept.at < max(max_age, ktw.FORCE_INTERVAL):
+        return kept, False
+    slot = _slot(project_id)
+    if not slot.acquire(timeout=ktw.FAMILY_DEADLINE):
+        raise ktw.MemberError("timeout")
+    try:
+        return _read(kind, url, cap), True
+    except ktw.MemberError:
+        raise
+    finally:
+        slot.release()
+
+
+def export(
+    reader: forge.Forge,
+    project_id: str,
+    repository_url: str,
+    canonical: str | None,
+    root: str,
+    max_age: int,
+) -> Served:
+    canonical_url, member = _member(reader, project_id, repository_url, canonical, root, max_age)
+    if member.error is not None or not member.state_url:
+        error = member.error or {"reason": "no_state_url"}
+        extra = {k: v for k, v in error.items() if k in ("status", "version")}
+        kept = ktw.RAW.get("state", member.state_url) if member.state_url else None
+        last = Served(canonical_url, root, kept, False) if kept is not None else None
+        raise _unavailable(error["reason"], last, **extra)
+    try:
+        raw, fresh = _file(project_id, "state", member.state_url, ktw.STATE_CAP, max_age)
+    except ktw.MemberError as failed:
+        kept = ktw.RAW.get("state", member.state_url)
+        last = Served(canonical_url, root, kept, False) if kept is not None else None
+        raise _unavailable(failed.reason, last, **failed.details) from None
+    return Served(canonical_url, root, raw, fresh)
+
+
+def bodies_url(state_url: str, name: Any) -> str | None:
+    """The bodies file beside the state, or None when `name` is not one plain segment."""
+    if not isinstance(name, str) or not _BODIES_NAME.match(name) or name in (".json", "..json"):
+        return None
+    return ktw.dashboard_url(state_url) + name
+
+
+def bodies(
+    reader: forge.Forge,
+    project_id: str,
+    repository_url: str,
+    canonical: str | None,
+    root: str,
+    max_age: int,
+) -> Served:
+    state = export(reader, project_id, repository_url, canonical, root, max_age)
+    if state.raw.bodies is None:
+        raise Refused(404, "not_found", "this export carries its bodies inline",
+                      reason="no_bodies_file")
+    url = bodies_url(state.raw.url, state.raw.bodies)
+    if url is None:
+        raise _unavailable("bodies_url_invalid")
+    try:
+        raw, fresh = _file(project_id, "bodies", url, BODIES_CAP, max_age)
+    except ktw.MemberError as failed:
+        raise _unavailable(failed.reason, **failed.details) from None
+    return Served(state.canonical, root, raw, fresh)

@@ -13,6 +13,7 @@ directory below the file that lists it.
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import json
 import logging
@@ -33,7 +34,7 @@ from maity_hub import bounded, clock, forge, outbound
 log = logging.getLogger(__name__)
 
 CONFIG_CAP = 64 * 1024
-STATE_CAP = 1024 * 1024
+STATE_CAP = 2 * 1024 * 1024  # §11.3, §11.5
 MAX_DEPTH = 4
 MAX_MEMBERS = 32
 MAX_ATTENTION = 200
@@ -313,11 +314,88 @@ def read_state(url: str) -> Read:
         raise MemberError(_REFUSALS.get(refused.reason, "unavailable")) from None
     if answer.status != 200:
         raise MemberError("http_status", status=answer.status)
+    data = parse(answer.body)
+    found = digest(data, dashboard_url(url))
+    RAW.keep_state(url, data)
+    return found
+
+
+def _no_constant(name: str) -> Any:
+    raise ValueError(f"{name} is not JSON")
+
+
+def parse(body: bytes) -> Any:
+    """A JSON document as a browser's JSON.parse reads it: UTF-8, no NaN or Infinity;
+    `MemberError("not_json")` otherwise."""
     try:
-        data = json.loads(answer.body)
+        return json.loads(body.decode("utf-8"), parse_constant=_no_constant)
     except (ValueError, UnicodeDecodeError, RecursionError):  # nesting deep enough to recurse
         raise MemberError("not_json") from None
-    return digest(data, dashboard_url(url))
+
+
+# --- the exports as published, for the views (§11.5) ----------------------------------------
+
+RAW_BUDGET = 64 * 1024 * 1024
+
+
+@dataclass
+class Raw:
+    """A file as published, written again as compact JSON, with when it was read."""
+
+    url: str
+    body: bytes
+    digest: str
+    at: float  # _now() of the read
+    observed_at: str
+    bodies: str | None = None  # a lean state's `bodies` value, as published
+
+
+@dataclass
+class RawStore:
+    """The published files the views read (§11.5), keyed by their URL: a read carries no
+    credential (§11.1), so a URL's bytes are the same for every project, and which project
+    may be answered with them is decided before the store is asked. At most RAW_BUDGET bytes,
+    the least recently used dropped first."""
+
+    files: OrderedDict[tuple[str, str], Raw] = field(default_factory=OrderedDict)
+    size: int = 0
+    guard: threading.Lock = field(default_factory=threading.Lock)
+
+    def clear(self) -> None:
+        with self.guard:
+            self.files.clear()
+            self.size = 0
+
+    def get(self, kind: str, url: str) -> Raw | None:
+        with self.guard:
+            found = self.files.get((kind, url))
+            if found is not None:
+                self.files.move_to_end((kind, url))
+            return found
+
+    def put(self, kind: str, url: str, data: Any, bodies: str | None = None) -> Raw:
+        body = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode()
+        raw = Raw(
+            url, body, hashlib.sha256(body).hexdigest(), _now(), clock.rfc3339(clock.now()), bodies
+        )
+        with self.guard:
+            old = self.files.pop((kind, url), None)
+            if old is not None:
+                self.size -= len(old.body)
+            if len(body) <= RAW_BUDGET:
+                self.files[(kind, url)] = raw
+                self.size += len(body)
+            while self.size > RAW_BUDGET and self.files:
+                _key, gone = self.files.popitem(last=False)
+                self.size -= len(gone.body)
+        return raw
+
+    def keep_state(self, url: str, data: Any) -> Raw:
+        bodies = data.get("bodies") if isinstance(data, dict) else None
+        return self.put("state", url, data, bodies if isinstance(bodies, str) else None)
+
+
+RAW = RawStore()
 
 
 # --- the family ------------------------------------------------------------------------------
@@ -332,6 +410,7 @@ class Member:
     observed_at: str | None = None
     read: Read | None = None
     error: dict[str, Any] | None = None
+    parent: str | None = None  # the config block's `parent:` line, as written (§11.5)
 
     def view(self) -> dict[str, Any]:
         return {
@@ -377,7 +456,12 @@ def walk(reader: forge.Forge, repository: str, deadline: float | None = None) ->
     def visit(path: str, name: str | None, source: str, depth: int) -> None:
         nonlocal truncated
         settings = config(source)
-        member = Member(path=path, name=name, id=text(settings.get("id"), 200))
+        member = Member(
+            path=path,
+            name=name,
+            id=text(settings.get("id"), 200),
+            parent=text(settings.get("parent"), 2048),
+        )
         state = settings.get("dashboard-state")
         if not state:
             member.error = _error("no_state_url")
