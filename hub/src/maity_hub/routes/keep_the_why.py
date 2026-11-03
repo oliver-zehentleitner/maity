@@ -6,7 +6,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, Response
 
-from maity_hub import ktw, ktw_reads
+from maity_hub import clock, forge, ktw, ktw_reads
 from maity_hub.access import membership
 from maity_hub.deps import AnyCaller, engine_of, reader_of
 from maity_hub.errors import ApiError, not_found, probe_not_configured
@@ -90,9 +90,19 @@ def _views_read(
     fg = reader_of(request).for_project(project.id)
     if fg.refused is not None:
         raise probe_not_configured(fg.refused if mine.may("project:admin") else None)
+    held = fg.retry_at()
+    if held is not None:
+        raise ApiError(
+            503, "probe_unavailable", "the forge budget is spent", {"retry_at": clock.rfc3339(held)}
+        )
     read = ktw_reads.export if which == "state" else ktw_reads.bodies
     try:
-        served = read(fg, project.id, project.repository_url, canonical or None, root or "", max_age)
+        served = read(
+            fg, project.id, project.repository_url, canonical or None, root or "", max_age
+        )
+    except forge.ForgeUnavailableError as error:  # the budget ran out during the read
+        details = {"retry_at": clock.rfc3339(error.retry_at)} if error.retry_at else None
+        raise ApiError(503, "probe_unavailable", "the forge did not answer", details) from None
     except ktw_reads.Refused as refused:
         raise ApiError(
             refused.status, refused.code, refused.message, refused.details or None

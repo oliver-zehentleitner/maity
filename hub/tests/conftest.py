@@ -308,6 +308,7 @@ def _fresh_process_state() -> Iterator[None]:
 
     ktw_reads.FOREIGN.clear()
     ktw_reads._slots.clear()
+    ktw_reads._read_at.clear()
     from maity_hub import maintenance
 
     maintenance.forget()  # one test's window must not refuse the next test's requests

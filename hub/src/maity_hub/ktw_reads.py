@@ -24,6 +24,12 @@ from maity_hub import bounded, forge, ktw, outbound
 BODIES_CAP = 4 * 1024 * 1024
 MAX_NAMED = 8
 _BODIES_NAME = re.compile(r"^[A-Za-z0-9._-]{1,95}\.json$")
+# §11.5 "A repository's name": the one accepted form, and nothing else.
+_NAME = re.compile(
+    r"^https://github\.com/([A-Za-z0-9-]{1,39})/([A-Za-z0-9._-]{1,100}?)(?:\.git)?/?$"
+)
+IN_FLIGHT_ALL = 16  # §11.5's reads in flight across the hub
+HELD_KEPT = 4096  # when each file and family was last read, for the 30 s hold after a drop
 
 
 class Refused(Exception):
@@ -68,17 +74,14 @@ class Served:
 
 
 def _repository(url: str | None) -> str | None:
-    """`owner/name`, lower case, of a URL on a configured forge; None for anything else."""
-    if not url or forge.kind_of(url) != "github" or not url.startswith("https://"):
+    """`owner/repo`, lower case, when `url` has exactly the accepted form; None otherwise.
+    Every read of a named repository is built from this value alone."""
+    if not isinstance(url, str):
         return None
-    try:
-        found = forge.repository_of(url)
-    except (IndexError, ValueError):
+    match = _NAME.match(url)
+    if match is None or match.group(2) in (".", ".."):
         return None
-    owner, _, name = found.partition("/")
-    if not owner or not name or not all(re.match(r"^[A-Za-z0-9._-]+$", p) for p in (owner, name)):
-        return None
-    return found.lower()
+    return f"{match.group(1)}/{match.group(2)}".lower()
 
 
 def named(members: list[ktw.Member], own: str) -> list[str]:
@@ -86,7 +89,7 @@ def named(members: list[ktw.Member], own: str) -> list[str]:
     lists the members: a URL-form child location, then each member's `parent:` line."""
     found: list[str] = []
     for member in members:
-        candidates = []
+        candidates: list[str | None] = []
         if (member.error or {}).get("reason") == "location_not_followed":
             candidates.append(member.path)
         candidates.append(member.parent)
@@ -140,6 +143,10 @@ class ForeignCache:
                 current = self.entries.get(key)
             if current is not None and ktw._now() - current.at < max(max_age, ktw.FORCE_INTERVAL):
                 return current, False
+            held = f"{project_id}|{repository}"
+            if current is None and _held("family", held):
+                return _Foreign(None, "timeout", ktw._now()), False  # dropped for room
+            _mark_read("family", held)
             found = self._read(reader, repository)
             with self.guard:
                 for gone in bounded.put(self.entries, key, found, FOREIGN_KEPT, lambda k: False):
@@ -151,8 +158,9 @@ class ForeignCache:
     @staticmethod
     def _read(reader: forge.Forge, repository: str) -> _Foreign:
         now = ktw._now()
-        if not reader.repository_public(repository):
-            return _Foreign(None, "not_public", now)
+        seen = _visibility(reader, repository)
+        if seen is not None:
+            return _Foreign(None, seen, now)
         try:
             family = ktw.walk(reader, repository, ktw._now() + ktw.FAMILY_DEADLINE)
         except ktw.NotConfigured:
@@ -160,6 +168,22 @@ class ForeignCache:
         except ktw.RootUnavailable:
             return _Foreign(None, "forge_unavailable", now)
         return _Foreign(family, None, now)
+
+
+def _visibility(reader: forge.Forge, repository: str) -> str | None:
+    """None when the forge reports the repository public; else why it is not served:
+    `repository_moved` for a redirect (never followed, §11.4), `not_public` for a private
+    repository or one whose visibility cannot be read. A spent budget is `forge.
+    ForgeUnavailableError` with `retry_at`, for the caller to answer `probe_unavailable`."""
+    try:
+        found = reader._get(f"/repos/{repository}", uncached=True)
+    except forge.NotCoveredError as error:
+        return "repository_moved" if error.reason == "repository_moved" else "not_public"
+    except forge.ForgeUnavailableError as error:
+        if error.retry_at is not None:
+            raise
+        return "not_public"
+    return None if isinstance(found, dict) and found.get("private") is False else "not_public"
 
 
 FOREIGN = ForeignCache()
@@ -174,14 +198,40 @@ def _slot(project_id: str) -> threading.BoundedSemaphore:
         return _slots.setdefault(project_id, threading.BoundedSemaphore(ktw.IN_FLIGHT))
 
 
+_all = threading.BoundedSemaphore(IN_FLIGHT_ALL)
+# When each file was last read, kept apart from the store, so that a file dropped for room
+# is not read again inside FORCE_INTERVAL (§11.5).
+_read_at: OrderedDict[tuple[str, str], float] = OrderedDict()
+_read_at_guard = threading.Lock()
+
+
+def _held(kind: str, url: str) -> bool:
+    with _read_at_guard:
+        at = _read_at.get((kind, url))
+    return at is not None and ktw._now() - at < ktw.FORCE_INTERVAL
+
+
+def _mark_read(kind: str, url: str) -> None:
+    with _read_at_guard:
+        _read_at[(kind, url)] = ktw._now()
+        _read_at.move_to_end((kind, url))
+        while len(_read_at) > HELD_KEPT:
+            _read_at.popitem(last=False)
+
+
 # --- the reads -------------------------------------------------------------------------------
 
 
 def _unavailable(reason: str, last: Served | None = None, **details: Any) -> Refused:
     if last is not None:
         details["last"] = json.loads(last.document("state"))
-    return Refused(503, "ktw_unavailable", "the Keep the Why export could not be read",
-                   reason=reason, **details)
+    return Refused(
+        503,
+        "ktw_unavailable",
+        "the Keep the Why export could not be read",
+        reason=reason,
+        **details,
+    )
 
 
 def _member(
@@ -200,23 +250,32 @@ def _member(
         raise _unavailable("forge_unavailable") from None
     snapshot = entry.snapshot
     if snapshot is None:
-        raise Refused(409, "ktw_not_configured",
-                      "the repository names no Keep the Why export (.keep-the-why, dashboard-state)")
+        raise Refused(
+            409,
+            "ktw_not_configured",
+            "the repository names no Keep the Why export (.keep-the-why, dashboard-state)",
+        )
     if snapshot.error is not None:
         raise _unavailable(snapshot.error["reason"])
     wanted = own if not canonical else _repository(canonical)
     if wanted is None:
-        raise Refused(404, "not_found", "not a repository of this project's family",
-                      reason="not_in_family")
+        raise Refused(
+            404, "not_found", "not a repository of this project's family", reason="not_in_family"
+        )
     members = snapshot.members
     if wanted != own:
         names = named(snapshot.members, own)
         if wanted not in names:
-            raise Refused(404, "not_found", "not a repository of this project's family",
-                          reason="not_in_family")
+            raise Refused(
+                404,
+                "not_found",
+                "not a repository of this project's family",
+                reason="not_in_family",
+            )
         if names.index(wanted) >= MAX_NAMED:
-            raise Refused(404, "not_found", "past the repositories a project may name",
-                          reason="family_cap")
+            raise Refused(
+                404, "not_found", "past the repositories a project may name", reason="family_cap"
+            )
         try:
             foreign, _fresh = FOREIGN.get(reader, project_id, wanted, max_age)
         except ktw.Busy:
@@ -253,13 +312,19 @@ def _file(project_id: str, kind: str, url: str, cap: int, max_age: int) -> tuple
     kept = ktw.RAW.get(kind, url)
     if kept is not None and ktw._now() - kept.at < max(max_age, ktw.FORCE_INTERVAL):
         return kept, False
+    if kept is None and _held(kind, url):
+        raise ktw.MemberError("timeout")  # dropped for room, and read less than 30 s ago
     slot = _slot(project_id)
     if not slot.acquire(timeout=ktw.FAMILY_DEADLINE):
         raise ktw.MemberError("timeout")
     try:
-        return _read(kind, url, cap), True
-    except ktw.MemberError:
-        raise
+        if not _all.acquire(timeout=ktw.FAMILY_DEADLINE):
+            raise ktw.MemberError("timeout")
+        try:
+            _mark_read(kind, url)
+            return _read(kind, url, cap), True
+        finally:
+            _all.release()
     finally:
         slot.release()
 
@@ -305,8 +370,9 @@ def bodies(
 ) -> Served:
     state = export(reader, project_id, repository_url, canonical, root, max_age)
     if state.raw.bodies is None:
-        raise Refused(404, "not_found", "this export carries its bodies inline",
-                      reason="no_bodies_file")
+        raise Refused(
+            404, "not_found", "this export carries its bodies inline", reason="no_bodies_file"
+        )
     url = bodies_url(state.raw.url, state.raw.bodies)
     if url is None:
         raise _unavailable("bodies_url_invalid")
