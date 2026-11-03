@@ -26,7 +26,8 @@ window.Maity = window.Maity || {};
     return t || null;
   }
 
-  // A wait in whole minutes, at least one: the hub counts seconds, a person reads minutes.
+  // A wait in whole minutes, at least one: the hub counts seconds, a person reads minutes
+  // (js/admin-sign-in.js says its own rate limit with it too).
   const minutes = (seconds) => Math.max(1, Math.ceil(Number(seconds || 0) / 60));
 
   // The hub's refusals of the step in words (§2.8.2, §2.8.6, §2.8.8).
@@ -127,5 +128,5 @@ window.Maity = window.Maity || {};
       signedIn ? h("a", { href: "/all" }, M.t("sf.elsewhere.dashboard")) : h("a", { href: "/login" }, M.t("sf.elsewhere.sign_in"))));
   }
 
-  M.secondFactor = { page, elsewhere, isMailLink };
+  M.secondFactor = { page, elsewhere, isMailLink, minutes };
 })(window.Maity);

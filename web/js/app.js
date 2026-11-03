@@ -125,8 +125,9 @@ window.Maity = window.Maity || {};
     if (parts[0] === "observe" && parts[2]) return { scope: "observe", slug: parts[1] + "/" + parts[2], args: parts.slice(3) };
     if (parts[0] === "admin" && !parts[1]) return { scope: "instance-admin" };
     // The two sections a notification links into (§18.2): Registration, and Reports with one report opened;
-    // and Pages with a part of it (tsk-fct4awzw3k30).
+    // Maintenance, where the full page of a running window leads (§16.12); and Pages with a part of it (tsk-fct4awzw3k30).
     if (parts[0] === "admin" && (parts[1] === "registration" && !parts[2] || parts[1] === "reports" && !parts[3]
+      || parts[1] === "maintenance" && !parts[2]
       || parts[1] === "pages" && !parts[3] && (!parts[2] || ["landing", "legal", "sign-in", "sign-up", "site"].includes(parts[2])))) {
       return { scope: "instance-admin", section: parts[1], args: parts.slice(2) };
     }
@@ -1594,6 +1595,8 @@ window.Maity = window.Maity || {};
         // A failed notifications read keeps the last counts and leaves /me's
         // refresh standing; the next round reads them again.
         const [fresh] = await Promise.all([M.api.get("/me"), M.notify.read().catch(() => null)]);
+        // A window announced, changed or started meanwhile: the banner, or the full page (§16.12).
+        if ("maintenance" in fresh) M.maintenance.know(fresh.maintenance);
         ctx.projects = fresh.projects;
         renderSwitcher(ctx);
         renderChat(ctx);
@@ -1767,6 +1770,24 @@ window.Maity = window.Maity || {};
     }
   }
 
+  // §16.12 While a window runs, for a signed-in caller (`me`: /me's member): the full page; the
+  // instance admin's own window alone at /admin/maintenance, the one admin section the hub still answers.
+  function heldPage(main, me, where) {
+    const header = document.getElementById("header");
+    if (me.instance_admin && where.scope === "instance-admin" && where.section === "maintenance" && M.adminMaintenance) {
+      M.maintenance.aware();
+      append(clear(header), h("div", { class: "bar" }, brandTitle(true)));
+      const root = h("section", { class: "view view-instance-admin" }, h("p", null, h("a", { href: "/all" }, M.t("maintenance.back"))));
+      const part = h("section", { class: "panel admin-section", id: "admin-maintenance", "aria-label": M.t("admin.maintenance.title") });
+      append(root, part);
+      append(clear(main), root);
+      M.adminMaintenance.section({ me }, part).catch((err) => { const status = statusLine(); status.fail(M.t("admin.section_failed", { section: M.t("admin.maintenance.title") }), err); append(part, status.el); });
+      document.title = M.t("admin.maintenance.title") + " · Maity";
+      return true;
+    }
+    return M.maintenance.fullPage(main, header, { me, brand: brandTitle(true) });
+  }
+
   let renderSeq = 0;
   // The mail sign-in banner (§2.6.5) at the top of the page: built when the
   // page renders and again when the count of unread sign-in alerts changes.
@@ -1820,10 +1841,16 @@ window.Maity = window.Maity || {};
     let where = { scope: "unknown" };
     let ctx;
     await M.i18n.ready;
+    // §16.12: the window as the hub has it, read at most once a minute; while it runs, the
+    // full page stands instead of the view (heldPage), the sign-in and its step excepted.
+    M.maintenance.drawing();
+    await M.maintenance.fresh();
+    if (seq !== renderSeq) return;
     try {
       where = parseRoute();
-      if (where.scope === "invite" && M.invite) { await M.invite.page(main, document.getElementById("header"), where.token); return; }
-      if (where.scope === "register" && M.register) { await M.register.page(main, document.getElementById("header"), routeNext()); return; }
+      const held = M.maintenance.running();
+      if (where.scope === "invite" && M.invite && !held) { await M.invite.page(main, document.getElementById("header"), where.token); return; }
+      if (where.scope === "register" && M.register && !held) { await M.register.page(main, document.getElementById("header"), routeNext()); return; }
       let session;
       try {
         session = await M.api.get("/auth/session");
@@ -1833,6 +1860,14 @@ window.Maity = window.Maity || {};
         // Without a session the login page; the landing page at the root
         // is the hub's own static page (§16.7), never drawn here.
         if (err.status === 401) {
+          // §16.12: while a window runs a visitor gets the full page, with the way to the
+          // sign-in, which stays open so the instance admin can end the window.
+          if (M.maintenance.running()) {
+            if (seq !== renderSeq) return;
+            if (where.scope === "login") { M.maintenance.aware(); renderLogin(main); return; }
+            M.maintenance.fullPage(main, document.getElementById("header"), { brand: brandTitle(false), tools: themeMenu(), signIn: true });
+            return;
+          }
           // A public page of this address, read-only (§16.9); otherwise the login.
           if (M.visitor && await M.visitor.page(main, document.getElementById("header"), where, M.route.current().path, { signedIn: false, brand: brandTitle(false), tools: themeMenu(), live: () => seq === renderSeq })) return;
           // The hub's own page in <main> stands when its data could not be read.
@@ -1845,15 +1880,22 @@ window.Maity = window.Maity || {};
       // 401) ends nothing, and one that ends now is told again — the second step included.
       if (sessionEnded) { sessionEnded = false; M.sessionEpoch = (M.sessionEpoch || 0) + 1; }
       // A session that owes the second factor reaches nothing else (§2.8.2): its step.
-      if (session && session.second_factor === "required" && M.secondFactor) { renderStep(main, session); return; }
+      if (session && session.second_factor === "required" && M.secondFactor) { if (M.maintenance.running()) M.maintenance.aware(); renderStep(main, session); return; }
       // So does one that must set the factor up first (§2.8.5): the setup is its page.
-      if (session && session.second_factor === "enrolment_required" && M.security) { if (seq === renderSeq) renderEnrolment(main); return; }
+      if (session && session.second_factor === "enrolment_required" && M.security) {
+        if (seq !== renderSeq) return;
+        if (M.maintenance.running()) M.maintenance.fullPage(main, document.getElementById("header"), { me: null, brand: brandTitle(true) });
+        else renderEnrolment(main);
+        return;
+      }
       // The link opened where the sign-in is already complete: nothing to post here.
       if (M.secondFactor && M.secondFactor.isMailLink()) { renderStepElsewhere(main, true); return; }
       // The step's own address (where a sign-in link's 303 lands) with the sign-in complete: the start.
       if (M.route.current().path === "/sign-in/second-factor") { M.route.go("/", { replace: true }); return; }
       const me = await M.api.get("/me");
       if (seq !== renderSeq) return;
+      if ("maintenance" in me) M.maintenance.know(me.maintenance, true);
+      if (M.maintenance.running() && heldPage(main, me.member, where)) return;
       // Signed in again after signing out here: the stream may run again.
       M.notify.resume();
       // An account that waits for approval (§2.7.5) sees that, and nothing else.
@@ -2055,5 +2097,6 @@ window.Maity = window.Maity || {};
   window.addEventListener("resize", () => {
     document.getElementById("header").querySelectorAll("nav").forEach(updateCue);
   });
+  M.maintenance.onChange(() => render());
   document.addEventListener("DOMContentLoaded", render);
 })(window.Maity);
