@@ -472,11 +472,32 @@ class Forge:
         with _caches_lock:
             _public.pop(key, None)
 
+    def require_covered(self, repository: str) -> None:
+        """What `_call` checks before a read with the operator's token, for a caller that
+        reads nothing itself (§11.5 asks on every call whether the project's source still
+        covers its repository): `NotCoveredError` with the owner's reason where the owner's
+        grants say more, the project told that the token does not cover it. A grant or a
+        refused reader has nothing to check here (`for_project` chose it)."""
+        if self.refused is not None:
+            raise NotCoveredError(self.refused)
+        if self.granted is not None or self.token is None:
+            return
+        try:
+            self._require_public(repository)
+        except NotCoveredError as error:
+            if self.access is not None and self.project_id is not None:
+                self.access.not_covered(self.project_id)
+            if self.owner_reason is not None and error.reason != "repository_moved":
+                raise NotCoveredError(self.owner_reason) from None
+            raise
+
     def _require_public(self, repository: str) -> None:
         """Raises `NotCoveredError` unless the forge reported the repository public within
         PUBLIC_SECONDS; a visibility the forge does not answer is `ForgeUnavailableError`
         and is asked again on the next read."""
-        key = (hashlib.sha256((self.token or "").encode()).hexdigest(), repository)
+        # lower case, as `_forget` keys it: a refusal must drop the verdict however the
+        # repository's name was written
+        key = (hashlib.sha256((self.token or "").encode()).hexdigest(), repository.lower())
         known = _public.get(key)
         if known is None or time.monotonic() - known[0] >= PUBLIC_SECONDS:
             try:
