@@ -1304,8 +1304,8 @@
     "text": "269d4e385210685a"
   },
   "bell.security_hint": {
-    "en": "b3bcd94f9fe4e53c",
-    "text": "b21cba5a83052b2c"
+    "en": "0f18c6cdd8b3c96c",
+    "text": "4f49c46118d0d443"
   },
   "bell.settings": {
     "en": "c749ce622125ec2a",
@@ -14347,10 +14347,6 @@
     "en": "ceb846c9f1e324a3",
     "text": "dcc88496659aff79"
   },
-  "sessions.alert_open": {
-    "en": "2a8a6c218d690279",
-    "text": "8cbe0711fd57625b"
-  },
   "sessions.banner.approved": {
     "en": "36d355755805147c",
     "text": "daf05333d16405af"
@@ -14378,14 +14374,6 @@
   "sessions.cannot_end.too_new": {
     "en": "130a7b20d904f44c",
     "text": "2951b76f017405cf"
-  },
-  "sessions.confirm.refused": {
-    "en": "479112e115109e21",
-    "text": "7dd9cd07ef832ee4"
-  },
-  "sessions.confirm.unknown": {
-    "en": "060ed25d62d1fea1",
-    "text": "2b4ac51637dc8032"
   },
   "sessions.confirmed": {
     "en": "38ab47d4615a9c3f",
