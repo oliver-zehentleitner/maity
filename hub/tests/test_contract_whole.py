@@ -236,6 +236,15 @@ def test_a_truncated_tree_fails_closed_before_any_lookup(owner: flow.Human, gith
     assert error(owner.get(URL)) == (400, "invalid", {"settings.contract_path": "not_markdown"})
 
 
+def test_a_truncated_tree_without_the_segment_is_not_markdown_not_missing(
+    owner: flow.Human, github: Forge
+) -> None:
+    """A cut tree cannot tell a missing entry from one cut off: the truncated check comes
+    before the lookup, so the code is `not_markdown`, never `not_found_on_forge`."""
+    tree(github, "", {"README.md": "100644"}, truncated=True)
+    assert error(owner.get(URL)) == (400, "invalid", {"settings.contract_path": "not_markdown"})
+
+
 def test_a_segment_a_complete_tree_does_not_list_is_not_found(
     owner: flow.Human, github: Forge
 ) -> None:
