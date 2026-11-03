@@ -4172,9 +4172,11 @@ rewritten: when anything it shows changes (an instance comes or goes,
 or a line's kind, `since`, `last seen`, cards or reason), the hub
 withdraws it and, when an away instance is not silenced (below), files
 a new one in the same pass. An answer from a page that has not seen the
-change is then `request_not_open` (409), and the owner reads the new
-one, so an answered request is always exactly what its page showed.
-The hub withdraws it without a successor when none is away any more. Answering `seen`
+change is then `request_not_open` (409), so an answered request is
+always exactly what its page showed; a client that gets it on a digest
+request reloads the inbox (`GET /requests`), where the new one stands.
+The hub withdraws the open request without a successor when none is
+away any more. Answering `seen`
 closes it; what it silences is set out below ("Silence after `seen`").
 The next hour files a new request only when an away instance is not
 silenced, and that request, like every refiling, lists every away
@@ -4184,7 +4186,7 @@ same hours and by the same rules, one account record
 request (`holding`: how many of those instances are stalled holders,
 counted in `instances` too): an item
 of kind `inbox` in the bell (§18.1), titled like the request, that stays listed while any instance
-is away and links to the human's agents (`/agents`); with `off` the
+is away and is updated in place, since nothing answers it and no page of it can be stale, and links to the human's agents (`/agents`); with `off` the
 human hears nothing of it. A change of `not_listening.mode` takes
 effect at the `PATCH`: an open digest request is withdrawn when the
 mode leaves `inbox`, an open `agents_not_listening` record is closed

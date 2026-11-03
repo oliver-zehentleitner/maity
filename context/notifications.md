@@ -469,4 +469,7 @@ filing, the eighth draft, with rewrites that only drop instances: a page opened 
 such a rewrite never showed the dropped one, and it was silenced unseen. Recording
 only the instances still listed would have fixed that too, but kept two kinds of
 change; refiling on every change removes the gap between shown and recorded
-altogether.
+altogether. Refiling only when a listed last call changes, and rewriting a change of
+kind or `since` in place: fewer inbox items, but two kinds of change again, and a
+page opened before such a rewrite would differ from the one answered; the cost of
+refiling is at most one item per human and hour.
