@@ -10,12 +10,15 @@
   created, a harness only in a workspace marked `checked-out` after a
   complete checkout, a retry in a fresh one for any workspace without
   the mark that moves the old one aside instead of deleting it, one lock
-  per workspace path outside every renamed directory, held across the
-  renames and the harness's start, with a table of a workspace path's
-  states, no link followed into `.git/maity`, the IPv6 host directory
-  always with its port, the next run only when work waits, with backoff,
-  stopping by signal, Ctrl-C or console close, and how it stays apart
-  from the full runner.
+  per workspace path outside every renamed directory, keyed by the names
+  the file system stores, held across the renames and the harness's
+  start and inherited by the run, so a harness that outlives a killed
+  local mode keeps the path (`harness_running`), with a table of a
+  workspace path's states, its crash states each with how it is found,
+  no link or hard link followed into `.git/maity` at any use, the IPv6
+  host directory always with its port, the next run only when work
+  waits, with backoff, stopping by signal, Ctrl-C or console close, and
+  how it stays apart from the full runner.
 
 ### Changed
 

@@ -988,7 +988,7 @@ operator's config would admit every owner's project with that slug.
 **See:** credentials.md — 116c5330-8dab-42ed-af06-74b6f02cee89 — as of 2026-11-03
 **See:** runner.md — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-03
 **See:** runner.md — c2acd907-0f26-4850-8272-063390f1d6a7 — as of 2026-11-03
-**Revisit when:** a harness signals its provider limit; someone asks local mode for an interactive session; the deny rules or a harness's sandbox are verified on Windows; the hub should tell a stopped local session from a busy one
+**Revisit when:** a harness signals its provider limit; someone asks local mode for an interactive session; the deny rules or a harness's sandbox are verified on Windows; the hub should tell a stopped local session from a busy one; a harness or its sandbox is found to close or unlock inherited descriptors as a rule
 
 `maity runner <harness> --join <url>` redeems the link into a new workspace
 under `<state home>/maity-local/<link host>/<handle>`, lets the agent's own
@@ -1024,11 +1024,23 @@ directory always carries the port, so `[::1]:80` and `[::1:80]` differ.
 One lock per workspace path, `maity-local/.locks/<key>`, keyed like the
 adapter files, is taken before anything in the workspace is read and
 held until local mode exits, across both renames and the harness's
-start; a start that finds it held is refused at once. A start opens the
-workspace, `.git` and `.git/maity` without following a link and refuses
-any link or junction (`workspace_link`). A `.replaced-*` directory is
-never started (`workspace_replaced`). §15.13 lists the states of a
-workspace path in one table; each review finding maps to a row:
+start; a start that finds it held is refused at once. The key takes
+every component as its parent's listing names it, so two spellings on a
+file system that ignores case, or an 8.3 short name, take one lock. On
+Linux and macOS the harness inherits the locked descriptor, so the lock
+lasts while any process of the run does, and a run record under
+`maity-local/.runs` with the harness's id, start time and group lets a
+start refuse (`harness_running`) a path whose run outlived a killed
+local mode. Every use of `.git/maity`, local mode's and that of every
+`maity` command in a local-mode session, opens the workspace, `.git` and
+`.git/maity` without following a link and refuses any link, junction or
+hard-linked file (`workspace_link`). The retry copies the credential
+into the fresh directory first and resumes there. The staging and the
+retry's fresh directory are printed when they are created, and a start
+names every `.join-*` beside it with what it holds. A `.replaced-*`
+directory is never started (`workspace_replaced`); its time is
+`YYYYMMDDTHHMMSSZ`. §15.13 lists the states of a workspace path in one
+table; each review finding maps to a row:
 
 - `replacing` and `between`: the lock released before the renames, so a
   second retry could move away the tree a harness had just started in
@@ -1044,7 +1056,19 @@ workspace path in one table; each review finding maps to a row:
   its random name (dzse on `a228f3ea`).
 - Every row that reads a workspace: `.git/maity` swapped for a link to
   another workspace's, whose credential the retry would copy (dzse on
-  `a228f3ea`).
+  `a228f3ea`), and the same swap during a run, which a check at the
+  start alone missed: local mode's next `maity wait` would follow the
+  link with the other agent's credential (dzse on `3d34a8a3`).
+- `surviving`: a harness or its descendants outliving a killed local
+  mode (macOS `kill -9`, Linux descendants), so the next start took the
+  free lock and launched a second harness (pmwg on `3d34a8a3`).
+- `abandoned`, `unfinished` and `orphaned`: one `orphaned` row for every
+  crash while the fresh directory is built, though only a complete one
+  fits it (pmwg on `3d34a8a3`).
+- `staging` to `kept` after a crash: a staging directory with the spent
+  credential that nothing named (dzse on `3d34a8a3`).
+- Every row with a lock: two spellings of one path on a file system that
+  ignores case took two locks (dzse on `3d34a8a3`).
 
 The harness gets a runner's adapter context: the adapter files outside
 the workspace under `maity-local/.adapters`, no `MAITY_PLACEMENT`, the
@@ -1089,9 +1113,25 @@ guards the tree, not the path: once the tree is renamed, a second start
 locks whatever new tree the path names, and Windows renames no
 directory with an open file, so a lock inside had to be released before
 the rename. Outside, nothing is released before the rename it guards,
-and no check after taking it is needed. The no-link opening is there
-because Codex may write `.git`, and a link needs no read access to its
-target. The sandbox follows what the adapters
+and no check after taking it is needed. The lock follows the run, not
+only local mode, because the run is what must be alone on a path, and
+local mode can die without it: macOS has no parent-death signal, and on
+Linux the subreaper dies with local mode. The inherited descriptor
+covers every process of the run from its first instruction, the run
+record covers a process that closed or unlocked what it inherited, and
+each covers the other's gap except a descendant that does both, which
+the contract names as the limit. The key comes from the listing
+because only the name the file system stores is one per directory; the
+parents' real path alone left the last component's case open. The
+no-link opening is there because Codex may write `.git`, and a link
+needs no read access to its target; it runs at every use because
+local mode keeps using `.git/maity` after the harness has run, through
+handles so nothing can be swapped between the check and the use. The
+retry resumes against the fresh directory's copy because that one no
+harness ever reached. Every directory that may come to hold a
+credential is printed before it does, and starts name the leftovers,
+because a crash prints nothing, and a person who does not find a spent
+credential would redeem a spent link. The sandbox follows what the adapters
 already do on a runner (Claude Code strict or not at all, Codex only
 sandboxed), so local mode adds no third policy. Codex's sandbox is
 required because without it nothing confines Codex at all, while Claude
@@ -1159,3 +1199,20 @@ message says are no boundary.
   again.
 - Following links in `.git` as before: an agent could point
   `.git/maity` at another workspace's (review of #1294, dzse).
+- The no-link check at the start only: the harness can swap
+  `.git/maity` during a run, and local mode's next `maity wait` runs
+  outside any sandbox (review of #1294, dzse).
+- The lock held by local mode alone, taken over once it is free: a
+  harness that outlived a killed local mode and a second one would work
+  on one tree (review of #1294, pmwg).
+- Only the inherited descriptor, or only a run record: a process can
+  close or unlock the descriptor, and a descendant that left the group
+  is not in the record; together the gap is a process that does both.
+- The lock keyed by the directory's inode: it would follow the tree
+  through the renames, which is what the path lock replaced.
+- Only the parents resolved, and `normcase` on Windows: two spellings of
+  the last component on APFS, or an 8.3 short name, took two locks
+  (review of #1294, dzse).
+- One `orphaned` state for every crash while the fresh directory is
+  built: an incomplete one cannot be started, and one without a
+  credential holds nothing to recover (review of #1294, pmwg).
