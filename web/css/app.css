@@ -1663,3 +1663,22 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .broadcasts { margin-top: 24px; }
 .broadcasts-agents { display: grid; gap: 4px; border: 1px solid var(--border); padding: 8px; margin: 0; }
 .broadcasts-agents label.check { display: flex; align-items: center; gap: 6px; }
+
+/* §16.13 The product line: at the end of every page the dashboard draws (js/product-line.js),
+   never sticky, small and muted; at phone width it wraps between its parts, never sideways. */
+.product-line { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; column-gap: 0; row-gap: 2px;
+  padding: 12px var(--gap) 16px; color: var(--muted); font-size: 0.8rem; text-align: center; }
+.product-line:empty { display: none; }
+.product-part { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0 0.25em; }
+.product-sep { white-space: pre; }
+.product-line a { color: inherit; }
+.product-mark { width: 14px; height: 14px; vertical-align: -2px; flex: none; }
+.product-icon { display: inline-flex; align-items: center; padding: 2px; border-radius: 3px; }
+.product-heart { color: var(--bad); }
+/* The Maity mark's dark variant (brand/maity-mark-small-dark.svg): CSS over the presentation attributes. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .product-mark-t { fill: #4c8dff; }
+  :root:not([data-theme="light"]) .product-mark-seat { fill: #e6e9ec; }
+}
+:root[data-theme="dark"] .product-mark-t { fill: #4c8dff; }
+:root[data-theme="dark"] .product-mark-seat { fill: #e6e9ec; }
