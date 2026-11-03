@@ -31,7 +31,7 @@ that has not yet added the volume.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** implementation session, 2026-10-27 (`docs/api.md` §8.7 fixes "the blob first, the metadata after"; the way to undo it is the implementer's); the coordinator's ruling of 2026-11-03 for the `s3` store: the blob outside the project's lock, an orphan after a failed transaction left to the sweep; the reviews of #1281 on 2026-11-03 (the clocks the sweep compares, a write whose answer is lost); the 15-minute limit on a request's time is the SigV4 rule of AWS S3 and MinIO
+**Source:** implementation session, 2026-10-27 (`docs/api.md` §8.7 fixes "the blob first, the metadata after"; the way to undo it is the implementer's); the coordinator's ruling of 2026-11-03 for the `s3` store: the blob outside the project's lock, an orphan after a failed transaction left to the sweep; the reviews of #1281 on 2026-11-03 (the clocks the sweep compares, a write whose answer is lost); the 15-minute limit on a request's time is the SigV4 rule of AWS S3 and MinIO; the S3 service this project runs on refused a request signed 20 minutes off with `RequestTimeTooSkewed` and answered the same read with the right time (a read-only check, 2026-11-03)
 **Revisit when:** the time from the start of an upload's write to its commit can come near `UPLOAD_FRESH`, a store answers without a `Date` header and does not refuse requests with a skewed clock, or the contract changes the write order
 **See:** replicas.md#attachments-move-to-s3-compatible-object-storage — a70d7269-a0a9-45aa-94c5-54715f112c10 — as of 2026-11-03
 

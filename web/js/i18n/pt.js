@@ -1013,6 +1013,7 @@ window.MAITY_I18N["pt"] = {
   "error.timestamp_skew": "O relógio deste dispositivo está distante demais do relógio do hub.",
   "error.too_few": "Poucos membros seriam convidados para esta rodada.",
   "error.unauthenticated": "Você não entrou.",
+  "error.upload_expired": "O envio demorou demais. Envie o arquivo de novo.",
   "error.version_exists": "Já existe um lançamento com esta versão.",
   "error.webhook_signature": "A entrega do forge não tem assinatura válida.",
   "forge.app.hint": "Instale o App na sua conta do GitHub e escolha os repositórios que ele pode ler. Ele passa a atender todo projeto seu cujo repositório ele inclua.",
