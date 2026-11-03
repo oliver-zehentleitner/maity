@@ -3,9 +3,9 @@
 this change. The downgrade drops the column; the name is a setting, nothing derived from it is
 stored elsewhere.
 
-Revision ID: 20261103210000_required_check
-Revises: 20261103100000_session_confirmed
-Create Date: 2026-11-03
+Revision ID: 20261104000000_required_check
+Revises: 20261103210000_digest_seen
+Create Date: 2026-11-04
 """
 
 from collections.abc import Sequence
@@ -13,8 +13,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "20261103210000_required_check"
-down_revision: str | None = "20261103100000_session_confirmed"
+revision: str = "20261104000000_required_check"
+down_revision: str | None = "20261103210000_digest_seen"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
