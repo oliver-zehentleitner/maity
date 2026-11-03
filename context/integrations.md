@@ -129,6 +129,91 @@ operator's own projects.
 - The instance token for every public repository, as since 2026-10-28:
   what the maintainer turned away from. Other alternatives: unknown.
 
+## A deploy is observed through a commit link, against a required check each project names
+
+**Id:** 8838abc2-b80f-49dc-8a60-9563e2612c64
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the project lead's decisions on card tsk-d1n4g1sp305j, 2026-11-02, on the coder's plan; the reviews of PR #1295, 2026-11-03 (cancelled, branch reads, wakes, re-runs, PATCH); contract `docs/api.md` §6.1, §6.6, §6.13, §11, §11.4
+**Revisit when:** a deploy needs more than one required check, a second forge kind comes, or the commit links' reads strain a source's budget
+
+"Is the commit we deploy green on its required check, and is it still
+the head of the default branch?" is answered by the probe, not by an
+agent's word. A deploy is an ordinary `task` card that links the commit
+it will deploy (`kind: commit`). The hub observes that commit:
+`{found, sha, checks, required_check, branch_head_sha, ahead}`.
+`ahead: true` means the default branch moved past it (a merge after the
+freeze). It is shown and wakes the card's holder, nobody else. The
+required check is named per project (`repository.required_check`,
+default `null`); the hub builds in no name, `ci-ok` included. The same
+`{name, status}` goes on a report's observation from the pull request
+read that already returns every check, so the PR card shows the watched
+head and its required check at no extra forge cost. `cancelled` is a
+state of its own, neither green nor "superseded": a run ends
+`cancelled` by hand or by a timeout too (`context/process.md`), and
+with Maity's CI a superseded commit never shows as `cancelled`. A
+commit on main whose waiting run GitHub replaced has no `ci-ok` check
+run at all (`missing`), and a pull request's run cancelled by a newer
+push still ends `ci-ok` as `failure` (`if: always()`), read on commits
+`42f18c627cbd198affd001c4f8a1dc13d8695e74` and
+`a0a09f9bf31a30d661e42d0ed1aabcb6d5f53eef`. On a deploy card
+"superseded" is `ahead: true`, whatever the check says. Only the
+current result of each check counts, so a re-run replaces the earlier
+attempt.
+
+Forge cost: commit links are read only on cards that are not closed,
+through the source's existing budget. With the budget spent the probe
+reports at most `unknown` or the last complete observation with its
+time. A `required_check` or `ahead` never comes from a partial read. A
+branch read that feeds `report.observed` or a commit link's
+`branch_head_sha` reads no checks, and `GET …/probe?branch=` does not
+either; a branch's head is checked with `?commit=`. Reason: every
+reported card reads its branch each round, and those cards never show
+the branch's check. A report costs what it cost before; commit links
+share one cached default-branch read per project and one read per
+linked commit.
+
+A `required_check` that first appears, after the rollout or when a
+project first names its check, or that only changes its name, wakes
+nobody: nothing changed on the forge, and otherwise every holder of an
+open reported card would be woken once.
+
+**Reason:** a deploy is a moment, not a lifecycle, and it already lives
+on an ordinary card. A link reuses everything a forge link has: the
+repository rule, observation on open cards only, `link_observed`. The
+name of the check that gates a deploy is a project's convention, not the
+hub's. Folding `cancelled` into `failure`, as the `checks` summary
+does, would make a run cancelled by hand look red. Waking
+`trust:admin` on `ahead` would wake half the team for what the one
+person deploying has to act on. Stability comes first: the probe must
+not report something false when the forge stops answering.
+
+**Rejected alternatives:**
+- A new card kind `deploy`: a new lifecycle and new rules for one
+  observation.
+- A deploy field on the release card (§6.7): not every deploy is a
+  release, and a release's deploy can need several commits over time.
+- A built-in `ci-ok`: only Maity's own CI calls it that.
+- Counting `cancelled` as `failure` (as `checks` does): a run
+  cancelled by hand would look red.
+- Reading "superseded" from `cancelled`: GitHub creates no check run
+  for a run cancelled while it waited, so the case never shows as
+  `cancelled`, and a timeout or a manual cancel on the branch's head
+  supersedes nothing; `ahead` is what says it.
+- `required_check` on every branch read: every reported card would pay
+  the check reads of its branch each round for a field no card shows.
+- Counting every attempt of a re-run (the worst of all): an old
+  `failure` would hold a later `success` red.
+- Resetting `required_check` to `null` on a `PATCH` that leaves it
+  out, like `default_branch` falls back to `main`: a client that
+  predates the field would erase the name with every repository edit.
+- Waking `trust:admin` on `ahead: true`: too many woken for one person's
+  decision.
+- Keeping the parts of a read that succeeded when the budget ran out
+  partway: an `ahead: false` from a stale branch read is false, not
+  unknown.
+
 ## The Why view's Keep the Why views read whole exports through the hub: the project's family and the repositories it names, one hop, no other fetch path
 
 **Id:** 14288e6a-141e-4f93-8200-b879252c8ccd

@@ -1330,14 +1330,22 @@ window.Maity = window.Maity || {};
   }
   // A security item is marked read only from a session in good standing that
   // existed before what it reports, never from the reported session (§18.3).
-  function mayMarkSecurity(x) {
+  // Why this session may not mark a security item read, or null (§18.3):
+  // only a sign-in and an address change are guarded, `not_earlier` before
+  // `not_in_good_standing`, as the hub checks them.
+  function securityRefusal(x) {
     const cur = currentSession();
-    if (!cur || !cur.good_standing) return false;
-    if (x.target && x.target.type === "session") {
-      const reported = fixtures()["sessions.json"].items.find((s) => s.id === x.target.id);
-      return !!reported && reported.id !== cur.id && Date.parse(cur.created_at) < Date.parse(reported.created_at);
+    const t0 = x.target || {};
+    const address = t0.type === "settings" && t0.id === "notifications";
+    if (t0.type !== "session" && !address) return null;
+    let since = Date.parse(x.at);
+    if (t0.type === "session") {
+      if (cur && t0.id === cur.id) return "not_earlier";
+      const reported = fixtures()["sessions.json"].items.find((s) => s.id === t0.id);
+      if (reported) since = Date.parse(reported.created_at);
     }
-    return Date.parse(cur.created_at) < Date.parse(x.at);
+    if (!cur || !(Date.parse(cur.created_at) < since)) return "not_earlier";
+    return cur.good_standing ? null : "not_in_good_standing";
   }
 
   // A position's two parts, and whether an item lies past one (§18.2).
@@ -1699,6 +1707,22 @@ window.Maity = window.Maity || {};
       endSession(s, s.id === fixtures()["sessions.json"].current ? "logout" : "revoked");
       return { ended: true };
     }],
+    // §2.6.5: "This was me", checked in the hub's order; it marks the
+    // sign-in's alert read as well.
+    ["POST", /^\/auth\/sessions\/([^/]+)\/confirm$/, (m, body, path) => {
+      const all = fixtures()["sessions.json"];
+      const s = all.items.find((x) => x.id === m[1]);
+      if (!s || s.ended_at) fail(404, "not_found", "no such session", path);
+      const cur = currentSession();
+      const refuse = (reason) => fail(403, "forbidden", "this session may not confirm that one", path, { reason });
+      if (s.id === cur.id || !(Date.parse(cur.created_at) < Date.parse(s.created_at))) refuse("not_earlier");
+      if (!cur.good_standing) refuse("not_in_good_standing");
+      if (!s.good_standing) Object.assign(s, { good_standing: true, confirmed_at: nowIso(), confirmed_by: cur.id });
+      fixtures()["notifications.json"].items.forEach((x) => {
+        if (x.target && x.target.type === "session" && x.target.id === s.id) x.read = true;
+      });
+      return Object.assign({ current: false }, s);
+    }],
     ["POST", /^\/auth\/sessions\/end-others$/, (m, body, path) => {
       // From a session not in good standing only the others not in good
       // standing, and while it is under an hour old none older than itself.
@@ -1804,25 +1828,27 @@ window.Maity = window.Maity || {};
     ["POST", /^\/me\/notifications\/read$/, (m, body, path) => {
       const n = fixtures()["notifications.json"];
       if (("ids" in body) === ("up_to" in body)) fail(400, "invalid", "ids or up_to", path, { fields: { body: "invalid" } });
+      if ("include_security" in body && ("ids" in body || typeof body.include_security !== "boolean")) {
+        fail(400, "invalid", "the request does not validate", path, { fields: { include_security: "invalid" } });
+      }
       // A kind outside the four, one removed earlier included, is unknown (§18.3).
       if ("kind" in body && !KINDS.includes(body.kind)) fail(400, "invalid", "the request does not validate", path, { fields: { kind: "unknown" } });
-      // up_to never reaches a security item: those only by id, from a
-      // session allowed to (§18.3); a confirmed sign-in is in good standing.
+      // up_to reaches a security item only with include_security; each one
+      // only from a session allowed to, the rest named in `skipped`. Reading
+      // one confirms nothing (§18.3).
+      const skipped = [];
       n.items.forEach((x) => {
-        if (body.ids && body.ids.includes(x.id) && x.kind === "security") {
-          if (!mayMarkSecurity(x)) return;
-          const reported = x.target && x.target.type === "session" && fixtures()["sessions.json"].items.find((s) => s.id === x.target.id);
-          if (reported) reported.good_standing = true;
-          x.read = true;
-          return;
-        }
         // An open matter is never marked by a caller (§18.3).
-        if (x.kind === "inbox" && x.open_matter) return;
-        if (body.ids ? body.ids.includes(x.id)
-          : x.kind !== "security" && !pastOf(x, body.up_to) && (!body.kind || x.kind === body.kind)
-            && (!body.project || (x.project && x.project.full_name === body.project))) x.read = true;
+        if (x.read || (x.kind === "inbox" && x.open_matter)) return;
+        const covered = body.ids ? body.ids.includes(x.id)
+          : (x.kind !== "security" || body.include_security === true) && !pastOf(x, body.up_to)
+            && (!body.kind || x.kind === body.kind) && (!body.project || (x.project && x.project.full_name === body.project));
+        if (!covered) return;
+        const why = x.kind === "security" ? securityRefusal(x) : null;
+        if (why) { skipped.push({ id: x.id, reason: why }); return; }
+        x.read = true;
       });
-      return notificationCounts();
+      return Object.assign(notificationCounts(), { skipped });
     }],
     // §18.4: the account's settings; a PATCH merges what it names.
     // §19.4: the human's preferences, their versions, the projects that read them.
@@ -3813,6 +3839,17 @@ window.Maity = window.Maity || {};
       if (entry.error) fail(entry.error.status, entry.error.code, entry.error.message, path, entry.error.fields ? { fields: entry.error.fields } : {});
       return Object.assign({ path: where, section: card.contract.section, fetched_at: nowIso() }, entry);
     }],
+    // §6.8 "The whole contract": the file `settings.contract_path` names, from
+    // fixtures/<slug>/contract.json keyed by path; an entry with `error`
+    // answers that refusal, a path without an entry not_found_on_forge.
+    ["GET", /^\/projects\/([^/]+)\/contract$/, (m, body, path) => {
+      const proj = project(m[1], path);
+      const where = (proj.settings || {}).contract_path || "docs/api.md";
+      const entry = (fixtures()[m[1] + "/contract.json"] || {})[where];
+      if (!entry) fail(404, "not_found", "the contract file is not there", path, { fields: { "settings.contract_path": "not_found_on_forge" } });
+      if (entry.error) fail(entry.error.status, entry.error.code, entry.error.message, path, entry.error.fields ? { fields: entry.error.fields } : {});
+      return Object.assign({ path: where, fetched_at: nowIso() }, entry);
+    }],
     // §6.4: a new card. assigned_to needs tasks:admin; plan and review need a reason.
     ["POST", /^\/projects\/([^/]+)\/tasks$/, (m, body, path) => {
       const proj = project(m[1], path);
@@ -4318,7 +4355,7 @@ window.Maity = window.Maity || {};
         id, join_url: url, code: "FIXT-URE0-0000", paste_lines: {
           join: "maity join " + url + " --code FIXT-URE0-0000",
           posix: "export PATH=\"$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}\" && { command -v maity >/dev/null 2>&1 || { pipx install maity; }; } && maity join " + url + " --code FIXT-URE0-0000",
-          windows: "$env:Path += \";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR } else { \"$HOME\\.local\\bin\" })\"; if (-not (Get-Command maity -ErrorAction SilentlyContinue)) { pipx install maity }; if (Get-Command maity -ErrorAction SilentlyContinue) { maity join " + url + " --code FIXT-URE0-0000 }",
+          windows: "$OutputEncoding = [Console]::InputEncoding = [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; $env:Path += \";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR } else { \"$HOME\\.local\\bin\" })\"; if (-not (Get-Command maity -ErrorAction SilentlyContinue)) { if (Get-Command pipx -ErrorAction SilentlyContinue) { pipx install maity } else { python -m pip install --user pipx; python -m pipx install maity } }; if (Get-Command maity -ErrorAction SilentlyContinue) { maity join " + url + " --code FIXT-URE0-0000 }",
         },
         agent_id: agentId, project: fullOf(m[1]), expires_at: expires,
       };
