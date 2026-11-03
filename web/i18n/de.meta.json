@@ -2176,8 +2176,8 @@
     "text": "7d1bf4141ccc5ab1"
   },
   "cardpanel.notes.edit.conflict_removed": {
-    "en": "1bca3c8bfd9a68d7",
-    "text": "4f508c169c290ca1"
+    "en": "2b0b0c5372c5fffa",
+    "text": "1e9795a9475a16f0"
   },
   "cardpanel.notes.edit.field": {
     "en": "8399952d32486b55",
@@ -2187,9 +2187,9 @@
     "en": "e511e3013311068b",
     "text": "95ae7347d1e2f256"
   },
-  "cardpanel.notes.edit.label": {
-    "en": "f3e2eae8127990db",
-    "text": "a625a75d9f5f8bf1"
+  "cardpanel.notes.edit.label_of": {
+    "en": "74df97e9f8116256",
+    "text": "d9bfaf4885aec351"
   },
   "cardpanel.notes.edit.not_saved": {
     "en": "ae6ac2366f27b54c",
@@ -2279,9 +2279,9 @@
     "en": "3f9a5f41ede9b7a3",
     "text": "6f33dba2ce8e8268"
   },
-  "cardpanel.notes.remove.label": {
-    "en": "b4e1a24685c8066e",
-    "text": "64440111f95b031f"
+  "cardpanel.notes.remove.label_of": {
+    "en": "85ee23a6985e10e2",
+    "text": "90680fae47b12db5"
   },
   "cardpanel.notes.remove.reason_needed": {
     "en": "dab0775f0a6e599c",
@@ -4080,12 +4080,12 @@
     "text": "8423890b6e225e6a"
   },
   "forge.via.instance": {
-    "en": "af99f024da99184a",
-    "text": "a11683ac824a5de1"
+    "en": "213d4401f693e8f9",
+    "text": "08d5b38023ea2587"
   },
   "forge.via.none": {
-    "en": "c8b1997e9d1dc468",
-    "text": "eab5be6825444b11"
+    "en": "f3c21cbf73952d4b",
+    "text": "6aa1a808246a55a6"
   },
   "forge.via.owner_token": {
     "en": "3f7cfca281e0d495",
@@ -8419,6 +8419,10 @@
     "en": "b2eab682cd738bf6",
     "text": "0a4781ab225b3274"
   },
+  "mail.test.recipient_hint": {
+    "en": "2c4450c19633aa3d",
+    "text": "4873501dd649f769"
+  },
   "mail.test.send": {
     "en": "ca5bc8a2fe244917",
     "text": "f54aaee5c0eedfc4"
@@ -12664,8 +12668,8 @@
     "text": "de979073bfb8a03b"
   },
   "public_profile.presence.hint": {
-    "en": "d7d86055c25b4c25",
-    "text": "b283800d5fe231fe"
+    "en": "e340a78a7fa20d30",
+    "text": "14a1417966424444"
   },
   "public_profile.refused": {
     "en": "eefc90bc95b7b6cc",
@@ -17042,6 +17046,14 @@
   "visitor.holder.member": {
     "en": "5327c7984ea05cf1",
     "text": "49d26e5b368b1d6e"
+  },
+  "visitor.note.edited": {
+    "en": "a7df407dc4bcc8cc",
+    "text": "862fce3cd345deb6"
+  },
+  "visitor.note.edited_reason": {
+    "en": "f49216d0539c20f9",
+    "text": "054f5e39af3d5443"
   },
   "visitor.others": {
     "en": "086354b8dd869a39",

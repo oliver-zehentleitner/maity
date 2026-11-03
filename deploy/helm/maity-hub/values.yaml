@@ -52,6 +52,12 @@ config:
   # Serve the dashboard from the image's web/ (MAITY_WEB_DIR=/app/web). Off:
   # API only.
   dashboard: true
+  # MAITY_WORKERS: serving processes per pod, 1 to 64. The default 1 is the
+  # single-process hub. More than 1 only with PostgreSQL and at least two pool
+  # connections per process (the hub refuses to start otherwise); the pool
+  # (MAITY_DB_POOL_SIZE) is split among them. resources must grow with them:
+  # about 150Mi of memory and a share of CPU per process.
+  workers: 1
 
 database:
   # Required. The name of a Secret in the release namespace whose `key` holds
@@ -72,6 +78,11 @@ forge:
     # then the token is read and unused.
     existingSecret: ""
     key: github-token
+    # The operator's own namespaces, comma separated (MAITY_FORGE_INSTANCE_NAMESPACES): the
+    # token reads only for projects there, and only public repositories. Empty: it serves no
+    # project, and every project is read through its owner's App or token. A listed name
+    # nobody has is held for the operator (docs/api.md §11.4).
+    instanceNamespaces: ""
 
 attachments:
   # The local store for the files of messages (docs/api.md §8.7). The name of an existing PersistentVolumeClaim in the release namespace; the

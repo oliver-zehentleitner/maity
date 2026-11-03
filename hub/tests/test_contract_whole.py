@@ -60,7 +60,9 @@ class Forge(FakeGitHub):
 
 @pytest.fixture
 def settings(settings: Settings) -> Settings:
-    return replace(settings, forge_github_token=TOKEN)
+    return replace(
+        settings, forge_github_token=TOKEN, forge_instance_namespaces=frozenset({"maintainer"})
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -158,6 +160,13 @@ def test_a_toc_keeps_at_most_2000_headings_and_300_characters_a_title() -> None:
     entries = contract_text.toc(long + "".join(f"## {n} H\n" for n in range(2100)))
     assert len(entries) == contract_text.TOC_MAX
     assert len(entries[0]["title"]) == contract_text.TITLE_MAX
+
+
+def test_a_number_that_occurs_again_past_the_cut_is_not_unique() -> None:
+    headings = ["## 1 First\n"] + [f"## {n} H\n" for n in range(2, 2002)] + ["## 1 Again\n"]
+    entries = contract_text.toc("".join(headings))
+    assert len(entries) == contract_text.TOC_MAX
+    assert entries[0]["anchor"] == "h-0"  # the second `1` is past 2000, and still counts
 
 
 def test_the_etag_answers_304_and_follows_the_bytes_not_the_commit(
@@ -259,6 +268,16 @@ def test_a_segment_a_complete_tree_does_not_list_is_not_found(
 def test_names_compare_byte_for_byte(owner: flow.Human, github: Forge) -> None:
     tree(github, "", {"Docs": "040000"})
     assert error(owner.get(URL))[2] == {"settings.contract_path": "not_found_on_forge"}
+
+
+def test_a_tree_the_forge_did_not_answer_is_asked_again(owner: flow.Human, github: Forge) -> None:
+    key = f"/repos/acme/maity/git/trees/{urllib.parse.quote(f'{SHA}:docs', safe='')}"
+    kept = github.answers.pop(key)
+    assert error(owner.get(URL))[2] == {"settings.contract_path": "not_found_on_forge"}
+    github.answers[key] = kept
+    with contract_text._lock:
+        contract_text._reads.clear()  # the kept read gone; no tree kept for the 404
+    assert owner.get(URL).status_code == 200
 
 
 def test_a_commits_trees_are_read_once(owner: flow.Human, github: Forge) -> None:

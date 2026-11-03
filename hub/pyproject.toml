@@ -48,6 +48,7 @@ packages = ["src/maity_hub"]
 "../web/css" = "maity_hub/web/css"
 "../web/js" = "maity_hub/web/js"
 "../web/brand" = "maity_hub/web/brand"
+"../web/vendor" = "maity_hub/web/vendor"
 
 [tool.black]
 line-length = 100

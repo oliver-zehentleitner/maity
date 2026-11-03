@@ -10,6 +10,7 @@ database:
 forge:
   github:
     existingSecret: maity-hub-secrets
+    instanceNamespaces: maity-org
 attachments:
   existingClaim: maity-attachments
   mountPath: /data/attachments
