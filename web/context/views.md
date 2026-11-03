@@ -4411,7 +4411,7 @@ view registers `ctx.followRoute`, and the pane is drawn into a detached
 holder and put in place once it is ready. Meanwhile the list already
 marks the new chat and the pane being left stands dimmed and inert. Direct chats take
 their unread count, newest message and one's own participant entry from the list as last read; what
-came since is the forward read's, and a chat left before that read is not marked read by it. The list is read again after the pane
+came since is the forward read's, and a chat left before that read starts is not marked read by it. The list is read again after the pane
 is drawn, and nothing waits for it. A project or chat not in the list as last read,
 or a failed read, still draws the page anew, which reads it or says what is wrong.
 A chat's timers and listeners are the pane's own, ended when it is left.

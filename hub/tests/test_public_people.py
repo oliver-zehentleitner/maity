@@ -127,13 +127,14 @@ def test_a_patch_that_changes_nothing_is_refused_and_a_null_switch_too(
     who = flow.human(make_client, migrated)
     assert who.patch("/me", {}).status_code == 400
     assert who.patch("/me", {"public_profile": None}).status_code == 400
+    assert who.patch("/me", {"public_presence": None}).status_code == 400
 
 
 def test_an_agent_sets_neither_field(make_client: ClientFactory, migrated: Engine) -> None:
     owner = flow.human(make_client, migrated)
     flow.project(owner)
     bot = flow.agent(make_client, owner, role="admin")
-    for body in ({"public_profile": True}, {"public_bio": "hello"}):
+    for body in ({"public_profile": True}, {"public_presence": False}, {"public_bio": "hello"}):
         refused = bot.patch("/me", body)
         assert refused.status_code == 403, refused.text
         assert refused.json()["error"]["details"]["reason"] == "humans_only"

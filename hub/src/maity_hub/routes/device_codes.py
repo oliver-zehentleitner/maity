@@ -23,6 +23,7 @@ from maity_hub import (
     API_VERSION,
     clock,
     longpoll,
+    maintenance,
     moderation,
     paths,
     registration,
@@ -375,9 +376,11 @@ def methods(request: Request) -> JSONResponse:
             "password": True,
             "device_code": device_code,
             "email_link": email_link,
-            # An allowlist with both lists empty admits nobody: no way in is shown (§2.7).
+            # An allowlist with both lists empty admits nobody: no way in is shown (§2.7);
+            # nor while a maintenance window runs, which refuses registration (§16.12).
             "registration": resolved.effective_mode in ("allowlist", "open")
-            and "allowlist" not in resolved.missing,
+            and "allowlist" not in resolved.missing
+            and not maintenance.running_now(engine_of(request)),
             "terms": terms if isinstance(terms, dict) else None,
         }
     )

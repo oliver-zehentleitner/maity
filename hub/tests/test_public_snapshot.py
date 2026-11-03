@@ -194,6 +194,72 @@ def test_an_away_or_paused_member_is_not_counted_online(world: World, hub: Any) 
     assert snapshot(world)["online"]["humans"] == before - 1
 
 
+def online_section(world: World) -> str:
+    text = world.anyone.get(BASE).text
+    return text[text.index("<h2>Online</h2>") :]
+
+
+def test_with_public_presence_off_a_person_is_neither_named_nor_counted(
+    world: World, hub: Any
+) -> None:
+    seen(world, world.anna_member, clock.now())
+    worker = public_snapshot.Worker(world.migrated, hub)
+    worker.run_once()
+    before = snapshot(world)["online"]
+    assert any(p["handle"] == "anna" for p in before["named"])
+    assert "(anna)" in online_section(world)
+    switched = world.anna.patch("/me", {"public_presence": False})
+    assert switched.status_code == 200, switched.text
+    assert switched.json()["member"]["public_presence"] is False
+    up = snapshot(world)["online"]  # at once, without the worker's run
+    assert all(p["handle"] != "anna" for p in up["named"])
+    assert up["humans"] == before["humans"] - 1  # a count beside the names would point at them
+    assert "(anna)" not in online_section(world)
+    worker.run_once()
+    assert all(p["handle"] != "anna" for p in snapshot(world)["online"]["named"])
+    assert world.anna.patch("/me", {"public_presence": True}).status_code == 200
+    worker.run_once()
+    assert any(p["handle"] == "anna" for p in snapshot(world)["online"]["named"])
+
+
+def test_a_person_under_a_hold_is_neither_named_nor_counted_online(world: World, hub: Any) -> None:
+    seen(world, world.anna_member, clock.now())
+    worker = public_snapshot.Worker(world.migrated, hub)
+    worker.run_once()
+    before = snapshot(world)["online"]["humans"]
+    made = report(world.owner, {"type": "profile", "id": world.anna.id}, "spam")
+    assert made.status_code == 201, made.text
+    path = f"/admin/reports/{made.json()['id']}/resolve"
+    assert world.owner.post(path, {"action": "hide"}).status_code == 200
+    worker.run_once()
+    up = snapshot(world)["online"]
+    assert all(p["handle"] != "anna" for p in up["named"])
+    assert up["humans"] == before - 1
+    assert world.owner.post(path, {"action": "dismiss"}).status_code == 200
+    worker.run_once()
+    assert snapshot(world)["online"]["humans"] == before
+
+
+def test_public_presence_off_takes_the_name_off_at_once_also_under_interval(
+    world: World, hub: Any
+) -> None:
+    seen(world, world.anna_member, clock.now())
+    public_snapshot.Worker(world.migrated, hub).run_once()
+    public_pages.configure(replace(hub, public_pages_render="interval"))
+    assert world.anna.patch("/me", {"public_presence": False}).status_code == 200
+    assert all(p["handle"] != "anna" for p in snapshot(world)["online"]["named"])
+
+
+def test_public_presence_never_covers_the_person_s_agents(world: World, hub: Any) -> None:
+    bot = world.bot.get("/me").json()["member"]
+    resumed = world.bot.resume()  # a live session, called just now: online (§5.3)
+    assert resumed.status_code == 200, resumed.text
+    world.owner.patch("/me", {"public_presence": False})
+    public_snapshot.Worker(world.migrated, hub).run_once()
+    named = [p["handle"] for p in snapshot(world)["online"]["named"]]
+    assert bot["handle"] in named
+
+
 def test_a_merge_url_that_is_not_https_is_left_out(world: World) -> None:
     item(world, {**merge("a merge"), "url": "http://github.com/o/r/pull/1"})
     assert [e["url"] for e in snapshot(world)["ticker"]] == [None]

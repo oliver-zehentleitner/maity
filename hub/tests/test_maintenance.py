@@ -3,6 +3,7 @@ its exceptions, the broadcast and each owner's choice, and the deadlines that mo
 
 from __future__ import annotations
 
+import time
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -13,10 +14,13 @@ from sqlalchemy import Engine, insert, select, update
 
 from maity_hub import clock, maintenance
 from maity_hub import tables as t
+from maity_hub.config import Settings
 from maity_hub.notifications.preferences import HELD_FOR
 from tests import factory, flow
 from tests.conftest import ClientFactory
+from tests.statements import count_statements
 from tests.test_landing import HERO
+from tests.test_registration import SIGNING
 
 START = datetime(2026, 11, 2, 12, 0, tzinfo=UTC)
 FROM = START + timedelta(hours=1)
@@ -243,6 +247,50 @@ def test_a_window_does_not_refuse_once_it_is_over_inside_the_cache(
     assert admin.get("/projects").status_code == 503
     now.set(UNTIL + timedelta(seconds=1))  # the cached read is a moment old
     assert admin.get("/projects").status_code == 200
+
+
+def test_a_replica_reads_a_window_set_elsewhere_once_its_cache_is_old(
+    admin: flow.Human, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The cache holds for `CACHE_SECONDS` on the cache's own clock, then the window is read
+    again: a window another replica set (no `forget` here) reaches this one."""
+    assert admin.get("/maintenance").json()["window"] is None
+    with migrated.begin() as conn:  # as another replica would
+        conn.execute(
+            insert(t.maintenance_window).values(
+                id="mnt-elsewhere",
+                starts_at=FROM,
+                ends_at=UNTIL,
+                text="elsewhere",
+                created_by=admin.id,
+                created_at=START,
+                updated_by=admin.id,
+                updated_at=START,
+            )
+        )
+    assert maintenance.window_now(migrated) is None  # cached
+    base = maintenance.monotonic()
+    monkeypatch.setattr(maintenance, "monotonic", lambda: base + maintenance.CACHE_SECONDS + 1)
+    found = maintenance.window_now(migrated)
+    assert found is not None and found["text"] == "elsewhere"
+
+
+def test_a_slow_runner_does_not_change_what_a_request_costs(
+    admin: flow.Human, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """tsk-aaprca1rs4ny: real time (`time.monotonic`) moving 6 s between two measurements
+    (a slow CI runner) must not add the window's read to the second one."""
+    flow.project(admin, "maity")
+
+    def call() -> None:
+        assert admin.get("/projects").status_code == 200
+
+    call()
+    few = count_statements(migrated, call)
+    wall = time.monotonic() + 6
+    monkeypatch.setattr(time, "monotonic", lambda: wall)
+    many = count_statements(migrated, call)
+    assert many == few, (few, many)
 
 
 # --- the broadcast and the owner's choice -----------------------------------------------
@@ -817,6 +865,34 @@ def test_a_stored_page_s_tag_follows_the_window(
     after = client.get(PATH + "?as=public", headers={"If-None-Match": again.headers["etag"]})
     assert after.status_code == 200 and "maintenance-banner" not in after.text
     assert after.headers["etag"] == plain.headers["etag"]
+
+
+def test_the_sign_in_page_offers_no_registration_while_a_window_runs(
+    make_client: ClientFactory, admin: flow.Human, now: Clock
+) -> None:
+    """Registration is refused in a running window (§16.12), so `GET /auth/methods`, which
+    stays open, does not offer a way in that ends in a 503 (§2.7)."""
+    env = Settings.from_env(
+        {
+            "MAITY_DATABASE_URL": "sqlite://",
+            "MAITY_REGISTRATION": "open",
+            "MAITY_MAIL_SIGNING_KEY": SIGNING,
+            "MAITY_SMTP_HOST": "smtp.example.com",
+            "MAITY_SMTP_FROM": "hub@example.com",
+        }
+    )
+    visitor = make_client(mail=env.mail, registration=env.registration)
+    assert visitor.get("/api/v1/auth/methods").json()["registration"] is True
+    put(admin)
+    maintenance.forget()
+    assert visitor.get("/api/v1/auth/methods").json()["registration"] is True  # upcoming
+    running(now)
+    answer = visitor.get("/api/v1/auth/methods")
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["registration"] is False
+    assert visitor.get("/api/v1/auth/pages/sign_up").status_code == 503
+    now.set(UNTIL + timedelta(seconds=1))  # over: the way in is offered again
+    assert visitor.get("/api/v1/auth/methods").json()["registration"] is True
 
 
 def test_the_explore_page_carries_the_banner_of_an_upcoming_window(

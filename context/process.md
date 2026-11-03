@@ -197,6 +197,35 @@ run names.
 - Cancelling runs on main as well: each merge's own result is the
   record a deploy is decided on.
 
+## A change to the contract alone runs a light `hub-contract` part, not the database jobs
+
+**Id:** 5b0f7a42-3c1e-4d68-9a15-e2c7d4f1b903
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's request of 2026-11-02 (review lead's finding that #1235, a pull request changing only `docs/api.md`, left main red with 2 failed tests); `.github/workflows/ci.yml`
+**Revisit when:** a test opens `docs/api.md` in a way the grep does not find, or the gap below is closed, or the hub's database jobs get fast enough to take the contract path too
+
+Three hub test files (`test_contract_routes.py`, `test_guide.py`, `test_paths.py`) read `docs/api.md`, but the `hub` part of the `changes` job
+did not list it, so a pull request that changed only the contract got a green `ci-ok` and main went red after the merge. A new
+part `contract` (`docs/api.md` and `hub/*`) starts the job `hub-contract`: `make install` and every test file that builds
+the path `"docs" / "api.md"` (found by `grep` in the job, not listed; today `test_contract_routes`, `test_guide` and
+`test_paths`) on SQLite, a few minutes. It is in `ci-ok`. A change under `hub/` starts it too, beside the hub jobs that run the same files: it answers in a few minutes, while the database
+jobs take about an hour, and the coordinator asked for the filter `contract:docs/api.md` and `contract:hub/*`; a push to main and a change
+to the workflow start it like every other part.
+
+**Known gap (review of 2026-11-02):** hub tests also read files outside `hub/` and `docs/` (`web/tools/hub-shapes.json`,
+`web/tools/site-fixture.json`, `deploy/Dockerfile`, `cli/src/maity/__init__.py`, `README.md`); a pull request that changes only
+one of them starts neither the hub jobs nor this one. Not solved here; its own task.
+
+**Rejected alternatives:**
+- `docs/api.md` in the `hub` part: every contract pull request would run the PostgreSQL and SQLite suites, about an
+  hour, for a few files that need neither a database server nor the rest of the suite.
+- A fixed list of the test files: the first version listed two and missed `test_guide.py`, found in review; the job now
+  selects them by the path they build.
+- Moving the tests to the join-page gate or a script outside pytest: the tests stay where the hub's other tests are, and
+  CI only chooses when to run them.
+
 ## Every agent uses Keep the Why: implementers record each decision in the same pull request, reviewers gate on it
 
 **Id:** e534e9f3-a419-4a09-8054-117150592490

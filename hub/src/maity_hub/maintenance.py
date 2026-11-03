@@ -13,7 +13,7 @@ import hashlib
 import math
 import threading
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import datetime, timedelta
 from html import escape
 from typing import Any
@@ -29,6 +29,14 @@ MARGIN = timedelta(minutes=1)  # deadlines this soon after `until` move too (§1
 AGENTS_MAX = 200
 MODES = ("accept_all", "refuse_all", "accept_only", "refuse_for")
 CACHE_SECONDS = 5.0  # how long one replica trusts its last read of the window
+
+
+def _process_monotonic() -> float:
+    return time.monotonic()
+
+
+# The cache's clock; tests hold it still, so a slow runner does not re-read the window mid-test.
+monotonic: Callable[[], float] = _process_monotonic
 
 _lock = threading.Lock()
 _cached: tuple[float, dict[str, Any] | None] | None = None
@@ -80,7 +88,7 @@ def window_now(engine: Engine) -> dict[str, Any] | None:
     middleware asks on every request. `forget` drops it after a change on this replica."""
     global _cached
     with _lock:
-        if _cached is not None and time.monotonic() - _cached[0] < CACHE_SECONDS:
+        if _cached is not None and monotonic() - _cached[0] < CACHE_SECONDS:
             found = _cached[1]
             # The clock may pass `from` inside the cache's few seconds; past `until` the
             # window is read again, so the deadlines are settled before a sweep acts on them.
@@ -89,7 +97,7 @@ def window_now(engine: Engine) -> dict[str, Any] | None:
     with engine.begin() as conn:
         found = view(current(conn))
     with _lock:
-        _cached = (time.monotonic(), found)
+        _cached = (monotonic(), found)
     return found
 
 

@@ -1,6 +1,6 @@
 ### Changed
 
-- hub: during a running maintenance window, `GET /auth/methods` and `GET /auth/pages/sign_in` answer, so the sign-in page draws as usual for the instance admin (§16.12).
+- hub: during a running maintenance window, `GET /auth/methods` and `GET /auth/pages/sign_in` answer, so the sign-in page draws as usual for the instance admin (§16.12); `registration` is `false` then, since registration is refused during the window (§2.7).
 
 ### Added
 

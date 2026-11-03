@@ -65,6 +65,37 @@ CI. Emulating the DOM in Python — no standard-library DOM, and a second
 copy of the page's behaviour to keep in step. Keeping the test outside
 the repository — nobody else could run it, and CI would not.
 
+## The smoke test runs in CI's locale and time zone, whatever the machine's
+
+**Id:** 386c533d-9cfe-4ce9-a2aa-3fa8ce61bc2c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-c3qrypstpk5h, a matrix of local runs on main ed9e23ff, 2026-11-03
+**Revisit when:** a case needs the machine's own locale or time zone, or CI's environment changes
+**See:** stack.md#the-behaviour-smoke-test-runs-on-a-bare-node-binary-in-ci-make-check-stays-on-python-alone — ad2319c8-9158-483e-b180-ee88691c6b87 — as of 2026-11-03
+
+`tools/smoke.js` starts itself once more with `LANG` and `LC_ALL` set to
+`en_US.UTF-8`, `LANGUAGE` to `en_US` and `TZ` to `UTC` when it was started
+in any other environment, so a local run formats as CI does. A case about
+another locale sets `M.i18n.locale` itself, as before.
+
+**Reason:** Intl takes its default locale and time zone from the
+environment when node starts, and the page formats with them wherever a
+reader has chosen none. On a machine with `LANG=de_AT.UTF-8` the swarm
+step read `2,4` for CI's `2.4`, and the campaign table `12 345`, so main
+was red locally and green in CI, which misled every reviewer. The clock
+was not the cause: with the time faked to just before midnight in UTC,
+Vienna, Los Angeles and Kiritimati, every run was green.
+
+**Rejected alternative:** fixing each expectation to the machine's locale
+(as #1225 does for one line) — it holds only for the lines someone has
+already seen fail, and every new number or date check has to remember it.
+Setting the environment in the Makefile — `node tools/smoke.js .` run by
+hand, as reviewers do, would still use the machine's. Pinning
+`M.i18n.locale` in the shim — it would not cover `toLocaleDateString`
+with an undefined locale, nor the time zone the page reads from Intl.
+
 ## A real-browser end-to-end test runs in CI with Playwright for Python, next to the smoke test
 
 **Id:** fb1daf22-fe54-4073-b89e-9e099a5a389e
