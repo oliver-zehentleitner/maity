@@ -1316,6 +1316,10 @@ window.MAITY_I18N["en"] = {
   "header.fixtures.title": "Data from web/fixtures/, not from the hub. Changes are kept in this tab only.",
   "header.instance_admin": "Instance administration",
   "header.invitations": "Invitations",
+  "header.mentions.unread": {
+    "one": "{count} unread mention",
+    "other": "{count} unread mentions"
+  },
   "header.new": "New project",
   "header.new_project": "+ New project",
   "header.observe": "Read along",
@@ -4759,6 +4763,8 @@ window.MAITY_I18N["en"] = {
   "waiting.read_failed": "Could not read notifications: ",
   "waiting.removed": "Removed",
   "waiting.title": "Notifications",
+  "waiting.title.in": "Notifications in {project}",
+  "waiting.title.kind_in": "{kind} in {project}",
   "waiting.unread": "(unread)",
   "waiting.untitled": "Notification",
   "watch.changed": "What waits for you changed ({count} open).",

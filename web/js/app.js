@@ -1322,6 +1322,20 @@ window.Maity = window.Maity || {};
     return n ? h("span", { class: "count", "aria-label": route === "inbox" ? M.t("header.count.open", { count: n }) : M.t("header.count.unread", { count: n }) }, String(n)) : null;
   }
 
+  // The project's mentions have no tab (the inbox is the requests alone),
+  // yet the pill counts them (§18.2): while some are unread, a link beside
+  // the tabs leads to them on /notifications, filtered to this project
+  // (tsk-xb7bf1x0h3cy). Filled again with every count read.
+  const mentionsHref = (fullName) => "/notifications?kind=mention&project=" + encodeURIComponent(fullName);
+  function fillMentionNote(ctx, box) {
+    clear(box);
+    const n = M.notify.state.counts
+      ? M.notify.projectCount(ctx.projects.find((p) => p.full_name === ctx.slug) || { full_name: ctx.slug }).mention : 0;
+    box.hidden = !n;
+    if (n) append(box, h("a", { href: mentionsHref(ctx.slug) }, M.t("header.mentions.unread", { count: n })));
+    return box;
+  }
+
   // All projects has two pages (the maintainer, tsk-gw59z3w3fenf): the
   // requests across projects and every chat across them, each with what
   // the hub counts for it (§18.2).
@@ -1354,6 +1368,8 @@ window.Maity = window.Maity || {};
       });
       return;
     }
+    const note = document.getElementById("header").querySelector(".mention-note");
+    if (note) fillMentionNote(ctx, note);
     nav.querySelectorAll("a").forEach((a) => {
       // dom.h writes a route through M.route.href (a fragment in the fixture), so compare with that.
       const route = NAV.find((n) => a.getAttribute("href") === M.route.href(projectLink(ctx.slug, n.route)));
@@ -1523,7 +1539,8 @@ window.Maity = window.Maity || {};
         : ALL_PAGES.some((page) => page.scope === ctx.scope)
           ? h("nav", { class: "views", "aria-label": M.t("all.pages") },
             ALL_PAGES.filter((page) => !page.when || page.when(ctx)).map((page) => h("a", { href: page.href, "aria-current": ctx.scope === page.scope ? "page" : null }, page.label(), allCount(page))))
-          : null);
+          : null,
+      ctx.scope === "project" ? fillMentionNote(ctx, h("p", { class: "mention-note" })) : null);
     header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
     const linkRow = header.querySelector(".project-links");
     if (linkRow) scrollCue(linkRow);

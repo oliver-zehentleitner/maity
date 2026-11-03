@@ -4618,3 +4618,34 @@ would see it changed.
 
 **Known limit:** a mode changed and later set back to the default stays set; the contract has no
 reset.
+
+## A project's unread mentions are a link beside its tabs, to /notifications filtered to the project
+
+**Id:** 0906c3fe-ffe3-4baf-94c1-c093de6fee54
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-xb7bf1x0h3cy (the owner's report: the Maity pill showed 2, the Inbox and Chat tabs nothing), the plan agreed with the lead on the card, 2026-11-03; docs/api.md §18.2 (`kind`, `project`), §18.3 (`up_to` with `kind` and `project`), §18.8 "Per-project badges"
+**See:** views.md#the-inbox-is-the-requests-alone-activity-is-on-the-bell-the-chat-button-and-notifications — 2ff6afe9-ed47-4ffd-b12d-947cfb7774ca — as of 2026-11-03
+
+A project's pill counts its open requests, unread chats and unread mentions (§18.2 `by_project`),
+but only Inbox and Chat have a tab count. While the project has unread mentions, a line beside its
+tabs ("1 unread mention") links to `/notifications?kind=mention&project=<owner>/<slug>`. That page
+reads both filters from its address and asks the hub with them (§18.2). Its heading names them
+("Mentions in Maity"), a link leads back to all notifications, and Mark all read sends the same
+`kind` and `project` with `up_to` (§18.3), so it marks nothing outside the filter. The line is
+filled again with every count read, so it follows the pill.
+
+**Reason:** a count on a project should lead to what it counts in one step, and mentions have no
+place in the project: the inbox is the requests alone (see 2ff6afe9). The hub already filters
+by kind and project for reading and for marking, so the dashboard needs no new call.
+
+**Rejected alternatives:**
+- Leaving mentions out of the pill: §18.8 builds the per-project badge from `by_project`, whose
+  total counts them, and the all-projects pill would no longer add up.
+- A Mentions tab: the tabs are the project's own views; this one would only lead out to
+  `/notifications`.
+- The pill leading to the mentions when they are all it counts: the pill always opens the
+  project, and a target that changes with the count is surprising.
+- The line in the inbox only: it would show on one tab, and the inbox does not redraw when only
+  the counts change.

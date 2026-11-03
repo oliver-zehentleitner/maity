@@ -228,6 +228,7 @@ main:has(> .page-loading, > .page-failed) { flex: 1; display: flex; flex-directi
 .source { color: var(--warn); border-style: dashed; }
 
 .state-note { margin: 4px 0 0; font-size: 0.85rem; color: var(--muted); }
+.mention-note { margin: 4px 0 0; font-size: 0.88rem; }
 
 /* The header's rows of links (js/app.js): not every nav, the chat list is one too. */
 nav.switcher, nav.views { display: flex; gap: 4px; overflow-x: auto; margin-top: 8px; }
