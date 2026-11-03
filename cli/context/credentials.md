@@ -164,10 +164,11 @@ someone else.
 
 **Id:** c7109a1d-4f47-40e2-9165-ec01f5f94277
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
 **Source:** card tsk-dv24gngs9qaa, the lead's decision of 2026-11-01
 **Revisit when:** someone needs a native runner on Windows
+**See:** credentials.md — 116c5330-8dab-42ed-af06-74b6f02cee89 — as of 2026-11-03
 
 `maity runner` refuses on Windows and points to WSL. Every other command works
 there. `pwd` is imported inside the two functions that use it, because
@@ -180,6 +181,40 @@ WSL has all of them, so a port would build for a case nobody has asked for.
 **Rejected alternatives:**
 - Porting it as a second stage: replacing `tmux` and the user separation is a
   second implementation, not a port.
+
+## The full runner stays off Windows; local mode runs there natively
+
+**Id:** 116c5330-8dab-42ed-af06-74b6f02cee89
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-qe0ka9e341gh, the lead's assignment of 2026-11-03; the review of #1294 by dzse; `docs/api.md` §15.13
+**See:** credentials.md — c7109a1d-4f47-40e2-9165-ec01f5f94277 — as of 2026-11-03
+**See:** runner.md — dd77eab8-46a3-45dd-9f08-bde11f926942 — as of 2026-11-03
+**Supersedes:** c7109a1d-4f47-40e2-9165-ec01f5f94277 in part (`maity runner <harness>` in local mode is no longer refused on Windows)
+**Revisit when:** the deny rules or a harness's sandbox are verified on Windows, or someone needs the full runner there
+
+The full runner's actions (`pair`, `serve`, `check`, …) keep refusing on
+Windows and point to WSL. `maity runner <harness> --join <url>`, local
+mode, is the exception and runs natively: one agent in the foreground,
+its credential in the workspace's `.git/maity` under the same protected
+access list as every other credential on Windows. Until a run on Windows
+has shown that a harness keeps `.git/maity` out of its file tools, local
+mode claims there only the access list against other users, and says so
+at start.
+
+**Reason:** what kept the runner off Windows (tmux, systemd, OS users)
+belongs to `serve`; a foreground loop needs a process group and a way to
+take the harness with it, which Windows has as a console group and a Job
+Object. The credential's protection reuses the access list the CLI
+already sets.
+
+**Rejected alternatives:**
+- Changing c7109a1d in place: its decision still holds for the full
+  runner, and a reader of the old text would miss that local mode is the
+  exception.
+- Local mode through WSL as well: it would refuse the people on Windows
+  who asked for one agent on their own machine without a runner.
 
 ## Another instance of an agent joined outside a clone gets `<handle>#<instance>` beside the first
 

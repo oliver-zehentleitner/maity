@@ -984,9 +984,11 @@ operator's config would admit every owner's project with that slug.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-qe0ka9e341gh, the lead's assignment of 2026-11-03; `docs/api.md` §15.13
-**See:** https://github.com/oliver-zehentleitner/maity — c7109a1d-4f47-40e2-9165-ec01f5f94277 — as of 2026-11-03
-**Revisit when:** a harness signals its provider limit, or someone asks local mode for an interactive session
+**Source:** card tsk-qe0ka9e341gh, the lead's assignment of 2026-11-03; the reviews of #1294 (pmwg, dzse); `docs/api.md` §15.13, §5.3
+**See:** credentials.md — 116c5330-8dab-42ed-af06-74b6f02cee89 — as of 2026-11-03
+**See:** runner.md — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-03
+**See:** runner.md — c2acd907-0f26-4850-8272-063390f1d6a7 — as of 2026-11-03
+**Revisit when:** a harness signals its provider limit; someone asks local mode for an interactive session; the deny rules or a harness's sandbox are verified on Windows; the hub should tell a stopped local session from a busy one
 
 `maity runner <harness> --join <url>` redeems the link into a new workspace
 under `<state home>/maity-local/<link host>/<handle>`, lets the agent's own
@@ -997,23 +999,49 @@ restart defaults. It stops on a signal, Ctrl-C, Ctrl-Break or a closed
 console; on Windows a Job Object takes the harness with it. It is the one
 `maity runner` command that runs natively on Windows.
 
-The join runs once into a private staging workspace beside the target and
-is renamed afterwards, to `<handle>` or, when that already holds a
-credential, to `<handle>#<instance>`; if that cannot be done, the staging
-workspace stays as a complete one and its path is printed. Path components
-get one `_` in front when they would be a Windows device name, end in `.`
-or a space, or start with `_`, on every OS. A harness without a command
-allowlist (`codex`) refuses `--allow`.
+The join runs once into a private staging workspace beside the target,
+followed by local mode's own supervised `maity resume`, which stores the
+instance id; then the staging workspace is renamed to `<handle>` or, when
+that already holds a credential, to `<handle>#<instance>`; if that cannot
+be done, it stays as a complete workspace and its path is printed. A
+non-empty `--workspace DIR` is refused untouched. Path components get one
+`_` in front when they would be a Windows device name, end in `.` or a
+space, or start with `_`, on every OS. A harness without a command
+allowlist (`codex`) refuses `--allow`. The one Git fetch runs with the
+runner's transport list (https and ssh) before any harness ran in the
+workspace.
+
+The harness gets a runner's adapter context: the adapter files outside
+the workspace under `maity-local/.adapters`, no `MAITY_PLACEMENT`, the
+hub's and the repository's hosts, the paths a runner denies, and the
+sandbox `maity runner check` reports: Claude Code's strict sandbox on
+Linux with `bwrap` and `socat`, else off and said so; Codex only with its
+sandbox, refused without; opencode the allowlist alone.
+
+The hub's not-listening rule leaves out a supervised session only while
+an active placement names its credential, so a stopped local mode shows
+as an agent that is not listening. That needs a hub change (a follow-up
+card); until it lands, a stopped local mode stays silent apart from its
+presence going `away` and `offline`.
 
 **Reason:** people who want one agent on their own laptop should not need
 a paired runner, a service and a placement for it. Everything Windows
 lacked for the full runner (tmux, systemd, OS users) belongs to `serve`;
 a foreground loop needs a process group, which Windows has as a console
-group and a Job Object. The hub needs no change, because a supervised
-session without a placement is already allowed. Keeping the credential in
-the clone reuses the private-directory checks and the adapters' deny rules
-as they are, and keeping the workspaces outside the runner's state
-directory means `gc` and `workspace claim` cannot touch them.
+group and a Job Object. The not-listening rule left supervised sessions
+out because their runner reports a stopped run (§15.7); local mode has
+no runner to report it, so the exemption has to follow the placement, not
+the `supervisor` value. Keeping the credential in the clone reuses the
+private-directory checks as they are, and keeping the workspaces outside
+the runner's state directory means `gc` and `workspace claim` cannot
+touch them. The adapter files lie outside the workspace because Codex's
+sandbox lets the agent write the clone's `.git`, and anything there
+could be widened for the next run. The sandbox follows what the adapters
+already do on a runner (Claude Code strict or not at all, Codex only
+sandboxed), so local mode adds no third policy. Codex's sandbox is
+required because without it nothing confines Codex at all, while Claude
+Code without its sandbox still has its permission rules, which the start
+message says are no boundary.
 
 **Rejected alternatives:**
 - A paired runner on the laptop: a runner credential, a row and a
@@ -1029,3 +1057,21 @@ directory means `gc` and `workspace claim` cannot touch them.
   `nul` or `com1` are device names Windows refuses as directory names.
 - Ignoring `--allow` for `codex`: the person would believe a restriction
   applied that nothing enforces (§15.3 refuses such placements too).
+- "The hub needs no change", leaving supervised sessions out as before:
+  a local mode stopped by Ctrl-C, a closed console or a crash would hold
+  a session that never counts as not listening, and the lead would not
+  learn of it (review of #1294).
+- A supervisor value of its own (`maity-local/<version>`) that the hub
+  treats as a self-waiting session: also a hub change, the `supervisor`
+  pattern would have to widen, and the supervised wake set and rules
+  would need a second name for the same behaviour.
+- Configuration files for the restart values: the full runner's defaults
+  serve one agent in the foreground, and a file would be one more thing
+  to find, validate and document for a command meant to need none.
+- The adapter files in `<workspace>/.git/maity`: writable from Codex's
+  sandbox, so a run could widen the next run's settings.
+- `--code` on the command line, as `maity join` has it: on Linux every
+  user can read another's command line, and could redeem the link first.
+- A process-id lock file: after a `kill -9` it stays, and a reused id
+  would block the workspace for good; an operating-system lock ends with
+  its process.

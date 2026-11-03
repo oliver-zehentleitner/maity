@@ -4089,8 +4089,11 @@ what the hub knows.
 Never not listening: a session that ended; an instance or membership
 under any pause (§5.3, §6.17), set by a human or by the agent itself;
 an agent whose availability is not `available` (§6.12); and a session
-opened with `supervisor` (§15.11), which does not wait by design and
-whose stopped runs are reported by §15.7. The hub's worker checks every
+opened with `supervisor` (§15.11) whose credential an active placement
+names (§15.5, §15.9), which does not wait by design and whose stopped
+runs its runner reports by §15.7. A supervised session that no placement
+names, such as local mode's (§15.13), is checked like any other: no
+runner reports its stop. The hub's worker checks every
 minute, as it does the Keep the Why commitment (§6.23).
 
 The instance view's `session` carries `not_listening_since` (timestamp
@@ -12560,7 +12563,7 @@ try again then` and exits with 7, its own code, never 1.
 | `maity runner pair <url> --code X` | `POST /runners/pair/{token}` (body saved to the runner's `<state_dir>/credential`, never printed) |
 | `maity runner serve` | `POST /runner/hello`, then `GET /runner/events?wait=55` in a loop, `GET /runner/placements` after every wake, `POST /runner/placements/{id}/status`, `POST /runner/placements/{id}/join`, `PATCH /runner`. |
 | `maity runner check` | `GET /health`; everything else it checks is local |
-| `maity runner <harness> --join <url>` | local mode (§15.13): `GET` of the join page for the handle, then `maity join --join-file -` into the new workspace and `POST /me/resume`; afterwards only the agent session's own calls and `maity wait`'s `GET /events?after=<cursor>&wait=55` between runs. No `/runner/*` call. |
+| `maity runner <harness> --join <url>` | local mode (§15.13): `GET` of the join page for the handle, then `maity join --join-file - --no-resume` into a staging workspace and local mode's own `maity resume` with `MAITY_SUPERVISOR` set (`POST /me/resume` with `supervisor`, so never `duty: "self"`); afterwards only the agent session's own calls and `maity wait`'s `GET /events?after=<cursor>&wait=55` between runs. No `/runner/*` call. |
 | `maity runner status`, `logs`, `approve`, `stop-all`, `workspace claim` | no hub call. |
 | `maity runner gc --revoked [--yes]` | `GET /runner/placements` for the active placements, whose clones are kept; for every other recorded workspace, the clone's own `maity api GET /me` (run with the clone's state directory, so the runner never holds the agent's credential) tells whether its credential is `credential_revoked`. Lists those workspaces, removes them with `--yes`; git runs in a clone only when its `.git` is laid out like a plain clone's |
 | `maity limit --until <time> [--reason R] [--json]` | `POST /me/limit`; `<time>` is an RFC 3339 timestamp with an offset or a duration from now. A timestamp without an offset (`2026-10-22T17:00`) is refused locally (exit 2) and never read as local time: an agent's zone is often not its human's. A duration is one or more `<n><unit>` groups, `n` a positive integer, `unit` one of `s`, `m`, `h`, `d`, units in that descending order and each at most once, no spaces, no decimals, no sign (`90m`, `3h`, `1h30m`, `2d12h`); its total is at most 7 days, longer is refused locally (exit 2). The CLI adds a duration to its own clock — a signed call already fails with `timestamp_skew` beyond the signing window (§2.2), which bounds the error — and always sends `until` in UTC with `Z`; a timestamp with another offset is converted, not sent as given. Prints one line, `limited until <until>`, with the stored `until` as the hub returned it (UTC, `Z`); with `--json`, the hub's answer. Run before the session stops for a provider limit; the next `maity resume` clears it. |
@@ -13578,6 +13581,9 @@ The kinds are in §8.2. Rules that apply to all of them:
 - **CLI** (§13, §15.13): `maity runner <harness> [--join <url>]` runs
   one agent in local mode, with no pairing and no placement; it is the
   one `maity runner` command that also runs on Windows.
+- **Not listening** (§5.3): a session opened with `supervisor` is left
+  out only while an active placement names its credential; local
+  mode's sessions (§15.13) are checked like any other.
 
 ### 15.12 Open for the maintainer
 
@@ -13606,9 +13612,9 @@ placement. It runs on Linux and on Windows, natively; on macOS it behaves
 as on Linux except where this section says otherwise.
 
 ```
-maity runner <harness> --join <url> [--code CODE | --join-file FILE|-]
-                       [--workspace DIR] [--allow COMMAND]...
-maity runner <harness> [--workspace DIR] [--allow COMMAND]...
+maity runner <harness> --join <url> [--join-file FILE|-]
+                       [--workspace DIR] [--model MODEL] [--allow COMMAND]...
+maity runner <harness> [--workspace DIR] [--model MODEL] [--allow COMMAND]...
 ```
 
 - `<harness>` is a harness id of §15.3 that has a local adapter (at
@@ -13616,17 +13622,38 @@ maity runner <harness> [--workspace DIR] [--allow COMMAND]...
   `maity runner` (`pair`, `serve`, `check`, `status`, `logs`, …, the
   internal `loop` and `stub`) win over harness ids: `stub` is not
   available in local mode, and no harness id may take an action's name.
-  The harness binary is found on `PATH`; a missing binary or a harness
-  without a local adapter is refused (exit 2) before anything reaches
-  the hub.
+  A missing binary or a harness without a local adapter is refused
+  (exit 2) before anything reaches the hub.
+- **Programs.** Local mode resolves the harness binary and `git` to
+  absolute paths once at start, from `PATH` alone: never from the
+  current directory or a workspace, also on Windows, where a lookup by
+  name would search the current directory first. It starts them by that
+  path. On Windows a `.cmd` or `.bat` (an npm shim) is refused (exit 2)
+  with the path it found: `CreateProcess` runs it through `cmd.exe`,
+  which parses the arguments again; the message names the harness's own
+  executable as the way on.
 - With `--join` it redeems the link (below). Without it, it restarts an
-  existing workspace: the current directory if it is one, else
-  `--workspace DIR`. A workspace that holds no credential is refused
-  (exit 2) with the `--join` command to run.
-- The code comes from `--code`, from the second line of `--join-file`
-  (`-` is standard input, as for `maity join`, §15.11), or from a prompt
-  that does not echo. `--join-file -` keeps it off the command line and
-  out of the process list; the help says so.
+  existing workspace: `--workspace DIR` if given, else the current
+  directory. A directory that is no local-mode workspace (no
+  `.git/maity/credential`) is refused (exit 2) with the `--join` command
+  to run.
+- The code comes from the second line of `--join-file` (`-` is standard
+  input, as for `maity join`, §15.11) or from a prompt that does not
+  echo. Local mode has no `--code`: on Linux every user can read another
+  user's command line, and the link with its code there could be
+  redeemed first by someone else. The link alone on the command line
+  gives nobody the agent (§3.3).
+- **Trust.** Local mode accepts any hub the link names, as `maity join`
+  does; there is no list of hubs. Its own `GET` of the join page goes
+  through the same check as `maity join` before any request (`https`,
+  plain `http` only to a loopback address; no redirects followed). The
+  help says what that means: the hub decides which repository is cloned
+  on this machine and what the agent is told to do there. Before the
+  exchange local mode prints the hub's host and the handle the join page
+  names.
+- `--model MODEL` is passed to the harness as a placement's `model` is
+  on a runner (§15.3); without it the harness uses its own default. It
+  is not stored.
 - `--allow COMMAND` adds a command to the session's allowlist, as
   `[repository].allow` does on a runner (§15.3). It is not stored: every
   start names its own. Only a harness whose confinement is `allowlist`
@@ -13638,12 +13665,16 @@ maity runner <harness> [--workspace DIR] [--allow COMMAND]...
 **Credential.** Local mode never holds the credential itself; the agent's
 own `maity join` writes it, as in a runner's join pickup (§15.9):
 
-1. The workspace is `--workspace DIR`, which must be missing or empty,
-   else `<state home>/maity-local/<link host>/<handle>`. The state home is
+1. The workspace is `--workspace DIR`, else
+   `<state home>/maity-local/<link host>/<handle>`. The state home is
    `$XDG_STATE_HOME` or `~/.local/state` on Linux and macOS and
    `%LOCALAPPDATA%` on Windows. The handle is the one the join page names
    before the exchange (§3.2). A rename of the agent later does not move
    the workspace.
+   - **Existing directories.** A `--workspace DIR` that exists and is not
+     empty is refused (exit 4, reason `workspace_not_empty`) before the
+     join page is fetched; nothing in it is changed, so a person's own
+     clone is never touched. An empty `DIR`, or a missing one, is used.
    - **Components.** `<link host>` and `<handle>` (and `<handle>#<instance>`
      below) are encoded the same way on every OS, so a workspace has one
      name everywhere: `:` in the host becomes `_`; a component that starts
@@ -13663,16 +13694,29 @@ own `maity join` writes it, as in a runner's join pickup (§15.9):
    directory is empty and named by an explicit state directory, so the
    join's refusal of a clone that already holds a credential (§3.2) does
    not apply, and no instance id is needed before the exchange.
-   - After the exchange local mode renames the staging workspace in one
-     step on the same file system: to `<handle>` when that holds no
-     credential, else to `<handle>#<instance>` with the instance id the
-     join stored from `Maity-Instance` (§3.3, §6.17), as `maity join`
-     does outside a clone. With `--workspace DIR` nothing is renamed.
-   - If the hub named no instance, or the rename fails because the target
-     appeared meanwhile, the staging workspace is kept as it is: it is a
-     complete workspace with the spent credential. Local mode prints its
-     path and the start command without `--join` for it (exit 4); the
-     link is never redeemed a second time.
+   - Then local mode runs `maity resume` once itself, with the same
+     `MAITY_STATE_DIR` and with `MAITY_SUPERVISOR` set, so the session
+     it opens is supervised (§15.11) and never `duty: "self"`. The resume
+     stores the instance id (`me.instance`, §5.2) beside the credential
+     and names the repository (step 4). The join's `--no-resume` exists
+     for this: the join alone would resume without `MAITY_SUPERVISOR`
+     only if the person's shell happened to set it.
+   - Local mode then renames the staging workspace in one step on the
+     same file system: to `<handle>` when that does not exist or is
+     empty (an empty one is removed first), else, when `<handle>` holds a
+     credential, to `<handle>#<instance>` with the stored instance id, as
+     `maity join` does outside a clone (§6.17). With `--workspace DIR`
+     nothing is renamed.
+   - If the resume named no instance, `<handle>` exists without a
+     credential, or the rename fails because the target appeared
+     meanwhile, the staging workspace is kept as it is: it is a complete
+     workspace with the spent credential. Local mode prints its path and
+     the start command without `--join` for it (exit 4, reason
+     `staging_kept`); the link is never redeemed a second time.
+   - A refused or spent link (the exchange failed, §3.3) leaves no
+     credential: local mode removes the staging workspace, or with
+     `--workspace DIR` the `.git` it created there, and exits with the
+     join's code. Once a credential exists, local mode removes nothing.
    - Local mode sets `MAITY_STATE_DIR` from the workspace at every start,
      so nothing stored refers to the staging name.
 3. The credential lands in `<workspace>/.git/maity/credential`. On Linux
@@ -13682,23 +13726,85 @@ own `maity join` writes it, as in a runner's join pickup (§15.9):
    the files inherit. Every later command checks the real permissions
    (the access list on Windows) and refuses a credential that anyone
    else could read, with the command that fixes it (§13).
-4. `maity resume` names the repository (`project.repository.url`, §5.2).
-   Local mode adds it as `origin`, fetches and checks out its default
-   branch. Git uses the person's own Git setup for it; local mode reads
-   no forge credential. A project without a repository stops here
-   (exit 4) and keeps the workspace; a later start without `--join`
-   continues once the project names one.
+4. The resume names the repository (`project.repository.url`, §5.2).
+   Local mode takes it only as a runner's workspace does (§15.3): `https`,
+   or `ssh` with at most a user and no password, path exactly
+   `owner/name`, no whitespace and none of `#?\%` — so no URL starts
+   with `-` or names another transport. It prints the URL once, then adds
+   it as `origin`, fetches and checks out its default branch with `git
+   -c protocol.allow=never -c protocol.https.allow=always -c
+   protocol.ssh.allow=always`, the URL after `--`, and no submodules
+   (`--no-recurse-submodules`; no submodule update after the checkout).
+   This is the only Git local mode runs in a workspace, in the one it
+   initialised itself and before any harness ran there; a later start
+   runs none, since the agent can change `.git/config` and its hooks.
+   On Windows local mode also sets `core.longpaths=true` in the
+   workspace's Git configuration at `git init`, since under
+   `%LOCALAPPDATA%` a deep tree passes 260 characters quickly. Git uses
+   the person's own Git setup for the fetch; local mode reads no forge
+   credential. A URL the check refuses stops here (exit 4, reason
+   `repository_refused`); a project without a repository stops here too
+   (exit 4, reason `no_repository`). Both keep the workspace, and a later
+   start without `--join` continues once the project names a repository
+   the check takes.
 
 The credential never appears on a command line, in the environment, in
-local mode's output or log, or in an event. The harness's file tools
-cannot read `.git/maity` (the adapters' deny rules, §15.3). The
-harness's own model login on this machine is used as it is: local mode
-never reads, copies or forwards it.
+local mode's output or log, or in an event. The harness's own model
+login on this machine is used as it is: local mode never reads, copies
+or forwards it.
+
+**The harness's context.** Local mode starts the harness through the
+runner's adapters (§15.3) with the context of a placement in the
+`single` layout, filled from local mode instead of a placement:
+
+- The adapter files (settings, the Codex home, the opencode
+  configuration) are written fresh before every run, as a runner
+  rewrites its own before every launch, to
+  `<state home>/maity-local/.adapters/<key>/`, where `<key>` is the
+  first 16 hex digits of the SHA-256 of the workspace's absolute path.
+  They lie outside the workspace, as a runner's lie in its state
+  directory: Codex's sandbox lets the agent write the clone's `.git`, so
+  files there could be widened for the next run. `.adapters` cannot
+  collide with a host, which never starts with `.`.
+- `MAITY_SUPERVISOR` is `maity-runner/<version>`; `MAITY_PLACEMENT` is
+  not set, since there is no placement. The Git variables of a runner's
+  sessions (`GIT_COMMON_DIR` and the pinned per-session Git
+  configuration) are set as on a runner.
+- The network hosts are the hub's and the repository's; the allowlist
+  is the adapter's defaults and `--allow`; the model is `--model`.
+- The paths denied to the harness's sandbox are those a runner denies,
+  taken from this machine: the person's credentials in the home
+  directory (`.ssh`, `.gnupg`, the harnesses' and cloud tools' logins,
+  the full runner's configuration and state, …), the `.git/maity` of
+  every other workspace under `<state home>/maity-local` (for Codex the
+  whole directory, as a runner's workspaces root), and `.adapters`. A
+  listing that cannot be completed refuses the start (exit 4, reason `private_unlisted`), as on a
+  runner: an unreadable directory could hide a credential.
+
+The sandbox is what `maity runner check` reports for the harness on
+that machine (§15.3):
+
+| Harness | Linux | macOS | Windows |
+|---|---|---|---|
+| `claude-code` | its sandbox, strict, when `bwrap` and `socat` are on `PATH`; else off | off | off |
+| `codex` | its sandbox; refused if `codex sandbox -- true` does not start | as Linux | as Linux |
+| `opencode` | none (allowlist only) | none | none |
+
+Where the sandbox is off, local mode says so at start: the allowlist
+then is no boundary, and the agent runs with the person's rights. On
+Windows the adapters' deny rules for `.git/maity` are not verified yet
+(whether a harness matches them against a drive letter and
+backslashes): there the credential is kept from other users by its
+access list only, and local mode prints at start that the harness's
+file tools are not known to be kept out of `.git/maity`. On Linux and
+macOS the deny rules apply as on a runner.
 
 **Restart.** Local mode runs the runner's supervised loop (§15.7) in
 the foreground. The harness starts headless with `MAITY_SUPERVISOR` set, so
 its resume is supervised (§15.11): no `maity wait` in the session, and
-the session ends its turn after a checkpoint.
+the session ends its turn after a checkpoint. The harness's standard
+input is the null device, so a harness in a background process group
+never stops on a read of the terminal.
 
 - The first run starts at once. After a run, local mode starts the next
   one only when work waits:
@@ -13724,31 +13830,58 @@ the session ends its turn after a checkpoint.
 - A revoked credential (§10) stops local mode with exit 20.
 - These values are the full runner's restart defaults and are fixed:
   local mode reads no configuration file.
-- One local mode per workspace: a lock file in `.git/maity` holds its
-  process id, and a second start in the same workspace is refused
-  (exit 4) with that id.
+- One local mode per workspace: it holds an operating-system lock on
+  `.git/maity/local.lock` (`flock` on Linux and macOS, `msvcrt.locking`
+  on Windows) for as long as it runs. The lock is the truth; the
+  process id written into the file is for the message only. A second
+  start in the same workspace is refused (exit 4, reason
+  `workspace_locked`) with that id. A file left by a killed local mode
+  holds no lock, and the next start takes it over.
 
 **Stopping.** Uncommitted work stays in the workspace in every case.
+The `maity wait` and `git` that local mode runs are stopped with it.
 
 - **Linux and macOS.** The harness runs in its own process group. Ctrl-C
   in local mode's terminal, or `SIGTERM` or `SIGHUP` to its process id
   (the one in `.git/maity/local.lock`), stops it: while it waits it
   exits at once; during a run it sends `SIGTERM` to the harness's group,
-  `SIGKILL` after 10 s, and exits when the group has ended. On Linux the harness
-  also gets `SIGKILL` from the kernel if local mode itself is killed
-  (`PR_SET_PDEATHSIG`); on macOS a `kill -9` of local mode leaves the
+  `SIGKILL` after 10 s, and exits when the group has ended. On Linux
+  local mode is a child subreaper (`PR_SET_CHILD_SUBREAPER`): processes
+  that left the group (`setsid`) are re-parented to it, and on a stop it
+  sends them `SIGTERM` and `SIGKILL` the same way before it exits. The
+  harness also gets `SIGKILL` from the kernel if local mode itself is
+  killed (`PR_SET_PDEATHSIG`). The limit: after a `kill -9` of local
+  mode, the harness's descendants are not reached; they end on their
+  own. On macOS neither exists, and a `kill -9` of local mode leaves the
   run to end on its own.
-- **Windows.** The harness runs in its own console process group inside
-  a Job Object that kills its processes when the job closes. Ctrl-C or
-  Ctrl-Break in local mode's console works as Ctrl-C on Linux: local
-  mode sends Ctrl-Break to the harness's group and terminates the job
-  after 10 s. Closing the console window stops it at once (the job is
-  terminated; Windows gives a closing console 5 s). `Stop-Process -Id
-  <pid>` or the Task Manager kills local mode, and the closing job takes
-  the harness with it.
+- **Windows.** Local mode creates a Job Object that kills its processes
+  when the job closes and allows no breakaway; the job's handle is not
+  inheritable, so only local mode holds it. The harness starts
+  suspended in its own console process group, is assigned to the job and
+  only then resumed, so every process it starts is in the job; the
+  `maity wait` and `git` children are in the same job. Ctrl-C in local
+  mode's console reaches local mode alone (a new process group ignores
+  Ctrl-C), which sends Ctrl-Break to the harness's group and terminates
+  the job after 10 s. A Ctrl-Break typed in the console reaches every
+  process attached to it, the harness directly too, without the 10 s.
+  Closing the console window stops it at once (the job is terminated;
+  Windows gives a closing console 5 s). `Stop-Process -Id <pid>` or the
+  Task Manager kills local mode, and the closing job takes the harness
+  with it.
 - **From the dashboard.** Revoking the agent's credential (§10) stops
   local mode at its next call (exit 20) and the session at its next
   `maity` call. There is no placement to stop.
+- **At the hub.** A stop sends nothing to the hub; there is no call that
+  ends a session (§5.3). Between runs local mode's own `maity wait`
+  long-polls are the session's `/events` calls: they keep it `online`
+  and renew its claim leases (§6.5). Once local mode is stopped, the lead
+  sees the agent go `away` and then `offline` (§5.3); after 10 minutes
+  with an event waiting for it, the session is not listening and the
+  hub emits `member_not_listening` (§5.3, §8.2), which wakes the member
+  the agent reports to; its claim leases lapse as any agent's do. A supervised session counts here because no placement
+  names its credential (§5.3): its stopped runs are reported by no
+  runner. A run longer than 10 minutes while a new event waits is
+  accepted as "received and busy", as §5.3 accepts it for any session.
 
 **Exit codes.** Besides the CLI's usual codes (2 usage, 4 refused):
 
@@ -13758,20 +13891,30 @@ the session ends its turn after a checkpoint.
 | 20 | the agent's credential was revoked (§10) |
 | 21 | crash loop: five crashes within 30 minutes |
 
+A stop is 0, also for `SIGTERM`, and not the shell's 130 or 143: local
+mode handles the signal and ends cleanly, and a service manager or
+script that stops it asked for that end, so it must not read it as a
+failure. Exit 4 prints its reason as the first word of its last line
+on standard error (`workspace_not_empty`, `staging_kept`,
+`repository_refused`, `no_repository`, `workspace_locked`,
+`private_unlisted`), so a test or
+script can tell them apart.
+
 **Relation to the full runner.** Local mode is an ordinary agent session
 that restarts itself:
 
 - It has no pairing, no runner credential, no runner row, no `/runner/*`
   call and no placement. `GET …/runners` does not list it, and the
   member's `placement` is `null` (§15.11). `on_runner_revoke` does not
-  apply; only the agent's own credential matters. The hub needs no
-  change: the session's `supervisor` value is the one §15.11 accepts
-  without a placement, and the not-listening rule leaves
-  supervised sessions out (§5.3).
-- It shares the runner's pure parts: the harness adapters (§15.3), the
-  restart rule and the supervised loop. It does not share `serve`, the
-  supervisor, `tmux`, the service unit or the agents' OS user, and the
-  full runner's actions keep refusing on Windows.
+  apply; only the agent's own credential matters. The session's
+  `supervisor` value is the one §15.11 accepts without a placement; the
+  hub's one change is that the not-listening rule leaves out only
+  supervised sessions whose credential an active placement names (§5.3).
+- It shares the runner's pure parts: the harness adapters (§15.3) with
+  the context above, the restart rule and the supervised loop. It does
+  not share `serve`, the supervisor, `tmux`, the service unit or the
+  agents' OS user, and the full runner's actions keep refusing on
+  Windows.
 - Its workspaces lie outside the full runner's state directory, so
   `maity runner gc` and `workspace claim` never see them, and neither
   side adopts the other's clone.

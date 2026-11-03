@@ -3,7 +3,15 @@
 - Contract §15.13: `maity runner <harness> --join <url>`, local mode. One
   agent in the foreground on the person's own machine, on Linux and
   Windows, with no pairing and no placement: the credential in the
-  workspace's `.git/maity` (mode 600, or an access list for the user
-  alone on Windows), the next run only when work waits, with backoff,
-  stopping by signal, Ctrl-C or console close, and how it stays apart
-  from the full runner.
+  workspace's `.git/maity` (mode 600, or on Windows an access list for
+  the user, `SYSTEM` and `Administrators`), a runner's adapter context
+  with the sandbox `maity runner check` reports, the one Git fetch on the
+  runner's transport list, the next run only when work waits, with
+  backoff, stopping by signal, Ctrl-C or console close, and how it stays
+  apart from the full runner.
+
+### Changed
+
+- Contract §5.3: the not-listening rule leaves out a supervised session
+  only while an active placement names its credential, so a stopped
+  local mode shows as not listening (the hub follows in its own change).
