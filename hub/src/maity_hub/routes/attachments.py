@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import time
 from collections.abc import Iterator
 from typing import Any
 
@@ -118,15 +119,26 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     name = attachments.clean_name(raw_name, image_type=sniffed)
     store = blobs.store_of(settings)
     attachment_id = new_id("attachment")
+    try:
+        # The quota and the pending bounds before the store is written, without the lock: a
+        # refusal costs no write. They are read again under the lock, right before the insert.
+        with engine.begin() as conn:
+            _check_room(conn, membership(conn, caller, slug), settings, len(data))
+    except BaseException:
+        attachments.give_back(rate_key, charged)  # nothing was stored: not counted
+        raise
     # The blob first, the row after (§8.7), and the blob outside every transaction: for `s3`
     # the write is a network call, and none may wait under the project's lock or hold a
-    # database connection. The sweep leaves a blob without a row alone for `BLOB_GRACE`.
+    # database connection. The sweep leaves a blob without a row alone for `BLOB_GRACE`; the
+    # row is inserted only while the blob is younger than `UPLOAD_FRESH`, half of it.
+    # From the write on, the rate stays charged, whatever follows: the write happened.
     key = blobs.key_of(mine.project.id, attachment_id)
     try:
         store.put(key, data)
     except BaseException:
         attachments.give_back(rate_key, charged)  # nothing was stored: not counted
         raise
+    written = time.monotonic()
 
     def action(conn: Connection) -> idempotency.Outcome:
         project = lock_project(conn, membership(conn, caller, slug).project.id)
@@ -138,18 +150,11 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
             raise not_found()
         if project.state in CLOSED_STATES:
             raise ApiError(409, "project_closed", f"the project is {project.state}")
-        used = attachments.used(conn, locked.project.id)
-        if used + len(data) > settings.attachment_quota:
-            raise attachments.quota_error("project", used=used, quota=settings.attachment_quota)
-        count, held = attachments.pending_of(conn, locked.id)
-        if count + 1 > attachments.PENDING_COUNT or held + len(data) > attachments.PENDING_BYTES:
-            raise attachments.quota_error(
-                "pending",
-                used=held,
-                quota=attachments.PENDING_BYTES,
-                count=count,
-                max=attachments.PENDING_COUNT,
-            )
+        _check_room(conn, locked, settings, len(data))
+        if time.monotonic() - written > attachments.UPLOAD_FRESH:
+            # The sweep may already count the blob as a stray: no row may name it now.
+            log.warning("an upload waited too long for its row; refused, its blob removed")
+            raise ApiError(503, "database_unavailable", "the database is unreachable")
         conn.execute(
             insert(t.attachment).values(
                 id=attachment_id,
@@ -170,12 +175,27 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     try:
         answer = idempotency.run(engine, request, caller, action)
     except BaseException:
-        attachments.give_back(rate_key, charged)
         _discard(store, key)
         raise
     if json.loads(bytes(answer.body)).get("id") != attachment_id:
         _discard(store, key)  # a concurrent call with the same key won: its answer, not this blob
     return answer
+
+
+def _check_room(conn: Connection, mine: Any, settings: Any, size: int) -> None:
+    """The project's quota and the membership's pending bounds (§8.7) for `size` more bytes."""
+    used = attachments.used(conn, mine.project.id)
+    if used + size > settings.attachment_quota:
+        raise attachments.quota_error("project", used=used, quota=settings.attachment_quota)
+    count, held = attachments.pending_of(conn, mine.id)
+    if count + 1 > attachments.PENDING_COUNT or held + size > attachments.PENDING_BYTES:
+        raise attachments.quota_error(
+            "pending",
+            used=held,
+            quota=attachments.PENDING_BYTES,
+            count=count,
+            max=attachments.PENDING_COUNT,
+        )
 
 
 def _discard(store: blobs.BlobStore, key: str) -> None:
