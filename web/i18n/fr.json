@@ -957,6 +957,8 @@
   "error.load_failed_at": "Chargement impossible ({path})",
   "error.mail_not_configured": "Ce hub ne peut pas envoyer d'e-mails.",
   "error.maintenance": "Le hub est en maintenance. Réessayez une fois la maintenance terminée.",
+  "error.maintenance_not_running": "Aucune maintenance n’est en cours.",
+  "error.maintenance_running": "Une maintenance en cours se termine, elle ne s’annule pas.",
   "error.memory_full": "Cette mémoire est pleine.",
   "error.method_not_allowed": "Cette action n'est pas disponible ici.",
   "error.namespace_owner": "Le propriétaire de l'espace de noms de ce projet ne peut pas être modifié ni retiré de cette façon.",

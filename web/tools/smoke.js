@@ -1329,7 +1329,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Each section's id is a fixed word, the same in every language (#891's review).
   const adminIds = main.querySelectorAll("section.admin-section").map((x) => x.getAttribute("id"));
   expect(JSON.stringify(adminIds) === JSON.stringify(["admin-statistics", "admin-users", "admin-limits", "admin-reports", "admin-mail-settings",
-    "admin-registration", "admin-sign-in", "admin-pages", "admin-instance-information"]),
+    "admin-registration", "admin-sign-in", "admin-pages", "admin-maintenance", "admin-instance-information"]),
     "admin: every section keyed by its fixed word " + JSON.stringify(adminIds));
   const meRow = userRows().find((tr) => text(tr).includes("Maintainer"));
   expect(text(meRow).includes("(you)") && text(meRow).includes("instance admin") && /Projects2|>2</.test(meRow.querySelectorAll("td").map((td) => td.attrs["data-label"] + td.textContent).join("")),
@@ -4246,10 +4246,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(text(main).includes(says) && main.querySelector("form.join-form"), "join: a hand-over the hub refuses is said in words (" + typed + ")");
   }
   joinPosts.length = 0;
-  byId("join-handover").value = " 6001 ";
+  // Written as the page shows a message ("message #6001"), the leading # is no part of the seq.
+  byId("join-handover").value = " #6001 ";
   main.querySelector("form.join-form").dispatch("submit"); await tick(); await tick();
   expect(joinPosts.length === 1 && joinPosts[0][1].briefing === "You review hub/.", "the join sends the briefing, trimmed");
-  expect(joinPosts[0][1].takes_over === "agt-a" && joinPosts[0][1].handover === 6001, "join: takes_over and a message's seq as a number go with a first join");
+  expect(joinPosts[0][1].takes_over === "agt-a" && joinPosts[0][1].handover === 6001, "join: takes_over and a message's seq as a number go with a first join, a leading # dropped");
   win.Maity.api.post = realPost2;
   expect(text(main).includes("maity join https://maity.example/j/FIXTURE") && text(main).includes("shown once"), "paste line shown once");
   expect(text(main).includes("as a message in its clone of the repository") && text(main).includes("install the maity CLI first") && text(main).includes("follows the join page"), "the paste line says where it goes");
@@ -6517,14 +6518,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !main.querySelector(".earlier button"), "group chat: the earlier part is read on demand and put before");
   // Reading along as an agent's owner: no writing, no managing, no removing; the observers named.
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/conversations/cnv-0007"
-    ? gcGet(p).then((v) => Object.assign({}, v, { access: "observer", observers: ["hum-maintainer", "hum-outside"],
+    ? gcGet(p).then((v) => Object.assign({}, v, { access: "observer", observers: ["hum-maintainer", "hum-outside", "agt-unlisted"],
       participants: v.participants.filter((x) => x.member_id !== "hum-maintainer").concat([{ member_id: "hum-ops", kind: "human", handle: "ops", owner_id: null, joined_at: v.created_at }]) }))
     : gcGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/cnv-0007");
   expect(!byId("chat-text") && text(main).includes("You read along as the owner of an agent in this chat") && !main.querySelector(".group-manage")
     && !gcList().querySelectorAll("button").some((b) => b.textContent === "Remove" || b.textContent === "Quote")
-    && text(main.querySelector(".group-observers")).includes("Also read by: you (owner of Agent A, Agent B), an owner outside the project"),
-    "group chat: an owner reads along, writes and manages nothing, and is named as reading along");
+    && text(main.querySelector(".group-observers")).includes("Also read by: you (owner of Agent A, Agent B), an owner outside the project, an agent not listed for you. They read"),
+    "group chat: an owner reads along, writes and manages nothing, and is named as reading along; one owning no agent in it is named alone, an agent the list lacks neutrally "
+    + JSON.stringify(text(main.querySelector(".group-observers"))));
   // A closed chat stays readable and takes nothing.
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/conversations/cnv-0007" ? gcGet(p).then((v) => Object.assign({}, v, { closed_at: "2026-10-22T10:00:00Z", closed_reason: "no_human" })) : gcGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/cnv-0007");
@@ -9832,8 +9834,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && cpRows()[0] === "2026-10-31|main page|none|140|3|1" && cpRows()[1] === "2026-10-31|/for/maintainers|x-h1-w1 (removed)|212|9|4"
     && text(main).includes("Views are approximate") && !main.querySelectorAll("a").some((a) => a.textContent === "Download as CSV"),
     "statistics: the campaign table for the same window, views marked approximate, a code no longer configured marked removed; no CSV link in fixtures " + JSON.stringify(cpRows()));
-  // A fresh instance: zeros, nothing broken.
-  win.Maity.api.get = (p) => (p.startsWith("/admin/statistics")
+  // A fresh instance: zeros, nothing broken; a campaign's counts formatted for the locale as the tiles are.
+  win.Maity.api.get = (p) => (p.startsWith("/admin/statistics/campaigns")
+    ? Promise.resolve({ as_of: "2026-10-25T10:00:00Z", window_days: 7, views_approximate: false,
+      rows: [{ date: "2026-10-25", variant: "default", campaign: null, views: 12345, registrations: 0, activations: 0 }] })
+    : p.startsWith("/admin/statistics")
     ? Promise.resolve({ as_of: "2026-10-25T10:00:00Z", window_days: 7, totals: { humans: 1, humans_pending: 0, agents: 0, projects: 0, instances_online: 0, humans_with_an_agent: 0 },
       days: Array.from({ length: 7 }, (_, i) => ({ date: "2026-10-" + (25 - i), registrations: 0, new_instances: 0, humans_active: i ? 0 : 1, agents_active: 0,
         cards_created: 0, cards_claimed: 0, cards_done: 0, reviews: 0 })), returning: { after_7_days: 0, after_30_days: 0 }, coverage: { reviews_since: null } })
@@ -9841,6 +9846,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(stBox(), "7 days").click(); for (let k = 0; k < 4; k++) await tick();
   expect(stCells("cards_done")[1] === "0" && stCells("humans_active")[1] === "up to 1 a day" && !text(stBox()).includes("Reviews are counted from")
     && stTiles()[0] === "1Humans", "statistics: an empty instance reads zeros");
+  expect(cpRows()[0] === "2026-10-25|main page|none|12,345|0|0", "statistics: a campaign's counts are formatted for the locale " + JSON.stringify(cpRows()));
   win.Maity.api.get = (p) => (p.startsWith("/admin/statistics") ? Promise.reject(new win.Maity.api.ApiError("boom", 500, p, "internal")) : stGet(p));
   btn(stBox(), "30 days").click(); for (let k = 0; k < 4; k++) await tick();
   expect(!stBox().querySelector("li.stat-tile") && text(stBox()).includes("The statistics could not be read: boom"), "statistics: a failed read clears the old counts and says so");
@@ -10795,6 +10801,106 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(crewBack.status === "withdrawn" && crewAgain.code === "request_not_open", "transfer: its asker withdraws it, the owners' requests with it");
   expect(win.Maity.projectNames.said({ code: "invalid_transition", details: { reason: "transfer_stale" } }).message === "the transfer no longer holds; ask again",
     "transfer: a stale transfer is said as invalid_transition with its reason");
+
+  // §16.12 The maintenance window (tsk-12hwmpykz2ht): the admin announces, changes, cancels and ends
+  // it; the banner stands above the header on every page, the full page instead of the view while it
+  // runs; the owner chooses which agents get the notice. The header gets the page's body as its parent,
+  // where the banner goes.
+  const mtBody = new El("body"); mtBody.appendChild(header); mtBody.appendChild(main);
+  const mtBanner = () => mtBody.childNodes.find((n) => n.id === "maintenance-banner") || null;
+  const mtPad = (n) => String(n).padStart(2, "0");
+  const mtField = (ms) => { const d = new Date(ms); return d.getFullYear() + "-" + mtPad(d.getMonth() + 1) + "-" + mtPad(d.getDate()) + "T" + mtPad(d.getHours()) + ":" + mtPad(d.getMinutes()); };
+  const mtSection = () => byId("admin-maintenance");
+  const mtSettle = async () => { for (let k = 0; k < 8; k++) await tick(); };
+  const mtSubmit = async (from, until, words) => {
+    if (from !== null) byId("maintenance-from").value = from;
+    byId("maintenance-until").value = until;
+    byId("maintenance-text").value = words;
+    mtSection().querySelector("form.admin-maintenance-form").dispatch("submit");
+    await mtSettle();
+  };
+  await go("#/admin/maintenance"); await mtSettle();
+  expect(mtSection() && !mtSection().hidden && text(mtSection()).includes("No maintenance window is announced.") && text(mtSection()).includes("No changes yet.")
+    && !mtBanner(), "maintenance: /admin/maintenance opens the section; no window, no banner");
+  await mtSubmit(mtField(Date.now() + 3600000), mtField(Date.now() - 60000), "DB upgrade");
+  expect(text(mtSection()).includes("Not saved: Until: must be in the future") && !mtBanner(), "maintenance: a window that would end in the past is refused, said per field");
+  await mtSubmit(mtField(Date.now() + 3600000), mtField(Date.now() + 7200000), "  DB <b>upgrade</b>  ");
+  const mtUp = mtBanner();
+  expect(text(mtSection()).includes("Saved.") && text(mtSection()).includes("Announced: ") && text(mtSection()).includes("Cancel the window")
+    && mtUp && mtUp.getAttribute("role") === "status" && mtUp.className === "maintenance-banner" && mtBody.childNodes.indexOf(mtUp) === mtBody.childNodes.indexOf(header) - 1
+    && /^Maintenance .+–.+: DB <b>upgrade<\/b>$/.test(mtUp.textContent) && !mtUp.querySelector("b"),
+  "maintenance: announced, the banner stands above the header, the text trimmed and shown as text, never as markup");
+  expect(text(mtSection().querySelector(".maintenance-change-list")).startsWith("Announced"), "maintenance: the change is listed");
+  await go("#/all"); await mtSettle();
+  expect(mtBanner() === mtUp && !main.querySelector(".maintenance-page") && main.querySelector(".view-all"), "maintenance: an upcoming window leaves the view, the banner stays across pages");
+  // The start passes under the open page (the boundary timer): the same words, the banner turns running.
+  const mtNow = win.Maity.api.now;
+  win.Maity.api.now = () => Date.now() + 3600000 + 60000;
+  win.Maity.maintenance.drawBanner();
+  expect(mtBanner() && mtBanner().className === "maintenance-banner running", "maintenance: an upcoming window that starts under the page turns the banner running");
+  win.Maity.api.now = mtNow;
+  win.Maity.maintenance.drawBanner();
+  expect(mtBanner() && mtBanner().className === "maintenance-banner", "maintenance: back before the start, the banner is upcoming again");
+  await go("#/admin/maintenance"); await mtSettle();
+  btn(mtSection(), "Cancel the window").click(); await mtSettle();
+  expect(!mtBanner() && text(mtSection()).includes("No maintenance window is announced.")
+    && text(mtSection().querySelector(".maintenance-change-list")).startsWith("Cancelled"), "maintenance: a cancelled window takes the banner with it");
+  // Running: the admin's own section alone, every other page the full page, every other call refused.
+  await mtSubmit(mtField(Date.now() - 600000), mtField(Date.now() + 1800000), "Moving the database");
+  await mtSettle();
+  expect(mtBanner() && mtBanner().className === "maintenance-banner running" && mtSection() && text(mtSection()).includes("Running since")
+    && byId("maintenance-from").disabled && text(main).includes("Back to Maity") && !header.querySelector("nav.switcher"),
+  "maintenance: running, the admin keeps the window's section alone, its start fixed");
+  const mtRefused = await win.Maity.api.get("/projects").then(() => null, (err) => err);
+  expect(mtRefused && mtRefused.status === 503 && mtRefused.code === "maintenance" && mtRefused.details.text === "Moving the database"
+    && mtRefused.details.retry_after > 0, "maintenance: the fixture hub refuses other calls with 503 maintenance, the window in its details");
+  await go("#/all"); await mtSettle();
+  const mtPage = main.querySelector(".maintenance-page");
+  expect(mtPage && mtPage.all().some((e) => e.tagName === "H2" && e.textContent === "Maintenance") && text(mtPage).includes("Moving the database") && text(mtPage).includes("back at")
+    && btn(mtPage, "End maintenance now") && mtPage.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/admin/maintenance")
+    && !main.querySelector(".error") && plainTitle() === "Maintenance · Maity", "maintenance: the full page for the instance admin, with End maintenance now and the way to change it");
+  const mtOther = new El("main"), mtHead = new El("header");
+  win.Maity.maintenance.fullPage(mtOther, mtHead, { me: { instance_admin: false }, brand: new El("h1") });
+  const mtVisitor = new El("main");
+  win.Maity.maintenance.fullPage(mtVisitor, new El("header"), { me: null, brand: new El("h1"), signIn: true });
+  expect(!btn(mtOther, "End maintenance now") && !mtOther.querySelectorAll("a").length && text(mtOther).includes("Moving the database")
+    && mtVisitor.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/login" && a.textContent === "Sign in as the instance admin"),
+  "maintenance: anyone else gets the notice alone, a visitor the way to sign in");
+  btn(mtPage, "End maintenance now").click(); await mtSettle(); await mtSettle();
+  expect(!mtBanner() && !main.querySelector(".maintenance-page") && main.querySelector(".view-all"), "maintenance: ended early, the view is back and the banner gone");
+  const mtChanges = (await win.Maity.api.get("/admin/maintenance/changes")).items.map((c) => c.action);
+  expect(JSON.stringify(mtChanges) === JSON.stringify(["ended", "created", "cancelled", "created"]), "maintenance: every change kept, newest first " + JSON.stringify(mtChanges));
+  // A window that starts while a page is open, learnt from a refused call: the full page at once.
+  await win.Maity.api.put("/admin/maintenance", { from: new Date(Date.now() - 60000).toISOString(), until: new Date(Date.now() + 600000).toISOString(), text: "Told by a refusal" });
+  expect(!mtBanner() && !main.querySelector(".maintenance-page"), "maintenance: (a window the page has not read yet)");
+  await win.Maity.api.get("/projects").catch(() => null); await mtSettle();
+  expect(main.querySelector(".maintenance-page") && text(main).includes("Told by a refusal") && mtBanner(), "maintenance: a 503 maintenance shows the full page at once");
+  await win.Maity.api.post("/admin/maintenance/end");
+  win.Maity.maintenance.know(null); await mtSettle();
+  expect(!main.querySelector(".maintenance-page") && !mtBanner(), "maintenance: a window gone takes the full page with it");
+  // The sign-in page during a window: the hub may refuse its read of the methods; the mailed link stays offered.
+  const mtGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/auth/methods" ? Promise.reject(new win.Maity.api.ApiError("x", 503, p, "maintenance", {})) : mtGet(p));
+  const mtLogin = win.Maity.deviceSignIn.loginOptions(() => {}, () => {}); await mtSettle();
+  win.Maity.api.get = (p) => (p === "/auth/methods" ? Promise.reject(new win.Maity.api.ApiError("x", 500, p, "internal", {})) : mtGet(p));
+  const mtLoginDown = win.Maity.deviceSignIn.loginOptions(() => {}, () => {}); await mtSettle();
+  win.Maity.api.get = mtGet;
+  expect(mtLogin.querySelectorAll("section.sign-in-mail").length === 1
+    && !mtLoginDown.querySelectorAll("section.sign-in-mail").length,
+  "maintenance: the sign-in still offers the mailed link when a window refuses the methods; another failure offers nothing, as before");
+  // The owner's choice on /agents: which agents get the notice.
+  await go("#/agents"); await mtSettle();
+  const mtChoice = main.querySelector("section.broadcasts");
+  const mtMode = byId("broadcasts-mode");
+  expect(mtChoice && mtMode && mtMode.value === "accept_all" && mtChoice.querySelector("fieldset").hidden, "broadcasts: /agents shows the choice, all agents by default");
+  mtMode.value = "accept_only"; mtMode.dispatch("change");
+  byId("broadcasts-agent-agt-b").checked = true;
+  mtChoice.querySelector("form.broadcasts-form").dispatch("submit"); await mtSettle();
+  const mtSaved = await win.Maity.api.get("/me/broadcasts");
+  expect(mtSaved.mode === "accept_only" && JSON.stringify(mtSaved.agents) === JSON.stringify(["agt-b"]) && text(mtChoice).includes("Saved.")
+    && !main.querySelector("section.broadcasts fieldset").hidden, "broadcasts: only the agents ticked, saved as the hub has it");
+  const mtBad = await win.Maity.api.patch("/me/broadcasts", { mode: "refuse_all", agents: ["agt-b"] }).then(() => null, (err) => err);
+  expect(mtBad && mtBad.details.fields.agents === "not_allowed", "broadcasts: a list with refuse_all is refused, as the hub refuses it");
 
   // API mode against a fake hub: CSRF on writes, fail loud without a hub.
   win.location.protocol = "http:";

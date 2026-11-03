@@ -3519,6 +3519,14 @@
     "en": "b1f1ef269b21aacf",
     "text": "6cdfe971caa4d104"
   },
+  "error.maintenance_not_running": {
+    "en": "58e52c5607e41459",
+    "text": "0a3da382eddcb59b"
+  },
+  "error.maintenance_running": {
+    "en": "6215abdad2c9c05f",
+    "text": "f9a6fe02fc7d8d92"
+  },
   "error.memory_full": {
     "en": "1d443815d36c4d47",
     "text": "35db1bc8ce4aa0f9"

@@ -211,7 +211,7 @@ window.Maity = window.Maity || {};
       if (!pctx) {
         place(open ? h("p", { class: "error", role: "alert" }, M.t("chats.no_project", { project: open.slug }))
           : h("p", { class: "chat-none muted" }, M.t("chats.pick")));
-        return;
+        return false;
       }
       const timers = [];
       const sub = Object.create(pctx);
