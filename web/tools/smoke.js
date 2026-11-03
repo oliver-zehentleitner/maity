@@ -6133,7 +6133,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = lpGet;
   // An invitation (docs/api.md §3.4) without a session: who invites to what, and the ways in this hub offers.
   const ivPage = () => main.querySelector("article.invite");
+  // An in-app move to an invitation, the window's read a minute old: no request leaves before the
+  // page's no-referrer policy stands (§16.13), GET /maintenance included.
+  const ivNoRef = () => head.querySelectorAll("meta").some((m) => m.getAttribute("name") === "referrer" && m.getAttribute("content") === "no-referrer");
+  const ivRefGet = win.Maity.api.get, ivRealNow = Date.now, ivRefAsked = [];
+  expect(!ivNoRef(), "invite: no referrer policy before the first invitation (the check below means something)");
+  Date.now = () => ivRealNow() + 120000;
+  win.Maity.api.get = (p) => { if (win.Maity.route.current().path.startsWith("/invite/")) ivRefAsked.push(p + "=" + ivNoRef()); return ivRefGet(p); };
   await go("#/invite/open-xxxxxxxxxxxxxxxx1"); for (let k = 0; k < 4; k++) await tick();
+  win.Maity.api.get = ivRefGet; Date.now = ivRealNow;
+  expect(ivRefAsked.includes("/maintenance=true") && ivRefAsked.every((a) => a.endsWith("=true")),
+    "invite: an in-app move sets the no-referrer policy before any request, GET /maintenance included " + JSON.stringify(ivRefAsked));
   // The token is in the path: the page sends no Referer (docs/api.md §16.13), and still ends with the product line.
   expect(head.querySelectorAll("meta").filter((m) => m.getAttribute("name") === "referrer" && m.getAttribute("content") === "no-referrer").length === 1,
     "invite: the page sets <meta name=referrer content=no-referrer>, once");

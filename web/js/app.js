@@ -1873,6 +1873,10 @@ window.Maity = window.Maity || {};
     else Array.from(main.childNodes).forEach((n) => { if (n.setAttribute) n.setAttribute("inert", ""); });
     let where = { scope: "unknown" };
     let ctx;
+    // The invitation's token is in its path: no referrer before this drawing asks anything
+    // (GET /maintenance below), also when the tab came here from another view, whose shell had
+    // no header for it, and while a maintenance window stands (§16.13).
+    try { if (M.invite && parseRoute().scope === "invite") M.invite.noReferrer(); } catch { /* the drawing below says why */ }
     await M.i18n.ready;
     // The product line after <main> (§16.13), in the language this view is drawn in; i18n
     // draws it again when the session's language arrives. Not under a stored public page
@@ -1886,8 +1890,6 @@ window.Maity = window.Maity || {};
     try {
       where = parseRoute();
       const held = M.maintenance.running();
-      // The invitation's token is in its path: no referrer, maintenance window or not (§16.13).
-      if (where.scope === "invite" && M.invite) M.invite.noReferrer();
       if (where.scope === "invite" && M.invite && !held) { await M.invite.page(main, document.getElementById("header"), where.token); return; }
       if (where.scope === "register" && M.register && !held) { await M.register.page(main, document.getElementById("header"), routeNext()); return; }
       let session;
