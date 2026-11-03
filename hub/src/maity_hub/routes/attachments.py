@@ -9,10 +9,12 @@ the one question the message does: may this caller read it.
 from __future__ import annotations
 
 import hashlib
+import logging
+from collections.abc import Iterator
 from typing import Any
 
 from fastapi import APIRouter, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import Connection, delete, insert, select, update
 
 from maity_hub import attachment_store as blobs
@@ -31,6 +33,7 @@ from maity_hub.routes.project_images import _matches
 from maity_hub.scopes import in_admin_team
 
 router = APIRouter(route_class=ProjectRoute)
+log = logging.getLogger(__name__)
 
 HEADERS = {
     "X-Content-Type-Options": "nosniff",
@@ -195,8 +198,8 @@ def get_content(slug: str, attachment_id: str, request: Request, caller: AnyCall
     headers = {**HEADERS, "ETag": tag}
     if _matches(request.headers.get("if-none-match"), tag):
         return Response(status_code=304, headers=headers)
-    data = store.get(blobs.key_of(row.project_id, row.id))
-    if data is None:
+    blob = store.open(blobs.key_of(row.project_id, row.id))
+    if blob is None:
         # The bytes may have gone since the row was read: a redaction or a deletion commits
         # and removes them. Read the row again; gone or unreadable now is `not_found`.
         with engine_of(request).begin() as conn:
@@ -204,14 +207,58 @@ def get_content(slug: str, attachment_id: str, request: Request, caller: AnyCall
             again = _row(conn, mine, attachment_id)
             if again.deleted_at is not None or not attachments.readable(conn, mine, again):
                 raise not_found()
-    if data is None or hashlib.sha256(data).hexdigest() != row.sha256:
-        raise ApiError(500, "internal", "the stored bytes do not match their digest")
+        raise _not_matching()
     if row.kind == "image":
         inline = request.query_params.get("download") != "1"
         headers["Content-Disposition"] = attachments.disposition(row.name, inline=inline)
-        return Response(content=data, media_type=row.type, headers=headers)
-    headers["Content-Disposition"] = attachments.disposition(row.name, inline=False)
-    return Response(content=data, media_type="application/octet-stream", headers=headers)
+        media_type = row.type
+    else:
+        headers["Content-Disposition"] = attachments.disposition(row.name, inline=False)
+        media_type = "application/octet-stream"
+    if blob.size != row.size:
+        blob.close()
+        raise _not_matching()
+    if row.size <= WHOLE:
+        # Small enough to check before the first byte goes out: a mismatch is a plain 500.
+        try:
+            data = b"".join(blob)
+        finally:
+            blob.close()
+        if hashlib.sha256(data).hexdigest() != row.sha256:
+            raise _not_matching()
+        return Response(content=data, media_type=media_type, headers=headers)
+    headers["Content-Length"] = str(row.size)
+    return StreamingResponse(_checked(blob, row.sha256), media_type=media_type, headers=headers)
+
+
+# Up to this size the bytes are read whole and checked before the answer starts; above it
+# they stream, and the check holds the last piece back (`_checked`).
+WHOLE = 1024 * 1024
+
+
+def _not_matching() -> ApiError:
+    return ApiError(500, "internal", "the stored bytes do not match their digest")
+
+
+def _checked(blob: blobs.Blob, sha256: str) -> Iterator[bytes]:
+    """The blob's pieces, hashed as they pass. The last piece is held back until the whole
+    digest is known: bytes that do not match their digest end the answer short of its
+    `Content-Length`, so no client takes them for the attachment."""
+    digest = hashlib.sha256()
+    held: bytes | None = None
+    try:
+        for piece in blob:
+            digest.update(piece)
+            if held is not None:
+                yield held
+            held = piece
+        if digest.hexdigest() != sha256:
+            log.error("an attachment's stored bytes do not match their digest; answer cut short")
+            raise blobs.StoreError("the stored bytes do not match their digest")
+        if held is not None:
+            yield held
+    finally:
+        blob.close()
 
 
 @router.get("/projects/{owner}/{slug}/attachments")
@@ -308,7 +355,7 @@ def _not_a_participant() -> ApiError:
 
 
 def _delete_sent(
-    conn: Connection, mine: Any, caller: Any, row: Any, store: blobs.LocalStore
+    conn: Connection, mine: Any, caller: Any, row: Any, store: blobs.BlobStore
 ) -> idempotency.Outcome:
     """An attachment a message carries (§8.7): readable as the message is, deleted by its
     uploader, by a human in the chat now (a chat message), or by a human with

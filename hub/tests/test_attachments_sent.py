@@ -303,9 +303,9 @@ def test_a_download_that_loses_the_race_with_a_redaction_is_not_found_not_a_fail
     agent = flow.agent(stored, owner)
     named = upload(agent, "race.txt", b"bytes")
     sent = send(agent, owner.id, [named])
-    real = attachment_store.LocalStore.get
+    real = attachment_store.LocalStore.open
 
-    def redacted_meanwhile(self: Any, key: str) -> bytes | None:
+    def redacted_meanwhile(self: Any, key: str) -> attachment_store.Blob | None:
         # The redaction commits between the read of the row and the read of the bytes.
         done = owner.post(
             f"/projects/maintainer/maity/events/{sent['seq']}/redact", {"reason": "x"}
@@ -313,7 +313,7 @@ def test_a_download_that_loses_the_race_with_a_redaction_is_not_found_not_a_fail
         assert done.status_code == 200, done.text
         return real(self, key)
 
-    monkeypatch.setattr(attachment_store.LocalStore, "get", redacted_meanwhile)
+    monkeypatch.setattr(attachment_store.LocalStore, "open", redacted_meanwhile)
     answer = owner.get(f"/projects/maintainer/maity/attachments/{named}/content")
     assert answer.status_code == 404, answer.text
     assert answer.json()["error"]["code"] == "not_found"

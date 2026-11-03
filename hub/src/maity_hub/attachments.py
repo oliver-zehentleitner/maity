@@ -380,7 +380,7 @@ def attach(conn: Connection, rows: list[Any], seq: int) -> None:
 
 
 def redact_message(
-    conn: Connection, seq: int, by: str | None, store: attachment_store.LocalStore | None
+    conn: Connection, seq: int, by: str | None, store: attachment_store.BlobStore | None
 ) -> None:
     """A redacted message has no attachments (§8.7, §8.5): the rows become tombstones in the
     redaction's transaction, `deleted_reason` `redacted`, and the bytes go once it commits.
@@ -426,7 +426,7 @@ BLOB_GRACE = 600  # a blob younger than this may belong to a transaction still o
 
 
 def expire(
-    engine: Engine, store: attachment_store.LocalStore, candidates: Sequence[Any], cutoff: Any
+    engine: Engine, store: attachment_store.BlobStore, candidates: Sequence[Any], cutoff: Any
 ) -> int:
     """Delete the candidates that are still pending and still past the cutoff, each under
     its project's lock, and remove the bytes of the rows that were deleted, and of no other.
@@ -450,7 +450,7 @@ def expire(
     return removed
 
 
-def remove_stray(engine: Engine, store: attachment_store.LocalStore, key: str) -> bool:
+def remove_stray(engine: Engine, store: attachment_store.BlobStore, key: str) -> bool:
     """Remove a blob no row names, if it is older than a transaction can be. The project's lock is
     held from the look at the row to the removal, as an upload holds it from writing the blob to
     inserting the row: an upload that commits meanwhile cannot lose its file."""
@@ -470,7 +470,7 @@ def remove_stray(engine: Engine, store: attachment_store.LocalStore, key: str) -
 
 
 def sweep(
-    engine: Engine, store: attachment_store.LocalStore, stop: worker_runs.Stopping | None = None
+    engine: Engine, store: attachment_store.BlobStore, stop: worker_runs.Stopping | None = None
 ) -> dict[str, int]:
     """One pass: pending uploads past 24 hours go with their bytes, the bytes of a
     tombstoned row go if they are still there, and a blob no row names goes once it is
@@ -510,7 +510,7 @@ def sweep(
 class Worker:
     """Runs the sweep in the background, one thread per process, when a store is set."""
 
-    def __init__(self, engine: Engine, store: attachment_store.LocalStore) -> None:
+    def __init__(self, engine: Engine, store: attachment_store.BlobStore) -> None:
         self.engine = engine
         self.store = store
         self._stop = threading.Event()

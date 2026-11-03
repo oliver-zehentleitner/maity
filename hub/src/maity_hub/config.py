@@ -279,7 +279,9 @@ def parse_attachment_s3(env: dict[str, str]) -> AttachmentS3 | None:
     endpoint = parse_s3_endpoint(env.get("MAITY_ATTACHMENT_S3_ENDPOINT", ""), allow_http)
     prefix = env.get("MAITY_ATTACHMENT_S3_PREFIX", "").strip().strip("/")
     if any(c.isspace() for c in prefix) or {".", ".."} & set(prefix.split("/")):
-        raise ConfigError("MAITY_ATTACHMENT_S3_PREFIX must be a key prefix such as maity/attachments")
+        raise ConfigError(
+            "MAITY_ATTACHMENT_S3_PREFIX must be a key prefix such as maity/attachments"
+        )
     key_id = env.get("MAITY_ATTACHMENT_S3_ACCESS_KEY_ID", "").strip() or None
     secret = env.get("MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY", "").strip() or None
     if (key_id is None) != (secret is None):
@@ -325,7 +327,9 @@ def parse_s3_endpoint(value: str, allow_http: bool) -> str | None:
     if parts.scheme != "http":
         raise ConfigError(f"{name} must be an https URL")
     if not allow_http:
-        raise ConfigError(f"{name} is plain http: set MAITY_ATTACHMENT_S3_ALLOW_HTTP=1, or use https")
+        raise ConfigError(
+            f"{name} is plain http: set MAITY_ATTACHMENT_S3_ALLOW_HTTP=1, or use https"
+        )
     if not cluster_internal(parts.hostname):
         raise ConfigError(
             f"{name} is plain http to {parts.hostname}: http is only for a loopback or "
@@ -335,6 +339,12 @@ def parse_s3_endpoint(value: str, allow_http: bool) -> str | None:
 
 
 _CLUSTER_SUFFIXES = (".svc", ".svc.cluster.local", ".cluster.local")
+# The private ranges a cluster or a compose network hands out (RFC 1918, the shared space of
+# RFC 6598, unique local IPv6). Not `is_private`, which also counts the documentation ranges.
+_CLUSTER_NETWORKS = tuple(
+    ipaddress.ip_network(n)
+    for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "fc00::/7")
+)
 
 
 def cluster_internal(host: str) -> bool:
@@ -347,7 +357,7 @@ def cluster_internal(host: str) -> bool:
         address = ipaddress.ip_address(host)
     except ValueError:
         return host == "localhost" or "." not in host or host.endswith(_CLUSTER_SUFFIXES)
-    return address.is_loopback or address.is_private
+    return address.is_loopback or any(address in net for net in _CLUSTER_NETWORKS)
 
 
 def parse_attachment_dir(env: dict[str, str]) -> Path | None:

@@ -13,8 +13,8 @@
 existing, writable directory, else the hub stops). When it is unset the hub
 starts with attachments switched off: every attachment call, and a message
 that names an attachment, answers `409 attachments_not_configured` with the
-variable's name. `s3` stops the hub with a plain message: it is documented and
-not built.
+variable's name. The `s3` store, opt-in, needs no directory (replicas.md
+a70d7269).
 
 **Reason:** every deployment that exists today starts without the variable,
 and a hub that stopped there would not come back on the next rollout until its
@@ -145,7 +145,7 @@ A list of projects does that per project.
 
 **Id:** 02fb33e3-0fc5-4140-8e33-016045fefdbb
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** implementation session, 2026-10-27 (`docs/api.md` §8.7: pending uploads expire after 24 hours, a blob without a row "is removed by the hub's sweep", a failed removal "is retried by the sweep", `hub/` documents the interval); the interval and the grace are the implementer's
 **Revisit when:** a second replica runs (each would sweep), or the `s3` store is built
@@ -219,3 +219,57 @@ nobody. Deleting a deleted attachment answers with its tombstone.
 
 **Reason:** the log is append-only, so the message keeps naming the file; the
 tombstone is how readers learn it is gone.
+
+## A download past one mebibyte streams and holds its last piece back until the digest matches
+
+**Id:** 81f57cb5-f48a-43c7-9729-1d4e4de696b7
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-11-03 (`docs/api.md` §8.7: bytes that do not match their digest are never served; the build plan for the `s3` store: downloads stream, checked while they stream); the threshold is the implementer's
+**Revisit when:** a client is found that keeps a body shorter than its `Content-Length`, or attachments grow past what the threshold was chosen for
+**See:** replicas.md#attachments-move-to-s3-compatible-object-storage — a70d7269-a0a9-45aa-94c5-54715f112c10 — as of 2026-11-03
+
+`GET …/content` first compares the stored size with the row's and answers
+`500 internal` when they differ. Up to 1 MiB (`routes/attachments.WHOLE`) the
+bytes are then read whole and their SHA-256 checked before the answer starts,
+so a mismatch is still a plain `500`. Past it they stream with the row's
+`Content-Length`, hashed as they pass, and the last piece is held back until
+the digest is known: when it does not match, the answer ends short of its
+length and the hub logs it, so no client takes the bytes for the attachment.
+
+**Reason:** the contract forbids serving bytes that do not match their
+digest, and a whole file in memory per download does not hold for large files
+or many downloads at once. The status line is gone by the time the last byte
+is read, so a short body is the one way left to refuse; a small file, the
+common case, keeps the plain `500`.
+
+**Rejected alternatives:**
+- **Reading every file whole, as before:** a 100 MiB download costs 100 MiB of
+  the pod's memory for as long as it takes.
+- **Streaming without the check, or checking only after the last byte went
+  out:** the client would hold bytes the hub never vouched for.
+
+## A plain-HTTP S3 endpoint needs its own switch and a host that stays inside the cluster
+
+**Id:** 63204998-0aa3-48eb-bfc6-071612309cb4
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** `docs/api.md` §16 (`MAITY_ATTACHMENT_S3_ENDPOINT`: plain HTTP only to a loopback or cluster-internal host, only with `MAITY_ATTACHMENT_S3_ALLOW_HTTP=1`), which leaves "cluster-internal" undefined; `config.cluster_internal`, implementation session 2026-11-03
+**Revisit when:** a deployment's object store sits on a private address outside these ranges, or the contract defines the term itself
+
+A host counts as cluster-internal when it is a loopback address, an address in
+10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10 or fc00::/7,
+`localhost`, a name of one label (a service in the same namespace, a compose
+service), or a name ending in `.svc`, `.svc.cluster.local` or `.cluster.local`.
+Any other name, which resolves through public DNS, needs `https`.
+
+**Reason:** the credentials and the attachments travel in every request, so
+plain HTTP is only for the MinIO in the same cluster or on the same machine,
+which often has no certificate; the switch makes even that a choice the
+operator wrote down.
+
+**Rejected alternative:**
+- **Python's `is_private`, as first written:** it also counts the
+  documentation ranges (203.0.113.0/24 and others) as private.

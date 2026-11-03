@@ -163,7 +163,9 @@ class _S3Blob:
         try:
             yield from self._body.iter_chunks(CHUNK)
         except Exception as error:
-            raise StoreError(f"the attachment store could not read a blob ({_code(error)})") from None
+            raise StoreError(
+                f"the attachment store could not read a blob ({_code(error)})"
+            ) from None
 
     def close(self) -> None:
         self._body.close()
@@ -270,11 +272,11 @@ def _client(config: AttachmentS3) -> Any:
     import boto3
     from botocore.config import Config
 
-    # botocore logs each request's headers at DEBUG, the access key id among them: never
-    # below INFO, whatever the operator's log level.
-    for name in ("botocore", "boto3"):
+    # botocore logs each request's headers at DEBUG, the access key id among them: its own
+    # loggers are set to INFO, so that a root logger at DEBUG (now or later) does not reach them.
+    for name in ("botocore", "boto3", "s3transfer", "urllib3"):
         logger = logging.getLogger(name)
-        if logger.getEffectiveLevel() < logging.INFO:
+        if logger.level == logging.NOTSET or logger.level < logging.INFO:
             logger.setLevel(logging.INFO)
     options: dict[str, Any] = {
         "retries": {"mode": "standard", "max_attempts": 3},

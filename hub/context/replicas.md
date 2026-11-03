@@ -485,35 +485,46 @@ causes errors (403 or 429 from the forge for everyone).
 
 **Id:** a70d7269-a0a9-45aa-94c5-54715f112c10
 **Type:** decision
-**Status:** open
-**Evidence:** inferred
-**Source:** `attachment_store.py` (`LocalStore` under `MAITY_ATTACHMENT_DIR`, written whole with `os.replace`), kubernetes.md 9111cb2f (a 10 GiB `ReadWriteOnce` claim, tarred by the backup job), the maintainer's internal deployment planning (2026-10-30) (shared file storage or S3-compatible object storage, the choice left to this card)
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision for object storage instead of a shared `ReadWriteMany` volume (card tsk-enpbgadqgmbr, 2026-11-03), the build plan the coordinator accepted for it (2026-11-03: boto3 at runtime, no presigned URLs, hub and chart in separate pull requests), the maintainer's rule of 2026-11-03 that every setting keeps its single-server default; `attachment_store.py` (`BlobStore`, `LocalStore`, `S3Store`), kubernetes.md 9111cb2f (a 10 GiB `ReadWriteOnce` claim, tarred by the backup job)
 **See:** kubernetes.md — 9111cb2f-89b0-4088-8c92-2fa5c1348ec7 — as of 2026-10-30
-**Revisit when:** the coordinator or the maintainer prefers shared file storage, or the object store's latency shows in the load test of uploads and downloads
+**See:** attachments.md#a-download-past-one-mebibyte-streams-and-holds-its-last-piece-back-until-the-digest-matches — 81f57cb5-f48a-43c7-9729-1d4e4de696b7 — as of 2026-11-03
+**Revisit when:** the object store's latency shows in the load test of uploads and downloads, or an upload's `PutObject` under the project's lock (below) holds a database connection long enough to matter
 
-The store gets a second implementation, `S3Store`, behind the same interface
-(`MAITY_ATTACHMENT_STORE=s3`, bucket, endpoint, region, credentials from a Secret), chosen at start.
-Downloads stay behind the hub's access checks: the hub streams the object (or answers with a
-presigned URL of a minute, a choice for the build card); uploads are written by the hub as today.
-The sweep and `remove_stray` keep their project-lock discipline and delete objects instead of files.
-Backups stop tarring a volume: the bucket's versioning (and its replication to a second
-location) replaces the attachment tar, and the dump marker stops requiring it.
-`LocalStore` stays for one replica and for development.
+The store has two implementations behind one interface (`attachment_store.BlobStore`): `LocalStore`,
+the default, for one replica, a laptop or a self-hosted hub, and `S3Store`, opt-in with
+`MAITY_ATTACHMENT_STORE=s3` and the `MAITY_ATTACHMENT_S3_*` settings, chosen at start. Nothing about
+the single-server setup changes: unset, the store is `local`, and `s3` is never a default.
+`attachment_store.shared(settings)` says whether every replica sees the same bytes, true only for
+`s3`; the several-pods check reads it rather than the setting's name.
 
-This is the one entry where the choice is the maintainer's as much as the design's: shared file
-storage (a `ReadWriteMany` volume) would need no code change in the hub, only in the
-chart and the backup job. The recommendation is object storage, for the reasons below.
+`S3Store` talks to the bucket through boto3, one client per process. Downloads stay behind the hub's
+access checks: the hub streams the object in 64 KiB pieces and checks its digest on the way; no
+presigned URL leaves the hub. An upload is one `PutObject`, so a reader sees the old bytes or the new
+ones; it is still written under the project's lock, as the local file is, so the sweep and
+`remove_stray` keep their lock discipline and delete objects instead of files. Every error of the
+client becomes a `StoreError` that names the operation and the service's error code, never a
+credential, and the client's own loggers are held at `INFO`, since botocore logs each request's
+headers at `DEBUG`. The chart values, the copy of an existing volume into the bucket and the backup
+without the volume's tar follow in a second pull request.
 
-**Reason:** object storage scales and replicates independently of the nodes, a bucket is the
-usual home for off-site backups anyway, and it removes the volume from every node's scheduling. A
-shared file system brings NFS semantics (locking, latency on many small files) and is one more
-piece to keep available; the hub writes files whole and never appends, which fits objects.
+**Reason:** object storage scales and replicates independently of the nodes, a bucket is the usual
+home for off-site backups anyway, and it removes the volume from every node's scheduling. A shared
+file system brings NFS semantics (locking, latency on many small files) and is one more piece to keep
+available; the hub writes files whole and never appends, which fits objects. boto3 is the client
+every S3-compatible service is tested against, and its retries and request signing are not code the
+hub has to keep.
 
 **Rejected alternatives:**
 - **`ReadWriteMany` shared file storage:** no hub change, but an NFS dependency on the hot path of
-  downloads and the tar backup stays.
+  downloads, and the tar backup stays.
 - **Attachments in the database:** one store for everything, but large binary rows in the dump
   and in the WAL, and the database is the resource this design is trying to spare.
+- **A client of the hub's own (SigV4 signing over the HTTP library it has):** no new dependency,
+  but signing, retries and the differences between services become the hub's to get right.
+- **Presigned download URLs:** less traffic through the hub, but a link that works for anyone who
+  holds it for its lifetime, outside the hub's access checks and its digest check.
 
 ## Connections: a per-pod pool sized to the database, PgBouncer only in session mode until prepared statements are off
 
@@ -733,7 +744,7 @@ interpretation; the scenarios are exactly the behaviours the entries above chang
 4. The `worker_run` claim with its interval and lease, the digest's lock order and the presence
    upsert (24489a9c); the shared forge budget, the forget channel and the stored `probe_via`
    (83da2bfa).
-5. `S3Store` and the backup change (a70d7269), once the storage choice is confirmed.
+5. `S3Store` (a70d7269, built), then the chart values and the backup change.
 6. Chart: replicas, autoscaling, disruption budget, spread, values gate, `RollingUpdate` for
    releases without migrations, pool sizing, the `prepare_threshold` setting, the timeouts on
    the role and `MAITY_DIRECT_DATABASE_URL` (2e7de08a, a83fc8e7); kubernetes.md 5e42eb26 is
