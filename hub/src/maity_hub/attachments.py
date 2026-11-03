@@ -322,7 +322,7 @@ def bind(
     deleted ones and other members' alike) or `already_attached`."""
     if not ids:
         return []
-    if settings is None or settings.attachment_dir is None:
+    if not attachment_store.configured(settings):
         raise ApiError(
             409,
             "attachments_not_configured",
@@ -380,7 +380,7 @@ def attach(conn: Connection, rows: list[Any], seq: int) -> None:
 
 
 def redact_message(
-    conn: Connection, seq: int, by: str | None, store: attachment_store.LocalStore | None
+    conn: Connection, seq: int, by: str | None, store: attachment_store.BlobStore | None
 ) -> None:
     """A redacted message has no attachments (§8.7, §8.5): the rows become tombstones in the
     redaction's transaction, `deleted_reason` `redacted`, and the bytes go once it commits.
@@ -422,11 +422,29 @@ def drop_pending(conn: Connection, membership_id: int) -> None:
 
 log = logging.getLogger(__name__)
 SWEEP_EVERY = 300  # seconds between sweeps
-BLOB_GRACE = 600  # a blob younger than this may belong to a transaction still open
+# An upload inserts its row only while less than this has passed since its write began
+# (`upload_clock`, taken before the write): a write and a lock wait together never take longer.
+UPLOAD_FRESH = 5 * 60
+# The sweep reads a blob's age from one clock: `local` has only the hub's, `s3` takes both
+# times from the store (the answer's `Date` against the object's LastModified). Only an `s3`
+# answer without a `Date` falls back to the hub's `time.time()`; for that case S3 and MinIO
+# refuse a signed request whose time is more than 15 minutes off their own (SigV4,
+# `RequestTimeTooSkewed`), the margin here (hub/context/attachments.md 7dcd4850).
+CLOCK_SKEW = 15 * 60
+# A blob younger than this may still get its row. Older by the sweep's look means, with the
+# skew taken off, more than `UPLOAD_FRESH` since the write began: no row may come any more.
+BLOB_GRACE = 30 * 60
+
+
+def upload_clock() -> float:
+    """Seconds on a clock that keeps counting while the host is suspended (Linux's boot
+    time), for the upload's own bound; elsewhere the monotonic clock."""
+    boot = getattr(time, "CLOCK_BOOTTIME", None)
+    return time.clock_gettime(boot) if boot is not None else time.monotonic()
 
 
 def expire(
-    engine: Engine, store: attachment_store.LocalStore, candidates: Sequence[Any], cutoff: Any
+    engine: Engine, store: attachment_store.BlobStore, candidates: Sequence[Any], cutoff: Any
 ) -> int:
     """Delete the candidates that are still pending and still past the cutoff, each under
     its project's lock, and remove the bytes of the rows that were deleted, and of no other.
@@ -450,27 +468,32 @@ def expire(
     return removed
 
 
-def remove_stray(engine: Engine, store: attachment_store.LocalStore, key: str) -> bool:
-    """Remove a blob no row names, if it is older than a transaction can be. The project's lock is
-    held from the look at the row to the removal, as an upload holds it from writing the blob to
-    inserting the row: an upload that commits meanwhile cannot lose its file."""
+def remove_stray(engine: Engine, store: attachment_store.BlobStore, key: str) -> bool:
+    """Remove a blob no row names, if it is older than `BLOB_GRACE`. The store is asked
+    outside every transaction: for `s3` its answers are network calls, and none may wait
+    under the project's lock (hub/context/attachments.md 7dcd4850).
+
+    Under the lock only the row is looked at. An upload inserts its row under the same lock
+    and only while its blob is younger than `UPLOAD_FRESH` (`routes/attachments`): a blob
+    older than `BLOB_GRACE` before the look, with no row at the look, can no longer get one,
+    so its removal after the lock is released cannot take the bytes of a row."""
     project_id, _, attachment_id = key.partition("/")
+    age = store.age(key, time.time())
+    if age is None or age <= BLOB_GRACE:
+        return False
     with engine.begin() as conn:
         events.lock_project(conn, project_id)
         named = conn.execute(
             select(t.attachment.c.id).where(t.attachment.c.id == attachment_id)
         ).first()
-        if named is not None:
-            return False
-        age = store.age(key, time.time())
-        if age is None or age <= BLOB_GRACE:
-            return False
-        store.delete(key)
+    if named is not None:
+        return False
+    store.delete(key)
     return True
 
 
 def sweep(
-    engine: Engine, store: attachment_store.LocalStore, stop: worker_runs.Stopping | None = None
+    engine: Engine, store: attachment_store.BlobStore, stop: worker_runs.Stopping | None = None
 ) -> dict[str, int]:
     """One pass: pending uploads past 24 hours go with their bytes, the bytes of a
     tombstoned row go if they are still there, and a blob no row names goes once it is
@@ -510,7 +533,7 @@ def sweep(
 class Worker:
     """Runs the sweep in the background, one thread per process, when a store is set."""
 
-    def __init__(self, engine: Engine, store: attachment_store.LocalStore) -> None:
+    def __init__(self, engine: Engine, store: attachment_store.BlobStore) -> None:
         self.engine = engine
         self.store = store
         self._stop = threading.Event()

@@ -348,7 +348,7 @@ def _remove(
     report: Any,
     note: str | None,
     fg: Forge,
-    store: attachment_store.LocalStore | None,
+    store: attachment_store.BlobStore | None,
 ) -> None:
     """Each with the note as its reason; the ordinary rules of who may do it do not apply
     to this one change (§16.8)."""
@@ -408,7 +408,7 @@ def apply(
     action: str,
     note: str | None,
     fg: Forge,
-    store: attachment_store.LocalStore | None = None,
+    store: attachment_store.BlobStore | None = None,
 ) -> None:
     """Make the change `action` asks for. Resolving again replaces the report's hold;
     `dismiss` lifts it and restores nothing. A suspension is the operator's to lift."""
@@ -432,7 +432,9 @@ def apply(
         if report.target_type == "card":  # a card a hold stood on is on the Board again
             public_pages.touch(conn, "project_views", str(report.project_id), removal=False)
             public_pages.touch(conn, "card", target_key(report)[1], removal=False)
-            public_pages.touch(conn, "project", str(report.project_id), removal=False)
+            public_pages.touch(
+                conn, "project", str(report.project_id), removal=False, dependents=False
+            )
         return
     if action == "hide":
         _hide(conn, report, note)
@@ -458,7 +460,8 @@ def apply(
     if report.target_type == "card":  # a card a hold stands on is on no Board, and has no page
         public_pages.touch(conn, "project_views", str(report.project_id))
         public_pages.touch(conn, "card", target_key(report)[1])
-        public_pages.touch(conn, "project", str(report.project_id))  # nor a ticker entry
+        # nor a ticker entry: the project's own page, as in `events.emit`
+        public_pages.touch(conn, "project", str(report.project_id), dependents=False)
     _agents_of_outsiders(conn, report, org_id, account)
     again = report.status == "resolved" and report.action == action and report.note == note
     # The affected account's notice: the action and the note, never the reporter. A repeat of

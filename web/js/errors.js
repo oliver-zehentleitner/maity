@@ -103,6 +103,7 @@ window.Maity = window.Maity || {};
     timestamp_skew: () => M.tOwn("error.timestamp_skew"),
     too_few: () => M.tOwn("error.too_few"),
     unauthenticated: () => M.tOwn("error.unauthenticated"),
+    upload_expired: () => M.tOwn("error.upload_expired"),
     version_exists: () => M.tOwn("error.version_exists"),
     webhook_signature: () => M.tOwn("error.webhook_signature"),
   };

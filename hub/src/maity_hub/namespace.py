@@ -173,6 +173,13 @@ def owner_of(conn: Connection, project: Any) -> dict[str, str]:
     return {"id": project.owner_id, "handle": handle}
 
 
+def current_handle(conn: Connection, owner_id: str) -> str | None:
+    """The current handle of a namespace owner, a human's or an organisation's (§6.26)."""
+    table = t.human if owner_id.startswith("hum-") else t.org
+    handle = conn.execute(select(table.c.handle).where(table.c.id == owner_id)).scalar()
+    return None if handle is None else str(handle)
+
+
 def full_name(conn: Connection, project: Any) -> str:
     """`<owner handle>/<slug>`: computed, never stored, so it follows a rename (§6.25)."""
     return f"{owner_of(conn, project)['handle']}/{project.slug}"
