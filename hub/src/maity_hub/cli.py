@@ -102,7 +102,10 @@ def main(argv: list[str] | None = None) -> int:
         help="copy the files under MAITY_ATTACHMENT_DIR into the bucket of the s3 store",
     )
     copy.add_argument(
-        "--apply", action="store_true", help="copy; without it only count what would be copied"
+        "--apply",
+        action="store_true",
+        help="copy, and remove from the bucket what was deleted since an earlier run; without it "
+        "only count",
     )
     quick = commands.add_parser(
         "quickstart",
@@ -162,33 +165,36 @@ def _copy_to_s3(settings: Settings, *, apply: bool) -> int:
             still=lambda key: _still_live(engine, key),
         )
         # The bucket's objects whose attachment was deleted since an earlier run (the hub
-        # still on the volume deletes only there), as the hub's sweep under `s3` removes them.
-        cleaned = (
-            _clean_bucket(engine, target) if apply else {"tombstoned": 0, "orphans": 0, "failed": 0}
-        )
+        # still on the volume deletes only there), as the hub's sweep under `s3` removes them;
+        # without `--apply` only counted.
+        cleaned = _clean_bucket(engine, target, apply=apply)
     except SchemaNotCurrentError as error:
         return _fail(str(error), EXIT_FAILURE)
     except (SQLAlchemyError, ImportError) as error:
         return _database_error(settings, error)
-    verb = "copied" if apply else "to copy"
+    verb, removed = ("copied", "removed from") if apply else ("to copy", "to remove from")
     print(
         f"{verb}: {done['copied']}, already there: {done['present']}, "
         f"different in the bucket: {done['differs']}, "
         f"deleted, not copied: {done['skipped_deleted']}, "
-        f"deleted, removed from the bucket: {cleaned['tombstoned'] + cleaned['orphans']}, "
+        f"deleted, {removed} the bucket: {cleaned['tombstoned'] + cleaned['orphans']}, "
         f"failed: {done['failed'] + cleaned['failed']}"
     )
     return EXIT_FAILURE if done["failed"] or cleaned["failed"] or done["differs"] else 0
 
 
-def _clean_bucket(engine: Any, target: attachment_store.S3Store) -> dict[str, int]:
+def _clean_bucket(engine: Any, target: attachment_store.S3Store, *, apply: bool) -> dict[str, int]:
     """The sweep's removals against the bucket, without expiring rows: a tombstone's object,
     and an object no row names once it is older than `BLOB_GRACE` (an upload in flight under
-    `s3` is younger). A failure is logged and counted; the copy itself stands."""
+    `s3` is younger). Without `apply` only counted. A failure of the store or the database is
+    logged and counted; the copy itself stands, and its counts are printed."""
     try:
-        done = attachments.sweep(engine, target, expiring=False)
-    except attachment_store.StoreError as error:
-        logging.getLogger(__name__).error("cleaning the bucket: %s", error)
+        done = attachments.sweep(engine, target, expiring=False, apply=apply)
+    except (attachment_store.StoreError, SQLAlchemyError) as error:
+        # The driver's first line only, as in `_database_error`: no SQL, no parameters.
+        original = getattr(error, "orig", None) or error
+        reason = (str(original).strip().splitlines() or [type(original).__name__])[0]
+        logging.getLogger(__name__).error("cleaning the bucket: %s", reason)
         return {"tombstoned": 0, "orphans": 0, "failed": 1}
     return {"tombstoned": done["tombstoned"], "orphans": done["orphans"], "failed": 0}
 
