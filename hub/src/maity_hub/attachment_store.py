@@ -22,10 +22,11 @@ import contextlib
 import datetime
 import email.utils
 import functools
+import hashlib
 import logging
 import os
 import secrets
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, BinaryIO, Protocol
 
@@ -145,6 +146,10 @@ class LocalStore:
         return [f"{project}/{p.name}" for p in folder.iterdir() if not p.name.startswith(".")]
 
 
+# The object metadata the hub writes with every blob (`x-amz-meta-sha256`): a copy compares it
+# instead of downloading the object again.
+SHA256 = "sha256"
+
 # The S3 client's own errors, by code, that mean "there is no such object".
 _MISSING = {"NoSuchKey", "404", "NotFound"}
 
@@ -192,10 +197,32 @@ class S3Store:
 
     def put(self, key: str, data: bytes) -> None:
         name = self._object(key)
+        digest = hashlib.sha256(data).hexdigest()
         try:
-            self.client.put_object(Bucket=self.bucket, Key=name, Body=data)
+            self.client.put_object(
+                Bucket=self.bucket, Key=name, Body=data, Metadata={SHA256: digest}
+            )
         except Exception as error:
             raise self._fail("store a blob", error) from None
+
+    def digest(self, key: str) -> str | None:
+        """The SHA-256 the hub wrote with the object, or None when it is gone or was written
+        without one (by another tool)."""
+        found = self.stat(key)
+        return found[1] if found else None
+
+    def stat(self, key: str) -> tuple[int, str | None] | None:
+        """The object's size and the SHA-256 the hub wrote with it (None when another tool wrote
+        it), or None when it is gone; one HEAD."""
+        name = self._object(key)
+        try:
+            answer = self.client.head_object(Bucket=self.bucket, Key=name)
+        except Exception as error:
+            if _code(error) in _MISSING:
+                return None
+            raise self._fail("look at a blob", error) from None
+        found = answer.get("Metadata", {}).get(SHA256)
+        return int(answer.get("ContentLength", -1)), (str(found) if found else None)
 
     def open(self, key: str) -> Blob | None:
         name = self._object(key)
@@ -366,3 +393,86 @@ def shared(settings: Settings) -> bool:
     `local` is one directory, shared only when the operator mounts the same one in
     every replica, which the hub cannot see."""
     return settings.attachment_s3 is not None
+
+
+def copy_local_to_s3(
+    source: LocalStore,
+    target: S3Store,
+    *,
+    apply: bool,
+    live: Callable[[str], set[str]] | None = None,
+    still: Callable[[str], bool] | None = None,
+) -> dict[str, int]:
+    """Copy every blob of the local store into the bucket, under the same key; the migration from
+    a volume to `s3` (hub/context/replicas.md 99360a7a). A blob the bucket already holds with the
+    same SHA-256 is skipped, so the copy can run again until it reports nothing to copy; the
+    local files are never changed. An object the hub wrote with another SHA-256 is never
+    overwritten: keys are immutable, so the file changed, and it is counted as `differs`. After
+    each put one HEAD checks the size and the SHA-256 the put wrote as metadata. A file is read
+    whole (at most `FILE_CAP`, like an upload). A folder or file the hub cannot read counts as
+    failed, the rest goes on. Without `apply` it only counts.
+
+    `live(project)` names the attachments of a project that have a row and are not deleted. A
+    file without one is skipped (`skipped_deleted`): under `s3` the hub deletes only in the
+    bucket, so a redacted or expired attachment's file stays on the volume and must not go back
+    (a file whose upload has not committed its row yet is skipped too; the next run takes it).
+    `still(key)` asks again right before and right after each put. Before, it saves the write
+    in the usual case; after, it closes the race: the hub commits a deletion first and removes
+    the bytes after, so an attachment deleted during the put is removed from the bucket again
+    here and counted as skipped (in a versioned bucket one noncurrent version remains, which its
+    lifecycle rule expires). A pending upload past its 24 hours that the sweep has not
+    removed yet still has its row and is copied; the next sweep removes it from the bucket."""
+    log = logging.getLogger(__name__)
+    done = {"copied": 0, "present": 0, "differs": 0, "skipped_deleted": 0, "failed": 0}
+    try:
+        projects = sorted(source.projects())
+    except OSError as error:
+        log.error("the volume: %s", error.strerror or type(error).__name__)
+        done["failed"] += 1
+        return done
+    for project in projects:
+        try:
+            keys = sorted(source.keys(project))
+        except OSError as error:  # lost+found on an ext4 volume, owned by root
+            log.error("%s: %s", project, error.strerror or type(error).__name__)
+            done["failed"] += 1
+            continue
+        alive = live(project) if live is not None else None
+        for key in keys:
+            if alive is not None and key.partition("/")[2] not in alive:
+                done["skipped_deleted"] += 1
+                continue
+            try:
+                data = source.get(key)
+            except OSError as error:
+                log.error("%s: %s", key, error.strerror or type(error).__name__)
+                done["failed"] += 1
+                continue
+            if data is None:  # removed since it was listed
+                continue
+            digest = hashlib.sha256(data).hexdigest()
+            try:
+                found = target.stat(key)
+                if found is not None and found[1] == digest:
+                    done["present"] += 1
+                    continue
+                if found is not None and found[1] is not None:
+                    log.error("%s: the bucket holds other bytes; not overwritten", key)
+                    done["differs"] += 1
+                    continue
+                if apply:
+                    if still is not None and not still(key):  # deleted since the live ids
+                        done["skipped_deleted"] += 1
+                        continue
+                    target.put(key, data)
+                    if target.stat(key) != (len(data), digest):
+                        raise StoreError("the attachment store did not keep a blob whole")
+                    if still is not None and not still(key):  # deleted while this ran
+                        target.delete(key)
+                        done["skipped_deleted"] += 1
+                        continue
+                done["copied"] += 1
+            except StoreError as error:
+                log.error("%s: %s", key, error)
+                done["failed"] += 1
+    return done
