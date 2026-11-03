@@ -3813,6 +3813,17 @@ window.Maity = window.Maity || {};
       if (entry.error) fail(entry.error.status, entry.error.code, entry.error.message, path, entry.error.fields ? { fields: entry.error.fields } : {});
       return Object.assign({ path: where, section: card.contract.section, fetched_at: nowIso() }, entry);
     }],
+    // §6.8 "The whole contract": the file `settings.contract_path` names, from
+    // fixtures/<slug>/contract.json keyed by path; an entry with `error`
+    // answers that refusal, a path without an entry not_found_on_forge.
+    ["GET", /^\/projects\/([^/]+)\/contract$/, (m, body, path) => {
+      const proj = project(m[1], path);
+      const where = (proj.settings || {}).contract_path || "docs/api.md";
+      const entry = (fixtures()[m[1] + "/contract.json"] || {})[where];
+      if (!entry) fail(404, "not_found", "the contract file is not there", path, { fields: { "settings.contract_path": "not_found_on_forge" } });
+      if (entry.error) fail(entry.error.status, entry.error.code, entry.error.message, path, entry.error.fields ? { fields: entry.error.fields } : {});
+      return Object.assign({ path: where, fetched_at: nowIso() }, entry);
+    }],
     // §6.4: a new card. assigned_to needs tasks:admin; plan and review need a reason.
     ["POST", /^\/projects\/([^/]+)\/tasks$/, (m, body, path) => {
       const proj = project(m[1], path);

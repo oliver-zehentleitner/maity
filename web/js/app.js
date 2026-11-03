@@ -25,6 +25,9 @@ window.Maity = window.Maity || {};
     // Redrawn in place on task_*, request_*, probe_observed and member_* (js/overview.js).
     { route: "overview", get label() { return M.t("nav.overview"); } },
     { route: "board", get label() { return M.t("nav.board"); }, watch: /^task_/, get changed() { return M.t("nav.board.changed"); } },
+    // The whole contract (js/contract.js, §6.8): opened from the overview's
+    // Contract row and a contract card's section; its tab is the overview's.
+    { route: "contract", get label() { return M.t("nav.contract"); }, tab: false, current: "overview" },
     // One card (/<owner>/<slug>/tasks/<id>, an id's link, js/ids.js): the board
     // with that card marked; its tab is the board's.
     { route: "tasks", view: "board", get label() { return M.t("nav.board"); }, tab: false, current: "board", watch: /^task_/, get changed() { return M.t("nav.board.changed"); } },
