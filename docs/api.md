@@ -4196,7 +4196,8 @@ or a line's kind, `since`, `last seen`, cards or reason), the hub
 withdraws it and, when an away instance is not silenced (below), files
 a new one in the same pass — a change of kind or `since` without a
 call too, although it would be silenced after an answer, at the cost of
-at most one more inbox item per hour. An answer from a page that has not seen the
+at most one more inbox item per hour, with its mail under the default
+`inbox` `immediate` (§18.4) and its entry in the bell list (§18.1). An answer from a page that has not seen the
 change is then `request_not_open` (409), so an answered request is
 always exactly what its page showed; a client that gets it on a digest
 request reloads the inbox (`GET /requests`), where the new one stands.
@@ -9681,7 +9682,9 @@ project's request list:
   `POST /requests/{id}/answer` (the body of the project route) —
   membership in the project not required. Nobody else answers it.
 - **Withdrawing.** Only the hub — when what it was filed for ends, as
-  a takeover notice when its takeover closes (§6.19); an outage notice
+  a takeover notice when its takeover closes (§6.19); the owner's digest
+  when what it shows changes, a new one following, or none is away any
+  more (§5.3); an outage notice
   when the placement recovers, is stopped or deleted, the project is
   archived or deleted, or the profile's owner changes (§15.7); a Keep
   the Why notice when the instance confirms, is removed or replaced,

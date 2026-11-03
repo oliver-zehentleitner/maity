@@ -432,7 +432,9 @@ since, nothing about it is new, whatever its state turns into (its cards moved, 
 the digest advises, or an episode started by the move); once it called, any later
 stop is new, a crash after work included. The record is what the request showed, not
 the state at the answer, because the answer can come hours after the filing and the
-owner did not see calls made in between. A rewrite in place would send no event and
+owner did not see calls made in between. This departs on purpose from the rewrite in
+place the hourly digest began with (messages.md,
+4bf2451b-2aa6-4264-aa9e-8b6e87d50c57). A rewrite in place would send no event and
 reach no open page, and pages opened before and after it would show different sets,
 so the request is refiled on every change instead: the answered request is always
 what its page showed, and an answer from a stale page is `request_not_open`. The cost

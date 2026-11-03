@@ -119,7 +119,7 @@ then sends `include_security`. Declined, nothing is sent. What the hub
 left unread (`skipped`) is named with its reason, and the panel stays
 open. A sign-in or an address change leads to the account's
 sessions (`/account/sessions`), a personal request of a project one is not in to everything waiting (the
-personal inbox, `/requests/<id>`, is not in the page yet), and "<n> of your agent instances are not listening"
+personal inbox, `/requests/<id>`, is not in the page yet), and "<n> of your agent instances are not listening" (or "… are away" when one of them stopped while holding cards)
 (`agents_not_listening`, target `agents`, under `not_listening.mode: bell`) to one's agents (`/agents`). Escape closes
 the panel from the bell or inside it. The bell links to the settings.
 
