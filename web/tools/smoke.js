@@ -4,6 +4,18 @@
 // are not covered. Needs a node binary only, no packages.
 //
 //   node tools/smoke.js .        (from web/; `make smoke`)
+//
+// Every run formats as CI does: English and UTC (tsk-c3qrypstpk5h). Intl's default
+// locale and time zone come from the environment when node starts, and the page
+// formats with them wherever a reader has chosen none; on a German machine the swarm
+// step read "2,4" for CI's "2.4". So a run in any other environment starts itself
+// again in this one. A case that is about another locale sets M.i18n.locale itself.
+const PINNED = { LANG: "en_US.UTF-8", LC_ALL: "en_US.UTF-8", LANGUAGE: "en_US", TZ: "UTC" };
+if (Object.entries(PINNED).some(([k, v]) => process.env[k] !== v)) {
+  const again = require("child_process").spawnSync(process.execPath, [...process.execArgv, __filename, ...process.argv.slice(2)],
+    { stdio: "inherit", env: Object.assign({}, process.env, PINNED) });
+  process.exit(again.status === null ? 1 : again.status);
+}
 const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
@@ -1329,7 +1341,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Each section's id is a fixed word, the same in every language (#891's review).
   const adminIds = main.querySelectorAll("section.admin-section").map((x) => x.getAttribute("id"));
   expect(JSON.stringify(adminIds) === JSON.stringify(["admin-statistics", "admin-users", "admin-limits", "admin-reports", "admin-mail-settings",
-    "admin-registration", "admin-sign-in", "admin-pages", "admin-instance-information"]),
+    "admin-registration", "admin-sign-in", "admin-pages", "admin-maintenance", "admin-instance-information"]),
     "admin: every section keyed by its fixed word " + JSON.stringify(adminIds));
   const meRow = userRows().find((tr) => text(tr).includes("Maintainer"));
   expect(text(meRow).includes("(you)") && text(meRow).includes("instance admin") && /Projects2|>2</.test(meRow.querySelectorAll("td").map((td) => td.attrs["data-label"] + td.textContent).join("")),
@@ -3444,7 +3456,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(cpPanel().querySelector(".card-body")) === "The REST contract hub, CLI and dashboard build against; ask @agent-b."
     // Its stored mention a link where it stands (the one renderer, review of #860).
     && cpPanel().querySelector(".card-body a.mention") && cpPanel().querySelector(".card-body a.mention").getAttribute("href") === "#/maintainer/maity/members/agt-b"
-    && cpNotes()[0] === "@agent-c · " + win.Maity.dom.formatTime("2026-10-21T10:30:00Z") + "The CLI needs --no-code here too."
+    && cpNotes()[0] === "@agent-c · " + win.Maity.dom.formatTime("2026-10-21T10:30:00Z") + "Edited by @agent-c · " + win.Maity.dom.formatTime("2026-10-21T10:35:00Z")
+      + ": Fixed a typo in the flag.The CLI needs --no-code here too.EditRemove"
     && cpNotes().length === 2 && cpGets.includes("/projects/maintainer/maity/tasks/tsk-0001/notes?state=open"),
     "card panel: the card with its controls (no link to itself, not dragged), the body as Markdown, the open notes only " + JSON.stringify(cpNotes()));
   // A redacted note (§6.16) keeps its place; its body is §8.5's tombstone, never "[object Object]".
@@ -3550,6 +3563,134 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.post = (p, b) => { if (p.includes("/notes")) cpPosts.push([p, b]); return cpPost(p, b); };
   cpForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(cpPosts.length === cpBefore + 2 && cpNotes().length === 4, "card panel: the note is sent again after the refusal");
+  // Edit and Remove (§6.16): the owner edits another's note with a reason, the old text gone, "edited" shown; Remove leaves the tombstone.
+  const neRmPath = () => "/projects/maintainer/maity/tasks/tsk-0001/notes/nte-0031";
+  const neNote = (id) => cpPanel().querySelectorAll("li.card-note").find((li) => li.getAttribute("data-note") === id);
+  const cpPatches = [], cpPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { cpPatches.push([p, b]); return cpPatch(p, b); };
+  btn(neNote("nte-0031"), "Edit").click(); await tick();
+  const cpEditText = byId("card-note-edit-nte-0031"), cpEditReason = byId("card-note-reason-nte-0031");
+  expect(cpEditText && cpEditText.value === "The CLI needs `--no-code` here too." && document.activeElement === cpEditText && !neNote("nte-0031").querySelector(".card-note-actions")
+    && text(neNote("nte-0031")).includes("Why you change someone else's note"),
+    "note edit: the text in a field, focused, the reason asked for another's note");
+  cpEditText.value = "The CLI needs `--no-code` and `--quiet`.";
+  neNote("nte-0031").querySelector("form.card-note-edit-form").dispatch("submit"); await tick();
+  expect(!cpPatches.length && text(neNote("nte-0031")).includes("Say why you change someone else's note.") && document.activeElement === cpEditReason,
+    "note edit: another's note is not sent without a reason");
+  cpEditReason.value = "  scope  ";
+  neNote("nte-0031").querySelector("form.card-note-edit-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(cpPatches[0]) === JSON.stringify(["/projects/maintainer/maity/tasks/tsk-0001/notes/nte-0031", { body: "The CLI needs `--no-code` and `--quiet`.", base_version: 2, reason: "scope" }])
+    && text(neNote("nte-0031")).includes("Edited by @maintainer") && text(neNote("nte-0031")).includes(": scope")
+    && text(neNote("nte-0031")).includes("The CLI needs --no-code and --quiet.") && !text(neNote("nte-0031")).includes("here too")
+    && document.activeElement === btn(neNote("nte-0031"), "Edit"),
+    "note edit: sent with the reason, the new text and the mark shown, the focus back on Edit " + text(neNote("nte-0031")));
+  // One's own note: no reason needed; Cancel and Escape leave it as it was.
+  const cpMine = cpPanel().querySelectorAll("li.card-note")[2].getAttribute("data-note");
+  btn(neNote(cpMine), "Edit").click(); await tick();
+  expect(text(neNote(cpMine)).includes("Why (optional"), "note edit: the reason is optional for one's own note");
+  byId("card-note-edit-" + cpMine).value = "changed?";
+  btn(neNote(cpMine), "Cancel").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(cpPatches.length === 1 && text(neNote(cpMine)).includes("Check §6.16 too.") && !neNote(cpMine).querySelector("form") && document.activeElement === btn(neNote(cpMine), "Edit"),
+    "note edit: Cancel sends nothing and leaves the note as it was");
+  btn(neNote(cpMine), "Edit").click(); await tick();
+  byId("card-note-edit-" + cpMine).value = "Check §6.16 and §8.5.";
+  neNote(cpMine).querySelector("form.card-note-edit-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(cpPatches[1][1]) === JSON.stringify({ body: "Check §6.16 and §8.5.", base_version: 1 }) && text(neNote(cpMine)).includes("Edited by @maintainer")
+    && !text(neNote(cpMine).querySelector(".card-note-edited")).includes(": "),
+    "note edit: one's own note is saved without a reason, its mark without one");
+  // A refusal keeps the form and says why.
+  win.Maity.api.patch = () => Promise.reject(Object.assign(new Error("a note is at most 4 KiB"), { code: "invalid", details: { fields: { body: "too_long" } } }));
+  btn(neNote(cpMine), "Edit").click(); await tick();
+  neNote(cpMine).querySelector("form.card-note-edit-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(neNote(cpMine).querySelector("form.card-note-edit-form") && text(neNote(cpMine)).includes("Not saved") && !btn(neNote(cpMine), "Save").disabled,
+    "note edit: a refusal keeps the form and says so");
+  neNote(cpMine).querySelector("form.card-note-edit-form").dispatch("keydown", { key: "Escape" }); for (let k = 0; k < 4; k++) await tick();
+  expect(!neNote(cpMine).querySelector("form") && cpPanel(), "note edit: Escape in the form leaves the edit, not the card");
+  win.Maity.api.patch = cpPatch;
+  // A stale edit (§6.16): the note changed after the form opened; the hub's conflict shows the
+  // text as it is now, keeps the writer's own, says "not saved", and the next save names the new version.
+  const nePath = "/projects/maintainer/maity/tasks/tsk-0001/notes/nte-0031";
+  win.Maity.api.patch = (p, b) => { cpPatches.push([p, b]); return cpPatch(p, b); };
+  btn(neNote("nte-0031"), "Edit").click(); await tick();
+  await cpPatch(nePath, { body: "Changed by someone else.", base_version: 3, reason: "meanwhile" });
+  byId("card-note-edit-nte-0031").value = "My correction.";
+  byId("card-note-reason-nte-0031").value = "mine";
+  neNote("nte-0031").querySelector("form.card-note-edit-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  const neNow = neNote("nte-0031").querySelector(".card-note-now");
+  expect(cpPatches[cpPatches.length - 1][1].base_version === 3 && neNote("nte-0031").querySelector("form.card-note-edit-form")
+    && neNow && text(neNow).includes("The note now reads:") && text(neNow).includes("Changed by someone else.")
+    && byId("card-note-edit-nte-0031").value === "My correction." && text(neNote("nte-0031")).includes("changed in the meantime")
+    && !btn(neNote("nte-0031"), "Save").disabled,
+    "note edit: a stale edit is not saved, the note as it is now shown above the writer's own text " + text(neNote("nte-0031")));
+  neNote("nte-0031").querySelector("form.card-note-edit-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(cpPatches[cpPatches.length - 1][1].base_version === 4 && !neNote("nte-0031").querySelector("form")
+    && text(neNote("nte-0031")).includes("My correction.") && !text(neNote("nte-0031")).includes("someone else"),
+    "note edit: saved again on the version it was shown, the writer's text replaces it");
+  win.Maity.api.patch = cpPatch;
+  // Remove: a reason asked for (again when empty), the tombstone in place and focused; cancelled sends nothing.
+  const cpPrompt = win.prompt, cpAsks = [];
+  win.prompt = () => null;
+  btn(neNote(cpMine), "Remove").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(cpPosts.length === cpBefore + 2 && !neNote(cpMine).querySelector(".card-note-removed"), "note remove: cancelled, nothing sent");
+  win.prompt = (q) => { cpAsks.push(q); return cpAsks.length === 1 ? "  " : "posted twice"; };
+  btn(neNote(cpMine), "Remove").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(cpAsks.length === 2 && cpAsks[1].startsWith("A reason is needed")
+    && JSON.stringify(cpPosts[cpPosts.length - 1]) === JSON.stringify(["/projects/maintainer/maity/tasks/tsk-0001/notes/" + cpMine + "/redact", { reason: "posted twice", base_version: 2 }])
+    && text(neNote(cpMine)).includes("The note was removed by Maintainer: posted twice") && !neNote(cpMine).querySelector(".md, .card-note-actions, .card-note-edited")
+    && document.activeElement === neNote(cpMine).querySelector(".card-note-removed"),
+    "note remove: asked for a reason, the tombstone in place, no buttons, the focus on it " + text(neNote(cpMine)));
+  // A stale removal: the note changed after the list was read; nothing is removed and the
+  // list shows the text as it is now.
+  await cpPatch(neRmPath(), { body: "Rewritten before the removal.", base_version: 5, reason: "meanwhile" });
+  win.prompt = () => "stale";
+  btn(neNote("nte-0031"), "Remove").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(cpPosts[cpPosts.length - 1]) === JSON.stringify([neRmPath() + "/redact", { reason: "stale", base_version: 5 }])
+    && !neNote("nte-0031").querySelector(".card-note-removed") && text(neNote("nte-0031")).includes("Rewritten before the removal.")
+    && text(cpPanel()).includes("Not removed: the note was changed in the meantime"),
+    "note remove: a stale removal removes nothing, the note as it is now listed " + text(neNote("nte-0031")));
+  // An edit of a note removed meanwhile: the hub answers `invalid`/`redacted` (removal before
+  // version, §6.16); the edit ends, the list shows the tombstone, the message says why.
+  btn(neNote("nte-0031"), "Edit").click(); await tick();
+  await cpPost(neRmPath() + "/redact", { reason: "removed meanwhile", base_version: 6 });
+  byId("card-note-edit-nte-0031").value = "Too late.";
+  byId("card-note-reason-nte-0031").value = "late";
+  neNote("nte-0031").querySelector("form.card-note-edit-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(!neNote("nte-0031").querySelector("form") && neNote("nte-0031").querySelector(".card-note-removed")
+    && text(cpPanel()).includes("Not saved: the note was removed in the meantime."),
+    "note edit: a note removed meanwhile ends the edit, its tombstone listed " + text(neNote("nte-0031")));
+  // A removal that comes second: someone removed the note first; the list shows the tombstone
+  // and the line says so, not "not removed".
+  const neLast = cpPanel().querySelectorAll("li.card-note").filter((li) => !li.querySelector(".card-note-removed")).pop().getAttribute("data-note");
+  const neLastPath = "/projects/maintainer/maity/tasks/tsk-0001/notes/" + neLast;
+  await cpPost(neLastPath + "/redact", { reason: "first", base_version: 1 });
+  win.prompt = () => "second";
+  btn(neNote(neLast), "Remove").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(neNote(neLast).querySelector(".card-note-removed") && text(cpPanel()).includes("Already removed: someone removed the note first.")
+    && !text(cpPanel()).includes("Not removed"),
+    "note remove: a note someone removed first is listed as removed, the line says so " + text(cpPanel().querySelector(".send-status")));
+  win.prompt = cpPrompt;
+  // A member without events:admin: Edit on their own note only, no Remove; a tombstone
+  // without the reason the hub keeps from them (§8.5); a closed project takes no edit.
+  const cpOthersAll = win.Maity.api.getAll;
+  const cpList = [
+    { id: "nte-a", author: { member_id: "hum-x", handle: "x", kind: "human" }, body: "Mine.", mentions: [], state: "open", edited: null, created_at: "2026-10-21T10:00:00Z" },
+    { id: "nte-b", author: { member_id: "agt-c", handle: "agent-c", kind: "agent" }, body: "Theirs.", mentions: [], state: "open", edited: null, created_at: "2026-10-21T10:00:00Z" },
+    { id: "nte-c", author: { member_id: "agt-b", handle: "agent-b", kind: "agent" }, body: { redacted: true, reason: null, by: "hum-maintainer", at: "2026-10-21T12:00:00Z" }, mentions: [], state: "open", edited: null, created_at: "2026-10-21T10:00:00Z" },
+    { id: "nte-d", author: { member_id: "agt-b", handle: "agent-b", kind: "agent" }, body: { redacted: true, reason: null, by: null, at: null }, mentions: [], state: "open", edited: null, created_at: "2026-10-21T10:00:00Z" }];
+  win.Maity.api.getAll = (p) => (p.endsWith("/notes?state=open") ? Promise.resolve({ items: cpList }) : cpOthersAll(p));
+  const cpReader = (state, canAdmin) => win.Maity.cardPanel.render({ base: "/projects/maintainer/maity", slug: "maity", project: { state }, link: () => "#", canAdmin,
+    me: { id: "hum-x", kind: "human" }, members: [], memberById: {} }, { id: "tsk-0001", title: "Notes", links: [] }, win.Maity.dom.h("article"), () => {});
+  const cpPlain = cpReader("build", false); for (let k = 0; k < 4; k++) await tick();
+  const cpLi = (panel, id) => panel.el.querySelectorAll("li.card-note").find((li) => li.getAttribute("data-note") === id);
+  const cpButtons = (panel, id) => cpLi(panel, id).querySelectorAll("button").map((b) => text(b));
+  expect(JSON.stringify(cpButtons(cpPlain, "nte-a")) === JSON.stringify(["Edit"]) && !cpButtons(cpPlain, "nte-b").length && !cpButtons(cpPlain, "nte-c").length
+    && text(cpLi(cpPlain, "nte-c")).includes("The note was removed by hum-maintainer. · ") && !text(cpLi(cpPlain, "nte-c")).includes("null")
+    && text(cpLi(cpPlain, "nte-d")).endsWith("The note was removed."),
+    "note edit: a member edits their own note only, removes none; a tombstone without its reason " + text(cpLi(cpPlain, "nte-c")));
+  const cpClosed = cpReader("archived", true); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(cpButtons(cpClosed, "nte-a")) === JSON.stringify(["Remove"]) && JSON.stringify(cpButtons(cpClosed, "nte-b")) === JSON.stringify(["Remove"]),
+    "note edit: a closed project takes no edit, a removal still");
+  win.Maity.api.getAll = cpOthersAll;
   // Escape closes, as Close does: the board again, the card marked, its title focused.
   cpPanel().dispatch("keydown", { key: "Escape" }); for (let k = 0; k < 4; k++) await tick(); await new Promise((r) => setTimeout(r, 5));
   expect(win.location.hash === "#/maintainer/maity/board" && !cpPanel() && cpCard().classList.contains("wanted") && document.activeElement === cpCard().querySelector("a.card-open"),
@@ -4246,10 +4387,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(text(main).includes(says) && main.querySelector("form.join-form"), "join: a hand-over the hub refuses is said in words (" + typed + ")");
   }
   joinPosts.length = 0;
-  byId("join-handover").value = " 6001 ";
+  // Written as the page shows a message ("message #6001"), the leading # is no part of the seq.
+  byId("join-handover").value = " #6001 ";
   main.querySelector("form.join-form").dispatch("submit"); await tick(); await tick();
   expect(joinPosts.length === 1 && joinPosts[0][1].briefing === "You review hub/.", "the join sends the briefing, trimmed");
-  expect(joinPosts[0][1].takes_over === "agt-a" && joinPosts[0][1].handover === 6001, "join: takes_over and a message's seq as a number go with a first join");
+  expect(joinPosts[0][1].takes_over === "agt-a" && joinPosts[0][1].handover === 6001, "join: takes_over and a message's seq as a number go with a first join, a leading # dropped");
   win.Maity.api.post = realPost2;
   expect(text(main).includes("maity join https://maity.example/j/FIXTURE") && text(main).includes("shown once"), "paste line shown once");
   expect(text(main).includes("as a message in its clone of the repository") && text(main).includes("install the maity CLI first") && text(main).includes("follows the join page"), "the paste line says where it goes");
@@ -4784,6 +4926,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/account"); for (let k = 0; k < 4; k++) await tick();
   expect(text(byId("meat-proxy-note")) === "This person says: a newer note.", "meat proxy: the note shown is the one /me carries");
   win.Maity.api.get = mpGet;
+  // The online switch on the account page (§16.9): on by default, unticking sends exactly
+  // {public_presence: false}, and the box then shows what the hub answered.
+  {
+    await go("#/account"); for (let k = 0; k < 4; k++) await tick();
+    const psForm = () => main.querySelector("form.public-profile-form");
+    const psPatch = win.Maity.api.patch, psSent = [];
+    win.Maity.api.patch = (p, b) => { if (p === "/me") psSent.push(b); return psPatch(p, b); };
+    expect(psForm() && byId("public-presence") && byId("public-presence").checked, "online switch: the account page shows it ticked by default");
+    byId("public-presence").checked = false; psForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    expect(JSON.stringify(psSent) === JSON.stringify([{ public_presence: false }]) && !byId("public-presence").checked,
+      "online switch: unticking sends public_presence false alone and keeps the answer " + JSON.stringify(psSent));
+    byId("public-presence").checked = true; psForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    expect(JSON.stringify(psSent[psSent.length - 1]) === JSON.stringify({ public_presence: true }) && byId("public-presence").checked,
+      "online switch: ticking it again sends public_presence true " + JSON.stringify(psSent));
+    win.Maity.api.patch = psPatch;
+  }
   // Your data (docs/api.md §2.9): the export and the deletion request, each a sensitive call (§2.8): the page asks for the
   // password or a code where the hub says so, proves it and makes the call again.
   const ydGet = win.Maity.api.get, ydPost = win.Maity.api.post, ydSave = win.Maity.yourData.save;
@@ -6501,14 +6659,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !main.querySelector(".earlier button"), "group chat: the earlier part is read on demand and put before");
   // Reading along as an agent's owner: no writing, no managing, no removing; the observers named.
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/conversations/cnv-0007"
-    ? gcGet(p).then((v) => Object.assign({}, v, { access: "observer", observers: ["hum-maintainer", "hum-outside"],
+    ? gcGet(p).then((v) => Object.assign({}, v, { access: "observer", observers: ["hum-maintainer", "hum-outside", "agt-unlisted"],
       participants: v.participants.filter((x) => x.member_id !== "hum-maintainer").concat([{ member_id: "hum-ops", kind: "human", handle: "ops", owner_id: null, joined_at: v.created_at }]) }))
     : gcGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/cnv-0007");
   expect(!byId("chat-text") && text(main).includes("You read along as the owner of an agent in this chat") && !main.querySelector(".group-manage")
     && !gcList().querySelectorAll("button").some((b) => b.textContent === "Remove" || b.textContent === "Quote")
-    && text(main.querySelector(".group-observers")).includes("Also read by: you (owner of Agent A, Agent B), an owner outside the project"),
-    "group chat: an owner reads along, writes and manages nothing, and is named as reading along");
+    && text(main.querySelector(".group-observers")).includes("Also read by: you (owner of Agent A, Agent B), an owner outside the project, an agent not listed for you. They read"),
+    "group chat: an owner reads along, writes and manages nothing, and is named as reading along; one owning no agent in it is named alone, an agent the list lacks neutrally "
+    + JSON.stringify(text(main.querySelector(".group-observers"))));
   // A closed chat stays readable and takes nothing.
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/conversations/cnv-0007" ? gcGet(p).then((v) => Object.assign({}, v, { closed_at: "2026-10-22T10:00:00Z", closed_reason: "no_human" })) : gcGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/chat/cnv-0007");
@@ -7736,6 +7895,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const refused = await win.Maity.api.patch("/me", { public_bio: "a\u0001b" }).catch((e) => e);
     await win.Maity.api.patch("/me", { public_profile: false, public_bio: null });
     expect(gone.member.public_profile === true && gone.member.public_bio === "Builds tools." && refused.details.fields.public_bio === "control_character", "public profile: the fixture takes both fields and refuses a control character");
+    const hidden = await win.Maity.api.patch("/me", { public_presence: false });
+    const shown = await win.Maity.api.patch("/me", { public_presence: true });
+    expect(hidden.member.public_presence === false && shown.member.public_presence === true, "online switch: the fixture stores public_presence and answers it");
   }
   expect(byId("ktw-defaults-select").value === "adopt" && text(kdForm()).includes(".keep-the-why"),
     "keep the why: the personal settings read adopt and name the repository's file");
@@ -9813,8 +9975,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && cpRows()[0] === "2026-10-31|main page|none|140|3|1" && cpRows()[1] === "2026-10-31|/for/maintainers|x-h1-w1 (removed)|212|9|4"
     && text(main).includes("Views are approximate") && !main.querySelectorAll("a").some((a) => a.textContent === "Download as CSV"),
     "statistics: the campaign table for the same window, views marked approximate, a code no longer configured marked removed; no CSV link in fixtures " + JSON.stringify(cpRows()));
-  // A fresh instance: zeros, nothing broken.
-  win.Maity.api.get = (p) => (p.startsWith("/admin/statistics")
+  // A fresh instance: zeros, nothing broken; a campaign's counts formatted for the locale as the tiles are.
+  win.Maity.api.get = (p) => (p.startsWith("/admin/statistics/campaigns")
+    ? Promise.resolve({ as_of: "2026-10-25T10:00:00Z", window_days: 7, views_approximate: false,
+      rows: [{ date: "2026-10-25", variant: "default", campaign: null, views: 12345, registrations: 0, activations: 0 }] })
+    : p.startsWith("/admin/statistics")
     ? Promise.resolve({ as_of: "2026-10-25T10:00:00Z", window_days: 7, totals: { humans: 1, humans_pending: 0, agents: 0, projects: 0, instances_online: 0, humans_with_an_agent: 0 },
       days: Array.from({ length: 7 }, (_, i) => ({ date: "2026-10-" + (25 - i), registrations: 0, new_instances: 0, humans_active: i ? 0 : 1, agents_active: 0,
         cards_created: 0, cards_claimed: 0, cards_done: 0, reviews: 0 })), returning: { after_7_days: 0, after_30_days: 0 }, coverage: { reviews_since: null } })
@@ -9822,6 +9987,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(stBox(), "7 days").click(); for (let k = 0; k < 4; k++) await tick();
   expect(stCells("cards_done")[1] === "0" && stCells("humans_active")[1] === "up to 1 a day" && !text(stBox()).includes("Reviews are counted from")
     && stTiles()[0] === "1Humans", "statistics: an empty instance reads zeros");
+  expect(cpRows()[0] === "2026-10-25|main page|none|12,345|0|0", "statistics: a campaign's counts are formatted for the locale " + JSON.stringify(cpRows()));
   win.Maity.api.get = (p) => (p.startsWith("/admin/statistics") ? Promise.reject(new win.Maity.api.ApiError("boom", 500, p, "internal")) : stGet(p));
   btn(stBox(), "30 days").click(); for (let k = 0; k < 4; k++) await tick();
   expect(!stBox().querySelector("li.stat-tile") && text(stBox()).includes("The statistics could not be read: boom"), "statistics: a failed read clears the old counts and says so");
@@ -10776,6 +10942,131 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(crewBack.status === "withdrawn" && crewAgain.code === "request_not_open", "transfer: its asker withdraws it, the owners' requests with it");
   expect(win.Maity.projectNames.said({ code: "invalid_transition", details: { reason: "transfer_stale" } }).message === "the transfer no longer holds; ask again",
     "transfer: a stale transfer is said as invalid_transition with its reason");
+
+  // §16.12 The maintenance window (tsk-12hwmpykz2ht): the admin announces, changes, cancels and ends
+  // it; the banner stands above the header on every page, the full page instead of the view while it
+  // runs; the owner chooses which agents get the notice. The header gets the page's body as its parent,
+  // where the banner goes.
+  const mtBody = new El("body"); mtBody.appendChild(header); mtBody.appendChild(main);
+  const mtBanner = () => mtBody.childNodes.find((n) => n.id === "maintenance-banner") || null;
+  const mtPad = (n) => String(n).padStart(2, "0");
+  const mtField = (ms) => { const d = new Date(ms); return d.getFullYear() + "-" + mtPad(d.getMonth() + 1) + "-" + mtPad(d.getDate()) + "T" + mtPad(d.getHours()) + ":" + mtPad(d.getMinutes()); };
+  const mtSection = () => byId("admin-maintenance");
+  const mtSettle = async () => { for (let k = 0; k < 8; k++) await tick(); };
+  const mtSubmit = async (from, until, words) => {
+    if (from !== null) byId("maintenance-from").value = from;
+    byId("maintenance-until").value = until;
+    byId("maintenance-text").value = words;
+    mtSection().querySelector("form.admin-maintenance-form").dispatch("submit");
+    await mtSettle();
+  };
+  await go("#/admin/maintenance"); await mtSettle();
+  expect(mtSection() && !mtSection().hidden && text(mtSection()).includes("No maintenance window is announced.") && text(mtSection()).includes("No changes yet.")
+    && !mtBanner(), "maintenance: /admin/maintenance opens the section; no window, no banner");
+  await mtSubmit(mtField(Date.now() + 3600000), mtField(Date.now() - 60000), "DB upgrade");
+  expect(text(mtSection()).includes("Not saved: Until: must be in the future") && !mtBanner(), "maintenance: a window that would end in the past is refused, said per field");
+  await mtSubmit(mtField(Date.now() + 3600000), mtField(Date.now() + 7200000), "  DB <b>upgrade</b>  ");
+  const mtUp = mtBanner();
+  expect(text(mtSection()).includes("Saved.") && text(mtSection()).includes("Announced: ") && text(mtSection()).includes("Cancel the window")
+    && mtUp && mtUp.getAttribute("role") === "status" && mtUp.className === "maintenance-banner" && mtBody.childNodes.indexOf(mtUp) === mtBody.childNodes.indexOf(header) - 1
+    && /^Maintenance .+–.+: DB <b>upgrade<\/b>$/.test(mtUp.textContent) && !mtUp.querySelector("b"),
+  "maintenance: announced, the banner stands above the header, the text trimmed and shown as text, never as markup");
+  expect(text(mtSection().querySelector(".maintenance-change-list")).startsWith("Announced"), "maintenance: the change is listed");
+  await go("#/all"); await mtSettle();
+  expect(mtBanner() === mtUp && !main.querySelector(".maintenance-page") && main.querySelector(".view-all"), "maintenance: an upcoming window leaves the view, the banner stays across pages");
+  // The start passes under the open page (the boundary timer): the same words, the banner turns running.
+  const mtNow = win.Maity.api.now;
+  win.Maity.api.now = () => Date.now() + 3600000 + 60000;
+  win.Maity.maintenance.drawBanner();
+  expect(mtBanner() && mtBanner().className === "maintenance-banner running", "maintenance: an upcoming window that starts under the page turns the banner running");
+  win.Maity.api.now = mtNow;
+  win.Maity.maintenance.drawBanner();
+  expect(mtBanner() && mtBanner().className === "maintenance-banner", "maintenance: back before the start, the banner is upcoming again");
+  await go("#/admin/maintenance"); await mtSettle();
+  btn(mtSection(), "Cancel the window").click(); await mtSettle();
+  expect(!mtBanner() && text(mtSection()).includes("No maintenance window is announced.")
+    && text(mtSection().querySelector(".maintenance-change-list")).startsWith("Cancelled"), "maintenance: a cancelled window takes the banner with it");
+  // Running: the admin's own section alone, every other page the full page, every other call refused.
+  await mtSubmit(mtField(Date.now() - 600000), mtField(Date.now() + 1800000), "Moving the database");
+  await mtSettle();
+  expect(mtBanner() && mtBanner().className === "maintenance-banner running" && mtSection() && text(mtSection()).includes("Running since")
+    && byId("maintenance-from").disabled && text(main).includes("Back to Maity") && !header.querySelector("nav.switcher"),
+  "maintenance: running, the admin keeps the window's section alone, its start fixed");
+  const mtRefused = await win.Maity.api.get("/projects").then(() => null, (err) => err);
+  expect(mtRefused && mtRefused.status === 503 && mtRefused.code === "maintenance" && mtRefused.details.text === "Moving the database"
+    && mtRefused.details.retry_after > 0, "maintenance: the fixture hub refuses other calls with 503 maintenance, the window in its details");
+  await go("#/all"); await mtSettle();
+  const mtPage = main.querySelector(".maintenance-page");
+  expect(mtPage && mtPage.all().some((e) => e.tagName === "H2" && e.textContent === "Maintenance") && text(mtPage).includes("Moving the database") && text(mtPage).includes("back at")
+    && btn(mtPage, "End maintenance now") && mtPage.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/admin/maintenance")
+    && !main.querySelector(".error") && plainTitle() === "Maintenance · Maity", "maintenance: the full page for the instance admin, with End maintenance now and the way to change it");
+  const mtOther = new El("main"), mtHead = new El("header");
+  win.Maity.maintenance.fullPage(mtOther, mtHead, { me: { instance_admin: false }, brand: new El("h1") });
+  const mtVisitor = new El("main");
+  win.Maity.maintenance.fullPage(mtVisitor, new El("header"), { me: null, brand: new El("h1"), signIn: true });
+  expect(!btn(mtOther, "End maintenance now") && !mtOther.querySelectorAll("a").length && text(mtOther).includes("Moving the database")
+    && mtVisitor.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/login" && a.textContent === "Sign in as the instance admin"),
+  "maintenance: anyone else gets the notice alone, a visitor the way to sign in");
+  btn(mtPage, "End maintenance now").click(); await mtSettle(); await mtSettle();
+  expect(!mtBanner() && !main.querySelector(".maintenance-page") && main.querySelector(".view-all"), "maintenance: ended early, the view is back and the banner gone");
+  const mtChanges = (await win.Maity.api.get("/admin/maintenance/changes")).items.map((c) => c.action);
+  expect(JSON.stringify(mtChanges) === JSON.stringify(["ended", "created", "cancelled", "created"]), "maintenance: every change kept, newest first " + JSON.stringify(mtChanges));
+  // A window that starts while a page is open, learnt from a refused call: the full page at once.
+  await win.Maity.api.put("/admin/maintenance", { from: new Date(Date.now() - 60000).toISOString(), until: new Date(Date.now() + 600000).toISOString(), text: "Told by a refusal" });
+  expect(!mtBanner() && !main.querySelector(".maintenance-page"), "maintenance: (a window the page has not read yet)");
+  await win.Maity.api.get("/projects").catch(() => null); await mtSettle();
+  expect(main.querySelector(".maintenance-page") && text(main).includes("Told by a refusal") && mtBanner(), "maintenance: a 503 maintenance shows the full page at once");
+  // Someone other than the instance admin, signed in: the full page at /admin/maintenance too, with a way out.
+  const mtMeGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/me" ? mtMeGet(p).then((v) => ({ ...v, member: { ...v.member, instance_admin: false } })) : mtMeGet(p));
+  await go("#/admin/maintenance"); await mtSettle();
+  expect(main.querySelector(".maintenance-page") && !mtSection() && !btn(main, "End maintenance now") && header.querySelector("button.maintenance-sign-out")
+    && header.querySelector("button.maintenance-sign-out").textContent === "Sign out",
+  "maintenance: a signed-in non-admin gets the full page at /admin/maintenance too, and a way to sign out");
+  // A visitor without a session: the full page through the drawing itself, with the way to the sign-in.
+  win.Maity.api.get = (p) => (p === "/auth/session" ? Promise.reject(new win.Maity.api.ApiError("x", 401, p, "unauthenticated", {})) : mtMeGet(p));
+  await go("#/all"); await mtSettle();
+  expect(main.querySelector(".maintenance-page") && main.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/login") && !byId("login-handle"),
+    "maintenance: a visitor without a session gets the full page, not the public page or the sign-in");
+  win.Maity.api.get = mtMeGet;
+  // A banner left in other words (a change of language) is drawn again by the next drawing, even from a recent read.
+  mtBanner().textContent = "stale words";
+  await win.Maity.maintenance.fresh();
+  expect(mtBanner() && mtBanner().textContent !== "stale words" && mtBanner().textContent.includes("Told by a refusal"),
+    "maintenance: a drawing redraws the banner from a recent read, so a change of language reaches it");
+  // The window ends at `until` by itself: past it, nothing is known to run and the banner goes.
+  const mtClock = win.Maity.api.now;
+  win.Maity.api.now = () => Date.now() + 601000;
+  win.Maity.maintenance.drawBanner();
+  expect(win.Maity.maintenance.current() === null && !win.Maity.maintenance.running() && !mtBanner(), "maintenance: past `until` the window is over by itself, the banner gone");
+  win.Maity.api.now = mtClock;
+  win.Maity.maintenance.drawBanner();
+  await win.Maity.api.post("/admin/maintenance/end");
+  win.Maity.maintenance.know(null); await mtSettle();
+  expect(!main.querySelector(".maintenance-page") && !mtBanner(), "maintenance: a window gone takes the full page with it");
+  // The sign-in page during a window: the hub may refuse its read of the methods; the mailed link stays offered.
+  const mtGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/auth/methods" ? Promise.reject(new win.Maity.api.ApiError("x", 503, p, "maintenance", {})) : mtGet(p));
+  const mtLogin = win.Maity.deviceSignIn.loginOptions(() => {}, () => {}); await mtSettle();
+  win.Maity.api.get = (p) => (p === "/auth/methods" ? Promise.reject(new win.Maity.api.ApiError("x", 500, p, "internal", {})) : mtGet(p));
+  const mtLoginDown = win.Maity.deviceSignIn.loginOptions(() => {}, () => {}); await mtSettle();
+  win.Maity.api.get = mtGet;
+  expect(mtLogin.querySelectorAll("section.sign-in-mail").length === 1
+    && !mtLoginDown.querySelectorAll("section.sign-in-mail").length,
+  "maintenance: the sign-in still offers the mailed link when a window refuses the methods; another failure offers nothing, as before");
+  // The owner's choice on /agents: which agents get the notice.
+  await go("#/agents"); await mtSettle();
+  const mtChoice = main.querySelector("section.broadcasts");
+  const mtMode = byId("broadcasts-mode");
+  expect(mtChoice && mtMode && mtMode.value === "accept_all" && mtChoice.querySelector("fieldset").hidden, "broadcasts: /agents shows the choice, all agents by default");
+  mtMode.value = "accept_only"; mtMode.dispatch("change");
+  byId("broadcasts-agent-agt-b").checked = true;
+  mtChoice.querySelector("form.broadcasts-form").dispatch("submit"); await mtSettle();
+  const mtSaved = await win.Maity.api.get("/me/broadcasts");
+  expect(mtSaved.mode === "accept_only" && JSON.stringify(mtSaved.agents) === JSON.stringify(["agt-b"]) && text(mtChoice).includes("Saved.")
+    && !main.querySelector("section.broadcasts fieldset").hidden, "broadcasts: only the agents ticked, saved as the hub has it");
+  const mtBad = await win.Maity.api.patch("/me/broadcasts", { mode: "refuse_all", agents: ["agt-b"] }).then(() => null, (err) => err);
+  expect(mtBad && mtBad.details.fields.agents === "not_allowed", "broadcasts: a list with refuse_all is refused, as the hub refuses it");
 
   // API mode against a fake hub: CSRF on writes, fail loud without a hub.
   win.location.protocol = "http:";

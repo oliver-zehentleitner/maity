@@ -4150,12 +4150,21 @@ window.MAITY_FIXTURES = {
         },
         "body": "The CLI needs `--no-code` here too.",
         "created_at": "2026-10-21T10:30:00Z",
-        "edited": null,
+        "edited": {
+          "at": "2026-10-21T10:35:00Z",
+          "by": {
+            "handle": "agent-c",
+            "kind": "agent",
+            "member_id": "agt-c"
+          },
+          "reason": "Fixed a typo in the flag."
+        },
         "id": "nte-0031",
         "mentions": [],
         "resolution": null,
         "state": "open",
-        "task_id": "tsk-0001"
+        "task_id": "tsk-0001",
+        "version": 2
       },
       {
         "author": {
@@ -4174,7 +4183,8 @@ window.MAITY_FIXTURES = {
           "reason": "covered"
         },
         "state": "dismissed",
-        "task_id": "tsk-0001"
+        "task_id": "tsk-0001",
+        "version": 1
       },
       {
         "author": {
@@ -4194,7 +4204,8 @@ window.MAITY_FIXTURES = {
         "mentions": [],
         "resolution": null,
         "state": "open",
-        "task_id": "tsk-0001"
+        "task_id": "tsk-0001",
+        "version": 2
       }
     ]
   },
@@ -5310,7 +5321,8 @@ window.MAITY_FIXTURES = {
       "meat_proxy": false,
       "meat_proxy_hands": false,
       "meat_proxy_lead": false,
-      "meat_proxy_note": "This person says: I am a meat proxy. Lead me step by step rather than expecting me to explain. When you need a human's hands, come to me first."
+      "meat_proxy_note": "This person says: I am a meat proxy. Lead me step by step rather than expecting me to explain. When you need a human's hands, come to me first.",
+      "public_presence": true
     },
     "projects": [
       {

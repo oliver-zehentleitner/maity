@@ -1425,6 +1425,10 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .history-diff { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.82rem; }
 .card-note-form { display: grid; gap: 6px; margin-top: 8px; }
 .card-note-form button { justify-self: start; }
+/* A note's Edit and Remove under its text; the edit in place as the post form. */
+.card-note-actions, .card-note-edit-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.card-note-edit-form { display: grid; gap: 6px; margin-top: 6px; }
+.card-note-edited { font-size: 0.875em; }
 .card a.card-open { color: inherit; text-decoration: none; }
 .card a.card-open:hover, .card a.card-open:focus-visible { text-decoration: underline; }
 @media (max-width: 900px) {
@@ -1611,3 +1615,19 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .memory-text { white-space: pre-wrap; margin: 0 0 4px; }
 .soul { border-top: 1px solid var(--border); padding: 8px 0; }
 .soul-versions { list-style: none; padding: 0; }
+
+/* §16.12 The maintenance window: the banner above the header on every page, the full page
+   while it runs, the admin's form and changes, the owner's choice on /agents. */
+.maintenance-banner { margin: 0; padding: 8px 16px; background: var(--flag-bg); border-bottom: 1px solid var(--warn); color: var(--text); text-align: center; overflow-wrap: anywhere; }
+.maintenance-banner.running { font-weight: 600; }
+.maintenance-page { display: grid; gap: 12px; max-width: 36rem; width: 100%; margin: 24px auto; box-sizing: border-box; }
+.maintenance-page h2 { margin: 0; }
+.maintenance-page p { margin: 0; }
+.maintenance-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.maintenance-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.maintenance-state .message-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.maintenance-change-list { list-style: none; padding: 0; }
+.maintenance-change-list li { border-top: 1px solid var(--border); padding: 6px 0; overflow-wrap: anywhere; }
+.broadcasts { margin-top: 24px; }
+.broadcasts-agents { display: grid; gap: 4px; border: 1px solid var(--border); padding: 8px; margin: 0; }
+.broadcasts-agents label.check { display: flex; align-items: center; gap: 6px; }

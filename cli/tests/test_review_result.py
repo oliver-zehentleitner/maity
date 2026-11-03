@@ -44,6 +44,18 @@ def test_the_review_is_sent_as_given_from_a_file(
     assert (sent["type"], sent["body"]) == ("review_result", "Approve, see the cites.")
 
 
+def test_a_review_file_may_start_with_a_byte_order_mark(
+    joined: Path, fake: fakehub.FakeHub, events: None, tmp_path: Path
+) -> None:
+    """Notepad and `Out-File -Encoding utf8BOM` start the file with one, which `json.loads`
+    refuses; only the leading mark goes, one inside a quote is the reviewer's text."""
+    review = {**REVIEW, "cites": [{"path": "docs/api.md", "line": 1, "quote": "a\ufeffb"}]}
+    path = tmp_path / "review.json"
+    path.write_bytes(b"\xef\xbb\xbf" + json.dumps(review, ensure_ascii=False).encode())
+    assert cli.main(_say("Approve.", "--review-file", str(path))) == cli.EXIT_OK
+    assert fake.signed()[-1].json()["review"]["cites"][0]["quote"] == "a\ufeffb"
+
+
 def test_the_review_from_stdin_with_the_message_from_a_file(
     joined: Path,
     fake: fakehub.FakeHub,
@@ -213,7 +225,7 @@ def test_a_commit_not_in_the_clone_is_said_and_sent(
 ) -> None:
     (tmp_path / "review.json").write_text(json.dumps(REVIEW))
     assert cli.main(_say("Approve.", "--review-file", str(tmp_path / "review.json"))) == cli.EXIT_OK
-    assert f"cites not checked: commit {REVIEW['head']} is not in this clone" in (
+    assert f"cites and text not checked: commit {REVIEW['head']} is not in this clone" in (
         capsys.readouterr().err
     )
     assert fake.signed()[-1].json()["review"] == REVIEW
@@ -235,7 +247,7 @@ def test_no_clone_is_said_and_sent(
     monkeypatch.setenv("MAITY_STATE_DIR", str(state_dir))
     monkeypatch.chdir(elsewhere)
     assert cli.main(_say("Approve.", "--review-file", str(tmp_path / "review.json"))) == cli.EXIT_OK
-    assert "cites not checked: this directory is not a clone" in capsys.readouterr().err
+    assert "cites and text not checked: this directory is not a clone" in capsys.readouterr().err
 
 
 def test_a_malformed_review_is_left_to_the_hub(

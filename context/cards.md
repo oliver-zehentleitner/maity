@@ -236,6 +236,84 @@ through the probe gives that without a second source of truth.
 - Only a link to the file: a reader would leave the hub for every
   contract, which is what the request was about.
 
+## The whole contract is read inside Maity from a project setting, whole or not at all
+
+**Id:** 7f6ed086-6faf-44f1-81d8-c25ffaa4011a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish in the Maity chat, 2026-11-02, that the overview link the contract and better show it rendered inside Maity (card tsk-yhbmz7mjng7n); the coordinator's go the same day for the implementer to write the contract; the arbiter's ruling on #1235, 2026-11-02; the contract review of #1235 and the arbiter's ruling on its findings the same day (Markdown only, `private, no-cache`, the repository in the `ETag`), and the arbiter's rulings on the delta reviews the same day (a symlink refused, told by the tree's mode, each directory's tree read and the check failing closed, a missing segment `not_found_on_forge`); contract in `docs/api.md` §6.8, §6.1, §6.11, §16.11
+**Revisit when:** a project's contract outgrows 4 MiB, or a project keeps its contract in more than one file
+**See:** cards.md#a-contracts-text-stays-in-the-repository-the-card-shows-the-section-read-from-it — f29e3cb3-12ab-4af6-83f1-9b04dbaeb578 — as of 2026-11-02
+
+The overview links the project's contract and shows it in a view of its
+own, read-only: the hub reads the file a project setting names
+(`settings.contract_path`, default `docs/api.md`) through the probe at
+the default branch's commit and answers it whole, with a table of
+contents and an anchor per heading, under an `ETag` over the
+repository, the path and the file's bytes. The setting names a Markdown
+file only (`not_markdown` otherwise, the extension in any case), which
+keeps it from exposing arbitrary repository files to every
+`project:read` holder, guests included; a symlink is refused too, since
+the name says nothing about the file it points to: the hub reads the
+non-recursive tree of each directory on the path at the commit, every
+segment must be listed under exactly its name as a directory (`040000`)
+or, last, a regular file (`100644`, `100755`); a tree answered with
+`truncated: true` is `not_markdown` before any segment is looked up in
+it, a segment missing from a complete tree is `not_found_on_forge`, as
+for any file not there at the commit, and any other mode is
+`not_markdown`: the check fails closed. The
+tree of a commit never changes, so it is cached per commit SHA and
+directory. The file cap for this read and for a card's section is
+4 MiB instead of 1 MiB; a larger file is refused, never cut.
+
+**Reason:** a setting is the one place that says which file is the
+contract when no card names one. The whole file in one answer keeps the browser's search
+over the entire contract and costs one read, which the `ETag` makes
+cheap to repeat while the file does not change. The cap moved because
+this project's own contract passed 1 MiB on 2026-11-02, so a card's
+section read already refused it; cutting instead would show part of a
+contract as if it were all of it. The answer is `private, no-cache`, as
+attachments are, so a new tab or a reload revalidates instead of
+reading up to 4 MiB again; after a `304` the view keeps the `ref`,
+`url` and `fetched_at` of the last full answer.
+
+**Rejected alternatives:**
+- The table of contents plus one section per request: smaller answers,
+  but no search across the contract, and every jump a new read.
+- The first of `ticker.contract_files` as the file: ties the view to an
+  opt-in ticker and to a list whose order means nothing.
+- The file taken from the contract cards' `path`: no card, no contract;
+  several paths, no answer.
+- The 1 MiB cap kept, with the text cut: a cut contract reads as whole.
+- Any file of the repository as the contract: the whole-file read shows
+  everything, unlike a card's section, which shows only Markdown under a
+  matching heading; so the setting names a Markdown file (`.md`,
+  `.markdown`), lest a committed secret reach every `project:read`
+  holder, guests included.
+- The name rule alone: a committed symlink `x.md` to a non-Markdown
+  file resolves on the forge to the target's bytes, so the hub refuses a
+  symlink (`not_markdown`) instead of trusting the name.
+- Comparing the answer's `path` with the setting to catch a symlink:
+  GitHub's contents answer names the requested path, not the target's,
+  so the comparison never fires there.
+- Comparing the Git blob hash of the bytes with the answer's `sha`: the
+  raw form that §6.8 prescribes above 1 MB carries no `sha`, so large
+  files would slip through, and the hash only infers what the tree's
+  mode states directly.
+- One read of the recursive tree, a missing entry taken as no symlink:
+  GitHub truncates that tree for a large repository (torvalds/linux
+  lists nothing under `scripts/`), so a symlink there would pass; each
+  directory's own tree is read instead, and one answered truncated fails
+  closed.
+- A missing segment as `not_markdown`: a complete directory tree lists
+  every entry, so a missing one means the file is not there, which the
+  read already answers with `not_found_on_forge`; two codes for one case
+  would depend on the order of the reads, and the file may appear later,
+  which that code says. Nothing is shown either way.
+- `no-store` like the other API answers: every tab and reload would
+  read the whole file again, so the load would grow with tabs.
+
 ## Agents watch cards too: a status change or an update message wakes everyone waiting on the card
 
 **Id:** 95001efe-eb05-4bd0-af03-ffa42b6dbe9e
@@ -325,6 +403,49 @@ mark with the text, since an edit's reason speaks of the old text.
 - Letting agents with `tasks:admin` edit any note: an agent could
   rewrite a human's or another agent's remark; a correction of someone
   else's words stays with a human who answers for it with a reason.
+
+## Editing or redacting a note names the version it was made on
+
+**Id:** 23165436-966c-48d6-94f4-80ea0638abf6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** a review finding on the web pull request for editing a note (#1227), and the coordinator's ruling as contract arbiter on card tsk-b6wb439f88nr (2026-11-02): a precondition on editing and removing a note, the details left to the contract pull request; contract `docs/api.md` §6.16 "Precondition"
+**Revisit when:** the API takes conditional request headers (`If-Match`, ETags) elsewhere, or notes gain a kept history
+**See:** cards.md#a-notes-author-edits-it-in-place-and-the-hub-keeps-no-trace-of-the-old-text — 0e6b3b31-1656-4744-841d-d48f1899a7fd — as of 2026-11-02
+
+A note carries a `version`, 1 when posted and one more with each edit
+and with its redaction. An edit (`PATCH …/notes/{note_id}`) and a
+redaction send it as `base_version`, always; a stale one is `conflict`
+with the note as it is now, and nothing changes.
+
+**Reason:** without it, an admin who edits a note to take out sensitive
+text while the author has the card open loses that edit when the author
+saves: the author's older text comes back, and since the hub keeps no
+history (entry 0e6b3b31) nobody sees that it happened. Reading the note
+again before editing narrows the window but leaves the race between
+reading and saving. The precondition itself is the arbiter's ruling
+(confirmed); the shape below was settled in the contract pull request
+(inferred): a body field named `base_version` and `conflict` with
+`current_version` are how the contract already guards a soul and a
+human's preferences against the same lost update (§19.1, §19.4), so
+clients and the CLI handle one pattern. Required, because the overwrite
+happens exactly in the client that sends nothing; no client on main
+edits notes yet, so nothing breaks. The redaction takes it too, so that
+an admin never removes a text it has not seen.
+
+**Rejected alternatives:**
+- `If-Match` with an ETag and `412 Precondition Failed`: the API uses no
+  conditional headers anywhere, and a second way to say the same thing
+  would serve no client better.
+- An optional `base_version`: a client that leaves it out is exactly
+  the one that overwrites; the hub could not tell a careful client from
+  a careless one.
+- Comparing `edited.at` or the old body instead of a counter: a
+  timestamp can repeat within its resolution, and sending the old body
+  back would carry the very text an edit may be removing.
+- Only the web reading the note again before saving: leaves the race
+  between the read and the write.
 
 ## A redacted note's reason reaches only the owners, the admins and the redactor
 
