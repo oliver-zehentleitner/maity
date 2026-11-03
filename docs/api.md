@@ -11970,8 +11970,12 @@ Two names are the same repository when their `{owner}/{repo}` match
 with ASCII `A`–`Z` and `a`–`z` compared ignoring case. The form decides
 what the hub reads; it is not a complete check of the forge's own
 naming rules, and a name the forge does not have is simply not found.
-The text is checked as written in the file, before anything is removed
-from it: a control or zero-width character makes it no name. A text
+The text is checked as written in the file: the file is split into lines
+at LF or CRLF, the value taken as the line's grammar gives it (a child's
+location between `: ` and ` — `, a `parent:` line's value after `: `,
+spaces around it dropped), and nothing else is removed from it before
+the check; a control or zero-width character left in it makes it no
+name. A text
 that does not have this form names no repository: it is skipped
 where it stands, takes none of the 8 places below, and a `canonical` in
 another form is `not_found` with `not_in_family`. Every forge read of a
@@ -12078,8 +12082,9 @@ it last read each file and each family, and reads a dropped one again
 no sooner than 30 s after that; a call in between answers
 `ktw_unavailable` with reason `timeout`. At most 4 reads of one project in flight at once,
 its own repository and the named ones together, and at most 16 of
-§11.5's reads in flight across the hub. The hub keeps at most 64 MiB of
-these reads across all projects, the least recently used dropped first.
+§11.5's reads in flight in each serving process, which keeps at most 64
+MiB of these reads for all projects, the least recently used dropped
+first.
 
 The cost of a call does not grow with its project's history beyond the
 size of the files themselves. Warm, a call is one answer from memory.
@@ -12112,7 +12117,7 @@ Errors: `ktw_not_configured` (the project's repository has no
 `probe_not_configured` (§11.4), `details.reason` (`no_grant`,
 `unconfirmed`, …) for a `project:admin` only, every other reader gets
 `details: {}`; `probe_unavailable` with `details.retry_at` while the
-grant's forge budget is spent (§11.4, **Rate limits**); `not_found`
+source's forge budget is spent (§11.4, **Rate limits**); `not_found`
 with `details.reason` `not_in_family`, `family_cap`, `no_bodies_file`
 or `not_public`; `ktw_unavailable` with `details.reason` one of §11.3's
 member reasons (`forge_unavailable`, `config_missing`, `no_state_url`,
