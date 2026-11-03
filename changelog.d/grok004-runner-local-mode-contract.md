@@ -14,4 +14,6 @@
 
 - Contract §5.3: the not-listening rule leaves out a supervised session
   only while an active placement names its credential, so a stopped
-  local mode shows as not listening (the hub follows in its own change).
+  local mode shows as not listening. Not built yet: the hub follows in
+  tsk-mcd2xwwa2fzv; until then a stopped local mode stays silent and its
+  lead sees only `away` and `offline`.

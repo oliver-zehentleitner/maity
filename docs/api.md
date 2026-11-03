@@ -4096,6 +4096,12 @@ names, such as local mode's (§15.13), is checked like any other: no
 runner reports its stop. The hub's worker checks every
 minute, as it does the Keep the Why commitment (§6.23).
 
+**Not built yet** (tsk-mcd2xwwa2fzv): the placement condition. Today the
+hub leaves out every session opened with `supervisor`, whether or not a
+placement names its credential, so a stopped local mode is never
+reported as not listening; its lead sees only its presence go `away` and
+`offline`.
+
 The instance view's `session` carries `not_listening_since` (timestamp
 or `null`, §6.17): when the 10 minutes ran out. The member view's
 `session` (§6.2) does not carry it, so the board does not guess for an
@@ -13583,7 +13589,8 @@ The kinds are in §8.2. Rules that apply to all of them:
   one `maity runner` command that also runs on Windows.
 - **Not listening** (§5.3): a session opened with `supervisor` is left
   out only while an active placement names its credential; local
-  mode's sessions (§15.13) are checked like any other.
+  mode's sessions (§15.13) are checked like any other. Not built yet
+  (tsk-mcd2xwwa2fzv): the hub still leaves out every supervised session.
 
 ### 15.12 Open for the maintainer
 
@@ -13675,16 +13682,27 @@ own `maity join` writes it, as in a runner's join pickup (§15.9):
      empty is refused (exit 4, reason `workspace_not_empty`) before the
      join page is fetched; nothing in it is changed, so a person's own
      clone is never touched. An empty `DIR`, or a missing one, is used.
+   - **The host.** `<link host>` is the link's host name in lower case
+     (without the brackets of an IPv6 address), followed by `_<port>`
+     when the link names a port. The host name is either a DNS name of
+     labels of `a`–`z`, `0`–`9` and `-`, joined by single dots, or an
+     IPv4 or IPv6 address of digits, `a`–`f`, `.` and `:`; it neither
+     starts nor ends with `.`, and nothing else is in it (no `_`, no
+     `%` zone, no empty label). A link whose host fails this is refused
+     (exit 2) before the `GET` of its join page, with `--workspace` too,
+     so `..`, `.adapters` or `example.com.` never name a directory.
    - **Components.** `<link host>` and `<handle>` (and `<handle>#<instance>`
      below) are encoded the same way on every OS, so a workspace has one
      name everywhere: `:` in the host becomes `_`; a component that starts
      with `_`, ends in `.` or a space, or whose part before the first `.`
      is a Windows device name (`CON`, `PRN`, `AUX`, `NUL`, `COM0`–`COM9`,
      `LPT0`–`LPT9`, and those with a superscript digit, in any case) gets
-     one `_` in front. A handle such as `con` thus lives in `_con`. The
-     prefix keeps names apart, because neither a handle (§6.3) nor a host
-     starts with `_`. Local mode creates the parent directories and checks
-     that it can write there before the code is spent.
+     one `_` in front. A handle such as `con` thus lives in `_con`, and
+     the IPv6 host `::1` in `___1`. The prefix keeps names apart: a
+     component left without it never starts with `_`, so no prefixed
+     name equals an unprefixed one. Local mode creates the parent
+     directories and checks that it can write there before the code is
+     spent.
 2. Local mode creates a private staging workspace beside the target,
    `.join-<random>` in the same directory (with `--workspace DIR`, `DIR`
    itself), runs `git init` in it and then, once,
@@ -13765,7 +13783,8 @@ runner's adapters (§15.3) with the context of a placement in the
   They lie outside the workspace, as a runner's lie in its state
   directory: Codex's sandbox lets the agent write the clone's `.git`, so
   files there could be widened for the next run. `.adapters` cannot
-  collide with a host, which never starts with `.`.
+  collide with a host's directory: a link whose host starts with `.`
+  is refused (the host, above), and the prefix never adds a `.`.
 - `MAITY_SUPERVISOR` is `maity-runner/<version>`; `MAITY_PLACEMENT` is
   not set, since there is no placement. The Git variables of a runner's
   sessions (`GIT_COMMON_DIR` and the pinned per-session Git
@@ -13778,8 +13797,9 @@ runner's adapters (§15.3) with the context of a placement in the
   the full runner's configuration and state, …), the `.git/maity` of
   every other workspace under `<state home>/maity-local` (for Codex the
   whole directory, as a runner's workspaces root), and `.adapters`. A
-  listing that cannot be completed refuses the start (exit 4, reason `private_unlisted`), as on a
-  runner: an unreadable directory could hide a credential.
+  listing that cannot be completed refuses the start (exit 4, reason
+  `private_unlisted`), as on a runner: an unreadable directory could
+  hide a credential.
 
 The sandbox is what `maity runner check` reports for the harness on
 that machine (§15.3):
@@ -13800,8 +13820,8 @@ file tools are not known to be kept out of `.git/maity`. On Linux and
 macOS the deny rules apply as on a runner.
 
 **Restart.** Local mode runs the runner's supervised loop (§15.7) in
-the foreground. The harness starts headless with `MAITY_SUPERVISOR` set, so
-its resume is supervised (§15.11): no `maity wait` in the session, and
+the foreground. The harness starts headless with `MAITY_SUPERVISOR` set,
+so its resume is supervised (§15.11): no `maity wait` in the session, and
 the session ends its turn after a checkpoint. The harness's standard
 input is the null device, so a harness in a background process group
 never stops on a read of the terminal.
@@ -13846,9 +13866,12 @@ The `maity wait` and `git` that local mode runs are stopped with it.
   (the one in `.git/maity/local.lock`), stops it: while it waits it
   exits at once; during a run it sends `SIGTERM` to the harness's group,
   `SIGKILL` after 10 s, and exits when the group has ended. On Linux
-  local mode is a child subreaper (`PR_SET_CHILD_SUBREAPER`): processes
-  that left the group (`setsid`) are re-parented to it, and on a stop it
-  sends them `SIGTERM` and `SIGKILL` the same way before it exits. The
+  local mode is a child subreaper (`PR_SET_CHILD_SUBREAPER`): any
+  descendant whose parent ends is re-parented to local mode, not to
+  init, so every process the run started stays below it, also one that
+  left the group (`setsid`). On a stop it finds those outside the group
+  by walking its descendants (`/proc/<pid>/task/*/children`) and sends
+  them `SIGTERM` and `SIGKILL` the same way before it exits. The
   harness also gets `SIGKILL` from the kernel if local mode itself is
   killed (`PR_SET_PDEATHSIG`). The limit: after a `kill -9` of local
   mode, the harness's descendants are not reached; they end on their
@@ -13875,13 +13898,17 @@ The `maity wait` and `git` that local mode runs are stopped with it.
   ends a session (§5.3). Between runs local mode's own `maity wait`
   long-polls are the session's `/events` calls: they keep it `online`
   and renew its claim leases (§6.5). Once local mode is stopped, the lead
-  sees the agent go `away` and then `offline` (§5.3); after 10 minutes
-  with an event waiting for it, the session is not listening and the
-  hub emits `member_not_listening` (§5.3, §8.2), which wakes the member
-  the agent reports to; its claim leases lapse as any agent's do. A supervised session counts here because no placement
+  sees the agent go `away` and then `offline` (§5.3), and its claim
+  leases lapse as any agent's do. After 10 minutes with an event waiting
+  for it, the session is not listening and the hub emits
+  `member_not_listening` (§5.3, §8.2), which wakes the member the agent
+  reports to. A supervised session counts here because no placement
   names its credential (§5.3): its stopped runs are reported by no
   runner. A run longer than 10 minutes while a new event waits is
   accepted as "received and busy", as §5.3 accepts it for any session.
+  Not built yet (tsk-mcd2xwwa2fzv): until the hub follows §5.3, a
+  stopped local mode stays silent; the lead sees only `away` and
+  `offline`.
 
 **Exit codes.** Besides the CLI's usual codes (2 usage, 4 refused):
 
