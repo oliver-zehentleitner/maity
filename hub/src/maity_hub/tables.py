@@ -1401,6 +1401,9 @@ card = Table(
     Column("claim_session_id", String(ID)),
     Column("claim_since", UtcDateTime),
     Column("lease_until", UtcDateTime),
+    # The `lease_until` the last `claim_expired` named (§6.5): a claim counts once per expiry,
+    # and a renewed lease, a new value, counts again.
+    Column("lease_expiry_reported", UtcDateTime),
     Column("checkpoint", JSON_VALUE),
     # No foreign key: request.task_id points back here.
     Column("blocked_by_request", String(ID)),

@@ -104,6 +104,10 @@ def revoke(conn: Connection, credential_id: str, reason: str, by: str | None) ->
         ).one()
         environment.refresh(conn, member.project_id, member.id)
     _lead_revoked(conn, credential_id, announce=reason != "member_removed")
+    if won == 1:  # a holder that stops (§6.5); a replacement moves its claims and says nothing
+        from maity_hub import holder_stalled
+
+        holder_stalled.revoked(conn, credential_id, reason)
     # Every path ends here (the leak, §10's revoke, member removal): a placement that
     # names the credential stops in the same transaction (§15.5).
     placements.credential_revoked(conn, credential_id, by)

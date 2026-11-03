@@ -229,6 +229,10 @@ def check(engine: Engine, session_id: str) -> None:
             select(t.agent_session).where(t.agent_session.c.id == session_id)
         ).one()
         _announce(conn, member, credential, refreshed, since, ended=False)
+        # The same episode, to the same member: a holder that stops (§6.5).
+        from maity_hub import holder_stalled
+
+        holder_stalled.stalled(conn, member.id, credential.instance, "not_listening")
 
 
 def sweep(engine: Engine) -> None:
@@ -254,7 +258,7 @@ def sweep(engine: Engine) -> None:
 
 
 class Worker:
-    """Runs `sweep` every minute (§5.3)."""
+    """Runs `sweep` every minute (§5.3), then the lease expiry's `claim_expired` (§6.5)."""
 
     def __init__(self, engine: Engine, interval: float | None = None) -> None:
         self.engine = engine
@@ -279,5 +283,8 @@ class Worker:
                 with worker_runs.claim(self.engine, "not-listening", self.interval) as held:
                     if held is not None:
                         sweep(self.engine)
+                        from maity_hub import holder_stalled
+
+                        holder_stalled.expire(self.engine)  # `claim_expired`, every minute (§6.5)
             except Exception:
                 log.exception("the not-listening sweep failed")

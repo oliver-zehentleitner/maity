@@ -484,3 +484,34 @@ round named owner and supervisor changes, and a removal ends an address too, and
 **Known limit:** `changed` is what decides; a writer that moves `reports_to` without naming it would
 wake too few. `reports_to` moves through `members.apply_patch` and a removal today, and tests hold
 both. Nothing changes an agent's owner yet, so `owner_id` holds the rule for when something does.
+
+## A holder that stops is reported from the three places that stop it and a minute pass, and nothing is released
+
+**Id:** 483be046-dbf5-4c2f-a9d4-cc18dfb09469
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.5 (contract #1292); card tsk-ehs8abh1arwg
+**Revisit when:** a fourth way for a holder to stop appears, or the hub starts releasing claims itself
+
+`holder_stalled` is emitted in `holder_stalled.py` from three hooks: `auth.leaks.revoke`, the one
+function every revocation passes, when its update won and the reason is not `replaced`;
+`availability.set_agent_limit`, only when no limit ran before (a moved `until` is no start);
+and `not_listening.check`, in the transaction that starts the episode. `claim_expired` is a pass
+the not-listening worker runs after its sweep, under the same worker claim: one event per holder
+and instance for the leases that ran out, each lease once, held by `card.lease_expiry_reported`
+(the `lease_until` the last event named; a renewed lease that runs out again differs and counts
+again). The migration marks the leases already expired as reported, so the first pass after a
+deploy does not report every old lease at once. `events.wakes` checks these two kinds before the
+dormant rule: only the agent the holder reports to wakes, the holding instance's `instance:`
+token never does.
+
+**Reason:** a hook at each stopping point says it in the transaction that stopped the holder, with
+nothing to poll; a lease runs out without any write, so only a pass can see it, and the minute
+worker already runs per project under a claim. A column on the card keeps "once per expiry" across
+restarts and replicas without a table.
+
+**Rejected alternatives:**
+- Hooking each revoke route: a new path to revoke would forget it; `leaks.revoke` is where all end.
+- A table of reported expiries: more than one row per card is never needed.
+- Reporting every expired lease on the first pass after the deploy: a burst of old news.
