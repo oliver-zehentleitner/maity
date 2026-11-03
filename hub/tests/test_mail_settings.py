@@ -12,13 +12,14 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
 from maity_hub import secretbox
 from maity_hub import tables as t
 from maity_hub.config import ConfigError, Settings
 from maity_hub.mail import address, headers, settings, smtp
 from maity_hub.mail.environment import Sender
+from maity_hub.notifications import preferences
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.smtpfake import FakeSmtp, Script, certificate
@@ -361,6 +362,49 @@ def test_the_test_send_delivers_one_fixed_mail(
     assert owner.get(PATH).json()["last_test"] == last
     owner.patch(PATH, {"username": "maity"})
     assert owner.get(PATH).json()["last_test"] is None
+
+
+@pytest.mark.parametrize("body", [None, {}, {"to": None}, {"to": "explicit@example.org"}])
+def test_the_test_send_defaults_to_the_admins_verified_address(
+    make_client: ClientFactory,
+    migrated: Engine,
+    smtp_server: list[FakeSmtp],
+    body: dict[str, Any] | None,
+) -> None:
+    server = serve(smtp_server, Script())
+    owner = admin(make_client, migrated, local_env(server.port))
+    address.prepare(migrated, None)
+    with migrated.begin() as conn:
+        assert preferences.claim_verified(conn, "owner@example.org", owner.id, secret_key=None)
+        conn.execute(
+            update(t.notification_settings)
+            .where(t.notification_settings.c.human_id == owner.id)
+            .values(pending_address="pending@example.org")
+        )
+    response = owner.post(f"{PATH}/test", body)
+    assert response.status_code == 200, response.text
+    assert response.json()["ok"] is True
+    mail = message_from_bytes(server.record.data, policy=default)
+    assert mail["To"] == ((body or {}).get("to") or "owner@example.org")
+
+
+@pytest.mark.parametrize("status", ["pending", "disabled"])
+def test_the_test_send_never_defaults_to_an_unverified_or_disabled_address(
+    make_client: ClientFactory, migrated: Engine, status: str
+) -> None:
+    owner = admin(make_client, migrated, env_of())
+    with migrated.begin() as conn:
+        preferences.row_of(conn, owner.id, lock=True)
+        conn.execute(
+            update(t.notification_settings)
+            .where(t.notification_settings.c.human_id == owner.id)
+            .values(
+                address="old@example.org", address_status=status, pending_address="new@example.org"
+            )
+        )
+    response = owner.post(f"{PATH}/test", {})
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["details"]["fields"] == {"to": "no_verified_address"}
 
 
 def test_the_test_send_refuses_before_it_connects(

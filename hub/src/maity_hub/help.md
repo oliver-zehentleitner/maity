@@ -779,3 +779,6 @@ the inbox.
 - `GET /api/v1/auth/pages/{sign_in|sign_up}?lang=<tag>`: the pitch of the sign-in and
   sign-up pages, `{language, texts}`; public, cached a minute. The instance admin edits it
   at `/api/v1/admin/settings/auth-pages` (§16.7.4).
+- `GET /api/v1/site/chrome?lang=<tag>`: the header and footer of every page a visitor sees
+  without a session, as one model in one language (`{language, landing, header, footer}`);
+  public, cached a minute (§16.7.5).

@@ -1250,6 +1250,62 @@ column: a column is too narrow for a description and a history, and
 every board reload would close it again. A modal dialog: on a phone the
 same as the panel, on a desktop it hides the board the card belongs to.
 
+## A note is edited in place in the card panel; Remove asks its reason as a chat removal does
+
+**Id:** 5260ca07-539c-40fb-bdcb-5cd21d3c181e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** PR #1227 (tsk-bj9yb4d8f2cg), part 3 of editing a note, and its review; PR #1243 (`base_version` and the conflict in the panel); the follow-up PR (tsk-dprnjakk3ykh); contract in `docs/api.md` §6.16, §8.5
+**Revisit when:** the dashboard gets a dialog of its own for reasons
+**See:** https://github.com/oliver-zehentleitner/maity — 0e6b3b31-1656-4744-841d-d48f1899a7fd — as of 2026-11-03
+**See:** https://github.com/oliver-zehentleitner/maity — 09c47db5-75b7-4636-8c49-0cc46c8c9d46 — as of 2026-11-03
+
+Edit stands under a note for its author and for an owner or admin, Remove
+for an owner or admin only; neither under a tombstone, and Edit not in an
+archived project, where removal stays allowed. The edit replaces the text in
+place; the reason field is required for someone else's note, optional for
+one's own, and sent only when it holds text; a missing reason is said at the
+field. Remove asks its reason with the same prompt loop as removing a chat
+message. The tombstone says who and when, and the reason only when the hub
+gives it. Each button names the note's author and date in its label, an
+Escape the mention picker has taken leaves the edit open, and Add a note
+is drawn once per panel and stays while the list above it is drawn
+again: the field keeps its text, focus and caret, a post's busy state and a
+refusal stay in sight, also after a failed read. The list stays as drawn
+while it is read, only the latest read replaces it, and its Edit and Remove
+wait meanwhile (`aria-busy`). On a post's success exactly the text sent
+leaves the field; anything typed since stays. After an edit, a removal or a
+post the focus moves on only if it is still where that action left it. An edit and a removal name the
+version they were made on (`base_version`); a conflict shows the note as it
+is now and keeps the writer's text for the next save, and a note removed
+meanwhile ends the edit, says the text was not kept, and puts the focus on
+its tombstone, as a removal of one's own does. The public card page shows an
+edited note's mark as the hub's own page does (§16.9): the editor named as a
+holder, the date and the reason, never the old text, none on a removed note.
+
+**Reason:** the buttons follow who the hub lets act, so nobody meets a
+refusal for a button that should not have been there; an empty reason is not
+sent, so the edit mark of one's own note stays without one, as §6.16 has it;
+one way of asking a removal's reason in the whole dashboard; a note is posted
+once, however the list is drawn again around its post.
+
+**Rejected alternatives:**
+- Showing Edit to every reader and letting the hub refuse: a button that
+  always fails for most readers.
+- Clearing Add a note after every post whatever it holds: text typed while
+  the post was on its way would be lost.
+- Drawing Add a note again with the list and carrying its text over: each
+  variant reviewed on #1268 lost something, the text sent came back into a
+  free form (a second post one click away), the focus and caret went, a
+  refusal vanished with a failed read. A form drawn once has none of it.
+- Keeping an edit begun on the list being read: the list drawn after the read
+  would have to merge it in; Edit and Remove waiting for the read is simpler.
+- Always sending `reason`, empty for one's own note: an empty reason would
+  read as a given one.
+- A dialog of its own for the removal's reason: a second pattern beside the
+  chat's prompt for the same act.
+
 ## The header gets a "+" menu to bring someone in; invitations get their own page; Runners lose their tab
 
 **Id:** 3f6eadd3-d1d5-4389-bb65-626e9cdbc1dc
