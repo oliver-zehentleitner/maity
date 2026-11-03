@@ -1,5 +1,5 @@
-"""`maity-hub serve` and `maity-hub migrate`, the operator's account commands, and the load test's
-seed."""
+"""`maity-hub serve` and `maity-hub migrate`, the operator's account commands, the copy of the
+attachments into a bucket, and the load test's seed."""
 
 from __future__ import annotations
 
@@ -22,6 +22,8 @@ from uvicorn.supervisors import multiprocess
 
 from maity_hub import (
     __version__,
+    attachment_store,
+    attachments,
     clock,
     handle_register,
     handles,
@@ -93,6 +95,15 @@ def main(argv: list[str] | None = None) -> int:
         "purge", help="delete every row of the lt-<n> accounts; without --apply only count"
     )
     purge.add_argument("--apply", action="store_true")
+    files = commands.add_parser("attachments", help="the attachment store (docs/api.md §8.7)")
+    files_commands = files.add_subparsers(dest="attachments_command", required=True)
+    copy = files_commands.add_parser(
+        "copy-to-s3",
+        help="copy the files under MAITY_ATTACHMENT_DIR into the bucket of the s3 store",
+    )
+    copy.add_argument(
+        "--apply", action="store_true", help="copy; without it only count what would be copied"
+    )
     quick = commands.add_parser(
         "quickstart",
         help="a personal hub on SQLite: set up a new database, the first account, then serve",
@@ -120,11 +131,91 @@ def main(argv: list[str] | None = None) -> int:
         return _unsuspend(settings, args.handle)
     if args.command == "quickstart":
         return _quickstart(settings, args.handle, args.display_name)
+    if args.command == "attachments":
+        return _copy_to_s3(settings, apply=args.apply)
     if args.command == "loadtest" and args.load_command == "purge":
         return _loadtest_purge(settings, apply=args.apply)
     if args.command == "loadtest":
         return _loadtest_seed(settings, args.humans, Path(args.out))
     return _serve(settings)
+
+
+def _copy_to_s3(settings: Settings, *, apply: bool) -> int:
+    """From the volume to the bucket, before the hub runs on `s3` alone; idempotent, so it runs
+    once while the hub still serves from the volume and once more after it stopped."""
+    if settings.attachment_dir is None:
+        return _fail("MAITY_ATTACHMENT_DIR is not set: the files to copy are there", EXIT_CONFIG)
+    if settings.attachment_s3 is None:
+        return _fail(
+            "MAITY_ATTACHMENT_STORE is not s3: set it and MAITY_ATTACHMENT_S3_BUCKET", EXIT_CONFIG
+        )
+    source = attachment_store.LocalStore(settings.attachment_dir)
+    target = attachment_store.S3Store(settings.attachment_s3)
+    try:
+        engine = make_engine(settings.database_url)
+        require_current_schema(engine)
+        done = attachment_store.copy_local_to_s3(
+            source,
+            target,
+            apply=apply,
+            live=lambda project: _live_attachments(engine, project),
+            still=lambda key: _still_live(engine, key),
+        )
+        # The bucket's objects whose attachment was deleted since an earlier run (the hub
+        # still on the volume deletes only there), as the hub's sweep under `s3` removes them.
+        cleaned = (
+            _clean_bucket(engine, target) if apply else {"tombstoned": 0, "orphans": 0, "failed": 0}
+        )
+    except SchemaNotCurrentError as error:
+        return _fail(str(error), EXIT_FAILURE)
+    except (SQLAlchemyError, ImportError) as error:
+        return _database_error(settings, error)
+    verb = "copied" if apply else "to copy"
+    print(
+        f"{verb}: {done['copied']}, already there: {done['present']}, "
+        f"different in the bucket: {done['differs']}, "
+        f"deleted, not copied: {done['skipped_deleted']}, "
+        f"deleted, removed from the bucket: {cleaned['tombstoned'] + cleaned['orphans']}, "
+        f"failed: {done['failed'] + cleaned['failed']}"
+    )
+    return EXIT_FAILURE if done["failed"] or cleaned["failed"] or done["differs"] else 0
+
+
+def _clean_bucket(engine: Any, target: attachment_store.S3Store) -> dict[str, int]:
+    """The sweep's removals against the bucket, without expiring rows: a tombstone's object,
+    and an object no row names once it is older than `BLOB_GRACE` (an upload in flight under
+    `s3` is younger). A failure is logged and counted; the copy itself stands."""
+    try:
+        done = attachments.sweep(engine, target, expiring=False)
+    except attachment_store.StoreError as error:
+        logging.getLogger(__name__).error("cleaning the bucket: %s", error)
+        return {"tombstoned": 0, "orphans": 0, "failed": 1}
+    return {"tombstoned": done["tombstoned"], "orphans": done["orphans"], "failed": 0}
+
+
+def _live_attachments(engine: Any, project: str) -> set[str]:
+    """The attachments of a project that have a row and are not deleted, for the copy."""
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(t.attachment.c.id).where(
+                t.attachment.c.project_id == project, t.attachment.c.deleted_at.is_(None)
+            )
+        )
+        return {str(row.id) for row in rows}
+
+
+def _still_live(engine: Any, key: str) -> bool:
+    """Whether the attachment of a blob key still has a row that is not deleted."""
+    project, _, attachment_id = key.partition("/")
+    with engine.connect() as conn:
+        found = conn.execute(
+            select(t.attachment.c.id).where(
+                t.attachment.c.id == attachment_id,
+                t.attachment.c.project_id == project,
+                t.attachment.c.deleted_at.is_(None),
+            )
+        ).first()
+    return found is not None
 
 
 def _loadtest_refusal(settings: Settings) -> str | None:
