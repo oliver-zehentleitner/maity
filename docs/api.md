@@ -4433,8 +4433,9 @@ silently: `invalid` with `details.fields` naming the field —
 `"settings.role_rules.<role>.checklist": "not_allowed"` for a checklist on
 `coder`, `"settings.role_rules.<role>.checklist": "empty_item"` for an item that
 is empty after trimming, `"multiline"` for one that holds a line break,
-a control character or an invisible one that hides or turns text (zero-width
-characters, bidi controls, a byte order mark; §16.7.4 refuses control characters in its texts too), `"too_long"`
+a control character or an invisible format character that hides or turns text
+(Unicode categories Cc, Cf, Zl and Zp: zero-width characters, bidi controls and
+marks, a byte order mark, a soft hyphen; §16.7.4 refuses control characters in its texts too), `"too_long"`
 for one over 300 characters and `"too_many"` for more than 30.
 The hub stores each item trimmed and serves it so. A field the object does not know is
 `invalid` as everywhere (`extra_forbidden`). A change bumps
