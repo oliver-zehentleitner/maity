@@ -45,6 +45,20 @@ window.Maity = window.Maity || {};
     header = footer = null;
     const app = document.getElementById("header");
     if (app) app.hidden = false;
+    line();
+  }
+
+  // The product line (§16.13) stands where render() wants it (not under a stored hub page), and
+  // neither a frame footer stands nor a drawing of /login or /register waits to learn whether
+  // it gets one: the landing page's footer takes its place (req-5k1gvfsmcg9k). So it shows
+  // neither while a read is pending, on the way in or between the frame's pages, nor once the
+  // frame stands, and comes back where the frame is left or not drawn (a failed read, a model
+  // without header or footer).
+  let lineWanted = true, lineHeld = false;
+  function line(wanted, held) {
+    if (wanted !== undefined) lineWanted = !!wanted;
+    if (held !== undefined) lineHeld = !!held;
+    if (M.productLine) M.productLine.show(lineWanted && !lineHeld && !footer);
   }
 
   // An address of the model as a link: an https URL, or a path of this host. A dashboard route
@@ -154,12 +168,12 @@ window.Maity = window.Maity || {};
     try {
       model = await M.api.get("/site/chrome?lang=" + encodeURIComponent(M.i18n.language));
     } catch (err) {
-      if (mine === round) drop();
+      if (mine === round) { lineHeld = false; drop(); }
       return false;
     }
     if (mine !== round) return false;
     // A model without its header or footer is no frame: the page stands as it would without one.
-    if (!model || !model.header || !model.footer) { drop(); return false; }
+    if (!model || !model.header || !model.footer) { lineHeld = false; drop(); return false; }
     drop();
     const app = bar;
     const main = document.getElementById("main");
@@ -173,9 +187,7 @@ window.Maity = window.Maity || {};
     app.parentNode.insertBefore(header, app.nextSibling);
     main.parentNode.insertBefore(footer, main.nextSibling);
     app.hidden = true;
-    // The landing page's footer stands in place of the product line (req-5k1gvfsmcg9k, §16.13):
-    // it stays empty until the next view, whose render() shows it again.
-    if (M.productLine) M.productLine.show(false);
+    line();
     if (drawn) drawn(model);
     return true;
   }
@@ -183,10 +195,11 @@ window.Maity = window.Maity || {};
   // Every other view: the frame and its stylesheets go, the app's header comes back.
   function leave() {
     round++;
+    lineHeld = false;
     drop();
     sheets(false);
     mark(false);
   }
 
-  M.siteChrome = { enter, leave, active: () => (document.documentElement.className || "").split(/\s+/).includes(ON) };
+  M.siteChrome = { enter, leave, line, active: () => (document.documentElement.className || "").split(/\s+/).includes(ON) };
 })(window.Maity);

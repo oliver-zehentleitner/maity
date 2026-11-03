@@ -1897,7 +1897,9 @@ window.Maity = window.Maity || {};
     // The product line after <main> (§16.13), in the language this view is drawn in; i18n
     // draws it again when the session's language arrives. Not under a stored public page
     // the hub put into <main> (§16.13, "Where it is"), which stands for this view.
-    if (M.productLine) M.productLine.show(!hubPage);
+    // Through the frame: a drawing of /login or /register signed out holds the line back until
+    // the frame's read decides, its footer standing in the line's place (req-5k1gvfsmcg9k).
+    M.siteChrome.line(!hubPage, /^\/(login|register)$/.test(M.route.current().path) && !M.api.session());
     // §16.12: the window as the hub has it, read at most once a minute; while it runs, the
     // full page stands instead of the view (heldPage), the sign-in and its step excepted.
     M.maintenance.drawing();

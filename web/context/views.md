@@ -4658,10 +4658,14 @@ frame's header into `#header`: the specificity fight above, and an override per 
 `render()`, but the smoke test's DOM has no observer, so it would ship untested. Waiting with the
 form until the frame is read: sign-in may never depend on that call (§16.7.4).
 
-The frame's footer stands in place of the dashboard's product line (§16.13): `enter()` empties it
-once the frame stands, and the next `render()` shows it again. A failed read keeps it, since the
-page then has no landing footer either. The choice itself is confirmed: the maintainer's
-decision req-5k1gvfsmcg9k (2026-11-03), against keeping the product line under the landing footer.
-His reason is not recorded. Inferred: two footers on one page would both name the product. A hook
-in `product-line.js` deciding by route was not needed, since only the frame knows when its
-footer stands.
+The frame's footer stands in place of the dashboard's product line (§16.13). `render()` hands
+its wish to `M.siteChrome.line()`. A signed-out drawing of /login or /register holds the line
+back until its read decides, and the line stays away while a frame stands. It comes back only
+where the frame is left (`leave()`) or not drawn (a failed read, a model without header or
+footer, which both run `drop()`). The choice itself is confirmed: the maintainer's decision
+req-5k1gvfsmcg9k (2026-11-03), against keeping the product line under the landing footer. His
+reason is not recorded. Inferred: two footers on one page would both name the product.
+**Rejected:** showing the line in `render()` and hiding it in `enter()` once the read answers. That
+showed it under the landing footer for one round trip on every drawing in the frame, and under the
+form on the way in (#1287 review, `b5142212`). Also rejected: a route check in `product-line.js`,
+which does not know whether the frame stands or its read failed.

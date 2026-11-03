@@ -16233,7 +16233,7 @@ back to the English sentence.
 
 | Page | Line |
 |---|---|
-| every page the dashboard draws (`web/`): the signed-in views, `/login`, `/register`, the invitation and enrolment steps, the full maintenance page (§16.12); also `/explore` and a public address (§16.9) while the hub answers it with the app shell, as it does for one with no stored page | yes |
+| every page the dashboard draws (`web/`): the signed-in views, `/login` and `/register` where the frame of §16.7.5 does not stand, the invitation and enrolment steps, the full maintenance page (§16.12); also `/explore` and a public address (§16.9) while the hub answers it with the app shell, as it does for one with no stored page | yes |
 | the hub's `503 maintenance` page (§16.12) | yes |
 | the pages behind the links in mails, `/mail/…` (§2.6.3, §2.7.1, §2.9, §18.6) | yes |
 | the join page in a browser, `/join/{token}` as HTML on either host (§3.2), below its own note | yes |
@@ -16241,10 +16241,13 @@ back to the English sentence.
 | the landing page and its variants (§16.7, §16.7.2), the legal pages (§16.7.1), and their previews for an admin (§16.7, §16.7.1) | no: the operator's site, with the operator's footer |
 | `/explore` and the stored public pages (§16.9), as the hub answers them from what it stored | no |
 
-On `/login` and `/register` the line comes after the frame of §16.7.5,
-below the landing page's footer. It does not depend on the frame: a page
-drawn without it (a failed `GET /site/chrome`, a maintenance window)
-still ends with the line.
+On `/login` and `/register` the frame of §16.7.5 has the landing page's
+footer, and it stands in the line's place: while the frame stands, and
+while a drawing of the two pages signed out waits for its
+`GET /site/chrome`, the page has no line (the maintainer's decision
+req-5k1gvfsmcg9k, 2026-11-03). A page drawn without the frame (a failed
+`GET /site/chrome`, a model without header or footer, a maintenance
+window) ends with the line.
 
 **How it looks.** At the end of the page's content, never sticky or
 fixed, so it takes no room on a phone. Small and muted. At phone width it
@@ -16254,8 +16257,8 @@ language is longer, never scrolling sideways.
 **Beyond the decision.** The card leaves these open, and the contract
 settles them: the line is centred, the year's icon is decorative, the
 links carry no query of their own, the icons' accessible names are
-`GitHub` and `Maity`, and on `/login` and `/register` the line comes below
-the frame of §16.7.5.
+`GitHub` and `Maity`, and on `/login` and `/register` the frame of §16.7.5
+stands in its place (above, since req-5k1gvfsmcg9k).
 
 ## 17. The change ticker
 

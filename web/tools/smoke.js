@@ -6225,6 +6225,32 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The dashboard's policy refuses inline style (default-src 'self'): the mark's colours come from public-pages.css.
   const frMark = frHead().all().filter((x) => ["RECT", "CIRCLE", "PATH"].includes(x.tagName));
   expect(frMark.length === 7 && frMark.every((x) => !("style" in x.attrs)), "frame: the mark's seven parts carry no style attribute");
+  // A frame stands and the next drawing waits for its read (/login to /register): its footer stays, so the product
+  // line stays away the whole wait, not only once the answer is in (nyh5's review of #1287).
+  const frLineGet = win.Maity.api.get, frLineHeld = [];
+  win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? new Promise((r) => frLineHeld.push(r)) : frGet(p));
+  await go("#/register"); for (let k = 0; k < 6; k++) await tick();
+  const frLineWait = [!!frFoot(), productLine.querySelectorAll("a").length, frLineHeld.length];
+  frLineHeld.forEach((r) => r(frModel({}))); for (let k = 0; k < 6; k++) await tick();
+  win.Maity.api.get = frLineGet;
+  expect(JSON.stringify(frLineWait) === "[true,0,1]" && frFoot() && !productLine.querySelectorAll("a").length,
+    "frame: while the next read waits, the frame's footer stands and no product line under it " + JSON.stringify(frLineWait));
+  // From the frame to /register with a failed read: the frame goes, and the product line comes back with it.
+  win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.reject(Object.assign(new Error("down"), { status: 503 })) : frGet(p));
+  await go("#/register"); for (let k = 0; k < 6; k++) await tick();
+  win.Maity.api.get = frLineGet;
+  expect(!frFoot() && productLine.querySelectorAll("a").length === 3, "frame: a failed read after a frame takes it down and brings the product line back");
+  // On the way in from another view, no frame yet: no product line under the form while the read waits either.
+  await go("#/invite/open-xxxxxxxxxxxxxxxx1"); for (let k = 0; k < 4; k++) await tick();
+  const frInHeld = [];
+  win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? new Promise((r) => frInHeld.push(r)) : frGet(p));
+  await go("#/login"); for (let k = 0; k < 6; k++) await tick();
+  const frInWait = [!!frFoot(), productLine.querySelectorAll("a").length, frInHeld.length];
+  frInHeld.forEach((r) => r(frModel({}))); for (let k = 0; k < 6; k++) await tick();
+  win.Maity.api.get = frLineGet;
+  expect(JSON.stringify(frInWait) === "[false,0,1]" && frFoot() && !productLine.querySelectorAll("a").length,
+    "frame: on the way in, no product line while the read waits nor once the frame stands " + JSON.stringify(frInWait));
+  head.querySelectorAll("meta").filter((m) => m.getAttribute("name") === "referrer").forEach((m) => m.remove());
   // Two drawings in a row: only the later answer draws, once.
   let frHeld = [];
   win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? new Promise((r) => frHeld.push(r)) : frGet(p));
@@ -6242,9 +6268,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.reject(Object.assign(new Error("maintenance"), { status: 503, code: "maintenance" })) : frGet(p));
   await go("#/all"); await go("#/login"); for (let k = 0; k < 6; k++) await tick();
   const lpLegal = main.querySelector(".legal-links");
-  expect(!frHead() && !frFoot() && header.hidden === false && frOn() && byId("login-handle")
+  expect(!frHead() && !frFoot() && header.hidden === false && frOn() && byId("login-handle") && productLine.querySelectorAll("a").length === 3
     && lpLegal && lpLegal.querySelectorAll("a").map((a) => a.getAttribute("href") + "=" + text(a)).join() === "/impressum=Imprint",
-    "frame: a failed read draws the login without it, the app's bar shown, the legal pages linked under the form");
+    "frame: a failed read draws the login without it, the app's bar shown, the legal pages linked under the form, the product line at the end");
   win.Maity.api.get = frGet;
   // Another view leaves it: stylesheets off, the class gone, the frame's elements gone.
   await go("#/invite/open-xxxxxxxxxxxxxxxx1"); for (let k = 0; k < 4; k++) await tick();
