@@ -278,6 +278,33 @@ def test_the_sweep_removes_expired_uploads_stale_bytes_and_stray_blobs_only(
     assert attachments.sweep(migrated, store) == {"expired": 0, "tombstoned": 0, "orphans": 0}
 
 
+def test_each_sweep_pass_logs_what_it_removed_also_when_nothing_went(
+    migrated: Engine, blobs: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The sweep's only evidence besides a failure: one INFO line per pass, with its counts."""
+    worker = attachments.Worker(migrated, attachment_store.LocalStore(blobs))
+    passes = [
+        {"expired": 2, "tombstoned": 1, "orphans": 0},
+        {"expired": 0, "tombstoned": 0, "orphans": 0},
+    ]
+
+    def one_pass(engine: Any, store: Any, stop: Any = None) -> dict[str, int]:
+        done = passes.pop(0)
+        if not passes:
+            worker.stop()  # the loop ends after the second pass
+        return done
+
+    monkeypatch.setattr(attachments, "SWEEP_EVERY", 0.001)
+    monkeypatch.setattr(attachments, "sweep", one_pass)
+    with caplog.at_level("INFO", logger="maity_hub.attachments"):
+        worker._run()
+    lines = [r.getMessage() for r in caplog.records if r.name == "maity_hub.attachments"]
+    assert lines == [
+        "the attachment sweep removed 2 expired, 1 tombstoned, 0 orphans",
+        "the attachment sweep removed 0 expired, 0 tombstoned, 0 orphans",
+    ]
+
+
 def test_a_sweep_without_expiring_leaves_an_old_pending_upload_and_its_bytes(
     stored: ClientFactory, owner: flow.Human, blobs: Path, migrated: Engine
 ) -> None:

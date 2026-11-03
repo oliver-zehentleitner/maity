@@ -31,7 +31,7 @@ that has not yet added the volume.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** implementation session, 2026-10-27 (`docs/api.md` §8.7 fixes "the blob first, the metadata after"; the way to undo it is the implementer's); the coordinator's ruling of 2026-11-03 for the `s3` store: the blob outside the project's lock, an orphan after a failed transaction left to the sweep; the reviews of #1281 on 2026-11-03 (the clocks the sweep compares, a write whose answer is lost); the 15-minute limit on a request's time is the SigV4 rule of AWS S3 and MinIO; the S3 service this project runs on refused a request signed 20 minutes off with `RequestTimeTooSkewed` and answered the same read with the right time (a read-only check, 2026-11-03)
+**Source:** implementation session, 2026-10-27 (`docs/api.md` §8.7 fixes "the blob first, the metadata after"; the way to undo it is the implementer's); the coordinator's ruling of 2026-11-03 for the `s3` store: the blob outside the project's lock, an orphan after a failed transaction left to the sweep; the reviews of #1281 on 2026-11-03 (the clocks the sweep compares, a write whose answer is lost, a COMMIT whose answer is lost, a COMMIT still running when the client gave up); the 15-minute limit on a request's time is the SigV4 rule of AWS S3 and MinIO; the S3 service this project runs on refused a request signed 20 minutes off with `RequestTimeTooSkewed` and answered the same read with the right time (a read-only check, 2026-11-03)
 **Revisit when:** the time from the start of an upload's write to its commit can come near `UPLOAD_FRESH`, a store answers without a `Date` header and does not refuse requests with a skewed clock, or the contract changes the write order
 **See:** replicas.md#attachments-move-to-s3-compatible-object-storage — a70d7269-a0a9-45aa-94c5-54715f112c10 — as of 2026-11-03
 
@@ -60,7 +60,14 @@ whatever follows: a write whose answer was lost may still have stored the bytes,
 refusals and failures cannot buy writes past the rate. When it
 does not commit (a refusal, a failure, or a concurrent call with the same
 idempotency key that won), the route removes the blob afterwards, outside the
-lock; when that removal fails too, or the process dies before it, the blob is
+lock, but only once a fresh read finds no row with the upload's id: an error
+does not prove the row is absent, a COMMIT whose answer was lost, or a retry
+refused after an attempt that did commit, leaves a row that names the blob.
+The read takes the project's lock first: the upload's transaction holds it
+until the server has ended that transaction, also when the client already
+gave up on the answer, so a COMMIT still running on the server is waited for
+instead of missed. When the row is there the blob stays; when the read fails,
+the blob stays for the sweep. When the removal fails, or the process dies before it, the blob is
 one without a row, which the sweep removes after `BLOB_GRACE`. Deleting a
 pending upload removes the row in the transaction and the blob after the
 commit (`events.on_commit`, new for this), where a failure is logged and left to
@@ -68,12 +75,25 @@ the sweep. A crash between the write and the commit leaves a blob without a
 row, which only the sweep (a later part) can find.
 
 **Reason:** the order the contract fixes keeps the worse failure, a row
-without bytes, impossible; the leftover blob is the harmless one.
+without bytes, out of reach of a crash or a failed write; the leftover blob is
+the harmless one. Until 2026-11-03 the route removed the blob on every error
+after the write, so a lost COMMIT answer could still leave a row without bytes;
+the read before the removal closes that.
 
 **Rejected alternatives:**
 - The row first, then the blob: a crash leaves a row that serves nothing.
 - Removing the blob inside the transaction: a rollback would then lose bytes
   a row still names.
+- Removing the blob on every error after the write, as until 2026-11-03: an
+  error from the commit does not say whether the row was written, and a
+  removal on a guess can leave a row without bytes, the failure the order is
+  there to avoid. Keeping the blob on every error instead would leave each
+  refusal's blob to the sweep for `BLOB_GRACE`, though the fresh read can
+  tell it apart.
+- The fresh read without the project's lock, as in the first version of the
+  fix: on PostgreSQL a read can come before a COMMIT the server is still
+  running becomes visible (a review reproduced it with a deferred trigger),
+  and the removal then takes the bytes of the row that commits after it.
 - Writing the blob inside the transaction, under the project's lock, as until
   2026-11-03: for `s3` a network call of up to three times 60 seconds while the
   lock and a database connection are held, the kind of wait that ends in a
