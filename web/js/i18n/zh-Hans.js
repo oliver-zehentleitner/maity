@@ -352,20 +352,34 @@ window.MAITY_I18N["zh-Hans"] = {
   "bell.count.security": {
     "other": "登录与地址 {count}"
   },
+  "bell.filter.unread": "仅未读",
   "bell.item.unread": "（未读）",
   "bell.kind.chat": "聊天",
   "bell.kind.inbox": "请求",
   "bell.kind.mention": "提及",
   "bell.kind.security": "登录与地址",
   "bell.mark_all": "全部标为已读",
+  "bell.mark_all.ask": {
+    "other": "其中包含 {count} 条安全提醒。将其标为已读并不代表确认。仍要全部标为已读吗？"
+  },
+  "bell.mark_read": "标为已读",
+  "bell.mark_read.label": "标为已读：{what}",
+  "bell.marked_read": "已标为已读。",
   "bell.marking": "正在标记…",
   "bell.none": "最近 30 天没有通知。",
+  "bell.none_unread": "最近 30 天没有未读通知。",
   "bell.not_marked": "未标记： ",
   "bell.nothing_new": "没有新内容。",
+  "bell.pinned": "安全提醒",
   "bell.read_failed": "无法读取你的通知： ",
   "bell.removed": "已移除",
-  "bell.security_hint": "将安全提醒标为已读并不代表确认。请通过“这是我本人”确认登录，可以在此处，也可以在你账户的“会话”中。",
+  "bell.security_hint": "将安全提醒标为已读并不代表确认。请通过“是我”确认登录，可以在此处，也可以在你账户的“会话”中。",
   "bell.settings": "通知设置",
+  "bell.skipped": {
+    "other": "{count} 条提醒仍为未读： "
+  },
+  "bell.skipped.not_earlier": "只有早于这条提醒的会话才能标记它",
+  "bell.skipped.not_in_good_standing": "此会话自身的登录尚未确认",
   "bell.title": "通知",
   "bell.unread": {
     "other": "{count} 条新通知"
@@ -3787,6 +3801,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "sessions.address.remove": "移除登录地址",
   "sessions.address.title": "有一项地址更改在等你处理",
   "sessions.address.too_new": "批准需要至少已存在一天的会话；此会话可以驳回。",
+  "sessions.alert_unread": "其登录提醒仍为未读。",
   "sessions.banner.approved": "该会话批准了：{devices}。",
   "sessions.banner.end": "结束此会话",
   "sessions.banner.ended_but": "该会话已结束，但它批准的会话仍然有效：{devices}。",
@@ -3821,6 +3836,11 @@ window.MAITY_I18N["zh-Hans"] = {
   "sessions.hint": "你登录的位置。浏览器和系统是各设备自己报告的；地址是 hub 看到的。",
   "sessions.line": "通过{method}登录，{when}，来自 {from}；{ago}最后一次出现，来自 {ip}。",
   "sessions.line.approved": "通过{method}登录，{when}，来自 {from}；{ago}最后一次出现，来自 {ip}；由 {approver} 批准。",
+  "sessions.mark_read": "标为已读",
+  "sessions.mark_read.label": "标为已读：{what}",
+  "sessions.mark_read.refused": "hub 未从此会话将其标为已读",
+  "sessions.marked_read": "已标为已读：{what}。",
+  "sessions.marking": "正在标记…",
   "sessions.method.device_code": "另一台设备的验证码",
   "sessions.method.email_code": "邮件验证码",
   "sessions.method.email_link": "邮件链接",
@@ -3829,6 +3849,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "sessions.other_alerts": "其他提醒",
   "sessions.read_failed": "无法读取你的会话：{reason}",
   "sessions.refused.conflict": "它已被更新的更改取代，现已显示",
+  "sessions.refused.not_earlier": "只有在它之前登录的会话才能这样做",
   "sessions.refused.not_in_good_standing": "此会话自己的登录尚未确认；请先在另一个会话中确认",
   "sessions.refused.too_new": "此会话太新，无法执行此操作",
   "sessions.second_factor_badge": "已通过第二因素",
