@@ -573,7 +573,7 @@ def test_the_copy_command_needs_both_stores_skips_what_was_deleted_and_fails_on_
     assert cli.main(["attachments", "copy-to-s3"]) == 0
     assert (
         "to copy: 1, already there: 0, different in the bucket: 0, deleted, not copied: 3, "
-        "deleted, removed from the bucket: 0, failed: 0" in capsys.readouterr().out
+        "deleted, to remove from the bucket: 0, failed: 0" in capsys.readouterr().out
     )
     assert cli.main(["attachments", "copy-to-s3", "--apply"]) == 0
     assert "copied: 1" in capsys.readouterr().out
@@ -592,13 +592,29 @@ def test_the_copy_command_needs_both_stores_skips_what_was_deleted_and_fails_on_
         )
     (folder / late).unlink()
     assert owner.delete(f"/projects/maintainer/maity/attachments/{dropped}").status_code == 200
+    before = {o["Key"] for o in raw(config).list_objects_v2(Bucket=config.bucket)["Contents"]}
+    assert cli.main(["attachments", "copy-to-s3"]) == 0  # without --apply: counted, not removed
+    assert "deleted, to remove from the bucket: 1," in capsys.readouterr().out
+    assert {
+        o["Key"] for o in raw(config).list_objects_v2(Bucket=config.bucket)["Contents"]
+    } == before
     assert cli.main(["attachments", "copy-to-s3", "--apply"]) == 0
     assert "deleted, removed from the bucket: 1," in capsys.readouterr().out  # the tombstone's
     keys = {o["Key"] for o in raw(config).list_objects_v2(Bucket=config.bucket)["Contents"]}
     assert keys == {f"{folder.name}/{kept}", f"{folder.name}/{dropped}"}  # too young a stray
     monkeypatch.setattr(attachments, "BLOB_GRACE", -60)  # as if older than the grace
+    assert cli.main(["attachments", "copy-to-s3"]) == 0  # the stray counted, and left
+    assert "deleted, to remove from the bucket: 1," in capsys.readouterr().out
+    assert {o["Key"] for o in raw(config).list_objects_v2(Bucket=config.bucket)["Contents"]} == keys
     assert cli.main(["attachments", "copy-to-s3", "--apply"]) == 0
     assert "deleted, removed from the bucket: 1," in capsys.readouterr().out  # no row: a stray
+    # A project the database does not know (data the hub did not write): left alone, and the
+    # rest of the pass goes on.
+    raw(config).put_object(Bucket=config.bucket, Key="prj-unknown/att-foreign", Body=b"x")
+    assert cli.main(["attachments", "copy-to-s3", "--apply"]) == 0
+    assert "deleted, removed from the bucket: 0, failed: 0" in capsys.readouterr().out
+    assert raw(config).head_object(Bucket=config.bucket, Key="prj-unknown/att-foreign")
+    raw(config).delete_object(Bucket=config.bucket, Key="prj-unknown/att-foreign")
     listed = raw(config).list_objects_v2(Bucket=config.bucket)["Contents"]
     assert [o["Key"] for o in listed] == [f"{folder.name}/{kept}"]
     assert cli._still_live(migrated, f"{folder.name}/{kept}")
@@ -613,6 +629,24 @@ def test_the_copy_command_needs_both_stores_skips_what_was_deleted_and_fails_on_
     assert "copied: 0," in printed and "deleted, not copied: 3," in printed, printed
     assert "deleted, removed from the bucket: 0," in printed
     monkeypatch.setattr(cli, "_live_attachments", real_live)
+    # A clean-up that fails, of the store or of the database: the copy's counts are printed,
+    # and the run ends with exit 1.
+    from sqlalchemy.exc import OperationalError
+
+    real_sweep = attachments.sweep
+    for failure in (
+        StoreError("the attachment store could not list (x)"),
+        OperationalError("SELECT", {}, Exception("server closed the connection")),
+    ):
+
+        def failing(*args: Any, error: Exception = failure, **kwargs: Any) -> Any:
+            raise error
+
+        monkeypatch.setattr(attachments, "sweep", failing)
+        assert cli.main(["attachments", "copy-to-s3", "--apply"]) == cli.EXIT_FAILURE
+        printed = capsys.readouterr().out
+        assert "copied: 0, already there: 1," in printed and "failed: 1" in printed, printed
+    monkeypatch.setattr(attachments, "sweep", real_sweep)
     (folder / kept).write_bytes(b"changed")  # other bytes than the bucket's: reported, exit 1
     assert cli.main(["attachments", "copy-to-s3", "--apply"]) == cli.EXIT_FAILURE
     assert "different in the bucket: 1" in capsys.readouterr().out

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -436,6 +438,31 @@ def test_a_single_command_keeps_its_windows_line_without_the_pipx_path() -> None
     assert "{ uv tool install maity }" in line and "$env:Path" not in line
 
 
+def test_the_windows_line_sets_utf8_first_whatever_the_install_line() -> None:
+    """PowerShell 5.1 pipes ASCII by default and an `ü` arrives as `?`; set before anything
+    runs, without a byte order mark."""
+    for install in ("pipx install maity", "uv tool install maity"):
+        line = join_line.windows(install, "U", "C")
+        assert line is not None and line.startswith(f"{join_line.UTF8_POWERSHELL}; ")
+    assert "UTF8Encoding $false" in join_line.UTF8_POWERSHELL
+
+
+def test_the_windows_line_installs_pipx_where_it_is_missing() -> None:
+    """Without pipx the line used to fail at `pipx`; pipx from `pip --user` is not on the
+    PATH, so it runs as a module, and only a pipx install line gets this."""
+    line = join_line.windows("pipx install maity", "U", "C")
+    assert line is not None
+    assert (
+        "{ if (Get-Command pipx -ErrorAction SilentlyContinue) { pipx install maity } "
+        "else { python -m pip install --user pipx; python -m pipx install maity } }"
+    ) in line
+    assert line.endswith(
+        "if (Get-Command maity -ErrorAction SilentlyContinue) " "{ maity join U --code C }"
+    )
+    other = join_line.windows("uv tool install maity", "U", "C")
+    assert other is not None and "pipx" not in other
+
+
 def test_a_public_address_on_the_join_host_keeps_its_path(
     make_client: ClientFactory, migrated: Any
 ) -> None:
@@ -449,3 +476,26 @@ def test_a_public_address_on_the_join_host_keeps_its_path(
     ):
         got = client.get(sent, follow_redirects=False)
         assert (got.status_code, got.headers["location"]) == (302, went), sent
+
+
+def test_the_contract_example_and_the_dashboard_fixture_are_the_lines_the_hub_makes() -> None:
+    """`docs/api.md` §3.1 and `web/js/api.js` spell the three lines out by hand; a change to
+    `join_line` that leaves one of them behind fails here."""
+    root = Path(__file__).resolve().parents[2]
+    api = (root / "docs" / "api.md").read_text(encoding="utf-8")
+    lines = re.search(r'^    "join": .*\n    "posix": .*\n    "windows": .*$', api, re.M)
+    assert lines is not None
+    example = json.loads("{" + lines[0] + "}")
+    join = re.fullmatch(r"maity join (\S+) --code (\S+)", example["join"])
+    assert join is not None
+    url, code = join.groups()
+    assert example["posix"] == join_line.posix("pipx install maity", url, code)
+    assert example["windows"] == join_line.windows("pipx install maity", url, code)
+    fixture = (root / "web" / "js" / "api.js").read_text(encoding="utf-8")
+    for name, make in (("posix", join_line.posix), ("windows", join_line.windows)):
+        found = re.search(
+            rf'^ +{name}: ("(?:[^"\\]|\\.)*") \+ url \+ ("(?:[^"\\]|\\.)*"),$', fixture, re.M
+        )
+        assert found is not None, name
+        before, after = json.loads(found[1]), json.loads(found[2])
+        assert before + "URL" + after == make("pipx install maity", "URL", "FIXT-URE0-0000")

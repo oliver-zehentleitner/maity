@@ -571,7 +571,8 @@ expires (a70d7269). While the hub still serves from the volume, its deletions re
 file there, and an object the copy put earlier stays current in the bucket. So each run with
 `--apply` ends with the sweep's removals against the bucket, without expiring rows (the hub's
 own sweep does that): the object of a tombstoned row, and an object no row names once it is
-older than `BLOB_GRACE`, the same bound that protects an upload in flight under `s3`. What is
+older than `BLOB_GRACE`, the same bound that protects an upload in flight under `s3`. A run without
+`--apply` counts these removals and deletes nothing, like the copy itself. What is
 deleted after the last run stays in the bucket until the switch; from then on the hub's own
 sweep removes it within its interval. A staging that is given up or rolled back leaves the bucket as
 the last run left it: one more run with `--apply` cleans it, or the bucket's prefix is emptied. A pending

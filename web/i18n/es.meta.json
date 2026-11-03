@@ -2867,6 +2867,10 @@
     "en": "169c766081d782ef",
     "text": "a55de96bff32d451"
   },
+  "contract.meta.whole": {
+    "en": "3cccb13e7824459a",
+    "text": "e6f3f934490cb0fb"
+  },
   "contract.none": {
     "en": "311ccdabe1e7f8f6",
     "text": "5885d7c692d177cb"
@@ -2914,6 +2918,34 @@
   "contract.unresolved": {
     "en": "df927d470f71b978",
     "text": "e6604f49eebd4de5"
+  },
+  "contract.whole.reading": {
+    "en": "45d56821f9a79b06",
+    "text": "4f23d314a7f5adf3"
+  },
+  "contract.whole.title": {
+    "en": "733e9ab34898e5d7",
+    "text": "1fe53ab540df3a63"
+  },
+  "contract.whole.toc": {
+    "en": "978507cc93df4d03",
+    "text": "dd691456db5df966"
+  },
+  "contract.whole.why.not_found_on_forge": {
+    "en": "c6c784efe43c072b",
+    "text": "3d6f241d30289a12"
+  },
+  "contract.whole.why.not_markdown": {
+    "en": "815d6f4b97ff85d4",
+    "text": "ddc352d70fbd0e1a"
+  },
+  "contract.whole.why.not_text": {
+    "en": "e7937b1a925b74a6",
+    "text": "66ede3bc961b75e1"
+  },
+  "contract.whole.why.too_large": {
+    "en": "fe9d8e7479c1d23b",
+    "text": "0af0a83f71a212ca"
   },
   "contract.why.ambiguous_in_file": {
     "en": "19ca6c7b6493f149",
@@ -3968,12 +4000,12 @@
     "text": "ed5f28249311c454"
   },
   "forge.via.instance": {
-    "en": "af99f024da99184a",
-    "text": "87f15fbdef61376e"
+    "en": "213d4401f693e8f9",
+    "text": "8c33dd576bf57340"
   },
   "forge.via.none": {
-    "en": "c8b1997e9d1dc468",
-    "text": "93831fa813973b0e"
+    "en": "f3c21cbf73952d4b",
+    "text": "0bc813bbe74bf41f"
   },
   "forge.via.owner_token": {
     "en": "3f7cfca281e0d495",
@@ -9791,6 +9823,10 @@
     "en": "0adf70d5dd00616b",
     "text": "0adf70d5dd00616b"
   },
+  "nav.contract": {
+    "en": "733e9ab34898e5d7",
+    "text": "1fe53ab540df3a63"
+  },
   "nav.inbox": {
     "en": "c2c0b354370cf87a",
     "text": "d11d46db2da98a1e"
@@ -10750,6 +10786,10 @@
   "overview.project.contract": {
     "en": "733e9ab34898e5d7",
     "text": "1fe53ab540df3a63"
+  },
+  "overview.project.contract_forge": {
+    "en": "1269313bee6567c9",
+    "text": "01b29f5a90c5764c"
   },
   "overview.project.no_repository": {
     "en": "8c3b5df817eeac05",
@@ -11834,6 +11874,18 @@
   "prefs.versions.title": {
     "en": "d946eb551f1d6a44",
     "text": "73b313f10bfa8895"
+  },
+  "product.bug": {
+    "en": "191903c61492ea38",
+    "text": "6a5e0ffee370acdf"
+  },
+  "product.love": {
+    "en": "96fa5228627bef6a",
+    "text": "81f8f93867ca1ded"
+  },
+  "product.made_by": {
+    "en": "3c4acf7ac90b37e1",
+    "text": "894277f3d0cc72cd"
   },
   "profile_delete.busy": {
     "en": "c0ca40456b38f753",

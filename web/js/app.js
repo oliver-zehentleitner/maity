@@ -1889,7 +1889,15 @@ window.Maity = window.Maity || {};
     if (!/^\/(login|register)$/.test(M.route.current().path) || M.api.session()) M.siteChrome.leave();
     let where = { scope: "unknown" };
     let ctx;
+    // The invitation's token is in its path: no referrer before this drawing asks anything
+    // (GET /maintenance below), also when the tab came here from another view, whose shell had
+    // no header for it, and while a maintenance window stands (§16.13).
+    try { if (M.invite && parseRoute().scope === "invite") M.invite.noReferrer(); } catch { /* the drawing below says why */ }
     await M.i18n.ready;
+    // The product line after <main> (§16.13), in the language this view is drawn in; i18n
+    // draws it again when the session's language arrives. Not under a stored public page
+    // the hub put into <main> (§16.13, "Where it is"), which stands for this view.
+    if (M.productLine) M.productLine.show(!hubPage);
     // §16.12: the window as the hub has it, read at most once a minute; while it runs, the
     // full page stands instead of the view (heldPage), the sign-in and its step excepted.
     M.maintenance.drawing();
@@ -2141,6 +2149,8 @@ window.Maity = window.Maity || {};
   }
 
   M.redraw = render;
+  // The path of a forge's 16 × 16 mark, for js/product-line.js (§16.13).
+  M.forgeMarkPath = (forge) => FORGE_MARKS[forge] || FORGE_MARKS.other;
   M.errorBox = errorBox;
   M.withMembers = withMembers;
   M.logout = logout;

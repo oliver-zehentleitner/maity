@@ -3023,6 +3023,10 @@
     "en": "169c766081d782ef",
     "text": "346d823521a76743"
   },
+  "contract.meta.whole": {
+    "en": "3cccb13e7824459a",
+    "text": "128cf3f1ad193a0d"
+  },
   "contract.none": {
     "en": "311ccdabe1e7f8f6",
     "text": "879998563d59f03f"
@@ -3070,6 +3074,34 @@
   "contract.unresolved": {
     "en": "df927d470f71b978",
     "text": "04d14b656b811375"
+  },
+  "contract.whole.reading": {
+    "en": "45d56821f9a79b06",
+    "text": "c95221988be3029b"
+  },
+  "contract.whole.title": {
+    "en": "733e9ab34898e5d7",
+    "text": "0e77163e9ce7ab9c"
+  },
+  "contract.whole.toc": {
+    "en": "978507cc93df4d03",
+    "text": "7763482f7e6608e5"
+  },
+  "contract.whole.why.not_found_on_forge": {
+    "en": "c6c784efe43c072b",
+    "text": "65dc96666298264f"
+  },
+  "contract.whole.why.not_markdown": {
+    "en": "815d6f4b97ff85d4",
+    "text": "69684fb599aa9f6a"
+  },
+  "contract.whole.why.not_text": {
+    "en": "e7937b1a925b74a6",
+    "text": "6a61801b273e95e3"
+  },
+  "contract.whole.why.too_large": {
+    "en": "fe9d8e7479c1d23b",
+    "text": "efec281a1a1d8849"
   },
   "contract.why.ambiguous_in_file": {
     "en": "19ca6c7b6493f149",
@@ -10235,6 +10267,10 @@
     "en": "0adf70d5dd00616b",
     "text": "0adf70d5dd00616b"
   },
+  "nav.contract": {
+    "en": "733e9ab34898e5d7",
+    "text": "0e77163e9ce7ab9c"
+  },
   "nav.inbox": {
     "en": "c2c0b354370cf87a",
     "text": "df5f2368da71cd5b"
@@ -11194,6 +11230,10 @@
   "overview.project.contract": {
     "en": "733e9ab34898e5d7",
     "text": "0e77163e9ce7ab9c"
+  },
+  "overview.project.contract_forge": {
+    "en": "1269313bee6567c9",
+    "text": "0ba69e202ecb8903"
   },
   "overview.project.no_repository": {
     "en": "8c3b5df817eeac05",
@@ -12278,6 +12318,18 @@
   "prefs.versions.title": {
     "en": "d946eb551f1d6a44",
     "text": "fae687096c0aff9a"
+  },
+  "product.bug": {
+    "en": "191903c61492ea38",
+    "text": "daf2ae936b976d2f"
+  },
+  "product.love": {
+    "en": "96fa5228627bef6a",
+    "text": "91aaab83e0a5a83e"
+  },
+  "product.made_by": {
+    "en": "3c4acf7ac90b37e1",
+    "text": "f19cb47cd1354ba0"
   },
   "profile_delete.busy": {
     "en": "c0ca40456b38f753",

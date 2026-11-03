@@ -19,6 +19,7 @@ from typing import Any
 from urllib.parse import quote
 
 from sqlalchemy import Connection, Engine, delete, func, select, update
+from sqlalchemy.exc import NoResultFound
 
 from maity_hub import attachment_store, clock, events, worker_runs
 from maity_hub import tables as t
@@ -468,27 +469,59 @@ def expire(
     return removed
 
 
-def remove_stray(engine: Engine, store: attachment_store.BlobStore, key: str) -> bool:
-    """Remove a blob no row names, if it is older than `BLOB_GRACE`. The store is asked
-    outside every transaction: for `s3` its answers are network calls, and none may wait
-    under the project's lock (hub/context/attachments.md 7dcd4850).
+_UNKNOWN_PROJECTS: set[str] = set()  # logged once per process, not on every pass
+
+
+def _left_alone(project_id: str) -> None:
+    """Log a store folder no project row has, once per process: the hub did not write it
+    (`lost+found` on an ext4 volume, other data in the bucket), so it is not the sweep's."""
+    if project_id not in _UNKNOWN_PROJECTS:
+        _UNKNOWN_PROJECTS.add(project_id)
+        log.warning(
+            "the attachment store holds a folder no project has, left alone: %r", project_id
+        )
+
+
+def remove_stray(
+    engine: Engine, store: attachment_store.BlobStore, key: str, *, apply: bool = True
+) -> bool:
+    """Remove a blob no row names, if it is older than `BLOB_GRACE`; without `apply` only
+    say whether it would go. The store is asked outside every transaction: for `s3` its
+    answers are network calls, and none may wait under the project's lock
+    (hub/context/attachments.md 7dcd4850).
 
     Under the lock only the row is looked at. An upload inserts its row under the same lock
     and only while its blob is younger than `UPLOAD_FRESH` (`routes/attachments`): a blob
     older than `BLOB_GRACE` before the look, with no row at the look, can no longer get one,
-    so its removal after the lock is released cannot take the bytes of a row."""
+    so its removal after the lock is released cannot take the bytes of a row. A key whose
+    project has no row (data the hub did not write there, a database older than the store)
+    is left alone and logged once: no lock decides it, and one such key must not stop the
+    pass for every other. Without `apply` the look takes the same lock, for one SELECT: a count
+    follows the path of the removal it stands for."""
     project_id, _, attachment_id = key.partition("/")
     age = store.age(key, time.time())
     if age is None or age <= BLOB_GRACE:
         return False
+    known = True
     with engine.begin() as conn:
-        events.lock_project(conn, project_id)
-        named = conn.execute(
-            select(t.attachment.c.id).where(t.attachment.c.id == attachment_id)
-        ).first()
+        try:
+            events.lock_project(conn, project_id)
+        except NoResultFound:  # read on the client side: the transaction is still usable
+            known = False
+        named = (
+            conn.execute(
+                select(t.attachment.c.id).where(t.attachment.c.id == attachment_id)
+            ).first()
+            if known
+            else None
+        )
+    if not known:
+        _left_alone(project_id)
+        return False
     if named is not None:
         return False
-    store.delete(key)
+    if apply:
+        store.delete(key)
     return True
 
 
@@ -498,22 +531,30 @@ def sweep(
     stop: worker_runs.Stopping | None = None,
     *,
     expiring: bool = True,
+    apply: bool = True,
 ) -> dict[str, int]:
     """One pass: pending uploads past 24 hours go with their bytes, the bytes of a
     tombstoned row go if they are still there, and a blob no row names goes once it is
     older than a transaction can be. Returns what it removed, by kind. Without `expiring` it
-    leaves the rows alone and only cleans `store`: `copy-to-s3` cleans the bucket so while
-    the hub still serves from the volume, whose own sweep expires the rows."""
+    leaves the rows alone and only cleans `store`: `copy-to-s3` cleans the bucket that way
+    while the hub still serves from the volume, whose own sweep expires the rows. Without
+    `apply` (and without `expiring`) it removes nothing and counts what it would remove."""
+    if expiring and not apply:
+        raise ValueError("a sweep that expires rows cannot only count")
     done = {"expired": 0, "tombstoned": 0, "orphans": 0}
     cutoff = clock.now() - PENDING_FOR
     with engine.connect() as conn:
-        candidates = conn.execute(
-            select(t.attachment.c.id, t.attachment.c.project_id).where(
-                t.attachment.c.message_seq.is_(None),
-                t.attachment.c.deleted_at.is_(None),
-                t.attachment.c.uploaded_at < cutoff,
-            )
-        ).all()
+        candidates = (
+            conn.execute(
+                select(t.attachment.c.id, t.attachment.c.project_id).where(
+                    t.attachment.c.message_seq.is_(None),
+                    t.attachment.c.deleted_at.is_(None),
+                    t.attachment.c.uploaded_at < cutoff,
+                )
+            ).all()
+            if expiring
+            else []
+        )
         tombstoned = conn.execute(
             select(t.attachment.c.id, t.attachment.c.project_id).where(
                 t.attachment.c.deleted_at.is_not(None)
@@ -526,13 +567,21 @@ def sweep(
             return done
         key = attachment_store.key_of(row.project_id, row.id)
         if store.age(key, time.time()) is not None:
-            store.delete(key)
+            if apply:
+                store.delete(key)
             done["tombstoned"] += 1
     for project in store.projects():
+        # A folder no project has is skipped before its keys are read: its blobs are not the
+        # hub's, and one the hub cannot read (`lost+found`, 0700 root) would fail the pass.
+        with engine.connect() as conn:
+            known = conn.execute(select(t.project.c.id).where(t.project.c.id == project)).first()
+        if known is None:
+            _left_alone(project)
+            continue
         for key in store.keys(project):
             if stop is not None and stop.is_set():
                 return done
-            if remove_stray(engine, store, key):
+            if remove_stray(engine, store, key, apply=apply):
                 done["orphans"] += 1
     return done
 
@@ -560,6 +609,13 @@ class Worker:
             try:
                 with worker_runs.claim(self.engine, "attachments", SWEEP_EVERY, self._stop) as held:
                     if held is not None:
-                        sweep(self.engine, self.store, held)
+                        done = sweep(self.engine, self.store, held)
+                        # One line per pass, also when nothing went: the proof the sweep runs.
+                        log.info(
+                            "the attachment sweep removed %d expired, %d tombstoned, %d orphans",
+                            done["expired"],
+                            done["tombstoned"],
+                            done["orphans"],
+                        )
             except Exception:
                 log.exception("the attachment sweep failed")

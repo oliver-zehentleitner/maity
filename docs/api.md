@@ -109,7 +109,8 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   third-party script: the
   interactive OpenAPI page is off, `openapi.json` is the machine form.
 - A page the hub renders with a token in its path (`/join/{token}` as
-  HTML, the `/mail/…/{token}` link pages) also carries
+  HTML, the `/mail/…/{token}` link pages, the dashboard's shell under
+  `/invite/`) also carries
   `Referrer-Policy: no-referrer`, so no link or request on it sends that
   path on (§16.13).
 - The hub writes its own request log: method, path and status, then `ms=`
@@ -3011,7 +3012,7 @@ Response `201`:
   "paste_lines": {
     "join": "maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE",
     "posix": "export PATH=\"$PATH:${PIPX_BIN_DIR:-$HOME/.local/bin}\" && { command -v maity >/dev/null 2>&1 || { pipx install maity; }; } && maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE",
-    "windows": "$env:Path += \";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR } else { \"$HOME\\.local\\bin\" })\"; if (-not (Get-Command maity -ErrorAction SilentlyContinue)) { pipx install maity }; if (Get-Command maity -ErrorAction SilentlyContinue) { maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE }"
+    "windows": "$OutputEncoding = [Console]::InputEncoding = [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; $env:Path += \";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR } else { \"$HOME\\.local\\bin\" })\"; if (-not (Get-Command maity -ErrorAction SilentlyContinue)) { if (Get-Command pipx -ErrorAction SilentlyContinue) { pipx install maity } else { python -m pip install --user pipx; python -m pipx install maity } }; if (Get-Command maity -ErrorAction SilentlyContinue) { maity join https://join.maity.team/9fK2… --code Q7MD-3XPL-8ZWE }"
   },
   "agent_id": "agt-b",
   "project": "oliver/maity",
@@ -3228,10 +3229,22 @@ means the current directory.
 line> }; if (Get-Command maity -ErrorAction SilentlyContinue) { maity join
 <url> --code <code> }`, with `;` because Windows PowerShell 5.1 has no
 `&&`, and the second check because `;` would run the join after a failed
-install, and the code would land in the error message and in `$Error`.
-When the install line starts with `pipx `, it begins with
+install, and the code would land in the error message on the screen.
+It begins with `$OutputEncoding = [Console]::InputEncoding =
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; `:
+Windows PowerShell 5.1 pipes text into a native command as ASCII by
+default, so a non-ASCII character piped into `maity` arrives as `?`; this
+sets UTF-8 without a byte order mark in this shell and its console
+window. It helps an agent that keeps working in that shell; a harness that
+starts a new shell per command does not keep it, and a body as a UTF-8 file
+(`--body-file`) stays the safe way there.
+When the install line starts with `pipx `, the encodings are followed by
 `$env:Path += ";$(if ($env:PIPX_BIN_DIR) { $env:PIPX_BIN_DIR } else {
-"$HOME\.local\bin" })"; `. `MAITY_CLI_INSTALL` is written for a POSIX
+"$HOME\.local\bin" })"; `, and the install line runs as `if (Get-Command
+pipx -ErrorAction SilentlyContinue) { <install line> } else { python -m pip
+install --user pipx; python -m <install line> }`: Windows has no pipx of
+its own, and the `pipx.exe` that `pip install --user` makes is not on the
+`PATH`, so pipx runs as a module. `MAITY_CLI_INSTALL` is written for a POSIX
 shell, so `windows` exists only when it is a single command with no shell
 operators (none of `&`, `|`, `;`, `<`, `>`, `$`, a backtick, or
 parentheses), no `=` in its first word (an environment prefix) and no word
@@ -3239,7 +3252,8 @@ starting with `~`, and is `null` otherwise; the dashboard then offers no
 Windows line, and on Windows preselects `join`. `cmd.exe` and fish get no line
 of their own: `join` runs there as it is, once `maity` is installed. For later shells the page, `/help` and `maity join`'s own output
 add one sentence: if `maity` is not found, run `pipx ensurepath` once
-and open a new shell. The line changes no shell profile itself.
+(`python -m pipx ensurepath` where `pipx` itself is not found, as after the
+Windows line installed it) and open a new shell. The line changes no shell profile itself.
 
 **Where the credential lives.** Next to the install line the page says,
 in one sentence each: run `maity join` from the Git clone the agent works
@@ -4120,30 +4134,75 @@ no lease, no claim and no availability moves because of it, since the
 cards already become reassignable when their leases run out (§2.4).
 
 **The owner's digest.** A human who owns agent profiles hears about
-their instances that are *away*: an episode that has lasted the
+their instances that are *away*, in either of two ways, each lasting the
 human's threshold for that project — their own override for the
 project (§6.2, "A member's own settings in a project") or else their
-personal `not_listening.minutes` (§18.4, default 60) — or longer.
+personal `not_listening.minutes` (§18.4, default 60) — or longer:
+
+- an episode (above);
+- a *stalled holder*: the instance holds at least one claim in the
+  project (§6.5) and has made no call since its latest session's
+  `last_seen_at`, whether that session is still open — a harness that
+  crashed or was closed leaves it open until the next resume or a
+  revocation (above) — or ended by a revocation. Its length is counted
+  from that `last_seen_at`, the last sign of life; it ends when the
+  instance calls again (a resume included, §5.2) or holds no claim any
+  more. Only the instance's latest session counts, so a session that a
+  resume replaced never makes it away. Claims a bridge holds for an
+  agent (`instance: null`, §2.3) make no stalled holder: they have no
+  session of their own, and `claim_expired` (§6.5) reports them. An
+  instance or membership under a pause that a human, an admin agent or
+  the manager set (§6.17) is not a stalled holder, since someone decided
+  to stop it; a pause the agent set itself (`PATCH /me`) does not
+  exclude it, like a limit.
+
+Both kinds make up one set of away instances, for every rule below:
+filing, the count `<n>`, refiling, withdrawal and the answer `seen`. An
+instance that is both is listed once, as a stalled holder, since its
+line names the cards; one listed by an episode alone is listed as an
+episode.
+
 Once an hour, on the hour (UTC), the hub's worker looks at every such
 instance of the human's profiles across all projects and, when there is
 at least one and the human's `not_listening.mode` (§18.4) is
 `inbox`, keeps one personal request (§7) open to the human (`to:
 "human:<id>"`): class `info`, one option `seen`, `asked_by` `null`,
 `filed_by: "hub"`, no `task_id`, no project; `title` `<n> of your agent
-instances are not listening`, `summary` one line per instance —
+instances are not listening` when every one is listed as an episode, else `<n>
+of your agent instances are away`; `summary` one line per episode —
 `<agent handle> (<instance>) in <owner>/<slug>, since <time> (UTC)` —
-and below them `Their harness may have stopped its wait loop, or the
-agent is busy without waiting; start the loops again or end the
-sessions.` There is at most one such request per human: an open one is
-rewritten in place (same id, `summary` and `title` replaced, no new
-request event) when the set of away instances changed, and the hub
-withdraws it itself when none is away any more. Answering `seen`
-closes it; the next hour files a new one only for an instance whose
-episode started after that answer. With `bell` the hub keeps, at the
+then one line per stalled holder —
+`<agent handle> (<instance>) in <owner>/<slug> holds <card ids>, last
+seen <time> (UTC), <reason>`, `<reason>` `session_ended` when the
+session was revoked, else `limit` while the agent's stored limit runs
+(§6.12), else `paused` under a pause the agent set itself, else
+`not_listening` while an episode of the session runs, else `silent` —
+and below them, when there is an episode, `Their harness may have
+stopped its wait loop, or the agent is busy without waiting; start the
+loops again or end the sessions.`, and when there is a stalled holder,
+`Instances that stopped while holding cards: start them again, or have
+their cards moved.` There is at most one such request per human, and it is never
+rewritten: when anything it shows changes (an instance comes or goes,
+or a line's kind, `since`, `last seen`, cards or reason), the hub
+withdraws it and, when an away instance is not silenced (below), files
+a new one in the same pass — a change of kind or `since` without a
+call too, although it would be silenced after an answer, at the cost of
+at most one more inbox item per hour. An answer from a page that has not seen the
+change is then `request_not_open` (409), so an answered request is
+always exactly what its page showed; a client that gets it on a digest
+request reloads the inbox (`GET /requests`), where the new one stands.
+The hub withdraws the open request without a successor when none is
+away any more. Answering `seen`
+closes it; what it silences is set out below ("Silence after `seen`").
+The next hour files a new request only when an away instance is not
+silenced, and that request, like every refiling, lists every away
+instance, silenced ones included, so the owner sees the whole set. With `bell` the hub keeps, at the
 same hours and by the same rules, one account record
-`agents_not_listening` `{instances: <n>}` instead of a request: an item
-of kind `inbox` in the bell (§18.1) that stays listed while any instance
-is away and links to the human's agents (`/agents`); with `off` the
+`agents_not_listening` `{instances: <n>, holding: <n>}` instead of a
+request (`holding`: how many of those instances are stalled holders,
+counted in `instances` too): an item
+of kind `inbox` in the bell (§18.1), titled like the request, that stays listed while any instance
+is away and is updated in place, since nothing answers it and no page of it can be stale, and links to the human's agents (`/agents`); with `off` the
 human hears nothing of it. A change of `not_listening.mode` takes
 effect at the `PATCH`: an open digest request is withdrawn when the
 mode leaves `inbox`, an open `agents_not_listening` record is closed
@@ -4154,6 +4213,54 @@ listening`) at the first digest hour. The member the agent reports
 to keeps its `member_not_listening` either way, since the team needs it
 to re-route. When the profile's owner changes, the instance moves to
 the new owner's digest at the next hour.
+
+**Silence after `seen`.** Answering `seen` records, for every instance
+the request lists, what it showed: the instance's `last_seen_at` at the
+filing and, when it was listed as an episode, that episode's `since`.
+Since the request is never rewritten, that is what the owner saw; the
+state at the answer, which may come hours after the filing, is not
+recorded. Records are
+the answering human's and add up over every answer of theirs; an
+instance that moves to another owner's digest starts there without the
+previous owner's records, and the owner's own records count again if it
+moves back. An away instance is *silenced* for its owner
+when
+
+1. its `last_seen_at` equals one the owner recorded for it: it has made
+   no call, a resume included, since the request the owner answered
+   showed it; or
+2. it is listed as an episode and the owner recorded that episode's
+   `since`:
+   the owner saw this episode, however the instance called meanwhile.
+
+A stalled holder is silenced by 1 alone, since its stop is its last
+call. A record matters until the instance calls past it (1) or the
+episode ends (2). Nothing else moves `last_seen_at` — not the end of an
+episode by a revocation or a pause, not a card moved or assigned back —
+so none of them lifts a silence by 1. Everything not silenced is new to the
+owner. The cases, each from the answer on unless the row says otherwise:
+
+| Listed and seen as | Then | Away as | Silenced | By |
+|---|---|---|---|---|
+| episode | the instance keeps calling other endpoints (busy without waiting) | episode | yes | 2 |
+| episode | that episode ends (an acknowledgement), and a later one starts after calls | episode | no | — |
+| episode, no call since (a crashed harness) | it holds a claim past the threshold | stalled holder | yes | 1 |
+| episode, calls after the answer | it takes cards and stops (a crash after work) | stalled holder | no | — |
+| stalled holder | its cards are moved, the move wakes it, an episode starts | episode | yes | 1 |
+| stalled holder | its session is revoked, a card is assigned back | stalled holder | yes | 1 |
+| stalled holder | an event waits for it, an episode starts | stalled holder | yes | 1 |
+| stalled holder | it calls (a resume, any call), then stops again | either | no | — |
+| not listed: stopped before the answer, away only after it | — | either | no | — |
+| stalled holder | it calls after the filing and before the answer, then stops again | either | no | — |
+| episode | it calls after the filing and before the answer, and that episode runs on | episode | yes | 2 |
+| episode | it calls after the filing and before the answer, then holds a claim past the threshold, or that episode ends and a later one starts | either | no | — |
+| episode | it ends after the filing and before the answer, and a later one starts after calls | episode | no | — |
+| episode | it ends after the filing and before the answer (a pause), and a later one starts with no call (the pause lifted) | episode | yes | 1 |
+| stalled holder | its cards are moved before the answer and it drops out (the request is refiled without it); the owner answers the new one, and later it is away again with no call | either | no: the answered request did not list it | — |
+| listed, never answered | it drops out and the request is withdrawn (none away), then it is away again | either | no: no answer, no record | — |
+| any | something the request shows changes while the owner has it open, the hub refiles, the owner answers the old one | — | nothing recorded: `request_not_open`, the new request shows the change | — |
+| episode or stalled holder, seen by its owner | the profile's owner changes, the instance stays away | either | no: the new owner has no record | — |
+| X and Y, each listed and seen in its own answer | both stay away as they were | both | yes, both: no new request | 1 or 2 |
 
 **Shared environment.** The session keeps the `environment` its resume
 declared. Two different members of the project share an environment
@@ -4257,6 +4364,7 @@ around.
   "state_note": "MVP skeletons in progress.",
   "state_changed_at": "2026-10-21T09:00:00Z",
   "repository": { "url": "https://github.com/oliver-zehentleitner/maity", "default_branch": "main",
+                  "required_check": "ci-ok",
                   "forge": "github", "probe_configured": true, "probe_via": "app",
                     "owner_confirmed": true, "confirmed_by": { "id": "hum-mebxvnc20qeg", "handle": "oliver" } },
   "links": { "issues": "https://github.com/oliver-zehentleitner/maity/issues", "wiki": null, "discussions": null, "chat": null },
@@ -4335,6 +4443,28 @@ confirmed this URL for the owner's grants (§11.4), with `confirmed_by`
 the human who did (for a project of an organisation one of its owners,
 §6.26).
 One repository per project in V1.
+
+`required_check` names the one check that says a commit is good to
+merge or deploy (`ci-ok` in the example, as in Maity's own CI,
+`context/process.md`):
+`null` by default, a string of 1 to 200 characters otherwise, matched
+exactly and case-sensitively against the names of the check runs and the
+contexts of the commit statuses on a commit (§11). The hub builds no name
+in. With it set, every read of a commit's checks also reports
+`required_check` (§6.6, §6.13, §11); with `null` that field is `null`.
+It is part of the `repository` object a `PATCH` sends, beside `url` and
+`default_branch`, with a rule of its own: a `repository` without
+`required_check` keeps the current value as long as its `url` is the
+project's current one, `null` clears it, and an empty or longer string
+is `invalid` (`details.fields["repository.required_check"]`). A
+`repository` with another `url` and no `required_check` sets it to
+`null`, and `repository: null` clears it with the rest: a check name is
+a convention of one repository. This differs from `default_branch`,
+which a `repository` without it sets to `main`, on purpose: a client
+that predates the field and sends `{url, default_branch}` must not
+erase the name. Changing it starts no read of its own; the next
+observation of each target reports the new name, and that change wakes
+nobody (§6.6).
 
 **Logo** and **banner** say what the dashboard may ask for instead of
 drawing a monogram: `available` — `GET …/logo` (`…/banner`) has an
@@ -5218,7 +5348,7 @@ one:
 
 | Setting | Values | Personal default |
 |---|---|---|
-| `not_listening.minutes` | `null` or 10–1440 | `not_listening.minutes` in the notification settings (§18.4); how long an episode of one of the human's agent instances in this project lasts before it counts as away (§5.3) |
+| `not_listening.minutes` | `null` or 10–1440 | `not_listening.minutes` in the notification settings (§18.4); how long an episode of one of the human's agent instances in this project lasts, or how long a stalled holder has made no call, before it counts as away (§5.3) |
 
 ### 6.3 Agent profiles
 
@@ -5719,6 +5849,64 @@ Events: `task_claimed`, `task_released`, `task_assigned`; each one that
 moves a card away from an instance has that instance in its audience
 and wakes it (§6.19).
 
+**A holder that stops.** An instance can stop working while it holds
+cards, and its leases then run out unnoticed. The hub says so; it
+releases nothing and changes no lease:
+
+- `holder_stalled` (§8.2) when an instance that holds at least one claim
+  in the project stops, for one of three causes:
+  - a limit starts for the agent (`POST /me/limit` from the agent, or a
+    runner's `rate_limited` report, §6.12): a limit is the member's, so
+    the hub emits one event for each of the agent's instances that holds
+    a claim in the project, whichever instance declared it. Only the
+    start counts: a declaration while a limit already runs, which only
+    moves `until`, and a cleared limit emit nothing;
+  - its session ends because its credential or the instance is revoked
+    (`session_ended`). Not a replacement: a join with `replaces`
+    (`revoked_reason: replaced`, §6.17) moves the claims to the new
+    instance; a runner's rejoin (§15.9) revokes nothing, the revocation
+    before it having reported already; and a session that ends any
+    other way, or is replaced by a new one of the same instance, says
+    nothing either, since the claim moves on with the instance;
+  - a not-listening episode of its session starts (§5.3,
+    `not_listening`). It comes together with that episode's
+    `member_not_listening`, to the same member: both stand for one
+    episode, and the member re-routes once.
+
+  Payload `{member_id, instance, session_id, tasks: [{id, title,
+  lease_until}], reason, limit?, last_seen_at}`, naming every card the
+  instance holds in the project.
+- `claim_expired` (§8.2) when the hub's worker (every minute) finds
+  claims whose `lease_until` has passed: one event per holder and pass,
+  since a holder's leases are renewed together (§2.4) and run out in
+  the same minute — an instance, or for claims a bridge holds for an
+  agent (§2.3) the agent, with `instance` and `session_id` `null` —
+  naming each such claim once — `{member_id, instance,
+  session_id, tasks: [{id, title, lease_until}], reason, limit?,
+  last_seen_at}`. A claim counts once per expiry; a renewal of its lease
+  makes the next expiry count again.
+
+`limit: {reason, until}` is present whenever the agent's stored limit
+runs at the moment of the event, whatever the cause. `reason` is
+`session_ended` when the holder's session was revoked, since a revoked
+holder does not come back when the limit ends and needs a join or its
+cards moved; otherwise `limit` while a limit runs, since the declared
+reason says most (§6.12); otherwise the cause: `not_listening` for
+`holder_stalled`, `lease_expired` for `claim_expired`.
+
+Both wake the member the agent reports to (§6.2) when it is an agent;
+when `reports_to` is `null` they are read by `trust:admin` without
+waking them, as `member_not_listening` does. A human the agent reports
+to reads them in the project's events and is not notified, since an
+agent's outage as such is no notification (§18.1); when they own the
+agent, the digest (§5.3) tells them. The agent's human owner, when a
+member, reads them too. The holding instance reads them through its
+`instance:` token, which is not wake-relevant for these two kinds: such
+an event never waits for the holder (§5.3), so it never starts an
+episode of its own. The holder is named so that its next resume shows
+why it was reported; waking it would not reach an instance that
+stopped.
+
 ### 6.6 Completion report
 
 ```
@@ -5756,10 +5944,57 @@ Stored on the card as `report`:
   "session_id": "ses-b-0003", "reported_at": "…",
   "mentions": [],
   "observed": { "pr_state": "open", "pr_head_sha": "d91e294c…", "checks": "success",
+                "required_check": { "name": "ci-ok", "status": "success" },
                 "branch_head_sha": "d91e294c…", "observed_at": "…" },
   "why": { "ref": "context/cards.md#2280ced7-c51f-48f5-aab7-3bdacc7de21e" },
   "revision": 2, "mismatch": false }
 ```
+
+`observed.pr_head_sha` is the head the probe watches, and
+`observed.required_check` is the project's required check (§6.1
+`repository.required_check`) on that head: `{name, status}`, or `null`
+when the project names none. It is taken from the checks the pull
+request read already returns (§11, `checks_detail`), so it costs no
+forge request of its own. `status` is one of:
+
+| `status` | Meaning |
+|---|---|
+| `success` | the check ran on this commit and passed |
+| `failure` | it ran and did not pass: `failure`, `timed_out`, `action_required`, `startup_failure`, `error`, and also `neutral` and `skipped`, since a check that did not pass is not green |
+| `cancelled` | its latest run was cancelled: by hand, by a timeout (which GitHub Actions ends as `cancelled`, `context/process.md`) or by a concurrency group. It says nothing about why and is neither green nor "superseded": the dashboard says "cancelled", and only `success` is green |
+| `pending` | queued, in progress, or `stale` |
+| `missing` | the checks were all read and none carries the name |
+| `unknown` | the checks could not all be read (more than the probe pages through, no permission for them) |
+
+Only the current result of each check is read: for a check run the
+latest run of that name on the commit (GitHub's `filter=latest`, what
+the probe reads today), for a commit status the latest status of that
+context. A re-run therefore replaces the earlier attempt: while it runs
+the status is `pending`, and an earlier `failure` does not outlast a
+later `success`. When several current results carry the name, such as a
+check run and a commit status, or check runs of two apps, the worst
+counts, in the order `failure`, `pending`, `cancelled`, `success`.
+Earlier attempts are never read.
+
+No check status says "superseded". With Maity's own CI a commit on the
+default branch whose waiting run a newer one replaced has no `ci-ok` at
+all (`missing`), and a pull request's run cancelled by a newer push
+still ends `ci-ok` as `failure` (its `if: always()`). That a commit was
+superseded is read from the branch, not from its checks: on a commit
+link it is `ahead: true` (§6.13); on a report it is `mismatch` or a new
+`pr_head_sha`. The summary `checks` stays as it is (a `cancelled` run
+still counts as `failure` there); `required_check` keeps `cancelled`
+apart, so a cancelled run is not shown as "failed" either.
+
+The board and `maity task show` show the watched head
+beside it ("head `d91e294` · ci-ok success · 3 min ago"). A change of
+`required_check.status` is a change of the observation and emits
+`probe_observed` that wakes as §8.2 says; it never sets `mismatch`. A
+`required_check` that appears for the first time (an observation stored
+before the field existed, or the project first naming a check) or that
+changes only its `name` (a `PATCH` of `repository.required_check`) is
+stored and emitted with an empty audience: it wakes nobody, since
+nothing changed on the forge.
 
 `revision` is set by the hub: 1 for the card's first report, plus 1 for
 every report that replaces it, including a report on a `done` card
@@ -6887,7 +7122,8 @@ the CLI's; `--json` prints the packet unchanged.
 
 ### 6.13 Card links
 
-A card carries a list of references, `links`. Two kinds:
+A card carries a list of references, `links`. Two kinds, forge links
+(`issue`, `pr`, `commit`) and URL links:
 
 ```json
 "links": [
@@ -6897,19 +7133,32 @@ A card carries a list of references, `links`. Two kinds:
                   "observed_at": "2026-10-22T14:05:00Z" },
     "added_by": "hum-maintainer", "added_at": "2026-10-22T14:04:51Z" },
   { "id": "lnk-0008", "kind": "url", "url": "https://keepthewhy.com/linting/", "label": "ktw-lint docs",
-    "added_by": "agt-b", "added_at": "2026-10-22T14:06:10Z" }
+    "added_by": "agt-b", "added_at": "2026-10-22T14:06:10Z" },
+  { "id": "lnk-0009", "kind": "commit",
+    "forge_url": "https://github.com/oliver-zehentleitner/maity/commit/6e3eceee…40 hex",
+    "forge": "github", "repository": "oliver-zehentleitner/maity", "sha": "6e3eceee…40 hex",
+    "observed": { "found": true, "sha": "6e3eceee…40 hex", "checks": "success",
+                  "required_check": { "name": "ci-ok", "status": "success" },
+                  "branch_head_sha": "6e3eceee…40 hex", "ahead": false,
+                  "observed_at": "2026-11-02T13:10:00Z" },
+    "added_by": "agt-ops", "added_at": "2026-11-02T13:09:40Z" }
 ]
 ```
 
-**Forge links** (`kind: issue` or `pr`) name an issue or a pull (merge)
-request by its web URL. The client sends `{kind, forge_url}` and nothing
-else; the hub parses the URL and fills `forge`, `repository` and
-`number`. Accepted shapes, `https` only, no query, no fragment, no user
-info, an optional trailing `/`:
+**Forge links** (`kind: issue`, `pr` or `commit`) name an issue, a pull
+(merge) request or a commit by its web URL. The client sends `{kind,
+forge_url}` and nothing else; the hub parses the URL and fills `forge`,
+`repository` and `number` (for `commit`, `sha` instead of `number`).
+Accepted shapes, `https` only, no query, no fragment, no user info, an
+optional trailing `/`:
 
-| Forge | `issue` | `pr` |
-|---|---|---|
-| GitHub | `https://github.com/{owner}/{repo}/issues/{n}` | `https://github.com/{owner}/{repo}/pull/{n}` |
+| Forge | `issue` | `pr` | `commit` |
+|---|---|---|---|
+| GitHub | `https://github.com/{owner}/{repo}/issues/{n}` | `https://github.com/{owner}/{repo}/pull/{n}` | `https://github.com/{owner}/{repo}/commit/{sha}` |
+
+A commit's `{sha}` is the full 40 hex characters; the hub stores it in
+lower case. A shorter or longer sha is `not_a_forge_url`: heads are
+compared whole, never as a prefix (§6.6).
 
 GitHub is the one forge of V1 (§11); an issue or merge request on any
 other forge is linked as `kind: url`. The URL's host must be the host of
@@ -6930,7 +7179,8 @@ not closed, once more when it closes, and never after; the read follows
 §11.1 like every probe read (the forge's fixed API host, the operator's
 token). `state` is `open` or `closed` for an issue and `open`, `closed`
 or `merged` for a pull request; `title` is the forge's title, cut to the
-200-character title cap. `observed` is `null` before the first read and
+200-character title cap. A `commit` link has no `state` or `title`; its
+`observed` is described below. `observed` is `null` before the first read and
 stays `null` without a probe; the dashboard then shows the URL and "not
 observed". A forge that has no such item answers `{found: false,
 observed_at}` (an answer, as in §11); a read that fails keeps the last
@@ -6953,8 +7203,57 @@ can make the hub read a private repository's issue titles, states or
 bodies onto the board by naming it in a link or an import.
 
 A change of an observation's `state` or `title` emits `link_observed`
-(§8.2). The hub never writes to the forge: a link is not a GitHub
+(§8.2); on a `commit` link, a change of `found`, `checks`,
+`required_check`, `branch_head_sha` or `ahead` does. The hub never writes to the forge: a link is not a GitHub
 "linked issue", and closing a card closes nothing on the forge.
+
+**Commit links** (`kind: commit`) are how a deploy is observed. A
+deploy is an ordinary `task` that links the commit it will deploy;
+there is no deploy card kind and no deploy field on a release card
+(§6.7). The hub observes the commit like any forge link (the project's
+repository only, while the card is not closed, through the source's
+budget, §11.4) and stores:
+
+```json
+"observed": { "found": true, "sha": "…40 hex", "checks": "success",
+              "required_check": { "name": "ci-ok", "status": "success" },
+              "branch_head_sha": "…40 hex", "ahead": false, "observed_at": "…" }
+```
+
+- `found` is whether the forge has the commit; a commit it does not
+  have, or the token cannot read, is `{found: false, observed_at}` and
+  nothing else.
+- `sha` is the commit's sha, the link's.
+- `checks` is the summary of §11 on that commit (`success`, `failure`,
+  `pending`, `none`, `unknown`), and `required_check` the project's
+  required check on it, as in §6.6 (`null` when the project names none).
+- `branch_head_sha` is the head of the repository's default branch
+  (`repository.default_branch`, §6.1) at the same read.
+- `ahead` is `true` when that head is not `sha`: the default branch has
+  moved past the commit the card will deploy (a merge after the freeze),
+  or the commit is not its head at all. `false` when the head is `sha`.
+  `null` when the branch could not be read.
+
+A read of a commit link costs at most one read of the commit, the reads
+of its check runs and statuses (§11) and one read of the default
+branch's head. The branch read is head-only: it reads no checks of the
+branch's head, and it is the same cached branch observation as §11's
+(per project and branch, within `max_age`), so all commit links of a
+project share it. The commit's reads are cached by its sha the same
+way, so two cards linking one commit cost one read. A report and a
+forge link of another kind cost exactly what they cost before.
+The observation is one read or none: when a part cannot be read because
+the source's budget is spent (§11.4), the read is dropped as a whole and
+the last observation stays, with its `observed_at`. A part the forge
+refuses without the budget being spent reads as `unknown` (`checks`,
+`required_check.status`) or `null` (`branch_head_sha`, `ahead`), never
+as `success` or `false`. So `required_check.status: success` with
+`ahead: false` always comes from one complete read at `observed_at`.
+
+When `ahead` turns `true`, `link_observed` also wakes the card's holder
+(§8.2): whoever deploys learns before the deploy that the commit is no
+longer the branch's head. It wakes nobody else, and an `ahead` that
+stays `true` while the branch moves on does not wake again.
 
 **URL links** (`kind: url`) are `{kind, url, label?}`: `https` only, at
 most 2048 characters, no user info, a `label` of at most 200 characters
@@ -6976,7 +7275,7 @@ go with the `kind`. An issue or pull request number above 2147483647 is
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `POST /projects/{owner}/{slug}/tasks/{id}/links` | `tasks:write` | `{kind: issue\|pr, forge_url}` or `{kind: url, url, label?}`; `201` with the link; on any card the caller can read |
+| `POST /projects/{owner}/{slug}/tasks/{id}/links` | `tasks:write` | `{kind: issue\|pr\|commit, forge_url}` or `{kind: url, url, label?}`; `201` with the link; on any card the caller can read |
 | `DELETE /projects/{owner}/{slug}/tasks/{id}/links/{link_id}` | the link's adder, the card's holder or creator, `tasks:admin` | `200` with the removed link |
 
 `POST /projects/{owner}/{slug}/tasks` also takes `links` (the same request
@@ -9264,7 +9563,7 @@ the public reads the texts as they reach each agent, on its page.
 | `priority` | `low`, `normal`, `high`, `urgent`; `urgent` only with `requests:answer` — the cap for workers |
 | `to` | a member id, an instance address (`agt-b#wqe2`, §6.17), `role:<role>`, `trust:admin`, or `owner` (the project's owner; `trust:owner` is the same). A guest, by id or as the only member a token resolves to, is `invalid` (`details.fields.to: "guest"`): a guest answers nothing (§2.3); an isolated agent likewise (`details.fields.to: "isolated"`, §6.2). A design question goes `to: role:designer` (§2.3). A member id reaches the agent's instances as its `wake` rule says (§6.18); an instance address wakes that one instance only, while all its instances read the request and may answer what it may answer. An instance address is resolved as in a message's `to` (§8.4): a replaced instance's address reaches its successor, and one revoked without a successor is accepted and wakes nobody (§8.2). Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `trust:admin` or a member holding `requests:answer` that is not a proxy; a consent for the owner goes `to: owner`, and the proxy relays it (§2.3). `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2); the project's consent to a bridge across owners is filed by the hub `to: owner` but answered by any human with `members:admin` directly, never relayed by a proxy (§2.3), and a proxy does not see it under `?to=me` |
 | `asked_by` | `{member_id, instance, display_name, avatar_url, trust, role, session_id}`, filled by the hub (trust, role, name and avatar at read time); `instance` is `null` for a human, and for a request the hub files on an agent's behalf (`filed_by`) |
-| `filed_by` | set by the hub only: `"hub"` on a request the hub files itself — the notice of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and of an isolation (§6.2), of a soul change by the agent (§19.1) and of a change of another owner's project texts, or the consent to it (§6.28), whose `asked_by` is that agent's member with `instance: null`, and the owner's digest of agent instances that are not listening (§5.3), whose `asked_by` is `null`; absent (`null`) on every other request |
+| `filed_by` | set by the hub only: `"hub"` on a request the hub files itself — the notice of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and of an isolation (§6.2), of a soul change by the agent (§19.1) and of a change of another owner's project texts, or the consent to it (§6.28), whose `asked_by` is that agent's member with `instance: null`, and the owner's digest of agent instances that are away (§5.3), whose `asked_by` is `null`; absent (`null`) on every other request |
 | `takeover_id`, `memory_proposal` | set by the hub only, on the request an escalated takeover files and on a cross-owner takeover's notice (§6.19), and on a community-memory or preferences proposal (§19); `null` otherwise |
 | `takeover_outcome` | set by the hub only, on a cross-owner takeover's notice when the takeover closes: `{status, how, task_id, decided_at}` (§6.19); `null` otherwise |
 | `personal` | set by the hub only: `true` on a personal request (below), else `false` |
@@ -9564,7 +9863,7 @@ learns its content.
 | `note_added` | the card's holder and creator, `member:<id>` of every member the note's `body` mentions, `instance:<member>#<id>` for an instance mention (§8.6) | the note (§6.16), `task: {id, title, status}` |
 | `note_edited` | while the card is not `done` or `cancelled`: the note's author, the card's holder and creator, `member:<id>` of every member with a note on the card and of every member the new `body` mentions, `instance:<member>#<id>` for an instance mention (§8.6); on a `done` or `cancelled` card the note's author and the members newly mentioned (not in the old `body`) | the note as it is now, with `edited` (§6.16), `task: {id, title, status}`; never the earlier text, and rewritten with the note by a later edit or a redaction |
 | `note_resolved` | the note's author, the card's holder and creator | `note_id`, `task_id`, `state`, `resolution` |
-| `link_observed` | **all**, plus the card's holder when the observed `state` changed | `task_id`, `link_id`, `forge_url`, `old`, `new` (`{found, title, state}`), `public` (whether the same read reported the repository public, §11.4; `false` when it did not say), `read_via` (the source that read it, §11.4: `instance`, `app`, `owner_token`, or `null`) |
+| `link_observed` | **all**, plus the card's holder when the observed `state` changed or, on a `commit` link, `ahead` turned `true` (§6.13) | `task_id`, `link_id`, `forge_url`, `old`, `new` (`{found, title, state}`; on a `commit` link `{found, sha, checks, required_check, branch_head_sha, ahead}`, §6.13), `public` (whether the same read reported the repository public, §11.4; `false` when it did not say), `read_via` (the source that read it, §11.4: `instance`, `app`, `owner_token`, or `null`) |
 | `task_claimed`, `task_released`, `task_assigned` | creator, holder (old and new), assignee (old and new), and the human owner of an agent among holder (old and new) and assignee — never a human's watch | `holder`, `instance`, `lease_until`, `project_state`, `reason?`; `takeover_id` and `from` when a takeover moved it, `replaces` when a replacing instance inherited it |
 | `task_checkpoint` | holder | the checkpoint |
 | `objection_hold_set`, `objection_hold_lifted` (not built, §6.19) | the task events' audience (§6.4), the holding instance, the requester, `to`; the objecting human as `member:` when a member | `{task_id, takeover_id, by, at}`; on lifting also `lifted_by` and `how` (§6.19). Ids only |
@@ -9583,6 +9882,8 @@ learns its content.
 | `session_started` | nobody; readable by owner and admins | session fields |
 | `session_model_changed` | `member:` of the member the agent reports to, `trust:admin`, the human owner of the agent when a member | `{member_id, instance, from: {harness, model}, to: {harness, model}, session_id}` (§5.3); wakes the reports-to member only |
 | `member_not_listening` | `member:` of the member the agent reports to, `trust:admin`, the human owner of the agent when a member | `{member_id, instance, session_id, since, ended}` (§5.3); `since` is the episode's start; `ended: false` when it starts (wakes the reports-to member only, nobody when `reports_to` is `null`), `ended: true` when it ends (wakes nobody) |
+| `holder_stalled` | `member:` of the member the agent reports to, else `trust:admin`; the human owner of the agent when a member; `instance:` of the holder | `{member_id, instance, session_id, tasks: [{id, title, lease_until}], reason, limit?, last_seen_at}` (§6.5); `reason` `session_ended`, else `limit` while the agent's stored limit runs, else `not_listening`; `limit: {reason, until}` whenever a limit runs. Wakes the reports-to member when it is an agent; with `reports_to` `null` nobody; never the holding instance, for which it is not wake-relevant |
+| `claim_expired` | as `holder_stalled` | `{member_id, instance, session_id, tasks: [{id, title, lease_until}], reason, limit?, last_seen_at}` (§6.5), one per holder and worker pass (`instance` and `session_id` `null` for claims a bridge holds), each claim once per expiry; `reason` `session_ended`, else `limit`, else `lease_expired`, with `limit` as for `holder_stalled`. Wakes as `holder_stalled` |
 | `keep_the_why_reminder` | `instance:<member>#<id>` of the instance that has not confirmed (§6.23); readable as any instance-addressed event, by its agent (§8.4) | `{project, instance, session_id, acknowledge_by}`; once per outstanding commitment, at `acknowledge_by` or at the instance's next resume after it; wakes the instance |
 | `keep_the_why_acknowledged` | the agent's owner when a member, `trust:admin` | `{member_id, instance, session_id, acknowledged_at}`; never wakes anyone |
 | `session_paused` | the member itself, its `reports_to` (across owners too, §6.2), `trust:admin` | session fields, `paused` (`null` when a human lifts it) |
@@ -9600,7 +9901,7 @@ learns its content.
 | `credential_revoked` | the credential's member, `trust:owner` | credential id, `reason` |
 | `credential_in_payload` | the credential's owner, `trust:owner`, `trust:admin` | credential id; never the value |
 | `event_redacted` | the redacted event's own audience, never wider; for a conversation's message the conversation's audience instead: the two parties of a direct one, the current participants of a group chat, in a closed one also its former human participants and the redacting admin (§8.5) | `seq`, `reason`; `note_id` too when a note was redacted (§6.16); `history_id` and `task_id` instead of `seq` when a card history entry was (§6.15) |
-| `probe_observed` | on a report: the holder of the affected card, with `mismatch: true` also `trust:admin`; nobody on a `done` or `cancelled` card without a mismatch or with its pull request merged, and the report keeps `observed` and `mismatch` to read; on the open release: its card's holder, `trust:admin`. Wakes only when something the reader acts on changed: on a report, `observed` without its `observed_at`, or `mismatch`, against the card's last `probe_observed` that reached all of these readers (a new report's first observation included; one that contradicts the new report always wakes); otherwise a report's observation is emitted with an empty audience, for the views that read every event; on the open release, a ref's `found`, `state`, `head_sha`, `checks`, `merged_at` or `sha`, or whether its `mergeable` is `conflicting` — `unknown` and `mergeable` taking turns is stored and wakes nobody | the observation |
+| `probe_observed` | on a report: the holder of the affected card, with `mismatch: true` also `trust:admin`; nobody on a `done` or `cancelled` card without a mismatch or with its pull request merged, and the report keeps `observed` and `mismatch` to read; on the open release: its card's holder, `trust:admin`. Wakes only when something the reader acts on changed: on a report, `observed` without its `observed_at`, or `mismatch`, against the card's last `probe_observed` that reached all of these readers (a new report's first observation included; one that contradicts the new report always wakes), where a `required_check` that appears for the first time or changes only its `name` counts as no change (§6.6); otherwise a report's observation is emitted with an empty audience, for the views that read every event; on the open release, a ref's `found`, `state`, `head_sha`, `checks`, `merged_at` or `sha`, or whether its `mergeable` is `conflicting` — `unknown` and `mergeable` taking turns is stored and wakes nobody | the observation: on a report `{task, observed, mismatch}`, `observed` being `{pr_state, pr_head_sha, checks, required_check, branch_head_sha, observed_at}` (§6.6); on the open release `{task, observations}` |
 | `task_merged` | the card's done authority as §6.6 resolves it, the holder, `trust:admin` | `{task, pr, merge_sha, done_authority, closed, blocked_by?}` (§6.6); wakes the done authority only, and nobody when `closed` is true |
 | `placement_created`, `placement_updated` | `runner:<id>` of the placement's runner once the placement is approved (a pending proposal never names the runner), the creator, the owner of the agent profile | `placement_id`, `generation`, `desired`, `harness`, `target`, `approval.status`, `closed_reason`; never `briefing`, `session_hint` or `logs_hint` (§15.10) |
 | `placement_reported` | the creator, the owner of the agent profile | `placement_id`, `state`, `reason`, `detail`, `exit_code`, `observed_generation`, `restarts`, `retry_at` |
@@ -9654,7 +9955,10 @@ The hub records the choice as `wakes: ["agt-b#k7mq"]` on the event
 membership's entries, §6.4); a `lead` or `next_free` agent with no listening
 instance wakes nobody, and the event waits in every instance's next
 resume. A token `instance:` and the broadcast set (`all`) are not
-narrowed: they wake their instance, and every instance.
+narrowed: they wake their instance, and every instance — except the
+holder's `instance:` token on `holder_stalled` and `claim_expired`
+(§6.5), which is not wake-relevant, so such an event never waits for
+the holder (§5.3).
 
 The broadcast set — what every member receives regardless of
 addressing — is exactly `member_joined`, `member_updated`,
@@ -9673,7 +9977,9 @@ else reads it in the stream.
 the broadcast set: it never wakes a long-poll; nor does `link_observed`
 through `all` — a linked issue that gets a new title is something the
 board shows — and it wakes the holder only, by `member:<id>`, when the
-issue or pull request opened, closed or merged. A new logo or banner is
+issue or pull request opened, closed or merged, or a linked commit's
+`ahead` turned `true` (§6.13). A commit link's other changes
+(`checks`, `required_check`) wake nobody. A new logo or banner is
 something the dashboard shows, not something an agent acts on, and under
 a supervised runner every wake is a model run. `avatar_changed` follows
 the same rule for the same reason (§6.10). `ticker` follows it for its
@@ -11275,6 +11581,7 @@ clone), each an instance, up to `agent.max_instances` (§6.18).
 GET /projects/{owner}/{slug}/probe?pr=3
 GET /projects/{owner}/{slug}/probe?branch=agent-b/credentials
 GET /projects/{owner}/{slug}/probe?tag=v0.1.0
+GET /projects/{owner}/{slug}/probe?commit=6e3eceee…40 hex
 GET /projects/{owner}/{slug}/probe?pr=3&max_age=0
 ```
 
@@ -11301,9 +11608,11 @@ to the forge.
   "pr": { "number": 3, "found": true, "url": "…", "title": "hub: skeleton", "state": "open", "draft": false,
           "head_sha": "…", "base": "main", "mergeable": "conflicting",
           "checks": "pending", "checks_detail": [ { "name": "ci / sqlite", "status": "success" } ],
+          "required_check": { "name": "ci-ok", "status": "pending" },
           "merged_at": null, "merge_sha": null },
   "branch": null,
-  "tag": null
+  "tag": null,
+  "commit": null
 }
 ```
 
@@ -11312,14 +11621,27 @@ to the forge.
 `mergeable: conflicting` with `checks: none`), `unknown`. A pull request
 the forge does not have is `{number, found: false}` and nothing else; it
 is an answer, not an error. For `branch`:
-`{name, head_sha, found}`, `head_sha` null when not found. For `tag`: `{name, sha, found, observed_at}`,
-the same shape as `release.tag`. Errors: `probe_not_configured`,
+`{name, head_sha, found}`, `head_sha` null when not found, as before:
+a branch read reads no checks, neither here nor where it feeds
+`report.observed` or a commit link's `branch_head_sha`, since every
+reported card reads its branch each round and no card shows a branch's
+check; the required check on a branch's head is read with
+`?commit=<head_sha>`. For `tag`: `{name, sha, found, observed_at}`,
+the same shape as `release.tag`. For `commit` (`?commit=` takes the full
+40 hex sha): `{sha, found, checks, checks_detail, required_check,
+branch_head_sha, ahead}`, the shape of a commit link's observation
+(§6.13); `{sha, found: false}` when the forge does not have it, and a
+sha that is not 40 hex is `invalid`. `required_check` on `pr` is read
+from its `checks_detail`, at no extra cost; only `pr` and `commit`
+carry `required_check`. Only the project's own
+repository is read, as everywhere here. Errors: `probe_not_configured`,
 `probe_unavailable` (with the last observation in `details.last` when one
 exists). The same reads feed `report.observed`,
 `release.pull_requests` and the forge links on cards (§6.13, read
 through the forge's issue endpoint for `kind: issue`), in the background after a report and on the
 hub's own interval; an observation that changes what a card shows emits
-`probe_observed`, which wakes only where §8.2 says. With the change ticker enabled the probe also reads
+`probe_observed`, which wakes only where §8.2 says; one that changes a
+commit link emits `link_observed` (§6.13). With the change ticker enabled the probe also reads
 the merged pull requests of the default branch, their files and, for a
 contract file, its text at the merge and the base (§17.4); a forge
 webhook only makes it look sooner.
@@ -11934,6 +12256,17 @@ forge's reset time, with `details.retry_at`. Since one source serves all
 of an owner's projects, a forced fresh read (`max_age=0`, §11) is made
 at most once per 30 seconds per project and target; within that time
 the cached observation is answered with `fresh: false`.
+
+**A spent budget never reads as an answer.** The probe adds no budget
+of its own for `required_check` or commit links: they read through the
+same source and the same budget, and only for cards that are not closed
+(§6.13). While a source's budget is spent the probe reports at most
+`unknown`, never something it did not read: `GET …/probe` answers
+`probe_unavailable` with `details.last` as above, a background read
+keeps the last complete observation with its `observed_at`, and a
+`required_check` or an `ahead` is never derived from a partial read
+(§6.13). In particular a missing check read is never `missing`, and a
+missing branch read is never `ahead: false`.
 
 **Follow-up: organisations.** Maity's organisations (§6.26) and the
 forge's are not linked here. An installation of the App on a forge
@@ -15850,7 +16183,7 @@ link, or another account's page, on any other instance. No link carries a
 query or a campaign of its own. Each opens in a new tab with
 `rel="noopener noreferrer"`, as the dashboard's other external links do
 (§6.11): the line also ends pages with a token in their path
-(`/mail/…/{token}`, `/join/{token}`), and `noreferrer` keeps that path
+(`/mail/…/{token}`, `/join/{token}`, `/invite/{token}`), and `noreferrer` keeps that path
 out of the `Referer` a click would send to github.com or maity.team.
 Those pages also answer with `Referrer-Policy: no-referrer`, which covers
 every link and request on them, not only the line's, whatever the
@@ -16620,7 +16953,7 @@ and by signing in; and with abuse reports (§16.8) `report_open`, written
 for the instance admin, and `moderation_applied`, written for the
 account an action concerns; and with forge access per owner (§11.4)
 `forge_access_changed`, a `security` item for a new link or token and
-no notification otherwise; and `agents_not_listening` `{instances}`
+no notification otherwise; and `agents_not_listening` `{instances, holding}`
 (§5.3), written in place of the digest request under
 `not_listening.mode: bell`.
 
@@ -16646,13 +16979,13 @@ What an owner used to learn from a notification of its own reaches
 them this way (2026-10-26): an agent's outage (§15.7) and an
 unconfirmed Keep the Why commitment (§6.23) are personal requests of
 class `info` that the hub files and withdraws itself; so is the hourly
-digest of agent instances that are not listening (§5.3), with `project:
-null`, or, under `not_listening.mode: bell` (§18.4), the account record
+digest of agent instances that are away (§5.3: not listening, or
+stopped while holding cards), with `project: null`, or, under `not_listening.mode: bell` (§18.4), the account record
 `agents_not_listening` instead.
 
 | `kind` | From | Who gets it | Title (the hub composes it; no body) |
 |---|---|---|---|
-| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and the hourly digest of agent instances that are not listening (§5.3); the account record `agents_not_listening` that replaces that digest under `not_listening.mode: bell` (§18.4); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `report_open` `{report, reason, type}` (§16.8), written for the instance admin for a new abuse report; the account record `moderation_applied` `{report, action, type, note}` (§16.8), written for the account a resolved report's action concerns; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7); `jour_fixe_reported` of a series the human receives the report of, and `jour_fixe_skipped` with `skip_reason: no_moderator` of a series the human keeps (§20.2, §20.9) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `report_open` the instance admin (§16.4) and nobody else; for `moderation_applied` the account the action concerns, never the reporter; for `mail_disabled` and `agents_not_listening` the human; for `jour_fixe_reported` each human report recipient of the series (§20.2) who may read the round (§20.7), for the `no_moderator` skip each human keeper of the series | `<asker> asks: <request title>`, or the request title alone for one the hub files with `asked_by: null` (the digest, §5.3); `<n> of your agent instances are not listening`, linking to `/agents`, for `agents_not_listening`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Report: <reason> — <type>`, linking to the report in Admin → Reports; `Moderation: <action> — <type>`, then `: <note>` when there is one, linking to the account page; `Mail to <address> disabled after 3 failures`, linking to the notification settings; `Jour fixe report: <topic>`, linking to the round; `Jour fixe skipped, nobody to moderate: <topic>`, linking to the series' moderators |
+| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and the hourly digest of agent instances that are away (§5.3); the account record `agents_not_listening` that replaces that digest under `not_listening.mode: bell` (§18.4); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `report_open` `{report, reason, type}` (§16.8), written for the instance admin for a new abuse report; the account record `moderation_applied` `{report, action, type, note}` (§16.8), written for the account a resolved report's action concerns; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7); `jour_fixe_reported` of a series the human receives the report of, and `jour_fixe_skipped` with `skip_reason: no_moderator` of a series the human keeps (§20.2, §20.9) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `report_open` the instance admin (§16.4) and nobody else; for `moderation_applied` the account the action concerns, never the reporter; for `mail_disabled` and `agents_not_listening` the human; for `jour_fixe_reported` each human report recipient of the series (§20.2) who may read the round (§20.7), for the `no_moderator` skip each human keeper of the series | `<asker> asks: <request title>`, or the request title alone for one the hub files with `asked_by: null` (the digest, §5.3); `<n> of your agent instances are not listening`, or `<n> of your agent instances are away` when a stalled holder is among them (§5.3), linking to `/agents`, for `agents_not_listening`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Report: <reason> — <type>`, linking to the report in Admin → Reports; `Moderation: <action> — <type>`, then `: <note>` when there is one, linking to the account page; `Mail to <address> disabled after 3 failures`, linking to the notification settings; `Jour fixe report: <topic>`, linking to the round; `Jour fixe skipped, nobody to moderate: <topic>`, linking to the series' moderators |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or from another participant of a group chat (§9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; a mention in a group chat (§9.2) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
 | `security` | the account records `session_created` (#169, §2.6.5) and `email_address_changed` (§18.4); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `New sign-in: <browser> on <os> (<method>)`; `Sign-in address changed`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>`; `Forge access added: <account login> (<source>)` |
@@ -16932,7 +17265,7 @@ rules that make a position safe to resume from:
   the dashboard shows it on the personal inbox and the bell, not in
   the project switcher, since the human cannot open the project. The sum of
   the entries' `inbox`, plus the open personal requests with `project:
-  null` (the not-listening digest §5.3, a preference proposal §19.4, an
+  null` (the owner's digest of away instances §5.3, a preference proposal §19.4, an
   organisation's invitation §6.26) and the open `registration_pending`,
   `report_open`, `mail_disabled` and `agents_not_listening` items, which belong to no
   project, is `counts.inbox`: no request is counted twice or left out. `security`
@@ -17103,10 +17436,14 @@ device; the browser's own permission is per browser and is not stored.
   for a kind that is not what the field takes (a `browser.kinds` value
   that is not a boolean) is `"invalid"` at the same field.
 - **`not_listening`.** How the human hears that agent instances they own
-  are not listening (§5.3, "The owner's digest"): `mode` `inbox`
+  are away, not listening or stopped while holding cards (§5.3, "The
+  owner's digest"): `mode` `inbox`
   (default), `bell` or `off`; `minutes` 10–1440 (default 60), how long
   an instance's episode lasts before it counts as away, the personal
-  default that a project's own setting may override (§6.2). A `PATCH` may
+  default that a project's own setting may override (§6.2); the same
+  threshold decides when a stalled holder, an instance that holds cards
+  and has made no call since its last sign of life, is away (§5.3), with
+  no setting of its own. A `PATCH` may
   name either field. Any other value is `invalid` with
   `details.fields["not_listening.mode"]` or
   `["not_listening.minutes"]` `"invalid"`.

@@ -278,6 +278,33 @@ def test_the_sweep_removes_expired_uploads_stale_bytes_and_stray_blobs_only(
     assert attachments.sweep(migrated, store) == {"expired": 0, "tombstoned": 0, "orphans": 0}
 
 
+def test_each_sweep_pass_logs_what_it_removed_also_when_nothing_went(
+    migrated: Engine, blobs: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The sweep's only evidence besides a failure: one INFO line per pass, with its counts."""
+    worker = attachments.Worker(migrated, attachment_store.LocalStore(blobs))
+    passes = [
+        {"expired": 2, "tombstoned": 1, "orphans": 0},
+        {"expired": 0, "tombstoned": 0, "orphans": 0},
+    ]
+
+    def one_pass(engine: Any, store: Any, stop: Any = None) -> dict[str, int]:
+        done = passes.pop(0)
+        if not passes:
+            worker.stop()  # the loop ends after the second pass
+        return done
+
+    monkeypatch.setattr(attachments, "SWEEP_EVERY", 0.001)
+    monkeypatch.setattr(attachments, "sweep", one_pass)
+    with caplog.at_level("INFO", logger="maity_hub.attachments"):
+        worker._run()
+    lines = [r.getMessage() for r in caplog.records if r.name == "maity_hub.attachments"]
+    assert lines == [
+        "the attachment sweep removed 2 expired, 1 tombstoned, 0 orphans",
+        "the attachment sweep removed 0 expired, 0 tombstoned, 0 orphans",
+    ]
+
+
 def test_a_sweep_without_expiring_leaves_an_old_pending_upload_and_its_bytes(
     stored: ClientFactory, owner: flow.Human, blobs: Path, migrated: Engine
 ) -> None:
@@ -297,6 +324,55 @@ def test_a_sweep_without_expiring_leaves_an_old_pending_upload_and_its_bytes(
         assert old in set(conn.execute(select(t.attachment.c.id)).scalars())
     assert [p.name for p in blobs.glob("*/*")] == [old]
     assert attachments.sweep(migrated, store)["expired"] == 1
+
+
+def test_a_sweep_leaves_a_folder_no_project_has_and_goes_on(
+    stored: ClientFactory,
+    owner: flow.Human,
+    blobs: Path,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A folder the hub did not write (other data, `lost+found` it cannot read) is skipped,
+    named once in the log, and the strays of the projects listed after it still go."""
+    agent = flow.agent(stored, owner)
+    kept = upload(agent, "kept.txt")
+    (project,) = [p.name for p in blobs.iterdir()]
+    stray = blobs / project / "att-stray"
+    stray.write_bytes(b"no row")
+    foreign = blobs / "aaa-foreign"
+    foreign.mkdir()
+    (foreign / "att-x").write_bytes(b"not the hub's")
+    unreadable = blobs / "lost+found"
+    unreadable.mkdir()
+
+    class Sorted(attachment_store.LocalStore):
+        def projects(self) -> list[str]:
+            return sorted(super().projects())  # as S3 lists: both foreign folders come first
+
+    store = Sorted(blobs)
+    monkeypatch.setattr(attachments, "BLOB_GRACE", -60)  # every blob as if old
+    monkeypatch.setattr(attachments, "_UNKNOWN_PROJECTS", set())
+    with pytest.raises(ValueError):  # expiring rows is no count
+        attachments.sweep(migrated, store, apply=False)
+    unreadable.chmod(0)
+    try:
+        with caplog.at_level("WARNING", logger="maity_hub.attachments"):
+            assert attachments.sweep(migrated, store, expiring=False, apply=False)["orphans"] == 1
+            assert stray.exists()  # counted, not removed
+            assert attachments.sweep(migrated, store)["orphans"] == 1
+    finally:
+        unreadable.chmod(0o700)
+    assert not stray.exists()
+    assert (blobs / project / kept).exists() and (foreign / "att-x").exists()
+    warned = [
+        r.getMessage()
+        for r in caplog.records
+        if r.name == "maity_hub.attachments" and r.levelname == "WARNING"
+    ]
+    assert len(warned) == 2, warned  # once per folder, not per pass
+    assert "'aaa-foreign'" in warned[0] and "'lost+found'" in warned[1]
 
 
 def test_removing_a_member_drops_its_pending_uploads_and_keeps_what_it_sent(

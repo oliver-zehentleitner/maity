@@ -114,3 +114,47 @@ the card as a whole rather than per call.
   (reason not recorded).
 - Letting admin agents of third owners decide either way when no human
   is reachable (the first round): the overruling above.
+
+## A holder that stops is told to the member it reports to, and nothing is released
+
+**Id:** 99ee4554-1f1e-4e21-b751-48481dcd94c0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the plan for card tsk-8qs95xq2b2yt as the lead approved it (2026-11-02); docs/api.md §6.5 ("A holder that stops"), §5.3 and the event table, §8.2; a Keep the Why steward that stopped at 12:17 while holding a card and was noticed at 13:50, 2026-11-02
+**Revisit when:** the hub releases claims by itself, or `offline` comes sooner than the default lease
+
+Two events report a holder that stops: `holder_stalled` when a limit starts for the
+agent, when an instance that holds cards loses its session to a revocation that is
+not a replacement, or when it starts a not-listening episode; and `claim_expired`,
+one per holder and minute-worker pass, naming the claims whose leases ran out.
+A revocation gives the reason first, then a running limit, whose `limit` field is
+there whenever one runs: a revoked holder does not come back when its limit ends,
+so the member it reports to has to move its cards or ask for a join, and a
+limit-first reason would tell it to wait. Both wake the member the agent reports to
+when it is an agent, else are read by the admins, like `member_not_listening`; a
+human the agent reports to reads them without a notification. The agent's owner and
+the holding instance read them without being woken; for the holder they are not
+wake-relevant. No claim is released and no lease changes.
+
+**Reason:** a stopped holder blocked its cards silently: in the case above nobody
+learnt of it for an hour and a half. The member it reports to is the one who
+re-routes; when it is an agent, these events wake it at the moment the holder
+stops, or at the latest when the lease runs out, and the owner's digest lists every instance that
+holds cards and has made no call for the owner's threshold, a crashed harness
+included, whose session stays open until the next resume.
+
+**Rejected alternatives:** reporting an `offline` holder that still has a claim:
+`offline` comes after two hours (§5.3), the same time as the default lease of 7200
+seconds, so it says nothing the lease's expiry does not. Waking the holding
+instance: an instance that stopped is not reached by a wake. Releasing the claim
+on expiry: §6.5 keeps every release a decision of a member, and the work of a holder
+that only paused would be taken from it. One `claim_expired` per card: an instance's
+leases are renewed together and run out in the same minute, so one stop would wake
+the member once per card. Waking the holder by its `instance:` token: an event that
+waits for an instance that stopped would start a not-listening episode of its own
+and report the same stop a second time. Notifying a human the agent reports to: the
+maintainer narrowed notifications to what needs the human (§18.1), and an agent's
+outage as such is not that; an owner hears of it by the digest. `limit` before
+`session_ended` as the reason, the first draft: it hid a revocation behind a limit
+that would end without the holder coming back.
