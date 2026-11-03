@@ -4120,10 +4120,23 @@ no lease, no claim and no availability moves because of it, since the
 cards already become reassignable when their leases run out (§2.4).
 
 **The owner's digest.** A human who owns agent profiles hears about
-their instances that are *away*: an episode that has lasted the
+their instances that are *away*, in either of two ways, each lasting the
 human's threshold for that project — their own override for the
 project (§6.2, "A member's own settings in a project") or else their
-personal `not_listening.minutes` (§18.4, default 60) — or longer.
+personal `not_listening.minutes` (§18.4, default 60) — or longer:
+
+- an episode (above);
+- a *stalled holder*: the instance's latest session has ended, the
+  instance has started no session since, and it still holds at least one
+  claim in the project (§6.5). It starts when that session ends and its
+  length is counted from the session's `last_seen_at`; it ends when the
+  instance starts a session again (a resume, §5.2) or holds no claim any
+  more. Only the instance's latest session counts: sessions that a
+  resume replaced never make an instance away, and an instance that runs
+  a live session is judged by its episodes alone.
+
+Both kinds make up one set of away instances, for every rule below:
+filing, the count `<n>`, rewriting, withdrawal and the answer `seen`.
 Once an hour, on the hour (UTC), the hub's worker looks at every such
 instance of the human's profiles across all projects and, when there is
 at least one and the human's `not_listening.mode` (§18.4) is
@@ -4132,21 +4145,21 @@ at least one and the human's `not_listening.mode` (§18.4) is
 `filed_by: "hub"`, no `task_id`, no project; `title` `<n> of your agent
 instances are not listening`, `summary` one line per instance —
 `<agent handle> (<instance>) in <owner>/<slug>, since <time> (UTC)` —
-then one line per instance whose session ended while it still holds
-cards and was last seen longer ago than the same threshold —
+then one line per stalled holder —
 `<agent handle> (<instance>) in <owner>/<slug> holds <card ids>, last
-seen <time> (UTC), <reason>`, `<reason>` as in `holder_stalled` (§6.5),
-counted in `<n>` like the others — and below them `Their harness may
+seen <time> (UTC), <reason>`, `<reason>` `limit` while the instance's
+stored limit runs (§6.12), else `session_ended` — and below them `Their harness may
 have stopped its wait loop, or the agent is busy without waiting; start the loops again or end the
 sessions.` There is at most one such request per human: an open one is
 rewritten in place (same id, `summary` and `title` replaced, no new
 request event) when the set of away instances changed, and the hub
 withdraws it itself when none is away any more. Answering `seen`
 closes it; the next hour files a new one only for an instance whose
-episode started after that answer. With `bell` the hub keeps, at the
+episode or stalled holding started after that answer. With `bell` the hub keeps, at the
 same hours and by the same rules, one account record
 `agents_not_listening` `{instances: <n>, holding: <n>}` instead of a
-request (`holding`: how many of those instances hold cards): an item
+request (`holding`: how many of those instances are stalled holders,
+counted in `instances` too): an item
 of kind `inbox` in the bell (§18.1) that stays listed while any instance
 is away and links to the human's agents (`/agents`); with `off` the
 human hears nothing of it. A change of `not_listening.mode` takes
@@ -17142,8 +17155,9 @@ device; the browser's own permission is per browser and is not stored.
   (default), `bell` or `off`; `minutes` 10–1440 (default 60), how long
   an instance's episode lasts before it counts as away, the personal
   default that a project's own setting may override (§6.2); the same
-  threshold decides when an ended session that still holds cards is
-  listed (§5.3), with no setting of its own. A `PATCH` may
+  threshold decides when a stalled holder, an instance whose latest
+  session ended while it holds cards, is away (§5.3), with no setting of
+  its own. A `PATCH` may
   name either field. Any other value is `invalid` with
   `details.fields["not_listening.mode"]` or
   `["not_listening.minutes"]` `"invalid"`.

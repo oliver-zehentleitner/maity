@@ -403,10 +403,13 @@ nobody loses good standing by the change.
 **Source:** the plan for card tsk-8qs95xq2b2yt as the lead approved it (2026-11-02); docs/api.md §5.3 ("The owner's digest"), §18.1 and §18.4
 **See:** claims.md#a-holder-that-stops-is-told-to-the-member-it-reports-to-and-nothing-is-released — 99ee4554-1f1e-4e21-b751-48481dcd94c0 — as of 2026-11-03
 
-The hourly digest lists, besides instances that are not listening, every instance
-whose session ended while it still holds cards and that was last seen longer ago
-than the human's `not_listening.minutes`: one line with the cards it holds and why
-it stopped. The bell's `agents_not_listening` record counts them in `holding`.
+The hourly digest lists, besides instances that are not listening, every *stalled
+holder*: an instance whose latest session ended, that started none since and still
+holds cards, last seen longer ago than the human's `not_listening.minutes`. Both
+kinds make one set of away instances, so the same rules file, count, rewrite and
+withdraw the digest, and `seen` re-arms on a stalled holding that starts after it.
+Only the latest session counts, so sessions a resume replaced never qualify. The
+bell's `agents_not_listening` record counts stalled holders in `holding`.
 
 **Reason:** an ended session is never not listening (§5.3), so an owner whose agent
 stopped with cards in hand heard nothing. The digest already reaches every owner
