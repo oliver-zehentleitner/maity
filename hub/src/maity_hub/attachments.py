@@ -553,6 +553,13 @@ class Worker:
             try:
                 with worker_runs.claim(self.engine, "attachments", SWEEP_EVERY, self._stop) as held:
                     if held is not None:
-                        sweep(self.engine, self.store, held)
+                        done = sweep(self.engine, self.store, held)
+                        # One line per pass, also when nothing went: the proof the sweep runs.
+                        log.info(
+                            "the attachment sweep removed %d expired, %d tombstoned, %d orphans",
+                            done["expired"],
+                            done["tombstoned"],
+                            done["orphans"],
+                        )
             except Exception:
                 log.exception("the attachment sweep failed")

@@ -17,7 +17,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
-from sqlalchemy import Connection, delete, insert, select, update
+from sqlalchemy import Connection, Engine, delete, insert, select, update
 
 from maity_hub import attachment_store as blobs
 from maity_hub import attachments, avatars, clock, group_chats, idempotency, paging
@@ -104,6 +104,10 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     kept_type = attachments.file_type(declared)
     try:
         if sniffed is not None:
+            # The count bound before a decode that can take seconds; the bytes it keeps are
+            # known only after it, so the quota and the byte bound wait for the check below.
+            with engine.begin() as conn:
+                _check_room(conn, mine, settings, None)
             image = avatars.decode_attachment(settings, data, sniffed)
             data, kept_type, width, height, kind = (
                 image.data,
@@ -178,20 +182,25 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     try:
         answer = idempotency.run(engine, request, caller, action)
     except BaseException:
-        _discard(store, key)
+        # An error does not prove the row is absent: a COMMIT whose answer was lost, or a
+        # retry refused after an attempt that did commit, leaves a row that names this blob.
+        _discard_unless_committed(engine, store, key, attachment_id)
         raise
     if json.loads(bytes(answer.body)).get("id") != attachment_id:
-        _discard(store, key)  # a concurrent call with the same key won: its answer, not this blob
+        # A concurrent call with the same key won: its answer, not this blob.
+        _discard_unless_committed(engine, store, key, attachment_id)
     return answer
 
 
-def _check_room(conn: Connection, mine: Any, settings: Any, size: int) -> None:
-    """The project's quota and the membership's pending bounds (§8.7) for `size` more bytes."""
-    used = attachments.used(conn, mine.project.id)
-    if used + size > settings.attachment_quota:
-        raise attachments.quota_error("project", used=used, quota=settings.attachment_quota)
+def _check_room(conn: Connection, mine: Any, settings: Any, size: int | None) -> None:
+    """The project's quota and the membership's pending bounds (§8.7) for `size` more bytes;
+    with `size` None only the count of pending uploads."""
+    if size is not None:
+        used = attachments.used(conn, mine.project.id)
+        if used + size > settings.attachment_quota:
+            raise attachments.quota_error("project", used=used, quota=settings.attachment_quota)
     count, held = attachments.pending_of(conn, mine.id)
-    if count + 1 > attachments.PENDING_COUNT or held + size > attachments.PENDING_BYTES:
+    if count + 1 > attachments.PENDING_COUNT or held + (size or 0) > attachments.PENDING_BYTES:
         raise attachments.quota_error(
             "pending",
             used=held,
@@ -199,6 +208,26 @@ def _check_room(conn: Connection, mine: Any, settings: Any, size: int) -> None:
             count=count,
             max=attachments.PENDING_COUNT,
         )
+
+
+def _discard_unless_committed(
+    engine: Engine, store: blobs.BlobStore, key: str, attachment_id: str
+) -> None:
+    """Remove the upload's blob only when a fresh read finds no row with its id. When the row
+    is there, the blob is its bytes and stays; when the read fails, the blob stays too, and
+    the sweep removes it after `BLOB_GRACE` if no row names it by then."""
+    try:
+        with engine.connect() as conn:
+            found = conn.execute(
+                select(t.attachment.c.id).where(t.attachment.c.id == attachment_id)
+            ).first()
+    except Exception:
+        log.warning("an upload failed and its row could not be read; the sweep decides")
+        return
+    if found is not None:
+        log.warning("an upload failed after its row was committed; its blob kept")
+        return
+    _discard(store, key)
 
 
 def _discard(store: blobs.BlobStore, key: str) -> None:
