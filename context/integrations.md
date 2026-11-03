@@ -104,3 +104,18 @@ operator's own projects.
 **Rejected alternatives:**
 - The instance token for every public repository, as since 2026-10-28:
   what the maintainer turned away from. Other alternatives: unknown.
+
+## The Why view's Keep the Why views read whole exports through the hub: the project's family and the repositories it names, one hop, no other fetch path
+
+**Id:** 14288e6a-141e-4f93-8200-b879252c8ccd
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** tsk-nzhv3kgaxmpe (KTW M2), 2026-11-03: the arbiter's constraints on the card (forge reads only, no allow-list of raw or Pages hosts, caps and a shared cache, nothing growing with history per call); the shape of the reads proposed by its implementer in the contract pull request (docs/api.md §11.5)
+**Revisit when:** private repositories of other owners are to be read (the card's step 2), or Keep the Why's views need `family`, `memberState` or `resolveEntry`
+
+Keep the Why's views, vendored into the dashboard (web/context/stack.md), ask their host for a repository's published export and for a lean export's entry texts. The hub answers both (§11.5) from the read §11.3 already makes: a `.keep-the-why` through the forge with the grant §11.4 picks, its `dashboard-state:` URL under the outbound rule of §11.1, held in memory, the cache shared with §11.3. It serves the project's own repository and its family, and the public repositories that family names by URL or as a parent, at most 8 and one hop; a repository named only inside an export (a See into another project) is refused as `not_in_family`, and the library shows the reference as not resolved. The library walks a family itself, export by export, so the hub serves one export per call and merges nothing.
+
+**Reason:** the dashboard runs under `default-src 'self'`, so the browser cannot read a forge or a Pages host itself; the hub already reads exactly these files for §11.3 and holds the grant, so the views read through it with no second path and no host trusted for its name. Bounding the repositories by the project's own `.keep-the-why` files keeps the set of reads in the hands of the repository's maintainers, not of whatever an export cites, and keeps the forge budget of the owner's grant bounded per project.
+
+**Rejected alternatives:** the browser reading exports directly, with their hosts in the policy: a `connect-src` that grows with every project's Pages host, and reads the hub cannot cap or cache. A hub proxy that reads whatever URL the library asks for: a second fetch path and a server-side request forgery surface, which the arbiter excluded. Following every repository an export cites: unbounded reads on the owner's grant, and a family that can pull in the forge. A merged family state from the hub: the library already merges, and two implementations of one merge drift. The Keep the Why server's `family`/`memberState` interface: it assumes checkouts on one machine, which the hub does not have.

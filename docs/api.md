@@ -11512,7 +11512,7 @@ gives it (`null` for the root). Members are listed depth-first in the
 order of the blocks, the root first.
 
 **The read.** The transport rule of §11.1 for every read, each
-`state.json` at most 1 MiB, `Accept: application/json`; at most 4 reads
+`state.json` at most 2 MiB (§11.5), `Accept: application/json`; at most 4 reads
 of one project's family in flight at once. The `.keep-the-why` files and
 the exports are cached together for `max_age` seconds (default 600). A
 `max_age` below 30 is taken as 30: a fresh read of the whole family
@@ -11914,6 +11914,154 @@ confirmed it (above). Whether an installation on a forge organisation
 may serve a Maity organisation's projects is open for its own
 contract; until then nothing else in this section changes.
 
+### 11.5 The Keep the Why views' reads
+
+```
+GET /projects/{owner}/{slug}/keep-the-why/export
+GET /projects/{owner}/{slug}/keep-the-why/export?root=hub
+GET /projects/{owner}/{slug}/keep-the-why/export?canonical=https://github.com/acme/platform&root=
+GET /projects/{owner}/{slug}/keep-the-why/bodies?canonical=…&root=…
+```
+
+Scope `project:read`. The project's Why view mounts Keep the Why's own
+views (timeline, graph, family, search, thoughts, pages; the library
+`web/` vendors, `web/context/stack.md`). They read through a provider the
+host gives them (keep-the-why `docs/dashboard-views.md`, "provider"), and
+the dashboard's provider reads here: `exportState(canonical, root)` from
+`…/export`, `bodies(state)` from `…/bodies`, `state()` as `…/export`
+without parameters. The library walks a family itself, one export at a
+time, from what each export declares (`project.parent`,
+`project.children`); the hub serves one export per call and never merges
+them. `family`, `memberState` and `resolveEntry` are not offered: they
+need a Keep the Why server, and the library works without them (the
+family search scope then covers what the exports reach).
+
+This is §11.3's read, served whole instead of summarised. The same
+rules hold: the hub reads only what a repository publishes, finds a
+state URL only through the forge (the `dashboard-state:` line of a
+`.keep-the-why`, read with the grant §11.4 picks), reads it under §11.1,
+keeps it in memory only and never in its database, and never reads or
+writes `context/`. There is no other fetch path: no URL from a request,
+from an export or from a project setting is ever read, and no host is
+allowed because of its name.
+
+**Which repositories.** `canonical` names a repository by its URL
+(`https://`, on a configured forge host, normalised as §6.1 normalises
+`repository.url`); empty or absent is the project's own repository.
+The hub serves:
+
+1. **the project's own repository**, the root (`root` empty) and every
+   member of its family that §11.3 reads (`root` the member's `path`), and
+2. **a repository the project's family names**: a URL-form location in
+   a `keep-the-why:children` block, or the `parent:` line of a config
+   block, of a `.keep-the-why` that §11.3 reads in the project's own
+   repository — at most 8 such repositories per project, the first 8 in
+   the order §11.3 lists the members; a later one is refused with reason
+   `family_cap`. Of such a repository the hub serves its root and the
+   members of its own family by the rules of §11.3 (directory locations
+   only, depth 4, 32 members), never a repository *it* names: one hop,
+   so a family cannot pull in the forge.
+
+The second kind is read only where the forge reports the repository
+public, with the grant §11.4 picks for the project's own repository
+(the instance token only for a project in the operator's own
+namespaces), checked as §11.4 checks visibility, before the first read
+and on every refresh; a private one, or one whose visibility cannot be
+read, is refused with reason `not_public`. Its `.keep-the-why` is read
+through the forge's contents API like the project's own (64 KiB), never
+from a raw or Pages host. Any other `canonical` or `root` — a
+repository named only inside an export (a See into another repository,
+`Superseded by`), a path that is not a member — is `not_found` with
+`details.reason: not_in_family`; the library then shows the reference as
+not resolved, with the reason, as it does on any host without the read.
+
+**`…/export`.** `?canonical=&root=` as above. The answer:
+
+```json
+{
+  "canonical": "https://github.com/oliver-zehentleitner/maity",
+  "root": "hub",
+  "url": "https://maity.dev/keep-the-why-dashboard/hub/state.json",
+  "observed_at": "2026-11-03T09:00:00Z",
+  "fresh": true,
+  "fork_of": null,
+  "state": { "state-json": 2, "project": { "…": "…" }, "entries": [ "…" ], "bodies": "state.body.json" }
+}
+```
+
+`state` is the member's `state.json` as published, parsed and written
+again as JSON, nothing removed or added: the hub checks that it is a JSON
+object with `state-json` major `2` and an `entries` array (§11.3's
+`state_json_version` and `shape`), and nothing else of it. `url` is the
+state URL it was read from; the library resolves a lean state's
+`bodies` file against it. `fork_of` is `null`; the library judges a
+fork from the export itself (its `exportVerdict`), the hub does not.
+
+**`…/bodies`.** `?canonical=&root=` as above. A lean export names a
+file beside it that holds its entries' texts (`"bodies":
+"state.body.json"`). The hub reads it only when the export it holds for
+that member names one, and only at the state URL's own directory: the
+value must be one path segment (letters, digits, `.`, `_`, `-`, ending
+in `.json`, at most 100 characters), resolved against the state URL with
+its last segment replaced — same scheme, host and port, no query, no
+fragment; anything else is reason `bodies_url_invalid`. The read follows
+§11.1. The answer is `{canonical, root, url, observed_at, fresh, bodies}`
+with `bodies` the file's `bodies` object as published (an object of
+entry `id` to body); the provider fills the state it holds and sets
+`bodiesLoaded` (keep-the-why `docs/dashboard-views.md`). An export with
+its bodies inline (no `bodies` field) is `not_found` with
+`details.reason: no_bodies_file`; the library asks only for a lean state.
+
+**Caps and cache.** Per read: a `state.json` at most 2 MiB (§11.3's 1
+MiB is raised to 2 MiB for both; this project's own root export is
+0.45 MiB), a bodies file at most 4 MiB, decoded bytes, refused at the
+first byte past (`too_large`). The exports, the `.keep-the-why` files and
+the bodies files are cached together with §11.3's, one entry per
+repository, member and file: what one call or §11.3 read is what the
+next answers, so a project's tabs share it. `max_age` as in §11.3
+(default 600 s, below 30 taken as 30); a fresh read of one repository's
+family happens at most once per 30 s per project, a closer call answers
+from the cache with `fresh: false`. At most 4 reads of one project in
+flight at once, its own repository and the named ones together. The hub
+keeps at most 64 MiB of these reads across all projects, the least
+recently used dropped first; a dropped read is read again on the next
+call. The cost of a call does not grow with the history: it is one
+answer from the cache, or at most one `.keep-the-why` and one file read.
+
+**Revalidation.** Both answers carry an `ETag`, a digest over
+`canonical`, `root`, `url` and the bytes as read, and `Cache-Control:
+private, no-cache`, as a contract file does (§6.8): the browser keeps
+the answer and sends `If-None-Match`, and a `304` costs no second
+megabyte. The hub authorizes first and only then compares
+`If-None-Match`: a caller without `project:read` gets `not_found`,
+never `304`.
+
+**Untrusted.** Everything in `state` and `bodies` is the repository's
+text: the hub passes it through unchanged and the dashboard hands it to
+the library, which renders entry text as text and never as HTML
+(keep-the-why `docs/dashboard-views.md`, "Rendering safety";
+`web/context/rendering.md`). No string from an export becomes a URL the
+hub reads.
+
+Errors: `ktw_not_configured` (the project's repository has no
+`.keep-the-why` or no `dashboard-state:` line, as in §11.3);
+`probe_not_configured` with `details.reason` `no_grant` or
+`unconfirmed` (§11.4); `not_found` with `details.reason`
+`not_in_family`, `family_cap`, `no_bodies_file` or `not_public`;
+`ktw_unavailable` with `details.reason` one of §11.3's member reasons
+(`forge_unavailable`, `config_missing`, `no_state_url`,
+`state_url_invalid`, `address_refused`, `redirect_refused`,
+`unavailable`, `timeout`, `http_status` with `status`, `too_large`,
+`not_json`, `state_json_version` with `version`, `shape`) or
+`bodies_url_invalid`; with `details.last`, the last good answer in the
+shape above, when the hub holds one. The dashboard's provider turns
+each into the library's `{ error }`, so a view says why it has nothing
+instead of failing.
+
+Out of scope here: private repositories of other owners and a member's
+or owner's token for them (step 2 of the card), `family`, `memberState`
+and `resolveEntry`, and any write.
+
 ## 12. Endpoint index
 
 | Method | Path | Scope | § |
@@ -12071,6 +12219,7 @@ contract; until then nothing else in this section changes.
 | GET | `/projects/{owner}/{slug}/logo`, `/projects/{owner}/{slug}/banner` | `project:read` | 11.2 |
 | PUT, DELETE | `/projects/{owner}/{slug}/logo`, `/projects/{owner}/{slug}/banner` | `project:admin`, human only | 11.2 |
 | GET | `/projects/{owner}/{slug}/keep-the-why` | `project:read` | 11.3 |
+| GET | `/projects/{owner}/{slug}/keep-the-why/export`, `/projects/{owner}/{slug}/keep-the-why/bodies` | `project:read` | 11.5 |
 | GET | `/projects/{owner}/{slug}/overview` | `project:read` | 6.11 |
 | GET | `/badge/{owner}/{slug}.svg` (outside the API) | — (served only while `policy.badge` is not `off`) | 6.20 |
 | GET | `/{owner}/{slug}`, `/{handle}` (outside the API) | — (the page inside the app shell without a valid session, the bare page with `?as=public`, each with `MAITY_PUBLIC_PAGES` on and the page chosen public; otherwise the app shell) | 16.9, 16.11 |
