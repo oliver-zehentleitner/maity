@@ -624,6 +624,7 @@ def test_a_spent_budget_is_probe_unavailable_with_retry_at(
     error = answer.json()["error"]
     assert error["code"] == "probe_unavailable"
     assert error["details"]["retry_at"].startswith("2099-11-03T12:00:00")
+    assert set(error["details"]) == {"retry_at"}, "never an export with probe_unavailable"
     assert fake.state_reads == []
 
 
@@ -836,6 +837,7 @@ def test_a_budget_spent_while_reading_the_family_is_probe_unavailable(
     error = answer.json()["error"]
     assert error["code"] == "probe_unavailable"
     assert error["details"]["retry_at"].startswith("2099-11-03T12:00:00")
+    assert set(error["details"]) == {"retry_at"}, "never an export with probe_unavailable"
 
 
 def test_a_budget_spent_reading_a_named_repository_is_probe_unavailable(
