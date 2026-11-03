@@ -239,7 +239,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any; `details.retry_at` while the forge's rate limit for the source is spent: no read before that time (§11) |
 | 503 | `ktw_unavailable` | the root `.keep-the-why` of the Keep the Why family could not be read (§11.3); `details.reason`, `details.last` holds the last good answer if any; a family member's own failure is reported on that member, not as this error |
 | 503 | `database_unavailable` | the database cannot be reached (`/health`, and any call that needs it); `details` is `{}`, the message carries no driver text |
-| 503 | `upload_expired` | an attachment upload whose write and row took longer than the hub allows (§8.7); nothing was stored, the upload may be sent again and counted against the rate |
+| 503 | `upload_expired` | an attachment upload whose write and row took longer than the hub allows (§8.7); nothing was stored, the attempt counted against the upload rate, and it may be sent again |
 | 503 | `schema_outdated` | the database is not at the migration head (`/health`); `details.revision`, `details.head` |
 
 ### 1.4 Pagination

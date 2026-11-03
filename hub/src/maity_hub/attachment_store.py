@@ -19,6 +19,7 @@ operation and the error code only.
 from __future__ import annotations
 
 import contextlib
+import datetime
 import email.utils
 import functools
 import logging
@@ -283,9 +284,12 @@ def _date(answer: dict[str, Any]) -> float | None:
     if not raw:
         return None
     try:
-        return email.utils.parsedate_to_datetime(str(raw)).timestamp()
+        when = email.utils.parsedate_to_datetime(str(raw))
     except (TypeError, ValueError):
         return None
+    if when.tzinfo is None:  # asctime or `-0000`: HTTP dates are UTC (RFC 9110)
+        when = when.replace(tzinfo=datetime.UTC)
+    return when.timestamp()
 
 
 def _client(config: AttachmentS3) -> Any:
