@@ -261,13 +261,14 @@ def test_login_answers_a_safe_next(
 # --- the rules for sessions not in good standing (device code and mail link) ---------
 
 
-def row(name: str, method: str, minutes_old: float) -> Any:
+def row(name: str, method: str, minutes_old: float, confirmed: bool = False) -> Any:
     return SimpleNamespace(
         id_hash=name,
         public_id=f"hss-{name}",
         method=method,
         created_at=clock.now() - timedelta(minutes=minutes_old),
         second_factor=None,
+        confirmed_at=clock.now() if confirmed else None,
     )
 
 
@@ -286,9 +287,9 @@ def test_who_may_end_which_session() -> None:
     assert sessions.refusal(weak_old, weak_young, now) is None
     assert sessions.refusal(weak_young, weak_young, now) is None  # a logout
     # A confirmed sign-in is in good standing, whatever its method.
-    confirmed = frozenset({"hss-weak-young"})
-    assert sessions.refusal(weak_young, strong, now, confirmed) is None
-    assert sessions.refusal(weak_old, weak_young, now, confirmed) == "not_in_good_standing"
+    confirmed = row("weak-young", "email_link", 10, confirmed=True)
+    assert sessions.refusal(confirmed, strong, now) is None
+    assert sessions.refusal(weak_old, confirmed, now) == "not_in_good_standing"
 
 
 def test_ending_a_session_ends_what_it_approved(
