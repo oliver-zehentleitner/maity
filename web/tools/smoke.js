@@ -6759,6 +6759,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   };
   await go("#/maintainer/maity/chat/cnv-0007");
   {
+    // A group chat's "Sending…" stands in its row of buttons too, before Send (tsk-j10w2hsm1h90).
+    const row = main.querySelector("form.compose .compose-actions");
+    const kids = row ? Array.from(row.childNodes) : [];
+    const at = kids.findIndex((n) => (n.className || "").split(" ").includes("send-status"));
+    const send = kids.findIndex((n) => (n.tagName === "BUTTON" ? [n] : n.querySelectorAll ? n.querySelectorAll("button") : []).some((x) => x.getAttribute("type") === "submit"));
+    const pane = main.querySelector("section.chat-pane.group-chat");
+    expect(at >= 0 && send > at && pane && !Array.from(pane.childNodes).some((n) => (n.className || "").split(" ").includes("send-status") && n.getAttribute("role") === "status" && n !== kids[at] && n.getAttribute("tabindex") === "-1"),
+      "group chat: the send status stands in the action row, before Send, not below the composer");
+  }
+  {
     // A group chat offers its participants alone: the hub resolves a mention against them only (§8.6).
     const gcView = await win.Maity.api.get("/projects/maintainer/maity/conversations/cnv-0007");
     const inChat = gcView.participants.map((p) => "@" + p.handle);
