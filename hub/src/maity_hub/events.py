@@ -310,9 +310,10 @@ def emit(
         # neither precedes its row nor announces one that does not exist. Only where to look,
         # never what happened: the row is read with the reader's own rights.
         conn.execute(select(func.pg_notify(CHANNEL, f"{project_id}:{seq}")))
-    if kind in MEMBER_KINDS and project.public_page == "on":
+    if kind in MEMBER_KINDS and project.public_page == "on" and _shown_member_change(kind, payload):
         # Who a public page shows follows who is a member (§16.9): a join adds, any other
-        # change may take someone off.
+        # change may take someone off. A change no page shows renders nothing: this
+        # transaction holds the project row (hub/context/public-pages.md 721bcdfa).
         from maity_hub import public_pages
 
         public_pages.touch(conn, "project", project_id, removal=kind != "member_joined")
@@ -328,7 +329,7 @@ def emit(
             # waits for the snapshot worker; this transaction holds the project row
             # (hub/context/public-pages.md 721bcdfa).
             public_pages.touch(conn, "project", project_id, dependents=False)
-        # And so does the card's own page (§16.9, "Card").
+        # The card's own page follows it like the Board (§16.9, "Card").
         if isinstance(card_id, str):
             public_pages.touch(conn, "card", card_id, removal=kind != "task_created")
     elif kind in NOTE_KINDS and project.public_page == "on" and subject and subject[0] == "task":
@@ -340,6 +341,24 @@ def emit(
 
         public_pages.touch(conn, "card", subject[1], removal=kind == "note_edited")
     return seq
+
+
+# The `changed` fields of a `member_updated` that no public page shows: the language, the
+# line consent, and the availability (a dormant instance, the outage policy), which only
+# changes who is online, and that waits for the snapshot (§16.9).
+UNSHOWN_MEMBER_FIELDS = frozenset({"language", "line_consent", "dormant", "availability_policy"})
+
+
+def _shown_member_change(kind: str, payload: dict[str, Any]) -> bool:
+    """Whether a membership event may change a public page. A join always may; an update
+    that names its `changed` fields only when one of them is not in `UNSHOWN_MEMBER_FIELDS`;
+    one that names none (a role, a handle, a bridge) is taken as one that may."""
+    if kind != "member_updated":
+        return True
+    changed = payload.get("changed")
+    if not isinstance(changed, list) or not changed:
+        return True
+    return bool(set(changed) - UNSHOWN_MEMBER_FIELDS)
 
 
 def _hides_ticker_entries(
