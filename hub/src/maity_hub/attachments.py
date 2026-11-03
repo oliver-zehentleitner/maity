@@ -451,9 +451,10 @@ def expire(
 
 
 def remove_stray(engine: Engine, store: attachment_store.BlobStore, key: str) -> bool:
-    """Remove a blob no row names, if it is older than a transaction can be. The project's lock is
-    held from the look at the row to the removal, as an upload holds it from writing the blob to
-    inserting the row: an upload that commits meanwhile cannot lose its file."""
+    """Remove a blob no row names, if it is older than `BLOB_GRACE`. An upload writes its blob
+    before its transaction and inserts the row under the project's lock; this holds the same lock
+    from the look at the row to the removal, so a row that commits meanwhile is seen and its file
+    stays, and the grace covers the time from the write to that commit."""
     project_id, _, attachment_id = key.partition("/")
     with engine.begin() as conn:
         events.lock_project(conn, project_id)

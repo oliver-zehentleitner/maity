@@ -497,7 +497,8 @@ causes errors (403 or 429 from the forge for everyone).
 **Source:** the maintainer's decision for object storage instead of a shared `ReadWriteMany` volume (card tsk-enpbgadqgmbr, 2026-11-03), the build plan the coordinator accepted for it (2026-11-03: boto3 at runtime, no presigned URLs, hub and chart in separate pull requests), the maintainer's rule of 2026-11-03 that every setting keeps its single-server default; `attachment_store.py` (`BlobStore`, `LocalStore`, `S3Store`), kubernetes.md 9111cb2f (a 10 GiB `ReadWriteOnce` claim, tarred by the backup job)
 **See:** kubernetes.md — 9111cb2f-89b0-4088-8c92-2fa5c1348ec7 — as of 2026-10-30
 **See:** attachments.md#a-download-past-one-mebibyte-streams-and-holds-its-last-piece-back-until-the-digest-matches — 81f57cb5-f48a-43c7-9729-1d4e4de696b7 — as of 2026-11-03
-**Revisit when:** the object store's latency shows in the load test of uploads and downloads, or an upload's `PutObject` under the project's lock (below) holds a database connection long enough to matter
+**See:** attachments.md#the-blob-is-written-before-the-row-and-removed-when-the-row-never-commits-or-is-gone — 7dcd4850-9dc4-4b4a-9148-e156c8e11718 — as of 2026-11-03
+**Revisit when:** the object store's latency shows in the load test of uploads and downloads
 
 The store has two implementations behind one interface (`attachment_store.BlobStore`): `LocalStore`,
 the default, for one replica, a laptop or a self-hosted hub, and `S3Store`, opt-in with
@@ -509,8 +510,9 @@ the single-server setup changes: unset, the store is `local`, and `s3` is never 
 `S3Store` talks to the bucket through boto3, one client per process. Downloads stay behind the hub's
 access checks: the hub streams the object in 64 KiB pieces and checks its digest on the way; no
 presigned URL leaves the hub. An upload is one `PutObject`, so a reader sees the old bytes or the new
-ones; it is still written under the project's lock, as the local file is, so the sweep and
-`remove_stray` keep their lock discipline and delete objects instead of files. Every error of the
+ones, written before the upload's transaction and outside the project's lock (attachments.md
+7dcd4850); the sweep and `remove_stray` keep their lock discipline and their grace, and delete
+objects instead of files. Every error of the
 client becomes a `StoreError` that names the operation and the service's error code, never a
 credential, and the client's own loggers are held at `INFO`, since botocore logs each request's
 headers at `DEBUG`. The chart values, the copy of an existing volume into the bucket and the backup

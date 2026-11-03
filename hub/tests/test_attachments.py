@@ -9,9 +9,9 @@ from typing import Any
 
 import pytest
 from PIL import Image, PngImagePlugin
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Engine, select, text, update
 
-from maity_hub import attachment_store, attachments, avatars, middleware
+from maity_hub import attachment_store, attachments, avatars, events, middleware
 from maity_hub import tables as t
 from maity_hub.config import ConfigError, Settings
 from maity_hub.ratelimit import Limiter
@@ -217,6 +217,42 @@ def test_the_project_quota_counts_pending_uploads_and_deleting_frees_it(
     assert over.json()["error"]["details"] == {"scope": "project", "used": 1500, "quota": 2048}
     assert owner.delete(f"/projects/maintainer/maity/attachments/{first['id']}").status_code == 200
     assert put(owner, "b.bin", b"x" * 1000, "application/octet-stream").status_code == 201
+
+
+def test_the_blob_is_written_outside_the_projects_lock(
+    owner: flow.Human, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """For `s3` the write is a network call: it must not wait under the project's lock."""
+    real = attachment_store.LocalStore.put
+    taken: list[str] = []
+
+    def put_while_free(self: Any, key: str, data: bytes) -> None:
+        project_id = key.partition("/")[0]
+        # Another transaction takes the project's lock: it would wait (and fail on the
+        # timeout) if the upload held the lock or, on SQLite, the write lock.
+        with migrated.begin() as conn:
+            if migrated.dialect.name == "postgresql":
+                conn.execute(text("SET LOCAL lock_timeout = '2s'"))
+            events.lock_project(conn, project_id)
+        taken.append(key)
+        real(self, key, data)
+
+    monkeypatch.setattr(attachment_store.LocalStore, "put", put_while_free)
+    shown = put(owner, "a.txt", b"free")
+    assert shown.status_code == 201, shown.text
+    assert taken == [f"{taken[0].partition('/')[0]}/{shown.json()['id']}"]
+
+
+def test_a_refused_upload_leaves_no_blob(
+    stored: ClientFactory, migrated: Engine, blobs: Path
+) -> None:
+    """The blob is written before the transaction; a refusal in it removes the blob again."""
+    owner = flow.human(lambda **kw: stored(attachment_quota=2048, **kw), migrated)
+    flow.project(owner, "maity")
+    first = put(owner, "a.bin", b"x" * 1500, "application/octet-stream").json()
+    over = put(owner, "b.bin", b"x" * 1000, "application/octet-stream")
+    assert over.status_code == 409 and over.json()["error"]["code"] == "attachment_quota"
+    assert [p.name for p in blobs.glob("*/*")] == [first["id"]]
 
 
 def test_a_membership_holds_a_bounded_number_of_pending_uploads(

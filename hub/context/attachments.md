@@ -29,15 +29,21 @@ that has not yet added the volume.
 
 **Id:** 7dcd4850-9dc4-4b4a-9148-e156c8e11718
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** inferred
-**Source:** implementation session, 2026-10-27 (`docs/api.md` §8.7 fixes "the blob first, the metadata after"; the way to undo it is the implementer's)
-**Revisit when:** the sweep (removing blobs without a row) lands, or an `s3` store is built
+**Source:** implementation session, 2026-10-27 (`docs/api.md` §8.7 fixes "the blob first, the metadata after"; the way to undo it is the implementer's); the coordinator's ruling of 2026-11-03 for the `s3` store: the blob outside the project's lock, an orphan after a failed transaction left to the sweep
+**Revisit when:** the time from an upload's write to its commit can come near `BLOB_GRACE`, or the contract changes the write order
+**See:** replicas.md#attachments-move-to-s3-compatible-object-storage — a70d7269-a0a9-45aa-94c5-54715f112c10 — as of 2026-11-03
 
-The upload writes the bytes to a file of its own and moves it into place
-(`os.replace`, after an `fsync`), inside the transaction that inserts the row, so
-a reader never sees half a blob and no row names a missing one. If the
-transaction does not commit, `events.on_rollback` removes the blob. Deleting a
+The upload writes the bytes before the transaction that inserts the row begins,
+outside the project's lock: one `PutObject` for `s3`, a file of its own moved
+into place for `local` (`os.replace`, after an `fsync`), so a reader never sees
+half a blob and no row names a missing one. The transaction then takes the lock
+and checks the quota, the right to post and the project's state again. When it
+does not commit (a refusal, a failure, or a concurrent call with the same
+idempotency key that won), the route removes the blob afterwards, outside the
+lock; when that removal fails too, or the process dies before it, the blob is
+one without a row, which the sweep removes after `BLOB_GRACE`. Deleting a
 pending upload removes the row in the transaction and the blob after the
 commit (`events.on_commit`, new for this), where a failure is logged and left to
 the sweep. A crash between the write and the commit leaves a blob without a
@@ -50,6 +56,14 @@ without bytes, impossible; the leftover blob is the harmless one.
 - The row first, then the blob: a crash leaves a row that serves nothing.
 - Removing the blob inside the transaction: a rollback would then lose bytes
   a row still names.
+- Writing the blob inside the transaction, under the project's lock, as until
+  2026-11-03: for `s3` a network call of up to three times 60 seconds while the
+  lock and a database connection are held, the kind of wait that ends in a
+  statement timeout for every other writer of the project. For `local` it made
+  no difference, and one order for both stores keeps one rule for the sweep.
+- Removing the blob in `on_rollback`: the idempotent run may retry the
+  transaction, and a retry after the removal would insert a row whose bytes are
+  gone.
 
 ## A pending upload is its uploader's alone, and the rate counts 64 KiB units
 
@@ -165,7 +179,8 @@ The sweep takes the project's lock for each expired candidate and deletes it wit
 conditions repeated (still pending, not deleted, still past the cutoff), and removes the bytes
 only of a row that this delete removed: a message that named the upload since the sweep
 chose it has bound it, the delete finds nothing, and the file stays. A stray blob is removed under the project's lock, held from the look at its row
-to the unlink, as an upload holds it from writing the blob to inserting the row. A message cannot name an upload past its 24
+to the unlink, the lock under which an upload inserts its row; the grace covers the time from the
+upload's write, before its transaction, to that commit. A message cannot name an upload past its 24
 hours either (`unknown`), so the two cannot disagree about the same row.
 
 **Reason:** the write order of the contract leaves exactly one kind of

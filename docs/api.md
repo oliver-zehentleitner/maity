@@ -10369,7 +10369,11 @@ written first and the metadata committed after it, so a row never points
 at a missing blob; a blob without a row (a crash between the two) is
 removed by the hub's sweep. On read the hub checks the digest of what the
 store returned against the stored one and answers `internal` on a
-mismatch rather than serve other bytes. A deletion tombstones the row in
+mismatch rather than serve other bytes. A file larger than 1 MiB is
+streamed with its `Content-Length` and checked as it passes; its last
+piece is held back until the digest is known, and on a mismatch the
+answer ends short of that length, so no client receives the bytes whole.
+A deletion tombstones the row in
 its transaction and removes the blob after the commit; a blob removal
 that fails is retried by the sweep, and the tombstoned row is never
 served again either way. The database stays small and portable across

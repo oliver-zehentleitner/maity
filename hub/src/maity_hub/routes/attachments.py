@@ -2,13 +2,15 @@
 
 An upload is raw bytes with the name in the query. An image is decoded and encoded again
 outside the transaction, in the avatar decoder's process; the blob is written before the
-row is committed, and removed again when the transaction does not commit. Reading asks
-the one question the message does: may this caller read it.
+transaction that inserts the row begins, outside the project's lock, and removed again when
+that transaction does not commit. Reading asks the one question the message does: may this
+caller read it.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 from collections.abc import Iterator
 from typing import Any
@@ -23,7 +25,7 @@ from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.deps import AnyCaller, engine_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
-from maity_hub.events import emit, lock_project, on_commit, on_rollback
+from maity_hub.events import emit, lock_project, on_commit
 from maity_hub.ids import new_id
 from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES
@@ -116,6 +118,15 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     name = attachments.clean_name(raw_name, image_type=sniffed)
     store = blobs.store_of(settings)
     attachment_id = new_id("attachment")
+    # The blob first, the row after (§8.7), and the blob outside every transaction: for `s3`
+    # the write is a network call, and none may wait under the project's lock or hold a
+    # database connection. The sweep leaves a blob without a row alone for `BLOB_GRACE`.
+    key = blobs.key_of(mine.project.id, attachment_id)
+    try:
+        store.put(key, data)
+    except BaseException:
+        attachments.give_back(rate_key, charged)  # nothing was stored: not counted
+        raise
 
     def action(conn: Connection) -> idempotency.Outcome:
         project = lock_project(conn, membership(conn, caller, slug).project.id)
@@ -123,6 +134,8 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
         # under the lock, right before the insert.
         locked = membership(conn, caller, slug)
         _require_post(locked)
+        if locked.project.id != mine.project.id:  # the blob's key names the project it was for
+            raise not_found()
         if project.state in CLOSED_STATES:
             raise ApiError(409, "project_closed", f"the project is {project.state}")
         used = attachments.used(conn, locked.project.id)
@@ -137,9 +150,6 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
                 count=count,
                 max=attachments.PENDING_COUNT,
             )
-        key = blobs.key_of(locked.project.id, attachment_id)
-        store.put(key, data)  # the blob first, the row after
-        on_rollback(conn, lambda: store.delete(key))
         conn.execute(
             insert(t.attachment).values(
                 id=attachment_id,
@@ -158,10 +168,24 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
         return idempotency.Outcome(201, "attachment", attachment_id, load(conn, attachment_id))
 
     try:
-        return idempotency.run(engine, request, caller, action)
+        answer = idempotency.run(engine, request, caller, action)
     except BaseException:
         attachments.give_back(rate_key, charged)
+        _discard(store, key)
         raise
+    if json.loads(bytes(answer.body)).get("id") != attachment_id:
+        _discard(store, key)  # a concurrent call with the same key won: its answer, not this blob
+    return answer
+
+
+def _discard(store: blobs.BlobStore, key: str) -> None:
+    """Remove the blob of an upload whose row was never committed, after the transaction and
+    outside its lock. When that fails too, the blob is one without a row, and the sweep
+    removes it once it is older than `BLOB_GRACE`."""
+    try:
+        store.delete(key)
+    except Exception:
+        log.warning("an upload's blob could not be removed; the sweep removes it later")
 
 
 # --- reading -------------------------------------------------------------------------------

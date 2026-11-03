@@ -11,3 +11,7 @@
 - hub: an attachment download past 1 MiB now streams instead of being read into memory whole. Its
   SHA-256 is checked on the way, and bytes that do not match end the answer short of its
   `Content-Length`. Smaller files are still checked before the answer starts.
+- hub: an upload now writes its bytes before its database transaction and outside the project's
+  lock, so a slow store never holds the lock or a database connection. When the transaction does
+  not commit, the bytes are removed afterwards. If that removal fails as well, the sweep removes
+  them after ten minutes.
