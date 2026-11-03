@@ -47,7 +47,9 @@ mark (GitHub and GitLab their own; Gitea and any other a branch mark),
 **Pull Requests** on GitHub, GitLab, Gitea and Bitbucket, the project's own
 links, and **Why**, the
 Keep the Why dashboard of the family's root (`keep_the_why_export`'s
-member at `path: ""`); each only when its address is plain `https`. At the top right, in this order, are **Chat**, the
+member at `path: ""`); each only when its address is plain `https`. On a
+phone the links are one row that scrolls sideways, the state and the
+absence beside it; what does not fit beside the row wraps under it. At the top right, in this order, are **Chat**, the
 **Lead** button where there is a lead to reach, **"+"**, the gear, the
 bell (notifications) and the profile. **"+"** (humans only) is a menu
 with **Agent** (the agents page, `/agents`) and **User** (the
@@ -94,7 +96,8 @@ picks it with three radio buttons, saying that the choice is kept in this
 browser only. A pick made signed out stays after signing in.
 
 Left of the menus are **Chat** and the **bell**, in that order (Chat,
-Notifications, gear, profile, in one row on a phone too). **Chat** leads
+Notifications, gear, profile, in one row on a phone too; there the
+**Lead** button is hidden and stands on the Chats page instead). **Chat** leads
 to `/chats` with the hub's count of unread chat messages
 (`counts.chat`); the **bell** has the count of every kind but the open
 requests. A badge is a number only, hidden at zero; the words are the

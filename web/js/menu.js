@@ -66,6 +66,21 @@ window.Maity = window.Maity || {};
     svg.appendChild(body);
     return svg;
   }
+  // A plus and a cross, drawn as two bars, so they sit in the button's middle in every browser:
+  // as text glyphs ("+", "×") they followed the font's metrics and sat off-centre in Edge on
+  // Windows (tsk-m9ew7v609fq0). They take the text colour.
+  function bars(size, d) {
+    const svg = document.createElementNS(SVG, "svg");
+    [["viewBox", "0 0 24 24"], ["width", String(size)], ["height", String(size)], ["aria-hidden", "true"], ["focusable", "false"], ["class", "icon"]]
+      .forEach(([k, v]) => svg.setAttribute(k, v));
+    const body = document.createElementNS(SVG, "path");
+    body.setAttribute("d", d);
+    body.setAttribute("class", "icon-fill");
+    svg.appendChild(body);
+    return svg;
+  }
+  const plus = (size) => bars(size, "M10.5 4h3v6.5H20v3h-6.5V20h-3v-6.5H4v-3h6.5z");
+  const close = (size) => bars(size, "M6.1 4L12 9.9 17.9 4 20 6.1 14.1 12 20 17.9 17.9 20 12 14.1 6.1 20 4 17.9 9.9 12 4 6.1z");
   // The theme: a circle half filled (the system's), a sun, a moon.
   function themeIcon(theme, size) {
     const svg = document.createElementNS(SVG, "svg");
@@ -83,7 +98,7 @@ window.Maity = window.Maity || {};
     svg.appendChild(path);
     return svg;
   }
-  M.icons = { gear, bell, chat, lead, theme: themeIcon };
+  M.icons = { gear, bell, chat, lead, plus, close, theme: themeIcon };
 
   // spec: { label (accessible name), face (nodes inside the button), items: [...],
   // listLabel (the list's name, when the button's label carries a state that changes) }
