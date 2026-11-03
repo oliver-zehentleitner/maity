@@ -3709,8 +3709,10 @@ the chat layout starts on the page and less what stands below it down to the end
 product line under the composer is in sight, and only the history and the chat list scroll. It is
 measured again on a resize and whenever the page around it changes size (a `ResizeObserver` on the
 body: a banner above, the product line below). It is never less than what the open chat cannot
-shrink (its heading, the composer) plus 120 px of history: on a screen too small for that, the page
-scrolls and the product line stays below the composer, never over it. A layout not yet in the page,
+shrink (its heading, the composer) plus 60 px of history, about three lines: on a screen too small
+for that, the page scrolls and the product line stays below the composer, never over it. The
+observer measures in the next frame, not in its own round, where a new height would resize the
+body again and the browser would report a ResizeObserver loop. A layout not yet in the page,
 as Chats builds it while its view is still drawn, is measured once it is there, a few tries at
 most, and then lets go of its listeners; the holder a pane is drawn into on Chats is not measured
 at all, Chats measures the layout the pane moves into. While a
@@ -3731,6 +3733,8 @@ good, leaving the CSS fallback `calc(100dvh - 140px)`.
   width (it wraps on a phone) and a banner above the chat moves the layout too.
 - Only a fixed floor (240 px) on a small screen: the heading and the composer of a group chat take
   more than that, so the composer ran past the pane and under the product line.
+- A floor of 120 px of history: a group chat on a 390 × 844 phone no longer fitted the window
+  even without a banner above it.
 
 ## Forge access is a section of the account, also at /settings/forge; a project's settings say which grant reads its repository
 

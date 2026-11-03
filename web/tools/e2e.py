@@ -768,6 +768,7 @@ def main() -> int:
                     scenario(run, page)
                     # Inside the same report: a failure in a later round shows its trace too (review of #997).
                     fixture_views(run, browser)
+                    chat_height_views(run, browser)
                     second_hub_round(run, browser, work, artifacts)
                     security_round(run, browser, work, artifacts)
                     mail_factor_round(run, browser, work, artifacts)
@@ -2196,6 +2197,61 @@ def fixture_views(run: Run, browser) -> None:
         run.shot(page, "fixtures-why-phone")
     finally:
         context.close()
+
+
+CHAT_MEASURE = """() => {
+  const box = (sel) => { const el = document.querySelector(sel); if (!el) return null;
+    const b = el.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, height: b.height }; };
+  return { overflow: document.scrollingElement.scrollHeight - window.innerHeight,
+    history: box('.chat-layout.open .chat-pane .messages'), compose: box('.chat-layout.open .chat-pane .compose'),
+    footer: box('#product-line'), errors: window.__errors.slice() };
+}"""
+
+
+def chat_height_views(run: Run, browser) -> None:
+    """The open chat against the window (tsk-j10w2hsm1h90), in fixture mode: on a project's Chat
+    tab and on Chats, direct and group, at 1280 x 800 and 390 x 844. Without the sign-in banner the
+    page ends at the window's bottom edge; with it (a phone has no room then) the page scrolls, but
+    the history keeps some height and the composer never runs under the product line. A
+    ResizeObserver loop is reported on window only, so a collector there counts it as an error."""
+    run.step("fixtures: the open chat ends at the window's bottom edge, the composer above the product line")
+    index = (WEB / "index.html").as_uri()
+    for width, height in ((1280, 800), (390, 844)):
+        context = browser.new_context(viewport={"width": width, "height": height})
+        context.add_init_script(
+            "window.__errors = []; window.addEventListener('error', (e) => window.__errors.push(String(e.message)));"
+        )
+        page = context.new_page()
+        errors: list[str] = []
+        # Page errors only: on file:// Chromium refuses the pictures the page loads (CORS) and says so on the console.
+        page.on("pageerror", lambda err: errors.append(str(err)))
+        try:
+            for route in (
+                "#/maintainer/maity/chat/agt-a",
+                "#/maintainer/maity/chat/cnv-0007",
+                "#/chats/maintainer/maity/agt-a",
+                "#/chats/maintainer/maity/cnv-0007",
+            ):
+                for banner in (True, False):
+                    page.goto("about:blank")
+                    page.goto(f"{index}?lang=en{route}")
+                    page.locator(".chat-layout.open .chat-pane .compose").wait_for()
+                    page.wait_for_timeout(800)
+                    if not banner:
+                        page.evaluate("() => { const b = document.querySelector('main .signin-banner'); if (b) b.remove(); }")
+                        page.wait_for_timeout(300)
+                    m = page.evaluate(CHAT_MEASURE)
+                    where = f"{route} at {width}x{height}" + (" with the sign-in banner" if banner else "")
+                    assert not m["errors"] and not errors, f"{where}: {m['errors'] + errors}"
+                    assert m["history"]["height"] >= 56, f"{where}: the history is {m['history']['height']:.0f} px tall"
+                    assert m["compose"]["bottom"] <= m["footer"]["top"] + 0.5, (
+                        f"{where}: the composer ends at {m['compose']['bottom']:.0f}, the product line starts at {m['footer']['top']:.0f}"
+                    )
+                    if not banner:
+                        assert m["overflow"] <= 1, f"{where}: the page scrolls {m['overflow']} px past the window"
+            run.shot(page, f"fixtures-chat-{width}")
+        finally:
+            context.close()
 
 
 def pair_exchange(run: Run, pair_line: str) -> tuple[int, dict, str]:

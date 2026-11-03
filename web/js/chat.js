@@ -435,7 +435,7 @@ window.Maity = window.Maity || {};
   // it changes; the visual viewport shrinks with a phone's on-screen
   // keyboard, 100dvh does not everywhere.
   // The lines of history an open chat keeps in view however small the screen.
-  const HISTORY_LEAST = 120;
+  const HISTORY_LEAST = 60;
   function fitToScreen(layout) {
     let watcher = null;
     // Chats fits its layout while the view is still being drawn, before the
@@ -473,14 +473,21 @@ window.Maity = window.Maity || {};
       const history = pane ? pane.querySelector(".messages") : null;
       const fixed = pane && history ? pane.scrollHeight - history.offsetHeight : 0;
       const least = Math.max(240, Number.isFinite(fixed) ? fixed + HISTORY_LEAST : 0);
-      layout.style.setProperty("--chat-h", Math.max(least, Math.floor(height - (box.top + scrolled) - below)) + "px");
+      const value = Math.max(least, Math.floor(height - (box.top + scrolled) - below)) + "px";
+      if (layout.style.getPropertyValue && layout.style.getPropertyValue("--chat-h") === value) return;
+      layout.style.setProperty("--chat-h", value);
     };
     window.addEventListener("resize", fit);
     if (window.visualViewport) window.visualViewport.addEventListener("resize", fit);
     // A banner above or the product line below that comes or goes moves the
     // layout without a resize; a fit that changes nothing stops the round.
     if (window.ResizeObserver && document.body) {
-      watcher = new window.ResizeObserver(() => fit());
+      // Measured in the next frame, not inside the observer's own round: a
+      // height set there resizes the body again and the browser reports a
+      // ResizeObserver loop.
+      let frame = 0;
+      const later = window.requestAnimationFrame ? (f) => window.requestAnimationFrame(f) : (f) => window.setTimeout(f, 0);
+      watcher = new window.ResizeObserver(() => { if (!frame) frame = later(() => { frame = 0; fit(); }); });
       watcher.observe(document.body);
     }
     fit();
