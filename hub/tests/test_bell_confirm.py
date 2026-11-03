@@ -374,6 +374,31 @@ def hold_at_enrolment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(second_factor, "must_enrol", lambda *args: True)
 
 
+def test_records_without_an_item_take_no_place_in_pinned(
+    make_client: ClientFactory, migrated: Engine, human: str
+) -> None:
+    """A sign-in alert, then more newer forge records that give no item than the block
+    holds: the alert still stands pinned, as it is counted (§18.1, §18.2)."""
+    strong = sign_in(make_client)
+    with migrated.begin() as conn:
+        for _ in range(50):
+            records.forge_access_changed(conn, human, "owner_token", "token_removed", "octo")
+        records.forge_access_changed(conn, human, "app", "unlinked", None)
+        conn.execute(  # all newer than the sign-in
+            update(t.account_record)
+            .where(t.account_record.c.type == "forge_access_changed")
+            .values(at=clock.now() + timedelta(minutes=1))
+        )
+    strong_id = strong.get("/auth/session").json()["session_id"]
+    answer = strong.get("/me/notifications").json()
+    assert answer["counts"]["security"] == 1
+    assert [i["target"] for i in answer["pinned"]] == [{"type": "session", "id": strong_id}]
+    with migrated.begin() as conn:
+        records.forge_access_changed(conn, human, "owner_token", "token_set", "octo")
+    pinned = strong.get("/me/notifications").json()["pinned"]
+    assert len(pinned) == 2 and pinned[1]["target"] == {"type": "session", "id": strong_id}
+
+
 def test_a_moved_session_in_good_standing_reaches_the_confirm(
     make_client: ClientFactory, migrated: Engine, human: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -518,7 +543,9 @@ def test_a_confirm_that_loses_to_an_end_is_not_found(
 
 
 def _end_in(conn: Any, public_id: str) -> None:
-    """What `DELETE /auth/sessions/{id}` writes, in a transaction the race holds open."""
+    """The end's write on the target row, in a transaction the race holds open. The route
+    also locks the human and writes a record, but both sides take the target row first, so
+    this row is where they meet."""
     conn.execute(
         update(t.human_session)
         .where(t.human_session.c.public_id == public_id)

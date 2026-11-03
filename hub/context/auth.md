@@ -475,7 +475,10 @@ the time of its record, so "mark all read" from an older session in good standin
 it.
 
 The pinned block (`items.pinned`) reads the unread security records alone, newest first, up to
-50. Security items come only from account records, so it reads no project's events. A session
+50. Security items come only from account records, so it reads no project's events. The 50 are
+taken in SQL, so the records that give no item (a forge access that went, §18.1) are left out
+in SQL too (`items.records_without_item`): counted against the limit, 50 newer ones would hide
+a sign-in alert that `counts.security` still counts. A session
 moved into enrolment (§2.8.5) keeps `GET /me/notifications`, `POST /me/notifications/read` and
 the confirm only while its sign-in was complete and it is in good standing; a fresh enrolment
 sign-in keeps none of them.

@@ -6,7 +6,10 @@ time of the read mark, `confirmed_by` the session that made it. A record without
 was not read by a session and confirms nothing. The downgrade drops the columns. A session
 confirmed after the upgrade had its record marked read by the same call, so the old rule reads
 it as confirmed too, as long as that record exists with its `read_by`: every completed sign-in
-writes one, and a read mark always sets `read_at` and `read_by` together.
+writes one, and a read mark always sets `read_at` and `read_by` together. A sign-in writes one
+`session_created` record per session; were there several read ones for a session, which of
+them the carry-over takes is not fixed (an `UPDATE … FROM` has no order), only that the session
+is confirmed.
 
 Revision ID: 20261103100000_session_confirmed
 Revises: 20261102230000_card_note_version
