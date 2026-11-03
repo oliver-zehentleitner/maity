@@ -4,7 +4,8 @@
 
 **Id:** 5e42eb26-9883-49e2-89c0-9fe4e6517c62
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** ec91fe03-1e12-4fb6-8c8e-f09ae8528e5d
 **Evidence:** inferred
 **Source:** implementation session, 2026-10-22 (the Helm chart)
 **See:** events.md — 6310ef59-6010-4fa5-95d5-30f20bc00117 — as of 2026-10-22
@@ -160,7 +161,7 @@ lift the rule. They are the revisit, not something V1 needs with one pod.
 
 **Id:** 3194a790-29c5-43b6-a07a-cdb21f2f6aae
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** the measurement of the upgrade on maity.team (events of 2026-10-25 06:35–06:36 UTC) and a local stop test, card tsk-4tad7bmbkzh2, agreed with the coordinator (seq 3405)
 **Revisit when:** the chart moves away from Recreate, or an upgrade's 503 window grows again
@@ -206,8 +207,11 @@ empty answer anyway (§8.3).
 **Revisit when:** migrations take their locks in a fixed order with a lock timeout and retry, or the chart can stop the hub itself
 **See:** kubernetes.md#migrations-as-a-pre-installpre-upgrade-hook-job-not-an-init-container — eced7109-a606-4549-b2f2-962e7436f8a8 — as of 2026-10-28
 
-`deploy/scripts/helm-upgrade.sh` scales the hub to 0, runs `helm upgrade` (the hook Job migrates alone) and
-scales back to the replicas it had on any exit. A release whose migration touches no busy table may use
+`deploy/scripts/helm-upgrade.sh` scales the hub to 0 and runs `helm upgrade` (the hook Job migrates alone).
+Once Helm succeeded the hub runs the replicas the release renders (Helm resets the scaled Deployment to
+the chart's value, and a changed `replicas` must not be undone), also when the rollout check after it
+fails; when the script ends before Helm or Helm fails, it scales back to the replicas it had. A hub
+found at 0 stays at 0. A release whose migration touches no busy table may use
 plain `helm upgrade`. A migration that alters `project`, `human`, `membership` or another table every
 request reads or writes is written to run with the hub stopped, and the release notes say so.
 

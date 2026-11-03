@@ -181,7 +181,9 @@ runs the hub against an existing PostgreSQL:
 
 - **Migration:** a hook Job runs `maity-hub migrate` before every install
   and upgrade.
-- **Pods:** exactly one pod, replaced with `Recreate`.
+- **Pods:** one pod by default, replaced with `Recreate`. With PostgreSQL and
+  attachments off the pod's volume, `replicas` runs more, rolled one at a time
+  (the chart's README, "Several pods").
 - **Secrets:** the database URL and the forge token come from Secrets you
   create; the chart only names them.
 - **Ingress:** optional, with TLS.
@@ -232,6 +234,7 @@ All settings come from the environment.
 | `MAITY_DB_POOL_SIZE` | `16` | Pooled connections to a server database (PostgreSQL, MariaDB), 1–500. They are reused, the most recently used first. |
 | `MAITY_DB_MAX_OVERFLOW` | `16` | Connections beyond the pool when it is busy, 0–500. |
 | `MAITY_WORKERS` | `1` | Serving processes of `maity-hub serve`, 1–64. More than one only with PostgreSQL and with `MAITY_DB_POOL_SIZE` at least twice the workers (refused otherwise). The pool and the overflow above are the hub's total: each process holds its share, rounded down. Each process takes about 130 MB of memory. |
+| `MAITY_REPLICAS` | `1` | How many hubs the deployment runs on this database, 1–100, as the deployment states it (the chart sets it from `replicas`). More than one only with PostgreSQL and without a local attachment directory (refused otherwise). At the start the hub warns when the connections it may ask (per worker its pool and overflow share plus a listener, per pod one for the probe, for replicas + 1 pods during a rolling update) exceed what PostgreSQL gives ordinary roles. |
 | `MAITY_DB_POOL_RECYCLE` | `1800` | Seconds after which a pooled connection is replaced when it is next taken, 0–86400; 0 never replaces. A connect that fails because the database host name does not resolve is tried once more after a short pause. |
 | `MAITY_DB_STATEMENT_TIMEOUT` | `30` | Seconds a statement may run on a PostgreSQL connection of the hub before the server cancels it (`statement_timeout`), 0–3600; 0 turns it off. Not set on `maity-hub migrate` and the other commands, nor on MariaDB or SQLite. |
 | `MAITY_DB_IDLE_IN_TRANSACTION_TIMEOUT` | `60` | Seconds a PostgreSQL connection of the hub may sit in an open transaction without a statement before the server ends it (`idle_in_transaction_session_timeout`), 0–3600; 0 turns it off. Same scope as above. |
