@@ -2249,9 +2249,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     + "https://maity.dev/keep-the-why-dashboard/|Keep the Why dashboard (opens in a new tab)|Why"
     && hlLinks().every((a) => a.getAttribute("target") === "_blank" && a.getAttribute("rel") === "noopener noreferrer" && a.querySelector("svg")),
     "header: the repository (\"Repository\", its forge in the mark and the name), Pull Requests from its forge, the project's own links that are set, and the Keep the Why dashboard, beside the state, in tabs of their own");
+  // The links in a row of their own, which a phone scrolls, the state beside it, not in it (tsk-m9ew7v609fq0).
   const hlBlock = Array.from(header.querySelector(".project-state").childNodes).map((c) => String(c.className || ""));
-  expect(hlBlock.indexOf("header-link") === 0 && hlBlock.lastIndexOf("header-link") < hlBlock.findIndex((c) => c.split(" ").includes("state")),
-    "header: the state stands to the right of the project's links (tsk-hf70q6maf8cv): " + hlBlock.join());
+  expect(hlBlock[0] === "project-links" && hlBlock.findIndex((c) => c.split(" ").includes("state")) > 0
+    && header.querySelector(".project-links").childNodes.length === hlLinks().length
+    && !header.querySelector(".project-links").querySelector(".state"),
+    "header: the state stands to the right of the project's links (tsk-hf70q6maf8cv), outside the row that scrolls: " + hlBlock.join());
   // Pull Requests per forge (tsk-hf70q6maf8cv): none for a forge the table does not know.
   const hlPulls = win.Maity.api.get;
   for (const [forge, url, want] of [
@@ -4713,6 +4716,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   jpPanel().querySelector("button.join-close").click(); await tick();
   expect(jpPanel().hidden && document.activeElement === jpButton() && jpPanel().querySelector("button.join-close").getAttribute("aria-label") === "Close",
     "join: the panel's own Close does the same");
+  expect(jpPanel().querySelector("button.join-close svg") && text(jpPanel().querySelector("button.join-close")).trim() === "",
+    "join: the Close button's cross is an icon, no text glyph");
   jpProto.focus = jpFocus; document.activeElement = undefined;
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents/join"); for (let k = 0; k < 4; k++) await tick();
   expect(main.querySelector(".view-agents") && !jpPanel().hidden && main.querySelector(".profiles"), "join: /agents/join opens Agents with the panel open");
@@ -8478,6 +8483,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const addItems = header.querySelectorAll(".menu-box").find((b) => b.querySelector(".add-menu")).querySelectorAll("a").map((a) => text(a) + "=" + a.getAttribute("href"));
   expect(addBtn.getAttribute("aria-label") === "Add an agent or a person" && JSON.stringify(addItems) === JSON.stringify(["Agent=#/agents", "User=#/invite"]),
     "header: the + menu leads to the agents page and the invitations page " + JSON.stringify(addItems));
+  // The + is drawn, not a text glyph: a glyph followed the font's metrics and sat off-centre in Edge (tsk-m9ew7v609fq0).
+  expect(addBtn.querySelector("svg") && text(addBtn).trim() === "",
+    "header: the + is an icon, no text glyph " + JSON.stringify(text(addBtn)));
   addBtn.click(); await tick();
   // The Lead button (the maintainer's decision, req-4rpd7vqb6xe3): Chat stays the way to every chat; Lead reaches
   // the one lead at once (here the owner's own admin agent, on a hub without coordinator data).
@@ -8515,6 +8523,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && chLinks[6].getAttribute("href") === "#/chats/maintainer/sample/agt-s1" && text(chLinks[6]).endsWith("in Sample shop")
     && text(main).includes("Pick a conversation.") && header.querySelector("a.chat-button").getAttribute("aria-current") === "page",
     "chats: the Chat tab's layout with every project's chats, unread first, then the newest, each with its project");
+  // On a phone the header hides the Lead (tsk-m9ew7v609fq0): the Chats page, where Chat leads, carries it, once.
+  await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
+  expect(main.querySelectorAll(".chats-lead .lead-button").length === 1 && header.querySelectorAll(".lead-button").length === 1
+    && main.querySelector(".chats-lead .lead-button").getAttribute("aria-label") === header.querySelector(".lead-button").getAttribute("aria-label"),
+    "chats: the page carries the header's Lead, once, for a phone where the header hides it");
   // All projects has two pages, Inbox and Chats (tsk-gw59z3w3fenf), each with the hub's count for it.
   const apPages = () => header.querySelectorAll("nav.views a");
   const apAll = () => header.querySelectorAll("nav.switcher a").find((a) => a.getAttribute("href") === "#/all");

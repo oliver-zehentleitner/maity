@@ -21,10 +21,10 @@ from starlette.types import Receive, Scope, Send
 from maity_hub import paths, public_pages
 from maity_hub.errors import error_response
 
-# The built files the dashboard names under `/assets/` (§16.11): web/'s three directories of
-# scripts, stylesheets and brand files. Everything else in web/ (the page itself, fixtures,
-# tools, the README, context/) is not served as a file.
-ASSET_DIRS = frozenset({"brand", "css", "js"})
+# The built files the dashboard names under `/assets/` (§16.11): web/'s directories of
+# scripts, stylesheets and brand files, and the vendored libraries (web/vendor/). Everything
+# else in web/ (the page itself, fixtures, tools, the README, context/) is not served as a file.
+ASSET_DIRS = frozenset({"brand", "css", "js", "vendor"})
 SHELL_HEADERS = {
     "Cache-Control": "no-cache",  # small, and it must follow a deploy at once (§16.11)
     "X-Robots-Tag": "noindex",

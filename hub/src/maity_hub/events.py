@@ -555,6 +555,11 @@ def window_times(conn: Connection, project_id: str, membership: Any) -> list[tup
     return found
 
 
+def is_isolated(membership: Any) -> bool:
+    """An isolated agent member (§6.2)."""
+    return _isolated(membership)
+
+
 def _isolated(membership: Any) -> bool:
     """An isolated agent member (§6.2); a reader that is no membership row, such as an owner
     outside the project, is none."""
