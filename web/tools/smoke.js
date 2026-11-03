@@ -3615,6 +3615,34 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(cpRacePosts.length === 1 && byId("card-note-body").value === "" && !btn(cpForm(), "Post the note").disabled
     && cpNotes().filter((n) => n.includes("A race post")).length === 1,
     "card panel: the text posted leaves the field drawn meanwhile, so it is not sent twice " + JSON.stringify([cpRacePosts.length, byId("card-note-body").value]));
+  // Two reads of the list overlapping: the one an edit's Cancel started is held while the post
+  // succeeds and its own, later read draws the list; the older read, ending last, draws nothing.
+  const cpOverGets = win.Maity.api.getAll;
+  let cpOverHold = false, cpOverOld = null;
+  win.Maity.api.getAll = (p) => {
+    if (!cpOverHold || !p.endsWith("/notes?state=open")) return cpOverGets(p);
+    return new Promise((resolve) => { cpOverOld = () => resolve(cpOverGets(p)); });
+  };
+  cpRacePosts.length = 0;
+  win.Maity.api.post = (p, b) => {
+    if (!p.endsWith("/notes")) return cpRaceWas(p, b);
+    cpRacePosts.push(b);
+    return new Promise((resolve) => { cpRaceDone = () => resolve(cpPost(p, b)); });
+  };
+  byId("card-note-body").value = "An overlap post";
+  cpForm().dispatch("submit"); await tick();
+  cpOverHold = true;
+  btn(neNote("nte-0031"), "Edit").click(); await tick();
+  btn(neNote("nte-0031"), "Cancel").click(); await tick();
+  cpOverHold = false;
+  cpRaceDone(); for (let k = 0; k < 6; k++) await tick();
+  cpOverOld(); for (let k = 0; k < 6; k++) await tick();
+  const cpOverForms = cpPanel().querySelectorAll("form.card-note-form");
+  expect(cpOverForms.length === 1 && byId("card-note-body").value === "" && cpRacePosts.length === 1
+    && cpNotes().filter((n) => n.includes("An overlap post")).length === 1,
+    "card panel: an older read of the notes ending last draws no second form and brings back no posted text "
+      + JSON.stringify([cpOverForms.length, cpOverForms.map((f) => f.querySelector("textarea").value), cpRacePosts.length]));
+  win.Maity.api.getAll = cpOverGets;
   win.Maity.api.post = cpRaceWas;
   // One's own note: no reason needed; Cancel and Escape leave it as it was.
   const cpMine = cpPanel().querySelectorAll("li.card-note")[2].getAttribute("data-note");
@@ -10777,6 +10805,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "admin: an empty recipient sends no `to`, the fixture hub mails the verified address " + JSON.stringify(testWrites));
   expect(await adminPost("/admin/settings/mail/test", { to: "" }).then(() => "sent", (err) => err.code + ":" + err.details.fields.to) === "invalid:invalid",
     "admin: the fixture hub refuses an empty `to` as the hub does; only an absent one defaults");
+  // The rule without a verified address, which the run's own admin has: each status but verified refuses.
+  const mtTo = win.Maity.api.fixtureMailTestTo;
+  expect(["none", "pending", "disabled"].every((st) => mtTo({}, { address_status: st }) === "no_verified_address") && mtTo({ to: null }, { address_status: "none" }) === "no_verified_address"
+    && mtTo({}, { address_status: "verified" }) === null && mtTo({ to: "a@example.org" }, { address_status: "none" }) === null && mtTo({ to: " " }, { address_status: "verified" }) === "invalid",
+    "admin: the fixture hub mails an absent recipient only to a verified address, else no_verified_address");
   win.Maity.api.post = async (path) => { throw new win.Maity.api.ApiError("the request does not validate", 400, path, "invalid", { fields: { to: "no_verified_address" } }); };
   main.querySelector("form.admin-mail-test").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(text(main.querySelector("form.admin-mail-test .send-status")).includes("to: enter a recipient address"), "admin: a test without a recipient or a verified address is said for the field");

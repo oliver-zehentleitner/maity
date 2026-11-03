@@ -134,6 +134,9 @@ window.Maity = window.Maity || {};
     // and status line as last drawn, so the redrawn form stays busy and the text
     // is cleared from the field shown when the post succeeds.
     let posting = null, noteForm = null;
+    // Each read of the list counts; only the latest draws it, so an older read that
+    // ends later neither adds a second form nor brings back a draft already posted.
+    let notesRead = 0;
     const box = h("aside", { class: "card-panel", "aria-labelledby": "card-panel-title" },
       h("div", { class: "card-panel-head" }, h("span", { class: "card-id" }, c.id),
         h("span", { class: "card-panel-actions" }, watchButton,
@@ -297,15 +300,21 @@ window.Maity = window.Maity || {};
     }
 
     async function notes() {
-      const draft = noteField ? noteField.value : "";
+      const read = ++notesRead;
       clear(notesBox);
       let list;
       try {
         list = (await M.api.getAll(base + "/notes?state=open")).items;
       } catch (err) {
+        if (read !== notesRead) return;
         append(notesBox, h("p", { class: "send-status failed" }, M.t("cardpanel.notes.read_failed", { reason: err.message })));
         return;
       }
+      if (read !== notesRead) return;
+      // The draft as the field last drawn holds it now, after the read: a post that
+      // succeeded meanwhile has cleared what it sent.
+      const draft = noteField ? noteField.value : "";
+      clear(notesBox);
       append(notesBox, list.length
         ? h("ul", { class: "card-note-list" }, list.map(noteLine))
         : h("p", { class: "muted" }, M.t("cardpanel.notes.none")), removeStatus.el);
