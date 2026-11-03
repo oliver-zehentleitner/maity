@@ -4172,7 +4172,7 @@ instances changes, an open one is rewritten in place (same id,
 `summary` and `title` replaced, no new request event) as long as the
 change only drops instances or changes a line's cards or reason. When
 the set gains an instance, or a listed instance would show another
-kind, `since` or `last seen`, the hub withdraws the open request and,
+kind, `since` or (as a stalled holder) `last seen`, the hub withdraws the open request and,
 when an away instance is not silenced (below), files a new one in the
 same pass, so an answer from a page that has not
 seen the change is `request_not_open` (409) and the owner reads the new
@@ -4199,12 +4199,15 @@ to re-route. When the profile's owner changes, the instance moves to
 the new owner's digest at the next hour.
 
 **Silence after `seen`.** Answering `seen` records, for every instance
-the request listed when it was filed, what it showed then: the
-instance's `last_seen_at` at the filing and, when it was listed as an
-episode, that episode's `since`. A rewrite in place only drops
-instances or changes cards and reasons, so the filing holds everything
-the owner was shown, instances dropped since included; the state at
-the answer, which may come hours later, is not recorded. Records are
+the request still lists at the answer, what it showed of it at the
+filing: the instance's `last_seen_at` then and, when it was listed as
+an episode, that episode's `since`. A rewrite in place only drops
+instances or changes cards and reasons, never these values of an
+instance it keeps, so every page of the request, opened before a
+rewrite or after it, showed each recorded instance with exactly these
+values. An instance dropped before the answer is not recorded, since a
+page opened after the drop never showed it; the state at the answer,
+which may come hours after the filing, is not recorded either. Records are
 the answering human's and add up over every answer of theirs; an
 instance that moves to another owner's digest starts there without the
 previous owner's records, and the owner's own records count again if it
@@ -4241,7 +4244,7 @@ owner. The cases, each from the answer on unless the row says otherwise:
 | episode | it calls after the filing and before the answer, then holds a claim past the threshold, or that episode ends and a later one starts | either | no | — |
 | episode | it ends after the filing and before the answer, and a later one starts after calls | episode | no | — |
 | episode | it ends after the filing and before the answer (a pause), and a later one starts with no call (the pause lifted) | episode | yes | 1 |
-| stalled holder | its cards are moved before the answer and it drops out (a rewrite); after the answer it is away again with no call | either | yes | 1 |
+| stalled holder | its cards are moved before the answer and it drops out (a rewrite); after the answer it is away again with no call | either | no: not recorded, a page opened after the drop never showed it | — |
 | listed, never answered | it drops out and the request is withdrawn (none away), then it is away again | either | no: no answer, no record | — |
 | not listed | it becomes away while the owner has the request open, the hub refiles, the owner answers the old one | — | no: `request_not_open`, the new request lists it | — |
 | episode or stalled holder, seen by its owner | the profile's owner changes, the instance stays away | either | no: the new owner has no record | — |

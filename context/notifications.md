@@ -407,22 +407,22 @@ The hourly digest lists, besides instances that are not listening, every *stalle
 holder*: an instance that holds cards and has made no call since its latest session's
 last sign of life for the human's `not_listening.minutes`, whether that session is
 still open or was revoked. Both kinds make one set of away instances, so the same
-rules file, count, rewrite and withdraw the digest. `seen` records, per listed
-instance, what the request showed when it was filed: its `last_seen_at` and, listed
-as an episode, that episode's `since`. A rewrite in place only drops instances or
-changes cards and reasons; a change that adds news (a new instance, another kind,
-`since` or last call) withdraws the request and files a new one. The records are the
-answering human's. An away instance is silenced for its owner while its
-`last_seen_at` equals a record (no call since the request showed it), or, listed as
-an episode, while that episode's `since` is recorded. Records add up; a new request
-comes only for an instance not silenced and lists every away instance. A table in
-§5.3 lists the cases the review rounds raised. Only the latest session counts, so
-sessions a resume replaced never qualify. A pause a human or the manager set excludes
-an instance, since someone decided to stop it; a pause the agent set itself does not,
-since, like a limit, it is the agent's own account of why it stopped and its cards
-stay blocked all the same. The title and the advice follow what the digest holds, in
-the request and in the bell, and the bell's `agents_not_listening` record counts
-stalled holders in `holding`.
+rules file, count, rewrite and withdraw the digest. `seen` records, per instance the
+request still lists at the answer, what it showed of it at the filing: its
+`last_seen_at` and, listed as an episode, that episode's `since`. A rewrite in place
+only drops instances or changes cards and reasons; a change that adds news (a new
+instance, another kind, `since` or last call) withdraws the request and files a new
+one. The records are the answering human's. An away instance is silenced for its
+owner while its `last_seen_at` equals a record (no call since the request showed it),
+or, listed as an episode, while that episode's `since` is recorded. Records add up; a
+new request comes only for an instance not silenced and lists every away instance. A
+table in §5.3 lists the cases the review rounds raised. Only the latest session
+counts, so sessions a resume replaced never qualify. A pause a human or the manager
+set excludes an instance, since someone decided to stop it; a pause the agent set
+itself does not, since, like a limit, it is the agent's own account of why it stopped
+and its cards stay blocked all the same. The title and the advice follow what the
+digest holds, in the request and in the bell, and the bell's `agents_not_listening`
+record counts stalled holders in `holding`.
 
 **Reason:** an instance that stopped with cards in hand is often not listening by
 §5.3's rule at all: no event waits for it, or its session ended. A crashed harness
@@ -435,14 +435,16 @@ the digest advises, or an episode started by the move); once it called, any late
 stop is new, a crash after work included. The record is what the request showed, not
 the state at the answer, because the answer can come hours after the filing and the
 owner did not see calls made in between. A rewrite in place sends no event, so a page
-left open does not show it; letting such rewrites only remove keeps the filing a
-complete picture of what the owner was shown, and anything new comes as a new
-request, whose filing withdraws the old one, so an answer from a stale page is
-refused. The records belong to the human who answered, since a new owner of the
-profile has seen nothing. A running episode also stays silenced by its own start,
-since a busy instance keeps calling and the owner already saw that episode. Seven
-review rounds each found a transition the prose missed, so the rule is now one test
-with a table of the cases.
+left open does not show it; letting such rewrites only remove, and never change the
+recorded values of an instance they keep, means every page of the request showed each
+still-listed instance with the same values; anything new comes as a new request,
+whose filing withdraws the old one, so an answer from a stale page is refused. An
+instance dropped before the answer is not recorded, since a page opened after the
+drop never showed it; the cost is at most one more question about it. The records
+belong to the human who answered, since a new owner of the profile has seen nothing.
+A running episode also stays silenced by its own start, since a busy instance keeps
+calling and the owner already saw that episode. Seven review rounds each found a
+transition the prose missed, so the rule is now one test with a table of the cases.
 
 **Rejected alternatives:** a setting of its own for this list: it is the same
 question to the owner, whether their agents still work, and one threshold answers it.
@@ -466,4 +468,6 @@ latest rewrite, the seventh draft: a rewrite in place reaches no open page, so t
 owner answered an older version and an instance added since was silenced unseen. A
 version token in the answer body: a new field on the answer route shared by every
 request for one kind of request, while a new request with the existing
-`request_not_open` refuses a stale answer already.
+`request_not_open` refuses a stale answer already. Recording every instance of the
+filing, also the seventh draft: a page opened after a rewrite that dropped one never
+showed it, and it was silenced unseen.
