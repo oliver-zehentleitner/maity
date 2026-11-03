@@ -7,7 +7,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, insert, select, update
+from sqlalchemy import Engine, func, insert, select, update
 
 from maity_hub import clock, not_listening_digest
 from maity_hub import tables as t
@@ -456,6 +456,28 @@ def test_only_the_latest_session_is_read_however_long_the_history(
     not_listening_digest.run(migrated)
     [digest] = _digests(owner)
     assert digest["summary"].partition("\n\n")[0].endswith(", silent")
+
+
+def test_the_latest_session_lookup_reads_along_the_credential_start_index(
+    migrated: Engine,
+) -> None:
+    """The plan, not only the rows: each credential's latest start comes from the index on
+    (credential, start), never from a scan per candidate session (SQLite's plan; the index
+    itself is in the schema for every database)."""
+    if migrated.dialect.name != "sqlite":
+        pytest.skip("the plan check reads SQLite's EXPLAIN QUERY PLAN")
+    with migrated.connect() as conn:
+        s = t.agent_session
+        query = (
+            select(s.c.credential_id, func.max(s.c.started_at))
+            .where(s.c.credential_id.in_(["crd-a", "crd-b"]))
+            .group_by(s.c.credential_id)
+        )
+        compiled = query.compile(migrated, compile_kwargs={"literal_binds": True})
+        plan = " ".join(
+            str(row[-1]) for row in conn.exec_driver_sql(f"EXPLAIN QUERY PLAN {compiled}")
+        )
+    assert "ix_agent_session_credential_started" in plan, plan
 
 
 def test_a_stalled_holder_is_listed_with_its_cards_and_reason(

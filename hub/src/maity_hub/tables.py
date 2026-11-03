@@ -1115,6 +1115,8 @@ agent_session = Table(
     Column("not_listening_seq", BIG_ID),
     Column("not_listening_request_id", String(ID)),
     UniqueConstraint("credential_id", "live", name="uq_agent_session_one_live"),
+    # Each credential's latest session, read on every bell read and digest hour (§5.3).
+    Index("ix_agent_session_credential_started", "credential_id", "started_at"),
     CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
     **MYSQL_TABLE,
 )

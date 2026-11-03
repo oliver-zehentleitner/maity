@@ -3,7 +3,9 @@ lines a digest request shows, and `not_listening_seen`, what each owner answered
 one row per human and instance. An open digest request filed before has no lines; the next
 hour sees a change, withdraws it and files a new one, so nothing needs carrying over. Answers
 given before this change recorded only their time; the next hour asks once more about what is
-still away, which the owner then answers under the new rule. The downgrade drops both.
+still away, which the owner then answers under the new rule. An index on `agent_session`
+(credential, start) serves the digest's and the bell's look at each credential's latest session.
+The downgrade drops all three; the credential's foreign key keeps the unique (credential, live).
 
 Revision ID: 20261103210000_digest_seen
 Revises: 20261103100000_session_confirmed
@@ -45,9 +47,13 @@ def upgrade() -> None:
         sa.Index("ix_not_listening_seen_membership", "membership_id"),
         **MYSQL,
     )
+    op.create_index(
+        "ix_agent_session_credential_started", "agent_session", ["credential_id", "started_at"]
+    )
 
 
 def downgrade() -> None:
+    op.drop_index("ix_agent_session_credential_started", table_name="agent_session")
     # The table alone: its index goes with it, and dropping it first fails on MariaDB while
     # the foreign key needs it.
     op.drop_table("not_listening_seen")

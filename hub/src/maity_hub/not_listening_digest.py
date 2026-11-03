@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Connection, Engine, func, insert, select, update
+from sqlalchemy import Connection, Engine, and_, func, insert, select, update
 
 from maity_hub import clock, maintenance, worker_runs
 from maity_hub import tables as t
@@ -174,16 +174,23 @@ def _latest_sessions(conn: Connection, credential_ids: set[str]) -> list[Any]:
     reads this live, and the history of ended sessions grows without bound."""
     if not credential_ids:
         return []
-    s, older = t.agent_session, t.agent_session.alias("older")
+    s = t.agent_session
     latest = (
-        select(func.max(older.c.started_at))
-        .where(older.c.credential_id == s.c.credential_id)
-        .scalar_subquery()
-    )
+        select(s.c.credential_id, func.max(s.c.started_at).label("started_at"))
+        .where(s.c.credential_id.in_(credential_ids))
+        .group_by(s.c.credential_id)
+        .subquery()
+    )  # once per credential, along `ix_agent_session_credential_started`
     return list(
         conn.execute(
             select(s)
-            .where(s.c.credential_id.in_(credential_ids), s.c.started_at == latest)
+            .join(
+                latest,
+                and_(
+                    s.c.credential_id == latest.c.credential_id,
+                    s.c.started_at == latest.c.started_at,
+                ),
+            )
             .order_by(s.c.started_at, s.c.id)
         )
     )
