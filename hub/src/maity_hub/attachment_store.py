@@ -19,6 +19,7 @@ operation and the error code only.
 from __future__ import annotations
 
 import contextlib
+import email.utils
 import functools
 import logging
 import os
@@ -250,7 +251,15 @@ class S3Store:
             if _code(error) in _MISSING:
                 return None
             raise self._fail("look at a blob", error) from None
-        return now - float(answer["LastModified"].timestamp())
+        written = float(answer["LastModified"].timestamp())
+        # Both times from the store's clock: the answer's `Date` against the object's
+        # LastModified, so the hub's clock may differ from the store's by any amount
+        # (hub/context/attachments.md 7dcd4850). Without a usable `Date`, the hub's `now`.
+        store_now = _date(answer)
+        age = (store_now if store_now is not None else now) - written
+        if age < -1:
+            logging.getLogger(__name__).warning("a blob's age is negative: the clocks disagree")
+        return age
 
     def keys(self, project: str) -> list[str]:
         """The blobs of one project, for the sweep; an object under the prefix that is
@@ -266,6 +275,17 @@ class S3Store:
                     continue
                 found.append(key)
         return found
+
+
+def _date(answer: dict[str, Any]) -> float | None:
+    """The `Date` header of a store's answer, in seconds since the epoch, or None."""
+    raw = answer.get("ResponseMetadata", {}).get("HTTPHeaders", {}).get("date")
+    if not raw:
+        return None
+    try:
+        return email.utils.parsedate_to_datetime(str(raw)).timestamp()
+    except (TypeError, ValueError):
+        return None
 
 
 def _client(config: AttachmentS3) -> Any:
