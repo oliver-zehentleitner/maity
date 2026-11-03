@@ -1,5 +1,5 @@
 """`scripts/with_postgres.sh`, with stand-ins for PostgreSQL's tools: it stops what it started,
-keeps a server started for everyone, and runs in a run slot that the server does not hold."""
+keeps a server started with --start, and runs in a run slot that the server does not hold."""
 
 from __future__ import annotations
 
@@ -155,7 +155,7 @@ def test_the_commands_exit_status_is_kept(run: dict[str, str]) -> None:
     assert subprocess.run([SCRIPT, "false"], env=run).returncode == 1
 
 
-def test_start_leaves_the_server_up_for_everyone(run: dict[str, str]) -> None:
+def test_start_leaves_the_server_up_for_every_run(run: dict[str, str]) -> None:
     subprocess.run([SCRIPT, "--start"], env=run, check=True)
     subprocess.run([SCRIPT, "true"], env=run, check=True)
     assert len(calls(run, "start")) == 1 and calls(run, "stop") == []
