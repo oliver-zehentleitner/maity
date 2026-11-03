@@ -1143,10 +1143,6 @@
     "en": "647e98cce4691499",
     "text": "b7ec3a1ce2d2558a"
   },
-  "bell.security_hint": {
-    "en": "b3bcd94f9fe4e53c",
-    "text": "a392f1cf1b2736f7"
-  },
   "bell.settings": {
     "en": "c749ce622125ec2a",
     "text": "6dc24261c456ee66"
@@ -3519,6 +3515,14 @@
     "en": "b1f1ef269b21aacf",
     "text": "9caa9987d1ec3904"
   },
+  "error.maintenance_not_running": {
+    "en": "58e52c5607e41459",
+    "text": "7da2a358112b5fc8"
+  },
+  "error.maintenance_running": {
+    "en": "6215abdad2c9c05f",
+    "text": "c12c62c0afd56697"
+  },
   "error.memory_full": {
     "en": "1d443815d36c4d47",
     "text": "c3b3b4bfe497849b"
@@ -3714,6 +3718,10 @@
   "error.unauthenticated": {
     "en": "cb2b69a399606add",
     "text": "b3304f6137af4ed5"
+  },
+  "error.upload_expired": {
+    "en": "390ab9fb8bdb7c70",
+    "text": "1c78ecf8d6fdc019"
   },
   "error.version_exists": {
     "en": "d10b17f2f8fdf5cb",
@@ -12224,8 +12232,8 @@
     "text": "06faf21693a49663"
   },
   "public_profile.hint": {
-    "en": "08b784924901f17f",
-    "text": "9ea773f29a3f1f9c"
+    "en": "bdc3c71606e891f1",
+    "text": "a1a31447571e8756"
   },
   "public_profile.links": {
     "en": "5b3bd4bf0fd959d5",
@@ -12262,6 +12270,14 @@
   "public_profile.network.format": {
     "en": "86d6d20cf41e43d7",
     "text": "df3757b34ade0e4e"
+  },
+  "public_profile.presence": {
+    "en": "13fd36440a3dfcb7",
+    "text": "b913e4e8f14e125e"
+  },
+  "public_profile.presence.hint": {
+    "en": "e340a78a7fa20d30",
+    "text": "9644681719fe6309"
   },
   "public_profile.refused": {
     "en": "eefc90bc95b7b6cc",
@@ -13679,10 +13695,6 @@
     "en": "ceb846c9f1e324a3",
     "text": "47bbf1d3ab987b97"
   },
-  "sessions.alert_open": {
-    "en": "2a8a6c218d690279",
-    "text": "0700937465f71398"
-  },
   "sessions.banner.approved": {
     "en": "36d355755805147c",
     "text": "d99d691650eb7ee5"
@@ -13710,14 +13722,6 @@
   "sessions.cannot_end.too_new": {
     "en": "130a7b20d904f44c",
     "text": "f6675d63658e239f"
-  },
-  "sessions.confirm.refused": {
-    "en": "479112e115109e21",
-    "text": "ab1b4fcdd63c6732"
-  },
-  "sessions.confirm.unknown": {
-    "en": "060ed25d62d1fea1",
-    "text": "3f39fdbb1b418f51"
   },
   "sessions.confirmed": {
     "en": "38ab47d4615a9c3f",
@@ -16594,10 +16598,6 @@
   "visitor.holder.member": {
     "en": "5327c7984ea05cf1",
     "text": "0a492c3669e367fa"
-  },
-  "visitor.other_agents": {
-    "en": "d609f62988203fe5",
-    "text": "1c2b22dab14600cc"
   },
   "visitor.others": {
     "en": "086354b8dd869a39",

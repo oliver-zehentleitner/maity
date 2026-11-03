@@ -34,7 +34,9 @@ from maity_hub.mail import outbox
 from maity_hub.notifications import records, tokens
 
 KINDS = ("inbox", "chat", "mention", "security")
-MODES = ("immediate", "hourly", "daily", "off")
+MODES = ("immediate", "hourly", "daily", "weekly", "off")
+DIGESTS = ("hourly", "daily", "weekly")
+WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 CONTENT_KINDS = ("chat", "mention")
 VERIFY_FOR = timedelta(hours=24)
 APPROVER_AGE = timedelta(hours=24)
@@ -60,12 +62,16 @@ DEFAULTS: dict[str, Any] = {
         "timezone": "UTC",
         "kinds": {
             "inbox": {"mode": "immediate"},
-            "chat": {"mode": "hourly", "content": False},
-            "mention": {"mode": "immediate", "content": False},
+            # A digest by default against filled mailboxes; the inbox and security at once
+            # (context/notifications.md da12f2b5). Only what the human set is stored, so a
+            # kind nobody chose follows these as they are now.
+            "chat": {"mode": "daily", "content": False},
+            "mention": {"mode": "daily", "content": False},
             "security": {"mode": "immediate"},
         },
         "sign_in_link": True,
         "daily_at": "08:00",
+        "weekly_on": "mon",
         "quiet_hours": None,
     },
     # How the human hears of their agent instances that are not listening (§5.3, §18.4);
@@ -271,6 +277,11 @@ def _check_email(given: Any, errors: dict[str, str]) -> dict[str, Any]:
                 out[key] = value
             else:
                 errors[name] = "invalid"
+        elif key == "weekly_on":
+            if value in WEEKDAYS:
+                out[key] = value
+            else:
+                errors[name] = "invalid"
         elif key == "quiet_hours":
             ok = value is None or (
                 isinstance(value, dict)
@@ -303,10 +314,8 @@ def _check_modes(value: Any, errors: dict[str, str]) -> dict[str, Any] | None:
             return None
         # A missing `mode` is a partial change; one that is present must be a mode, `null`
         # included (§18.4).
-        if "mode" in setting and setting["mode"] not in (
-            ("immediate", "off") if kind == "security" else MODES
-        ):
-            errors[f"email.kinds.{kind}"] = "invalid"  # a delayed alert is no alert (§18.4)
+        if "mode" in setting and setting["mode"] not in MODES:
+            errors[f"email.kinds.{kind}"] = "invalid"  # every kind takes every mode (§18.4)
             return None
         if "content" in setting and (
             kind not in CONTENT_KINDS or not isinstance(setting["content"], bool)
@@ -511,8 +520,7 @@ def _change_address(
                 raise invalid({"current_password": "mismatch"})
         else:
             held = _held(row)
-            confirmed = sessions.confirmed_sessions(conn, human.id)
-            standing = sessions.good_standing(session, confirmed)
+            standing = sessions.good_standing(session)
             if not standing and held is not None:
                 raise _session_forbidden("not_in_good_standing")
             if not standing or clock.now() - session.created_at < APPROVER_AGE:
@@ -761,8 +769,7 @@ def decide_held(
     `step_up` raises when the session owes the second factor (§2.8.4)."""
     row = row_of(conn, human.id, lock=True)
     held = _held(row)
-    confirmed = sessions.confirmed_sessions(conn, human.id)
-    if not sessions.good_standing(session, confirmed):
+    if not sessions.good_standing(session):
         raise _session_forbidden("not_in_good_standing")
     if held is None or held["id"] != change_id or held["address"] != address:
         raise ApiError(409, "conflict", "no held change with that id and address")

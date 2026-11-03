@@ -88,6 +88,14 @@
  "GET /me": {
   "object": {
    "deletion": "null",
+   "maintenance": {
+    "object": {
+     "from": "string",
+     "state": "string",
+     "text": "string",
+     "until": "string"
+    }
+   },
    "member": {
     "object": {
      "account_status": "string",
@@ -109,6 +117,7 @@
      "meat_proxy_lead": "boolean",
      "meat_proxy_note": "string",
      "public_bio": "null",
+     "public_presence": "boolean",
      "public_profile": "boolean",
      "social": {
       "object": {}
@@ -261,6 +270,28 @@
    },
    "next_after": "string",
    "next_cursor": "null",
+   "pinned": {
+    "array": {
+     "object": {
+      "actor": "null",
+      "at": "string",
+      "id": "string",
+      "kind": "string",
+      "project": "null",
+      "read": "boolean",
+      "record": "string",
+      "redacted": "boolean",
+      "target": {
+       "object": {
+        "id": "string",
+        "type": "string"
+       }
+      },
+      "title": "string",
+      "url": "string"
+     }
+    }
+   },
    "server_time": "string"
   }
  },
@@ -1038,6 +1069,19 @@
       },
       "body": "string",
       "created_at": "string",
+      "edited": {
+       "object": {
+        "at": "string",
+        "by": {
+         "object": {
+          "handle": "string",
+          "kind": "string",
+          "member_id": "string"
+         }
+        },
+        "reason": "string"
+       }
+      },
       "id": "string",
       "mentions": {
        "array": {
@@ -1054,7 +1098,8 @@
       },
       "resolution": "null",
       "state": "string",
-      "task_id": "string"
+      "task_id": "string",
+      "version": "number"
      }
     }
    },

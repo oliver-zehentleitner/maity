@@ -211,13 +211,17 @@ def confirmed_by_of(conn: Connection, projects: Sequence[Any]) -> dict[str, dict
 
 
 def repository(
-    project: Any, settings: Settings, confirmed_by: dict[str, str] | None = None
+    project: Any,
+    settings: Settings,
+    owner_handle: str,
+    confirmed_by: dict[str, str] | None = None,
 ) -> dict[str, Any] | None:
     if project.repository_url is None:
         return None
-    via = forge_access.probe_via(
-        project.id, project.repository_url, project.probe_via, settings.forge_github_token
+    instance = settings.forge_github_token is not None and forge_access.serves(
+        settings.forge_instance_namespaces, owner_handle
     )
+    via = forge_access.probe_via(project.id, project.repository_url, project.probe_via, instance)
     return {
         "url": project.repository_url,
         "default_branch": project.repository_default_branch,
@@ -282,7 +286,7 @@ def project_view(
         "public_page": project.public_page,
         "public_about": project.public_about,
         "state_changed_at": ts(project.state_changed_at),
-        "repository": repository(project, settings, confirmed_by),
+        "repository": repository(project, settings, owner_handle, confirmed_by),
         # The project's own links (§6.11), all four keys, null where none is set.
         "links": project_links.view(project.links),
         "logo": shown.get("logo", NO_IMAGE),
@@ -1173,6 +1177,15 @@ def _without_reason(row: Any, reader: Any, group_readers: set[str] | None = None
     notice and the tombstone it leaves) is null for everyone it is not for (§8.5).
     Every other event's `reason` is untouched."""
     payload = row.payload
+    if row.kind in ("note_added", "note_edited") and isinstance(payload, dict) and not row.redacted:
+        # A redacted note's tombstone sits inside the event that carried it (§6.16).
+        note = payload.get("note")
+        body = note.get("body") if isinstance(note, dict) else None
+        if isinstance(note, dict) and isinstance(body, dict) and body.get("redacted"):
+            from maity_hub.board import notes
+
+            return {**payload, "note": {**note, "body": notes.tombstone_for(body, reader)}}
+        return payload
     redaction = row.kind == "event_redacted" or row.redacted
     if not redaction or not isinstance(payload, dict):
         return payload

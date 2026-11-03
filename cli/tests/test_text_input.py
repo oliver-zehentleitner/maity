@@ -144,3 +144,61 @@ def test_inline_text_that_the_shell_ate_is_warned_about(
     assert cli.main(["say", "agt-a", text, "--type", "notice"]) == cli.EXIT_OK
     assert ("warning:" in capsys.readouterr().err) is warned
     assert fake.signed()[-1].json()["body"] == text
+
+
+BOM = "\ufeff"
+
+
+def test_say_drops_a_byte_order_mark_from_stdin(
+    joined: Path, fake: fakehub.FakeHub, events: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PowerShell pipes a mark first when `$OutputEncoding` is UTF-8 with one; it is not text."""
+    _stdin(monkeypatch, BOM + MARKDOWN)
+    assert cli.main(["say", "agt-a", "--type", "notice", "-"]) == cli.EXIT_OK
+    assert fake.signed()[-1].json()["body"] == MARKDOWN.rstrip("\n")
+
+
+def test_say_drops_a_byte_order_mark_from_a_file(
+    joined: Path, fake: fakehub.FakeHub, events: None, tmp_path: Path
+) -> None:
+    """`Out-File -Encoding utf8BOM` and Notepad start the file with one."""
+    (tmp_path / "m.md").write_bytes(b"\xef\xbb\xbf" + MARKDOWN.encode())
+    argv = ["say", "agt-a", "--type", "notice", "--body-file", str(tmp_path / "m.md")]
+    assert cli.main(argv) == cli.EXIT_OK
+    assert fake.signed()[-1].json()["body"] == MARKDOWN
+
+
+def test_only_a_leading_byte_order_mark_is_dropped(
+    joined: Path, fake: fakehub.FakeHub, events: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One inside the text is the writer's character, and stays."""
+    _stdin(monkeypatch, f"{BOM}a{BOM}b")
+    assert cli.main(["say", "agt-a", "--type", "notice", "-"]) == cli.EXIT_OK
+    assert fake.signed()[-1].json()["body"] == f"a{BOM}b"
+
+
+def test_a_byte_order_mark_at_the_end_of_a_file_stays(
+    joined: Path, fake: fakehub.FakeHub, events: None, tmp_path: Path
+) -> None:
+    """Only the first character can be a mark; anywhere else it is the writer's text."""
+    (tmp_path / "m.md").write_bytes(b"\xef\xbb\xbfa\xef\xbb\xbf")
+    argv = ["say", "agt-a", "--type", "notice", "--body-file", str(tmp_path / "m.md")]
+    assert cli.main(argv) == cli.EXIT_OK
+    assert fake.signed()[-1].json()["body"] == f"a{BOM}"
+
+
+def test_of_two_marks_at_the_start_only_the_first_goes(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    events: None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The first marks the encoding; a second one is already the writer's text."""
+    (tmp_path / "m.md").write_text(f"{BOM}{BOM}a", encoding="utf-8")
+    argv = ["say", "agt-a", "--type", "notice", "--body-file", str(tmp_path / "m.md")]
+    assert cli.main(argv) == cli.EXIT_OK
+    assert fake.signed()[-1].json()["body"] == f"{BOM}a"
+    _stdin(monkeypatch, f"{BOM}{BOM}a")
+    assert cli.main(["say", "agt-a", "--type", "notice", "-"]) == cli.EXIT_OK
+    assert fake.signed()[-1].json()["body"] == f"{BOM}a"

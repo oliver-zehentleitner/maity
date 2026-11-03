@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, insert, select, update
 
-from maity_hub import clock
+from maity_hub import catalog, clock
 from maity_hub import tables as t
 from maity_hub.notifications import mailer
 from tests import factory, flow
@@ -21,8 +21,14 @@ PUBLIC = "https://hub.example"
 
 @pytest.fixture
 def at() -> Any:
-    """Move the hub's clock: `at(minutes=3)` is three minutes after the test began."""
-    start = clock.now().replace(minute=10, second=0, microsecond=0)
+    """Move the hub's clock: `at(minutes=3)` is three minutes after the test began.
+
+    The test begins at 12:10 UTC of today, whenever it runs: the digests go out at a time of day
+    (`daily_at`, by default 08:00), so a start at the real hour let a test that moves the clock
+    by an hour cross 08:00 when CI ran shortly before it, and its "nothing yet" failed
+    (tsk-vhzhg5zpvxxf). 12:10 is far from the default; a test that needs another time of day
+    sets `daily_at` from `clock.now()`."""
+    start = clock.now().replace(hour=12, minute=10, second=0, microsecond=0)
     clock.set_source(lambda: start)
 
     def move(**delta: float) -> datetime:
@@ -43,6 +49,11 @@ def setup(make_client: ClientFactory, engine: Engine) -> tuple[flow.Human, flow.
     later = clock.now() + timedelta(seconds=30)
     clock.set_source(lambda: later)
     return owner, agent
+
+
+def hourly_chat(owner: flow.Human) -> None:
+    """Chat as an hourly digest; the default is daily since 2026-11-02 (§18.4)."""
+    assert owner.patch(S, {"email": {"kinds": {"chat": {"mode": "hourly"}}}}).status_code == 200
 
 
 def run(engine: Engine) -> int:
@@ -87,8 +98,10 @@ def test_a_language_the_hub_has_no_words_in_gets_the_english_mail(
     make_client: ClientFactory, migrated: Engine, at: Any
 ) -> None:
     owner, agent = setup(make_client, migrated)
+    # A listed language outside the ten the portal is translated into: the hub has no words in it.
+    assert not catalog.speaks("mail", "fi")
     assert (
-        owner.patch("/me/notification-settings", {"email": {"language": "ja"}}).status_code == 200
+        owner.patch("/me/notification-settings", {"email": {"language": "fi"}}).status_code == 200
     )
     ask(agent)
     at(minutes=3)
@@ -154,6 +167,7 @@ def test_hourly_items_wait_for_the_full_hour(
     make_client: ClientFactory, migrated: Engine, at: Any
 ) -> None:
     owner, agent = setup(make_client, migrated)
+    hourly_chat(owner)
     run(migrated)  # starts the hourly clock
     for n in range(2):
         agent.post(
@@ -298,6 +312,7 @@ def test_over_the_instance_budget_mail_waits_and_merges_into_one(
     from maity_hub import instance_settings as store
 
     owner, agent = setup(make_client, migrated)
+    hourly_chat(owner)
     run(migrated)  # starts the digest clocks
     with migrated.begin() as conn:
         store.put(conn, "mail.max_per_hour", 1, None)
@@ -325,6 +340,7 @@ def test_one_pass_sends_one_mail_and_stays_within_the_budget(
     from maity_hub import instance_settings as store
 
     owner, agent = setup(make_client, migrated)
+    hourly_chat(owner)
     run(migrated)  # starts the digest clocks
     with migrated.begin() as conn:
         store.put(conn, "mail.max_per_hour", 1, None)
@@ -420,6 +436,7 @@ def test_an_item_waiting_for_its_hour_keeps_the_passes_deriving(
     make_client: ClientFactory, migrated: Engine, at: Any
 ) -> None:
     owner, agent = setup(make_client, migrated)
+    hourly_chat(owner)
     run(migrated)
     agent.post(f"/projects/maintainer/maity/conversations/{agent.id}/messages", {"body": "later"})
     at(minutes=20)
@@ -575,3 +592,73 @@ def test_the_unsubscribe_link_of_a_notification_mail_leaves_with_the_mail(
     assert b"List-Unsubscribe" in server.record.data  # it did go out with the header
     rest = [r for r in rows if r.status == "waiting"]
     assert all(r.body and "List-Unsubscribe" in r.headers for r in rest)
+
+
+DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
+
+def test_chat_is_a_daily_digest_by_default(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    owner, agent = setup(make_client, migrated)
+    run(migrated)  # starts the digest clocks
+    agent.post(f"/projects/maintainer/maity/conversations/{agent.id}/messages", {"body": "hi"})
+    at(minutes=55)
+    run(migrated)
+    assert notifications(migrated) == []  # no hourly mail any more (§18.4)
+    ask(agent)  # the inbox stays immediate
+    at(minutes=58)
+    run(migrated)
+    [mail] = notifications(migrated)
+    assert "asks: Which?" in mail.body and "/chat/" not in mail.body
+
+
+def test_weekly_items_wait_for_their_day_and_hour(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    owner, agent = setup(make_client, migrated)
+    due = clock.now() + timedelta(hours=2)
+    owner.patch(
+        S,
+        {
+            "email": {
+                "daily_at": due.strftime("%H:%M"),
+                "weekly_on": DAYS[due.weekday()],
+                "kinds": {"chat": {"mode": "weekly"}},
+            }
+        },
+    )
+    run(migrated)  # starts the weekly clock
+    agent.post(f"/projects/maintainer/maity/conversations/{agent.id}/messages", {"body": "wk"})
+    at(hours=1)
+    run(migrated)
+    assert notifications(migrated) == []
+    at(hours=2, minutes=5)
+    run(migrated)
+    [digest] = notifications(migrated)
+    assert "/chat/" in digest.body
+    at(days=1, hours=2, minutes=5)
+    agent.post(f"/projects/maintainer/maity/conversations/{agent.id}/messages", {"body": "wk2"})
+    run(migrated)
+    assert len(notifications(migrated)) == 1  # the next one waits a week
+
+
+def test_a_sign_in_alert_in_a_digest_travels_with_it(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    owner, _ = setup(make_client, migrated)
+    assert owner.patch(S, {"email": {"kinds": {"security": {"mode": "hourly"}}}}).status_code == 200
+    run(migrated)  # starts the hourly clock
+    make_client(peer="198.51.100.41").post(
+        "/api/v1/auth/login", json={"handle": "maintainer", "password": factory.PASSWORD}
+    )
+    at(minutes=5)
+    run(migrated)
+    security = [r for r in outbox_rows(migrated) if r.kind == "security" and r.status == "waiting"]
+    assert security == [] and notifications(migrated) == []
+    at(minutes=55)
+    run(migrated)
+    [digest] = notifications(migrated)
+    assert "/account/" in digest.body or "session" in digest.body.lower()
+    waiting = [r for r in outbox_rows(migrated) if r.kind == "security" and r.status == "waiting"]
+    assert waiting == []  # no mail of its own: it went in the digest

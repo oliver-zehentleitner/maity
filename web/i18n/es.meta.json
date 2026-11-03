@@ -1143,10 +1143,6 @@
     "en": "647e98cce4691499",
     "text": "29764731a9fd621f"
   },
-  "bell.security_hint": {
-    "en": "b3bcd94f9fe4e53c",
-    "text": "0771aec9c0743f26"
-  },
   "bell.settings": {
     "en": "c749ce622125ec2a",
     "text": "98fd1dad9af4297e"
@@ -3519,6 +3515,14 @@
     "en": "b1f1ef269b21aacf",
     "text": "66a94d75609d7cc0"
   },
+  "error.maintenance_not_running": {
+    "en": "58e52c5607e41459",
+    "text": "8a74e23e1df6d2d9"
+  },
+  "error.maintenance_running": {
+    "en": "6215abdad2c9c05f",
+    "text": "54f5291bc3bccf28"
+  },
   "error.memory_full": {
     "en": "1d443815d36c4d47",
     "text": "e6754e98ee1dab25"
@@ -3714,6 +3718,10 @@
   "error.unauthenticated": {
     "en": "cb2b69a399606add",
     "text": "f876a60ae3af448b"
+  },
+  "error.upload_expired": {
+    "en": "390ab9fb8bdb7c70",
+    "text": "f37d0a52217432ef"
   },
   "error.version_exists": {
     "en": "d10b17f2f8fdf5cb",
@@ -12223,10 +12231,6 @@
     "en": "a9d14dc96a952550",
     "text": "014e6e7062d0abcb"
   },
-  "public_profile.hint": {
-    "en": "08b784924901f17f",
-    "text": "7e216f61a434b224"
-  },
   "public_profile.links": {
     "en": "5b3bd4bf0fd959d5",
     "text": "2f0a5fcdd3b35919"
@@ -13679,10 +13683,6 @@
     "en": "ceb846c9f1e324a3",
     "text": "1f9cdb11c1078bde"
   },
-  "sessions.alert_open": {
-    "en": "2a8a6c218d690279",
-    "text": "4f572b56d4cc4e0e"
-  },
   "sessions.banner.approved": {
     "en": "36d355755805147c",
     "text": "6f9c51840a2e30eb"
@@ -13710,14 +13710,6 @@
   "sessions.cannot_end.too_new": {
     "en": "130a7b20d904f44c",
     "text": "8ee61e0eb10eaec8"
-  },
-  "sessions.confirm.refused": {
-    "en": "479112e115109e21",
-    "text": "1e277401c4a063bf"
-  },
-  "sessions.confirm.unknown": {
-    "en": "060ed25d62d1fea1",
-    "text": "2ca415390014c026"
   },
   "sessions.confirmed": {
     "en": "38ab47d4615a9c3f",
@@ -16594,10 +16586,6 @@
   "visitor.holder.member": {
     "en": "5327c7984ea05cf1",
     "text": "737b080086f4c8b4"
-  },
-  "visitor.other_agents": {
-    "en": "d609f62988203fe5",
-    "text": "12ed6f19667fd5f2"
   },
   "visitor.others": {
     "en": "086354b8dd869a39",

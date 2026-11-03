@@ -97,6 +97,30 @@ at all, not even the visibility check, and the dashboard asks the owner
 to connect. Unset, the token serves no project. This narrows the third
 source of the entry above (4e15dcbb), which stands otherwise.
 
+The namespace's current handle is part of what the choice of a
+project's source depends on and is read again on every read, so a
+rename or a transfer out of the list takes effect on the next read, not
+after the choice's ten minutes; caching those facts would reopen that
+gap, and tests for both guard it. The first look at a new project's
+repository runs before the creating transaction, so that no row lock is
+held while the forge answers; it is made only where the new page can
+start `on` (the creator's own namespace, or an owner of an organisation
+that is not suspended), so that naming a listed organisation one cannot
+publish in cannot spend the operator's token.
+The look on a `PATCH` that names a new repository likewise comes only
+after a cheap check that the caller may make the change, since otherwise
+any signed-in account could make the operator's token read any URL by
+naming a project in a listed namespace, even one that does not exist.
+That check includes the namespace owner's right to the page fields, the
+look is made only when the page would stay `on`, and the namespace is
+the project's owner now, never the path's: after a transfer the old full
+name stays the project's alias and still names the listed former owner.
+Under the lock the transaction asks again whether the project is still
+listed, since a transfer may come between the look and the write.
+Making the look inside the transaction was rejected: it would hold the
+project's row lock while the forge answers. The transaction still checks
+the right under its lock.
+
 **Reason:** the maintainer wants projects to connect their repository
 to the forge themselves and keeps the instance's token for the
 operator's own projects.
@@ -158,3 +182,52 @@ not report something false when the forge stops answering.
 - Keeping the parts of a read that succeeded when the budget ran out
   partway: an `ahead: false` from a stale branch read is false, not
   unknown.
+
+## The Why view's Keep the Why views read whole exports through the hub: the project's family and the repositories it names, one hop, no other fetch path
+
+**Id:** 14288e6a-141e-4f93-8200-b879252c8ccd
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** tsk-nzhv3kgaxmpe (KTW M2), 2026-11-03: the arbiter's constraints on the card (forge reads only, no allow-list of raw or Pages hosts, caps and a shared cache, nothing growing with history per call); the shape of the reads proposed by its implementer in the contract pull request (docs/api.md §11.5) and ruled on by the arbiter: 8 repositories one hop, one 2 MiB cap, `not_in_family` as `not_found`, and named repositories never read with the owner's grant, read with the instance token only for the operator's own projects (the corrected ruling, which withdrew a first one that let the instance token read them for every project)
+**Revisit when:** private repositories of other owners are to be read (the card's step 2), or Keep the Why's views need `family`, `memberState` or `resolveEntry`
+
+Keep the Why's views, vendored into the dashboard (web/context/stack.md), ask their host for a repository's published export and for a lean export's entry texts. The hub answers both (§11.5) from the read §11.3 already makes: a `.keep-the-why` through the forge with the grant §11.4 picks, its `dashboard-state:` URL under the outbound rule of §11.1, held in memory, the cache shared with §11.3. It serves the project's own repository and its family, and the public repositories that family names by URL or as a parent, at most 8 and one hop; a repository named only inside an export (a See into another project) is refused as `not_in_family`, and the library shows the reference as not resolved. The library walks a family itself, export by export, so the hub serves one export per call and merges nothing.
+
+**Reason:** the dashboard runs under `default-src 'self'`, so the browser cannot read a forge or a Pages host itself; the hub already reads exactly these files for §11.3 and holds the grant, so the views read through it with no second path and no host trusted for its name. Bounding the repositories by the project's own `.keep-the-why` files keeps the set of reads in the hands of the repository's maintainers, not of whatever an export cites. A named repository is another owner's: it is never read with the project owner's App installation or token, only with the operator's instance token (for the operator's own projects) or without one, and only when public, so no third-party repository is touched with an owner's credentials, and the visibility check stays honest because neither reader sees a private repository on someone's behalf; those reads share the hub-wide budget of their source, not the owner's.
+
+**Rejected alternatives:** the browser reading exports directly, with their hosts in the policy: a `connect-src` that grows with every project's Pages host, and reads the hub cannot cap or cache. A hub proxy that reads whatever URL the library asks for: a second fetch path and a server-side request forgery surface, which the arbiter excluded. Following every repository an export cites: unbounded reads on the owner's grant, and a family that can pull in the forge. A merged family state from the hub: the library already merges, and two implementations of one merge drift. The Keep the Why server's `family`/`memberState` interface: it assumes checkouts on one machine, which the hub does not have. Reading a named public repository with the grant §11.4 picks for the project's own (the rule of the first contract draft): the owner's App installation or token would act on a third party's repository, which the arbiter ruled out; named repositories are read with the instance token only for a project in the operator's own namespaces, and without a token for every other project, which keeps the entry on the instance token's namespaces above as it is. Reading every project's named repositories with the instance token: the arbiter's first ruling, withdrawn the same day, because it would have made the operator's token serve every project's reads against that entry and let any project spend the operator's own budget.
+
+## A listed namespace name nobody has is held for the operator; an alias and the operator's own command are not
+
+**Id:** d74e201f-7f31-4a5e-8482-2c3d91b30353
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the project lead's decisions on the review of the contract (`docs/api.md` §11.4), 2026-11-02: the hold as a must, the exception for `maity-hub owner create`; the alias exception from the same review; card tsk-frfcjf7q1mja
+**Revisit when:** the instance token's namespaces are configured anywhere but the server's environment, or names can be released
+
+A name in `MAITY_FORGE_INSTANCE_NAMESPACES` that is neither the handle
+nor an alias of any human or organisation is `reserved` while it is
+listed: registration, `POST /orgs` and every rename refuse it, and the
+hub warns at start about it and about a listed name that is only an
+alias. `maity-hub owner create` may take it, and an alias stays with
+its id, which may take it back.
+
+**Reason:** the instance token reads for whatever namespace carries a
+listed name (ce611bd9). A typing error in the list, or an organisation
+the operator has not created yet, would otherwise let anyone register
+the name later and have their projects read with the operator's token.
+An alias needs no hold, since it is never another's (§6.24), and holding
+it would stop the operator taking back their own former name. `owner
+create` runs on the server with the hub's configuration and database,
+so whoever runs it is the operator who also sets the list.
+
+**Rejected alternatives:**
+- Only a warning at start, or the risk named as the operator's duty: a
+  warning in a log does not stop a registration.
+- Holding every listed name that is not a current handle, aliases
+  included: blocks the operator's own rename back.
+- Holding the name for `owner create` too: the operator could create
+  their own listed account or organisation only after taking the name
+  off the list and restarting.

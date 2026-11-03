@@ -637,7 +637,9 @@ must not publish its members by an update.
 
 **Rejected alternatives:**
 - Public by default with an opt-out: publishes people and projects who
-  never decided to be public.
+  never decided to be public. (Overturned by the maintainer: projects are
+  public by default since 2026-10-31 and profiles since 2026-11-02,
+  projects.md 038e685e.)
 - Rendering on every request: the same output at the cost of a render
   per crawler visit; a stored page is enough when it is rebuilt on change.
 - Only rendering on change, without a choice: the maintainer wanted the
@@ -660,6 +662,8 @@ must not publish its members by an update.
   their activity would be published by someone else's choice; they show
   only with their owner's public profile, the rest as a number (the
   separate `swarm_public` switch is gone, see projects.md bfe4c4a6).
+  (Overturned on 2026-11-02: an open project names every agent,
+  `hub/context/public-pages.md` 3da2d551.)
 
 ## A public project shows Overview, Board, Members, Organisation and Why; agents get pages under their owner; a person's links are theirs to show
 
@@ -675,9 +679,11 @@ page at the view's own address: Overview, Board, Members, Organisation
 and Why. Inbox, Chat, Messages and Ticker stay with the members, Runners
 and Settings with the owners. The Board shows each card's id, title,
 status and label, never its body, notes or history, and has no page per
-card. People and agents appear by name only where the person (or the
-agent's owner) has a public profile, otherwise as "a member"/"an agent"
-or an unnamed box. Why shows only what the hub already reads of Keep
+card. People and agents appeared by name only where the person (or the
+agent's owner) had a public profile, otherwise as "a member"/"an agent"
+or an unnamed box; since 2026-11-02 an open project names every member
+by handle and a card has its own page (`hub/context/public-pages.md`,
+3da2d551 and e3bcdf82). Why shows only what the hub already reads of Keep
 the Why (summary, dashboards, attention; never `context/`), and only
 while the repository is public, read with the instance's token — so
 only for a project in the operator's own namespaces (ce611bd9 in
@@ -888,6 +894,50 @@ sections are worth a link.
   not choose.
 
 
+## Every page without a session has the landing's header and footer, from one model the hub computes
+
+**Id:** 41837936-d085-4592-88d7-b1708a8b4b3a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-74rvy49kbv6s, the maintainer's go on the lead's four proposals and the designer's draft (2026-11-02); the lead's approval of the plan in three pull requests, with its rejected alternatives; contract `docs/api.md` §16.7.5
+**See:** scope.md#the-landing-header-links-only-the-sections-that-carry-a-short-nav_label-at-most-four — 7817872f-1876-40b2-8ec8-7ee4e2802991 — as of 2026-11-02
+
+The landing page, the legal pages, `/login` and `/register` show one
+header and one footer, the landing page's. The hub computes them once as
+a model (header links, sign in, call to action, footer columns, operator
+line, languages). It renders the landing page and the legal pages from
+that model and serves the same model as `GET /site/chrome` for the
+dashboard, which draws the sign-in and sign-up pages. Signed in, the
+app's header stays as it is.
+
+**Reason:** a visitor should not leave the site's frame between the
+landing page and signing in. The rules of the frame (which sections are a
+link, which legal pages are set, which social link a column above already
+has) are written once in the hub. A second copy in the dashboard would
+drift, and "a section that draws nothing is no link" depends on the
+renderer itself.
+
+**Rejected alternatives:**
+- The hub hands the dashboard the header and footer as finished HTML to
+  insert: that puts raw HTML from a response into the page, while the
+  dashboard builds its pages from text and elements only.
+- The dashboard computes the frame itself from `GET /landing` and
+  `GET /legal`: it would repeat the hub's rules in JavaScript, and the two
+  copies would disagree sooner or later.
+
+**Consequence:** the model holds only what the public landing page
+already shows. While the landing page is disabled, the operator line and
+the social links are in it only if a legal page is set, because only then
+does a page already show them; an operator preparing a landing page
+publishes nothing through the frame. Leaving them out always was
+rejected: the operator's line would then be missing beside the imprint,
+whose frame comes from the same model. A failed read of it draws the sign-in and sign-up pages
+without the frame, so signing in never depends on it. The pages that a
+mail's link opens (§2.7.1) keep their own small frame for now; they come
+later on their own card.
+
+
 ## The landing's counters show the real numbers, small ones too; cards done count across every project
 
 **Id:** 05b29565-5505-4bab-a67f-cfacef328964
@@ -945,3 +995,46 @@ page offers an instance nobody has to host.
 **Rejected alternatives:**
 - "Self-hosted hub" as the core sentence, the README's earlier opening: it
   names the deployment before the reader knows what is being deployed.
+
+
+## Every page of the platform's own interface ends with one product line, also on a self-hosted instance
+
+**Id:** ba8583f2-7a56-4435-8c4c-6ab2c9bf7378
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-bpww6m2s1pbf, the maintainer's decision (2026-11-03); the lead's answer to the contract question on which pages (2026-11-03); the maintainer's change to the credit, two icon links instead of a linked name, with "on" (card notes, 2026-11-03); contract `docs/api.md` §16.13
+**See:** scope.md#every-page-without-a-session-has-the-landings-header-and-footer-from-one-model-the-hub-computes — 41837936-d085-4592-88d7-b1708a8b4b3a — as of 2026-11-03
+
+The dashboard and the hub's own pages (the maintenance page, the pages
+behind links in mails, the join page in a browser) end with one small
+line: the Maity icon, "Maity" and the current year, "Found a bug?" to the
+project's GitHub issues, and "Made with ♥ by Oliver Zehentleitner on"
+two icons: GitHub's, linked to the maintainer's GitHub profile, and
+Maity's, linked to the maintainer's page on maity.team. The name itself
+is no link. It is part of the product and
+always shown, with no operator setting. The landing page, the legal
+pages, `/explore` and the public pages of §16.9 do not carry it.
+
+**Reason:** the line belongs to the software, not to an instance's
+content: whoever uses Maity, on any instance, sees where to report a bug
+and who makes it. The landing page and the legal pages are the operator's
+own site with the operator's footer, and the public pages show a
+member's or a project's content, so the product line stays off them. Both
+profile links are absolute: the maintainer's page exists only on
+maity.team, and on any other instance a relative link would be dead or
+name another account.
+
+**Rejected alternatives:**
+- A relative link to the maintainer's page on the same hub: dead, or
+  another account's page, on every self-hosted instance.
+- The name itself as the one link, to the page on maity.team: the
+  maintainer chose the two profiles, GitHub's and Maity's, as icon links
+  after the name ("on GitHub & Maity", where Maity was built), and the
+  name stays plain text.
+- An operator switch to hide the line: the maintainer decided it is part
+  of the product.
+- A sticky line at the bottom of the screen: it would take room on a
+  phone on every page.
+- The line on the landing and legal pages as well: they are the
+  operator's site and already end with the operator's footer.

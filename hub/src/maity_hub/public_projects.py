@@ -83,11 +83,11 @@ def served(conn: Connection, project: Any) -> bool:
     )
 
 
-def team(conn: Connection, project_id: str) -> tuple[list[Any], list[Any], int]:
-    """Who the page shows (§16.9): the human members whose own profile is public, the agents
-    whose owner's profile is public, and the number of the agents it does not show. Active
-    memberships only, in the order of the handles; an isolated agent (§6.28) is neither shown
-    nor counted."""
+def team(conn: Connection, project_id: str) -> tuple[list[Any], list[Any]]:
+    """Who the page names (§16.9): every human member and every agent, by handle, whatever
+    their profile says; an open project never only counts them. Active memberships only, in
+    the order of the handles. A person or agent profile under a hold of moderation (§16.8), a
+    suspended owner's agent and an isolated agent (§6.28) are neither named nor counted."""
     m = t.membership.c
     people = conn.execute(
         select(t.human)
@@ -117,7 +117,7 @@ def team(conn: Connection, project_id: str) -> tuple[list[Any], list[Any], int]:
     shown = [
         a for a in agents if a.id not in held and public_people.served(conn, owners[a.owner_id])
     ]
-    return humans, shown, len(agents) - len(shown)
+    return humans, shown
 
 
 STAT_DAYS = 30
@@ -151,7 +151,7 @@ def agent_statistics(
     agents = {row.id for row in rows}
     by_agent = {row.agent_id: row.id for row in rows}
     if named is None:
-        _, named, _ = team(conn, project_id)
+        _, named = team(conn, project_id)
     people = {
         by_agent[a.id]: {"handle": a.handle, "name": a.display_name, "display_name": a.display_name}
         for a in named
@@ -218,9 +218,10 @@ def _statistics_html(stats: dict[str, Any]) -> str:
 
 def pages_of_member(conn: Connection, human_id: str) -> list[tuple[str, str]]:
     """The public project pages that show the person: a member, or the owner of an agent that
-    is one (a person's profile turning private or public changes them, §16.9), and the card
-    pages whose holder or a note's author is one of those memberships, which name them as the
-    Board names a holder."""
+    is one (a moderation hold on the person's profile, its lifting, a rename or a change of
+    what the profile shows changes them, §16.9), and the card pages whose holder, a note's
+    author or a note's latest editor is one of those memberships, which name them as the
+    Board names a holder: by handle, or "member" while a hold stands."""
     from maity_hub import public_cards
 
     m = t.membership.c
@@ -249,7 +250,25 @@ def pages_of_member(conn: Connection, human_id: str) -> list[tuple[str, str]]:
         .join(t.project, t.project.c.id == t.card.c.project_id)
         .where(t.project.c.public_page == "on", *theirs)
     )
-    cards = sorted(set(conn.execute(held).scalars()) | set(conn.execute(noted).scalars()))
+    # The latest editor of a note is named on the page too; `edited` keeps their membership in
+    # JSON, so the few edited notes of the person's projects are matched here.
+    mine = set(
+        conn.execute(
+            select(m.id)
+            .join(t.project, t.project.c.id == m.project_id)
+            .where(t.project.c.public_page == "on", *theirs)
+        ).scalars()
+    )
+    edited = conn.execute(
+        select(t.card_note.c.card_id, t.card_note.c.edited)
+        .join(t.card, t.card.c.id == t.card_note.c.card_id)
+        .where(
+            t.card_note.c.edited.is_not(None),
+            t.card.c.project_id.in_(select(m.project_id).where(m.id.in_(mine))),
+        )
+    )
+    by_them = {row.card_id for row in edited if row.edited["by"] in mine}
+    cards = sorted(set(conn.execute(held).scalars()) | set(conn.execute(noted).scalars()) | by_them)
     return [(kind, project_id) for project_id in ids for kind in (KIND, VIEWS)] + [
         (public_cards.KIND, card) for card in cards
     ]
@@ -282,15 +301,14 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
         for u in shown_links
         if landing.safe_target(u)
     )
-    humans, agents, others = team(conn, project.id)
+    humans, agents = team(conn, project.id)
     people = "".join(
         f'<li><a href="/{escape(h.handle, quote=True)}">{escape(h.display_name)}</a></li>'
         for h in humans
     )
     bots = "".join(f"<li>{escape(a.display_name)} ({escape(a.handle)})</li>" for a in agents)
-    more = f"<p>and {others} more agent{'s' if others != 1 else ''}</p>" if others else ""
     team_html = (f"<h2>People</h2><ul>{people}</ul>" if people else "") + (
-        f"<h2>Agents</h2><ul>{bots}</ul>{more}" if bots else more
+        f"<h2>Agents</h2><ul>{bots}</ul>" if bots else ""
     )
     statistics = agent_statistics(conn, project.id, agents)
     statistics_html = _statistics_html(statistics)
@@ -351,7 +369,6 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
             }
             for a in agents
         ],
-        "other_agents": others,
         "statistics": statistics,
         "ticker": entries,
         # The snapshot's time: `data` is stored on every render, the HTML and the sitemap's

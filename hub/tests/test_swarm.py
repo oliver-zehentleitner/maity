@@ -462,3 +462,96 @@ def test_one_pull_request_is_one_key_however_its_url_is_written() -> None:
     a = swarm.pull_key("https://github.com/Oliver-Zehentleitner/Maity/pull/12")
     b = swarm.pull_key("https://github.com/oliver-zehentleitner/maity/pulls/12")
     assert a == b == "github.com/oliver-zehentleitner/maity#12"
+
+
+def presence(engine: Engine, membership_id: int, minute: datetime) -> None:
+    with engine.begin() as conn:
+        conn.execute(insert(t.presence_minute).values(membership_id=membership_id, minute=minute))
+
+
+def test_team_and_board_are_read_now(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, project_id: str
+) -> None:
+    agent = flow.agent(make_client, owner)
+    flow.agent(make_client, owner)
+    listening.opened(agent.resume().json()["session"]["id"])
+    creator = membership_of(migrated, owner.id)
+    for status in ("open", "open", "in_progress", "review", "blocked", "done", "cancelled"):
+        card(migrated, project_id, creator, status=status)
+    found = page(owner)
+    assert found["team"] == {
+        "agents": 2, "humans": 1, "instances": 2,
+        "online": {"agents": 1, "humans": found["team"]["online"]["humans"], "instances": 1},
+    }  # fmt: skip
+    assert found["board"] == {"open": 2, "in_progress": 1, "review": 1, "blocked": 1}
+    card(migrated, project_id, creator, status="review")
+    assert page(owner)["board"]["review"] == 2  # never cached
+
+
+def test_cards_created_and_merges_per_day_count_in_the_window(
+    owner: flow.Human, migrated: Engine, project_id: str
+) -> None:
+    creator = membership_of(migrated, owner.id)
+    card(migrated, project_id, creator, created_at=NOW - timedelta(days=1))
+    card(migrated, project_id, creator, created_at=NOW - timedelta(days=1), status="cancelled")
+    card(migrated, project_id, creator, created_at=NOW - timedelta(days=40))
+    pull = "https://github.com/maintainer/maity/pull/"
+    for number, days in ((1, 0), (2, 2), (3, 2)):
+        event(migrated, project_id, "ticker", NOW - timedelta(days=days), str(number), {
+            "type": "merge", "url": pull + str(number), "tasks": [],
+            "merge": {"pr": number},
+        }, subject_type="pull_request")  # fmt: skip
+    totals = page(owner, days=7)["totals"]
+    assert totals["cards_created"] == 2
+    per_day = {r["date"]: r["count"] for r in totals["cards_created_per_day"]}
+    assert len(per_day) == 7 and per_day["2026-10-24"] == 2 and sum(per_day.values()) == 2
+    merged = {r["date"]: r["count"] for r in totals["prs_merged_per_day"]}
+    assert merged["2026-10-25"] == 1 and merged["2026-10-23"] == 2 and sum(merged.values()) == 3
+
+
+def test_messages_count_by_type_and_review_results_per_merged_pr(
+    owner: flow.Human, migrated: Engine, project_id: str
+) -> None:
+    kinds = ["chat", "chat", "notice", "review_result", "review_result", "update", "blocker"]
+    for kind in kinds:
+        event(migrated, project_id, "message", NOW - timedelta(hours=1), None, {"type": kind})
+    event(migrated, project_id, "message", NOW - timedelta(days=40), None, {"type": "chat"})
+    totals = page(owner)["totals"]
+    assert totals["messages"] == {"chat": 2, "notice": 1, "review_result": 2, "other": 2}
+    assert totals["review_results_per_pr"] is None  # no merged pull request
+    event(migrated, project_id, "ticker", NOW, "1", {
+        "type": "merge", "url": "https://github.com/maintainer/maity/pull/1", "tasks": [],
+        "merge": {"pr": 1},
+    }, subject_type="pull_request")  # fmt: skip
+    swarm.CACHE.clear()
+    assert page(owner)["totals"]["review_results_per_pr"] == 2.0
+
+
+def test_awake_counts_the_last_24_full_hours_with_an_agent_online(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = membership_of(migrated, flow.agent(make_client, owner).id)
+    other = membership_of(migrated, flow.agent(make_client, owner).id)
+    human = membership_of(migrated, owner.id)
+    presence(migrated, agent, NOW - timedelta(hours=1, minutes=-5))  # 11:05, hour 11
+    presence(migrated, other, NOW - timedelta(minutes=50))  # 11:10, the same hour
+    presence(migrated, agent, NOW - timedelta(hours=5))  # 07:00
+    presence(migrated, agent, NOW - timedelta(hours=24))  # 12:00 yesterday, the first hour
+    presence(migrated, agent, NOW - timedelta(hours=25))  # before the 24 hours
+    presence(migrated, agent, NOW)  # the current hour has not run in full
+    presence(migrated, human, NOW - timedelta(hours=3))  # a human is no agent
+    assert page(owner)["awake"] == {
+        "hours": 3, "of_hours": 24, "since": "2026-10-24T12:00:00Z",
+    }  # fmt: skip
+
+
+def test_a_public_page_gets_none_of_the_swarm_as_a_whole(
+    owner: flow.Human, migrated: Engine, project_id: str
+) -> None:
+    # Closed with the block: left open, its read would hold locks the next test's TRUNCATE waits
+    # for without end on PostgreSQL (tsk-xz3bxa5cwv4v).
+    with migrated.connect() as conn:
+        found = swarm.CACHE.get(conn, project_id)
+    folded = swarm.fold(found, {}, days=30, include=lambda _m: True, public_only=True)
+    assert not {"cards_created", "messages", "prs_merged_per_day"} & set(folded["totals"])
+    assert {"team", "board", "awake"}.isdisjoint(folded)

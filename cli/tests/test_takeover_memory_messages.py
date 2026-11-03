@@ -249,6 +249,17 @@ def test_memory_add_soul_proposes_the_file(
     assert "request req-0100 waits for your owner" in capsys.readouterr().out
 
 
+def test_memory_add_soul_drops_a_leading_byte_order_mark(
+    joined: Path, fake: fakehub.FakeHub, tmp_path: Path
+) -> None:
+    """The soul file goes through the same reader as every other text file."""
+    (tmp_path / "soul.md").write_bytes(b"\xef\xbb\xbfI write small PRs.\n")
+    fake.routes[("POST", "/api/v1/me/soul/proposals")] = lambda s: (202, {"id": "req-0100"})
+    argv = ["memory", "add", "--soul", str(tmp_path / "soul.md"), "--reason", "learned it"]
+    assert cli.main(argv) == cli.EXIT_OK
+    assert fake.signed()[-1].json()["markdown"] == "I write small PRs.\n"
+
+
 @pytest.mark.parametrize(
     "argv",
     [["memory", "--community", "add", "x"], ["memory", "--soul", "add", "x"],

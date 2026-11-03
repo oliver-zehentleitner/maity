@@ -2015,13 +2015,22 @@ def verify_address(run: Run, page, catcher: MailCatcher) -> None:
     """The owner's own address, verified by the mail's link: the code of the switch goes there."""
     seen = len(catcher.mails)
     page.evaluate("""(password) => window.Maity.api.post("/auth/reauthenticate", { password })""", OWNER_PASSWORD)
-    page.evaluate("""(address) => window.Maity.api.patch("/me/notification-settings", { email: { address } })""", MAIL_ADDRESS)
+    # Set in the account's Mail section (§18.4), the form against the real hub.
+    page.goto(f"{run.base}/account/notifications")
+    section = page.locator("section.mail-address")
+    expect(section.locator(".mail-address-state")).to_have_text("No mail address yet: Maity sends you no mail.")
+    page.locator("#mail-address").fill(MAIL_ADDRESS)
+    section.get_by_role("button", name="Save the address", exact=True).click()
+    expect(section).to_contain_text(f"A link to confirm it went to {MAIL_ADDRESS}.")
+    expect(section.locator(".mail-address-state")).to_have_text(f"Not confirmed yet: follow the link sent to {MAIL_ADDRESS}.")
     # The hub's signed token is `<body>.<mac>`, both base64url (notifications/tokens.py).
     token = re.search(r"/mail/verify/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)", newest_mail(catcher, MAIL_ADDRESS, seen))
     assert token, "no verification link in the mail"
     page.evaluate("""(token) => window.Maity.api.post("/me/notification-settings/email/verify", { token })""", token.group(1))
     settings = page.evaluate("""() => window.Maity.api.get("/me/notification-settings")""")
     assert settings["email"]["address_status"] == "verified", settings["email"]
+    page.reload()
+    expect(page.locator("section.mail-address .mail-address-state")).to_have_text(f"Mail goes to {MAIL_ADDRESS}.")
 
 
 def turn_on_mail_factor(run: Run, page, catcher: MailCatcher) -> None:
@@ -2806,14 +2815,53 @@ def notifications_step(run: Run, page: Page) -> None:
     assert (len(order) == 5 + lead and "chat-button" in order[lead] and "add" in order[1 + lead]
             and "bell-box" in order[3 + lead] and "profile" in order[4 + lead]), f"header order: {order}"
     page.set_viewport_size({"width": 390, "height": 844})
-    # One row: every button's vertical middle within the others' height (a pixel of alignment is no wrap).
-    boxes = page.evaluate("Array.from(document.querySelectorAll('header .me > *')).map((e) => { const r = e.getBoundingClientRect(); return [r.top, r.bottom]; })")
+    # One row with the logo: every shown button's vertical middle within the others' height and the
+    # logo's (a pixel of alignment is no wrap). The Lead is hidden there; the Chats page carries it
+    # (the maintainer, tsk-m9ew7v609fq0).
+    boxes = page.evaluate("Array.from(document.querySelectorAll('header .me > *, header .bar .brand')).filter((e) => e.offsetParent).map((e) => { const r = e.getBoundingClientRect(); return [r.top, r.bottom]; })")
     middles = [(top + bottom) / 2 for top, bottom in boxes]
-    assert all(top <= m <= bottom for top, bottom in boxes for m in middles), f"the header's four buttons wrap at 390 px: {boxes}"
+    assert all(top <= m <= bottom for top, bottom in boxes for m in middles), f"the header's buttons wrap under the logo at 390 px: {boxes}"
+    assert page.evaluate("!Array.from(document.querySelectorAll('header .me > *')).some((e) => e.offsetParent && /lead-button/.test(e.className))"), "the Lead is hidden in the header at 390 px"
     page.set_viewport_size({"width": 1280, "height": 900})
     run.step("chats: the Chat button opens every chat across the projects")
     page.locator("header a.chat-button").click()
     expect(page).to_have_url(re.compile(r"/chats$"))
+    expect(page.locator("main section.view-chats h2")).to_have_text("Chats")
+    # On a phone the Chats page carries the Lead the header hides there. The scenario's agents are
+    # members, so no project has a lead to reach: the members list of E2E Alpha is answered with its
+    # agents as admins for this check alone, which gives the header a Lead (spq4 at #1271).
+    members = re.compile(r"/api/v1/projects/owner/e2e-alpha/members(\?|$)")
+
+    def as_admins(route) -> None:
+        body = route.fetch().json()
+        for item in body.get("items", []):
+            if item.get("kind") == "agent" and item.get("role") != "proxy":
+                item["trust"] = "admin"
+        route.fulfill(json=body)
+
+    page.route(members, as_admins)
+    try:
+        page.reload()
+        expect(page.locator("header .me .lead-button")).to_be_visible()
+        page.set_viewport_size({"width": 390, "height": 844})
+        expect(page.locator("header .me .lead-button")).to_be_hidden()
+        expect(page.locator("main .chats-lead .lead-button")).to_be_visible()
+        # Several leads are a menu; under the heading at the left edge it opens from that edge, on
+        # screen (e5kk at #1271). Drawn with a second lead beside the real one.
+        box = page.evaluate("""() => new Promise((ok) => {
+          const ctx = document.getElementById('header').chatCtx; const t = ctx.chatFound.list[0];
+          const two = { list: [t, { ...t, member: { ...t.member, id: t.member.id + '-2', display_name: 'Second lead' } }], multiProject: false };
+          const slot = document.querySelector('main .chats-lead');
+          const before = slot.firstChild; slot.replaceChildren(window.Maity.leadChat.leadControl(ctx, two));
+          slot.querySelector('button').click();
+          setTimeout(() => { const r = slot.querySelector('.menu').getBoundingClientRect(); slot.replaceChildren(before); ok([r.left, r.right, innerWidth]); }, 100);
+        })""")
+        assert box[0] >= 0 and box[1] <= box[2], f"the Chats page's lead menu leaves the screen at 390 px: {box}"
+        page.set_viewport_size({"width": 1280, "height": 900})
+        expect(page.locator("main .chats-lead .lead-button")).to_be_hidden()
+    finally:
+        page.unroute(members, as_admins)
+    page.reload()
     expect(page.locator("main section.view-chats h2")).to_have_text("Chats")
     run.a11y(page, "chats across projects")
     run.step("all projects: Inbox, Chats and Agents lead its pages; Inbox leads back to the requests")
@@ -3195,6 +3243,35 @@ def project_links_step(run: Run, page: Page) -> None:
     issues = page.locator("header .project-state a.header-link", has_text="Issues")
     expect(issues).to_have_attribute("href", "https://issues.example.org/e2e")
     expect(issues).to_have_attribute("rel", "noopener noreferrer")
+    # On a phone the links are one row that scrolls sideways; the state stays in sight beside it,
+    # scrolled to either end (the maintainer, tsk-m9ew7v609fq0).
+    page.set_viewport_size({"width": 360, "height": 780})
+    tops = page.evaluate("Array.from(document.querySelectorAll('header .project-links > a')).map((a) => Math.round(a.getBoundingClientRect().top))")
+    assert len(set(tops)) == 1, f"the project's links wrap at 360 px: {tops}"
+    # With an absence beside the state it needs more room than the row leaves, so it wraps under
+    # the row; the row keeps a usable width and nothing scrolls the page sideways (spq4 at #1271).
+    # The absence is set here and ended after the check, so the steps after see none.
+    page.set_viewport_size({"width": 1280, "height": 900})
+    until = page.evaluate("""() => { const d = new Date(); d.setDate(d.getDate() + 7); d.setHours(10, 0, 0, 0);
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T10:00`; }""")
+    page.locator("#absence-until").fill(until)
+    page.locator("#absence-scope").fill("e2e: links beside an absence")
+    page.get_by_role("button", name="Set absence", exact=True).click()
+    expect(page.locator("header .project-state > .state.away")).to_have_count(1)
+    page.set_viewport_size({"width": 360, "height": 780})
+    row = page.locator("header .project-links").bounding_box()
+    assert row and row["width"] >= 140, f"the link row is squeezed to {row} at 360 px"
+    width = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+    assert width[0] <= width[1], f"the page is {width[0]} px wide at {width[1]} px with an absence"
+    for end in (0, 9999):
+        page.locator("header .project-links").evaluate("(e, x) => { e.scrollLeft = x; }", end)
+        parts = page.evaluate("Array.from(document.querySelectorAll('header .project-state > :not(.project-links)')).map((e) => { const r = e.getBoundingClientRect(); return [e.className, r.left, r.right]; })")
+        assert parts and all(left >= 0 and right <= 361 for _, left, right in parts), f"the state leaves the screen at scroll {end}: {parts}"
+    run.shot(page, "project-links-phone")
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.get_by_role("button", name="I am back", exact=True).click()
+    expect(page.locator("header .project-state > .state.away")).to_have_count(0)
     run.shot(page, "project-links")
     run.a11y(page, "project links")
     no_problems(run, "project links")

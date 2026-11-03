@@ -114,6 +114,7 @@
   "register_page.legal_privacy": "Datenschutzerklärung",
   "register_page.legal_terms": "Nutzungsbedingungen",
   "register_page.password": "Das Passwort, das du bei der Anfrage gewählt hast",
+  "register_page.public": "Dein Name und dein Handle sind öffentlich sichtbar. Der Name kann frei gewählt sein; er muss nicht dein echter sein. Dein Profil ist standardmäßig öffentlich, mit deinen öffentlichen Projekten und dem Text und den Links, die du dort zeigen willst, und die öffentlichen Seiten deiner Projekte zeigen, wann du online bist; beides kannst du in deinem Konto ausschalten.",
   "register_page.terms": "Ich akzeptiere die Bedingungen ({url}, Version {version})",
   "register_page.terms_changed": "Die Bedingungen haben sich geändert, während die Seite offen war. Lies sie noch einmal und bestätige sie.",
   "register_page.title": "Maity-Konto anlegen",

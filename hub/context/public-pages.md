@@ -79,7 +79,8 @@ can give; a registry keeps each kind's rendering next to its inputs and gives th
 
 **Id:** 833b0f1f-5dad-43c8-b7e6-a22cdaa26c9f
 **Type:** decision
-**Status:** needs-review
+**Status:** superseded
+**Superseded by:** 3da2d551-c8a5-420d-b777-b3be88121199
 **Evidence:** confirmed
 **Source:** `docs/api.md` §16.9 ("A person's page", "What is never served"); the review of the engine step (#723) on a process without the app
 **Revisit when:** a person can be shown on the page of a project they are a member of (step 4), a second place sets `public_profile`, or a handle can be renamed (#523): the rename is one more path that must `touch` the person, or the page stays under the old handle
@@ -106,6 +107,47 @@ public page they could reorder or hide text to make one person's words read as a
   the bio is read on every render.
 - Rendering a person's page for any member of a public project: the contract shows members by their own
   choice only.
+
+## Every active account has a page and an open project names its members; `public_profile` decides how much the page shows
+
+**Id:** 3da2d551-c8a5-420d-b777-b3be88121199
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-02, relayed by the lead on card tsk-my5gvj4warte (the card's body and the lead's answers on it); for who is online, the maintainer's answer the same day (request req-jkqzzy638k10): yes in principle, but a person must be able to turn their online status off in the settings; contract `docs/api.md` §2.7.1, §6.22, §6.27, §16.9
+**Revisit when:** a person needs to work in an open project without being named there, or a profile that is off should keep a visitor from its page altogether
+**See:** https://github.com/oliver-zehentleitner/maity — 038e685e-62bb-4f21-be5d-ab4a58b9c444 — as of 2026-11-02
+
+It supersedes 833b0f1f, whose `touch` paths stay as written there. `public_profile` defaults to on, and the migration `20261102110000_profiles_public` switched every
+existing account on; an instance that upgrades later has its accounts of that moment switched the same
+way, so its operator tells their users first (the changelog says so). `public_people.served` no longer reads it: every active account that is not suspended
+or deleted and whose profile is under no hold of moderation has its page at `/{handle}` and is named on the
+pages of its open projects, by handle, on the Overview, Board, Members, Organisation, a card's page and the
+snapshot alike, who is online included (on `main` before, an online member with the profile off was only
+counted); the setting to keep one's online status off the public pages came on its own card (54823a3a), and
+this change goes to production only together with it; `public_projects.team` counts nobody it does not name, so "and N more agents" is gone. The
+switch decides what the page shows: on, the bio, the links under `everyone` and the public projects; off,
+only the name, the handle and the agents, with `noindex` in the page and its headers (`public_page.indexed`,
+which the sitemap also skips). With the profile off, the bio, the links and the list of projects are for the
+members of a shared project, in the dashboard (`GET /people/{handle}`). The registration's link page says
+that the name and the handle are public, that the name need not be the real one, and that the profile is
+public by default (the public projects, the text and links one chooses to show) and can be turned off in the
+account. An agent's page links
+its owner's page, which now always exists while the owner has an account in good standing.
+
+**Reason:** an open project follows the forge model the maintainer chose for projects and profiles
+(038e685e): on a forge every contributor is named by handle on the work and has a profile page. Who acts in
+a project that is open by choice is part of what it shows; what stays a person's choice is what is personal
+(bio, links, the list of projects), and a name that need not be the real one keeps a person's identity theirs.
+
+**Rejected alternatives:**
+- A profile that is off is only counted, never named (the rule until then): the Board and the card pages
+  would show holders and note authors as "a member", and an agent's page could not name whose agent it is
+  without publishing what its owner withheld.
+- No page at all with the profile off: a name on a project's page would lead nowhere, and an agent's page
+  could not link its owner.
+- Switching existing accounts only after a notice and a waiting period: the mechanism was struck from the
+  contract with #1176; the instance's existing users are told before the deploy instead.
 
 ## A process without the app configures the public pages itself before it changes an input
 
@@ -283,11 +325,11 @@ repository's URL is a leak that cannot be taken back from a crawler.
 **Source:** `docs/api.md` §16.9 ("A project's page", "How the pages are made"); the plan of 2026-10-30 on the cards tsk-w89mspg3gwx1 and tsk-xr6fqx8e0vw5
 **Revisit when:** a page shows a fact of a person that no event of a membership or of the person's page announces
 
-A project's page lists the human members whose own profile is public (a link to their page) and the agents
-whose owner's is, and counts the other agents (`public_projects.team`). Two things keep that true. A person's
+A project's page lists every human member (a link to their page) and every agent (`public_projects.team`);
+since 2026-11-02 whatever their profile says, and a person or agent under a hold is left out, not counted
+(entry 3da2d551). Two things keep that true. A person's
 page and the project pages that show them change together: a kind may name its `dependents`, and `touch` of a
-person renders those project pages with the person (a profile going private or public, a bio, a suspension, a
-deletion). And a membership changes through events: `events.emit` calls `touch` for the project of a
+person renders those project pages with the person (a name, a hold, a suspension, a deletion). And a membership changes through events: `events.emit` calls `touch` for the project of a
 `member_joined` (an addition: it waits for the run under `interval`) or a `member_updated` (a removal, an
 agent profile deleted among them) when the project's page is on, so the many places that add or remove a
 member need no call of their own. Every `member_updated` counts as a possible removal and renders at once
@@ -341,7 +383,7 @@ moment.
 - A `touch` in every card write: the cards are the hub's busiest writes, and a count is not something that
   has to go.
 - Totals only, the rows per agent left to the agent's page: this was the first reading, and §6.22 says
-  otherwise for agents whose owner's profile is public; the contract won (review of #806).
+  otherwise for the agents the page names; the contract won (review of #806).
 - Folding over everyone and hiding the humans' rows: the totals would still carry the humans' work.
 
 ## The Board, Members and Organisation are a second kind of page that follows the cards at once
@@ -384,9 +426,9 @@ and the people of the overview.
 **Source:** `docs/api.md` §16.9 ("An agent's page", "A person's page"), §6.22; the plan of 2026-10-30 on the cards tsk-w89mspg3gwx1 and tsk-xr6fqx8e0vw5
 **Revisit when:** an organisation's page lists agents, or §6.22 counts a median over something the window does not keep
 
-`public_agents` renders `/{owner}/agents/{handle}` while the owner's profile is public, no hold of moderation stands on the agent's profile and the agent is an active, not isolated member of at least one project whose page is served. Two things keep the page true. The kind `project` names the agent pages of its agents and the person pages that list it or them (its human members' and the owners' of its agent members, who need not be members: `touch` goes one level deep) as dependents, so a project's page going on or off, its name, a member joining, leaving or being isolated renders them at once, and the last public project going takes the agent's page with it. The kind `person` names the agent pages of the person's agents: the page's address contains the owner's handle and its existence follows the owner's profile. The person's page lists the public projects they are a member of and their agents that have a page, from the same `served` rules. The statistics are the agent's own counters summed over its public projects and its two medians over the pooled samples of all of them (`swarm` windows read per project), because a median of medians is no median; a project that is not public contributes nothing. The Members view of a project links a named agent to this page, since the agent is named exactly when the page exists.
+`public_agents` renders `/{owner}/agents/{handle}` while the owner has a page (since 2026-11-02 every active account without a hold, whatever its `public_profile`, entry 3da2d551), no hold of moderation stands on the agent's profile and the agent is an active, not isolated member of at least one project whose page is served. Two things keep the page true. The kind `project` names the agent pages of its agents and the person pages that list it or them (its human members' and the owners' of its agent members, who need not be members: `touch` goes one level deep) as dependents, so a project's page going on or off, its name, a member joining, leaving or being isolated renders them at once, and the last public project going takes the agent's page with it. The kind `person` names the agent pages of the person's agents: the page's address contains the owner's handle and its existence follows the owner's account and holds. The person's page lists the public projects they are a member of and their agents that have a page, from the same `served` rules. The statistics are the agent's own counters summed over its public projects and its two medians over the pooled samples of all of them (`swarm` windows read per project), because a median of medians is no median; a project that is not public contributes nothing. The Members view of a project links a named agent to this page, since the agent is named exactly when the page exists.
 
-Contract changed, code follows: since #1176 (2026-11-02) an agent's page no longer depends on its owner's `public_profile`; it stands while the agent is in a public project and names its owner by handle and name. Until the implementation follows, the hub still renders the page only while the owner's profile is public. Whether Board and Members then always name an agent, and what the owner's page shows with `public_profile` off, is the profile contract's (tsk-my5gvj4warte).
+Since #1176 and the profile change of tsk-my5gvj4warte (both 2026-11-02) the page no longer depends on its owner's `public_profile`: it names and links its owner, whose page exists with the profile off too, and Board and Members always name the agent (entry 3da2d551).
 
 **Reason:** an agent belongs to several projects and the page speaks for all the public ones; a page that is stored and taken off in the changing transaction needs every input to name the pages that show it.
 
@@ -618,9 +660,13 @@ state once resolved, and its body as Markdown without raw HTML. A redacted note 
 neither its text nor the redaction's reason is published, since a reason may repeat what was removed. A resolved
 note shows its state but not its `resolution` (who, when, why): the reason is written to the note's author and
 the card's people, as a redaction's is, and the state alone says what became of the note. A note's own
-events (`note_added`, `note_resolved`) and its redaction call `touch` for the card, and an author's profile change
+events (`note_added`, `note_resolved`, `note_edited`) and its redaction call `touch` for the card, and an author's profile change
 reaches the page through the person's dependents, as a holder's does. Notes have no moderation target of their own:
 they follow the card's hold and the `security` rule with it.
+An edited note shows its new text with "edited by", the editor named as an author is, the date and the edit's reason;
+the old text is gone with the render in the same transaction (`context/cards.md` 0e6b3b31). Unlike a redaction's
+reason, an edit's reason is published: the maintainer decided it is shown with the edit mark to every reader, and its
+writer knows that, while a redaction's reason is written for the members (2026-11-02, tsk-bj9yb4d8f2cg).
 
 **Rejected:**
 - Only open notes: an incorporated or dismissed note is part of the discussion an issue keeps, and the page would
@@ -642,7 +688,11 @@ item by the card page's rule: a merge only from a repository last seen public an
 page; a decision only on such a card; deploys, releases, notes, renames and jour fixe reports never, since their
 text names what the card rule does not cover. `public_snapshot.Worker` renders every public project page again every
 `MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES` under one `worker_runs` claim; presence is read at that moment. A card change
-that may take a ticker item off renders the project page at once, so a removal never waits for the timer.
+that may take a ticker item off renders the project page at once, so a removal never waits for the timer; a new
+item waits for it. Who is online is counted as the names are shown: a member the page does not name (a profile
+under a hold, a person who keeps their online status off) is not counted either, since a count beside the names
+would point at them; the contract always said so, and the hub counted them until the online switch's change. Known and left so: a decision's text keeps
+the card's title from the moment it was decided, since a ticker item is stored text; a later rename does not change it.
 
 The load grows with the page cache, not with connections: a visitor reads a stored row behind the public cache and
 reloads to see more, and the hub's cost is one render per project per interval, whatever the number of visitors.
@@ -654,3 +704,80 @@ change only with what the page shows.
   for a load test.
 - Rendering on every ticker item and presence change: presence changes all the time, and every agent's heartbeat
   would render a page.
+
+## A card event renders only the project's own page, and only when it may take a ticker item off
+
+**Id:** 721bcdfa-9464-4b57-b885-a1455f5adbb8
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** production incident of 2026-11-03 after the deploy of `634f0f60`: `lock_project` waits on the maity project ended in statement timeouts (57014, 503); the holder was idle in transaction with in_state 0 s while its age grew, its last statement the `moderation_hold` read of a card page's render; the lead's go on this fix the same day; the review of #1277 (the member events as a follow-up, card tsk-2k10yf9w7kzw)
+**See:** public-pages.md#a-public-project-shows-a-snapshot-of-its-ticker-and-who-is-online-rendered-on-a-timer-never-live — 65c0167c-f61c-419a-9506-8d9453edd482 — as of 2026-11-03
+**See:** public-pages.md#a-page-is-rendered-again-in-the-transaction-that-changed-its-input-by-a-registry-of-kinds — b7a13a49-7c56-49d6-bc18-4622b21d0077 — as of 2026-11-03
+**Revisit when:** the API can set the `security` label or move a card out of `done`, or another input of the ticker's card rule appears
+
+`events.emit` holds the project row (`lock_project` is its first statement). For a card event of a public project
+it renders the Board and the card's own page as before, and the project's page only when the event may take a
+ticker item off: a label change, or a status change of a `security` card (`_hides_ticker_entries`, the two inputs
+of `public_cards.shown`; a hold is `moderation.apply`'s). That render is `touch(..., dependents=False)`: the
+project's own page, none of its dependents, since only that page shows the ticker. Everything else reaches the
+page with the snapshot worker. Through the API this render does not happen today: `security` is not a label the
+API sets, and `done` has no way out; the rule guards imported cards and a later change of either.
+
+**Reason:** from the ticker's change on, every card event except a creation called `touch(conn, "project", …)`
+with its default `removal`, which renders the project's page and every dependent at once: the views, the org,
+the agent and person pages, and every card page of the project. On a project with many cards each claim,
+report or edit made hundreds of short queries inside the transaction that holds the project row, and every other
+write to the project waited behind it. Single-server setups are affected the same way; nothing here is opt-in.
+
+**Rejected alternatives:**
+- Rendering the project page with its dependents on every card event (the state before): the incident above.
+- Dropping the at-once render and leaving every card change to the snapshot worker: a removal from a public page
+  never waits for a timer (`docs/api.md` §16.9), and a hold or an imported `security` card still needs it.
+- Rendering after the commit, outside the lock: the removal belongs to the transaction that changed the input
+  (b7a13a49), and a second transaction after the commit could fail and leave the page stale.
+
+The member events take the same path with one filter (tsk-2k10yf9w7kzw): a `member_updated` whose `changed`
+fields are all in `events.UNSHOWN_MEMBER_FIELDS` renders nothing. These are the language (one event per project of
+the person, each under that project's row), the line consent, and a dormant instance or outage policy, which only
+change who is online and so wait for the snapshot. Every other member change, a join, and an update that names no
+`changed` fields still renders the project page with its dependents, since a member's name stands on the card
+pages they hold. Rejected: naming the fields a page shows instead (an allowlist), because a field added later
+would silently leave a stale name on a public page; a field missing from the list only costs a render.
+
+## A person can keep their online status off the public pages; their projects' pages then neither name nor count them
+
+**Id:** 54823a3a-96be-4484-9689-8059201b1bb3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer of 2026-11-02 on request req-jkqzzy638k10 (an open project may name who is online, but a person must be able to turn that off in the settings); the maintainer's answer the same day on request req-dv6p6588avjn (option b: a project's page neither names nor counts a person who turned it off, the instance-wide counts still count them); the lead's choices on card tsk-my5gvj4warte the same day (the switch covers the person only, not their agents), which the maintainer approved; the maintainer's answers of 2026-11-03 on requests req-h6z5ddvkeest (the registration note names the switch) and req-yv0z4eq2pwk2 (`people_online` keeps counting, and the account says so); contract `docs/api.md` §16.9 ("Online on public pages")
+**See:** public-pages.md#a-public-project-shows-a-snapshot-of-its-ticker-and-who-is-online-rendered-on-a-timer-never-live — 65c0167c-f61c-419a-9506-8d9453edd482 — as of 2026-11-02
+**Revisit when:** the maintainer wants the switch to cover a person's agents, wants `people_online` to leave them out after all, or a project's page gets another count of who is online
+
+`human.public_presence` (default `true`) is set in Your account next to `public_profile`. While it is `false` the
+snapshot's Online on the person's projects leaves them out entirely: no name, and not in `online.humans`. The
+landing page's `people_online` still counts them: it covers the whole instance and names no project; the badge
+counts agents only. Turning the switch off takes the person off at once, as every
+removal from a public page is; turning it on waits for the next snapshot. The switch never covers the person's
+agents: an agent is public work, named by its handle like everywhere else on the page. Since the switch starts on,
+the note under the display name at registration says so before the account exists, beside the public profile
+(the maintainer's decision on request req-h6z5ddvkeest, 2026-11-03, card tsk-en9mm6x2v3s0).
+
+Known and left so: the landing page's number and the sum of the project pages' numbers can differ by the people who
+turned the switch off. On an instance with a single public project whose landing page shows `people_online` (a
+self-hosted instance, typically), that difference is at most the number of members online with the switch off
+(exactly that when every human of the instance is a member of that project), and when there is exactly one it can
+be that person; the two numbers are computed on different timers, which blurs it but does not
+close it (found in the review of the contract). The maintainer decided on 2026-11-03 (request req-yv0z4eq2pwk2)
+that `people_online` keeps counting them, and that the note under the switch in the account says so: the start
+page's number still counts you, without your name (card tsk-en9mm6x2v3s0).
+
+**Rejected:**
+- Counted, not named: "humans online" minus the names shown is exactly the one person who turned it off, however
+  many members a project has (found in the review of the contract); the maintainer chose to leave them out of the
+  count instead.
+- Leaving the person out of the instance-wide counts as well: no project is named there, so nothing points at
+  anyone, and the landing page would need a filter of its own.
+- A second switch for the person's agents: not wanted now; the lead puts it to the maintainer.

@@ -54,6 +54,7 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("event", "actor_human_id"): True,
     ("handle_register", "owner_id"): True,  # a human's or an organisation's id
     ("human_session", "approved_by"): False,  # the approving session's public id
+    ("human_session", "confirmed_by"): False,  # the confirming session's public id
     ("human_session", "ended_by"): False,  # why: `logout`, `revoked`, …
     ("idempotency_key", "caller"): True,
     ("instance_landing", "updated_by"): True,
@@ -125,6 +126,8 @@ DELETION_KEEPS = {
     "jour_fixe_series": "an owner's series stays, disabled, until a human with `project:admin` "
     f"deletes it (§20.1); who created a series: {_RECORD}",
     "legal_version": f"who wrote a version of a legal page: {_RECORD}",
+    "maintenance_change": f"who set, changed, cancelled or ended a maintenance window: {_RECORD}",
+    "maintenance_window": f"who set or last changed a maintenance window: {_RECORD}",
     "memory_entry": f"who confirmed a project memory entry: {_RECORD}",
     "project": "an archived project of the namespace stays under its name (§2.9); "
     "the deletion reads projects for `namespace_owner` only",
@@ -179,6 +182,8 @@ EXPORT_LEAVES_OUT = {
     "jour_fixe_moderator": f"names a person only as who granted a right; {_UNLISTED}",
     "jour_fixe_series": f"the project's jour fixe, not the caller's data; {_UNLISTED}",
     "mail_item_sent": _BOOKKEEPING,
+    "maintenance_change": _INSTANCE,
+    "maintenance_window": _INSTANCE,
     "mail_outbox": _BOOKKEEPING,
     "memory_entry": _UNLISTED,
     "notification_mail_state": _BOOKKEEPING,

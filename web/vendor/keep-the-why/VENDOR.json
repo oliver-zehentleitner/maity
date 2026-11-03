@@ -1,0 +1,40 @@
+{
+  "comment": "Written by tools/vendor_ktw.py; do not edit. Checked by tools/check.py.",
+  "package": "keep-the-why-dashboard",
+  "version": "0.11.39",
+  "wheel": "keep_the_why_dashboard-0.11.39-py3-none-any.whl",
+  "wheel_sha256": "3bd67072cb4d4eab7229476d3baf6dd83329ebf14b19ddea34b115482e0c959c",
+  "api": 0,
+  "state": 2,
+  "scripts": [
+    "ktw-core.js",
+    "ktw-ui.js",
+    "ktw-scene.js",
+    "ktw-markdown.js",
+    "ktw-graph.js",
+    "ktw-timeline.js",
+    "ktw-family.js",
+    "ktw-search.js",
+    "ktw-thoughts.js",
+    "ktw-pages.js"
+  ],
+  "styles": [
+    "ktw-views.css"
+  ],
+  "files": {
+    "ktw-core.js": "f0f26dacc5e32a764d6bbfe9370c7a85ecf4346f113a29ab176e82d16e56e65f",
+    "ktw-family.js": "4cd3d233315c4e77077d3d0afb8d8dac338beba478a9a547002c1b4557b5c4a0",
+    "ktw-graph.js": "39adb5efb2160643f4114ae4ae5a831d54760d3b6b2c00dc54fbd9a629e46c15",
+    "ktw-markdown.js": "a06a67a291d6e45dd68b28486d2d2f961f48b1ad5bf1d5d045ac5b7a867aab7f",
+    "ktw-pages.js": "301feba2ae203cf284f1bfe0f3975d5969eb9aa430a0151619e6363e11a2a7d9",
+    "ktw-scene.js": "bdb57d91e1a1f68e4f0f1aa4118261c24d93d220586a923d1c4d4a94355cea87",
+    "ktw-search.js": "ed516e1880e6bd3d67735bdcef4e6366765b9933eca9ed79a8cc75b4be0613ad",
+    "ktw-thoughts.js": "afe9adbaae2db57949d88d175c1b40100b7d57f080bd715e2802bb51e4fc6a52",
+    "ktw-timeline.js": "032f50be8e3984747f043356fba6546df5e62c14a3a137bb9b909862c4ae54a6",
+    "ktw-ui.js": "1477b7a7accd98c62f7ebaddab09ceb665ee73bcf8ae454c69472342a706cf3d",
+    "ktw-views.css": "96c1ede7802b4a2f6b4514161d789a27c255dac8728d3a7781a0aa8f62b8b308",
+    "ktw-views.json": "fce4267b7adb7f5523c3221a9f3e8da8ccf4ede511f1cdbcee9308c12cc524be"
+  },
+  "license_sha256": "44d2c60afe04d9c481caa77df83cc96e61649fde239d290405a2ac5abd584097",
+  "changelog": "https://github.com/oliver-zehentleitner/keep-the-why/blob/dashboard-v0.11.39/dashboard/CHANGELOG.md"
+}

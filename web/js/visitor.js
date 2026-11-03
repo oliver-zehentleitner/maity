@@ -54,6 +54,11 @@ window.Maity = window.Maity || {};
       .map((key) => h("li", null, COUNTERS[key] + ": " + totals[key])));
   }
 
+  function editMark(e) {
+    const o = { who: holderLabel(e.by) || M.t("visitor.holder.member"), at: M.dom.formatTime(e.at) };
+    return e.reason ? M.tn("visitor.note.edited_reason", Object.assign(o, { reason: e.reason })) : M.tn("visitor.note.edited", o);
+  }
+
   function holderLabel(holder) {
     if (!holder) return null;
     if (holder === "member") return h("span", { class: "muted" }, M.t("visitor.holder.member"));
@@ -70,7 +75,6 @@ window.Maity = window.Maity || {};
         d.links.map((url) => h("p", null, external(url))),
         d.people.length ? [h("h2", null, M.t("visitor.people")), names(d.people)] : null,
         d.agents.length ? [h("h2", null, M.t("visitor.agents")), names(d.agents)] : null,
-        d.other_agents ? h("p", { class: "muted" }, M.t("visitor.other_agents", { count: d.other_agents })) : null,
         d.ticker && d.ticker.length ? [h("h2", null, M.t("visitor.recently")), h("ul", { class: "visitor-ticker" }, d.ticker.map((e) => h("li", null,
           h("span", { class: "muted" }, M.dom.formatTime(e.at)), " ", (e.url && external(e.url, e.text)) || e.text)))] : null,
         d.online ? [h("h2", null, M.t("visitor.online")),
@@ -94,7 +98,10 @@ window.Maity = window.Maity || {};
           d.holder ? [" ", holderLabel(d.holder)] : null),
         d.body && d.body.trim() ? h("div", { class: "about" }, M.markdown(d.body)) : null,
         d.notes && d.notes.length ? [h("h2", null, M.t("cardpanel.notes")), h("ol", { class: "card-notes" }, d.notes.map((n) => h("li", { "data-note": n.id },
-          h("p", { class: "muted" }, holderLabel(n.author), " · ", M.dom.formatTime(n.created_at), NOTE_STATES[n.state] ? " · " + NOTE_STATES[n.state] : ""),
+          h("p", { class: "muted" }, holderLabel(n.author), " · ", M.dom.formatTime(n.created_at), NOTE_STATES[n.state] ? " · " + NOTE_STATES[n.state] : "",
+            // The edit mark as the hub's own page has it (§16.9, a card's page): the editor named as a holder, the date,
+            // the reason; never the old text, and none on a removed note.
+            n.edited && !n.redacted ? [" · ", editMark(n.edited)] : null),
           n.redacted ? h("p", { class: "muted" }, M.t("jfa.redacted")) : h("div", { class: "about" }, M.markdown(n.body || "")))))] : null,
       ];
     },

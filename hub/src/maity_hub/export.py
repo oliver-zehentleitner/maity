@@ -23,7 +23,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select
 
-from maity_hub import avatars, clock, group_chats, inbox, namespace, reports
+from maity_hub import avatars, clock, group_chats, inbox, maintenance, namespace, reports
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.auth import second_factor
@@ -233,6 +233,7 @@ def _account(conn: Connection, human: Any) -> dict[str, Any]:
             else None
         ),
         "addresses": addresses,
+        "broadcasts": maintenance.choice(human.broadcasts),  # §16.12
         "preferences": (
             {
                 "markdown": prefs.markdown,

@@ -1,7 +1,7 @@
-"""Two real hub processes on one PostgreSQL: what must hold across replicas, seen from the outside
-(hub/context/replicas.md). The unit tests of each piece run in one process and stand in for the
-other one; here nothing is stood in for. `hub-postgresql` runs this file, every other database
-skips it: only PostgreSQL runs replicas."""
+"""Two real hubs on one PostgreSQL, as two pods of one or two processes each: what must hold
+across replicas, seen from the outside (hub/context/replicas.md). The unit tests of each piece
+run in one process and stand in for the other one; here nothing is stood in for.
+`hub-postgresql` runs this file, every other database skips it: only PostgreSQL runs replicas."""
 
 from __future__ import annotations
 
@@ -70,7 +70,7 @@ def _free_port() -> int:
         return int(probe.getsockname()[1])
 
 
-def _start(database_url: str, tmp_path: Path, name: str) -> Hub:
+def _start(database_url: str, tmp_path: Path, name: str, workers: int = 1) -> Hub:
     port = _free_port()
     log = tmp_path / f"hub-{name}.log"
     env = {
@@ -80,6 +80,8 @@ def _start(database_url: str, tmp_path: Path, name: str) -> Hub:
         "MAITY_PUBLIC_URL": f"http://127.0.0.1:{port}",
         "MAITY_ALLOW_PLAIN_HTTP": "1",
         "MAITY_WEB_DIR": "",
+        "MAITY_REPLICAS": "2",
+        "MAITY_WORKERS": str(workers),
     }
     with log.open("wb") as out:
         process = subprocess.Popen(
@@ -108,20 +110,25 @@ def _only_on_postgresql(database_url: str) -> None:
         pytest.skip("only PostgreSQL runs replicas")
 
 
-@pytest.fixture
-def hubs(migrated: Engine, tmp_path: Path) -> Iterator[tuple[Hub, Hub]]:
+@pytest.fixture(params=[1, 2], ids=["one-worker", "two-workers"])
+def hubs(
+    migrated: Engine, tmp_path: Path, request: pytest.FixtureRequest
+) -> Iterator[tuple[Hub, Hub]]:
+    """Two pods of the chart's `replicas: 2`, each with one process or two (`MAITY_WORKERS`):
+    a request lands on either pod and, inside it, on either worker."""
+    workers: int = request.param
     url = migrated.url.render_as_string(hide_password=False)
-    pair = (_start(url, tmp_path, "a"), _start(url, tmp_path, "b"))
+    pair = (_start(url, tmp_path, "a", workers), _start(url, tmp_path, "b", workers))
     try:
         deadline = time.monotonic() + 60
         for hub in pair:
             _ready(hub, deadline)
-        while time.monotonic() < deadline:  # a wake-up needs both listeners in place
-            if _listeners(migrated) >= 2:
+        while time.monotonic() < deadline:  # a wake-up needs every listener in place
+            if _listeners(migrated) >= 2 * workers:
                 break
             time.sleep(0.1)
         else:
-            pytest.fail("the two hubs' listeners did not connect")
+            pytest.fail("the hubs' listeners did not connect")
         yield pair
     finally:
         for hub in pair:
@@ -254,9 +261,16 @@ def test_a_signed_requests_nonce_is_refused_on_the_other_process(
 def test_a_workers_pass_runs_once_per_interval_over_both_processes(
     hubs: tuple[Hub, Hub], migrated: Engine
 ) -> None:
-    """The mail worker looks every 5 seconds in each process, whether or not there is mail. A
-    trigger writes down every pass: polling the row would miss a second pass right after the first,
-    and two processes started together tick that close."""
+    gaps = passes_of_the_mail_worker(migrated)
+    assert len(gaps) >= 1, gaps
+    assert min(gaps) >= outbox.INTERVAL, gaps
+
+
+def passes_of_the_mail_worker(migrated: Engine) -> list[float]:
+    """The seconds between the mail worker's passes over four of its intervals. It looks every
+    5 seconds in each process, whether or not there is mail. A trigger writes down every pass:
+    polling the row would miss a second pass right after the first, and two processes started
+    together tick that close."""
     with migrated.begin() as conn:
         conn.execute(text("CREATE TABLE pass_seen (started_at timestamp NOT NULL)"))
         conn.execute(
@@ -283,6 +297,4 @@ def test_a_workers_pass_runs_once_per_interval_over_both_processes(
             conn.execute(text("DROP TRIGGER note_pass ON worker_run"))
             conn.execute(text("DROP FUNCTION note_pass()"))
             conn.execute(text("DROP TABLE pass_seen"))
-    gaps = [(b - a).total_seconds() for a, b in zip(seen, seen[1:], strict=False)]
-    assert len(gaps) >= 1, seen
-    assert min(gaps) >= outbox.INTERVAL, gaps
+    return [(b - a).total_seconds() for a, b in zip(seen, seen[1:], strict=False)]

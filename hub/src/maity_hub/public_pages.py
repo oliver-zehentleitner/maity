@@ -21,12 +21,13 @@ from typing import Any
 
 from fastapi import Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import Connection, Engine, delete, insert, select
+from sqlalchemy import Connection, Engine, delete, insert, literal, select
 
 from maity_hub import clock, worker_runs
 from maity_hub import tables as t
 from maity_hub.auth import caller as auth_caller
 from maity_hub.config import Settings
+from maity_hub.db import xact_lock
 from maity_hub.deps import engine_of, origin_of, settings_of
 from maity_hub.errors import not_found, rate_limited
 from maity_hub.ratelimit import Limiter
@@ -56,6 +57,7 @@ def put(
     lastmod: datetime,
     view: str,
     data: dict[str, Any],
+    indexed: bool = True,
 ) -> None:
     """Store the page of `path`, replacing the one there."""
     conn.execute(delete(t.public_page).where(t.public_page.c.path == path))
@@ -71,6 +73,7 @@ def put(
             rendered_at=clock.now(),
             view=view,
             data=data,
+            indexed=indexed,
         )
     )
 
@@ -92,6 +95,11 @@ def remove(conn: Connection, kind: str, target_id: str) -> int:
 def clear(conn: Connection) -> int:
     """Delete every page: the next render starts from the inputs as they are."""
     return int(conn.execute(delete(t.public_page)).rowcount)
+
+
+def _robots(page: Any) -> dict[str, str]:
+    """A page kept out of search says so in its header as well as in its HTML (§16.9)."""
+    return {} if page.indexed else {"X-Robots-Tag": "noindex"}
 
 
 def answer(
@@ -120,6 +128,13 @@ def answer(
         query = f"?{request.url.query}" if request.url.query else ""
         return RedirectResponse(f"{bare}{query}", status_code=308)
     assert page is not None
+    # A visitor gets the small 503 page while a window runs, bare or inside the shell (§16.12):
+    # a crawler reads the status, not what the app would draw.
+    from maity_hub import maintenance
+
+    window = maintenance.window_now(engine_of(request))
+    if window is not None and window["state"] == "running":
+        return maintenance.refusal_page(window)  # type: ignore[no-any-return]
     wait = BY_ADDRESS.hit(origin_of(request).address)
     if wait:
         raise rate_limited(wait)
@@ -130,25 +145,29 @@ def answer(
         # The shell's files change with a deploy: its digest is part of the tag.
         tag = '"' + hashlib.sha256(shelled).hexdigest() + '"'
         candidates = request.headers.get("if-none-match", "").split(",")
-        wrapped = {"Cache-Control": CACHE, "ETag": tag, "Vary": "Cookie"}
+        wrapped = {"Cache-Control": CACHE, "ETag": tag, "Vary": "Cookie", **_robots(page)}
         if any(c.strip() == "*" or c.strip().removeprefix("W/") == tag for c in candidates):
             return Response(status_code=304, headers=wrapped)
         if request.method == "HEAD":
             return Response(media_type="text/html", headers=wrapped)
         return Response(shelled, media_type="text/html", headers=wrapped)
+    # The banner of an upcoming window is part of the answer, and so of its tag: a cache
+    # holding the page from before (or after) the window gets it again, not a 304.
+    tag = maintenance.etag(page.etag, window)
     headers = {
         "Cache-Control": CACHE,
-        "ETag": page.etag,
+        "ETag": tag,
         "Vary": "Cookie",
         "Content-Security-Policy": CSP,
         "X-Content-Type-Options": "nosniff",
+        **_robots(page),
     }
     candidates = request.headers.get("if-none-match", "").split(",")
-    if any(tag.strip() == "*" or tag.strip().removeprefix("W/") == page.etag for tag in candidates):
+    if any(c.strip() == "*" or c.strip().removeprefix("W/") == tag for c in candidates):
         return Response(status_code=304, headers=headers)
     if request.method == "HEAD":
         return Response(media_type="text/html", headers=headers)
-    return HTMLResponse(page.body, headers=headers)
+    return HTMLResponse(maintenance.with_banner(page.body, window), headers=headers)
 
 
 def read(request: Request, path: str) -> Response:
@@ -196,6 +215,7 @@ class Page:
     lastmod: datetime
     view: str
     data: dict[str, Any]
+    indexed: bool = True  # false: `noindex` and out of the sitemap (§16.9)
 
 
 @dataclass(frozen=True)
@@ -230,19 +250,27 @@ def configure(hub: Settings | None) -> None:
     _hub = hub
 
 
-def refresh(conn: Connection, hub: Settings, kind: str, target_id: str) -> None:
+def refresh(
+    conn: Connection, hub: Settings, kind: str, target_id: str, *, fresh: bool = False
+) -> None:
     """Render the pages of one target again, in the caller's transaction. A page whose inputs
     are the digest stored is left as it is (its ETag and `lastmod` stay); one whose inputs
     changed is replaced; one that is no longer rendered is deleted. A render that fails takes
-    the target's pages off: nothing stale is served for the sake of a bug."""
+    the target's pages off: nothing stale is served for the sake of a bug. `fresh`: also
+    replaced when only the HTML differs, as after a new version rendering the same inputs
+    (`startup`). Under a lock per target, so two processes rendering it together (every pod
+    at its start, a change and the worker) write it one after the other."""
+    xact_lock(conn, f"public_page:{kind}:{target_id}")
     existing = {
         row.path: row
         for row in conn.execute(
             select(
                 t.public_page.c.path,
+                t.public_page.c.body if fresh else literal(None).label("body"),
                 t.public_page.c.inputs,
                 t.public_page.c.view,
                 t.public_page.c.data,
+                t.public_page.c.indexed,
                 t.public_page.c.lastmod,
             ).where(t.public_page.c.kind == kind, t.public_page.c.target_id == target_id)
         )
@@ -260,7 +288,8 @@ def refresh(conn: Connection, hub: Settings, kind: str, target_id: str) -> None:
         if (
             stored is None
             or not same_inputs
-            or (stored.view, stored.data) != (page.view, page.data)
+            or (stored.view, stored.data, stored.indexed) != (page.view, page.data, page.indexed)
+            or (fresh and stored.body != page.body)
         ):
             put(
                 conn,
@@ -273,31 +302,39 @@ def refresh(conn: Connection, hub: Settings, kind: str, target_id: str) -> None:
                 lastmod=stored.lastmod if stored is not None and same_inputs else page.lastmod,
                 view=page.view,
                 data=page.data,
+                indexed=page.indexed,
             )
     gone = existing.keys() - {page.path for page in rendered}
     if gone:
         conn.execute(delete(t.public_page).where(t.public_page.c.path.in_(gone)))
 
 
-def touch(conn: Connection, kind: str, target_id: str, *, removal: bool = True) -> None:
+def touch(
+    conn: Connection, kind: str, target_id: str, *, removal: bool = True, dependents: bool = True
+) -> None:
     """An input of the target's pages changed, in the transaction that changed it. A change
     that takes anything off a page (`removal`, the default) renders it again at once under
     either mode; under `on_change` so does every other change; under `interval` a new entry or
     a count waits for the next run (§16.9). Nothing happens while the instance serves no
-    pages."""
+    pages. `dependents=False` renders the target's own pages only, for a change that no other
+    page shows: a project's dependents are every card page of the project, too many to render
+    while the caller holds the project row (hub/context/public-pages.md 721bcdfa)."""
     hub = _hub
     if hub is None or not hub.public_pages:
         return
     if removal or hub.public_pages_render == "on_change":
         refresh(conn, hub, kind, target_id)
-        dependents = KINDS[kind].dependents
-        for other, other_id in dependents(conn, target_id) if dependents else []:
+        others = KINDS[kind].dependents if dependents else None
+        for other, other_id in others(conn, target_id) if others else []:
             refresh(conn, hub, other, other_id)
 
 
-def render_all(engine: Engine, hub: Settings, stop: worker_runs.Stopping | None = None) -> None:
+def render_all(
+    engine: Engine, hub: Settings, stop: worker_runs.Stopping | None = None, *, fresh: bool = False
+) -> None:
     """Every page of every kind from the inputs as they are now: the targets that exist are
-    rendered again, the pages of targets that no longer exist are deleted."""
+    rendered again, the pages of targets that no longer exist are deleted (`fresh`: see
+    `refresh`)."""
     for kind in KINDS.values():
         with engine.begin() as conn:
             ids = kind.targets(conn)
@@ -305,7 +342,7 @@ def render_all(engine: Engine, hub: Settings, stop: worker_runs.Stopping | None 
             if stop is not None and stop.is_set():
                 return
             with engine.begin() as conn:
-                refresh(conn, hub, kind.name, target_id)
+                refresh(conn, hub, kind.name, target_id, fresh=fresh)
         with engine.begin() as conn:
             stored = set(
                 conn.execute(
@@ -317,14 +354,16 @@ def render_all(engine: Engine, hub: Settings, stop: worker_runs.Stopping | None 
 
 
 def startup(engine: Engine, hub: Settings) -> None:
-    """When the instance serves pages, every page is rendered again before any is served, so
-    nothing made under an earlier state is (§16.9)."""
+    """When the instance serves pages, every page is rendered again before this process serves
+    any, so nothing made under an earlier state is (§16.9). Page by page, never cleared first:
+    the other processes and pods serving meanwhile find the old page or the new one, never
+    none (hub/context/replicas.md, "Several workers per pod")."""
     configure(hub)
     if not hub.public_pages:
         return
-    with engine.begin() as conn:
-        clear(conn)
-    render_all(engine, hub)
+    with engine.begin() as conn:  # a kind this version no longer renders
+        conn.execute(delete(t.public_page).where(t.public_page.c.kind.not_in(list(KINDS))))
+    render_all(engine, hub, fresh=True)
 
 
 class Worker:

@@ -52,8 +52,17 @@
     "email": {
       "language": "en",
       "address": "maintainer@example.org", "address_status": "verified", "verified_at": "2026-10-01T09:12:00Z", "pending_address": null,
-      "address_change": { "id": "adc-7f2a", "address": "maint@example.net", "requested_at": "2026-10-22T13:20:00Z", "session_id": "hss-41d2" }
+      "address_change": { "id": "adc-7f2a", "address": "maint@example.net", "requested_at": "2026-10-22T13:20:00Z", "session_id": "hss-41d2" },
+      "timezone": "Europe/Vienna",
+      "kinds": {
+        "inbox": { "mode": "immediate" },
+        "chat": { "mode": "daily", "content": false },
+        "mention": { "mode": "daily", "content": false },
+        "security": { "mode": "immediate" }
+      },
+      "sign_in_link": true, "daily_at": "08:00", "weekly_on": "mon", "quiet_hours": null,
+      "hard_failures": 0, "disabled_at": null
     },
-    "mail_available": false
+    "mail_available": true
   }
 }

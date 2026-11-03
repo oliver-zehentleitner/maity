@@ -218,6 +218,47 @@ def test_a_hidden_project_has_no_page_and_cannot_be_made_public_again_until_the_
     assert boss.patch("/projects/maintainer/maity", {"public_page": "on"}).status_code == 200
 
 
+def test_a_lifted_hold_on_an_organisation_s_project_brings_its_board_and_cards_back_at_once(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A project's dependents come back with it: the dismiss renders them, not only the project's
+    own page. An organisation's project has no account whose `touch_owned` would do it (nyh5 at
+    #1277: 3 pages before the hold, 0 under it, 1 instead of 3 after the dismiss)."""
+    from tests.test_orgs import make_org
+
+    admin = flow.human(pages(make_client), migrated)
+    boss = flow.human(pages(make_client), migrated, "boss")
+    make_org(boss, "acme", "Acme")
+    assert (
+        boss.post("/projects", {"slug": "tool", "name": "Tool", "owner": "acme"}).status_code == 201
+    )
+    assert boss.patch("/projects/acme/tool", {"public_page": "on"}).status_code == 200
+    card = boss.post("/projects/acme/tool/tasks", {"title": "Comes back"}).json()["id"]
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    pat = flow.human(pages(make_client), migrated, "pat")
+    factory.membership(migrated, project_id, "member", human_id=pat.id)
+
+    def stored() -> set[tuple[str, str]]:
+        with migrated.connect() as conn:
+            rows = conn.execute(select(t.public_page.c.kind, t.public_page.c.target_id)).all()
+        return {(r.kind, r.target_id) for r in rows if r.target_id in (project_id, card)}
+
+    before = stored()
+    assert {("project", project_id), ("project_views", project_id), ("card", card)} <= before
+    made = report(pat, {"type": "project", "id": "acme/tool"}, "spam")
+    assert made.status_code == 201, made.text
+
+    def resolved(action: str) -> None:
+        done = admin.post(f"/admin/reports/{made.json()['id']}/resolve", {"action": action})
+        assert done.status_code == 200, done.text
+
+    resolved("hide")
+    assert stored() == set()
+    resolved("dismiss")
+    assert stored() == before
+
+
 def test_a_project_of_a_suspended_owner_has_no_page(
     make_client: ClientFactory, migrated: Engine, owner: flow.Human, settings: Any
 ) -> None:

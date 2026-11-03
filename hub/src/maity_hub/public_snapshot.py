@@ -102,7 +102,9 @@ def ticker(conn: Connection, project: Any) -> list[dict[str, Any]]:
 
 
 def online(conn: Connection, project_id: str) -> dict[str, Any]:
-    """Who is online at the snapshot: the counts per kind, and those the page names."""
+    """Who is online at the snapshot: the counts per kind, and those the page names; a
+    person whose `public_presence` is off, and a member under a moderation hold, is neither
+    named nor counted (§16.9)."""
     from maity_hub.availability import presences_of
     from maity_hub.public_project_views import _shown, members
 
@@ -110,9 +112,12 @@ def online(conn: Connection, project_id: str) -> dict[str, Any]:
     m = t.membership.c
     rows = conn.execute(select(t.membership).where(m.id.in_(list(who))).order_by(m.id)).all()
     up = [mid for mid, presence in presences_of(conn, rows).items() if presence == "online"]
-    people = [who[i] for i in up if i in who]
+    # Whoever the page does not name is not counted either (a hold, or a person who keeps
+    # their online status off): a count beside the names would point at them.
+    people = [who[i] for i in up if i in who and who[i].shown and who[i].presence_named]
     named = sorted(
-        (p for p in people if p.shown), key=lambda p: (not p.human, p.handle or "", p.id)
+        people,
+        key=lambda p: (not p.human, p.handle or "", p.id),
     )
     return {
         "humans": sum(1 for p in people if p.human),

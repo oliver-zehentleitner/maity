@@ -119,7 +119,7 @@ window.Maity = window.Maity || {};
       return reading;
     };
     const el = h("nav", { class: "chat-list-pane", "aria-label": M.t("chats.conversations") },
-      h("div", { class: "toolbar" }, h("h2", null, M.t("chats.title"))),
+      h("div", { class: "toolbar" }, h("h2", null, M.t("chats.title")), h("span", { class: "chats-lead" })),
       h("p", { class: "muted" }, M.t("chats.hint")),
       none, failed, ul, status.el);
     const shown = (open) => (open && read[open.slug]) || { chats: [], groups: [], items: [] };
@@ -192,6 +192,7 @@ window.Maity = window.Maity || {};
 
     const layout = h("div", { class: "chat-layout" }, list.el);
     append(root, layout);
+    if (M.leadOnChats) M.leadOnChats(layout.querySelector(".chats-lead"));  // a phone's way to the Lead (js/app.js)
     // What stands beside the list: the view's parts go in together, once they are ready.
     const place = (parts) => {
       layout.className = "chat-layout" + (open ? " open" : "");
@@ -211,7 +212,7 @@ window.Maity = window.Maity || {};
       if (!pctx) {
         place(open ? h("p", { class: "error", role: "alert" }, M.t("chats.no_project", { project: open.slug }))
           : h("p", { class: "chat-none muted" }, M.t("chats.pick")));
-        return;
+        return false;
       }
       const timers = [];
       const sub = Object.create(pctx);

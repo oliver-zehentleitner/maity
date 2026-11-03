@@ -38,7 +38,7 @@ defaults:
 # parallel, so that a queue of pull requests for one runner per job type cannot hold up the checks
 # people wait for. Unset or empty, they run on GitHub-hosted runners; unsetting the variable is the
 # whole fallback. Setup: deploy/runner/README.md.
-# The MariaDB suite is not here: it runs hourly on main, outside the pull request gate and ci-ok
+# The MariaDB suite is not here: it runs on main after every push (the last job below starts it) and at the latest hourly, outside the pull request gate and ci-ok
 # (hub-mariadb.yml, and the entry on it in context/process.md).
 jobs:
   # Which parts a pull request touches, from its merge commit against the base it
@@ -46,6 +46,7 @@ jobs:
   # change to this workflow, runs everything.
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     outputs:
       hub: ${{ steps.paths.outputs.hub }}
       image: ${{ steps.paths.outputs.image }}
@@ -54,6 +55,8 @@ jobs:
       e2e: ${{ steps.paths.outputs.e2e }}
       cli: ${{ steps.paths.outputs.cli }}
       helm: ${{ steps.paths.outputs.helm }}
+      contract: ${{ steps.paths.outputs.contract }}
+      vendor: ${{ steps.paths.outputs.vendor }}
     defaults:
       run:
         working-directory: .
@@ -67,7 +70,7 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
         run: |
-          parts="hub image join web e2e cli helm"
+          parts="hub image join web e2e cli helm contract vendor"
           if [ "$EVENT" != pull_request ]; then
             for part in $parts; do echo "$part=true" >> "$GITHUB_OUTPUT"; done
             exit 0
@@ -87,6 +90,8 @@ jobs:
                 e2e:web/*|e2e:hub/*|e2e:cli/*|e2e:docs/join-page.md) hit=true ;;
                 cli:cli/*) hit=true ;;
                 helm:deploy/*) hit=true ;;
+                contract:docs/api.md|contract:hub/*) hit=true ;;
+                vendor:web/vendor/*|vendor:web/tools/vendor_ktw.py) hit=true ;;
               esac
             done <<< "$changed"
             echo "$part=$hit" >> "$GITHUB_OUTPUT"
@@ -97,6 +102,7 @@ jobs:
   # docs renderer's Markdown and YAML, on the oldest Python the tools support.
   changelog:
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     defaults:
       run:
         working-directory: .
@@ -121,6 +127,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     defaults:
       run:
         working-directory: web
@@ -129,6 +136,23 @@ jobs:
       - run: python3 --version && node --version
       - run: make check
       - run: make smoke
+
+  # The vendored Keep the Why views against the release VENDOR.json names, file for file, fetched
+  # again from PyPI: the lock that make check reads proves nothing about where the files came from
+  # (web/context/stack.md). Runs when web/vendor/ or the tool changes. It is in ci-ok.
+  web-vendor:
+    needs: changes
+    if: needs.changes.outputs.vendor == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: python3 tools/vendor_ktw.py --verify
 
   # The dashboard in headless Chromium against a real hub on SQLite, with the
   # maity CLI as the agent (web/tools/e2e.py). The screenshots of every step
@@ -170,6 +194,8 @@ jobs:
             sudo apt-get install -y -qq --no-install-recommends libnss3 libnspr4 libasound2t64
           fi
           if ldd "$shell" | grep "not found"; then exit 1; fi
+      # The vendored Keep the Why views mounted under the hub's `default-src 'self'` (web/context/stack.md).
+      - run: python web/tools/vendor_csp.py
       - run: python web/tools/e2e.py --artifacts e2e-screenshots
       # Fails on any text outside the catalog (web/README.md, "Texts outside the catalog").
       - if: "!cancelled()"
@@ -185,6 +211,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.hub == 'true'
     runs-on: ${{ (vars.HUB_RUNNER_LABEL != '' && contains(format(' {0} ', vars.HUB_RUNNER_TYPES || 'sqlite pg maria'), ' sqlite ') && github.event_name == 'push') && fromJSON(format('["self-hosted","{0}-sqlite"]', vars.HUB_RUNNER_LABEL)) || 'ubuntu-latest' }}
+    # A hang fails after 90 minutes instead of GitHub's 6 hours (context/process.md, the entry on job timeouts).
+    timeout-minutes: 90
     steps:
       - run: echo "runner $RUNNER_NAME ($RUNNER_ENVIRONMENT, $RUNNER_OS $RUNNER_ARCH), $(nproc) cpus"  # hosted or the maintainer's machine (HUB_RUNNER_LABEL)
         working-directory: .  # before the checkout, `hub` does not exist yet
@@ -197,6 +225,33 @@ jobs:
       - run: make install
       - run: make check
 
+  # The contract tests: the test files that read docs/api.md (the endpoint index against the
+  # routes, the reserved paths, the guide texts), on SQLite. A change of the contract alone does not start the
+  # hub jobs (`hub` does not list docs/api.md: the database jobs take about an hour); this part
+  # does, and a change under hub/ starts it too. It is in ci-ok.
+  hub-contract:
+    needs: changes
+    if: needs.changes.outputs.contract == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: make install
+      # Not a fixed list: every test file that builds the path to the contract as
+      # `"docs" / "api.md"` (today test_contract_routes, test_guide, test_paths). A file that opens
+      # it another way is not found; the step fails when none is.
+      - shell: bash
+        run: |
+          files="$(grep -lF '"docs" / "api.md"' tests/*.py)"
+          echo "$files"
+          test -n "$files"
+          python -m pytest $files
+
   # What ships: the wheel, installed non-editable, so a file missing from it
   # (a migration, help.md) fails here. Python 3.13 backs "3.12 or newer". Only the
   # tests marked `wheel` run: the package data, the entry point and the migrations
@@ -205,6 +260,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.hub == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -221,6 +277,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.hub == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -233,6 +290,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.image == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     defaults:
       run:
         working-directory: .
@@ -251,6 +309,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.helm == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     defaults:
       run:
         working-directory: .
@@ -266,6 +325,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.join == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     defaults:
       run:
         working-directory: .
@@ -283,6 +343,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.hub == 'true'
     runs-on: ${{ (vars.HUB_RUNNER_LABEL != '' && contains(format(' {0} ', vars.HUB_RUNNER_TYPES || 'sqlite pg maria'), ' pg ') && github.event_name == 'push') && fromJSON(format('["self-hosted","{0}-pg"]', vars.HUB_RUNNER_LABEL)) || 'ubuntu-latest' }}
+    # A hang fails after 90 minutes instead of GitHub's 6 hours (context/process.md, the entry on job timeouts).
+    timeout-minutes: 90
     services:
       postgres:
         image: postgres:17@sha256:31ba9c94a03ada9988f2bb493a22a75eef3a185884533e5cdbcd498ea835b08f # pinned: a local tag cannot replace it
@@ -314,6 +376,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.cli == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     strategy:
       matrix:
         python-version: ["3.11", "3.13"]
@@ -333,6 +396,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.cli == 'true'
     runs-on: windows-latest
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     strategy:
       fail-fast: false
       matrix:
@@ -354,6 +418,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.join == 'true'
     runs-on: windows-latest
+    timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     defaults:
       run:
         working-directory: .
@@ -374,7 +439,7 @@ jobs:
   # needed (skipped by `changes`), red when one failed or was cancelled.
   ci-ok:
     if: always()
-    needs: [changes, changelog, web, web-e2e, hub-sqlite, hub-wheel, hub-lock, hub-image, helm, join-smoke, hub-postgresql, cli, cli-windows, join-windows]
+    needs: [changes, changelog, web, web-vendor, web-e2e, hub-sqlite, hub-contract, hub-wheel, hub-lock, hub-image, helm, join-smoke, hub-postgresql, cli, cli-windows, join-windows]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -391,3 +456,23 @@ jobs:
               *) exit 1 ;;
             esac
           done
+
+  # Starts the MariaDB run (hub-mariadb.yml) for a push to main, after the jobs above, whatever their result: a red ci
+  # is no reason to leave MariaDB unchecked. Only a push to this repository's main gets here (not a pull request), and
+  # a workflow_dispatch with the workflow's own token is allowed; a workflow_run trigger is not, see deploy/runner/README.md.
+  # A run that GitHub cancelled while it waited never gets here; the newer run covers it.
+  mariadb:
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [ci-ok]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run hub-mariadb.yml --repo "$GITHUB_REPOSITORY" --ref main -f trigger=ci

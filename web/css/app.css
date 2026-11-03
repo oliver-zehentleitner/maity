@@ -253,12 +253,19 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
    screen that block goes under the chips. */
 .switcher-row { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; }
 .switcher-row .switcher { flex: 1 1 18rem; min-width: 0; }
-.project-state { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding-inline-start: 12px; border-inline-start: 1px solid var(--border); flex: none; }
+.project-state { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; padding-inline-start: 12px; border-inline-start: 1px solid var(--border); flex: none; max-width: 100%; }
 /* The project's repository and Keep the Why dashboard beside its state (js/app.js projectLinks). */
 .header-link { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 2px 8px; border: 1px solid var(--border);
   border-radius: 999px; color: var(--text); text-decoration: none; font-size: 0.85rem; }
 .header-link:hover { border-color: var(--accent); }
 .header-link-mark { flex: none; }
+/* The links in a row of their own inside the block, so a phone scrolls them while the state stays. */
+.project-links { display: flex; align-items: center; gap: 6px; }
+.project-links.more-after { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); }
+.project-links.more-before { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent); }
+.project-links.more-before.more-after { -webkit-mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent); }
+/* The Lead on the Chats page: only where the header hides it, on a phone. */
+.chats-lead { display: none; }
 .state.away { color: var(--warn); }
 .switcher { gap: 6px; padding-bottom: 2px; }
 
@@ -939,7 +946,18 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 
 @media (max-width: 600px) {
   main { padding: 12px; }
-  .project-state { border-inline-start: none; padding-inline-start: 0; flex-wrap: wrap; flex-basis: 100%; }
+  .project-state { border-inline-start: none; padding-inline-start: 0; flex-wrap: wrap; row-gap: 6px; flex-basis: 100%; min-width: 0; }
+  /* One row of links that scrolls, never narrower than about one link; the state, the released
+     mark and the absence stand beside it and wrap under it where they need more room. */
+  .project-links { flex: 1 1 0; min-width: min(9rem, 100%); overflow-x: auto; }
+  .project-links .header-link { flex: none; white-space: nowrap; }
+  .project-state > :not(.project-links) { flex: none; white-space: nowrap; }
+  /* No room for the Lead beside the logo: it stands on the Chats page, where Chat leads. */
+  .me > .lead-button, .me > .lead-button-box { display: none; }
+  .chats-lead { display: inline-flex; }
+  .chats-lead .lead-button-label { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
+  /* Under the heading at the left edge: its menu (several leads) opens from that edge, not off screen. */
+  .chats-lead .menu { inset-inline-end: auto; inset-inline-start: 0; }
   .me-name { display: none; }
   .lead-button-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   /* On a phone the buttons of a form or a row stack, full width. */
@@ -1154,7 +1172,7 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 .join-panel[hidden] { display: none; }
 .join-head { display: flex; align-items: center; gap: 8px; }
 .join-head h3 { margin: 0; }
-.join-head .join-close { margin-inline-start: auto; font-size: 1.2rem; }
+.join-head .join-close { margin-inline-start: auto; }
 .join-columns { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 8px; }
 .join-fields { flex: 1 1 320px; min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; align-content: start; }
 /* One column that a wide select cannot stretch, and rows at their own height: a taller neighbour in the row must not stretch the label and the control. */
@@ -1237,6 +1255,13 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 /* A section of the Overview (a grid item) never grows past its column:
    the table scrolls sideways in its own box on a phone. */
 .swarm-body { min-width: 0; }
+/* The swarm as a whole (§6.22): the team and the board now, as small figures. */
+.swarm-figures { display: inline-block; vertical-align: top; margin: 0 24px 8px 0; }
+.swarm-figures h5 { margin: 0 0 4px; font-size: 0.85rem; }
+.swarm-figures dl { display: grid; grid-template-columns: auto auto; gap: 2px 12px; margin: 0; }
+.swarm-figures dt { color: var(--muted); }
+.swarm-figures dd { margin: 0; font-variant-numeric: tabular-nums; }
+.swarm-awake, .swarm-messages, .swarm-reviews-per-pr { margin: 4px 0; }
 .swarm-body .table-scroll { overflow-x: auto; max-width: 100%; }
 .swarm-table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .swarm-table th, .swarm-table td { text-align: right; padding: 4px 10px 4px 0; border-bottom: 1px solid var(--border); white-space: nowrap; }
@@ -1278,6 +1303,22 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
     radial-gradient(farthest-side at 50% 100%, rgba(0, 0, 0, 0.18), transparent) center bottom / 100% 12px no-repeat scroll; }
 .contract-unresolved code { overflow-wrap: anywhere; }
 .contract-place { margin-top: 6px; }
+/* The whole contract (js/contract.js, §6.8): the table of contents beside
+   the text, which here is the page's own and has no height of its own; on
+   a narrow screen the table above it. A heading opened by its anchor stops
+   below the header. */
+.contract-whole { display: grid; grid-template-columns: minmax(12rem, 18rem) minmax(0, 1fr); gap: 16px; align-items: start; }
+.contract-toc { position: sticky; top: 8px; max-height: calc(100vh - 16px); overflow: auto; font-size: 0.85rem; }
+.contract-toc ol { list-style: none; margin: 0; padding: 0; }
+.contract-toc li { margin: 2px 0; overflow-wrap: anywhere; }
+.contract-toc .contract-toc-3 { padding-left: 12px; }
+.contract-toc .contract-toc-4 { padding-left: 24px; }
+.contract-whole .contract-text { max-height: none; overflow: visible; background: none; }
+.contract-whole .md-anchored { scroll-margin-top: 8px; }
+@media (max-width: 600px) {
+  .contract-whole { grid-template-columns: minmax(0, 1fr); }
+  .contract-toc { position: static; max-height: 40vh; }
+}
 /* Statistics in the admin area (js/statistics.js, §16.6): tiles, one row
    per series with a 2px line in the accent, the days as a table. */
 .statistics-window { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 8px; }
@@ -1418,6 +1459,10 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .history-diff { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.82rem; }
 .card-note-form { display: grid; gap: 6px; margin-top: 8px; }
 .card-note-form button { justify-self: start; }
+/* A note's Edit and Remove under its text; the edit in place as the post form. */
+.card-note-actions, .card-note-edit-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.card-note-edit-form { display: grid; gap: 6px; margin-top: 6px; }
+.card-note-edited { font-size: 0.875em; }
 .card a.card-open { color: inherit; text-decoration: none; }
 .card a.card-open:hover, .card a.card-open:focus-visible { text-decoration: underline; }
 @media (max-width: 900px) {
@@ -1494,6 +1539,17 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .not-listening-settings { display: grid; gap: 6px; max-width: 32rem; margin: 16px 0; }
 .not-listening-settings h3 { margin: 0; }
 .not-listening-settings button { justify-self: start; }
+.mail-address { margin: 16px 0; max-width: 32rem; }
+.mail-address h3 { margin: 0 0 6px; }
+.mail-address-state { margin: 0 0 6px; }
+.mail-address-form { display: grid; gap: 6px; }
+.mail-address-form .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.mail-modes { margin: 16px 0; max-width: 32rem; }
+.mail-modes h3 { margin: 0 0 6px; }
+.mail-modes-form { display: grid; gap: 6px; }
+.mail-kinds, .mail-quiet { display: grid; gap: 6px; }
+.mail-modes-form .mail-kind { display: grid; gap: 4px; }
+.mail-modes-form button[type=submit] { justify-self: start; margin-top: 6px; }
 /* My settings: each choice a row of at least 28 px, so the radios are targets of their own. */
 .my-nl { display: grid; gap: 6px; }
 .my-nl .check { display: flex; align-items: center; gap: 8px; min-height: 28px; }
@@ -1566,8 +1622,6 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .handle-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0.4rem 0; }
 .handle-form .field-error { flex-basis: 100%; margin: 0; }
 .handle-at { color: var(--muted, inherit); }
-/* The header's "+" menu (an agent, a person): a bold plus as its face. */
-.add-face { font-weight: 800; font-size: 1.25rem; line-height: 1; }
 /* The meat-proxy switch of a chat (js/meat-proxy.js): the designer's icons as a mask, so they take the colour. */
 .meat-chat { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .meat-chat .send-status:empty { display: none; }
@@ -1593,3 +1647,19 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .memory-text { white-space: pre-wrap; margin: 0 0 4px; }
 .soul { border-top: 1px solid var(--border); padding: 8px 0; }
 .soul-versions { list-style: none; padding: 0; }
+
+/* §16.12 The maintenance window: the banner above the header on every page, the full page
+   while it runs, the admin's form and changes, the owner's choice on /agents. */
+.maintenance-banner { margin: 0; padding: 8px 16px; background: var(--flag-bg); border-bottom: 1px solid var(--warn); color: var(--text); text-align: center; overflow-wrap: anywhere; }
+.maintenance-banner.running { font-weight: 600; }
+.maintenance-page { display: grid; gap: 12px; max-width: 36rem; width: 100%; margin: 24px auto; box-sizing: border-box; }
+.maintenance-page h2 { margin: 0; }
+.maintenance-page p { margin: 0; }
+.maintenance-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.maintenance-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.maintenance-state .message-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.maintenance-change-list { list-style: none; padding: 0; }
+.maintenance-change-list li { border-top: 1px solid var(--border); padding: 6px 0; overflow-wrap: anywhere; }
+.broadcasts { margin-top: 24px; }
+.broadcasts-agents { display: grid; gap: 4px; border: 1px solid var(--border); padding: 8px; margin: 0; }
+.broadcasts-agents label.check { display: flex; align-items: center; gap: 6px; }

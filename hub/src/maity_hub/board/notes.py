@@ -1,8 +1,10 @@
 """Notes on a card (docs/api.md §6.16): remarks that never change the card.
 
-A note is posted, then resolved (`incorporated`, `dismissed`) or redacted; never edited
-or deleted. A card holds at most 50 open notes and 200 in all, of which agents may post
-150, so that the last places stay for humans (`context/cards.md`).
+A note is posted, then resolved (`incorporated`, `dismissed`) or redacted, and its author
+edits it in place; no earlier text is kept anywhere, the events that carried the note are
+rewritten with it (`context/cards.md` 0e6b3b31). A note is never deleted. A card holds at
+most 50 open notes and 200 in all, of which agents may post 150, so that the last places
+stay for humans (`context/cards.md`).
 """
 
 from __future__ import annotations
@@ -24,6 +26,9 @@ TOTAL_MAX = 200
 AGENTS_MAX = 150
 # 20 notes per membership in 10 minutes; in process, like the other limits of one replica.
 POSTED = Limiter(20, 600, name="board.notes.POSTED")
+REASON_MAX = 500
+# The events that carry a note's text, rewritten by an edit or a redaction.
+CARRIERS = ("note_added", "note_edited")
 
 
 def over_cap(*, open_count: int, total: int, by_agents: int, author_is_agent: bool) -> bool:
@@ -66,40 +71,122 @@ def counts_of(conn: Connection, card_ids: Iterable[str]) -> dict[str, dict[str, 
     return found
 
 
-def view(row: Any, authors: dict[int, dict[str, Any]]) -> dict[str, Any]:
-    """A note as §6.16 shows it; `authors` from `history.members`."""
+def people(rows: Iterable[Any]) -> list[int]:
+    """The memberships a note's view names: its author and its latest editor."""
+    found: list[int] = []
+    for row in rows:
+        found.append(row.author)
+        if row.edited:
+            found.append(row.edited["by"])
+    return found
+
+
+def tombstone_for(mark: dict[str, Any], reader: Any) -> dict[str, Any]:
+    """A redacted note's tombstone as `reader` sees it (§6.16, §8.5): the reason reaches the
+    human owners and admins and the redactor; everyone else, agents included, reads it as
+    `null`, since a reason often names what was removed (context/cards.md 09c47db5)."""
+    from maity_hub.views import sees_reasons
+
+    if sees_reasons(reader) or (reader is not None and mark.get("by") == reader.principal_id):
+        return mark
+    return {**mark, "reason": None}
+
+
+def view(row: Any, authors: dict[int, dict[str, Any]], reader: Any = None) -> dict[str, Any]:
+    """A note as §6.16 shows it to `reader` (no reader: the reason of a redaction hidden);
+    `authors` from `history.members` over `people`."""
     return {
         "id": row.id,
         "task_id": row.card_id,
         "author": authors[row.author],
-        "body": row.redaction if row.redacted else row.body,
+        "body": tombstone_for(row.redaction, reader) if row.redacted else row.body,
         "mentions": [] if row.redacted else (row.mentions or []),
         "state": row.state,
         "resolution": row.resolution,
+        "edited": {**row.edited, "by": authors[row.edited["by"]]} if row.edited else None,
+        "version": row.version,
         "created_at": clock.rfc3339(row.created_at),
         **({"redacted": True} if row.redacted else {}),
     }
 
 
-def redact(conn: Connection, row: Any, mark: dict[str, Any]) -> bool:
-    """Tombstone the body, empty the mentions, and redact the note's `note_added` the
-    same way. Only the one redaction that wins the conditional UPDATE announces."""
+def redact(conn: Connection, project_id: str, row: Any, mark: dict[str, Any]) -> bool:
+    """Tombstone the body, empty the mentions, drop the edit mark (an edit's reason is the
+    editor's words about the old text), and redact the note in every event that carries it
+    the same way. The UPDATE holds only on the version the redactor read (`row.version`),
+    so a note edited meanwhile is not redacted unseen (§6.16). Only the one redaction that
+    wins the conditional UPDATE announces."""
+    c = t.card_note.c
     won = conn.execute(
         update(t.card_note)
-        .where(t.card_note.c.id == row.id, t.card_note.c.redacted.is_(False))
-        .values(body=None, mentions=[], redacted=True, redaction=mark)
+        .where(c.id == row.id, c.redacted.is_(False), c.version == row.version)
+        .values(
+            body=None,
+            mentions=[],
+            edited=None,
+            redacted=True,
+            redaction=mark,
+            version=c.version + 1,
+        )
     ).rowcount
     if won != 1:
         return False
     from maity_hub import public_pages
 
     public_pages.touch(conn, "card", row.card_id)  # a public card page shows its notes (§16.9)
-    if row.event_seq is not None:
-        event = conn.execute(select(t.event).where(t.event.c.seq == row.event_seq)).first()
-        if event is not None and not event.redacted:
-            payload = dict(event.payload)
-            note = dict(payload.get("note") or {})
-            note.update(body=mark, mentions=[])
-            payload["note"] = note
-            conn.execute(update(t.event).where(t.event.c.seq == event.seq).values(payload=payload))
+    for event in carriers(conn, project_id, row):
+        note = dict(event.payload.get("note") or {})
+        note.update(body=mark, mentions=[], edited=None, version=row.version + 1)
+        rewrite(conn, event, note)
     return True
+
+
+def edit(
+    conn: Connection, row: Any, body: str, found: list[dict[str, Any]], mark: dict[str, Any]
+) -> bool:
+    """Replace the body and its mentions in place, one version up; only on the version the
+    editor read (`row.version`) and never on a redacted note, also when another write won
+    the race to the row. False when it did: the caller reads the row again and says why."""
+    c = t.card_note.c
+    return (
+        conn.execute(
+            update(t.card_note)
+            .where(c.id == row.id, c.redacted.is_(False), c.version == row.version)
+            .values(body=body, mentions=found, edited=mark, version=c.version + 1)
+        ).rowcount
+        == 1
+    )
+
+
+def carriers(conn: Connection, project_id: str, row: Any) -> list[Any]:
+    """The note's `note_added` and every `note_edited` of it, not redacted as events."""
+    c = t.event.c
+    found = conn.execute(
+        select(t.event).where(
+            c.project_id == project_id,
+            c.subject_type == "task",
+            c.subject_id == row.card_id,
+            c.kind.in_(CARRIERS),
+        )
+    ).all()
+    return [
+        e
+        for e in found
+        if not e.redacted
+        and (e.seq == row.event_seq or ((e.payload or {}).get("note") or {}).get("id") == row.id)
+    ]
+
+
+def rewrite(conn: Connection, event: Any, note: dict[str, Any]) -> None:
+    """The event's `note` replaced in place, as a redaction rewrites it (§8.5)."""
+    payload = {**event.payload, "note": note}
+    conn.execute(update(t.event).where(t.event.c.seq == event.seq).values(payload=payload))
+
+
+def authors(conn: Connection, card_id: str) -> list[int]:
+    """Every membership with a note on the card, in order of their first note."""
+    c = t.card_note.c
+    rows = conn.execute(
+        select(c.author).where(c.card_id == card_id).order_by(c.created_at, c.id)
+    ).scalars()
+    return list(dict.fromkeys(rows))

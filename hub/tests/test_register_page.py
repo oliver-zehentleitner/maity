@@ -100,6 +100,10 @@ def test_the_page_shows_the_form_and_changes_nothing(
     for name in ("password", "handle", "display_name"):
         assert f'name="{name}"' in page.text
     assert "terms_accepted" not in page.text  # the instance has no terms
+    # §2.7.1: the form says, before the account exists, what of it is public
+    assert "Your name and handle are publicly visible." in page.text
+    assert "Your profile is public by default" in page.text
+    assert "the public pages of your projects show when you are online" in page.text
     assert page.headers["referrer-policy"] == "no-referrer"
     cookie = page.headers["set-cookie"]
     assert cookie.startswith("maity_form=") and "Path=/mail/register" in cookie

@@ -310,9 +310,10 @@ def emit(
         # neither precedes its row nor announces one that does not exist. Only where to look,
         # never what happened: the row is read with the reader's own rights.
         conn.execute(select(func.pg_notify(CHANNEL, f"{project_id}:{seq}")))
-    if kind in MEMBER_KINDS and project.public_page == "on":
+    if kind in MEMBER_KINDS and project.public_page == "on" and _shown_member_change(kind, payload):
         # Who a public page shows follows who is a member (§16.9): a join adds, any other
-        # change may take someone off.
+        # change may take someone off. A change no page shows renders nothing: this
+        # transaction holds the project row (hub/context/public-pages.md 721bcdfa).
         from maity_hub import public_pages
 
         public_pages.touch(conn, "project", project_id, removal=kind != "member_joined")
@@ -321,19 +322,66 @@ def emit(
         from maity_hub import public_pages
 
         public_pages.touch(conn, "project_views", project_id, removal=kind != "task_created")
-        if kind != "task_created":  # a card turning `security` or held takes a ticker entry off
-            public_pages.touch(conn, "project", project_id)
-        # And so does the card's own page (§16.9, "Card").
         card_id = subject[1] if subject and subject[0] == "task" else payload.get("id")
+        if isinstance(card_id, str) and _hides_ticker_entries(conn, kind, payload, card_id):
+            # A card turning `security`, or a `security` card leaving `done`, takes its ticker
+            # entries off the project's page: that page alone, at once. Every other change
+            # waits for the snapshot worker; this transaction holds the project row
+            # (hub/context/public-pages.md 721bcdfa).
+            public_pages.touch(conn, "project", project_id, dependents=False)
+        # The card's own page follows it like the Board (§16.9, "Card").
         if isinstance(card_id, str):
             public_pages.touch(conn, "card", card_id, removal=kind != "task_created")
     elif kind in NOTE_KINDS and project.public_page == "on" and subject and subject[0] == "task":
-        # A card's notes are on its page (§16.9): a new one adds, a resolution changes its
-        # state; the redaction of one renders the page from `notes.redact`.
+        # A card's notes are on its page (§16.9): a new one adds and a resolution changes its
+        # state, which may wait for an `interval` run; an edit takes the old text off, so it
+        # renders the page at once under either mode. The redaction of one renders the page
+        # from `notes.redact`.
         from maity_hub import public_pages
 
-        public_pages.touch(conn, "card", subject[1], removal=False)
+        public_pages.touch(conn, "card", subject[1], removal=kind == "note_edited")
     return seq
+
+
+# The `changed` fields of a `member_updated` that no public page shows: the language, the
+# line consent, and the availability (a dormant instance, the outage policy), which only
+# changes who is online, and that waits for the snapshot (§16.9).
+UNSHOWN_MEMBER_FIELDS = frozenset({"language", "line_consent", "dormant", "availability_policy"})
+
+
+def _shown_member_change(kind: str, payload: dict[str, Any]) -> bool:
+    """Whether a membership event may change a public page. A join always may; an update
+    that names its `changed` fields only when one of them is not in `UNSHOWN_MEMBER_FIELDS`;
+    one that names none (a role, a handle, a bridge) is taken as one that may."""
+    if kind != "member_updated":
+        return True
+    changed = payload.get("changed")
+    if not isinstance(changed, list) or not changed:
+        return True
+    return bool(set(changed) - UNSHOWN_MEMBER_FIELDS)
+
+
+def _hides_ticker_entries(
+    conn: Connection, kind: str, payload: dict[str, Any], card_id: str
+) -> bool:
+    """Whether a card event may take a ticker entry off its project's page (§16.9): an entry
+    names a card only while `public_cards.shown` holds, which reads the card's label and
+    status. A new label, or a new status of a `security` card, may end that; a claim, a
+    release, an assignment or a merge (into `done`, which only adds) never does. A hold is
+    `moderation.apply`'s."""
+    if kind == "task_updated":
+        fields = payload.get("fields") or []
+        if "label" in fields:
+            return True
+        if "status" not in fields:
+            return False
+    elif kind == "task_reported":
+        if payload.get("status_before") == payload.get("status_after"):
+            return False
+    else:
+        return False
+    label = conn.execute(select(t.card.c.label).where(t.card.c.id == card_id)).scalar()
+    return (label or "").lower() == "security"
 
 
 # The events of a membership: what a public page shows of the team follows them (§16.9).
@@ -353,7 +401,7 @@ CARD_KINDS = frozenset(
 )
 
 # The events of a card's notes: the card's public page follows them (§16.9).
-NOTE_KINDS = frozenset({"note_added", "note_resolved"})
+NOTE_KINDS = frozenset({"note_added", "note_resolved", "note_edited"})
 
 # The trusts that read every event of the project, a proxy included (§2.3, §8.2).
 SEE_ALL_TRUSTS = ("owner", "admin")
@@ -553,6 +601,11 @@ def window_times(conn: Connection, project_id: str, membership: Any) -> list[tup
     return found
 
 
+def is_isolated(membership: Any) -> bool:
+    """An isolated agent member (§6.2)."""
+    return _isolated(membership)
+
+
 def _isolated(membership: Any) -> bool:
     """An isolated agent member (§6.2); a reader that is no membership row, such as an owner
     outside the project, is none."""
@@ -692,6 +745,7 @@ NON_WAKING = frozenset(
         "attachment_deleted",  # a deleted file wakes nobody (§8.7)
         "jour_fixe_skipped",  # a skip and a series change wake nobody (§20.9)
         "jour_fixe_series_changed",
+        "maintenance_cancelled",  # nothing to plan around any more (§16.12)
     }
 )
 

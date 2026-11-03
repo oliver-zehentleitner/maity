@@ -9,7 +9,7 @@ from fastapi import APIRouter, Body, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from sqlalchemy import Connection
 
-from maity_hub import clock, landing, legal, previews, render
+from maity_hub import clock, landing, landing_stats, legal, previews, render
 from maity_hub.admin import instance_admin_id
 from maity_hub.auth import second_factor
 from maity_hub.deps import HumanCaller, engine_of, settings_of
@@ -98,6 +98,7 @@ def show_legal_preview(
         texts = row.payload
         setting = legal.stored(conn)
         chosen = render.choose_language(list(texts), setting["default_language"], lang, None)
+        frame = landing.stored(conn)
         body = render.legal_document(
             page=row.page,
             lang=chosen,
@@ -107,8 +108,9 @@ def show_legal_preview(
             current=None,
             languages=list(texts),
             legal=legal.public(setting),
-            setting=landing.stored(conn),
+            setting=frame,
             public_url=settings_of(request).public_url,
+            stats=landing_stats.for_frame(conn, frame),
         )
     return HTMLResponse(
         body,

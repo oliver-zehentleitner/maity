@@ -15,6 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine, inspect, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import OperationalError
 
 from maity_hub.app import create_app
 from maity_hub.config import Settings, normalize_database_url
@@ -107,11 +108,56 @@ def _downgrade_emptied(engine: Engine) -> None:
     downgrade(engine)
 
 
+TRUNCATE_LOCK_TIMEOUT = "60s"
+LOCK_NOT_AVAILABLE = "55P03"  # PostgreSQL's SQLSTATE for a lock timeout
+
+
+class LeakedConnection(RuntimeError):
+    """A connection a test left in a transaction held locks the cleanup between tests needs."""
+
+
 def _empty_the_tables(engine: Engine) -> None:
-    """Delete every row of a server database at head, keeping the schema and the revision."""
+    """Delete every row of a server database at head, keeping the schema and the revision.
+
+    On PostgreSQL a connection a test left in a transaction holds its locks, and the TRUNCATE
+    waited for them without end (tsk-xz3bxa5cwv4v). It now gives up after
+    `TRUNCATE_LOCK_TIMEOUT`; the sessions holding locks in this worker's database are named and
+    ended, so this one test fails and the next one runs (hub/context/testing.md)."""
+    try:
+        _truncate(engine)
+    except OperationalError as error:
+        if getattr(error.orig, "sqlstate", None) != LOCK_NOT_AVAILABLE:
+            raise
+        holders = _end_the_lock_holders(engine)
+        raise LeakedConnection(
+            f"the cleanup before this test waited {TRUNCATE_LOCK_TIMEOUT} for locks a connection"
+            f" left in a transaction held; ended so the next test runs: {holders or 'none found'}"
+        ) from error
+
+
+def _end_the_lock_holders(engine: Engine) -> list[str]:
+    """The sessions holding a table lock in this database, other than this one: each named
+    with its state and last statement, then ended."""
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT DISTINCT a.pid, a.state, left(a.query, 200) AS query"
+                " FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid"
+                " WHERE l.granted AND l.relation IS NOT NULL"
+                " AND a.datname = current_database() AND a.pid <> pg_backend_pid()"
+            )
+        ).all()
+        for row in rows:
+            conn.execute(text("SELECT pg_terminate_backend(:pid)"), {"pid": row.pid})
+        conn.commit()
+    return [f"pid {row.pid} ({row.state}): {row.query}" for row in rows]
+
+
+def _truncate(engine: Engine) -> None:
     tables = [t for t in inspect(engine).get_table_names() if t != "alembic_version"]
     with engine.begin() as connection:
         if engine.dialect.name == "postgresql":
+            connection.execute(text(f"SET LOCAL lock_timeout = '{TRUNCATE_LOCK_TIMEOUT}'"))
             quoted = ", ".join(f'"{t}"' for t in tables)
             connection.execute(text(f"TRUNCATE {quoted} RESTART IDENTITY CASCADE"))
             if "nonce_epoch" in tables:
@@ -224,6 +270,15 @@ def _no_outbound_network(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _no_held_instance_names(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A hub started with `MAITY_FORGE_INSTANCE_NAMESPACES` holds its names process-wide
+    (§11.4); the next test starts with none held."""
+    from maity_hub import handles
+
+    monkeypatch.setattr(handles, "_instance_names", frozenset())
+
+
+@pytest.fixture(autouse=True)
 def _no_background_ktw_reads(monkeypatch: pytest.MonkeyPatch) -> None:
     """A project view schedules a Keep the Why read in the background; in tests that
     would race the next test's cache. Tests of the scheduling replace this themselves."""
@@ -297,7 +352,14 @@ def _fresh_process_state() -> Iterator[None]:
     forge._budgets.clear()
     images.reset()
     ktw.CACHE.clear()
+    from maity_hub import maintenance
+
+    maintenance.forget()  # one test's window must not refuse the next test's requests
+    # The window cache's clock stands still: a counting test must not see the window read
+    # again because its runner is slow (tsk-aaprca1rs4ny); a test that wants expiry moves it.
+    maintenance.monotonic = lambda: 0.0
     yield
+    maintenance.monotonic = maintenance._process_monotonic
     clock.reset()
     from maity_hub import longpoll
 

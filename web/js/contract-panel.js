@@ -62,10 +62,12 @@ window.Maity = window.Maity || {};
         return;
       }
       const url = safeUrl(s.url);
+      const whole = wholeLink(ctx, k);
       append(clear(body),
         h("p", { class: "muted contract-meta" }, M.tn("contract.meta.at", { path: s.path, ref: h("code", null, String(s.ref || "").slice(0, 7)) }),
           " · ", M.t("contract.meta.read", { ago: formatAgo(s.fetched_at, M.api.now()) }),
           url ? [" · ", h("a", { href: url, rel: "noopener noreferrer", target: "_blank" }, M.t("contract.meta.file"))] : null,
+          whole ? [" · ", whole] : null,
           " · ", refresh()),
         h("div", { class: "md contract-text" }, M.markdown(s.text)),
         s.truncated ? h("p", { class: "flag" }, url
@@ -98,6 +100,16 @@ window.Maity = window.Maity || {};
       if (k.section) read();
     }
     return box;
+  }
+
+  // The section in the whole contract (§6.8): only for a card whose file is
+  // the one the project's setting names, and a section that is a number, as
+  // its anchor `s-<number>` is. A number two headings share anchors
+  // neither; the card's own read already says `ambiguous_in_file` then.
+  function wholeLink(ctx, k) {
+    const path = k.path || DEFAULT_PATH;
+    if (!k.section || !/^\d+(\.\d+)*$/.test(k.section) || !M.contractView || path !== M.contractView.pathOf(ctx.project)) return null;
+    return h("a", { class: "contract-whole-link", href: ctx.link("contract") + "#s-" + k.section }, M.t("contract.meta.whole"));
   }
 
   // Path and section, as whoever may edit the card sets them (§6.8).

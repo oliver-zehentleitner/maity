@@ -308,8 +308,8 @@ def create(
     errors: dict[str, str] = {}
     if not _HANDLE.fullmatch(handle):
         errors["handle"] = "invalid"
-    elif paths.handle_reserved(handle):
-        errors["handle"] = "reserved"
+    elif paths.handle_reserved(handle) or handles.held_for_instance(conn, handle):
+        errors["handle"] = "reserved"  # §16.11, or held for the operator's token (§11.4)
     if not display_name_ok(display_name):
         errors["display_name"] = "invalid"
     if errors:
