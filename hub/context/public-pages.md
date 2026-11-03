@@ -119,7 +119,8 @@ public page they could reorder or hide text to make one person's words read as a
 **See:** https://github.com/oliver-zehentleitner/maity — 038e685e-62bb-4f21-be5d-ab4a58b9c444 — as of 2026-11-02
 
 It supersedes 833b0f1f, whose `touch` paths stay as written there. `public_profile` defaults to on, and the migration `20261102110000_profiles_public` switched every
-existing account on. `public_people.served` no longer reads it: every active account that is not suspended
+existing account on; an instance that upgrades later has its accounts of that moment switched the same
+way, so its operator tells their users first (the changelog says so). `public_people.served` no longer reads it: every active account that is not suspended
 or deleted and whose profile is under no hold of moderation has its page at `/{handle}` and is named on the
 pages of its open projects, by handle, on the Overview, Board, Members, Organisation, a card's page and the
 snapshot alike, who is online included (on `main` before, an online member with the profile off was only
@@ -129,7 +130,9 @@ switch decides what the page shows: on, the bio, the links under `everyone` and 
 only the name, the handle and the agents, with `noindex` in the page and its headers (`public_page.indexed`,
 which the sitemap also skips). With the profile off, the bio, the links and the list of projects are for the
 members of a shared project, in the dashboard (`GET /people/{handle}`). The registration's link page says
-that the name and the handle are public and that the name need not be the real one. An agent's page links
+that the name and the handle are public, that the name need not be the real one, and that the profile is
+public by default (the public projects, the text and links one chooses to show) and can be turned off in the
+account. An agent's page links
 its owner's page, which now always exists while the owner has an account in good standing.
 
 **Reason:** an open project follows the forge model the maintainer chose for projects and profiles

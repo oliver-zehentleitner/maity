@@ -2102,7 +2102,10 @@ transport, `Sec-Fetch-Site` and `next`.
    fields: the **password chosen at registration**, the **handle**, the
    **display name** — under it the note "Your name and handle are
    publicly visible. The name can be anything; it does not have to be
-   your real one.", since every account has a public page (§16.9) — and — when the instance has terms — "I accept the
+   your real one. Your profile is public by default, with your public
+   projects and the text and links you choose to show there; you can
+   turn it off in your account.", since every account has a public page
+   and `public_profile` starts `true` (§16.9) — and — when the instance has terms — "I accept the
    terms (<url>, version <version>)", unchecked, for the instance's
    current version. The form carries that version in a hidden field the
    hub signs together with the registration token (HMAC under
@@ -14945,8 +14948,9 @@ second segment (§16.11), so the address never meets a project.
 is under no moderation hold: an open project names its members, so the
 name leads somewhere (the maintainer's decision of 2026-11-02). Private
 projects never appear on it. `PATCH /me` (human only) sets
-`public_profile` (default `true`; the accounts that existed on
-2026-11-02 were switched to `true`) and `public_bio` (`null` or plain
+`public_profile` (default `true`; the upgrade that brings this
+switches every account existing at that moment to `true`, so an
+operator tells their users first) and `public_bio` (`null` or plain
 text, at most 280 characters; every C0 control character and the
 bidirectional overrides U+202A–U+202E and U+2066–U+2069 are `invalid`
 with `details.fields.public_bio: "control_character"`).

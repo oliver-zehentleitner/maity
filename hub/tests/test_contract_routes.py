@@ -34,8 +34,6 @@ NOT_ROUTED = {
     ("PATCH", "/me/preferences"),
     # Contract without a route yet: tsk-0kz8v1ff5sgf (confirming a sign-in apart from reading it).
     ("POST", "/auth/sessions/{}/confirm"),
-    # Contract without a route yet: tsk-yhbmz7mjng7n (the whole contract, §6.8).
-    ("GET", "/projects/{}/{}/contract"),
 }
 
 # Routes the contract no longer names, removed with the hub change of the same card. Remove an

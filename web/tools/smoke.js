@@ -4,6 +4,18 @@
 // are not covered. Needs a node binary only, no packages.
 //
 //   node tools/smoke.js .        (from web/; `make smoke`)
+//
+// Every run formats as CI does: English and UTC (tsk-c3qrypstpk5h). Intl's default
+// locale and time zone come from the environment when node starts, and the page
+// formats with them wherever a reader has chosen none; on a German machine the swarm
+// step read "2,4" for CI's "2.4". So a run in any other environment starts itself
+// again in this one. A case that is about another locale sets M.i18n.locale itself.
+const PINNED = { LANG: "en_US.UTF-8", LC_ALL: "en_US.UTF-8", LANGUAGE: "en_US", TZ: "UTC" };
+if (Object.entries(PINNED).some(([k, v]) => process.env[k] !== v)) {
+  const again = require("child_process").spawnSync(process.execPath, [...process.execArgv, __filename, ...process.argv.slice(2)],
+    { stdio: "inherit", env: Object.assign({}, process.env, PINNED) });
+  process.exit(again.status === null ? 1 : again.status);
+}
 const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
@@ -4864,6 +4876,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/account"); for (let k = 0; k < 4; k++) await tick();
   expect(text(byId("meat-proxy-note")) === "This person says: a newer note.", "meat proxy: the note shown is the one /me carries");
   win.Maity.api.get = mpGet;
+  // The online switch on the account page (§16.9): on by default, unticking sends exactly
+  // {public_presence: false}, and the box then shows what the hub answered.
+  {
+    await go("#/account"); for (let k = 0; k < 4; k++) await tick();
+    const psForm = () => main.querySelector("form.public-profile-form");
+    const psPatch = win.Maity.api.patch, psSent = [];
+    win.Maity.api.patch = (p, b) => { if (p === "/me") psSent.push(b); return psPatch(p, b); };
+    expect(psForm() && byId("public-presence") && byId("public-presence").checked, "online switch: the account page shows it ticked by default");
+    byId("public-presence").checked = false; psForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    expect(JSON.stringify(psSent) === JSON.stringify([{ public_presence: false }]) && !byId("public-presence").checked,
+      "online switch: unticking sends public_presence false alone and keeps the answer " + JSON.stringify(psSent));
+    byId("public-presence").checked = true; psForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+    expect(JSON.stringify(psSent[psSent.length - 1]) === JSON.stringify({ public_presence: true }) && byId("public-presence").checked,
+      "online switch: ticking it again sends public_presence true " + JSON.stringify(psSent));
+    win.Maity.api.patch = psPatch;
+  }
   // Your data (docs/api.md §2.9): the export and the deletion request, each a sensitive call (§2.8): the page asks for the
   // password or a code where the hub says so, proves it and makes the call again.
   const ydGet = win.Maity.api.get, ydPost = win.Maity.api.post, ydSave = win.Maity.yourData.save;
@@ -10938,6 +10966,31 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!mtBanner() && !main.querySelector(".maintenance-page"), "maintenance: (a window the page has not read yet)");
   await win.Maity.api.get("/projects").catch(() => null); await mtSettle();
   expect(main.querySelector(".maintenance-page") && text(main).includes("Told by a refusal") && mtBanner(), "maintenance: a 503 maintenance shows the full page at once");
+  // Someone other than the instance admin, signed in: the full page at /admin/maintenance too, with a way out.
+  const mtMeGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/me" ? mtMeGet(p).then((v) => ({ ...v, member: { ...v.member, instance_admin: false } })) : mtMeGet(p));
+  await go("#/admin/maintenance"); await mtSettle();
+  expect(main.querySelector(".maintenance-page") && !mtSection() && !btn(main, "End maintenance now") && header.querySelector("button.maintenance-sign-out")
+    && header.querySelector("button.maintenance-sign-out").textContent === "Sign out",
+  "maintenance: a signed-in non-admin gets the full page at /admin/maintenance too, and a way to sign out");
+  // A visitor without a session: the full page through the drawing itself, with the way to the sign-in.
+  win.Maity.api.get = (p) => (p === "/auth/session" ? Promise.reject(new win.Maity.api.ApiError("x", 401, p, "unauthenticated", {})) : mtMeGet(p));
+  await go("#/all"); await mtSettle();
+  expect(main.querySelector(".maintenance-page") && main.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/login") && !byId("login-handle"),
+    "maintenance: a visitor without a session gets the full page, not the public page or the sign-in");
+  win.Maity.api.get = mtMeGet;
+  // A banner left in other words (a change of language) is drawn again by the next drawing, even from a recent read.
+  mtBanner().textContent = "stale words";
+  await win.Maity.maintenance.fresh();
+  expect(mtBanner() && mtBanner().textContent !== "stale words" && mtBanner().textContent.includes("Told by a refusal"),
+    "maintenance: a drawing redraws the banner from a recent read, so a change of language reaches it");
+  // The window ends at `until` by itself: past it, nothing is known to run and the banner goes.
+  const mtClock = win.Maity.api.now;
+  win.Maity.api.now = () => Date.now() + 601000;
+  win.Maity.maintenance.drawBanner();
+  expect(win.Maity.maintenance.current() === null && !win.Maity.maintenance.running() && !mtBanner(), "maintenance: past `until` the window is over by itself, the banner gone");
+  win.Maity.api.now = mtClock;
+  win.Maity.maintenance.drawBanner();
   await win.Maity.api.post("/admin/maintenance/end");
   win.Maity.maintenance.know(null); await mtSettle();
   expect(!main.querySelector(".maintenance-page") && !mtBanner(), "maintenance: a window gone takes the full page with it");

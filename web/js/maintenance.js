@@ -49,7 +49,9 @@ window.Maity = window.Maity || {};
 
   // Before a drawing: GET /maintenance unless a read is recent. A failed read keeps what is known.
   async function fresh() {
-    if (readAt && Date.now() - readAt < FRESH_MS) return current();
+    // A recent read answers from what is known; the banner is drawn again all the same, since a
+    // drawing after a change of language must not keep it in the old one.
+    if (readAt && Date.now() - readAt < FRESH_MS) { drawBanner(); return current(); }
     try {
       const answer = await M.api.get("/maintenance");
       known = answer.window ? { from: answer.window.from, until: answer.window.until, text: answer.window.text } : null;

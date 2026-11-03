@@ -558,7 +558,9 @@ also on an instance that serves no public pages, because public means
 open work, not only a page.
 
 Since 2026-11-02 profiles follow too: `public_profile` is on by
-default and every existing account was switched on; a profile that is
+default and every account existing at the upgrade is switched on (on
+this instance on 2026-11-02; an operator who upgrades later tells their
+users first); a profile that is
 off keeps a page with name and handle, out of search, and an open
 project names every member by handle (`hub/context/public-pages.md`,
 3da2d551).
