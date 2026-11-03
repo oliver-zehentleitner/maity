@@ -296,8 +296,8 @@ Runs on a shared machine overlapped, and agents gated them by hand with `pgrep`.
 **Id:** f3b6fe34-f86e-490c-afe6-f03ee3263ab3
 **Type:** decision
 **Status:** active
-**Evidence:** inferred
-**Source:** tsk-5tcq1t2vhh56 (KTW M1), 2026-11-03; the source of the files chosen by its implementer, announced to the lead the same day
+**Evidence:** confirmed
+**Source:** tsk-5tcq1t2vhh56 (KTW M1), 2026-11-03; the wheel instead of a release asset confirmed by the project's lead on that card the same day
 **See:** stack.md#no-framework-and-no-build-step-static-html-vanilla-javascript-as-classic-scripts-css — bbf733b2-9b82-4c60-9857-4ee23849683b — as of 2026-11-03
 **Revisit when:** Keep the Why publishes the views as a release asset of their own, or the dashboard gets a build step
 
