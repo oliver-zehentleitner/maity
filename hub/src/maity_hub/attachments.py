@@ -493,11 +493,17 @@ def remove_stray(engine: Engine, store: attachment_store.BlobStore, key: str) ->
 
 
 def sweep(
-    engine: Engine, store: attachment_store.BlobStore, stop: worker_runs.Stopping | None = None
+    engine: Engine,
+    store: attachment_store.BlobStore,
+    stop: worker_runs.Stopping | None = None,
+    *,
+    expiring: bool = True,
 ) -> dict[str, int]:
     """One pass: pending uploads past 24 hours go with their bytes, the bytes of a
     tombstoned row go if they are still there, and a blob no row names goes once it is
-    older than a transaction can be. Returns what it removed, by kind."""
+    older than a transaction can be. Returns what it removed, by kind. Without `expiring` it
+    leaves the rows alone and only cleans `store`: `copy-to-s3` cleans the bucket so while
+    the hub still serves from the volume, whose own sweep expires the rows."""
     done = {"expired": 0, "tombstoned": 0, "orphans": 0}
     cutoff = clock.now() - PENDING_FOR
     with engine.connect() as conn:
@@ -513,7 +519,8 @@ def sweep(
                 t.attachment.c.deleted_at.is_not(None)
             )
         ).all()
-    done["expired"] = expire(engine, store, candidates, cutoff)
+    if expiring:
+        done["expired"] = expire(engine, store, candidates, cutoff)
     for row in tombstoned:  # a tombstone never comes back: its bytes can go without a lock
         if stop is not None and stop.is_set():
             return done

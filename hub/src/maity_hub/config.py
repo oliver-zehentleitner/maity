@@ -89,6 +89,10 @@ class Settings:
     # MAITY_WORKERS: how many serving processes `maity-hub serve` starts, 1–64. More than one
     # only on PostgreSQL, where the processes share what they must (hub/context/replicas.md).
     workers: int = 1
+    # MAITY_REPLICAS: how many hubs the deployment runs on this database, 1–100, as the
+    # deployment says it (the chart sets it from `replicas`); the hub cannot count them. More
+    # than one only on PostgreSQL and without a local attachment directory, which is one pod's.
+    replicas: int = 1
     # MAITY_DB_POOL_SIZE, MAITY_DB_MAX_OVERFLOW: the server database's connection pool
     # (16 + 16; SQLAlchemy's own defaults are 5 + 10, hub/context/persistence.md), for the
     # whole hub: with several workers each process holds its share (`per_worker`).
@@ -198,6 +202,7 @@ class Settings:
                 parse_number(env, "MAITY_ATTACHMENT_QUOTA", 1024**3, minimum=1024, maximum=2**50)
             ),
             workers=int(parse_number(env, "MAITY_WORKERS", 1, minimum=1, maximum=64)),
+            replicas=int(parse_number(env, "MAITY_REPLICAS", 1, minimum=1, maximum=100)),
             db_pool_size=int(parse_number(env, "MAITY_DB_POOL_SIZE", 16, minimum=1, maximum=500)),
             db_max_overflow=int(
                 parse_number(env, "MAITY_DB_MAX_OVERFLOW", 16, minimum=0, maximum=500)

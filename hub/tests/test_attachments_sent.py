@@ -305,6 +305,27 @@ def test_each_sweep_pass_logs_what_it_removed_also_when_nothing_went(
     ]
 
 
+def test_a_sweep_without_expiring_leaves_an_old_pending_upload_and_its_bytes(
+    stored: ClientFactory, owner: flow.Human, blobs: Path, migrated: Engine
+) -> None:
+    """`copy-to-s3` cleans the bucket with the sweep while the hub serves from the volume: the
+    rows stay the hub's own sweep's to expire."""
+    agent = flow.agent(stored, owner)
+    old = upload(agent, "old.txt")
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.attachment)
+            .where(t.attachment.c.id == old)
+            .values(uploaded_at=clock.now() - timedelta(hours=25))
+        )
+    store = attachment_store.LocalStore(blobs)
+    assert attachments.sweep(migrated, store, expiring=False)["expired"] == 0
+    with migrated.connect() as conn:
+        assert old in set(conn.execute(select(t.attachment.c.id)).scalars())
+    assert [p.name for p in blobs.glob("*/*")] == [old]
+    assert attachments.sweep(migrated, store)["expired"] == 1
+
+
 def test_removing_a_member_drops_its_pending_uploads_and_keeps_what_it_sent(
     stored: ClientFactory, owner: flow.Human, blobs: Path, migrated: Engine
 ) -> None:
