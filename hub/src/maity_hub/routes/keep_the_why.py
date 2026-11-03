@@ -103,7 +103,7 @@ def _views_read(
         ktw_reads.require_covered(fg, forge.repository_of(project.repository_url))
         served = read(
             fg,
-            ktw_reads.named_reader(base),
+            ktw_reads.named_reader(base, fg),
             project.id,
             project.repository_url,
             canonical or None,

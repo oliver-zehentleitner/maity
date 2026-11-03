@@ -14,6 +14,8 @@ from tests.conftest import ClientFactory
 from tests.test_keep_the_why import BASE, REPO, Fake, entry, export, kfile
 
 PATH = "/projects/maintainer/widget/keep-the-why"
+# §11.4's own visibility check, kept before the fixture replaces it for the other tests
+REAL_REQUIRE_PUBLIC = forge.Forge._require_public
 OTHER = "https://github.com/acme/other"
 OTHER_BASE = "https://other.example/ktw"
 
@@ -772,7 +774,7 @@ def test_a_removed_grant_ends_the_cached_export_at_once(owner: flow.Human, fake:
         assert b"hub.md#e1" not in answer.content
 
 
-def test_a_repository_turned_private_ends_the_cached_export_at_once(
+def test_a_repository_turned_private_ends_the_cached_export_with_the_visibility_check(
     owner: flow.Human, fake: Fake
 ) -> None:
     fake.instance = True  # type: ignore[attr-defined]
@@ -922,13 +924,17 @@ def test_the_visibility_is_read_anonymously_without_a_token() -> None:
     assert ktw_reads._visibility(_Anonymous({"private": True}), "acme/other") == "not_public"  # type: ignore[arg-type]
 
 
-def test_the_named_reader_is_the_instance_token_or_none() -> None:
+def test_the_named_reader_is_the_instance_token_only_where_it_serves_the_project() -> None:
+    base = forge.Forge("instance", access=object())
     grant = forge.Forge("owner-grant", granted="owner_token", repository="acme/widget")
-    assert ktw_reads.named_reader(forge.Forge("instance")).token == "instance"
-    assert ktw_reads.named_reader(forge.Forge(None)).token is None
-    reader = ktw_reads.named_reader(forge.Forge("instance", access=object()))
+    served = forge.Forge("instance")  # the project's own source is the instance (§11.4)
+    refused = forge.Forge("instance", refused="no_grant")
+    assert ktw_reads.named_reader(base, served).token == "instance"
+    assert ktw_reads.named_reader(base, grant).token is None, "an owner's project: anonymous"
+    assert ktw_reads.named_reader(base, refused).token is None
+    assert ktw_reads.named_reader(forge.Forge(None), served).token is None
+    reader = ktw_reads.named_reader(base, served)
     assert reader.granted is None and reader.access is None and reader.project_id is None
-    assert grant.granted == "owner_token"  # the grant is never what named_reader is given
 
 
 def test_a_budget_spent_reading_a_childs_config_is_probe_unavailable(
@@ -964,3 +970,39 @@ def test_a_retry_at_that_passed_is_read_again_not_repeated(
     now[0] += ktw.FORCE_INTERVAL + 1
     again = owner.get(f"{PATH}/export")
     assert again.status_code == 200, "not the same 503 until the cached snapshot expires"
+
+
+def test_a_repository_turned_private_ends_within_the_ten_minutes_of_the_real_check(
+    owner: flow.Human, fake: Fake, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With §11.4's own visibility check and its cache, not a stub: served while the check's
+    answer is younger than PUBLIC_SECONDS, refused after it is read again."""
+    import time as real_time
+
+    monkeypatch.setattr(forge.Forge, "_require_public", REAL_REQUIRE_PUBLIC)
+    fake.family()
+    private = [False]
+    sent: list[str] = []
+
+    def send(self: forge.Forge, path: str, *args: Any, **kwargs: Any) -> Any:
+        sent.append(path)
+        return {"private": private[0]}
+
+    clock_now = [real_time.monotonic()]
+    monkeypatch.setattr(forge.Forge, "_send", send)
+    monkeypatch.setattr(real_time, "monotonic", lambda: clock_now[0])
+    monkeypatch.setattr(
+        forge.Forge, "for_project", lambda self, project_id: forge.Forge("instance")
+    )
+    project(owner)
+    first = owner.get(f"{PATH}/export")
+    assert first.status_code == 200
+    private[0] = True
+    clock_now[0] += forge.PUBLIC_SECONDS - 5
+    within = owner.get(f"{PATH}/export")
+    assert within.status_code == 200, "inside the check's 10 minutes, as §11.5 says"
+    clock_now[0] += 10
+    after = owner.get(f"{PATH}/export", headers={"If-None-Match": first.headers["ETag"]})
+    assert after.status_code == 409
+    assert after.json()["error"]["details"]["reason"] == "private_without_grant"
+    assert sent.count("/repos/acme/widget") == 2

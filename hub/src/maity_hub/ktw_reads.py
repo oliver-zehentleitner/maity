@@ -206,11 +206,13 @@ def _visibility(reader: forge.Forge, repository: str) -> str | None:
 FOREIGN = ForeignCache()
 
 
-def named_reader(instance: forge.Forge) -> forge.Forge:
-    """The reader of a named repository (§11.5): the operator's instance token where one is
-    set, else none; never a project owner's grant, and bound to no project, so no source of
-    §11.4 is chosen for it. Its reads count against that source's hub-wide budget."""
-    return forge.Forge(instance.token)
+def named_reader(instance: forge.Forge, own: forge.Forge) -> forge.Forge:
+    """The reader of a named repository (§11.5): the operator's instance token for a project
+    the instance token serves itself (its own source, `own`, is the instance, §11.4: the
+    operator's own namespaces), else no token; never a project owner's grant, and bound to
+    no project, so no source of §11.4 is chosen for it. Its reads count against that
+    source's budget."""
+    return forge.Forge(instance.token if own.via == "instance" else None)
 
 
 def require_covered(reader: forge.Forge, repository: str) -> None:
