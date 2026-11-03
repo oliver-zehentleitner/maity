@@ -7,13 +7,21 @@ metadata:
     {{- include "maity-hub.labels" . | nindent 4 }}
     app.kubernetes.io/component: hub
 spec:
-  # One pod, never two at once: the long-poll notifier, "one long-poll per
-  # session", the request-signing nonce window and the probe worker live in
-  # the process (docs/architecture.md §8). Recreate stops the old pod before
-  # the new one starts; a rolling update would overlap them.
-  replicas: 1
+  # One pod by default, stopped before its successor starts: with SQLite or
+  # a local attachment volume two pods would not share what they must. More
+  # replicas (PostgreSQL, attachments off the volume; the hub refuses
+  # otherwise) share wake-ups, nonces, limits and worker passes through the
+  # database (hub/context/replicas.md), so they roll one at a time.
+  replicas: {{ .Values.replicas }}
   strategy:
+    {{- if gt (int .Values.replicas) 1 }}
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+    {{- else }}
     type: Recreate
+    {{- end }}
   revisionHistoryLimit: 5
   selector:
     matchLabels:
@@ -105,4 +113,16 @@ spec:
       {{- with .Values.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml .Values.topologySpreadConstraints | nindent 8 }}
+      {{- else if gt (int .Values.replicas) 1 }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "maity-hub.hubSelectorLabels" . | nindent 14 }}
       {{- end }}

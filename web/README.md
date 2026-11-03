@@ -104,13 +104,20 @@ requests. A badge is a number only, hidden at zero; the words are the
 button's name ("3 new notifications", "2 unread chat messages"). The bell reads the latest 20
 items when it opens, unread ones marked, each a link to where it happened. The link is
 built from the item's `target`, never from its `url`. Opening an item
-marks it read, except a sign-in or address alert (`security`): that is
-confirmed only explicitly, so opening it to look never gives the
-reported session good standing (§2.6.5, §18.3). **Mark all read** marks
-everything up to that answer's position (`next_after`, passed back
-unchanged) and leaves those alerts; it is not offered when they are all
-that is unread. The panel says they stay unread until **This was me**
-under Sessions. A sign-in or an address change leads to the account's
+marks it read, except a security alert (`security`): the unread ones
+stand pinned on top in a block of their own (`pinned`, §18.2), each
+once, and opening one only leads to it. Reading never confirms
+(§2.6.5, §18.3): a sign-in this session may confirm has **This was me**
+(`POST /auth/sessions/{id}/confirm`), every other one **Mark read** where
+this session may mark it (a sign-in or address alert from a confirmed
+session older than it, every other kind from any session). For that the
+bell reads the sessions, ended ones too, whenever an alert is pinned.
+**Mark all read** marks everything up to that answer's position
+(`next_after`, passed back unchanged); with security alerts pinned it
+first asks, naming each with its time, title (the device) and place, and
+then sends `include_security`. Declined, nothing is sent. What the hub
+left unread (`skipped`) is named with its reason, and the panel stays
+open. A sign-in or an address change leads to the account's
 sessions (`/account/sessions`), a personal request of a project one is not in to everything waiting (the
 personal inbox, `/requests/<id>`, is not in the page yet), and "<n> of your agent instances are not listening"
 (`agents_not_listening`, target `agents`, under `not_listening.mode: bell`) to one's agents (`/agents`). Escape closes
@@ -1078,14 +1085,16 @@ where the human is signed in, newest first, from `GET /auth/sessions?ended=true`
   from and when, which session approved a device code, and whether it is
   confirmed (`good_standing`) and passed the second factor (§2.8.7). The
   current one is marked.
-- **This was me** on a session whose sign-in alert is unread, ended
-  sessions included, marks that alert read by its id (§18.3); it is
-  offered only from a confirmed session older than the one it confirms,
-  never on the session itself. An alert with no session (an address
-  change) has its own **This was me**. The hub answers 200 even when it
-  skipped the id, so "Confirmed" is said only when the alert is gone
-  from the unread ones afterwards, and when the list cannot be read
-  again the result is said to be unknown.
+- **This was me** on an active session that is not confirmed confirms its
+  sign-in by its own call (`POST /auth/sessions/{id}/confirm`, §2.6.5),
+  whatever its alert's read mark. It is offered only from a confirmed
+  session older than the one it confirms, never on the session itself,
+  and never on an ended one. The hub's refusals (`not_earlier`,
+  `not_in_good_standing`) are said in words. An unread alert of a session
+  ended since, or one with no session (an address change), gets
+  **Mark read** where this session may mark it (§18.3). The hub answers
+  200 and names what it skipped, so a skipped id is said, not shown as
+  read.
 - **End** per session and **End all other sessions**. From a session that
   is not confirmed, **End** on a confirmed one is disabled ("Confirm this
   session's sign-in from another session first"), and while it is under
@@ -1107,10 +1116,11 @@ where the human is signed in, newest first, from `GET /auth/sessions?ended=true`
   approved session is still active. **End this session** (one click)
   ends those that are, under the same rules as the list (disabled with
   the reason where the hub would refuse); **This was me** where allowed.
-  It is built again on every 15-second round while a sign-in alert is
-  unread (and once more when the last one went), so a new alert, a swap
-  of alerts or an approved session ending elsewhere shows without
-  navigating.
+  It follows the sessions (`good_standing`), not the alerts' read marks,
+  so every page a human loads reads `/auth/sessions?ended=true` once for
+  it. It is built again on the 15-second round while it stands and when
+  the security count moves, so a confirm elsewhere or an approved session
+  ending elsewhere shows without navigating.
 - Times are compared as instants on the hub's clock (`Maity-Server-Time`).
   A check each minute draws the section again when this session crosses
   an hour or a day of age, which changes what it may do.
@@ -1797,11 +1807,13 @@ button, and every notification on **All notifications**
 a dot and said to a screen reader, **Mark read** beside each unread item
 that may be marked from here, the row marked in place (not one of the
 four open matters of §18.3 — a registration, a disabled address, an open
-report, agents not listening; a sign-in or address alert only where this
-session may confirm it, §2.6.5), and **Mark all
+report, agents not listening; a security alert only where this session
+may mark it, as on the bell, §18.3), and **Mark all
 read**, always there and off while nothing it marks is unread, marking up
-to the head of the first page (§18.3); the page says that a sign-in or
-address alert stays unread until confirmed with **This was me**.
+to the head of the first page (§18.3); the page says that it leaves
+sign-in and address alerts unread. Marking one read confirms nothing:
+a sign-in is confirmed with **This was me**. An id the hub skips
+(`skipped`) is said, and its row stays unread.
 
 Language settings follow the API's English/Deutsch choices. In **Project
 settings**, human owners and admins can save the project language; other

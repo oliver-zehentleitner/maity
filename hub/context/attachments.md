@@ -13,8 +13,8 @@
 existing, writable directory, else the hub stops). When it is unset the hub
 starts with attachments switched off: every attachment call, and a message
 that names an attachment, answers `409 attachments_not_configured` with the
-variable's name. `s3` stops the hub with a plain message: it is documented and
-not built.
+variable's name. The `s3` store, opt-in, needs no directory (replicas.md
+a70d7269).
 
 **Reason:** every deployment that exists today starts without the variable,
 and a hub that stopped there would not come back on the next rollout until its
@@ -29,15 +29,39 @@ that has not yet added the volume.
 
 **Id:** 7dcd4850-9dc4-4b4a-9148-e156c8e11718
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** inferred
-**Source:** implementation session, 2026-10-27 (`docs/api.md` §8.7 fixes "the blob first, the metadata after"; the way to undo it is the implementer's)
-**Revisit when:** the sweep (removing blobs without a row) lands, or an `s3` store is built
+**Source:** implementation session, 2026-10-27 (`docs/api.md` §8.7 fixes "the blob first, the metadata after"; the way to undo it is the implementer's); the coordinator's ruling of 2026-11-03 for the `s3` store: the blob outside the project's lock, an orphan after a failed transaction left to the sweep; the reviews of #1281 on 2026-11-03 (the clocks the sweep compares, a write whose answer is lost); the 15-minute limit on a request's time is the SigV4 rule of AWS S3 and MinIO; the S3 service this project runs on refused a request signed 20 minutes off with `RequestTimeTooSkewed` and answered the same read with the right time (a read-only check, 2026-11-03)
+**Revisit when:** the time from the start of an upload's write to its commit can come near `UPLOAD_FRESH`, a store answers without a `Date` header and does not refuse requests with a skewed clock, or the contract changes the write order
+**See:** replicas.md#attachments-move-to-s3-compatible-object-storage — a70d7269-a0a9-45aa-94c5-54715f112c10 — as of 2026-11-03
 
-The upload writes the bytes to a file of its own and moves it into place
-(`os.replace`, after an `fsync`), inside the transaction that inserts the row, so
-a reader never sees half a blob and no row names a missing one. If the
-transaction does not commit, `events.on_rollback` removes the blob. Deleting a
+The upload checks the project's quota and the membership's pending bounds in a
+short read without the lock, so that a refusal costs no write, and then writes
+the bytes before the transaction that inserts the row begins, outside the
+project's lock: one `PutObject` for `s3`, a file of its own moved into place for
+`local` (`os.replace`, after an `fsync`), so a reader never sees half a blob and
+no row names a missing one. The transaction then takes the lock and checks the
+quota, the right to post and the project's state again, and inserts the row only
+while less than `UPLOAD_FRESH` (5 minutes) has passed since the write began, on a
+clock that keeps counting while the host is suspended; past it the upload is
+refused with `503 upload_expired`, a code of its own: the database was reached, so
+`database_unavailable` would name the wrong cause. The sweep measures a blob's age
+on one clock. For `local` that is the hub's wall clock (the file's mtime against
+`time.time()`), while the upload's bound runs on boot time, so a jump of the wall clock
+acts like a skew of that size; for `s3` both times come from the store, the `Date`
+header of its HEAD answer against the object's LastModified, so the hub's clock may
+be off by any amount. A `Date` without a zone (asctime, `-0000`) is read as UTC, as
+HTTP dates are. A negative age is logged. Only an answer without a
+`Date` falls back to the hub's clock. For that case, a store that checks request
+signatures refuses a request whose time is more than 15 minutes (`CLOCK_SKEW`) off
+its own. `BLOB_GRACE` (30 minutes) is larger than both together: a blob the sweep
+sees older than the grace can no longer get its row. From the write on, even a write that failed, the rate stays charged
+whatever follows: a write whose answer was lost may still have stored the bytes, so
+refusals and failures cannot buy writes past the rate. When it
+does not commit (a refusal, a failure, or a concurrent call with the same
+idempotency key that won), the route removes the blob afterwards, outside the
+lock; when that removal fails too, or the process dies before it, the blob is
+one without a row, which the sweep removes after `BLOB_GRACE`. Deleting a
 pending upload removes the row in the transaction and the blob after the
 commit (`events.on_commit`, new for this), where a failure is logged and left to
 the sweep. A crash between the write and the commit leaves a blob without a
@@ -50,6 +74,27 @@ without bytes, impossible; the leftover blob is the harmless one.
 - The row first, then the blob: a crash leaves a row that serves nothing.
 - Removing the blob inside the transaction: a rollback would then lose bytes
   a row still names.
+- Writing the blob inside the transaction, under the project's lock, as until
+  2026-11-03: for `s3` a network call of up to three times 60 seconds while the
+  lock and a database connection are held, the kind of wait that ends in a
+  statement timeout for every other writer of the project. For `local` it made
+  no difference, and one order for both stores keeps one rule for the sweep.
+- Removing the blob in `on_rollback`: the idempotent run may retry the
+  transaction, and a retry after the removal would insert a row whose bytes are
+  gone.
+- A reservation the sweep honours (a row written before the write, or a
+  tombstone set under the lock and the store asked after): a durable bound, but
+  one more transaction and write per upload and per stray, and a table to keep
+  in step with the store; the freshness bound needs neither. It rests on the
+  stores' own limit on clock skew instead, which holds for the stores the hub
+  supports (`local` has one clock).
+- The hub's clock against the object's LastModified: the first version under
+  `s3`. It is right only while the two clocks agree, which the hub cannot see.
+- Timing the bound from the end of the write: a write that returns late (a slow
+  answer, a suspended process) could find its blob already counted as a stray.
+- Giving the rate back on every refusal, as before the write moved: a refusal
+  found under the lock comes after the write, and a caller could buy writes
+  past the rate with uploads that are refused each time.
 
 ## A pending upload is its uploader's alone, and the rate counts 64 KiB units
 
@@ -145,7 +190,7 @@ A list of projects does that per project.
 
 **Id:** 02fb33e3-0fc5-4140-8e33-016045fefdbb
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** implementation session, 2026-10-27 (`docs/api.md` §8.7: pending uploads expire after 24 hours, a blob without a row "is removed by the hub's sweep", a failed removal "is retried by the sweep", `hub/` documents the interval); the interval and the grace are the implementer's
 **Revisit when:** a second replica runs (each would sweep), or the `s3` store is built
@@ -164,8 +209,14 @@ their bytes go by this last rule.
 The sweep takes the project's lock for each expired candidate and deletes it with its
 conditions repeated (still pending, not deleted, still past the cutoff), and removes the bytes
 only of a row that this delete removed: a message that named the upload since the sweep
-chose it has bound it, the delete finds nothing, and the file stays. A stray blob is removed under the project's lock, held from the look at its row
-to the unlink, as an upload holds it from writing the blob to inserting the row. A message cannot name an upload past its 24
+chose it has bound it, the delete finds nothing, and the file stays. A stray blob is asked for
+its age outside every transaction; only the look at its row is under the project's lock, the
+lock under which an upload inserts its row; the removal follows after the lock is released.
+Neither store call waits under the lock, since for `s3` both are network calls. That is safe
+because an upload inserts its row only while its write is younger than `UPLOAD_FRESH`: a blob
+older than `BLOB_GRACE` before the look, with no row at the look, can no longer get one. The
+bound is not a reservation the database holds: it rests on the store's write time and the
+hub's clock agreeing to within a few minutes (half the grace, less the write's own duration). A message cannot name an upload past its 24
 hours either (`unknown`), so the two cannot disagree about the same row.
 
 **Reason:** the write order of the contract leaves exactly one kind of
@@ -219,3 +270,60 @@ nobody. Deleting a deleted attachment answers with its tombstone.
 
 **Reason:** the log is append-only, so the message keeps naming the file; the
 tombstone is how readers learn it is gone.
+
+## A download past one mebibyte streams and holds its last piece back until the digest matches
+
+**Id:** 81f57cb5-f48a-43c7-9729-1d4e4de696b7
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** implementation session, 2026-11-03 (`docs/api.md` §8.7: bytes that do not match their digest are never served; the build plan for the `s3` store: downloads stream, checked while they stream); the threshold is the implementer's
+**Revisit when:** a client is found that keeps a body shorter than its `Content-Length`, or attachments grow past what the threshold was chosen for
+**See:** replicas.md#attachments-move-to-s3-compatible-object-storage — a70d7269-a0a9-45aa-94c5-54715f112c10 — as of 2026-11-03
+
+`GET …/content` first compares the stored size with the row's and answers
+`500 internal` when they differ. Up to 1 MiB (`routes/attachments.WHOLE`) the
+bytes are then read whole and their SHA-256 checked before the answer starts,
+so a mismatch is still a plain `500`. Past it they stream with the row's
+`Content-Length`, hashed as they pass, and the last piece is held back until
+the digest is known: when it does not match, the answer ends short of its
+length and the hub logs it, so no client takes the bytes for the attachment.
+Its status line is still `200`: a client that ignores a body shorter than its
+`Content-Length` would keep a partial file. Uploads are not streamed: the body
+is read whole within the upload limit, as before, and written in one piece.
+
+**Reason:** the contract forbids serving bytes that do not match their
+digest, and a whole file in memory per download does not hold for large files
+or many downloads at once. The status line is gone by the time the last byte
+is read, so a short body is the one way left to refuse; a small file, the
+common case, keeps the plain `500`.
+
+**Rejected alternatives:**
+- **Reading every file whole, as before:** a 100 MiB download costs 100 MiB of
+  the pod's memory for as long as it takes.
+- **Streaming without the check, or checking only after the last byte went
+  out:** the client would hold bytes the hub never vouched for.
+
+## A plain-HTTP S3 endpoint needs its own switch and a host that stays inside the cluster
+
+**Id:** 63204998-0aa3-48eb-bfc6-071612309cb4
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** `docs/api.md` §16 (`MAITY_ATTACHMENT_S3_ENDPOINT`: plain HTTP only to a loopback or cluster-internal host, only with `MAITY_ATTACHMENT_S3_ALLOW_HTTP=1`), which leaves "cluster-internal" undefined; `config.cluster_internal`, implementation session 2026-11-03
+**Revisit when:** a deployment's object store sits on a private address outside these ranges, or the contract defines the term itself
+
+A host counts as cluster-internal when it is a loopback address, an address in
+10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10 or fc00::/7,
+`localhost`, a name of one label (a service in the same namespace, a compose
+service), or a name ending in `.svc`, `.svc.cluster.local` or `.cluster.local`.
+Any other name, which resolves through public DNS, needs `https`.
+
+**Reason:** the credentials and the attachments travel in every request, so
+plain HTTP is only for the MinIO in the same cluster or on the same machine,
+which often has no certificate; the switch makes even that a choice the
+operator wrote down.
+
+**Rejected alternative:**
+- **Python's `is_private`, as first written:** it also counts the
+  documentation ranges (203.0.113.0/24 and others) as private.

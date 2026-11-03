@@ -25,6 +25,9 @@ window.Maity = window.Maity || {};
     // Redrawn in place on task_*, request_*, probe_observed and member_* (js/overview.js).
     { route: "overview", get label() { return M.t("nav.overview"); } },
     { route: "board", get label() { return M.t("nav.board"); }, watch: /^task_/, get changed() { return M.t("nav.board.changed"); } },
+    // The whole contract (js/contract.js, §6.8): opened from the overview's
+    // Contract row and a contract card's section; its tab is the overview's.
+    { route: "contract", get label() { return M.t("nav.contract"); }, tab: false, current: "overview" },
     // One card (/<owner>/<slug>/tasks/<id>, an id's link, js/ids.js): the board
     // with that card marked; its tab is the board's.
     { route: "tasks", view: "board", get label() { return M.t("nav.board"); }, tab: false, current: "board", watch: /^task_/, get changed() { return M.t("nav.board.changed"); } },
@@ -1630,10 +1633,10 @@ window.Maity = window.Maity || {};
         renderBell(ctx);
         renderTabCounts(ctx);
         document.title = M.notify.title(baseTitle);
-        // While a sign-in alert is unread, or when the last one went: the
-        // banner is built again each round, so a swap of alerts or an
+        // While the banner stands, or when the security count moved (a
+        // sign-in, a confirm elsewhere): the banner is built again, so an
         // approved session ending elsewhere shows at once (§2.6.5).
-        if (securityCount() || bannerFor) renderBanner(ctx);
+        if (bannerShown || securityCount() !== bannerFor) renderBanner(ctx);
       },
     };
     if (where.scope !== "project") return ctx;
@@ -1823,20 +1826,22 @@ window.Maity = window.Maity || {};
 
   let renderSeq = 0;
   // The mail sign-in banner (§2.6.5) at the top of the page: built when the
-  // page renders and again when the count of unread sign-in alerts changes.
+  // page renders, and again while it stands or when the count of unread
+  // security alerts changes. It follows the sessions, read or not.
   let bannerFor = 0;
+  let bannerShown = false;
   let bannerSeq = 0;
   const securityCount = () => (M.notify.state.counts ? M.notify.state.counts.security || 0 : 0);
   function renderBanner(ctx) {
-    if (!M.sessions) return;
+    if (!M.sessions || !ctx.me || ctx.me.kind !== "human") return; // a human's sessions only
     const main = document.getElementById("main");
     const seq = ++bannerSeq;
     bannerFor = securityCount();
     const drop = () => { const old = main.querySelector(".signin-banner"); if (old) main.removeChild(old); };
-    if (!bannerFor) { drop(); return; }
     M.sessions.banner(ctx, () => render()).then((b) => {
       if (seq !== bannerSeq) return;
       drop();
+      bannerShown = !!b;
       if (b) main.insertBefore(b, main.firstChild);
     });
   }

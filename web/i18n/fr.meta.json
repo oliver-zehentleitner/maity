@@ -1143,10 +1143,6 @@
     "en": "647e98cce4691499",
     "text": "b7ec3a1ce2d2558a"
   },
-  "bell.security_hint": {
-    "en": "b3bcd94f9fe4e53c",
-    "text": "a392f1cf1b2736f7"
-  },
   "bell.settings": {
     "en": "c749ce622125ec2a",
     "text": "6dc24261c456ee66"
@@ -3722,6 +3718,10 @@
   "error.unauthenticated": {
     "en": "cb2b69a399606add",
     "text": "b3304f6137af4ed5"
+  },
+  "error.upload_expired": {
+    "en": "390ab9fb8bdb7c70",
+    "text": "1c78ecf8d6fdc019"
   },
   "error.version_exists": {
     "en": "d10b17f2f8fdf5cb",
@@ -13707,10 +13707,6 @@
     "en": "ceb846c9f1e324a3",
     "text": "47bbf1d3ab987b97"
   },
-  "sessions.alert_open": {
-    "en": "2a8a6c218d690279",
-    "text": "0700937465f71398"
-  },
   "sessions.banner.approved": {
     "en": "36d355755805147c",
     "text": "d99d691650eb7ee5"
@@ -13738,14 +13734,6 @@
   "sessions.cannot_end.too_new": {
     "en": "130a7b20d904f44c",
     "text": "f6675d63658e239f"
-  },
-  "sessions.confirm.refused": {
-    "en": "479112e115109e21",
-    "text": "ab1b4fcdd63c6732"
-  },
-  "sessions.confirm.unknown": {
-    "en": "060ed25d62d1fea1",
-    "text": "3f39fdbb1b418f51"
   },
   "sessions.confirmed": {
     "en": "38ab47d4615a9c3f",

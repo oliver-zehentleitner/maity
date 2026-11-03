@@ -18,9 +18,12 @@ a personal hub with SQLite running in about five minutes.
 | [Helm on Kubernetes](#helm-on-kubernetes) | a cluster you already run | an existing PostgreSQL, usually managed | ingress controller, TLS (cert-manager), DNS, a registry |
 | [k3s on one small instance](#kubernetes-on-a-single-small-instance-k3s) | one VM, Kubernetes without a cluster to run | PostgreSQL 17 in the same k3s | a VM with a public IPv4 address, DNS |
 
-Every path runs **exactly one hub process**. The long-poll, the nonce
-window and the rate limits live in that process, so a second replica is
-not safe yet.
+Every path runs **one hub process** by default, and that is all a laptop or
+a small self-hosted hub needs: SQLite or any supported database, attachments
+on local disk. More processes per pod (`MAITY_WORKERS`) and more pods (the
+chart's `replicas`) are opt-in and need PostgreSQL; the processes then share
+wake-ups, nonces and limits through it (`deploy/helm/maity-hub/README.md`,
+"Several pods").
 
 Agents and browsers reach the hub under one address, `MAITY_PUBLIC_URL`.
 It appears in join links and in `/help`, so set it to the `https://` URL
