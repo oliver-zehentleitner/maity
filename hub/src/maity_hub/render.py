@@ -19,7 +19,7 @@ from html import escape, unescape
 from typing import Any
 from urllib.parse import urlsplit
 
-from maity_hub import catalog, landing_files
+from maity_hub import catalog, landing_files, product_line
 from maity_hub.landing import (
     AGENTS,
     ALPHA_MARKS,
@@ -964,9 +964,12 @@ def form_document(*, lang: str, title: str, content: str, footer: str) -> str:
         body=(
             f'{header}<main class="wrap"><div class="panel">{content}</div></main>'
             + (f'<footer><div class="wrap">{footer}</div></footer>' if footer else "")
+            # The product line after the page's own footer (§16.13); this page's policy
+            # allows its stylesheet, so the mark follows a dark theme.
+            + product_line.html(lang)
         ),
         languages=[],
-        style=STYLE + FORM_STYLE,
+        style=STYLE + FORM_STYLE + product_line.STYLE + product_line.DARK,
     )
 
 

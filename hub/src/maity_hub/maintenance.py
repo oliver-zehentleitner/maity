@@ -126,8 +126,8 @@ def running_now(engine: Engine) -> bool:
 PAGE = (
     '<!doctype html><html lang="en"><head><meta charset="utf-8">'
     '<meta name="viewport" content="width=device-width"><meta name="robots" '
-    'content="noindex"><title>Maintenance</title></head><body><main><h1>Maintenance</h1>'
-    "<p>Back at {until} UTC.</p><p>{text}</p></main></body></html>"
+    'content="noindex"><title>Maintenance</title>{style}</head><body><main><h1>Maintenance</h1>'
+    "<p>Back at {until} UTC.</p><p>{text}</p></main>{product}</body></html>"
 )
 
 
@@ -137,8 +137,17 @@ def refusal_page(found: dict[str, Any]) -> Any:
 
     from starlette.responses import HTMLResponse
 
-    page = PAGE.format(until=escape(found["until"]), text=escape(found["text"]))
-    return HTMLResponse(page, status_code=503, headers={"Retry-After": str(retry_after(found))})
+    from maity_hub import product_line
+
+    page = PAGE.format(
+        until=escape(found["until"]),
+        text=escape(found["text"]),
+        style=product_line.HEAD,
+        product=product_line.html("en"),
+    )
+    # It also answers the paths with a token in them (`/join/…`, `/mail/…`): no referrer.
+    headers = {"Retry-After": str(retry_after(found)), **product_line.HEADERS}
+    return HTMLResponse(page, status_code=503, headers=headers)
 
 
 def retry_after(found: dict[str, Any]) -> int:
