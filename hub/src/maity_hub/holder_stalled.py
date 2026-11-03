@@ -22,6 +22,7 @@ from sqlalchemy import Connection, Engine, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
+from maity_hub.cards import CLOSED as CLOSED_CARDS
 from maity_hub.events import emit, lock_project, transaction
 
 log = logging.getLogger(__name__)
@@ -39,7 +40,7 @@ def _held(conn: Connection, membership_id: int, instance: str | None) -> list[An
     return list(
         conn.execute(
             select(c.id, c.title, c.lease_until)
-            .where(c.claim_holder == membership_id, where)
+            .where(c.claim_holder == membership_id, where, c.status.notin_(CLOSED_CARDS))
             .order_by(c.id)
         )
     )
@@ -133,7 +134,11 @@ def limit_started(conn: Connection, membership_id: int) -> None:
     """A limit started for the agent: one event per instance that holds a claim (§6.5)."""
     instances = conn.execute(
         select(t.card.c.claim_instance)
-        .where(t.card.c.claim_holder == membership_id, t.card.c.claim_instance.is_not(None))
+        .where(
+            t.card.c.claim_holder == membership_id,
+            t.card.c.claim_instance.is_not(None),
+            t.card.c.status.notin_(CLOSED_CARDS),
+        )
         .distinct()
         .order_by(t.card.c.claim_instance)
     ).scalars()
@@ -166,6 +171,7 @@ def expire(engine: Engine, now: datetime | None = None) -> None:
             .join(t.membership, t.membership.c.id == c.claim_holder)
             .where(
                 c.claim_holder.is_not(None),
+                c.status.notin_(CLOSED_CARDS),  # a closed card keeps its holder's columns
                 c.lease_until.is_not(None),
                 c.lease_until < now,
                 (c.lease_expiry_reported.is_(None)) | (c.lease_expiry_reported != c.lease_until),
@@ -187,6 +193,7 @@ def _expire_one(conn: Connection, membership_id: int, instance: str | None, now:
             .where(
                 c.claim_holder == membership_id,
                 where,
+                c.status.notin_(CLOSED_CARDS),
                 c.lease_until.is_not(None),
                 c.lease_until < now,
                 (c.lease_expiry_reported.is_(None)) | (c.lease_expiry_reported != c.lease_until),

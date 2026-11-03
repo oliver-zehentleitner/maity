@@ -148,6 +148,22 @@ def test_an_expired_lease_is_reported_once_per_expiry(setup: Setup) -> None:
     assert setup.holder(first).claim_holder is not None  # nothing released
 
 
+@pytest.mark.parametrize("status", ["done", "cancelled"])
+def test_a_closed_card_is_held_by_nobody(setup: Setup, status: str) -> None:
+    """A closed card keeps `claim_holder`, `claim_instance` and `lease_until`; it neither
+    makes a holder that stops nor a lease that runs out."""
+    card = setup.claim()
+    with setup.engine.begin() as conn:
+        conn.execute(update(t.card).where(t.card.c.id == card).values(status=status))
+    _expire(setup, card, timedelta(minutes=2))
+    holder_stalled.expire(setup.engine)
+    until = clock.rfc3339(clock.now() + timedelta(hours=2))
+    assert setup.agent.post("/me/limit", {"until": until, "reason": "quota"}).status_code < 300
+    revoked = setup.owner.post(f"{BASE}/credentials/{setup.agent.credential_id}/revoke", {})
+    assert revoked.status_code == 200, revoked.text
+    assert setup.events("holder_stalled") == [] and setup.events("claim_expired") == []
+
+
 def _reader(agent_id: str | None, role: str = "member") -> Any:
     return SimpleNamespace(
         id=7, agent_id=agent_id, role=role, lead_instance=None, isolated_since=None
