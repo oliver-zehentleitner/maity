@@ -2189,6 +2189,14 @@ def fixture_views(run: Run, browser) -> None:
         assert not errors, errors
         run.shot(page, "fixtures-why-topic")
         errors.clear()
+        # The timeline's selected controls are the library's white on the accent, which Maity
+        # writes in its own text for the accent (css/app.css); axe checks them in both themes.
+        page.goto(f"{index}#/maintainer/maity/why/timeline")
+        expect(page.locator("main .why-main .ktw-stage-seg button.ktw-on").first).to_be_visible()
+        assert not errors, errors
+        run.shot(page, "fixtures-why-timeline")
+        run.a11y(page, "fixtures: why timeline")
+        errors.clear()
         page.goto(f"{index}?ktw=unavailable#/maintainer/maity/why")
         expect(page.locator("main")).to_contain_text("shown is its last good read")
         expect(page.locator("main .why-main")).not_to_be_empty()

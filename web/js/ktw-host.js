@@ -203,18 +203,24 @@ window.Maity = window.Maity || {};
     const K = window.KeepTheWhy;
     if (!args || !args.length) return { view: "overview" };
     if (args[0] === "topic") return { view: "topic", file: args.slice(1).join("/") };
+    if (args[0] === "at" && (args.length === 3 || args.length === 4)) {
+      return { view: "entry", uuid: args[1], centre: { mode: "public", canonical: args[2], root: args[3] || "" } };
+    }
     return K.core.routes.parse("#" + args.map(encodeURIComponent).join("/").replace(/%2C/g, ","));
   }
 
   // The path below Why of a route. The library's grammar has no place for a route's `centre`
-  // (another repository of the family): an entry there is its `ref` place, which reads that
-  // repository's export through the family; any other place there is the family page, which
-  // lists it. A topic's file is written segment by segment, encoded.
+  // (another repository of the family): an entry there is the host's own `at/<uuid>/<canonical>
+  // [/<root>]`, drawn from that repository's export (atCentre); any other place there is the
+  // family page, which lists it. A topic's file is written segment by segment, encoded.
   function below(K, route) {
     let r = route;
     if (r && r.centre) {
-      r = r.view === "entry" && r.centre.mode === "public" && r.centre.canonical
-        ? { view: "ref", canonical: r.centre.canonical, uuid: r.uuid } : { view: "family" };
+      const c = r.centre;
+      if (r.view === "entry" && c.mode === "public" && c.canonical && r.uuid) {
+        return ["at", r.uuid, c.canonical].concat(c.root ? [c.root] : []).map(encodeURIComponent).join("/");
+      }
+      r = { view: "family" };
     }
     if (r && r.view === "topic") return "topic/" + String(r.file || "").split("/").map(encodeURIComponent).join("/");
     return K.core.routes.format(r).slice(1); // the format's leading hash dropped
@@ -232,7 +238,12 @@ window.Maity = window.Maity || {};
     const pathOf = (route) => prefix + "/" + below(K, route);
     const nav = {
       href: (route) => M.route.href(pathOf(route)),
-      go(route, opts) { current = route; M.route.go(pathOf(route), { replace: !!(opts && opts.replace) }); },
+      // a `ref` place the library resolved goes on to the entry in place of the ref: Back skips it
+      go(route, opts) {
+        const replace = !!(opts && opts.replace) || (current.view === "ref" && !!(route && route.centre));
+        current = route;
+        M.route.go(pathOf(route), { replace });
+      },
       current: () => current,
     };
     const scene = K.scene.create({ state, self: state, scope: "project" });
@@ -289,6 +300,7 @@ window.Maity = window.Maity || {};
     else if (r.view === "findings") pages.findings(main);
     else if (r.view === "authors") pages.authors(main, H);
     else if (r.view === "topic") pages.topic(main, r.file, H);
+    else if (r.view === "entry" && r.centre) atCentre(x, r, main, H);
     else if (r.view === "entry") pages.entry(main, r.uuid, H);
     else if (r.view === "search") search.view(main, r.scope || "self", r.q || "");
     else if (r.view === "family") family.view(main);
@@ -300,7 +312,54 @@ window.Maity = window.Maity || {};
     else pages.overview(main, H);
   }
 
+  // A relative directory of the repository, segment by segment, or "" for its root.
+  const ROOT = /^[A-Za-z0-9_][A-Za-z0-9._-]*(\/[A-Za-z0-9_][A-Za-z0-9._-]*)*$/;
+
+  // The views of another repository's published export, made once per repository and root:
+  // its own scene and pages, with a nav that keeps every entry route at that centre (below).
+  function centred(x, centre, state) {
+    const key = centre.canonical + "|" + centre.root;
+    x.centres ||= new Map();
+    if (x.centres.has(key)) return x.centres.get(key);
+    const at = (route) => (route && !route.centre ? Object.assign({}, route, { centre }) : route);
+    const nav = { href: (route) => x.nav.href(at(route)), go: (route, opts) => x.nav.go(at(route), opts), current: () => x.nav.current() };
+    const scene = x.K.scene.create({ state, self: x.state, scope: "project" });
+    const made = { state, nav, pages: x.K.views.pages.create({ scene, nav, prefs, family: x.family, search: x.search }) };
+    x.centres.set(key, made);
+    return made;
+  }
+
+  // An entry in another repository of the family, at `at/<uuid>/<canonical>[/<root>]`: read
+  // through the family (the hub's §11.5 read of that export) and drawn with its own scene, in
+  // place of the library's own route there, which this host's router cannot hold.
+  async function atCentre(x, r, main, H) {
+    const c = { mode: "public", canonical: r.centre.canonical, root: r.centre.root || "" };
+    if (!M.dom.safeUrl(c.canonical) || (c.root && !ROOT.test(c.root))) {
+      append(main, h("p", { class: "flag" }, M.t("why.lib.error.not_in_family")));
+      return;
+    }
+    const drawn = x.drawn;
+    append(main, h("p", { class: "ktw-center" }, M.t("why.lib.loading")));
+    const got = await x.family.publicState(c.canonical, c.root);
+    if (got.state) await x.family.bodies(got.state);
+    if (x.drawn !== drawn) return; // drawn anew meanwhile
+    clear(main);
+    if (!got.state) {
+      append(main, h("p", { class: "flag" }, got.error || M.t("why.lib.error.not_in_family")));
+      return;
+    }
+    const there = centred(x, c, got.state);
+    const topicHref = (file) => there.nav.href({ view: "topic", file });
+    const K = x.K;
+    there.pages.entry(main, r.uuid, Object.assign({}, H, {
+      inline: (md) => K.markdown.renderInline(document, md, { topicHref }),
+      renderBody: (md) => K.markdown.render(document, md, { topicHref }),
+    }));
+    sweep(main);
+  }
+
   function draw(x, route, main, aside) {
+    x.drawn = (x.drawn || 0) + 1;
     clear(main);
     clear(aside);
     place(x, route, main, aside);

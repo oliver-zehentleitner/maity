@@ -1840,6 +1840,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   let ktwGraphFailed = false;
   const ktwCalls = [];
   let ktwNav = null;
+  const ktwPublic = {}; // `${canonical}|${root}` -> what the family's publicState answers
   const fakeKtw = {
     core: {
       normalizeState: (s) => s,
@@ -1853,15 +1854,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     markdown: { render: () => [], renderInline: () => [] },
     scene: { create: (o) => o },
     views: {
-      family: { create: (o) => { ktwNav = o.nav; return { view: (box) => box.appendChild(document.createTextNode("family view")), bodies: (s) => Promise.resolve(s), publicState: () => Promise.resolve({}) }; } },
+      family: { create: (o) => { ktwNav = o.nav; return { view: (box) => box.appendChild(document.createTextNode("family view")), bodies: (s) => Promise.resolve(s),
+        publicState: (canonical, root) => { ktwCalls.push(["public", canonical, root]); return Promise.resolve(ktwPublic[canonical + "|" + root] || { error: "no export there" }); } }; } },
       search: { create: () => ({ view: (box, scope, q) => box.appendChild(document.createTextNode("search " + q)) }) },
       thoughts: { create: () => ({ page: (box) => box.appendChild(document.createTextNode("thoughts page")), reader: () => {} }) },
-      pages: { create: () => ({
+      pages: { create: (o) => ({
         overview: (box, H) => { ktwCalls.push(["overview", H.provider()]); box.appendChild(document.createTextNode("overview page")); },
         topic: (box, file) => { ktwCalls.push(["topic", file]); box.appendChild(document.createTextNode("topic " + file)); },
-        entry: (box, uuid) => { ktwCalls.push(["entry", uuid]); box.appendChild(document.createTextNode("entry " + uuid)); },
+        entry: (box, uuid) => { const id = o.scene.state && o.scene.state.project && o.scene.state.project.id;
+          ktwCalls.push(["entry", uuid, id]); box.appendChild(document.createTextNode("entry " + uuid + (id ? " of " + id : ""))); },
         entryRow: () => null, queuesPage: () => {}, findings: () => {}, authors: () => {},
-        remoteEntry: (box, canonical, uuid) => { ktwCalls.push(["ref", canonical, uuid]); } }) },
+        // as the library: what resolves goes to the entry at that repository's centre
+        remoteEntry: (box, canonical, uuid) => { ktwCalls.push(["ref", canonical, uuid]);
+          if (ktwPublic[canonical + "|"]) o.nav.go({ view: "entry", uuid, centre: { mode: "public", canonical, root: "" } }); } }) },
       graph: { create: () => ({ assemble: () => ({}), run: () => { ktwCalls.push(["graph"]); }, lightThought: () => {} }) },
       timeline: { create: () => ({ view: (box) => box.appendChild(document.createTextNode("timeline view")) }) },
     },
@@ -1969,8 +1974,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && ktwOut.getAttribute("href") === "https://github.com/acme/widget" && ktwOwn.getAttribute("href") === win.Maity.route.href("/maintainer/maity/why/graph"),
     "why: a link the library writes that is neither a path of the dashboard nor plain https loses its target");
   // The routes: a ref's repository from the address, a centre, a topic's file.
-  expect(kh.below(win.KeepTheWhy, { view: "entry", uuid: U, centre: { mode: "public", canonical: "https://github.com/acme/other", root: "" } }) .startsWith("ref/"),
-    "why: an entry in another repository of the family is its ref place");
+  const whyAt = kh.below(win.KeepTheWhy, { view: "entry", uuid: U, centre: { mode: "public", canonical: "https://github.com/acme/other", root: "" } });
+  const whyAtRoot = kh.below(win.KeepTheWhy, { view: "entry", uuid: U, centre: { mode: "public", canonical: "https://github.com/acme/other", root: "packages/a" } });
+  const whyBack = kh.routeOf(whyAtRoot.split("/").map(decodeURIComponent));
+  expect(whyAt === "at/" + U + "/" + encodeURIComponent("https://github.com/acme/other")
+    && whyBack.view === "entry" && whyBack.uuid === U && whyBack.centre.canonical === "https://github.com/acme/other" && whyBack.centre.root === "packages/a",
+    "why: an entry in another repository of the family is its own place there, the child root kept");
   expect(kh.below(win.KeepTheWhy, { view: "overview", centre: { mode: "public", canonical: "https://github.com/acme/other" } }) === "family",
     "why: another place in another repository is the family page");
   expect(kh.below(win.KeepTheWhy, { view: "topic", file: "a b/c.md" }) === "topic/a%20b/c.md"
@@ -1981,6 +1990,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/why/ref/" + encodeURIComponent("https://github.com/acme/other") + "/" + U); for (let k = 0; k < 6; k++) await tick();
   expect(ktwCalls.some((c) => c[0] === "ref" && c[1] === "https://github.com/acme/other" && c[2] === U),
     "why: a ref in plain https is the library's place");
+  // A ref that resolves: the library goes to the entry at that centre, drawn from that export.
+  ktwPublic["https://github.com/acme/other|"] = { state: { project: { id: "acme-other" }, entries: [], topics: [] } };
+  ktwPublic["https://github.com/acme/other|packages/a"] = { state: { project: { id: "acme-other-a" }, entries: [], topics: [] } };
+  const whyRefPath = "/maintainer/maity/why/ref/" + encodeURIComponent("https://github.com/acme/other") + "/" + U;
+  await go("#" + whyRefPath); for (let k = 0; k < 10; k++) await tick();
+  expect(win.Maity.route.current().path === "/maintainer/maity/why/" + whyAt && text(main).includes("entry " + U + " of acme-other"),
+    "why: a ref that resolves opens the entry in that repository's export, not the same ref again");
+  await go("#/maintainer/maity/why/" + whyAtRoot); for (let k = 0; k < 10; k++) await tick();
+  expect(ktwCalls.some((c) => c[0] === "public" && c[2] === "packages/a") && text(main).includes("entry " + U + " of acme-other-a"),
+    "why: an entry at a child root reads that root's export");
+  ktwCalls.length = 0;
+  await go("#/maintainer/maity/why/at/" + U + "/" + encodeURIComponent("https://github.com/acme/other") + "/" + encodeURIComponent("../x")); for (let k = 0; k < 6; k++) await tick();
+  await go("#/maintainer/maity/why/at/" + U + "/" + encodeURIComponent("javascript:alert(1)")); for (let k = 0; k < 6; k++) await tick();
+  expect(!ktwCalls.some((c) => c[0] === "public") && text(main).includes("Not a repository of this project's family."),
+    "why: an entry place whose repository is not plain https, or whose root leaves the repository, reads nothing");
+  ktwPublic["https://github.com/acme/other|"] = null;
   win.Maity.api.get = realGet6;
   btn(main, "Read again").click(); for (let k = 0; k < 10; k++) await tick();
   // Another person signed in in this tab reads the export anew; the same one does not.

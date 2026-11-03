@@ -123,9 +123,17 @@
   --ktw-font: var(--font);
   --ktw-mono: var(--mono);
 }
-/* The library writes #fff on its accent here: 3.2:1 on the dark theme's --accent; Maity's own
-   text for its accent passes in both themes (5.32:1 light, 6.0:1 dark). */
-.ktw-root .ktw-search-scope a.ktw-on { color: var(--accent-text); }
+/* The library writes #fff on its accent in its selected controls: 3.2:1 on the dark theme's
+   --accent; Maity's own text for its accent passes in both themes (5.32:1 light, 6.0:1 dark).
+   Every such rule of ktw-views.css, so one the views mount later is covered too. */
+.ktw-root .ktw-search-scope a.ktw-on,
+.ktw-root .ktw-mode button.ktw-on,
+.ktw-root.ktw-aside .ktw-mini .ktw-mini-seg button.ktw-on,
+.ktw-root.ktw-aside .ktw-thought-min button.ktw-on,
+.ktw-root.ktw-aside .ktw-pane-width button.ktw-on,
+.ktw-root .ktw-thought-reader .ktw-timeline-bar .ktw-tick,
+.ktw-root .ktw-stage-wrap .ktw-stage-seg button.ktw-on,
+.ktw-root .ktw-stage-card .ktw-stage-card-held:hover { color: var(--accent-text); }
 
 .why-places { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 var(--gap); }
 .why-places a[aria-current="page"] { font-weight: 600; text-decoration: none; color: var(--text); }
