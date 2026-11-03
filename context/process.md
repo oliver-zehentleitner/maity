@@ -1189,9 +1189,9 @@ are in `CONTRIBUTING.md`, "PostgreSQL runs and a shared machine".
   through a file of its own: on the shared descriptor its exclusive lock would only convert the
   lock the command's leftovers hold, and once the wrapper ended they would hold it exclusively,
   and every later run, `--start` and `--stop` would hang (found in the same review). The cost:
-  something the command leaves running keeps the server up and `--stop` refused until it ends,
-  while other runs go on; the slot's `.who` file in the run-slot directory names the run it came
-  from.
+  something the command leaves running keeps the server up, `--stop` refused and its run slot
+  taken until it ends, so two such processes leave no slot free; other runs still get the server.
+  The slot's `.who` file in the run-slot directory names the run it came from.
 - The slots and the server are files of one account (the data directory is the owner's only), so
   they bind the runs of that account. That is how the machine is shared; several accounts would
   each get two slots and a server of their own.
@@ -1199,8 +1199,8 @@ are in `CONTRIBUTING.md`, "PostgreSQL runs and a shared machine".
 **Rejected alternatives:**
 - A server per contributor: what was done before, and what used the memory.
 - A new tool around the `pgserver` package: `with_postgres.sh` already shared one server between
-  runs and stopped only a server it started. It needed a start for everyone, the run slot and the
-  database name, not a second way to do the same.
+  runs and stopped only a server it started. It needed a start for every run of the account, the
+  run slot and the database name, not a second way to do the same.
 - The command without the server lock, a run counted by its wrapper alone: what #1302 had first.
   A reap kills the wrapper and leaves the command running, which then had the server stopped under
   it.
