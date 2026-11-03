@@ -259,6 +259,13 @@ nav.switcher .count, nav.views .count { margin-left: 6px; color: var(--accent); 
   border-radius: 999px; color: var(--text); text-decoration: none; font-size: 0.85rem; }
 .header-link:hover { border-color: var(--accent); }
 .header-link-mark { flex: none; }
+/* The links in a row of their own inside the block, so a phone scrolls them while the state stays. */
+.project-links { display: flex; align-items: center; gap: 6px; }
+.project-links.more-after { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); }
+.project-links.more-before { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent); }
+.project-links.more-before.more-after { -webkit-mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent); }
+/* The Lead on the Chats page: only where the header hides it, on a phone. */
+.chats-lead { display: none; }
 .state.away { color: var(--warn); }
 .switcher { gap: 6px; padding-bottom: 2px; }
 
@@ -939,7 +946,15 @@ a.button { display: inline-block; padding: 6px 14px; border-radius: var(--radius
 
 @media (max-width: 600px) {
   main { padding: 12px; }
-  .project-state { border-inline-start: none; padding-inline-start: 0; flex-wrap: wrap; flex-basis: 100%; }
+  .project-state { border-inline-start: none; padding-inline-start: 0; flex-basis: 100%; min-width: 0; }
+  /* One row of links that scrolls; the state and the absence keep their place beside it. */
+  .project-links { flex: 0 1 auto; min-width: 0; overflow-x: auto; }
+  .project-links .header-link { flex: none; white-space: nowrap; }
+  .project-state > :not(.project-links) { flex: none; white-space: nowrap; }
+  /* No room for the Lead beside the logo: it stands on the Chats page, where Chat leads. */
+  .me > .lead-button, .me > .lead-button-box { display: none; }
+  .chats-lead { display: inline-flex; }
+  .chats-lead .lead-button-label { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
   .me-name { display: none; }
   .lead-button-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   /* On a phone the buttons of a form or a row stack, full width. */

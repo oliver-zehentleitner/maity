@@ -2127,6 +2127,28 @@ and All chats when there are several (asked as B): a second click to
 every chat, and one button meaning two things. Keeping the strip: it took
 the room above the tabs on every page of a project.
 
+## On a phone the Lead stands on the Chats page, not in the header
+
+**Id:** 6abce868-55e7-4f64-b3c4-3984bda22965
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's card tsk-m9ew7v609fq0, 2026-11-03 (on a phone the header's buttons wrapped under the logo; hide the Lead there, its function reachable another way, the menu or settings named as an example); the dashboard's implementation the same day
+**Revisit when:** the header gets room for the Lead at phone width again, or the Chat button stops leading to `/chats`
+**See:** views.md#the-lead-is-reached-by-a-lead-button-left-of-chat-not-by-chat-itself-or-a-strip — 0ff66bde-7c26-412a-a856-069b52764910 — as of 2026-11-03
+
+At phone width (≤ 600 px) the header hides the Lead button, so Chat, +, the gear, the bell and
+the profile fit in the logo's row. The same control (one lead opened at once, several a menu with
+their group chat) stands on the Chats page beside its heading, with its word, at phone width only.
+
+**Reason:** Chat leads to `/chats`, so the lead is one tap further than before, and the control
+keeps everything it does. Hiding it was the maintainer's call; where it went instead is the
+author's.
+
+**Rejected alternative:** an entry in the gear or profile menu, as the card suggested. A menu
+item is one action, and several leads with a group chat would need a second menu inside the
+first.
+
 ## Runners in the gear menu, not in the projects' row
 
 **Id:** a6c7bf3a-9742-4535-ae21-110bd809dc47

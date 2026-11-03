@@ -2815,15 +2815,23 @@ def notifications_step(run: Run, page: Page) -> None:
     assert (len(order) == 5 + lead and "chat-button" in order[lead] and "add" in order[1 + lead]
             and "bell-box" in order[3 + lead] and "profile" in order[4 + lead]), f"header order: {order}"
     page.set_viewport_size({"width": 390, "height": 844})
-    # One row: every button's vertical middle within the others' height (a pixel of alignment is no wrap).
-    boxes = page.evaluate("Array.from(document.querySelectorAll('header .me > *')).map((e) => { const r = e.getBoundingClientRect(); return [r.top, r.bottom]; })")
+    # One row with the logo: every shown button's vertical middle within the others' height and the
+    # logo's (a pixel of alignment is no wrap). The Lead is hidden there; the Chats page carries it
+    # (the maintainer, tsk-m9ew7v609fq0).
+    boxes = page.evaluate("Array.from(document.querySelectorAll('header .me > *, header .bar .brand')).filter((e) => e.offsetParent).map((e) => { const r = e.getBoundingClientRect(); return [r.top, r.bottom]; })")
     middles = [(top + bottom) / 2 for top, bottom in boxes]
-    assert all(top <= m <= bottom for top, bottom in boxes for m in middles), f"the header's four buttons wrap at 390 px: {boxes}"
+    assert all(top <= m <= bottom for top, bottom in boxes for m in middles), f"the header's buttons wrap under the logo at 390 px: {boxes}"
+    assert page.evaluate("!Array.from(document.querySelectorAll('header .me > *')).some((e) => e.offsetParent && /lead-button/.test(e.className))"), "the Lead is hidden in the header at 390 px"
     page.set_viewport_size({"width": 1280, "height": 900})
     run.step("chats: the Chat button opens every chat across the projects")
     page.locator("header a.chat-button").click()
     expect(page).to_have_url(re.compile(r"/chats$"))
     expect(page.locator("main section.view-chats h2")).to_have_text("Chats")
+    if lead:  # on a phone the Chats page carries the Lead the header hides there
+        page.set_viewport_size({"width": 390, "height": 844})
+        expect(page.locator("main .chats-lead .lead-button")).to_be_visible()
+        page.set_viewport_size({"width": 1280, "height": 900})
+        expect(page.locator("main .chats-lead .lead-button")).to_be_hidden()
     run.a11y(page, "chats across projects")
     run.step("all projects: Inbox, Chats and Agents lead its pages; Inbox leads back to the requests")
     pages = page.locator("header nav.views a")
@@ -3204,6 +3212,17 @@ def project_links_step(run: Run, page: Page) -> None:
     issues = page.locator("header .project-state a.header-link", has_text="Issues")
     expect(issues).to_have_attribute("href", "https://issues.example.org/e2e")
     expect(issues).to_have_attribute("rel", "noopener noreferrer")
+    # On a phone the links are one row that scrolls sideways; the state stays in sight beside it,
+    # scrolled to either end (the maintainer, tsk-m9ew7v609fq0).
+    page.set_viewport_size({"width": 360, "height": 780})
+    tops = page.evaluate("Array.from(document.querySelectorAll('header .project-links > a')).map((a) => Math.round(a.getBoundingClientRect().top))")
+    assert len(set(tops)) == 1, f"the project's links wrap at 360 px: {tops}"
+    for end in (0, 9999):
+        page.locator("header .project-links").evaluate("(e, x) => { e.scrollLeft = x; }", end)
+        state = page.locator("header .project-state > .state").first.bounding_box()
+        assert state and state["x"] >= 0 and state["x"] + state["width"] <= 361, f"the state leaves the screen at scroll {end}: {state}"
+    run.shot(page, "project-links-phone")
+    page.set_viewport_size({"width": 1280, "height": 900})
     run.shot(page, "project-links")
     run.a11y(page, "project links")
     no_problems(run, "project links")

@@ -2249,9 +2249,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     + "https://maity.dev/keep-the-why-dashboard/|Keep the Why dashboard (opens in a new tab)|Why"
     && hlLinks().every((a) => a.getAttribute("target") === "_blank" && a.getAttribute("rel") === "noopener noreferrer" && a.querySelector("svg")),
     "header: the repository (\"Repository\", its forge in the mark and the name), Pull Requests from its forge, the project's own links that are set, and the Keep the Why dashboard, beside the state, in tabs of their own");
+  // The links in a row of their own, which a phone scrolls, the state beside it, not in it (tsk-m9ew7v609fq0).
   const hlBlock = Array.from(header.querySelector(".project-state").childNodes).map((c) => String(c.className || ""));
-  expect(hlBlock.indexOf("header-link") === 0 && hlBlock.lastIndexOf("header-link") < hlBlock.findIndex((c) => c.split(" ").includes("state")),
-    "header: the state stands to the right of the project's links (tsk-hf70q6maf8cv): " + hlBlock.join());
+  expect(hlBlock[0] === "project-links" && hlBlock.findIndex((c) => c.split(" ").includes("state")) > 0
+    && header.querySelector(".project-links").childNodes.length === hlLinks().length
+    && !header.querySelector(".project-links").querySelector(".state"),
+    "header: the state stands to the right of the project's links (tsk-hf70q6maf8cv), outside the row that scrolls: " + hlBlock.join());
   // Pull Requests per forge (tsk-hf70q6maf8cv): none for a forge the table does not know.
   const hlPulls = win.Maity.api.get;
   for (const [forge, url, want] of [
@@ -8370,6 +8373,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && chLinks[6].getAttribute("href") === "#/chats/maintainer/sample/agt-s1" && text(chLinks[6]).endsWith("in Sample shop")
     && text(main).includes("Pick a conversation.") && header.querySelector("a.chat-button").getAttribute("aria-current") === "page",
     "chats: the Chat tab's layout with every project's chats, unread first, then the newest, each with its project");
+  // On a phone the header hides the Lead (tsk-m9ew7v609fq0): the Chats page, where Chat leads, carries it, once.
+  await fireIntervals(); for (let k = 0; k < 3; k++) await tick();
+  expect(main.querySelectorAll(".chats-lead .lead-button").length === 1 && header.querySelectorAll(".lead-button").length === 1
+    && main.querySelector(".chats-lead .lead-button").getAttribute("aria-label") === header.querySelector(".lead-button").getAttribute("aria-label"),
+    "chats: the page carries the header's Lead, once, for a phone where the header hides it");
   // All projects has two pages, Inbox and Chats (tsk-gw59z3w3fenf), each with the hub's count for it.
   const apPages = () => header.querySelectorAll("nav.views a");
   const apAll = () => header.querySelectorAll("nav.switcher a").find((a) => a.getAttribute("href") === "#/all");
