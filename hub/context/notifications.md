@@ -873,11 +873,16 @@ one filed with the new lines. Answering `seen` copies the stored lines into
 `since` stays when the instance is listed as a stalled holder the next time. An instance
 is silenced when its `last_seen_at` equals the row's, or, listed as an episode, its
 `since` does. The request is still found by its shape (hub, no project, no organisation).
-Stalled holders are read from the cards' claims (`claim_holder`, `claim_instance`), the
-credential of that instance and its latest session by `started_at`; claims without an
-instance (a bridge's) and instances under a pause someone else set are left out. The
+Stalled holders are read from the claims of open cards (`claim_holder`, `claim_instance`;
+a `done` or `cancelled` card keeps both), the credential of that instance and its latest
+session by `started_at`; claims without an instance (a bridge's) and instances under a pause
+someone else set are left out. The latest session is found in SQL, once per credential: a
+grouped `max(started_at)` joined back, along the index `ix_agent_session_credential_started`,
+and on an equal start the live session wins, then the later `last_seen_at`, then the id. The
 bell's record carries `holding` beside `instances` when it opens; its title is read live
-like its count.
+like its count. An answer to a digest (found by its shape, so one filed before the lines
+were stored counts too) locks the owner's row before the request's, the order of the hourly
+pass, which locks the owner and then withdraws; the other order deadlocks on PostgreSQL.
 
 **Reason:** the contract records what the answered request showed, not the state at the
 answer, so the lines must be kept with the request; the request table already carries such
@@ -893,3 +898,8 @@ instances an owner ever saw.
   the newest is dead, and the silence check would read them all.
 - Recomputing at the answer what the request showed: the state moves between the hour and
   the answer, which is the gap the contract closes.
+- Reading every session of the held credentials and keeping the last in Python: the bell
+  reads this live, and the history grows with every resume. A correlated `max` per row:
+  quadratic in that history without an index of its own.
+- Choosing among sessions with an equal start by id alone: ids are random, so an ended
+  session could stand for a live one after a resume within one tick.

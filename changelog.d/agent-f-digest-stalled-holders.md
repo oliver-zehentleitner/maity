@@ -14,3 +14,4 @@
   owner of a profile starts without the old owner's records.
 - docs/api.md §5.3, §7: the cost of refiling names the mail and the bell entry; a hub-filed
   digest's withdrawal is listed under "Withdrawing".
+- hub: a new index on `agent_session` (credential, start) for each credential's latest session.

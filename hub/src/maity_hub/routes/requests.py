@@ -2087,9 +2087,10 @@ def _locked_personal(
         orgs.lock(conn, org_id)
     if row.project_id is not None:
         lock_project(conn, row.project_id)
-    elif row.not_listening is not None:
-        # The owner's digest (§5.3): the hourly pass withdraws it under the owner's row, so an
-        # answer takes the same lock and never lands between its read and its withdrawal.
+    elif row.filed_by == "hub" and row.org_id is None and row.to_human is not None:
+        # The owner's digest (§5.3), found by its shape (hub, no project, no organisation), so a
+        # digest filed before the stored lines counts too: the hourly pass withdraws it under the
+        # owner's row, and an answer takes the same lock first, never the request's row first.
         records.lock_human(conn, row.to_human)
     return _personal(conn, caller, request_id, asker=asker)
 

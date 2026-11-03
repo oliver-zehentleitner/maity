@@ -7,7 +7,8 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, insert, select, update
+from sqlalchemy import Engine, event, func, insert, select, update
+from sqlalchemy import Engine as SaEngine
 
 from maity_hub import clock, not_listening_digest
 from maity_hub import tables as t
@@ -298,6 +299,51 @@ def test_a_changed_set_withdraws_the_request_and_files_a_new_one(
     assert [d["id"] for d in _digests(owner, "open")] == [new["id"]]  # nothing changed
 
 
+@pytest.mark.parametrize("legacy", [False, True])
+def test_answering_the_digest_locks_the_owner_before_the_request(
+    inbox_owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    legacy: bool,
+) -> None:
+    """The hourly pass locks the owner's row, then withdraws the request; an answer takes the
+    same order, so the two never wait on each other's row (a deadlock on PostgreSQL). A digest
+    filed before the stored lines is found by its shape and locks too."""
+    from maity_hub.notifications import records as records_module
+
+    owner = inbox_owner
+    agent = _agent(make_client, owner)
+    _episode(migrated, agent, timedelta(hours=2))
+    not_listening_digest.run(migrated)
+    [digest] = _digests(owner)
+    if legacy:
+        with migrated.begin() as conn:
+            conn.execute(
+                update(t.request).where(t.request.c.id == digest["id"]).values(not_listening=None)
+            )
+    order: list[str] = []
+    lock = records_module.lock_human
+
+    def locking(conn: Any, human_id: str) -> None:
+        order.append("lock")
+        lock(conn, human_id)
+
+    monkeypatch.setattr(records_module, "lock_human", locking)
+
+    def statement(conn: Any, cursor: Any, sql: str, *args: Any) -> None:
+        if sql.lstrip().upper().startswith("UPDATE REQUEST "):
+            order.append("update")
+
+    event.listen(SaEngine, "before_cursor_execute", statement)
+    try:
+        answered = owner.post(f"/requests/{digest['id']}/answer", {"reply_id": "seen"})
+    finally:
+        event.remove(SaEngine, "before_cursor_execute", statement)
+    assert answered.status_code == 200, answered.text
+    assert order and order[0] == "lock" and "update" in order, order
+
+
 def test_the_hub_withdraws_it_when_none_is_away(
     inbox_owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
@@ -456,6 +502,66 @@ def test_only_the_latest_session_is_read_however_long_the_history(
     not_listening_digest.run(migrated)
     [digest] = _digests(owner)
     assert digest["summary"].partition("\n\n")[0].endswith(", silent")
+
+
+@pytest.mark.parametrize("ended_id", ["ses-zzzzzzzzzzzz", "ses-000000000000"])
+def test_on_an_equal_start_the_live_session_is_the_latest(
+    inbox_owner: flow.Human, make_client: ClientFactory, migrated: Engine, ended_id: str
+) -> None:
+    """A resume ends the old session and starts the new one in one tick: the random ids must
+    not decide which one the digest reads, whichever way they sort."""
+    owner = inbox_owner
+    agent = _agent(make_client, owner)
+    _holding(owner, agent)
+    with migrated.begin() as conn:
+        live = conn.execute(
+            select(t.agent_session).where(
+                t.agent_session.c.credential_id == agent.credential_id,
+                t.agent_session.c.live.is_(True),
+            )
+        ).one()
+        conn.execute(
+            update(t.agent_session)
+            .where(t.agent_session.c.id == live.id)
+            .values(last_seen_at=clock.now() - timedelta(minutes=5))
+        )
+        conn.execute(
+            insert(t.agent_session).values(
+                {
+                    **dict(live._mapping),
+                    "id": ended_id,
+                    "live": None,
+                    "ended_at": live.started_at,
+                    "last_seen_at": live.started_at,
+                }
+            )
+        )
+        [row] = not_listening_digest._latest_sessions(conn, {agent.credential_id})
+        assert row.id == live.id
+    not_listening_digest.run(migrated)
+    assert _digests(owner) == []  # seen five minutes ago: not away
+
+
+def test_the_latest_session_lookup_reads_along_the_credential_start_index(
+    migrated: Engine,
+) -> None:
+    """The plan, not only the rows: each credential's latest start comes from the index on
+    (credential, start), never from a scan per candidate session (SQLite's plan; the index
+    itself is in the schema for every database)."""
+    if migrated.dialect.name != "sqlite":
+        pytest.skip("the plan check reads SQLite's EXPLAIN QUERY PLAN")
+    with migrated.connect() as conn:
+        s = t.agent_session
+        query = (
+            select(s.c.credential_id, func.max(s.c.started_at))
+            .where(s.c.credential_id.in_(["crd-a", "crd-b"]))
+            .group_by(s.c.credential_id)
+        )
+        compiled = query.compile(migrated, compile_kwargs={"literal_binds": True})
+        plan = " ".join(
+            str(row[-1]) for row in conn.exec_driver_sql(f"EXPLAIN QUERY PLAN {compiled}")
+        )
+    assert "ix_agent_session_credential_started" in plan, plan
 
 
 def test_a_stalled_holder_is_listed_with_its_cards_and_reason(
