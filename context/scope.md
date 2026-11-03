@@ -995,3 +995,39 @@ page offers an instance nobody has to host.
 **Rejected alternatives:**
 - "Self-hosted hub" as the core sentence, the README's earlier opening: it
   names the deployment before the reader knows what is being deployed.
+
+
+## Every page of the platform's own interface ends with one product line, also on a self-hosted instance
+
+**Id:** ba8583f2-7a56-4435-8c4c-6ab2c9bf7378
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-bpww6m2s1pbf, the maintainer's decision (2026-11-03); the lead's answer to the contract question on which pages and which profile link (2026-11-03); contract `docs/api.md` §16.13
+**See:** scope.md#every-page-without-a-session-has-the-landings-header-and-footer-from-one-model-the-hub-computes — 41837936-d085-4592-88d7-b1708a8b4b3a — as of 2026-11-03
+
+The dashboard and the hub's own pages (the maintenance page, the pages
+behind links in mails, the join page in a browser) end with one small
+line: the Maity icon, "Maity" and the current year, "Found a bug?" to the
+project's GitHub issues, and "Made with ♥ by" the maintainer, linked to
+the maintainer's profile on maity.team. It is part of the product and
+always shown, with no operator setting. The landing page, the legal
+pages, `/explore` and the public pages of §16.9 do not carry it.
+
+**Reason:** the line belongs to the software, not to an instance's
+content: whoever uses Maity, on any instance, sees where to report a bug
+and who makes it. The landing page and the legal pages are the operator's
+own site with the operator's footer, and the public pages show a
+member's or a project's content, so the product line stays off them. The
+profile link is absolute to maity.team because the maintainer's profile
+exists only there; on any other instance a relative link would be dead.
+
+**Rejected alternatives:**
+- A relative link `/@oliver-zehentleitner` on the same hub: dead on every
+  self-hosted instance.
+- An operator switch to hide the line: the maintainer decided it is part
+  of the product.
+- A sticky line at the bottom of the screen: it would take room on a
+  phone on every page.
+- The line on the landing and legal pages as well: they are the
+  operator's site and already end with the operator's footer.

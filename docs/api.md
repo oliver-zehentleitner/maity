@@ -15533,6 +15533,67 @@ They are security deadlines or ones that end something the person
 chose; whoever runs into one during a window signs in or asks again
 afterwards.
 
+### 16.13 The product line
+
+The maintainer's decision of 2026-11-03 (`context/scope.md`): every page
+of the platform's own interface ends with one small line about Maity
+itself. It is part of the product, not of an instance's content: it is
+always shown, on a self-hosted instance as well, with no setting to turn
+it off, and it is no part of the landing setting or of the frame of
+§16.7.5.
+
+```
+[Maity icon] Maity 2026 · Found a bug? · Made with ♥ by Oliver Zehentleitner
+```
+
+**The parts**, in this order, separated by ` · `:
+
+- the Maity icon, decorative (empty `alt`), followed by `Maity` and the
+  current year. The year is never stored or built in: the hub takes it
+  from its clock (UTC) when it renders the page, the dashboard from the
+  browser's clock when it draws it;
+- **Found a bug?**, a link to
+  `https://github.com/oliver-zehentleitner/maity/issues`;
+- **Made with ♥ by Oliver Zehentleitner**, the name a link to
+  `https://maity.team/@oliver-zehentleitner`. The heart is a symbol with
+  the accessible name "love" (`role="img"`, `aria-label`).
+
+Both links are absolute and the same on every instance. The profile link
+names maity.team, not the instance's own host: a relative
+`/@oliver-zehentleitner` would be a dead link on any other instance.
+Neither link carries a query, a campaign or a referrer of its own.
+
+**Words.** "Found a bug?", "Made with ♥ by" and "love" are translated as
+the rest of the page is, in every language of §16.7, under the same keys
+in the dashboard's catalogue (`web/i18n/<lang>.json`, with its metadata)
+and the hub's (`hub/src/maity_hub/words/<lang>.json`):
+`product.bug` ("Found a bug?"), `product.made_by` ("Made with {heart} by
+{name}", so a language may put the parts in its own order) and
+`product.love` ("love"). `Maity` and the name are never translated. The
+line is in the language of the page it ends.
+
+**Where it is.**
+
+| Page | Line |
+|---|---|
+| every page the dashboard draws (`web/`): the signed-in views, `/login`, `/register`, the invitation and enrolment steps, the full maintenance page (§16.12) | yes |
+| the hub's `503 maintenance` page (§16.12) | yes |
+| the pages behind the links in mails, `/mail/…` (§2.6.3, §2.7.1, §2.9, §18.6) | yes |
+| the join page in a browser, `/join/{token}` as HTML on either host (§3.2), below its own note | yes |
+| the join page for an agent, the Markdown answer (§3.2) | no |
+| the landing page and its variants (§16.7, §16.7.2), the legal pages (§16.7.1) | no: the operator's site, with the operator's footer |
+| `/explore` and the stored public pages (§16.9) | no |
+
+On `/login` and `/register` the line comes after the frame of §16.7.5,
+below the landing page's footer. It does not depend on the frame: a page
+drawn without it (a failed `GET /site/chrome`, a maintenance window)
+still ends with the line.
+
+**How it looks.** At the end of the page's content, never sticky or
+fixed, so it takes no room on a phone. Small and muted, centred. At
+phone width it stays one line where it fits and wraps between its parts
+where a language is longer, never scrolling sideways.
+
 ## 17. The change ticker
 
 The maintainer's decision of 2026-10-22: every merge into the default
