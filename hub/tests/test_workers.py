@@ -321,12 +321,14 @@ def test_the_connection_budget_counts_every_pod_and_process() -> None:
     settings = _settings(
         MAITY_REPLICAS="3", MAITY_WORKERS="2", MAITY_DB_POOL_SIZE="10", MAITY_DB_MAX_OVERFLOW="5"
     )
-    # 3 pods and the surge pod; per pod 2 × (5 + 2 + 1 listener) + 1 health.
-    assert serving.connections(settings) == 4 * (2 * (5 + 2 + 1) + 1)
+    # 3 pods and the surge pod; per pod 2 × (5 + 2 + 2 shared + 1 listener) + 1 health.
+    assert serving.connections(settings) == 4 * (2 * (5 + 2 + 2 + 1) + 1)
     assert serving.budget_warning(settings, 100, 3) is None
     warning = serving.budget_warning(settings, 50, 3) or ""
-    assert "68 database connections" in warning and "takes 47" in warning
-    assert serving.connections(_settings()) == 16 + 16 + 1 + 1  # the single-server hub, no surge
+    assert "84 database connections" in warning and "takes 47" in warning
+    assert (
+        serving.connections(_settings()) == 16 + 16 + 2 + 1 + 1
+    )  # the single-server hub, no surge
 
 
 @pytest.mark.parametrize(
@@ -342,7 +344,7 @@ def test_the_budget_is_what_the_workers_hold(
         _settings(), replicas=replicas, workers=workers, db_pool_size=pool, db_max_overflow=overflow
     )
     share = serving.per_worker(settings)
-    held = workers * (share.db_pool_size + share.db_max_overflow + 1) + 1
+    held = workers * (share.db_pool_size + share.db_max_overflow + 2 + 1) + 1
     assert serving.connections(settings) == serving.pods_at_most(settings) * held
     assert serving.pods_at_most(settings) == replicas + (replicas > 1)
 

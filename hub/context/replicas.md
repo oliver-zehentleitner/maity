@@ -269,7 +269,7 @@ is the cheapest shared check there is.
 **Status:** active
 **Evidence:** inferred
 **Source:** `registration.DROPPED` (`registration.py:377`, read at `:292`), `ratelimit.Limiter` and its about thirty module-level instances (auth, registration, email links, device codes, joins, runner pairing, second factor and its reset, exports, test mail, invitations, uploads, avatars, mentions, ticker, notes, forge webhook, badges, public pages); `second_factor._wrong_in_session`; `device_codes._breaker`; `registration.BREAKER`; the maintainer's internal deployment planning (2026-10-30); built in `shared_counts` and migration `20261031011834_rate_counts` (card tsk-j4k2gc4efnz6), 2026-10-31; review findings of #822 (the window of a give-back, `blocked`, a count over the limit, the second connection, the sweep) built in card tsk-kckyhv9vdrrp
-**Revisit when:** the counter writes or the sweep show in the load test, the pool runs out while requests hold a second connection for a count, or a limit needs exact sliding-window semantics across pods
+**Revisit when:** the counter writes or the sweep show in the load test, the dedicated counter pool becomes a bottleneck, or a limit needs exact sliding-window semantics across pods
 
 `ratelimit.Limiter` keeps its interface (`hit`, `take`, `place`/`release`, `blocked`,
 `reset`; `give_back` gave way to `place` with a count, below) and gets a shared backend on PostgreSQL (`shared_counts`): an `UNLOGGED`
@@ -317,14 +317,19 @@ long or holds a NUL (an address paired with a source) is stored as its SHA-256. 
 its own short transaction, apart from the request's, as the counts in the process were never
 rolled back either. Inside a request's transaction (a wrong second-factor code in
 `second_factor.verify`, the mentions, notes, ticker and avatar charges) that means a second
-connection from the same pool for the moment of the count; a pool held entirely by such requests
-makes the counts wait for `pool_timeout` instead of failing at once, which the pool's overflow
-(16 by default) keeps far away. Rejected: the count on the request's own connection, which a
+connection for the moment of the count. Counts and forge budgets share a dedicated PostgreSQL
+engine per process, with two pooled connections and no overflow. The request pool can therefore
+be entirely occupied without making a request retain its transaction's locks while waiting for
+its own second serving connection. The app disposes the extra engine after its workers stop;
+SQLite and MariaDB still create no extra engine. The extra two connections per process count
+in the deployment's connection budget. Rejected: the count on the request's own connection, which a
 refused request's rollback would undo, a wrong code included. That transaction is exempt from `write_guard` (`write_guard.exempt`): it
 changes nothing of an account, and taking the human's shared `account_lock` there would wait for
 the request's own transaction, which may have just made that row (a hang `create_invitation`
-showed in the tests). Rejected: a second engine for the counts without the guard's hook, which
-would bring a second pool per replica for the same database. Every thousandth add of a process deletes windows older than two days, inside that add's
+showed in the tests). The earlier rejection of a second engine is superseded here: a bounded extra pool costs two
+connections per process, but avoids competition with the request connections. Using the serving
+pool was rejected because requests can exhaust it while retaining locks; adding more overflow
+only moves that threshold. The existing `write_guard.exempt` remains explicit. Every thousandth add of a process deletes windows older than two days, inside that add's
 transaction: the one request that makes it waits for a scan of the table, since the primary key
 starts with `bucket`, not `window_start`. Two days of windows keep that small; an index on
 `window_start` or a timed sweep apart from the requests are the moves if the load test shows it. On
@@ -446,8 +451,9 @@ Two limits of that. `in_flight` stays with the process, so the reserve can be ov
 the other pods have under way before their answers reach the row; with GitHub's 5000 an hour and a
 reserve of 250 that takes more parallel reads than a hub has. And each forge read costs one read of
 the row before and one upsert after, each on a second connection, often from a request that holds
-one already: with a full pool a forge read waits up to `pool_timeout`, then goes on unshared, the
-same pattern as the shared limits (entry on limits above).
+one already. These transactions now use the dedicated two-connection pool shared with the
+limits (entry on limits above), so a full serving pool does not delay them. An unavailable
+database or an exhausted dedicated pool still falls back to the process's budget.
 
 The notice on `maity_forget` (`wakeups.forget_token_everywhere`, `forget_repository_everywhere`)
 carries only ids, in the writing transaction. This process forgets at once, as before, not at
@@ -616,7 +622,7 @@ bucket is what the hub serves.
 **Source:** `db.postgres_options` (the `options` startup parameter, `db.py:71-112, 144`), `db.make_engine` (`pool_size` and `max_overflow` 16 and 16 by default, `pool_recycle` 1800 s, PostgreSQL `statement_timeout` and `idle_in_transaction_session_timeout`), the maintainer's internal deployment planning (2026-10-30) (a managed PostgreSQL whose connections are limited by its size, with its own pooler port in session, transaction and statement modes); psycopg 3 prepares named statements after a few runs
 **Revisit when:** the load test sets the pool size, or `prepare_threshold=None` is in and tested behind PgBouncer's transaction mode
 
-With N pods the hub asks for N × (pool + overflow) + N listener connections + health checks.
+With N pods the hub asks for N × (pool + overflow + 2 shared-counter connections) + N listener connections + health checks.
 The chart sets `MAITY_DB_POOL_SIZE` and `MAITY_DB_MAX_OVERFLOW` per pod so that at the HPA's
 maximum the sum stays under the service's limit with room for migrations and the backup. Behind
 PgBouncer:
@@ -953,8 +959,9 @@ supports. More than one:
 - **Spread over nodes** (`kubernetes.io/hostname`, `maxSkew: 1`, `ScheduleAnyway`), replaceable
   through `topologySpreadConstraints`; `ScheduleAnyway` so a single-node cluster still starts
   every pod.
-- **The connection budget** is pods × (workers × (pool share + overflow share + 1) + 1): each
-  worker holds its share of the pod's pool and overflow (`serving.per_worker`, rounded down)
+- **The connection budget** is pods × (workers × (pool share + overflow share + 2 + 1) + 1): each
+  worker holds its share of the pod's pool and overflow (`serving.per_worker`, rounded down),
+  plus two connections for shared counters and forge budgets
   plus its LISTEN connection, and each pod one more for the readiness probe. With more than one
   replica, pods counts the surge pod of a rolling update too (replicas + 1). The chart sets the pool per pod (`database.poolSize`, `.maxOverflow`). At its start the
   hub warns when the sum exceeds `max_connections` less the reserved connections; only a

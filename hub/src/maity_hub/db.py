@@ -163,6 +163,26 @@ def make_engine(
     return engine
 
 
+SHARED_POOL_SIZE = 2
+
+
+def make_shared_engine(
+    engine: Engine, *, statement_timeout: float = 0, idle_in_transaction_timeout: float = 0
+) -> Engine | None:
+    """Short counter/budget transactions must not wait for a request's pool connection.
+    No extra engine off PostgreSQL: those backends keep their counters in the process."""
+    if engine.dialect.name != "postgresql":
+        return None
+    return make_engine(
+        engine.url.render_as_string(hide_password=False),
+        pool_size=SHARED_POOL_SIZE,
+        max_overflow=0,
+        statement_timeout=statement_timeout,
+        idle_in_transaction_timeout=idle_in_transaction_timeout,
+        application_name="maity-shared",
+    )
+
+
 def make_listener_engine(url: str) -> Engine:
     """An engine for the wake-up listener alone (`wakeups`): PostgreSQL, no pool, no statement
     timeout, as its one connection waits in `LISTEN` for as long as it lives."""
