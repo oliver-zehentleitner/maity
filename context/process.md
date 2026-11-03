@@ -1163,11 +1163,11 @@ each command is checked only once.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's decisions at the jour fixe of 2026-11-03 (a PostgreSQL run before review for every hub change with a migration or raw SQL; one shared server and a cap on parallel runs), card tsk-7f9064s936kf
-**Revisit when:** contributors no longer share one machine, the shared machine gets enough memory for more parallel runs, or CI checks a pull request's merge with the current main on PostgreSQL before review
+**Revisit when:** contributors no longer share one machine and account, the shared machine gets enough memory for more parallel runs (two runs at once no longer bring a reap near), or CI checks a pull request's merge with the current main on PostgreSQL before review
 
 A hub change that adds or changes an Alembic migration or raw SQL runs the tests it affects on
 PostgreSQL before it asks for review, and the reviewers run them there too or say that they checked
-on SQLite only. On a machine several contributors share, those runs use one server, which
+on SQLite only. On a machine several contributors share under one Unix account, those runs use one server, which
 `hub/scripts/with_postgres.sh --start` leaves up. Each run gets a throwaway database of its own,
 named after whoever runs it. `make smoke` and `with_postgres.sh` each hold one of two run slots
 (`tools/run_slot.sh`, a lock file per slot), so a third run waits instead of starting. The commands
@@ -1183,6 +1183,13 @@ are in `CONTRIBUTING.md`, "PostgreSQL runs and a shared machine".
 - A slot is held by an inherited file descriptor, so it lasts exactly as long as the command and
   everything the command starts. The server itself is started with that descriptor closed, or it
   would hold a slot for as long as it runs.
+- The command inherits the server lock the same way. A memory reap ends the wrapper with SIGKILL
+  and its command can live on; with the lock it still counts as a run, so `--stop` and the last
+  run's cleanup leave the server up under it (found in the review of #1302). The cost: something
+  the command leaves running keeps the server up until it ends.
+- The slots and the server are files of one account (the data directory is the owner's only), so
+  they bind the runs of that account. That is how the machine is shared; several accounts would
+  each get two slots and a server of their own.
 
 **Rejected alternatives:**
 - A server per contributor: what was done before, and what used the memory.
