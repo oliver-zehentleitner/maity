@@ -639,6 +639,14 @@ window.Maity = window.Maity || {};
   // member and its whole branch, with their instances not revoked; an instance is online while
   // its presence is online or, not paused, it is dormant, and dormant is a part of online. A
   // paused, suspended (presence paused) or isolated member has no instance online.
+  // §16.3, the test mail's recipient: without `to` the admin's own verified address, else
+  // no_verified_address; an empty `to` is no address, as the hub has it (only an absent or
+  // null one defaults). The refusal's field reason, or null when the mail goes out.
+  function fixtureMailTestTo(body, email) {
+    if (body.to == null) return email && email.address_status === "verified" ? null : "no_verified_address";
+    return String(body.to).trim() ? null : "invalid";
+  }
+
   function fixtureManages(items) {
     const below = {};
     items.forEach((x) => { if (x.reports_to) (below[x.reports_to] = below[x.reports_to] || []).push(x); });
@@ -2436,7 +2444,8 @@ window.Maity = window.Maity || {};
     }],
     ["POST", /^\/admin\/settings\/mail\/test$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
-      if (!body.to) fail(400, "invalid", "Recipient required", path);
+      const refused = fixtureMailTestTo(body, fixtures()["notifications.json"].settings.email);
+      if (refused) fail(400, "invalid", "the request does not validate", path, { fields: { to: refused } });
       const value = fixtures()["admin-mail.json"];
       value.last_test = { ok: true, stage: null, smtp_code: 250, detail: null, at: nowIso() }; return value.last_test;
     }],
@@ -4909,6 +4918,8 @@ window.Maity = window.Maity || {};
     now: () => Date.now() + skew,
     // The fixture hub's `manages` count (§6.2), for the smoke test of its rule.
     fixtureManages,
+    // The fixture hub's rule for the test mail's recipient (§16.3), for the smoke test.
+    fixtureMailTestTo,
     source,
     ApiError,
     get: (path, opts) => request("GET", path, undefined, undefined, opts && opts.signal),

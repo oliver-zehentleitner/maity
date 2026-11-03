@@ -3568,6 +3568,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const neNote = (id) => cpPanel().querySelectorAll("li.card-note").find((li) => li.getAttribute("data-note") === id);
   const cpPatches = [], cpPatch = win.Maity.api.patch;
   win.Maity.api.patch = (p, b) => { cpPatches.push([p, b]); return cpPatch(p, b); };
+  // Each button names its note, so a screen reader's list of buttons tells them apart.
+  const cpEditLabels = cpPanel().querySelectorAll("button.card-note-edit").map((b) => b.getAttribute("aria-label"));
+  expect(cpEditLabels.length >= 2 && cpEditLabels.every((l) => /^Edit the note by @\S+ from /.test(l)) && cpEditLabels[0] !== cpEditLabels[1]
+    && cpPanel().querySelectorAll("button.card-note-remove").every((b) => /^Remove the note by @\S+ from .+ for everyone$/.test(b.getAttribute("aria-label"))),
+    "note edit: Edit and Remove name the note's author and date in their labels " + JSON.stringify(cpEditLabels));
+  // A draft in Add a note outlives an edit being saved or cancelled (the list is drawn again).
+  byId("card-note-body").value = "A draft, not sent yet.";
   btn(neNote("nte-0031"), "Edit").click(); await tick();
   const cpEditText = byId("card-note-edit-nte-0031"), cpEditReason = byId("card-note-reason-nte-0031");
   expect(cpEditText && cpEditText.value === "The CLI needs `--no-code` here too." && document.activeElement === cpEditText && !neNote("nte-0031").querySelector(".card-note-actions")
@@ -3575,8 +3582,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "note edit: the text in a field, focused, the reason asked for another's note");
   cpEditText.value = "The CLI needs `--no-code` and `--quiet`.";
   neNote("nte-0031").querySelector("form.card-note-edit-form").dispatch("submit"); await tick();
-  expect(!cpPatches.length && text(neNote("nte-0031")).includes("Say why you change someone else's note.") && document.activeElement === cpEditReason,
-    "note edit: another's note is not sent without a reason");
+  const cpReasonError = byId("card-note-reason-nte-0031-error");
+  expect(!cpPatches.length && text(cpReasonError) === "Say why you change someone else's note." && !cpReasonError.hidden && document.activeElement === cpEditReason
+    && cpEditReason.getAttribute("aria-invalid") === "true" && cpEditReason.getAttribute("aria-describedby") === "card-note-reason-nte-0031-error",
+    "note edit: another's note is not sent without a reason, said at the field");
   cpEditReason.value = "  scope  ";
   neNote("nte-0031").querySelector("form.card-note-edit-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(JSON.stringify(cpPatches[0]) === JSON.stringify(["/projects/maintainer/maity/tasks/tsk-0001/notes/nte-0031", { body: "The CLI needs `--no-code` and `--quiet`.", base_version: 2, reason: "scope" }])
@@ -3584,6 +3593,142 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(neNote("nte-0031")).includes("The CLI needs --no-code and --quiet.") && !text(neNote("nte-0031")).includes("here too")
     && document.activeElement === btn(neNote("nte-0031"), "Edit"),
     "note edit: sent with the reason, the new text and the mark shown, the focus back on Edit " + text(neNote("nte-0031")));
+  expect(byId("card-note-body").value === "A draft, not sent yet.", "note edit: a draft in Add a note is kept when the list is drawn again");
+  byId("card-note-body").value = "";
+  // A post on its way when the list is drawn again (an edit cancelled meanwhile): the redrawn form
+  // stays busy, and on success the text sent leaves the field shown, so it is not posted twice.
+  const cpRacePosts = [], cpRaceWas = win.Maity.api.post;
+  let cpRaceDone = null;
+  win.Maity.api.post = (p, b) => {
+    if (!p.endsWith("/notes")) return cpRaceWas(p, b);
+    cpRacePosts.push(b);
+    return new Promise((resolve) => { cpRaceDone = () => resolve(cpPost(p, b)); });
+  };
+  byId("card-note-body").value = "A race post";
+  cpForm().dispatch("submit"); await tick();
+  btn(neNote("nte-0031"), "Edit").click(); await tick();
+  btn(neNote("nte-0031"), "Cancel").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(byId("card-note-body").value === "A race post" && btn(cpForm(), "Post the note").disabled,
+    "card panel: a list drawn again while a note is being posted keeps the form busy");
+  cpForm().dispatch("submit"); await tick();
+  cpRaceDone(); for (let k = 0; k < 6; k++) await tick();
+  expect(cpRacePosts.length === 1 && byId("card-note-body").value === "" && !btn(cpForm(), "Post the note").disabled
+    && cpNotes().filter((n) => n.includes("A race post")).length === 1,
+    "card panel: the text posted leaves the field drawn meanwhile, so it is not sent twice " + JSON.stringify([cpRacePosts.length, byId("card-note-body").value]));
+  // Two reads of the list overlapping: the one an edit's Cancel started is held while the post
+  // succeeds and its own, later read draws the list; the older read, ending last, draws nothing.
+  const cpOverGets = win.Maity.api.getAll;
+  let cpOverHold = false, cpOverOld = null;
+  win.Maity.api.getAll = (p) => {
+    if (!cpOverHold || !p.endsWith("/notes?state=open")) return cpOverGets(p);
+    // The answer as the hub had it when the read was asked: a stale snapshot when released late.
+    const asked = cpOverGets(p);
+    return new Promise((resolve) => { cpOverOld = () => resolve(asked); });
+  };
+  cpRacePosts.length = 0;
+  win.Maity.api.post = (p, b) => {
+    if (!p.endsWith("/notes")) return cpRaceWas(p, b);
+    cpRacePosts.push(b);
+    return new Promise((resolve) => { cpRaceDone = () => resolve(cpPost(p, b)); });
+  };
+  byId("card-note-body").value = "An overlap post";
+  cpForm().dispatch("submit"); await tick();
+  cpOverHold = true;
+  btn(neNote("nte-0031"), "Edit").click(); await tick();
+  btn(neNote("nte-0031"), "Cancel").click(); await tick();
+  cpOverHold = false;
+  cpRaceDone(); for (let k = 0; k < 6; k++) await tick();
+  cpOverOld(); for (let k = 0; k < 6; k++) await tick();
+  const cpOverForms = cpPanel().querySelectorAll("form.card-note-form");
+  expect(cpOverForms.length === 1 && byId("card-note-body").value === "" && cpRacePosts.length === 1
+    && cpNotes().filter((n) => n.includes("An overlap post")).length === 1,
+    "card panel: an older read of the notes ending last draws no second form and brings back no posted text "
+      + JSON.stringify([cpOverForms.length, cpOverForms.map((f) => f.querySelector("textarea").value), cpRacePosts.length]));
+  // Every read held, the older one released first: it draws nothing, the form shown meanwhile holds
+  // no text already posted (a submit sends nothing), and the latest read draws one empty form.
+  const cpHeld = [];
+  win.Maity.api.getAll = (p) => {
+    if (!p.endsWith("/notes?state=open")) return cpOverGets(p);
+    const asked = cpOverGets(p);
+    return new Promise((resolve) => cpHeld.push(() => resolve(asked)));
+  };
+  cpRacePosts.length = 0;
+  byId("card-note-body").value = "A held post";
+  cpForm().dispatch("submit"); await tick();
+  btn(neNote("nte-0031"), "Edit").click(); await tick();
+  btn(neNote("nte-0031"), "Cancel").click(); await tick();
+  // The list stays as drawn while it is read: the form is still there to type in.
+  const cpHeldShown = !!cpForm() && byId("card-note-body").value === "A held post";
+  cpRaceDone(); for (let k = 0; k < 4; k++) await tick();
+  cpHeld.shift()(); for (let k = 0; k < 4; k++) await tick();
+  if (cpForm()) { cpForm().dispatch("submit"); await tick(); }
+  const cpHeldMid = [cpRacePosts.length, cpPanel().querySelectorAll("form.card-note-form").map((f) => f.querySelector("textarea").value)];
+  cpHeld.shift()(); for (let k = 0; k < 6; k++) await tick();
+  expect(cpHeldShown && cpRacePosts.length === 1 && cpPanel().querySelectorAll("form.card-note-form").length === 1 && byId("card-note-body").value === ""
+    && cpNotes().filter((n) => n.includes("A held post")).length === 1,
+    "card panel: the list stays while it is read; reads held and the older released first bring back no posted text and draw one form " + JSON.stringify([cpHeldShown, cpHeldMid, cpRacePosts.length]));
+  // Typing in Add a note while an edit's Cancel reads the list: the field is the same element after the
+  // read (focus, caret and text stay), and the Cancel's completion leaves the focus where the writer put it.
+  const cpTyping = [];
+  win.Maity.api.getAll = (p) => {
+    if (!p.endsWith("/notes?state=open")) return cpOverGets(p);
+    const asked = cpOverGets(p);
+    return new Promise((resolve) => cpTyping.push(() => resolve(asked)));
+  };
+  const cpField = byId("card-note-body");
+  btn(neNote("nte-0031"), "Edit").click(); await tick();
+  btn(neNote("nte-0031"), "Cancel").click(); await tick();
+  cpField.focus(); cpField.value = "typed during the read";
+  while (cpTyping.length) { cpTyping.shift()(); for (let k = 0; k < 4; k++) await tick(); }
+  for (let k = 0; k < 4; k++) await tick();
+  expect(byId("card-note-body") === cpField && document.activeElement === cpField && cpField.value === "typed during the read"
+    && !neNote("nte-0031").querySelector("form") && cpPanel().querySelectorAll("form.card-note-form").length === 1,
+    "card panel: the field typed in during a read is the same after it, the focus stays there, not on Edit "
+      + JSON.stringify([byId("card-note-body") === cpField, document.activeElement === cpField, document.activeElement && document.activeElement.className]));
+  cpField.value = "";
+  // While the list is read, its Edit and Remove wait (aria-busy): an edit begun on the old list would
+  // go with it, its text too.
+  const cpLock = [];
+  win.Maity.api.getAll = (p) => {
+    if (!p.endsWith("/notes?state=open")) return cpOverGets(p);
+    const asked = cpOverGets(p);
+    return new Promise((resolve) => cpLock.push(() => resolve(asked)));
+  };
+  btn(neNote("nte-0031"), "Edit").click(); await tick();
+  btn(neNote("nte-0031"), "Cancel").click(); await tick();
+  const cpLockList = cpPanel().querySelector(".card-note-items");
+  // Another note of the old list, its Edit still shown while the read runs.
+  const cpLockId = cpLockList.querySelectorAll("li.card-note").find((li) => li.getAttribute("data-note") !== "nte-0031" && li.querySelector("button.card-note-edit")).getAttribute("data-note");
+  const cpLockEdit = btn(neNote(cpLockId), "Edit");
+  cpLockEdit.click(); await tick();
+  const cpLockMid = [cpLockList.getAttribute("aria-busy"), cpLockEdit.disabled, !!neNote(cpLockId).querySelector("form.card-note-edit-form")];
+  while (cpLock.length) { cpLock.shift()(); for (let k = 0; k < 4; k++) await tick(); }
+  expect(JSON.stringify(cpLockMid) === JSON.stringify(["true", true, false]) && !cpLockList.getAttribute("aria-busy")
+    && !btn(neNote(cpLockId), "Edit").disabled && !neNote(cpLockId).querySelector("form.card-note-edit-form"),
+    "card panel: while the list is read its Edit waits, no edit begins on the old list; after the read it is free "
+      + JSON.stringify([cpLockMid, cpLockList.getAttribute("aria-busy"), neNote(cpLockId) && btn(neNote(cpLockId), "Edit") && btn(neNote(cpLockId), "Edit").disabled, cpLock.length]));
+  // A failed read and then a failed post: Add a note stays, with the text and the refusal in it.
+  let cpFailRead = null;
+  win.Maity.api.getAll = (p) => (p.endsWith("/notes?state=open")
+    ? new Promise((resolve, reject) => { cpFailRead = () => reject(new win.Maity.api.ApiError("read failed", 503, p, "unavailable")); })
+    : cpOverGets(p));
+  win.Maity.api.post = (p, b) => (p.endsWith("/notes") ? Promise.reject(new win.Maity.api.ApiError("boom", 503, p, "unavailable")) : cpRaceWas(p, b));
+  byId("card-note-body").value = "Kept through two failures";
+  btn(neNote("nte-0031"), "Edit").click(); await tick();
+  btn(neNote("nte-0031"), "Cancel").click(); await tick();
+  cpFailRead(); for (let k = 0; k < 4; k++) await tick();
+  if (cpForm()) { cpForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick(); }
+  expect(text(cpPanel()).includes("Could not read the notes") && cpForm() && byId("card-note-body").value === "Kept through two failures"
+    && text(cpForm()).includes("Not posted") && !btn(cpForm(), "Post the note").disabled,
+    "card panel: after a failed read a failed post keeps the form, its text and its refusal in sight " + text(cpPanel().querySelector(".card-notes")));
+  // The list comes back with the next post.
+  // Posted past the counting stub: the removal cases below count the posts they make.
+  win.Maity.api.getAll = cpOverGets; win.Maity.api.post = (p, b) => (p.endsWith("/notes") ? cpPost(p, b) : cpRaceWas(p, b));
+  if (cpForm()) { cpForm().dispatch("submit"); for (let k = 0; k < 6; k++) await tick(); }
+  expect(byId("card-note-body") && byId("card-note-body").value === "" && cpNotes().filter((n) => n.includes("Kept through two failures")).length === 1,
+    "card panel: the text kept is posted once the hub answers again");
+  win.Maity.api.getAll = cpOverGets;
+  win.Maity.api.post = cpRaceWas;
   // One's own note: no reason needed; Cancel and Escape leave it as it was.
   const cpMine = cpPanel().querySelectorAll("li.card-note")[2].getAttribute("data-note");
   btn(neNote(cpMine), "Edit").click(); await tick();
@@ -3604,6 +3749,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   neNote(cpMine).querySelector("form.card-note-edit-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   expect(neNote(cpMine).querySelector("form.card-note-edit-form") && text(neNote(cpMine)).includes("Not saved") && !btn(neNote(cpMine), "Save").disabled,
     "note edit: a refusal keeps the form and says so");
+  // An Escape the mention picker took (preventDefault) closes the picker only, not the edit.
+  neNote(cpMine).querySelector("form.card-note-edit-form").dispatch("keydown", { key: "Escape", defaultPrevented: true }); for (let k = 0; k < 4; k++) await tick();
+  expect(neNote(cpMine).querySelector("form.card-note-edit-form"), "note edit: an Escape already taken by the mention picker leaves the edit open");
   neNote(cpMine).querySelector("form.card-note-edit-form").dispatch("keydown", { key: "Escape" }); for (let k = 0; k < 4; k++) await tick();
   expect(!neNote(cpMine).querySelector("form") && cpPanel(), "note edit: Escape in the form leaves the edit, not the card");
   win.Maity.api.patch = cpPatch;
@@ -3633,7 +3781,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(neNote(cpMine), "Remove").click(); for (let k = 0; k < 4; k++) await tick();
   expect(cpPosts.length === cpBefore + 2 && !neNote(cpMine).querySelector(".card-note-removed"), "note remove: cancelled, nothing sent");
   win.prompt = (q) => { cpAsks.push(q); return cpAsks.length === 1 ? "  " : "posted twice"; };
-  btn(neNote(cpMine), "Remove").click(); for (let k = 0; k < 6; k++) await tick();
+  // A click focuses the button it is on, as a browser does; the shim's click does not.
+  btn(neNote(cpMine), "Remove").focus(); btn(neNote(cpMine), "Remove").click(); for (let k = 0; k < 6; k++) await tick();
   expect(cpAsks.length === 2 && cpAsks[1].startsWith("A reason is needed")
     && JSON.stringify(cpPosts[cpPosts.length - 1]) === JSON.stringify(["/projects/maintainer/maity/tasks/tsk-0001/notes/" + cpMine + "/redact", { reason: "posted twice", base_version: 2 }])
     && text(neNote(cpMine)).includes("The note was removed by Maintainer: posted twice") && !neNote(cpMine).querySelector(".md, .card-note-actions, .card-note-edited")
@@ -3656,8 +3805,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("card-note-reason-nte-0031").value = "late";
   neNote("nte-0031").querySelector("form.card-note-edit-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   expect(!neNote("nte-0031").querySelector("form") && neNote("nte-0031").querySelector(".card-note-removed")
-    && text(cpPanel()).includes("Not saved: the note was removed in the meantime."),
-    "note edit: a note removed meanwhile ends the edit, its tombstone listed " + text(neNote("nte-0031")));
+    && text(cpPanel()).includes("Not saved: the note was removed in the meantime. Your text was not kept.")
+    && document.activeElement === neNote("nte-0031").querySelector(".card-note-removed"),
+    "note edit: a note removed meanwhile ends the edit, its tombstone listed and focused, the line says the text is not kept " + text(neNote("nte-0031")));
   // A removal that comes second: someone removed the note first; the list shows the tombstone
   // and the line says so, not "not removed".
   const neLast = cpPanel().querySelectorAll("li.card-note").filter((li) => !li.querySelector(".card-note-removed")).pop().getAttribute("data-note");
@@ -3667,7 +3817,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(neNote(neLast), "Remove").click(); for (let k = 0; k < 6; k++) await tick();
   expect(neNote(neLast).querySelector(".card-note-removed") && text(cpPanel()).includes("Already removed: someone removed the note first.")
     && !text(cpPanel()).includes("Not removed"),
-    "note remove: a note someone removed first is listed as removed, the line says so " + text(cpPanel().querySelector(".send-status")));
+    "note remove: a note someone removed first is listed as removed, the line says so " + text(cpPanel().querySelector(".card-note-list").nextSibling));
   win.prompt = cpPrompt;
   // A member without events:admin: Edit on their own note only, no Remove; a tombstone
   // without the reason the hub keeps from them (§8.5); a closed project takes no edit.
@@ -9439,8 +9589,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const viGet = win.Maity.api.get;
   const viPages = {
     "/public/pages/stranger/tool/tasks/tsk-1": { path: "/stranger/tool/tasks/tsk-1", kind: "card", data: { id: "tsk-1", title: "A <b>card</b>", status: "in_progress", label: "bug", holder: "agent", body: "## Steps\n\n<img src=x onerror=alert(1)> [x](javascript:alert(1))",
-      notes: [{ id: "nte-1", author: "member", body: "A *note* <img src=y onerror=alert(2)>", state: "open", created_at: "2026-11-02T08:00:00Z", redacted: false },
-        { id: "nte-2", author: "agent", body: null, state: "dismissed", created_at: "2026-11-02T09:00:00Z", redacted: true }] } },
+      notes: [{ id: "nte-1", author: "member", body: "A *note* <img src=y onerror=alert(2)>", state: "open", created_at: "2026-11-02T08:00:00Z", redacted: false,
+          edited: { by: "agent", at: "2026-11-02T08:30:00Z", reason: "a <b>typo</b>" } },
+        { id: "nte-2", author: "agent", body: null, state: "dismissed", created_at: "2026-11-02T09:00:00Z", redacted: true, edited: null }] } },
     "/public/pages/stranger/tool/board": { path: "/stranger/tool/board", kind: "board", data: { columns: [{ status: "open", cards: [{ id: "tsk-1", title: "A <b>card</b>", label: "bug", holder: "member" }] }] } },
     "/public/pages/stranger/tool": { path: "/stranger/tool", kind: "project", data: { name: "Tool", full_name: "stranger/tool", about: null, state: "active", repository_url: "javascript:alert(1)", links: [], people: [{ name: "Sam", handle: "sam", page: "/sam" }], agents: [], statistics: { totals: { cards_done: 3, prs_merged: null } },
       ticker: [{ type: "merge", text: "#1 <b>merged</b>", url: "https://github.com/s/t/pull/1", at: "2026-11-02T08:00:00Z" }, { type: "decision", text: "Decided: tsk-1", url: null, at: "2026-11-02T07:00:00Z" }],
@@ -9473,6 +9624,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(viNotes.length === 2 && text(viNotes[0]).includes("A member") && text(viNotes[0]).includes("note") && !viNotes[0].querySelector("img")
     && text(viNotes[1]).includes("Removed.") && text(viNotes[1]).includes("dismissed") && !text(viNotes[0]).includes("open"),
     "visitor: a card's notes under it, their authors named as the holder, a redacted one as removed");
+  expect(text(viNotes[0]).includes("edited by An agent") && text(viNotes[0]).includes(": a <b>typo</b>") && !viNotes[0].querySelector("b")
+    && !text(viNotes[1]).includes("edited"), "visitor: an edited note says who edited it, when and why, the reason as text; a removed one no mark " + JSON.stringify(text(viNotes[0])));
   await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
   expect(viView() && viView().getAttribute("data-kind") === "project" && text(viView()).includes("Sam")
     && !viView().querySelectorAll("a").some((a) => /javascript:/.test(a.getAttribute("href") || "")) && text(viView()).includes("Cards done: 3")
@@ -10727,6 +10880,26 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("mail-test-to").value = "admin@example.org";
   main.querySelector("form.admin-mail-test").dispatch("submit"); await tick(); await tick();
   expect(JSON.stringify(testWrites) === JSON.stringify([["/admin/settings/mail/test", { to: "admin@example.org" }]]) && text(main).includes("Stage: auth") && text(main).includes("535 Credentials … rejected") && text(main).includes("Test mail failed."), "admin: test uses only recipient and shows unsuccessful200 stage/redacted reply");
+  // §16.3: the recipient is optional; empty, the body has no `to` and the fixture hub sends to the
+  // admin's own verified address. Its refusal without one is said for the field.
+  expect(!byId("mail-test-to").attrs.required && byId("mail-test-to").attrs["aria-describedby"] === "mail-test-to-hint"
+    && text(byId("mail-test-to-hint")).includes("your own verified address"), "admin: the test recipient is optional, the hint says where an empty one goes");
+  win.Maity.api.post = (path, body) => { testWrites.push([path, body]); return adminPost(path, body); };
+  byId("mail-test-to").value = "";
+  main.querySelector("form.admin-mail-test").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(JSON.stringify(testWrites[1]) === JSON.stringify(["/admin/settings/mail/test", {}]) && text(main.querySelector("form.admin-mail-test").parentNode).includes("Test mail sent."),
+    "admin: an empty recipient sends no `to`, the fixture hub mails the verified address " + JSON.stringify(testWrites));
+  expect(await adminPost("/admin/settings/mail/test", { to: "" }).then(() => "sent", (err) => err.code + ":" + err.details.fields.to) === "invalid:invalid",
+    "admin: the fixture hub refuses an empty `to` as the hub does; only an absent one defaults");
+  // The rule without a verified address, which the run's own admin has: each status but verified refuses.
+  const mtTo = win.Maity.api.fixtureMailTestTo;
+  expect(["none", "pending", "disabled"].every((st) => mtTo({}, { address_status: st }) === "no_verified_address") && mtTo({ to: null }, { address_status: "none" }) === "no_verified_address"
+    && mtTo({}, { address_status: "verified" }) === null && mtTo({ to: "a@example.org" }, { address_status: "none" }) === null && mtTo({ to: " " }, { address_status: "verified" }) === "invalid",
+    "admin: the fixture hub mails an absent recipient only to a verified address, else no_verified_address");
+  win.Maity.api.post = async (path) => { throw new win.Maity.api.ApiError("the request does not validate", 400, path, "invalid", { fields: { to: "no_verified_address" } }); };
+  main.querySelector("form.admin-mail-test").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(text(main.querySelector("form.admin-mail-test .send-status")).includes("to: enter a recipient address"), "admin: a test without a recipient or a verified address is said for the field");
+  win.Maity.api.post = adminPost;
   win.Maity.api.get = (path) => path === "/health" ? Promise.reject(new win.Maity.api.ApiError("outdated", 503, path, "schema_outdated", { revision: "old", head: "new" })) : adminGet(path);
   await go("#/all"); await go("#/admin");
   expect(text(main).includes("Database reachable, migration required.") && text(main).includes("Revision: old · head: new"), "admin: outdated schema is shown with both revisions");
