@@ -12260,8 +12260,8 @@
     "text": "663bac00e0ea8061"
   },
   "public_profile.hint": {
-    "en": "b9c7adc490cdec63",
-    "text": "a6ced12ca834bc6b"
+    "en": "bdc3c71606e891f1",
+    "text": "63a65f4e09fae883"
   },
   "public_profile.links": {
     "en": "5b3bd4bf0fd959d5",
@@ -12298,6 +12298,14 @@
   "public_profile.network.format": {
     "en": "86d6d20cf41e43d7",
     "text": "0abf065df8e2d828"
+  },
+  "public_profile.presence": {
+    "en": "13fd36440a3dfcb7",
+    "text": "ab0c9c82f1850ad7"
+  },
+  "public_profile.presence.hint": {
+    "en": "d7d86055c25b4c25",
+    "text": "0446cf64d975b55b"
   },
   "public_profile.refused": {
     "en": "eefc90bc95b7b6cc",
