@@ -573,10 +573,10 @@ def test_bidi_marks_outside_the_control_class(owner: flow.Human, repo: Repo, web
 @pytest.mark.parametrize(
     ("body", "reason"),
     [
-        ((200, b"[" + b"1," * (600 * 1024) + b"1]", {}), "too_large"),
+        ((200, b"[" + b"1," * (1100 * 1024) + b"1]", {}), "too_large"),  # past 2 MiB
         ((200, gzip.compress(b" " * (8 * 1024 * 1024)), {"Content-Encoding": "gzip"}), "too_large"),
         ((200, b"\xff\xfe\x00garbage", {}), "not_json"),
-        ((200, b"NaN", {}), "shape"),
+        ((200, b"NaN", {}), "not_json"),  # not JSON for a browser's JSON.parse (§11.5)
         ((302, b"", {"Location": "https://evil.example/s.json"}), "redirect_refused"),
         ((302, b"", {"Location": "http://ktw.example/d/s.json"}), "redirect_refused"),
         ((302, b"", {"Location": "https://ktw.example:8443/d/s.json"}), "redirect_refused"),
