@@ -3515,6 +3515,18 @@
     "en": "77d15a32b297e58e",
     "text": "cc8318c26864906f"
   },
+  "error.maintenance": {
+    "en": "b1f1ef269b21aacf",
+    "text": "70f1bd06e1f042f8"
+  },
+  "error.maintenance_not_running": {
+    "en": "58e52c5607e41459",
+    "text": "435989fdadf21860"
+  },
+  "error.maintenance_running": {
+    "en": "6215abdad2c9c05f",
+    "text": "9a0fa3fb0e0abffa"
+  },
   "error.memory_full": {
     "en": "1d443815d36c4d47",
     "text": "e88774a1329e5d9f"

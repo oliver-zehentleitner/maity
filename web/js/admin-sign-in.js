@@ -106,8 +106,7 @@ window.Maity = window.Maity || {};
             }
             if (err.code === "rate_limited") {
               askStatus.done();
-              const seconds = Number(err.details && err.details.retry_after) || 60;
-              error.textContent = M.t("sf.rate_limited", { minutes: Math.max(1, Math.ceil(seconds / 60)) });
+              error.textContent = M.t("sf.rate_limited", { minutes: M.secondFactor.minutes(err.details && err.details.retry_after) });
               return;
             }
             const why = err.code === "invalid" && err.details && err.details.fields && err.details.fields.second_factor;

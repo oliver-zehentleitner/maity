@@ -88,7 +88,14 @@
  "GET /me": {
   "object": {
    "deletion": "null",
-   "maintenance": "null",
+   "maintenance": {
+    "object": {
+     "from": "string",
+     "state": "string",
+     "text": "string",
+     "until": "string"
+    }
+   },
    "member": {
     "object": {
      "account_status": "string",
@@ -110,6 +117,7 @@
      "meat_proxy_lead": "boolean",
      "meat_proxy_note": "string",
      "public_bio": "null",
+     "public_presence": "boolean",
      "public_profile": "boolean",
      "social": {
       "object": {}
@@ -1039,7 +1047,19 @@
       },
       "body": "string",
       "created_at": "string",
-      "edited": "null",
+      "edited": {
+       "object": {
+        "at": "string",
+        "by": {
+         "object": {
+          "handle": "string",
+          "kind": "string",
+          "member_id": "string"
+         }
+        },
+        "reason": "string"
+       }
+      },
       "id": "string",
       "mentions": {
        "array": {

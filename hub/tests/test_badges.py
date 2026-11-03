@@ -175,6 +175,7 @@ def test_online_uses_canonical_presence(
         assert cached.status_code == 304 and cached.content == b""
     finally:
         listening.closed(recent.session_id or "", wait)
+    listening.written()  # on PostgreSQL the close reaches `long_poll` from the writer thread
     resting = public.get("/badge/maintainer/maity.svg", headers={"If-None-Match": animated_etag})
     assert resting.status_code == 200 and "<style" not in resting.text
     assert resting.headers["etag"] == offline_etag
