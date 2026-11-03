@@ -4862,8 +4862,6 @@
   "why.lib.place.timeline": "Timeline",
   "why.lib.place.thoughts": "Thoughts",
   "why.lib.place.family": "Family",
-  "why.lib.elsewhere": "In another repository",
-  "why.lib.not_found": "Not found in that repository's export.",
   "why.lib.error.budget": "The forge's rate limit is spent; try again later.",
   "why.lib.error.budget_until": "The forge's rate limit is spent until {time}.",
   "why.lib.error.no_access": "Maity has no access to this repository.",

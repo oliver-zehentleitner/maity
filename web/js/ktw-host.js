@@ -82,15 +82,52 @@ window.Maity = window.Maity || {};
     return (err && err.message) || M.t("why.reason.unavailable");
   }
 
-  // A link the library takes from an export (a See into another repository) is used only
-  // when plain https (context/rendering.md); any other is dropped before the library sees it.
+  // A link the library takes from an export is used only when plain https, as every link from
+  // data in the dashboard (context/rendering.md): the project's canonical URL (which its file and
+  // tree links start with), the config's canonical and dashboard-state, a git remote and the
+  // repository it is a fork of (written after "https://"), a See into another repository and a
+  // superseded_by in another one. Any other is dropped before the library sees it; a
+  // superseded_by keeps its entry's id. Links in entry text are left to `guard` below.
+  const SUPERSEDED_ELSEWHERE = /^(\S+)\s+[—–-]\s+([0-9a-f-]{36})\s+[—–-]/i;
+  function dropUnsafe(obj, key, prefix = "") {
+    if (obj && typeof obj === "object" && key in obj && !M.dom.safeUrl(prefix + obj[key])) delete obj[key];
+  }
   function httpsOnly(raw) {
+    const project = raw && raw.project && typeof raw.project === "object" ? raw.project : null;
+    if (project) {
+      dropUnsafe(project, "canonical");
+      dropUnsafe(project.config, "canonical");
+      dropUnsafe(project.config, "dashboard-state");
+      if (project.git && typeof project.git.remote === "string") dropUnsafe(project.git, "remote", "https://");
+      if (project.git && project.git.fork && typeof project.git.fork.of === "string") dropUnsafe(project.git.fork, "of", "https://");
+    }
     for (const e of (raw && Array.isArray(raw.entries) ? raw.entries : [])) {
-      for (const see of (e && Array.isArray(e.see) ? e.see : [])) {
-        if (see && typeof see === "object" && "remote" in see && !M.dom.safeUrl(see.remote)) delete see.remote;
-      }
+      for (const see of (e && Array.isArray(e.see) ? e.see : [])) dropUnsafe(see, "remote");
+      const m = e && typeof e.superseded_by === "string" ? SUPERSEDED_ELSEWHERE.exec(e.superseded_by.trim()) : null;
+      if (m && /^[a-z][a-z0-9+.-]*:/i.test(m[1]) && !M.dom.safeUrl(m[1])) e.superseded_by = m[2];
     }
     return raw;
+  }
+
+  // Every link the library writes into the view, entry text included, is held to the rule
+  // dom.h holds Maity's own to: a path of the dashboard or plain https. Any other loses its
+  // target before it can be followed (a MutationObserver runs before the next event).
+  function linkOk(value) {
+    if (typeof value !== "string") return false;
+    if (M.dom.safeUrl(value)) return true;
+    const path = M.route.fixture ? value.slice(1) : value; // fixture mode writes a route after "#"
+    return M.route.isRoute(path) && M.route.href(path) === value;
+  }
+  function sweep(node) {
+    const href = node.getAttribute ? node.getAttribute("href") : null;
+    if (href != null && !linkOk(href)) node.removeAttribute("href");
+    for (const child of node.childNodes || []) sweep(child);
+  }
+  function guard(mount) {
+    if (typeof MutationObserver === "function") {
+      new MutationObserver(() => sweep(mount)).observe(mount, { subtree: true, childList: true, attributes: true, attributeFilter: ["href"] });
+    }
+    return mount;
   }
 
   function provider(base) {
@@ -160,10 +197,27 @@ window.Maity = window.Maity || {};
     return "/" + parts.slice(0, 2).join("/") + "/why";
   }
 
+  // The route of the path's segments below Why (decoded by app.js). A topic's file is taken as
+  // it stands: the library's grammar writes and reads it unencoded.
   function routeOf(args) {
     const K = window.KeepTheWhy;
     if (!args || !args.length) return { view: "overview" };
+    if (args[0] === "topic") return { view: "topic", file: args.slice(1).join("/") };
     return K.core.routes.parse("#" + args.map(encodeURIComponent).join("/").replace(/%2C/g, ","));
+  }
+
+  // The path below Why of a route. The library's grammar has no place for a route's `centre`
+  // (another repository of the family): an entry there is its `ref` place, which reads that
+  // repository's export through the family; any other place there is the family page, which
+  // lists it. A topic's file is written segment by segment, encoded.
+  function below(K, route) {
+    let r = route;
+    if (r && r.centre) {
+      r = r.view === "entry" && r.centre.mode === "public" && r.centre.canonical
+        ? { view: "ref", canonical: r.centre.canonical, uuid: r.uuid } : { view: "family" };
+    }
+    if (r && r.view === "topic") return "topic/" + String(r.file || "").split("/").map(encodeURIComponent).join("/");
+    return K.core.routes.format(r).slice(1); // the format's leading hash dropped
   }
 
   async function makeHost(ctx) {
@@ -175,7 +229,7 @@ window.Maity = window.Maity || {};
     const stale = first.stale ? { reason: first.stale, at: first.at } : null;
     const prefix = whyPath();
     let current = { view: "overview" };
-    const pathOf = (route) => prefix + "/" + K.core.routes.format(route).slice(1); // the format's leading hash dropped
+    const pathOf = (route) => prefix + "/" + below(K, route);
     const nav = {
       href: (route) => M.route.href(pathOf(route)),
       go(route, opts) { current = route; M.route.go(pathOf(route), { replace: !!(opts && opts.replace) }); },
@@ -203,7 +257,7 @@ window.Maity = window.Maity || {};
       live: () => false, published: () => true, project: () => null, provider: () => x.P,
       inline: (md) => K.markdown.renderInline(document, md, { topicHref }),
       renderBody: (md) => K.markdown.render(document, md, { topicHref }),
-      shareUrl: (r) => ({ url: new URL(x.slug + "/" + K.core.routes.format(r).slice(1), window.location.origin).href, where: "Maity" }),
+      shareUrl: (r) => ({ url: new URL(x.slug + "/" + below(K, r), window.location.origin).href, where: "Maity" }),
       details: () => aside, miniGraph: () => {},
       entryThoughts: () => [], thoughts, memberLink: (m, href) => href,
       authorLink: (n) => document.createTextNode(n || "-"),
@@ -228,8 +282,7 @@ window.Maity = window.Maity || {};
       append(wrap, canvas);
       append(main, wrap);
       graphView.run(canvas, graphOf(), { fit: true, onEntry: (n) => nav.go({ view: "entry", uuid: n.entry.uuid || n.entry.id }), onTopic: (n) => nav.go({ view: "topic", file: n.file }) });
-    } else if (r.centre) elsewhere(x, r, main);
-    else if (r.view === "timeline") timeline.view(main, r.day || null, { graph: () => graphOf(), bodies: (st) => family.bodies(st), entryRow: (e) => pages.entryRow(e, H), renderBody: H.renderBody, render });
+    } else if (r.view === "timeline") timeline.view(main, r.day || null, { graph: () => graphOf(), bodies: (st) => family.bodies(st), entryRow: (e) => pages.entryRow(e, H), renderBody: H.renderBody, render });
     else if (r.view === "thoughts") thoughts.page(main, T);
     else if (r.view === "thought") thoughts.reader(main, r.refs, T);
     else if (r.view === "queues") pages.queuesPage(main, H);
@@ -239,24 +292,20 @@ window.Maity = window.Maity || {};
     else if (r.view === "entry") pages.entry(main, r.uuid, H);
     else if (r.view === "search") search.view(main, r.scope || "self", r.q || "");
     else if (r.view === "family") family.view(main);
-    else if (r.view === "ref") pages.remoteEntry(main, r.canonical, r.uuid, H);
+    else if (r.view === "ref") {
+      // the repository comes from the address: plain https or nothing is read (context/rendering.md)
+      if (M.dom.safeUrl(r.canonical)) pages.remoteEntry(main, r.canonical, r.uuid, H);
+      else append(main, h("p", { class: "flag" }, M.t("why.lib.error.not_in_family")));
+    }
     else pages.overview(main, H);
-  }
-
-  // A place in another repository: where the library sent the reader, and what that
-  // repository's export says the entry is (the hub serves it only for the family, §11.5).
-  function elsewhere(x, r, main) {
-    append(main, h("h1", null, M.t("why.lib.elsewhere")), h("p", { class: "muted" }, r.centre.canonical || ""));
-    x.family.publicState(r.centre.canonical, r.centre.root || "").then((got) => {
-      const e = got.state && got.state.entries.find((y) => y.uuid === r.uuid);
-      append(main, h("p", null, e ? e.title : got.error || M.t("why.lib.not_found")));
-    });
   }
 
   function draw(x, route, main, aside) {
     clear(main);
     clear(aside);
     place(x, route, main, aside);
+    sweep(main); // what the library wrote at once; `guard` takes what it writes later
+    sweep(aside);
   }
 
   // Read again drops what this page holds of the project and reads its export anew.
@@ -299,13 +348,13 @@ window.Maity = window.Maity || {};
     }
     const route = routeOf(args);
     host.setRoute(route);
-    const main = h("div", { class: "ktw-root why-main", translate: "no" });
-    const aside = h("aside", { class: "ktw-root ktw-aside why-aside", translate: "no" });
+    const main = guard(h("div", { class: "ktw-root why-main", translate: "no" }));
+    const aside = guard(h("aside", { class: "ktw-root ktw-aside why-aside", translate: "no" }));
     const note = host.stale ? h("p", { class: "flag" }, M.t("why.lib.stale", { reason: host.stale.reason,
       ago: host.stale.at ? M.dom.formatAgo(host.stale.at) : "" })) : null;
     append(clear(root), toolbar(host, route, ctx), note, h("div", { class: "why-layout" }, main, aside));
     draw(host, route, main, aside);
   };
 
-  M.ktwHost = { SCRIPTS, STYLES, routeOf, failure, provider, load, whyPath };
+  M.ktwHost = { SCRIPTS, STYLES, routeOf, below, failure, provider, load, whyPath, httpsOnly, linkOk, sweep };
 })(window.Maity);

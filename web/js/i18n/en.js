@@ -4818,7 +4818,6 @@ window.MAITY_I18N["en"] = {
     "other": "{count} warnings"
   },
   "why.findings.warnings_unknown": "— warnings",
-  "why.lib.elsewhere": "In another repository",
   "why.lib.error.budget": "The forge's rate limit is spent; try again later.",
   "why.lib.error.budget_until": "The forge's rate limit is spent until {time}.",
   "why.lib.error.family_cap": "Past the 8 repositories a project's family may name.",
@@ -4826,7 +4825,6 @@ window.MAITY_I18N["en"] = {
   "why.lib.error.not_in_family": "Not a repository of this project's family.",
   "why.lib.error.not_public": "That repository is not public.",
   "why.lib.loading": "Loading the Keep the Why views…",
-  "why.lib.not_found": "Not found in that repository's export.",
   "why.lib.not_loaded": "The Keep the Why views could not be loaded.",
   "why.lib.place.family": "Family",
   "why.lib.place.graph": "Graph",

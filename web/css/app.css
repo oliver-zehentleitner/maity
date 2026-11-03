@@ -103,23 +103,29 @@
   --ktw-muted: var(--muted);
   --ktw-line: var(--border);
   --ktw-accent: var(--accent);
-  --ktw-accent2: var(--plan);
+  /* text in the plan's and the warning's hue, a fifth of the way to --text: 4.95:1 at least
+     on --bg, --surface, --surface-2 and the type pill's accent tint in light, 5.16:1 in dark
+     (axe color-contrast, WCAG AA); --plan and --warn themselves are 3.95:1 and 4.26:1 there */
+  --ktw-accent2: color-mix(in srgb, var(--plan) 80%, var(--text));
   --ktw-info: var(--accent);
   --ktw-ok: var(--ok);
-  --ktw-warn: var(--warn);
+  --ktw-warn: color-mix(in srgb, var(--warn) 80%, var(--text));
   --ktw-bad: var(--bad);
   --ktw-confirmed: var(--ok);
-  --ktw-inferred: var(--warn);
+  --ktw-inferred: var(--ktw-warn);
   --ktw-unknown: var(--muted);
   --ktw-status-active: var(--ok);
   --ktw-status-open: var(--accent);
-  --ktw-status-needs-review: var(--warn);
+  --ktw-status-needs-review: var(--ktw-warn);
   --ktw-status-pending-confirmation: var(--plan);
   --ktw-status-superseded: var(--muted);
   --ktw-radius: var(--radius);
   --ktw-font: var(--font);
   --ktw-mono: var(--mono);
 }
+/* The library writes #fff on its accent here: 3.2:1 on the dark theme's --accent; Maity's own
+   text for its accent passes in both themes (5.32:1 light, 6.0:1 dark). */
+.ktw-root .ktw-search-scope a.ktw-on { color: var(--accent-text); }
 
 .why-places { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 var(--gap); }
 .why-places a[aria-current="page"] { font-weight: 600; text-decoration: none; color: var(--text); }

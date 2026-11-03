@@ -1845,8 +1845,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       normalizeState: (s) => s,
       routes: {
         format: (r) => "#" + [r.view, r.file, r.uuid].filter((x) => x != null).map(encodeURIComponent).join("/"),
-        parse: (h) => { const [view, a] = h.slice(1).split("/").map(decodeURIComponent);
-          return view === "topic" ? { view, file: a } : view === "entry" ? { view, uuid: a } : { view: view || "overview" }; },
+        parse: (h) => { const [view, a, b] = h.slice(1).split("/").map(decodeURIComponent);
+          return view === "topic" ? { view, file: a } : view === "entry" ? { view, uuid: a }
+            : view === "ref" ? { view, canonical: a, uuid: b } : { view: view || "overview" }; },
       },
     },
     markdown: { render: () => [], renderInline: () => [] },
@@ -1859,7 +1860,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
         overview: (box, H) => { ktwCalls.push(["overview", H.provider()]); box.appendChild(document.createTextNode("overview page")); },
         topic: (box, file) => { ktwCalls.push(["topic", file]); box.appendChild(document.createTextNode("topic " + file)); },
         entry: (box, uuid) => { ktwCalls.push(["entry", uuid]); box.appendChild(document.createTextNode("entry " + uuid)); },
-        entryRow: () => null, queuesPage: () => {}, findings: () => {}, authors: () => {}, remoteEntry: () => {} }) },
+        entryRow: () => null, queuesPage: () => {}, findings: () => {}, authors: () => {},
+        remoteEntry: (box, canonical, uuid) => { ktwCalls.push(["ref", canonical, uuid]); } }) },
       graph: { create: () => ({ assemble: () => ({}), run: () => { ktwCalls.push(["graph"]); }, lightThought: () => {} }) },
       timeline: { create: () => ({ view: (box) => box.appendChild(document.createTextNode("timeline view")) }) },
     },
@@ -1935,6 +1937,50 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const ktwSeen = await P.exportState("", "");
   expect(!("remote" in ktwSeen.state.entries[0].see[0]) && ktwSeen.state.entries[0].see[1].remote === "https://ok.example/y",
     "why: a link from an export that is not plain https is dropped before the library sees it");
+  // Every link field of an export, each with one link that is not plain https and one that is.
+  const kh = win.Maity.ktwHost;
+  const U = "00000000-0000-4000-8000-000000000001";
+  for (const [field, set, kept, bad, good] of [
+    ["project.canonical", (r, v) => { r.project = { canonical: v }; }, (r) => r.project.canonical, "javascript:alert(1);//", "https://github.com/acme/widget"],
+    ["project.config.canonical", (r, v) => { r.project = { config: { canonical: v } }; }, (r) => r.project.config.canonical, "http://github.com/acme/widget", "https://github.com/acme/widget"],
+    ["project.config.dashboard-state", (r, v) => { r.project = { config: { "dashboard-state": v } }; }, (r) => r.project.config["dashboard-state"], "https://user:pw@pages.example/state.json", "https://pages.example/state.json"],
+    ["project.git.remote", (r, v) => { r.project = { git: { remote: v } }; }, (r) => r.project.git.remote, "evil.example/x y", "github.com/acme/widget"],
+    ["project.git.fork.of", (r, v) => { r.project = { git: { fork: { of: v } } }; }, (r) => r.project.git.fork.of, "@evil.example/x", "github.com/acme/upstream"],
+    ["entries.see.remote", (r, v) => { r.entries = [{ see: [{ remote: v }] }]; }, (r) => r.entries[0].see[0].remote, "javascript:alert(1)", "https://github.com/acme/other"],
+  ]) {
+    const a = {}; set(a, bad); kh.httpsOnly(a);
+    const b = {}; set(b, good); kh.httpsOnly(b);
+    expect(kept(a) === undefined && kept(b) === good, "why: " + field + " that is not plain https is dropped, plain https kept");
+  }
+  const sup = { entries: [{ superseded_by: `javascript:alert(1) — ${U} — as of 2026-11-03` }, { superseded_by: `https://github.com/acme/other — ${U} — as of 2026-11-03` }, { superseded_by: U }] };
+  kh.httpsOnly(sup);
+  expect(sup.entries[0].superseded_by === U && sup.entries[1].superseded_by.startsWith("https://github.com/acme/other")
+    && sup.entries[2].superseded_by === U, "why: a superseded_by elsewhere that is not plain https keeps only its entry's id");
+  // What the library writes into the view, entry text included, keeps only a path or plain https.
+  const ktwBox = document.createElement("div");
+  const ktwEvil = document.createElement("a"); ktwEvil.setAttribute("href", "javascript:alert(1)");
+  const ktwUserinfo = document.createElement("a"); ktwUserinfo.setAttribute("href", "https://bank.example@ktwEvil.example/");
+  const ktwOut = document.createElement("a"); ktwOut.setAttribute("href", "https://github.com/acme/widget");
+  const ktwOwn = document.createElement("a"); ktwOwn.setAttribute("href", win.Maity.route.href("/maintainer/maity/why/graph"));
+  const ktwInner = document.createElement("p"); ktwInner.appendChild(ktwEvil);
+  ktwBox.appendChild(ktwInner); ktwBox.appendChild(ktwUserinfo); ktwBox.appendChild(ktwOut); ktwBox.appendChild(ktwOwn);
+  kh.sweep(ktwBox);
+  expect(ktwEvil.getAttribute("href") === undefined && ktwUserinfo.getAttribute("href") === undefined
+    && ktwOut.getAttribute("href") === "https://github.com/acme/widget" && ktwOwn.getAttribute("href") === win.Maity.route.href("/maintainer/maity/why/graph"),
+    "why: a link the library writes that is neither a path of the dashboard nor plain https loses its target");
+  // The routes: a ref's repository from the address, a centre, a topic's file.
+  expect(kh.below(win.KeepTheWhy, { view: "entry", uuid: U, centre: { mode: "public", canonical: "https://github.com/acme/other", root: "" } }) .startsWith("ref/"),
+    "why: an entry in another repository of the family is its ref place");
+  expect(kh.below(win.KeepTheWhy, { view: "overview", centre: { mode: "public", canonical: "https://github.com/acme/other" } }) === "family",
+    "why: another place in another repository is the family page");
+  expect(kh.below(win.KeepTheWhy, { view: "topic", file: "a b/c.md" }) === "topic/a%20b/c.md"
+    && kh.routeOf(["topic", "a b", "c.md"]).file === "a b/c.md", "why: a topic's file is written encoded and read back as it stands");
+  await go("#/maintainer/maity/why/ref/" + encodeURIComponent("javascript:alert(1)") + "/" + U); for (let k = 0; k < 6; k++) await tick();
+  expect(!ktwCalls.some((c) => c[0] === "ref") && text(main).includes("Not a repository of this project's family."),
+    "why: a ref whose repository in the address is not plain https reads nothing");
+  await go("#/maintainer/maity/why/ref/" + encodeURIComponent("https://github.com/acme/other") + "/" + U); for (let k = 0; k < 6; k++) await tick();
+  expect(ktwCalls.some((c) => c[0] === "ref" && c[1] === "https://github.com/acme/other" && c[2] === U),
+    "why: a ref in plain https is the library's place");
   win.Maity.api.get = realGet6;
   btn(main, "Read again").click(); for (let k = 0; k < 10; k++) await tick();
   // Another person signed in in this tab reads the export anew; the same one does not.
