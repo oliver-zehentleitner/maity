@@ -1,4 +1,5 @@
-"""`scripts/with_postgres.sh`, with stand-ins for PostgreSQL's tools: it stops what it started."""
+"""`scripts/with_postgres.sh`, with stand-ins for PostgreSQL's tools: it stops what it started,
+keeps a server started for everyone, and runs in a run slot that the server does not hold."""
 
 from __future__ import annotations
 
@@ -20,7 +21,9 @@ FAKE = """#!/bin/sh
 echo "$(basename "$0") $*" >> "$FAKE_LOG"
 case "$(basename "$0") $*" in
   "pg_ctl -D "*" status") [ -f "$FAKE_UP" ] ;;
-  "pg_ctl "*" start") touch "$FAKE_UP"; echo "$$" > "$MAITY_PG_DIR/postmaster.pid" ;;
+  "pg_ctl "*" start")
+    touch "$FAKE_UP"; echo "$$" > "$MAITY_PG_DIR/postmaster.pid"
+    if [ -e /proc/$$/fd/7 ]; then echo "server holds fd 7" >> "$FAKE_LOG"; fi ;;
   "pg_ctl "*" stop") rm -f "$FAKE_UP" "$MAITY_PG_DIR/postmaster.pid" ;;
   initdb*) touch "$3/PG_VERSION" ;;
 esac
@@ -38,8 +41,10 @@ def run(tmp_path: Path) -> dict[str, str]:
     data.mkdir()
     (bin_dir / "initdb").write_text(FAKE.replace('touch "$3/PG_VERSION"', 'touch "$2/PG_VERSION"'))
     (bin_dir / "initdb").chmod(0o755)
+    env = {key: value for key, value in os.environ.items() if key != "MAITY_RUN_SLOT"}
     return {
-        **os.environ,
+        **env,
+        "MAITY_RUN_SLOTS_DIR": str(tmp_path / "slots"),
         "MAITY_PG_BIN": str(bin_dir),
         "MAITY_PG_DIR": str(data),
         "FAKE_LOG": str(tmp_path / "log"),
@@ -148,3 +153,66 @@ def test_at_a_terminal_ctrl_c_ends_the_command_and_cleans_up(run: dict[str, str]
 
 def test_the_commands_exit_status_is_kept(run: dict[str, str]) -> None:
     assert subprocess.run([SCRIPT, "false"], env=run).returncode == 1
+
+
+def test_start_leaves_the_server_up_for_everyone(run: dict[str, str]) -> None:
+    subprocess.run([SCRIPT, "--start"], env=run, check=True)
+    subprocess.run([SCRIPT, "true"], env=run, check=True)
+    assert len(calls(run, "start")) == 1 and calls(run, "stop") == []
+    assert Path(run["FAKE_UP"]).exists()
+
+
+def test_start_keeps_a_server_a_running_run_started(run: dict[str, str]) -> None:
+    gate = Path(run["FAKE_LOG"]).parent / "gate"
+    first = subprocess.Popen(
+        [SCRIPT, "sh", "-c", f"until [ -f {gate} ]; do sleep 0.05; done"], env=run
+    )
+    while not Path(run["FAKE_UP"]).exists():
+        assert first.poll() is None
+    subprocess.run([SCRIPT, "--start"], env=run, check=True)
+    gate.touch()
+    assert first.wait(timeout=30) == 0
+    assert calls(run, "stop") == []
+
+
+def test_stop_waits_for_no_run_and_refuses_while_one_runs(run: dict[str, str]) -> None:
+    subprocess.run([SCRIPT, "--start"], env=run, check=True)
+    gate = Path(run["FAKE_LOG"]).parent / "gate"
+    ready = Path(run["FAKE_LOG"]).parent / "ready"
+    first = subprocess.Popen(
+        [SCRIPT, "sh", "-c", f"touch {ready}; until [ -f {gate} ]; do sleep 0.05; done"], env=run
+    )
+    while not ready.exists():
+        assert first.poll() is None
+    refused = subprocess.run([SCRIPT, "--stop"], env=run, capture_output=True, text=True)
+    assert refused.returncode == 1 and "still uses the server" in refused.stderr
+    assert calls(run, "stop") == []
+    gate.touch()
+    assert first.wait(timeout=30) == 0
+    subprocess.run([SCRIPT, "--stop"], env=run, check=True)
+    assert len(calls(run, "stop")) == 1 and not Path(run["FAKE_UP"]).exists()
+
+
+def test_the_database_is_named_after_who_runs_it(run: dict[str, str]) -> None:
+    run = {**run, "MAITY_RUN_NAME": "Coder-7#ab12"}
+    out = subprocess.run(
+        [SCRIPT, "sh", "-c", 'echo "$MAITY_TEST_DATABASE_URL"'],
+        env=run,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert out.startswith("postgresql://postgres@/maity_test_coder_7_ab12_")
+
+
+@pytest.mark.skipif(not Path("/proc/self/fd").is_dir(), reason="needs /proc")
+def test_the_run_holds_a_slot_and_the_server_does_not(run: dict[str, str]) -> None:
+    out = subprocess.run(
+        [SCRIPT, "sh", "-c", 'echo "slot=$MAITY_RUN_SLOT"'],
+        env=run,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert out.strip() == "slot=0"
+    assert "server holds fd 7" not in Path(run["FAKE_LOG"]).read_text()

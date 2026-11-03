@@ -1,7 +1,7 @@
 PYTHON ?= python3
 NODE ?= node
 
-.PHONY: check release-check fixtures shapes smoke starter-configs e2e pseudo
+.PHONY: check release-check fixtures shapes smoke smoke-run starter-configs e2e pseudo
 
 # HTML, JavaScript, CSS and fixture checks, and the e2e harness's own
 # judgement of answers; Python standard library only.
@@ -26,7 +26,14 @@ shapes:
 	cd ../hub && MAITY_WRITE_SHAPES=1 $(HUB_PYTHON) -m pytest -q -p no:cacheprovider tests/test_web_shapes.py
 
 # Behaviour smoke test against a DOM shim; needs a node binary, no packages.
+# It runs in one of the machine's run slots (../tools/run_slot.sh, at most two
+# smoke or PostgreSQL runs at a time); `make smoke SLOT=` runs it without one.
+SLOT ?= ../tools/run_slot.sh
+
 smoke:
+	$(SLOT) $(MAKE) --no-print-directory smoke-run
+
+smoke-run:
 	$(NODE) tools/smoke.js .
 	$(NODE) tools/notifications-stream.js .
 	$(NODE) tools/landing-js.js
