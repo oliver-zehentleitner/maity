@@ -13,11 +13,13 @@
   marks the fresh one, and the old one before it is moved aside, with the
   one path it may run at, so at any one time only the copy at that path
   starts and a start in any other is refused every time (the mark
-  compared by the directory's identity, not its spelling, and removed
-  once the copy is at its path; by hand only when that path holds
-  another instance or nothing, after the person checked that no other
-  copy exists; not covered: a leftover the person did not remove,
-  renamed onto the path after the copy there moved on), one
+  compared by the directory's identity, not its spelling, printed when
+  written and when rewritten, and removed once the copy is at its path;
+  by hand only when that path holds another instance or nothing, after
+  the person checked that no other copy exists; not covered: a leftover
+  the person did not remove, renamed onto the path after the copy there
+  moved on, and a `.replaced-*` the person makes by hand, which carries
+  no mark), one
   lock per workspace path outside every renamed directory, keyed by the names
   the file system stores, held by local mode alone across the renames
   and the harness's start, so at most one harness runs per path while

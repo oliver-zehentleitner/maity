@@ -984,7 +984,7 @@ operator's config would admit every owner's project with that slug.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-qe0ka9e341gh, the lead's assignment of 2026-11-03; the reviews of #1294 (pmwg, dzse), lotse's request for a state table (2026-11-03); the review lead's scope decision for #1294 of 2026-11-03 (only the parts settled across reviewers, the run's lifetime to card tsk-3tzhegcrr48h); the review lead's order of 2026-11-03 for the next fixes (pmwg, dzse on 83b3a7ca); the review lead's order of 2026-11-03 for the fixes on 6b564a86 (nyh5, dzse); the manager's order of 2026-11-03 for a last text round on 9ebbdcd1 (wtwy; dzse, nyh5); `docs/api.md` §15.13, §5.3
+**Source:** card tsk-qe0ka9e341gh, the lead's assignment of 2026-11-03; the reviews of #1294 (pmwg, dzse), lotse's request for a state table (2026-11-03); the review lead's scope decision for #1294 of 2026-11-03 (only the parts settled across reviewers, the run's lifetime to card tsk-3tzhegcrr48h); the review lead's order of 2026-11-03 for the next fixes (pmwg, dzse on 83b3a7ca); the review lead's order of 2026-11-03 for the fixes on 6b564a86 (nyh5, dzse); the manager's order of 2026-11-03 for a last text round on 9ebbdcd1 (wtwy; dzse, nyh5); the manager's order of 2026-11-03 for a text round on 1a77bbdc (wtwy; dzse); `docs/api.md` §15.13, §5.3
 **See:** credentials.md — 116c5330-8dab-42ed-af06-74b6f02cee89 — as of 2026-11-03
 **See:** runner.md — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-03
 **See:** runner.md — c2acd907-0f26-4850-8272-063390f1d6a7 — as of 2026-11-03
@@ -1055,8 +1055,9 @@ the copy is at its path. When its path holds another instance or
 nothing, the person may remove it by hand after checking that no other
 copy of the credential exists; when it holds this instance, never. The
 staging and the retry's fresh directory are printed when they are
-created, and a start names every `.join-*` beside it with what it
-holds. A `.replaced-*` directory is never started
+created, the fresh directory with the path its mark names, which is
+printed again when it is rewritten to `<handle>#<instance>`, and a
+start names every `.join-*` beside it with what it holds. A `.replaced-*` directory is never started
 (`workspace_replaced`); its time is `YYYYMMDDTHHMMSSZ`. §15.13 lists
 the states of a workspace path in one table; each review finding maps
 to a row (the one under `running` is named as the limit, not fixed):
@@ -1186,8 +1187,11 @@ it arrives: its mark is removed then, so that a workspace moved later is
 not refused, and a leftover left beside it can follow onto the freed
 path. Closing that would need local mode to know every directory a copy
 was ever moved to, which it cannot, so the contract names the gap
-instead of claiming more, and every way on that puts a workspace onto a
-path asks the person first to check that no other copy exists. That is
+instead of claiming more. The ways on for a mark whose path holds
+another instance or nothing ask the person first to check that no other
+copy exists; the ways that rename a copy to the path its mark names
+(when that path holds this instance, `orphaned`, `stranded`) do not,
+since the copy goes where the mark puts it. That is
 also why a retry from a kept `.join-*`
 goes to `<handle>#<instance>`, which the instance alone decides, and not
 to `<handle>` when that happens to be free: every retry of one staging
@@ -1203,10 +1207,15 @@ that none runs, since every copy that exists can be started. When the
 path holds this instance there is no such way out: the copy there and
 this one would both exist and start. The advice to rename a workspace
 onto an empty path asks for the same check and only for the path the
-retry printed at the creation, since the path comes from a file a
-harness can write, and local mode does not move workspaces to such a
-path either. The old tree gets a mark before it is moved aside, so
-restoring it under another name than its path is refused like any copy.
+retry printed for the mark, when it wrote it at the creation and again
+when it rewrote it to `<handle>#<instance>`, since the path comes from a
+file a harness can write, and local mode does not move workspaces to
+such a path either. The old tree gets a mark before the retry moves it
+aside, so restoring that `.replaced-*` under another name than its path
+is refused like any copy. A `.replaced-*` the person makes by hand
+carries no mark (the copy at the path lost its own when it arrived), so
+restoring it under another name is not refused: part of the gap over
+time, named, not covered.
 Local mode creates `maity-local` before it decides whether a
 `--workspace` lies inside it, because a directory that does not exist
 yet has no identity to compare with. The message reads the instance at
