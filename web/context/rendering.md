@@ -1051,6 +1051,15 @@ or a consonant gives both forms (`(이)에요`, `(으)로`, `은(는)`, `와(과
 A confirmation question (`…할까요?`) and the sentence after it share one register, 해요, also on a legal or security
 page: a dialog is a message to the person at the screen, not the legal or security text itself, and one dialog never
 switches mid-way; 합니다 after a 해요 question was rejected because the dialog then mixes both.
+In Simplified Chinese the reader is `你`, as the glossary says. Redacting is `移除` on every key, the word on the
+button, in the portal and in the hub's mails alike (`reports.action.remove.hint`, `mail_links.delete_keeps`), never
+`抹除`. A review's Approve is `通过`, because a human's go is `批准`, and a project's launch is `推出`, because a
+deploy is `上线`. The role proxy and the Meat Proxy stay two things: `Meat Proxy` keeps its English name. A role in
+a sentence is `所有 {role}` with the role's English word, as in `trust.every.role.*`. A dormant instance is `休眠`,
+as on every key that names one, and a maintenance window is `维护时段`.
+The imprint is `运营者信息` on every key that names it, the page's own title (`frame.imprint`), the
+registration's link and the portal's legal settings alike, as in Japanese and Korean. A public page shows you as
+online while you are (`在你在线时显示你在线`), not when you were (`何时在线` reads as a history).
 
 **Rejected alternatives:**
 - `Übernahme` for both claim and takeover: an error then says a card "needs a takeover" next to "nobody has claimed it".
@@ -1062,6 +1071,7 @@ switches mid-way; 합니다 after a 해요 question was rejected because the dia
 - `Uniéndote…` and `Uniéndose…` for Joining: one addresses the reader, the other reads as the formal address; the glossary wants a neutral waiting text.
 - `entrada` for a join or a sign-in in Portuguese: it is already an entry and the inbox, and reads as a door, not an act.
 - A neutral form for `Besitzer` in the table: it would make the level's name differ between labels and sentences.
+- `法律声明` for the imprint in Simplified Chinese: it reads as a disclaimer and gave one page two names.
 
 
 ## Where the glossary contradicted itself or the catalogs
