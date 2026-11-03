@@ -12,7 +12,7 @@ from string import Template
 
 from fastapi import APIRouter, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
-from sqlalchemy import Engine
+from sqlalchemy import Engine, text
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.routing import Mount
 
@@ -188,6 +188,39 @@ def check_startup(engine: Engine, settings: Settings) -> None:
                 "MAITY_SIGN_IN_SECOND_FACTOR=email needs complete, enabled mail settings"
             )
     check_secrets(engine, settings.secret_key)
+
+
+def warn_on_connection_budget(engine: Engine, settings: Settings) -> None:
+    """Say at the start when the deployment may ask more connections than PostgreSQL gives
+    ordinary roles (hub/context/replicas.md, "Several pods"). Not a refusal: behind a pooler the
+    server's own limit is not the one that counts. `settings` are the hub's, before any split
+    among workers."""
+    from maity_hub import serving
+
+    if engine.dialect.name != "postgresql":
+        return
+    try:
+        with engine.connect() as conn:
+            limits = {
+                name: int(value)
+                for name, value in conn.execute(
+                    text(
+                        "SELECT name, setting FROM pg_settings WHERE name IN ('max_connections', "
+                        "'superuser_reserved_connections', 'reserved_connections')"
+                    )
+                )
+            }
+    except SQLAlchemyError as error:  # a warning never stops the hub; the start says the rest
+        log.info("the connection budget was not checked: %s", type(error).__name__)
+        return
+    if "max_connections" not in limits:
+        return
+    reserved = limits.get("superuser_reserved_connections", 0) + limits.get(
+        "reserved_connections", 0
+    )
+    warning = serving.budget_warning(settings, limits["max_connections"], reserved)
+    if warning:
+        log.warning("%s", warning)
 
 
 def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:

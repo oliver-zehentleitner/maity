@@ -83,6 +83,16 @@
         "key": {
           "type": "string",
           "minLength": 1
+        },
+        "poolSize": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 500
+        },
+        "maxOverflow": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 500
         }
       }
     },
@@ -302,6 +312,14 @@
     },
     "affinity": {
       "type": "object"
+    },
+    "topologySpreadConstraints": {
+      "type": "array"
+    },
+    "replicas": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
     },
     "mail": {
       "type": "object",

@@ -1,4 +1,4 @@
-# The Maity hub on Kubernetes: one Deployment with one pod, a Service, an
+# The Maity hub on Kubernetes: one Deployment (one pod unless `replicas` says more), a Service, an
 # optional Ingress, a NetworkPolicy, and `maity-hub migrate` as a Job before
 # every install and upgrade. PostgreSQL is not part of the chart; the hub
 # connects to one that exists. Secrets are never values here: the chart only
@@ -8,6 +8,15 @@
 # either the Ingress (ingress.enabled, ingress.host, ingress.className,
 # config.trustedProxies) or config.publicUrl. README.md walks through a
 # complete install.
+
+# MAITY_REPLICAS: hub pods. The default 1 is one pod, stopped before its successor starts
+# (Recreate). More than 1 needs PostgreSQL and attachments off the pod's volume (the hub
+# refuses to start otherwise, and the chart refuses attachments.existingClaim): the pods then
+# roll one at a time (RollingUpdate, maxUnavailable 0), a PodDisruptionBudget keeps one up and
+# they spread over nodes. A release with a migration still stops the hub
+# (deploy/scripts/helm-upgrade.sh). Database connections: replicas × (pool + overflow +
+# config.workers + 1) must fit the database's max_connections (README.md, "Several pods").
+replicas: 1
 
 image:
   # Required. ghcr.io/oliver-zehentleitner/maity-hub once releases are published
@@ -67,6 +76,10 @@ database:
   # database's CA for sslmode=verify-full.
   existingSecret: ""
   key: database-url
+  # MAITY_DB_POOL_SIZE and MAITY_DB_MAX_OVERFLOW: each pod's connections to the database,
+  # shared by its workers. Unset: the hub's 16 and 16.
+  poolSize: null
+  maxOverflow: null
 
 forge:
   github:
@@ -251,3 +264,6 @@ podLabels: {}
 nodeSelector: {}
 tolerations: []
 affinity: {}
+# With more than one replica the pods spread over nodes (kubernetes.io/hostname, maxSkew 1,
+# ScheduleAnyway). Set constraints here to replace that.
+topologySpreadConstraints: []

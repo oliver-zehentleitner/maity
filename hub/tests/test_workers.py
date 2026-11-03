@@ -217,3 +217,54 @@ def test_the_stop_signal_releases_the_waits_of_every_worker(
         assert answers and answers[0].status_code == 200
     hub.process.wait(timeout=30)
     assert time.monotonic() - begun < 15  # not the 50 seconds the waits asked for
+
+
+# --- several pods (`MAITY_REPLICAS`) -----------------------------------------------------------
+
+
+@pytest.mark.parametrize("value", ["0", "101", "many"])
+def test_the_replica_count_is_a_number_from_one_to_a_hundred(value: str) -> None:
+    with pytest.raises(ConfigError, match="MAITY_REPLICAS"):
+        _settings(MAITY_REPLICAS=value)
+    assert _settings().replicas == 1 and _settings(MAITY_REPLICAS="3").replicas == 3
+
+
+def test_several_replicas_are_refused_off_postgresql() -> None:
+    settings = replace(_settings(), database_url="sqlite:///hub.db", replicas=2)
+    assert "MAITY_REPLICAS=2 needs PostgreSQL" in (serving.refusal(settings) or "")
+
+
+def test_several_replicas_are_refused_with_a_local_attachment_directory(tmp_path: Path) -> None:
+    """Each pod's directory holds only the files it took; the single-server setup keeps it."""
+    local = replace(_settings(), attachment_dir=tmp_path, replicas=2)
+    assert "local attachment directory" in (serving.refusal(local) or "")
+    assert serving.refusal(replace(local, replicas=1)) is None
+    assert serving.refusal(replace(local, attachment_dir=None)) is None  # attachments off
+    assert serving.refusal(replace(local, attachment_store="s3")) is None
+
+
+def test_the_connection_budget_counts_every_pod_and_process() -> None:
+    settings = _settings(
+        MAITY_REPLICAS="3", MAITY_WORKERS="2", MAITY_DB_POOL_SIZE="10", MAITY_DB_MAX_OVERFLOW="5"
+    )
+    assert serving.connections(settings) == 3 * (10 + 5 + 2 + 1)
+    assert serving.budget_warning(settings, 100, 3) is None
+    warning = serving.budget_warning(settings, 50, 3) or ""
+    assert "54 database connections" in warning and "takes 47" in warning
+    assert serving.connections(_settings()) == 16 + 16 + 1 + 1  # the single-server hub
+
+
+def test_a_budget_past_the_servers_limit_is_said_at_the_start(
+    migrated: Engine, database_url: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    from maity_hub.app import warn_on_connection_budget
+
+    if not database_url.startswith("postgresql"):
+        warn_on_connection_budget(migrated, replace(_settings(), replicas=100))
+        assert not caplog.records  # only PostgreSQL has the limit to read
+        return
+    with caplog.at_level("WARNING"):
+        warn_on_connection_budget(migrated, _settings())
+        assert not caplog.records
+        warn_on_connection_budget(migrated, _settings(MAITY_REPLICAS="100"))
+    assert any("database connections" in r.getMessage() for r in caplog.records)

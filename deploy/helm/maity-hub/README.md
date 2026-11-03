@@ -9,7 +9,8 @@ What it installs:
 | Object | Purpose |
 |---|---|
 | Job `<release>-maity-hub-migrate` | `maity-hub migrate`, as a `pre-install,pre-upgrade` hook before the Deployment changes |
-| Deployment `<release>-maity-hub` | one pod, `Recreate` on upgrade, non-root, read-only root filesystem |
+| Deployment `<release>-maity-hub` | one pod (`Recreate`) unless `replicas` says more (rolled one at a time), non-root, read-only root filesystem |
+| PodDisruptionBudget (with `replicas` above 1) | keeps one hub pod up through a node drain |
 | Service `<release>-maity-hub` | ClusterIP, port 80 → 8080 |
 | Ingress (optional) | TLS, with ingress-nginx annotations for the event long-poll |
 | NetworkPolicy (on by default) | only the ingress controller's namespace and the release's test pod reach the hub |
@@ -188,6 +189,10 @@ silently ignored. These are the values that matter:
 | `image.tag` / `image.digest` | appVersion / none | a digest wins over the tag |
 | `imagePullSecrets` | `[]` | `[{name: …}]` |
 | `database.existingSecret`, `.key` | required, `database-url` | the Secret holding `MAITY_DATABASE_URL` |
+| `database.poolSize`, `.maxOverflow` | hub default (16, 16) | `MAITY_DB_POOL_SIZE`, `MAITY_DB_MAX_OVERFLOW`: each pod's connections, shared by its workers (see Several pods) |
+| `replicas` | `1` | hub pods and `MAITY_REPLICAS`; above 1 only with PostgreSQL and without `attachments.existingClaim` (see Several pods) |
+| `config.workers` | `1` | `MAITY_WORKERS`, serving processes per pod; above 1 only with PostgreSQL |
+| `topologySpreadConstraints` | `[]` | with more than one replica: spread over nodes by default; set to replace it |
 | `forge.github.existingSecret`, `.key` | none, `github-token` | the Secret holding `MAITY_FORGE_GITHUB_TOKEN` |
 | `attachments.existingClaim`, `.mountPath`, `.quotaBytes` | none, `/var/lib/maity/attachments`, hub default (1 GiB per project) | the PersistentVolumeClaim of the local attachment store (docs/api.md §8.7), mounted into the hub, not the migrate Job, and `MAITY_ATTACHMENT_DIR`/`_QUOTA`. A directory the hub cannot write stops the new hub at its start: with `Recreate` the old pod is already gone, so the hub is down, and the migration has already run. The way back is forward: fix the volume or `attachments.mountPath` and run `helm upgrade` again with the same image. `helm rollback` to the old image works only if the upgrade did not move the schema (see Rollback below); otherwise the old image needs the dump restored; empty claim: attachments off. The files are not in the database: back the volume up with it |
 | `secretKey.existingSecret`, `.key` | none, `secret-key` | the Secret holding `MAITY_SECRET_KEY`, the instance key for stored secrets; moving it from `extraEnv`: drop it there in the same upgrade, the chart does not dedupe; a Secret created with the first README holds the key as `MAITY_SECRET_KEY`, then set `secretKey.key: MAITY_SECRET_KEY` |
@@ -273,11 +278,9 @@ not ship yet (`hub/context/kubernetes.md`).
 
 ## Behaviour worth knowing
 
-- **One pod, always.** The long-poll notifier, the request-signing nonce
-  window, the rate limits and the probe worker live in the process. A
-  second pod, even during a rolling update, is not safe yet. Upgrades
-  therefore use `Recreate`, and there is no replica value
-  (`hub/context/kubernetes.md`).
+- **One pod by default.** With `replicas: 1` the pod is replaced with
+  `Recreate`: SQLite and a local attachment volume are one pod's. More pods
+  are opt-in, see Several pods below.
 - **The schema and the running pod.** A hub serves only on exactly the
   schema head of its own version. Once the hook has migrated, the old pod's
   `/api/v1/health` answers 503 `schema_outdated`. It leaves the Service, and
@@ -310,6 +313,29 @@ not ship yet (`hub/context/kubernetes.md`).
   database is down or behind the migration head. Liveness and startup use
   `/api/v1/help`, which needs no database, so a database outage takes the
   pod out of the Service without restarting it.
+
+## Several pods
+
+`replicas` above 1 runs several hub pods against one PostgreSQL. They share
+wake-ups, request nonces, rate limits, worker passes and the forge budget
+through the database (`hub/context/replicas.md`).
+
+- **Needs:** PostgreSQL, and attachments off the pod's volume (S3) or off
+  altogether. The chart refuses `attachments.existingClaim` with more than one
+  replica; the hub refuses to start on another database or with a local
+  attachment directory.
+- **Upgrades:** a release without a migration rolls one pod at a time
+  (`maxUnavailable: 0`, `maxSurge: 1`). A release with a migration still goes
+  through `deploy/scripts/helm-upgrade.sh`, which stops every pod and brings
+  back as many as it found.
+- **Drains and nodes:** a PodDisruptionBudget keeps one pod up; the pods
+  spread over nodes where they can (`topologySpreadConstraints` replaces it).
+- **Connections:** the hub asks up to
+  replicas × (`database.poolSize` + `database.maxOverflow` + `config.workers` + 1)
+  connections: per pod its pool and overflow, one listener per process, one
+  for the readiness probe. Keep that under the database's `max_connections`
+  less its reserved connections; the hub warns at its start when it is not.
+  Example: 3 replicas with 2 workers and the default 16 + 16 ask 3 × 35 = 105.
 
 ## When an install or upgrade fails
 

@@ -40,6 +40,7 @@ from maity_hub.app import (
     create_app,
     require_current_schema,
     serving_engine,
+    warn_on_connection_budget,
 )
 from maity_hub.auth import second_factor_reset
 from maity_hub.auth.passwords import MIN_LENGTH, hash_password
@@ -431,6 +432,7 @@ def _serve(settings: Settings, banner: list[str] | None = None) -> int:
     try:
         engine = serving_engine(settings)
         require_current_schema(engine)
+        warn_on_connection_budget(engine, settings)
         app = create_app(settings, engine)
     except SchemaNotCurrentError as error:
         return _fail(str(error), EXIT_FAILURE)
@@ -465,6 +467,7 @@ def _serve_workers(settings: Settings, banner: list[str] | None) -> int:
         engine = serving_engine(serving.per_worker(settings))
         try:
             check_startup(engine, settings)
+            warn_on_connection_budget(engine, settings)
         finally:
             engine.dispose()
     except SchemaNotCurrentError as error:
