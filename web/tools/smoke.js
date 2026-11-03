@@ -6132,10 +6132,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && frFollow.querySelectorAll("a").length === 1 && frFollow.querySelector("a").getAttribute("rel") === "noopener noreferrer me" && text(frFollow).includes("Bad")
     && text(frFoot().querySelector("p.operator")) === "Wien" && frLinks(frFoot().querySelector("p.langs")) === "?lang=de=Deutsch,?lang=en=English",
     "frame: the model's words carry its language, a section link loads the landing page, a social link is rel=me without a referrer, an unsafe address no link");
-  // The dashboard's policy refuses inline style (default-src 'self'): the mark's colours are classes.
+  // The dashboard's policy refuses inline style (default-src 'self'): the mark's colours come from public-pages.css.
   const frMark = frHead().all().filter((x) => ["RECT", "CIRCLE", "PATH"].includes(x.tagName));
-  expect(frMark.length === 7 && frMark.every((x) => !("style" in x.attrs) && /^mark-(seat|member|line)$/.test(x.attrs.class || "")),
-    "frame: the mark's seven parts carry classes, no style attribute");
+  expect(frMark.length === 7 && frMark.every((x) => !("style" in x.attrs)), "frame: the mark's seven parts carry no style attribute");
   // Two drawings in a row: only the later answer draws, once.
   let frHeld = [];
   win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? new Promise((r) => frHeld.push(r)) : frGet(p));

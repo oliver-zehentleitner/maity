@@ -81,3 +81,10 @@
 :lang(ko){word-break:keep-all}
 :lang(ja) :is(.door-panel .subline,.door-form h1){word-break:auto-phrase}
 @media (prefers-reduced-motion:reduce){.door-form *{transition:none!important}}
+/* The header's mark: the dashboard's policy (default-src 'self') drops the SVG's inline
+   style="fill:var(--…)", so the colours come from here, the same tokens as the landing page. */
+.site-header .mark rect{fill:var(--accent)}
+.site-header .mark circle{fill:var(--text)}
+.site-header .mark path{stroke:var(--text)}
+/* Narrow and no pitch (the default delivery, second factor, mail sent, closed): no empty dark band. */
+@media (max-width:959.98px){.door-panel:not(:has(.subline)):not(:has(li)){display:none}}

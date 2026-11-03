@@ -1370,10 +1370,6 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .public-frame #main { padding: 0; max-width: none; }
 .public-frame .door-form .login, .public-frame .door-form .sign-in-options { margin: 0; max-width: none; }
 .public-frame .door-form .legal-links { text-align: start; }
-/* The frame's mark (js/site-chrome.js) in the header's tokens; the hub's copy says them inline. */
-.site-header .mark .mark-seat { fill: var(--accent); }
-.site-header .mark .mark-member { fill: var(--text); }
-.site-header .mark .mark-line { stroke: var(--text); }
 .landing-preview .landing { margin: 16px auto; }
 .landing-preview .inert-link { text-decoration: underline dotted; }
 .landing-preview .inert-link.button { cursor: default; }

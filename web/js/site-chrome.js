@@ -63,22 +63,21 @@ window.Maity = window.Maity || {};
     return a;
   }
 
-  // The mark as the hub inlines it (landing_assets/mark.svg). Its colours are the header's tokens,
-  // set by classes in app.css: the hub's file says them in style attributes, which the
-  // dashboard's policy (default-src 'self', no inline style) refuses.
+  // The mark as the hub inlines it (landing_assets/mark.svg), without its style attributes: the
+  // dashboard's policy (default-src 'self', no inline style) refuses them. Its colours, the
+  // header's tokens, come from public-pages.css (`.site-header .mark rect`, …).
   const SVG = "http://www.w3.org/2000/svg";
   function home() {
     const svg = document.createElementNS(SVG, "svg");
     [["viewBox", "0 0 64 64"], ["aria-hidden", "true"], ["focusable", "false"], ["class", "mark"]].forEach(([k, v]) => svg.setAttribute(k, v));
-    const part = (tag, attrs, kind) => {
+    const part = (tag, attrs) => {
       const el = document.createElementNS(SVG, tag);
       Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
-      el.setAttribute("class", kind);
       svg.appendChild(el);
     };
-    part("rect", { x: "26", y: "4", width: "12", height: "12", rx: "3" }, "mark-seat");
-    [[51, 21], [51, 43], [32, 54], [13, 43], [13, 21]].forEach(([cx, cy]) => part("circle", { cx: String(cx), cy: String(cy), r: "6" }, "mark-member"));
-    part("path", { d: "M23.5 38V31a4.25 4.25 0 0 1 8.5 0v7M32 31a4.25 4.25 0 0 1 8.5 0v7", fill: "none", "stroke-width": "3.5" }, "mark-line");
+    part("rect", { x: "26", y: "4", width: "12", height: "12", rx: "3" });
+    [[51, 21], [51, 43], [32, 54], [13, 43], [13, 21]].forEach(([cx, cy]) => part("circle", { cx: String(cx), cy: String(cy), r: "6" }));
+    part("path", { d: "M23.5 38V31a4.25 4.25 0 0 1 8.5 0v7M32 31a4.25 4.25 0 0 1 8.5 0v7", fill: "none", "stroke-width": "3.5" });
     const a = h("a", { class: "brand" }, svg, "maity");
     // The instance's start page, the hub's own (§16.7): a page load, in fixture mode too.
     a.setAttribute("href", "/");
