@@ -200,7 +200,7 @@ A worker thread, started when a store is configured, runs every five
 minutes (`attachments.SWEEP_EVERY`). One pass deletes pending uploads older
 than 24 hours with their bytes, removes the bytes of a tombstoned row that
 are still there (a removal that failed after a commit), and removes a blob no
-row names. That last rule only touches a blob older than ten minutes
+row names. That last rule only touches a blob older than 30 minutes
 (`BLOB_GRACE`): an upload writes the blob before its row is committed, so a
 younger blob without a row may belong to a transaction still open. A removed
 member's pending uploads are deleted as rows in the removal's transaction and
