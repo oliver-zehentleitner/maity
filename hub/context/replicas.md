@@ -494,10 +494,11 @@ causes errors (403 or 429 from the forge for everyone).
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision for object storage instead of a shared `ReadWriteMany` volume (card tsk-enpbgadqgmbr, 2026-11-03), the build plan the coordinator accepted for it (2026-11-03: boto3 at runtime, no presigned URLs, hub and chart in separate pull requests), the maintainer's rule of 2026-11-03 that every setting keeps its single-server default; `attachment_store.py` (`BlobStore`, `LocalStore`, `S3Store`), kubernetes.md 9111cb2f (a 10 GiB `ReadWriteOnce` claim, tarred by the backup job)
+**Source:** the maintainer's decision for object storage instead of a shared `ReadWriteMany` volume (card tsk-enpbgadqgmbr, 2026-11-03), the coordinator's request of 2026-11-03 to record that with versioning a deletion becomes final only through a lifecycle rule, the build plan the coordinator accepted for it (2026-11-03: boto3 at runtime, no presigned URLs, hub and chart in separate pull requests), the maintainer's rule of 2026-11-03 that every setting keeps its single-server default; `attachment_store.py` (`BlobStore`, `LocalStore`, `S3Store`), kubernetes.md 9111cb2f (a 10 GiB `ReadWriteOnce` claim, tarred by the backup job)
 **See:** kubernetes.md — 9111cb2f-89b0-4088-8c92-2fa5c1348ec7 — as of 2026-10-30
 **See:** attachments.md#a-download-past-one-mebibyte-streams-and-holds-its-last-piece-back-until-the-digest-matches — 81f57cb5-f48a-43c7-9729-1d4e4de696b7 — as of 2026-11-03
 **See:** attachments.md#the-blob-is-written-before-the-row-and-removed-when-the-row-never-commits-or-is-gone — 7dcd4850-9dc4-4b4a-9148-e156c8e11718 — as of 2026-11-03
+**See:** replicas.md#the-volume-moves-into-the-bucket-by-a-copy-the-hub-runs-compared-by-the-digest-it-writes — 99360a7a-0de1-453f-88eb-9be12100c9c5 — as of 2026-11-03
 **Revisit when:** the object store's latency shows in the load test of uploads and downloads
 
 The store has two implementations behind one interface (`attachment_store.BlobStore`): `LocalStore`,
@@ -515,8 +516,13 @@ ones, written before the upload's transaction and outside the project's lock (at
 objects instead of files. Every error of the
 client becomes a `StoreError` that names the operation and the service's error code, never a
 credential, and the client's own loggers are held at `INFO`, since botocore logs each request's
-headers at `DEBUG`. The chart values, the copy of an existing volume into the bucket and the backup
-without the volume's tar follow in a second pull request.
+headers at `DEBUG`. The chart renders the store and the bucket's settings (`attachments.store`,
+`attachments.s3.*`, the credentials by Secret reference), and `maity-hub attachments copy-to-s3`
+moves an existing volume into the bucket (99360a7a). With the bucket's versioning on, which is what
+replaces the volume's tar as the backup, a deletion by the hub only adds a delete marker: the bytes
+are gone for good only once a lifecycle rule expires the noncurrent versions, so a deployment with
+versioning needs that rule for a deleted attachment to be deleted. The backup job without the
+volume's tar follows once no deployment mounts the volume any more.
 
 **Reason:** object storage scales and replicates independently of the nodes, a bucket is the usual
 home for off-site backups anyway, and it removes the volume from every node's scheduling. A shared
@@ -534,6 +540,72 @@ hub has to keep.
   but signing, retries and the differences between services become the hub's to get right.
 - **Presigned download URLs:** less traffic through the hub, but a link that works for anyone who
   holds it for its lifetime, outside the hub's access checks and its digest check.
+
+## The volume moves into the bucket by a copy the hub runs, compared by the digest it writes
+
+**Id:** 99360a7a-0de1-453f-88eb-9be12100c9c5
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card's scope (tsk-enpbgadqgmbr: "a command or documented step that copies the existing files from the volume into the bucket, idempotent"), the coordinator's request of 2026-11-03 for a one-off copy that checks the digest, the operator's question of 2026-11-03 whether the hub would read through instead, the reviews of #1282 on 2026-11-03 (an overwritten object, an unreadable folder, deleted attachments copied back, what the check after a put compares, a deletion while the hub still serves from the volume); `attachment_store.copy_local_to_s3`, `cli._copy_to_s3`
+**Revisit when:** a deployment's volume is too large to copy while the hub serves, or a second migration (between buckets) is needed
+**See:** replicas.md#attachments-move-to-s3-compatible-object-storage — a70d7269-a0a9-45aa-94c5-54715f112c10 — as of 2026-11-03
+
+`maity-hub attachments copy-to-s3` reads `MAITY_ATTACHMENT_DIR` and writes every blob into the
+bucket of the `s3` settings under the same key; without `--apply` it only counts. `S3Store` writes
+each object with its SHA-256 as metadata (`x-amz-meta-sha256`), and the copy skips an object whose
+metadata matches the file, so it runs as often as needed: once while the hub still serves from the
+volume, once more after the store is switched, for the uploads in between. It never changes the
+volume. An object the hub wrote with another SHA-256 is not overwritten but counted as different
+(exit 1); only a missing object or one without the metadata is written. A file whose attachment
+has no row, or a deleted one, is skipped: under `s3` the hub deletes only in the bucket, so the
+volume still holds the files of redacted and expired attachments, and a later run would put them
+back (with versioning on, as one more noncurrent version each time). The live ids are read once
+per project, and right before and right after each put the copy asks again for that one row.
+Before, it saves the write when the attachment was deleted since the ids were read, the usual
+case. After, it closes the race with the deletion of a hub that already serves from the bucket:
+the hub commits a deletion before it removes the bytes, so a deletion during the put is either
+seen there and the object removed again, or its own removal comes after the put. In a versioned
+bucket that race leaves one noncurrent version, which the lifecycle rule for noncurrent versions
+expires (a70d7269). While the hub still serves from the volume, its deletions remove only the
+file there, and an object the copy put earlier stays current in the bucket. So each run with
+`--apply` ends with the sweep's removals against the bucket, without expiring rows (the hub's
+own sweep does that): the object of a tombstoned row, and an object no row names once it is
+older than `BLOB_GRACE`, the same bound that protects an upload in flight under `s3`. What is
+deleted after the last run stays in the bucket until the switch; from then on the hub's own
+sweep removes it within its interval. A staging that is given up or rolled back leaves the bucket as
+the last run left it: one more run with `--apply` cleans it, or the bucket's prefix is emptied. A pending
+upload past its 24 hours that the sweep has not removed yet still has its row and is copied;
+once the hub's sweep has expired the row, the object has no row and goes like any other. After each put one HEAD
+compares the size and the metadata the put wrote, not the bytes: reading every object back would
+double the traffic. Each file is read whole, at most `FILE_CAP` like an upload. A folder or
+file the pod cannot read (`lost+found` on an ext4 volume) counts as failed, and the copy goes on.
+There is no copy back: after the switch, uploads exist only in the bucket. The chart renders the bucket's settings whenever a bucket is set, also with `local`, so the
+command finds them in the pod before the switch, and the claim may stay mounted under `s3` for the
+second run.
+
+**Reason:** the copy runs where both stores already are (the hub's pod, its settings, its
+credentials), and needs no tool of the operator's. The digest it compares is the one the hub
+checks on every download only while the file is intact: keys are immutable attachment ids, so other
+bytes under a key the hub already wrote mean the file changed, and once the store is switched the
+bucket is what the hub serves.
+
+**Rejected alternatives:**
+- **The hub reads through (from the volume when the bucket has no object):** two stores on the hot
+  path of every download, for as long as the volume is mounted, and a volume still pinned to one node.
+- **Overwriting an object whose digest differs from the file:** the first version of the copy did,
+  and a file changed on the volume after the first run replaced good bytes in the bucket.
+- **Copying every file and leaving deleted ones to the sweep:** the first version did. The sweep
+  removes them again, but with the bucket's versioning on each run leaves the redacted bytes
+  behind as one more noncurrent version.
+- **Checking the bytes after each put** (reading the object back, or the store's own SHA-256
+  checksum on the put): reading back doubles the traffic of the move, and not every
+  S3-compatible store takes the newer checksum headers. The client checks the transfer itself.
+- **Deleting in both stores while the hub still serves from the volume:** the hub would need the
+  bucket's settings and credentials, and a working bucket, before the switch, and every deletion
+  path two removals; the copy's own clean-up reaches the same state at each run.
+- **Comparing by the ETag:** it is an MD5 of the bytes only for a single-part upload without
+  server-side encryption by a managed key, which not every bucket guarantees.
 
 ## Connections: a per-pod pool sized to the database, PgBouncer only in session mode until prepared statements are off
 
