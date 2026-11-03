@@ -47,7 +47,9 @@ mark (GitHub and GitLab their own; Gitea and any other a branch mark),
 **Pull Requests** on GitHub, GitLab, Gitea and Bitbucket, the project's own
 links, and **Why**, the
 Keep the Why dashboard of the family's root (`keep_the_why_export`'s
-member at `path: ""`); each only when its address is plain `https`. At the top right, in this order, are **Chat**, the
+member at `path: ""`); each only when its address is plain `https`. On a
+phone the links are one row that scrolls sideways, the state and the
+absence beside it; what does not fit beside the row wraps under it. At the top right, in this order, are **Chat**, the
 **Lead** button where there is a lead to reach, **"+"**, the gear, the
 bell (notifications) and the profile. **"+"** (humans only) is a menu
 with **Agent** (the agents page, `/agents`) and **User** (the
@@ -94,7 +96,8 @@ picks it with three radio buttons, saying that the choice is kept in this
 browser only. A pick made signed out stays after signing in.
 
 Left of the menus are **Chat** and the **bell**, in that order (Chat,
-Notifications, gear, profile, in one row on a phone too). **Chat** leads
+Notifications, gear, profile, in one row on a phone too; there the
+**Lead** button is hidden and stands on the Chats page instead). **Chat** leads
 to `/chats` with the hub's count of unread chat messages
 (`counts.chat`); the **bell** has the count of every kind but the open
 requests. A badge is a number only, hidden at zero; the words are the
@@ -1479,6 +1482,31 @@ smoke test is not a browser: layout, CSS and real events are outside
 both. The browser end-to-end test below covers one path through them;
 what else a change looked like in a browser is stated in its pull
 request.
+
+## Vendored Keep the Why views
+
+`vendor/keep-the-why/` holds the Keep the Why views library (timeline, graph, family, search, thoughts, pages:
+classic scripts on `globalThis.KeepTheWhy` and one stylesheet) that the Why view mounts. They are copies, never edited
+here (`context/stack.md`):
+
+```sh
+python3 tools/vendor_ktw.py --version 0.11.39   # take that release of keep-the-why-dashboard from PyPI
+python3 tools/vendor_ktw.py --check             # the files on disk against VENDOR.json, offline
+python3 tools/vendor_ktw.py --verify            # the files on disk against the locked release itself, online
+python3 tools/vendor_ktw.py --latest            # the newest release on PyPI
+python3 tools/vendor_csp.py                     # the views in Chromium under the hub's policy (Playwright)
+```
+
+`vendor_ktw.py` refuses a wheel whose sha256 is not PyPI's and writes only the files the wheel's `ktw-views.json`
+lists, the manifest and the licence; `VENDOR.json` records the version and every sha256. `make check` fails when a
+vendored file differs from its hash, when a file there is not in the manifest, or when a script uses a markup- or
+code-evaluating call or sets a style attribute (an inline style through the element's style object is fine under the
+policy). A hand edit whose new hash is written into `VENDOR.json` too passes that check, so `--verify` fetches the
+locked release again and compares every file byte for byte; CI runs it in the `web-vendor` job whenever `web/vendor/`
+changes. The hub serves the directory under `/assets/vendor/`. `vendor_csp.py` serves the files with `Content-Security-Policy: default-src 'self'`, mounts every view on
+`tools/ktw-fixture-state.json` (Keep the Why's own test fixture) and fails on a policy violation, an error, an empty
+view or an empty graph; CI runs it in `web-e2e`. The `ktw-vendor` workflow checks PyPI daily and opens a pull request
+for a newer release with its hashes and changelog link; that pull request's CI starts when it is closed and reopened.
 
 ## Texts outside the catalog
 
