@@ -1,0 +1,3 @@
+### Fixed
+
+- web: the open chat ends at the window's bottom edge again, on a project's Chat tab and on Chats, at desktop and phone widths. Since the product line came below every page (#1290), the page scrolled past the composer: the chat's height was measured from the header's bottom and left out what stands below it, and on Chats the measure ran before the view was in the page and gave up. The chat list column ends with it, each pane scrolling on its own. "Sending…" and a failed send now stand in the composer's row after the meat-proxy switch, so the composer no longer jumps up while a message is sent.

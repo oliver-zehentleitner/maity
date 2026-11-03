@@ -842,6 +842,8 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .compose-actions { display: flex; align-items: center; gap: 8px; }
 .compose-actions > .send-with-keys, .compose-actions > button[type="submit"] { margin-inline-start: auto; }
 .compose-actions .attach-button[hidden] { display: none; }
+/* "Sending…" and a failure in the row, after the meat-proxy switch: no line appears below it (tsk-j10w2hsm1h90). */
+.compose-actions > .send-status { margin: 0; min-height: 0; flex: 1 1 8rem; min-width: 0; }
 .compose:has(input[type="file"]:focus-visible) .attach-button { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .absence { margin: 6px 0 0; font-size: 0.88rem; }

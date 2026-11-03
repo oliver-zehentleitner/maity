@@ -3662,6 +3662,39 @@ for it per browser, and a reader would set it again in every chat. A
 field that grows with its text by itself: it moves the history while one
 types and still does not give a phone its screen.
 
+## A chat fills the window from where it starts, less what stands below it; "Sending…" stands in the composer's row
+
+**Id:** 21fd7884-0462-49dc-8e47-da59f57ef557
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-j10w2hsm1h90 (the owner, 2026-11-03: the chat no longer ended at the window's bottom edge after the product line of #1290; the Chats list column too; "Sending…" to move beside the meat-proxy switch); browser measurements at 1280 × 800 and 390 × 844 in the PR
+**Revisit when:** the chat stops sizing itself with `--chat-h`, or the product line moves out of the page's flow
+**See:** views.md#a-chats-composer-hides-for-reading-on-a-phone-and-grows-on-a-wide-screen-both-are-the-browsers-choice — 5af3970c-0f6a-42e7-a211-13ba27fbae5d — as of 2026-11-03
+
+The open chat's height (`--chat-h`, `fitToScreen` in `js/chat.js`) is the window's height less where
+the chat layout starts on the page and less what stands below it down to the end of the page
+(main's padding, the product line of §16.13). The page then ends at the window's bottom edge, the
+product line under the composer is in sight, and only the history and the chat list scroll. It is
+measured again on a resize and whenever the page around it changes size (a `ResizeObserver` on the
+body: a banner above, the product line below). A layout not yet in the page, as Chats builds it
+while its view is still drawn, is measured once it is there instead of being given up. While a
+message is sent, "Sending…" and a failure stand in the composer's row, after the meat-proxy switch
+and before Send, so no line appears below the row and nothing moves.
+
+**Reason:** the earlier measure took the header's bottom and 16 px. It left out what stands between
+the header and the chat and everything below it, so the product line pushed the composer past the
+window's edge. On Chats the first measure came before the layout was in the page and stopped for
+good, leaving the CSS fallback `calc(100dvh - 140px)`.
+
+**Rejected alternatives:**
+- No product line on chat views: §16.13 puts it at the end of every page the dashboard draws.
+- The product line inside the history's scroll area: it would only show at the end of the history
+  and would scroll with the messages.
+- A sticky or fixed product line: §16.13 says it is never sticky.
+- The header's bottom plus a fixed allowance for the product line: its height changes with the
+  width (it wraps on a phone) and a banner above the chat moves the layout too.
+
 ## Forge access is a section of the account, also at /settings/forge; a project's settings say which grant reads its repository
 
 **Id:** 861705c6-539c-4d4c-9532-658311c463b7

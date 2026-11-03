@@ -238,7 +238,10 @@ window.Maity = window.Maity || {};
   // A composer's one row of actions (the designer's pass on #431): Attach
   // at the start, the keys and Send at the end.
   // extra: the chat's meat-proxy switch (js/meat-proxy.js), between Attach and Send.
-  const actionRow = (files, button, extra) => h("div", { class: "compose-actions" }, files ? files.chooser : null, extra || null, button);
+  // status: "Sending…" and what failed, in the same row after it, so that
+  // nothing below the row appears and pushes the composer up while sending.
+  const actionRow = (files, button, extra, status) => h("div", { class: "compose-actions" },
+    files ? files.chooser : null, extra || null, status ? status.el : null, button);
 
   // The composer's head (tsk-k6nakahy6fnj): its label, and on a phone a
   // button that folds the composer away for reading and brings it back;
@@ -422,23 +425,53 @@ window.Maity = window.Maity || {};
   // The quote of a message, as Markdown: each line behind "> ", the sender first.
   const quoteOf = (ctx, msg) => "> " + String(ctx.nameOf(msg.from)).replace(/\s+/g, " ").trim() + ":\n" + String(msg.body || "").split("\n").map((l) => "> " + l).join("\n") + "\n\n";
 
-  // The chat fills the screen below the header, so that only its history
-  // scrolls and the composer stays at the bottom; the visual viewport
-  // shrinks with a phone's on-screen keyboard, 100dvh does not everywhere.
+  // The chat fills the window, so that only its history and its list scroll
+  // and the composer stays at the bottom: from where the layout starts on
+  // the page down to the window's bottom edge, less what stands below it
+  // (main's padding, the product line of §16.13). Measuring from the
+  // header's bottom left out what stands between (a banner, the toolbar's
+  // margin) and everything below, so the page scrolled past the composer
+  // (tsk-j10w2hsm1h90). Measured again on a resize and when the page around
+  // it changes; the visual viewport shrinks with a phone's on-screen
+  // keyboard, 100dvh does not everywhere.
   function fitToScreen(layout) {
+    let watcher = null;
+    // Chats fits its layout while the view is still being drawn, before the
+    // router puts it into the page: measured once it is there, a few tries
+    // at most. Only a layout that was in the page and left it stops.
+    let seen = false, tries = 0;
     const fit = () => {
+      if (layout.isConnected === false && !seen) {
+        if (tries++ < 40) window.setTimeout(fit, 50);
+        return;
+      }
+      if (layout.isConnected !== false) seen = true;
       if (layout.isConnected === false) {
         window.removeEventListener("resize", fit);
         if (window.visualViewport) window.visualViewport.removeEventListener("resize", fit);
+        if (watcher) watcher.disconnect();
         return;
       }
-      const header = document.getElementById("header");
-      const top = header && header.getBoundingClientRect ? Math.max(0, header.getBoundingClientRect().bottom) : 0;
+      if (!layout.getBoundingClientRect || !layout.style.setProperty) return;
       const height = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-      if (layout.style.setProperty) layout.style.setProperty("--chat-h", Math.max(240, Math.floor(height - top - 16)) + "px");
+      const scrolled = window.scrollY || 0;
+      const box = layout.getBoundingClientRect();
+      // What stands below the layout down to the end of the page: the body's
+      // content box ends there, its own margin follows.
+      const body = document.body;
+      const end = body && body.getBoundingClientRect ? body.getBoundingClientRect().bottom : box.bottom;
+      const margin = body && window.getComputedStyle ? parseFloat(window.getComputedStyle(body).marginBottom) || 0 : 0;
+      const below = Math.max(0, end + margin - box.bottom);
+      layout.style.setProperty("--chat-h", Math.max(240, Math.floor(height - (box.top + scrolled) - below)) + "px");
     };
     window.addEventListener("resize", fit);
     if (window.visualViewport) window.visualViewport.addEventListener("resize", fit);
+    // A banner above or the product line below that comes or goes moves the
+    // layout without a resize; a fit that changes nothing stops the round.
+    if (window.ResizeObserver && document.body) {
+      watcher = new window.ResizeObserver(() => fit());
+      watcher.observe(document.body);
+    }
     fit();
   }
 
@@ -827,7 +860,7 @@ window.Maity = window.Maity || {};
       pollStatus.el,
       append(composeForm,
         composeHead(composeForm, text, h("label", { for: "chat-text" }, M.t("chat.message"), h("span", { class: "visually-hidden" }, " " + M.t("chat.send_keys", { keys: M.dom.SEND_KEYS })))),
-        text, M.projectMentionPicker(ctx, text, { onPick: typedInChat }), mentionHint, files0 ? files0.el : null, actionRow(files0, button, meat), status.el));
+        text, M.projectMentionPicker(ctx, text, { onPick: typedInChat }), mentionHint, files0 ? files0.el : null, actionRow(files0, button, meat, status)));
     // Sizing, scrolling and focus need the view in the page, which the
     // router does once this function has returned.
     window.setTimeout(() => {
