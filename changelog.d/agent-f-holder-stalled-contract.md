@@ -13,8 +13,9 @@
 
 ### Changed
 
-- docs/api.md §5.3: answering the digest's `seen` silences every entry it listed for as long as
-  that entry lasts, adding up over answers; a new request comes only for an entry no answer
-  silenced and lists every away instance, so an instance that becomes away only after an answer is
-  filed, even when it stopped before it; an entry lasts until the
-  instance is back, so moving a stalled holder's cards does not ask again.
+- docs/api.md §5.3: answering the digest's `seen` records each listed instance's `last_seen_at`
+  and the `since` of a running episode; an away instance stays silenced while it has made no call
+  since such a record, or while that episode runs. Records add up; a new request comes only for
+  an instance not silenced and lists every away instance. A table lists the cases: moving a
+  stalled holder's cards or assigning one back does not ask again, a crash after work does, and
+  an instance that became away only after an answer is filed.

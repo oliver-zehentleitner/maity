@@ -4144,16 +4144,9 @@ personal `not_listening.minutes` (§18.4, default 60) — or longer:
 
 Both kinds make up one set of away instances, for every rule below:
 filing, the count `<n>`, rewriting, withdrawal and the answer `seen`. An
-instance that is both is one entry, a stalled holder, since its line
-names the cards. An entry is known by its instance and its start: an
-episode by its `since`, a stalled holding by its `last_seen_at`. An
-entry lasts until the instance is back, not until its kind changes:
-an episode until it ends (above), a stalled holding until the instance
-calls again. While the instance is not back, an episode that runs on
-after a stalled holding ends (its cards moved, as the digest advises), a
-stalled holding that starts again (a card assigned back, §6.5) and a
-stalled holding that follows an episode are the same entry, keyed by
-the first one's start, and keep its silence below.
+instance that is both is listed once, as a stalled holder, since its
+line names the cards; one listed by an episode alone is listed as an
+episode.
 
 Once an hour, on the hour (UTC), the hub's worker looks at every such
 instance of the human's profiles across all projects and, when there is
@@ -4161,7 +4154,7 @@ at least one and the human's `not_listening.mode` (§18.4) is
 `inbox`, keeps one personal request (§7) open to the human (`to:
 "human:<id>"`): class `info`, one option `seen`, `asked_by` `null`,
 `filed_by: "hub"`, no `task_id`, no project; `title` `<n> of your agent
-instances are not listening` when every entry is an episode, else `<n>
+instances are not listening` when every one is listed as an episode, else `<n>
 of your agent instances are away`; `summary` one line per episode —
 `<agent handle> (<instance>) in <owner>/<slug>, since <time> (UTC)` —
 then one line per stalled holder —
@@ -4178,15 +4171,10 @@ their cards moved.` There is at most one such request per human: an open one is
 rewritten in place (same id, `summary` and `title` replaced, no new
 request event) when the set of away instances changed, and the hub
 withdraws it itself when none is away any more. Answering `seen`
-closes it and silences every entry it listed, for as long as that
-entry lasts (above), so a silence ends only when the instance is back;
-silences add up over every answered request. The next hour
-files a new request only when an away instance has an entry that no
-answered request silenced, and that request, like every rewrite of it,
-lists every away instance, silenced entries included, so the owner sees
-the whole set. An instance that became away only after an answer is a
-new entry and is filed although it stopped before it; an entry that
-stays as it was listed is never the reason for a new request. With `bell` the hub keeps, at the
+closes it; what it silences is set out below ("Silence after `seen`").
+The next hour files a new request only when an away instance is not
+silenced, and that request, like every rewrite of it, lists every away
+instance, silenced ones included, so the owner sees the whole set. With `bell` the hub keeps, at the
 same hours and by the same rules, one account record
 `agents_not_listening` `{instances: <n>, holding: <n>}` instead of a
 request (`holding`: how many of those instances are stalled holders,
@@ -4203,6 +4191,36 @@ listening`) at the first digest hour. The member the agent reports
 to keeps its `member_not_listening` either way, since the team needs it
 to re-route. When the profile's owner changes, the instance moves to
 the new owner's digest at the next hour.
+
+**Silence after `seen`.** Answering `seen` records, for every instance
+the request listed, its `last_seen_at` at that moment and, when an
+episode of it runs, that episode's `since`. Records add up over every
+answer. An away instance is *silenced* when
+
+1. its `last_seen_at` equals one recorded for it: it has made no call,
+   a resume included, since the owner saw it; or
+2. it is listed as an episode and that episode's `since` is recorded:
+   the owner saw this episode, however the instance called meanwhile.
+
+A stalled holder is silenced by 1 alone, since its stop is its last
+call. A record matters until the instance calls past it (1) or the
+episode ends (2). Nothing else moves `last_seen_at` — not the end of an
+episode by a revocation or a pause, not a card moved or assigned back —
+so none of them lifts a silence by 1. Everything not silenced is new to the
+owner. The cases, each from the answer on:
+
+| Listed and seen as | Then | Away as | Silenced | By |
+|---|---|---|---|---|
+| episode | the instance keeps calling other endpoints (busy without waiting) | episode | yes | 2 |
+| episode | that episode ends (an acknowledgement), and a later one starts after calls | episode | no | — |
+| episode, no call since (a crashed harness) | it holds a claim past the threshold | stalled holder | yes | 1 |
+| episode, calls after the answer | it takes cards and stops (a crash after work) | stalled holder | no | — |
+| stalled holder | its cards are moved, the move wakes it, an episode starts | episode | yes | 1 |
+| stalled holder | its session is revoked, a card is assigned back | stalled holder | yes | 1 |
+| stalled holder | an event waits for it, an episode starts | stalled holder | yes | 1 |
+| stalled holder | it calls (a resume, any call), then stops again | either | no | — |
+| not listed: stopped before the answer, away only after it | — | either | no | — |
+| X and Y, each listed and seen in its own answer | both stay away as they were | both | yes, both: no new request | 1 or 2 |
 
 **Shared environment.** The session keeps the `environment` its resume
 declared. Two different members of the project share an environment

@@ -407,26 +407,31 @@ The hourly digest lists, besides instances that are not listening, every *stalle
 holder*: an instance that holds cards and has made no call since its latest
 session's last sign of life for the human's `not_listening.minutes`, whether that
 session is still open or was revoked. Both kinds make one set of away instances, so
-the same rules file, count, rewrite and withdraw the digest. `seen` silences the
-entries it listed for as long as each lasts, and silences add up; a new request
-comes only for an entry no answer silenced, and lists every away instance, so two
-instances that stay away never take turns. An instance that became away only after
-the answer is a new entry, even when it stopped before it. An entry lasts until the
-instance is back (its episode ended, or it called again), whatever kind it turns into: a holder whose cards were moved,
-as the digest advises, and whose session now counts as not listening has not come
-back, and asking its owner again would answer the advice with the same question. Only the latest session
-counts, so sessions a resume replaced never qualify. A pause a human or the manager
-set excludes an instance, since someone decided to stop it; a pause the agent set
-itself does not, since, like a limit, it is the agent's own account of why it
-stopped and its cards stay blocked all the same. The title and the advice follow
-what the digest holds, in the request and in the bell, and the bell's
+the same rules file, count, rewrite and withdraw the digest. `seen` records, per
+listed instance, its `last_seen_at` and the `since` of an episode that runs; an away
+instance is silenced while its `last_seen_at` equals a record (no call since the
+owner saw it), or, listed as an episode, while that episode's `since` is recorded.
+Records add up; a new request comes only for an instance not silenced and lists every
+away instance. A table in §5.3 lists the cases the review rounds raised. Only the
+latest session counts, so sessions a resume replaced never qualify. A pause a human
+or the manager set excludes an instance, since someone decided to stop it; a pause
+the agent set itself does not, since, like a limit, it is the agent's own account of
+why it stopped and its cards stay blocked all the same. The title and the advice
+follow what the digest holds, in the request and in the bell, and the bell's
 `agents_not_listening` record counts stalled holders in `holding`.
 
 **Reason:** an instance that stopped with cards in hand is often not listening by
 §5.3's rule at all: no event waits for it, or its session ended. A crashed harness
 leaves the session open until the next resume, so a rule for ended sessions alone
 would miss the case that started this, and an owner heard nothing. The digest
-already reaches every owner at the hour, by the mode they chose.
+already reaches every owner at the hour, by the mode they chose. `seen` is keyed by
+the last call because that is what the owner saw: as long as the instance has not
+called since, nothing about it is new, whatever its state turns into (its cards
+moved, as the digest advises, or an episode started by the move); once it called,
+any later stop is new, a crash after work included. A running episode also stays
+silenced by its own start, since a busy instance keeps calling and the owner already
+saw that episode. Five review rounds each found a transition the prose missed, so the
+rule is now one test with a table of the cases.
 
 **Rejected alternatives:** a setting of its own for this list: it is the same
 question to the owner, whether their agents still work, and one threshold answers
@@ -438,4 +443,8 @@ would never have been filed, the crash case again. Silencing only the entries of
 last answered request, the third draft: two instances that stay away would have been
 filed in turns every hour. Keying an entry by its kind and start alone, the fourth
 draft: moving a stalled holder's cards turned the same silent instance into a new
-episode, and the owner was asked again.
+episode, and the owner was asked again. Letting an entry run on until the instance is
+"back", an episode's end counting as back, the fifth draft: a stall after an episode
+the instance had worked through inherited its silence, and the crash went unheard. Entries with keys and continuation rules, drafts four
+and five: each patch to how an entry continues reopened another transition; the
+record of the last call replaces them.
