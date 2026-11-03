@@ -448,6 +448,41 @@ def test_a_membership_holds_a_bounded_number_of_pending_uploads(
     assert decoded == []  # an image past the count bound is refused before its decode
 
 
+def test_a_failed_read_before_the_decode_gives_the_rate_back(
+    owner: flow.Human, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Nothing was decoded or stored: a database error in the count bound costs no upload."""
+    from sqlalchemy.exc import OperationalError
+
+    given_back: list[Any] = []
+    monkeypatch.setattr(attachments, "give_back", lambda key, charged: given_back.append(1))
+
+    def unreadable(*args: Any) -> Any:
+        raise OperationalError("SELECT", {}, Exception("server closed the connection"))
+
+    monkeypatch.setattr(attachments, "pending_of", unreadable)
+    answer = put(owner, "a.png", png(), "image/png")
+    assert answer.status_code == 503 and answer.json()["error"]["code"] == "database_unavailable"
+    assert given_back == [1]
+
+
+def test_an_upload_that_loses_to_the_same_key_leaves_no_blob(
+    owner: flow.Human, blobs: Path, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A concurrent call with the same idempotency key won: this upload's blob has no row and
+    goes at once; the answer is the winner's."""
+    first = put(owner, "first.txt", b"first")
+    assert first.status_code == 201
+
+    def the_other_won(engine: Any, request: Any, caller: Any, action: Any) -> Any:
+        return idempotency.respond(first.json(), 201)
+
+    monkeypatch.setattr(idempotency, "run", the_other_won)
+    lost = put(owner, "second.txt", b"second")
+    assert lost.status_code == 201 and lost.json()["id"] == first.json()["id"]
+    assert [p.name for p in blobs.glob("*/*")] == [first.json()["id"]]
+
+
 def test_uploads_are_rate_limited_per_membership_and_a_refusal_counts_nothing(
     owner: flow.Human, monkeypatch: pytest.MonkeyPatch
 ) -> None:

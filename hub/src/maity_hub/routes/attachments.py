@@ -102,12 +102,17 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     charged = attachments.check_rate(rate_key, len(data))  # the refund is this, whatever follows
     kind, width, height = "file", None, None
     kept_type = attachments.file_type(declared)
-    try:
-        if sniffed is not None:
-            # The count bound before a decode that can take seconds; the bytes it keeps are
-            # known only after it, so the quota and the byte bound wait for the check below.
+    if sniffed is not None:
+        # The count bound before a decode that can take seconds; the bytes it keeps are known
+        # only after it, so the quota and the byte bound wait for the check below.
+        try:
             with engine.begin() as conn:
                 _check_room(conn, mine, settings, None)
+        except BaseException:  # a refusal or a failed read: nothing was decoded or stored
+            attachments.give_back(rate_key, charged)
+            raise
+    try:
+        if sniffed is not None:
             image = avatars.decode_attachment(settings, data, sniffed)
             data, kept_type, width, height, kind = (
                 image.data,
