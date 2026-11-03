@@ -33,6 +33,8 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false  # the token is given to the push and the pull request only
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
@@ -51,7 +53,7 @@ jobs:
             echo "$branch exists already; its pull request is open or was declined"; exit 0
           fi
           python3 web/tools/vendor_ktw.py --version "$version"
-          (cd web && python3 tools/check.py)
+          (cd web && python3 tools/check.py && python3 tools/vendor_ktw.py --verify)
           topic="ktw-vendor-${version//./-}"
           printf '### Changed\n- web: the vendored Keep the Why views library is keep-the-why-dashboard %s (was %s).\n' \
             "$version" "$current" > "changelog.d/$topic.md"
@@ -60,7 +62,7 @@ jobs:
           git switch -c "$branch"
           git add web/vendor/keep-the-why "changelog.d/$topic.md"
           git commit -m "web: vendor keep-the-why-dashboard $version"
-          git push origin "$branch"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$branch"
           body="$(mktemp)"
           python3 - "$current" > "$body" <<'PY'
           import json, sys

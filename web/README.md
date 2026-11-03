@@ -1484,6 +1484,7 @@ here (`context/stack.md`):
 ```sh
 python3 tools/vendor_ktw.py --version 0.11.39   # take that release of keep-the-why-dashboard from PyPI
 python3 tools/vendor_ktw.py --check             # the files on disk against VENDOR.json, offline
+python3 tools/vendor_ktw.py --verify            # the files on disk against the locked release itself, online
 python3 tools/vendor_ktw.py --latest            # the newest release on PyPI
 python3 tools/vendor_csp.py                     # the views in Chromium under the hub's policy (Playwright)
 ```
@@ -1492,7 +1493,9 @@ python3 tools/vendor_csp.py                     # the views in Chromium under th
 lists, the manifest and the licence; `VENDOR.json` records the version and every sha256. `make check` fails when a
 vendored file differs from its hash, when a file there is not in the manifest, or when a script uses a markup- or
 code-evaluating call or sets a style attribute (an inline style through the element's style object is fine under the
-policy). `vendor_csp.py` serves the files with `Content-Security-Policy: default-src 'self'`, mounts every view on
+policy). A hand edit whose new hash is written into `VENDOR.json` too passes that check, so `--verify` fetches the
+locked release again and compares every file byte for byte; CI runs it in the `web-vendor` job whenever `web/vendor/`
+changes. The hub serves the directory under `/assets/vendor/`. `vendor_csp.py` serves the files with `Content-Security-Policy: default-src 'self'`, mounts every view on
 `tools/ktw-fixture-state.json` (Keep the Why's own test fixture) and fails on a policy violation, an error, an empty
 view or an empty graph; CI runs it in `web-e2e`. The `ktw-vendor` workflow checks PyPI daily and opens a pull request
 for a newer release with its hashes and changelog link; that pull request's CI starts when it is closed and reopened.

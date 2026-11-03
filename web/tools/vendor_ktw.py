@@ -3,6 +3,7 @@
 
     python3 tools/vendor_ktw.py --version 0.11.39   fetch that release and write its files
     python3 tools/vendor_ktw.py --check             the files on disk match the lock (offline)
+    python3 tools/vendor_ktw.py --verify            the files on disk are the locked wheel's (online)
     python3 tools/vendor_ktw.py --latest            print the newest release on PyPI
 
 The library ships inside the `keep-the-why-dashboard` wheel on PyPI (ktw_dashboard/web/). The
@@ -11,7 +12,10 @@ From it, exactly the files its `ktw-views.json` lists (scripts, styles, and the 
 are written, nothing else; a listed name that is not a plain `ktw-*.js`/`ktw-*.css` file name, or
 a listed file the wheel lacks, is refused. The licence text comes from the release's tag in the
 Keep the Why repository. `VENDOR.json` records the version, the wheel's sha256 and every
-file's sha256; `tools/check.py` verifies them (context/stack.md).
+file's sha256; `tools/check.py` verifies them (context/stack.md). The lock alone proves nothing
+about where the files came from (a hand edit with a matching hash passes it), so `--verify`
+fetches the locked release again and compares every file, byte for byte, with the wheel's and the
+tag's; CI runs it whenever web/vendor/ changes.
 
 Python standard library only.
 """
@@ -103,7 +107,17 @@ def files_of(wheel):
     return manifest, out
 
 
-def vendor(version):
+def read_lock(dest=DEST):
+    path = os.path.join(dest, "VENDOR.json")
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def fetch_release(version):
+    """(filename, wheel sha256, manifest, {name: bytes}, licence bytes) of a release, the wheel
+    checked against PyPI's digest."""
     filename, url, digest = release(version)
     wheel = fetch(url)
     if sha256(wheel) != digest:
@@ -112,6 +126,15 @@ def vendor(version):
     licence = fetch(LICENSE_URL.format(version=version))
     if b"MIT License" not in licence[:200]:
         raise Refused("the licence at the tag is not the MIT licence; look before vendoring")
+    return filename, digest, manifest, files, licence
+
+
+def vendor(version):
+    filename, digest, manifest, files, licence = fetch_release(version)
+    old = read_lock()
+    if old and old.get("version") == version and old.get("wheel_sha256") != digest:
+        raise Refused("%s %s: PyPI's wheel sha256 is %s, the lock has %s; a release does not change"
+                      % (PACKAGE, version, digest, old.get("wheel_sha256")))
     os.makedirs(DEST, exist_ok=True)
     # Files of an earlier release that this one no longer lists go.
     for name in os.listdir(DEST):
@@ -142,13 +165,38 @@ def vendor(version):
     return lock
 
 
+def verify(dest=DEST):
+    """What differs between the vendored files and the locked release itself; [] when they agree."""
+    lock = read_lock(dest)
+    if not lock:
+        return ["no VENDOR.json"]
+    filename, digest, manifest, files, licence = fetch_release(lock["version"])
+    out = []
+    if digest != lock.get("wheel_sha256") or filename != lock.get("wheel"):
+        out.append("VENDOR.json names wheel %s %s, PyPI has %s %s"
+                   % (lock.get("wheel"), lock.get("wheel_sha256"), filename, digest))
+    present = set(os.listdir(dest)) - set(OWN)
+    for name in sorted(present - set(files)):
+        out.append("%s: not in the release's manifest" % name)
+    for name, data in sorted(files.items()):
+        path = os.path.join(dest, name)
+        if not os.path.exists(path):
+            out.append("%s is missing" % name)
+            continue
+        with open(path, "rb") as f:
+            if f.read() != data:
+                out.append("%s: not the file of %s" % (name, filename))
+    with open(os.path.join(dest, "LICENSE"), "rb") as f:
+        if f.read() != licence:
+            out.append("LICENSE: not the licence at the release's tag")
+    return out
+
+
 def problems(dest=DEST):
     """What differs between the vendored files and their lock; [] when they agree."""
-    lock_path = os.path.join(dest, "VENDOR.json")
-    if not os.path.exists(lock_path):
+    lock = read_lock(dest)
+    if not lock:
         return ["no VENDOR.json: run tools/vendor_ktw.py --version X"]
-    with open(lock_path, encoding="utf-8") as f:
-        lock = json.load(f)
     out = []
     files = lock.get("files", {})
     listed = [MANIFEST] + list(lock.get("scripts") or []) + list(lock.get("styles") or [])
@@ -196,6 +244,13 @@ def main(argv):
             found = problems()
             for p in found:
                 print("vendor/keep-the-why/" + p)
+            return 1 if found else 0
+        if argv == ["--verify"]:
+            found = verify()
+            for p in found:
+                print("vendor/keep-the-why/" + p)
+            if not found:
+                print("vendor/keep-the-why/ is %s's release %s, file for file" % (PACKAGE, read_lock()["version"]))
             return 1 if found else 0
         if argv == ["--latest"]:
             print(latest())

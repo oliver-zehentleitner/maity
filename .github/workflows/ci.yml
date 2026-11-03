@@ -55,6 +55,7 @@ jobs:
       cli: ${{ steps.paths.outputs.cli }}
       helm: ${{ steps.paths.outputs.helm }}
       contract: ${{ steps.paths.outputs.contract }}
+      vendor: ${{ steps.paths.outputs.vendor }}
     defaults:
       run:
         working-directory: .
@@ -68,7 +69,7 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
         run: |
-          parts="hub image join web e2e cli helm contract"
+          parts="hub image join web e2e cli helm contract vendor"
           if [ "$EVENT" != pull_request ]; then
             for part in $parts; do echo "$part=true" >> "$GITHUB_OUTPUT"; done
             exit 0
@@ -89,6 +90,7 @@ jobs:
                 cli:cli/*) hit=true ;;
                 helm:deploy/*) hit=true ;;
                 contract:docs/api.md|contract:hub/*) hit=true ;;
+                vendor:web/vendor/*|vendor:web/tools/vendor_ktw.py) hit=true ;;
               esac
             done <<< "$changed"
             echo "$part=$hit" >> "$GITHUB_OUTPUT"
@@ -131,6 +133,23 @@ jobs:
       - run: python3 --version && node --version
       - run: make check
       - run: make smoke
+
+  # The vendored Keep the Why views against the release VENDOR.json names, file for file, fetched
+  # again from PyPI: the lock that make check reads proves nothing about where the files came from
+  # (web/context/stack.md). Runs when web/vendor/ or the tool changes. It is in ci-ok.
+  web-vendor:
+    needs: changes
+    if: needs.changes.outputs.vendor == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: python3 tools/vendor_ktw.py --verify
 
   # The dashboard in headless Chromium against a real hub on SQLite, with the
   # maity CLI as the agent (web/tools/e2e.py). The screenshots of every step
@@ -404,7 +423,7 @@ jobs:
   # needed (skipped by `changes`), red when one failed or was cancelled.
   ci-ok:
     if: always()
-    needs: [changes, changelog, web, web-e2e, hub-sqlite, hub-contract, hub-wheel, hub-lock, hub-image, helm, join-smoke, hub-postgresql, cli, cli-windows, join-windows]
+    needs: [changes, changelog, web, web-vendor, web-e2e, hub-sqlite, hub-contract, hub-wheel, hub-lock, hub-image, helm, join-smoke, hub-postgresql, cli, cli-windows, join-windows]
     runs-on: ubuntu-latest
     defaults:
       run:

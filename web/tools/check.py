@@ -902,8 +902,10 @@ VENDOR = os.path.join(ROOT, "vendor", "keep-the-why")
 # The calls of FORBIDDEN_JS that turn text into markup or code, and a style attribute written
 # as markup, which `default-src 'self'` refuses (the element's style object, the CSSOM, is not); the vendored files are not held to the dashboard's own style
 # rules (var, console, Maity.dom).
-VENDOR_FORBIDDEN = FORBIDDEN_JS[:8]  # checked on the code, strings and comments blanked
-VENDOR_FORBIDDEN_TEXT = FORBIDDEN_JS[8:9] + [  # checked on the text as written
+MARKUP_OR_CODE = {"innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "createContextualFragment",
+                  "DOMParser", "eval", "new Function"}
+VENDOR_FORBIDDEN = [(p, what) for p, what in FORBIDDEN_JS if what in MARKUP_OR_CODE]  # on the code, strings blanked
+VENDOR_FORBIDDEN_TEXT = [(p, what) for p, what in FORBIDDEN_JS if what.startswith("string passed")] + [  # as written
     (r"setAttribute\(\s*['\"]style['\"]", "setAttribute(\"style\")"),
     (r"\bstyle\s*=\s*['\"]", "a style= attribute"),
     (r"\bnew\s+Worker\b|\bimportScripts\b|\bimport\s*\(", "a script loaded at run time"),

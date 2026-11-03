@@ -5,10 +5,11 @@
 **Id:** bbf733b2-9b82-4c60-9857-4ee23849683b
 **Type:** decision
 **Type:** constraint
-**Status:** needs-review
+**Status:** active
 **Evidence:** inferred
-**Source:** the coordinator's task brief, 2026-10-21; the dashboard's first implementation, 2026-10-21
-**Revisit when:** a view needs client-side state that hand-written DOM code cannot keep correct, or a dependency has to be vendored
+**Source:** the coordinator's task brief, 2026-10-21; the dashboard's first implementation, 2026-10-21; re-checked in the review of the first vendored library, 2026-11-03
+**See:** stack.md#the-keep-the-why-views-are-vendored-from-the-pinned-pypi-wheel-by-their-manifest-and-hashes-not-taken-as-a-package-dependency — f3b6fe34-f86e-490c-afe6-f03ee3263ab3 — as of 2026-11-03
+**Revisit when:** a view needs client-side state that hand-written DOM code cannot keep correct, or a dependency to be vendored needs a build step or is not classic scripts
 
 The dashboard is a directory of static files the hub serves at `/`:
 one `index.html`, plain JavaScript files, one stylesheet. No framework,
@@ -301,7 +302,7 @@ Runs on a shared machine overlapped, and agents gated them by hand with `pgrep`.
 **See:** stack.md#no-framework-and-no-build-step-static-html-vanilla-javascript-as-classic-scripts-css — bbf733b2-9b82-4c60-9857-4ee23849683b — as of 2026-11-03
 **Revisit when:** Keep the Why publishes the views as a release asset of their own, or the dashboard gets a build step
 
-The Why view mounts Keep the Why's views (timeline, graph, family, search, thoughts, pages). Their files sit in `web/vendor/keep-the-why/` as committed copies: `tools/vendor_ktw.py --version X` takes the `keep-the-why-dashboard` wheel of that version from PyPI, refuses it when its sha256 is not the one PyPI names, and writes exactly the files the wheel's `ktw-views.json` lists, the manifest itself and the licence from the release's tag. `VENDOR.json` keeps the version and every sha256; `make check` fails on a file that differs, a file the manifest does not list, or a script that uses a markup- or code-evaluating call or writes a style attribute. `tools/vendor_csp.py` mounts the views in Chromium under the hub's `default-src 'self'` in CI. The `ktw-vendor` workflow opens a pull request for a newer release; nothing updates without review.
+The Why view mounts Keep the Why's views (timeline, graph, family, search, thoughts, pages). Their files sit in `web/vendor/keep-the-why/` as committed copies: `tools/vendor_ktw.py --version X` takes the `keep-the-why-dashboard` wheel of that version from PyPI, refuses it when its sha256 is not the one PyPI names, and writes exactly the files the wheel's `ktw-views.json` lists, the manifest itself and the licence from the release's tag. `VENDOR.json` keeps the version and every sha256; `make check` fails on a file that differs, a file the manifest does not list, or a script that uses a markup- or code-evaluating call or writes a style attribute. `tools/vendor_csp.py` mounts the views in Chromium under the hub's `default-src 'self'` in CI. `tools/vendor_ktw.py --verify` fetches the locked release again and compares every file byte for byte with it, in CI's `web-vendor` job whenever `web/vendor/` changes, because the lock alone would pass a hand-edited file whose hash was updated with it. The hub serves the directory under `/assets/vendor/` like `js/` and `css/`, and its wheel carries it. The `ktw-vendor` workflow opens a pull request for a newer release; nothing updates without review.
 
 **Reason:** the views are classic scripts on one global, like the dashboard's own, so a copy loads with no build step and from `file://` (bbf733b2). Committed files are what the hub serves and what review sees: a change to the code that runs in Maity's pages shows up as a diff in a Maity pull request, with the release it came from. The wheel is the published, hashed artefact of a Keep the Why release; the `dashboard-v*` tags carry no release assets.
 
