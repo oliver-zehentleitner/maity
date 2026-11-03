@@ -13,6 +13,7 @@
 
 ### Changed
 
-- docs/api.md §5.3: answering the digest's `seen` silences exactly the entries it listed; an
-  instance that becomes away only after the answer is filed the next hour, even when its episode
-  started before the answer.
+- docs/api.md §5.3: answering the digest's `seen` silences every entry it listed for as long as
+  that entry lasts, adding up over answers; a new request comes only for an entry no answer
+  silenced and lists every away instance, so an instance that becomes away only after an answer is
+  filed, even when its episode started before it.

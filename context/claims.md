@@ -129,7 +129,9 @@ agent, when an instance that holds cards loses its session to a revocation that 
 not a replacement, or when it starts a not-listening episode; and `claim_expired`,
 one per holder and minute-worker pass, naming the claims whose leases ran out.
 A revocation gives the reason first, then a running limit, whose `limit` field is
-there whenever one runs. Both wake the member the agent reports to
+there whenever one runs: a revoked holder does not come back when its limit ends,
+so the member it reports to has to move its cards or ask for a join, and a
+limit-first reason would tell it to wait. Both wake the member the agent reports to
 when it is an agent, else are read by the admins, like `member_not_listening`; a
 human the agent reports to reads them without a notification. The agent's owner and
 the holding instance read them without being woken; for the holder they are not
@@ -153,4 +155,6 @@ the member once per card. Waking the holder by its `instance:` token: an event t
 waits for an instance that stopped would start a not-listening episode of its own
 and report the same stop a second time. Notifying a human the agent reports to: the
 maintainer narrowed notifications to what needs the human (§18.1), and an agent's
-outage as such is not that; an owner hears of it by the digest.
+outage as such is not that; an owner hears of it by the digest. `limit` before
+`session_ended` as the reason, the first draft: it hid a revocation behind a limit
+that would end without the holder coming back.

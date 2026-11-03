@@ -407,11 +407,15 @@ The hourly digest lists, besides instances that are not listening, every *stalle
 holder*: an instance that holds cards and has made no call since its latest
 session's last sign of life for the human's `not_listening.minutes`, whether that
 session is still open or was revoked. Both kinds make one set of away instances, so
-the same rules file, count, rewrite and withdraw the digest. `seen` silences exactly
-the entries it listed, so an instance that became away only after the answer is
-filed, even when it stopped before it. Only the latest session counts, so sessions a
-resume replaced never qualify; a pause a human or the manager set excludes an
-instance, a pause the agent set itself does not. The title and the advice follow
+the same rules file, count, rewrite and withdraw the digest. `seen` silences the
+entries it listed for as long as each lasts, and silences add up; a new request
+comes only for an entry no answer silenced, and lists every away instance, so two
+instances that stay away never take turns. An instance that became away only after
+the answer is a new entry, even when it stopped before it. Only the latest session
+counts, so sessions a resume replaced never qualify. A pause a human or the manager
+set excludes an instance, since someone decided to stop it; a pause the agent set
+itself does not, since, like a limit, it is the agent's own account of why it
+stopped and its cards stay blocked all the same. The title and the advice follow
 what the digest holds, in the request and in the bell, and the bell's
 `agents_not_listening` record counts stalled holders in `holding`.
 
@@ -427,4 +431,6 @@ it. Listing ended sessions only, the first draft of this entry: a crashed harnes
 leaves its session open, so the holder that started the card would not have been
 listed. Re-arming `seen` on instances whose stop began after the answer, the
 second draft: a holder that stopped shortly before an answer about another instance
-would never have been filed, the crash case again.
+would never have been filed, the crash case again. Silencing only the entries of the
+last answered request, the third draft: two instances that stay away would have been
+filed in turns every hour.
