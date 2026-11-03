@@ -16,7 +16,17 @@ from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import URL, Engine, MetaData, create_engine, event, make_url
+from sqlalchemy import (
+    URL,
+    Connection,
+    Engine,
+    MetaData,
+    create_engine,
+    event,
+    func,
+    make_url,
+    select,
+)
 from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.pool import NullPool
 
@@ -200,6 +210,14 @@ def make_health_engine(engine: Engine) -> Engine | None:
         return connect_once_more_on_dns(dialect.loaded_dbapi.connect, cargs, cparams)
 
     return health
+
+
+def xact_lock(conn: Connection, name: str) -> None:
+    """Hold `name` until the transaction ends, against other processes and pods doing the same
+    (PostgreSQL's transaction-level advisory lock: it works behind PgBouncer in any mode). Off
+    PostgreSQL a no-op: SQLite writes one transaction at a time, and MariaDB runs one process."""
+    if conn.dialect.name == "postgresql":
+        conn.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(name, 0))))
 
 
 def _sqlite_begin_immediate(conn: Any) -> None:

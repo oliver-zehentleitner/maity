@@ -17,6 +17,8 @@ from typing import Any
 import uvicorn
 from sqlalchemy import exists, insert, inspect, literal, select
 from sqlalchemy.exc import SQLAlchemyError
+from uvicorn.config import STARTUP_FAILURE
+from uvicorn.supervisors import multiprocess
 
 from maity_hub import (
     __version__,
@@ -29,9 +31,18 @@ from maity_hub import (
     namespace,
     paths,
     public_pages,
+    serving,
 )
 from maity_hub import tables as t
-from maity_hub.app import SchemaNotCurrentError, create_app, require_current_schema, serving_engine
+from maity_hub.app import (
+    SchemaNotCurrentError,
+    check_startup,
+    check_web_dir,
+    create_app,
+    require_current_schema,
+    serving_engine,
+    start_once,
+)
 from maity_hub.auth import second_factor_reset
 from maity_hub.auth.passwords import MIN_LENGTH, hash_password
 from maity_hub.config import ConfigError, Settings, redact_database_url
@@ -89,10 +100,10 @@ def main(argv: list[str] | None = None) -> int:
     quick.add_argument("--display-name", help="its display name (default: the handle)")
     args = parser.parse_args(argv)
 
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     if args.command in ("serve", "quickstart"):
-        # Alembic logs its context on every revision lookup, i.e. on every health call.
-        logging.getLogger("alembic").setLevel(logging.WARNING)
+        serving.configure_logging()
+    else:
+        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     try:
         settings = Settings.from_env()
     except ConfigError as error:
@@ -414,6 +425,11 @@ def _quickstart(settings: Settings, handle: str | None, display_name: str | None
 
 
 def _serve(settings: Settings, banner: list[str] | None = None) -> int:
+    refused = serving.refusal(settings)
+    if refused is not None:
+        return _fail(refused, EXIT_CONFIG)
+    if settings.workers > 1:
+        return _serve_workers(settings, banner)
     try:
         engine = serving_engine(settings)
         require_current_schema(engine)
@@ -424,7 +440,12 @@ def _serve(settings: Settings, banner: list[str] | None = None) -> int:
         return _fail(str(error), EXIT_CONFIG)
     except (SQLAlchemyError, ImportError) as error:
         return _database_error(settings, error)
-    config = uvicorn.Config(
+    _Server(_config(settings, app), banner=[*(banner or []), _where(settings)]).run()
+    return 0
+
+
+def _config(settings: Settings, app: Any, workers: int = 1) -> uvicorn.Config:
+    return uvicorn.Config(
         app,
         host=settings.host,
         port=settings.port,
@@ -432,9 +453,42 @@ def _serve(settings: Settings, banner: list[str] | None = None) -> int:
         access_log=False,
         timeout_graceful_shutdown=GRACEFUL_SECONDS,
         timeout_keep_alive=KEEP_ALIVE_SECONDS,
+        factory=workers > 1,
+        workers=workers,
     )
-    _Server(config, banner=[*(banner or []), _where(settings)]).run()
-    return 0
+
+
+def _serve_workers(settings: Settings, banner: list[str] | None) -> int:
+    """`MAITY_WORKERS` processes on one socket under uvicorn's supervisor, which starts a worker
+    again when one dies and passes the stop signal on; each worker releases its long-polls on it,
+    as one process does (`_Server`). The parent checks the database and the schema once, so a hub
+    that cannot start says so once, not once per worker, and holds no connection itself."""
+    try:
+        check_web_dir(settings)
+        engine = serving_engine(serving.per_worker(settings))
+        try:
+            check_startup(engine, settings)
+            start_once(engine, settings)
+        finally:
+            engine.dispose()
+    except SchemaNotCurrentError as error:
+        return _fail(str(error), EXIT_FAILURE)
+    except ConfigError as error:
+        return _fail(str(error), EXIT_CONFIG)
+    except (SQLAlchemyError, ImportError) as error:
+        return _database_error(settings, error)
+    config = _config(settings, "maity_hub.serving:app", settings.workers)
+    socket = config.bind_socket()
+    # Printed once, by the parent: each worker would print it again.
+    for line in [*(banner or []), _where(settings), f"maity-hub: {settings.workers} workers"]:
+        print(line, flush=True)
+    # Every worker uvicorn starts, also one started again, is a `_WorkerProcess`.
+    multiprocess.Process = _WorkerProcess  # type: ignore[misc]
+    supervisor = multiprocess.Multiprocess(config, sockets=[socket])
+    supervisor.run()
+    # uvicorn stops every worker when one fails before it serves; the hub then fails too.
+    failed = any(p.process.exitcode == STARTUP_FAILURE for p in supervisor.processes)
+    return EXIT_FAILURE if failed else 0
 
 
 def _where(settings: Settings) -> str:
@@ -479,6 +533,17 @@ class _Server(uvicorn.Server):
         if self._loop is not None:
             self._loop.call_soon_threadsafe(longpoll.begin_shutdown)
         super().handle_exit(sig, frame)
+
+
+class _WorkerProcess(multiprocess.Process):
+    """One of the `MAITY_WORKERS` processes: uvicorn's worker, serving with `_Server`, so that
+    the stop signal releases its long-polls first, as a hub of one process does."""
+
+    @property
+    def server(self) -> uvicorn.Server:
+        if self._server is None:
+            self._server = _Server(config=self.config)
+        return self._server
 
 
 if __name__ == "__main__":
