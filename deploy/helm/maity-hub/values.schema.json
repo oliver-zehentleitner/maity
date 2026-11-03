@@ -412,6 +412,47 @@
           ],
           "minimum": 1024,
           "maximum": 1125899906842624
+        },
+        "store": {
+          "type": "string",
+          "enum": [
+            "local",
+            "s3"
+          ]
+        },
+        "s3": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "bucket": {
+              "type": "string",
+              "pattern": "^[^\\s/]*$"
+            },
+            "endpoint": {
+              "type": "string",
+              "pattern": "^(https?://[^\\s/?#]+/?)?$"
+            },
+            "region": {
+              "type": "string"
+            },
+            "prefix": {
+              "type": "string"
+            },
+            "allowHttp": {
+              "type": "boolean"
+            },
+            "existingSecret": {
+              "type": "string"
+            },
+            "accessKeyIdKey": {
+              "type": "string",
+              "minLength": 1
+            },
+            "secretAccessKeyKey": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
         }
       }
     }

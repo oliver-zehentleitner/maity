@@ -15,9 +15,10 @@ from typing import Any
 import boto3
 import pytest
 from moto.server import ThreadedMotoServer
-from sqlalchemy import Engine
+from sqlalchemy import Engine, update
 
-from maity_hub import attachment_store
+from maity_hub import attachment_store, attachments, clock
+from maity_hub import tables as t
 from maity_hub.attachment_store import S3Store, StoreError
 from maity_hub.config import AttachmentS3, ConfigError, Settings, cluster_internal
 from tests import flow
@@ -385,3 +386,239 @@ def test_cluster_internal_hosts() -> None:
         assert cluster_internal(host), host
     for host in ("s3.example", "203.0.113.9", "s3.amazonaws.com", "8.8.8.8"):
         assert not cluster_internal(host), host
+
+
+# --- the copy from a volume into the bucket ----------------------------------------------------
+
+
+def test_the_copy_to_s3_is_idempotent_and_counts_first_without_apply(
+    config: AttachmentS3, tmp_path: Path
+) -> None:
+    source = attachment_store.LocalStore(tmp_path)
+    for key, data in (("prj-1/att-1", b"one"), ("prj-1/att-2", b"two"), ("prj-2/att-3", b"3")):
+        source.put(key, data)
+    target = S3Store(config)
+    counted = attachment_store.copy_local_to_s3(source, target, apply=False)
+    assert counted == {"copied": 3, "present": 0, "differs": 0, "skipped_deleted": 0, "failed": 0}
+    assert raw(config).list_objects_v2(Bucket=config.bucket).get("Contents") is None
+    first = attachment_store.copy_local_to_s3(source, target, apply=True)
+    assert first == {"copied": 3, "present": 0, "differs": 0, "skipped_deleted": 0, "failed": 0}
+    assert target.get("prj-1/att-2") == b"two" and target.get("prj-2/att-3") == b"3"
+    again = attachment_store.copy_local_to_s3(source, target, apply=True)
+    assert again == {"copied": 0, "present": 3, "differs": 0, "skipped_deleted": 0, "failed": 0}
+    assert sorted(p.name for p in tmp_path.glob("*/*")) == ["att-1", "att-2", "att-3"]
+
+
+def test_the_copy_never_overwrites_an_object_the_hub_wrote_with_other_bytes(
+    config: AttachmentS3, tmp_path: Path
+) -> None:
+    """Keys are immutable attachment ids: other bytes under the same key mean the file changed,
+    and after the switch the bucket is what the hub serves."""
+    source = attachment_store.LocalStore(tmp_path)
+    source.put("prj-1/att-1", b"one")
+    target = S3Store(config)
+    assert attachment_store.copy_local_to_s3(source, target, apply=True)["copied"] == 1
+    source.put("prj-1/att-1", b"changed")
+    again = attachment_store.copy_local_to_s3(source, target, apply=True)
+    assert again == {"copied": 0, "present": 0, "differs": 1, "skipped_deleted": 0, "failed": 0}
+    assert target.get("prj-1/att-1") == b"one"
+
+
+def test_the_copy_checks_each_object_after_its_put(
+    config: AttachmentS3, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = attachment_store.LocalStore(tmp_path)
+    source.put("prj-1/att-1", b"one")
+    target = S3Store(config)
+    real = target.put
+    monkeypatch.setattr(target, "put", lambda key, data: real(key, data[:-1]))  # cut short
+    done = attachment_store.copy_local_to_s3(source, target, apply=True)
+    assert done == {"copied": 0, "present": 0, "differs": 0, "skipped_deleted": 0, "failed": 1}
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads a folder without permissions")
+def test_an_unreadable_folder_on_the_volume_fails_alone(
+    config: AttachmentS3, tmp_path: Path
+) -> None:
+    source = attachment_store.LocalStore(tmp_path)
+    source.put("prj-1/att-1", b"one")
+    (tmp_path / "lost+found").mkdir(mode=0o000)
+    try:
+        done = attachment_store.copy_local_to_s3(source, S3Store(config), apply=True)
+    finally:
+        (tmp_path / "lost+found").chmod(0o700)
+    assert done == {"copied": 1, "present": 0, "differs": 0, "skipped_deleted": 0, "failed": 1}
+
+
+def test_a_blob_without_the_hubs_digest_is_copied_again(
+    config: AttachmentS3, tmp_path: Path
+) -> None:
+    source = attachment_store.LocalStore(tmp_path)
+    source.put("prj-1/att-1", b"one")
+    raw(config).put_object(Bucket=config.bucket, Key="prj-1/att-1", Body=b"one")  # no metadata
+    target = S3Store(config)
+    assert target.digest("prj-1/att-1") is None and target.digest("prj-1/nope") is None
+    assert attachment_store.copy_local_to_s3(source, target, apply=True)["copied"] == 1
+    assert target.digest("prj-1/att-1") == hashlib.sha256(b"one").hexdigest()
+
+
+def test_the_copy_skips_a_file_whose_attachment_is_deleted_or_unknown(
+    config: AttachmentS3, tmp_path: Path
+) -> None:
+    source = attachment_store.LocalStore(tmp_path)
+    for key in ("prj-1/att-1", "prj-1/att-2", "prj-2/att-3"):
+        source.put(key, b"x")
+    alive = {"prj-1": {"att-1"}, "prj-2": set()}
+    done = attachment_store.copy_local_to_s3(
+        source, S3Store(config), apply=True, live=lambda project: alive[project]
+    )
+    assert done == {"copied": 1, "present": 0, "differs": 0, "skipped_deleted": 2, "failed": 0}
+    assert [o["Key"] for o in raw(config).list_objects_v2(Bucket=config.bucket)["Contents"]] == [
+        "prj-1/att-1"
+    ]
+
+
+def test_an_attachment_deleted_while_the_copy_runs_leaves_the_bucket_again(
+    config: AttachmentS3, tmp_path: Path
+) -> None:
+    """The hub commits a deletion first and removes the bytes after: the copy asks again after
+    each put, so a deletion it missed when it read the live ids does not stay in the bucket."""
+    source = attachment_store.LocalStore(tmp_path)
+    for key in ("prj-1/att-1", "prj-1/att-2", "prj-1/att-3", "prj-1/att-4"):
+        source.put(key, b"x")
+    target = S3Store(config)
+    puts: list[str] = []
+    real_put = target.put
+
+    def put_counted(key: str, data: bytes) -> None:
+        puts.append(key)
+        real_put(key, data)
+        if key == "prj-1/att-4":  # deleted during its put, and the hub removed it already
+            raw(config).delete_object(Bucket=config.bucket, Key=key)
+
+    target.put = put_counted  # type: ignore[method-assign]
+    asked: list[str] = []
+
+    def still(key: str) -> bool:
+        asked.append(key)
+        if key == "prj-1/att-2":  # deleted after the live ids were read, before its turn
+            return False
+        if key in ("prj-1/att-3", "prj-1/att-4"):  # deleted during its put
+            return asked.count(key) == 1
+        return True
+
+    done = attachment_store.copy_local_to_s3(
+        source,
+        target,
+        apply=True,
+        live=lambda project: {"att-1", "att-2", "att-3", "att-4"},
+        still=still,
+    )
+    # The object the hub removed first is no failure of the check after the put.
+    assert done == {"copied": 1, "present": 0, "differs": 0, "skipped_deleted": 3, "failed": 0}
+    assert puts == ["prj-1/att-1", "prj-1/att-3", "prj-1/att-4"]  # none for the one deleted before
+    assert (
+        asked
+        == ["prj-1/att-1", "prj-1/att-1", "prj-1/att-2"] + ["prj-1/att-3"] * 2 + ["prj-1/att-4"] * 2
+    )
+    assert [o["Key"] for o in raw(config).list_objects_v2(Bucket=config.bucket)["Contents"]] == [
+        "prj-1/att-1"
+    ]
+
+
+def test_the_copy_command_needs_both_stores_skips_what_was_deleted_and_fails_on_a_failure(
+    config: AttachmentS3,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    make_client: ClientFactory,
+    migrated: Engine,
+    database_url: str,
+) -> None:
+    """Under `s3` the hub deletes only in the bucket: the volume keeps the file of a redacted or
+    expired attachment, and the copy must not put it back."""
+    from maity_hub import cli
+
+    volume = tmp_path / "volume"
+    volume.mkdir()
+    owner = flow.human(lambda **kw: make_client(attachment_dir=volume, **kw), migrated)
+    flow.project(owner, "maity")
+    kept = put(owner, "a.txt", b"one").json()["id"]
+    gone = put(owner, "b.txt", b"two").json()["id"]
+    redacted = put(owner, "c.txt", b"three").json()["id"]
+    assert owner.delete(f"/projects/maintainer/maity/attachments/{gone}").status_code == 200
+    with migrated.begin() as conn:  # a tombstone, as a redaction or moderation leaves it
+        conn.execute(
+            update(t.attachment).where(t.attachment.c.id == redacted).values(deleted_at=clock.now())
+        )
+    (folder,) = [p.parent for p in volume.glob(f"*/{kept}")]
+    (folder / gone).write_bytes(b"two")  # the file the hub under `s3` would have left behind
+    (folder / "att-noroworphan").write_bytes(b"x")  # a file no row names
+    env = {
+        "MAITY_DATABASE_URL": database_url,
+        "MAITY_ATTACHMENT_STORE": "s3",
+        "MAITY_ATTACHMENT_S3_BUCKET": config.bucket,
+        "MAITY_ATTACHMENT_S3_ENDPOINT": str(config.endpoint),
+        "MAITY_ATTACHMENT_S3_ALLOW_HTTP": "1",
+        "MAITY_ATTACHMENT_S3_REGION": "us-east-1",
+        "MAITY_ATTACHMENT_S3_ACCESS_KEY_ID": KEY_ID,
+        "MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY": SECRET,
+    }
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.delenv("MAITY_ATTACHMENT_DIR", raising=False)
+    assert cli.main(["attachments", "copy-to-s3", "--apply"]) == cli.EXIT_CONFIG  # no source
+    monkeypatch.setenv("MAITY_ATTACHMENT_DIR", str(volume))
+    capsys.readouterr()
+    assert cli.main(["attachments", "copy-to-s3"]) == 0
+    assert (
+        "to copy: 1, already there: 0, different in the bucket: 0, deleted, not copied: 3, "
+        "deleted, removed from the bucket: 0, failed: 0" in capsys.readouterr().out
+    )
+    assert cli.main(["attachments", "copy-to-s3", "--apply"]) == 0
+    assert "copied: 1" in capsys.readouterr().out
+    listed = raw(config).list_objects_v2(Bucket=config.bucket)["Contents"]
+    assert [o["Key"] for o in listed] == [f"{folder.name}/{kept}"]
+    assert cli._live_attachments(migrated, folder.name) == {kept}  # the tombstone is not live
+    # The hub still serves from the volume: what it deletes after a run goes from the volume
+    # only. The next run removes it from the bucket too, as the sweep under `s3` would.
+    late = put(owner, "d.txt", b"four").json()["id"]
+    dropped = put(owner, "e.txt", b"five").json()["id"]
+    assert cli.main(["attachments", "copy-to-s3", "--apply"]) == 0
+    assert "copied: 2" in capsys.readouterr().out
+    with migrated.begin() as conn:  # redacted after the copy
+        conn.execute(
+            update(t.attachment).where(t.attachment.c.id == late).values(deleted_at=clock.now())
+        )
+    (folder / late).unlink()
+    assert owner.delete(f"/projects/maintainer/maity/attachments/{dropped}").status_code == 200
+    assert cli.main(["attachments", "copy-to-s3", "--apply"]) == 0
+    assert "deleted, removed from the bucket: 1," in capsys.readouterr().out  # the tombstone's
+    keys = {o["Key"] for o in raw(config).list_objects_v2(Bucket=config.bucket)["Contents"]}
+    assert keys == {f"{folder.name}/{kept}", f"{folder.name}/{dropped}"}  # too young a stray
+    monkeypatch.setattr(attachments, "BLOB_GRACE", -60)  # as if older than the grace
+    assert cli.main(["attachments", "copy-to-s3", "--apply"]) == 0
+    assert "deleted, removed from the bucket: 1," in capsys.readouterr().out  # no row: a stray
+    listed = raw(config).list_objects_v2(Bucket=config.bucket)["Contents"]
+    assert [o["Key"] for o in listed] == [f"{folder.name}/{kept}"]
+    assert cli._still_live(migrated, f"{folder.name}/{kept}")
+    for dead in (gone, redacted, "att-noroworphan"):
+        assert not cli._still_live(migrated, f"{folder.name}/{dead}"), dead
+    # The live ids would let a tombstone through: the check before the put (`_still_live`)
+    # still keeps it out of the bucket, so the clean-up has nothing to remove.
+    real_live = cli._live_attachments
+    monkeypatch.setattr(cli, "_live_attachments", lambda engine, project: {kept, redacted})
+    assert cli.main(["attachments", "copy-to-s3", "--apply"]) == 0
+    printed = capsys.readouterr().out
+    assert "copied: 0," in printed and "deleted, not copied: 3," in printed, printed
+    assert "deleted, removed from the bucket: 0," in printed
+    monkeypatch.setattr(cli, "_live_attachments", real_live)
+    (folder / kept).write_bytes(b"changed")  # other bytes than the bucket's: reported, exit 1
+    assert cli.main(["attachments", "copy-to-s3", "--apply"]) == cli.EXIT_FAILURE
+    assert "different in the bucket: 1" in capsys.readouterr().out
+    monkeypatch.setenv("MAITY_ATTACHMENT_S3_BUCKET", "no-such-bucket-here")
+    assert cli.main(["attachments", "copy-to-s3", "--apply"]) == cli.EXIT_FAILURE
+    out = capsys.readouterr()
+    assert "failed: 2" in out.out and SECRET not in out.out + out.err  # the copy and the clean
+    monkeypatch.setenv("MAITY_ATTACHMENT_STORE", "local")
+    assert cli.main(["attachments", "copy-to-s3"]) == cli.EXIT_CONFIG  # no target
