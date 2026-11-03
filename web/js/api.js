@@ -3688,6 +3688,34 @@ window.Maity = window.Maity || {};
       card.notes = { open: list.filter((n) => n.state === "open").length, total: list.length };
       return note;
     }],
+    // A note edited in place (§6.16): its author, or a human with events:admin
+    // (owner, admin) with a reason; the old text is gone, `edited` says who and when.
+    ["PATCH", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/notes\/([^/]+)$/, (m, body, path) => {
+      const note = ((fixtures()[m[1] + "/task-notes.json"] || {})[m[2]] || []).find((n) => n.id === m[3]);
+      if (!note) fail(404, "not_found", "Not found", path);
+      if (project(m[1], path).state === "archived") fail(409, "project_closed", "the project is closed", path);
+      const who = me().member;
+      const own = note.author && note.author.member_id === who.id;
+      if (!own && !(who.kind === "human" && ["owner", "admin"].includes(trustIn(m[1])))) fail(403, "forbidden", "not your note", path, { reason: "not_your_note" });
+      if (note.body && typeof note.body === "object") fail(400, "invalid", "the note was removed", path, { reason: "redacted" });
+      const text = String(body.body || "");
+      const reason = typeof body.reason === "string" && body.reason.trim() ? body.reason.trim() : null;
+      if (!text.trim()) fail(400, "invalid", "body: missing", path, { fields: { body: "missing" } });
+      if (utf8Bytes(text) > 4096) fail(400, "invalid", "body: too_long", path, { fields: { body: "too_long" } });
+      if (!own && !reason) fail(400, "invalid", "reason: required", path, { fields: { reason: "required" } });
+      Object.assign(note, { body: text, edited: { by: { member_id: who.id, handle: who.handle, kind: who.kind }, at: nowIso(), reason } });
+      return note;
+    }],
+    // A note removed (§6.16, §8.5): events:admin; its body becomes the tombstone.
+    ["POST", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/notes\/([^/]+)\/redact$/, (m, body, path) => {
+      const note = ((fixtures()[m[1] + "/task-notes.json"] || {})[m[2]] || []).find((n) => n.id === m[3]);
+      if (!note) fail(404, "not_found", "Not found", path);
+      const who = me().member;
+      if (!(who.kind === "human" && ["owner", "admin"].includes(trustIn(m[1])))) fail(403, "forbidden", "events:admin needed", path, { scope: "events:admin" });
+      if (typeof body.reason !== "string" || !body.reason.trim()) fail(400, "invalid", "a reason is required", path, { fields: { reason: "missing" } });
+      Object.assign(note, { body: { redacted: true, reason: body.reason.trim(), by: who.id, at: nowIso() }, mentions: [], edited: null });
+      return note;
+    }],
     ["GET", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/history$/, (m, body, path) => {
       if (!file(m[1], "tasks.json", path).items.some((c) => c.id === m[2])) fail(404, "not_found", "Not found", path);
       return { items: (fixtures()[m[1] + "/task-history.json"] || {})[m[2]] || [], next_cursor: null };

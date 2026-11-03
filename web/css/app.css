@@ -1425,6 +1425,10 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .history-diff { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.82rem; }
 .card-note-form { display: grid; gap: 6px; margin-top: 8px; }
 .card-note-form button { justify-self: start; }
+/* A note's Edit and Remove under its text; the edit in place as the post form. */
+.card-note-actions, .card-note-edit-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.card-note-edit-form { display: grid; gap: 6px; margin-top: 6px; }
+.card-note-edited { font-size: 0.875em; }
 .card a.card-open { color: inherit; text-decoration: none; }
 .card a.card-open:hover, .card a.card-open:focus-visible { text-decoration: underline; }
 @media (max-width: 900px) {

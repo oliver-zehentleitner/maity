@@ -4150,7 +4150,15 @@ window.MAITY_FIXTURES = {
         },
         "body": "The CLI needs `--no-code` here too.",
         "created_at": "2026-10-21T10:30:00Z",
-        "edited": null,
+        "edited": {
+          "at": "2026-10-21T10:35:00Z",
+          "by": {
+            "handle": "agent-c",
+            "kind": "agent",
+            "member_id": "agt-c"
+          },
+          "reason": "Fixed a typo in the flag."
+        },
         "id": "nte-0031",
         "mentions": [],
         "resolution": null,
