@@ -456,12 +456,16 @@ the row alone: password or registration, a TOTP or recovery-code second factor, 
 `20261103100000_session_confirmed` carries over every `session_created` record that a session
 marked read (`read_by` set) as a confirmation at that read's time by that session. Before, only
 an allowed session could mark one, so each such mark was a confirmation. A record read without
-`read_by` confirms nothing.
+`read_by` confirms nothing. The carry-over is one `UPDATE … FROM account_record`, joined on the
+record's `session_id`, because the column change holds an exclusive lock on `human_session`
+until the migration commits.
 
-The confirm checks run in one transaction, and the confirmation is a conditional `UPDATE` on
-`ended_at IS NULL`. When it does not hold, the session is read again, and if it ended meanwhile
-the call is `not_found`. A concurrent `DELETE` therefore either ends a confirmed session or
-leaves the confirm `not_found`.
+The confirm checks run in one transaction. A target not yet in good standing is confirmed by a
+conditional `UPDATE` on `ended_at IS NULL`; then every target, in good standing or not, is read
+again with a row lock (`SELECT … FOR UPDATE`), and if it ended meanwhile the call is
+`not_found` with nothing confirmed or marked. A concurrent `DELETE` therefore either waits and
+ends a confirmed session, or leaves the confirm `not_found`. A target already in good standing
+keeps its standing as it is; only its liveness is held.
 
 Who may mark a security item read is `listing.refusal`. Only `session_created` and
 `email_address_changed` are guarded; every other security kind may be marked from any session
@@ -488,6 +492,11 @@ and lets the bell mark alerts read without touching it.
 - Carrying the old read marks over as `confirmed_at: null` with good standing kept another way:
   the session list could not say when or by whom such a session was confirmed, although the
   record holds both.
+- Carrying the read marks over one `UPDATE` per record: every sign-in waits on the exclusive
+  lock for N round trips (measured on PostgreSQL: 50 000 marks, 9.9 s).
+- Holding only the target that still needs confirming: a target in good standing then had no
+  liveness check, and a concurrent `DELETE` and the confirm both answered 200 with the alert
+  marked read on an ended session (shown on PostgreSQL in review).
 - Refusing to mark the alert of a session whose row is gone (the old behaviour): such an alert
   could then never be cleared until its record expired, the very thing the bell change set out to
   end.

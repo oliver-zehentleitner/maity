@@ -413,6 +413,7 @@ def pinned(conn: Connection, where: Scope, limit: int) -> list[Item]:
         _record_rows(where, now, records.SECURITY)
         .where(c.read_at.is_(None))
         .order_by(c.at.desc(), c.n.desc())
+        .limit(limit)
     ).all()
     found = [i for i in _record_items(conn, where, now, rows) if i.kind == "security"]
     found.sort(key=lambda item: item.order, reverse=True)

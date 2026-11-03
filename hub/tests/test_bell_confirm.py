@@ -16,8 +16,11 @@ from maity_hub import tables as t
 from maity_hub.auth import second_factor, sessions
 from maity_hub.auth.caller import SESSION_COOKIE, session_id_hash
 from maity_hub.db import migrate
+from maity_hub.errors import ApiError
 from maity_hub.notifications import records
+from maity_hub.routes import auth
 from tests import factory, flow
+from tests.concurrency import finished, race, waiting
 from tests.conftest import ClientFactory
 from tests.test_sessions import sign_in
 
@@ -268,6 +271,19 @@ def test_include_security_is_a_flag_for_up_to_only(
     assert with_ids.headers["Maity-Error"] == "invalid"
 
 
+def test_a_newer_session_not_in_good_standing_is_told_not_earlier(
+    make_client: ClientFactory, migrated: Engine, human: str
+) -> None:
+    """Created after the sign-in, not the session it reports on, and not in good standing
+    either: `not_earlier` comes first (§18.3), as it does for "This was me"."""
+    old, old_id = plant(make_client, migrated, human, "email_link", 300)
+    newer, _ = plant(make_client, migrated, human, "device_code", 10)
+    alert = _alert(old, old_id)
+    answer = newer.post("/me/notifications/read", {"ids": [alert["id"]]}).json()
+    assert answer["skipped"] == [{"id": alert["id"], "reason": "not_earlier"}]
+    assert not _sign_in_alert_read(migrated, old_id)
+
+
 def test_a_newer_session_may_not_mark_an_older_sign_in_or_change(
     make_client: ClientFactory, migrated: Engine, human: str
 ) -> None:
@@ -463,13 +479,19 @@ def test_a_fresh_enrolment_sign_in_is_no_moved_session(
         assert refused.json()["error"]["details"]["reason"] == "second_factor_enrolment_required"
 
 
+@pytest.mark.parametrize("method", ["email_link", "password"])
 def test_a_confirm_that_loses_to_an_end_is_not_found(
-    make_client: ClientFactory, migrated: Engine, human: str, monkeypatch: pytest.MonkeyPatch
+    make_client: ClientFactory,
+    migrated: Engine,
+    human: str,
+    monkeypatch: pytest.MonkeyPatch,
+    method: str,
 ) -> None:
-    """The session ended between the confirm's look at it and its update: the conditional
-    update does not hold, and the confirm answers as if it had come after the end."""
+    """The session ended between the confirm's look at it and its hold on it: whether it
+    still needed confirming or already stood in good standing, the confirm answers as if it
+    had come after the end."""
     strong = sign_in(make_client)
-    _, weak_id = plant(make_client, migrated, human, "email_link", -1)
+    _, weak_id = plant(make_client, migrated, human, method, -1)
     with migrated.begin() as conn:  # the DELETE that won the race
         conn.execute(
             update(t.human_session)
@@ -490,6 +512,61 @@ def test_a_confirm_that_loses_to_an_end_is_not_found(
     monkeypatch.setattr(sessions, "ended", ended_meanwhile)
     response = strong.post(f"/auth/sessions/{weak_id}/confirm", {})
     assert response.status_code == 404, response.text
-    assert looks[0] == 2  # the first look, and the one after the update did not hold
+    assert looks[0] == 2  # the first look, and the one on the held row
     assert _session(migrated, weak_id).confirmed_at is None
     assert not _sign_in_alert_read(migrated, weak_id)
+
+
+def _end_in(conn: Any, public_id: str) -> None:
+    """What `DELETE /auth/sessions/{id}` writes, in a transaction the race holds open."""
+    conn.execute(
+        update(t.human_session)
+        .where(t.human_session.c.public_id == public_id)
+        .values(ended_at=clock.now(), ended_by="revoked")
+    )
+
+
+@pytest.mark.parametrize("method", ["email_link", "password"])
+def test_a_confirm_waits_for_a_running_end_and_is_not_found(
+    make_client: ClientFactory, migrated: Engine, human: str, method: str
+) -> None:
+    """An end holds the target and commits; the confirm that waited for it finds the session
+    ended: nothing confirmed, the alert unread, whether the target needed confirming or was
+    in good standing already (§2.6.5)."""
+    strong = sign_in(make_client)
+    _, target_id = plant(make_client, migrated, human, method, -1)
+    current = session_id_hash(strong.client.cookies[SESSION_COOKIE])
+    with race(migrated) as r:
+        ender, confirmer = r.first, r.second
+        _end_in(ender, target_id)
+        step = r.run(confirmer, lambda: auth.confirm(confirmer, human, current, target_id))
+        assert waiting(step)
+        ender.commit()
+        with pytest.raises(ApiError) as refused:
+            finished(step)
+        assert refused.value.status == 404
+    assert _session(migrated, target_id).confirmed_at is None
+    assert not _sign_in_alert_read(migrated, target_id)
+
+
+@pytest.mark.parametrize("method", ["email_link", "password"])
+def test_an_end_waits_for_a_running_confirm_and_ends_it(
+    make_client: ClientFactory, migrated: Engine, human: str, method: str
+) -> None:
+    """The confirm holds the target first: the end waits for it and then ends the session,
+    whose sign-in stays confirmed and its alert read."""
+    strong = sign_in(make_client)
+    _, target_id = plant(make_client, migrated, human, method, -1)
+    current = session_id_hash(strong.client.cookies[SESSION_COOKIE])
+    with race(migrated) as r:
+        confirmer, ender = r.first, r.second
+        auth.confirm(confirmer, human, current, target_id)
+        step = r.run(ender, lambda: _end_in(ender, target_id))
+        assert waiting(step)
+        confirmer.commit()
+        finished(step)
+        ender.commit()
+    row = _session(migrated, target_id)
+    assert row.ended_at is not None
+    assert (row.confirmed_at is not None) is (method == "email_link")
+    assert _sign_in_alert_read(migrated, target_id)

@@ -3,9 +3,10 @@
 `session_created` record was marked read, and only an allowed session could mark it, so every
 such read mark was a confirmation. The upgrade carries each one over: `confirmed_at` is the
 time of the read mark, `confirmed_by` the session that made it. A record without `read_by`
-was not read by a session and confirms nothing. The downgrade drops the columns; a session
+was not read by a session and confirms nothing. The downgrade drops the columns. A session
 confirmed after the upgrade had its record marked read by the same call, so the old rule reads
-it as confirmed too.
+it as confirmed too, as long as that record exists with its `read_by`: every completed sign-in
+writes one, and a read mark always sets `read_at` and `read_by` together.
 
 Revision ID: 20261103100000_session_confirmed
 Revises: 20261102230000_card_note_version
@@ -47,23 +48,19 @@ def upgrade() -> None:
         sa.column("confirmed_at", UtcDateTime()),
         sa.column("confirmed_by", sa.String()),
     )
-    conn = op.get_bind()
-    marks = conn.execute(
-        sa.select(record.c.data, record.c.read_at, record.c.read_by).where(
+    # One statement, joined on the record's session id, so the exclusive lock the column
+    # change takes on `human_session` is held for one pass, not one round trip per mark.
+    op.execute(
+        session.update()
+        .where(
             record.c.type == "session_created",
             record.c.read_at.is_not(None),
             record.c.read_by.is_not(None),
+            session.c.public_id == record.c.data["session_id"].as_string(),
+            session.c.confirmed_at.is_(None),
         )
-    ).all()
-    for mark in marks:
-        public_id = (mark.data or {}).get("session_id")
-        if not public_id:
-            continue
-        conn.execute(
-            session.update()
-            .where(session.c.public_id == public_id, session.c.confirmed_at.is_(None))
-            .values(confirmed_at=mark.read_at, confirmed_by=mark.read_by)
-        )
+        .values(confirmed_at=record.c.read_at, confirmed_by=record.c.read_by)
+    )
 
 
 def downgrade() -> None:
