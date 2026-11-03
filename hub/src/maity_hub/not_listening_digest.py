@@ -28,7 +28,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, select, update
 
-from maity_hub import clock, worker_runs
+from maity_hub import clock, maintenance, worker_runs
 from maity_hub import tables as t
 from maity_hub.events import lock_project, transaction
 from maity_hub.notifications import preferences, records
@@ -339,8 +339,10 @@ class Worker:
             now = clock.now()
             if now < self._due:
                 continue
-            self._due = next_hour(now)
             try:
+                if maintenance.running_now(self.engine):
+                    continue  # the hour's digest comes after the window (§16.12)
+                self._due = next_hour(now)
                 with worker_runs.claim(
                     self.engine, "not-listening-digest", ONE_PASS_PER_HOUR, self._stop
                 ) as held:

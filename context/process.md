@@ -197,6 +197,35 @@ run names.
 - Cancelling runs on main as well: each merge's own result is the
   record a deploy is decided on.
 
+## A change to the contract alone runs a light `hub-contract` part, not the database jobs
+
+**Id:** 5b0f7a42-3c1e-4d68-9a15-e2c7d4f1b903
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the coordinator's request of 2026-11-02 (review lead's finding that #1235, a pull request changing only `docs/api.md`, left main red with 2 failed tests); `.github/workflows/ci.yml`
+**Revisit when:** a test opens `docs/api.md` in a way the grep does not find, or the gap below is closed, or the hub's database jobs get fast enough to take the contract path too
+
+Three hub test files (`test_contract_routes.py`, `test_guide.py`, `test_paths.py`) read `docs/api.md`, but the `hub` part of the `changes` job
+did not list it, so a pull request that changed only the contract got a green `ci-ok` and main went red after the merge. A new
+part `contract` (`docs/api.md` and `hub/*`) starts the job `hub-contract`: `make install` and every test file that builds
+the path `"docs" / "api.md"` (found by `grep` in the job, not listed; today `test_contract_routes`, `test_guide` and
+`test_paths`) on SQLite, a few minutes. It is in `ci-ok`. A change under `hub/` starts it too, beside the hub jobs that run the same files: it answers in a few minutes, while the database
+jobs take about an hour, and the coordinator asked for the filter `contract:docs/api.md` and `contract:hub/*`; a push to main and a change
+to the workflow start it like every other part.
+
+**Known gap (review of 2026-11-02):** hub tests also read files outside `hub/` and `docs/` (`web/tools/hub-shapes.json`,
+`web/tools/site-fixture.json`, `deploy/Dockerfile`, `cli/src/maity/__init__.py`, `README.md`); a pull request that changes only
+one of them starts neither the hub jobs nor this one. Not solved here; its own task.
+
+**Rejected alternatives:**
+- `docs/api.md` in the `hub` part: every contract pull request would run the PostgreSQL and SQLite suites, about an
+  hour, for a few files that need neither a database server nor the rest of the suite.
+- A fixed list of the test files: the first version listed two and missed `test_guide.py`, found in review; the job now
+  selects them by the path they build.
+- Moving the tests to the join-page gate or a script outside pytest: the tests stay where the hub's other tests are, and
+  CI only chooses when to run them.
+
 ## Every agent uses Keep the Why: implementers record each decision in the same pull request, reviewers gate on it
 
 **Id:** e534e9f3-a419-4a09-8054-117150592490
@@ -998,23 +1027,28 @@ for the newest run to finish.
   green run for as long as the streak lasts, and a deploy needs a green one.
 - A group per commit, as before: nothing is ever replaced, so a merge streak queues one run per merge.
 
-## MariaDB checks main every hour, not every pull request; PostgreSQL and SQLite stay in the gate
+## MariaDB checks main after every ci run and every hour, not every pull request; PostgreSQL and SQLite stay in the gate
 
 **Id:** 75a2382c-6a3d-450d-873e-8aade80d6e3b
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's decision, 2026-10-31 (left to the coordinator), on card tsk-p7dfb6e9p5wz, after the database jobs had grown to 60 to 90 minutes a run
-**Revisit when:** MariaDB breaks on main often enough that the hourly clock finds it too late, or the suite gets fast enough to be a gate again
+**Revisit when:** MariaDB breaks on main often enough that the checks after each push and the hourly clock find it too late, or the suite gets fast enough to be a gate again
 
-The hub's test suite against MariaDB left `ci.yml` and `ci-ok`. `.github/workflows/hub-mariadb.yml` runs it at most
-once an hour on main, and only when files under `hub/` (or the join page doc, or the workflow itself) changed since the
-last green scheduled run; a quiet hour is skipped. `hub-postgresql` (what production runs) and `hub-sqlite` stay per
+The hub's test suite against MariaDB left `ci.yml` and `ci-ok`. `.github/workflows/hub-mariadb.yml` runs it on main after
+every finished `ci` run and at the latest once an hour, and only when files under `hub/` (or the join page doc, or the workflow itself) changed since the
+last green automatic run; a quiet hour is skipped. `hub-postgresql` (what production runs) and `hub-sqlite` stay per
 pull request and in `ci-ok`.
 
+**The clock is not enough (2026-11-01):** (Source: the coordinator's finding, 2026-11-01, that scheduled runs were skipped, visible in the run history of the workflow; the start from the last job of `ci.yml` was decided by the coordinator on 2026-11-02 in the review of the pull request that added it, after the first version with `workflow_run` was found to break the runner rule.) GitHub starts scheduled workflows on a best-effort basis; in the first nine hours
+after the merge only one scheduled run happened (and not at the minute asked for). Every push to main therefore also
+starts the workflow, from the last job of `ci.yml` (`gh workflow run` with `trigger=ci`, a `workflow_dispatch` with the workflow's own token), with the same checks: one running, one waiting, skipped when nothing relevant changed. The
+clock stays as the fallback for quiet days. "Automatic run" below means the clock or a start from `ci`; a hand start is not one. Both a start from `ci` and a hand start are a `workflow_dispatch`, so the run title (`hub-mariadb ci` or `hub-mariadb hand`) tells them apart where the run list is read.
+
 **What keeps it from rotting:** a red run opens one issue labelled `ci-red` that names the commit range since the last
-green run, and later red runs comment on it, so the change that broke it is found within the hour; a green scheduled run
-closes it. The next hour always runs again after a run that did not end green or while the issue is open, so a revert
+green run, and later red runs comment on it, so the change that broke it is found within the hour; a green automatic run
+closes it, but only when the green commit contains every commit the issue names as red (a hand run on a newer commit may have opened it). The next hour always runs again after a run that did not end green or while the issue is open, so a revert
 closes the issue and a failure outside the watched files is not skipped over. A deploy or release is not allowed past a red MariaDB: the run is started by hand for that commit
 (Actions, hub-mariadb, Run workflow, with the sha), and its result is read before the deploy.
 
@@ -1027,8 +1061,23 @@ fault close to the change that caused it without making every author wait for it
 - Keep it in the gate and add runners: more machines for a suite whose value is the daily catch, not the per-PR one.
 - Nightly only: the culprit would sit among a day of merges instead of an hour's.
 - Remove it: self-hosters on MariaDB would learn about a break from their own upgrade.
-- One concurrency group for the hourly run and the hand start: GitHub keeps one waiting run per group, so a hand start for a
-  deploy candidate would be displaced by the next hourly run while it waits behind a running one; they have a group each.
+- One concurrency group for the automatic runs and the hand start: GitHub keeps one waiting run per group, so a hand start for a
+  deploy candidate would be displaced by the next automatic run while it waits behind a running one; they have a group each.
+- A `workflow_run` trigger on `ci` (the first version of the pull request): `deploy/runner/README.md` says that no workflow of this
+  repository uses `workflow_run`, and with reason: `branches: [main]` compares the head branch name, so the `ci` run of a
+  fork's pull request from a branch called `main` would start it, with a write token in the report job and on the
+  maintainer's machine. The rule stays; `ci` starts the run itself (below). Found in review, decided by the coordinator, 2026-11-02.
+- A `push` trigger on main in `hub-mariadb.yml`: the run would start beside `ci` instead of after it and compete with it for
+  the same machines, and it would start for a commit whose `ci` is still going.
+- Starting it from `ci` only after a green `ci`: a red `ci` on main would then pause the MariaDB check entirely, and a red
+  state is what it is for; the last job of `ci.yml` runs whatever the result of the jobs before it.
+- One group per trigger (`github.event_name`, the first version): the clock and a finished `ci` run then do not queue behind
+  each other, both decide at once against the same last green run, and the suite starts twice for one commit; the two
+  automatic triggers share one group.
+- Counting a `cancelled` run as the last result: a waiting run that a newer one replaced in the queue ends `cancelled`
+  and sorts ahead of the run that is still going, so the next `decide` would see "the last run was not green" and run
+  although nothing relevant changed; `cancelled` is left out when the last result is read, and the diff base is still the
+  last green run, so no change goes untested.
 - Any commit for a hand start: the sha is free text and a commit of a fork's pull request can be checked out by it, which
   would run it on the self-hosted machine without the approval of outside collaborators; only commits of main are accepted.
 - Notify agents directly from the workflow: that needs a Maity credential in the repository's secrets; the issue is the

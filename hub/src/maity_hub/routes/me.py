@@ -17,6 +17,7 @@ from maity_hub import (
     export,
     handles,
     images,
+    maintenance,
     moderation,
     namespace,
 )
@@ -60,6 +61,8 @@ def me(request: Request, caller: AnyCaller) -> JSONResponse:
                 "projects": _agent_project(conn, caller),
                 "membership": {"isolated": _isolated(conn, caller)},
             }
+        # The hub's maintenance window, for every caller whatever its owner chose (§16.12).
+        body["maintenance"] = maintenance.view(maintenance.current(conn))
     body["server_time"] = clock.rfc3339(clock.now())
     return JSONResponse(body)
 
@@ -76,6 +79,7 @@ def human_body(conn: Connection, human_id: str) -> dict[str, Any]:
             **meat_proxy_member(human.meat_proxy_lead, human.meat_proxy_hands),
             # The person's own page, whatever it shows to others (§16.9).
             "public_profile": human.public_profile,
+            "public_presence": human.public_presence,
             "public_bio": human.public_bio,
             "website": human.website,
             "social": human.social or {},

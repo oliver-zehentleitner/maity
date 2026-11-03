@@ -25,9 +25,11 @@ from maity_hub import (
     handles,
     handover,
     idempotency,
+    instance_counts,
     instances,
     ktw_skill,
     languages,
+    maintenance,
     memory,
     mentions,
     moderation,
@@ -168,7 +170,7 @@ class ResumeIn(Strict):
 
 class MePatch(Strict):
     """An agent's `paused`, or a human's own profile switches (`meat_proxy`, §5.2) and their
-    public page (`public_profile`, `public_bio`, §16.9)."""
+    public page (`public_profile`, `public_presence`, `public_bio`, §16.9)."""
 
     paused: PausedIn | None = None
     dormant: StrictBool | None = None  # the calling instance rests or wakes (§6.17)
@@ -177,6 +179,7 @@ class MePatch(Strict):
     meat_proxy_lead: StrictBool | None = None
     meat_proxy_hands: StrictBool | None = None
     public_profile: StrictBool | None = None
+    public_presence: StrictBool | None = None
     public_bio: str | None = None
     website: str | None = None
     social: Any = None  # an object, checked with the other fields: `social: "format"`
@@ -190,6 +193,7 @@ HUMAN_FIELDS = (
     "meat_proxy_lead",
     "meat_proxy_hands",
     "public_profile",
+    "public_presence",
     "public_bio",
     "website",
     "social",
@@ -629,6 +633,8 @@ def _packet(
             "owner_preferences": owner_preferences,
             "availability_policy": availability.policy_of(mine.row),  # §6.12
             "covering": own_view["covering"],  # whom it covers (§6.12)
+            # Who stands below it, as the member answers count it (§6.2): what a lead resumes to.
+            "manages": instance_counts.for_member(conn, mine.row),
             "placement": _placement_block(conn, mine.id),
         },
         "team": siblings,
@@ -654,6 +660,8 @@ def _packet(
             "rules_version": project.rules_version,
         },
         "rules": rules_block,
+        # The hub's maintenance window while upcoming or running, for every agent (§16.12).
+        "maintenance": maintenance.view(maintenance.current(conn)),
         "preferences": preferences_block,
         "areas": areas,
         **_setup_block(conn, project),
@@ -845,7 +853,7 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
         if "paused" in given or "dormant" in given:
             raise invalid({"paused" if "paused" in given else "dormant": "agents_only"})
         parts = {"meat_proxy_lead": body.meat_proxy_lead, "meat_proxy_hands": body.meat_proxy_hands}
-        public = {"public_profile", "public_bio"} & given
+        public = {"public_profile", "public_presence", "public_bio"} & given
         links = {"website", "social", "links_visible"} & given
         if (
             body.meat_proxy is None
@@ -882,6 +890,10 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             if body.public_profile:
                 # A hidden or removed profile stays so until an admin lifts the hold (§16.8).
                 moderation.refuse_held(conn, "profile", caller.human_id)
+        if "public_presence" in given:
+            if body.public_presence is None:
+                raise invalid({"public_presence": "required"})
+            values["public_presence"] = body.public_presence
         if "public_bio" in given:
             problem = public_people.bio_problem(body.public_bio) if body.public_bio else None
             if problem is not None:
@@ -924,10 +936,12 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             person_links.announce(conn, caller.human_id)
         if public or links_given:
             # Turning the page off or editing its text takes something off it: at once (§16.9).
-            # Turning the page on alone adds a page: under `interval` it waits for the run.
-            switched_on_only = values.get("public_profile") is True and set(values) <= {
-                "public_profile"
+            # Turning the page or the online name on alone adds something: under `interval`
+            # it waits for the run.
+            switched_on = {
+                name for name in ("public_profile", "public_presence") if values.get(name)
             }
+            switched_on_only = bool(switched_on) and set(values) <= switched_on
             public_pages.touch(
                 conn, public_people.KIND, caller.human_id, removal=not switched_on_only
             )

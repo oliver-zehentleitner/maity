@@ -88,7 +88,9 @@ sequences, its position is two-part, read from one snapshot and only
 ever moved forward per component; its numbers and times come from the
 database, since several hub replicas write at once. Security items are
 read only one by one — never by age and never by "mark all read",
-which would confirm an intruding session in passing. The test send connects
+which would confirm an intruding session in passing. (Since 2026-11-02
+reading no longer confirms, and "mark all read" may include them after
+a confirm: d01ba62b-7acc-471c-b8d0-65c6d60209cc.) The test send connects
 only to the configured server.
 
 The rules are the contract owner's rulings on the reviews (four rounds); the reasons
@@ -339,3 +341,51 @@ for the same reason.
   coordinator the same day).
 - Resetting stored modes to the new defaults: it overrides choices
   people made, against the maintainer's rule.
+
+## Reading a security alert never confirms it: "mark all read" may include them after a confirm, and the protection lives in the session's confirmation
+
+**Id:** d01ba62b-7acc-471c-b8d0-65c6d60209cc
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer in chat, 2026-11-02 (seq 39544, 39571), card tsk-0kz8v1ff5sgf; the plan and the lead's answers (seq 39587, 39589); contract `docs/api.md` §2.3, §2.6.5, §18.2, §18.3, §18.8
+**Revisit when:** humans confirm sign-ins they did not make because the confirm before "mark all read" is clicked through, or a security kind needs a confirmation of its own beyond the sign-in
+
+Confirming a sign-in is its own call, "This was me" (`POST
+/auth/sessions/{id}/confirm`), allowed from the same sessions that could
+mark its alert read before: one that existed before the sign-in and is
+in good standing. Good standing follows from that confirmation (or a
+password or second-factor sign-in), never from a read flag. Reading a security alert
+confirms nothing, so "mark all read" may include security alerts once
+the human has confirmed a dialog that lists them; a session not allowed
+to mark an alert still cannot, and the answer names what it left and
+why. The mail sign-in banner stays until the session is confirmed,
+read or not. The bell shows the unread security alerts of every kind,
+whatever their age, in a pinned block at the top, and has an "unread
+only" filter. Open requests addressed to the human are not pinned.
+
+**Reason:** the earlier rule kept security alerts out of "mark all
+read" because reading one confirmed the session; in use that left the
+alerts unread for good and hard to find — the owner paged back ten
+times to reach one 19 hours old — and a bell that never empties is one
+nobody reads. The protection against a session obtained through the
+mailbox never needed the unread count: it needs that such a session
+cannot confirm itself, cannot hide its own alert and cannot end the
+sessions in good standing. Tying good standing and the banner to the
+confirmation keeps all three while the bell can be tidied. Sessions
+whose alert was marked read under the old rule count as confirmed, so
+nobody loses good standing by the change.
+
+**Rejected alternatives:**
+- Keeping "mark all read" away from security alerts and only pinning
+  them: the owner asked for "mark all read" to clear everything after a
+  confirm.
+- Letting any session mark any security alert read, now that reading
+  confirms nothing: a session obtained through the mailbox could then
+  remove its own alert from the bell of every other session.
+- Pinning only sign-in and address alerts: the other security kinds
+  (second factor, forge access) protect the account as well and are
+  few.
+- Pinning open requests to the human as urgent: they have their own
+  inbox and count there; the owner was asked and did not ask for it.
+

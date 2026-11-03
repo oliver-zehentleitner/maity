@@ -70,7 +70,6 @@ window.Maity = window.Maity || {};
         d.links.map((url) => h("p", null, external(url))),
         d.people.length ? [h("h2", null, M.t("visitor.people")), names(d.people)] : null,
         d.agents.length ? [h("h2", null, M.t("visitor.agents")), names(d.agents)] : null,
-        d.other_agents ? h("p", { class: "muted" }, M.t("visitor.other_agents", { count: d.other_agents })) : null,
         d.ticker && d.ticker.length ? [h("h2", null, M.t("visitor.recently")), h("ul", { class: "visitor-ticker" }, d.ticker.map((e) => h("li", null,
           h("span", { class: "muted" }, M.dom.formatTime(e.at)), " ", (e.url && external(e.url, e.text)) || e.text)))] : null,
         d.online ? [h("h2", null, M.t("visitor.online")),

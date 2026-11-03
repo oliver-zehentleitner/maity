@@ -4,10 +4,12 @@ of its own for a new sign-in.
 
 Per kind the human chose `immediate` (within about two minutes, every item that fell due
 in that window in one mail, at most ten such mails an hour), `hourly` (at the full hour),
-`daily` (at `daily_at` in their time zone) or `off`. Nothing but security mail is sent in
-the human's quiet hours; what fell due goes out when they end. Every item is checked
-against what the human may read when the mail is built, not when it happened, and an
-item goes out once. A new sign-in is a security mail of its own, immediate or off.
+`daily` (at `daily_at` in their time zone), `weekly` (at `daily_at` on `weekly_on`) or
+`off`. Nothing but immediate security mail is sent in the human's quiet hours; what fell
+due goes out when they end. Every item is checked against what the human may read when
+the mail is built, not when it happened, and an item goes out once. A new sign-in is a
+security mail of its own when `security` is immediate, and an item of a digest when the
+human put security in one (context/notifications.md da12f2b5).
 
 A mail carries only the hub's own links. Every text the hub did not write is quoted as
 plain text, an agent's marked as such, and anything a mail client could turn into a
@@ -20,7 +22,7 @@ import json
 import logging
 import re
 import threading
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, tzinfo
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -46,8 +48,12 @@ CONTENT_MAX = 500
 MAILED_KINDS = ("inbox", "chat", "mention")
 # An open matter the dashboard shows and no mail carries (§18.5).
 NEVER_MAILED = ("registration_pending", "mail_disabled")
-# Each of these is a security mail of its own: never batched, never held (§18.5, §2.6.5).
-SECURITY_MAIL = ("session_created", "second_factor_changed", "second_factor_failed")
+# The alert of a new sign-in: a security mail of its own while `security` is immediate, an
+# item of the digest the human put security in, none when off (§18.4, §2.6.5).
+SIGN_IN_ALERT = "session_created"
+# A takeover under way: a security mail of its own at once, whatever the mode, never held
+# by quiet hours, with no unsubscribe link (§18.4 "At once, whatever the mode", §2.8).
+AT_ONCE = ("second_factor_changed", "second_factor_failed")
 
 
 _SCHEME = re.compile(r"\b([A-Za-z][A-Za-z0-9+.-]*):(?=//)")
@@ -150,16 +156,23 @@ def for_human(
     ]
     modes = {kind: (prefs["kinds"].get(kind) or {}).get("mode", "off") for kind in prefs["kinds"]}
     queued = 0
-    # A new sign-in is a security mail of its own; quiet hours do not hold it (§2.6.5).
+    # Security mails of their own; quiet hours do not hold them (§2.6.5, §18.4).
     for item in pending:
-        if item.record_type in SECURITY_MAIL and modes.get("security") == "immediate":
-            if item.record_type == "session_created":
-                _sign_in_mail(conn, row, item, prefs, signing_key, public_url, local)
-            else:
-                _two_factor_mail(conn, row, item, prefs, signing_key, public_url, local)
-            _mark(conn, human_id, [item])
-            queued += 1
-    mailable = [i for i in pending if i.kind in MAILED_KINDS]
+        if item.record_type in AT_ONCE:
+            _two_factor_mail(conn, row, item, prefs, public_url, local)
+        elif item.record_type == SIGN_IN_ALERT and modes.get("security") == "immediate":
+            _sign_in_mail(conn, row, item, prefs, signing_key, public_url, local)
+        else:
+            continue
+        _mark(conn, human_id, [item])
+        queued += 1
+    # Security in a digest travels with it like any kind (§18.4).
+    digested_security = modes.get("security") in preferences.DIGESTS
+    mailable = [
+        i
+        for i in pending
+        if i.kind in MAILED_KINDS or (digested_security and i.record_type == SIGN_IN_ALERT)
+    ]
     if _quiet(prefs.get("quiet_hours"), local):
         _set_state(conn, human_id, stamp=moved, waiting=_waiting(mailable, modes))
         return queued
@@ -168,8 +181,8 @@ def for_human(
     due: list[Item] = []
     clocks: dict[str, datetime | None] = {}
     if state.held_since is not None:
-        due = [i for i in mailable if _mode(i, modes) in ("immediate", "hourly", "daily")]
-        clocks = {"hourly_at": now, "daily_at": now}
+        due = [i for i in mailable if _mode(i, modes) != "off"]
+        clocks = {"hourly_at": now, "daily_at": now, "weekly_at": now}
     else:
         immediate = [i for i in mailable if _mode(i, modes) == "immediate"]
         capped = _immediate_this_hour(conn, human_id, now) >= IMMEDIATE_PER_HOUR
@@ -189,6 +202,12 @@ def for_human(
         elif local >= today and state.daily_at < today:
             due += [i for i in mailable if _mode(i, modes) == "daily"]
             clocks["daily_at"] = now
+        week = _last_weekly(local, prefs["daily_at"], prefs["weekly_on"], zone)
+        if state.weekly_at is None:
+            clocks["weekly_at"] = now
+        elif state.weekly_at < week:
+            due += [i for i in mailable if _mode(i, modes) == "weekly"]
+            clocks["weekly_at"] = now
     if due:
         if _instance_full(conn, budget):
             # Over the instance's budget nothing waits in a queue of its own: the
@@ -210,6 +229,16 @@ def for_human(
     # What is left waits for its hour or day: the next pass must derive again.
     _set_state(conn, human_id, stamp=moved, waiting=_waiting(mailable, modes), **clocks)
     return queued
+
+
+def _last_weekly(local: datetime, daily_at: str, weekly_on: str, zone: tzinfo) -> datetime:
+    """The latest `weekly_on` at `daily_at` not after `local`: a pass that missed the
+    moment (the hub was down) still sends the week's digest at its next pass."""
+    back = (local.weekday() - preferences.WEEKDAYS.index(weekly_on)) % 7
+    at = datetime.combine(
+        local.date() - timedelta(days=back), time.fromisoformat(daily_at), tzinfo=zone
+    )
+    return at if at <= local else at - timedelta(days=7)
 
 
 def _mode(item: Item, modes: dict[str, str]) -> str:
@@ -443,22 +472,20 @@ def _two_factor_mail(
     row: Any,
     item: Item,
     prefs: dict[str, Any],
-    signing_key: bytes,
     public_url: str,
     local: datetime,
 ) -> None:
     """A change of the second factor, or wrong codes after a sign-in (§2.8.1): what happened
-    and when, and where to look; never a code, a secret or a link that changes anything."""
+    and when, and where to look; never a code, a secret or a link that changes anything. No
+    mode turns it off, so it carries no unsubscribe link (§18.4)."""
     words = catalog.section("mail", prefs["language"])
     record = conn.execute(select(t.account_record).where(t.account_record.c.n == item.record)).one()
-    token = preferences.unsubscribe_token(signing_key, row.human_id, "security", row.epoch)
-    stop = f"{public_url}/mail/unsubscribe/{token}"
     body = words["two_factor_body"].format(
         title=item.title,
         time=record.at.astimezone(local.tzinfo).strftime("%Y-%m-%d %H:%M %Z"),
         security=f"{public_url}/account/security",
     )
-    body += "\n" + words["stop"].format(kind="security", url=stop)
+    body += "\n" + words["settings"].format(url=f"{public_url}/account/notifications")
     body += "\n\n" + words["only"].format(url=public_url) + "\n"
     outbox.enqueue(
         conn,
@@ -467,10 +494,6 @@ def _two_factor_mail(
         to=row.address,
         subject=f"[Maity] {item.title}",
         body=body,
-        extra_headers={
-            "List-Unsubscribe": f"<{stop}>",
-            "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-        },
     )
 
 

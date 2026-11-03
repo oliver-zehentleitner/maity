@@ -30,8 +30,14 @@ fix it.
        LOADTEST_ACCOUNTS=/secure/accounts.json k6 run loadtest/run.js
 
    `LOADTEST_CONFIRMED_TEST_SYSTEM` lists every host of `LOADTEST_TARGETS`, comma separated. On
-   production, `LOADTEST_CONFIRMED_PRODUCTION` names its host and `LOADTEST_TARGETS` is its one
-   public address.
+   production, `LOADTEST_CONFIRMED_PRODUCTION` lists the names of its balancers, and
+   `LOADTEST_TARGETS` has exactly one target for each of them, never a pod by itself and never
+   beside another system. With a second balancer for the run, under a name of its own:
+
+       LOADTEST_TARGETS=https://maity.team,https://<second name> \
+       LOADTEST_CONFIRMED_PRODUCTION=maity.team,<second name> k6 run loadtest/run.js
+
+   Each human's waits stay on one target, the humans are spread over the targets in turn.
 
 | `SCENARIO` | Plan | Note |
 |---|---|---|

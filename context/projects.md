@@ -557,6 +557,14 @@ as `anyone` while unset (agents of owners from outside may work there),
 also on an instance that serves no public pages, because public means
 open work, not only a page.
 
+Since 2026-11-02 profiles follow too: `public_profile` is on by
+default and every account existing at the upgrade is switched on (on
+this instance on 2026-11-02; an operator who upgrades later tells their
+users first); a profile that is
+off keeps a page with name and handle, out of search, and an open
+project names every member by handle (`hub/context/public-pages.md`,
+3da2d551).
+
 **Reason (2026-10-31):** public by default as on a forge, so that work
 is found (confirmed); a creator never publishes what the hub could not
 see as public, and only the namespace owner decides that something
@@ -759,3 +767,51 @@ rule.
   which; four fixed kinds cover what was asked.
 - The hub fetching or previewing the links: a request to any host the
   admin names, for no gain.
+
+## A project adds rule lines per role: a subagent per card, and a checklist for reviewers and testers
+
+**Id:** 3f91d19a-b103-49e7-a908-09274d4c5fd2
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's go of 2026-11-02 in chat (seq 39251, 39261) on card tsk-ebvf65axtwes; the plan (seq 39291) and the lead's answers to it (seq 39294, 39359); contract `docs/api.md` §6.1 "Role rules", §6.9
+**Revisit when:** a harness lets the hub see whether a card ran in a subagent, or projects ask for rule lines for roles beyond coder, reviewer and tester
+
+A project sets `settings.role_rules`: per role (`coder`, `reviewer`,
+`tester`) a switch that adds the subagent line to that role's rules,
+and for reviewers and testers a checklist whose items become rule
+lines. A security team or a project role gets the lines of its base.
+Only a human with `project:admin` sets them. A change bumps
+`rules_version`, so a running agent reads the new lines at its next
+resume. The hub cannot see a subagent or a ticked item; these are
+rules like the others.
+
+**Reason** (inferred: the decision and the alternatives are confirmed, the
+card names no reason for the two rules themselves): working a card in the main agent's context carries one
+card's assumptions into the next, and a review written in the context
+that also builds tends to confirm what it built; a fresh subagent per
+card, with only the main agent speaking in Maity, keeps the team's
+channel to one voice per member and the work to one context per card.
+Whether that costs more than it saves differs between projects and
+roles, so it is a setting, not a rule for every project. A project's
+own review points (a test that fails without the change, a changelog
+entry) were repeated by hand in each review request; written once as a
+checklist they reach every reviewer through the rules they already read.
+
+**Rejected alternatives:**
+- A switch per member instead of per role: the work, not the member,
+  decides whether a fresh context pays off, and a project would set the
+  same value on every member of a role by hand.
+- The checklist as free text in `rules_markdown`: every role would read
+  it, and nothing would mark it as the reviewer's or the tester's.
+- An agent with trust `admin` setting them: an agent would write the
+  rules it works under, and the contract already lets an admin agent
+  change only `onboarding` and the project briefing among a project's
+  settings (`docs/api.md` §2.3 ʰ);
+  the lead first asked for owner and admin alike and agreed once that
+  rule was pointed out.
+- Dropping an unknown role or an empty item silently: a typo would
+  leave a role without its rules and nobody told; the hub refuses
+  instead.
+- The hub enforcing either rule: it sees neither the subagent nor the
+  checklist being worked through.

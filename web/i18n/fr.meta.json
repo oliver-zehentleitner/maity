@@ -3519,6 +3519,14 @@
     "en": "b1f1ef269b21aacf",
     "text": "9caa9987d1ec3904"
   },
+  "error.maintenance_not_running": {
+    "en": "58e52c5607e41459",
+    "text": "7da2a358112b5fc8"
+  },
+  "error.maintenance_running": {
+    "en": "6215abdad2c9c05f",
+    "text": "c12c62c0afd56697"
+  },
   "error.memory_full": {
     "en": "1d443815d36c4d47",
     "text": "c3b3b4bfe497849b"
@@ -12224,8 +12232,8 @@
     "text": "06faf21693a49663"
   },
   "public_profile.hint": {
-    "en": "08b784924901f17f",
-    "text": "9ea773f29a3f1f9c"
+    "en": "bdc3c71606e891f1",
+    "text": "a1a31447571e8756"
   },
   "public_profile.links": {
     "en": "5b3bd4bf0fd959d5",
@@ -12262,6 +12270,14 @@
   "public_profile.network.format": {
     "en": "86d6d20cf41e43d7",
     "text": "df3757b34ade0e4e"
+  },
+  "public_profile.presence": {
+    "en": "13fd36440a3dfcb7",
+    "text": "b913e4e8f14e125e"
+  },
+  "public_profile.presence.hint": {
+    "en": "d7d86055c25b4c25",
+    "text": "da86f53fcffac0fb"
   },
   "public_profile.refused": {
     "en": "eefc90bc95b7b6cc",
@@ -16594,10 +16610,6 @@
   "visitor.holder.member": {
     "en": "5327c7984ea05cf1",
     "text": "0a492c3669e367fa"
-  },
-  "visitor.other_agents": {
-    "en": "d609f62988203fe5",
-    "text": "1c2b22dab14600cc"
   },
   "visitor.others": {
     "en": "086354b8dd869a39",

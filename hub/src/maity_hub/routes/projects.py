@@ -21,6 +21,7 @@ from maity_hub import (
     bridges,
     clock,
     commitment,
+    contract_text,
     forge,
     forge_access,
     handles,
@@ -140,6 +141,8 @@ class SettingsIn(Strict):
     ticker: TickerSettingsIn | None = None
     onboarding: OnboardingIn | None = None
     language: str | None = None
+    # The file the overview links and shows as the project's contract (§6.8).
+    contract_path: str | None = None
 
     @field_validator("language", mode="before")
     @classmethod
@@ -824,6 +827,10 @@ def patch_project(
             named = body.settings.model_fields_set
             if body.settings.ticker is not None:
                 _check_ticker(body.settings.ticker)
+            if body.settings.contract_path is not None:
+                reason = contract_text.setting_error(body.settings.contract_path)
+                if reason is not None:
+                    raise invalid({"settings.contract_path": reason})
             dumped = body.settings.model_dump()
             if "onboarding" in named:
                 changed, stored, announcement = onboarding.replace_setting(

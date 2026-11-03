@@ -336,6 +336,12 @@ def _repository_in(path: str, query: dict[str, Any] | None) -> str | None:
     return None
 
 
+def _raw(raw_cap: int | None) -> dict[str, int]:
+    """The keyword a raw read passes down to `_send`, and none for a JSON read: the reads
+    of JSON call exactly as they did before raw reads existed."""
+    return {} if raw_cap is None else {"raw_cap": raw_cap}
+
+
 @dataclass(frozen=True)
 class Forge:
     """The hub's access to its forge: the token, and the reads made with it.
@@ -378,14 +384,19 @@ class Forge:
         """Whether the hub can observe this repository: a known forge and a source for it."""
         return kind_of(url) == "github" and self.token is not None and self.refused is None
 
-    def _get(self, path: str, *, uncached: bool = False) -> Any | None:
+    def _get(self, path: str, *, uncached: bool = False, raw_cap: int | None = None) -> Any | None:
         """GET on the forge API; `None` for 404, `ForgeUnavailableError` for anything else.
         `uncached` asks the forge itself even with the hub's own token, skipping the cached
-        visibility check that guards its reads."""
+        visibility check that guards its reads. `raw_cap` asks for the raw bytes of a file
+        instead of JSON, at most `raw_cap + 1` of them read (`_send`)."""
         if self.refused is not None:
             raise NotCoveredError(self.refused)
         if self.token is None:
             raise ForgeUnavailableError("no forge token")
+        if raw_cap is not None:
+            if uncached and self.granted is None:
+                return self._send(path, raw_cap=raw_cap)
+            return self._call(path, raw_cap=raw_cap)
         if uncached and self.granted is None:
             return self._send(path)
         return self._call(path)
@@ -394,7 +405,9 @@ class Forge:
         """When this reader's budget is there again, while it is spent (§11.4)."""
         return retry_at(self.token)
 
-    def _call(self, path: str, query: dict[str, Any] | None = None) -> Any | None:
+    def _call(
+        self, path: str, query: dict[str, Any] | None = None, *, raw_cap: int | None = None
+    ) -> Any | None:
         """A read on the forge API, with the token when the hub holds one and without it
         otherwise (a public repository). `query` makes it a GraphQL POST, which only reads.
         With the token, only of a repository the forge reports public (`NotCoveredError`
@@ -402,7 +415,7 @@ class Forge:
         if self.refused is not None:
             raise NotCoveredError(self.refused)
         if self.token is not None and self.granted is not None:
-            return self._call_granted(path, query)
+            return self._call_granted(path, query, **_raw(raw_cap))
         if self.token is not None:
             repository = _repository_in(path, query)
             if repository is None:
@@ -416,7 +429,7 @@ class Forge:
                     raise NotCoveredError(self.owner_reason) from None
                 raise
             try:
-                found = self._send(path, query)
+                found = self._send(path, query, **_raw(raw_cap))
             except ForgeUnavailableError as error:
                 refused = error.status in (401, 403) and not error.rate_limited
                 if refused or isinstance(error, NotCoveredError):
@@ -425,9 +438,11 @@ class Forge:
             if found is None or (query is not None and _graphql_refused(found)):
                 self._forget(repository)  # a 404 may be a ref that is not there, or a refusal
             return found
-        return self._send(path, query)
+        return self._send(path, query, **_raw(raw_cap))
 
-    def _call_granted(self, path: str, query: dict[str, Any] | None) -> Any | None:
+    def _call_granted(
+        self, path: str, query: dict[str, Any] | None, *, raw_cap: int | None = None
+    ) -> Any | None:
         """A read with the namespace owner's grant: only of the project's own repository.
         A refusal makes the project choose its source again on the next read."""
         if _repository_in(path, query) != self.repository:
@@ -435,9 +450,9 @@ class Forge:
             # owner's grant; without a token, so only a public one answers.
             if query is not None:
                 raise NotCoveredError("no_grant")
-            return Forge(None)._send(path, query)
+            return Forge(None)._send(path, query, **_raw(raw_cap))
         try:
-            found = self._send(path, query)
+            found = self._send(path, query, **_raw(raw_cap))
         except ForgeUnavailableError as error:
             refused = error.status in (401, 403) and not error.rate_limited
             if refused or isinstance(error, NotCoveredError):
@@ -484,9 +499,13 @@ class Forge:
         if known[1] is not None:
             raise NotCoveredError(known[1])
 
-    def _send(self, path: str, query: dict[str, Any] | None = None) -> Any | None:
+    def _send(
+        self, path: str, query: dict[str, Any] | None = None, *, raw_cap: int | None = None
+    ) -> Any | None:
         """The request itself, with no visibility check: only `_call` and the check use it.
-        While the source's budget is spent nothing is sent (§11.4)."""
+        While the source's budget is spent nothing is sent (§11.4). With `raw_cap` the
+        answer is a file's raw bytes, at most `raw_cap + 1` read, so a caller tells a file
+        over its cap from one at it without the forge sending the rest."""
         source = _source(self.token)
         held = _take(source)
         if held is not None:
@@ -497,7 +516,8 @@ class Forge:
             )
         data = None if query is None else json.dumps(query).encode()
         request = urllib.request.Request(f"https://{API_HOST}{path}", data=data)
-        request.add_header("Accept", "application/vnd.github+json")
+        accept = "application/vnd.github+json" if raw_cap is None else "application/vnd.github.raw"
+        request.add_header("Accept", accept)
         request.add_header("X-GitHub-Api-Version", "2022-11-28")
         if self.token is not None:
             request.add_header("Authorization", f"Bearer {self.token}")
@@ -509,6 +529,8 @@ class Forge:
             with _opener.open(request, timeout=TIMEOUT) as response:
                 _note(source, getattr(response, "headers", None), spent=False)
                 noted = True
+                if raw_cap is not None:
+                    return response.read(raw_cap + 1)
                 return json.loads(response.read())
         except urllib.error.HTTPError as error:
             headers: Any = error.headers or {}
@@ -741,11 +763,47 @@ class Forge:
 
     def file_at(self, repository: str, path: str, ref: str, cap: int) -> bytes | None:
         """A file at a commit through the contents API; None when it is not there. Over
-        `cap` bytes, or an answer that is not a file, is `ValueError`."""
-        found = self._get(
-            f"/repos/{repository}/contents/{urllib.parse.quote(path)}?ref={urllib.parse.quote(ref)}"
-        )
+        `cap` bytes, or an answer that is not a file, is `ValueError`. A file the API
+        answers without its content (GitHub above 1 MB, `encoding: none`) is read again in
+        its raw form, the cap counting the bytes read (docs/api.md §6.8, §11.1)."""
+        quoted = urllib.parse.quote(ref)
+        url = f"/repos/{repository}/contents/{urllib.parse.quote(path)}?ref={quoted}"
+        found = self._get(url)
+        if (
+            isinstance(found, dict)
+            and found.get("type") == "file"
+            and found.get("encoding") == "none"
+            and isinstance(found.get("size"), int)
+            and found["size"] <= cap
+        ):
+            data = self._get(url, raw_cap=cap)
+            if data is None:
+                return None
+            if not isinstance(data, bytes):
+                raise ValueError("no content")
+            if len(data) > cap:
+                raise ValueError("too large")
+            return data
         return _decoded(found, cap)
+
+    def tree(self, repository: str, ref: str, directory: str) -> dict[str, Any] | None:
+        """The non-recursive tree of `directory` (`""` for the root) at the commit `ref`:
+        `{"entries": [{"path", "mode"}], "truncated"}`, or None when the forge has none
+        there. Never the recursive tree, which GitHub cuts for a large repository (§6.8)."""
+        spec = ref if directory == "" else f"{ref}:{directory}"
+        found = self._get(f"/repos/{repository}/git/trees/{urllib.parse.quote(spec, safe='')}")
+        if found is None:
+            return None
+        if not isinstance(found, dict) or not isinstance(found.get("tree"), list):
+            raise ForgeUnavailableError("the forge answered a tree without entries")
+        entries = [
+            {"path": e["path"], "mode": e["mode"]}
+            for e in found["tree"]
+            if isinstance(e, dict)
+            and isinstance(e.get("path"), str)
+            and isinstance(e.get("mode"), str)
+        ]
+        return {"entries": entries, "truncated": found.get("truncated") is True}
 
     def deployment(self, repository: str, deployment_id: int) -> dict[str, Any] | None:
         """A deployment and its latest status, as the forge has them (§17.4): None when it

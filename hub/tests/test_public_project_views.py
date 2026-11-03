@@ -124,7 +124,9 @@ def test_a_card_change_renders_the_board_at_once(world: World) -> None:
     assert "cancelled (1)" in (view(world.anyone, "board") or "")
 
 
-def test_a_holder_is_named_only_when_shown_otherwise_a_member_or_an_agent(world: World) -> None:
+def test_a_holder_is_named_whatever_their_profile_and_a_held_one_is_a_member(
+    world: World,
+) -> None:
     with world.migrated.begin() as conn:
         bot_member = conn.execute(
             select(t.membership.c.id).where(t.membership.c.agent_id.is_not(None))
@@ -132,29 +134,27 @@ def test_a_holder_is_named_only_when_shown_otherwise_a_member_or_an_agent(world:
     world.card(title="By anna", claim_holder=world.anna_member)
     world.card(title="By the bot", claim_holder=bot_member)
     world.touch()
+    agent = world.bot.get("/me").json()["member"]
     text = view(world.anyone, "board") or ""
-    assert "a member" in text and "an agent" in text and "(anna)" not in text
-    world.anna.patch("/me", {"public_profile": True})
+    assert "Human anna (anna)" in text and f"({agent['handle']})" in text
+    world.anna.patch("/me", {"public_profile": False})  # off is not invisible (§16.9)
     assert "Human anna (anna)" in (view(world.anyone, "board") or "")
+    made = report(world.owner, {"type": "profile", "id": world.anna.id}, "impersonation")
+    assert made.status_code == 201, made.text
+    path = f"/admin/reports/{made.json()['id']}/resolve"
+    assert world.owner.post(path, {"action": "hide"}).status_code == 200
+    text = view(world.anyone, "board") or ""
+    assert "(anna)" not in text and "a member" in text
+
+
+def test_members_names_everyone_with_trust_and_role(world: World) -> None:
     world.anna.patch("/me", {"public_profile": False})
-    assert "(anna)" not in (view(world.anyone, "board") or "")
-
-
-def test_members_shows_the_public_ones_with_trust_and_role_and_counts_the_rest(
-    world: World,
-) -> None:
     text = view(world.anyone, "members") or ""
-    assert "Human anna" not in text and "<h2>Others</h2>" in text
-    world.anna.patch("/me", {"public_profile": True})
-    text = view(world.anyone, "members") or ""
-    assert '<a href="/anna">Human anna</a> (anna)' in text
-    assert "× coder</li>" in text
+    assert '<a href="/anna">Human anna</a> (anna)' in text and "<h2>Others</h2>" not in text
     assert "presence" not in text and "<img" not in text
 
 
-def test_organisation_shows_the_lines_and_hides_the_names_of_the_others(
-    world: World, migrated: Engine
-) -> None:
+def test_organisation_shows_the_lines_and_names_everyone(world: World, migrated: Engine) -> None:
     world.anna.patch("/me", {"public_profile": True})
     with migrated.begin() as conn:
         conn.execute(
@@ -168,7 +168,7 @@ def test_organisation_shows_the_lines_and_hides_the_names_of_the_others(
     assert "Human anna" in text and "<ul><li>" in text
     world.anna.patch("/me", {"public_profile": False})
     text = view(world.anyone, "organisation") or ""
-    assert "(anna)" not in text and '<span class="tag">coder</span>' in text
+    assert "Human anna (anna)" in text  # off is not invisible
 
 
 def test_a_card_under_a_hold_is_on_no_board_and_comes_back_when_it_is_dismissed(
@@ -231,7 +231,7 @@ def test_an_isolated_agent_is_on_no_view_and_a_held_agent_has_no_name(world: Wor
     isolate = f"/projects/maintainer/maity/members/{agent['id']}/isolate"
     assert world.owner.post(isolate, {"reason": "it rewrote the release notes"}).status_code == 200
     members = view(world.anyone, "members") or ""
-    assert f"({agent['handle']})" not in members and "1 × coder" in members  # anna alone
+    assert f"({agent['handle']})" not in members and "× coder" not in members
     assert (view(world.anyone, "organisation") or "").count("<li>") == boxes - 1  # no box
 
 
@@ -263,7 +263,7 @@ def test_the_holder_of_a_done_card_is_still_an_agent_when_it_was_isolated(world:
     assert world.owner.post(isolate, {"reason": "it rewrote the release notes"}).status_code == 200
     world.touch()
     text = view(world.anyone, "board") or ""
-    assert "Shipped by the bot" in text and "an agent" in text and "a member" in text
+    assert "Shipped by the bot" in text and "an agent" in text and "Human anna (anna)" in text
     assert agent["handle"] not in text
 
 

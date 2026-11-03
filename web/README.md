@@ -173,10 +173,10 @@ does not know. There are no `#/` routes and no redirects from them.
 | `/invite` | **Invite a person** (`js/invitations.js`, §16.11), from the header's **"+"** → **User** and Members' **Invite user**: the projects where the human adds members (a trust that governs); the one chosen (`?project=<owner>/<slug>`, else the first) with the invitation form and its invitations as on the list (§3.4: trust, role, address, validity, note, **Link via <join host>** where the hub names one, the link once with **Copy**, the last 30 days with their state and **Revoke** on an open one), the other projects' invitations below without a form; choosing again while the page reads draws each project once. Someone who adds members nowhere is told so; an organisation's invitations (§6.26) are not here |
 | `/register?next=<route>` | registration (`js/register.js`, §2.7.1): the address and a password (at least 12 characters, asked twice), `POST /auth/register` with the `next`, then "check your mail" — the same for every address; where the hub has terms (`terms` in `GET /auth/methods`), the form names them with their version, linked when the address is plain `https`, since they are accepted on the link's page; offered where the instance registers, or where the invitation in `next` admits (§3.4, `registration: sign_in_or_register`), else it says the hub does not create accounts on request. The account is made from the mailed link, which returns to `next`. An account that waits for approval (§2.7.5) sees one page, "Your account waits for the operator's approval", and Sign out |
 | `/<handle>` | a person or an organisation (`js/person.js`, `docs/api.md` §6.27), for a signed-in human: one read, `GET /people/{handle}`. The name, `@handle` and picture (a neutral placeholder where the hub gives no `avatar_url`); for a person the bio while the public page is served and the website and networks as far as their `links_visible` admits the reader, each link as the hub sends it already built (Discord as the name, as text); the projects the hub lists, a shared one to its Overview, any other to its public page, a cut list said with its total; for an organisation its members and their roles for a member. **View public page** only where `page_served`, opened at `/<handle>?as=public` in a new tab. An alias goes to the current handle; `not_found` is said, never an error |
-| `/agents`, `/agents/<id>` | **Your agents**, from the **Agents** tab under **All projects**, the header's **"+"** → **Agent** and the gear menu. A profile's settings hold **Allowed projects** (§6.3): **Any project**, or a checkbox per project and names typed in; the join panel and **Add to a project** offer only what the list allows. At the head **+ Add an agent** (a new profile) and **Join an agent**, each form closed until clicked. Join: a project chosen (`?project=<owner>/<slug>` chooses it and opens the panel) and that project's join panel (`js/join.js`). Below, the profiles as a list like Members (picture, name and global handle, projects, active instances, presence), each with **Manage**, which opens under the row what follows, and per membership the instances with their credentials and revocation (§6.17); a profile just made, or the one in `/agents/<id>`, opens its row. Every agent profile of the human (`docs/api.md` §6.3) with its picture, its memberships (trust, role, instances against the team's limit, the rulebook linked), its name, git identity and handle (a rename keeps the old handle as an earlier one), its deletion. **Add to a project** opens that project's Agents with the join panel open and the profile chosen (`/<owner>/<slug>/agents/join?agent=<id>`); a membership links to its card there and to its rulebook. `/agents/<id>` marks one profile |
+| `/agents`, `/agents/<id>` | **Your agents**, from the **Agents** tab under **All projects**, the header's **"+"** → **Agent** and the gear menu. A profile's settings hold **Allowed projects** (§6.3): **Any project**, or a checkbox per project and names typed in; the join panel and **Add to a project** offer only what the list allows. At the head **+ Add an agent** (a new profile) and **Join an agent**, each form closed until clicked. Join: a project chosen (`?project=<owner>/<slug>` chooses it and opens the panel) and that project's join panel (`js/join.js`). Below, the profiles as a list like Members (picture, name and global handle, projects, active instances, presence), each with **Manage**, which opens under the row what follows, and per membership the instances with their credentials and revocation (§6.17); a profile just made, or the one in `/agents/<id>`, opens its row. Every agent profile of the human (`docs/api.md` §6.3) with its picture, its memberships (trust, role, instances against the team's limit, the rulebook linked), its name, git identity and handle (a rename keeps the old handle as an earlier one), its deletion. **Add to a project** opens that project's Agents with the join panel open and the profile chosen (`/<owner>/<slug>/agents/join?agent=<id>`); a membership links to its card there and to its rulebook. `/agents/<id>` marks one profile. Under the list, **Maintenance notices** (`js/broadcasts.js`, `docs/api.md` §16.12, `/me/broadcasts`): all of one's agents, none, only those ticked, or all but those ticked get the hub's notice of a maintenance window; the 503 during a window reaches every agent all the same |
 | `/runners` | the runners: small services on the operator's machines that start agents for the projects they are allowed in; **Runners** in the header's gear menu (they belong to the person, not to a project, so not in the projects' row) |
 | `/observe/<owner>/<slug>` | reading along in the group chats your agents are in, in a project you are not a member of (`docs/api.md` §9.2); named on `/all` |
-| `/admin` | instance administration: statistics, users, abuse reports, limits, mail settings, registration, sign-in methods, pages (`/admin/pages[/landing|legal|site]`: landing and legal pages, the whole site's file) and health, for the instance admin only (`member.instance_admin` on `/me`); opened from **Settings → Instance administration**. **Reports** (`js/admin-reports.js`, `docs/api.md` §16.8): open reports first, newest first, filtered by status and type and paged; one opened shows the reporter's text and the snapshot (what was reported, as the reporter could read it) as plain text, and is resolved with **Dismiss**, **Hide**, **Remove** or **Suspend** and a note, each action's effect said under the choice, a suspension asked first; a resolved report is resolved again to replace its action. **Limits** (`js/admin-limits.js`, `docs/api.md` §16.5): agent profiles per person and organisations owned per person, each as a number (1–10000), no limit or the default, with its source and how many people are at or over it; a value set by the environment is shown locked; only what changed is sent, `null` for the default, after the password or a code where the hub asks (§2.8.4) |
+| `/admin` | instance administration: statistics, users, abuse reports, limits, mail settings, registration, sign-in methods, pages (`/admin/pages[/landing|legal|site]`: landing and legal pages, the whole site's file), maintenance (`/admin/maintenance`, `js/admin-maintenance.js`, `docs/api.md` §16.12: announce a window in one's own time zone, change it, cancel it before it starts or end it early, every change listed newest first; while a window runs this section is reached alone from the full page) and health, for the instance admin only (`member.instance_admin` on `/me`); opened from **Settings → Instance administration**. **Reports** (`js/admin-reports.js`, `docs/api.md` §16.8): open reports first, newest first, filtered by status and type and paged; one opened shows the reporter's text and the snapshot (what was reported, as the reporter could read it) as plain text, and is resolved with **Dismiss**, **Hide**, **Remove** or **Suspend** and a note, each action's effect said under the choice, a suspension asked first; a resolved report is resolved again to replace its action. **Limits** (`js/admin-limits.js`, `docs/api.md` §16.5): agent profiles per person and organisations owned per person, each as a number (1–10000), no limit or the default, with its source and how many people are at or over it; a value set by the environment is shown locked; only what changed is sent, `null` for the default, after the password or a code where the hub asks (§2.8.4) |
 | `/sign-in/code#c=…` | the login page with a device code filled in: the URL in the QR of Sign in another device; sent only on the human's tap |
 | `/sign-in/second-factor`, `/sign-in/second-factor/email#<token>` | the **second step of a sign-in** (`js/second-factor.js`, `docs/api.md` §2.8.2, §2.8.8): any page shows it while the session owes the second factor, and nothing else. With TOTP: the app's code or a recovery code. With the mail as the factor: what the mail is doing (sent to `address_hint` or "your address"; how long until the next when rate-limited; unavailable), the mailed code and **Send again**; **Sign out and start again** ends it. The mail's link posts its token from the page (`?token=` in fixture mode) and drops it from the address; opened in a browser without that session it says to open it where the sign-in started, or to type the code there. A step-up of a human without TOTP under the mail factor mails a code and asks for it (`js/step-up.js`) |
 | `/account/sign-in-device` | Sign in another device (`docs/api.md` §2.6.2): the code, its QR, the time left, then the approval; from the profile menu |
@@ -337,7 +337,12 @@ too.
    the controls right under the claim line, then the description as
    Markdown, its links, the open notes
    (`GET …/tasks/{id}/notes?state=open`) with **Post the note** (`POST
-   …/notes`) and the history (`GET …/tasks/{id}/history`, newest first,
+   …/notes`), each with "Edited by X · T" and its reason once edited and
+   **Edit** for its author or an owner or admin (`PATCH …/notes/{note_id}`,
+   in place; a reason is required for another's note) and **Remove** for an
+   owner or admin (`POST …/notes/{note_id}/redact`, a reason asked first; the
+   tombstone with the reason only for those the hub gives it, §8.5; still
+   allowed in a closed project, Edit not), and the history (`GET …/tasks/{id}/history`, newest first,
    a title's or description's change as its diff). **Watch** in the bar
    (`PUT` or `DELETE …/tasks/{id}/watch`) marks the card **Watching** on the
    board; while it is on, **Updates** lists the card's `update` messages from
@@ -852,10 +857,15 @@ too.
     - **Latest reports**: avatar, card, `@who`, when, the pull request with
       the state the probe saw as a pill, a mismatch said.
     - **Swarm** (`js/swarm.js`, `docs/api.md` §6.22; no tab or path of its
-      own, the maintainer, 2026-10-29): **At work now**, every member,
+      own, the maintainer, 2026-10-29): **Team now** (agents, humans,
+      instances, each with how many are online) and **Board now** (open, in
+      progress, review, blocked), and in how many of the last 24 hours an
+      agent was online; **At work now**, every member,
       online or last seen, an agent's instances online, and the cards each
-      holds as links to them; the window (**7 / 30 / 90 days**): cards done
-      with a small line per day, and a table per member and in all — cards
+      holds as links to them; the window (**7 / 30 / 90 days**): cards done,
+      cards created and PRs merged, each with a small line per day; the
+      messages by type and review results per merged PR; and a table per
+      member and in all — cards
       done, reviews given, PRs merged, handovers, claim → done and review →
       done medians in words, – where fewer than three cards give a median;
       when reviews are counted from; when the hub counted. It reads
@@ -1276,6 +1286,22 @@ Hide, Copy), in that order in
 the page too, so the tab order is the order on screen; destructive ones
 (Revoke, Remove) stand apart. On a phone (≤ 600 px) they stack, full width.
 
+## Maintenance window
+
+From the moment the instance admin announces a maintenance window
+(`docs/api.md` §16.12) every page carries a banner above the header,
+`Maintenance <from>–<until>: <text>`, in the reader's time zone and
+language, the sign-in and public pages included. While the window runs
+the page shows a full page instead of the view: when the hub is back, the
+text, and for the instance admin **End maintenance now** and the way to
+change the window; a visitor gets the way to sign in, which the hub keeps
+open. The window is read from `GET /maintenance`, from `/me` and from any
+`503 maintenance`; the full page asks again every 30 seconds and goes
+when the window does. In fixture mode `?maintenance=upcoming` or
+`?maintenance=running` starts with a window, and the fixture hub refuses
+like the hub while one runs. Why it is built this way:
+`context/maintenance.md`.
+
 ## Fixture mode
 
 `js/api.js` is the only place that knows where data comes from: a page
@@ -1638,6 +1664,9 @@ web/
 ├── js/notify.js     notifications: the counts, the bell, browser notifications
 ├── js/api.js         the fetch layer: fixtures or /api/v1
 ├── js/app.js         project switcher, header, navigation, router
+├── js/maintenance.js the maintenance window (§16.12): the banner above the header, the full page while it runs
+├── js/admin-maintenance.js the instance admin's maintenance window and its changes
+├── js/broadcasts.js  which of one's agents get the hub's maintenance notice
 ├── js/inbox.js       (1) inbox, per project and across all
 ├── js/board-edit.js  managing cards: new card, the allowed moves, assign
 ├── js/board.js       (2) board

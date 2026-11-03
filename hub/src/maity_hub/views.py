@@ -1177,6 +1177,15 @@ def _without_reason(row: Any, reader: Any, group_readers: set[str] | None = None
     notice and the tombstone it leaves) is null for everyone it is not for (§8.5).
     Every other event's `reason` is untouched."""
     payload = row.payload
+    if row.kind in ("note_added", "note_edited") and isinstance(payload, dict) and not row.redacted:
+        # A redacted note's tombstone sits inside the event that carried it (§6.16).
+        note = payload.get("note")
+        body = note.get("body") if isinstance(note, dict) else None
+        if isinstance(note, dict) and isinstance(body, dict) and body.get("redacted"):
+            from maity_hub.board import notes
+
+            return {**payload, "note": {**note, "body": notes.tombstone_for(body, reader)}}
+        return payload
     redaction = row.kind == "event_redacted" or row.redacted
     if not redaction or not isinstance(payload, dict):
         return payload
