@@ -182,6 +182,10 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
                 # As of now, not as of the call's start: an isolation that committed since
                 # reads nothing more (§6.2, "Isolation").
                 row = conn.execute(select(t.membership).where(t.membership.c.id == mine.id)).one()
+                if waking and events.is_isolated(row):
+                    # Ended here too, not only by the process that isolated it: that one's
+                    # registry holds only its own waits (hub/context/replicas.md).
+                    return None
             if waking:
                 rows, examined = events.read_waking(
                     conn,

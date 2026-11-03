@@ -254,9 +254,16 @@ def test_a_signed_requests_nonce_is_refused_on_the_other_process(
 def test_a_workers_pass_runs_once_per_interval_over_both_processes(
     hubs: tuple[Hub, Hub], migrated: Engine
 ) -> None:
-    """The mail worker looks every 5 seconds in each process, whether or not there is mail. A
-    trigger writes down every pass: polling the row would miss a second pass right after the first,
-    and two processes started together tick that close."""
+    gaps = passes_of_the_mail_worker(migrated)
+    assert len(gaps) >= 1, gaps
+    assert min(gaps) >= outbox.INTERVAL, gaps
+
+
+def passes_of_the_mail_worker(migrated: Engine) -> list[float]:
+    """The seconds between the mail worker's passes over four of its intervals. It looks every
+    5 seconds in each process, whether or not there is mail. A trigger writes down every pass:
+    polling the row would miss a second pass right after the first, and two processes started
+    together tick that close."""
     with migrated.begin() as conn:
         conn.execute(text("CREATE TABLE pass_seen (started_at timestamp NOT NULL)"))
         conn.execute(
@@ -283,6 +290,4 @@ def test_a_workers_pass_runs_once_per_interval_over_both_processes(
             conn.execute(text("DROP TRIGGER note_pass ON worker_run"))
             conn.execute(text("DROP FUNCTION note_pass()"))
             conn.execute(text("DROP TABLE pass_seen"))
-    gaps = [(b - a).total_seconds() for a, b in zip(seen, seen[1:], strict=False)]
-    assert len(gaps) >= 1, seen
-    assert min(gaps) >= outbox.INTERVAL, gaps
+    return [(b - a).total_seconds() for a, b in zip(seen, seen[1:], strict=False)]

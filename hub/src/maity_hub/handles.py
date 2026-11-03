@@ -49,11 +49,13 @@ def held_for_instance(conn: Connection, handle: str) -> bool:
     return handle in _instance_names and holder(conn, HUMANS, handle) is None
 
 
-def unserved_instance_names(conn: Connection) -> tuple[list[str], list[str]]:
-    """The listed names the hub warns about at start (§11.4): those held because nobody has
-    them, and those that are only an alias, whose namespace is not served under that name."""
+def unserved_instance_names(conn: Connection, names: frozenset[str]) -> tuple[list[str], list[str]]:
+    """The listed `names` the hub warns about at start (§11.4): those held because nobody has
+    them, and those that are only an alias, whose namespace is not served under that name. Given
+    from the settings, not the held set: the parent of several workers checks before any app
+    (and so `hold_instance_names`) exists."""
     held, aliases = [], []
-    for name in sorted(_instance_names):
+    for name in sorted(names):
         found = holder(conn, HUMANS, name)
         if found is None:
             held.append(name)

@@ -72,7 +72,7 @@ them; the unit tests of each piece stand in for the other process.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** `events.transaction` and `Notifier` (events.py:45-110), `longpoll.Registry` (longpoll.py:35-79), `routes/events.py` (`FALLBACK_SECONDS = 2.0`), `routes/notifications.py` (polled `listing.stamp` every 0.5 s; on PostgreSQL now held by `wakeups.held`, at the latest every 2 s), `listening.py`; PostgreSQL documentation of `NOTIFY` (delivered at commit, never for a rolled-back transaction, payload under 8000 bytes); points 1 and 2 built in `events.emit`, `wakeups` and `MAITY_DIRECT_DATABASE_URL` (card tsk-kckyhv9vdrrp), 2026-10-31; point 3 built in `wakeups.opened` and `wakeups.supersede` (card tsk-ywss353vk5q2), 2026-10-31; point 4 built in `listening` and migration `20261031125530_long_polls` (card tsk-5mspd6ftkacq), 2026-10-31; point 5 built in `wakeups.held` and `wakeups.ring` (card tsk-az67x29mc2yg), 2026-10-31
+**Source:** `events.transaction` and `Notifier` (events.py:45-110), `longpoll.Registry` (longpoll.py:35-79), `routes/events.py` (`FALLBACK_SECONDS = 2.0`), `routes/notifications.py` (polled `listing.stamp` every 0.5 s; on PostgreSQL now held by `wakeups.held`, at the latest every 2 s), `listening.py`; PostgreSQL documentation of `NOTIFY` (delivered at commit, never for a rolled-back transaction, payload under 8000 bytes); points 1 and 2 built in `events.emit`, `wakeups` and `MAITY_DIRECT_DATABASE_URL` (card tsk-kckyhv9vdrrp), 2026-10-31; point 3 built in `wakeups.opened` and `wakeups.supersede` (card tsk-ywss353vk5q2), 2026-10-31; point 4 built in `listening` and migration `20261031125530_long_polls` (card tsk-5mspd6ftkacq), 2026-10-31, its stop dropping the queue in `listening.stop` (card tsk-xz3bxa5cwv4v, review on #1256), 2026-11-03; point 5 built in `wakeups.held` and `wakeups.ring` (card tsk-az67x29mc2yg), 2026-10-31
 **Revisit when:** NOTIFY throughput or the listener connection shows up as a limit in the load test (a transaction that notified takes a database-wide lock on the notification queue at commit, so notifying writers serialise there; the load test measures commit latency for it), or a wake-up is measured late across pods, or `pg_notification_queue_usage()` climbs
 
 Today a commit wakes only the waiters of the process that committed (`notifier.notify` after
@@ -154,6 +154,13 @@ design:
      closes many times an hour per agent.
    - SQLite and MariaDB, which run one replica, create the tables as ordinary ones and never
      write them; the registry stays in the process there.
+   - **A stop drops what is still queued** (tsk-xz3bxa5cwv4v, #1256 and its follow-up): each
+     writer ends on its own signal, after the write it is in, and the opens and closes still in
+     the queue are dropped, since the stop deletes the pod's rows right after anyway. Rejected:
+     working the queue off before the writer ends, which makes a stop wait for a database that
+     may be the very thing holding the writer (a lock, a failover); and leaving the rest to the
+     next writer, which in tests wrote one app's waits into the next app's database. In
+     production a stop only comes with a pod's shutdown.
 5. **The bell and the device-code waits** (0.5 s and 0.25 s polls of the database per open wait)
    move onto the wake-ups on PostgreSQL (`wakeups.held`, `Held.pause`): a held wait sleeps until
    something wakes it, at the latest `FALLBACK_SECONDS` (2 s), and then compares its stamp or
@@ -766,3 +773,65 @@ SQLite, the later arrival still takes over.
 **Rejected alternatives:**
 - Entering before the announcement, so that arrival and start share an order: the start comes from the database, and the wait
   would have to hold a key it has no start for.
+
+## Several workers per pod: uvicorn's supervisor, each process a replica of its own
+
+**Id:** 4e24abd8-ab64-4844-897b-629bfa211f6d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-hnp19jx1ajvx; the maintainer's rule for the scaling cards (2026-11-03): the single-server hub (one process, SQLite, local attachments) stays the default and keeps working, every scaling path is opt-in; `serving.py`, `cli._serve_workers`, `tests/test_workers.py`; uvicorn 0.54 `supervisors.multiprocess`
+**Revisit when:** uvicorn's `Multiprocess` changes how it builds a worker's `Server`, or the load test shows that more workers per pod buy less than more pods
+
+`MAITY_WORKERS` (chart: `config.workers`) sets how many processes `maity-hub serve` runs on one
+socket. The default is 1, and 1 is the hub as it always was: one process, no supervisor, any
+database. More than one is refused at start on anything but PostgreSQL, since the processes share
+wake-ups, nonces, limits and worker passes only through it. Each process is a replica in every
+sense the entries above use: its own `listening.POD`, its own LISTEN connection, its own
+`hub_pod` row, its own claims in `worker_run`. Nothing in the coordination knows about pods,
+only about processes.
+
+- **The pool is the hub's total.** `MAITY_DB_POOL_SIZE` and `MAITY_DB_MAX_OVERFLOW` keep their
+  meaning for the operator; each process holds its share, rounded down, so raising the workers
+  never adds to the connections asked of the database (entry on connections above). A share
+  below two pooled connections is refused at the start: a request may hold its transaction's
+  connection while a shared count or the forge budget takes a second from the same pool (entry
+  2bd65fec), and a process with one waits on itself until the pool's timeout. The listener
+  connections (one per process) and the readiness probe's come on top.
+- **The checks and the one-time work of a start run in the parent** before any worker is
+  spawned: the startup checks (schema, secrets, mail, reserved holders, a required dashboard
+  directory), then `app.start_once` (the generated text, the public pages, the sign-in
+  switches). Each worker checks again at its own start but does no one-time work, so N
+  processes starting together do not race each other. Pods starting together still run
+  `start_once` each: its steps take a lock (`db.xact_lock`, a transaction-level advisory lock
+  that works behind PgBouncer in any mode) or are claimed under one, and the public pages are
+  rendered again page by page, never cleared first, so a sibling serving meanwhile finds the
+  old page or the new one. A worker that fails to build its app exits with uvicorn's start
+  failure, so the supervisor stops and `serve` exits non-zero instead of starting it again and
+  again.
+- **A stop releases the open waits** in every worker, as in one process: the supervisor's
+  processes use the hub's own `Server`, which hands the release to the loop on SIGTERM.
+- The request stats line names its process (`pid=`), since each process counts its own.
+- **What stays per process** is what stays per pod (the "Weaker" list at the top): caches,
+  `registration.DROPPED`, the forge budget's in-flight count, the stats. An isolation ends the
+  isolated agent's waits at once in the process that ran it; a wait held by another process
+  ends at its next read, within the two-second fallback.
+- A worker that dies leaves its `hub_pod` row until it goes stale, as a dead pod does; the
+  supervisor starts a new one. uvicorn's SIGTTIN adds a process past `MAITY_WORKERS` and past
+  the pool's split: not a way to scale the hub.
+- **Memory** grows with the processes (about 130 MB each when idle): the chart's memory limit
+  has to grow with `config.workers`.
+
+The opt-in default is the maintainer's rule (confirmed); the reasons below are inferred.
+
+**Reason:** a pod with several cores served one event loop; a second process per pod uses them
+without a second pod, its own scheduling and its own share of node memory. The coordination for
+replicas was already per process, so workers needed no new shared state.
+
+**Rejected alternatives:**
+- **Gunicorn with uvicorn workers:** a second server to install and configure for what uvicorn's
+  own supervisor does, and one more dependency in the image.
+- **Several workers on SQLite:** each process would wake only its own waits and count its own
+  nonces and limits; the refusal keeps the single-server setup on the path that is correct.
+- **The pool per process:** simpler to explain, but the database's connection limit would then
+  depend on two settings multiplied, and a raised `MAITY_WORKERS` could exhaust it.

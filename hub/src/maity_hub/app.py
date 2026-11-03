@@ -168,7 +168,78 @@ def serving_engine(settings: Settings) -> Engine:
     )
 
 
-def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
+def check_startup(engine: Engine, settings: Settings) -> None:
+    """What stops a hub before it serves: the schema, the mail settings, the secrets. Raised as
+    `SchemaNotCurrentError` or `ConfigError`. Run by every process at its start, and by the
+    parent of several workers before it starts them, so a hub that cannot start says so once
+    instead of each worker failing and being started again."""
+    require_current_schema(engine)
+    with engine.connect() as conn:
+        holders = namespace.reserved_holders(conn)
+        if holders:  # `maity-hub migrate` refuses these; a hub started past it says so
+            log.error("words that docs/api.md §16.11 reserves are held: %s", ", ".join(holders))
+        held, aliases = handles.unserved_instance_names(conn, settings.forge_instance_namespaces)
+        for name in held:
+            log.warning(
+                "MAITY_FORGE_INSTANCE_NAMESPACES lists %r, which nobody has: it is held for "
+                "the operator until it is created or taken off the list (§11.4)",
+                name,
+            )
+        for name in aliases:
+            log.warning(
+                "MAITY_FORGE_INSTANCE_NAMESPACES lists %r, a former name: its namespace is "
+                "served only under its current handle (§11.4)",
+                name,
+            )
+        try:
+            mail.check_at_startup(conn, settings.mail, settings.secret_key)
+        except MailConfigError as error:
+            raise ConfigError(str(error)) from None
+        # The environment's `email` takes effect at once, so it may not lock out every
+        # human without TOTP at the start (§2.8.8).
+        if settings.sign_in_second_factor == "email" and not mail_factor.mail_ready(conn, settings):
+            raise ConfigError(
+                "MAITY_SIGN_IN_SECOND_FACTOR=email needs complete, enabled mail settings"
+            )
+    check_secrets(engine, settings.secret_key)
+
+
+def start_once(engine: Engine, settings: Settings) -> None:
+    """What a start does to the database once, before the hub serves: in the one process, or in
+    the parent of several workers before any is spawned, so that they do not race each other
+    (hub/context/replicas.md, "Several workers per pod"). Pods starting together are safe too:
+    each step is claimed under a lock or is a no-op the second time."""
+    with transaction(engine) as conn:  # an event wakes the long-polls once it commits
+        # The hub's own generated text is a rules input: a start with other text bumps
+        # every project that has not counted it, once (§6.9).
+        rules.sync_text(conn)
+    # Every public page again before any is served (§16.9), then the safety net's worker.
+    public_pages.startup(engine, settings)
+    with engine.begin() as conn:
+        # A method the environment switched off voids its open codes at once (§2.6.5).
+        if not sign_in.device_code_enabled(conn, settings):
+            codes.void_open(conn)
+        if not sign_in.email_link_enabled(conn, settings):
+            from maity_hub.auth import email_links
+
+            email_links.void_open(conn)
+        # A second factor the environment switched off is told, once (§2.8.5).
+        source = sign_in.resolve(conn, settings)["second_factor"][1]
+        sign_in.note_second_factor(conn, settings, "environment" if source == "env" else "admin")
+
+
+def check_web_dir(settings: Settings) -> None:
+    """`ConfigError` when a required dashboard directory is missing (`_mount_web`), checked
+    before anything starts."""
+    web_dir = settings.web_dir
+    if settings.web_dir_required and (web_dir is None or not web_dir.is_dir()):
+        raise ConfigError(f"MAITY_WEB_DIR {web_dir} is not a directory")
+
+
+def create_app(
+    settings: Settings, engine: Engine | None = None, *, started: bool = False
+) -> FastAPI:
+    """The hub's app. `started`: a worker of several, whose parent ran `start_once`."""
     engine = engine if engine is not None else serving_engine(settings)
     health_engine = make_health_engine(engine)  # the probe's own connection, outside the pool
     write_guard.install(engine)  # no write of a deleted account commits (§2.9)
@@ -177,56 +248,11 @@ def create_app(settings: Settings, engine: Engine | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        require_current_schema(engine)
-        with engine.connect() as conn:
-            holders = namespace.reserved_holders(conn)
-            if holders:  # `maity-hub migrate` refuses these; a hub started past it says so
-                log.error("words that docs/api.md §16.11 reserves are held: %s", ", ".join(holders))
-            held, aliases = handles.unserved_instance_names(conn)
-            for name in held:
-                log.warning(
-                    "MAITY_FORGE_INSTANCE_NAMESPACES lists %r, which nobody has: it is held for "
-                    "the operator until it is created or taken off the list (§11.4)",
-                    name,
-                )
-            for name in aliases:
-                log.warning(
-                    "MAITY_FORGE_INSTANCE_NAMESPACES lists %r, a former name: its namespace is "
-                    "served only under its current handle (§11.4)",
-                    name,
-                )
-            try:
-                mail.check_at_startup(conn, settings.mail, settings.secret_key)
-            except MailConfigError as error:
-                raise ConfigError(str(error)) from None
-            # The environment's `email` takes effect at once, so it may not lock out every
-            # human without TOTP at the start (§2.8.8).
-            if settings.sign_in_second_factor == "email" and not mail_factor.mail_ready(
-                conn, settings
-            ):
-                raise ConfigError(
-                    "MAITY_SIGN_IN_SECOND_FACTOR=email needs complete, enabled mail settings"
-                )
-        check_secrets(engine, settings.secret_key)
-        with transaction(engine) as conn:  # an event wakes the long-polls once it commits
-            # The hub's own generated text is a rules input: a start with other text bumps
-            # every project that has not counted it, once (§6.9).
-            rules.sync_text(conn)
-        # Every public page again before any is served (§16.9), then the safety net's worker.
-        public_pages.startup(engine, settings)
-        with engine.begin() as conn:
-            # A method the environment switched off voids its open codes at once (§2.6.5).
-            if not sign_in.device_code_enabled(conn, settings):
-                codes.void_open(conn)
-            if not sign_in.email_link_enabled(conn, settings):
-                from maity_hub.auth import email_links
-
-                email_links.void_open(conn)
-            # A second factor the environment switched off is told, once (§2.8.5).
-            source = sign_in.resolve(conn, settings)["second_factor"][1]
-            sign_in.note_second_factor(
-                conn, settings, "environment" if source == "env" else "admin"
-            )
+        check_startup(engine, settings)
+        if started:  # a worker: its parent did the one-time work (`cli._serve_workers`)
+            public_pages.configure(settings)
+        else:
+            start_once(engine, settings)
         reader = forge.Forge(settings.forge_github_token, access=_app.state.forge_access)
         # The owner's grants read too (§11.4): an App, or tokens sealed with the key.
         sources = (settings.forge_github_token, settings.github_app, settings.secret_key)
@@ -503,7 +529,7 @@ def _mount_web(app: FastAPI, settings: Settings) -> None:
         app.router.routes.append(Mount("/assets", app=AssetFiles(directory=web_dir), name="assets"))
         app.router.routes.append(ShellRoute(web_dir, settings.public_url))
     elif settings.web_dir_required:
-        raise ConfigError(f"MAITY_WEB_DIR {web_dir} is not a directory")
+        check_web_dir(settings)
     elif web_dir is None:
         log.warning("no dashboard configured (MAITY_WEB_DIR); serving the API only")
     else:

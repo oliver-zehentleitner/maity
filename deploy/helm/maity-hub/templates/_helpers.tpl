@@ -181,6 +181,8 @@ the chart.
 {{- end }}
 - name: MAITY_ALLOW_PLAIN_HTTP
   value: {{ ternary "1" "0" .Values.config.allowPlainHttp | quote }}
+- name: MAITY_WORKERS
+  value: {{ .Values.config.workers | int | toString | quote }}
 {{- if not .Values.config.dashboard }}
 - name: MAITY_WEB_DIR
   value: ""

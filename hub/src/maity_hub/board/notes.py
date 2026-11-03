@@ -104,6 +104,7 @@ def view(row: Any, authors: dict[int, dict[str, Any]], reader: Any = None) -> di
         "state": row.state,
         "resolution": row.resolution,
         "edited": {**row.edited, "by": authors[row.edited["by"]]} if row.edited else None,
+        "version": row.version,
         "created_at": clock.rfc3339(row.created_at),
         **({"redacted": True} if row.redacted else {}),
     }
@@ -112,12 +113,21 @@ def view(row: Any, authors: dict[int, dict[str, Any]], reader: Any = None) -> di
 def redact(conn: Connection, project_id: str, row: Any, mark: dict[str, Any]) -> bool:
     """Tombstone the body, empty the mentions, drop the edit mark (an edit's reason is the
     editor's words about the old text), and redact the note in every event that carries it
-    the same way. Only the one redaction that wins the conditional UPDATE
-    announces."""
+    the same way. The UPDATE holds only on the version the redactor read (`row.version`),
+    so a note edited meanwhile is not redacted unseen (§6.16). Only the one redaction that
+    wins the conditional UPDATE announces."""
+    c = t.card_note.c
     won = conn.execute(
         update(t.card_note)
-        .where(t.card_note.c.id == row.id, t.card_note.c.redacted.is_(False))
-        .values(body=None, mentions=[], edited=None, redacted=True, redaction=mark)
+        .where(c.id == row.id, c.redacted.is_(False), c.version == row.version)
+        .values(
+            body=None,
+            mentions=[],
+            edited=None,
+            redacted=True,
+            redaction=mark,
+            version=c.version + 1,
+        )
     ).rowcount
     if won != 1:
         return False
@@ -126,7 +136,7 @@ def redact(conn: Connection, project_id: str, row: Any, mark: dict[str, Any]) ->
     public_pages.touch(conn, "card", row.card_id)  # a public card page shows its notes (§16.9)
     for event in carriers(conn, project_id, row):
         note = dict(event.payload.get("note") or {})
-        note.update(body=mark, mentions=[], edited=None)
+        note.update(body=mark, mentions=[], edited=None, version=row.version + 1)
         rewrite(conn, event, note)
     return True
 
@@ -134,13 +144,15 @@ def redact(conn: Connection, project_id: str, row: Any, mark: dict[str, Any]) ->
 def edit(
     conn: Connection, row: Any, body: str, found: list[dict[str, Any]], mark: dict[str, Any]
 ) -> bool:
-    """Replace the body and its mentions in place; a redacted note is never edited, also
-    when a redaction won the race to the row."""
+    """Replace the body and its mentions in place, one version up; only on the version the
+    editor read (`row.version`) and never on a redacted note, also when another write won
+    the race to the row. False when it did: the caller reads the row again and says why."""
+    c = t.card_note.c
     return (
         conn.execute(
             update(t.card_note)
-            .where(t.card_note.c.id == row.id, t.card_note.c.redacted.is_(False))
-            .values(body=body, mentions=found, edited=mark)
+            .where(c.id == row.id, c.redacted.is_(False), c.version == row.version)
+            .values(body=body, mentions=found, edited=mark, version=c.version + 1)
         ).rowcount
         == 1
     )

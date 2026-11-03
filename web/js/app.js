@@ -276,6 +276,11 @@ window.Maity = window.Maity || {};
     ];
   }
 
+  function projectLinkRow(project) {
+    const links = projectLinks(project).flat().filter(Boolean);
+    return links.length ? h("div", { class: "project-links" }, links) : null;
+  }
+
   function releasedMark(project) {
     if (!project || !project.released_at) return null;
     return h("span", { class: "state released", title: M.t("project.released.since", { day: releasedDay(project) }) }, M.t("project.released"));
@@ -345,6 +350,8 @@ window.Maity = window.Maity || {};
       keptHandle = handle.value;
       await M.i18n.choose(site.value);
       renderLogin(main, note);
+      // The page is drawn here, not through `render`: the banner of a window follows the language too.
+      M.maintenance.drawBanner();
     });
     const password = h("input", { id: "login-password", name: "password", type: "password", autocomplete: "current-password", required: true });
     const status = statusLine();
@@ -1390,7 +1397,23 @@ window.Maity = window.Maity || {};
     if (!chat || !ctx.chatFound || !M.leadChat) return;
     const lead = M.leadChat.leadControl(ctx, ctx.chatFound);
     if (lead) me.insertBefore(lead, chat);
+    leadOnChats();
   }
+  // On a phone the header has no room for the Lead button (the maintainer, tsk-m9ew7v609fq0):
+  // it is hidden there and stands on the Chats page instead, where the Chat button leads.
+  // Drawn by whichever comes last, the header's lookup or the page; the page's slot is kept,
+  // since a view is built before it is in the document.
+  let chatsLeadSlot = null;
+  function leadOnChats(given) {
+    if (given) chatsLeadSlot = given;
+    const header = document.getElementById("header");
+    const slot = chatsLeadSlot;
+    const ctx = header && header.chatCtx;
+    if (!slot || slot.firstChild || !ctx || !ctx.chatFound || !M.leadChat) return;
+    const lead = M.leadChat.leadControl(ctx, ctx.chatFound);
+    if (lead) slot.appendChild(lead);
+  }
+  M.leadOnChats = leadOnChats;
 
   // The counts changed: only the switcher is replaced, so an open State &
   // absence panel and the tab row's scroll position stay as they are.
@@ -1432,7 +1455,7 @@ window.Maity = window.Maity || {};
     const add = ctx.me.kind === "human" ? M.menuButton({
       label: M.t("menu.add.label"),
       class: "add-menu",
-      face: h("span", { class: "add-face", "aria-hidden": "true" }, "+"),
+      face: M.icons.plus(18),
       items: () => [
         { label: M.t("menu.add.agent"), href: "/agents", current: ctx.scope === "agents" },
         { label: M.t("menu.add.user"), href: "/invite", current: ctx.scope === "invitations" },
@@ -1476,7 +1499,9 @@ window.Maity = window.Maity || {};
         switcher(ctx),
         ctx.scope === "project"
           ? h("div", { class: "project-state", role: "group", "aria-label": M.t("header.state_group") },
-            projectLinks(ctx.project),
+            // On a phone the links are one row that scrolls; the state beside it stays in sight
+            // (the maintainer, tsk-m9ew7v609fq0).
+            projectLinkRow(ctx.project),
             stateBadge(ctx.project.state, ctx.project.state_note),
             releasedMark(ctx.project),
             absence ? h("span", { class: "state away", title: absence.scope }, M.t("header.away_until", { time: formatTime(absence.until) })) : null)
@@ -1497,6 +1522,8 @@ window.Maity = window.Maity || {};
             ALL_PAGES.filter((page) => !page.when || page.when(ctx)).map((page) => h("a", { href: page.href, "aria-current": ctx.scope === page.scope ? "page" : null }, page.label(), allCount(page))))
           : null);
     header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
+    const linkRow = header.querySelector(".project-links");
+    if (linkRow) scrollCue(linkRow);
     // Whom the Lead button reaches: known at once in a project, read for every project outside one.
     header.chatCtx = ctx;
     if (M.leadChat) {
@@ -1772,11 +1799,17 @@ window.Maity = window.Maity || {};
 
   // §16.12 While a window runs, for a signed-in caller (`me`: /me's member): the full page; the
   // instance admin's own window alone at /admin/maintenance, the one admin section the hub still answers.
+  // `POST /auth/logout` stays open in a window (§16.12): on a shared computer the way out, on every
+  // page a window holds a signed-in session on.
+  function maintenanceSignOut() {
+    return h("button", { type: "button", class: "maintenance-sign-out", onclick: () => logout() }, M.t("menu.sign_out"));
+  }
+
   function heldPage(main, me, where) {
     const header = document.getElementById("header");
     if (me.instance_admin && where.scope === "instance-admin" && where.section === "maintenance" && M.adminMaintenance) {
       M.maintenance.aware();
-      append(clear(header), h("div", { class: "bar" }, brandTitle(true)));
+      append(clear(header), h("div", { class: "bar" }, brandTitle(true), themeMenu(), maintenanceSignOut()));
       const root = h("section", { class: "view view-instance-admin" }, h("p", null, h("a", { href: "/all" }, M.t("maintenance.back"))));
       const part = h("section", { class: "panel admin-section", id: "admin-maintenance", "aria-label": M.t("admin.maintenance.title") });
       append(root, part);
@@ -1785,9 +1818,7 @@ window.Maity = window.Maity || {};
       document.title = M.t("admin.maintenance.title") + " · Maity";
       return true;
     }
-    // `POST /auth/logout` stays open in a window (§16.12): on a shared computer the way out.
-    const signOut = h("button", { type: "button", class: "maintenance-sign-out", onclick: () => logout() }, M.t("menu.sign_out"));
-    return M.maintenance.fullPage(main, header, { me, brand: brandTitle(true), tools: [themeMenu(), signOut] });
+    return M.maintenance.fullPage(main, header, { me, brand: brandTitle(true), tools: [themeMenu(), maintenanceSignOut()] });
   }
 
   let renderSeq = 0;
@@ -1886,7 +1917,7 @@ window.Maity = window.Maity || {};
       // So does one that must set the factor up first (§2.8.5): the setup is its page.
       if (session && session.second_factor === "enrolment_required" && M.security) {
         if (seq !== renderSeq) return;
-        if (M.maintenance.running()) M.maintenance.fullPage(main, document.getElementById("header"), { me: null, brand: brandTitle(true) });
+        if (M.maintenance.running()) M.maintenance.fullPage(main, document.getElementById("header"), { me: null, brand: brandTitle(true), tools: [themeMenu(), maintenanceSignOut()] });
         else renderEnrolment(main);
         return;
       }
@@ -2097,7 +2128,7 @@ window.Maity = window.Maity || {};
   // Back, forward, a link of the dashboard, M.route.go: the view follows.
   M.route.listen(() => { if (!followingRoute || !followingRoute(parseRoute())) render(); });
   window.addEventListener("resize", () => {
-    document.getElementById("header").querySelectorAll("nav").forEach(updateCue);
+    document.getElementById("header").querySelectorAll("nav, .project-links").forEach(updateCue);
   });
   M.maintenance.onChange(() => render());
   document.addEventListener("DOMContentLoaded", render);

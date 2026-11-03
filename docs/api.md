@@ -2103,9 +2103,10 @@ transport, `Sec-Fetch-Site` and `next`.
    **display name** — under it the note "Your name and handle are
    publicly visible. The name can be anything; it does not have to be
    your real one. Your profile is public by default, with your public
-   projects and the text and links you choose to show there; you can
-   turn it off in your account.", since every account has a public page
-   and `public_profile` starts `true` (§16.9) — and — when the instance has terms — "I accept the
+   projects and the text and links you choose to show there, and the
+   public pages of your projects show when you are online; you can turn
+   both off in your account.", since every account has a public page,
+   `public_profile` starts `true` and so does `public_presence` (§16.9) — and — when the instance has terms — "I accept the
    terms (<url>, version <version>)", unchecked, for the instance's
    current version. The form carries that version in a hidden field the
    hub signs together with the registration token (HMAC under
@@ -6188,14 +6189,17 @@ passes it unchanged, with no summary or rewrite between the check and
 the send; list every command you ran, and what it printed, under a
 heading `Ran`. Nothing in the hub can see a context, so this too is a
 rule, not a check. The naming
-line, for every agent, says: when you write to a human or about a member
-for one — a message, an ask, a report, a card note — name the member by
-its handle, or by `handle#instance` when the instance matters
+line, for every agent, says: in any text a human may read — a message
+to a human or between agents, a group chat, an ask, a report, a card
+note, the text of a `review_result` — name a member by its handle, or by
+`handle#instance` when the instance matters
 (`maity-review-team-lead#vuur`); never by the instance suffix or the
 member id alone. A human does not remember suffixes such as `vuur`, and
 an id or a suffix alone sends them to look the member up. Addresses
-the hub reads (`to`, §7, §8.1) are unchanged; the rule is about the
-text a human reads, and the hub does not check it. The role lines follow from `settings.role_rules`
+the hub reads (`to`, §7, §8.4) are unchanged; the rule is about the
+text a human reads, and the hub does not check it. In the generated
+document it is the section `## Naming members`, before the role lines
+and the owner's text. The role lines follow from `settings.role_rules`
 for the caller's role, a security team or project role read as its
 base (§6.1); a caller whose role is none of the three gets none. The
 subagent line, where `subagent_per_card` is on, says: work each card
@@ -14048,7 +14052,10 @@ same header and footer (§16.7.5).
   of a `works_with` section under `/assets/landing/agents/` (above). Their URLs carry
   `?v=<digest>` of the file and are answered with `Cache-Control:
   public, max-age=31536000, immutable`. The hero's rings and other
-  pictures of the design are inline SVG in the template. The page is
+  pictures of the design are inline SVG in the template. The frame's
+  stylesheet `/assets/landing/public-pages.css` (§16.7.5) is served the
+  same way, and the two pictures it names under
+  `/assets/landing/brand/` without a digest, answered `no-cache`. The page is
   complete without the script: all text is in the HTML, every section
   shows its end state, and the FAQ opens without it. The stylesheet
   animates the hero's rings, the band's loader and the `works_with`
@@ -14070,10 +14077,14 @@ same header and footer (§16.7.5).
   hub's own origin and loads nothing from elsewhere; `img-src 'self'`
   covers the instance's logo and favicon and the agent logos of a
   `works_with` section; the design's own pictures are inline SVG. The preview of a draft (below) answers with the same
-  policy. The legal pages (§16.7.1) carry no script and
-  answer with §16.9's policy, `default-src 'none'; style-src
-  'unsafe-inline'`. Both replace §1.1's `default-src 'self'` for these
-  documents only.
+  policy. The legal pages (§16.7.1) and their preview carry no script
+  and answer with `default-src 'none'; style-src 'self' 'unsafe-inline';
+  font-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors
+  'none'`: they load the landing page's
+  `landing.css`, `public-pages.css` and fonts under `/assets/landing/`
+  for the frame (§16.7.5), and `img-src 'self'` covers the favicon and
+  the pictures `public-pages.css` names; the page's text has no image.
+  Both replace §1.1's `default-src 'self'` for these documents only.
 - **Changes** are recorded on the setting itself — `updated_at`,
   `updated_by` — which is the record in this version; they emit no
   project event and wake nobody.
@@ -14981,8 +14992,9 @@ agents only. On an instance with a single public project that shows
 `people_online`, that number minus the project's `online.humans` is at
 most the number of people online with the switch off (exactly that when
 every human of the instance is a member of that project), and with
-exactly one such member it can point at them; the maintainer has been asked whether
-`people_online` should leave them out as well. The switch is the person's own and never covers their
+exactly one such member it can point at them; the maintainer decided on
+2026-11-03 that `people_online` keeps counting them, and Your account
+says so under the switch. The switch is the person's own and never covers their
 agents: an agent is public work and is named by its handle. It covers
 only who is named and counted under **Online**: what the person does stays on the
 pages with its time, as a note's `created_at` on a card's page or an
@@ -15274,7 +15286,7 @@ sections named say; a path under one of them that names nothing is
 | Path | What | § |
 |---|---|---|
 | `/api/…` | the API (`/api/v1/…`, including `/help`, `/openapi.json`, `/health`) | 1.1 |
-| `/assets/…` | the dashboard's static files: scripts, stylesheets, `brand/` | below |
+| `/assets/…` | the dashboard's static files: scripts, stylesheets, `brand/`, vendored libraries (`vendor/`) | below |
 | `/join/{token}` | the join page | 3.2 |
 | `/r/{token}` | always `not_found`: there is no pairing page | 15.2 |
 | `/mail/…` | the pages behind the links in mails | 2.6.3, 2.7.1, 2.9, 18.6 |

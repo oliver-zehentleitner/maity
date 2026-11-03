@@ -106,6 +106,13 @@ window.Maity = window.Maity || {};
     return prefix + "-local-" + counter;
   }
 
+  // An edit or a removal names the note's version it was made on (§6.16):
+  // without one `invalid`, on another `conflict` with the note as it is now.
+  function notePrecondition(note, body, path) {
+    if (typeof body.base_version !== "number") fail(400, "invalid", "base_version: required", path, { fields: { base_version: "required" } });
+    if (body.base_version !== note.version) fail(409, "conflict", "the note changed since", path, { current_version: note.version, base_version: body.base_version, note: JSON.parse(JSON.stringify(note)) });
+  }
+
   function fail(status, code, message, path, details) {
     throw new ApiError(message, status, path, code, details);
   }
@@ -632,6 +639,14 @@ window.Maity = window.Maity || {};
   // member and its whole branch, with their instances not revoked; an instance is online while
   // its presence is online or, not paused, it is dormant, and dormant is a part of online. A
   // paused, suspended (presence paused) or isolated member has no instance online.
+  // §16.3, the test mail's recipient: without `to` the admin's own verified address, else
+  // no_verified_address; an empty `to` is no address, as the hub has it (only an absent or
+  // null one defaults). The refusal's field reason, or null when the mail goes out.
+  function fixtureMailTestTo(body, email) {
+    if (body.to == null) return email && email.address_status === "verified" ? null : "no_verified_address";
+    return String(body.to).trim() ? null : "invalid";
+  }
+
   function fixtureManages(items) {
     const below = {};
     items.forEach((x) => { if (x.reports_to) (below[x.reports_to] = below[x.reports_to] || []).push(x); });
@@ -2429,7 +2444,8 @@ window.Maity = window.Maity || {};
     }],
     ["POST", /^\/admin\/settings\/mail\/test$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
-      if (!body.to) fail(400, "invalid", "Recipient required", path);
+      const refused = fixtureMailTestTo(body, fixtures()["notifications.json"].settings.email);
+      if (refused) fail(400, "invalid", "the request does not validate", path, { fields: { to: refused } });
       const value = fixtures()["admin-mail.json"];
       value.last_test = { ok: true, stage: null, smtp_code: 250, detail: null, at: nowIso() }; return value.last_test;
     }],
@@ -3683,7 +3699,7 @@ window.Maity = window.Maity || {};
       const list = data[key][m[2]] || (data[key][m[2]] = []);
       const who = me().member;
       const note = { id: "nte-f" + String(list.length + 1).padStart(3, "0"), task_id: m[2],
-        author: { member_id: who.id, handle: who.handle, kind: who.kind }, body: text, mentions: [], state: "open", resolution: null, created_at: nowIso() };
+        author: { member_id: who.id, handle: who.handle, kind: who.kind }, body: text, mentions: [], state: "open", resolution: null, edited: null, version: 1, created_at: nowIso() };
       list.push(note);
       card.notes = { open: list.filter((n) => n.state === "open").length, total: list.length };
       return note;
@@ -3698,12 +3714,13 @@ window.Maity = window.Maity || {};
       const own = note.author && note.author.member_id === who.id;
       if (!own && !(who.kind === "human" && ["owner", "admin"].includes(trustIn(m[1])))) fail(403, "forbidden", "not your note", path, { reason: "not_your_note" });
       if (note.body && typeof note.body === "object") fail(400, "invalid", "the note was removed", path, { reason: "redacted" });
+      notePrecondition(note, body, path);
       const text = String(body.body || "");
       const reason = typeof body.reason === "string" && body.reason.trim() ? body.reason.trim() : null;
       if (!text.trim()) fail(400, "invalid", "body: missing", path, { fields: { body: "missing" } });
       if (utf8Bytes(text) > 4096) fail(400, "invalid", "body: too_long", path, { fields: { body: "too_long" } });
       if (!own && !reason) fail(400, "invalid", "reason: required", path, { fields: { reason: "required" } });
-      Object.assign(note, { body: text, edited: { by: { member_id: who.id, handle: who.handle, kind: who.kind }, at: nowIso(), reason } });
+      Object.assign(note, { body: text, edited: { by: { member_id: who.id, handle: who.handle, kind: who.kind }, at: nowIso(), reason }, version: note.version + 1 });
       return note;
     }],
     // A note removed (§6.16, §8.5): events:admin; its body becomes the tombstone.
@@ -3713,7 +3730,10 @@ window.Maity = window.Maity || {};
       const who = me().member;
       if (!(who.kind === "human" && ["owner", "admin"].includes(trustIn(m[1])))) fail(403, "forbidden", "events:admin needed", path, { scope: "events:admin" });
       if (typeof body.reason !== "string" || !body.reason.trim()) fail(400, "invalid", "a reason is required", path, { fields: { reason: "missing" } });
-      Object.assign(note, { body: { redacted: true, reason: body.reason.trim(), by: who.id, at: nowIso() }, mentions: [], edited: null });
+      notePrecondition(note, body, path);
+      // Repeated on the version it left, a redaction changes nothing.
+      if (note.body && typeof note.body === "object") return note;
+      Object.assign(note, { body: { redacted: true, reason: body.reason.trim(), by: who.id, at: nowIso() }, mentions: [], edited: null, version: note.version + 1 });
       return note;
     }],
     ["GET", /^\/projects\/([^/]+)\/tasks\/([^/]+)\/history$/, (m, body, path) => {
@@ -4898,6 +4918,8 @@ window.Maity = window.Maity || {};
     now: () => Date.now() + skew,
     // The fixture hub's `manages` count (§6.2), for the smoke test of its rule.
     fixtureManages,
+    // The fixture hub's rule for the test mail's recipient (§16.3), for the smoke test.
+    fixtureMailTestTo,
     source,
     ApiError,
     get: (path, opts) => request("GET", path, undefined, undefined, opts && opts.signal),

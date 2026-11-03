@@ -47,7 +47,9 @@ mark (GitHub and GitLab their own; Gitea and any other a branch mark),
 **Pull Requests** on GitHub, GitLab, Gitea and Bitbucket, the project's own
 links, and **Why**, the
 Keep the Why dashboard of the family's root (`keep_the_why_export`'s
-member at `path: ""`); each only when its address is plain `https`. At the top right, in this order, are **Chat**, the
+member at `path: ""`); each only when its address is plain `https`. On a
+phone the links are one row that scrolls sideways, the state and the
+absence beside it; what does not fit beside the row wraps under it. At the top right, in this order, are **Chat**, the
 **Lead** button where there is a lead to reach, **"+"**, the gear, the
 bell (notifications) and the profile. **"+"** (humans only) is a menu
 with **Agent** (the agents page, `/agents`) and **User** (the
@@ -94,7 +96,8 @@ picks it with three radio buttons, saying that the choice is kept in this
 browser only. A pick made signed out stays after signing in.
 
 Left of the menus are **Chat** and the **bell**, in that order (Chat,
-Notifications, gear, profile, in one row on a phone too). **Chat** leads
+Notifications, gear, profile, in one row on a phone too; there the
+**Lead** button is hidden and stands on the Chats page instead). **Chat** leads
 to `/chats` with the hub's count of unread chat messages
 (`counts.chat`); the **bell** has the count of every kind but the open
 requests. A badge is a number only, hidden at zero; the words are the
@@ -342,7 +345,10 @@ too.
    in place; a reason is required for another's note) and **Remove** for an
    owner or admin (`POST …/notes/{note_id}/redact`, a reason asked first; the
    tombstone with the reason only for those the hub gives it, §8.5; still
-   allowed in a closed project, Edit not), and the history (`GET …/tasks/{id}/history`, newest first,
+   allowed in a closed project, Edit not); both send the note's `version` as
+   `base_version`, and on `conflict` nothing changes: Edit shows the note as
+   it is now above the writer's own text and saves again on that version,
+   Remove lists the note as it is now (§6.16), and the history (`GET …/tasks/{id}/history`, newest first,
    a title's or description's change as its diff). **Watch** in the bar
    (`PUT` or `DELETE …/tasks/{id}/watch`) marks the card **Watching** on the
    board; while it is on, **Updates** lists the card's `update` messages from
@@ -1295,7 +1301,9 @@ language, the sign-in and public pages included. While the window runs
 the page shows a full page instead of the view: when the hub is back, the
 text, and for the instance admin **End maintenance now** and the way to
 change the window; a visitor gets the way to sign in, which the hub keeps
-open. The window is read from `GET /maintenance`, from `/me` and from any
+open, and a signed-in session **Sign out** in the header, the admin's own
+window and a session that must still set up its second factor included.
+The window is read from `GET /maintenance`, from `/me` and from any
 `503 maintenance`; the full page asks again every 30 seconds and goes
 when the window does. In fixture mode `?maintenance=upcoming` or
 `?maintenance=running` starts with a window, and the fixture hub refuses
@@ -1474,6 +1482,31 @@ smoke test is not a browser: layout, CSS and real events are outside
 both. The browser end-to-end test below covers one path through them;
 what else a change looked like in a browser is stated in its pull
 request.
+
+## Vendored Keep the Why views
+
+`vendor/keep-the-why/` holds the Keep the Why views library (timeline, graph, family, search, thoughts, pages:
+classic scripts on `globalThis.KeepTheWhy` and one stylesheet) that the Why view mounts. They are copies, never edited
+here (`context/stack.md`):
+
+```sh
+python3 tools/vendor_ktw.py --version 0.11.39   # take that release of keep-the-why-dashboard from PyPI
+python3 tools/vendor_ktw.py --check             # the files on disk against VENDOR.json, offline
+python3 tools/vendor_ktw.py --verify            # the files on disk against the locked release itself, online
+python3 tools/vendor_ktw.py --latest            # the newest release on PyPI
+python3 tools/vendor_csp.py                     # the views in Chromium under the hub's policy (Playwright)
+```
+
+`vendor_ktw.py` refuses a wheel whose sha256 is not PyPI's and writes only the files the wheel's `ktw-views.json`
+lists, the manifest and the licence; `VENDOR.json` records the version and every sha256. `make check` fails when a
+vendored file differs from its hash, when a file there is not in the manifest, or when a script uses a markup- or
+code-evaluating call or sets a style attribute (an inline style through the element's style object is fine under the
+policy). A hand edit whose new hash is written into `VENDOR.json` too passes that check, so `--verify` fetches the
+locked release again and compares every file byte for byte; CI runs it in the `web-vendor` job whenever `web/vendor/`
+changes. The hub serves the directory under `/assets/vendor/`. `vendor_csp.py` serves the files with `Content-Security-Policy: default-src 'self'`, mounts every view on
+`tools/ktw-fixture-state.json` (Keep the Why's own test fixture) and fails on a policy violation, an error, an empty
+view or an empty graph; CI runs it in `web-e2e`. The `ktw-vendor` workflow checks PyPI daily and opens a pull request
+for a newer release with its hashes and changelog link; that pull request's CI starts when it is closed and reopened.
 
 ## Texts outside the catalog
 

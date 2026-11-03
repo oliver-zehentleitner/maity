@@ -54,6 +54,11 @@ window.Maity = window.Maity || {};
       .map((key) => h("li", null, COUNTERS[key] + ": " + totals[key])));
   }
 
+  function editMark(e) {
+    const o = { who: holderLabel(e.by) || M.t("visitor.holder.member"), at: M.dom.formatTime(e.at) };
+    return e.reason ? M.tn("visitor.note.edited_reason", Object.assign(o, { reason: e.reason })) : M.tn("visitor.note.edited", o);
+  }
+
   function holderLabel(holder) {
     if (!holder) return null;
     if (holder === "member") return h("span", { class: "muted" }, M.t("visitor.holder.member"));
@@ -93,7 +98,10 @@ window.Maity = window.Maity || {};
           d.holder ? [" ", holderLabel(d.holder)] : null),
         d.body && d.body.trim() ? h("div", { class: "about" }, M.markdown(d.body)) : null,
         d.notes && d.notes.length ? [h("h2", null, M.t("cardpanel.notes")), h("ol", { class: "card-notes" }, d.notes.map((n) => h("li", { "data-note": n.id },
-          h("p", { class: "muted" }, holderLabel(n.author), " · ", M.dom.formatTime(n.created_at), NOTE_STATES[n.state] ? " · " + NOTE_STATES[n.state] : ""),
+          h("p", { class: "muted" }, holderLabel(n.author), " · ", M.dom.formatTime(n.created_at), NOTE_STATES[n.state] ? " · " + NOTE_STATES[n.state] : "",
+            // The edit mark as the hub's own page has it (§16.9, a card's page): the editor named as a holder, the date,
+            // the reason; never the old text, and none on a removed note.
+            n.edited && !n.redacted ? [" · ", editMark(n.edited)] : null),
           n.redacted ? h("p", { class: "muted" }, M.t("jfa.redacted")) : h("div", { class: "about" }, M.markdown(n.body || "")))))] : null,
       ];
     },
