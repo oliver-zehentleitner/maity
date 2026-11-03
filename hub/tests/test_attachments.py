@@ -9,9 +9,9 @@ from typing import Any
 
 import pytest
 from PIL import Image, PngImagePlugin
-from sqlalchemy import Engine, select, text, update
+from sqlalchemy import Engine, insert, select, text, update
 
-from maity_hub import attachment_store, attachments, avatars, events, middleware
+from maity_hub import attachment_store, attachments, avatars, events, idempotency, middleware
 from maity_hub import tables as t
 from maity_hub.config import ConfigError, Settings
 from maity_hub.ratelimit import Limiter
@@ -339,6 +339,85 @@ def test_a_write_that_fails_or_outlasts_the_bound_keeps_the_rate_charged_and_lea
     assert list(blobs.glob("*/*")) == [] and given_back == [] and locked == []  # no lock taken
 
 
+def test_an_upload_whose_commit_answer_is_lost_keeps_the_blob_its_row_names(
+    owner: flow.Human, migrated: Engine, blobs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An error after the COMMIT (its answer lost, or a retry refused after an attempt that
+    did commit) does not prove the row is absent: the blob stays when a fresh read finds the
+    row, goes when it finds none, and stays for the sweep when the read itself fails."""
+    from sqlalchemy.exc import OperationalError
+
+    from maity_hub.routes import attachments as route
+
+    real_run = idempotency.run
+    lost = OperationalError("COMMIT", {}, Exception("server closed the connection"))
+
+    def unavailable(answer: Any) -> bool:
+        return bool(
+            answer.status_code == 503 and answer.json()["error"]["code"] == "database_unavailable"
+        )
+
+    def committed_then_lost(*args: Any) -> Any:
+        real_run(*args)
+        raise lost
+
+    monkeypatch.setattr(idempotency, "run", committed_then_lost)
+    assert unavailable(put(owner, "kept.txt", b"kept"))
+    with migrated.connect() as conn:
+        rows = conn.execute(select(t.attachment.c.id, t.attachment.c.project_id)).all()
+    assert len(rows) == 1
+    kept = blobs / rows[0].project_id / rows[0].id
+    assert kept.read_bytes() == b"kept"  # the committed row still has its bytes
+
+    def failed_before(*args: Any) -> Any:
+        raise lost
+
+    monkeypatch.setattr(idempotency, "run", failed_before)
+    assert unavailable(put(owner, "gone.txt", b"gone"))
+    assert [p.name for p in blobs.glob("*/*")] == [rows[0].id]  # no row: its blob removed
+
+    def unreadable(*args: Any, **kwargs: Any) -> Any:
+        raise lost
+
+    monkeypatch.setattr(route, "select", unreadable)  # the fresh read fails too
+    assert unavailable(put(owner, "unknown.txt", b"unknown"))
+    assert len(list(blobs.glob("*/*"))) == 2  # left to the sweep, not removed blindly
+
+
+def test_the_read_before_the_removal_waits_for_a_commit_still_running(
+    owner: flow.Human, migrated: Engine, blobs: Path
+) -> None:
+    """The client may have given up on a COMMIT the server still runs: the read waits for the
+    project's lock, which that transaction holds until it ends, and then finds the row."""
+    import threading
+
+    from maity_hub.ids import new_id
+    from maity_hub.routes import attachments as route
+
+    first = put(owner, "first.txt", b"first").json()["id"]
+    with migrated.connect() as conn:
+        row = conn.execute(select(t.attachment).where(t.attachment.c.id == first)).one()
+    late = new_id("attachment")
+    key = attachment_store.key_of(row.project_id, late)
+    store = attachment_store.LocalStore(blobs)
+    store.put(key, b"late")
+    done = threading.Event()
+
+    def discard() -> None:
+        route._discard_unless_committed(migrated, store, key, late)
+        done.set()
+
+    with migrated.begin() as conn:  # the upload's transaction, its COMMIT not through yet
+        events.lock_project(conn, row.project_id)
+        conn.execute(insert(t.attachment).values({**row._asdict(), "id": late}))
+        worker = threading.Thread(target=discard)
+        worker.start()
+        assert not done.wait(0.5)  # the read waits for the lock
+    worker.join(timeout=30)
+    assert done.is_set()
+    assert store.get(key) == b"late"  # the row committed: its bytes stay
+
+
 def test_the_sweeps_grace_outlasts_the_upload_bound_by_the_clock_skew() -> None:
     """A blob the sweep sees older than `BLOB_GRACE` is, with the clocks up to `CLOCK_SKEW`
     apart, older than `UPLOAD_FRESH`: its upload can no longer insert the row."""
@@ -390,6 +469,52 @@ def test_a_membership_holds_a_bounded_number_of_pending_uploads(
     assert over.status_code == 409 and over.json()["error"]["details"]["scope"] == "pending"
     assert over.json()["error"]["details"]["count"] == 2
     assert over.json()["error"]["details"]["max"] == 2
+    decoded: list[int] = []
+    real = avatars.decode_attachment
+
+    def counted(*args: Any) -> Any:
+        decoded.append(1)
+        return real(*args)
+
+    monkeypatch.setattr(avatars, "decode_attachment", counted)
+    image = put(owner, "4.png", png(), "image/png")
+    assert image.status_code == 409 and image.json()["error"]["details"]["scope"] == "pending"
+    assert decoded == []  # an image past the count bound is refused before its decode
+
+
+def test_a_failed_read_before_the_decode_gives_the_rate_back(
+    owner: flow.Human, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Nothing was decoded or stored: a database error in the count bound costs no upload."""
+    from sqlalchemy.exc import OperationalError
+
+    given_back: list[Any] = []
+    monkeypatch.setattr(attachments, "give_back", lambda key, charged: given_back.append(1))
+
+    def unreadable(*args: Any) -> Any:
+        raise OperationalError("SELECT", {}, Exception("server closed the connection"))
+
+    monkeypatch.setattr(attachments, "pending_of", unreadable)
+    answer = put(owner, "a.png", png(), "image/png")
+    assert answer.status_code == 503 and answer.json()["error"]["code"] == "database_unavailable"
+    assert given_back == [1]
+
+
+def test_an_upload_that_loses_to_the_same_key_leaves_no_blob(
+    owner: flow.Human, blobs: Path, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A concurrent call with the same idempotency key won: this upload's blob has no row and
+    goes at once; the answer is the winner's."""
+    first = put(owner, "first.txt", b"first")
+    assert first.status_code == 201
+
+    def the_other_won(engine: Any, request: Any, caller: Any, action: Any) -> Any:
+        return idempotency.respond(first.json(), 201)
+
+    monkeypatch.setattr(idempotency, "run", the_other_won)
+    lost = put(owner, "second.txt", b"second")
+    assert lost.status_code == 201 and lost.json()["id"] == first.json()["id"]
+    assert [p.name for p in blobs.glob("*/*")] == [first.json()["id"]]
 
 
 def test_uploads_are_rate_limited_per_membership_and_a_refusal_counts_nothing(
