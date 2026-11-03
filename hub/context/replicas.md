@@ -672,7 +672,8 @@ card, once the load test says the platform holds.
 
 **Id:** 2e7de08a-31ab-40ee-bfb8-7fc362562964
 **Type:** decision
-**Status:** open
+**Status:** superseded
+**Superseded by:** ec91fe03-1e12-4fb6-8c8e-f09ae8528e5d
 **Evidence:** inferred
 **Source:** kubernetes.md 5e42eb26 (`replicas` fixed in the template, the values schema refuses unknown keys), the maintainer's internal deployment planning (2026-10-30) (HorizontalPodAutoscaler on CPU, PodDisruptionBudget, topology spread, an autoscaled node pool), routes/events.py (`WAIT_MAX` 55 s)
 **See:** kubernetes.md — 5e42eb26-9883-49e2-89c0-9fe4e6517c62 — as of 2026-10-30
@@ -913,3 +914,55 @@ replicas was already per process, so workers needed no new shared state.
   nonces and limits; the refusal keeps the single-server setup on the path that is correct.
 - **The pool per process:** simpler to explain, but the database's connection limit would then
   depend on two settings multiplied, and a raised `MAITY_WORKERS` could exhaust it.
+
+## Several pods: `replicas` in the chart, opt-in, refused where the pods would not share
+
+**Id:** ec91fe03-1e12-4fb6-8c8e-f09ae8528e5d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-fnff0s1n0zpg; the maintainer's rule for the scaling cards (2026-11-03): the single-server hub stays the default and keeps working, every scaling path is opt-in; entries 2e7de08a, 36157878 and a83fc8e7 above; `serving.refusal`, `serving.connections`, `app.warn_on_connection_budget`; `deploy/helm/maity-hub` (`replicas`, `templates/pdb.yaml`); `tests/test_two_processes.py` (two pods, one or two workers each)
+**Revisit when:** attachments get a shared store other than S3 (a `ReadWriteMany` claim), the load test sets requests, limits or the pool per pod, or expand/contract migrations let a release with a migration roll
+
+The chart's `replicas` (default 1) sets the Deployment's pods and `MAITY_REPLICAS`. One replica
+is the hub as before: `Recreate`, no disruption budget, no spread, any database the hub
+supports. More than one:
+
+- **Refused where pods would not share.** The hub refuses to start with `MAITY_REPLICAS` above 1
+  on anything but PostgreSQL, or with a local attachment directory (each pod's volume holds only
+  the files it took). The chart refuses `attachments.existingClaim` with `replicas` above 1
+  before anything is installed. The database URL lives in a Secret the chart never reads, so
+  that refusal is the hub's alone; it can only trust what the deployment states, since nothing
+  off PostgreSQL could count the pods.
+- **Rolled one at a time** (`RollingUpdate`, `maxUnavailable: 0`, `maxSurge: 1`) for a release
+  without a migration. A release with a migration still goes through
+  `deploy/scripts/helm-upgrade.sh`, which scales to 0 and, after a successful upgrade, leaves
+  the replicas the release renders (Helm resets a scaled Deployment to the chart's value, and a
+  changed `replicas` must not be undone), also when the rollout check after Helm fails (the way
+  back is `helm rollback`); when it ends before Helm or Helm fails, it scales back to the
+  replicas it found (entry 36157878), until migrations are expand/contract. A hub found at 0 stays at 0.
+- **A PodDisruptionBudget** with `minAvailable: 1`, rendered only with more than one replica: for
+  one pod it would block every node drain.
+- **Spread over nodes** (`kubernetes.io/hostname`, `maxSkew: 1`, `ScheduleAnyway`), replaceable
+  through `topologySpreadConstraints`; `ScheduleAnyway` so a single-node cluster still starts
+  every pod.
+- **The connection budget** is pods × (workers × (pool share + overflow share + 1) + 1): each
+  worker holds its share of the pod's pool and overflow (`serving.per_worker`, rounded down)
+  plus its LISTEN connection, and each pod one more for the readiness probe. With more than one
+  replica, pods counts the surge pod of a rolling update too (replicas + 1). The chart sets the pool per pod (`database.poolSize`, `.maxOverflow`). At its start the
+  hub warns when the sum exceeds `max_connections` less the reserved connections; only a
+  warning, because behind a pooler the server's limit is not the one that counts.
+
+The opt-in default is the maintainer's rule (confirmed); the shape of each point above is inferred.
+
+**Reason:** the shared state the entries above built is what makes a second pod safe; the
+chart makes that shape one value and the unsafe shapes fail before or at the start, while the
+single-server setup changes in nothing.
+
+**Rejected alternatives:**
+- **The chart deciding from the database URL:** the URL is in a Secret Helm does not read, and
+  reading it in a template would put it into the rendered manifests.
+- **A refusal of the connection budget:** a managed pooler in front reports the pooler's limit,
+  not the server's, and the hub cannot tell which it reached.
+- **An autoscaler in this step** (entry 2e7de08a): left for after the load test, which decides
+  whether CPU tracks load; `replicas` is the manual setting it would later drive.

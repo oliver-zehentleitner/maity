@@ -65,6 +65,9 @@ class Settings:
     # MAITY_FORGE_GITHUB_APP_*: the instance's GitHub App, all five settings or none
     # (§11.4); its key and client secret never in a repr.
     github_app: GitHubApp | None = field(default=None, repr=False)
+    # MAITY_FORGE_INSTANCE_NAMESPACES: the operator's own namespaces, in lower case, the only
+    # ones the instance token reads for (§11.4); empty: it serves no project.
+    forge_instance_namespaces: frozenset[str] = frozenset()
     # MAITY_JOIN_URL: a second hostname that serves the agent join only (§1.1).
     join_url: str | None = None
     # MAITY_CLI_INSTALL: the one line that installs the CLI, wherever the hub tells an
@@ -86,6 +89,10 @@ class Settings:
     # MAITY_WORKERS: how many serving processes `maity-hub serve` starts, 1–64. More than one
     # only on PostgreSQL, where the processes share what they must (hub/context/replicas.md).
     workers: int = 1
+    # MAITY_REPLICAS: how many hubs the deployment runs on this database, 1–100, as the
+    # deployment says it (the chart sets it from `replicas`); the hub cannot count them. More
+    # than one only on PostgreSQL and without a local attachment directory, which is one pod's.
+    replicas: int = 1
     # MAITY_DB_POOL_SIZE, MAITY_DB_MAX_OVERFLOW: the server database's connection pool
     # (16 + 16; SQLAlchemy's own defaults are 5 + 10, hub/context/persistence.md), for the
     # whole hub: with several workers each process holds its share (`per_worker`).
@@ -173,6 +180,9 @@ class Settings:
             trusted_proxies=parse_networks(env.get("MAITY_TRUSTED_PROXIES", "")),
             forge_github_token=env.get("MAITY_FORGE_GITHUB_TOKEN") or None,
             github_app=parse_github_app(env),
+            forge_instance_namespaces=parse_namespaces(
+                env.get("MAITY_FORGE_INSTANCE_NAMESPACES", "")
+            ),
             allow_plain_http=parse_flag(
                 env.get("MAITY_ALLOW_PLAIN_HTTP", ""), "MAITY_ALLOW_PLAIN_HTTP"
             ),
@@ -192,6 +202,7 @@ class Settings:
                 parse_number(env, "MAITY_ATTACHMENT_QUOTA", 1024**3, minimum=1024, maximum=2**50)
             ),
             workers=int(parse_number(env, "MAITY_WORKERS", 1, minimum=1, maximum=64)),
+            replicas=int(parse_number(env, "MAITY_REPLICAS", 1, minimum=1, maximum=100)),
             db_pool_size=int(parse_number(env, "MAITY_DB_POOL_SIZE", 16, minimum=1, maximum=500)),
             db_max_overflow=int(
                 parse_number(env, "MAITY_DB_MAX_OVERFLOW", 16, minimum=0, maximum=500)
@@ -493,6 +504,12 @@ def parse_join_url(value: str, public_url: str) -> str | None:
 
 
 IPNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
+
+
+def parse_namespaces(value: str) -> frozenset[str]:
+    """`MAITY_FORGE_INSTANCE_NAMESPACES` (§11.4): comma separated namespace names, spaces
+    around a name ignored, compared in lower case."""
+    return frozenset(name.strip().lower() for name in value.split(",") if name.strip())
 
 
 def parse_networks(value: str) -> tuple[IPNetwork, ...]:

@@ -37,7 +37,12 @@ def _limits() -> None:
 
 @pytest.fixture
 def settings(settings: Settings) -> Settings:
-    return replace(settings, forge_github_token=TOKEN, secret_key=KEY)
+    return replace(
+        settings,
+        forge_github_token=TOKEN,
+        secret_key=KEY,
+        forge_instance_namespaces=frozenset({"maintainer"}),
+    )
 
 
 @pytest.fixture

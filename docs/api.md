@@ -108,6 +108,10 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   a deploy. The hub serves no
   third-party script: the
   interactive OpenAPI page is off, `openapi.json` is the machine form.
+- A page the hub renders with a token in its path (`/join/{token}` as
+  HTML, the `/mail/…/{token}` link pages) also carries
+  `Referrer-Policy: no-referrer`, so no link or request on it sends that
+  path on (§16.13).
 - The hub writes its own request log: method, path and status, then `ms=`
   (how long the hub took) and `route=` (the pattern the answering route was
   declared with, such as `/api/v1/tasks/{id}`, holding nothing from the request, or `-`
@@ -236,8 +240,8 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 500 | `internal` | an unexpected failure; `details` is `{}`, the message names no internals; the response still carries the envelope and every header of §1.1 |
 | 503 | `maintenance` | the hub is in a maintenance window (§16.12); `Retry-After` is the seconds until its `until`, `details` is `{from, until, text}`; every caller, every route but the few §16.12 names |
 | 503 | `forge_unavailable` | the forge did not answer while linking a GitHub App installation (§11.4) |
-| 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any; `details.retry_at` while the forge's rate limit for the source is spent: no read before that time (§11) |
-| 503 | `ktw_unavailable` | the root `.keep-the-why` of the Keep the Why family could not be read (§11.3); `details.reason`, `details.last` holds the last good answer if any; a family member's own failure is reported on that member, not as this error |
+| 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any, never for the views' reads (§11.5), which carry no export; `details.retry_at` while the forge's rate limit for the source is spent: no read before that time (§11) |
+| 503 | `ktw_unavailable` | the root `.keep-the-why` of the Keep the Why family could not be read (§11.3); `details.reason`, `details.last` holds the last good answer if any; a family member's own failure is reported on that member, not as this error. For the views' reads (§11.5) also the export or bodies file asked for could not be read, with that member's reason, `repository_moved` or `bodies_url_invalid` |
 | 503 | `database_unavailable` | the database cannot be reached (`/health`, and any call that needs it); `details` is `{}`, the message carries no driver text |
 | 503 | `upload_expired` | an attachment upload whose write and row took longer than the hub allows (§8.7); nothing was stored, the attempt counted against the upload rate, and it may be sent again |
 | 503 | `schema_outdated` | the database is not at the migration head (`/health`); `details.revision`, `details.head` |
@@ -4430,11 +4434,13 @@ write the rules it works under. It is read like every `settings` key,
 by members with `project:read`; a public page never shows it (§16.9).
 The hub refuses what it would otherwise have to drop, never filtering
 silently: `invalid` with `details.fields` naming the field —
-`"role_rules.<key>": "unknown_role"` for a key other than the three roles,
-`"role_rules.<role>.checklist": "not_allowed"` for a checklist on
-`coder`, `"role_rules.<role>.checklist": "empty_item"` for an item that
-is empty after trimming, `"multiline"` for one that holds a line break
-or a control character (§16.7.4 refuses them in its texts too), `"too_long"`
+`"settings.role_rules.<key>": "unknown_role"` for a key other than the three roles,
+`"settings.role_rules.<role>.checklist": "not_allowed"` for a checklist on
+`coder`, `"settings.role_rules.<role>.checklist": "empty_item"` for an item that
+is empty after trimming, `"multiline"` for one that holds a line break,
+a control character or an invisible format character that hides or turns text
+(Unicode categories Cc, Cf, Zl and Zp: zero-width characters, bidi controls and
+marks, a byte order mark, a soft hyphen; §16.7.4 refuses control characters in its texts too), `"too_long"`
 for one over 300 characters and `"too_many"` for more than 30.
 The hub stores each item trimmed and serves it so. A field the object does not know is
 `invalid` as everywhere (`extra_forbidden`). A change bumps
@@ -4443,7 +4449,11 @@ The hub stores each item trimmed and serves it so. A field the object does not k
 it changes: a `PATCH` that changes `role_rules` together with
 `rules_markdown` or another input writes one `rules_changed`, whose
 `reason` is the `PATCH`'s own when it gives one, else
-`"settings.role_rules"` when `role_rules` is among the changes.
+`"settings.role_rules"` when `role_rules` is among the changes. When the
+same `PATCH` changes the state or the policy, its `state_changed` or
+`policy_changed` marks the new version and no `rules_changed` is written;
+one that changes both writes both events, carrying the same
+`rules_version`.
 
 **Onboarding** is what a new member is told when it arrives, set per
 project because projects work differently; the maintainer's decision of
@@ -11529,13 +11539,15 @@ gives it (`null` for the root). Members are listed depth-first in the
 order of the blocks, the root first.
 
 **The read.** The transport rule of §11.1 for every read, each
-`state.json` at most 1 MiB, `Accept: application/json`; at most 4 reads
+`state.json` at most 2 MiB (§11.5), `Accept: application/json`; at most 4 reads
 of one project's family in flight at once. The `.keep-the-why` files and
 the exports are cached together for `max_age` seconds (default 600). A
 `max_age` below 30 is taken as 30: a fresh read of the whole family
 happens at most once per project every 30 seconds, and a closer request
 answers from the cache with `fresh: false`.
-A failed read keeps the member's last good answer until the hub restarts.
+A failed read keeps the member's last good answer until the hub restarts
+or drops the project's answers for room (the 256 projects read most
+recently are kept).
 
 **What the hub relies on**, per export. Unknown keys are ignored, at
 every level; `bodies`, `authors`, `project` (the hub takes the family
@@ -11931,6 +11943,242 @@ confirmed it (above). Whether an installation on a forge organisation
 may serve a Maity organisation's projects is open for its own
 contract; until then nothing else in this section changes.
 
+### 11.5 The Keep the Why views' reads
+
+```
+GET /projects/{owner}/{slug}/keep-the-why/export
+GET /projects/{owner}/{slug}/keep-the-why/export?root=hub
+GET /projects/{owner}/{slug}/keep-the-why/export?canonical=https://github.com/acme/platform&root=
+GET /projects/{owner}/{slug}/keep-the-why/bodies?canonical=…&root=…
+```
+
+Scope `project:read`. The project's Why view mounts Keep the Why's own
+views (timeline, graph, family, search, thoughts, pages; the library
+`web/` vendors, `web/context/stack.md`). They read through a provider the
+host gives them (keep-the-why `docs/dashboard-views.md`, "provider"), and
+the dashboard's provider reads here: `exportState(canonical, root)` from
+`…/export`, `bodies(state)` from `…/bodies`, `state()` as `…/export`
+without parameters. The library walks a family itself, one export at a
+time, from what each export declares (`project.parent`,
+`project.children`); the hub serves one export per call and never merges
+them. `family`, `memberState` and `resolveEntry` are not offered: they
+need a Keep the Why server, and the library works without them (the
+family search scope then covers what the exports reach).
+
+This is §11.3's read, served whole instead of summarised. The same
+rules hold: the hub reads only what a repository publishes, finds a
+state URL only through the forge (the `dashboard-state:` line of a
+`.keep-the-why`, read with the grant §11.4 picks), reads it under §11.1,
+keeps it in memory only and never in its database, and never reads or
+writes `context/`. There is no other fetch path: no URL from a request
+or from a project setting is read; from an export only the one bodies
+file beside its state URL is (below); and no host is allowed because of
+its name.
+
+The limits below — reads in flight, the memory budget, the 30 s hold —
+are per serving process: a hub run as several processes or pods holds
+them in each, and their caches apart.
+
+**A repository's name.** A repository is named — in `canonical`, in a
+URL-form child location, in a `parent:` line — by exactly this form,
+and by nothing else:
+
+| Forge | Accepted form |
+|---|---|
+| GitHub | `https://github.com/{owner}/{repo}`, optionally followed by `.git`, then optionally by one `/` |
+
+`{owner}` is 1 to 39 ASCII characters from `A`–`Z`, `a`–`z`, `0`–`9`
+and `-`; `{repo}` 1 to 100 ASCII characters from `A`–`Z`, `a`–`z`,
+`0`–`9`, `.`, `_` and `-`, not `.` or `..`, not ending in `.git`, without
+the `.git` the form allows after it. Any other character — a non-ASCII letter or digit
+included — makes the text no name. No query, no fragment, no user info,
+no port, no further path segment, no percent-encoding, no whitespace.
+Two names are the same repository when their `{owner}/{repo}` match
+with ASCII `A`–`Z` and `a`–`z` compared ignoring case. The form decides
+what the hub reads; it is not a complete check of the forge's own
+naming rules, and a name the forge does not have is simply not found.
+The text is checked as written in the file: the file is split into lines
+at LF or CRLF, the value taken as the line's grammar gives it (a child's
+location between `: ` and ` — `, a `parent:` line's value after `: `,
+spaces around it dropped), and nothing else is removed from it before
+the check; a control or zero-width character left in it makes it no
+name. A text
+that does not have this form names no repository: it is skipped
+where it stands, takes none of the 8 places below, and a `canonical` in
+another form is `not_found` with `not_in_family`. Every forge read of a
+named repository builds its API path from the validated `{owner}` and
+`{repo}` alone, never from the text it was given. A `canonical` that
+names the project's own repository (its `repository.url`, compared the
+same way) is the first kind below, as an empty one is. A path-form
+`parent:` (a directory of the same repository) names no repository.
+
+The hub serves:
+
+1. **the project's own repository**, the root (`root` empty) and every
+   member of its family that §11.3 reads (`root` the member's `path`), and
+2. **a repository the project's family names**: a URL-form location in
+   a `keep-the-why:children` block, or the `parent:` line of a config
+   block, of a `.keep-the-why` that §11.3 reads in the project's own
+   repository, each in the form above — at most 8 such repositories per
+   project, the first 8 distinct ones in the order §11.3 lists the
+   members (a member's children before its `parent:`); a later one is
+   refused with reason `family_cap`. Of such a repository the hub serves its root and the
+   members of its own family by the rules of §11.3 (directory locations
+   only, depth 4, 32 members), never a repository *it* names: one hop,
+   so a family cannot pull in the forge.
+
+The second kind is never read with the project's owner's grant (§11.4:
+the App installation or the owner's token act on the project's own
+repository alone). For a project in one of the operator's own
+namespaces (§11.4, `MAITY_FORGE_INSTANCE_NAMESPACES`) it is read with
+the instance token (`MAITY_FORGE_GITHUB_TOKEN`), for every other project
+without any token: the instance token serves the operator's projects
+only, here as everywhere. It is read only where the forge reports the
+repository public: a repository the instance token could read although
+it is private is `not_public` all the same. The visibility is read as §11.4 reads it,
+before the first read and on every refresh of its family (at most every `max_age`, below, and
+at least every 600 s whatever `max_age` asks); a
+private one, or one whose visibility cannot be read for any reason but
+a spent budget, is refused with reason `not_public`, and what the hub
+held of it is dropped then; a spent budget keeps what the hub holds
+(below). A
+named repository the forge answers with a redirect (renamed or moved)
+is not followed, as §11.4 does for the project's own: it is
+`ktw_unavailable` with reason `repository_moved` until the family file
+names its new place. Its `.keep-the-why` is read through the forge's
+contents API like the project's own (64 KiB), never from a raw or Pages
+host. These reads count against the budget of their source — the
+instance token's, or that of reads without a token — never against an
+owner's grant (§11.4, **Rate limits**; the hub keeps one budget per
+source, shared by its serving processes where its database is
+PostgreSQL). Without a token GitHub allows 60 reads an hour per egress
+address: a project outside the operator's namespaces that names large
+families will see some of them answered `probe_unavailable` until the
+budget is back, and the cache only spreads those reads, it does not
+remove them. A spent budget, whenever it is found, is
+`probe_unavailable` with `details.retry_at`, never `not_public`; what the
+hub holds of the repository is kept, not served meanwhile, and served
+again once the budget is back; a `retry_at` already past refuses
+nothing, the hub reads again. Any other `canonical` or `root` — a
+repository named only inside an export (a See into another repository,
+`Superseded by`), a path that is not a member — is `not_found` with
+`details.reason: not_in_family`; the library then shows the reference as
+not resolved, with the reason, as it does on any host without the read.
+
+**`…/export`.** `?canonical=&root=` as above. The answer:
+
+```json
+{
+  "canonical": "https://github.com/oliver-zehentleitner/maity",
+  "root": "hub",
+  "url": "https://maity.dev/keep-the-why-dashboard/hub/state.json",
+  "observed_at": "2026-11-03T09:00:00Z",
+  "fresh": true,
+  "fork_of": null,
+  "state": { "state-json": 2, "project": { "…": "…" }, "entries": [ "…" ], "bodies": "state.body.json" }
+}
+```
+
+`state` is the member's `state.json` as published, parsed and written
+again as JSON with every non-ASCII character escaped, nothing removed or
+added; a file that is not UTF-8 JSON as a browser reads it — `NaN`,
+`Infinity` or a number too large to be finite included — is `not_json`.
+Beyond that the hub checks only that it is a JSON object with `state-json` major `2` and an `entries` array (§11.3's
+`state_json_version` and `shape`), and nothing else of it. `url` is the
+state URL it was read from; the library resolves a lean state's
+`bodies` file against it. `fork_of` is `null`; the library judges a
+fork from the export itself (its `exportVerdict`), the hub does not.
+
+**`…/bodies`.** `?canonical=&root=` as above. A lean export names a
+file beside it that holds its entries' texts (`"bodies":
+"state.body.json"`). The hub reads it only when the export it holds for
+that member names one, and only at the state URL's own directory: the
+value must be one path segment (ASCII letters and digits, `A`–`Z`,
+`a`–`z`, `0`–`9`, and `.`, `_`, `-`, ending in `.json`, at most 100
+characters), resolved against the state URL with
+its last segment replaced — same scheme, host and port, no query, no
+fragment; anything else is reason `bodies_url_invalid`. The read follows
+§11.1. The answer is `{canonical, root, url, observed_at, fresh, bodies}`
+with `bodies` the file's `bodies` object as published (an object of
+entry `id` to body); the provider fills the state it holds and sets
+`bodiesLoaded` (keep-the-why `docs/dashboard-views.md`). An export with
+its bodies inline (no `bodies` field) is `not_found` with
+`details.reason: no_bodies_file`; the library asks only for a lean state.
+
+**Caps and cache.** Per read: a `state.json` at most 2 MiB (§11.3's 1
+MiB is raised to 2 MiB for both; this project's own root export is
+0.45 MiB), a bodies file at most 4 MiB, decoded bytes, refused at the
+first byte past (`too_large`). The exports, the `.keep-the-why` files and
+the bodies files are cached together with §11.3's, one entry per
+repository, member and file: what one call or §11.3 read is what the
+next answers, so a project's tabs share it. Both calls take `max_age`
+as §11.3 does (`?max_age=`, default 600 s, below 30 taken as 30); a
+fresh read of one repository's family happens at most once per 30 s per
+project, and a closer call answers from the cache with `fresh: false`.
+The 30 s also hold for a read dropped for room: the hub remembers when
+it last read each file and each family, and reads a dropped one again
+no sooner than 30 s after that; a call in between answers
+`ktw_unavailable` with reason `timeout`. At most 4 reads of one project in flight at once,
+its own repository and the named ones together, and at most 16 of
+§11.5's reads in flight in each serving process, which keeps at most 64
+MiB of these reads for all projects, the least recently used dropped
+first.
+
+The cost of a call does not grow with its project's history beyond the
+size of the files themselves. Warm, a call is one answer from memory.
+Cold, the first call for a project reads what §11.3 reads — up to 32
+`.keep-the-why` files and 32 exports — and the first call for a named
+repository reads its visibility and its family the same way (up to 1 +
+32 + 32 reads), each within §11.3's deadline of 30 s per family; a
+bodies call adds one file. Nothing is read per entry, per tab or per
+viewer.
+
+**Revalidation.** Both answers carry an `ETag`, a digest over
+`canonical`, `root`, `url` and the bytes as read, and `Cache-Control:
+private, no-cache`, as a contract file does (§6.8): the browser keeps
+the answer and sends `If-None-Match`, and a `304` costs no second
+megabyte. The project's own repository is checked on every call against
+the source §11.4 chooses for it, so an export held in memory is not
+served once that source no longer covers it: a grant removed in the
+hub ends it at once, one revoked at the forge within §11.4's refresh of
+the source, and a repository the instance token finds private within
+§11.4's 10 minutes of visibility, in each serving process. Every refusal comes
+before `If-None-Match` is compared: a
+caller without `project:read`, a repository no longer in the family, no
+longer public or past the cap, and a member that failed get their
+error, never `304`.
+
+**Untrusted.** Everything in `state` and `bodies` is the repository's
+text: the hub passes it through unchanged and the dashboard hands it to
+the library, which renders entry text as text and never as HTML
+(keep-the-why `docs/dashboard-views.md`, "Rendering safety";
+`web/context/rendering.md`). No string from an export becomes a URL the
+hub reads, except the one bodies file name beside the state URL, under
+the rule above.
+
+Errors: `ktw_not_configured` (the project's repository has no
+`.keep-the-why` or no `dashboard-state:` line, as in §11.3);
+`probe_not_configured` (§11.4), `details.reason` (`no_grant`,
+`unconfirmed`, …) for a `project:admin` only, every other reader gets
+`details: {}`; `probe_unavailable` with `details.retry_at` while the
+source's forge budget is spent (§11.4, **Rate limits**); `not_found`
+with `details.reason` `not_in_family`, `family_cap`, `no_bodies_file`
+or `not_public`; `ktw_unavailable` with `details.reason` one of §11.3's
+member reasons (`forge_unavailable`, `config_missing`, `no_state_url`,
+`state_url_invalid`, `address_refused`, `redirect_refused`,
+`unavailable`, `timeout`, `http_status` with `status`, `too_large`,
+`not_json`, `state_json_version` with `version`, `shape`),
+`repository_moved` or `bodies_url_invalid`, and only this code with
+`details.last`, the last good answer in the shape above, when the hub
+holds one: `probe_unavailable`, `probe_not_configured` and `not_found`
+from §11.5 never carry an export. The dashboard's provider turns
+each into the library's `{ error }`, so a view says why it has nothing
+instead of failing.
+
+Out of scope here: private repositories of other owners and a member's
+or owner's token for them (step 2 of the card), `family`, `memberState`
+and `resolveEntry`, and any write.
+
 ## 12. Endpoint index
 
 | Method | Path | Scope | § |
@@ -12088,6 +12336,7 @@ contract; until then nothing else in this section changes.
 | GET | `/projects/{owner}/{slug}/logo`, `/projects/{owner}/{slug}/banner` | `project:read` | 11.2 |
 | PUT, DELETE | `/projects/{owner}/{slug}/logo`, `/projects/{owner}/{slug}/banner` | `project:admin`, human only | 11.2 |
 | GET | `/projects/{owner}/{slug}/keep-the-why` | `project:read` | 11.3 |
+| GET | `/projects/{owner}/{slug}/keep-the-why/export`, `/projects/{owner}/{slug}/keep-the-why/bodies` | `project:read` | 11.5 |
 | GET | `/projects/{owner}/{slug}/overview` | `project:read` | 6.11 |
 | GET | `/badge/{owner}/{slug}.svg` (outside the API) | — (served only while `policy.badge` is not `off`) | 6.20 |
 | GET | `/{owner}/{slug}`, `/{handle}` (outside the API) | — (the page inside the app shell without a valid session, the bare page with `?as=public`, each with `MAITY_PUBLIC_PAGES` on and the page chosen public; otherwise the app shell) | 16.9, 16.11 |
@@ -15557,6 +15806,122 @@ deletion's confirmation — and of a self-set limit or absence (§6.12).
 They are security deadlines or ones that end something the person
 chose; whoever runs into one during a window signs in or asks again
 afterwards.
+
+### 16.13 The product line
+
+The maintainer's decision of 2026-11-03 (`context/scope.md`): every page
+of the platform's own interface ends with one small line about Maity
+itself. It is part of the product, not of an instance's content: it is
+always shown, on a self-hosted instance as well, with no setting to turn
+it off, and it is no part of the landing setting or of the frame of
+§16.7.5.
+
+```
+[Maity icon] Maity 2026 · Found a bug? · Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity icon]
+```
+
+**The parts**, in this order, separated by ` · `:
+
+- the Maity icon, followed by `Maity` and the current year. The icon is
+  decorative (`aria-hidden="true"`). The year is never stored or built
+  in: the hub takes it from its clock (UTC) when it renders the page, the
+  dashboard from the browser's clock when it draws it;
+- **Found a bug?**, a link to
+  `https://github.com/oliver-zehentleitner/maity/issues`;
+- **Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity
+  icon]**. The name is plain text, no link. The heart is a symbol with
+  the accessible name "love" (`role="img"`, `aria-label`). Each of the
+  two icons is a link of its own:
+  - the GitHub icon to `https://github.com/oliver-zehentleitner`, with
+    the accessible name `GitHub`;
+  - the Maity icon to `https://maity.team/oliver-zehentleitner`, the
+    maintainer's page on maity.team (a person's page is `GET /{handle}`,
+    §16.9, with no `@`), with the accessible name `Maity`.
+
+  The accessible name is the link's `aria-label`, and the icon inside it
+  is `aria-hidden="true"`. `GitHub` and `Maity` are names and are not
+  translated.
+
+Every link is absolute and the same on every instance. The Maity link
+names maity.team, not the instance's own host: the maintainer's page
+exists only there, and a relative `/oliver-zehentleitner` would be a dead
+link, or another account's page, on any other instance. No link carries a
+query or a campaign of its own. Each opens in a new tab with
+`rel="noopener noreferrer"`, as the dashboard's other external links do
+(§6.11): the line also ends pages with a token in their path
+(`/mail/…/{token}`, `/join/{token}`), and `noreferrer` keeps that path
+out of the `Referer` a click would send to github.com or maity.team.
+Those pages also answer with `Referrer-Policy: no-referrer`, which covers
+every link and request on them, not only the line's, whatever the
+browser's default referrer policy is.
+
+**The icons.** All three are written into the page as inline `<svg>`
+and load no file. They therefore need no change to a page's
+`Content-Security-Policy` (the link pages allow no image source at all,
+§2.7.1), and they show on the join host, which serves no assets (§1.1).
+They use presentation attributes only (`fill`, `stroke`, …): no `style`
+attribute, no `<style>` element and no `<use>` of another file in the
+SVG. A page whose policy has no `style-src` would drop those, so the
+icons must not need them. The dark variant comes from the page's own
+stylesheet, overriding `fill`, where the page's policy allows one. The
+join page in a browser has none: its policy is `default-src 'self'`
+(§1.1), which allows no inline `<style>`, and the join host serves no
+stylesheet. It shows the light mark in either theme, on either host, so
+that it looks the same wherever it is opened. The Maity icons are the small mark of
+`web/brand/maity-mark-small.svg` (its dark variant,
+`maity-mark-small-dark.svg`, under a dark theme where a stylesheet can
+switch it). They are written without the file's `role="img"`,
+`aria-label` and `<title>`: the icon is `aria-hidden` and its link
+already has its name, and a `<title>` would add a tooltip. The GitHub
+icon is GitHub's mark from Octicons (MIT), the same path the dashboard
+already draws for a GitHub repository, in `currentColor`, so it follows
+the line's text colour on every page.
+
+**Words.** "Found a bug?", the sentence "Made with ♥ by … on … & …" and
+"love" are translated as the rest of the page is, in every language each
+catalogue has, under the same keys in the dashboard's
+(`web/i18n/<lang>.json`, with its metadata) and the hub's
+(`hub/src/maity_hub/words/<lang>.json`): `product.bug` ("Found a bug?"),
+`product.made_by` ("Made with {heart} by {name} on {github} & {maity}")
+and `product.love` ("love"). The word `on` and the `&` are part of the
+translated sentence, so a language uses its natural preposition and may
+put the placeholders in its own order. `Maity`, `GitHub` and the name are
+never translated. The line is in the language of the page it ends.
+
+The translated sentence is always text and is escaped. Only its
+placeholders become something else: `{name}` the name as text, and
+`{heart}`, `{github}` and `{maity}` the fixed elements above, never
+markup from the catalogue. A sentence in which one of the four is
+missing, or that names any other placeholder, is not used: the line falls
+back to the English sentence.
+
+**Where it is.**
+
+| Page | Line |
+|---|---|
+| every page the dashboard draws (`web/`): the signed-in views, `/login`, `/register`, the invitation and enrolment steps, the full maintenance page (§16.12); also `/explore` and a public address (§16.9) while the hub answers it with the app shell, as it does for one with no stored page | yes |
+| the hub's `503 maintenance` page (§16.12) | yes |
+| the pages behind the links in mails, `/mail/…` (§2.6.3, §2.7.1, §2.9, §18.6) | yes |
+| the join page in a browser, `/join/{token}` as HTML on either host (§3.2), below its own note | yes |
+| the join page for an agent, the Markdown answer (§3.2) | no |
+| the landing page and its variants (§16.7, §16.7.2), the legal pages (§16.7.1), and their previews for an admin (§16.7, §16.7.1) | no: the operator's site, with the operator's footer |
+| `/explore` and the stored public pages (§16.9), as the hub answers them from what it stored | no |
+
+On `/login` and `/register` the line comes after the frame of §16.7.5,
+below the landing page's footer. It does not depend on the frame: a page
+drawn without it (a failed `GET /site/chrome`, a maintenance window)
+still ends with the line.
+
+**How it looks.** At the end of the page's content, never sticky or
+fixed, so it takes no room on a phone. Small and muted. At phone width it
+stays one line where it fits and wraps between its parts where a
+language is longer, never scrolling sideways.
+
+**Beyond the decision.** The card leaves these open, and the contract
+settles them: the line is centred, the year's icon is decorative, the
+links carry no query of their own, the icons' accessible names are
+`GitHub` and `Maity`, and on `/login` and `/register` the line comes below
+the frame of §16.7.5.
 
 ## 17. The change ticker
 

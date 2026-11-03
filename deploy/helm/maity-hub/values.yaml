@@ -1,4 +1,4 @@
-# The Maity hub on Kubernetes: one Deployment with one pod, a Service, an
+# The Maity hub on Kubernetes: one Deployment (one pod unless `replicas` says more), a Service, an
 # optional Ingress, a NetworkPolicy, and `maity-hub migrate` as a Job before
 # every install and upgrade. PostgreSQL is not part of the chart; the hub
 # connects to one that exists. Secrets are never values here: the chart only
@@ -8,6 +8,16 @@
 # either the Ingress (ingress.enabled, ingress.host, ingress.className,
 # config.trustedProxies) or config.publicUrl. README.md walks through a
 # complete install.
+
+# MAITY_REPLICAS: hub pods. The default 1 is one pod, stopped before its successor starts
+# (Recreate). More than 1 needs PostgreSQL and attachments off the pod's volume (the hub
+# refuses to start otherwise, and the chart refuses attachments.existingClaim): the pods then
+# roll one at a time (RollingUpdate, maxUnavailable 0), a PodDisruptionBudget keeps one up and
+# they spread over nodes. A release with a migration still stops the hub
+# (deploy/scripts/helm-upgrade.sh). Database connections: pods × (config.workers × (pool share +
+# overflow share + 1) + 1), pods being replicas + 1 during a rolling update, must fit the
+# database's max_connections (README.md, "Several pods").
+replicas: 1
 
 image:
   # Required. ghcr.io/oliver-zehentleitner/maity-hub once releases are published
@@ -68,6 +78,10 @@ database:
   # database's CA for sslmode=verify-full.
   existingSecret: ""
   key: database-url
+  # MAITY_DB_POOL_SIZE and MAITY_DB_MAX_OVERFLOW: each pod's connections to the database,
+  # shared by its workers. Unset: the hub's 16 and 16.
+  poolSize: null
+  maxOverflow: null
 
 forge:
   github:
@@ -78,6 +92,11 @@ forge:
     # then the token is read and unused.
     existingSecret: ""
     key: github-token
+    # The operator's own namespaces, comma separated (MAITY_FORGE_INSTANCE_NAMESPACES): the
+    # token reads only for projects there, and only public repositories. Empty: it serves no
+    # project, and every project is read through its owner's App or token. A listed name
+    # nobody has is held for the operator (docs/api.md §11.4).
+    instanceNamespaces: ""
 
 attachments:
   # The local store for the files of messages (docs/api.md §8.7). The name of an existing PersistentVolumeClaim in the release namespace; the
@@ -272,3 +291,6 @@ podLabels: {}
 nodeSelector: {}
 tolerations: []
 affinity: {}
+# With more than one replica the pods spread over nodes (kubernetes.io/hostname, maxSkew 1,
+# ScheduleAnyway). Set constraints here to replace that.
+topologySpreadConstraints: []

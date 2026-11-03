@@ -5385,7 +5385,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     // A project's settings: which grant reads its repository, and the namespace owner's confirmation for their grants.
     await go("#/maintainer/maity/settings"); for (let k = 0; k < 6; k++) await tick();
     const fgRepo = () => main.querySelector(".forge-repository");
-    expect(fgRepo() && text(fgRepo()).includes("read with the instance's token, so only while it is public") && text(fgRepo()).includes("Not confirmed by the namespace owner")
+    expect(fgRepo() && text(fgRepo()).includes("read with the instance's token, which serves only the operator's own namespaces, and only while it is public") && text(fgRepo()).includes("Not confirmed by the namespace owner")
       && fgRepo().querySelectorAll("a").some((a) => a.getAttribute("href") === "#/settings/forge"),
       "forge: the project's settings say which grant reads the repository, unconfirmed, with a link to Forge access");
     const fgConfirms = [];

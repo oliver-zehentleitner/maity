@@ -34,7 +34,9 @@ PATCH = "@@ -9,1 +9,1 @@\n-old claim\n+new claim\n@@ -13,1 +13,2 @@\n old cli\n+
 
 @pytest.fixture
 def settings(settings: Settings) -> Settings:
-    return replace(settings, forge_github_token=TOKEN)
+    return replace(
+        settings, forge_github_token=TOKEN, forge_instance_namespaces=frozenset({"maintainer"})
+    )
 
 
 @pytest.fixture

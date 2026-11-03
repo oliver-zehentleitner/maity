@@ -712,7 +712,7 @@ change only with what the page shows.
 **Type:** incident
 **Status:** active
 **Evidence:** confirmed
-**Source:** production incident of 2026-11-03 after the deploy of `634f0f60`: `lock_project` waits on the maity project ended in statement timeouts (57014, 503); the holder was idle in transaction with in_state 0 s while its age grew, its last statement the `moderation_hold` read of a card page's render; the lead's go on this fix the same day
+**Source:** production incident of 2026-11-03 after the deploy of `634f0f60`: `lock_project` waits on the maity project ended in statement timeouts (57014, 503); the holder was idle in transaction with in_state 0 s while its age grew, its last statement the `moderation_hold` read of a card page's render; the lead's go on this fix the same day; the review of #1277 (the member events as a follow-up, card tsk-2k10yf9w7kzw)
 **See:** public-pages.md#a-public-project-shows-a-snapshot-of-its-ticker-and-who-is-online-rendered-on-a-timer-never-live — 65c0167c-f61c-419a-9506-8d9453edd482 — as of 2026-11-03
 **See:** public-pages.md#a-page-is-rendered-again-in-the-transaction-that-changed-its-input-by-a-registry-of-kinds — b7a13a49-7c56-49d6-bc18-4622b21d0077 — as of 2026-11-03
 **Revisit when:** the API can set the `security` label or move a card out of `done`, or another input of the ticker's card rule appears
@@ -738,8 +738,13 @@ write to the project waited behind it. Single-server setups are affected the sam
 - Rendering after the commit, outside the lock: the removal belongs to the transaction that changed the input
   (b7a13a49), and a second transaction after the commit could fail and leave the page stale.
 
-Known and left for its own card: the member events still render the project page with its dependents, since a
-member's name stands on the card pages they hold; they are far rarer than card events.
+The member events take the same path with one filter (tsk-2k10yf9w7kzw): a `member_updated` whose `changed`
+fields are all in `events.UNSHOWN_MEMBER_FIELDS` renders nothing. These are the language (one event per project of
+the person, each under that project's row), the line consent, and a dormant instance or outage policy, which only
+change who is online and so wait for the snapshot. Every other member change, a join, and an update that names no
+`changed` fields still renders the project page with its dependents, since a member's name stands on the card
+pages they hold. Rejected: naming the fields a page shows instead (an allowlist), because a field added later
+would silently leave a stale name on a public page; a field missing from the list only costs a render.
 
 ## A person can keep their online status off the public pages; their projects' pages then neither name nor count them
 
