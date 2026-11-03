@@ -435,13 +435,18 @@ prove they were public. Privacy goes before the statistic.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's adoption of the jour fixe of 2026-11-02 (round jfx-1fze3cfeq55h, req-658tp9mj77ny) on card tsk-m3w66pz16de9; the plan the lead approved on that card; docs/api.md §6.6 and the event table, §8.2
-**Revisit when:** a reader needs `mergeable` settling from `unknown`, or reports get a stored field for what was last announced
+**Revisit when:** a reader needs `mergeable` settling from `unknown`, a release holder is woken twice by a recomputed conflict often enough to matter, or reports get a stored field for what was last announced
 
-A report's observation is announced only when `observed` (without its time) or
-`mismatch` differs from what the card's last `probe_observed` said. A new report
-starts with `observed: null`, so its first observation is compared with the last
-announced one, read from the card's latest `probe_observed` events (redacted ones
-say nothing). On the open release, a ref is still stored and readiness rechecked
+A report's observation wakes its readers only when `observed` (without its time)
+or `mismatch` differs from what the card's last `probe_observed` to all of those
+readers said. A new report starts with `observed: null`, so its first observation
+is compared with the last one told, read from the card's latest `probe_observed`
+events (redacted ones say nothing; one with an empty audience, or without the
+current holder's token, told nobody now reading, as after a reassignment). A new
+report the forge contradicts always wakes: its claimed head is news even when the
+forge says what it said before. An observation that wakes nobody is still emitted,
+with an empty audience: the owners' and admins' views read every event and
+re-read the overview on it, and no agent is woken by it. On the open release, a ref is still stored and readiness rechecked
 on every change, but announced only when `found`, `state`, `head_sha`, `checks`,
 `merged_at`, `sha` changed, or the pull request started or stopped conflicting.
 
@@ -454,4 +459,13 @@ holder and the admins with nothing to act on.
 observation: it changes the report's shape for every reader, while the event log
 already holds what was announced. Leaving `mergeable` out of the release check
 altogether: a pull request that starts conflicting is something the release
-holder must act on.
+holder must act on. Skipping the event when nothing changed for the readers:
+the views lose the report's new state until the next card event. Putting the
+claimed heads into the comparison: a second report on the same wrong head would
+then be compared with the first, while comparing the claim's mismatch alone says
+what the holder must know.
+
+Known and left for later: `unknown` counts as not conflicting, so a conflicting
+pull request whose state GitHub recomputes (`conflicting`, `unknown`,
+`conflicting`) wakes the release holder twice. Carrying the last known conflict
+through `unknown` needs a stored value the observation does not have today.

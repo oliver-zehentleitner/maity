@@ -319,17 +319,23 @@ def observe_report(engine: Engine, fg: forge.Forge, card_id: str, max_age: int =
         merged.observed(conn, card_id, pr.data.get("merge_sha") if pr else None)
         if _seen(current.report) == _seen(stored):
             return True  # only the time moved on: stored, not announced again
-        # A new report starts with `observed: null`; its first observation is announced
-        # only when it differs from what the card's last one said (§8.2).
-        if _seen(stored) != _last_announced(conn, card.project_id, card_id):
-            emit(
-                conn,
-                card.project_id,
-                "probe_observed",
-                _report_audience(conn, card_id, mismatch, observed["pr_state"] == "merged"),
-                {"task": card_id, "observed": observed, "mismatch": mismatch},
-                subject=("task", card_id),
-            )
+        audience = _report_audience(conn, card_id, mismatch, observed["pr_state"] == "merged")
+        # A new report starts with `observed: null`. Its first observation wakes only when it
+        # differs from what the card's last one told the same readers, or contradicts this
+        # report (a second wrong head is news). Otherwise it is still emitted, to nobody: the
+        # owners' and admins' views read every event and show the report's new state (§8.2).
+        first = current.report.get("observed") is None
+        told = _last_announced(conn, card.project_id, card_id, audience)
+        if not (_seen(stored) != told or (first and mismatch)):
+            audience = []
+        emit(
+            conn,
+            card.project_id,
+            "probe_observed",
+            audience,
+            {"task": card_id, "observed": observed, "mismatch": mismatch},
+            subject=("task", card_id),
+        )
         releases.recheck(conn, card.project_id, fg)
     return True
 
@@ -357,16 +363,23 @@ def _seen(report: dict[str, Any]) -> tuple[Any, Any]:
     return observed, report.get("mismatch")
 
 
-ANNOUNCED_LOOKBACK = 20  # a card's latest `probe_observed` events read for its last report one
+# A card's latest `probe_observed` events read for the last one told to a report's readers. Past
+# them it counts as never told, and the observation wakes again: a spare wake-up, never a lost one.
+ANNOUNCED_LOOKBACK = 20
 
 
-def _last_announced(conn: Connection, project_id: str, card_id: str) -> tuple[Any, Any] | None:
-    """What the card's last announced report observation said, as `_seen` reads it, or None.
-    A release card's own events carry `observations` instead and are passed over; a redacted
-    event says nothing."""
+def _last_announced(
+    conn: Connection, project_id: str, card_id: str, audience: list[str]
+) -> tuple[Any, Any] | None:
+    """What the card's last report observation told all of `audience` said, as `_seen` reads it,
+    or None. An event that woke nobody, or not all of them (a card claimed anew, a mismatch now
+    told to the admins too), told them nothing. A release card's own events carry
+    `observations` instead and are passed over; a redacted event says nothing."""
+    if not audience:
+        return None
     e = t.event.c
     rows = conn.execute(
-        select(e.payload)
+        select(e.payload, e.audience)
         .where(
             e.project_id == project_id,
             e.subject_type == "task",
@@ -379,7 +392,7 @@ def _last_announced(conn: Connection, project_id: str, card_id: str) -> tuple[An
     ).all()
     for row in rows:
         payload = row.payload or {}
-        if "observed" in payload:
+        if "observed" in payload and set(audience) <= set(row.audience or []):
             return _seen(payload)
     return None
 

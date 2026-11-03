@@ -690,7 +690,8 @@ def test_a_new_report_on_an_unchanged_pull_request_wakes_nobody(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
 ) -> None:
     """The agent reports again; the forge says what it said for the last report: stored on
-    the new report, not announced (req-658tp9mj77ny)."""
+    the new report and emitted to nobody, so the views that read every event show it filled
+    (req-658tp9mj77ny)."""
     github.pull(7)
     github.branch("agent-b/probe")
     agent, card_id = _reported_card(owner, make_client)
@@ -699,7 +700,66 @@ def test_a_new_report_on_an_unchanged_pull_request_wakes_nobody(
     assert probe.observe_report(migrated, READER, card_id, max_age=0) is True
     report = owner.get(f"/projects/maintainer/maity/tasks/{card_id}").json()["report"]
     assert report["observed"]["pr_head_sha"] == SHA and report["mismatch"] is False
-    assert len(_reported_events(migrated, card_id)) == 1
+    told, quiet = _reported_events(migrated, card_id)
+    assert told.audience and quiet.audience == []
+    assert quiet.payload == {"task": card_id, "observed": report["observed"], "mismatch": False}
+    read = owner.get("/projects/maintainer/maity/events").json()["items"]
+    assert [e["seq"] for e in read if e["kind"] == "probe_observed"][-1] == quiet.seq
+
+
+def test_a_new_report_the_forge_contradicts_again_wakes(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """A second wrong head is news to the holder, though the forge says what it said."""
+    github.pull(7, head=OTHER)
+    github.branch("agent-b/probe", head=OTHER)
+    agent, card_id = _reported_card(owner, make_client)
+    assert probe.observe_report(migrated, READER, card_id) is True
+    third = "c" * 40
+    pr = {**_report()["pr"], "head": third}
+    again = agent.post(
+        f"/projects/maintainer/maity/tasks/{card_id}/report",
+        _report(head=third, remote_head=third, pr=pr),
+    )
+    assert again.status_code == 200, again.text
+    assert probe.observe_report(migrated, READER, card_id, max_age=0) is True
+    first, second = _reported_events(migrated, card_id)
+    assert first.payload["mismatch"] is second.payload["mismatch"] is True
+    assert second.audience == first.audience != []
+
+
+def test_a_new_holder_is_told_what_the_last_one_was(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """The last observation told the earlier holder: the one now holding the card is told it."""
+    github.pull(7)
+    github.branch("agent-b/probe")
+    agent, card_id = _reported_card(owner, make_client)
+    assert probe.observe_report(migrated, READER, card_id) is True
+    _report_again(agent, card_id)
+    with migrated.begin() as conn:
+        conn.execute(update(t.card).where(t.card.c.id == card_id).values(claim_instance="zz99"))
+    assert probe.observe_report(migrated, READER, card_id, max_age=0) is True
+    _, second = _reported_events(migrated, card_id)
+    assert second.audience == [f"instance:{agent.id}#zz99"]
+
+
+def test_an_observation_that_woke_nobody_told_nobody(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """Observed on a closed card (to nobody), then reopened: the holder's next report is told."""
+    github.pull(7)
+    github.branch("agent-b/probe")
+    agent, card_id = _reported_card(owner, make_client)
+    with migrated.begin() as conn:
+        conn.execute(update(t.card).where(t.card.c.id == card_id).values(status="done"))
+    assert probe.observe_report(migrated, READER, card_id) is True
+    with migrated.begin() as conn:
+        conn.execute(update(t.card).where(t.card.c.id == card_id).values(status="in_progress"))
+    _report_again(agent, card_id)
+    assert probe.observe_report(migrated, READER, card_id, max_age=0) is True
+    quiet, told = _reported_events(migrated, card_id)
+    assert quiet.audience == [] and told.audience == [f"instance:{agent.id}#{agent.instance}"]
 
 
 @pytest.mark.parametrize(
@@ -746,7 +806,8 @@ def test_a_report_after_its_announced_one_was_redacted_is_announced(
         )
     _report_again(agent, card_id)
     assert probe.observe_report(migrated, READER, card_id, max_age=0) is True
-    assert len(_reported_events(migrated, card_id)) == 2
+    _, again = _reported_events(migrated, card_id)
+    assert again.audience != []
 
 
 def _release_with_pull(owner: flow.Human, migrated: Engine, github: FakeGitHub) -> str:

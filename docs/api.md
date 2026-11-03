@@ -5811,10 +5811,12 @@ the card's `approvals` stay. Every replacement clears `approvals`
   the probe is configured it then reads the branch head (`?branch=`) and,
   with `pr` set, the pull request (§11), fills `observed`, sets `mismatch`
   (true when the observed PR head differs from `pr.head`, or the observed
-  branch head differs from `remote_head`) and emits `probe_observed`, unless
-  `observed` (but its `observed_at`) and `mismatch` are what the card's last
-  `probe_observed` said, for this report or an earlier one: then the report
-  is filled and nobody is woken. A
+  branch head differs from `remote_head`) and emits `probe_observed`. It
+  wakes its readers (§8.2) unless `observed` (but its `observed_at`) and
+  `mismatch` are what the card's last `probe_observed` to all of those
+  readers said, for this report or an earlier one, and this report's first
+  observation is no mismatch: then it is emitted to nobody, and only the
+  views that read every event (owners, admins) see the report filled. A
   branch the forge no longer has (deleted, as after a merge) is not a
   mismatch: `observed.branch_head_sha` is null and only the PR head is
   compared. A pull request the forge does not have is: `observed.pr_state`
@@ -9583,7 +9585,7 @@ learns its content.
 | `credential_revoked` | the credential's member, `trust:owner` | credential id, `reason` |
 | `credential_in_payload` | the credential's owner, `trust:owner`, `trust:admin` | credential id; never the value |
 | `event_redacted` | the redacted event's own audience, never wider; for a conversation's message the conversation's audience instead: the two parties of a direct one, the current participants of a group chat, in a closed one also its former human participants and the redacting admin (§8.5) | `seq`, `reason`; `note_id` too when a note was redacted (§6.16); `history_id` and `task_id` instead of `seq` when a card history entry was (§6.15) |
-| `probe_observed` | on a report: the holder of the affected card, with `mismatch: true` also `trust:admin`; nobody on a `done` or `cancelled` card without a mismatch or with its pull request merged, and the report keeps `observed` and `mismatch` to read; on the open release: its card's holder, `trust:admin`. Emitted only when something the reader acts on changed: on a report, `observed` without its `observed_at`, or `mismatch`, against the card's last `probe_observed` (a new report's first observation included); on the open release, a ref's `found`, `state`, `head_sha`, `checks`, `merged_at` or `sha`, or whether its `mergeable` is `conflicting` — `unknown` and `mergeable` taking turns is stored and wakes nobody | the observation |
+| `probe_observed` | on a report: the holder of the affected card, with `mismatch: true` also `trust:admin`; nobody on a `done` or `cancelled` card without a mismatch or with its pull request merged, and the report keeps `observed` and `mismatch` to read; on the open release: its card's holder, `trust:admin`. Wakes only when something the reader acts on changed: on a report, `observed` without its `observed_at`, or `mismatch`, against the card's last `probe_observed` that reached all of these readers (a new report's first observation included; one that contradicts the new report always wakes); otherwise a report's observation is emitted with an empty audience, for the views that read every event; on the open release, a ref's `found`, `state`, `head_sha`, `checks`, `merged_at` or `sha`, or whether its `mergeable` is `conflicting` — `unknown` and `mergeable` taking turns is stored and wakes nobody | the observation |
 | `task_merged` | the card's done authority as §6.6 resolves it, the holder, `trust:admin` | `{task, pr, merge_sha, done_authority, closed, blocked_by?}` (§6.6); wakes the done authority only, and nobody when `closed` is true |
 | `placement_created`, `placement_updated` | `runner:<id>` of the placement's runner once the placement is approved (a pending proposal never names the runner), the creator, the owner of the agent profile | `placement_id`, `generation`, `desired`, `harness`, `target`, `approval.status`, `closed_reason`; never `briefing`, `session_hint` or `logs_hint` (§15.10) |
 | `placement_reported` | the creator, the owner of the agent profile | `placement_id`, `state`, `reason`, `detail`, `exit_code`, `observed_generation`, `restarts`, `retry_at` |
@@ -11294,8 +11296,8 @@ the same shape as `release.tag`. Errors: `probe_not_configured`,
 exists). The same reads feed `report.observed`,
 `release.pull_requests` and the forge links on cards (§6.13, read
 through the forge's issue endpoint for `kind: issue`), in the background after a report and on the
-hub's own interval; an observation that changes a card's state emits
-`probe_observed`. With the change ticker enabled the probe also reads
+hub's own interval; an observation that changes what a card shows emits
+`probe_observed`, which wakes only where §8.2 says. With the change ticker enabled the probe also reads
 the merged pull requests of the default branch, their files and, for a
 contract file, its text at the merge and the base (§17.4); a forge
 webhook only makes it look sooner.
