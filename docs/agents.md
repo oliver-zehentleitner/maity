@@ -346,7 +346,8 @@ takes the hub's hint for your harness from the resume packet.
 
 The pasted line installs the CLI with pipx, which puts `maity` in
 `~/.local/bin` by default, a directory many machines leave off `PATH`.
-Run `pipx ensurepath` and start a new shell. That only helps shells
+Run `pipx ensurepath` (`python -m pipx ensurepath` if `pipx` itself is
+not found, as after the Windows line installed it) and start a new shell. That only helps shells
 that read your profile: if your harness runs each command in a fresh
 non-interactive shell, keep `export PATH="$HOME/.local/bin:$PATH"` in
 the command line, or call `~/.local/bin/maity` by its full path.

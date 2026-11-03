@@ -1072,7 +1072,7 @@
   "forge.unlink.hint": "Desvincular detiene su uso aquí; no desinstala la App. Desinstálala en {link}.",
   "forge.unread": "No se pudo leer el acceso a la forja: ",
   "forge.via.app": "El repositorio se lee con la instalación de la GitHub App de quien es propietario del espacio de nombres.",
-  "forge.via.instance": "El repositorio se lee con el token de la instancia, que solo sirve a los espacios de nombres propios del operador, y solo mientras sea público.",
+  "forge.via.instance": "El repositorio se lee con el token de la instancia, que solo sirve a los espacios de nombres propios del operador, y solo mientras el repositorio sea público.",
   "forge.via.none": "Ningún permiso lee el repositorio. Quien es propietario del espacio de nombres lo conecta en Acceso a la forja: instalar en él la GitHub App o añadir un token de solo lectura, y luego confirmar aquí el repositorio. Hasta entonces, el hub no lee nada de la forja para este proyecto.",
   "forge.via.owner_token": "El repositorio se lee con el token propio de quien es propietario del espacio de nombres.",
   "group.back": "← Conversaciones",
