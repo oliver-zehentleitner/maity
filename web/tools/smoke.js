@@ -6277,6 +6277,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   if (frPick) { frPick.value = win.Maity.i18n.language; frPick.dispatch("change"); for (let k = 0; k < 8; k++) await tick(); }
   expect(frPick && frPickStood && !frFoot() && header.hidden === false && byId("login-handle") && productLine.querySelectorAll("a").length === 3,
     "frame: the picker's redraw with a failed read takes the frame down and brings the product line back " + [!!frPick, frPickStood, productLine.querySelectorAll("a").length]);
+  // Picked again after that failure, its read held open: the line stays away while it waits, and once the frame stands
+  // (maity-review-team-chatgpt#nyh5's review of #1287).
+  const frPickHeld = [];
+  win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? new Promise((r) => frPickHeld.push(r)) : frGet(p));
+  const frPick2 = byId("login-interface");
+  if (frPick2) { frPick2.value = win.Maity.i18n.language; frPick2.dispatch("change"); for (let k = 0; k < 8; k++) await tick(); }
+  const frPickWait = [!!frPick2, productLine.querySelectorAll("a").length, frPickHeld.length];
+  frPickHeld.forEach((r) => r(frModel({}))); for (let k = 0; k < 6; k++) await tick();
+  win.Maity.api.get = frGet;
+  expect(JSON.stringify(frPickWait) === "[true,0,1]" && frFoot() && !productLine.querySelectorAll("a").length,
+    "frame: picked again after a failed read, no product line while its read waits nor once the frame stands " + JSON.stringify(frPickWait));
   frLangs.length = 0; frLangsWere.forEach((t) => frLangs.push(t));
   // A failed read (a hub in maintenance answers 503): the page without the frame, the app's bar back, the legal pages
   // linked under the form as before; the door layout keeps its stylesheet.

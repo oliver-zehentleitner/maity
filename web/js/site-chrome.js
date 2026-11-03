@@ -158,6 +158,9 @@ window.Maity = window.Maity || {};
   // the model, before anything else of the page changes.
   async function enter(current, drawn) {
     const mine = ++round;
+    // Every read holds the line back until it decides, also one a page starts itself without
+    // render() (the login's language picker), after an earlier read failed and let it go.
+    line(undefined, true);
     sheets(true);
     mark(true);
     // Until the read settles no bar is shown that the frame's header then pushes aside; a frame

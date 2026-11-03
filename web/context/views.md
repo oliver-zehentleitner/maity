@@ -4691,7 +4691,8 @@ form until the frame is read: sign-in may never depend on that call (§16.7.4).
 
 The frame's footer stands in place of the dashboard's product line (§16.13). `render()` hands
 its wish to `M.siteChrome.line()`. A signed-out drawing of /login or /register holds the line
-back until its read decides, and the line stays away while a frame stands. It comes back only
+back, and so does every read `enter()` starts, also one a page starts without `render()` (the
+login's language picker), until that read decides. The line stays away while a frame stands. It comes back only
 where the frame is left (`leave()`) or not drawn (a failed read, a model without header or
 footer, which both run `drop()`). The choice itself is confirmed: the maintainer's decision
 req-5k1gvfsmcg9k (2026-11-03), against keeping the product line under the landing footer. His
