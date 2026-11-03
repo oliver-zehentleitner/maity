@@ -9,9 +9,9 @@ from typing import Any
 
 import pytest
 from PIL import Image, PngImagePlugin
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Engine, select, text, update
 
-from maity_hub import attachment_store, attachments, avatars, middleware
+from maity_hub import attachment_store, attachments, avatars, events, middleware
 from maity_hub import tables as t
 from maity_hub.config import ConfigError, Settings
 from maity_hub.ratelimit import Limiter
@@ -217,6 +217,167 @@ def test_the_project_quota_counts_pending_uploads_and_deleting_frees_it(
     assert over.json()["error"]["details"] == {"scope": "project", "used": 1500, "quota": 2048}
     assert owner.delete(f"/projects/maintainer/maity/attachments/{first['id']}").status_code == 200
     assert put(owner, "b.bin", b"x" * 1000, "application/octet-stream").status_code == 201
+
+
+def test_the_blob_is_written_outside_the_projects_lock(
+    owner: flow.Human, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """For `s3` the write is a network call: it must not wait under the project's lock."""
+    real = attachment_store.LocalStore.put
+    taken: list[str] = []
+
+    def put_while_free(self: Any, key: str, data: bytes) -> None:
+        project_id = key.partition("/")[0]
+        # Another transaction takes the project's lock: it would wait (and fail on the
+        # timeout) if the upload held the lock or, on SQLite, the write lock.
+        with migrated.begin() as conn:
+            if migrated.dialect.name == "postgresql":
+                conn.execute(text("SET LOCAL lock_timeout = '2s'"))
+            events.lock_project(conn, project_id)
+        taken.append(key)
+        real(self, key, data)
+
+    monkeypatch.setattr(attachment_store.LocalStore, "put", put_while_free)
+    shown = put(owner, "a.txt", b"free")
+    assert shown.status_code == 201, shown.text
+    assert taken == [f"{taken[0].partition('/')[0]}/{shown.json()['id']}"]
+
+
+def test_a_refused_upload_leaves_no_blob(
+    stored: ClientFactory, migrated: Engine, blobs: Path
+) -> None:
+    """The blob is written before the transaction; a refusal in it removes the blob again."""
+    owner = flow.human(lambda **kw: stored(attachment_quota=2048, **kw), migrated)
+    flow.project(owner, "maity")
+    first = put(owner, "a.bin", b"x" * 1500, "application/octet-stream").json()
+    over = put(owner, "b.bin", b"x" * 1000, "application/octet-stream")
+    assert over.status_code == 409 and over.json()["error"]["code"] == "attachment_quota"
+    assert [p.name for p in blobs.glob("*/*")] == [first["id"]]
+
+
+def test_a_refusal_after_the_write_keeps_the_rate_charged_and_the_quota_is_checked_before_it(
+    stored: ClientFactory, migrated: Engine, blobs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refusal before the store is written costs no write; after it, the write happened, and
+    the rate stays charged (a refusal cannot buy writes past the rate)."""
+    owner = flow.human(lambda **kw: stored(attachment_quota=1024, **kw), migrated)
+    flow.project(owner, "maity")
+    writes: list[str] = []
+    real = attachment_store.LocalStore.put
+
+    def counted(self: Any, key: str, data: bytes) -> None:
+        writes.append(key)
+        real(self, key, data)
+
+    monkeypatch.setattr(attachment_store.LocalStore, "put", counted)
+    given_back: list[Any] = []
+    real_give_back = attachments.give_back
+
+    def give_back(key: str, charged: Any) -> None:
+        given_back.append(charged)
+        real_give_back(key, charged)
+
+    monkeypatch.setattr(attachments, "give_back", give_back)
+    for _ in range(attachments.RATE_UPLOADS + 5):  # past the rate, were the refusals counted
+        over = put(owner, "big.bin", b"x" * 2048, "application/octet-stream")
+        assert over.status_code == 409 and over.json()["error"]["code"] == "attachment_quota"
+    assert writes == []  # refused before the store was written
+    assert len(given_back) == attachments.RATE_UPLOADS + 5  # and given back: nothing was written
+    assert put(owner, "ok.txt", b"x").status_code == 201
+    # A refusal only the second look finds (here: past the bound for its row) comes after the
+    # write: the charge stays, and the blob goes again.
+    from maity_hub.routes import attachments as route
+
+    now = [0.0]
+    monkeypatch.setattr(attachments, "upload_clock", lambda: now[0])
+    real_lock = events.lock_project
+
+    def slow_lock(conn: Any, project_id: str) -> Any:
+        now[0] += attachments.UPLOAD_FRESH + 1  # the lock wait outlasts the bound
+        return real_lock(conn, project_id)
+
+    monkeypatch.setattr(route, "lock_project", slow_lock)
+    late = put(owner, "late.txt", b"y")
+    assert late.status_code == 503 and late.json()["error"]["code"] == "upload_expired"
+    assert len(writes) == 2 and not (blobs / writes[1]).exists()
+    assert len(given_back) == attachments.RATE_UPLOADS + 5
+
+
+def test_a_write_that_fails_or_outlasts_the_bound_keeps_the_rate_charged_and_leaves_no_blob(
+    owner: flow.Human, blobs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed write may still have stored the bytes (its answer lost): the charge stays, and
+    the blob is removed. A write that took longer than `UPLOAD_FRESH` gets no row: the sweep
+    may already count its blob as a stray."""
+    given_back: list[Any] = []
+    monkeypatch.setattr(attachments, "give_back", lambda key, charged: given_back.append(1))
+    real = attachment_store.LocalStore.put
+
+    def lost(self: Any, key: str, data: bytes) -> None:
+        real(self, key, data)
+        raise attachment_store.StoreError("the attachment store could not store a blob (x)")
+
+    monkeypatch.setattr(attachment_store.LocalStore, "put", lost)
+    assert put(owner, "a.txt", b"lost").status_code == 500
+    assert list(blobs.glob("*/*")) == [] and given_back == []
+    now = [0.0]
+    monkeypatch.setattr(attachments, "upload_clock", lambda: now[0])
+
+    def slow(self: Any, key: str, data: bytes) -> None:
+        real(self, key, data)
+        now[0] += attachments.UPLOAD_FRESH + 1
+
+    monkeypatch.setattr(attachment_store.LocalStore, "put", slow)
+    from maity_hub.routes import attachments as route
+
+    locked: list[str] = []
+    monkeypatch.setattr(route, "lock_project", lambda conn, project_id: locked.append(project_id))
+    slow_answer = put(owner, "b.txt", b"slow")
+    assert (
+        slow_answer.status_code == 503 and slow_answer.json()["error"]["code"] == "upload_expired"
+    )
+    assert list(blobs.glob("*/*")) == [] and given_back == [] and locked == []  # no lock taken
+
+
+def test_the_sweeps_grace_outlasts_the_upload_bound_by_the_clock_skew() -> None:
+    """A blob the sweep sees older than `BLOB_GRACE` is, with the clocks up to `CLOCK_SKEW`
+    apart, older than `UPLOAD_FRESH`: its upload can no longer insert the row."""
+    assert attachments.BLOB_GRACE - attachments.CLOCK_SKEW > attachments.UPLOAD_FRESH
+    assert attachments.upload_clock() <= attachments.upload_clock()
+
+
+def test_an_upload_whose_slug_names_another_project_under_the_lock_is_refused(
+    owner: flow.Human, blobs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The blob's key names the project the upload started for; when the slug resolves to
+    another project by the time the row is inserted, no row names that key, and it goes."""
+    import dataclasses
+    import types
+
+    from maity_hub import access
+    from maity_hub.routes import attachments as route
+
+    real = access.membership
+    real_lock = events.lock_project
+    locked: list[str] = []
+
+    def lock(conn: Any, project_id: str) -> Any:
+        found = real_lock(conn, project_id)
+        locked.append(project_id)
+        return found
+
+    def moved(conn: Any, caller: Any, slug: str) -> Any:
+        found = real(conn, caller, slug)
+        if not locked:  # every look before the lock sees the project the upload is for
+            return found
+        other = types.SimpleNamespace(**{**found.project._mapping, "id": "prj-another"})
+        return dataclasses.replace(found, project=other)
+
+    monkeypatch.setattr(route, "membership", moved)
+    monkeypatch.setattr(route, "lock_project", lock)
+    refused = put(owner, "a.txt", b"moved")
+    assert refused.status_code == 404 and refused.json()["error"]["code"] == "not_found"
+    assert list(blobs.glob("*/*")) == [] and len(locked) >= 1
 
 
 def test_a_membership_holds_a_bounded_number_of_pending_uploads(

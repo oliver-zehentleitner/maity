@@ -1143,10 +1143,6 @@
     "en": "647e98cce4691499",
     "text": "7f147192420f807c"
   },
-  "bell.security_hint": {
-    "en": "b3bcd94f9fe4e53c",
-    "text": "ac930f27cb321896"
-  },
   "bell.settings": {
     "en": "c749ce622125ec2a",
     "text": "a6238f567c5bbc10"
@@ -3730,6 +3726,10 @@
   "error.unauthenticated": {
     "en": "cb2b69a399606add",
     "text": "508cc3eebd5e9fab"
+  },
+  "error.upload_expired": {
+    "en": "390ab9fb8bdb7c70",
+    "text": "8a33795a406c778a"
   },
   "error.version_exists": {
     "en": "d10b17f2f8fdf5cb",
@@ -12516,8 +12516,8 @@
     "text": "f5ad73aae2940f62"
   },
   "public_profile.hint": {
-    "en": "b9c7adc490cdec63",
-    "text": "4ad5c9f415eaf927"
+    "en": "bdc3c71606e891f1",
+    "text": "df37abdbf39911cc"
   },
   "public_profile.links": {
     "en": "5b3bd4bf0fd959d5",
@@ -12554,6 +12554,14 @@
   "public_profile.network.format": {
     "en": "86d6d20cf41e43d7",
     "text": "158580ae35b285ff"
+  },
+  "public_profile.presence": {
+    "en": "13fd36440a3dfcb7",
+    "text": "46460c956cf3b5af"
+  },
+  "public_profile.presence.hint": {
+    "en": "e340a78a7fa20d30",
+    "text": "bce65cc5aae110a8"
   },
   "public_profile.refused": {
     "en": "eefc90bc95b7b6cc",
@@ -13971,10 +13979,6 @@
     "en": "ceb846c9f1e324a3",
     "text": "1a8555117230f54f"
   },
-  "sessions.alert_open": {
-    "en": "2a8a6c218d690279",
-    "text": "330f69c96362b320"
-  },
   "sessions.banner.approved": {
     "en": "36d355755805147c",
     "text": "f92c3faaeb4a3293"
@@ -14002,14 +14006,6 @@
   "sessions.cannot_end.too_new": {
     "en": "130a7b20d904f44c",
     "text": "cc0ebf61042b855e"
-  },
-  "sessions.confirm.refused": {
-    "en": "479112e115109e21",
-    "text": "590cdb76f6705e3f"
-  },
-  "sessions.confirm.unknown": {
-    "en": "060ed25d62d1fea1",
-    "text": "efe5e9cb7035be1e"
   },
   "sessions.confirmed": {
     "en": "38ab47d4615a9c3f",

@@ -2,17 +2,21 @@
 
 An upload is raw bytes with the name in the query. An image is decoded and encoded again
 outside the transaction, in the avatar decoder's process; the blob is written before the
-row is committed, and removed again when the transaction does not commit. Reading asks
-the one question the message does: may this caller read it.
+transaction that inserts the row begins, outside the project's lock, and removed again when
+that transaction does not commit. Reading asks the one question the message does: may this
+caller read it.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
+import logging
+from collections.abc import Iterator
 from typing import Any
 
 from fastapi import APIRouter, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import Connection, delete, insert, select, update
 
 from maity_hub import attachment_store as blobs
@@ -21,7 +25,7 @@ from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.deps import AnyCaller, engine_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
-from maity_hub.events import emit, lock_project, on_commit, on_rollback
+from maity_hub.events import emit, lock_project, on_commit
 from maity_hub.ids import new_id
 from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES
@@ -31,6 +35,7 @@ from maity_hub.routes.project_images import _matches
 from maity_hub.scopes import in_admin_team
 
 router = APIRouter(route_class=ProjectRoute)
+log = logging.getLogger(__name__)
 
 HEADERS = {
     "X-Content-Type-Options": "nosniff",
@@ -113,6 +118,29 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     name = attachments.clean_name(raw_name, image_type=sniffed)
     store = blobs.store_of(settings)
     attachment_id = new_id("attachment")
+    try:
+        # The quota and the pending bounds before the store is written, without the lock: a
+        # refusal costs no write. They are read again under the lock, right before the insert.
+        with engine.begin() as conn:
+            _check_room(conn, membership(conn, caller, slug), settings, len(data))
+    except BaseException:
+        attachments.give_back(rate_key, charged)  # nothing was stored: not counted
+        raise
+    # The blob first, the row after (§8.7), and the blob outside every transaction: for `s3`
+    # the write is a network call, and none may wait under the project's lock or hold a
+    # database connection. The sweep leaves a blob without a row alone for `BLOB_GRACE`; the
+    # row is inserted only while less than `UPLOAD_FRESH` has passed since the write began.
+    # From the write on, the rate stays charged, whatever follows: even a write that failed
+    # may have stored the bytes (a lost answer), so it is not given back.
+    key = blobs.key_of(mine.project.id, attachment_id)
+    started = attachments.upload_clock()
+    try:
+        store.put(key, data)
+        if attachments.upload_clock() - started > attachments.UPLOAD_FRESH:
+            raise ApiError(503, "upload_expired", "the upload took too long; send it again")
+    except BaseException:
+        _discard(store, key)
+        raise
 
     def action(conn: Connection) -> idempotency.Outcome:
         project = lock_project(conn, membership(conn, caller, slug).project.id)
@@ -120,23 +148,16 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
         # under the lock, right before the insert.
         locked = membership(conn, caller, slug)
         _require_post(locked)
+        if locked.project.id != mine.project.id:  # the blob's key names the project it was for
+            raise not_found()
         if project.state in CLOSED_STATES:
             raise ApiError(409, "project_closed", f"the project is {project.state}")
-        used = attachments.used(conn, locked.project.id)
-        if used + len(data) > settings.attachment_quota:
-            raise attachments.quota_error("project", used=used, quota=settings.attachment_quota)
-        count, held = attachments.pending_of(conn, locked.id)
-        if count + 1 > attachments.PENDING_COUNT or held + len(data) > attachments.PENDING_BYTES:
-            raise attachments.quota_error(
-                "pending",
-                used=held,
-                quota=attachments.PENDING_BYTES,
-                count=count,
-                max=attachments.PENDING_COUNT,
-            )
-        key = blobs.key_of(locked.project.id, attachment_id)
-        store.put(key, data)  # the blob first, the row after
-        on_rollback(conn, lambda: store.delete(key))
+        _check_room(conn, locked, settings, len(data))
+        if attachments.upload_clock() - started > attachments.UPLOAD_FRESH:
+            # The database did not take the row in time (a lock wait, retries); the sweep may
+            # already count the blob as a stray, so no row may name it now (§8.7).
+            log.warning("an upload waited too long for its row; refused, its blob removed")
+            raise ApiError(503, "upload_expired", "the upload took too long; send it again")
         conn.execute(
             insert(t.attachment).values(
                 id=attachment_id,
@@ -155,10 +176,39 @@ def upload(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
         return idempotency.Outcome(201, "attachment", attachment_id, load(conn, attachment_id))
 
     try:
-        return idempotency.run(engine, request, caller, action)
+        answer = idempotency.run(engine, request, caller, action)
     except BaseException:
-        attachments.give_back(rate_key, charged)
+        _discard(store, key)
         raise
+    if json.loads(bytes(answer.body)).get("id") != attachment_id:
+        _discard(store, key)  # a concurrent call with the same key won: its answer, not this blob
+    return answer
+
+
+def _check_room(conn: Connection, mine: Any, settings: Any, size: int) -> None:
+    """The project's quota and the membership's pending bounds (§8.7) for `size` more bytes."""
+    used = attachments.used(conn, mine.project.id)
+    if used + size > settings.attachment_quota:
+        raise attachments.quota_error("project", used=used, quota=settings.attachment_quota)
+    count, held = attachments.pending_of(conn, mine.id)
+    if count + 1 > attachments.PENDING_COUNT or held + size > attachments.PENDING_BYTES:
+        raise attachments.quota_error(
+            "pending",
+            used=held,
+            quota=attachments.PENDING_BYTES,
+            count=count,
+            max=attachments.PENDING_COUNT,
+        )
+
+
+def _discard(store: blobs.BlobStore, key: str) -> None:
+    """Remove the blob of an upload whose row was never committed, after the transaction and
+    outside its lock. When that fails too, the blob is one without a row, and the sweep
+    removes it once it is older than `BLOB_GRACE`."""
+    try:
+        store.delete(key)
+    except Exception:
+        log.warning("an upload's blob could not be removed; the sweep removes it later")
 
 
 # --- reading -------------------------------------------------------------------------------
@@ -195,8 +245,8 @@ def get_content(slug: str, attachment_id: str, request: Request, caller: AnyCall
     headers = {**HEADERS, "ETag": tag}
     if _matches(request.headers.get("if-none-match"), tag):
         return Response(status_code=304, headers=headers)
-    data = store.get(blobs.key_of(row.project_id, row.id))
-    if data is None:
+    blob = store.open(blobs.key_of(row.project_id, row.id))
+    if blob is None:
         # The bytes may have gone since the row was read: a redaction or a deletion commits
         # and removes them. Read the row again; gone or unreadable now is `not_found`.
         with engine_of(request).begin() as conn:
@@ -204,14 +254,58 @@ def get_content(slug: str, attachment_id: str, request: Request, caller: AnyCall
             again = _row(conn, mine, attachment_id)
             if again.deleted_at is not None or not attachments.readable(conn, mine, again):
                 raise not_found()
-    if data is None or hashlib.sha256(data).hexdigest() != row.sha256:
-        raise ApiError(500, "internal", "the stored bytes do not match their digest")
+        raise _not_matching()
     if row.kind == "image":
         inline = request.query_params.get("download") != "1"
         headers["Content-Disposition"] = attachments.disposition(row.name, inline=inline)
-        return Response(content=data, media_type=row.type, headers=headers)
-    headers["Content-Disposition"] = attachments.disposition(row.name, inline=False)
-    return Response(content=data, media_type="application/octet-stream", headers=headers)
+        media_type = row.type
+    else:
+        headers["Content-Disposition"] = attachments.disposition(row.name, inline=False)
+        media_type = "application/octet-stream"
+    if blob.size != row.size:
+        blob.close()
+        raise _not_matching()
+    if row.size <= WHOLE:
+        # Small enough to check before the first byte goes out: a mismatch is a plain 500.
+        try:
+            data = b"".join(blob)
+        finally:
+            blob.close()
+        if hashlib.sha256(data).hexdigest() != row.sha256:
+            raise _not_matching()
+        return Response(content=data, media_type=media_type, headers=headers)
+    headers["Content-Length"] = str(row.size)
+    return StreamingResponse(_checked(blob, row.sha256), media_type=media_type, headers=headers)
+
+
+# Up to this size the bytes are read whole and checked before the answer starts; above it
+# they stream, and the check holds the last piece back (`_checked`).
+WHOLE = 1024 * 1024
+
+
+def _not_matching() -> ApiError:
+    return ApiError(500, "internal", "the stored bytes do not match their digest")
+
+
+def _checked(blob: blobs.Blob, sha256: str) -> Iterator[bytes]:
+    """The blob's pieces, hashed as they pass. The last piece is held back until the whole
+    digest is known: bytes that do not match their digest end the answer short of its
+    `Content-Length`, so no client takes them for the attachment."""
+    digest = hashlib.sha256()
+    held: bytes | None = None
+    try:
+        for piece in blob:
+            digest.update(piece)
+            if held is not None:
+                yield held
+            held = piece
+        if digest.hexdigest() != sha256:
+            log.error("an attachment's stored bytes do not match their digest; answer cut short")
+            raise blobs.StoreError("the stored bytes do not match their digest")
+        if held is not None:
+            yield held
+    finally:
+        blob.close()
 
 
 @router.get("/projects/{owner}/{slug}/attachments")
@@ -308,7 +402,7 @@ def _not_a_participant() -> ApiError:
 
 
 def _delete_sent(
-    conn: Connection, mine: Any, caller: Any, row: Any, store: blobs.LocalStore
+    conn: Connection, mine: Any, caller: Any, row: Any, store: blobs.BlobStore
 ) -> idempotency.Outcome:
     """An attachment a message carries (§8.7): readable as the message is, deleted by its
     uploader, by a human in the chat now (a chat message), or by a human with

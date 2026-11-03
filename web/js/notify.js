@@ -108,15 +108,35 @@ window.Maity = window.Maity || {};
       M.icons.chat(18), n ? h("span", { class: "count", "aria-hidden": "true" }, String(n)) : null);
   }
 
-  // The bell: the unread count on it, the latest items under it, each a
-  // link to where it happened, unread ones marked, and Mark all read.
+  // Why the hub left an alert unread (§18.3 `skipped`), in words.
+  const SKIPPED = {
+    not_earlier: () => M.t("bell.skipped.not_earlier"),
+    not_in_good_standing: () => M.t("bell.skipped.not_in_good_standing"),
+  };
+  const skippedWhy = (reason) => (Object.hasOwn(SKIPPED, reason) ? SKIPPED[reason]() : reason);
+
+  // The question before "mark all read" takes security alerts along (§18.8):
+  // each one with its time, place and browser; reading them confirms nothing.
+  function askMarkAll(pinned, sessions) {
+    const lines = pinned.map((x) => {
+      const t0 = x.target || {};
+      const s = t0.type === "session" && sessions.find((y) => y.id === t0.id);
+      const place = s && (s.created ? s.created.ip : s.ip);
+      return "– " + M.dom.formatTime(x.at) + " · " + x.title + (place ? " · " + place : "");
+    });
+    return window.confirm(M.t("bell.mark_all.ask", { count: pinned.length }) + "\n\n" + lines.join("\n"));
+  }
+
+  // The bell: the unread count on it, the security alerts pinned above the
+  // latest items (§18.2), each a link to where it happened, unread ones
+  // marked, a filter "unread only", and Mark all read.
   function bell(ctx, onChange) {
     // What is unread on the bell: every kind but the open requests, which
-    // the inbox and the switcher show. Sign-in and address alerts count,
-    // but "mark all read" never reaches them (§18.3).
-    const counts = state.counts || {};
-    const unread = Object.keys(KIND_WORDS).filter((k) => k !== "inbox").reduce((n, k) => n + (counts[k] || 0), 0);
-    const markable = unread - (counts.security || 0);
+    // the inbox and the switcher show. Security alerts count, and "mark all
+    // read" takes them too after the human confirms it (§18.3, §18.8).
+    const unreadOf = (c) => Object.keys(KIND_WORDS).filter((k) => k !== "inbox").reduce((n, k) => n + (c[k] || 0), 0);
+    let counts = state.counts || {};
+    let unread = unreadOf(counts);
     const box = h("div", { class: "bell-box" });
     const list = h("div", { class: "bell-panel", id: "bell-panel", role: "region", "aria-label": M.t("bell.title") });
     list.hidden = true;
@@ -125,6 +145,18 @@ window.Maity = window.Maity || {};
       type: "button", class: "bell", "aria-expanded": "false", "aria-controls": "bell-panel", "aria-label": label, title: label,
     }, M.icons.bell(18), unread ? h("span", { class: "count", "aria-hidden": "true" }, String(unread)) : null);
     const status = M.statusLine();
+    // An open bell is not drawn anew with the counts (app.js renderBell): a
+    // change made in it brings its own count and label up to date.
+    function relabel() {
+      counts = state.counts || {};
+      unread = unreadOf(counts);
+      const words = unread ? M.t("bell.unread", { count: unread }) : M.t("bell.title");
+      button.setAttribute("aria-label", words);
+      button.setAttribute("title", words);
+      const shown = button.querySelector(".count");
+      if (shown) shown.remove();
+      if (unread) button.appendChild(h("span", { class: "count", "aria-hidden": "true" }, String(unread)));
+    }
     const close = (refocus) => {
       list.hidden = true;
       button.setAttribute("aria-expanded", "false");
@@ -133,31 +165,102 @@ window.Maity = window.Maity || {};
     };
     function outside(e) { if (!box.contains(e.target)) close(false); }
     let items = [];
+    let pinned = [];
+    let sessions = [];
     let top = null;
+    let unreadOnly = false;
+    // A change made in the panel: the counts and the bell again, the panel
+    // read again and kept open, the status line saying what happened.
+    async function after(words) {
+      await onChange();
+      relabel();
+      await load();
+      draw();
+      if (words) { status.done(); append(status.el, h("span", { class: "ok" }, words)); }
+    }
+    async function markAll() {
+      // Security alerts are among what it covers: asked first, declined, nothing.
+      const withSecurity = pinned.length > 0;
+      if (withSecurity && !askMarkAll(pinned, sessions)) return;
+      status.busy(M.t("bell.marking"));
+      let answer;
+      try {
+        answer = await M.api.post("/me/notifications/read", withSecurity ? { up_to: top, include_security: true } : { up_to: top });
+      } catch (err) {
+        status.fail(M.t("bell.not_marked"), err);
+        return;
+      }
+      const left = answer.skipped || [];
+      if (left.length) {
+        // What the hub left, and why (§18.3), stays in the open panel.
+        await after(null);
+        status.fail(M.t("bell.skipped", { count: left.length }), {
+          message: left.map((x) => {
+            const found = pinned.find((y) => y.id === x.id);
+            return (found ? found.title : x.id) + ": " + skippedWhy(x.reason);
+          }).join("; "),
+        });
+        return;
+      }
+      // The bell is drawn again with the new counts; the focus goes to it.
+      close(false);
+      await onChange();
+      const again = document.getElementById("header").querySelector("button.bell");
+      if (again) again.focus();
+    }
+    // One pinned alert: This was me for a sign-in this session may confirm,
+    // Mark read for the rest where this session may mark it (§18.8).
+    function pinnedRow(x) {
+      const t0 = x.target || {};
+      const s = t0.type === "session" ? sessions.find((y) => y.id === t0.id) : null;
+      const cur = sessions.find((y) => y.current) || null;
+      const may = M.sessions && M.sessions.mayConfirmSession(cur, s);
+      const mark = !may && M.sessions && M.sessions.mayMark(cur, x, s);
+      const run = (busy, fn, words) => async () => {
+        status.busy(busy);
+        try {
+          await fn();
+        } catch (err) {
+          status.fail(M.t("bell.not_marked"), M.sessions.said(err));
+          return;
+        }
+        await after(words);
+      };
+      return h("li", { class: "unread", "data-alert": x.id },
+        h("a", { href: linkOf(x), onclick: () => close(false) }, x.title),
+        h("span", { class: "muted" }, " · " + formatAgo(x.at)), " ",
+        may ? h("button", { type: "button", class: "small", "aria-label": M.t("sessions.this_was_me.label", { what: x.title }),
+          onclick: run(M.t("sessions.confirming"), () => M.sessions.confirm(s), M.t("sessions.confirmed", { what: M.sessions.device(s) })) }, M.t("sessions.this_was_me"))
+          : mark ? h("button", { type: "button", class: "small", "aria-label": M.t("bell.mark_read.label", { what: x.title }),
+            onclick: run(M.t("bell.marking"), async () => {
+              const answer = await M.api.post("/me/notifications/read", { ids: [x.id] });
+              const left = (answer.skipped || []).find((y) => y.id === x.id);
+              if (left) throw Object.assign(new Error(skippedWhy(left.reason)), { details: {} });
+            }, M.t("bell.marked_read")) }, M.t("bell.mark_read")) : null);
+    }
     function draw() {
+      const shownPinned = new Set(pinned.map((x) => x.id));
+      const listed = items.filter((x) => !shownPinned.has(x.id)); // shown once, in the block
       append(clear(list),
         h("div", { class: "bell-head" }, h("h2", { class: "panel-title" }, M.t("bell.title")),
-          top !== null && markable ? h("button", {
-            type: "button", class: "small",
-            onclick: async () => {
-              status.busy(M.t("bell.marking"));
-              try {
-                await M.api.post("/me/notifications/read", { up_to: top });
-              } catch (err) {
-                status.fail(M.t("bell.not_marked"), err);
-                return;
-              }
-              // The bell is drawn again with the new counts; the focus goes to it.
-              close(false);
-              await onChange();
-              const again = document.getElementById("header").querySelector("button.bell");
-              if (again) again.focus();
-            },
-          }, M.t("bell.mark_all")) : null),
+          top !== null && unread ? h("button", { type: "button", class: "small", onclick: markAll }, M.t("bell.mark_all")) : null),
         h("p", { class: "muted bell-counts" }, Object.keys(KIND_COUNTS).filter((k) => counts[k]).map((k) => KIND_COUNTS[k](counts[k])).join(" · ") || M.t("bell.nothing_new")),
-        counts.security ? h("p", { class: "hint" }, M.t("bell.security_hint")) : null,
-        items.length
-          ? h("ul", { class: "bell-items" }, items.map((x) => h("li", { class: x.read ? "read" : "unread" },
+        pinned.length ? h("section", { class: "bell-pinned", "aria-labelledby": "bell-pinned-title" },
+          h("h3", { id: "bell-pinned-title", class: "panel-subtitle" }, M.t("bell.pinned")),
+          h("p", { class: "hint" }, M.t("bell.security_hint")),
+          h("ul", { class: "bell-items" }, pinned.map(pinnedRow))) : null,
+        h("p", { class: "bell-filter" }, h("button", {
+          type: "button", class: "small", "aria-pressed": unreadOnly ? "true" : "false",
+          onclick: async () => {
+            unreadOnly = !unreadOnly;
+            await load();
+            draw();
+            const again = list.querySelector(".bell-filter button");
+            if (again) again.focus();
+          },
+        }, M.t("bell.filter.unread"))),
+        listed.length
+          ? h("ul", { class: "bell-items" }, listed.map((x) => h("li", { class: x.read ? "read" : "unread" },
             h("a", {
               href: linkOf(x),
               onclick: () => {
@@ -169,24 +272,35 @@ window.Maity = window.Maity || {};
             }, x.redacted ? M.t("bell.removed") : x.title),
             h("span", { class: "muted" }, " · " + (x.project ? x.project.name + " · " : "") + formatAgo(x.at)),
             x.read ? null : h("span", { class: "visually-hidden" }, " ", M.t("bell.item.unread")))))
-          : h("p", { class: "muted" }, M.t("bell.none")),
+          : h("p", { class: "muted" }, unreadOnly ? M.t("bell.none_unread") : M.t("bell.none")),
         h("p", { class: "hint" }, h("a", { href: "/notifications", onclick: () => close(false) }, M.t("bell.all")), " · ",
           h("a", { href: "/account/notifications", onclick: () => close(false) }, M.t("bell.settings"))),
         status.el);
     }
-    // The latest 20 are read when the bell opens; "mark all read" marks up to
-    // that answer's position.
-    button.addEventListener("click", async () => {
-      if (!list.hidden) { close(true); return; }
+    // The latest 20 are read when the bell opens, the unread ones only with
+    // the filter; "mark all read" marks up to that answer's position. The
+    // sessions are read only when a sign-in alert is pinned, to know where
+    // This was me is offered (§18.8).
+    async function load() {
       try {
-        const answer = await M.api.get("/me/notifications?limit=20");
+        const answer = await M.api.get("/me/notifications?limit=20" + (unreadOnly ? "&unread=true" : ""));
         items = (answer.items || []).filter(known);
+        pinned = (answer.pinned || []).filter(known);
         top = answer.next_after || null;
+        // Every pinned alert is judged against the current session (§18.3), and a sign-in
+        // alert may report a session ended since: the sessions, ended ones too.
+        sessions = pinned.length
+          ? (await M.api.get("/auth/sessions?ended=true").catch(() => ({ items: [] }))).items || [] : [];
       } catch (err) {
         items = [];
+        pinned = [];
         top = null;
         status.fail(M.t("bell.read_failed"), err);
       }
+    }
+    button.addEventListener("click", async () => {
+      if (!list.hidden) { close(true); return; }
+      await load();
       draw();
       list.hidden = false;
       button.setAttribute("aria-expanded", "true");
@@ -339,5 +453,5 @@ window.Maity = window.Maity || {};
     return () => { watchers.delete(fn); wakeLoop(); };
   }
 
-  M.notify = { known, keepsUnread, state, read, projectCount, title, bell, chatButton, linkOf, startBrowser, stopBrowser, halt, resume, running: () => !!browserConfig && !!browserLoop, subscribe, changed, KIND_WORDS };
+  M.notify = { known, keepsUnread, skippedWhy, state, read, projectCount, title, bell, chatButton, linkOf, startBrowser, stopBrowser, halt, resume, running: () => !!browserConfig && !!browserLoop, subscribe, changed, KIND_WORDS };
 })(window.Maity);
