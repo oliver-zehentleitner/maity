@@ -467,12 +467,16 @@ def copy_local_to_s3(
                         done["skipped_deleted"] += 1
                         continue
                     target.put(key, data)
-                    if target.stat(key) != (len(data), digest):
-                        raise StoreError("the attachment store did not keep a blob whole")
-                    if still is not None and not still(key):  # deleted while this ran
-                        target.delete(key)
+                    kept = target.stat(key)
+                    # Deleted while this ran: asked before the check, since the hub's own
+                    # removal may already have taken the object (no object is no failure then).
+                    if still is not None and not still(key):
+                        if kept is not None:
+                            target.delete(key)
                         done["skipped_deleted"] += 1
                         continue
+                    if kept != (len(data), digest):
+                        raise StoreError("the attachment store did not keep a blob whole")
                 done["copied"] += 1
             except StoreError as error:
                 log.error("%s: %s", key, error)
