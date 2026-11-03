@@ -441,3 +441,65 @@ the window holds nothing of the request.
 - Moving the nonces into the database on every engine: a table and a write per signed request on the
   engines that run one replica, for what one comparison solves.
 
+
+## A sign-in's confirmation is stored on its session, carried over from the read marks once
+
+**Id:** f5611a2e-9219-4e5e-a816-5700da32a47c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+
+"This was me" (`POST /auth/sessions/{id}/confirm`, §2.6.5) writes `confirmed_at` and
+`confirmed_by` on the confirmed session's `human_session` row. `sessions.good_standing` reads
+the row alone: password or registration, a TOTP or recovery-code second factor, or
+`confirmed_at`. Reading the `session_created` item sets nothing on the session. The migration
+`20261103100000_session_confirmed` carries over every `session_created` record that a session
+marked read (`read_by` set) as a confirmation at that read's time by that session. Before, only
+an allowed session could mark one, so each such mark was a confirmation. A record read without
+`read_by` confirms nothing. The carry-over is one `UPDATE … FROM account_record`, joined on the
+record's `session_id`, because the column change holds an exclusive lock on `human_session`
+until the migration commits.
+
+The confirm checks run in one transaction. A target not yet in good standing is confirmed by a
+conditional `UPDATE` on `ended_at IS NULL`; then every target, in good standing or not, is read
+again with a row lock (`SELECT … FOR UPDATE`), and if it ended meanwhile the call is
+`not_found` with nothing confirmed or marked. A concurrent `DELETE` therefore either waits and
+ends a confirmed session, or leaves the confirm `not_found`. A target already in good standing
+keeps its standing as it is; only its liveness is held.
+
+Who may mark a security item read is `listing.refusal`. Only `session_created` and
+`email_address_changed` are guarded; every other security kind may be marked from any session
+(§18.3). `not_earlier` is checked before `not_in_good_standing`, in the confirm's order, and
+each skipped item is answered in `skipped`. A sign-in whose session row is gone is judged by
+the time of its record, so "mark all read" from an older session in good standing still clears
+it.
+
+The pinned block (`items.pinned`) reads the unread security records alone, newest first, up to
+50. Security items come only from account records, so it reads no project's events. The 50 are
+taken in SQL, so the records that give no item (a forge access that went, §18.1) are left out
+in SQL too (`items.records_without_item`): counted against the limit, 50 newer ones would hide
+a sign-in alert that `counts.security` still counts. A session
+moved into enrolment (§2.8.5) keeps `GET /me/notifications`, `POST /me/notifications/read` and
+the confirm only while its sign-in was complete and it is in good standing; a fresh enrolment
+sign-in keeps none of them.
+
+**Reason:** with the confirmation derived from the record's read flag, any change to how items
+are read changed who is in good standing, and an expired record silently took the standing
+away. A column on the session makes standing one row's fact, readable where the session is read,
+and lets the bell mark alerts read without touching it.
+
+**Rejected alternatives:**
+- Keeping the derivation from `account_record.read_at` and adding a separate "read only" flag:
+  two flags on the record for one decision, and the standing still depends on a record that
+  expires after 90 days.
+- Carrying the old read marks over as `confirmed_at: null` with good standing kept another way:
+  the session list could not say when or by whom such a session was confirmed, although the
+  record holds both.
+- Carrying the read marks over one `UPDATE` per record: every sign-in waits on the exclusive
+  lock for N round trips (measured on PostgreSQL: 50 000 marks, 9.9 s).
+- Holding only the target that still needs confirming: a target in good standing then had no
+  liveness check, and a concurrent `DELETE` and the confirm both answered 200 with the alert
+  marked read on an ended session (shown on PostgreSQL in review).
+- Refusing to mark the alert of a session whose row is gone (the old behaviour): such an alert
+  could then never be cleared until its record expired, the very thing the bell change set out to
+  end.

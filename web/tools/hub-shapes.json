@@ -270,6 +270,28 @@
    },
    "next_after": "string",
    "next_cursor": "null",
+   "pinned": {
+    "array": {
+     "object": {
+      "actor": "null",
+      "at": "string",
+      "id": "string",
+      "kind": "string",
+      "project": "null",
+      "read": "boolean",
+      "record": "string",
+      "redacted": "boolean",
+      "target": {
+       "object": {
+        "id": "string",
+        "type": "string"
+       }
+      },
+      "title": "string",
+      "url": "string"
+     }
+    }
+   },
    "server_time": "string"
   }
  },

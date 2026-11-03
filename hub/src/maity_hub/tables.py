@@ -391,6 +391,10 @@ human_session = Table(
     Column("ip", String(64)),
     Column("approved_by", String(ID)),
     Column("ended_by", String(32)),
+    # "This was me" (§2.6.5): when and from which session (its public id) the sign-in was
+    # confirmed; null while it is not. Reading its alert never sets them.
+    Column("confirmed_at", UtcDateTime),
+    Column("confirmed_by", String(ID)),
     # Two-factor sign-in (docs/api.md §2.8): `full`, `second_factor` (the first factor is
     # done, the code is not) or `enrolment` (the policy wants a factor first);
     # `sign_in_complete` is false until the second step makes the sign-in count;
