@@ -293,6 +293,34 @@ def test_a_refusal_after_the_write_keeps_the_rate_charged_and_the_quota_is_check
     assert len(given_back) == attachments.RATE_UPLOADS + 5
 
 
+def test_an_upload_whose_slug_names_another_project_under_the_lock_is_refused(
+    owner: flow.Human, blobs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The blob's key names the project the upload started for; when the slug resolves to
+    another project by the time the row is inserted, no row names that key, and it goes."""
+    import dataclasses
+    import types
+
+    from maity_hub import access
+    from maity_hub.routes import attachments as route
+
+    real = access.membership
+    calls: list[int] = []
+
+    def moved(conn: Any, caller: Any, slug: str) -> Any:
+        found = real(conn, caller, slug)
+        calls.append(1)
+        if len(calls) <= 3:  # the first look, the check before the write, the lock
+            return found
+        other = types.SimpleNamespace(**{**found.project._mapping, "id": "prj-another"})
+        return dataclasses.replace(found, project=other)
+
+    monkeypatch.setattr(route, "membership", moved)
+    refused = put(owner, "a.txt", b"moved")
+    assert refused.status_code == 404 and refused.json()["error"]["code"] == "not_found"
+    assert list(blobs.glob("*/*")) == []
+
+
 def test_a_membership_holds_a_bounded_number_of_pending_uploads(
     owner: flow.Human, monkeypatch: pytest.MonkeyPatch
 ) -> None:
