@@ -1013,6 +1013,7 @@ window.MAITY_I18N["fr"] = {
   "error.timestamp_skew": "L'horloge de cet appareil est trop éloignée de celle du hub.",
   "error.too_few": "Trop peu de membres seraient invités à ce tour.",
   "error.unauthenticated": "Vous n'avez pas ouvert de session.",
+  "error.upload_expired": "L'envoi a pris trop de temps. Envoyez le fichier à nouveau.",
   "error.version_exists": "Une release portant ce numéro de version existe déjà.",
   "error.webhook_signature": "L'envoi de la forge n'a pas de signature valide.",
   "forge.app.hint": "Installez l'App sur votre compte GitHub et choisissez les dépôts qu'elle peut lire. Elle sert alors chaque projet dont vous êtes propriétaire et dont le dépôt en fait partie.",

@@ -5,7 +5,8 @@ The first that covers it, decided per project:
 1. the namespace owner's installation of the instance's GitHub App: the forge names an
    installation for the repository, and it is one of the owner's links;
 2. the namespace owner's own token: a read of the repository with it answers;
-3. the operator's token, only for a repository the forge reports public.
+3. the operator's token, only for a project in one of the operator's own namespaces
+   (`MAITY_FORGE_INSTANCE_NAMESPACES`) and only for a repository the forge reports public.
 
 Only the namespace owner's grants count, and only while the owner has confirmed the URL
 the project carries (`repository_owner_confirmed`): no co-admin can point a project at
@@ -27,7 +28,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Connection, Engine, select, update
 
 from maity_hub import (
     bounded,
@@ -35,6 +36,7 @@ from maity_hub import (
     forge,
     forge_links,
     github_app,
+    namespace,
     secretbox,
     wakeups,
     write_guard,
@@ -57,20 +59,36 @@ class _Facts:
     confirmed: bool
     links: tuple[tuple[str, int, str], ...]  # (id, installation id, status)
     token: tuple[str, Any, bytes] | None  # (status, set_at, sealed)
+    namespace: str  # the project's namespace by its current handle, in lower case
 
     def key(self, base: forge.Forge) -> tuple[Any, ...]:
         digest = hashlib.sha256((base.token or "").encode()).hexdigest()
         token = None if self.token is None else self.token[:2]
-        return (self.repository_url, self.owner_id, self.confirmed, self.links, token, digest)
+        return (
+            self.repository_url,
+            self.owner_id,
+            self.confirmed,
+            self.links,
+            token,
+            digest,
+            self.namespace,
+        )
 
 
 class ForgeAccess:
     """The grants the hub knows, for `Forge.for_project`."""
 
-    def __init__(self, engine: Engine, app: GitHubApp | None, secret_key: bytes | None) -> None:
+    def __init__(
+        self,
+        engine: Engine,
+        app: GitHubApp | None,
+        secret_key: bytes | None,
+        instance_namespaces: frozenset[str] = frozenset(),
+    ) -> None:
         self.engine = engine
         self.app = app
         self.secret_key = secret_key
+        self.instance_namespaces = instance_namespaces
         self._lock = threading.Lock()
         # project id -> (when chosen, what it depended on, the reader)
         self._chosen: OrderedDict[str, tuple[float, tuple[Any, ...], forge.Forge]] = OrderedDict()
@@ -141,6 +159,7 @@ class ForgeAccess:
                     t.project.c.repository_confirmed_by,
                 ).where(t.project.c.id == project_id)
             ).one()
+            handle = namespace.current_handle(conn, project.owner_id) or ""
             # The namespace owner's grants for a project of a human; for one of an organisation
             # the grants of the owner who confirmed it, and nobody's while none did.
             grants = project.repository_confirmed_by or (
@@ -158,6 +177,7 @@ class ForgeAccess:
             bool(project.repository_owner_confirmed),
             links,
             None if token is None else (token.status, token.set_at, token.token_sealed),
+            handle.lower(),
         )
 
     def _choose(self, project_id: str, facts: _Facts, base: forge.Forge) -> forge.Forge:
@@ -179,7 +199,9 @@ class ForgeAccess:
             owner_reason = owner_reason or token_reason
         elif has_grant:
             owner_reason = "unconfirmed"
-        if base.token is None:
+        if base.token is None or facts.namespace not in self.instance_namespaces:
+            # The operator's token serves the operator's own namespaces only (§11.4): any
+            # other project is read through its owner's grant or not at all.
             return self._refusing(base, project_id, owner_reason or "no_grant")
         # The operator's token, which checks on every read that the repository is public;
         # when it is not, the owner's reason says more than "private".
@@ -306,14 +328,29 @@ def _note_via(project_id: str, via: str | None) -> None:
         bounded.put(_last_via, project_id, via, VIA_KEPT)
 
 
-def probe_via(
-    project_id: str, url: str | None, stored: str | None, instance_token: str | None
-) -> str | None:
+def instance_serves(conn: Connection, fg: forge.Forge, owner_id: str) -> bool:
+    """Whether `fg`'s operator token reads for a project of this namespace owner (§11.4). A
+    reader that knows no grants (tests) reads for every project, as `for_project` does."""
+    if fg.token is None:
+        return False
+    if fg.access is None:
+        return True
+    return serves(fg.access.instance_namespaces, namespace.current_handle(conn, owner_id))
+
+
+def serves(namespaces: frozenset[str], handle: str | None) -> bool:
+    """Whether the operator's token reads for a project of the namespace with this current
+    handle: one of the operator's own (`MAITY_FORGE_INSTANCE_NAMESPACES`, §11.4)."""
+    return handle is not None and handle.lower() in namespaces
+
+
+def probe_via(project_id: str, url: str | None, stored: str | None, instance: bool) -> str | None:
     """`repository.probe_via` (§6.1): the source the project's last choice found; before
-    any, the operator's token when the hub holds one. `stored` is the project's `probe_via`, so
-    this asks neither the forge nor the database, and a view can show it."""
+    any, the operator's token when it serves the project (`instance`: the hub holds one and
+    the project is in one of the operator's own namespaces). `stored` is the project's
+    `probe_via`, so this asks neither the forge nor the database, and a view can show it."""
     if forge.kind_of(url) != "github":
         return None
     if stored is not None:
         return None if stored == NO_SOURCE else stored
-    return _last_via.get(project_id, "instance" if instance_token is not None else None)
+    return _last_via.get(project_id, "instance" if instance else None)

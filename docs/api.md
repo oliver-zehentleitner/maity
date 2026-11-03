@@ -108,6 +108,10 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   a deploy. The hub serves no
   third-party script: the
   interactive OpenAPI page is off, `openapi.json` is the machine form.
+- A page the hub renders with a token in its path (`/join/{token}` as
+  HTML, the `/mail/…/{token}` link pages) also carries
+  `Referrer-Policy: no-referrer`, so no link or request on it sends that
+  path on (§16.13).
 - The hub writes its own request log: method, path and status, then `ms=`
   (how long the hub took) and `route=` (the pattern the answering route was
   declared with, such as `/api/v1/tasks/{id}`, holding nothing from the request, or `-`
@@ -239,6 +243,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any; `details.retry_at` while the forge's rate limit for the source is spent: no read before that time (§11) |
 | 503 | `ktw_unavailable` | the root `.keep-the-why` of the Keep the Why family could not be read (§11.3); `details.reason`, `details.last` holds the last good answer if any; a family member's own failure is reported on that member, not as this error |
 | 503 | `database_unavailable` | the database cannot be reached (`/health`, and any call that needs it); `details` is `{}`, the message carries no driver text |
+| 503 | `upload_expired` | an attachment upload whose write and row took longer than the hub allows (§8.7); nothing was stored, the attempt counted against the upload rate, and it may be sent again |
 | 503 | `schema_outdated` | the database is not at the migration head (`/health`); `details.revision`, `details.head` |
 
 ### 1.4 Pagination
@@ -5812,7 +5817,12 @@ the card's `approvals` stay. Every replacement clears `approvals`
   the probe is configured it then reads the branch head (`?branch=`) and,
   with `pr` set, the pull request (§11), fills `observed`, sets `mismatch`
   (true when the observed PR head differs from `pr.head`, or the observed
-  branch head differs from `remote_head`) and emits `probe_observed`. A
+  branch head differs from `remote_head`) and emits `probe_observed`. It
+  wakes its readers (§8.2) unless `observed` (but its `observed_at`) and
+  `mismatch` are what the card's last `probe_observed` to all of those
+  readers said, for this report or an earlier one, and this report's first
+  observation is no mismatch: then it is emitted to nobody, and only the
+  views that read every event (owners, admins) see the report filled. A
   branch the forge no longer has (deleted, as after a merge) is not a
   mismatch: `observed.branch_head_sha` is null and only the PR head is
   compared. A pull request the forge does not have is: `observed.pr_state`
@@ -9584,7 +9594,7 @@ learns its content.
 | `credential_revoked` | the credential's member, `trust:owner` | credential id, `reason` |
 | `credential_in_payload` | the credential's owner, `trust:owner`, `trust:admin` | credential id; never the value |
 | `event_redacted` | the redacted event's own audience, never wider; for a conversation's message the conversation's audience instead: the two parties of a direct one, the current participants of a group chat, in a closed one also its former human participants and the redacting admin (§8.5) | `seq`, `reason`; `note_id` too when a note was redacted (§6.16); `history_id` and `task_id` instead of `seq` when a card history entry was (§6.15) |
-| `probe_observed` | on a report: the holder of the affected card, with `mismatch: true` also `trust:admin`; nobody on a `done` or `cancelled` card without a mismatch or with its pull request merged, and the report keeps `observed` and `mismatch` to read; on the open release: its card's holder, `trust:admin` | the observation |
+| `probe_observed` | on a report: the holder of the affected card, with `mismatch: true` also `trust:admin`; nobody on a `done` or `cancelled` card without a mismatch or with its pull request merged, and the report keeps `observed` and `mismatch` to read; on the open release: its card's holder, `trust:admin`. Wakes only when something the reader acts on changed: on a report, `observed` without its `observed_at`, or `mismatch`, against the card's last `probe_observed` that reached all of these readers (a new report's first observation included; one that contradicts the new report always wakes); otherwise a report's observation is emitted with an empty audience, for the views that read every event; on the open release, a ref's `found`, `state`, `head_sha`, `checks`, `merged_at` or `sha`, or whether its `mergeable` is `conflicting` — `unknown` and `mergeable` taking turns is stored and wakes nobody | the observation |
 | `task_merged` | the card's done authority as §6.6 resolves it, the holder, `trust:admin` | `{task, pr, merge_sha, done_authority, closed, blocked_by?}` (§6.6); wakes the done authority only, and nobody when `closed` is true |
 | `placement_created`, `placement_updated` | `runner:<id>` of the placement's runner once the placement is approved (a pending proposal never names the runner), the creator, the owner of the agent profile | `placement_id`, `generation`, `desired`, `harness`, `target`, `approval.status`, `closed_reason`; never `briefing`, `session_hint` or `logs_hint` (§15.10) |
 | `placement_reported` | the creator, the owner of the agent profile | `placement_id`, `state`, `reason`, `detail`, `exit_code`, `observed_generation`, `restarts`, `retry_at` |
@@ -10367,9 +10377,16 @@ and never hands out a presigned URL — the read rule is checked on every
 request, which a link to the store would bypass. On upload the blob is
 written first and the metadata committed after it, so a row never points
 at a missing blob; a blob without a row (a crash between the two) is
-removed by the hub's sweep. On read the hub checks the digest of what the
+removed by the hub's sweep. The row is committed only within 5 minutes of
+the start of the write. Past that the upload answers `503
+upload_expired` and the hub removes the blob. The upload may be sent
+again, and the attempt counts against the upload rate. On read the hub checks the digest of what the
 store returned against the stored one and answers `internal` on a
-mismatch rather than serve other bytes. A deletion tombstones the row in
+mismatch rather than serve other bytes. A file larger than 1 MiB is
+streamed with its `Content-Length` and checked as it passes; its last
+piece is held back until the digest is known, and on a mismatch the
+answer ends short of that length, so no client receives the bytes whole.
+A deletion tombstones the row in
 its transaction and removes the blob after the commit; a blob removal
 that fails is retried by the sweep, and the tombstoned row is never
 served again either way. The database stays small and portable across
@@ -11295,8 +11312,8 @@ the same shape as `release.tag`. Errors: `probe_not_configured`,
 exists). The same reads feed `report.observed`,
 `release.pull_requests` and the forge links on cards (§6.13, read
 through the forge's issue endpoint for `kind: issue`), in the background after a report and on the
-hub's own interval; an observation that changes a card's state emits
-`probe_observed`. With the change ticker enabled the probe also reads
+hub's own interval; an observation that changes what a card shows emits
+`probe_observed`, which wakes only where §8.2 says. With the change ticker enabled the probe also reads
 the merged pull requests of the default branch, their files and, for a
 contract file, its text at the merge and the base (§17.4); a forge
 webhook only makes it look sooner.
@@ -15544,6 +15561,122 @@ deletion's confirmation — and of a self-set limit or absence (§6.12).
 They are security deadlines or ones that end something the person
 chose; whoever runs into one during a window signs in or asks again
 afterwards.
+
+### 16.13 The product line
+
+The maintainer's decision of 2026-11-03 (`context/scope.md`): every page
+of the platform's own interface ends with one small line about Maity
+itself. It is part of the product, not of an instance's content: it is
+always shown, on a self-hosted instance as well, with no setting to turn
+it off, and it is no part of the landing setting or of the frame of
+§16.7.5.
+
+```
+[Maity icon] Maity 2026 · Found a bug? · Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity icon]
+```
+
+**The parts**, in this order, separated by ` · `:
+
+- the Maity icon, followed by `Maity` and the current year. The icon is
+  decorative (`aria-hidden="true"`). The year is never stored or built
+  in: the hub takes it from its clock (UTC) when it renders the page, the
+  dashboard from the browser's clock when it draws it;
+- **Found a bug?**, a link to
+  `https://github.com/oliver-zehentleitner/maity/issues`;
+- **Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity
+  icon]**. The name is plain text, no link. The heart is a symbol with
+  the accessible name "love" (`role="img"`, `aria-label`). Each of the
+  two icons is a link of its own:
+  - the GitHub icon to `https://github.com/oliver-zehentleitner`, with
+    the accessible name `GitHub`;
+  - the Maity icon to `https://maity.team/oliver-zehentleitner`, the
+    maintainer's page on maity.team (a person's page is `GET /{handle}`,
+    §16.9, with no `@`), with the accessible name `Maity`.
+
+  The accessible name is the link's `aria-label`, and the icon inside it
+  is `aria-hidden="true"`. `GitHub` and `Maity` are names and are not
+  translated.
+
+Every link is absolute and the same on every instance. The Maity link
+names maity.team, not the instance's own host: the maintainer's page
+exists only there, and a relative `/oliver-zehentleitner` would be a dead
+link, or another account's page, on any other instance. No link carries a
+query or a campaign of its own. Each opens in a new tab with
+`rel="noopener noreferrer"`, as the dashboard's other external links do
+(§6.11): the line also ends pages with a token in their path
+(`/mail/…/{token}`, `/join/{token}`), and `noreferrer` keeps that path
+out of the `Referer` a click would send to github.com or maity.team.
+Those pages also answer with `Referrer-Policy: no-referrer`, which covers
+every link and request on them, not only the line's, whatever the
+browser's default referrer policy is.
+
+**The icons.** All three are written into the page as inline `<svg>`
+and load no file. They therefore need no change to a page's
+`Content-Security-Policy` (the link pages allow no image source at all,
+§2.7.1), and they show on the join host, which serves no assets (§1.1).
+They use presentation attributes only (`fill`, `stroke`, …): no `style`
+attribute, no `<style>` element and no `<use>` of another file in the
+SVG. A page whose policy has no `style-src` would drop those, so the
+icons must not need them. The dark variant comes from the page's own
+stylesheet, overriding `fill`, where the page's policy allows one. The
+join page in a browser has none: its policy is `default-src 'self'`
+(§1.1), which allows no inline `<style>`, and the join host serves no
+stylesheet. It shows the light mark in either theme, on either host, so
+that it looks the same wherever it is opened. The Maity icons are the small mark of
+`web/brand/maity-mark-small.svg` (its dark variant,
+`maity-mark-small-dark.svg`, under a dark theme where a stylesheet can
+switch it). They are written without the file's `role="img"`,
+`aria-label` and `<title>`: the icon is `aria-hidden` and its link
+already has its name, and a `<title>` would add a tooltip. The GitHub
+icon is GitHub's mark from Octicons (MIT), the same path the dashboard
+already draws for a GitHub repository, in `currentColor`, so it follows
+the line's text colour on every page.
+
+**Words.** "Found a bug?", the sentence "Made with ♥ by … on … & …" and
+"love" are translated as the rest of the page is, in every language each
+catalogue has, under the same keys in the dashboard's
+(`web/i18n/<lang>.json`, with its metadata) and the hub's
+(`hub/src/maity_hub/words/<lang>.json`): `product.bug` ("Found a bug?"),
+`product.made_by` ("Made with {heart} by {name} on {github} & {maity}")
+and `product.love` ("love"). The word `on` and the `&` are part of the
+translated sentence, so a language uses its natural preposition and may
+put the placeholders in its own order. `Maity`, `GitHub` and the name are
+never translated. The line is in the language of the page it ends.
+
+The translated sentence is always text and is escaped. Only its
+placeholders become something else: `{name}` the name as text, and
+`{heart}`, `{github}` and `{maity}` the fixed elements above, never
+markup from the catalogue. A sentence in which one of the four is
+missing, or that names any other placeholder, is not used: the line falls
+back to the English sentence.
+
+**Where it is.**
+
+| Page | Line |
+|---|---|
+| every page the dashboard draws (`web/`): the signed-in views, `/login`, `/register`, the invitation and enrolment steps, the full maintenance page (§16.12); also `/explore` and a public address (§16.9) while the hub answers it with the app shell, as it does for one with no stored page | yes |
+| the hub's `503 maintenance` page (§16.12) | yes |
+| the pages behind the links in mails, `/mail/…` (§2.6.3, §2.7.1, §2.9, §18.6) | yes |
+| the join page in a browser, `/join/{token}` as HTML on either host (§3.2), below its own note | yes |
+| the join page for an agent, the Markdown answer (§3.2) | no |
+| the landing page and its variants (§16.7, §16.7.2), the legal pages (§16.7.1), and their previews for an admin (§16.7, §16.7.1) | no: the operator's site, with the operator's footer |
+| `/explore` and the stored public pages (§16.9), as the hub answers them from what it stored | no |
+
+On `/login` and `/register` the line comes after the frame of §16.7.5,
+below the landing page's footer. It does not depend on the frame: a page
+drawn without it (a failed `GET /site/chrome`, a maintenance window)
+still ends with the line.
+
+**How it looks.** At the end of the page's content, never sticky or
+fixed, so it takes no room on a phone. Small and muted. At phone width it
+stays one line where it fits and wraps between its parts where a
+language is longer, never scrolling sideways.
+
+**Beyond the decision.** The card leaves these open, and the contract
+settles them: the line is centred, the year's icon is decorative, the
+links carry no query of their own, the icons' accessible names are
+`GitHub` and `Maity`, and on `/login` and `/register` the line comes below
+the frame of §16.7.5.
 
 ## 17. The change ticker
 

@@ -92,6 +92,11 @@ forge:
     # then the token is read and unused.
     existingSecret: ""
     key: github-token
+    # The operator's own namespaces, comma separated (MAITY_FORGE_INSTANCE_NAMESPACES): the
+    # token reads only for projects there, and only public repositories. Empty: it serves no
+    # project, and every project is read through its owner's App or token. A listed name
+    # nobody has is held for the operator (docs/api.md §11.4).
+    instanceNamespaces: ""
 
 attachments:
   # The local store for the files of messages (docs/api.md §8.7). The name of an existing PersistentVolumeClaim in the release namespace; the

@@ -94,7 +94,10 @@ example; any cluster with the same pieces works.
 
    **Forge token (optional).** It is for the forge probe, which comes with a
    later hub version: with it, releases can become ready. Read access to
-   pull requests, contents and checks is enough.
+   pull requests, contents and checks is enough. It reads only for projects
+   in the namespaces you list in `forge.github.instanceNamespaces` (your
+   own); every other project connects its repository with its owner's
+   GitHub App installation or token.
 
    ```sh
    kubectl -n maity create secret generic maity-hub-forge --from-file=github-token=./github-token
@@ -131,6 +134,7 @@ example; any cluster with the same pieces works.
    forge:
      github:
        existingSecret: maity-hub-forge
+       instanceNamespaces: your-handle  # the token reads only your own projects
    config:
      # The ingress controller's pods: the cluster's pod network.
      trustedProxies: 10.244.0.0/16
@@ -194,6 +198,7 @@ silently ignored. These are the values that matter:
 | `config.workers` | `1` | `MAITY_WORKERS`, serving processes per pod; above 1 only with PostgreSQL |
 | `topologySpreadConstraints` | `[]` | with more than one replica: spread over nodes by default; set to replace it |
 | `forge.github.existingSecret`, `.key` | none, `github-token` | the Secret holding `MAITY_FORGE_GITHUB_TOKEN` |
+| `forge.github.instanceNamespaces` | empty | `MAITY_FORGE_INSTANCE_NAMESPACES`: the operator's own namespaces, comma separated, the only ones the token reads for (public repositories only); empty, it serves no project |
 | `attachments.existingClaim`, `.mountPath`, `.quotaBytes` | none, `/var/lib/maity/attachments`, hub default (1 GiB per project) | the PersistentVolumeClaim of the local attachment store (docs/api.md §8.7), mounted into the hub, not the migrate Job, and `MAITY_ATTACHMENT_DIR`/`_QUOTA`. A directory the hub cannot write stops the new hub at its start: with `Recreate` the old pod is already gone, so the hub is down, and the migration has already run. The way back is forward: fix the volume or `attachments.mountPath` and run `helm upgrade` again with the same image. `helm rollback` to the old image works only if the upgrade did not move the schema (see Rollback below); otherwise the old image needs the dump restored; empty claim: attachments off. The files are not in the database: back the volume up with it |
 | `secretKey.existingSecret`, `.key` | none, `secret-key` | the Secret holding `MAITY_SECRET_KEY`, the instance key for stored secrets; moving it from `extraEnv`: drop it there in the same upgrade, the chart does not dedupe; a Secret created with the first README holds the key as `MAITY_SECRET_KEY`, then set `secretKey.key: MAITY_SECRET_KEY` |
 | `mail.signingKeySecret.existingSecret`, `.key` | none, `mail-signing-key` | the Secret holding `MAITY_MAIL_SIGNING_KEY` (32 bytes or more, base64); without it the hub sends no mail |

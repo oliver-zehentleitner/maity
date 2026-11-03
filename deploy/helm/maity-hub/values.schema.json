@@ -107,6 +107,9 @@
             "existingSecret": {
               "type": "string"
             },
+            "instanceNamespaces": {
+              "type": "string"
+            },
             "key": {
               "type": "string",
               "minLength": 1

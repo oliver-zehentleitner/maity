@@ -64,6 +64,7 @@ grep -q "kind: NetworkPolicy" <<<"$out_np" && bad "networkPolicy.enabled=false s
     || ok "no NetworkPolicy when disabled"
 grep -q "kind: Ingress" <<<"$out" && bad "minimal: an Ingress without ingress.enabled" || ok "minimal: no Ingress"
 grep -q "MAITY_FORGE_GITHUB_TOKEN" <<<"$out" && bad "minimal: a token without a Secret" || ok "minimal: no forge token"
+grep -q "MAITY_FORGE_INSTANCE_NAMESPACES" <<<"$out" && bad "minimal: namespaces without a list" || ok "minimal: no instance namespaces"
 grep -q "MAITY_ATTACHMENT\|name: attachments" <<<"$out" && bad "minimal: attachment settings without a claim" || ok "minimal: no attachment settings"
 grep -q "MAITY_SECRET_KEY" <<<"$out" && bad "minimal: an instance key without a Secret" || ok "minimal: no instance key"
 grep -q "MAITY_SMTP\|MAITY_MAIL_SIGNING_KEY" <<<"$out" && bad "minimal: mail env without mail values" || ok "minimal: no mail env"
@@ -74,7 +75,8 @@ expect "ingress: TLS host, defaults merged with the operator's annotation, diges
     "ingressClassName: nginx" "secretName: t-maity-hub-tls" 'value: "https://maity.example.org"' \
     'nginx.ingress.kubernetes.io/proxy-buffering: "off"' "cert-manager.io/cluster-issuer: letsencrypt" \
     "@sha256:0000000000000000000000000000000000000000000000000000000000000000" \
-    "name: MAITY_FORGE_GITHUB_TOKEN" 'value: "10.244.0.0/16"'
+    "name: MAITY_FORGE_GITHUB_TOKEN" 'value: "10.244.0.0/16"' \
+    "name: MAITY_FORGE_INSTANCE_NAMESPACES" 'value: "maity-org"'
 grep -q "helm.sh/hook: pre-install" <<<"$out" && bad "ingress: migrate Job with migrate.enabled false" \
     || ok "ingress: no migrate Job when disabled"
 expect "ingress: the attachment volume, its mount, the directory and the quota" "$out" \

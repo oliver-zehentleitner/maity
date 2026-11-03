@@ -127,6 +127,10 @@ the chart.
       name: {{ . }}
       key: {{ $.Values.forge.github.key }}
 {{- end }}
+{{- with .Values.forge.github.instanceNamespaces }}
+- name: MAITY_FORGE_INSTANCE_NAMESPACES
+  value: {{ . | quote }}
+{{- end }}
 {{- with .Values.secretKey.existingSecret }}
 - name: MAITY_SECRET_KEY
   valueFrom:
