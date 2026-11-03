@@ -984,7 +984,7 @@ operator's config would admit every owner's project with that slug.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-qe0ka9e341gh, the lead's assignment of 2026-11-03; the reviews of #1294 (pmwg, dzse), lotse's request for a state table (2026-11-03); the review lead's scope decision for #1294 of 2026-11-03 (only the parts settled across reviewers, the run's lifetime to card tsk-3tzhegcrr48h); `docs/api.md` §15.13, §5.3
+**Source:** card tsk-qe0ka9e341gh, the lead's assignment of 2026-11-03; the reviews of #1294 (pmwg, dzse), lotse's request for a state table (2026-11-03); the review lead's scope decision for #1294 of 2026-11-03 (only the parts settled across reviewers, the run's lifetime to card tsk-3tzhegcrr48h); the review lead's order of 2026-11-03 for the next fixes (pmwg, dzse on 83b3a7ca); `docs/api.md` §15.13, §5.3
 **See:** credentials.md — 116c5330-8dab-42ed-af06-74b6f02cee89 — as of 2026-11-03
 **See:** runner.md — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-03
 **See:** runner.md — c2acd907-0f26-4850-8272-063390f1d6a7 — as of 2026-11-03
@@ -1031,19 +1031,26 @@ Only local mode holds it: the descriptor is never inherited, so it lasts
 as long as local mode. At most one harness per path is guaranteed only
 while local mode lives; a run that outlives a killed local mode (the
 harness on macOS, its descendants on Linux) and a start that takes the
-path over meanwhile are not covered yet and are card tsk-3tzhegcrr48h.
+path over meanwhile are not covered yet and are card tsk-3tzhegcrr48h;
+until then a person who restarts after a crash (a `kill -9` or the OOM
+killer) first checks that no process still works in the workspace
+(`lsof +D` on Linux and macOS).
 Every use of `.git/maity`, local mode's and that of every
 `maity` command in a local-mode session, opens the workspace, `.git` and
 `.git/maity` without following a link and refuses any link, junction or
 hard-linked file (`workspace_link`). The retry copies the credential
 into the fresh directory first and resumes there; from the first file
 copied, the fresh directory counts as possibly holding a secret. The
+fresh directory gets a `retry-of` mark with the old one's path first,
+and a start in it is refused (`retry_leftover`) while that path holds
+a credential, so a leftover copy never runs as the same agent instance
+beside the original. The
 staging and the retry's fresh directory are printed when they are
 created, and a start names every `.join-*` beside it with what it
 holds. A `.replaced-*` directory is never started
 (`workspace_replaced`); its time is `YYYYMMDDTHHMMSSZ`. §15.13 lists
 the states of a workspace path in one table; each review finding maps
-to a row:
+to a row (the one under `running` is named as the limit, not fixed):
 
 - `replacing` and `between`: the lock released before the renames, so a
   second retry could move away the tree a harness had just started in
@@ -1073,10 +1080,17 @@ to a row:
   fits it (pmwg on `3d34a8a3`); and an `F` with only the credential's
   temporary file, which the leftovers called free of secrets (pmwg on
   `1d09396a`).
+- `unfinished` and `orphaned` at `F`: a start in a retry's leftover
+  while the original could still be started ran the same credential and
+  instance in two workspaces, and the `unfinished` row promised a retry
+  in an `F` without the credential, which the entry rule refuses (pmwg,
+  dzse on `83b3a7ca`).
 - `staging` to `kept` after a crash: a staging directory with the spent
   credential that nothing named (dzse on `3d34a8a3`).
 - Every row with a lock: two spellings of one path on a file system that
-  ignores case took two locks (dzse on `3d34a8a3`).
+  ignores case took two locks (dzse on `3d34a8a3`), and a missing name,
+  which has no stored spelling yet, could still take two through a
+  `--workspace` under `maity-local` (dzse on `1d09396a`).
 
 The harness gets a runner's adapter context: the adapter files outside
 the workspace under `maity-local/.adapters`, no `MAITY_PLACEMENT`, the
@@ -1134,7 +1148,13 @@ the contract states the one it keeps, at most one harness per path
 while local mode lives, and leaves the rest to card tsk-3tzhegcrr48h.
 A copied credential's temporary name makes its final name atomic, not
 the directory free of secrets, so the leftovers count any file in
-`.git/maity` as a possible secret. The key comes from the listing
+`.git/maity` as a possible secret. A retry's leftover is gated, not
+only warned about, because the table itself offered the start in it and
+nothing about a duplicate instance needs a surviving run: two live
+local modes on two paths are enough. The mark names `W`'s path rather
+than its tree, so the gate lifts exactly when recovery moved `W` away
+or renamed `F` into its place, and a forged mark can only refuse a
+start. The key comes from the listing
 because only the name the file system stores is one per directory; the
 parents' real path alone left the last component's case open. The
 no-link opening is there because Codex may write `.git`, and a link
@@ -1234,3 +1254,11 @@ message says are no boundary.
 - One `orphaned` state for every crash while the fresh directory is
   built: an incomplete one cannot be started, and one without a
   credential holds nothing to recover (review of #1294, pmwg).
+- Naming a start in a retry's leftover as one more limit: the table
+  would still offer a start that runs one agent instance twice, with no
+  run outliving local mode needed (review of #1294, pmwg, dzse).
+- Case-folding a missing name for the lock's key: local mode cannot
+  tell whether the file system will ignore case, and folding everywhere
+  would give two real directories on a case-sensitive one one lock;
+  refusing a `--workspace` under `maity-local` with `--join` leaves only
+  names local mode spells itself (review of #1294, dzse).
