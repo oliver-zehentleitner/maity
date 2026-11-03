@@ -173,6 +173,9 @@ window.Maity = window.Maity || {};
     app.parentNode.insertBefore(header, app.nextSibling);
     main.parentNode.insertBefore(footer, main.nextSibling);
     app.hidden = true;
+    // The landing page's footer stands in place of the product line (req-5k1gvfsmcg9k, §16.13):
+    // it stays empty until the next view, whose render() shows it again.
+    if (M.productLine) M.productLine.show(false);
     if (drawn) drawn(model);
     return true;
   }

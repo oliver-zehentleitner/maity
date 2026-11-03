@@ -4657,3 +4657,11 @@ frame's header into `#header`: the specificity fight above, and an override per 
 `#main` with a MutationObserver and leaving the frame when its page is gone: it needs no rule in
 `render()`, but the smoke test's DOM has no observer, so it would ship untested. Waiting with the
 form until the frame is read: sign-in may never depend on that call (§16.7.4).
+
+The frame's footer stands in place of the dashboard's product line (§16.13): `enter()` empties it
+once the frame stands, and the next `render()` shows it again. A failed read keeps it, since the
+page then has no landing footer either. The choice itself is confirmed: the maintainer's
+decision req-5k1gvfsmcg9k (2026-11-03), against keeping the product line under the landing footer.
+His reason is not recorded. Inferred: two footers on one page would both name the product. A hook
+in `product-line.js` deciding by route was not needed, since only the frame knows when its
+footer stands.

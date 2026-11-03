@@ -6220,6 +6220,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.i18n.choose = frChoose;
   expect(frDeHref === "#/login?next=%2Fall&lang=de" && JSON.stringify(frChose) === '["de"]' && win.location.hash === "#/login?next=%2Fall&lang=de",
     "frame: a footer language keeps the page's address and next, and a click chooses it " + frDeHref + " " + win.location.hash);
+  // Signed out, /login stands in the landing page's footer, the product line not under it (req-5k1gvfsmcg9k).
+  expect(frFoot() && !productLine.querySelectorAll("a").length && !text(productLine).trim(), "frame: no product line under the landing page's footer on /login " + text(productLine));
   // The dashboard's policy refuses inline style (default-src 'self'): the mark's colours come from public-pages.css.
   const frMark = frHead().all().filter((x) => ["RECT", "CIRCLE", "PATH"].includes(x.tagName));
   expect(frMark.length === 7 && frMark.every((x) => !("style" in x.attrs)), "frame: the mark's seven parts carry no style attribute");
@@ -6246,8 +6248,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = frGet;
   // Another view leaves it: stylesheets off, the class gone, the frame's elements gone.
   await go("#/invite/open-xxxxxxxxxxxxxxxx1"); for (let k = 0; k < 4; k++) await tick();
-  expect(!frHead() && !frFoot() && !frOn() && frSheets().length === 2 && frSheets().every((l) => l.disabled === true) && header.hidden === false,
-    "frame: an invitation's page has none, its stylesheets off");
+  expect(!frHead() && !frFoot() && !frOn() && frSheets().length === 2 && frSheets().every((l) => l.disabled === true) && header.hidden === false
+    && productLine.querySelectorAll("a").length === 3,
+    "frame: an invitation's page has none, its stylesheets off, the product line back");
   win.Maity.api.get = lpGet;
   // That invitation set the page's no-referrer policy (js/invite.js); the invitation's own cases below start without it.
   head.querySelectorAll("meta").filter((m) => m.getAttribute("name") === "referrer").forEach((m) => m.remove());
