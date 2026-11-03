@@ -1094,6 +1094,7 @@ window.MAITY_I18N["en"] = {
   "error.timestamp_skew": "This device's clock is too far from the hub's.",
   "error.too_few": "Too few members would be invited to this round.",
   "error.unauthenticated": "You are not signed in.",
+  "error.upload_expired": "The upload took too long. Send the file again.",
   "error.version_exists": "A release with this version already exists.",
   "error.webhook_signature": "The forge's delivery has no valid signature.",
   "forge.app.hint": "Install the App on your GitHub account and choose the repositories it may read. It then serves every project you own whose repository it includes.",

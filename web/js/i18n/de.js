@@ -1041,6 +1041,7 @@ window.MAITY_I18N["de"] = {
   "error.timestamp_skew": "Die Uhr dieses Geräts weicht zu weit von der des Hubs ab.",
   "error.too_few": "Zu wenige Mitglieder würden zu dieser Runde eingeladen.",
   "error.unauthenticated": "Du bist nicht angemeldet.",
+  "error.upload_expired": "Das Hochladen hat zu lange gedauert. Sende die Datei noch einmal.",
   "error.version_exists": "Ein Release mit dieser Version gibt es schon.",
   "error.webhook_signature": "Die Zustellung der Forge hat keine gültige Signatur.",
   "forge.app.hint": "Installiere die App in deinem GitHub-Konto und wähle die Repositories, die sie lesen darf. Sie bedient dann jedes Projekt, das dir gehört und dessen Repository sie umfasst.",

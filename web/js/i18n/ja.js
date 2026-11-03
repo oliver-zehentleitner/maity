@@ -987,6 +987,7 @@ window.MAITY_I18N["ja"] = {
   "error.timestamp_skew": "このデバイスの時計が、ハブの時計と大きくずれています。",
   "error.too_few": "このラウンドに招待されるメンバーが少なすぎます。",
   "error.unauthenticated": "サインインしていません。",
+  "error.upload_expired": "アップロードに時間がかかりすぎました。もう一度ファイルを送ってください。",
   "error.version_exists": "このバージョンのリリースはすでに存在します。",
   "error.webhook_signature": "フォージからの配信に、有効な署名がありません。",
   "forge.app.hint": "GitHub アカウントに App をインストールし、読み取りを許可するリポジトリを選んでください。その App は、リポジトリが含まれているあなたのすべてのプロジェクトで使われます。",

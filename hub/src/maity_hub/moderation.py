@@ -348,7 +348,7 @@ def _remove(
     report: Any,
     note: str | None,
     fg: Forge,
-    store: attachment_store.LocalStore | None,
+    store: attachment_store.BlobStore | None,
 ) -> None:
     """Each with the note as its reason; the ordinary rules of who may do it do not apply
     to this one change (§16.8)."""
@@ -408,7 +408,7 @@ def apply(
     action: str,
     note: str | None,
     fg: Forge,
-    store: attachment_store.LocalStore | None = None,
+    store: attachment_store.BlobStore | None = None,
 ) -> None:
     """Make the change `action` asks for. Resolving again replaces the report's hold;
     `dismiss` lifts it and restores nothing. A suspension is the operator's to lift."""
