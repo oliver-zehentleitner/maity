@@ -984,7 +984,7 @@ operator's config would admit every owner's project with that slug.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-qe0ka9e341gh, the lead's assignment of 2026-11-03; the reviews of #1294 (pmwg, dzse), lotse's request for a state table (2026-11-03); the review lead's scope decision for #1294 of 2026-11-03 (only the parts settled across reviewers, the run's lifetime to card tsk-3tzhegcrr48h); the review lead's order of 2026-11-03 for the next fixes (pmwg, dzse on 83b3a7ca); the review lead's order of 2026-11-03 for the fixes on 6b564a86 (nyh5, dzse); `docs/api.md` §15.13, §5.3
+**Source:** card tsk-qe0ka9e341gh, the lead's assignment of 2026-11-03; the reviews of #1294 (pmwg, dzse), lotse's request for a state table (2026-11-03); the review lead's scope decision for #1294 of 2026-11-03 (only the parts settled across reviewers, the run's lifetime to card tsk-3tzhegcrr48h); the review lead's order of 2026-11-03 for the next fixes (pmwg, dzse on 83b3a7ca); the review lead's order of 2026-11-03 for the fixes on 6b564a86 (nyh5, dzse); the manager's order of 2026-11-03 for a last text round on 9ebbdcd1 (wtwy; dzse, nyh5); `docs/api.md` §15.13, §5.3
 **See:** credentials.md — 116c5330-8dab-42ed-af06-74b6f02cee89 — as of 2026-11-03
 **See:** runner.md — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-03
 **See:** runner.md — c2acd907-0f26-4850-8272-063390f1d6a7 — as of 2026-11-03
@@ -1016,7 +1016,7 @@ without it (`repository_refused`, `no_repository`, `fetch_failed`, a
 partial checkout, a crash) gets a retry: a fresh staging directory beside
 it, only the regular files of `.git/maity` copied over, then the old one
 renamed aside to `.replaced-<time>-<name>` and kept whole, and the fresh
-one renamed into its place (for a kept `.join-*`, to `<handle>` or
+one renamed into its place (for a kept `.join-*`, to
 `<handle>#<instance>`). Git never runs in a directory that existed
 before that start, and nothing in it is deleted. For an IPv6 host the
 directory always carries the port, so `[::1]:80` and `[::1:80]` differ.
@@ -1043,11 +1043,17 @@ into the fresh directory first and resumes there; from the first file
 copied, the fresh directory counts as possibly holding a secret. The
 fresh directory gets a `retry-of` mark first, naming the one path it
 may run at: the old one's, or for a kept `.join-*` `<handle>#<instance>`
-once its resume named the instance. A start anywhere else is refused
-(`retry_leftover`) every time, so of all copies of one credential only
-the one at that path starts. The mark is compared with the workspace by
-identity, not spelling, removed once the copy is at its path, and a
-stale or forged one is left by removing the file. The
+once its resume named the instance, and the old one gets a mark naming
+its own path before it is moved aside. A start anywhere else is refused
+(`retry_leftover`) every time, so at any one time only the copy at that
+path starts. That holds at a moment, not over time: once a copy has
+arrived its mark is removed, and when the person later moves it on, a
+leftover that was not removed can be renamed onto the freed path and
+start; the contract names that and does not cover it. The mark is
+compared with the workspace by identity, not spelling, and removed once
+the copy is at its path. When its path holds another instance or
+nothing, the person may remove it by hand after checking that no other
+copy of the credential exists; when it holds this instance, never. The
 staging and the retry's fresh directory are printed when they are
 created, and a start names every `.join-*` beside it with what it
 holds. A `.replaced-*` directory is never started
@@ -1100,7 +1106,16 @@ to a row (the one under `running` is named as the limit, not fixed):
 - Every row with a lock: two spellings of one path on a file system that
   ignores case took two locks (dzse on `3d34a8a3`), and a missing name,
   which has no stored spelling yet, could still take two through a
-  `--workspace` under `maity-local` (dzse on `1d09396a`).
+  `--workspace` under `maity-local` (dzse on `1d09396a`), also while
+  `maity-local` itself did not exist yet (dzse on `9ebbdcd1`).
+- `orphaned`, `stranded` and `replaced` at `F` and at `.replaced-*`: the
+  one-copy claim read as holding over time, though a leftover can take
+  the path once the copy there moved on; the way out read as removing
+  any mark, also one whose path holds this instance, after checking only
+  that no copy runs; the advice to rename onto an empty path followed a
+  path a harness could have written; and the old tree, restored under
+  another name, started beside the admitted copy (dzse on `9ebbdcd1`).
+  The first is named as a limit; the others are fixed.
 
 The harness gets a runner's adapter context: the adapter files outside
 the workspace under `maity-local/.adapters`, no `MAITY_PLACEMENT`, the
@@ -1165,8 +1180,15 @@ local modes on two paths are enough. The gate cannot ask whether the
 original's path holds a credential, because a second, successful retry
 empties that path for a moment, and from a kept `.join-*` for good,
 while its own copy runs; it asks where this copy is instead, since a
-path names one directory at a time, so of all copies only one can be at
-the path the mark names. That is also why a retry from a kept `.join-*`
+path names one directory at a time, so at any one time only one copy can
+be at the path the mark names. Over time the path binds a copy only until
+it arrives: its mark is removed then, so that a workspace moved later is
+not refused, and a leftover left beside it can follow onto the freed
+path. Closing that would need local mode to know every directory a copy
+was ever moved to, which it cannot, so the contract names the gap
+instead of claiming more, and every way on that puts a workspace onto a
+path asks the person first to check that no other copy exists. That is
+also why a retry from a kept `.join-*`
 goes to `<handle>#<instance>`, which the instance alone decides, and not
 to `<handle>` when that happens to be free: every retry of one staging
 workspace meets at one path. The mark is compared by identity, as the
@@ -1175,9 +1197,20 @@ still names the same directory; it is removed once the copy is at its
 path, so a workspace moved later is not refused. Local mode never moves
 a leftover itself, because the mark is a file a harness can write, and
 a forged one may only refuse its own workspace's starts; the way out of
-any mark that does not fit is the person's, removing the file after
-checking that no other copy runs. The message reads the instance at the
-named path only to say which way on fits. The key comes from the listing
+a mark whose path holds another instance or nothing is the person's,
+removing the file after checking that no other copy exists, not only
+that none runs, since every copy that exists can be started. When the
+path holds this instance there is no such way out: the copy there and
+this one would both exist and start. The advice to rename a workspace
+onto an empty path asks for the same check and only for the path the
+retry printed at the creation, since the path comes from a file a
+harness can write, and local mode does not move workspaces to such a
+path either. The old tree gets a mark before it is moved aside, so
+restoring it under another name than its path is refused like any copy.
+Local mode creates `maity-local` before it decides whether a
+`--workspace` lies inside it, because a directory that does not exist
+yet has no identity to compare with. The message reads the instance at
+the named path only to say which way on fits. The key comes from the listing
 because only the name the file system stores is one per directory; the
 parents' real path alone left the last component's case open. The
 no-link opening is there because Codex may write `.git`, and a link
@@ -1309,3 +1342,14 @@ message says are no boundary.
 - A retry from a kept `.join-*` to `<handle>` when that is free: a copy
   that crashed after picking it and a later retry that found it taken
   would end on two paths.
+- Refusing a copy's arrival while a leftover beside the path holds its
+  instance and names that path (proposed in review of #1294, dzse): it
+  sees only leftovers beside the path, never a copy moved elsewhere, so
+  the one-copy claim would still not hold over time; the contract names
+  the gap and asks for the check before every rename onto a path.
+- Removing the mark as the way out of every mark that does not fit (as
+  on `9ebbdcd1`): with this instance at the named path, both copies
+  would start (review of #1294, dzse; the manager's order).
+- Checking only that no other copy runs before removing a mark (as on
+  `9ebbdcd1`): a copy that is not running now can be started later
+  (review of #1294, dzse).

@@ -10,11 +10,14 @@
   created, a harness only in a workspace marked `checked-out` after a
   complete checkout, a retry in a fresh one for any workspace without
   the mark that moves the old one aside instead of deleting it and
-  marks the fresh one with the one path it may run at, so of the copies
-  of one credential only the one at that path starts and a start in any
-  other is refused every time (the mark compared by the directory's
-  identity, not its spelling, removed once the copy is at its path, and
-  removed by the person as the way out of a stale or forged one), one
+  marks the fresh one, and the old one before it is moved aside, with the
+  one path it may run at, so at any one time only the copy at that path
+  starts and a start in any other is refused every time (the mark
+  compared by the directory's identity, not its spelling, and removed
+  once the copy is at its path; by hand only when that path holds
+  another instance or nothing, after the person checked that no other
+  copy exists; not covered: a leftover the person did not remove,
+  renamed onto the path after the copy there moved on), one
   lock per workspace path outside every renamed directory, keyed by the names
   the file system stores, held by local mode alone across the renames
   and the harness's start, so at most one harness runs per path while
