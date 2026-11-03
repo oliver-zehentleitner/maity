@@ -236,7 +236,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 500 | `internal` | an unexpected failure; `details` is `{}`, the message names no internals; the response still carries the envelope and every header of §1.1 |
 | 503 | `maintenance` | the hub is in a maintenance window (§16.12); `Retry-After` is the seconds until its `until`, `details` is `{from, until, text}`; every caller, every route but the few §16.12 names |
 | 503 | `forge_unavailable` | the forge did not answer while linking a GitHub App installation (§11.4) |
-| 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any; `details.retry_at` while the forge's rate limit for the source is spent: no read before that time (§11) |
+| 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any, never for the views' reads (§11.5), which carry no export; `details.retry_at` while the forge's rate limit for the source is spent: no read before that time (§11) |
 | 503 | `ktw_unavailable` | the root `.keep-the-why` of the Keep the Why family could not be read (§11.3); `details.reason`, `details.last` holds the last good answer if any; a family member's own failure is reported on that member, not as this error. For the views' reads (§11.5) also the export or bodies file asked for could not be read, with that member's reason, `repository_moved` or `bodies_url_invalid` |
 | 503 | `database_unavailable` | the database cannot be reached (`/health`, and any call that needs it); `details` is `{}`, the message carries no driver text |
 | 503 | `schema_outdated` | the database is not at the migration head (`/health`); `details.revision`, `details.head` |
