@@ -293,9 +293,10 @@ not ship yet (`hub/context/kubernetes.md`).
   project namespace, did). The old pod answers 503 as soon as the schema has
   moved, so stopping it first costs almost no extra downtime:
   `deploy/scripts/helm-upgrade.sh -f values.yaml [helm arguments]` scales the
-  Deployment to 0, runs `helm upgrade` (the hook migrates alone), and scales
-  back to the replicas it had on any exit, a failed upgrade and Ctrl-C
-  included. Helm only starts once the hub's pods are verifiably gone; a failed
+  Deployment to 0, runs `helm upgrade` (the hook migrates alone), and then
+  runs the replicas the release renders (Helm sets them, so a changed
+  `replicas` takes effect). On any other exit, a failed upgrade and Ctrl-C
+  included, it scales back to the replicas it had; a hub found at 0 stays at 0. Helm only starts once the hub's pods are verifiably gone; a failed
   scale-down or pods still there after `STOP_TIMEOUT` end the script first.
   The exit status is Helm's own when the upgrade failed, 3 when scaling back
   failed, 4 when the hub did not become ready, 0 only when everything worked.
@@ -326,16 +327,19 @@ through the database (`hub/context/replicas.md`).
   attachment directory.
 - **Upgrades:** a release without a migration rolls one pod at a time
   (`maxUnavailable: 0`, `maxSurge: 1`). A release with a migration still goes
-  through `deploy/scripts/helm-upgrade.sh`, which stops every pod and brings
-  back as many as it found.
+  through `deploy/scripts/helm-upgrade.sh`, which stops every pod and starts
+  the replicas the release renders (as many as it found when Helm fails).
 - **Drains and nodes:** a PodDisruptionBudget keeps one pod up; the pods
   spread over nodes where they can (`topologySpreadConstraints` replaces it).
 - **Connections:** the hub asks up to
-  replicas × (`database.poolSize` + `database.maxOverflow` + `config.workers` + 1)
-  connections: per pod its pool and overflow, one listener per process, one
-  for the readiness probe. Keep that under the database's `max_connections`
-  less its reserved connections; the hub warns at its start when it is not.
-  Example: 3 replicas with 2 workers and the default 16 + 16 ask 3 × 35 = 105.
+  pods × (`config.workers` × (pool share + overflow share + 1) + 1)
+  connections: each worker its share of `database.poolSize` and
+  `database.maxOverflow` (divided by the workers, rounded down) and one
+  listener, each pod one more for the readiness probe. With more than one
+  replica, pods is replicas + 1, for the surge pod of a rolling update. Keep
+  that under the database's `max_connections` less its reserved connections;
+  the hub warns at its start when it is not. Example: 3 replicas with 2
+  workers and the default 16 + 16 ask 4 × (2 × (8 + 8 + 1) + 1) = 140.
 
 ## When an install or upgrade fails
 

@@ -13,7 +13,7 @@ cat > "$work/bin/kubectl" <<'STUB'
 S=$STUB_STATE
 echo "kubectl $*" >> "$S/log"
 case "$*" in
-  *"get deploy"*)           cat "$S/initial"; exit 0;;
+  *"get deploy"*)           cat "$S/replicas"; exit 0;;
   *"create job"*)           [ "$FAIL" = dump ] && exit 1; exit 0;;
   *'type=="Complete"'*)     [ "$FAIL" = job_failed ] && exit 0; echo True; exit 0;;
   *'type=="Failed"'*)       [ "$FAIL" = job_failed ] && echo True; exit 0;;
@@ -42,6 +42,8 @@ cat > "$work/bin/helm" <<'STUB'
 #!/bin/bash
 echo "helm $*" >> "$STUB_STATE/log"
 [ "$FAIL" = helm ] && exit 7
+# Helm resets the scaled Deployment to the count the release renders, when the test names one.
+[ -n "${RENDERED:-}" ] && echo "$RENDERED" > "$STUB_STATE/replicas"
 exit 0
 STUB
 cat > "$work/bin/sleep" <<'STUB'
@@ -91,4 +93,9 @@ run restore    restore    1 3 yes 0
 run rollout    rollout    1 4 yes 1
 run initial0   none       0 0 yes 0
 run initial0_pods none    0 1 no  0 yes
+# A changed `replicas`: the count the release renders stays after a successful upgrade.
+RENDERED=3 run more_replicas none 1 0 yes 3
+RENDERED=1 run fewer_replicas none 3 0 yes 1
+RENDERED=3 run helm_fails_keeps_old helm 1 7 yes 1
+RENDERED=2 run initial0_rendered none 0 0 yes 0
 [ "$failures" = 0 ] && echo "all scenarios pass" || { echo "$failures scenario(s) failed"; exit 1; }

@@ -15,8 +15,9 @@
 #   pods to be gone, 180), KUBECONFIG as usual.
 #
 # helm upgrade only runs when the hub is verifiably stopped: a failed scale-down or pods still
-# there after STOP_TIMEOUT end the script before Helm. On any exit the hub is scaled back to the
-# replicas it had (a hub found at 0 stays at 0).
+# there after STOP_TIMEOUT end the script before Helm. After a successful upgrade the hub runs the
+# replicas the release renders (Helm sets them; `replicas` may have changed); on any other exit it
+# is scaled back to the replicas it had. A hub found at 0 stays at 0 either way.
 # Exit status: Helm's own when the upgrade failed; otherwise 3 when scaling back failed, 4 when the
 # hub did not become ready, 1 for the steps before Helm, 0 only when everything worked.
 set -uo pipefail
@@ -117,6 +118,16 @@ helm_status=$?
 [ "$helm_status" = 0 ] || echo "helm upgrade failed ($helm_status); the hub is scaled back to $replicas replica(s) as it is deployed now (check helm history)" >&2
 
 status=$helm_status
+if [ "$helm_status" = 0 ] && [ "$replicas" != 0 ]; then
+  # Helm set the count the release renders (it resets a scaled Deployment to the chart's value);
+  # scaling back to the old count would undo a changed `replicas`.
+  rendered=$(kubectl -n "$NAMESPACE" get deploy "$DEPLOYMENT" -o jsonpath='{.spec.replicas}') || rendered=""
+  if [ -n "$rendered" ] && [ "$rendered" != 0 ]; then
+    echo "$DEPLOYMENT runs the $rendered replica(s) the release renders"
+    restored=1
+    replicas=$rendered
+  fi
+fi
 restore || { echo "scaling back failed" >&2; [ "$status" = 0 ] && status=3; }
 if [ "$replicas" != 0 ]; then
   kubectl -n "$NAMESPACE" rollout status "deploy/$DEPLOYMENT" --timeout=300s ||

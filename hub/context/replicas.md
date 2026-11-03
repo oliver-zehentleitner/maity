@@ -786,15 +786,35 @@ sense the entries above use: its own `listening.POD`, its own LISTEN connection,
 only about processes.
 
 - **The pool is the hub's total.** `MAITY_DB_POOL_SIZE` and `MAITY_DB_MAX_OVERFLOW` keep their
-  meaning for the operator; each process holds its share (at least one pooled connection), so
-  raising the workers does not multiply the connections asked of the database (entry on
-  connections above). The listener connections do grow with the processes.
-- **The startup checks run once, in the parent**, before any worker is spawned (schema, secrets,
-  mail, reserved holders). A worker that still fails its start makes the supervisor stop and
-  `serve` exit non-zero, instead of uvicorn restarting it in a loop.
+  meaning for the operator; each process holds its share, rounded down, so raising the workers
+  never adds to the connections asked of the database (entry on connections above). A share
+  below two pooled connections is refused at the start: a request may hold its transaction's
+  connection while a shared count or the forge budget takes a second from the same pool (entry
+  2bd65fec), and a process with one waits on itself until the pool's timeout. The listener
+  connections (one per process) and the readiness probe's come on top.
+- **The checks and the one-time work of a start run in the parent** before any worker is
+  spawned: the startup checks (schema, secrets, mail, reserved holders, a required dashboard
+  directory), then `app.start_once` (the generated text, the public pages, the sign-in
+  switches). Each worker checks again at its own start but does no one-time work, so N
+  processes starting together do not race each other. Pods starting together still run
+  `start_once` each: its steps take a lock (`db.xact_lock`, a transaction-level advisory lock
+  that works behind PgBouncer in any mode) or are claimed under one, and the public pages are
+  rendered again page by page, never cleared first, so a sibling serving meanwhile finds the
+  old page or the new one. A worker that fails to build its app exits with uvicorn's start
+  failure, so the supervisor stops and `serve` exits non-zero instead of starting it again and
+  again.
 - **A stop releases the open waits** in every worker, as in one process: the supervisor's
   processes use the hub's own `Server`, which hands the release to the loop on SIGTERM.
 - The request stats line names its process (`pid=`), since each process counts its own.
+- **What stays per process** is what stays per pod (the "Weaker" list at the top): caches,
+  `registration.DROPPED`, the forge budget's in-flight count, the stats. An isolation ends the
+  isolated agent's waits at once in the process that ran it; a wait held by another process
+  ends at its next read, within the two-second fallback.
+- A worker that dies leaves its `hub_pod` row until it goes stale, as a dead pod does; the
+  supervisor starts a new one. uvicorn's SIGTTIN adds a process past `MAITY_WORKERS` and past
+  the pool's split: not a way to scale the hub.
+- **Memory** grows with the processes (about 130 MB each when idle): the chart's memory limit
+  has to grow with `config.workers`.
 
 The opt-in default is the maintainer's rule (confirmed); the reasons below are inferred.
 
@@ -831,16 +851,19 @@ supports. More than one:
   off PostgreSQL could count the pods.
 - **Rolled one at a time** (`RollingUpdate`, `maxUnavailable: 0`, `maxSurge: 1`) for a release
   without a migration. A release with a migration still goes through
-  `deploy/scripts/helm-upgrade.sh`, which scales to 0 and back to the replicas it found (entry
-  36157878), until migrations are expand/contract.
+  `deploy/scripts/helm-upgrade.sh`, which scales to 0 and, after a successful upgrade, leaves
+  the replicas the release renders (Helm resets a scaled Deployment to the chart's value, and a
+  changed `replicas` must not be undone); after a failure it scales back to the replicas it
+  found (entry 36157878), until migrations are expand/contract. A hub found at 0 stays at 0.
 - **A PodDisruptionBudget** with `minAvailable: 1`, rendered only with more than one replica: for
   one pod it would block every node drain.
 - **Spread over nodes** (`kubernetes.io/hostname`, `maxSkew: 1`, `ScheduleAnyway`), replaceable
   through `topologySpreadConstraints`; `ScheduleAnyway` so a single-node cluster still starts
   every pod.
-- **The connection budget** is replicas × (pool + overflow + workers + 1): per pod its pool and
-  overflow (shared by its workers), one LISTEN connection per process, one for the readiness
-  probe. The chart sets the pool per pod (`database.poolSize`, `.maxOverflow`). At its start the
+- **The connection budget** is pods × (workers × (pool share + overflow share + 1) + 1): each
+  worker holds its share of the pod's pool and overflow (`serving.per_worker`, rounded down)
+  plus its LISTEN connection, and each pod one more for the readiness probe. With more than one
+  replica, pods counts the surge pod of a rolling update too (replicas + 1). The chart sets the pool per pod (`database.poolSize`, `.maxOverflow`). At its start the
   hub warns when the sum exceeds `max_connections` less the reserved connections; only a
   warning, because behind a pooler the server's limit is not the one that counts.
 

@@ -44,15 +44,36 @@ def refusal(settings: Settings) -> str | None:
             f"MAITY_REPLICAS={settings.replicas} with a local attachment directory: each pod "
             "would see only its own files; store attachments on S3, or run one replica"
         )
+    if settings.workers > 1 and settings.db_pool_size // settings.workers < MIN_POOL_PER_WORKER:
+        return (
+            f"MAITY_WORKERS={settings.workers} needs MAITY_DB_POOL_SIZE of at least "
+            f"{MIN_POOL_PER_WORKER * settings.workers} (it is {settings.db_pool_size}): each "
+            f"process holds its share and needs {MIN_POOL_PER_WORKER}, since a request may hold "
+            "one connection while a shared count takes another"
+        )
     return None
 
 
+# A request may hold its transaction's connection while a shared count or the forge budget takes
+# a second one from the same pool (hub/context/replicas.md, "Rate limits"): a process with fewer
+# waits on itself.
+MIN_POOL_PER_WORKER = 2
+
+
+def pods_at_most(settings: Settings) -> int:
+    """The pods that may run at once: the replicas, and during a rolling update of more than
+    one the surge pod beside them (the chart's `maxSurge: 1`)."""
+    return settings.replicas + (1 if settings.replicas > 1 else 0)
+
+
 def connections(settings: Settings) -> int:
-    """The most connections the whole deployment asks of the database: per pod its pool and
-    overflow, one LISTEN connection per process (§8, hub/context/replicas.md), and one for the
-    readiness probe, which holds none in between."""
-    per_pod = settings.db_pool_size + settings.db_max_overflow + settings.workers + 1
-    return settings.replicas * per_pod
+    """The most connections the whole deployment asks of the database, from what each worker
+    holds (`per_worker`, so the two stay one arithmetic): per process its share of the pool and
+    of the overflow and one LISTEN connection (hub/context/replicas.md), per pod one for the
+    readiness probe, which holds none in between; for as many pods as may run at once."""
+    share = per_worker(settings)
+    per_pod = settings.workers * (share.db_pool_size + share.db_max_overflow + 1) + 1
+    return pods_at_most(settings) * per_pod
 
 
 def budget_warning(settings: Settings, max_connections: int, reserved: int) -> str | None:
@@ -62,31 +83,42 @@ def budget_warning(settings: Settings, max_connections: int, reserved: int) -> s
     asked = connections(settings)
     if asked <= room:
         return None
+    share = per_worker(settings)
     return (
-        f"the hub may ask {asked} database connections ({settings.replicas} pod(s) × "
-        f"(pool {settings.db_pool_size} + overflow {settings.db_max_overflow} + "
-        f"{settings.workers} listener(s) + 1 health)), the database takes {room}; lower "
+        f"the hub may ask {asked} database connections ({pods_at_most(settings)} pod(s) at once "
+        f"× ({settings.workers} process(es) × (pool {share.db_pool_size} + overflow "
+        f"{share.db_max_overflow} + 1 listener) + 1 health)), the database takes {room}; lower "
         "MAITY_DB_POOL_SIZE / MAITY_DB_MAX_OVERFLOW or the replicas"
     )
 
 
 def per_worker(settings: Settings) -> Settings:
-    """The settings of one worker: its share of the pool, at least one connection, the overflow
-    divided alike. One worker keeps the pool as it is."""
+    """The settings of one worker: its share of the pool and of the overflow, rounded down, so
+    the processes together never hold more than the settings name (`refusal` makes sure the
+    share is enough). One worker keeps the pool as it is."""
     n = settings.workers
     if n == 1:
         return settings
     return replace(
         settings,
-        db_pool_size=max(1, settings.db_pool_size // n),
+        db_pool_size=settings.db_pool_size // n,
         db_max_overflow=settings.db_max_overflow // n,
     )
 
 
 def app() -> FastAPI:
-    """The app of one worker process, uvicorn's factory (`maity_hub.serving:app`)."""
+    """The app of one worker process, uvicorn's factory (`maity_hub.serving:app`). The parent ran
+    the checks and the one-time work of a start already (`cli._serve_workers`). A worker that
+    cannot build its app exits with uvicorn's start failure, so the supervisor stops instead of
+    starting it again and again."""
+    from uvicorn.config import STARTUP_FAILURE
+
     from maity_hub.app import create_app, serving_engine
 
     configure_logging()
-    settings = per_worker(Settings.from_env())
-    return create_app(settings, serving_engine(settings))
+    try:
+        settings = per_worker(Settings.from_env())
+        return create_app(settings, serving_engine(settings), started=True)
+    except Exception:
+        logging.getLogger(__name__).exception("a worker could not build its app")
+        raise SystemExit(STARTUP_FAILURE) from None
