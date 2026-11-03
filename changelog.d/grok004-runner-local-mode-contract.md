@@ -11,9 +11,10 @@
   complete checkout, a retry in a fresh one for any workspace without
   the mark that moves the old one aside instead of deleting it, one lock
   per workspace path outside every renamed directory, keyed by the names
-  the file system stores, held across the renames and the harness's
-  start and inherited by the run, so a harness that outlives a killed
-  local mode keeps the path (`harness_running`), with a table of a
+  the file system stores, held by local mode alone across the renames
+  and the harness's start, so at most one harness runs per path while
+  local mode lives (a run that outlives a killed local mode is not
+  covered yet: tsk-3tzhegcrr48h), with a table of a
   workspace path's states, its crash states each with how it is found,
   no link or hard link followed into `.git/maity` at any use, the IPv6
   host directory always with its port, the next run only when work

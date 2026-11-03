@@ -984,11 +984,11 @@ operator's config would admit every owner's project with that slug.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-qe0ka9e341gh, the lead's assignment of 2026-11-03; the reviews of #1294 (pmwg, dzse), lotse's request for a state table (2026-11-03); `docs/api.md` §15.13, §5.3
+**Source:** card tsk-qe0ka9e341gh, the lead's assignment of 2026-11-03; the reviews of #1294 (pmwg, dzse), lotse's request for a state table (2026-11-03); the review lead's scope decision for #1294 of 2026-11-03 (only the parts settled across reviewers, the run's lifetime to card tsk-3tzhegcrr48h); `docs/api.md` §15.13, §5.3
 **See:** credentials.md — 116c5330-8dab-42ed-af06-74b6f02cee89 — as of 2026-11-03
 **See:** runner.md — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-03
 **See:** runner.md — c2acd907-0f26-4850-8272-063390f1d6a7 — as of 2026-11-03
-**Revisit when:** a harness signals its provider limit; someone asks local mode for an interactive session; the deny rules or a harness's sandbox are verified on Windows; the hub should tell a stopped local session from a busy one; a harness or its sandbox is found to close or unlock inherited descriptors as a rule
+**Revisit when:** a harness signals its provider limit; someone asks local mode for an interactive session; the deny rules or a harness's sandbox are verified on Windows; the hub should tell a stopped local session from a busy one; card tsk-3tzhegcrr48h settles how a run that outlives local mode is found and taken over
 
 `maity runner <harness> --join <url>` redeems the link into a new workspace
 under `<state home>/maity-local/<link host>/<handle>`, lets the agent's own
@@ -1026,21 +1026,24 @@ adapter files, is taken before anything in the workspace is read and
 held until local mode exits, across both renames and the harness's
 start; a start that finds it held is refused at once. The key takes
 every component as its parent's listing names it, so two spellings on a
-file system that ignores case, or an 8.3 short name, take one lock. On
-Linux and macOS the harness inherits the locked descriptor, so the lock
-lasts while any process of the run does, and a run record under
-`maity-local/.runs` with the harness's id, start time and group lets a
-start refuse (`harness_running`) a path whose run outlived a killed
-local mode. Every use of `.git/maity`, local mode's and that of every
+file system that ignores case, or an 8.3 short name, take one lock.
+Only local mode holds it: the descriptor is never inherited, so it lasts
+as long as local mode. At most one harness per path is guaranteed only
+while local mode lives; a run that outlives a killed local mode (the
+harness on macOS, its descendants on Linux) and a start that takes the
+path over meanwhile are not covered yet and are card tsk-3tzhegcrr48h.
+Every use of `.git/maity`, local mode's and that of every
 `maity` command in a local-mode session, opens the workspace, `.git` and
 `.git/maity` without following a link and refuses any link, junction or
 hard-linked file (`workspace_link`). The retry copies the credential
-into the fresh directory first and resumes there. The staging and the
-retry's fresh directory are printed when they are created, and a start
-names every `.join-*` beside it with what it holds. A `.replaced-*`
-directory is never started (`workspace_replaced`); its time is
-`YYYYMMDDTHHMMSSZ`. §15.13 lists the states of a workspace path in one
-table; each review finding maps to a row:
+into the fresh directory first and resumes there; from the first file
+copied, the fresh directory counts as possibly holding a secret. The
+staging and the retry's fresh directory are printed when they are
+created, and a start names every `.join-*` beside it with what it
+holds. A `.replaced-*` directory is never started
+(`workspace_replaced`); its time is `YYYYMMDDTHHMMSSZ`. §15.13 lists
+the states of a workspace path in one table; each review finding maps
+to a row:
 
 - `replacing` and `between`: the lock released before the renames, so a
   second retry could move away the tree a harness had just started in
@@ -1059,12 +1062,17 @@ table; each review finding maps to a row:
   `a228f3ea`), and the same swap during a run, which a check at the
   start alone missed: local mode's next `maity wait` would follow the
   link with the other agent's credential (dzse on `3d34a8a3`).
-- `surviving`: a harness or its descendants outliving a killed local
+- `running`: a harness or its descendants outliving a killed local
   mode (macOS `kill -9`, Linux descendants), so the next start took the
-  free lock and launched a second harness (pmwg on `3d34a8a3`).
+  free lock and launched a second harness (pmwg on `3d34a8a3`). The
+  answer on `1d09396a` (an inherited lock and a run record) left gaps
+  (pmwg, dzse on `1d09396a`), so the contract now names this as its limit
+  and card tsk-3tzhegcrr48h takes it up with those findings.
 - `abandoned`, `unfinished` and `orphaned`: one `orphaned` row for every
   crash while the fresh directory is built, though only a complete one
-  fits it (pmwg on `3d34a8a3`).
+  fits it (pmwg on `3d34a8a3`); and an `F` with only the credential's
+  temporary file, which the leftovers called free of secrets (pmwg on
+  `1d09396a`).
 - `staging` to `kept` after a crash: a staging directory with the spent
   credential that nothing named (dzse on `3d34a8a3`).
 - Every row with a lock: two spellings of one path on a file system that
@@ -1113,14 +1121,20 @@ guards the tree, not the path: once the tree is renamed, a second start
 locks whatever new tree the path names, and Windows renames no
 directory with an open file, so a lock inside had to be released before
 the rename. Outside, nothing is released before the rename it guards,
-and no check after taking it is needed. The lock follows the run, not
-only local mode, because the run is what must be alone on a path, and
-local mode can die without it: macOS has no parent-death signal, and on
-Linux the subreaper dies with local mode. The inherited descriptor
-covers every process of the run from its first instruction, the run
-record covers a process that closed or unlocked what it inherited, and
-each covers the other's gap except a descendant that does both, which
-the contract names as the limit. The key comes from the listing
+and no check after taking it is needed. The lock is local mode's alone
+and never passed on, because a descriptor the run inherits can be
+closed or unlocked by any process of the run, which then frees local
+mode's lock too. The run is what must be alone on a path, and local mode
+can die without it (macOS has no parent-death signal, and on Linux the
+subreaper dies with local mode), but each way tried in review to make
+the lock outlast local mode left a gap: a run record written after the
+harness started, and a path left unlocked between runs once a process of
+the run had unlocked it. Rather than ship a guarantee with known holes,
+the contract states the one it keeps, at most one harness per path
+while local mode lives, and leaves the rest to card tsk-3tzhegcrr48h.
+A copied credential's temporary name makes its final name atomic, not
+the directory free of secrets, so the leftovers count any file in
+`.git/maity` as a possible secret. The key comes from the listing
 because only the name the file system stores is one per directory; the
 parents' real path alone left the last component's case open. The
 no-link opening is there because Codex may write `.git`, and a link
@@ -1202,12 +1216,16 @@ message says are no boundary.
 - The no-link check at the start only: the harness can swap
   `.git/maity` during a run, and local mode's next `maity wait` runs
   outside any sandbox (review of #1294, dzse).
-- The lock held by local mode alone, taken over once it is free: a
-  harness that outlived a killed local mode and a second one would work
-  on one tree (review of #1294, pmwg).
-- Only the inherited descriptor, or only a run record: a process can
-  close or unlock the descriptor, and a descendant that left the group
-  is not in the record; together the gap is a process that does both.
+- The harness inheriting the lock, so it lasts as long as the run, and a
+  run record under `maity-local/.runs` that refuses a start
+  (`harness_running`) while a recorded run lives: the record came only
+  after the harness had started, so a run that unlocked what it inherited
+  left a window without lock or record, and after a run the path stayed
+  unlocked while local mode waited, so a second local mode could take it
+  over (review of #1294, pmwg, dzse). Moved to card tsk-3tzhegcrr48h with
+  those findings and the proposals made (a launch gate, a second lock
+  file only the harness inherits); this contract keeps only the
+  guarantee while local mode lives.
 - The lock keyed by the directory's inode: it would follow the tree
   through the renames, which is what the path lock replaced.
 - Only the parents resolved, and `normcase` on Windows: two spellings of

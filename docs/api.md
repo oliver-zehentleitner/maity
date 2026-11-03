@@ -13646,9 +13646,11 @@ maity runner <harness> [--workspace DIR] [--model MODEL] [--allow COMMAND]...
   to run, which says the link may be spent already. Before it, the
   message names the **leftovers** beside the directory: every `.join-*`
   there, as complete (it holds `.git/maity/checked-out`), as incomplete
-  (a credential only) or as holding no secret (neither; removable once
-  no join runs), and every `.replaced-*-<name>` for its name, so
-  whatever a crash or an interrupted join or retry left (`kept`,
+  and possibly holding a secret (any other file in its `.git/maity`: a
+  credential, a copy of one still under its temporary name, or the
+  session's state) or as holding no secret (no file in its `.git/maity`;
+  removable once no join runs), and every `.replaced-*-<name>` for its
+  name, so whatever a crash or an interrupted join or retry left (`kept`,
   `unfinished`, `orphaned`, `stranded` in the lifecycle below) is found
   and the person does not redeem a spent link. A directory whose name
   starts with
@@ -13862,7 +13864,11 @@ own `maity join` writes it, as in a runner's join pickup (§15.9):
      never `.git/config` or hooks) into `F/.git/maity` through the two
      directories' handles, as **No links** says, with the permissions of
      step 3; the credential comes last, under a temporary name renamed
-     into place, so `F` holds the whole credential or none. Only then
+     into place, so its own name in `F` names the whole credential or
+     nothing. That makes the name atomic, not `F` free of secrets: the
+     temporary file may hold part or all of the credential, so from the
+     first file copied on, `F` counts as possibly holding a secret
+     (`unfinished` below), whatever its names. Only then
      does it run the supervised `maity resume` with `MAITY_STATE_DIR`
      set to `F/.git/maity`, a directory no harness ever reached, then the
      URL check and the fetch and checkout with the flags above, and it
@@ -13903,16 +13909,15 @@ leftovers a start names (the options above).
 | State | Lock of the path | What the path names | A start there meanwhile | Next |
 |---|---|---|---|---|
 | `absent` | none | nothing | without `--join`: refused, naming the leftovers beside it; with `--join`: a new `staging` elsewhere | `placing` of a join that targets it |
-| `staging` | the join's, from the creation | a `.join-<random>`, its path printed before the exchange, first without a credential, then with the spent one while it is checked out | `workspace_locked` | `placing`; `kept`, also on a crash after the exchange; removed when the exchange failed; on a crash before it, a `.join-*` that holds no secret |
+| `staging` | the join's, from the creation | a `.join-<random>`, its path printed before the exchange, first without a credential, then with the spent one while it is checked out | `workspace_locked` | `placing`; `kept`, also on a crash after the exchange; removed when the exchange failed; on a crash before it, a `.join-*` without a credential |
 | `kept` | none: local mode exited (`staging_kept`, `repository_refused`, `no_repository`, `fetch_failed`) or crashed | a tree with a credential and no `checked-out` | takes the lock: `replacing` | `replacing` |
 | `placing` | at `T` and at the staging, both the join's | `T`: nothing or an empty directory until the rename, then the checked-out tree | `workspace_locked` at `T` and at the staging | `running`; when the rename fails or both targets' locks are held, the staging stays checked out (`staging_kept`): `stopped` at its path |
 | `stopped` | none | a tree with a credential and `checked-out` | takes the lock: `running` | `running` |
-| `running` | local mode's, and on Linux and macOS every process of the run that keeps the inherited descriptor | the tree the harness works in | `workspace_locked` | `stopped` once local mode and the run have ended; `surviving` when local mode is killed and the run goes on |
-| `surviving` | the run's processes that keep the inherited descriptor, or none | the tree a harness or its descendants still work in, local mode gone; the run record names the harness | `workspace_locked` while the lock is held; else `harness_running` while the run record's harness or its process group lives | `stopped` once they have ended or the person stopped them |
-| `replacing` | at `W` and at `F`, both the retry's | `W`: the old tree, unchanged, while `F` is built; `F`'s path printed at its creation | `workspace_locked` at `W` and at `F` | `between`; `kept` on a refusal or failed fetch (`F` removed); on a crash, `abandoned` before the credential is whole in `F`, `unfinished` after it and before `checked-out`, `orphaned` after `checked-out` |
+| `running` | local mode's alone | the tree the harness works in | `workspace_locked` | `stopped` once local mode has ended; a run that outlives a killed local mode is not covered yet (**The limit** under **Restart**) |
+| `replacing` | at `W` and at `F`, both the retry's | `W`: the old tree, unchanged, while `F` is built; `F`'s path printed at its creation | `workspace_locked` at `W` and at `F` | `between`; `kept` on a refusal or failed fetch (`F` removed); on a crash, `abandoned` before the first file is copied into `F/.git/maity`, `unfinished` after it and before `checked-out`, `orphaned` after `checked-out` |
 | `between` | at `W` and at `F` (and at `T` when `W` is a `.join-*`), all the retry's | `W`: nothing, the old tree is at `.replaced-…`; `F` not yet renamed | `workspace_locked` | `running` at `W` (or `T`); `stranded` on a crash or a failed rename of `F` |
-| `abandoned` | none | `W`: the old tree (`kept`); beside it an `F` without a credential | at `W`: `replacing` again with a new `F`, naming the old one as holding no secret | the person removes `F` |
-| `unfinished` | none | `W`: the old tree (`kept`); beside it an `F` with a copy of `W`'s credential, a partial checkout or none, and no `checked-out` | at `W`: `replacing` again with a new `F`, naming the old one as incomplete; at `F`: `replacing` from a kept `.join-*` | the person removes `F`: `W` still holds the credential, and no harness ran in `F` |
+| `abandoned` | none | `W`: the old tree (`kept`); beside it an `F` with no file in its `.git/maity` | at `W`: `replacing` again with a new `F`, naming the old one as holding no secret | the person removes `F` |
+| `unfinished` | none | `W`: the old tree (`kept`); beside it an `F` with files copied from `W/.git/maity` (the credential whole, partly or wholly under its temporary name, or not yet), a partial checkout or none, and no `checked-out` | at `W`: `replacing` again with a new `F`, naming the old one as incomplete and possibly holding a secret; at `F`: `replacing` from a kept `.join-*` | the person removes `F`: `W` still holds the credential, and no harness ran in `F` |
 | `orphaned` | none | `W`: the old tree (`kept`); beside it a complete `F` with `checked-out`, its path printed at its creation and the way on printed before the renames, or by the next start at `W` when the crash came first | at `W`: `replacing` again with a new `F`, naming the old one as complete; at `F`: `stopped` | the person removes `F` and starts at `W`, or moves `W` aside and renames `F` to `W`'s path |
 | `stranded` | none | `W`: nothing; `F` complete beside it and the old tree at `.replaced-…`, both printed | at `W`: `absent`, naming `F`; at `F`: `stopped` | the person renames `F` to `W`'s path: `stopped` |
 | `replaced` | none, ever | a `.replaced-*`: the old tree | refused, `workspace_replaced` | the person's |
@@ -13933,8 +13938,8 @@ runner's adapters (§15.3) with the context of a placement in the
   lock's `<key>` (**Restart** below).
   They lie outside the workspace, as a runner's lie in its state
   directory: Codex's sandbox lets the agent write the clone's `.git`, so
-  files there could be widened for the next run. `.adapters`, `.locks`
-  and `.runs` cannot collide with a host's directory: a link whose host
+  files there could be widened for the next run. `.adapters` and
+  `.locks` cannot collide with a host's directory: a link whose host
   starts with `.` is refused (the host, above), and the prefix never
   adds a `.`.
 - `MAITY_SUPERVISOR` is `maity-runner/<version>`; `MAITY_PLACEMENT` is
@@ -13951,7 +13956,7 @@ runner's adapters (§15.3) with the context of a placement in the
   whole directory, as a runner's workspaces root), among them every
   `.join-*` and `.replaced-*`, which hold credentials too, with
   `--workspace DIR` also every `.join-*` and `.replaced-*` beside `DIR`,
-  and `.adapters`, `.locks` and `.runs`. A
+  and `.adapters` and `.locks`. A
   listing that cannot be completed refuses the start (exit 4, reason
   `private_unlisted`), as on a runner: an unreadable directory could
   hide a credential.
@@ -14031,37 +14036,22 @@ never stops on a read of the terminal.
   only. On Windows `msvcrt.locking` locks one byte at offset 64, past
   that id, since another process cannot read a locked range. A start
   whose lock is held does not wait: it is refused (exit 4, reason
-  `workspace_locked`) with that id; when no local mode runs under that
-  id, a process of the last run holds the lock (below), and the message
-  says so with the lock file's path, for `lsof` or `fuser`.
-- The lock lives as long as the run, not only as long as local mode. On
-  Linux and macOS the harness inherits the descriptor local mode locked
-  (opened read-only; the id is written through another one), and a
-  `flock` lock belongs to the open file, so it is held
-  while any process keeps that descriptor: local mode, the harness or
-  any descendant, also one that left the process group. A `kill -9` of
-  local mode, after which the harness on macOS and its descendants on
-  Linux run on (**Stopping**), so leaves the path locked until they have
-  ended; the descriptor exists from the harness's first instruction. On
-  Windows the job takes every process of the run with local mode.
-- A process may close what it inherited, or unlock it, which releases
-  the open file's lock for local mode too. So local mode also writes a
-  run record, `<state home>/maity-local/.runs/<key>`, once the harness
-  has started: the harness's process id, its start time as the system
-  reports it (`/proc/<pid>/stat` on Linux, `proc_pidinfo` on macOS,
-  `GetProcessTimes` on Windows) and on Linux and macOS its process
-  group. Local mode clears the record when the run has ended.
-- **Takeover.** A start takes a path over only when it gets the lock
-  without waiting and the run record names no live run: neither a
-  process with the recorded id and start time nor, on Linux and macOS,
-  any process in the recorded group. Else it is refused (exit 4, reason
-  `harness_running`) with the harness's id and the command that stops
-  the run (`kill -TERM -- -<group>`), and changes nothing. A lock file
-  and a run record that a killed local mode left, whose run has ended,
-  are taken over as they are; neither is removed. The limit: a
-  descendant that both left the group and closed the inherited
-  descriptor is not seen, as a process forked after the last walk is
-  not (**Stopping**).
+  `workspace_locked`) with that id and the lock file's path.
+- Only local mode holds the lock. Its descriptor is never passed on:
+  opened with `O_CLOEXEC` on Linux and macOS, and on Windows as a handle
+  that is not inheritable, so neither the harness nor the `maity wait`
+  and `git` local mode runs inherit it, and no process of a run can
+  close or unlock it. The lock lasts as long as local mode, and the id
+  in the file names the live local mode that holds it.
+- **The limit.** At most one harness per path is guaranteed only while
+  local mode lives. A run that survives local mode is not covered yet:
+  after a `kill -9` of local mode the harness on macOS, and its
+  descendants on Linux, run on (**Stopping**), the lock has ended with
+  local mode, and a new start takes the path although that run still
+  works in the tree. How a start finds such a run, refuses or takes
+  over, and how the person stops it, is the follow-up card
+  tsk-3tzhegcrr48h. On Windows the job takes every process of the run
+  with local mode, so there no run survives it.
 
 **Stopping.** Uncommitted work stays in the workspace in every case.
 The `maity wait` and `git` that local mode runs are stopped with it.
@@ -14085,8 +14075,9 @@ The `maity wait` and `git` that local mode runs are stopped with it.
   killed (`PR_SET_PDEATHSIG`). The limit: after a `kill -9` of local
   mode, the harness's descendants are not reached; they end on their
   own. On macOS neither exists, and a `kill -9` of local mode leaves the
-  run to end on its own. Either way no start takes the path over until
-  the run has ended (`surviving`, **Takeover** under **Restart**).
+  run to end on its own. Either way its lock has ended, and a new start
+  is not kept from the path while that run goes on (**The limit** under
+  **Restart**).
 - **Windows.** Local mode creates a Job Object that kills its processes
   when the job closes and allows no breakaway; the job's handle is not
   inheritable, so only local mode holds it. The harness starts
@@ -14134,7 +14125,7 @@ script that stops it asked for that end, so it must not read it as a
 failure. Exit 4 prints its reason as the first word of its last line
 on standard error (`workspace_not_empty`, `staging_kept`,
 `repository_refused`, `no_repository`, `workspace_locked`,
-`harness_running`, `private_unlisted`, `fetch_failed`, `workspace_link`,
+`private_unlisted`, `fetch_failed`, `workspace_link`,
 `workspace_replaced`, `replace_failed`), so a test or script can tell
 them apart.
 
