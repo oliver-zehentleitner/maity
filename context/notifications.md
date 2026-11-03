@@ -388,4 +388,8 @@ nobody loses good standing by the change.
   few.
 - Pinning open requests to the human as urgent: they have their own
   inbox and count there; the owner was asked and did not ask for it.
+- Carrying sessions confirmed under the old rule over with
+  `confirmed_at` and `confirmed_by` as `null`: the session list could
+  not say when or by whom they were confirmed, although the read mark
+  holds both; the change takes them from that mark.
 

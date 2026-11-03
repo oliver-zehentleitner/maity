@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import Connection, func, insert, select
+from sqlalchemy import Connection, func, insert, select, update
 
 from maity_hub import clock, wakeups
 from maity_hub import tables as t
@@ -103,6 +103,21 @@ def session_created(conn: Connection, human_id: str, data: dict[str, Any]) -> in
 
 def session_ended(conn: Connection, human_id: str, session_id: str, by: str) -> None:
     write(conn, human_id, "session_ended", {"session_id": session_id, "ended_by": by})
+
+
+def mark_sign_in_read(conn: Connection, human_id: str, session_id: str, by: str) -> None:
+    """Mark the `session_created` record of `session_id` read by the session `by`, as "This
+    was me" does (§2.6.5); one read already keeps its mark. The human's held bells look
+    again."""
+    record = sign_in_records(conn, human_id).get(session_id)
+    if record is None or record.read_at is not None:
+        return
+    conn.execute(
+        update(t.account_record)
+        .where(t.account_record.c.n == record.n, t.account_record.c.read_at.is_(None))
+        .values(read_at=clock.now(), read_by=by)
+    )
+    wakeups.ring(conn, "bell", human_id)
 
 
 def sign_in_records(conn: Connection, human_id: str) -> dict[str, Any]:

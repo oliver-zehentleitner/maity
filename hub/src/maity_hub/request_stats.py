@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import threading
 import time
 from dataclasses import dataclass, field
@@ -206,7 +207,8 @@ def lines(window: Window, engine: Engine, seconds: float, load: LoadWindow) -> l
     )
     return [
         f"stats window={seconds:g}s requests={taken.requests} 5xx={taken.errors} "
-        f"max_ms={taken.slowest_ms} slow_routes={len(slow)} {pool_fields(engine)} {load.fields()}",
+        f"max_ms={taken.slowest_ms} slow_routes={len(slow)} {pool_fields(engine)} {load.fields()} "
+        f"pid={os.getpid()}",
         *(
             f"stats_route window={seconds:g}s method={method} route={route} "
             f"requests={times.requests} over_1s={times.over_1s} over_3s={times.over_3s} "

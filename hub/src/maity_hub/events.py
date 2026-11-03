@@ -321,10 +321,14 @@ def emit(
         from maity_hub import public_pages
 
         public_pages.touch(conn, "project_views", project_id, removal=kind != "task_created")
-        if kind != "task_created":  # a card turning `security` or held takes a ticker entry off
-            public_pages.touch(conn, "project", project_id)
-        # And so does the card's own page (§16.9, "Card").
         card_id = subject[1] if subject and subject[0] == "task" else payload.get("id")
+        if isinstance(card_id, str) and _hides_ticker_entries(conn, kind, payload, card_id):
+            # A card turning `security`, or a `security` card leaving `done`, takes its ticker
+            # entries off the project's page: that page alone, at once. Every other change
+            # waits for the snapshot worker; this transaction holds the project row
+            # (hub/context/public-pages.md 721bcdfa).
+            public_pages.touch(conn, "project", project_id, dependents=False)
+        # And so does the card's own page (§16.9, "Card").
         if isinstance(card_id, str):
             public_pages.touch(conn, "card", card_id, removal=kind != "task_created")
     elif kind in NOTE_KINDS and project.public_page == "on" and subject and subject[0] == "task":
@@ -336,6 +340,29 @@ def emit(
 
         public_pages.touch(conn, "card", subject[1], removal=kind == "note_edited")
     return seq
+
+
+def _hides_ticker_entries(
+    conn: Connection, kind: str, payload: dict[str, Any], card_id: str
+) -> bool:
+    """Whether a card event may take a ticker entry off its project's page (§16.9): an entry
+    names a card only while `public_cards.shown` holds, which reads the card's label and
+    status. A new label, or a new status of a `security` card, may end that; a claim, a
+    release, an assignment or a merge (into `done`, which only adds) never does. A hold is
+    `moderation.apply`'s."""
+    if kind == "task_updated":
+        fields = payload.get("fields") or []
+        if "label" in fields:
+            return True
+        if "status" not in fields:
+            return False
+    elif kind == "task_reported":
+        if payload.get("status_before") == payload.get("status_after"):
+            return False
+    else:
+        return False
+    label = conn.execute(select(t.card.c.label).where(t.card.c.id == card_id)).scalar()
+    return (label or "").lower() == "security"
 
 
 # The events of a membership: what a public page shows of the team follows them (§16.9).
@@ -553,6 +580,11 @@ def window_times(conn: Connection, project_id: str, membership: Any) -> list[tup
         if first is not None and last is not None:
             found.append((first, last))
     return found
+
+
+def is_isolated(membership: Any) -> bool:
+    """An isolated agent member (§6.2)."""
+    return _isolated(membership)
 
 
 def _isolated(membership: Any) -> bool:

@@ -565,7 +565,8 @@ one from prose.
 **Revisit when:** the dashboard renders an instance suffix or a member id as the member's handle wherever a human reads it, so that the text no longer has to
 
 Every agent's rules carry the naming line: in what a human reads — a
-message, an ask, a report, a card note — a member is named by its
+message to a human or between agents, a group chat, an ask, a report,
+a card note, the text of a `review_result` — a member is named by its
 handle, or by `handle#instance` when the instance matters, never by the
 instance suffix or the member id alone. It is part of the hub's own
 generated text in §6.9, so a change reaches running agents through the
@@ -579,3 +580,8 @@ member up.
 - Putting the rule in the hub's default guides, a briefing layer
   (§6.28): a human may replace a guide, and the rule would go with it,
   though the maintainer wants it for every agent.
+- Limiting the rule to text written to a human, or about a member for
+  one: project messages between agents, group chats and the text of a
+  `review_result` are read by the maintainer too, so the lead ruled
+  that the rule covers everything a human reads, with the addresses the
+  hub reads left out (2026-11-02, seq 39831).

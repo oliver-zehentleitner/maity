@@ -56,6 +56,7 @@ jobs:
       cli: ${{ steps.paths.outputs.cli }}
       helm: ${{ steps.paths.outputs.helm }}
       contract: ${{ steps.paths.outputs.contract }}
+      vendor: ${{ steps.paths.outputs.vendor }}
     defaults:
       run:
         working-directory: .
@@ -69,7 +70,7 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
         run: |
-          parts="hub image join web e2e cli helm contract"
+          parts="hub image join web e2e cli helm contract vendor"
           if [ "$EVENT" != pull_request ]; then
             for part in $parts; do echo "$part=true" >> "$GITHUB_OUTPUT"; done
             exit 0
@@ -90,6 +91,7 @@ jobs:
                 cli:cli/*) hit=true ;;
                 helm:deploy/*) hit=true ;;
                 contract:docs/api.md|contract:hub/*) hit=true ;;
+                vendor:web/vendor/*|vendor:web/tools/vendor_ktw.py) hit=true ;;
               esac
             done <<< "$changed"
             echo "$part=$hit" >> "$GITHUB_OUTPUT"
@@ -135,6 +137,23 @@ jobs:
       - run: make check
       - run: make smoke
 
+  # The vendored Keep the Why views against the release VENDOR.json names, file for file, fetched
+  # again from PyPI: the lock that make check reads proves nothing about where the files came from
+  # (web/context/stack.md). Runs when web/vendor/ or the tool changes. It is in ci-ok.
+  web-vendor:
+    needs: changes
+    if: needs.changes.outputs.vendor == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: python3 tools/vendor_ktw.py --verify
+
   # The dashboard in headless Chromium against a real hub on SQLite, with the
   # maity CLI as the agent (web/tools/e2e.py). The screenshots of every step
   # and the hub's log are uploaded, also when a step fails.
@@ -175,6 +194,8 @@ jobs:
             sudo apt-get install -y -qq --no-install-recommends libnss3 libnspr4 libasound2t64
           fi
           if ldd "$shell" | grep "not found"; then exit 1; fi
+      # The vendored Keep the Why views mounted under the hub's `default-src 'self'` (web/context/stack.md).
+      - run: python web/tools/vendor_csp.py
       - run: python web/tools/e2e.py --artifacts e2e-screenshots
       # Fails on any text outside the catalog (web/README.md, "Texts outside the catalog").
       - if: "!cancelled()"
@@ -418,7 +439,7 @@ jobs:
   # needed (skipped by `changes`), red when one failed or was cancelled.
   ci-ok:
     if: always()
-    needs: [changes, changelog, web, web-e2e, hub-sqlite, hub-contract, hub-wheel, hub-lock, hub-image, helm, join-smoke, hub-postgresql, cli, cli-windows, join-windows]
+    needs: [changes, changelog, web, web-vendor, web-e2e, hub-sqlite, hub-contract, hub-wheel, hub-lock, hub-image, helm, join-smoke, hub-postgresql, cli, cli-windows, join-windows]
     runs-on: ubuntu-latest
     defaults:
       run:

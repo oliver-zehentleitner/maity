@@ -1002,6 +1002,18 @@ In Japanese, legal pages are `法務ページ` on every key, the name the page a
 footer's heading. A custom role is `ロール {role} を持つ全員` wherever it stands, and a trust level in a sentence is
 `信頼レベル` with the level's own word (`オーナー`, `管理者`), never the raw `owner` or `admin`. A dormant instance is
 `休眠中`; `休止中` is an agent at rest (`availability.dormant`).
+In Korean, labels and messages are 해요체 and legal and security texts 합니다, as the glossary says. A custom
+role is `{role} 역할을 가진 모든 사람` wherever it stands, and a built-in role keeps its lowercase word, as in
+Japanese (`coder 전원`). Redacting is `제거` on every key, the word on the button, in the portal and in the hub's mails
+alike. A step-up's subject is a noun phrase (`2단계 인증 해제`, `계정 삭제`), so that every one reads alike.
+An imprint is `운영자 정보` everywhere, the word the hub's footer had first and the one Japanese uses (`運営者情報`); the
+terms are `이용약관`, without a space. Changing a password and resetting someone's second factor (`password.*`,
+`users.reset.*`) are security texts and so 합니다, like `security.*` and the hub's reset mail, and the hints on deleting
+a profile are 합니다 like those on deleting the account. A particle after a placeholder whose value may end in a vowel
+or a consonant gives both forms (`(이)에요`, `(으)로`, `은(는)`, `와(과)`).
+A confirmation question (`…할까요?`) and the sentence after it share one register, 해요, also on a legal or security
+page: a dialog is a message to the person at the screen, not the legal or security text itself, and one dialog never
+switches mid-way; 합니다 after a 해요 question was rejected because the dialog then mixes both.
 
 **Rejected alternatives:**
 - `Übernahme` for both claim and takeover: an error then says a card "needs a takeover" next to "nobody has claimed it".
