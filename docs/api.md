@@ -11948,6 +11948,10 @@ or from a project setting is read; from an export only the one bodies
 file beside its state URL is (below); and no host is allowed because of
 its name.
 
+The limits below — reads in flight, the memory budget, the 30 s hold —
+are per serving process: a hub run as several processes or pods holds
+them in each, and their caches apart.
+
 **A repository's name.** A repository is named — in `canonical`, in a
 URL-form child location, in a `parent:` line — by exactly this form,
 and by nothing else:
@@ -11958,15 +11962,17 @@ and by nothing else:
 
 `{owner}` is 1 to 39 ASCII characters from `A`–`Z`, `a`–`z`, `0`–`9`
 and `-`; `{repo}` 1 to 100 ASCII characters from `A`–`Z`, `a`–`z`,
-`0`–`9`, `.`, `_` and `-`, not `.` or `..`, without the `.git` the form
-allows after it. Any other character — a non-ASCII letter or digit
+`0`–`9`, `.`, `_` and `-`, not `.`, `..` or `.git`, without the `.git`
+the form allows after it. Any other character — a non-ASCII letter or digit
 included — makes the text no name. No query, no fragment, no user info,
 no port, no further path segment, no percent-encoding, no whitespace.
 Two names are the same repository when their `{owner}/{repo}` match
 with ASCII `A`–`Z` and `a`–`z` compared ignoring case. The form decides
 what the hub reads; it is not a complete check of the forge's own
 naming rules, and a name the forge does not have is simply not found.
-A text that does not have this form names no repository: it is skipped
+The text is checked as written in the file, before anything is removed
+from it: a control or zero-width character makes it no name. A text
+that does not have this form names no repository: it is skipped
 where it stands, takes none of the 8 places below, and a `canonical` in
 another form is `not_found` with `not_in_family`. Every forge read of a
 named repository builds its API path from the validated `{owner}` and
@@ -11994,7 +12000,8 @@ The second kind is read only where the forge reports the repository
 public, with the grant §11.4 picks for the project's own repository
 (the instance token only for a project in the operator's own
 namespaces), checked as §11.4 checks visibility, before the first read
-and on every refresh of its family (at most every `max_age`, below); a
+and on every refresh of its family (at most every `max_age`, below, and
+at least every 600 s whatever `max_age` asks); a
 private one, or one whose visibility cannot be read, is refused with
 reason `not_public`, and what the hub held of it is dropped then. A
 named repository the forge answers with a redirect (renamed or moved)
@@ -12024,8 +12031,10 @@ not resolved, with the reason, as it does on any host without the read.
 ```
 
 `state` is the member's `state.json` as published, parsed and written
-again as JSON, nothing removed or added: the hub checks that it is a JSON
-object with `state-json` major `2` and an `entries` array (§11.3's
+again as JSON with every non-ASCII character escaped, nothing removed or
+added; a file that is not UTF-8 JSON as a browser reads it — `NaN`,
+`Infinity` or a number too large to be finite included — is `not_json`.
+Beyond that the hub checks only that it is a JSON object with `state-json` major `2` and an `entries` array (§11.3's
 `state_json_version` and `shape`), and nothing else of it. `url` is the
 state URL it was read from; the library resolves a lean state's
 `bodies` file against it. `fork_of` is `null`; the library judges a
