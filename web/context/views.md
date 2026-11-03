@@ -1270,7 +1270,10 @@ field. Remove asks its reason with the same prompt loop as removing a chat
 message. The tombstone says who and when, and the reason only when the hub
 gives it. Each button names the note's author and date in its label, an
 Escape the mention picker has taken leaves the edit open, and a draft in Add
-a note outlives the list being drawn again. An edit and a removal name the
+a note outlives the list being drawn again. A note being posted outlives it
+too: the form drawn meanwhile stays busy, only the latest read of the list
+draws it, the draft is taken after that read, and on success exactly the text
+sent leaves the field while anything typed since stays. An edit and a removal name the
 version they were made on (`base_version`); a conflict shows the note as it
 is now and keeps the writer's text for the next save, and a note removed
 meanwhile ends the edit, says the text was not kept, and puts the focus on
@@ -1281,11 +1284,16 @@ holder, the date and the reason, never the old text, none on a removed note.
 **Reason:** the buttons follow who the hub lets act, so nobody meets a
 refusal for a button that should not have been there; an empty reason is not
 sent, so the edit mark of one's own note stays without one, as §6.16 has it;
-one way of asking a removal's reason in the whole dashboard.
+one way of asking a removal's reason in the whole dashboard; a note is posted
+once, however the list is drawn again around its post.
 
 **Rejected alternatives:**
 - Showing Edit to every reader and letting the hub refuse: a button that
   always fails for most readers.
+- Clearing Add a note after every post whatever it holds: text typed while
+  the post was on its way would be lost. Keeping the draft without tying it
+  to the post in flight brought the text sent back into a free form, a
+  second post one click away (#1268 review).
 - Always sending `reason`, empty for one's own note: an empty reason would
   read as a given one.
 - A dialog of its own for the removal's reason: a second pattern beside the
