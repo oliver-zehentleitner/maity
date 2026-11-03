@@ -211,44 +211,45 @@ and with `local` they are there for the copy, which runs before the store is swi
 */}}
 {{- define "maity-hub.attachmentEnv" -}}
 {{- $a := .Values.attachments -}}
+{{- $o := $a.s3 | default dict -}}
 {{- $s3 := eq ($a.store | default "local") "s3" -}}
-{{- if and $s3 (not $a.s3.bucket) -}}
+{{- if and $s3 (not $o.bucket) -}}
 {{- fail "attachments.s3.bucket is required with attachments.store: s3" -}}
 {{- end -}}
 {{- if $s3 }}
 - name: MAITY_ATTACHMENT_STORE
   value: "s3"
 {{- end }}
-{{- if $a.s3.bucket }}
+{{- if $o.bucket }}
 - name: MAITY_ATTACHMENT_S3_BUCKET
-  value: {{ $a.s3.bucket | quote }}
-{{- with $a.s3.endpoint }}
+  value: {{ $o.bucket | quote }}
+{{- with $o.endpoint }}
 - name: MAITY_ATTACHMENT_S3_ENDPOINT
   value: {{ . | quote }}
 {{- end }}
-{{- with $a.s3.region }}
+{{- with $o.region }}
 - name: MAITY_ATTACHMENT_S3_REGION
   value: {{ . | quote }}
 {{- end }}
-{{- with $a.s3.prefix }}
+{{- with $o.prefix }}
 - name: MAITY_ATTACHMENT_S3_PREFIX
   value: {{ . | quote }}
 {{- end }}
-{{- if $a.s3.allowHttp }}
+{{- if $o.allowHttp }}
 - name: MAITY_ATTACHMENT_S3_ALLOW_HTTP
   value: "1"
 {{- end }}
-{{- with $a.s3.existingSecret }}
+{{- with $o.existingSecret }}
 - name: MAITY_ATTACHMENT_S3_ACCESS_KEY_ID
   valueFrom:
     secretKeyRef:
       name: {{ . | quote }}
-      key: {{ $a.s3.accessKeyIdKey | quote }}
+      key: {{ $o.accessKeyIdKey | quote }}
 - name: MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY
   valueFrom:
     secretKeyRef:
       name: {{ . | quote }}
-      key: {{ $a.s3.secretAccessKeyKey | quote }}
+      key: {{ $o.secretAccessKeyKey | quote }}
 {{- end }}
 {{- end }}
 {{- if $a.existingClaim }}

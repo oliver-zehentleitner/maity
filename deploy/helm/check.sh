@@ -100,7 +100,8 @@ grep -q "MAITY_ATTACHMENT_DIR\|claimName\|MAITY_ATTACHMENT_S3_ALLOW_HTTP\|MAITY_
     && bad "s3 without a claim still renders the volume, the directory or unset options" || ok "s3 without a claim: no volume, no directory"
 out_s3c="$(render -f "$minimal" --set attachments.store=s3 --set attachments.s3.bucket=b --set attachments.existingClaim=c --show-only templates/deployment.yaml)"
 expect "s3 with the claim kept for the copy: both" "$out_s3c" 'value: "s3"' "name: MAITY_ATTACHMENT_DIR" 'claimName: "c"'
-grep -q "secretKeyRef" <<<"$out_s3c" && bad "s3 without existingSecret renders a secret reference" || ok "s3 without existingSecret: the client's own credentials"
+grep -q "MAITY_ATTACHMENT_S3_ACCESS_KEY_ID\|MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY" <<<"$out_s3c" && bad "s3 without existingSecret renders a secret reference" || ok "s3 without existingSecret: the client's own credentials"
+render -f "$minimal" --set attachments.s3=null >/dev/null 2>&1 && ok "attachments.s3: null renders" || bad "attachments.s3: null breaks the template"
 render -f "$minimal" --set attachments.store=s3 >/dev/null 2>&1 && bad "s3 without a bucket is accepted" || ok "s3 without a bucket is refused"
 out_pre="$(render -f "$minimal" --set attachments.s3.bucket=b --set attachments.existingClaim=c --show-only templates/deployment.yaml)"
 expect "local with a bucket set, for the copy: its settings, not the store" "$out_pre" 'value: "b"' "name: MAITY_ATTACHMENT_DIR"

@@ -547,7 +547,7 @@ hub has to keep.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the card's scope (tsk-enpbgadqgmbr: "a command or documented step that copies the existing files from the volume into the bucket, idempotent"), the coordinator's request of 2026-11-03 for a one-off copy that checks the digest, the operator's question of 2026-11-03 whether the hub would read through instead; `attachment_store.copy_local_to_s3`, `cli._copy_to_s3`
+**Source:** the card's scope (tsk-enpbgadqgmbr: "a command or documented step that copies the existing files from the volume into the bucket, idempotent"), the coordinator's request of 2026-11-03 for a one-off copy that checks the digest, the operator's question of 2026-11-03 whether the hub would read through instead, the review of #1282 on 2026-11-03 (an overwritten object, an unreadable folder); `attachment_store.copy_local_to_s3`, `cli._copy_to_s3`
 **Revisit when:** a deployment's volume is too large to copy while the hub serves, or a second migration (between buckets) is needed
 **See:** replicas.md#attachments-move-to-s3-compatible-object-storage — a70d7269-a0a9-45aa-94c5-54715f112c10 — as of 2026-11-03
 
@@ -556,17 +556,25 @@ bucket of the `s3` settings under the same key; without `--apply` it only counts
 each object with its SHA-256 as metadata (`x-amz-meta-sha256`), and the copy skips an object whose
 metadata matches the file, so it runs as often as needed: once while the hub still serves from the
 volume, once more after the store is switched, for the uploads in between. It never changes the
-volume. The chart renders the bucket's settings whenever a bucket is set, also with `local`, so the
+volume. An object the hub wrote with another SHA-256 is not overwritten but counted as different
+(exit 1); only a missing object or one without the metadata is written. After each put one HEAD
+compares size and digest. Each file is read whole, at most `FILE_CAP` like an upload. A folder or
+file the pod cannot read (`lost+found` on an ext4 volume) counts as failed, and the copy goes on.
+There is no copy back: after the switch, uploads exist only in the bucket. The chart renders the bucket's settings whenever a bucket is set, also with `local`, so the
 command finds them in the pod before the switch, and the claim may stay mounted under `s3` for the
 second run.
 
 **Reason:** the copy runs where both stores already are (the hub's pod, its settings, its
-credentials), needs no tool of the operator's, and the digest it compares is the one the hub
-checks on every download.
+credentials), and needs no tool of the operator's. The digest it compares is the one the hub
+checks on every download only while the file is intact: keys are immutable attachment ids, so other
+bytes under a key the hub already wrote mean the file changed, and once the store is switched the
+bucket is what the hub serves.
 
 **Rejected alternatives:**
 - **The hub reads through (from the volume when the bucket has no object):** two stores on the hot
   path of every download, for as long as the volume is mounted, and a volume still pinned to one node.
+- **Overwriting an object whose digest differs from the file:** the first version of the copy did,
+  and a file changed on the volume after the first run replaced good bytes in the bucket.
 - **Comparing by the ETag:** it is an MD5 of the bytes only for a single-part upload without
   server-side encryption by a managed key, which not every bucket guarantees.
 

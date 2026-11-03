@@ -206,6 +206,12 @@ class S3Store:
     def digest(self, key: str) -> str | None:
         """The SHA-256 the hub wrote with the object, or None when it is gone or was written
         without one (by another tool)."""
+        found = self.stat(key)
+        return found[1] if found else None
+
+    def stat(self, key: str) -> tuple[int, str | None] | None:
+        """The object's size and the SHA-256 the hub wrote with it (None when another tool wrote
+        it), or None when it is gone; one HEAD."""
         name = self._object(key)
         try:
             answer = self.client.head_object(Bucket=self.bucket, Key=name)
@@ -214,7 +220,7 @@ class S3Store:
                 return None
             raise self._fail("look at a blob", error) from None
         found = answer.get("Metadata", {}).get(SHA256)
-        return str(found) if found else None
+        return int(answer.get("ContentLength", -1)), (str(found) if found else None)
 
     def open(self, key: str) -> Blob | None:
         name = self._object(key)
@@ -367,23 +373,53 @@ def shared(settings: Settings) -> bool:
 
 def copy_local_to_s3(source: LocalStore, target: S3Store, *, apply: bool) -> dict[str, int]:
     """Copy every blob of the local store into the bucket, under the same key; the migration from
-    a volume to `s3` (hub/context/replicas.md a70d7269). A blob the bucket already holds with the
+    a volume to `s3` (hub/context/replicas.md 99360a7a). A blob the bucket already holds with the
     same SHA-256 is skipped, so the copy can run again until it reports nothing to copy; the
-    local files are never changed. Without `apply` it only counts."""
-    done = {"copied": 0, "present": 0, "failed": 0}
-    for project in sorted(source.projects()):
-        for key in sorted(source.keys(project)):
-            data = source.get(key)
+    local files are never changed. An object the hub wrote with another SHA-256 is never
+    overwritten: keys are immutable, so the file changed, and it is counted as `differs`. After
+    each put one HEAD checks size and digest. A file is read whole (at most `FILE_CAP`, like an
+    upload). A folder or file the hub cannot read counts as failed, the rest goes on. Without
+    `apply` it only counts."""
+    log = logging.getLogger(__name__)
+    done = {"copied": 0, "present": 0, "differs": 0, "failed": 0}
+    try:
+        projects = sorted(source.projects())
+    except OSError as error:
+        log.error("the volume: %s", error.strerror or type(error).__name__)
+        done["failed"] += 1
+        return done
+    for project in projects:
+        try:
+            keys = sorted(source.keys(project))
+        except OSError as error:  # lost+found on an ext4 volume, owned by root
+            log.error("%s: %s", project, error.strerror or type(error).__name__)
+            done["failed"] += 1
+            continue
+        for key in keys:
+            try:
+                data = source.get(key)
+            except OSError as error:
+                log.error("%s: %s", key, error.strerror or type(error).__name__)
+                done["failed"] += 1
+                continue
             if data is None:  # removed since it was listed
                 continue
+            digest = hashlib.sha256(data).hexdigest()
             try:
-                if target.digest(key) == hashlib.sha256(data).hexdigest():
+                found = target.stat(key)
+                if found is not None and found[1] == digest:
                     done["present"] += 1
+                    continue
+                if found is not None and found[1] is not None:
+                    log.error("%s: the bucket holds other bytes; not overwritten", key)
+                    done["differs"] += 1
                     continue
                 if apply:
                     target.put(key, data)
+                    if target.stat(key) != (len(data), digest):
+                        raise StoreError("the attachment store did not keep a blob whole")
                 done["copied"] += 1
             except StoreError as error:
-                logging.getLogger(__name__).error("%s: %s", key, error)
+                log.error("%s: %s", key, error)
                 done["failed"] += 1
     return done

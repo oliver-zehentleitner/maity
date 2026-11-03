@@ -140,8 +140,11 @@ def _copy_to_s3(settings: Settings, *, apply: bool) -> int:
     target = attachment_store.S3Store(settings.attachment_s3)
     done = attachment_store.copy_local_to_s3(source, target, apply=apply)
     verb = "copied" if apply else "to copy"
-    print(f"{verb}: {done['copied']}, already there: {done['present']}, failed: {done['failed']}")
-    return EXIT_FAILURE if done["failed"] else 0
+    print(
+        f"{verb}: {done['copied']}, already there: {done['present']}, "
+        f"different in the bucket: {done['differs']}, failed: {done['failed']}"
+    )
+    return EXIT_FAILURE if done["failed"] or done["differs"] else 0
 
 
 def _loadtest_refusal(settings: Settings) -> str | None:

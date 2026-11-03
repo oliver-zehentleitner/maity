@@ -279,18 +279,27 @@ not ship yet (`hub/context/kubernetes.md`).
 The files on the claim are copied into the bucket by the hub itself, under the same key
 (`<prefix>/<project id>/<attachment id>`). `maity-hub attachments copy-to-s3` skips an object
 that is already there with the same SHA-256, so it can run as often as needed, and it never
-changes the files on the claim. Without `--apply` it only counts.
+changes the files on the claim. An object the hub wrote with another SHA-256 is never
+overwritten: it is reported as different, and the command ends with exit 1. After each copy it
+checks the object's size and digest. A folder it cannot read (`lost+found`) counts as failed,
+the rest is copied. Without `--apply` it only counts.
 
 1. Upgrade to a hub version that has the `s3` store, still with `attachments.store: local`, and
    with the `attachments.s3.*` values set: the chart renders them whenever a bucket is set, and
-   the hub reads them only under `s3`.
+   the hub reads them only under `s3`. The Secret named in `attachments.s3.existingSecret` must
+   exist first: the pod does not start without it, even under `local`.
 2. In the hub pod: `MAITY_ATTACHMENT_STORE=s3 maity-hub attachments copy-to-s3`, then the same
    with `--apply`. The store setting is the command's alone; the hub keeps serving from the claim.
 3. `helm upgrade` with `attachments.store: s3`, the claim still set: the hub now serves from the bucket, and the claim stays mounted for the next step.
 4. In the new pod: `maity-hub attachments copy-to-s3 --apply` once more, for the uploads between
-   steps 2 and 3; it should copy only those.
+   steps 2 and 3; it should copy only those. Run it right away: until it has run, the hub
+   cannot serve those uploads.
 5. `helm upgrade` with `attachments.existingClaim` empty. Keep the volume until the backups no
    longer need it.
+
+There is no copy back. Going back to `local` (a `helm rollback`, or `attachments.store: local`)
+works only while the claim is still mounted, and the uploads since step 3 are then only in the
+bucket.
 
 With the bucket's versioning on, a deletion by the hub leaves a noncurrent version behind: a
 lifecycle rule that expires noncurrent versions is what makes a deleted attachment gone.
