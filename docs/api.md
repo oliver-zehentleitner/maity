@@ -4134,14 +4134,19 @@ personal `not_listening.minutes` (§18.4, default 60) — or longer:
   from that `last_seen_at`, the last sign of life; it ends when the
   instance calls again (a resume included, §5.2) or holds no claim any
   more. Only the instance's latest session counts, so a session that a
-  resume replaced never makes it away; an instance or membership under
-  any pause (§6.17) is not a stalled holder, as it is never not
-  listening.
+  resume replaced never makes it away. Claims a bridge holds for an
+  agent (`instance: null`, §2.3) make no stalled holder: they have no
+  session of their own, and `claim_expired` (§6.5) reports them. An
+  instance or membership under a pause that a human, an admin agent or
+  the manager set (§6.17) is not a stalled holder, since someone decided
+  to stop it; a pause the agent set itself (`PATCH /me`) does not
+  exclude it, like a limit.
 
 Both kinds make up one set of away instances, for every rule below:
 filing, the count `<n>`, rewriting, withdrawal and the answer `seen`. An
 instance that is both is one entry, a stalled holder, since its line
 names the cards.
+
 Once an hour, on the hour (UTC), the hub's worker looks at every such
 instance of the human's profiles across all projects and, when there is
 at least one and the human's `not_listening.mode` (§18.4) is
@@ -4153,26 +4158,29 @@ of your agent instances are away`; `summary` one line per episode —
 `<agent handle> (<instance>) in <owner>/<slug>, since <time> (UTC)` —
 then one line per stalled holder —
 `<agent handle> (<instance>) in <owner>/<slug> holds <card ids>, last
-seen <time> (UTC), <reason>`, `<reason>` `limit` while the agent's
-stored limit runs (§6.12), else `session_ended` when the session was
-revoked, else `not_listening` — and below them, when there is an
-episode, `Their harness may have stopped its wait loop, or the agent is
-busy without waiting; start the loops again or end the sessions.`, and
-when there is a stalled holder, `Instances that stopped holding cards:
-start them again, or have their cards moved.` There is at most one such request per human: an open one is
+seen <time> (UTC), <reason>`, `<reason>` `session_ended` when the
+session was revoked, else `limit` while the agent's stored limit runs
+(§6.12), else `paused` under a pause the agent set itself, else
+`not_listening` while an episode of the session runs, else `silent` —
+and below them, when there is an episode, `Their harness may have
+stopped its wait loop, or the agent is busy without waiting; start the
+loops again or end the sessions.`, and when there is a stalled holder,
+`Instances that stopped while holding cards: start them again, or have
+their cards moved.` There is at most one such request per human: an open one is
 rewritten in place (same id, `summary` and `title` replaced, no new
 request event) when the set of away instances changed, and the hub
 withdraws it itself when none is away any more. Answering `seen`
-closes it; the next hour files a new one only for an instance whose
-episode started after that answer, or whose stalled holding did, a
-stalled holding starting at its `last_seen_at`: an instance still
-stalled since before the answer is not filed again, and one that calls
-and stops again is. With `bell` the hub keeps, at the
+closes it, and silences exactly the entries it listed: the next hour
+files a new one for every away instance that was not an entry of the
+answered request, or is away by another episode or stalled holding than
+the one listed there. An instance that became away only after the
+answer is filed although it stopped before it, and an entry that stays
+away as it was listed is not filed again. With `bell` the hub keeps, at the
 same hours and by the same rules, one account record
 `agents_not_listening` `{instances: <n>, holding: <n>}` instead of a
 request (`holding`: how many of those instances are stalled holders,
 counted in `instances` too): an item
-of kind `inbox` in the bell (§18.1) that stays listed while any instance
+of kind `inbox` in the bell (§18.1), titled like the request, that stays listed while any instance
 is away and links to the human's agents (`/agents`); with `off` the
 human hears nothing of it. A change of `not_listening.mode` takes
 effect at the `PATCH`: an open digest request is withdrawn when the
@@ -5763,8 +5771,9 @@ releases nothing and changes no lease:
     moves `until`, and a cleared limit emit nothing;
   - its session ends because its credential or the instance is revoked
     (`session_ended`). Not a replacement: a join with `replaces`
-    (`revoked_reason: replaced`, §6.17) and a runner's rejoin (§15.9)
-    move the claims to the new instance, and a session that ends any
+    (`revoked_reason: replaced`, §6.17) moves the claims to the new
+    instance; a runner's rejoin (§15.9) revokes nothing, the revocation
+    before it having reported already; and a session that ends any
     other way, or is replaced by a new one of the same instance, says
     nothing either, since the claim moves on with the instance;
   - a not-listening episode of its session starts (§5.3,
@@ -5776,18 +5785,22 @@ releases nothing and changes no lease:
   lease_until}], reason, limit?, last_seen_at}`, naming every card the
   instance holds in the project.
 - `claim_expired` (§8.2) when the hub's worker (every minute) finds
-  claims whose `lease_until` has passed: one event per instance and pass,
-  since an instance's leases are renewed together (§2.4) and run out in
-  the same minute, naming each such claim once — `{member_id, instance,
+  claims whose `lease_until` has passed: one event per holder and pass,
+  since a holder's leases are renewed together (§2.4) and run out in
+  the same minute — an instance, or for claims a bridge holds for an
+  agent (§2.3) the agent, with `instance` and `session_id` `null` —
+  naming each such claim once — `{member_id, instance,
   session_id, tasks: [{id, title, lease_until}], reason, limit?,
   last_seen_at}`. A claim counts once per expiry; a renewal of its lease
   makes the next expiry count again.
 
-`reason` is `limit`, with `limit: {reason, until}`, whenever the agent's
-stored limit runs at the moment of the event, whatever the cause, since
-the declared reason says most (§6.12); otherwise it is the cause:
-`session_ended` or `not_listening` for `holder_stalled`, `lease_expired`
-for `claim_expired`.
+`limit: {reason, until}` is present whenever the agent's stored limit
+runs at the moment of the event, whatever the cause. `reason` is
+`session_ended` when the holder's session was revoked, since a revoked
+holder does not come back when the limit ends and needs a join or its
+cards moved; otherwise `limit` while a limit runs, since the declared
+reason says most (§6.12); otherwise the cause: `not_listening` for
+`holder_stalled`, `lease_expired` for `claim_expired`.
 
 Both wake the member the agent reports to (§6.2) when it is an agent;
 when `reports_to` is `null` they are read by `trust:admin` without
@@ -9739,7 +9752,10 @@ The hub records the choice as `wakes: ["agt-b#k7mq"]` on the event
 membership's entries, §6.4); a `lead` or `next_free` agent with no listening
 instance wakes nobody, and the event waits in every instance's next
 resume. A token `instance:` and the broadcast set (`all`) are not
-narrowed: they wake their instance, and every instance.
+narrowed: they wake their instance, and every instance — except the
+holder's `instance:` token on `holder_stalled` and `claim_expired`
+(§6.5), which is not wake-relevant, so such an event never waits for
+the holder (§5.3).
 
 The broadcast set — what every member receives regardless of
 addressing — is exactly `member_joined`, `member_updated`,
@@ -16730,13 +16746,13 @@ What an owner used to learn from a notification of its own reaches
 them this way (2026-10-26): an agent's outage (§15.7) and an
 unconfirmed Keep the Why commitment (§6.23) are personal requests of
 class `info` that the hub files and withdraws itself; so is the hourly
-digest of agent instances that are not listening (§5.3), with `project:
-null`, or, under `not_listening.mode: bell` (§18.4), the account record
+digest of agent instances that are away (§5.3: not listening, or
+stopped while holding cards), with `project: null`, or, under `not_listening.mode: bell` (§18.4), the account record
 `agents_not_listening` instead.
 
 | `kind` | From | Who gets it | Title (the hub composes it; no body) |
 |---|---|---|---|
-| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and the hourly digest of agent instances that are not listening (§5.3); the account record `agents_not_listening` that replaces that digest under `not_listening.mode: bell` (§18.4); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `report_open` `{report, reason, type}` (§16.8), written for the instance admin for a new abuse report; the account record `moderation_applied` `{report, action, type, note}` (§16.8), written for the account a resolved report's action concerns; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7); `jour_fixe_reported` of a series the human receives the report of, and `jour_fixe_skipped` with `skip_reason: no_moderator` of a series the human keeps (§20.2, §20.9) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `report_open` the instance admin (§16.4) and nobody else; for `moderation_applied` the account the action concerns, never the reporter; for `mail_disabled` and `agents_not_listening` the human; for `jour_fixe_reported` each human report recipient of the series (§20.2) who may read the round (§20.7), for the `no_moderator` skip each human keeper of the series | `<asker> asks: <request title>`, or the request title alone for one the hub files with `asked_by: null` (the digest, §5.3); `<n> of your agent instances are not listening`, linking to `/agents`, for `agents_not_listening`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Report: <reason> — <type>`, linking to the report in Admin → Reports; `Moderation: <action> — <type>`, then `: <note>` when there is one, linking to the account page; `Mail to <address> disabled after 3 failures`, linking to the notification settings; `Jour fixe report: <topic>`, linking to the round; `Jour fixe skipped, nobody to moderate: <topic>`, linking to the series' moderators |
+| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and the hourly digest of agent instances that are not listening (§5.3); the account record `agents_not_listening` that replaces that digest under `not_listening.mode: bell` (§18.4); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `report_open` `{report, reason, type}` (§16.8), written for the instance admin for a new abuse report; the account record `moderation_applied` `{report, action, type, note}` (§16.8), written for the account a resolved report's action concerns; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7); `jour_fixe_reported` of a series the human receives the report of, and `jour_fixe_skipped` with `skip_reason: no_moderator` of a series the human keeps (§20.2, §20.9) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `report_open` the instance admin (§16.4) and nobody else; for `moderation_applied` the account the action concerns, never the reporter; for `mail_disabled` and `agents_not_listening` the human; for `jour_fixe_reported` each human report recipient of the series (§20.2) who may read the round (§20.7), for the `no_moderator` skip each human keeper of the series | `<asker> asks: <request title>`, or the request title alone for one the hub files with `asked_by: null` (the digest, §5.3); `<n> of your agent instances are not listening`, or `<n> of your agent instances are away` when a stalled holder is among them (§5.3), linking to `/agents`, for `agents_not_listening`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Report: <reason> — <type>`, linking to the report in Admin → Reports; `Moderation: <action> — <type>`, then `: <note>` when there is one, linking to the account page; `Mail to <address> disabled after 3 failures`, linking to the notification settings; `Jour fixe report: <topic>`, linking to the round; `Jour fixe skipped, nobody to moderate: <topic>`, linking to the series' moderators |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or from another participant of a group chat (§9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; a mention in a group chat (§9.2) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
 | `security` | the account records `session_created` (#169, §2.6.5) and `email_address_changed` (§18.4); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `New sign-in: <browser> on <os> (<method>)`; `Sign-in address changed`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>`; `Forge access added: <account login> (<source>)` |
@@ -17187,13 +17203,14 @@ device; the browser's own permission is per browser and is not stored.
   for a kind that is not what the field takes (a `browser.kinds` value
   that is not a boolean) is `"invalid"` at the same field.
 - **`not_listening`.** How the human hears that agent instances they own
-  are not listening (§5.3, "The owner's digest"): `mode` `inbox`
+  are away, not listening or stopped while holding cards (§5.3, "The
+  owner's digest"): `mode` `inbox`
   (default), `bell` or `off`; `minutes` 10–1440 (default 60), how long
   an instance's episode lasts before it counts as away, the personal
   default that a project's own setting may override (§6.2); the same
   threshold decides when a stalled holder, an instance that holds cards
-  and has made no call since, is away (§5.3), with no setting of its
-  own. A `PATCH` may
+  and has made no call since its last sign of life, is away (§5.3), with
+  no setting of its own. A `PATCH` may
   name either field. Any other value is `invalid` with
   `details.fields["not_listening.mode"]` or
   `["not_listening.minutes"]` `"invalid"`.

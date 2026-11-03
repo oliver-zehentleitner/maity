@@ -127,8 +127,9 @@ the card as a whole rather than per call.
 Two events report a holder that stops: `holder_stalled` when a limit starts for the
 agent, when an instance that holds cards loses its session to a revocation that is
 not a replacement, or when it starts a not-listening episode; and `claim_expired`,
-one per instance and minute-worker pass, naming the claims whose leases ran out.
-A running limit gives the reason in both. Both wake the member the agent reports to
+one per holder and minute-worker pass, naming the claims whose leases ran out.
+A revocation gives the reason first, then a running limit, whose `limit` field is
+there whenever one runs. Both wake the member the agent reports to
 when it is an agent, else are read by the admins, like `member_not_listening`; a
 human the agent reports to reads them without a notification. The agent's owner and
 the holding instance read them without being woken; for the holder they are not
@@ -136,8 +137,8 @@ wake-relevant. No claim is released and no lease changes.
 
 **Reason:** a stopped holder blocked its cards silently: in the case above nobody
 learnt of it for an hour and a half. The member it reports to is the one who
-re-routes; with these events it hears at the moment the holder stops, or at the
-latest when the lease runs out, and the owner's digest lists every instance that
+re-routes; when it is an agent, these events wake it at the moment the holder
+stops, or at the latest when the lease runs out, and the owner's digest lists every instance that
 holds cards and has made no call for the owner's threshold, a crashed harness
 included, whose session stays open until the next resume.
 

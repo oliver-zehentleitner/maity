@@ -394,7 +394,7 @@ nobody loses good standing by the change.
   holds both; the change takes them from that mark.
 
 
-## The owner's digest also lists instances that stopped holding cards, with no setting of its own
+## The owner's digest also lists instances that stopped while holding cards, with no setting of its own
 
 **Id:** 5327f41c-1e85-449e-9201-f34882ea4ba8
 **Type:** decision
@@ -407,11 +407,13 @@ The hourly digest lists, besides instances that are not listening, every *stalle
 holder*: an instance that holds cards and has made no call since its latest
 session's last sign of life for the human's `not_listening.minutes`, whether that
 session is still open or was revoked. Both kinds make one set of away instances, so
-the same rules file, count, rewrite and withdraw the digest; `seen` re-arms on a
-stalled holding whose last sign of life is after it. Only the latest session counts,
-so sessions a resume replaced never qualify. The title and the advice follow what
-the digest holds, and the bell's `agents_not_listening` record counts stalled
-holders in `holding`.
+the same rules file, count, rewrite and withdraw the digest. `seen` silences exactly
+the entries it listed, so an instance that became away only after the answer is
+filed, even when it stopped before it. Only the latest session counts, so sessions a
+resume replaced never qualify; a pause a human or the manager set excludes an
+instance, a pause the agent set itself does not. The title and the advice follow
+what the digest holds, in the request and in the bell, and the bell's
+`agents_not_listening` record counts stalled holders in `holding`.
 
 **Reason:** an instance that stopped with cards in hand is often not listening by
 §5.3's rule at all: no event waits for it, or its session ended. A crashed harness
@@ -423,4 +425,6 @@ already reaches every owner at the hour, by the mode they chose.
 question to the owner, whether their agents still work, and one threshold answers
 it. Listing ended sessions only, the first draft of this entry: a crashed harness
 leaves its session open, so the holder that started the card would not have been
-listed.
+listed. Re-arming `seen` on instances whose stop began after the answer, the
+second draft: a holder that stopped shortly before an answer about another instance
+would never have been filed, the crash case again.
