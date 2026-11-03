@@ -6262,7 +6262,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // A model without its footer is no frame: the one standing goes, the app's bar comes back.
   win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.resolve(Object.assign(frModel({}), { footer: null })) : frGet(p));
   const frHalf = await win.Maity.siteChrome.enter("/login");
-  expect(frHalf === false && !frHead() && !frFoot() && header.hidden === false, "frame: a model without its footer draws none and takes down the one standing");
+  expect(frHalf === false && !frHead() && !frFoot() && header.hidden === false && productLine.querySelectorAll("a").length === 3,
+    "frame: a model without its footer draws none, takes down the one standing and brings the product line back");
+  // The page's own language picker draws the login again without render() (app.js, renderLogin): a frame standing
+  // and then a failed read leaves the page without the frame, ending with the product line
+  // (maity-review-team-antigravity#e5zv's review of #1287).
+  win.Maity.api.get = frGet;
+  // The picker is drawn where the site offers two languages; the run offers one here, so a second is offered meanwhile.
+  const frLangs = win.Maity.i18n.available, frLangsWere = frLangs.slice();
+  if (frLangs.length < 2) frLangs.push(frLangs.includes("de") ? "fr" : "de");
+  await go("#/all"); await go("#/login"); for (let k = 0; k < 6; k++) await tick();
+  const frPick = byId("login-interface"), frPickStood = !!frFoot() && !productLine.querySelectorAll("a").length;
+  win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.reject(Object.assign(new Error("maintenance"), { status: 503, code: "maintenance" })) : frGet(p));
+  if (frPick) { frPick.value = win.Maity.i18n.language; frPick.dispatch("change"); for (let k = 0; k < 8; k++) await tick(); }
+  expect(frPick && frPickStood && !frFoot() && header.hidden === false && byId("login-handle") && productLine.querySelectorAll("a").length === 3,
+    "frame: the picker's redraw with a failed read takes the frame down and brings the product line back " + [!!frPick, frPickStood, productLine.querySelectorAll("a").length]);
+  frLangs.length = 0; frLangsWere.forEach((t) => frLangs.push(t));
   // A failed read (a hub in maintenance answers 503): the page without the frame, the app's bar back, the legal pages
   // linked under the form as before; the door layout keeps its stylesheet.
   win.Maity.api.get = (p) => (p.startsWith("/site/chrome") ? Promise.reject(Object.assign(new Error("maintenance"), { status: 503, code: "maintenance" })) : frGet(p));
