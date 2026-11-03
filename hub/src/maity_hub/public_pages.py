@@ -21,7 +21,7 @@ from typing import Any
 
 from fastapi import Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import Connection, Engine, delete, insert, select
+from sqlalchemy import Connection, Engine, delete, insert, literal, select
 
 from maity_hub import clock, worker_runs
 from maity_hub import tables as t
@@ -249,16 +249,21 @@ def configure(hub: Settings | None) -> None:
     _hub = hub
 
 
-def refresh(conn: Connection, hub: Settings, kind: str, target_id: str) -> None:
+def refresh(
+    conn: Connection, hub: Settings, kind: str, target_id: str, *, fresh: bool = False
+) -> None:
     """Render the pages of one target again, in the caller's transaction. A page whose inputs
     are the digest stored is left as it is (its ETag and `lastmod` stay); one whose inputs
     changed is replaced; one that is no longer rendered is deleted. A render that fails takes
-    the target's pages off: nothing stale is served for the sake of a bug."""
+    the target's pages off: nothing stale is served for the sake of a bug. `fresh`: also
+    replaced when only the HTML differs, as after a new version rendering the same inputs
+    (`startup`)."""
     existing = {
         row.path: row
         for row in conn.execute(
             select(
                 t.public_page.c.path,
+                t.public_page.c.body if fresh else literal(None).label("body"),
                 t.public_page.c.inputs,
                 t.public_page.c.view,
                 t.public_page.c.data,
@@ -281,6 +286,7 @@ def refresh(conn: Connection, hub: Settings, kind: str, target_id: str) -> None:
             stored is None
             or not same_inputs
             or (stored.view, stored.data, stored.indexed) != (page.view, page.data, page.indexed)
+            or (fresh and stored.body != page.body)
         ):
             put(
                 conn,
@@ -316,9 +322,12 @@ def touch(conn: Connection, kind: str, target_id: str, *, removal: bool = True) 
             refresh(conn, hub, other, other_id)
 
 
-def render_all(engine: Engine, hub: Settings, stop: worker_runs.Stopping | None = None) -> None:
+def render_all(
+    engine: Engine, hub: Settings, stop: worker_runs.Stopping | None = None, *, fresh: bool = False
+) -> None:
     """Every page of every kind from the inputs as they are now: the targets that exist are
-    rendered again, the pages of targets that no longer exist are deleted."""
+    rendered again, the pages of targets that no longer exist are deleted (`fresh`: see
+    `refresh`)."""
     for kind in KINDS.values():
         with engine.begin() as conn:
             ids = kind.targets(conn)
@@ -326,7 +335,7 @@ def render_all(engine: Engine, hub: Settings, stop: worker_runs.Stopping | None 
             if stop is not None and stop.is_set():
                 return
             with engine.begin() as conn:
-                refresh(conn, hub, kind.name, target_id)
+                refresh(conn, hub, kind.name, target_id, fresh=fresh)
         with engine.begin() as conn:
             stored = set(
                 conn.execute(
@@ -338,14 +347,16 @@ def render_all(engine: Engine, hub: Settings, stop: worker_runs.Stopping | None 
 
 
 def startup(engine: Engine, hub: Settings) -> None:
-    """When the instance serves pages, every page is rendered again before any is served, so
-    nothing made under an earlier state is (§16.9)."""
+    """When the instance serves pages, every page is rendered again before this process serves
+    any, so nothing made under an earlier state is (§16.9). Page by page, never cleared first:
+    the other processes and pods serving meanwhile find the old page or the new one, never
+    none (hub/context/replicas.md, "Several workers per pod")."""
     configure(hub)
     if not hub.public_pages:
         return
-    with engine.begin() as conn:
-        clear(conn)
-    render_all(engine, hub)
+    with engine.begin() as conn:  # a kind this version no longer renders
+        conn.execute(delete(t.public_page).where(t.public_page.c.kind.not_in(list(KINDS))))
+    render_all(engine, hub, fresh=True)
 
 
 class Worker:
