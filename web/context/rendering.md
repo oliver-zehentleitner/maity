@@ -1014,6 +1014,12 @@ or a consonant gives both forms (`(이)에요`, `(으)로`, `은(는)`, `와(과
 A confirmation question (`…할까요?`) and the sentence after it share one register, 해요, also on a legal or security
 page: a dialog is a message to the person at the screen, not the legal or security text itself, and one dialog never
 switches mid-way; 합니다 after a 해요 question was rejected because the dialog then mixes both.
+In Simplified Chinese the reader is `你`, as the glossary says. Redacting is `移除` on every key, the word on the
+button, in the portal and in the hub's mails alike (`reports.action.remove.hint`, `mail_links.delete_keeps`), never
+`抹除`. A review's Approve is `通过`, because a human's go is `批准`, and a project's launch is `推出`, because a
+deploy is `上线`. The role proxy and the Meat Proxy stay two things: `Meat Proxy` keeps its English name. A role in
+a sentence is `所有 {role}` with the role's English word, as in `trust.every.role.*`. A dormant instance is `休眠`,
+as on every key that names one, and a maintenance window is `维护时段`.
 
 **Rejected alternatives:**
 - `Übernahme` for both claim and takeover: an error then says a card "needs a takeover" next to "nobody has claimed it".
