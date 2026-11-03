@@ -294,8 +294,10 @@ Without `--apply` it only counts.
    the hub reads them only under `s3`. The Secret named in `attachments.s3.existingSecret` must
    exist first: the pod does not start without it, even under `local`.
 2. In the hub pod: `MAITY_ATTACHMENT_STORE=s3 maity-hub attachments copy-to-s3`, then the same
-   with `--apply`. The store setting is the command's alone; the hub keeps serving from the claim.
-3. `helm upgrade` with `attachments.store: s3`, the claim still set: the hub now serves from the bucket, and the claim stays mounted for the next step.
+   with `--apply`. The store setting is the command's alone; the hub keeps serving from the claim,
+   and an attachment it deletes from now on is removed from the claim only: its copy stays in
+   the bucket. Go on with step 3 right after this one.
+3. `helm upgrade` with `attachments.store: s3`, the claim still set: the hub now serves from the bucket, and the claim stays mounted for the next step. Its first attachment sweep under `s3`, within five minutes, removes from the bucket what was deleted since step 2: a deleted attachment's object at once, an object no row names once it is 30 minutes old.
 4. In the new pod: `maity-hub attachments copy-to-s3 --apply` once more, for the uploads between
    steps 2 and 3; it should copy only those. Run it right away: until it has run, the hub
    cannot serve those uploads.
@@ -305,6 +307,11 @@ Without `--apply` it only counts.
 There is no copy back. Going back to `local` (a `helm rollback`, or `attachments.store: local`)
 works only while the claim is still mounted, and the uploads since step 3 are then only in the
 bucket.
+
+A move given up before step 3, or rolled back to `local`, leaves objects in the bucket that may
+belong to deleted attachments, since no sweep under `s3` runs to remove them: empty the bucket's
+prefix, or delete the bucket. After a rollback from step 3 on, the uploads since then are only
+there: take what is still needed first.
 
 With the bucket's versioning on, a deletion by the hub leaves a noncurrent version behind: a
 lifecycle rule that expires noncurrent versions is what makes a deleted attachment gone.
