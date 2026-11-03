@@ -293,7 +293,6 @@ def end_session(public_id: str, request: Request, caller: AnyCaller) -> JSONResp
     now = clock.now()
     with engine_of(request).begin() as conn:
         mine = _session(conn, current)
-        confirmed = sessions.confirmed_sessions(conn, caller.principal_id)
         target = conn.execute(
             select(t.human_session).where(
                 t.human_session.c.public_id == public_id,
@@ -304,7 +303,7 @@ def end_session(public_id: str, request: Request, caller: AnyCaller) -> JSONResp
             raise not_found()  # another human's session is not found either
         skipped: list[str] = []
         if sessions.ended(target, now) is None:
-            reason = sessions.refusal(mine, target, now, confirmed)
+            reason = sessions.refusal(mine, target, now)
             if reason is not None:
                 raise sessions.forbidden_to_end(reason)
             by = "logout" if target.id_hash == current else "revoked"
@@ -312,20 +311,62 @@ def end_session(public_id: str, request: Request, caller: AnyCaller) -> JSONResp
             live = [s for s in chain if sessions.ended(s, now) is None]
             # The same refusal per session of the chain: what the caller may not end is
             # skipped and named, never ended (§2.6.5).
-            allowed = [s for s in live if sessions.refusal(mine, s, now, confirmed) is None]
+            allowed = [s for s in live if sessions.refusal(mine, s, now) is None]
             skipped = [s.public_id for s in live if s not in allowed]
             sessions.end(conn, [target], by)
             sessions.end(conn, allowed, "revoked")
         row = _session(conn, target.id_hash)
         sign_ins = records.sign_in_records(conn, caller.principal_id)
         answer = {
-            **sessions.view(row, current, clock.now(), sign_ins, confirmed),
+            **sessions.view(row, current, clock.now(), sign_ins),
             "skipped": skipped,
         }
     response = JSONResponse(answer)
     if target.id_hash == current:
         _clear_cookies(response, request)
     return response
+
+
+@router.post("/sessions/{public_id}/confirm")
+def confirm_session(public_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
+    """ "This was me" (§2.6.5): confirms the sign-in of one of the caller's own sessions and
+    marks its `session_created` item read. Checked in the contract's order: an ended session
+    or another human's is `not_found`, then `not_earlier`, then `not_in_good_standing`. The
+    target is confirmed only while it is still active, by one conditional update in the
+    transaction of the checks, so a concurrent `DELETE` either ends a confirmed session or
+    leaves this call `not_found`."""
+    current = _session_caller(caller)
+    now = clock.now()
+    with engine_of(request).begin() as conn:
+        mine = _session(conn, current)
+        target = conn.execute(
+            select(t.human_session).where(
+                t.human_session.c.public_id == public_id,
+                t.human_session.c.human_id == caller.principal_id,
+                t.human_session.c.sign_in_complete.is_(True),
+            )
+        ).first()
+        if target is None or sessions.ended(target, now) is not None:
+            raise not_found()
+        if target.id_hash == mine.id_hash or not mine.created_at < target.created_at:
+            raise sessions.forbidden_to_confirm("not_earlier")
+        if not sessions.good_standing(mine):
+            raise sessions.forbidden_to_confirm("not_in_good_standing")
+        if not sessions.good_standing(target):
+            c = t.human_session.c
+            won = conn.execute(
+                update(t.human_session)
+                .where(c.id_hash == target.id_hash, c.ended_at.is_(None), c.confirmed_at.is_(None))
+                .values(confirmed_at=now, confirmed_by=mine.public_id)
+            ).rowcount
+            if won != 1:
+                again = _session(conn, target.id_hash)
+                if sessions.ended(again, clock.now()) is not None:
+                    raise not_found()  # ended meanwhile
+        records.mark_sign_in_read(conn, caller.principal_id, public_id, mine.public_id)
+        row = _session(conn, target.id_hash)
+        sign_ins = records.sign_in_records(conn, caller.principal_id)
+        return JSONResponse(sessions.view(row, current, clock.now(), sign_ins))
 
 
 @router.post("/sessions/end-others")
@@ -338,8 +379,7 @@ def end_others(request: Request, caller: AnyCaller) -> JSONResponse:
         mine = _session(conn, current)
         live = sessions.listing(conn, caller.principal_id, current, with_ended=False)
         others = [row for row in live if row.id_hash != current]
-        confirmed = sessions.confirmed_sessions(conn, caller.principal_id)
-        allowed = [row for row in others if sessions.refusal(mine, row, now, confirmed) is None]
+        allowed = [row for row in others if sessions.refusal(mine, row, now) is None]
         sessions.end(conn, allowed, "end_others")
         return JSONResponse(_listing(conn, caller.principal_id, current, with_ended=False))
 
@@ -360,8 +400,7 @@ def _listing(conn: Connection, human_id: str, current: str, *, with_ended: bool)
     now = clock.now()
     rows = sessions.listing(conn, human_id, current, with_ended=with_ended)
     sign_ins = records.sign_in_records(conn, human_id)
-    confirmed = sessions.confirmed_sessions(conn, human_id)
-    return {"items": [sessions.view(row, current, now, sign_ins, confirmed) for row in rows]}
+    return {"items": [sessions.view(row, current, now, sign_ins) for row in rows]}
 
 
 def _require_cookie(caller: Caller) -> str:

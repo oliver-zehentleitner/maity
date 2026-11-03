@@ -1783,7 +1783,12 @@ window.Maity = window.Maity || {};
       const offset = Number(query.get("cursor") || 0);
       const ordered = items.slice().sort(inOrder).reverse();
       const listed = ordered.slice(offset, offset + limit);
+      // §18.2 "Pinned": every unread security item, newest first, at most 50, whatever
+      // the filters and the page; an answer to `after` carries none.
+      const pinned = n.items.filter((x) => x.kind === "security" && !x.read)
+        .sort(inOrder).reverse().slice(0, 50);
       return { counts, by_project: byProject, items: listed.map(view),
+        pinned: pinned.map(view),
         next_cursor: limit && offset + limit < ordered.length ? String(offset + limit) : null,
         next_after: head, server_time: nowIso() };
     }],
