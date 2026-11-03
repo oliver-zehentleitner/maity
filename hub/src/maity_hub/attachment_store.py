@@ -417,11 +417,13 @@ def copy_local_to_s3(
     bucket, so a redacted or expired attachment's file stays on the volume and must not go back
     (a file whose upload has not committed its row yet is skipped too; the next run takes it).
     `still(key)` asks again right before and right after each put. Before, it saves the write
-    in the usual case; after, it closes the race: the hub commits a deletion first and removes
-    the bytes after, so an attachment deleted during the put is removed from the bucket again
-    here and counted as skipped (in a versioned bucket one noncurrent version remains, which its
-    lifecycle rule expires). A pending upload past its 24 hours that the sweep has not
-    removed yet still has its row and is copied; the next sweep removes it from the bucket."""
+    in the usual case; after, it closes the race with a hub that serves from the bucket: the
+    hub commits a deletion first and removes the bytes after, so an attachment deleted during
+    the put is removed from the bucket again here and counted as skipped (in a versioned bucket
+    one noncurrent version remains, which its lifecycle rule expires). A deletion by a hub that
+    still serves from the volume removes only the file there: the command's clean-up after the
+    copy (`cli._clean_bucket`) removes its object from the bucket. A pending upload past its 24
+    hours that the sweep has not removed yet still has its row and is copied."""
     log = logging.getLogger(__name__)
     done = {"copied": 0, "present": 0, "differs": 0, "skipped_deleted": 0, "failed": 0}
     try:
@@ -465,12 +467,16 @@ def copy_local_to_s3(
                         done["skipped_deleted"] += 1
                         continue
                     target.put(key, data)
-                    if target.stat(key) != (len(data), digest):
-                        raise StoreError("the attachment store did not keep a blob whole")
-                    if still is not None and not still(key):  # deleted while this ran
-                        target.delete(key)
+                    kept = target.stat(key)
+                    # Deleted while this ran: asked before the check, since the hub's own
+                    # removal may already have taken the object (no object is no failure then).
+                    if still is not None and not still(key):
+                        if kept is not None:
+                            target.delete(key)
                         done["skipped_deleted"] += 1
                         continue
+                    if kept != (len(data), digest):
+                        raise StoreError("the attachment store did not keep a blob whole")
                 done["copied"] += 1
             except StoreError as error:
                 log.error("%s: %s", key, error)

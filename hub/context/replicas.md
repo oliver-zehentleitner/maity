@@ -568,11 +568,15 @@ the hub commits a deletion before it removes the bytes, so a deletion during the
 seen there and the object removed again, or its own removal comes after the put. In a versioned
 bucket that race leaves one noncurrent version, which the lifecycle rule for noncurrent versions
 expires (a70d7269). While the hub still serves from the volume, its deletions remove only the
-file there, and an object the copy put earlier stays current in the bucket. The switch follows
-the copy directly, and the first sweep under `s3` removes those objects: a tombstone's at once,
-one no row names once it is older than `BLOB_GRACE`. A staging that is given up or rolled back
-gets no such sweep, so its bucket is emptied (the chart README says so). A pending upload past its 24 hours that the sweep has not removed yet still
-has its row and is copied; the next sweep removes it from the bucket, and it was never sent. After each put one HEAD
+file there, and an object the copy put earlier stays current in the bucket. So each run with
+`--apply` ends with the sweep's removals against the bucket, without expiring rows (the hub's
+own sweep does that): the object of a tombstoned row, and an object no row names once it is
+older than `BLOB_GRACE`, the same bound that protects an upload in flight under `s3`. What is
+deleted after the last run stays in the bucket until the switch; from then on the hub's own
+sweep removes it within its interval. A staging that is given up or rolled back leaves the bucket as
+the last run left it: one more run with `--apply` cleans it, or the bucket's prefix is emptied. A pending
+upload past its 24 hours that the sweep has not removed yet still has its row and is copied;
+once the hub's sweep has expired the row, the object has no row and goes like any other. After each put one HEAD
 compares the size and the metadata the put wrote, not the bytes: reading every object back would
 double the traffic. Each file is read whole, at most `FILE_CAP` like an upload. A folder or
 file the pod cannot read (`lost+found` on an ext4 volume) counts as failed, and the copy goes on.
@@ -597,6 +601,9 @@ bucket is what the hub serves.
 - **Checking the bytes after each put** (reading the object back, or the store's own SHA-256
   checksum on the put): reading back doubles the traffic of the move, and not every
   S3-compatible store takes the newer checksum headers. The client checks the transfer itself.
+- **Deleting in both stores while the hub still serves from the volume:** the hub would need the
+  bucket's settings and credentials, and a working bucket, before the switch, and every deletion
+  path two removals; the copy's own clean-up reaches the same state at each run.
 - **Comparing by the ETag:** it is an MD5 of the bytes only for a single-part upload without
   server-side encryption by a managed key, which not every bucket guarantees.
 
