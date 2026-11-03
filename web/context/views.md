@@ -1274,7 +1274,9 @@ a note outlives the list being drawn again. An edit and a removal name the
 version they were made on (`base_version`); a conflict shows the note as it
 is now and keeps the writer's text for the next save, and a note removed
 meanwhile ends the edit, says the text was not kept, and puts the focus on
-its tombstone, as a removal of one's own does.
+its tombstone, as a removal of one's own does. The public card page shows an
+edited note's mark as the hub's own page does (§16.9): the editor named as a
+holder, the date and the reason, never the old text, none on a removed note.
 
 **Reason:** the buttons follow who the hub lets act, so nobody meets a
 refusal for a button that should not have been there; an empty reason is not

@@ -99,7 +99,7 @@ window.Maity = window.Maity || {};
         d.body && d.body.trim() ? h("div", { class: "about" }, M.markdown(d.body)) : null,
         d.notes && d.notes.length ? [h("h2", null, M.t("cardpanel.notes")), h("ol", { class: "card-notes" }, d.notes.map((n) => h("li", { "data-note": n.id },
           h("p", { class: "muted" }, holderLabel(n.author), " · ", M.dom.formatTime(n.created_at), NOTE_STATES[n.state] ? " · " + NOTE_STATES[n.state] : "",
-            // The edit mark as the hub's own page has it (§16.7.3): the editor named as a holder, the date,
+            // The edit mark as the hub's own page has it (§16.9, a card's page): the editor named as a holder, the date,
             // the reason; never the old text, and none on a removed note.
             n.edited && !n.redacted ? [" · ", editMark(n.edited)] : null),
           n.redacted ? h("p", { class: "muted" }, M.t("jfa.redacted")) : h("div", { class: "about" }, M.markdown(n.body || "")))))] : null,

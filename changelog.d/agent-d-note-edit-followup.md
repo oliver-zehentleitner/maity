@@ -8,5 +8,5 @@
 - web: an edit of a card note removed meanwhile now says the text was not
   kept and moves the focus to the note's tombstone.
 - web: the instance admin's test mail takes an empty recipient and then goes
-  to the admin's own verified address (§16.3); the fixture hub answers as the
-  hub does.
+  to the admin's own verified address (§16.3, the hub's side in #1266); the
+  fixture hub answers as #1266 does.
