@@ -287,8 +287,10 @@ window.Maity = window.Maity || {};
         items = (answer.items || []).filter(known);
         pinned = (answer.pinned || []).filter(known);
         top = answer.next_after || null;
-        sessions = pinned.some((x) => (x.target || {}).type === "session")
-          ? (await M.api.get("/auth/sessions").catch(() => ({ items: [] }))).items || [] : [];
+        // Every pinned alert is judged against the current session (§18.3), and a sign-in
+        // alert may report a session ended since: the sessions, ended ones too.
+        sessions = pinned.length
+          ? (await M.api.get("/auth/sessions?ended=true").catch(() => ({ items: [] }))).items || [] : [];
       } catch (err) {
         items = [];
         pinned = [];
@@ -451,5 +453,5 @@ window.Maity = window.Maity || {};
     return () => { watchers.delete(fn); wakeLoop(); };
   }
 
-  M.notify = { known, keepsUnread, state, read, projectCount, title, bell, chatButton, linkOf, startBrowser, stopBrowser, halt, resume, running: () => !!browserConfig && !!browserLoop, subscribe, changed, KIND_WORDS };
+  M.notify = { known, keepsUnread, skippedWhy, state, read, projectCount, title, bell, chatButton, linkOf, startBrowser, stopBrowser, halt, resume, running: () => !!browserConfig && !!browserLoop, subscribe, changed, KIND_WORDS };
 })(window.Maity);

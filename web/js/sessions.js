@@ -183,7 +183,7 @@ window.Maity = window.Maity || {};
             h("span", { class: s.good_standing ? OK_BADGE : "badge warn" }, s.good_standing ? M.t("sessions.confirmed_badge") : M.t("sessions.unconfirmed_badge")),
             s.second_factor ? h("span", { class: OK_BADGE }, M.t("sessions.second_factor_badge")) : null),
           h("p", { class: "muted" }, lineOf(s, sessions)),
-          alert ? h("p", { class: "flag" }, M.t("sessions.alert_open")) : null,
+          alert ? h("p", { class: "flag" }, M.t("sessions.alert_unread")) : null,
           s.current ? null : h("div", { class: "actions" },
             confirmButton(cur, s, device(s)),
             h("button", { type: "button", class: "small", disabled: why ? true : null, "aria-describedby": why ? "why-" + s.id : null,
@@ -198,7 +198,7 @@ window.Maity = window.Maity || {};
         return h("li", { class: "muted", "data-session": s.id },
           (Object.hasOwn(ENDED_LINES, s.ended_by) ? ENDED_LINES[s.ended_by]({ device: device(s), when: formatTime(s.ended_at) })
             : M.t("sessions.ended.other", { device: device(s), how: s.ended_by, when: formatTime(s.ended_at) })),
-          alert ? [" ", M.t("sessions.alert_open")] : null);
+          alert ? [" ", M.t("sessions.alert_unread")] : null);
       };
       // Alerts with no session in the list (an address change, §2.6.3).
       const loose = alerts.filter((a) => !(a.target && a.target.type === "session" && sessions.some((s) => s.id === a.target.id)));

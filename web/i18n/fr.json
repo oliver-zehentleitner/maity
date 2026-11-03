@@ -336,7 +336,6 @@
   "bell.nothing_new": "Rien de nouveau.",
   "bell.read_failed": "Impossible de lire vos notifications : ",
   "bell.removed": "Retiré",
-  "bell.security_hint": "Une alerte de connexion ou d'adresse reste non lue : l'ouvrir ici ne la confirme pas, et « Tout marquer comme lu » la laisse. Confirmez-la avec « C'était moi » sous Sessions dans votre compte.",
   "bell.settings": "Paramètres de notification",
   "bell.title": "Notifications",
   "bell.unread": {
@@ -3696,7 +3695,6 @@
   "sessions.address.remove": "Supprimer l'adresse de connexion",
   "sessions.address.title": "Un changement d'adresse vous attend",
   "sessions.address.too_new": "L'approbation exige une session vieille d'au moins un jour ; celle-ci peut le rejeter.",
-  "sessions.alert_open": "Son alerte de connexion n'est pas confirmée.",
   "sessions.banner.approved": "Elle a approuvé : {devices}.",
   "sessions.banner.end": "Terminer cette session",
   "sessions.banner.ended_but": "Elle est terminée, mais une session qu'elle a approuvée est toujours active : {devices}.",

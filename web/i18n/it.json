@@ -336,7 +336,6 @@
   "bell.nothing_new": "Niente di nuovo.",
   "bell.read_failed": "Impossibile leggere le tue notifiche: ",
   "bell.removed": "Rimossa",
-  "bell.security_hint": "Un avviso di accesso o di indirizzo resta non letto: aprirlo qui non lo conferma, e Segna tutto come letto lo lascia non letto. Confermalo con Ero io in Sessioni nel tuo account.",
   "bell.settings": "Impostazioni delle notifiche",
   "bell.title": "Notifiche",
   "bell.unread": {
@@ -3693,7 +3692,6 @@
   "sessions.address.remove": "Rimuovi l'indirizzo di accesso",
   "sessions.address.title": "Una modifica dell'indirizzo attende te",
   "sessions.address.too_new": "Per approvare serve una sessione vecchia di almeno un giorno; questa può rifiutarla.",
-  "sessions.alert_open": "Il suo avviso di accesso non è confermato.",
   "sessions.banner.approved": "Ha approvato: {devices}.",
   "sessions.banner.end": "Termina questa sessione",
   "sessions.banner.ended_but": "È terminata, ma una sessione che ha approvato è ancora attiva: {devices}.",

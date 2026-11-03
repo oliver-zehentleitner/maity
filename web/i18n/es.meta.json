@@ -1143,10 +1143,6 @@
     "en": "647e98cce4691499",
     "text": "29764731a9fd621f"
   },
-  "bell.security_hint": {
-    "en": "b3bcd94f9fe4e53c",
-    "text": "0771aec9c0743f26"
-  },
   "bell.settings": {
     "en": "c749ce622125ec2a",
     "text": "98fd1dad9af4297e"
@@ -13682,10 +13678,6 @@
   "sessions.address.too_new": {
     "en": "ceb846c9f1e324a3",
     "text": "1f9cdb11c1078bde"
-  },
-  "sessions.alert_open": {
-    "en": "2a8a6c218d690279",
-    "text": "4f572b56d4cc4e0e"
   },
   "sessions.banner.approved": {
     "en": "36d355755805147c",

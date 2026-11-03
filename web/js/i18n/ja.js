@@ -324,7 +324,6 @@ window.MAITY_I18N["ja"] = {
   "bell.nothing_new": "新着はありません。",
   "bell.read_failed": "通知を読み込めませんでした: ",
   "bell.removed": "取り除きました",
-  "bell.security_hint": "サインインやアドレスのアラートは未読のままです。ここで開いても確認したことにはならず、「すべて既読にする」でも対象外です。アカウントの「セッション」で「これは自分です」を選んで確認してください。",
   "bell.settings": "通知設定",
   "bell.title": "通知",
   "bell.unread": {
@@ -3621,7 +3620,6 @@ window.MAITY_I18N["ja"] = {
   "sessions.address.remove": "サインイン用アドレスを削除",
   "sessions.address.title": "アドレスの変更が、あなたの判断を待っています",
   "sessions.address.too_new": "承認するには、作成から1日以上経ったセッションが必要です。このセッションは、却下はできます。",
-  "sessions.alert_open": "そのサインインの通知は、確認されていません。",
   "sessions.banner.approved": "承認したもの: {devices}。",
   "sessions.banner.end": "このセッションを終了",
   "sessions.banner.ended_but": "終了しましたが、そのセッションが承認したセッションがまだ有効です: {devices}。",

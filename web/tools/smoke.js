@@ -8857,6 +8857,52 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.confirm = nConfirmWin;
   bellBtn().dispatch("keydown", { key: "Escape" });
   win.Maity.api.post = nPost;
+  // Only an alert without a session pinned (a second factor changed): the sessions are still
+  // read, ended ones too, and it gets Mark read, sent by its id (§18.3, §18.8).
+  const alertOf = (id, title, target, at) => ({ id, record: id.slice(4), kind: "security", at, project: null, actor: null,
+    title, target, url: "https://maity.team/account", read: false, redacted: false });
+  const twoFactor = alertOf("ntf-sfc-1", "Second factor changed", { type: "settings", id: "security" }, "2026-10-30T09:00:00Z");
+  const endedSignIn = alertOf("ntf-acr-2", "New sign-in: Chrome on Windows (password)", { type: "session", id: "hss-3f90" }, "2026-10-10T07:00:00Z");
+  const pinGet = win.Maity.api.get;
+  const pinGets = [];
+  let pinnedNow = [twoFactor];
+  win.Maity.api.get = (p) => (pinGets.push(p), p.startsWith("/me/notifications?limit=20")
+    ? Promise.resolve({ items: pinnedNow.slice(), pinned: pinnedNow.slice(), next_after: "4300.1" })
+    : p.startsWith("/me/notifications?limit=0")
+      ? pinGet(p).then((r) => Object.assign({}, r, { counts: Object.assign({}, r.counts, { security: pinnedNow.length }) }))
+      : pinGet(p));
+  const pinPost = win.Maity.api.post;
+  const pinPosts = [];
+  win.Maity.api.post = (p, b) => (p === "/me/notifications/read" ? (pinPosts.push([p, b]), Promise.resolve({ skipped: [] })) : pinPost(p, b));
+  bellBtn().click(); for (let k = 0; k < 4; k++) await tick();
+  expect(pinGets.includes("/auth/sessions?ended=true") && btn(bellPinned(), "Mark read") && !btn(bellPinned(), "This was me"),
+    "notifications: with only a second-factor alert pinned the sessions are read (ended too) and it offers Mark read " + JSON.stringify(pinGets));
+  btn(bellPinned(), "Mark read").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(JSON.stringify(pinPosts) === JSON.stringify([["/me/notifications/read", { ids: ["ntf-sfc-1"] }]]),
+    "notifications: Mark read on the pinned second-factor alert posts its id " + JSON.stringify(pinPosts));
+  bellBtn().dispatch("keydown", { key: "Escape" });
+  // The hub leaves it unread (§18.3 skipped): the reason is said, not "Marked read.", the panel stays.
+  win.Maity.api.post = (p, b) => (p === "/me/notifications/read"
+    ? (pinPosts.push([p, b]), Promise.resolve({ skipped: [{ id: "ntf-sfc-1", reason: "not_earlier" }] })) : pinPost(p, b));
+  bellBtn().click(); for (let k = 0; k < 4; k++) await tick();
+  btn(bellPinned(), "Mark read").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(pinPosts.length === 2 && !bellPanel().hidden && text(bellPanel()).includes("only a session older than it may mark it")
+    && !text(bellPanel()).includes("Marked read."),
+    "notifications: a Mark read the hub skips says why and claims nothing " + text(bellPanel()).slice(0, 200));
+  bellBtn().dispatch("keydown", { key: "Escape" });
+  // A sign-in alert of a session ended since: Mark all read names its place, read from the ended sessions.
+  pinnedNow = [endedSignIn];
+  const pinAsked = [];
+  const pinConfirm = win.confirm;
+  win.confirm = (q) => { pinAsked.push(q); return false; };
+  bellBtn().click(); for (let k = 0; k < 4; k++) await tick();
+  btn(bellPanel(), "Mark all read").click(); for (let k = 0; k < 4; k++) await tick();
+  expect(pinAsked.length === 1 && pinAsked[0].includes("Chrome on Windows") && pinAsked[0].includes("198.51.100.40"),
+    "notifications: the question before Mark all read names an ended session's place " + JSON.stringify(pinAsked));
+  win.confirm = pinConfirm;
+  bellBtn().dispatch("keydown", { key: "Escape" });
+  win.Maity.api.get = pinGet;
+  win.Maity.api.post = pinPost;
   // A failed read of the notifications is said, the page stays.
   const nGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p.startsWith("/me/notifications") ? Promise.reject(new win.Maity.api.ApiError("down", 500, p, "internal", {})) : nGet(p));
@@ -9213,8 +9259,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(sesRow("hss-41c7")).includes("approved from Firefox on Linux"),
     "sessions: the active ones, newest first, this browser marked, how each signed in");
   expect(text(sesBox().querySelector("details.sessions-ended")).includes("Chrome on Windows, signed out"), "sessions: the ended ones of the last 30 days");
-  expect(text(sesRow("hss-41d2")).includes("Its sign-in alert is not confirmed.") && btn(sesRow("hss-41d2"), "This was me") && !btn(sesRow("hss-41c7"), "This was me"),
+  expect(text(sesRow("hss-41d2")).includes("Its sign-in alert is unread.") && btn(sesRow("hss-41d2"), "This was me") && !btn(sesRow("hss-41c7"), "This was me"),
     "sessions: This was me on an active sign-in that is not confirmed, none on one in good standing");
+  // An ended sign-in is confirmed by nobody (§2.6.5): the banner, which may stand for an ended mail
+  // sign-in whose approved session lives on, offers no This was me for it.
+  const guardCur = { id: "hss-a", good_standing: true, created_at: "2026-10-01T00:00:00Z" };
+  const guardLive = { id: "hss-b", good_standing: false, created_at: "2026-10-10T00:00:00Z", ended_at: null };
+  expect(win.Maity.sessions.mayConfirmSession(guardCur, guardLive)
+    && !win.Maity.sessions.mayConfirmSession(guardCur, Object.assign({}, guardLive, { ended_at: "2026-10-12T00:00:00Z" })),
+    "sessions: This was me is offered for an active unconfirmed sign-in, never for an ended one");
   expect(text(main.querySelector(".address-change")).includes("from Firefox on Linux, 192.0.2.80, not confirmed"), "sessions: the held change says which session asked for it");
   // The banner of a mail sign-in, on every page of another session (§2.6.5).
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
@@ -9968,6 +10021,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   waitCurrent = "hss-41d2"; waitWrites.length = 1;
   await go("#/all"); await go("#/notifications"); for (let k = 0; k < 6; k++) await tick();
   expect(waitRow("ntf-acr-7") && !waitMark("ntf-acr-7"), "notifications: no Mark read on a sign-in alert from the session it reports on");
+  // Another kind of security alert (a second factor changed) may be marked from any session (§18.3), this
+  // unconfirmed one too; an id the hub skips is said, the row stays unread.
+  const waitFactor = { id: "ntf-sfc-9", record: "sfc-9", kind: "security", at: "2026-10-22T13:30:00Z", project: null, actor: null,
+    title: "Second factor changed", target: { type: "settings", id: "security" }, url: "https://maity.team/account", read: false, redacted: false };
+  const waitGet2 = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p.startsWith("/me/notifications?limit=50")
+    ? waitGet2(p).then((r) => Object.assign({}, r, { items: [waitFactor].concat(r.items) }))
+    : p === "/auth/sessions?ended=true" // this session not confirmed, whatever earlier cases confirmed
+      ? waitGet2(p).then((r) => Object.assign({}, r, { items: r.items.map((x) => (x.current ? Object.assign({}, x, { good_standing: false }) : x)) }))
+      : waitGet2(p));
+  win.Maity.api.post = (p, b) => (p === "/me/notifications/read" && b.ids
+    ? (waitWrites.push(b), Promise.resolve({ skipped: b.ids.map((id) => ({ id, reason: "not_earlier" })) })) : waitPost(p, b));
+  await go("#/all"); await go("#/notifications"); for (let k = 0; k < 6; k++) await tick();
+  expect(waitMark("ntf-sfc-9"), "notifications: Mark read on a second-factor alert from a session not in good standing");
+  waitMark("ntf-sfc-9").click(); for (let k = 0; k < 8; k++) await tick();
+  expect(JSON.stringify(waitWrites[waitWrites.length - 1]) === JSON.stringify({ ids: ["ntf-sfc-9"] }) && waitRow("ntf-sfc-9").classList.contains("unread")
+    && waitMark("ntf-sfc-9") && text(main).includes("only a session older than it may mark it"),
+    "notifications: an id the hub skips is said and the row stays unread " + JSON.stringify(waitWrites));
   win.Maity.api.get = waitGet; win.Maity.api.post = waitPost;
 
   // Languages: project writes are human-admin only; personal language is not mail-gated.

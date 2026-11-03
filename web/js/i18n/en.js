@@ -3885,7 +3885,7 @@ window.MAITY_I18N["en"] = {
   "sessions.address.remove": "Remove the sign-in address",
   "sessions.address.title": "An address change waits for you",
   "sessions.address.too_new": "Approving needs a session at least a day old; this one can reject it.",
-  "sessions.alert_open": "Its sign-in alert is not confirmed.",
+  "sessions.alert_unread": "Its sign-in alert is unread.",
   "sessions.banner.approved": "It approved: {devices}.",
   "sessions.banner.end": "End this session",
   "sessions.banner.ended_but": "It has ended, but a session it approved is still active: {devices}.",

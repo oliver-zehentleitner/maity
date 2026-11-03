@@ -341,7 +341,6 @@ window.MAITY_I18N["es"] = {
   "bell.nothing_new": "Nada nuevo.",
   "bell.read_failed": "No se pudieron leer tus notificaciones: ",
   "bell.removed": "Quitada",
-  "bell.security_hint": "Una alerta de inicio de sesión o de dirección sigue sin leer: abrirla aquí no la confirma, y Marcar todo como leído la deja como está. Confírmala con Fui yo en Sesiones de tu cuenta.",
   "bell.settings": "Ajustes de notificaciones",
   "bell.title": "Notificaciones",
   "bell.unread": {
@@ -3698,7 +3697,6 @@ window.MAITY_I18N["es"] = {
   "sessions.address.remove": "Quitar la dirección de inicio de sesión",
   "sessions.address.title": "Un cambio de dirección te espera",
   "sessions.address.too_new": "Aprobar requiere una sesión de al menos un día; esta puede rechazarlo.",
-  "sessions.alert_open": "Su alerta de inicio de sesión no está confirmada.",
   "sessions.banner.approved": "Aprobó: {devices}.",
   "sessions.banner.end": "Terminar esta sesión",
   "sessions.banner.ended_but": "Ha terminado, pero una sesión que aprobó sigue activa: {devices}.",

@@ -341,7 +341,6 @@ window.MAITY_I18N["nl"] = {
   "bell.nothing_new": "Niets nieuws.",
   "bell.read_failed": "Je meldingen konden niet worden gelezen: ",
   "bell.removed": "Verwijderd",
-  "bell.security_hint": "Een melding over een inlogpoging of adres blijft ongelezen: hier openen bevestigt haar niet, en Alles als gelezen markeren laat haar staan. Bevestig haar met Dit was ik onder Sessies in je account.",
   "bell.settings": "Meldingsinstellingen",
   "bell.title": "Meldingen",
   "bell.unread": {
@@ -3698,7 +3697,6 @@ window.MAITY_I18N["nl"] = {
   "sessions.address.remove": "Het loginadres weghalen",
   "sessions.address.title": "Een adreswijziging wacht op jou",
   "sessions.address.too_new": "Goedkeuren vereist een sessie die minstens een dag oud is; deze sessie kan het afwijzen.",
-  "sessions.alert_open": "De loginwaarschuwing ervan is niet bevestigd.",
   "sessions.banner.approved": "Deze sessie heeft goedgekeurd: {devices}.",
   "sessions.banner.end": "Deze sessie beëindigen",
   "sessions.banner.ended_but": "Deze sessie is beëindigd, maar een sessie die door deze sessie is goedgekeurd, is nog actief: {devices}.",
