@@ -630,7 +630,8 @@ too.
    starts down to its bottom edge, less what stands below it (the product line), on a
    project's Chat tab and on Chats alike (the visual viewport, so a phone's keyboard
    counts): the page does not scroll, its history and the chat list scroll on their own,
-   the composer stays at the bottom with "Sending…" in its row of buttons, and a new message keeps the
+   and on a screen too small for the heading, the composer and a few lines of history the
+   page scrolls instead of the composer running under the product line; the composer stays at the bottom with "Sending…" in its row of buttons, and a new message keeps the
    history at its end unless the human scrolled up. Whether the reader is
    at the end follows their own scrolling, so content that grows after it
    was drawn (an image loading, the pane resized) keeps them there too; a

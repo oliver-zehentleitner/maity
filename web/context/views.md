@@ -3708,8 +3708,12 @@ the chat layout starts on the page and less what stands below it down to the end
 (main's padding, the product line of §16.13). The page then ends at the window's bottom edge, the
 product line under the composer is in sight, and only the history and the chat list scroll. It is
 measured again on a resize and whenever the page around it changes size (a `ResizeObserver` on the
-body: a banner above, the product line below). A layout not yet in the page, as Chats builds it
-while its view is still drawn, is measured once it is there instead of being given up. While a
+body: a banner above, the product line below). It is never less than what the open chat cannot
+shrink (its heading, the composer) plus 120 px of history: on a screen too small for that, the page
+scrolls and the product line stays below the composer, never over it. A layout not yet in the page,
+as Chats builds it while its view is still drawn, is measured once it is there, a few tries at
+most, and then lets go of its listeners; the holder a pane is drawn into on Chats is not measured
+at all, Chats measures the layout the pane moves into. While a
 message is sent, "Sending…" and a failure stand in the composer's row, after the meat-proxy switch
 and before Send, so no line appears below the row and nothing moves.
 
@@ -3725,6 +3729,8 @@ good, leaving the CSS fallback `calc(100dvh - 140px)`.
 - A sticky or fixed product line: §16.13 says it is never sticky.
 - The header's bottom plus a fixed allowance for the product line: its height changes with the
   width (it wraps on a phone) and a banner above the chat moves the layout too.
+- Only a fixed floor (240 px) on a small screen: the heading and the composer of a group chat take
+  more than that, so the composer ran past the pane and under the product line.
 
 ## Forge access is a section of the account, also at /settings/forge; a project's settings say which grant reads its repository
 

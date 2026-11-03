@@ -434,24 +434,28 @@ window.Maity = window.Maity || {};
   // (tsk-j10w2hsm1h90). Measured again on a resize and when the page around
   // it changes; the visual viewport shrinks with a phone's on-screen
   // keyboard, 100dvh does not everywhere.
+  // The lines of history an open chat keeps in view however small the screen.
+  const HISTORY_LEAST = 120;
   function fitToScreen(layout) {
     let watcher = null;
     // Chats fits its layout while the view is still being drawn, before the
     // router puts it into the page: measured once it is there, a few tries
     // at most. Only a layout that was in the page and left it stops.
     let seen = false, tries = 0;
+    const stop = () => {
+      window.removeEventListener("resize", fit);
+      if (window.visualViewport) window.visualViewport.removeEventListener("resize", fit);
+      if (watcher) watcher.disconnect();
+    };
     const fit = () => {
       if (layout.isConnected === false && !seen) {
+        // A layout that never comes into the page lets go after its tries.
         if (tries++ < 40) window.setTimeout(fit, 50);
+        else stop();
         return;
       }
       if (layout.isConnected !== false) seen = true;
-      if (layout.isConnected === false) {
-        window.removeEventListener("resize", fit);
-        if (window.visualViewport) window.visualViewport.removeEventListener("resize", fit);
-        if (watcher) watcher.disconnect();
-        return;
-      }
+      if (layout.isConnected === false) { stop(); return; }
       if (!layout.getBoundingClientRect || !layout.style.setProperty) return;
       const height = window.visualViewport ? window.visualViewport.height : window.innerHeight;
       const scrolled = window.scrollY || 0;
@@ -462,7 +466,14 @@ window.Maity = window.Maity || {};
       const end = body && body.getBoundingClientRect ? body.getBoundingClientRect().bottom : box.bottom;
       const margin = body && window.getComputedStyle ? parseFloat(window.getComputedStyle(body).marginBottom) || 0 : 0;
       const below = Math.max(0, end + margin - box.bottom);
-      layout.style.setProperty("--chat-h", Math.max(240, Math.floor(height - (box.top + scrolled) - below)) + "px");
+      // Never less than what the open chat cannot shrink (heading, composer)
+      // plus a few lines of history: on a small screen the page scrolls
+      // rather than the composer running under the product line.
+      const pane = layout.querySelector ? layout.querySelector(".chat-pane") : null;
+      const history = pane ? pane.querySelector(".messages") : null;
+      const fixed = pane && history ? pane.scrollHeight - history.offsetHeight : 0;
+      const least = Math.max(240, Number.isFinite(fixed) ? fixed + HISTORY_LEAST : 0);
+      layout.style.setProperty("--chat-h", Math.max(least, Math.floor(height - (box.top + scrolled) - below)) + "px");
     };
     window.addEventListener("resize", fit);
     if (window.visualViewport) window.visualViewport.addEventListener("resize", fit);
@@ -531,8 +542,9 @@ window.Maity = window.Maity || {};
     const agent = args[0] ? mine.find((m) => m.id === args[0]) : null;
     const list = (given && given.list) || conversations(ctx, args[0] || null);
     // given.holder: where the pane goes, for the caller to put in place when it is ready.
-    const layout = (given && given.holder) || h("div", { class: "chat-layout" + (args[0] ? " open" : "") }, list.el);
-    if (!(given && given.holder)) append(root, layout);
+    const holder = given && given.holder;
+    const layout = holder || h("div", { class: "chat-layout" + (args[0] ? " open" : "") }, list.el);
+    if (!holder) append(root, layout);
     const isChat = (e) => e.kind === "message" && e.payload && e.payload.type === "chat";
     if (!given) {
       ctx.onEvents((events) => { if (events.some((e) => isChat(e) || /^conversation_|^event_redacted$/.test(e.kind))) list.refresh(false); });
@@ -548,7 +560,7 @@ window.Maity = window.Maity || {};
     if (!agent && args[0]) {
       await list.refresh(false);
       const group = list.groups().find((g) => g.id === args[0]);
-      if (group) { await M.groupChat.open(ctx, root, layout, list, group, M.chatParts); return; }
+      if (group) { await M.groupChat.open(ctx, root, layout, list, group, holder ? Object.assign({}, M.chatParts, { fitToScreen: () => {} }) : M.chatParts); return; }
     }
     if (!agent) {
       if (args[0]) append(layout, h("p", { class: "error", role: "alert" }, M.t("chat.no_such", { id: args[0] })));
@@ -864,7 +876,8 @@ window.Maity = window.Maity || {};
     // Sizing, scrolling and focus need the view in the page, which the
     // router does once this function has returned.
     window.setTimeout(() => {
-      fitToScreen(layout);
+      // A pane drawn into Chats' holder is fitted by Chats, in its own layout.
+      if (!holder) fitToScreen(layout);
       follow.open(messages.querySelector(".new-line"));
       // On a phone the chat replaced the list: take the focus to its heading.
       if (window.matchMedia && window.matchMedia("(max-width: 720px)").matches) heading.focus();
