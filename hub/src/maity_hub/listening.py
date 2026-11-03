@@ -222,6 +222,10 @@ def stop(*, every: bool = False) -> None:
         thread.join(timeout=STOP_SECONDS)
         if thread.is_alive():
             log.warning("the listening writer is still in a write; it ends after that write")
+        else:
+            # What it left is this app's and goes with its rows below; the next app's writer
+            # would write it into its own database (dzse at #1256).
+            _discard_queued()
     else:
         _discard_queued()
     _engine[0], _thread[0], _stopping[0] = None, None, None

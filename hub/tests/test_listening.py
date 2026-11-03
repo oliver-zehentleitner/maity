@@ -269,3 +269,38 @@ def test_a_writer_still_busy_after_the_stop_ends_no_later_writer(
         listening.stop(every=True)
         listening._open.clear()
         listening._rows.clear()
+
+
+def test_what_a_stopped_writer_left_is_not_written_by_the_next(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stop ends the writer after its current write; the opens still queued are the stopped
+    app's and go with its rows, not into the next app's database (dzse at #1256)."""
+    monkeypatch.setattr(listening, "_heartbeat", lambda engine: None)
+    gate = threading.Event()
+    handled: list[tuple[object, str]] = []
+
+    def apply(engine: object, kind: str, wait_id: str, key: str) -> None:
+        if not handled:
+            gate.wait(10)  # the first write is slow; two more wait behind it
+        handled.append((engine, key))
+
+    monkeypatch.setattr(listening, "_apply", apply)
+    old, new = _PgLike(), _PgLike()
+    listening.start(old)  # type: ignore[arg-type]
+    try:
+        for key in ("ses-1", "ses-2", "ses-3"):
+            listening.opened(key)
+        assert _until(lambda: listening._writes.qsize() == 2)  # the first is being written
+        threading.Timer(0.2, gate.set).start()
+        listening.stop(every=True)
+        assert listening._writes.unfinished_tasks == 0
+        listening.start(new)  # type: ignore[arg-type]
+        listening.opened("ses-4")
+        listening._drained(5)
+        assert handled == [(old, "ses-1"), (new, "ses-4")]
+    finally:
+        gate.set()
+        listening.stop(every=True)
+        listening._open.clear()
+        listening._rows.clear()
