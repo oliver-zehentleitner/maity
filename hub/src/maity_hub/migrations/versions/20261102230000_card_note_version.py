@@ -5,7 +5,7 @@ compared, never counted back. Events written before carry the note without `vers
 an edit or a redaction rewrites them in place.
 
 Revision ID: 20261102230000_card_note_version
-Revises: 20261102110000_profiles_public
+Revises: 20261102120000_public_presence
 Create Date: 2026-11-02
 """
 
@@ -15,7 +15,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "20261102230000_card_note_version"
-down_revision: str | None = "20261102110000_profiles_public"
+down_revision: str | None = "20261102120000_public_presence"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
