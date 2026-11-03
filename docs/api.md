@@ -238,7 +238,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 503 | `forge_unavailable` | the forge did not answer while linking a GitHub App installation (§11.4) |
 | 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any; `details.retry_at` while the forge's rate limit for the source is spent: no read before that time (§11) |
 | 503 | `ktw_unavailable` | the root `.keep-the-why` of the Keep the Why family could not be read (§11.3); `details.reason`, `details.last` holds the last good answer if any; a family member's own failure is reported on that member, not as this error |
-| 503 | `database_unavailable` | the database cannot be reached (`/health`, and any call that needs it); `details` is `{}`, the message carries no driver text |
+| 503 | `database_unavailable` | the database cannot be reached (`/health`, and any call that needs it), or did not take an attachment upload's row in time (§8.7); `details` is `{}`, the message carries no driver text |
 | 503 | `schema_outdated` | the database is not at the migration head (`/health`); `details.revision`, `details.head` |
 
 ### 1.4 Pagination
@@ -10367,7 +10367,11 @@ and never hands out a presigned URL — the read rule is checked on every
 request, which a link to the store would bypass. On upload the blob is
 written first and the metadata committed after it, so a row never points
 at a missing blob; a blob without a row (a crash between the two) is
-removed by the hub's sweep. On read the hub checks the digest of what the
+removed by the hub's sweep. The row is committed only within 5 minutes of
+the start of the write. An upload whose write takes longer answers
+`internal`, like any failed write. One whose row then waits longer for
+the database answers `503 database_unavailable`. Either may be retried,
+and the attempt counts against the upload rate. On read the hub checks the digest of what the
 store returned against the stored one and answers `internal` on a
 mismatch rather than serve other bytes. A file larger than 1 MiB is
 streamed with its `Content-Length` and checked as it passes; its last
