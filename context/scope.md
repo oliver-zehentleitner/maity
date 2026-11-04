@@ -604,7 +604,7 @@ route a crawler does not fetch.
 - Listing badges: they are per project and belong to the project's
   owner, not to the instance's public face.
 
-## Public pages are static HTML, chosen by their owner, and the instance's operator must allow them
+## Public pages are static HTML, public by default, and the instance's operator must allow them
 
 **Id:** 2571d046-a270-4680-b50a-dc4e9ad60f19
 **Type:** decision
@@ -655,9 +655,12 @@ operator switches it on.
 - Only rendering on change, without a choice: the maintainer wanted the
   operator to choose, since an interval batches the work on a busy
   instance.
-- Letting the interval delay removals too: a person who makes their
-  profile private would stay on other projects' pages for up to a day,
-  against their decision; removals are always immediate.
+- Letting the interval delay removals too: what a person or a project's
+  owner takes off a page would stay visible for up to a day, against
+  their decision; removals are always immediate. (The example at the
+  time, a person who turns their profile off leaving other projects'
+  pages, no longer applies: since 2026-11-02 they stay named there,
+  `hub/context/public-pages.md` 3da2d551.)
 - A fixed interval with no bound: 1–24 hours keeps a page from going
   stale for days or being rebuilt every minute.
 - Making the dashboard itself crawlable (server-side rendering of the
@@ -681,19 +684,20 @@ operator switches it on.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decisions of 2026-10-29 (which views are public, agents under the person's page; card tsk-w89mspg3gwx1) and 2026-10-30 (a person's website and social names, who sees them: five values, independent; card tsk-xr6fqx8e0vw5); the details (card fields, links built from names, no single-card page) are the contract owner's; contract `docs/api.md` §16.9
-**Revisit when:** follow exists (the `friends` value starts to mean something), a public card page is wanted, or the Why view should show a private repository's entries by an owner's choice
+**Source:** the maintainer's decisions of 2026-10-29 (which views are public, agents under the person's page; card tsk-w89mspg3gwx1) and 2026-10-30 (a person's website and social names, who sees them: five values, independent; card tsk-xr6fqx8e0vw5); the details (card fields, links built from names, at first no single-card page) are the contract owner's; a card's page and its notes since 2026-11-02 (`hub/context/public-pages.md` e3bcdf82, 9e1bb9f3); contract `docs/api.md` §16.9
+**Revisit when:** follow exists (the `friends` value starts to mean something), or the Why view should show a private repository's entries by an owner's choice
 
 A public project shows five of its views to anyone, each a stored
 page at the view's own address: Overview, Board, Members, Organisation
 and Why. Inbox, Chat, Messages and Ticker stay with the members, Runners
 and Settings with the owners. The Board shows each card's id, title,
-status and label, never its body, notes or history, and has no page per
-card. People and agents appeared by name only where the person (or the
+status and label, never its body, notes or history; at first there was
+no page per card either. People and agents appeared by name only where the person (or the
 agent's owner) had a public profile, otherwise as "a member"/"an agent"
 or an unnamed box; since 2026-11-02 an open project names every member
-by handle and a card has its own page (`hub/context/public-pages.md`,
-3da2d551 and e3bcdf82). Why shows only what the hub already reads of Keep
+by handle, and a card has its own page with its body and notes, its
+history staying with the team (`hub/context/public-pages.md`, 3da2d551,
+e3bcdf82 and 9e1bb9f3). Why shows only what the hub already reads of Keep
 the Why (summary, dashboards, attention; never `context/`), and only
 while the repository is public, read with the instance's token — so
 only for a project in the operator's own namespaces (ce611bd9 in
@@ -706,8 +710,9 @@ them: private, friends, colleagues, friends and colleagues, or everyone.
 
 **Reason:** the maintainer wants a public project to show how it is
 being built, not only that it exists; the board and the team are that.
-What a card says inside, and what people discuss, stays with the team.
-At first names followed each person's own choice, so publishing a
+What people discuss stays with the team. What a card says inside did
+too at first; since 2026-11-02 an open project's card is public, like an
+issue on a forge (`hub/context/public-pages.md` e3bcdf82). At first names followed each person's own choice, so publishing a
 project did not publish its people; since 2026-11-02 an open project
 names its members (`hub/context/public-pages.md` 3da2d551). Building links from names, instead of taking URLs,
 keeps a "GitHub" link from pointing anywhere else.
@@ -723,7 +728,10 @@ DNS host, never an IP address or a port.
 
 **Rejected alternatives:**
 - A public page per card: it would publish card bodies and history, the
-  part that is the team's working text.
+  part that is the team's working text. (Overturned on 2026-11-02: a
+  card of an open project has its own page with its body and notes,
+  while its history stays out, `hub/context/public-pages.md` e3bcdf82
+  and 9e1bb9f3.)
 - Every done card on the Board, and statistics over every project: the
   first makes the page a history, the second counts private work.
 - A moderated card shown as `cancelled`: the title is what was moderated.
