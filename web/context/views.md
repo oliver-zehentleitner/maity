@@ -789,13 +789,13 @@ by kind and project for reading and for marking, so the dashboard needs no new c
 - The line in the inbox only: it would show on one tab, and the inbox does not redraw when only
   the counts change.
 
-## A personal request in the cross-project inbox is labelled Personal and links into no project
+## A personal request in the cross-project inbox is labelled Personal; its project, card and mentions are no links
 
 **Id:** 2fd5910d-3233-4aca-a16e-8c1cc73d071a
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** docs/api.md §7 (personal requests, PR #232); the coordinator's card tsk-x995qwddkrk2, 2026-10-23; the dashboard's implementation, 2026-10-23; the coordinator's choice of the count fix on tsk-430dnt8s25a8 (option a), 2026-10-29
+**Source:** docs/api.md §7 (personal requests, PR #232); the coordinator's card tsk-x995qwddkrk2, 2026-10-23; the dashboard's implementation, 2026-10-23; the coordinator's choice of the count fix on tsk-430dnt8s25a8 (option a), 2026-10-29; the review of PR #1356 that found the people of a personal request linked by the member list since, 2026-11-04
 **Revisit when:** the dashboard gets a personal inbox of its own, apart from `/all`
 
 A personal request (`personal: true`, listed only by `GET /requests`) is
@@ -806,7 +806,10 @@ Withdraw, which only its human may do. Grouped by project, the personal
 ones come first under "Personal". Since 2026-10-29 a project's own inbox
 lists the open personal requests about that project too, read from
 `GET /requests`: its tab counts them (§18.2), so the list shows what the
-tab says; they keep the label and lead into nothing. The hub has no
+tab says; they keep the label, and their badge, card and mentions lead
+into nothing. Who asked, on whose behalf and to whom are named as
+everywhere: a link only for a member the request's project lists
+(801bc195). The hub has no
 project filter on `GET /requests` (§7), so the project's inbox filters
 what it reads; a failed read is said in the list's status line, never
 shown as an empty list, since a list short of its tab is the bug this
@@ -816,8 +819,9 @@ not `/me`'s `open_requests`, which does not.
 
 **Reason:** the project's routes answer `not_found` for a personal
 request, the project's own listing never holds one (§7), and its human
-need not be a member of that project: every link or member read into the
-project would lead nowhere. A tab that counts what its list leaves out
+need not be a member of that project: a link to the project's inbox or
+card would lead nowhere. A member the project lists has a page there,
+and one it does not list stays text (801bc195). A tab that counts what its list leaves out
 reads as a bug (the maintainer's report).
 
 **Rejected alternative:** the project's badge and links as for every
