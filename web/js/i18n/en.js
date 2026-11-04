@@ -1110,6 +1110,7 @@ window.MAITY_I18N["en"] = {
   "error.repository_not_offered": "That runner does not offer this project's repository.",
   "error.request_claimed": "Another admin already took this request.",
   "error.request_not_open": "This request is no longer open.",
+  "error.request_timeout": "This took too long to send. Try again, or on a faster connection.",
   "error.role_unknown": "The role this names no longer exists.",
   "error.runner_not_attached": "That runner is not attached to this project.",
   "error.runner_revoked": "That runner has been revoked.",

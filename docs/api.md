@@ -177,6 +177,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 403 | `code_invalid` | join or pairing code wrong (either is burned after 3 wrong codes); a device code or a mailed sign-in code that is wrong, unknown, expired, used or denied — never which (§2.6); a second-factor or recovery code that is wrong or already used (§2.8) |
 | 404 | `not_found` | no such resource — also for any resource in a project the caller is not a member of (exceptions: the owner of an agent in a group chat reads that chat along and the attachments of its messages, and its writes there are `forbidden`, §9.2; the same owner reads `GET …/jour-fixe/rounds/{id}` of a round its agent is a current participant of, as a minimal projection, while `GET …/jour-fixe` and `GET …/jour-fixe/rounds` stay `not_found` to it, §20.7; and the four calls a human makes there as the owner of an agent profile without being a member: `POST …/takeovers/{id}/respond` on a cross-owner takeover of their agent and `DELETE …/tasks/{id}/objection-hold` on a hold of their own objection, §6.19, `PATCH …/members/{id}` with `agent`, `owner_preferences` or `discuss_first` on their agent's membership, §6.18, §19.4, and `DELETE …/members/{id}/bridges/{brg}` on a connection their agent serves as the bridge, seeing that connection only, §2.3), for an event sequence number that belongs to another project, for a runner caller on any `/projects/*` route, and for a placement, runner or enrollment the caller may not see, a runner's own calls included (§15) |
 | 405 | `method_not_allowed` | the path exists, the method does not; the `Allow` header lists the methods |
+| 408 | `request_timeout` | the body did not arrive within 120 seconds of the hub starting to read it (§1.7); the hub closes the connection (`Connection: close`) |
 | 409 | `already_claimed` | claim on a task that is held; `details.holder`, `details.instance`, `details.lease_until`, `details.expired` |
 | 409 | `asker_not_allowed` | the `go` on a change to another owner's agent when the asker is no longer active, is isolated, or may no longer make exactly this change (§6.2); the request stays open |
 | 409 | `role_unknown` | the `go` on such a change when the project role it names no longer exists (§6.2); the request stays open |
@@ -323,6 +324,7 @@ the hub records it on the session.
 | What | Cap |
 |---|---|
 | Request body | 64 KiB; the landing page's settings 256 KiB (§16.7); the sign-in and sign-up pages' settings 512 KiB (§16.7.4); an uploaded logo or banner 1 MiB (§11.2), an uploaded avatar 1 MiB and 4096 pixels on a side (§6.10), an uploaded attachment 10 MiB (§8.7) |
+| Time to send a request body | 120 seconds, all of it, from when the hub starts to read it; then `request_timeout` (§1.3) |
 | Avatar changes | 10 `PUT` or `DELETE` per hour per account or profile, all its credentials together (§6.10) |
 | Handle changes | 3 per 24 hours per account or profile; at most 8 aliases per id (§6.24) |
 | Device codes and sign-in links | per human, per address and per source address as §2.6.4 |
@@ -10958,7 +10960,17 @@ callers with `project:admin`; for others it is `null`.
 **Limits.** At most 10 MiB per file, before re-encoding — the body cap
 of §1.7 does not apply to this call, the file cap does
 (`payload_too_large`, checked against `Content-Length` before the body
-is read, and against the bytes read when no length is given). At most 30
+is read, and against the bytes read when no length is given). The
+credential filter of §2.2 checks the query first. Then, before the body
+is read, the hub runs these checks of §2, and a call that fails one gets
+that refusal with its body unread, so its body is not scanned either:
+that there is a credential or a session cookie; for a bearer credential
+the transport, the credential and its secret; for a session cookie the
+transport, `Sec-Fetch-Site` and that the session is alive; for a signed
+call the headers' shape, the time window and that the credential exists.
+The signature, which covers the body, and every later check (a revoked
+credential, `X-CSRF-Token`, the caller's project among them) run after
+the body is read. At most 30
 uploads and 100 MiB per membership in 10 minutes; beyond either the call
 is `rate_limited` with `Retry-After` and stores nothing. A call that
 finds every decode slot taken is `rate_limited` as for an avatar. A
@@ -17281,7 +17293,8 @@ POST /api/v1/projects/{owner}/{slug}/forge/webhook
   requests cannot use up a project's deliveries. Every request reads its
   declared body before it is answered, for a project that does not exist
   or has no webhook secret too, so a body held back hangs alike whatever
-  the slug.
+  the slug, until the deadline of §1.7 answers it `request_timeout`, for
+  every slug alike.
 - Every slug is treated the same until a signature verifies. Every
   request first takes a place in a bucket per source address (the
   client address of §2.5) and in a bucket per slug and source address,

@@ -17,6 +17,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
+from maity_hub import body as body_reader
 from maity_hub import forge, forge_webhook, probe, secretbox
 from maity_hub import tables as t
 from maity_hub.config import Settings
@@ -421,6 +422,41 @@ def test_a_held_back_body_hangs_alike_for_every_slug(owner: flow.Human, migrated
     secret(owner)
     assert held(migrated, [HOOK]) == ([], 1)
     assert held(migrated, [UNKNOWN]) == ([], 1)
+
+
+def test_a_body_that_does_not_arrive_in_time_is_request_timeout_alike_for_every_slug(
+    owner: flow.Human, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    secret(owner)
+    monkeypatch.setattr(body_reader, "BODY_SECONDS", 0.05)
+
+    async def never() -> dict[str, Any]:
+        await asyncio.sleep(5)
+        return {"type": "http.request", "body": b"{}", "more_body": False}
+
+    def deliver(path: str) -> tuple[int, Any]:
+        sent: list[Any] = []
+
+        async def send(message: Any) -> None:
+            sent.append(message)
+
+        scope = {
+            "type": "http",
+            "method": "POST",
+            "path": path,
+            "headers": [(b"content-length", b"2"), (b"x-hub-signature-256", b"sha256=0")],
+            "state": {"origin": SimpleNamespace(address="192.0.2.8")},
+        }
+        status = asyncio.run(forge_webhook.handle(scope, never, send, migrated, KEY))
+        return status, dict(sent[0]["headers"])
+
+    for path in (HOOK, UNKNOWN):
+        status, headers = deliver(path)
+        assert (status, headers[b"maity-error"], headers[b"connection"]) == (
+            408,
+            b"request_timeout",
+            b"close",
+        ), path
 
 
 def test_parallel_requests_to_unknown_slugs_read_at_most_sixty_bodies_per_address(
