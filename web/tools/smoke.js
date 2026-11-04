@@ -2033,6 +2033,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(ktwSpeed.getAttribute("aria-label") === "the pace of the days" && ktwNamed.getAttribute("aria-label") === "its own name"
     && ktwLabelled.getAttribute("aria-label") === undefined && ktwAfter.getAttribute("href") === undefined,
     "why: a later title refreshes the name the host set, not one of the page's own; a labelled control stays as it is, and an id with a quote stops no sweep");
+  ktwRange.setAttribute("aria-label", "the page's later name"); ktwRange.setAttribute("title", "another title"); kh.sweep(ktwControls);
+  ktwSpeed.removeAttribute("title"); kh.sweep(ktwControls);
+  expect(ktwRange.getAttribute("aria-label") === "the page's later name" && ktwSpeed.getAttribute("aria-label") === undefined,
+    "why: a name the page sets after the host's is kept on a later title; the host's name goes with its title");
   await go("#/maintainer/maity/why/timeline"); for (let k = 0; k < 6; k++) await tick();
   const ktwPlaySpeed = main.querySelector('[class="ktw-play-speed"]');
   expect(ktwPlaySpeed && ktwPlaySpeed.getAttribute("aria-label") === "how fast the days pass",
