@@ -73,7 +73,7 @@ window.Maity = window.Maity || {};
   // fragment did: no second entry, no view drawn again under a form.
   // True when the address changed (and the view follows), false otherwise.
   // With quiet the current entry is changed and no view drawn again: a query the page already
-  // follows (the page's language, js/i18n.js). The place after `#` stays.
+  // follows (the page's language, js/i18n.js). Over http(s) the place after `#` stays.
   function go(path, opts) {
     const quiet = !!(opts && opts.quiet);
     const replace = !!(opts && opts.replace);
