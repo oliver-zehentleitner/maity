@@ -3,6 +3,8 @@ that clone is a plain one."""
 
 from __future__ import annotations
 
+import re
+import shutil
 from pathlib import Path
 
 import pytest
@@ -39,6 +41,24 @@ def test_a_key_a_plain_clone_has_not_is_refused(placed: Path) -> None:
     git(placed, "config", "core.pager", "cat")
     with pytest.raises(gitfacts.FactsError, match=r"not a plain clone: .*core\.pager"):
         gitfacts.collect(placed)
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["remote.origin.uploadpack", "core.sshCommand", "core.gitProxy", "credential.helper"],
+)
+def test_a_key_naming_a_program_for_a_remote_is_refused_before_git_runs(
+    placed: Path, key: str
+) -> None:
+    marker = placed.parent / "ran"
+    sh = shutil.which("sh", path="/usr/bin:/bin")
+    assert sh is not None
+    git(placed, "config", key, f"{sh} -c 'echo > {marker}'")
+    with pytest.raises(
+        gitfacts.FactsError, match=rf"(?i)not a plain clone: .*{re.escape(key.split('.')[-1])}"
+    ):
+        gitfacts.collect(placed)
+    assert not marker.exists()
 
 
 def test_an_entry_a_plain_clone_has_not_is_refused(placed: Path) -> None:
