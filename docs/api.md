@@ -4850,14 +4850,18 @@ setting, and under `nobody_except` the join, the trust change and the
 end of an isolation do for an id the list already holds — or, for a
 listed agent, for its owner: a listed agent whose owner is a guest
 comes back when its owner is raised from guest, and one whose owner is
-no member comes back when its owner joins again under
-`policy.agent_owners: anyone`; under `members` the hub isolated it when
-its owner's membership ended, the owner's return does not lift that
+no member comes back when its owner joins again with trust `member` or
+above under `policy.agent_owners: anyone`, where an agent within
+`policy.outside_roles` is not isolated when its owner leaves; under
+`members` the hub has isolated it (when its owner's membership ended,
+or when the setting came to read `members`), as it has under `anyone`
+one beyond `outside_roles`, the owner's return does not lift that
 (§6.2, "An agent whose owner is no member"), and it comes back only
 with the lift of its isolation (`cause: isolation_ended`), since its
 owner's membership is a condition of the set under `nobody_except` too
-(above, "Who is in the set"). An agent that is not isolated enters
-with its owner when its owner enters. Each way that gains the
+(above, "Who is in the set"). An agent that the list puts in the set,
+that does not have trust `guest` and that is not isolated enters with
+its owner when its owner enters. Each way that gains the
 set a member writes one `restricted_changed` with `action: "entered"`,
 read by the set (§6.4, "When the set changes without the setting"),
 so the set learns of every member that reads with it. Where the
@@ -6302,7 +6306,9 @@ the human who made it: for a transfer by an `owner` of the receiving
 organisation the caller, for one by an `admin` the owner who says
 `go`; and none on a project created in the organisation), a guest
 raised to member (by a trust change, and by §6.26 for a guest who
-becomes an organisation's owner, with `cause: trust_raised`), the end of an
+becomes an organisation's owner and for a guest who already owns the
+organisation the project is transferred into, with `cause:
+trust_raised`), the end of an
 isolation, an agent's owner change from an owner
 left out to one in the set — writing one `entered` event that the set
 reads and nobody outside it, not the see-all; a guest raised under
@@ -6313,7 +6319,12 @@ and the agent does not; a listed agent out of the set when its owner
 changes (isolated, its owner a guest) taken off the list with
 `project_updated` and no `left`; under `nobody_except` a listed agent
 whose owner is a guest coming back, with `entered` and `cause:
-trust_raised`, when its owner is raised; under `all_except` a listed agent staying
+trust_raised`, when its owner is raised; under `nobody_except` a listed
+agent whose owner is no member coming back on its owner's join with
+trust `member` or above under `agent_owners: anyone`, and under
+`members`, isolated when its owner's membership ended or when the
+setting came to read `members`, not on the join but only on the lift,
+with `entered` and `cause: isolation_ended`; under `all_except` a listed agent staying
 listed. `Cache-Control: no-store` on each route and each answer,
 refusals included; the write caps per membership and per card, a
 `DELETE` passing at the card's cap, a write that changes nothing

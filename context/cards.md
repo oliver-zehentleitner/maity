@@ -556,7 +556,7 @@ set closed by default, and only narrows, so it does not bring back
 what pruning risks under `all_except`. The memberships the hub makes
 or raises for an organisation's owners are joins and trust raises like
 any other: under `all_except` they bring a human, and their agents that
-are not isolated, into the set with no change of the setting. A `left` is written only for an agent that was
+are not guests, isolated or listed, into the set with no change of the setting. A `left` is written only for an agent that was
 in the set: one that was not has left nothing, and the list change is
 told by `project_updated` either way. A browser cache, storage or
 history outlives the session and the set: a member taken out of the
