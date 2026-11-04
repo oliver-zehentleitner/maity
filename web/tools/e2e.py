@@ -2210,13 +2210,15 @@ CHAT_MEASURE = """() => {
 
 def chat_height_views(run: Run, browser) -> None:
     """The open chat against the window (tsk-j10w2hsm1h90), in fixture mode: on a project's Chat
-    tab and on Chats, direct and group, at 1280 x 800 and 390 x 844. Without the sign-in banner the
+    tab and on Chats, direct and group, at 1280 x 800, 390 x 844 and 375 x 667; and after the pane
+    grew or shrank inside (the composer folded, shown, three times its rows, a group's Manage opened). Without the sign-in banner the
     page ends at the window's bottom edge; with it (a phone has no room then) the page scrolls, but
     the history keeps some height and the composer never runs under the product line. A
     ResizeObserver loop is reported on window only, so a collector there counts it as an error."""
     run.step("fixtures: the open chat ends at the window's bottom edge, the composer above the product line")
     index = (WEB / "index.html").as_uri()
-    for width, height in ((1280, 800), (390, 844)):
+    # 375 x 667 is too small for a composer and 60 px of history: there the page scrolls, never overlaps.
+    for width, height, fits in ((1280, 800, True), (390, 844, True), (375, 667, False)):
         context = browser.new_context(viewport={"width": width, "height": height})
         context.add_init_script(
             "window.__errors = []; window.addEventListener('error', (e) => window.__errors.push(String(e.message)));"
@@ -2247,7 +2249,7 @@ def chat_height_views(run: Run, browser) -> None:
                     assert m["compose"]["bottom"] <= m["footer"]["top"] + 0.5, (
                         f"{where}: the composer ends at {m['compose']['bottom']:.0f}, the product line starts at {m['footer']['top']:.0f}"
                     )
-                    if not banner:
+                    if fits and not banner:
                         assert m["overflow"] <= 1, f"{where}: the page scrolls {m['overflow']} px past the window"
                     toggle = page.locator(".chat-layout.open .chat-pane .compose-toggle")
                     if toggle.is_visible():
@@ -2281,20 +2283,32 @@ def chat_height_views(run: Run, browser) -> None:
                         for _, undo in grown:
                             undo()
                         page.wait_for_timeout(300)
+                        back = page.evaluate(CHAT_MEASURE)
                         what = ", ".join(n for n, _ in grown)
                         assert g["history"]["height"] >= 56 and g["compose"]["bottom"] <= g["footer"]["top"] + 0.5, f"{where}, {what}: {g}"
+                        # And back: the pane shrinks again by itself, as a fresh fit (a window resize) would size it.
+                        page.evaluate("() => window.dispatchEvent(new Event('resize'))")
+                        page.wait_for_timeout(300)
+                        fresh = page.evaluate(CHAT_MEASURE)
+                        assert abs(back["overflow"] - fresh["overflow"]) <= 1, (
+                            f"{where}, {what} undone: the page scrolls {back['overflow']} px, a fresh fit {fresh['overflow']}"
+                        )
             # On Chats a group chat takes the place of a direct one in the same layout.
             page.goto("about:blank")
             page.goto(f"{index}?lang=en#/chats/maintainer/maity/agt-a")
             page.locator(".chat-layout.open .chat-pane .compose").wait_for()
-            page.evaluate("() => { const b = document.querySelector('main .signin-banner'); if (b) b.remove(); }")
+            page.wait_for_timeout(500)
             page.evaluate("() => { location.hash = '#/chats/maintainer/maity/cnv-0007'; }")
             page.locator(".chat-layout.open .chat-pane.group-chat .compose").wait_for()
             page.wait_for_timeout(800)
             m = page.evaluate(CHAT_MEASURE)
-            where = f"Chats, agt-a then cnv-0007, at {width}x{height}"
+            where = f"Chats with the sign-in banner, agt-a then cnv-0007, at {width}x{height}"
             assert not m["errors"] and not errors, f"{where}: {m['errors'] + errors}"
-            assert m["history"]["height"] >= 56 and m["compose"]["bottom"] <= m["footer"]["top"] + 0.5 and m["overflow"] <= 1, f"{where}: {m}"
+            assert m["history"]["height"] >= 56 and m["compose"]["bottom"] <= m["footer"]["top"] + 0.5, f"{where}: {m}"
+            page.evaluate("() => window.dispatchEvent(new Event('resize'))")
+            page.wait_for_timeout(300)
+            fresh = page.evaluate(CHAT_MEASURE)
+            assert abs(m["overflow"] - fresh["overflow"]) <= 1, f"{where}: the page scrolls {m['overflow']} px, a fresh fit {fresh['overflow']}"
             run.shot(page, f"fixtures-chat-{width}")
         finally:
             context.close()

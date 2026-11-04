@@ -3737,6 +3737,11 @@ good, leaving the CSS fallback `calc(100dvh - 140px)`.
   more than that, so the composer ran past the pane and under the product line.
 - A floor of 120 px of history: a group chat on a 390 × 844 phone no longer fitted the window
   even without a banner above it.
+- A `ResizeObserver` on the body alone: the layout's height is fixed by `--chat-h`, so a change
+  inside the open pane (the composer folded or shown, its 1×/2×/3×, a group's "Manage or leave",
+  another chat on Chats) does not resize the body. The floor stayed the one measured first, and on
+  a 375 × 667 phone a group composer shown again ran 76 px under the product line with no history
+  in sight.
 
 ## Forge access is a section of the account, also at /settings/forge; a project's settings say which grant reads its repository
 
