@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -145,6 +146,13 @@ class Settings:
     public_pages_render: str = "on_change"
     public_pages_interval_hours: int = 6
     public_pages_snapshot_minutes: int = 5
+    # MAITY_ROUTE_LIMITS: limits on single routes the operator sets in an emergency, counted per
+    # client address in each process; empty, no route has one beyond its own (§1.7).
+    route_limits: tuple[RouteLimit, ...] = ()
+    # MAITY_PUBLIC_PAGE_LIMIT, MAITY_BADGE_LIMIT: reads per client address of the public pages
+    # (§16.9) and of the badges (§17.5), as (count, seconds).
+    public_page_limit: tuple[int, int] = (60, 60)
+    badge_limit: tuple[int, int] = (60, 60)
 
     @property
     def join_host(self) -> str | None:
@@ -241,6 +249,9 @@ class Settings:
             ),
             max_agents_per_human=parse_limit(env, "MAITY_MAX_AGENTS_PER_HUMAN"),
             max_orgs_per_human=parse_limit(env, "MAITY_MAX_ORGS_PER_HUMAN"),
+            route_limits=parse_route_limits(env.get("MAITY_ROUTE_LIMITS", "")),
+            public_page_limit=parse_rate(env, "MAITY_PUBLIC_PAGE_LIMIT", (60, 60)),
+            badge_limit=parse_rate(env, "MAITY_BADGE_LIMIT", (60, 60)),
         )
 
 
@@ -464,6 +475,64 @@ def parse_limit(env: dict[str, str], name: str) -> int | str | None:
     if not value.isdigit() or not 1 <= int(value) <= 10000:
         raise ConfigError(f"{name} must be a number from 1 to 10000, or unlimited")
     return int(value)
+
+
+@dataclass(frozen=True)
+class RouteLimit:
+    """One entry of MAITY_ROUTE_LIMITS: at most `count` calls of `method` on the route
+    `template` per client address in `seconds`."""
+
+    method: str
+    template: str
+    count: int
+    seconds: int
+
+
+ROUTE_METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
+_RATE = re.compile(r"([0-9]{1,6})/([0-9]{1,5})")
+_ROUTE_LIMIT = re.compile(r"([A-Z]+)\s+(/\S*)\s*=\s*(\S+)")
+
+
+def parse_rate(env: dict[str, str], name: str, default: tuple[int, int]) -> tuple[int, int]:
+    """`<count>/<seconds>`, a count from 1 to 100000 in 1 to 86400 seconds; unset is the
+    default, anything else stops the hub."""
+    value = env.get(name, "").strip()
+    if not value:
+        return default
+    return _rate(value, name)
+
+
+def _rate(value: str, name: str) -> tuple[int, int]:
+    found = _RATE.fullmatch(value)
+    if found is None or not 1 <= int(found[1]) <= 100000 or not 1 <= int(found[2]) <= 86400:
+        raise ConfigError(
+            f"{name}: {value!r} is not <count>/<seconds> (1-100000 in 1-86400 seconds)"
+        )
+    return int(found[1]), int(found[2])
+
+
+def parse_route_limits(value: str) -> tuple[RouteLimit, ...]:
+    """MAITY_ROUTE_LIMITS: entries `<METHOD> <route> = <count>/<seconds>`, one per line or
+    separated by `;`, e.g. `GET /api/v1/projects/{owner}/{slug}/events = 120/60`. The route is
+    written as the hub declares it, with its `{…}` placeholders; whether it exists is checked
+    when the app is built (`route_limits.resolve`). Anything malformed stops the hub, and so
+    does a route named twice for one method."""
+    limits: list[RouteLimit] = []
+    for raw in re.split(r"[;\n]", value):
+        entry = raw.strip()
+        if not entry:
+            continue
+        found = _ROUTE_LIMIT.fullmatch(entry)
+        if found is None or found[1] not in ROUTE_METHODS:
+            raise ConfigError(
+                f"MAITY_ROUTE_LIMITS: {entry!r} is not <METHOD> <route> = <count>/<seconds>"
+                f" (METHOD one of {', '.join(ROUTE_METHODS)})"
+            )
+        count, seconds = _rate(found[3], "MAITY_ROUTE_LIMITS")
+        if any(x.method == found[1] and x.template == found[2] for x in limits):
+            raise ConfigError(f"MAITY_ROUTE_LIMITS: {found[1]} {found[2]} is named twice")
+        limits.append(RouteLimit(found[1], found[2], count, seconds))
+    return tuple(limits)
 
 
 def parse_cli_install(value: str) -> str:

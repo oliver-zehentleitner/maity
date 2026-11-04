@@ -35,12 +35,13 @@ from maity_hub import (
     net,
     paths,
     request_stats,
+    route_limits,
 )
 from maity_hub.auth import caller, credentials
 from maity_hub.auth.leaks import revoke_leaked
 from maity_hub.config import Settings
 from maity_hub.db import retrying
-from maity_hub.errors import ApiError, error_response
+from maity_hub.errors import ApiError, error_response, rate_limited
 
 log = logging.getLogger(__name__)
 # The hub's own request log; the server's access log is off (§1.1).
@@ -149,6 +150,19 @@ class HubMiddleware:
 
         if await self._maintenance_refused(scope, receive, send, path):
             return
+
+        table = getattr(getattr(scope.get("app"), "state", None), "route_limits", None)
+        if table:
+            # The operator's limit on single routes (MAITY_ROUTE_LIMITS, §1.7), before any
+            # other work: no body is read, no caller looked up.
+            wait = route_limits.wait(scope, table, origin.address)
+            if wait:
+                refused = rate_limited(wait)
+                await error_response(
+                    refused.status, refused.code, refused.message, None, refused.headers
+                )(scope, receive, send)
+                _access(scope, 429)
+                return
 
         if not on_join_host and forge_webhook.matches(scope):
             # Signed, not authenticated, and limited before its body is read (§17.4).

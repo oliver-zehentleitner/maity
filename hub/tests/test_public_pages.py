@@ -162,12 +162,9 @@ def test_a_page_stored_again_replaces_the_one_before(
 
 
 def test_the_page_is_rate_limited_by_source_address(
-    make_client: ClientFactory, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+    make_client: ClientFactory, migrated: Engine
 ) -> None:
-    from maity_hub.ratelimit import Limiter
-
-    monkeypatch.setattr(public_pages, "BY_ADDRESS", Limiter(2, 60, name="public_pages.BY_ADDRESS"))
-    client = visitor(make_client)
+    client = visitor(make_client, public_page_limit=(2, 60))  # MAITY_PUBLIC_PAGE_LIMIT
     store(migrated)
     assert [client.get(PATH).status_code for _ in range(3)] == [200, 200, 429]
     # the shell is not counted
