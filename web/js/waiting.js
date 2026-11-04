@@ -88,7 +88,7 @@ window.Maity = window.Maity || {};
     const list = h("ul", { class: "waiting-items" }), status = M.statusLine();
     const older = h("button", { type: "button" }, M.t("waiting.older"));
     // Mark all read marks up to the head of the first page (§18.3, as the
-    // bell does); a sign-in or address alert stays unread (§2.6.5). Always
+    // bell does); a security alert stays unread (§18.3). Always
     // there, off while nothing it would mark is unread.
     const markAll = h("button", { type: "button", class: "small" }, M.t("waiting.mark_all"));
     // A filter from the address (?kind=mention&project=<owner>/<slug>, the

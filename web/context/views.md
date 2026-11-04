@@ -521,6 +521,7 @@ shows.
 **Revisit when:** the session view gains a field that says what a session may do
 **See:** views.md#sessions-say-what-this-session-may-not-do-before-it-is-tried-and-this-was-me-is-the-only-way-a-sign-in-is-confirmed — 561b77f6-2a12-4352-aa50-36a8aa773fbe — as of 2026-11-03
 **See:** refresh.md#the-bell-pins-the-unread-security-alerts-and-mark-all-read-takes-them-only-after-asking — 643600cd-dd61-4291-85d7-025e322f4c81 — as of 2026-11-03
+**See:** refresh.md#the-bell-pins-security-alerts-but-no-sign-in-the-notifications-page-lists-the-current-sessions-read-again-when-sessions_rev-moves — 09f74f56-7c6c-4d94-a499-ef804b022f3a — as of 2026-11-04
 
 What the earlier entry says about disabled buttons and their reasons stands. What
 changed: **This was me** posts the session's confirm and is offered on an active
@@ -540,6 +541,11 @@ the session, so its result is known without reading the list again.
 contract made reading and confirming two acts. Keeping the banner tied to the unread
 alert: marking it read in the bell would take the banner down while the sign-in is still
 unconfirmed. Offering This was me on an ended session: there is nothing left to confirm.
+
+**Since 2026-11-04** (09f74f56-7c6c-4d94-a499-ef804b022f3a): `pinned` holds no sign-in, so the
+unread alerts listed in this section are only the other security kinds, each with **Mark
+read**; no row says its sign-in alert is unread, and the ended sessions stay folded. **This
+was me** on an active unconfirmed session is unchanged.
 
 ## The Ticker view reads the listing, not the events, and says each reason in the dashboard's own words
 

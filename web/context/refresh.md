@@ -131,7 +131,8 @@ the sign-in.
 
 **Id:** 643600cd-dd61-4291-85d7-025e322f4c81
 **Type:** decision
-**Status:** needs-review
+**Status:** superseded
+**Superseded by:** 09f74f56-7c6c-4d94-a499-ef804b022f3a
 **Evidence:** inferred
 **Source:** docs/api.md §2.6.5 ("This was me" its own call), §18.2 (`pinned`), §18.3 (`include_security`, `skipped`) and §18.8 (the dashboard's part), contract PR #1230; the bell card tsk-0kz8v1ff5sgf, 2026-11-03
 **Revisit when:** the hub confirms a sign-in by anything but its own call, or `pinned` changes what it holds
@@ -163,6 +164,39 @@ resolves this entry.
 could only be cleared one by one, and the bell stayed lit. Marking them without asking:
 one click would clear a sign-in alert nobody looked at. Showing pinned alerts in the list
 as well: the same alert twice in a panel of twenty.
+
+## The bell pins security alerts but no sign-in; the Notifications page lists the current sessions, read again when sessions_rev moves
+
+**Id:** 09f74f56-7c6c-4d94-a499-ef804b022f3a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §2.6.5 ("A sign-in is no notification"), §18.2 (`sessions_rev`) and §18.8, contract PR #1331; card tsk-0baaez2895sb, 2026-11-04
+**Revisit when:** the hub pins a sign-in again, or `sessions_rev` stops moving on a session record
+**See:** refresh.md#the-bell-pins-the-unread-security-alerts-and-mark-all-read-takes-them-only-after-asking — 643600cd-dd61-4291-85d7-025e322f4c81 — as of 2026-11-04
+**See:** views.md#sessions-say-what-this-session-may-not-do-and-a-sign-in-is-confirmed-by-its-own-call — 0d50b2d4-2841-4510-a204-90d3aa574927 — as of 2026-11-04
+
+What the earlier entry says about the pinned block and Mark all read stands for the
+security alerts the hub still pins: an address change, a second factor, forge access.
+Each gets **Mark read** where this session may mark it, and Mark all read asks first and
+sends `include_security: true`. A sign-in is in none of it: the pinned block has no
+**This was me**, and nothing in the bell links to a session. The Notifications page shows
+a small "Current sessions" box instead: the active sessions, newest first, five and a
+count of the rest, this session and the unconfirmed ones marked, a link to Profile →
+Sessions, no buttons. It reads `GET /auth/sessions` when the page opens and again only
+when `sessions_rev` in a counts answer differs from the value it last read with; the
+mail sign-in banner is redrawn on the same change.
+
+**Reason:** the contract makes a sign-in no notification, so a pinned sign-in with a
+confirm button would show something the hub no longer sends. `sessions_rev` is the one
+signal the counts already carry that a session began or ended; reading the session list
+on every counts round would cost a request each 15 seconds for an answer that rarely
+changes.
+
+**Rejected alternatives:** reading the sessions on every counts round: it works without
+`sessions_rev`, at one more request per round per tab. Keeping **This was me** in the
+box: the maintainer asked for a small field that shows, not one that acts; confirming
+stays in Profile → Sessions and on the banner.
 
 ## A device code is followed with wait=0 every 2 seconds on both devices, not with its long-poll
 
