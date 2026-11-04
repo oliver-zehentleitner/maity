@@ -709,7 +709,7 @@ land on another pod.
 **Type:** decision
 **Status:** open
 **Evidence:** inferred
-**Source:** the card (k6 or locust, target numbers), the maintainer's internal deployment planning (2026-10-30) (a staging address, 1, 2 and 4 pods; the run sets node pool, HPA target, database size and pool size), `hub/tests/test_load.py` (statement-count load tests of the bell), the request signature (HMAC-SHA256 over a canonical string, `auth/credentials.py:101`); the maintainer's answers to req-6cw5xwfpyeva (production, throwaway accounts) and req-gjzkcdtbg7t2 (a second confirmation for production), and req-3efa9j1v8ez2 (purge deletes every row), and req-zx1nhgy5r6ab (a second balancer for the run)
+**Source:** the card (k6 or locust, target numbers), the maintainer's internal deployment planning (2026-10-30) (a staging address, 1, 2 and 4 pods; the run sets node pool, HPA target, database size and pool size), `hub/tests/test_load.py` (statement-count load tests of the bell), the request signature (HMAC-SHA256 over a canonical string, `auth/credentials.py:101`); the maintainer's answers to req-6cw5xwfpyeva (production, throwaway accounts) and req-gjzkcdtbg7t2 (a second confirmation for production), and req-3efa9j1v8ez2 (purge deletes every row), and req-zx1nhgy5r6ab (a second balancer for the run); card tsk-ch8nt5dfgmp7 (reserving `lt-<digits>` for the load-test accounts)
 **Revisit when:** the maintainer gives a concurrency or traffic figure that replaces the assumptions below
 
 **Tool: k6.** It holds tens of thousands of concurrent long-polls per load generator cheaply,
@@ -764,6 +764,21 @@ both, and takes the host as `run.js` does: a trailing dot is refused, since `mai
 production and would otherwise have passed as a test system's name (found in the review). Twice
 means the same host and port as reached (`https://a` and `https://a:443`); another port on one
 host stays another target, as a test system's pods may be port-forwards on one machine.
+
+Changed on 2026-11-04: the prefix is now reserved. The lead (@lotse) approved the plan on card
+tsk-ch8nt5dfgmp7. A person or an organisation may not take a handle of the form `lt-` followed by
+digits. The pattern is not in `RESERVED_FIRST`, because that list is also read by the robots file
+(`routes/seo.py`), the join host (`join_host.py`) and the migration's holder check
+(`namespace.py`), and a load-test handle is not a path word. An agent's handle is not held to the
+pattern, because an agent's handle is not an address (docs/api.md §6.24). The seed still creates
+`lt-<n>` by writing the rows itself, not through the check that refuses the handle. `purge` still
+requires the password marker, for accounts made before the reservation. Whoever already holds such
+a handle keeps it: nothing is migrated or renamed. `maity-hub migrate` names no holder of one,
+because it would name the seed accounts themselves and stop. An id may take its own alias of that
+form back (§6.24): the reservation stops a new claimant, so the load-test check is skipped when
+the handle is already that id's alias and a holder who renamed away is not stuck. A word of
+`RESERVED_FIRST` is still refused on the way back.
+
 The 60 000 held connections are spread over several generator pods with their own source
 addresses: one source address has about 64 000 ephemeral ports, and the run must measure the
 hub, not the generator's port exhaustion.

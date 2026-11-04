@@ -783,8 +783,17 @@ SUPERVISED_ALL_WAKES = frozenset({"state_changed", "policy_changed", "rules_chan
 ADDRESSING_CHANGES = frozenset({"reports_to", "owner_id"})
 
 
+# Readable by everyone through `all`, but woken only through their other tokens: a linked
+# issue's new title or a commit's checks are something the board shows; the holder is woken
+# by `member:` when the state changed or `ahead` turned `true` (§8.2, §6.13).
+ALL_READS_ONLY = frozenset({"link_observed"})
+
+
 def _wakes_everyone(row: Any) -> bool:
-    """`all` in the audience wakes, except on a `member_updated` that moves no address."""
+    """`all` in the audience wakes, except on a kind in ALL_READS_ONLY and on a
+    `member_updated` that moves no address."""
+    if row.kind in ALL_READS_ONLY:
+        return False
     if row.kind != "member_updated":
         return True
     payload = row.payload or {}

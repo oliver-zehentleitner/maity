@@ -32,6 +32,18 @@ def test_the_reserved_first_segments_are_the_contracts() -> None:
     assert frozenset(listed) == paths.RESERVED_FIRST
 
 
+def test_the_load_test_handle_pattern_is_the_contracts() -> None:
+    """The sentence next to the reserved-words list is the pattern in the code."""
+    section = re.sub(r"\s+", " ", _section())
+    found = re.search(
+        r"form `([^`]+)` followed by digits is reserved too, "
+        r"for the load-test accounts \(`maity-hub loadtest seed`\)",
+        section,
+    )
+    assert found is not None
+    assert paths.LOADTEST_HANDLE.pattern == found.group(1) + "[0-9]+"
+
+
 def test_every_project_view_the_contract_names_is_reserved_as_a_slug() -> None:
     section = _section()
     row = next(

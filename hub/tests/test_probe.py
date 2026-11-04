@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, insert, select, update
 
-from maity_hub import clock, forge, probe
+from maity_hub import clock, events, forge, probe
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from tests import flow
@@ -147,7 +147,7 @@ def test_a_pull_request_read_has_the_contract_shape(owner: flow.Human, github: F
     github.pull(3)
     body = owner.get("/projects/maintainer/maity/probe?pr=3").json()
     assert (body["forge"], body["repository"], body["fresh"]) == ("github", "acme/maity", True)
-    assert (body["branch"], body["tag"]) == (None, None)
+    assert (body["branch"], body["tag"], body["commit"]) == (None, None, None)
     assert body["pr"] == {
         "number": 3,
         "found": True,
@@ -160,6 +160,7 @@ def test_a_pull_request_read_has_the_contract_shape(owner: flow.Human, github: F
         "mergeable": "mergeable",
         "checks": "success",
         "checks_detail": [{"name": "ci / sqlite", "status": "success"}],
+        "required_check": None,
         "merged_at": None,
         "merge_sha": None,
     }
@@ -302,7 +303,7 @@ def test_an_unanswering_forge_is_probe_unavailable_with_the_last_observation(
 
 def test_a_probe_read_needs_a_ref(owner: flow.Human, github: FakeGitHub) -> None:
     response = owner.get("/projects/maintainer/maity/probe")
-    assert response.json()["error"]["details"]["fields"] == {"pr": "one_of_pr_branch_tag"}
+    assert response.json()["error"]["details"]["fields"] == {"pr": "one_of_pr_branch_tag_commit"}
     assert (
         owner.get("/projects/maintainer/maity/probe?branch=a%20b").json()["error"]["code"]
         == "invalid"
@@ -1079,3 +1080,337 @@ def test_a_merge_round_goes_on_past_a_project_no_source_covers(
     monkeypatch.setattr(probe, "announce_merges", announce)
     probe.merge_sweep(migrated, READER)
     assert sorted(seen) == sorted(projects)
+
+
+# --- the required check (§6.1, §6.6) and `?commit=` (§11) ----------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("runs", "status"),
+    [
+        ([("ci-ok", "success")], "success"),
+        ([("ci-ok", "skipped")], "failure"),
+        ([("ci-ok", "neutral")], "failure"),
+        ([("ci-ok", "timed_out")], "failure"),
+        ([("ci-ok", "cancelled")], "cancelled"),
+        ([("ci-ok", None)], "pending"),
+        ([("ci-ok", "success"), ("ci-ok", "cancelled")], "cancelled"),
+        ([("ci-ok", "cancelled"), ("ci-ok", None)], "pending"),
+        ([("ci-ok", None), ("ci-ok", "failure")], "failure"),
+        ([("ci / sqlite", "success")], "missing"),
+    ],
+)
+def test_the_required_check_takes_the_worst_of_its_name(
+    runs: list[tuple[str, str | None]], status: str
+) -> None:
+    detail = [{"name": n, "status": r or "pending"} for n, r in runs]  # as `checks()` reads them
+    assert forge.required_check("ci-ok", "success", detail) == {"name": "ci-ok", "status": status}
+
+
+def test_the_required_check_is_unknown_on_a_partial_read_and_null_without_a_name() -> None:
+    """§11.4: never `missing` from a read that did not see every check."""
+    assert forge.required_check("ci-ok", "unknown", []) == {"name": "ci-ok", "status": "unknown"}
+    assert forge.required_check(None, "success", [{"name": "ci-ok", "status": "success"}]) is None
+
+
+def _name_the_check(owner: flow.Human, name: str | None) -> None:
+    named = owner.patch(
+        "/projects/maintainer/maity", {"repository": {**REPO, "required_check": name}}
+    )
+    assert named.status_code == 200, named.text
+
+
+def test_a_pull_request_read_carries_the_required_check(
+    owner: flow.Human, github: FakeGitHub
+) -> None:
+    _name_the_check(owner, "ci / sqlite")
+    github.pull(3)
+    body = owner.get("/projects/maintainer/maity/probe?pr=3").json()
+    assert body["pr"]["required_check"] == {"name": "ci / sqlite", "status": "success"}
+    github.answers["/repos/acme/maity/pulls/4"] = None
+    missing = owner.get("/projects/maintainer/maity/probe?pr=4").json()
+    assert missing["pr"] == {"number": 4, "found": False}
+
+
+def _commit(github: FakeGitHub, sha: str, runs: list[tuple[str, str | None]]) -> None:
+    github.answers[f"/repos/acme/maity/git/commits/{sha}"] = {"sha": sha}
+    github.runs(sha, runs)
+
+
+def test_a_commit_read_has_the_contract_shape(
+    owner: flow.Human, github: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(probe, "FORCED_FLOOR", 0)  # the floor has its own test
+    _name_the_check(owner, "ci-ok")
+    _commit(github, SHA, [("ci-ok", "success"), ("lint", None)])
+    github.branch("main", head=OTHER)
+    body = owner.get(f"/projects/maintainer/maity/probe?commit={SHA.upper()}").json()
+    assert (body["pr"], body["branch"], body["tag"]) == (None, None, None)
+    assert body["commit"] == {
+        "sha": SHA,
+        "found": True,
+        "checks": "pending",
+        "checks_detail": [
+            {"name": "ci-ok", "status": "success"},
+            {"name": "lint", "status": "pending"},
+        ],
+        "required_check": {"name": "ci-ok", "status": "success"},
+        "branch_head_sha": OTHER,
+        "ahead": True,
+    }
+    github.branch("main", head=SHA)
+    again = owner.get(f"/projects/maintainer/maity/probe?commit={SHA}&max_age=0").json()
+    assert (again["commit"]["branch_head_sha"], again["commit"]["ahead"]) == (SHA, False)
+
+
+def test_a_commit_the_forge_does_not_have_is_found_false_and_reads_no_branch(
+    owner: flow.Human, github: FakeGitHub
+) -> None:
+    github.answers[f"/repos/acme/maity/git/commits/{OTHER}"] = forge.ForgeUnavailableError(
+        "No commit found for SHA", status=422
+    )
+    body = owner.get(f"/projects/maintainer/maity/probe?commit={OTHER}").json()
+    assert body["commit"] == {"sha": OTHER, "found": False}
+    assert not any("/branches/" in call for call in github.calls)
+
+
+@pytest.mark.parametrize("sha", ["abc1234", SHA + "0", "g" * 40])
+def test_a_commit_that_is_no_full_sha_is_invalid(
+    owner: flow.Human, github: FakeGitHub, sha: str
+) -> None:
+    response = owner.get(f"/projects/maintainer/maity/probe?commit={sha}")
+    assert response.status_code == 400
+    assert response.json()["error"]["details"]["fields"] == {"commit": "not_a_sha"}
+    assert github.calls == []
+
+
+def test_a_refused_branch_reads_as_null_and_a_spent_budget_drops_the_commit_read(
+    owner: flow.Human, github: FakeGitHub
+) -> None:
+    """§6.13: refused without the budget being spent, `branch_head_sha`/`ahead` are null,
+    never `false`; a spent budget drops the read as a whole."""
+    _commit(github, SHA, [("ci-ok", "success")])
+    branch = "/repos/acme/maity/branches/main"
+    github.answers[branch] = forge.ForgeUnavailableError("refused", status=403)
+    body = owner.get(f"/projects/maintainer/maity/probe?commit={SHA}").json()
+    assert (body["commit"]["branch_head_sha"], body["commit"]["ahead"]) == (None, None)
+    github.answers[branch] = forge.ForgeUnavailableError("later", status=403, rate_limited=True)
+    _commit(github, OTHER, [("ci-ok", "success")])
+    dropped = owner.get(f"/projects/maintainer/maity/probe?commit={OTHER}")
+    assert dropped.status_code == 503
+    assert dropped.json()["error"]["code"] == "probe_unavailable"
+
+
+def _checked_card(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> tuple[Any, str]:
+    """A reported card whose last observation told its holder `ci-ok: success`."""
+    _name_the_check(owner, "ci-ok")
+    github.pull(7)
+    github.runs(SHA, [("ci-ok", "success")])
+    github.branch("agent-b/probe")
+    agent, card_id = _reported_card(owner, make_client)
+    assert probe.observe_report(migrated, READER, card_id) is True
+    [told] = _reported_events(migrated, card_id)
+    assert told.audience and told.payload["observed"]["required_check"] == {
+        "name": "ci-ok",
+        "status": "success",
+    }
+    return agent, card_id
+
+
+def test_a_required_check_status_change_wakes_the_holder(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """§6.6: a skipped run leaves the summary `success`; the required check fails."""
+    _, card_id = _checked_card(owner, make_client, migrated, github)
+    github.runs(SHA, [("ci-ok", "skipped")])
+    assert probe.observe_report(migrated, READER, card_id, max_age=0) is True
+    _, changed = _reported_events(migrated, card_id)
+    assert changed.payload["observed"]["checks"] == "success"
+    assert changed.payload["observed"]["required_check"]["status"] == "failure"
+    assert changed.audience != []
+
+
+def test_a_renamed_required_check_wakes_nobody_whatever_its_status(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """spq4's P3 on #1295: a rename with a status change is no news from the forge; a later
+    status change under the new name is."""
+    _, card_id = _checked_card(owner, make_client, migrated, github)
+    _name_the_check(owner, "ci / sqlite")  # its status: `missing`
+    assert probe.observe_report(migrated, READER, card_id, max_age=0) is True
+    _, renamed = _reported_events(migrated, card_id)
+    assert renamed.payload["observed"]["required_check"] == {
+        "name": "ci / sqlite",
+        "status": "missing",
+    }
+    assert renamed.audience == []
+    github.runs(SHA, [("ci-ok", "success"), ("ci / sqlite", "success")])
+    assert probe.observe_report(migrated, READER, card_id, max_age=0) is True
+    *_, now_success = _reported_events(migrated, card_id)
+    assert now_success.payload["observed"]["required_check"]["status"] == "success"
+    assert now_success.audience != []  # the same name as the last observation: news
+
+
+def test_a_required_check_cleared_or_named_first_wakes_nobody(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    _, card_id = _checked_card(owner, make_client, migrated, github)
+    _name_the_check(owner, None)
+    assert probe.observe_report(migrated, READER, card_id, max_age=0) is True
+    _, cleared = _reported_events(migrated, card_id)
+    assert cleared.payload["observed"]["required_check"] is None
+    assert cleared.audience == []
+    _name_the_check(owner, "ci-ok")  # named again, as the last told: nothing new either
+    github.runs(SHA, [("ci-ok", "success"), ("lint", "success")])
+    _name_the_check(owner, "lint")  # a first name the readers were never told
+    assert probe.observe_report(migrated, READER, card_id, max_age=0) is True
+    *_, first = _reported_events(migrated, card_id)
+    assert first.payload["observed"]["required_check"] == {"name": "lint", "status": "success"}
+    assert first.audience == []
+
+
+def test_a_required_check_renamed_back_is_compared_with_the_last_observation(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """nyh5's P2 on #1306: A, B, A again; the baseline is the last stored observation, so the
+    second rename is a silent new baseline too, whatever the status under A meanwhile."""
+    _, card_id = _checked_card(owner, make_client, migrated, github)
+    _name_the_check(owner, "lint")
+    github.runs(SHA, [("ci-ok", "success"), ("lint", "success")])
+    assert probe.observe_report(migrated, READER, card_id, max_age=0) is True
+    github.runs(SHA, [("ci-ok", "skipped"), ("lint", "success")])
+    _name_the_check(owner, "ci-ok")
+    assert probe.observe_report(migrated, READER, card_id, max_age=0) is True
+    *_, back = _reported_events(migrated, card_id)
+    assert back.payload["observed"]["required_check"] == {"name": "ci-ok", "status": "failure"}
+    assert back.audience == []
+
+
+def test_a_status_change_after_a_rename_and_a_new_report_wakes_the_holder(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """e5kk's P2 on #1306: after a silent rename and a new report, the first status change
+    under the new name is news, also on the first read for the new report: compared with the
+    last observation whatever its audience, not with the last one told."""
+    agent, card_id = _checked_card(owner, make_client, migrated, github)
+    _name_the_check(owner, "lint")
+    github.runs(SHA, [("ci-ok", "success"), ("lint", "success")])
+    assert probe.observe_report(migrated, READER, card_id, max_age=0) is True
+    _report_again(agent, card_id)  # `report.observed` is null again
+    github.runs(SHA, [("ci-ok", "success"), ("lint", "skipped")])  # the summary stays
+    assert probe.observe_report(migrated, READER, card_id, max_age=0) is True
+    *_, failed = _reported_events(migrated, card_id)
+    assert failed.payload["observed"]["checks"] == "success"
+    assert failed.payload["observed"]["required_check"] == {"name": "lint", "status": "failure"}
+    assert failed.audience != []
+
+
+def test_a_commit_read_is_stored_whole_or_not_at_all(owner: flow.Human, github: FakeGitHub) -> None:
+    """e5kk's P1 on #1306: a branch read refused by a spent budget stores no commit row,
+    so no later read finds a commit observation without `branch_head_sha`/`ahead`."""
+    _commit(github, SHA, [("ci-ok", "success")])
+    branch = "/repos/acme/maity/branches/main"
+    github.answers[branch] = forge.ForgeUnavailableError("later", status=403, rate_limited=True)
+    dropped = owner.get(f"/projects/maintainer/maity/probe?commit={SHA}")
+    assert dropped.status_code == 503
+    assert "last" not in dropped.json()["error"]["details"]
+    github.answers.pop(branch)
+    github.branch("main", head=OTHER)
+    body = owner.get(f"/projects/maintainer/maity/probe?commit={SHA}").json()
+    assert (body["commit"]["branch_head_sha"], body["commit"]["ahead"]) == (OTHER, True)
+
+
+def test_the_last_commit_observation_on_a_spent_budget_has_the_contract_shape(
+    owner: flow.Human, github: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """e5kk's P1 on #1306: `details.last` is the §6.13 shape, not the stored row."""
+    monkeypatch.setattr(probe, "FORCED_FLOOR", 0)
+    _name_the_check(owner, "ci-ok")
+    _commit(github, SHA, [("ci-ok", "success")])
+    github.branch("main", head=OTHER)
+    first = owner.get(f"/projects/maintainer/maity/probe?commit={SHA}").json()["commit"]
+    for path in [p for p in github.answers if SHA in p or p.endswith("/branches/main")]:
+        github.answers[path] = forge.ForgeUnavailableError("later", status=403, rate_limited=True)
+    dropped = owner.get(f"/projects/maintainer/maity/probe?commit={SHA}&max_age=0")
+    assert dropped.status_code == 503
+    last = dropped.json()["error"]["details"]["last"]
+    assert {k: v for k, v in last.items() if k != "observed_at"} == first
+
+
+def test_review_last_preserves_complete_refused_branch(
+    owner: flow.Human, github: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """nyh5's P2 on #1306: a branch refused without a spent budget is a complete answer with
+    `branch_head_sha`/`ahead` null. `details.last` is that answer, not the commit joined with
+    an older branch read the refusal left in the cache."""
+    monkeypatch.setattr(probe, "FORCED_FLOOR", 0)
+    _name_the_check(owner, "ci-ok")
+    _commit(github, SHA, [("ci-ok", "success")])
+    github.branch("main", head=SHA)
+    first = owner.get(f"/projects/maintainer/maity/probe?commit={SHA}").json()["commit"]
+    assert (first["branch_head_sha"], first["ahead"]) == (SHA, False)
+    branch = "/repos/acme/maity/branches/main"
+    github.answers[branch] = forge.ForgeUnavailableError("refused", status=403)
+    refused = owner.get(f"/projects/maintainer/maity/probe?commit={SHA}&max_age=0")
+    assert refused.status_code == 200, refused.text
+    second = refused.json()["commit"]
+    assert (second["branch_head_sha"], second["ahead"]) == (None, None)
+    commit = f"/repos/acme/maity/git/commits/{SHA}"
+    github.answers[commit] = forge.ForgeUnavailableError("later", status=403, rate_limited=True)
+    dropped = owner.get(f"/projects/maintainer/maity/probe?commit={SHA}&max_age=0")
+    assert dropped.status_code == 503
+    last = dropped.json()["error"]["details"]["last"]
+    assert {k: v for k, v in last.items() if k != "observed_at"} == {
+        k: v for k, v in second.items() if k != "observed_at"
+    }
+
+
+def test_review_last_keeps_the_not_found_answer(
+    owner: flow.Human, github: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """dzse's nit on #1306: a commit the forge does not know is a complete answer too, so a
+    later read dropped for a spent budget shows it as `details.last`, not nothing."""
+    monkeypatch.setattr(probe, "FORCED_FLOOR", 0)
+    github.answers[f"/repos/acme/maity/git/commits/{OTHER}"] = None
+    first = owner.get(f"/projects/maintainer/maity/probe?commit={OTHER}").json()["commit"]
+    assert first == {"sha": OTHER, "found": False}
+    commit = f"/repos/acme/maity/git/commits/{OTHER}"
+    github.answers[commit] = forge.ForgeUnavailableError("later", status=403, rate_limited=True)
+    dropped = owner.get(f"/projects/maintainer/maity/probe?commit={OTHER}&max_age=0")
+    assert dropped.status_code == 503
+    last = dropped.json()["error"]["details"]["last"]
+    assert last is not None
+    assert {k: v for k, v in last.items() if k != "observed_at"} == first
+
+
+def test_a_slower_commit_answer_never_replaces_a_newer_kept_one(
+    owner: flow.Human, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """dzse's nit on #1306: an answer read earlier but kept last stays out once a newer
+    answer was kept in between (the check under the project lock in `_kept`, as in `_put`)."""
+    project = _project(migrated)
+    now = clock.now()
+    older = probe.CommitObservation({"sha": SHA, "found": False}, now, True)
+    newer_data = {"sha": SHA, "found": True, "checks": "success", "checks_detail": []}
+    newer = probe.CommitObservation(
+        {**newer_data, "required_check": None, "branch_head_sha": SHA, "ahead": False},
+        now + timedelta(seconds=5),
+        True,
+    )
+    real_transaction = events.transaction
+    raced = [False]
+
+    def newer_kept_first(engine: Engine) -> Any:
+        if not raced[0]:  # the older answer passed the first look; the newer one wins the lock
+            raced[0] = True
+            probe._kept(engine, project, SHA, newer)
+        return real_transaction(engine)
+
+    monkeypatch.setattr(probe, "transaction", newer_kept_first)
+    probe._kept(migrated, project, SHA, older)
+    assert raced[0]
+    last = probe.last_commit(migrated, project, SHA)
+    assert last is not None and last.data["found"] is True
+    assert last.observed_at == newer.observed_at

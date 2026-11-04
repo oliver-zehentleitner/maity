@@ -4,14 +4,15 @@
 
 **Id:** 098ef90f-83b8-4b38-9c21-1e89c086b6db
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's decision on the design synthesis, 2026-10-21
-**Revisit when:** a second forge (GitLab) is needed, or the probe's token handling has to change
+**Verification:** corroborated — re-checked 2026-11-04 after the token handling changed (the next entry: an App installation first, the owner's token second): the probe still reads GitHub only, and its only POSTs are GraphQL queries (`hub/src/maity_hub/forge.py`) and the exchanges that mint a token (`hub/src/maity_hub/github_app.py`: an installation token, the OAuth code); nothing writes a repository's state
+**Revisit when:** a second forge (GitLab) is needed, or the hub is to write to a forge
 
-The hub holds a read-only token for the project's forge (GitHub first)
-and probes pull request state, head SHA, check results, merge time and
-tags. Release readiness is computed from observed state, not from what an
+The hub reads the project's forge (GitHub first) read-only, with the
+grant the next entry chooses, and probes pull request state, head SHA,
+check results, merge time and tags. Release readiness is computed from observed state, not from what an
 agent reported; an agent-typed reference that does not match is shown as
 such. The hub never writes to the forge.
 
@@ -25,27 +26,36 @@ keeping the hub free of any forge dependency and one secret poorer — the
 handover concept's position. Rejected because a release gate that trusts
 descriptions repeats the incident it is meant to prevent.
 
-## The hub reads a repository with its owner's grant: a GitHub App installation first, the owner's token second, the instance token for public repositories only
+## The hub reads a repository with its owner's grant: a GitHub App installation first, the owner's token second, the instance token only for an operator's project with a public repository
 
 **Id:** 4e15dcbb-9bb4-4c14-9193-9aa2b2d3f0f3
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's decision in the project chat, 2026-10-28, on the coordinator's answer about the forge token; contract `docs/api.md` §11.4
-**Revisit when:** a second forge kind comes, organisations become namespace owners (§6.25), or the App's own webhook replaces the per-project one
+**Verification:** corroborated — re-checked 2026-11-04 after organisations became namespace owners: an organisation holds no grant of its own; its project reads with the grants of the organisation owner who confirmed the repository, and nobody's before one did (§11.4, `hub/src/maity_hub/forge_access.py`, the organisation entry linked below). An installation on an organisation account is still refused (`hub/src/maity_hub/forge_links.py`, `organisation_installation`)
+**See:** projects.md#organisations-are-a-second-kind-of-namespace-owner-beside-humans-in-the-same-ownerslug-namespace-their-owners-own-every-project-admins-and-members-only-what-they-are-added-to — 33f520b9-5aaa-4aed-96f4-e90bf3749c56 — as of 2026-11-04
+**See:** https://github.com/oliver-zehentleitner/maity — 6af0bb67-32dd-40df-91df-df1eb03288fc — as of 2026-11-04
+**See:** integrations.md#the-instance-token-serves-only-the-operators-own-namespaces-every-other-project-connects-its-repository-itself — ce611bd9-ef89-43e2-8895-2340f87f6c6e — as of 2026-11-04
+**Revisit when:** a second forge kind comes, an installation on an organisation account is to be accepted, or the App's own webhook replaces the per-project one
 
 A project's forge reads use the first grant that covers its repository:
 the namespace owner's linked installation of the instance's GitHub App,
 then the owner's own stored token, then the instance token, and that
-one only for a repository the forge reports as public. Only the
-namespace owner's grants count for a project, and only for a
+one only for a project in one of the operator's own namespaces and a
+repository the forge reports as public. Only the namespace owner's
+grants count for a project (for an organisation's project, those of the
+owner who confirmed it), and only for a
 repository URL the owner confirmed for it with an explicit call under
 step-up; every URL change and a transfer reset that. Linking an installation checks, with the
 installing user's one-time OAuth authorisation, that the installation's
-account is that user (organisation installations wait for organisation
-namespaces). The owner's token must be fine-grained. Data read through
+account is that user (an installation on an organisation account is
+refused; see the organisation entry for whose grants an organisation's
+project uses). The owner's token must be fine-grained. Data read through
 an owner's grant reaches project readers only, never a page without
-sign-in.
+sign-in, with one exception (§11.4): the bare number of merged pull
+requests on a public page may come from such a read, as long as that read
+found the repository public (the hub entry linked above).
 
 **Reason:** one instance token cannot read the private repositories of
 the people who host projects on an instance, and a token from the
@@ -135,7 +145,7 @@ operator's own projects.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the project lead's decisions on card tsk-d1n4g1sp305j, 2026-11-02, on the coder's plan; the reviews of PR #1295, 2026-11-03 (cancelled, branch reads, wakes, re-runs, PATCH); contract `docs/api.md` §6.1, §6.6, §6.13, §11, §11.4
+**Source:** the project lead's decisions on card tsk-d1n4g1sp305j, 2026-11-02, on the coder's plan; the reviews of PR #1295, 2026-11-03 (cancelled, branch reads, wakes, re-runs, PATCH, a cleared name); card tsk-trxeyz1n78be (the hub implementation) and the reviews of its PR #1306, 2026-11-03 (whole reads, `details.last`, the baseline, the project lock); contract `docs/api.md` §6.1, §6.6, §6.13, §11, §11.4
 **Revisit when:** a deploy needs more than one required check, a second forge kind comes, or the commit links' reads strain a source's budget
 
 "Is the commit we deploy green on its required check, and is it still
@@ -175,9 +185,36 @@ share one cached default-branch read per project and one read per
 linked commit.
 
 A `required_check` that first appears, after the rollout or when a
-project first names its check, or that only changes its name, wakes
-nobody: nothing changed on the forge, and otherwise every holder of an
-open reported card would be woken once.
+project first names its check, that only changes its name, or that is
+cleared to `null`, wakes nobody: nothing changed on the forge, and
+otherwise every holder of an open reported card would be woken once.
+Only a new `status` under the name of the card's last stored
+observation wakes, whatever that observation's audience and also on the
+first observation of a new report: a rename, a rename back to an earlier
+name included, is a silent new baseline (docs/api.md §6.6). Reason: the
+last *told* observation, or the report row, loses its baseline after a
+rename followed by a new report, so a rename back would wake for a
+status nobody saw change, and the first change after it would not.
+
+A commit observation is stored whole or not at all: the commit row is
+written only once the branch read is in too, so a read dropped halfway
+leaves nothing a later round or `details.last` could take for complete.
+The complete answer is kept as it was given (kind `commit_answer` beside
+the commit row), refused-branch nulls included, and `details.last` is
+that answer, not the commit row joined with the branch row: a branch the
+forge refuses leaves the older branch row in place, and the join would
+turn the refusal's `ahead: null` into a definite `ahead`. There is one
+answer row per project and sha, replaced in place, and it goes with the
+project's other observations when the repository changes. A commit
+link's `ahead` that goes to `null` keeps the last known value under
+`_ahead_known`, never shown, so `true`, `null`, `true` wakes once.
+
+The card is read again under the project lock after the forge reads, so
+a card closed or handed over meanwhile is seen: a closed card's commit
+link is skipped, an issue or pull request link on a closed card wakes no
+holder, and the current holder is the one woken. This holds only because
+every path that closes a card or changes its holder takes the project
+lock before writing the card; a new such path must take it too.
 
 **Reason:** a deploy is a moment, not a lifecycle, and it already lives
 on an ordinary card. A link reuses everything a forge link has: the
@@ -210,9 +247,15 @@ not report something false when the forge stops answering.
   predates the field would erase the name with every repository edit.
 - Waking `trust:admin` on `ahead: true`: too many woken for one person's
   decision.
+- Waking on a `required_check` cleared to `null`: the maintainer
+  removed the name on purpose, and every holder of a reported card
+  would be woken for a setting, not for anything on the forge.
 - Keeping the parts of a read that succeeded when the budget ran out
   partway: an `ahead: false` from a stale branch read is false, not
   unknown.
+- Building `details.last` from the separately cached commit and branch
+  rows: after a refused branch read it shows the older branch's head and
+  a definite `ahead` the last complete read could not determine.
 
 ## The Why view's Keep the Why views read whole exports through the hub: the project's family and the repositories it names, one hop, no other fetch path
 
@@ -220,14 +263,14 @@ not report something false when the forge stops answering.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** tsk-nzhv3kgaxmpe (KTW M2), 2026-11-03: the arbiter's constraints on the card (forge reads only, no allow-list of raw or Pages hosts, caps and a shared cache, nothing growing with history per call); the shape of the reads proposed by its implementer in the contract pull request (docs/api.md §11.5) and ruled on by the arbiter: 8 repositories one hop, one 2 MiB cap, `not_in_family` as `not_found`, and named repositories never read with the owner's grant, read with the instance token only for the operator's own projects (the corrected ruling, which withdrew a first one that let the instance token read them for every project)
+**Source:** tsk-nzhv3kgaxmpe (KTW M2), 2026-11-03: the arbiter's constraints on the card (forge reads only, no allow-list of raw or Pages hosts, caps and a shared cache, nothing growing with history per call); the shape of the reads proposed by its implementer in the contract pull request (docs/api.md §11.5) and ruled on by the arbiter: 8 repositories one hop, one 2 MiB cap, `not_in_family` as `not_found`, and named repositories never read with the owner's grant, read with the instance token only for the operator's own projects (the corrected ruling, which withdrew a first one that let the instance token read them for every project); narrowed on 2026-11-03 by the lead's ruling after the review of #1280 (its P3s on §11.5's wording): the instance token reads them only for a project whose own repository it reads, by §11.4's one choice of source
 **Revisit when:** private repositories of other owners are to be read (the card's step 2), or Keep the Why's views need `family`, `memberState` or `resolveEntry`
 
 Keep the Why's views, vendored into the dashboard (web/context/stack.md), ask their host for a repository's published export and for a lean export's entry texts. The hub answers both (§11.5) from the read §11.3 already makes: a `.keep-the-why` through the forge with the grant §11.4 picks, its `dashboard-state:` URL under the outbound rule of §11.1, held in memory, the cache shared with §11.3. It serves the project's own repository and its family, and the public repositories that family names by URL or as a parent, at most 8 and one hop; a repository named only inside an export (a See into another project) is refused as `not_in_family`, and the library shows the reference as not resolved. The library walks a family itself, export by export, so the hub serves one export per call and merges nothing.
 
 **Reason:** the dashboard runs under `default-src 'self'`, so the browser cannot read a forge or a Pages host itself; the hub already reads exactly these files for §11.3 and holds the grant, so the views read through it with no second path and no host trusted for its name. Bounding the repositories by the project's own `.keep-the-why` files keeps the set of reads in the hands of the repository's maintainers, not of whatever an export cites. A named repository is another owner's: it is never read with the project owner's App installation or token, only with the operator's instance token (for the operator's own projects) or without one, and only when public, so no third-party repository is touched with an owner's credentials, and the visibility check stays honest because neither reader sees a private repository on someone's behalf; those reads share the hub-wide budget of their source, not the owner's.
 
-**Rejected alternatives:** the browser reading exports directly, with their hosts in the policy: a `connect-src` that grows with every project's Pages host, and reads the hub cannot cap or cache. A hub proxy that reads whatever URL the library asks for: a second fetch path and a server-side request forgery surface, which the arbiter excluded. Following every repository an export cites: unbounded reads on the owner's grant, and a family that can pull in the forge. A merged family state from the hub: the library already merges, and two implementations of one merge drift. The Keep the Why server's `family`/`memberState` interface: it assumes checkouts on one machine, which the hub does not have. Reading a named public repository with the grant §11.4 picks for the project's own (the rule of the first contract draft): the owner's App installation or token would act on a third party's repository, which the arbiter ruled out; named repositories are read with the instance token only for a project in the operator's own namespaces, and without a token for every other project, which keeps the entry on the instance token's namespaces above as it is. Reading every project's named repositories with the instance token: the arbiter's first ruling, withdrawn the same day, because it would have made the operator's token serve every project's reads against that entry and let any project spend the operator's own budget.
+**Rejected alternatives:** the browser reading exports directly, with their hosts in the policy: a `connect-src` that grows with every project's Pages host, and reads the hub cannot cap or cache. A hub proxy that reads whatever URL the library asks for: a second fetch path and a server-side request forgery surface, which the arbiter excluded. Following every repository an export cites: unbounded reads on the owner's grant, and a family that can pull in the forge. A merged family state from the hub: the library already merges, and two implementations of one merge drift. The Keep the Why server's `family`/`memberState` interface: it assumes checkouts on one machine, which the hub does not have. Reading a named public repository with the grant §11.4 picks for the project's own (the rule of the first contract draft): the owner's App installation or token would act on a third party's repository, which the arbiter ruled out; named repositories are read with the instance token only for a project whose own repository the instance token reads (§11.4: its source is the instance token, `probe_via: instance`: in one of the operator's own namespaces, and no confirmed grant of the owner covers it), and without a token for every other project, the owner's grant never, which keeps the entry on the instance token's namespaces above as it is. Reading every project's named repositories with the instance token: the arbiter's first ruling, withdrawn the same day, because it would have made the operator's token serve every project's reads against that entry and let any project spend the operator's own budget.
 
 ## A listed namespace name nobody has is held for the operator; an alias and the operator's own command are not
 

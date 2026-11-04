@@ -3177,6 +3177,7 @@ window.MAITY_FIXTURES = {
       "lease_seconds": 7200,
       "member_agents": "on",
       "member_agents_max": 3,
+      "on_runner_revoke": "stop",
       "outside_roles": [
         "coder"
       ],
@@ -3193,6 +3194,7 @@ window.MAITY_FIXTURES = {
       "owner_confirmed": false,
       "probe_configured": true,
       "probe_via": "instance",
+      "required_check": "ci-ok",
       "url": "https://github.com/oliver-zehentleitner/maity"
     },
     "rules_version": 7,

@@ -440,7 +440,7 @@ window.Maity = window.Maity || {};
       append(compose,
         parts.composeHead(compose, text, h("label", { for: "chat-text" }, M.tn("group.compose.label", { keys: h("span", { class: "visually-hidden" }, M.t("group.compose.keys", { keys: M.dom.SEND_KEYS })) }))),
         // Only the participants: a group chat resolves a mention against them alone (§8.6).
-        text, M.projectMentionPicker(ctx, text, { allowed: (m) => view.participants.some((p) => p.member_id === m.id), onPick: typedInChat }), hint, files ? files.el : null, parts.actionRow(files, button, meat));
+        text, M.projectMentionPicker(ctx, text, { allowed: (m) => view.participants.some((p) => p.member_id === m.id), onPick: typedInChat }), hint, files ? files.el : null, parts.actionRow(files, button, meat, status));
     }
 
     const heading = h("h2", { class: "group-title", tabindex: "-1" }, titleOf());
@@ -481,7 +481,9 @@ window.Maity = window.Maity || {};
       follow.pill,
       pollStatus.el,
       compose,
-      status.el);
+      // With a composer its status stands in its row of buttons (as in a
+      // direct chat); a read-only chat keeps it below.
+      status.el.parentNode ? null : status.el);
     window.setTimeout(() => {
       parts.fitToScreen(layout);
       follow.open(messages.querySelector(".new-line"));

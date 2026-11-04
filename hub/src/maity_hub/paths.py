@@ -28,11 +28,22 @@ RESERVED_FIRST = frozenset(
 # keep it, so the migration's check of the reserved words does not ask for them.
 MISLEADING_HANDLES = frozenset({"hub", "human", "maity", "system"})
 
+# The load-test seed names its accounts `lt-<n>` and purge deletes them (§16.11). Not a member of
+# `RESERVED_FIRST`: that set is path words, also read by the robots list, the join host and the
+# migration's holder check. An account that already holds one keeps it, and may take that
+# alias back: the reservation stops a new claimant, not the id's own old name.
+LOADTEST_HANDLE = re.compile(r"lt-[0-9]+")
+
 
 def handle_reserved(handle: str, *, of_agent: bool = False) -> bool:
     """Whether nobody may take `handle`: the one check of every path that gives one (§6.25). An
-    agent's handle is no first segment of a path, so only the misleading words hold for it."""
-    return handle in MISLEADING_HANDLES or (not of_agent and handle in RESERVED_FIRST)
+    agent's handle is no first segment of a path, so only the misleading words hold for it.
+    `lt-<digits>` is reserved for a person or an organisation, for the load-test accounts."""
+    if handle in MISLEADING_HANDLES:
+        return True
+    if of_agent:
+        return False
+    return handle in RESERVED_FIRST or LOADTEST_HANDLE.fullmatch(handle) is not None
 
 
 # The views of a project in the dashboard (§16.11): `/<owner>/<slug>/<view>…`. A slug is never

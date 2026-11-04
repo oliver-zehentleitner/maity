@@ -100,10 +100,11 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
   (the dashboard, the HTML join page), `Content-Security-Policy:
   default-src 'self'`; a page the hub renders whole with the product
   line in its head (§16.13: the join page, the mail link pages, the
-  sign-in link page, the `503` page) adds
+  `503` page) adds
   `style-src 'sha256-…'`, the hash of that line's one `<style>` block
   and of no other. The dashboard draws the line with its own stylesheet
-  and sends no hash. The one exception to `no-store` is the images —
+  and sends no hash. The sign-in link page answers with its own policy
+  (§16.7.5). The one exception to `no-store` is the images —
   the logo and banner (§11.2) and the avatars (§6.10) — and the
   attachments (§8.7) and the whole contract (§6.8), which are revalidated
   by `ETag`, and the project
@@ -1636,7 +1637,8 @@ link`. Body:
 public host only (a join host answers it with its `302`, §1.1), with the
 rules of §18.6: the request log masks the token as `…`, an invalid,
 expired or used token is the page that says the link no longer works
-(status `not_found`, never which reason).
+(status `not_found`, never which reason). Both pages stand in the frame
+of the pages without a session (§16.7.5).
 
 | Method | Effect |
 |---|---|
@@ -6007,9 +6009,14 @@ beside it ("head `d91e294` · ci-ok success · 3 min ago"). A change of
 `probe_observed` that wakes as §8.2 says; it never sets `mismatch`. A
 `required_check` that appears for the first time (an observation stored
 before the field existed, or the project first naming a check) or that
-changes only its `name` (a `PATCH` of `repository.required_check`) is
-stored and emitted with an empty audience: it wakes nobody, since
-nothing changed on the forge.
+changes only its `name` (a `PATCH` of `repository.required_check`), and
+one cleared to `null` (the project naming no check anymore), is stored
+and emitted with an empty audience: it wakes nobody, since nothing
+changed on the forge. Only a new `status` under the `name` of the last
+stored observation wakes, whatever that observation's audience and also
+on the first observation for a new report: a rename, a rename back to an
+earlier name included, is a new baseline that later observations are
+compared with.
 
 `revision` is set by the hub: 1 for the card's first report, plus 1 for
 every report that replaces it, including a report on a `done` card
@@ -7267,8 +7274,14 @@ as `success` or `false`. So `required_check.status: success` with
 
 When `ahead` turns `true`, `link_observed` also wakes the card's holder
 (§8.2): whoever deploys learns before the deploy that the commit is no
-longer the branch's head. It wakes nobody else, and an `ahead` that
-stays `true` while the branch moves on does not wake again.
+longer the branch's head, the holder the card has when the read is
+stored. It wakes nobody else, and an `ahead` that stays `true` while the
+branch moves on does not wake again, also across a refused branch read
+(`ahead: null`) in between. A commit read is stored whole or not at all:
+a spent budget during its branch read keeps the last complete
+observation. A card closed while its commit was read gets no
+observation; the one read of an `issue` or `pr` link after a card closed
+is stored and emitted, and wakes nobody.
 
 **URL links** (`kind: url`) are `{kind, url, label?}`: `https` only, at
 most 2048 characters, no user info, a `label` of at most 200 characters
@@ -8701,7 +8714,8 @@ The check holds for every call that gives a handle — registration
 placement that creates a profile (§3.1, §15.5, `handle_taken` at the
 pickup, §15.9) — not only for a rename. The id's own current handle is
 a no-op: `200`, nothing changes, no event. One of the id's own aliases
-may be taken back.
+may be taken back, including a handle of the form `lt-` followed by
+digits (§16.11).
 
 **Aliases.** A rename appends the handle given up to the id's
 `aliases`; a handle taken back leaves the list. The list is in the
@@ -8977,7 +8991,11 @@ registration, `maity-hub owner create`, `POST /orgs` and a rename,
 `invite`; the list is §16.11's. `hub`, `human`, `maity` and `system` are
 `reserved` for every handle, an agent profile's too, since in a by-line
 they would speak for the hub or the reader's human; whoever holds one
-already keeps it.
+already keeps it. A handle of the form `lt-` followed by digits is
+reserved too, for the load-test accounts (`maity-hub loadtest seed`,
+§16.11). Whoever holds one already keeps it, and may take that alias
+back; `maity-hub migrate` does not name them, because the load-test seed
+accounts themselves hold such handles.
 
 **Why one release instead of `v2`.** §1.6 serves a breaking change as
 `v2` next to `v1`. This change is made before the launch, while every
@@ -9918,7 +9936,7 @@ learns its content.
 | `credential_revoked` | the credential's member, `trust:owner` | credential id, `reason` |
 | `credential_in_payload` | the credential's owner, `trust:owner`, `trust:admin` | credential id; never the value |
 | `event_redacted` | the redacted event's own audience, never wider; for a conversation's message the conversation's audience instead: the two parties of a direct one, the current participants of a group chat, in a closed one also its former human participants and the redacting admin (§8.5) | `seq`, `reason`; `note_id` too when a note was redacted (§6.16); `history_id` and `task_id` instead of `seq` when a card history entry was (§6.15) |
-| `probe_observed` | on a report: the holder of the affected card, with `mismatch: true` also `trust:admin`; nobody on a `done` or `cancelled` card without a mismatch or with its pull request merged, and the report keeps `observed` and `mismatch` to read; on the open release: its card's holder, `trust:admin`. Wakes only when something the reader acts on changed: on a report, `observed` without its `observed_at`, or `mismatch`, against the card's last `probe_observed` that reached all of these readers (a new report's first observation included; one that contradicts the new report always wakes), where a `required_check` that appears for the first time or changes only its `name` counts as no change (§6.6); otherwise a report's observation is emitted with an empty audience, for the views that read every event; on the open release, a ref's `found`, `state`, `head_sha`, `checks`, `merged_at` or `sha`, or whether its `mergeable` is `conflicting` — `unknown` and `mergeable` taking turns is stored and wakes nobody | the observation: on a report `{task, observed, mismatch}`, `observed` being `{pr_state, pr_head_sha, checks, required_check, branch_head_sha, observed_at}` (§6.6); on the open release `{task, observations}` |
+| `probe_observed` | on a report: the holder of the affected card, with `mismatch: true` also `trust:admin`; nobody on a `done` or `cancelled` card without a mismatch or with its pull request merged, and the report keeps `observed` and `mismatch` to read; on the open release: its card's holder, `trust:admin`. Wakes only when something the reader acts on changed: on a report, `observed` without its `observed_at`, or `mismatch`, against the card's last `probe_observed` that reached all of these readers (a new report's first observation included; one that contradicts the new report always wakes), where a `required_check` that appears for the first time, changes only its `name` or is cleared to `null` counts as no change (§6.6); otherwise a report's observation is emitted with an empty audience, for the views that read every event; on the open release, a ref's `found`, `state`, `head_sha`, `checks`, `merged_at` or `sha`, or whether its `mergeable` is `conflicting` — `unknown` and `mergeable` taking turns is stored and wakes nobody | the observation: on a report `{task, observed, mismatch}`, `observed` being `{pr_state, pr_head_sha, checks, required_check, branch_head_sha, observed_at}` (§6.6); on the open release `{task, observations}` |
 | `task_merged` | the card's done authority as §6.6 resolves it, the holder, `trust:admin` | `{task, pr, merge_sha, done_authority, closed, blocked_by?}` (§6.6); wakes the done authority only, and nobody when `closed` is true |
 | `placement_created`, `placement_updated` | `runner:<id>` of the placement's runner once the placement is approved (a pending proposal never names the runner), the creator, the owner of the agent profile | `placement_id`, `generation`, `desired`, `harness`, `target`, `approval.status`, `closed_reason`; never `briefing`, `session_hint` or `logs_hint` (§15.10) |
 | `placement_reported` | the creator, the owner of the agent profile | `placement_id`, `state`, `reason`, `detail`, `exit_code`, `observed_generation`, `restarts`, `retry_at` |
@@ -12379,13 +12397,16 @@ The hub serves:
 
 The second kind is never read with the project's owner's grant (§11.4:
 the App installation or the owner's token act on the project's own
-repository alone). For a project in one of the operator's own
-namespaces (§11.4, `MAITY_FORGE_INSTANCE_NAMESPACES`) it is read with
-the instance token (`MAITY_FORGE_GITHUB_TOKEN`), for every other project
-without any token: the instance token serves the operator's projects
-only, here as everywhere. It is read only where the forge reports the
-repository public: a repository the instance token could read although
-it is private is `not_public` all the same. The visibility is read as §11.4 reads it,
+repository alone). For a project whose own repository the instance
+token reads (§11.4: its source is the instance token, `probe_via:
+instance`: in one of the operator's own namespaces,
+`MAITY_FORGE_INSTANCE_NAMESPACES`, and no confirmed grant of the
+owner covers it) it is read with the instance token
+(`MAITY_FORGE_GITHUB_TOKEN`), for every other project without any
+token: the instance token serves the operator's projects only, here as
+everywhere, and §11.4's one choice of source decides which those are.
+It is read only where the forge reports the repository public: a
+repository the instance token could read although it is private is `not_public` all the same. The visibility is read as §11.4 reads it,
 before the first read and on every refresh of its family (at most every `max_age`, below, and
 at least every 600 s whatever `max_age` asks); a
 private one, or one whose visibility cannot be read for any reason but
@@ -12402,8 +12423,8 @@ instance token's, or that of reads without a token — never against an
 owner's grant (§11.4, **Rate limits**; the hub keeps one budget per
 source, shared by its serving processes where its database is
 PostgreSQL). Without a token GitHub allows 60 reads an hour per egress
-address: a project outside the operator's namespaces that names large
-families will see some of them answered `probe_unavailable` until the
+address: a project whose named repositories are read without a token
+(above) and that names large families will see some of them answered `probe_unavailable` until the
 budget is back, and the cache only spreads those reads, it does not
 remove them. A spent budget, whenever it is found, is
 `probe_unavailable` with `details.retry_at`, never `not_public`; what the
@@ -15802,9 +15823,14 @@ is. `registration`, the settings of §16.4, stays a part of its own.
 The maintainer's decision of 2026-11-02 (`context/scope.md`): every page
 a visitor sees without a session has one header and one footer, the
 landing page's, from one source. That is the landing page, the legal
-pages (§16.7.1) and the dashboard's `/login` and `/register` (§16.7.4).
-The hub renders the first two itself; the dashboard draws the other two
-in the app shell. So the hub computes the frame once, as a model: it
+pages (§16.7.1), the sign-in link's page `/mail/sign-in/{token}` with the
+page for a link that no longer works (§2.6.3), and the dashboard's
+`/login` and `/register` (§16.7.4).
+The dashboard's sign-in stands in the frame wherever it is drawn without
+a session, not only at `/login`: at the root after a sign-out, and at an
+address of the app opened without a session that has no stored public
+page (§16.9). The hub renders the first three itself; the dashboard draws
+the others in the app shell. So the hub computes the frame once, as a model: it
 renders its own pages from that model, and hands the same model to the
 dashboard. The rules stay in one place: which sections are a link, which
 legal pages exist, which social link a column above already has.
@@ -15819,9 +15845,10 @@ one language, chosen as the landing page's is: `lang` if the landing page
 has it, else the best match of `Accept-Language` among the landing page's
 languages, else its `default_language`. While the landing page is
 disabled, `lang` if it is one of §16.7's languages, else the best match of
-`Accept-Language` among them, else `en`. An unknown `lang` is no error. A label from the operator's page is in that
-page's language; every other word (sign in, register, the column titles,
-the legal pages' names) comes from the hub's catalogue in `language`.
+`Accept-Language` among them, else `en`. An unknown `lang` is no error.
+A label from the operator's page is in that page's language; every other
+word (sign in, register, the column titles, the legal pages' names) comes
+from the hub's catalogue in `language`.
 
 ```json
 { "language": "de",
@@ -15888,6 +15915,19 @@ the legal pages' names) comes from the hub's catalogue in `language`.
   does not exist (`not_found`). During a maintenance window it answers
   `503 maintenance` like every call §16.12 does not name; the dashboard
   then draws the sign-in and sign-up pages without the frame (§16.7.4).
+- **The sign-in link's page.** `/mail/sign-in/{token}` (§2.6.3) stands in
+  the model's header and footer around the door of `public-pages.css`,
+  its panel empty, in the human's interface language (§6.2); the page
+  for a link that no longer works is in the best match of
+  `Accept-Language` among §16.7's languages, else `en`. Its footer has no
+  language switch (`languages` is `[]`): the page's language is the
+  person's, not the address's, and the address holds the token. The page
+  has no script; its policy is `default-src 'none'`, the hub's own
+  stylesheets, fonts and images and the fallback style by its hash,
+  `form-action 'self'`, `base-uri 'none'`
+  and `frame-ancestors 'none'`, with `Referrer-Policy: no-referrer`.
+  Registration's link page (§2.7.1) and the other `/mail/…` pages
+  (§18.6) stay outside the frame, with the product line (§16.13).
 
 ### 16.8 Abuse reports
 
@@ -16697,7 +16737,11 @@ rename. The list:
 
 `components`, `health` and `imprint` name no route today and are
 reserved so that they stay free for one (a component gallery, a health
-page, an English imprint address).
+page, an English imprint address). A handle of the form `lt-` followed
+by digits is reserved too, for the load-test accounts (`maity-hub
+loadtest seed`). Whoever holds one already keeps it, and may take that
+alias back (§6.24); `maity-hub migrate` does not name them, because the
+load-test seed accounts themselves hold such handles.
 
 One-letter segments (`r`) and names with a dot (`robots.txt`,
 `sitemap.xml`) cannot be handles anyway (§6.24's syntax). A release that adds a first segment adds it to
@@ -16712,7 +16756,9 @@ that `/<owner>/<word>` stays free for pages of an owner's own.
 alias, a slug or a project alias already holds does not migrate:
 `maity-hub migrate` refuses and names each holder to the operator, who
 renames it first, as the namespace migration did (§6.25). A hub started
-past it logs the holders and runs.
+past such a release logs the holders and runs. A handle of the form
+`lt-` followed by digits is not such a word: whoever holds one already
+keeps it, and migrate does not name them (above).
 
 **Every address the hub writes** is a path of this section on
 `MAITY_PUBLIC_URL`, never a fragment: invitation URLs (§3.4), the
@@ -16945,18 +16991,23 @@ back to the English sentence.
 
 | Page | Line |
 |---|---|
-| every page the dashboard draws (`web/`): the signed-in views, `/login`, `/register`, the invitation and enrolment steps, the full maintenance page (§16.12); also `/explore` and a public address (§16.9) while the hub answers it with the app shell, as it does for one with no stored page | yes |
+| every page the dashboard draws (`web/`): the signed-in views, the sign-in and `/register` where the frame of §16.7.5 does not stand, the invitation and enrolment steps, the full maintenance page (§16.12); also `/explore` and a public address (§16.9) while the hub answers it with the app shell, as it does for one with no stored page | yes |
 | the hub's `503 maintenance` page (§16.12) | yes |
-| the pages behind the links in mails, `/mail/…` (§2.6.3, §2.7.1, §2.9, §18.6) | yes |
+| the pages behind the links in mails, `/mail/…` (§2.7.1, §2.9, §18.6), except the sign-in link's | yes |
+| the sign-in link's page `/mail/sign-in/{token}` and its page for a link that no longer works (§2.6.3), in the frame of §16.7.5 | no: the frame's footer |
 | the join page in a browser, `/join/{token}` as HTML on either host (§3.2), below its own note | yes |
 | the join page for an agent, the Markdown answer (§3.2) | no |
 | the landing page and its variants (§16.7, §16.7.2), the legal pages (§16.7.1), and their previews for an admin (§16.7, §16.7.1) | no: the operator's site, with the operator's footer |
 | `/explore` and the stored public pages (§16.9), as the hub answers them from what it stored | no |
 
-On `/login` and `/register` the line comes after the frame of §16.7.5,
-below the landing page's footer. It does not depend on the frame: a page
-drawn without it (a failed `GET /site/chrome`, a maintenance window)
-still ends with the line.
+The sign-in link's page is the hub's own page in that frame, so it has
+no line either. Where the dashboard draws the sign-in or `/register`
+without a session, the frame of §16.7.5 has the landing page's footer,
+and it stands in the line's place: while the frame stands, and while
+such a drawing waits for its `GET /site/chrome`, the page has no line
+(the maintainer's decision req-5k1gvfsmcg9k, 2026-11-03). A page drawn
+without the frame (a failed `GET /site/chrome`, a model without header
+or footer, a maintenance window) ends with the line.
 
 **How it looks.** At the end of the page's content, never sticky or
 fixed, so it takes no room on a phone. Small and muted. At phone width it
@@ -16966,8 +17017,8 @@ language is longer, never scrolling sideways.
 **Beyond the decision.** The card leaves these open, and the contract
 settles them: the line is centred, the year's icon is decorative, the
 links carry no query of their own, the icons' accessible names are
-`GitHub` and `Maity`, and on `/login` and `/register` the line comes below
-the frame of §16.7.5.
+`GitHub` and `Maity`, and under the signed-out sign-in the frame of §16.7.5
+stands in its place (above, since req-5k1gvfsmcg9k).
 
 ## 17. The change ticker
 

@@ -13,6 +13,8 @@ fenced code and links whose target passes `landing.safe_target`.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import re
 from collections.abc import Iterable
 from html import escape, unescape
@@ -922,6 +924,71 @@ def legal_document(
         head=head,
         body=body,
         languages=languages,
+        style="" if all(sheets) else STYLE,
+    )
+
+
+# A door page (below) has no script and no inline style but the fallback when the landing
+# page's stylesheets are missing; its policy allows exactly that fallback by its hash. The
+# token of a mail link is in the address, so the page posts only to itself and is never framed.
+DOOR_CSP = (
+    "default-src 'none'; style-src 'self' 'sha256-"
+    + base64.b64encode(hashlib.sha256(STYLE.encode()).digest()).decode()
+    + "'; font-src 'self'; img-src 'self'; form-action 'self'; base-uri 'none'; "
+    "frame-ancestors 'none'"
+)
+
+
+def door_document(
+    *,
+    lang: str,
+    title: str,
+    content: str,
+    setting: dict[str, Any],
+    legal: dict[str, Any],
+    stats: dict[str, Any] | None,
+    accept_language: str | None,
+) -> str:
+    """A page a mail link opens, in the frame of the pages without a session (§16.7.5): the
+    landing page's header and footer, between them the door of `public-pages.css` (the dark
+    panel with its art, the form's column with `content`), as the dashboard draws `/login`.
+    No product line: the frame's footer stands in its place, as on the framed `/login`
+    (req-5k1gvfsmcg9k). The footer has no language switch, since the page's language is the
+    person's, not the address's. `content` is HTML of escaped text and elements."""
+    model = chrome(setting, legal, lang=lang, accept_language=accept_language, stats=stats)
+    model["footer"]["languages"] = []
+    nav = "".join(
+        f'<a href="{escape(item["href"], quote=True)}">{escape(item["label"])}</a>'
+        for item in model["header"]["nav"]
+    )
+    cta = _button(model["header"]["cta"], "btn-primary") if model["header"]["cta"] else ""
+    header, footer = _site_header(model, nav, cta, None), _landing_footer(model, on_landing=False)
+    # The mark without its style attributes, which the policy would block: public-pages.css
+    # colours it (`.site-header .mark rect`, …), as on the dashboard's framed pages.
+    mark = landing_files.svg("mark.svg")
+    header = header.replace(mark, re.sub(r'\s+style="[^"]*"', "", mark), 1)
+    if model["language"] != lang:  # the frame's words are in a language the landing page has
+        header = header.replace("<header ", f'<header lang="{escape(model["language"])}" ', 1)
+        footer = footer.replace("<footer ", f'<footer lang="{escape(model["language"])}" ', 1)
+    # The panel without a pitch, as the dashboard draws it for its own pages of this kind
+    # (web/js/auth-pages.js, door()): public-pages.css shows the art large, and hides the panel
+    # at phone width.
+    body = (
+        header + '<main><div class="door-page">'
+        '<aside class="door-panel" aria-hidden="true"></aside>'
+        f'<section class="door-form"><div>{content}</div></section></div></main>' + footer
+    )
+    sheets = [landing_files.url("landing.css"), landing_files.url("public-pages.css")]
+    head = "".join(
+        f'<link rel="stylesheet" href="{escape(sheet, quote=True)}">' for sheet in sheets if sheet
+    )
+    return _document(
+        lang=lang,
+        title=title,
+        description="",
+        head=head,
+        body=body,
+        languages=[],
         style="" if all(sheets) else STYLE,
     )
 

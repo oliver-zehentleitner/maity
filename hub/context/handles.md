@@ -85,8 +85,9 @@ is minutes long, not for a window of a day.
 `handle_alias` is in `DELETION_KEEPS` and left out of the export. The deleted
 human's row stays with its id, so its aliases stay with it and stay taken: the
 old names must never come to mean someone else. An agent profile's aliases go
-the other way, with the profile (`handles.retire`, called by `delete_profile`),
-because a tombstoned profile frees its handle for the same owner (§6.3).
+the other way, with the profile (`handles.retire`, called by `DELETE /agents/{id}`
+after `delete_profile`; the account's deletion does not retire them, since its scope
+goes with it), because a tombstoned profile frees its handle for the same owner (§6.3).
 
 **Reason:** the two rules of §2.9 and §6.24 meet here; keeping the human's
 aliases is the reading that breaks neither. Not asked of the coordinator.
