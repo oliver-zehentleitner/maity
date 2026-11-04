@@ -252,13 +252,14 @@ rm mail-signing-key smtp-password   # keep secret-key outside the cluster, then 
 A new `secret-key` leaves everything sealed with the old one unreadable, and a
 new `mail-signing-key` voids the links still out in mails.
 
-**5. The manifests.** Replace `maity.example.org` in `cert.yaml` and
-`hub-values.yaml` first (and drop the join host from both if you run
-without one):
+**5. The manifests.** Replace `maity.example.org` in `cert.yaml`,
+`uploads.yaml` and `hub-values.yaml` first (and drop the join host from
+`cert.yaml` and `hub-values.yaml` if you run without one):
 
 ```sh
 kubectl apply -f deploy/k3s-single/postgres.yaml -f deploy/k3s-single/postgres-netpol.yaml \
-  -f deploy/k3s-single/attachments.yaml -f deploy/k3s-single/backup.yaml -f deploy/k3s-single/issuer.yaml -f deploy/k3s-single/cert.yaml
+  -f deploy/k3s-single/attachments.yaml -f deploy/k3s-single/backup.yaml -f deploy/k3s-single/issuer.yaml -f deploy/k3s-single/cert.yaml \
+  -f deploy/k3s-single/uploads.yaml
 kubectl -n maity get certificate maity-tls   # READY True after the HTTP-01 challenge
 ```
 

@@ -274,12 +274,18 @@ The event long-poll holds a request open for up to 55 seconds. The
 controller must allow at least that per request (the defaults give 75 s)
 and must pass the response on unbuffered.
 
+An attachment upload is one body of up to 10 MiB (`docs/api.md` §8.7).
+The controller must let it through: ingress-nginx refuses bodies over 1 MiB
+unless told otherwise, so the defaults set `proxy-body-size` to `11m`. On
+k3s's Traefik, `deploy/k3s-single/uploads.yaml` gives the upload its own
+route, which buffers the body before it reaches the hub.
+
 The default annotations are for ingress-nginx, the most common controller
 until now. Upstream ingress-nginx (`kubernetes/ingress-nginx`) has been
 retired since March 2026: no further releases or security fixes. A new
 cluster should use a maintained controller. The chart's Ingress is a plain
 `networking.k8s.io/v1` Ingress that any controller serves; set
-`ingress.className`, set the controller's own equivalents of the three
+`ingress.className`, set the controller's own equivalents of the four
 annotations, and set `null` for the nginx keys if they bother you. A
 controller that only speaks Gateway API needs an HTTPRoute the chart does
 not ship yet (`hub/context/kubernetes.md`).

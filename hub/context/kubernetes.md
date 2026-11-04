@@ -345,3 +345,41 @@ when the hub starts, after the migration, not before it, and the hub is down unt
   the node's disk is the limit, so the init container checks the room before it writes.
 - Backing up only when the volume changed: a cheap saving on a small volume, and a night without a tar breaks the "same time stamp" rule.
 
+## The ingress lets a 10 MiB upload through: 11m for ingress-nginx, a buffered route of its own on Traefik
+
+**Id:** 5eb8e035-d2f3-4eed-872b-7e21bd473792
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the plan for card tsk-eejgfehwg4k0, approved by the team lead on 2026-11-04; ingress-nginx's documented default `proxy-body-size` of 1m and Traefik's documented buffering middleware (not reproduced on a cluster); `docs/api.md` §8.7; implementation session, 2026-11-04
+**Revisit when:** the hub's attachment cap changes, Traefik can buffer a request without its response (a `disableResponseBuffer` option in a release k3s ships), or the k3s setup moves off Traefik
+**See:** kubernetes.md#the-ingress-is-a-plain-networkingk8siov1-ingress-ingress-nginx-annotations-are-only-defaults — adc362f5-08ef-41e0-ab34-05f07cd5fa26 — as of 2026-11-04
+
+The chart's default annotations gain
+`nginx.ingress.kubernetes.io/proxy-body-size: "11m"` for the whole host, and
+`deploy/helm/check.sh` checks that the value stays above the hub's
+`ATTACHMENT_CAP`. The k3s setup sets that key to null and applies
+`deploy/k3s-single/uploads.yaml`: a Traefik `IngressRoute` that matches only
+`POST …/attachments`, with a `buffering` middleware of at most 11 MiB.
+
+**Reason:** the hub takes a 10 MiB attachment (§8.7), but ingress-nginx
+refuses a body over 1 MiB by default, so an upload between the two caps
+fails at the ingress. 11 MiB leaves room above the hub's cap, so that the
+hub, not the ingress, refuses an oversize file with its own
+`payload_too_large`. Every other body is capped by the hub at 64 KiB to
+512 KiB, so a host-wide limit needs no finer split. On Traefik the buffered
+route takes the whole body before the hub sees it, and keeps it on disk past
+1 MiB.
+
+**Rejected alternatives:**
+- **One buffering middleware for the whole host on Traefik:** Traefik's
+  buffering holds back the response as well, and the event long-poll's answer
+  must reach the client unbuffered (§8); the option to buffer only the
+  request is not in a release k3s ships.
+- **A separate Ingress with its own `proxy-body-size` for the upload path in
+  the chart:** an Ingress path cannot match the method or the
+  `{owner}/{slug}` segments without regex annotations, and the hub already
+  caps the other bodies, so a second Ingress object adds nothing over one
+  host-wide value.
+- **A 2m host-wide limit plus 11m for the upload path:** the same second
+  object for limits the hub already enforces itself.
