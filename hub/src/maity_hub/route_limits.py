@@ -4,9 +4,12 @@ The general limit per client is the ingress's (hub/context/kubernetes.md); the h
 route by default beyond what the route limits itself. An entry names a route of the API as
 the hub's OpenAPI document lists it (`/api/v1/openapi.json`) and is resolved against that
 document when the app is built: a route the document does not list with that method stops
-the hub, so a typo never leaves the operator believing a limit holds. A request counts
-against the first route of the document, in its order (the order the router matches in),
-whose method and pattern it fits; that is the route that serves it. Counted per client
+the hub, so a typo never leaves the operator believing a limit holds. The routes are read
+from the app's router, in the order it matches in, each named by its path as the document
+lists it (`path_format`) and matched by the router's own pattern, so a path converter
+(`{path:path}`, listed as `{path}`) matches as many segments as the route does. A request
+counts against the first route whose method and pattern it fits; that is the route that
+serves it. Counted per client
 address in this process only (`Limiter(local=True)`): no database write per request, so
 with several replicas each counts its own share.
 """
@@ -14,10 +17,11 @@ with several replicas each counts its own share.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
+from fastapi.routing import iter_route_contexts
 from starlette.routing import compile_path
 from starlette.types import Scope
 
@@ -25,7 +29,7 @@ from maity_hub.config import ConfigError, RouteLimit
 from maity_hub.ratelimit import Limiter
 
 # The methods a route of the OpenAPI document is listed under.
-_METHODS = ("get", "post", "put", "patch", "delete")
+_METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
 
 
 @dataclass(frozen=True)
@@ -39,17 +43,24 @@ class Table:
         return bool(self.limiters)
 
 
-def resolve(schema: Callable[[], dict[str, Any]], limits: tuple[RouteLimit, ...]) -> Table:
-    """The table for `limits`, or ConfigError for an entry the API does not have. `schema`
-    gives the OpenAPI document; it is built only when a limit is set."""
+def resolve(app_routes: Iterable[Any], limits: tuple[RouteLimit, ...]) -> Table:
+    """The table for `limits`, or ConfigError for an entry the API does not have.
+    `app_routes` are the app's routes in the router's order, included routers walked with
+    their prefixes (`iter_route_contexts`); those the OpenAPI document lists
+    (`include_in_schema`) are the ones a limit may name. A route's pattern is compiled from
+    its declared path, converters kept."""
     if not limits:
         return Table()
     routes: list[tuple[str, re.Pattern[str], str]] = []
-    for template, operations in schema().get("paths", {}).items():
-        pattern = compile_path(template)[0]
+    for route in iter_route_contexts(list(app_routes)):
+        if not getattr(route, "include_in_schema", False) or not route.methods:
+            continue
+        if route.path is None or route.path_format is None:
+            continue  # a mount, which the document does not list
+        pattern = compile_path(route.path)[0]
         for method in _METHODS:
-            if method in operations:
-                routes.append((method.upper(), pattern, template))
+            if method in route.methods:
+                routes.append((method, pattern, route.path_format))
     listed = {(method, template) for method, _, template in routes}
     limiters: dict[tuple[str, str], Limiter] = {}
     for limit in limits:

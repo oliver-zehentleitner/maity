@@ -150,7 +150,7 @@ class Settings:
     # client address in each process; empty, no route has one beyond its own (§1.7).
     route_limits: tuple[RouteLimit, ...] = ()
     # MAITY_PUBLIC_PAGE_LIMIT, MAITY_BADGE_LIMIT: reads per client address of the public pages
-    # (§16.9) and of the badges (§17.5), as (count, seconds).
+    # (§16.9) and of the badges (§6.20), as (count, seconds).
     public_page_limit: tuple[int, int] = (60, 60)
     badge_limit: tuple[int, int] = (60, 60)
 

@@ -169,3 +169,30 @@ def test_a_request_counts_for_the_route_that_serves_it_not_a_template_it_also_fi
     assert {client.get("/api/v1/runners/enrollments").status_code for _ in range(3)} != {429}
     assert client.get("/api/v1/runners/rnr-1").status_code != 429
     assert client.get("/api/v1/runners/rnr-2").status_code == 429
+
+
+def test_a_route_with_a_path_converter_counts_every_address_it_serves(make_client: Any) -> None:
+    """`{path:path}` is listed as `{path}` in the OpenAPI document, but it serves addresses of
+    several segments (a project page, `owner/slug/board`), and the limit counts them all."""
+    page = "/api/v1/public/pages/{path}"
+    client = make_client(route_limits=(RouteLimit("GET", page, 2, 60),))
+    codes = [
+        client.get("/api/v1/public/pages/owner").status_code,
+        client.get("/api/v1/public/pages/owner/slug/board").status_code,
+        client.get("/api/v1/public/pages/owner/slug").status_code,
+    ]
+    assert codes[:2] != [429, 429] and codes[2] == 429, codes
+
+
+def test_configure_reads_no_database(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every worker and replica builds its app, which configures the read limits: one starting
+    must not clear what the others count in `shared_counts`, nor need the database at all."""
+
+    def refuse(*args: Any, **kwargs: Any) -> None:
+        raise AssertionError("configure touched shared_counts")
+
+    monkeypatch.setattr(shared_counts, "active", lambda: True)
+    monkeypatch.setattr(shared_counts, "clear", refuse)
+    limiter = Limiter(1, 60, name="t")
+    limiter.configure(2, 30)
+    assert (limiter.limit, limiter.window) == (2, 30)
