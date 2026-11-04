@@ -71,7 +71,7 @@ h1 em{font-style:normal;color:var(--accent)}
 .sub{font-size:clamp(18px,1.6vw,21px);color:var(--muted);max-width:36rem;margin:22px 0 0}
 .cta{display:flex;flex-wrap:wrap;gap:12px;margin-top:32px}
 .cta .text-link{align-self:center;margin-left:8px;font-weight:600;text-decoration:none}
-.cta .text-link::after{content:" →"}
+.cta .text-link::after{content:" →" / ""}
 .cta .text-link:hover{text-decoration:underline}
 .meta{margin:22px 0 0;font-size:14px;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px 20px}
 .meta span::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin:0 8px 2px 0;vertical-align:middle}
@@ -150,6 +150,7 @@ footer a{color:var(--muted)}footer a:hover{color:var(--ink)}
   .nav a:not(.btn):not(:first-child){display:none}
   .grid{grid-template-columns:1fr}
   .cta .btn{flex:1 1 100%}
+  .cta .text-link{margin-left:0}
   .rings{max-width:280px}
 }
 </style>
