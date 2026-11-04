@@ -847,20 +847,21 @@ menu per press would make that slow.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's rule that agents and humans are always clickable, relayed by the coordinator (tsk-f7w3w35bq0r3), 2026-10-23; the dashboard's implementation, 2026-10-23; the maintainer's report that "Asked by" in the inbox was plain text, relayed by the lead on tsk-3re8qp89hc18, 2026-11-04 (web/js/inbox.js `ref`, the e2e step `asker_links_step`)
+**Source:** the maintainer's rule that agents and humans are always clickable, relayed by the coordinator (tsk-f7w3w35bq0r3), 2026-10-23; the dashboard's implementation, 2026-10-23; the maintainer's report that "Asked by" in the inbox was plain text, relayed by the lead on tsk-3re8qp89hc18, 2026-11-04 (web/js/inbox.js `ref` and `membersOf`, the e2e step `asker_links_step`); the review of PR #1356 that found links to members the project no longer lists, 2026-11-04
 **Revisit when:** a member gets a view of their own apart from the Members row, or names appear inside a control that cannot hold a link
 
 `M.dom.memberRef(ctx, who, opts)` is the one way a view names a member:
 a link to `/<owner>/<slug>/members/<id>` (Members marks that row and focuses
 it), the full name as tooltip, `data-member` for tests. A member the
 project does not list (removed, outside) and every member in a view read
-from outside the project are plain text. The inbox names who asked and
-on whose behalf from the request itself where it does not read the
-project's member list (the inbox of all projects, a personal request):
-a link into the request's project when that project is one of the
-reader's, text otherwise (a personal request from a project the human
-is not in, whose pages would not open). A name inside a button (an
-inbox entry's head) stays text, since a link cannot sit in a button.
+from outside the project are plain text. The inbox of all projects
+reads the member list of each request's project among the reader's, once
+per view, and names who asked, on whose behalf and to whom by it: a link
+into the request's project for one that list names, text for one it does
+not (a member removed since, a human who asks without a membership, a
+project the reader is not in, a list that could not be read), as inside
+a project. A name inside a button (an inbox entry's head) stays text,
+since a link cannot sit in a button.
 
 **Reason:** the maintainer wants to reach any member's actions from
 wherever they appear, and one helper keeps the link, the tooltip and the
@@ -869,9 +870,12 @@ plain-text rule the same on every page.
 **Rejected alternative:** a link built in each view: the rules for who
 is linkable (listed, inside the project) would drift between pages.
 Keeping the inbox of all projects plain text, as it was until
-2026-11-04, since it reads no member list there: the hub itself names
-who asked in the request's project, so the link is no guess, and the
-maintainer found the plain name a dead end.
+2026-11-04, since it read no member list there: the maintainer found the
+plain name a dead end. A link built from the request alone, for anyone
+it names in one of the reader's projects: the hub keeps an open request
+of a member removed since, and names a human who asks without a
+membership the same way, and both links opened only "No member with the
+id … in this project" (the review of PR #1356, 2026-11-04).
 
 ## A route the hub does not serve is said quietly, and the page does not ask it again
 

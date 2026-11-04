@@ -1183,6 +1183,8 @@ def asker_links_step(run: Run, page: Page, alpha: Path) -> None:
         expect(mark).to_have_text(f"#{instance}")
         if inbox == "/all":
             run.shot(page, "inbox-asker-links")
+            # The project's link and the asker's in the rows one above the other: 24 px apart (WCAG 2.2).
+            run.a11y(page, "/all, the asker's links under the project's")
         handle.click()
         expect(page).to_have_url(re.compile(rf"/owner/e2e-alpha/members/{member_id}$"))
         expect(page.locator(".member-head")).to_contain_text("E2E Agent")

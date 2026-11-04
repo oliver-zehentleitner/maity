@@ -369,6 +369,9 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 8px 0; }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; overflow-wrap: anywhere; }
+/* WCAG 2.2 target size: in an entry two links can stand in rows one above the other (the project, who
+   asked), each line 18 px high: the rows 6 px apart keep them 24 px from each other. */
+.entry-body .facts { row-gap: 6px; }
 
 .send-status { min-height: 1.2em; margin: 6px 0 0; color: var(--muted); }
 .send-status.failed { color: var(--bad); }

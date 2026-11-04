@@ -10192,6 +10192,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const label = li && li.querySelector("a.project-label");
     return label && a.getAttribute("href").startsWith(label.getAttribute("href").replace(/inbox$/, "members/"));
   }), "member links: in all projects the asker links into the request's own project");
+  // One the request's project does not list stays text there too, as in the project's inbox: a
+  // foreign agent (agt-z) and a human the list does not name (hum-anna) (c47w on #1356).
+  for (const [title, id] of [["Foreign agent: may it reuse the logo?", "agt-z"], ["Human asker: lunch at noon?", "hum-anna"]]) {
+    const head = main.querySelectorAll(".entry-head").find((b) => (b.textContent || "").includes(title));
+    if (head && head.attrs["aria-expanded"] !== "true") { head.click(); await tick(); }
+    const dt = main.querySelectorAll(".current .entry-body .facts dt").find((x) => text(x) === "Asked by");
+    let dd = dt && dt.nextSibling; while (dd && dd.tagName !== "DD") dd = dd.nextSibling;
+    const asker = dd && dd.querySelector(".member-ref");
+    expect(head && asker && asker.tagName === "SPAN" && asker.classList.contains("plain") && !dd.querySelector("a"),
+      "member links: in all projects an asker the request's project does not list is text " + id + " " + (asker ? asker.tagName : "none"));
+  }
+  // Asked of the reader in person (`human:<id>`): "you", never a member link to "human:…" (e5kk on #1356).
+  const youHead = main.querySelectorAll(".entry-head").find((b) => (b.textContent || "").includes("Agent A proposes a change to your preferences"));
+  if (youHead && youHead.attrs["aria-expanded"] !== "true") { youHead.click(); await tick(); }
+  const toDt = main.querySelectorAll(".current .entry-body .facts dt").find((x) => text(x) === "To");
+  let toDd = toDt && toDt.nextSibling; while (toDd && toDd.tagName !== "DD") toDd = toDd.nextSibling;
+  expect(youHead && toDd && text(toDd) === "you" && !toDd.querySelector("a"), "inbox: a request to the reader in person says you " + (toDd ? text(toDd) : "none"));
   // The direct chat's heading names its agent as a link; a needs-in-session note names its member.
   await go("#/maintainer/maity/chat/agt-a"); for (let k = 0; k < 4; k++) await tick();
   const mrHead = main.querySelector(".chat-pane") && main.querySelector(".chat-pane").querySelector("a.member-ref");
