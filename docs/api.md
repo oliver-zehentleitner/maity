@@ -5278,7 +5278,7 @@ this order, and only the fields the request carries: `trust`, `role`,
 still-quoted value other than `reports_to` is replaced by the words
 `full value in agent_change`, and this repeats until the summary
 fits. The value replaced is the longest one still quoted in full,
-measured as §1.7 measures the summary. Of equal length, the one
+measured in characters (code points). Of equal length, the one
 later in that field order is replaced first, and within one field
 the current value before the proposed value. A value is not cut in
 the middle, so the omission is visible. `reports_to` is never
@@ -5302,7 +5302,7 @@ is the `invalid` of §1.3. Before canonicalisation, a number token in
 such a value must be an integer in the range RFC 8785 recommends for
 integers, a SHOULD, from `-(2^53)+1` to `2^53-1` (Appendix B, note 1).
 RFC 8785 itself allows any number an IEEE-754 double can represent
-(section 3.2). The range here is Maity's own input rule. A token is
+(section 3.1). The range here is Maity's own input rule. A token is
 an integer only when it has no fraction and no exponent. A fraction
 or an exponent in the token, such as `1.0` or `1e2`, is `invalid`
 (`details.fields.<name>: "not_an_integer"`), and so is an integer

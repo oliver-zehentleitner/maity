@@ -12,9 +12,11 @@
 - docs: the owner's consent stores each proposed value and a SHA-256 of its RFC 8785
   (JCS) canonical form, and the request read returns that canonical string next to the
   hash. `agent_change` carries every current and proposed value in full. The `summary`
-  quotes them in full while it fits the 16 KiB cap, and past the cap replaces the
-  longest value that no longer fits with `full value in agent_change` (`reports_to`
-  stays). A number token with a fraction or an exponent is `not_an_integer`. The
+  quotes them in full while it fits the 16 KiB cap. While the summary is past the
+  cap, the hub replaces the longest value still quoted in full, measured in
+  characters (code points), with `full value in agent_change`, repeating until the
+  summary fits (`reports_to` stays). A number token with a fraction or an exponent
+  is `not_an_integer`. The
   integer range is the one RFC 8785 recommends (a SHOULD); RFC 8785 itself allows any
   IEEE-754 double, and the range is Maity's input rule. A lone surrogate in a string
   is `invalid` (`lone_surrogate`). A `reports_to` value in the summary names the

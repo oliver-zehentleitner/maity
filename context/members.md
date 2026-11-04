@@ -742,15 +742,17 @@ member to `null` in the same transaction, and it does not wait.
 The consent request for a change of another owner's agent names every
 current value and every proposed value. `agent_change` carries each of
 them in full. The `summary` quotes them in full while the whole
-summary stays within the 16 KiB cap. A value that would take the
-summary past the cap is not cut: the summary says `full value in
-agent_change` where that text would have stood. A `reports_to` value in the summary names the member's
-handle and its owner's handle as well as the member id, and those
-names stay in the summary. While the summary is past the cap, one
-still-quoted value other than `reports_to` is replaced at a time by
-`full value in agent_change`: the longest first, and of equal length
-the one later in the summary's field order, the current value of a
-field before its proposed value. The request stores each proposed
+summary stays within the 16 KiB cap. A value is not cut in the
+middle: where a still-quoted value is replaced, the summary says
+`full value in agent_change`. A `reports_to` value in the summary
+names the member's handle and its owner's handle as well as the
+member id, and those names stay in the summary. While the summary
+is past the cap, one still-quoted value other than `reports_to` is
+replaced at a time by `full value in agent_change`, repeating until
+the summary fits: the longest still quoted in full, measured in
+characters (code points), and of equal length the one later in the
+summary's field order, the current value of a field before its
+proposed value. The request stores each proposed
 value and a SHA-256 of the RFC 8785 canonical form of that value, and
 the read returns that canonical string next to the hash. A number
 token is an integer only with no fraction and no exponent, inside
