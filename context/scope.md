@@ -624,8 +624,9 @@ anything taken off a page, any edit of a shown text included, is taken
 off at once, and only new entries and counts wait for the interval. As decided on 2026-10-28,
 both were opt-in: a project got its page when its namespace owner turned
 `public_page` on, a person when they turned `public_profile` on. Since
-then projects are public by default (2026-10-31) and so are profiles
-(2026-11-02, projects.md 038e685e): a project's owner can still make it
+then a new project is public by default (2026-10-31), while an existing
+one stays private until its owner switches, and profiles are public by
+default (2026-11-02, projects.md 038e685e): a project's owner can still make it
 private, and a person's `public_profile` decides how much their page
 shows, not whether it exists. The operator switches
 the feature on for the instance (`MAITY_PUBLIC_PAGES`); it is off by
