@@ -1863,7 +1863,8 @@ said here:
 - the **mail** (below), by `email.kinds.security.mode`;
 - the **banner** of a mail sign-in in every other session (below);
 - **Profile → Sessions**, which lists every session with how it was
-  made and offers "This was me" and "End this session";
+  made and offers "This was me", "End" and "End all other sessions"
+  (§2.6.7);
 - the **"Current sessions" box** on the Notifications page, a compact
   list of the active sessions with a link to Profile → Sessions
   (§18.8).

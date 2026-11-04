@@ -506,7 +506,8 @@ change has ended, its alert stays unread until its record expires after 90 days.
 use, the maintainer found three alerts he could not clear three days later, because every
 session he had then was newer, and over time that is the normal case. A notification nobody may
 clear does not say "react to this" (1ebd4cc1-6f1b-445f-8c88-98103a4bc3ef); the list of
-sessions does what the alert was for, and Profile → Sessions is where the human acts on it. What
+sessions shows what the alert showed, though only to a human who opens the page; for a human
+without mail that is all that is left (§2.6.5), and Profile → Sessions is where the human acts on it. What
 guards against a session obtained through the mailbox never was the unread count: it is the
 banner, which that session cannot remove, the confirm only from an older session, and the
 rules on ending sessions (7865693c, d01ba62b). They all stay. The banner used to be rebuilt when
@@ -521,5 +522,9 @@ only of sign-ins.
   unreviewed): correct, but the maintainer found it too complicated for what the alert gives.
 - Rebuilding the banner and the box on every long-poll wake: one `GET /auth/sessions` per wake,
   chat included, is the wrong price for sessions with a busy chat (the lead).
+- The time of the newest session record as the change marker (`sessions_at`, the first draft):
+  timestamps have second precision and `at` is only kept from decreasing, so a second record in
+  the same second would not move it, and a dashboard would miss the end or the new session
+  (reviews of #1331).
 - Dropping `email_address_changed` from the bell too: the maintainer spoke only of sign-ins,
   and an address change is rare.
