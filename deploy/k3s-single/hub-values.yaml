@@ -32,6 +32,7 @@ ingress:
     nginx.ingress.kubernetes.io/proxy-read-timeout: null
     nginx.ingress.kubernetes.io/proxy-send-timeout: null
     nginx.ingress.kubernetes.io/proxy-buffering: null
+    nginx.ingress.kubernetes.io/proxy-body-size: null  # uploads.yaml bounds the upload instead
   tls:
     enabled: true
     secretName: maity-tls                # filled by cert.yaml's Certificate

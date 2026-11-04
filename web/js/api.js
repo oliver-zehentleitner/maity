@@ -301,6 +301,7 @@ window.Maity = window.Maity || {};
   // The address a forge would deliver to: this page's origin, or a placeholder on file://.
   const hubOrigin = () => (window.location && window.location.origin && window.location.origin !== "null" ? window.location.origin : "https://<hub>");
   const avatarChanges = {};  // member id -> times of its last PUT or DELETE (§6.10: 10 per hour)
+  const revokeApplied = new Map();  // runner id -> what its removal applied per project (§15.3)
 
   function runnersFile() {
     return fixtures()["runners.json"];
@@ -2629,6 +2630,24 @@ window.Maity = window.Maity || {};
     }],
     ["DELETE", /^\/runners\/([^/]+)$/, (m, body, path) => {
       const r = runnerOf(m[1], path);
+      // §15.3: the rule applied in each attached project, kept with the revocation as the
+      // hub keeps it with the revoked key, so a second DELETE answers it again; the answer
+      // names the projects the caller is a member of. `inherit` takes the instance setting,
+      // `keep` by default.
+      if (!r.removed_at) {
+        revokeApplied.set(r.id, runnersFile().attachments
+          .filter((a) => a.runner_id === r.id && !a.detached_at)
+          .map((a) => {
+            const policy = ((fixtures()[fixtureSlug(a.project) + "/project.json"] || {}).policy || {}).on_runner_revoke;
+            const rule = (body && body.agents) === "stop" || policy === "stop" ? "stop" : "keep";
+            const stopped = rule === "stop"
+              ? placementsOf(fixtureSlug(a.project)).filter((p) => p.active && p.runner.id === r.id).map((p) => p.id)
+              : [];
+            return { project: a.project, rule, stopped };
+          }));
+      }
+      const mine = me().projects.map((p) => p.full_name);
+      const onRevoke = (revokeApplied.get(r.id) || []).filter((x) => mine.includes(x.project));
       if (!r.removed_at) {
         if (r.credential && !r.credential.revoked_at) { r.credential.revoked_at = nowIso(); r.credential.revoked_reason = "runner_removed"; }
         r.credential_state = "revoked";
@@ -2636,7 +2655,7 @@ window.Maity = window.Maity || {};
         r.projects = [];
         runnersFile().attachments.filter((a) => a.runner_id === r.id && !a.detached_at).forEach((a) => { a.detached_at = r.removed_at; });
       }
-      return Object.assign({}, r, { still_running: (runnersFile().still_running || {})[r.id] || [] });
+      return Object.assign({}, r, { still_running: (runnersFile().still_running || {})[r.id] || [], on_runner_revoke: onRevoke });
     }],
     // Attachments (docs/api.md §15.4). The runner's `projects` follow them.
     ["GET", /^\/projects\/([^/]+)\/runners$/, (m, body, path) => {
@@ -3979,6 +3998,25 @@ window.Maity = window.Maity || {};
       if (!item) fail(404, "not_found", "no such checklist item", path);
       Object.assign(item, body.done ? { done: true, by: me().member.id, at: nowIso() } : { done: false, by: null, at: null });
       return card;
+    }],
+    // §11.5: the project's own export whole (the root only; a member, a named repository and
+    // a lean export's bodies are the real hub's to show).
+    ["GET", /^\/projects\/([^/]+)\/keep-the-why\/export$/, (m, body, path, query) => {
+      if (!project(m[1], path).keep_the_why_export) {
+        fail(409, "ktw_not_configured", "the project has no Keep the Why export", path);
+      }
+      if (query.get("canonical") || query.get("root")) {
+        fail(404, "not_found", "not a repository of this project's family", path, { reason: "not_in_family" });
+      }
+      const answer = JSON.parse(JSON.stringify(file(m[1], "keep-the-why-export.json", path)));
+      if (fixtureKtw === "unavailable") {
+        fail(503, "ktw_unavailable", "the Keep the Why export could not be read", path,
+          { reason: "forge_unavailable", last: Object.assign(answer, { fresh: false }) });
+      }
+      return answer;
+    }],
+    ["GET", /^\/projects\/([^/]+)\/keep-the-why\/bodies$/, (m, body, path) => {
+      fail(404, "not_found", "this export carries its bodies inline", path, { reason: "no_bodies_file" });
     }],
     ["GET", /^\/projects\/([^/]+)\/keep-the-why$/, (m, body, path, query) => {
       if (!project(m[1], path).keep_the_why_export) {
