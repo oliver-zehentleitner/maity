@@ -1,22 +1,25 @@
 # Puts the attachment files of one night back (docs/install/README.md, "Backups on this setup"). The backups are encrypted to a key that is
 # not on the cluster, so the tar is decrypted and checked where the private key is, and streamed into this Job's pod, which waits for it.
 # It REPLACES everything in the attachment volume with the contents of that tar, so that the files match the restored database. Scale the
-# hub to 0 first (the install guide's step 1), then run this as one block: `sh -eu` stops at the first command that fails, so a
-# decryption or a tar check that fails never reaches the cluster, and the volume is only emptied once the whole tar has been read here.
+# hub to 0 first (the install guide's step 1), then run this as one block with GNU tar: `sh -eu` stops at the first command that fails, so
+# a decryption that fails, or a tar that does not end with its end-of-archive block (cut off, even between two files), never reaches the
+# cluster. The exec passes the tar's SHA-256; the pod keeps the stream in a scratch volume first and empties the attachment volume only
+# when what arrived has that digest, so a stream cut off on the way leaves the volume as it is.
 #   sh -eu -c '
 #     gpg -d "$1" > attachments.tar
-#     tar -tf attachments.tar > /dev/null
+#     LC_ALL=C tar -tRf attachments.tar | tail -n 1 | grep -q "Block of NULs"   # reached the end-of-archive block
+#     sum=$(sha256sum < attachments.tar | cut -c1-64)
 #     kubectl apply -f deploy/k3s-single/restore-attachments.yaml
 #     kubectl -n maity wait --for=create pod -l job-name=restore-attachments --timeout=60s || sleep 10   # 1.33+; older returns at once
 #     kubectl -n maity wait --for=condition=ready pod -l job-name=restore-attachments --timeout=120s
-#     kubectl -n maity exec -i job/restore-attachments -- sh /tmp/restore < attachments.tar
+#     kubectl -n maity exec -i job/restore-attachments -- sh /tmp/restore "$sum" < attachments.tar
 #     kubectl -n maity wait --for=condition=complete job/restore-attachments --timeout=120s
 #     kubectl -n maity delete job restore-attachments
 #     rm attachments.tar
 #   ' restore maity-<time stamp>.attachments.tar.gpg
-# A failed step stops the block where it is and keeps attachments.tar. A stream cut off midway fails the exec and leaves the volume
-# partly restored: run the exec line again, it empties the volume first. Nothing streamed within an hour ends the Job as failed,
-# with the volume unchanged.
+# A failed step stops the block where it is and keeps attachments.tar. A stream that arrives incomplete fails the exec with the volume
+# unchanged: run the exec line again with the same digest. Nothing streamed within an hour ends the Job as failed, with the volume
+# unchanged. The scratch volume is on the node's disk and holds one copy of the tar while the restore runs.
 apiVersion: batch/v1
 kind: Job
 metadata: {name: restore-attachments, namespace: maity}
@@ -37,16 +40,19 @@ spec:
               # The script the exec runs, reading the decrypted tar from its stdin.
               cat > /tmp/restore <<'EOF'
               set -e
-              # The first 512 bytes are the tar's first header: nothing, or anything that is not a tar, leaves the volume as it is.
-              dd bs=512 count=1 iflag=fullblock of=/tmp/head 2>/dev/null
-              if [ "$(dd if=/tmp/head bs=1 skip=257 count=5 2>/dev/null)" != ustar ]; then
-                echo "not a tar: the volume is unchanged" >&2; exit 1
+              # $1 is the SHA-256 of the tar that was checked where it was decrypted. The stream goes to the scratch volume first:
+              # anything but exactly that tar (cut off, empty, no digest given) leaves the attachment volume as it is.
+              cat > /staging/attachments.tar
+              if [ -z "${1:-}" ] || [ "$(sha256sum < /staging/attachments.tar | cut -c1-64)" != "$1" ]; then
+                rm -f /staging/attachments.tar
+                echo "the tar did not arrive whole (its SHA-256 differs): the volume is unchanged" >&2; exit 1
               fi
               find /attachments -mindepth 1 -delete
               # --strip-components=1 skips the "./" entry: the root of the volume is the provisioner's (root, 0777), not ours, and
               # tar would fail on setting its time and mode (exit 2) after the files were already back. A volume with a lost+found
               # (root, 0700) would also fail here and in the nightly tar: that is not the case on k3s's local-path.
-              { cat /tmp/head; cat; } | tar -xf - -C /attachments --strip-components=1
+              tar -xf /staging/attachments.tar -C /attachments --strip-components=1
+              rm /staging/attachments.tar
               touch /tmp/done
               echo "restored into /attachments"
               EOF
@@ -54,5 +60,7 @@ spec:
           securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
           volumeMounts:
             - {name: a, mountPath: /attachments}
+            - {name: staging, mountPath: /staging}
       volumes:
         - {name: a, persistentVolumeClaim: {claimName: maity-attachments}}
+        - {name: staging, emptyDir: {}}

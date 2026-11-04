@@ -371,11 +371,15 @@ ends the Job as failed with a `backup failed:` line, before anything
 is written. A restore decrypts where the private key is: the dump is
 decrypted to a file there and read whole with `pg_restore -f /dev/null`
 before it goes to `pg_restore --clean` over `kubectl exec` (a listing reads
-only the start and passes a cut-off dump), and the tar is streamed
+only the start and passes a cut-off dump), and the tar is checked to
+reach its end-of-archive block (`tar -tR` with GNU tar; a plain listing
+passes a tar cut off between two files) and streamed with its SHA-256
 into a restore Job that waits for it. Both run as one block each that
 stops before the cluster when the decryption or the check of the file
-fails, and the Job reads the tar's first header before it empties the
-volume, so a wrong key or a corrupt backup leaves the files in place. Backups written before encryption
+fails. The Job keeps the stream in a scratch volume and empties the
+attachment volume only when what arrived has that digest, so a wrong
+key, a backup cut off or a stream cut off on the way leaves the files
+in place. Backups written before encryption
 are left alone and counted in every night's log.
 
 **Reason:** a backup holds the verifiers of every agent credential, and
@@ -400,6 +404,12 @@ gpg leaves a mark the script checks.
   copying them off.
 - A restore Job that reads the private key from a temporary Secret:
   simpler to run, but it puts the private key on the cluster.
+- Checking only the tar's first header in the Job before emptying the
+  volume: a tar or stream cut off between two files still unpacks
+  without an error, so the volume ends up with part of the files.
+- Staging the stream in the attachment volume itself: the volume
+  would need room for its contents twice; the scratch volume uses the
+  node's disk once.
 
 ## The ingress lets a 10 MiB upload through: 11m for ingress-nginx, a buffered route of its own on Traefik
 

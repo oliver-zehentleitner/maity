@@ -352,14 +352,16 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
      ```
   3. Put the files of the same night back, replacing the volume's contents (the hub is still at 0 from step 1). The commands
      are at the top of `deploy/k3s-single/restore-attachments.yaml`, as one `sh -eu` block that stops at the first failure:
-     decrypt and check the tar locally, apply the Job, then stream the tar into it with `kubectl exec -i`. Run it as that
-     block, not line by line: the Job empties the volume before it unpacks, so it must only ever get a tar that was read
-     whole first.
+     decrypt the tar locally and check that it reaches its end-of-archive block (GNU tar), apply the Job, then stream the tar
+     into it with `kubectl exec -i` together with its SHA-256. Run it as that block, not line by line: the Job empties the
+     volume before it unpacks, so it must only ever get a tar that was read whole first, and it unpacks only what arrived
+     with that digest.
   4. Scale the hub back to 1.
 - **Test a restore** once after setting up the key, and after every new key: decrypt the newest dump and read all of it,
   `set -o pipefail; gpg -d maity-<UTC time>.dump.gpg | pg_restore -f /dev/null && echo restorable` in bash, and the
-  attachments with `set -o pipefail; gpg -d maity-<UTC time>.attachments.tar.gpg | tar -tf - > /dev/null && echo readable`. That proves the
-  key and the whole file together; a listing alone (`pg_restore --list`) reads only the start and passes a cut-off file.
+  attachments with `set -o pipefail; gpg -d maity-<UTC time>.attachments.tar.gpg | LC_ALL=C tar -tRf - | tail -n 1 | grep -q "Block of NULs" && echo readable`
+  (GNU tar). That proves the key and the whole file together; a listing alone (`pg_restore --list`, `tar -tf`) passes a
+  cut-off file: `pg_restore --list` reads only the start, and `tar -tf` accepts a tar cut off between two files.
 - **Upgrades** are `helm upgrade` with the new digest. The chart's hook
   migrates first ([Upgrades](#upgrades)). An installation set up before
   `uploads.yaml` existed applies it once, with its host name, like step 5.
