@@ -7,11 +7,11 @@
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's decision on the design synthesis, 2026-10-21
-**Verification:** corroborated — re-checked 2026-11-04 after the token handling changed (the next entry: an App installation first, the owner's token second): the probe still reads GitHub only, and its only POSTs are GraphQL queries (`hub/src/maity_hub/forge.py`) and the exchanges that mint a token (`github_app.py`: an installation token, the OAuth code); nothing writes a repository's state
+**Verification:** corroborated — re-checked 2026-11-04 after the token handling changed (the next entry: an App installation first, the owner's token second): the probe still reads GitHub only, and its only POSTs are GraphQL queries (`hub/src/maity_hub/forge.py`) and the exchanges that mint a token (`hub/src/maity_hub/github_app.py`: an installation token, the OAuth code); nothing writes a repository's state
 **Revisit when:** a second forge (GitLab) is needed, or the hub is to write to a forge
 
-The hub holds a read-only token for the project's forge (GitHub first)
-and probes pull request state, head SHA, check results, merge time and
+The hub reads the project's forge (GitHub first) read-only, with the
+grant the next entry chooses, and probes pull request state, head SHA, check results, merge time and
 tags. Release readiness is computed from observed state, not from what an
 agent reported; an agent-typed reference that does not match is shown as
 such. The hub never writes to the forge.
@@ -26,23 +26,26 @@ keeping the hub free of any forge dependency and one secret poorer — the
 handover concept's position. Rejected because a release gate that trusts
 descriptions repeats the incident it is meant to prevent.
 
-## The hub reads a repository with its owner's grant: a GitHub App installation first, the owner's token second, the instance token for public repositories only
+## The hub reads a repository with its owner's grant: a GitHub App installation first, the owner's token second, the instance token only for public repositories in the operator's own namespaces
 
 **Id:** 4e15dcbb-9bb4-4c14-9193-9aa2b2d3f0f3
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's decision in the project chat, 2026-10-28, on the coordinator's answer about the forge token; contract `docs/api.md` §11.4
-**Verification:** corroborated — re-checked 2026-11-04 after organisations became namespace owners: an organisation holds no grant of its own; its project reads with the grants of the organisation owner who confirmed the repository, and nobody's before one did (§11.4, `hub/src/maity_hub/forge_access.py`, the organisation entry linked below). An installation on an organisation account is still refused (`forge_links.py`, `organisation_installation`)
+**Verification:** corroborated — re-checked 2026-11-04 after organisations became namespace owners: an organisation holds no grant of its own; its project reads with the grants of the organisation owner who confirmed the repository, and nobody's before one did (§11.4, `hub/src/maity_hub/forge_access.py`, the organisation entry linked below). An installation on an organisation account is still refused (`hub/src/maity_hub/forge_links.py`, `organisation_installation`)
 **See:** projects.md#organisations-are-a-second-kind-of-namespace-owner-beside-humans-in-the-same-ownerslug-namespace-their-owners-own-every-project-admins-and-members-only-what-they-are-added-to — 33f520b9-5aaa-4aed-96f4-e90bf3749c56 — as of 2026-11-04
 **See:** https://github.com/oliver-zehentleitner/maity — 6af0bb67-32dd-40df-91df-df1eb03288fc — as of 2026-11-04
+**See:** integrations.md#the-instance-token-serves-only-the-operators-own-namespaces-every-other-project-connects-its-repository-itself — ce611bd9-ef89-43e2-8895-2340f87f6c6e — as of 2026-11-04
 **Revisit when:** a second forge kind comes, an installation on an organisation account is to be accepted, or the App's own webhook replaces the per-project one
 
 A project's forge reads use the first grant that covers its repository:
 the namespace owner's linked installation of the instance's GitHub App,
 then the owner's own stored token, then the instance token, and that
-one only for a repository the forge reports as public. Only the
-namespace owner's grants count for a project, and only for a
+one only for a project in one of the operator's own namespaces and a
+repository the forge reports as public. Only the namespace owner's
+grants count for a project (for an organisation's project, those of the
+owner who confirmed it), and only for a
 repository URL the owner confirmed for it with an explicit call under
 step-up; every URL change and a transfer reset that. Linking an installation checks, with the
 installing user's one-time OAuth authorisation, that the installation's
