@@ -1141,6 +1141,8 @@ window.MAITY_I18N["de"] = {
   "forge.via.instance": "Das Repository wird mit dem Token der Instanz gelesen. Es gilt nur für die eigenen Namensräume des Betreibers und nur, solange das Repository öffentlich ist.",
   "forge.via.none": "Keine Berechtigung liest das Repository. Der Besitzer des Namensraums verbindet es unter Forge-Zugriff: die GitHub-App darauf installieren oder ein Token nur zum Lesen hinterlegen und das Repository dann hier bestätigen. Bis dahin liest der Hub für dieses Projekt nichts von der Forge.",
   "forge.via.owner_token": "Das Repository wird mit dem eigenen Token des Besitzers des Namensraums gelesen.",
+  "frame.panel": "Über diesen Hub",
+  "frame.theme": "Zwischen hellem und dunklem Farbschema wechseln",
   "group.back": "← Unterhaltungen",
   "group.closed_flag": "geschlossen",
   "group.compose.failed": "Nicht gesendet: ",

@@ -4892,5 +4892,7 @@
   "contract.whole.why.too_large": "the file is larger than 4 MiB",
   "contract.whole.why.not_text": "the file is not UTF-8 text",
   "contract.meta.whole": "in the whole contract",
-  "overview.project.contract_forge": "on the forge"
+  "overview.project.contract_forge": "on the forge",
+  "frame.panel": "About this hub",
+  "frame.theme": "Switch between the light and the dark theme"
 }

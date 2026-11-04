@@ -15814,8 +15814,11 @@ The maintainer's decision of 2026-11-02 (`context/scope.md`): every page
 a visitor sees without a session has one header and one footer, the
 landing page's, from one source. That is the landing page, the legal
 pages (§16.7.1) and the dashboard's `/login` and `/register` (§16.7.4).
-The hub renders the first two itself; the dashboard draws the other two
-in the app shell. So the hub computes the frame once, as a model: it
+The dashboard's sign-in stands in the frame wherever it is drawn without
+a session, not only at `/login`: at the root after a sign-out, and at an
+address of the app opened without a session that has no stored public
+page (§16.9). The hub renders the first two itself; the dashboard draws
+the others in the app shell. So the hub computes the frame once, as a model: it
 renders its own pages from that model, and hands the same model to the
 dashboard. The rules stay in one place: which sections are a link, which
 legal pages exist, which social link a column above already has.
@@ -15830,9 +15833,10 @@ one language, chosen as the landing page's is: `lang` if the landing page
 has it, else the best match of `Accept-Language` among the landing page's
 languages, else its `default_language`. While the landing page is
 disabled, `lang` if it is one of §16.7's languages, else the best match of
-`Accept-Language` among them, else `en`. An unknown `lang` is no error. A label from the operator's page is in that
-page's language; every other word (sign in, register, the column titles,
-the legal pages' names) comes from the hub's catalogue in `language`.
+`Accept-Language` among them, else `en`. An unknown `lang` is no error.
+A label from the operator's page is in that page's language; every other
+word (sign in, register, the column titles, the legal pages' names) comes
+from the hub's catalogue in `language`.
 
 ```json
 { "language": "de",
@@ -16956,7 +16960,7 @@ back to the English sentence.
 
 | Page | Line |
 |---|---|
-| every page the dashboard draws (`web/`): the signed-in views, `/login`, `/register`, the invitation and enrolment steps, the full maintenance page (§16.12); also `/explore` and a public address (§16.9) while the hub answers it with the app shell, as it does for one with no stored page | yes |
+| every page the dashboard draws (`web/`): the signed-in views, the sign-in and `/register` where the frame of §16.7.5 does not stand, the invitation and enrolment steps, the full maintenance page (§16.12); also `/explore` and a public address (§16.9) while the hub answers it with the app shell, as it does for one with no stored page | yes |
 | the hub's `503 maintenance` page (§16.12) | yes |
 | the pages behind the links in mails, `/mail/…` (§2.6.3, §2.7.1, §2.9, §18.6) | yes |
 | the join page in a browser, `/join/{token}` as HTML on either host (§3.2), below its own note | yes |
@@ -16964,10 +16968,13 @@ back to the English sentence.
 | the landing page and its variants (§16.7, §16.7.2), the legal pages (§16.7.1), and their previews for an admin (§16.7, §16.7.1) | no: the operator's site, with the operator's footer |
 | `/explore` and the stored public pages (§16.9), as the hub answers them from what it stored | no |
 
-On `/login` and `/register` the line comes after the frame of §16.7.5,
-below the landing page's footer. It does not depend on the frame: a page
-drawn without it (a failed `GET /site/chrome`, a maintenance window)
-still ends with the line.
+Where the dashboard draws the sign-in or `/register` without a session,
+the frame of §16.7.5 has the landing page's footer, and it stands in the
+line's place: while the frame stands, and while such a drawing waits for
+its `GET /site/chrome`, the page has no line (the maintainer's decision
+req-5k1gvfsmcg9k, 2026-11-03). A page drawn without the frame (a failed
+`GET /site/chrome`, a model without header or footer, a maintenance
+window) ends with the line.
 
 **How it looks.** At the end of the page's content, never sticky or
 fixed, so it takes no room on a phone. Small and muted. At phone width it
@@ -16977,8 +16984,8 @@ language is longer, never scrolling sideways.
 **Beyond the decision.** The card leaves these open, and the contract
 settles them: the line is centred, the year's icon is decorative, the
 links carry no query of their own, the icons' accessible names are
-`GitHub` and `Maity`, and on `/login` and `/register` the line comes below
-the frame of §16.7.5.
+`GitHub` and `Maity`, and under the signed-out sign-in the frame of §16.7.5
+stands in its place (above, since req-5k1gvfsmcg9k).
 
 ## 17. The change ticker
 

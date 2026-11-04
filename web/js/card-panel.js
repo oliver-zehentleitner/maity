@@ -154,7 +154,7 @@ window.Maity = window.Maity || {};
     // Add a note is drawn once per panel, below the list, and stays while the list
     // is drawn again: whoever types in it keeps the field, its focus, caret and text.
     // `posting` is the text of a post on its way (null when none).
-    let noteField = null, noteFormEl = null, posting = null;
+    let noteFormEl = null, posting = null;
     // Each read of the list counts; only the latest draws it, so an older read that
     // ends later draws nothing and says so to its caller (false).
     let notesRead = 0;
@@ -362,7 +362,7 @@ window.Maity = window.Maity || {};
         : h("p", { class: "muted" }, M.t("cardpanel.notes.none")), removeStatus.el);
       if (closed()) {
         if (noteFormEl) noteFormEl.remove();
-        noteFormEl = noteField = null;
+        noteFormEl = null;
       } else if (!noteFormEl) {
         append(notesBox, noteFormEl = noteForm());
       }
@@ -373,7 +373,7 @@ window.Maity = window.Maity || {};
     // sends nothing; a refusal makes the button usable again. On success exactly the
     // text sent leaves the field; anything typed since stays.
     function noteForm() {
-      const text = noteField = M.dom.sendOnCtrlEnter(h("textarea", { id: "card-note-body", rows: "3", maxlength: "4096", placeholder: M.t("cardpanel.notes.placeholder") }));
+      const text = M.dom.sendOnCtrlEnter(h("textarea", { id: "card-note-body", rows: "3", maxlength: "4096", placeholder: M.t("cardpanel.notes.placeholder") }));
       const status = M.statusLine();
       const submit = h("button", { type: "submit" }, M.t("cardpanel.notes.post"));
       const form = h("form", {

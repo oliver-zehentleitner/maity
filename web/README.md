@@ -1336,7 +1336,10 @@ credit, with three absolute links in a new tab with
 `rel="noopener noreferrer"`. It is in the page's language and drawn again
 whenever the language changes; a translation of `product.made_by` that
 does not name each of its four placeholders once falls back to English.
-A stored public page the hub put into `<main>` stands without it.
+A stored public page the hub put into `<main>` stands without it, and so do
+the sign-in and `/register` drawn without a session, while the frame of §16.7.5
+stands or such a drawing waits for its `GET /site/chrome`: the landing page's footer
+takes the line's place (req-5k1gvfsmcg9k, `js/site-chrome.js`).
 
 ## Fixture mode
 

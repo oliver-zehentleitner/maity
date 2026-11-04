@@ -1194,6 +1194,8 @@ window.MAITY_I18N["en"] = {
   "forge.via.instance": "The repository is read with the instance's token, which serves only the operator's own namespaces, and only while it is public.",
   "forge.via.none": "No grant reads the repository. The namespace owner connects it under Forge access: install the GitHub App on it or add a read-only token, then confirm the repository here. Until then the hub reads nothing from the forge for this project.",
   "forge.via.owner_token": "The repository is read with the namespace owner's own token.",
+  "frame.panel": "About this hub",
+  "frame.theme": "Switch between the light and the dark theme",
   "group.back": "← Conversations",
   "group.closed_flag": "closed",
   "group.compose.failed": "Not sent: ",

@@ -864,13 +864,10 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 .new-agent { display: grid; gap: 6px; }
 .new-agent[hidden] { display: none; }
 .login { margin: 10vh auto 0; }
-/* The door (the designer's pass part 2): sign-in, register and an
-   invitation as one centred card. */
+/* The door (the designer's pass part 2): an invitation as one centred card. Sign-in and
+   register stand in the frame below. */
 .door { max-width: 28rem; margin: 10vh auto; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; display: grid; gap: 12px; box-sizing: border-box; }
 .door h2 { margin: 0; }
-.door-subline { margin: 6px 0 0; }
-.door-points { margin: 8px 0 0; padding-left: 1.2rem; }
-.door-note { margin-top: 8px; font-size: 0.88rem; color: var(--muted); }
 .door .door-action { width: 100%; justify-content: center; text-align: center; box-sizing: border-box; }
 .door-alt { text-align: center; margin: 0; }
 .door-mark { font-size: 2rem; color: var(--muted); }
@@ -1388,6 +1385,12 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .landing-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; margin: 8px 0 0; }
 .landing-cta { font-size: 1.05rem; padding: 10px 20px; }
 .landing-preview { border: 1px dashed var(--border); border-radius: 6px; padding: 0 16px; }
+/* The frame of the pages without a session (js/site-chrome.js, docs/api.md §16.7.5): the hub's
+   landing.css and public-pages.css, loaded after this file, lay out /login and /register; the
+   shell's own spacing steps aside for them. */
+.public-frame #main { padding: 0; max-width: none; }
+.public-frame .door-form .login, .public-frame .door-form .sign-in-options { margin: 0; max-width: none; }
+.public-frame .door-form .legal-links { text-align: start; }
 .landing-preview .landing { margin: 16px auto; }
 .landing-preview .inert-link { text-decoration: underline dotted; }
 .landing-preview .inert-link.button { cursor: default; }
