@@ -1126,3 +1126,34 @@ Each case is settled once:
   catalogs build on it.
 - French `fil d'actualité` in full in every sentence: nine sentences grow long for no gain once `le fil` means the
   ticker alone.
+
+## A list drawn as a grid holds its rows in one column of `minmax(0, 1fr)`, so a long line cannot widen it
+
+**Id:** af756909-d3b0-4484-af3f-f88c41014ac4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-6bn80bppb5e5 (a request with a long code line and long card links pushed the inbox of all projects past the window, every collapsed row with it); web/css/app.css `.entries`, `.entries-box`, `.card-note-list`; the e2e step `wide_lines_step`; the lead's approval of the plan, 2026-11-04
+**Revisit when:** a list of written text is laid out as something other than a grid, or a Markdown code block wraps its lines instead of scrolling
+
+The inbox's lists (`.entries`, `.entries-box`) and the card panel's
+lists (`.card-note-list`, `.card-history-list`, `.card-links`) set
+`grid-template-columns: minmax(0, 1fr)`. A code block in a request or a
+note keeps its lines and scrolls inside itself (`.md-code`,
+`overflow-x: auto`), links and text wrap (`overflow-wrap: anywhere`), and
+the row is as wide as its list.
+
+**Reason:** a grid without columns of its own gives its rows one implicit
+`auto` column, and a grid item's minimum width is its content's: the
+longest line of a code block that does not wrap. One open request with a
+600-character line made that column 4420 px wide in a 1280 px window,
+and every other row of the list the same width. In the card panel the same
+note was cut off by the panel instead of scrolling. A column of
+`minmax(0, 1fr)` gives the rows the list's width, whatever they hold. The
+chat was not affected: its messages already have `min-width: 0`.
+
+**Rejected alternative:** `min-width: 0` on every row (`.entry`, each
+note): it works only where it is set, and the next list of written text
+would have to remember it. Wrapping code lines (`white-space: pre-wrap`
+in `.md-code`): a shell line or a path broken across lines reads as
+several, and the block's scrolling stays as it was.

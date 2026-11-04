@@ -1065,6 +1065,7 @@ def scenario(run: Run, page: Page) -> None:
     no_problems(run, "all projects")
 
     id_links_step(run, page, alpha, task["id"])
+    wide_lines_step(run, page, alpha, task["id"])
     chat_pause_state(run, page, alpha, agent_id)
     group_chat_form_step(run, page)
     direct_removal_step(run, page, agent_id)
@@ -1158,6 +1159,64 @@ def scenario(run: Run, page: Page) -> None:
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
+
+
+def wide_lines_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
+    """A long unbroken line keeps the page inside the window (tsk-6bn80bppb5e5): a request with a
+    600-character code line and long card links, open in the inbox of all projects above a collapsed
+    one, and a card note with the same text. The code scrolls in its own block, the links wrap, every
+    row keeps the page's width; desktop and phone, light and dark."""
+    run.step("a long line in a request and in a card note stays inside the window")
+    line = ("for f in $(git ls-files 'web/i18n/*.json'); do " + "python3 -m json.tool \"$f\" >/dev/null && " * 20)[:600]
+    links = " ".join(f"{run.base}/owner/e2e-alpha/tasks/{card_id}?from={'x' * 60}{i}" for i in range(4))
+    text = f"Run this first:\n\n```sh\n{line}\n```\n\nThe cards: {links}"
+    asked = [
+        re.search(r"req-[0-9a-z]+", run.maity(alpha, "ask", title + "\n" + text, "--to", "human", "--class", "info")).group(0)
+        for title in ("A request with a long line", "A short one below it")
+    ]
+    run.maity(alpha, "note", "add", card_id, text)
+
+    def inside(where: str) -> None:
+        sw, iw = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+        assert sw <= iw, f"{where}: the page is {sw} px wide in a {iw} px window"
+
+    try:
+        for width, height, scheme in ((1280, 900, "light"), (2560, 1200, "dark"), (390, 844, "light"), (390, 844, "dark")):
+            page.set_viewport_size({"width": width, "height": height})
+            page.emulate_media(color_scheme=scheme)
+            where = f"{width} px {scheme}"
+            page.goto(f"{run.base}/all")
+            wide = page.locator(f"li.entry[data-request='{asked[0]}']")
+            expect(wide).to_be_visible()
+            wide.locator(".entry-head").first.click()
+            block = wide.locator(".entry-body .md-code")
+            expect(block).to_be_visible()
+            inside(f"the inbox at {where}")
+            rows = page.evaluate("Array.from(document.querySelectorAll('li.entry')).map((e) => e.getBoundingClientRect().right)")
+            assert rows and max(rows) <= width, f"the inbox at {where}: rows end at {max(rows)} px"
+            client, scroll = block.evaluate("(b) => [b.clientWidth, b.scrollWidth]")
+            assert scroll > client, f"the inbox at {where}: the code line does not scroll in its block ({client}/{scroll})"
+            if width == 390:
+                run.shot(page, f"inbox-long-line-{scheme}")
+
+            page.goto(f"{run.base}/owner/e2e-alpha/tasks/{card_id}")
+            note = page.locator("aside.card-panel .card-note-list li").filter(has_text="Run this first").first
+            expect(note.locator(".md-code")).to_be_visible()
+            inside(f"the card's notes at {where}")
+            right = note.evaluate("(n) => n.querySelector('.md-code').getBoundingClientRect().right")
+            assert right <= width, f"the card's notes at {where}: the code block ends at {right} px"
+        run.a11y(page, "card notes, a long code line")
+    finally:
+        page.set_viewport_size({"width": 1280, "height": 900})
+        page.emulate_media(color_scheme="light")
+    for request_id in asked:
+        page.goto(f"{run.base}/owner/e2e-alpha/inbox/{request_id}")
+        current = page.locator("li.entry.current")
+        current.locator("textarea").fill("Seen.")
+        current.get_by_role("button", name="Send", exact=True).click()
+        expect(page.locator(f"li.entry[data-request='{request_id}']")).to_have_count(0)
+    expect_inbox_empty(page)
+    no_problems(run, "long lines")
 
 
 def id_links_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
