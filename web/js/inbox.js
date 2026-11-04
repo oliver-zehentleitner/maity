@@ -340,11 +340,14 @@ window.Maity = window.Maity || {};
     }
 
     const status = M.statusLine();
+    // What stays disabled once a refused answer gives the controls back (Talk, Send without words).
+    let settle = null;
     const send = (payload, verb) => {
       body.querySelectorAll("button, textarea").forEach((el) => { el.disabled = true; });
       status.busy(M.t("inbox.sending"));
       onAnswer(req, payload, verb).catch((err) => {
         body.querySelectorAll("button, textarea").forEach((el) => { el.disabled = false; });
+        if (settle) settle();
         status.fail(M.t("inbox.not_sent"), err);
       });
     };
@@ -368,8 +371,8 @@ window.Maity = window.Maity || {};
     const text = h("textarea", { id: textId, rows: "3", placeholder: M.t("inbox.reply_placeholder") });
     // The one field above the buttons is always writable: a reply or Talk
     // takes its text along when it holds any (§7); Send is the answer in
-    // words alone, offered where there are no replies to press. A preference
-    // proposal's words go with its Decline, in the review.
+    // words alone, beside the replies too (below). A preference proposal's
+    // words go with its Decline, in the review.
     // Inside a project the trust is known: only the owner answers an action (§2.3).
     const notOwner = !!req.action && ctx.scope === "project" && !ctx.isOwner;
     if (notOwner) append(body, h("p", { class: "muted" }, M.t("inbox.action.owner_only")));
@@ -379,13 +382,41 @@ window.Maity = window.Maity || {};
       const value = text.value.trim();
       return value ? Object.assign({}, payload, { text: value }) : payload;
     };
+    // Send is on every request with a field: the words alone are an answer (§7), Ctrl+Enter
+    // the same. Not where the hub refuses them (a takeover's reply is required) or reads them as
+    // No (a consent's proposal or placement, §15.6): the request view does not say which consent
+    // carries one, so no consent, action or takeover gets the words alone; it stays, disabled,
+    // and says why (web/context/views.md).
+    const wordsAlone = req.class !== "consent" && !req.action && !req.placement && !req.takeover_id;
     const sendWords = () => {
       const value = text.value.trim();
+      if (!wordsAlone) return;
       if (!value) { text.focus(); return; }
       send({ text: value });
     };
-    const sendText = noField || replies.length ? null : h("button", { type: "button", class: "reply", onclick: sendWords }, M.t("inbox.send"));
-    if (sendText) M.dom.sendOnCtrlEnter(text, sendWords, sendText);
+    const hintId = textId + "-hint";
+    // A takeover's request needs one of its replies (§6.19): the hub refuses `talk` as it refuses the words alone.
+    const talkable = canTalk(ctx, req) && !notOwner && !req.takeover_id;
+    // Not where no answer is possible yet: a call for the owner alone, a request not read in full.
+    const showTalk = !notOwner && !unread;
+    const talkWhy = talkable || !showTalk ? null : req.takeover_id ? M.t("inbox.talk_takeover")
+      : req.filed_by === "hub" ? M.t("inbox.talk_hub") : M.t("inbox.talk_not_yours");
+    // No reason for a Send that is not there (no field: a preference review, an unread or a call for the owner alone).
+    const sendWhy = wordsAlone || noField ? null : M.t("inbox.send_needs_reply");
+    const why = [sendWhy, talkWhy].filter(Boolean);
+    const sendText = noField ? null : h("button", { type: "button", class: "reply send", onclick: sendWords,
+      "aria-describedby": sendWhy ? hintId : null }, M.t("inbox.send"));
+    const empty = () => { if (sendText) sendText.disabled = !wordsAlone || !text.value.trim(); };
+    if (sendText) {
+      empty();
+      text.addEventListener("input", empty);
+      // Ctrl+Enter only where Send can ever send: a Send disabled for good announces no shortcut.
+      if (wordsAlone) M.dom.sendOnCtrlEnter(text, sendWords, sendText);
+    }
+    const talk = h("button", { type: "button", class: "reply talk", "aria-describedby": talkWhy ? hintId : null,
+      onclick: () => { if (talkable) send(withText({ talk: true })); } }, M.t("inbox.talk"));
+    talk.disabled = !talkable;
+    settle = () => { empty(); talk.disabled = !talkable; };
     append(body,
       noField ? null : h("div", { class: "free-text" },
         h("label", { for: textId }, replies.length ? M.t("inbox.note_label") : M.t("inbox.free_text_label", { keys: M.dom.SEND_KEYS })),
@@ -401,7 +432,9 @@ window.Maity = window.Maity || {};
           title: M.t("inbox.later_title"),
           onclick: () => onLater(req),
         }, M.t("inbox.later")),
-        canTalk(ctx, req) && !notOwner ? h("button", { type: "button", class: "reply talk", onclick: () => send(withText({ talk: true })) }, M.t("inbox.talk")) : null,
+        // Talk on every request one can answer; where the hub takes `talk` from nobody here it stays,
+        // disabled, and says why (§7).
+        showTalk ? talk : null,
         // Its human may withdraw a personal request, as nobody else can (§7).
         req.personal ? h("button", {
           type: "button",
@@ -417,6 +450,7 @@ window.Maity = window.Maity || {};
           ...replies.filter((r) => replyClass(req, r) === "reply primary")].map((r) =>
           h("button", { type: "button", class: replyClass(req, r), onclick: () => send(withText({ reply_id: r.id })) }, r.label)),
         sendText),
+      why.length ? h("p", { class: "muted reply-hint", id: hintId }, why.join(" ")) : null,
       status.el);
 
     // Ownership is known inside a project only; across projects the link to

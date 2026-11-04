@@ -9651,7 +9651,7 @@ the public reads the texts as they reach each agent, on its page.
 |---|---|
 | `class` | `decision` (pick one, or say), `consent` (may I), `contract` (an interface changes; routed to the arbiter), `info` (a fact someone has; answered in free text or with an option). Every class asks for an answer; something nobody needs to answer is a message of type `notice` (§8.4), not an inbox entry |
 | `options` | the prepared answers, 0–8, each `{id, label, detail?}`; `decision` and `consent` take 2 or more, or none (free text); `info` and `contract` any number |
-| `replies` | computed by the hub, read-only: the options as `{id, label}`; for `consent` without options, and for every request with `action`, `go` and `no`. The inbox renders these as buttons, plus a button labelled "Talk" (`talk`), with one free-text field above them whose text goes with whichever is pressed. `reply_id` must name one of them |
+| `replies` | computed by the hub, read-only: the options as `{id, label}`; for `consent` without options, and for every request with `action`, `go` and `no`. The inbox renders these as buttons, plus a button labelled "Talk" (`talk`) and a send button for the text alone (`{text}`), with one free-text field above them whose text goes with whichever is pressed (below). `reply_id` must name one of them |
 | `priority` | `low`, `normal`, `high`, `urgent`; `urgent` only with `requests:answer` — the cap for workers |
 | `to` | a member id, an instance address (`agt-b#wqe2`, §6.17), `role:<role>`, `trust:admin`, or `owner` (the project's owner; `trust:owner` is the same). A guest, by id or as the only member a token resolves to, is `invalid` (`details.fields.to: "guest"`): a guest answers nothing (§2.3); an isolated agent likewise (`details.fields.to: "isolated"`, §6.2). A design question goes `to: role:designer` (§2.3). A member id reaches the agent's instances as its `wake` rule says (§6.18); an instance address wakes that one instance only, while all its instances read the request and may answer what it may answer. An instance address is resolved as in a message's `to` (§8.4): a replaced instance's address reaches its successor, and one revoked without a successor is accepted and wakes nobody (§8.2). Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `trust:admin` or a member holding `requests:answer` that is not a proxy; a consent for the owner goes `to: owner`, and the proxy relays it (§2.3). `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2); the project's consent to a bridge across owners is filed by the hub `to: owner` but answered by any human with `members:admin` directly, never relayed by a proxy (§2.3), and a proxy does not see it under `?to=me` |
 | `asked_by` | `{member_id, instance, display_name, avatar_url, trust, role, session_id}`, filled by the hub (trust, role, name and avatar at read time); `instance` is `null` for a human, and for a request the hub files on an agent's behalf (`filed_by`) |
@@ -9718,10 +9718,18 @@ beside `reply_id` is the same kind of note on the chosen reply.
 **The inbox.** For every open request it shows one free-text field
 above the reply buttons. Each reply button and the `talk` button sends
 the field's text along when it holds any (`{reply_id, text}`,
-`{talk: true, text}`). A request without `replies` offers the field
-with a send button (`{text}`) beside `talk`. The `talk` button is
-labelled "Talk" in every language; it is offered only where `talk` is
-accepted (above).
+`{talk: true, text}`). A send button after the replies sends the text
+alone (`{text}`), on a request with `replies` too, and Ctrl+Enter in
+the field does the same; it is disabled while the field is empty. Where
+the text alone is refused or read as No — a `consent` (its proposal or
+placement, §15.6), a request with `action`, a takeover's — it stays
+disabled and the reason stands below the buttons. The `talk` button is
+labelled "Talk" in every language; it is on every request that can be
+answered and enabled only where `talk` is accepted (above): not for
+another owner's agent, a human asker or a request the hub filed itself,
+nor on a takeover's, which needs one of its replies (§6.19). There it is
+disabled with the reason below the buttons. Ctrl+Enter is offered only
+where the send button can send at all.
 
 **Personal requests.** Some requests concern one human as the owner
 of an agent profile, not the project: the notice of a soul change
@@ -16501,15 +16509,18 @@ its own.
 
 ### 16.9 Public pages
 
-The maintainer's decision of 2026-10-28: projects and people that choose
-to be public get pages a search engine can read — plain HTML that needs
-no script and no session — so that an instance is found by what is on it.
-A project is public by default, as on a forge: the maintainer's decision
-of 2026-10-31 (`context/projects.md`). A new project's page is on
-unless its creator chooses private at creation, and a project whose
-repository the hub finds private (or cannot read) at creation starts
-private. A person's page and an organisation's (§6.26) exist only by
-their own choice.
+The maintainer's decision of 2026-10-28: public projects, and people
+whose profile is public, get pages a search engine can read — plain
+HTML that needs no script and no session — so that an instance is found
+by what is on it. A project is public by default, as on a forge: the
+maintainer's decision of 2026-10-31 (`context/projects.md`). A new
+project's page is on unless its creator chooses private at creation,
+and a project whose repository the hub finds private (or cannot read)
+at creation starts private. Every active account whose profile is under
+no moderation hold has a page (below), and the person's profile is
+public by default as well (§2.7; the maintainer's decision of
+2026-11-02): they choose how much it shows. An organisation's page
+(§6.26) exists only by its owners' choice.
 
 **The addresses.** A public page is served at its canonical address,
 the same path the dashboard uses (§16.11): a project's at
@@ -16816,8 +16827,8 @@ shows the `display_name`, the `handle` and the organisation's projects
 whose own `public_page` is `on`, each with a link to its page. The
 avatar is not on it, since a page carries no image (below). The
 organisation's members are never shown: who belongs to it is not
-public, whatever its page says; a project's page still shows its own
-members by their own choice (above). Without `public_page: on` the address
+public, whatever its page says; a project's page still names its own
+members (above). Without `public_page: on` the address
 answers as for an unknown handle (below).
 
 **What is never served.** A page answers the app shell (§16.11), the
