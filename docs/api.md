@@ -9717,8 +9717,8 @@ as `answer.text` and travels with `request_answered` like any answer's
 text; the hub posts nothing into the conversation for it. A `text`
 beside `reply_id` is the same kind of note on the chosen reply.
 
-**The inbox.** For every open request it shows one free-text field
-above the reply buttons. Each reply button and the `talk` button sends
+**The inbox.** For every open request but one with `report` (below) it
+shows one free-text field above the reply buttons. Each reply button and the `talk` button sends
 the field's text along when it holds any (`{reply_id, text}`,
 `{talk: true, text}`). A send button after the replies sends the text
 alone (`{text}`), on a request with `replies` too, and Ctrl+Enter in
