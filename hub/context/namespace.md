@@ -313,8 +313,8 @@ otherwise lift it), and leaving archived projects out of the availability sweep 
 that goes over every project each round. The jour fixe keeps its contract instead of a filter of its
 own: §20.1 records a slot of an archived project as `skipped`/`project_closed` and §20.6 lets an
 opened round finish, a closing project included; dropping archived projects from the jour-fixe
-worker left a round in `reporting` and turned the slots into `missed`/`hub_down` after unarchiving
-(the lead's decision on review round 2 of the card). The owner row is the lock because the
+worker left an open round standing still (in `reporting`, for one) and turned the slots into
+`missed`/`hub_down` after unarchiving (the lead's decision on review round 2 of the card). The owner row is the lock because the
 organisation's row is already taken before any project row (`lock_project`), and creation takes no
 project row at all.
 
@@ -329,5 +329,5 @@ project row at all.
   each run would need its own rule for what passed meanwhile. Such a freeze would be a change of
   its own, specified first; the card asked for the cap.
 - A jour-fixe filter of its own for archived projects: it broke §20.1 and §20.6, a round open at
-  archiving stayed in `reporting` and the slots turned into `missed`/`hub_down` after unarchiving
-  (review round 2 of the card).
+  archiving stood still (in `reporting`, for one) and the slots turned into `missed`/`hub_down`
+  after unarchiving (review round 2 of the card).
