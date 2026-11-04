@@ -12,7 +12,9 @@ event, when the session ends, or when an exclusion begins, with `member_not_list
 (`ended: true`). It files no request of its own: the owner hears of it through the hourly
 digest (`not_listening_digest`). A session never not listening: one with
 an open long-poll, a paused instance or membership, an agent that is not `available`,
-and a session a runner supervises (§15.11).
+and a session a runner supervises (§15.11) while an active placement names its credential.
+A supervised session no placement names, such as local mode's (§15.13), is checked like any
+other: no runner reports its stop.
 """
 
 from __future__ import annotations
@@ -107,11 +109,25 @@ def oldest_waiting(conn: Connection, session: Any, member: Any, credential: Any)
         after = examined
 
 
-def _excluded(session: Any, member: Any, credential: Any) -> str | None:
+def _placed(conn: Connection, credential: Any) -> bool:
+    """Whether an active placement names this credential (§15.5, §15.9)."""
+    return (
+        conn.execute(
+            select(t.placement.c.id).where(
+                t.placement.c.credential_id == credential.id, t.placement.c.active.is_(True)
+            )
+        ).first()
+        is not None
+    )
+
+
+def _excluded(conn: Connection, session: Any, member: Any, credential: Any) -> str | None:
     """Why this session is never not listening now, or None."""
     if session.live is None or session.ended_at is not None:
         return "the session ended"
-    if session.supervisor is not None:
+    # Only a placement's runner reports the stopped runs (§15.7); local mode's supervised
+    # session has none, so it is checked like any other (§5.3, §15.13).
+    if session.supervisor is not None and _placed(conn, credential):
         return "a runner supervises the session"
     if credential.revoked_at is not None:
         return "the credential was revoked"
@@ -203,7 +219,7 @@ def check(engine: Engine, session_id: str) -> None:
         credential = conn.execute(
             select(t.credential).where(t.credential.c.id == session.credential_id)
         ).one()
-        why = _excluded(session, member, credential)
+        why = _excluded(conn, session, member, credential)
         if session.not_listening_since is not None:
             if why is not None:
                 _end(conn, member, credential, session, why)
