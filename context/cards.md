@@ -507,7 +507,7 @@ every redaction is easier to keep right than a second, looser one.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the maintainer's request of 2026-11-04 (card tsk-g8ts5vxhj1md); the coordinator's rulings the same day on the contract draft and on the review findings of its pull request (#1380); contract in `docs/api.md` §6.1 "Restricted access", §6.4 "Restricted text"
+**Source:** the maintainer's request of 2026-11-04 (card tsk-g8ts5vxhj1md); the coordinator's rulings the same day on the contract draft and on the review findings of its pull request (#1380), both review rounds; contract in `docs/api.md` §6.1 "Restricted access", §6.4 "Restricted text"
 **Revisit when:** the text must stay unreadable to the instance's operators, an owner or admin needs to read every text without entering the set, or the hub learns which instance of an agent acts
 **See:** cards.md#cards-carry-links-an-edit-history-and-notes-a-note-never-changes-the-card — 4e1208f1-4ca9-45ad-9005-3327b2638a0c — as of 2026-11-04
 
@@ -518,10 +518,17 @@ Without the setting nobody is in the set, owners and admins included;
 a human with `project:admin` and a step-up changes it. The set is per
 membership, never per instance. Under `all_except` an agent is in it
 only while its owner is, and every way into the set (the setting, a
-join, a guest raised, an isolation ended) tells the set with a
-`restricted_changed` event. The list is never pruned. A person's export
-carries only the texts whose current version they wrote, of projects
-whose set they are in.
+join, a guest raised, an isolation ended, an agent's owner changed)
+tells the set with a `restricted_changed` event. Under `nobody_except`
+there is no owner gate, so whoever controls a listed agent reads
+through it; a listed agent whose owner changes leaves the list, and an
+admin lists it again. The list is otherwise never pruned. The routes
+answer `Cache-Control: no-store` and the dashboard keeps the text in
+memory only. Writes are capped per membership and, for `PUT`, per
+card; a `DELETE` is never held by the card's cap. Notifications are
+capped at one per card and human, and one for the set per human and
+project, in 10 minutes. A person's export carries only the texts whose
+current version they wrote, of projects whose set they are in.
 
 **Reason:** the request was a place on a card for what not every member
 may read. Closed by default means no existing project changes what
@@ -538,7 +545,27 @@ excluded under `all_except` back in when it joins again. The see-all
 of owners and admins would tell them which cards have a text and who
 changes it, which is what the set keeps to itself. An export of texts
 others wrote, or of a project whose set one left, would carry them out
-of the hub past the set.
+of the hub past the set. An agent's owner change is a way in like the
+others: under `all_except` it can bring an agent in with no change of
+the setting, so it is told the same way. Under `nobody_except` the
+admin confirmed the agent with the owner it had, and the new owner
+would read through it unconfirmed; taking it off the list keeps the
+set closed by default, and only narrows, so it does not bring back
+what pruning risks under `all_except`. A browser cache, storage or
+history outlives the session and the set: a member taken out of the
+set, or the next person at a shared machine, would still find the
+text, so nothing is kept outside the page's memory. The write caps
+keep a member in the set — an agent in a loop above all — from
+filling the history, the events and the notifications; the card's cap
+keeps many members from doing that on one card. A shared card cap
+counting `DELETE` would let one looping member block for up to an
+hour everyone's clearing of a text pasted by mistake, which is the
+write that most needs to go through; a `DELETE` changes at most once
+per text, so leaving it to the membership's cap costs little. The
+10-minute notification caps keep a burst of edits, or of members
+entering, from becoming a burst of mail and push; the events stay
+readable, so suppressing the further notices loses nothing that the
+set cannot see.
 
 **Rejected alternatives:**
 - Encrypting the text: the hub, its operators and every agent in the
@@ -560,3 +587,23 @@ of the hub past the set.
 - Exporting every text the person can read: the export would carry
   texts out of the hub that others wrote or the person may no longer
   read.
+- Under `nobody_except`, a listed agent staying in the set when its
+  owner changes, with only an event to the set: its new owner would
+  read until an admin acts. Keeping the owner each agent was listed
+  with and checking it on every call: a second state to store and
+  show, for the same outcome as taking the id off the list.
+- An owner gate under `nobody_except` as under `all_except`: there the
+  admin names each agent on purpose, and the gate would make listing
+  an agent of an owner who is not listed pointless; the contract says
+  instead that whoever controls a listed agent reads through it.
+- Ordinary caching, or keeping the text in the browser for speed or
+  offline use: the copy would outlive the set and the session.
+- No write caps, or a cap per membership only: a looping agent, or
+  several members on one card, could flood the history, the events and
+  every human's notifications.
+- `DELETE` under the card's cap: one looping member could keep
+  everyone from clearing a text pasted by mistake.
+- A notification for every change, or a digest instead of dropping the
+  further ones within 10 minutes: every change would be a mail or a
+  push, and a digest would be a second kind of notice to build and
+  keep for what the events already show.
