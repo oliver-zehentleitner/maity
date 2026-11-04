@@ -312,7 +312,9 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
   k3s's local-path storage keeps the volume under
   `/var/lib/rancher/k3s/storage/pvc-…_maity_maity-backups/`.
 - **Copy them off the instance, every night.** On the instance they protect against a bad upgrade, not against losing
-  it. Pull the `.gpg` files to another machine, for example with `rsync` from a cron job there. They are encrypted, so the
+  it. Pull the `.gpg` files to another machine, for example with `rsync` from a cron job there; the files are 0600 and
+  owned by the containers' users under k3s's storage path, so the account that reads them needs root on the instance.
+  They are encrypted, so the
   copy needs no further protection, but the private key must never be stored with them.
 - **Unencrypted backups from before.** An installation that ran an older `backup.yaml` still has `maity-*.dump` and
   `maity-*.attachments.tar` files. The Job leaves them alone and names their number in its log every night. Copy off what
@@ -342,11 +344,16 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
      are at the top of `deploy/k3s-single/restore-attachments.yaml`: decrypt and check the tar locally, apply the Job, then
      stream the tar into it with `kubectl exec -i`.
   4. Scale the hub back to 1.
-- **Test a restore** once after setting up the key, and after every new key: decrypt the newest dump and list it
-  (`gpg -d maity-<UTC time>.dump.gpg | pg_restore --list | head`). That proves the key and the file together.
+- **Test a restore** once after setting up the key, and after every new key: decrypt the newest dump and read all of it,
+  `set -o pipefail; gpg -d maity-<UTC time>.dump.gpg | pg_restore -f /dev/null && echo restorable` in bash, and the
+  attachments the same way with `gpg -d maity-<UTC time>.attachments.tar.gpg | tar -tf - > /dev/null`. That proves the
+  key and the whole file together; a listing alone (`pg_restore --list`) reads only the start and passes a cut-off file.
 - **Upgrades** are `helm upgrade` with the new digest. The chart's hook
   migrates first ([Upgrades](#upgrades)). An installation set up before
   `uploads.yaml` existed applies it once, with its host name, like step 5.
+  One whose backups were not yet encrypted creates the Secret
+  `maity-backup-key` first (step 4) and applies the new `backup.yaml`
+  after it: without the key every night's Job fails.
 - **PostgreSQL:** a new minor version of 17 is an image bump. A new
   major version needs a dump and a restore.
 
