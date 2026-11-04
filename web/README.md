@@ -1400,8 +1400,10 @@ fails while the bundle is stale.
 `make check` also compares the fixture hub's answers to the requests in
 `tools/shape-requests.json` with the hub's, recorded in
 `tools/hub-shapes.json`: a key or type the hub does not send is a
-finding, unless `tools/fixture-shapes-baseline.json` lists it, which only
-shrinks. After a change to the hub's answers, run `make shapes`
+finding, unless `tools/fixture-shapes-baseline.json` lists it. For a
+request already in the list the baseline only shrinks; a request added to
+the list has its differences written into the baseline by hand, since
+`python3 tools/check.py --write` only drops entries. After a change to the hub's answers, run `make shapes`
 (`HUB_PYTHON=` a Python with the hub's test requirements) and commit the
 file (`context/fixtures.md`).
 

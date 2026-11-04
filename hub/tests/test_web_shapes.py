@@ -217,6 +217,9 @@ def test_the_recorded_shapes_are_the_hubs(make_client: ClientFactory, migrated: 
     owner, ids = _seed(make_client, migrated)
     maps = frozenset(spec["maps"])
     recorded = {}
+    methods = [request["method"] for request in spec["requests"]]
+    first_write = next((i for i, m in enumerate(methods) if m != "GET"), len(methods))
+    assert "GET" not in methods[first_write:], "a read after a write reads a changed seed"
     for request in spec["requests"]:
         path = request["path"].format(**ids)
         answer = _send(owner, request["method"], path, request.get("body"))

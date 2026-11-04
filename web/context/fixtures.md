@@ -87,11 +87,12 @@ reports every difference that is not in
 `tools/fixture-shapes-baseline.json`: a key the fixture has and the hub
 does not, a key the hub has and the fixture lacks, another type. The
 baseline holds today's differences; for a request already listed it only
-shrinks (`make fixtures` drops what no longer differs), and a request
-added to the list brings its differences in. Writes (`POST`, `PATCH`,
-`DELETE`, with the request's `body`) come after every read in the list:
-both sides send the requests in order to one seed, so a read sees the
-seed before any write changed it. It started with about ten routes; more
+shrinks (`make fixtures` drops what no longer differs); a request added
+to the list has its differences written into the baseline by hand, since
+`--write` only drops entries. Writes (`POST` and `PATCH` with the
+request's `body`, and `DELETE`) come after every read in the list, and
+the hub test fails on a read after a write: both sides send the requests
+in order to one seed, so a read sees the seed before any write changed it. It started with about ten routes; more
 come one at a time, and a test keeps the two copies of the form functions
 (the hub test's and `check.py`'s, which uses the standard library only)
 equal.
@@ -115,7 +116,10 @@ from the record when the seed lacks that state, and an empty list says
 nothing about its items. So the seed fills what is cheap: settings,
 mentions, a note, a link, a dependency, a request. `banner.etag` and
 `logo.etag` (only with an image) stay in the baseline as keys "the hub
-sends no such key"; a personal request from a project the reader is no
+sends no such key", and so does `owner_preferences` in the answer to
+`PATCH …/members/{agent}`: §6.2 puts it in the member view where
+`briefing` is, but the hub builds that answer without the view's
+`details`, so the gap there is the hub's; a personal request from a project the reader is no
 member of is seeded because only its notification carries
 `project.member`; without that state the record reads as if the hub never
 sent the key, and a fixture "fixed" to match would be wrong.
