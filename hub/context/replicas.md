@@ -924,10 +924,12 @@ only about processes.
   at once, so one is enough to be correct and more is throughput, the operator's choice. The
   shared-counter connections (two per process), the listener connections (one per process) and
   the readiness probe's come on top. A known consequence of a share of one: the background
-  passes take from the same pool, so a request that finds the share in use waits SQLAlchemy's
-  pool timeout (30 s) and then answers 500 `internal`, since `sqlalchemy.exc.TimeoutError` is
-  not mapped to 503. The gap predates the minimum of one, which only makes it reachable with a
-  single held connection; mapping it is its own card (tsk-p80cre8r9355).
+  passes take from the same pool, so a request that finds its pool share and its overflow share
+  (`MAITY_DB_MAX_OVERFLOW` divided by the workers, rounded down) in use waits up to
+  SQLAlchemy's pool timeout (30 s) and then answers 500 `internal`, since
+  `sqlalchemy.exc.TimeoutError` is not mapped to 503. The gap predates the minimum of one, which
+  makes it reachable with one held connection when the overflow share is 0; mapping it is its
+  own card (tsk-p80cre8r9355).
 - **The checks and the one-time work of a start run in the parent** before any worker is
   spawned: the startup checks (schema, secrets, mail, reserved holders, a required dashboard
   directory), then `app.start_once` (the generated text, the public pages, the sign-in

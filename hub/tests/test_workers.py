@@ -77,8 +77,9 @@ def test_each_worker_holds_its_share_of_the_pool() -> None:
 def test_workers_whose_share_of_the_pool_would_be_zero_are_refused(
     workers: int, pool: int, refused: bool
 ) -> None:
-    """The minimum share of one (tsk-zm2z04ep2cma): no measured request held two serving
-    connections at once, and a share of 0 would be SQLAlchemy's `pool_size=0`, no limit at all."""
+    """The minimum share of one (tsk-zm2z04ep2cma): no request handler in the measured tests held
+    two serving connections at once, and a share of 0 would be SQLAlchemy's `pool_size=0`, no
+    limit at all."""
     settings = replace(_settings(), workers=workers, db_pool_size=pool)
     reason = serving.refusal(settings)
     if refused:
