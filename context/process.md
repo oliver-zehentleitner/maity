@@ -1068,24 +1068,41 @@ hung MariaDB run ended without a word.
 `hub-postgresql` (`ci.yml`) sets `PYTEST_ADDOPTS: -o faulthandler_timeout=300` in the job's environment. A test whose
 setup, call and teardown together run longer than 300 s makes its worker print the stack of every thread into the job log,
 once, and the test runs on: a slow test that ends still passes, and a hang still ends at the job's 90 minutes. The log then
-already holds the hanging test's frame and the line it waits on, which the cancel alone never shows.
+already holds the frame and the line the hang waits on, which the cancel alone never shows. The dump holds frames only:
+when the call hangs, the test function's frame names the test; when a fixture hangs in setup or teardown, it shows the
+fixture (as on #1255, `_empty_the_tables` under `pytest_runtest_setup`), and without `-v` nothing else in the log under
+`pytest-xdist` names the test. The job does not add `-v`: with it the #1255 log grew to about 1.5 MB, and the fixture's
+frame is what the search for a hang starts from.
 
 300 s because: the setting only prints, so a value too low costs a block of log and nothing else, and a value too high
 costs waiting; the cleanup between tests waits up to 60 s for a lock before it ends a leaked connection
 (`TRUNCATE_LOCK_TIMEOUT`, `hub/context/testing.md`), so a limit needs room above that; the diagnosis run on #1255 used
-300 s and found the hang's stacks; 300 s is a sixth of the 90 minutes, so a hang shows where it waits early in the run.
+300 s and found the hang's stacks (that run also had `-v`, which named the test; this job does not, see above); 300 s is
+an eighteenth of the 90 minutes, so a hang shows where it waits early in the run.
 
 **Rejected alternatives:**
 - `pytest-timeout`: it would also fail the hanging test, but it is a new dependency in the locks; the entry above rejected
   it for the queue, and the stack is what the search for a hang needs. `faulthandler_timeout` is part of pytest.
+- `faulthandler_exit_on_timeout` as well (built into the pinned pytest, no new dependency): the worker exits after the
+  dump, `pytest-xdist` reports "worker crashed while running <test>" as failed, which names the test even when a fixture
+  hangs, and the job goes red after 5 minutes instead of 90. Not taken: a slow but finite test past 300 s would then
+  fail, and its worker is gone for the rest of the run; the card asked for a stack that leaves the test running, and the
+  value was chosen as a print threshold, not as a limit a green test must stay under.
 - In `[tool.pytest.ini_options]` of `hub/pyproject.toml`: every local and SQLite run would print stacks too, past the
   scope the jour fixe decided; the job's environment keeps it to `hub-postgresql`.
 - On the `make test` line (`PYTEST_ARGS`): repeats the Makefile's `-n auto`, and a later change to that line drops the
   limit unnoticed.
 
+`hub-mariadb` (`hub-mariadb.yml`) also runs `make test` under 90 minutes, and the cleanup's lock timeout is PostgreSQL
+only, so a leaked lock there is not bounded by the suite. It stays out here: the card and the jour fixe named
+`hub-postgresql`, the job where the hangs were seen; MariaDB runs on main outside `ci-ok`, and a timed-out run already
+counts as red and opens a ci-red issue (the entries on the timeouts and on MariaDB). No hang on MariaDB has been
+reproduced; the same line there is open for a later card. `hub-sqlite` has no server locks between sessions.
+
 Which reasons are confirmed and which inferred: that the setting prints the stack under `pytest-xdist` and the test still
-passes is confirmed (proof run on #1316, and a local counter-check without the setting printing nothing); the value is the
-author's weighing, not measured against a real hang beyond #1255.
+passes is confirmed (proof run on #1316, and a local counter-check without the setting printing nothing); that a setup
+hang's dump names no test without `-v` is confirmed by a local reproduction in the review of #1319 and by the #1255 log;
+the value is the author's weighing, not measured against a real hang beyond #1255.
 
 ## MariaDB checks main after every ci run and every hour, not every pull request; PostgreSQL and SQLite stay in the gate
 
