@@ -1115,6 +1115,8 @@ agent_session = Table(
     Column("not_listening_seq", BIG_ID),
     Column("not_listening_request_id", String(ID)),
     UniqueConstraint("credential_id", "live", name="uq_agent_session_one_live"),
+    # Each credential's latest session, read on every bell read and digest hour (§5.3).
+    Index("ix_agent_session_credential_started", "credential_id", "started_at"),
     CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
     **MYSQL_TABLE,
 )
@@ -1401,6 +1403,9 @@ card = Table(
     Column("claim_session_id", String(ID)),
     Column("claim_since", UtcDateTime),
     Column("lease_until", UtcDateTime),
+    # The `lease_until` the last `claim_expired` named (§6.5): a claim counts once per expiry,
+    # and a renewed lease, a new value, counts again.
+    Column("lease_expiry_reported", UtcDateTime),
     Column("checkpoint", JSON_VALUE),
     # No foreign key: request.task_id points back here.
     Column("blocked_by_request", String(ID)),
@@ -1575,6 +1580,10 @@ request = Table(
     Column("needs_in_session", JSON_VALUE),
     Column("cover", JSON_VALUE),  # `{for, by, since}` while a substitute covers it (§6.12)
     Column("ktw_ref", String(255)),
+    # The owner's digest (§5.3): what the request shows, one entry per listed instance
+    # (`{membership_id, instance, kind, since, last_seen_at, cards, reason}`), compared on the
+    # hour and recorded when the owner answers `seen`; null for every other request.
+    Column("not_listening", JSON_VALUE),
     Column("status", String(16), nullable=False),
     Column("answer", JSON_VALUE),
     _membership_ref("answered_by"),
@@ -1905,6 +1914,24 @@ conversation_participant = Table(
         "conversation_id", "membership_id", "here", name="uq_conversation_participant_one_stay"
     ),
     CheckConstraint("here IS NOT FALSE", name="here_true_or_null"),
+    **MYSQL_TABLE,
+)
+
+# What an owner answered `seen` to in the digest (docs/api.md §5.3, "Silence after `seen`"):
+# per human and instance, the latest `last_seen_at` and the latest episode `since` a request
+# they answered showed. An older call or episode can never come back (`last_seen_at` only
+# grows, a later episode starts later), so one row per instance holds every record that still
+# matters. Deleted with the account; not in the export (the hub's bookkeeping).
+not_listening_seen = Table(
+    "not_listening_seen",
+    metadata,
+    _ref("human_id", "human.id", nullable=False),
+    _membership_ref("membership_id", nullable=False),
+    Column("instance", String(INSTANCE), nullable=False),
+    Column("last_seen_at", UtcDateTime, nullable=False),
+    Column("since", UtcDateTime),
+    PrimaryKeyConstraint("human_id", "membership_id", "instance"),
+    Index("ix_not_listening_seen_membership", "membership_id"),
     **MYSQL_TABLE,
 )
 

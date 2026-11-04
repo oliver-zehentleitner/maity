@@ -309,16 +309,20 @@ window.Maity = window.Maity || {};
     const own = msg.from === ctx.me.id;
     // A grouped message says when, not again who.
     const delivery = (m) => (own && !o.group ? " · " + (m.delivered_at ? M.t("chat.delivery.reached") : M.t("chat.delivery.waiting")) : "");
-    // Who (a link to them), then when; a delivery update rewrites the when alone.
-    const said = (m) => formatTime(m.sent_at) + delivery(m);
-    const when = h("span", { class: "when" }, said(msg));
+    // Who (a link to them), then when, then the message's seq (tsk-0aadqqwe8jvt: agents cite
+    // a message by it, "seq 54246"), then the delivery; an update rewrites the delivery alone.
+    // The seq's text is the number alone, so that it copies as one; the "#" before it is
+    // drawn by the stylesheet (.msg-seq::before) and is not part of the selection.
+    const when = h("span", { class: "when" }, formatTime(msg.sent_at));
+    const seq = h("span", { class: "msg-seq" }, String(msg.seq));
+    const state = own && !o.group ? h("span", { class: "msg-state" }, delivery(msg)) : null;
     const sender = ctx.memberById ? ctx.memberById[msg.from] : null;
     // An agent's message names its instance (from_instance, §9, §6.17).
     // One's own message sent to one instance says which (§9.1 to_instance).
     const meta = h("span", { class: "meta" }, grouped || own ? null
       : [M.dom.memberRef(ctx, msg.from, { instance: msg.from_instance }), projectsOf(ctx, sender), " · "],
-    own && msg.to_instance ? [h("span", { class: "msg-to" }, M.tn("chat.to_instance", { who: M.dom.memberRef(ctx, msg.to, { instance: msg.to_instance }) })), " · "] : null, when);
-    if (own && !o.group && !msg.delivered_at) pending.set(msg.seq, (fresh) => { when.textContent = said(fresh); });
+    own && msg.to_instance ? [h("span", { class: "msg-to" }, M.tn("chat.to_instance", { who: M.dom.memberRef(ctx, msg.to, { instance: msg.to_instance }) })), " · "] : null, when, " · ", seq, state);
+    if (state && !msg.delivered_at) pending.set(msg.seq, (fresh) => { state.textContent = delivery(fresh); });
     // A removed message reads body null (§9); who and why only where known
     // (this page's own removal, or the event_redacted that said so).
     const removed = isRemoved(msg);

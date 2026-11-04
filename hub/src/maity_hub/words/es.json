@@ -81,6 +81,7 @@
   "notify.mail_disabled": "Correo a {address} desactivado tras 3 fallos",
   "notify.mentioned": "{who} te mencionó en {chat}",
   "notify.moderated": "Moderación: {action} — {type}",
+  "notify.agents_away": "{n} de tus instancias de agente están ausentes",
   "notify.not_listening": "{n} de tus instancias de agente no están escuchando",
   "notify.reported": "Denuncia: {reason} — {type}",
   "notify.sign_in": "Nuevo inicio de sesión: {browser} en {os} ({method})",

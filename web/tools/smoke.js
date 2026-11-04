@@ -650,6 +650,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity-old" ? nsGet("/projects/maintainer/maity") : nsGet(p));
   await go("#/maintainer/maity-old/members"); await nsSettle();
   expect(win.location.hash === "#/maintainer/maity/members", "namespace: an alias leads to the current full name");
+  // The swarm tab too: an old address has no public page, so it is no non-member's overview.
+  await go("#/maintainer/maity-old/overview/swarm"); await nsSettle();
+  expect(win.location.hash === "#/maintainer/maity/overview/swarm", "namespace: an alias of the swarm tab leads to the current full name, the tab kept " + win.location.hash);
   win.Maity.api.get = nsGet;
   // A dashboard word is never a namespace.
   await go("#/runners/maity"); await nsSettle();
@@ -2592,6 +2595,49 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(eSel("role").value === "reviewer", "members: after a consent request the form shows the hub's state, not the draft");
   await submitEdit();
   expect(consents.length === 1 && text(main).includes("Nothing changed."), "members: saving again after a consent request files no second one");
+  // Another owner's agent (§6.2): the real hub names the owner as `human:<id>`, who need be no
+  // member here. The sentence names them as the owner, never the raw address (tsk-0dhk4wdt111m).
+  // Reviewer is hum-elsewhere's here; Agent B is of the same owner, Agent C of a third.
+  const ofGet = win.Maity.api.getAll;
+  let ofBoss = null;
+  const ofOwner = { "agt-r": "hum-elsewhere", "agt-b": "hum-elsewhere", "agt-c": "hum-third" };
+  win.Maity.api.getAll = (p) => ofGet(p).then((r) => (p !== "/projects/maintainer/maity/members" ? r
+    : { items: r.items.map((x) => (ofOwner[x.id] ? Object.assign({}, x, { owner_id: ofOwner[x.id] }, x.id === "agt-r" && ofBoss ? { reports_to: ofBoss } : {}) : x)), next_cursor: null }));
+  let ofTo = "human:hum-elsewhere";
+  win.Maity.api.patch = (p, b) => { consents.push(b); return Promise.resolve({ id: "req-c010", class: "consent", status: "open", to: ofTo, title: "Change reviewer in Maity" }); };
+  eSel("role").value = "coder"; eSel("role").dispatch("change");
+  await submitEdit();
+  expect(text(main).includes("Not changed yet: waiting for the owner's consent (req-c010, Change reviewer in Maity).") && !text(main).includes("human:"),
+    "members: a consent of another owner's agent names its owner, not the raw human: address " + JSON.stringify(text(main).match(/Not changed yet[^.]*\./)));
+  // A boss of the agent's own owner applies at once, the role waits: the line says which is which.
+  const mxBoss = "agt-b";
+  ofBoss = mxBoss;
+  eSel("role").value = "coder"; eSel("role").dispatch("change");
+  eSel("reports").value = mxBoss; eSel("reports").dispatch("change");
+  await submitEdit();
+  expect(consents[consents.length - 1].reports_to === mxBoss && consents[consents.length - 1].role === "coder"
+    && text(main).includes("Saved: reports to. The rest is not changed yet: waiting for the owner's consent (req-c010, Change reviewer in Maity).")
+    && !text(main).includes("Not changed yet"),
+    "members: a boss taken at once and a role waiting say both " + JSON.stringify([mxBoss, text(main).match(/(Saved|Not changed)[^.]*\.[^.]*\./)]));
+  ofBoss = null;
+  // A human who is a member here is named; one outside who is not the agent's owner is the
+  // owner of a boss of another owner, whose edge request the hub answers with for a cross-owner
+  // `reports_to` on its own (hub/src/maity_hub/cross_owner.py).
+  ofTo = "human:hum-maintainer";
+  eSel("role").value = "coder"; eSel("role").dispatch("change");
+  await submitEdit();
+  expect(text(main).includes("Not changed yet: waiting for Maintainer's consent (req-c010, Change reviewer in Maity)."),
+    "members: a consent of a human who is a member here names them " + JSON.stringify(text(main).match(/Not changed yet[^.]*\./)));
+  // An agent of a third owner chosen alone as the boss: the hub asks that owner first and
+  // answers with that edge request.
+  ofTo = "human:hum-third";
+  win.Maity.api.patch = (p, b) => { consents.push(b); return Promise.resolve({ id: "req-c011", class: "consent", status: "open", to: ofTo, title: "Take reviewer as a report of Agent C" }); };
+  eSel("reports").value = "agt-c"; eSel("reports").dispatch("change");
+  await submitEdit();
+  expect(Object.keys(consents[consents.length - 1]).join() === "reports_to"
+    && text(main).includes("Not changed yet: waiting for the boss's owner's consent (req-c011, Take reviewer as a report of Agent C)."),
+    "members: a consent of an outside human who is not the agent's owner names the boss's owner " + JSON.stringify(text(main).match(/Not changed yet[^.]*\./)));
+  win.Maity.api.getAll = ofGet;
   win.Maity.api.patch = mPatch;
   btn(mRow("Reviewer"), "Done").click(); await tick();
   // Done drops a row's unsaved edits.
@@ -4320,6 +4366,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   feed = [chatEvent];
   await fireIntervals(); await tick();
   expect(main.querySelectorAll(".msg").length === 4 && text(main).includes("On it."), "a chat event in the feed shows the agent's reply");
+  // Each message says its seq after its time (tsk-0aadqqwe8jvt), the number alone as its text
+  // (the "#" is the stylesheet's, so a copy is the number), muted with the time in .meta.
+  const onIt = main.querySelectorAll(".msg").find((li) => li.attrs["data-seq"] === "9999");
+  const onItMeta = onIt && onIt.querySelector(".meta");
+  expect(onItMeta && onItMeta.querySelector(".msg-seq") && onItMeta.querySelector(".msg-seq").textContent === "9999"
+    && text(onItMeta).endsWith(text(onItMeta.querySelector(".when")) + " · 9999")
+    && /\.msg-seq::before \{ content: "#"; \}/.test(fs.readFileSync(path.join(WEB, "css/app.css"), "utf8")),
+    "chat: a message shows its seq after its time, the # drawn by the stylesheet " + (onItMeta && text(onItMeta)));
   expect(feedPaths[0] && /after=\d+&wait=0&limit=200$/.test(feedPaths[0]), "the feed reads from the head with wait=0");
   feed = [chatEvent];
   await fireIntervals(); await tick();
@@ -4348,6 +4402,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await fireIntervals(); await tick(); await tick();
   expect(msgReads.length === 1 && msgReads[0] === convPath + "?after=" + (thanks.seq - 1) + "&limit=200"
     && thanksLine().includes("reached a session"), "the agent's next event marks the message as picked up");
+  expect(thanksLine().includes(" · " + thanks.seq + " · reached a session"),
+    "chat: the delivery's update keeps the seq after the time, before the delivery " + thanksLine());
   feed = [{ seq: 10002, kind: "session_resumed", actor: { member_id: "agt-a" }, payload: {} }];
   await fireIntervals(); await tick(); await tick();
   expect(msgReads.length === 1, "nothing pending: no further re-read");
@@ -6968,6 +7024,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(gcNew > 0 && gcList().childNodes[gcNew + 1].attrs["data-seq"] === "5020" && !main.querySelector(".earlier button"),
     "group chat: the unread line before the first unread; no earlier part for someone there from the start");
   expect(text(gcList().querySelectorAll("li.msg")[1]).includes("Agent A") && !text(main).includes("not picked up yet"), "group chat: senders named, no delivery line (several recipients)");
+  expect(gcList().querySelectorAll("li.msg").every((li) => li.querySelector(".msg-seq") && li.querySelector(".msg-seq").textContent === li.attrs["data-seq"]),
+    "group chat: every message shows its seq after its time");
   // Writing, with mentions that reach only someone in the chat.
   byId("chat-text").value = "@agent-c look"; byId("chat-text").dispatch("input");
   expect(!main.querySelector(".group-chat .mention-hint").hidden && text(main.querySelector(".group-chat .mention-hint")) === "@agent-c is not in this chat: it reaches nobody.",
@@ -9990,6 +10048,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       notes: [{ id: "nte-1", author: "member", body: "A *note* <img src=y onerror=alert(2)>", state: "open", created_at: "2026-11-02T08:00:00Z", redacted: false,
           edited: { by: "agent", at: "2026-11-02T08:30:00Z", reason: "a <b>typo</b>" } },
         { id: "nte-2", author: "agent", body: null, state: "dismissed", created_at: "2026-11-02T09:00:00Z", redacted: true, edited: null }] } },
+    "/public/pages/stranger/agents/overview": { path: "/stranger/agents/overview", kind: "agent", data: { name: "Overview", handle: "overview", owner: { name: "Sam", handle: "sam", page: "/sam" }, projects: [{ name: "Tool", full_name: "stranger/tool" }], statistics: { totals: { cards_done: 1, prs_merged: null } } } },
     "/public/pages/stranger/tool/board": { path: "/stranger/tool/board", kind: "board", data: { columns: [{ status: "open", cards: [{ id: "tsk-1", title: "A <b>card</b>", label: "bug", holder: "member" }] }] } },
     "/public/pages/stranger/tool": { path: "/stranger/tool", kind: "project", data: { name: "Tool", full_name: "stranger/tool", about: null, state: "active", repository_url: "javascript:alert(1)", links: [], people: [{ name: "Sam", handle: "sam", page: "/sam" }], agents: [], statistics: { totals: { cards_done: 3, prs_merged: null } },
       ticker: [{ type: "merge", text: "#1 <b>merged</b>", url: "https://github.com/s/t/pull/1", at: "2026-11-02T08:00:00Z" }, { type: "decision", text: "Decided: tsk-1", url: null, at: "2026-11-02T07:00:00Z" }],
@@ -10062,6 +10121,38 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!viAll.some((p) => p.startsWith("/projects/stranger")), "visitor: a stranger's public project asks no member route");
   expect(text(header).length && !header.querySelector(".visitor-sign-in"), "visitor: signed in, the reader's own header stays, with no sign-in link");
   expect(win.Maity.api.isPublicPath("/public/pages/stranger/tool"), "visitor: the read works after the session ended here");
+  // The member Overview's own address (§6.20's badge links there) shows the public overview at that
+  // address, its Overview tab current (§16.9, the maintainer's decision of 2026-11-01); its swarm tab is
+  // the members' alone, a non-member is taken to the overview.
+  const viOverview = (label) => {
+    const tab = viView() && viView().querySelectorAll("a.view-tab").find((a) => a.getAttribute("aria-current") === "page");
+    expect(viView() && viView().getAttribute("data-kind") === "project" && viAsked[viAsked.length - 1] === "/public/pages/stranger/tool"
+      && tab && (tab.getAttribute("href") || "").replace(/^#/, "") === "/stranger/tool" && !text(main).includes("You are not a member"),
+      label + " " + JSON.stringify([viView() && viView().getAttribute("data-kind"), viAsked.slice(-2), tab && tab.getAttribute("href")]));
+  };
+  for (const at of ["overview", "overview/project"]) {
+    await go("#/stranger/tool/" + at); for (let k = 0; k < 4; k++) await tick();
+    viOverview("visitor: signed in, /" + at + " of a public project one is no member of is its public overview");
+    expect(win.Maity.route.current().path === "/stranger/tool/" + at, "visitor: signed in, /" + at + " keeps its address");
+  }
+  await go("#/stranger/tool/overview/swarm"); for (let k = 0; k < 4; k++) await tick();
+  viOverview("visitor: signed in, a non-member's /overview/swarm shows the public overview");
+  expect(win.Maity.route.current().path === "/stranger/tool/overview", "visitor: signed in, a non-member's /overview/swarm is replaced by /overview");
+  // An agent may be named `overview`: its page is its own, not a project's overview.
+  await go("#/stranger/agents/overview"); for (let k = 0; k < 4; k++) await tick();
+  expect(viView() && viView().getAttribute("data-kind") === "agent" && viAsked[viAsked.length - 1] === "/public/pages/stranger/agents/overview",
+    "visitor: /<owner>/agents/overview is the page of the agent named so " + JSON.stringify([viView() && viView().getAttribute("data-kind"), viAsked.slice(-1)]));
+  const viSoGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/auth/session" || p === "/me" ? Promise.reject(new win.Maity.api.ApiError("signed out", 401, p, "unauthenticated")) : viSoGet(p));
+  await go("#/stranger/tool/overview"); for (let k = 0; k < 4; k++) await tick();
+  viOverview("visitor: without a session, /overview of a public project is its public overview, not the login");
+  expect(header.querySelector(".visitor-sign-in") && !byId("login-handle"), "visitor: without a session, /overview has the way to the sign-in in its header");
+  await go("#/stranger/agents/overview"); for (let k = 0; k < 4; k++) await tick();
+  expect(viView() && viView().getAttribute("data-kind") === "agent" && viAsked[viAsked.length - 1] === "/public/pages/stranger/agents/overview",
+    "visitor: without a session, /<owner>/agents/overview is the page of the agent named so " + JSON.stringify([viView() && viView().getAttribute("data-kind"), viAsked.slice(-1)]));
+  await go("#/stranger/tool/overview/swarm"); for (let k = 0; k < 4; k++) await tick();
+  expect(!viView() && byId("login-handle"), "visitor: without a session, /overview/swarm stays the login (members only, it goes on there after the sign-in)");
+  win.Maity.api.get = viSoGet;
   await go("#/stranger/none"); for (let k = 0; k < 4; k++) await tick();
   expect(!viView() && text(main).includes("You are not a member"), "visitor: no public page: a non-member's error stays");
   win.Maity.api.get = viGet;

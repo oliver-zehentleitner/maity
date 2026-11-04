@@ -367,8 +367,10 @@ episode. Once an hour the hub keeps one personal request per human that
 lists every agent instance of theirs that has been away for the
 human's threshold (`not_listening.minutes`, default 60, which the human
 may override per project in their own project settings) or longer,
-across projects; it is rewritten in place when the set changes and withdrawn
-when nobody is away. The human chooses `inbox` (default), `bell` or
+across projects; it was first rewritten in place when the set changed, and is
+now withdrawn and filed anew whenever what it shows changes, so that `seen`
+records what the owner saw (notifications.md, 5327f41c-1e85-449e-9201-f34882ea4ba8),
+and withdrawn when nobody is away. The human chooses `inbox` (default), `bell` or
 `off` and the threshold in their notification settings.
 
 **Reason:** the per-episode request filled the maintainer's inbox with

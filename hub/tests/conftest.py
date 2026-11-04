@@ -395,6 +395,13 @@ def _fresh_process_state() -> Iterator[None]:
     forge._budgets.clear()
     images.reset()
     ktw.CACHE.clear()
+    ktw.RAW.clear()
+    from maity_hub import ktw_reads
+
+    ktw_reads.FOREIGN.clear()
+    ktw_reads._slots.clear()
+    ktw_reads._flights.clear()
+    ktw_reads._failed.clear()
     from maity_hub import maintenance
 
     maintenance.forget()  # one test's window must not refuse the next test's requests
