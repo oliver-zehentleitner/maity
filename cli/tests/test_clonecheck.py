@@ -246,3 +246,50 @@ def test_the_state_directory_under_the_runner_is_the_clones(
 
     monkeypatch.setattr(proc, "run", no_git)
     assert state.resolve_state_dir(placed / "sub") == placed / ".git" / "maity"
+
+
+def test_a_clone_git_for_windows_made_reads_as_before(placed: Path) -> None:
+    git(placed, "config", "core.symlinks", "false")
+    facts = gitfacts.collect(placed)
+    assert facts.remote_head == facts.head
+
+
+def test_an_ordinary_setting_says_how_to_go_on_and_keeps_the_state(
+    placed: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maity import state
+
+    monkeypatch.delenv(state.STATE_DIR_ENV, raising=False)
+    git(placed, "config", "pull.rebase", "true")
+    with pytest.raises(gitfacts.FactsError, match=r"pull\.rebase.*git config --unset"):
+        gitfacts.collect(placed)
+    assert state.resolve_state_dir(placed) == placed / ".git" / "maity"
+
+
+def test_the_copy_by_path_reads_the_same_refs_and_refuses_links(
+    placed: Path, tmp_path: Path
+) -> None:
+    """The copy local mode uses on Windows, run here: the same files as the POSIX copy."""
+    git(placed, "pack-refs", "--all")
+    git(placed, "branch", "loose")
+    by_fd, by_path = tmp_path / "fd", tmp_path / "path"
+    for target in (by_fd, by_path):
+        (target / "refs").mkdir(parents=True)
+    if sys.platform != "win32":
+        clonecheck._copy_refs(placed / ".git", by_fd)
+        listed = {p.relative_to(by_fd): p.read_bytes() for p in by_fd.rglob("*") if p.is_file()}
+    clonecheck._copy_refs_by_path(placed / ".git", by_path)
+    copied = {p.relative_to(by_path): p.read_bytes() for p in by_path.rglob("*") if p.is_file()}
+    assert Path("refs/heads/loose") in copied and Path("packed-refs") in copied
+    if sys.platform != "win32":
+        assert copied == listed
+    outside = tmp_path / "outside"
+    outside.write_text("0" * 40 + "\n")
+    try:
+        (placed / ".git" / "refs" / "heads" / "elsewhere").symlink_to(outside)
+    except OSError:
+        pytest.skip("no symlinks for this user")
+    again = tmp_path / "again"
+    (again / "refs").mkdir(parents=True)
+    with pytest.raises(clonecheck.Refused, match="elsewhere"):
+        clonecheck._copy_refs_by_path(placed / ".git", again)

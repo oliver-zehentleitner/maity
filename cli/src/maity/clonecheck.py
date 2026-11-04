@@ -222,7 +222,9 @@ def _within(path: Path, directory: Path) -> bool:
 # The configuration keys maity passes on to git from the clone's own, under the runner: what
 # report and the checks read (remotes, upstreams, who commits) and how the work tree is read.
 # The repository's layout (`core.bare`, the format) is maity's, never the clone's.
-PASSED_ON = frozenset({"filemode", "ignorecase", "precomposeunicode", "logallrefupdates"})
+PASSED_ON = frozenset({
+    "filemode", "ignorecase", "precomposeunicode", "logallrefupdates", "symlinks",
+})  # fmt: skip
 # A loose ref or HEAD is one line; more than this many refs is not a clone maity copies.
 REF_MAX = 4096
 REFS_MAX = 20_000
@@ -253,7 +255,11 @@ def placement_git(cwd: Path) -> Iterator[dict[str, str] | None]:
         raise Refused(f"{onboarding.inline(str(here))} is outside the clone {root}")
     reason, entries = _inspect(root, LOCAL)
     if reason is not None:
-        raise Refused(f"the clone {root} is not a plain clone: {reason}")
+        raise Refused(
+            f"the clone {root} is not a plain clone: {reason}. Under the runner maity's git runs"
+            " only in a clone laid out and configured as `git clone` leaves it; undo that"
+            " change (for a setting, `git config --unset`) and run the command again"
+        )
     dot_git = root / ".git"
     own = dot_git / "maity"
     if own.is_symlink() or not own.is_dir():
@@ -313,8 +319,9 @@ def _copy_refs(dot_git: Path, private: Path) -> None:
     """HEAD, `packed-refs`, `shallow` and `refs/` of the clone into `private`, as regular
     files only: a link, or anything else, is refused rather than followed. Read through
     the directory `.git` was when opened, so a `.git` replaced meanwhile is not read."""
-    if sys.platform == "win32":  # the runner places agents on POSIX hosts only
-        raise Refused("maity's git under the runner needs a POSIX host")
+    if sys.platform == "win32":
+        _copy_refs_by_path(dot_git, private)
+        return
     try:
         top = os.open(dot_git, os.O_RDONLY | os.O_NOFOLLOW | os.O_DIRECTORY)
     except OSError as exc:
@@ -339,3 +346,39 @@ def _copy_refs(dot_git: Path, private: Path) -> None:
         raise Refused(f"the clone's refs cannot be copied ({exc})") from None
     finally:
         os.close(top)
+
+
+def _plain_file(path: Path, limit: int) -> bytes:
+    """A regular file that is no link or other reparse point, at most `limit` bytes."""
+    mode = path.lstat()
+    reparse = getattr(mode, "st_file_attributes", 0) & 0x400  # FILE_ATTRIBUTE_REPARSE_POINT
+    if not stat.S_ISREG(mode.st_mode) or reparse or mode.st_size > limit:
+        raise Refused(f"{onboarding.inline(path.name)} in the clone's .git is not a plain ref")
+    with path.open("rb") as fh:
+        return fh.read(limit + 1)[:limit]
+
+
+def _copy_refs_by_path(dot_git: Path, private: Path) -> None:
+    """`_copy_refs` where directories cannot be opened (Windows, local mode): each entry is
+    checked with `lstat` before it is read. A file replaced between the two is read as it
+    then is; local mode's sandbox is not verified there (runner.md, local mode)."""
+    try:
+        (private / "HEAD").write_bytes(_plain_file(dot_git / "HEAD", REF_MAX))
+        for name in ("packed-refs", "shallow"):
+            if (dot_git / name).exists():
+                (private / name).write_bytes(_plain_file(dot_git / name, PACKED_REFS_MAX))
+        count = 0
+        for here, dirs, files in os.walk(dot_git / "refs"):  # does not descend into links
+            where = private / Path(here).relative_to(dot_git)
+            where.mkdir(exist_ok=True)
+            for name in dirs:
+                mode = (Path(here) / name).lstat()
+                if stat.S_ISLNK(mode.st_mode) or getattr(mode, "st_file_attributes", 0) & 0x400:
+                    raise Refused(f".git/refs holds a link, {onboarding.inline(name)}")
+            for name in files:
+                count += 1
+                if count > REFS_MAX:
+                    raise Refused(f"the clone has more than {REFS_MAX} loose refs")
+                (where / name).write_bytes(_plain_file(Path(here) / name, REF_MAX))
+    except OSError as exc:
+        raise Refused(f"the clone's refs cannot be copied ({exc})") from None

@@ -1375,13 +1375,14 @@ message says are no boundary.
 **Revisit when:** agents under the runner need a git configuration key a plain clone has not, the runner starts sessions without `GIT_COMMON_DIR` or `.git/maity`, a sandbox stops denying the agent `.git/maity`, maity's git under the runner needs to write, or clones under the runner get worktrees
 
 In a session the runner started (`MAITY_PLACEMENT` set), every git
-maity starts first checks the clone the same way `gc` does
+maity itself starts first checks the clone the same way `gc` does
 (`clonecheck.not_inspectable`, moved out of `runner/operate.py` so both
 use one check): a `.git` made only of a plain clone's entries, a
 configuration made only of a plain clone's keys, as git itself reads
 that configuration (`git config --file -` on the bytes, includes off,
 no other configuration), checked by section, subsection and key, so a
-remote or branch name may hold a dot. The clone is the
+remote or branch name may hold a dot, and the keys git for Windows
+writes on a clone are a plain clone's too. The clone is the
 parent of `GIT_COMMON_DIR`, which the runner sets. Without it, or when
 it does not resolve, maity runs no git; it never falls back to the
 current directory. The current directory must lie inside that clone.
@@ -1394,9 +1395,15 @@ are copied as regular files only. Objects, the index and the work tree
 are the clone's (`GIT_OBJECT_DIRECTORY`, `GIT_INDEX_FILE`,
 `GIT_WORK_TREE`, `GIT_CEILING_DIRECTORIES`), and `GIT_OPTIONAL_LOCKS=0`
 keeps `status` from writing into the clone. The directory is removed
-after the run. The state directory under the runner is the clone's
-`.git/maity`, taken from `GIT_COMMON_DIR`, not from git. Outside a
-placement nothing changes.
+after the run. On Windows (local mode), where a directory cannot be
+opened and read from, each ref is checked with `lstat` before it is
+read. A refused clone gets the way back: undo the change, a setting
+with `git config --unset`. The state directory under the runner is the
+clone's `.git/maity`, taken from `GIT_COMMON_DIR`, not from git, so a
+refused clone still reaches its credential. The check lists `.git` on
+every run (about a quarter of a second at 10 000 entries); it is not
+cached, since the clone may change between two runs. git that gh starts
+is not maity's and is not checked. Outside a placement nothing changes.
 
 **Reason:** under the runner, maity's git runs outside the agent's
 sandbox, in a clone whose configuration the agent writes. The pinned
