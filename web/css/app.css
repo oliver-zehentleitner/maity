@@ -1681,7 +1681,9 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .product-sep { white-space: pre; }
 .product-line a { color: inherit; }
 .product-mark { width: 14px; height: 14px; vertical-align: -2px; flex: none; }
-.product-icon { display: inline-flex; align-items: center; padding: 2px; border-radius: 3px; }
+/* 24 px: the icon links keep the target size of WCAG 2.5.8 when the line wraps at phone width. */
+.product-icon { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 24px;
+  border-radius: 3px; }
 .product-heart { color: var(--bad); }
 /* The Maity mark's dark variant (brand/maity-mark-small-dark.svg): CSS over the presentation attributes. */
 @media (prefers-color-scheme: dark) {
