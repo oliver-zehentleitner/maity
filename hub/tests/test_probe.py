@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, insert, select, update
 
-from maity_hub import clock, forge, probe
+from maity_hub import clock, events, forge, probe
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from tests import flow
@@ -1399,7 +1399,7 @@ def test_a_slower_commit_answer_never_replaces_a_newer_kept_one(
         now + timedelta(seconds=5),
         True,
     )
-    real_transaction = probe.transaction
+    real_transaction = events.transaction
     raced = [False]
 
     def newer_kept_first(engine: Engine) -> Any:
