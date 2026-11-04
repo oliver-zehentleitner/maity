@@ -2589,6 +2589,20 @@ window.Maity = window.Maity || {};
     }],
     ["DELETE", /^\/runners\/([^/]+)$/, (m, body, path) => {
       const r = runnerOf(m[1], path);
+      // §15.3: the rule applied in each attached project the caller is a member of;
+      // `inherit` takes the instance setting, `keep` by default. A second DELETE finds
+      // nothing attached and answers an empty list.
+      const mine = me().projects.map((p) => p.full_name);
+      const onRevoke = runnersFile().attachments
+        .filter((a) => a.runner_id === r.id && !a.detached_at && mine.includes(a.project))
+        .map((a) => {
+          const policy = ((fixtures()[fixtureSlug(a.project) + "/project.json"] || {}).policy || {}).on_runner_revoke;
+          const rule = (body && body.agents) === "stop" || policy === "stop" ? "stop" : "keep";
+          const stopped = rule === "stop"
+            ? placementsOf(fixtureSlug(a.project)).filter((p) => p.active && p.runner.id === r.id).map((p) => p.id)
+            : [];
+          return { project: a.project, rule, stopped };
+        });
       if (!r.removed_at) {
         if (r.credential && !r.credential.revoked_at) { r.credential.revoked_at = nowIso(); r.credential.revoked_reason = "runner_removed"; }
         r.credential_state = "revoked";
@@ -2596,7 +2610,7 @@ window.Maity = window.Maity || {};
         r.projects = [];
         runnersFile().attachments.filter((a) => a.runner_id === r.id && !a.detached_at).forEach((a) => { a.detached_at = r.removed_at; });
       }
-      return Object.assign({}, r, { still_running: (runnersFile().still_running || {})[r.id] || [] });
+      return Object.assign({}, r, { still_running: (runnersFile().still_running || {})[r.id] || [], on_runner_revoke: onRevoke });
     }],
     // Attachments (docs/api.md §15.4). The runner's `projects` follow them.
     ["GET", /^\/projects\/([^/]+)\/runners$/, (m, body, path) => {

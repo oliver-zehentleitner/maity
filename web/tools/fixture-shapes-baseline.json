@@ -1,7 +1,4 @@
 {
- "DELETE /runners/{runner}": [
-  ".on_runner_revoke: the fixture leaves it out"
- ],
  "GET /agents": [
   ".items[].aliases: the fixture leaves it out",
   ".items[].allowed_projects: the fixture leaves it out",
