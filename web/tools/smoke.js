@@ -356,8 +356,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // A consent takes no words alone (a proposal's would be read as No, §15.6): Send stays, disabled, and says why.
   const c2Send = btn(c2, "Send"), c2Hint = c2.querySelector(".reply-hint");
   expect(c2Send.disabled && c2Hint && c2Send.getAttribute("aria-describedby") === c2Hint.id && text(c2Hint).includes("Choose one of the answers")
-    && !btn(c2, "Talk").disabled && !btn(c2, "Talk").getAttribute("aria-describedby"),
-    "a consent: Send disabled, described by the hint; Talk for the agent's owner, no reason to give");
+    && !btn(c2, "Talk").disabled && !btn(c2, "Talk").getAttribute("aria-describedby") && !c2Send.getAttribute("aria-keyshortcuts"),
+    "a consent: Send disabled, described by the hint, no Ctrl+Enter announced; Talk for the agent's owner, no reason to give");
   // The one text field stands above the buttons, always writable (§7).
   const fieldAbove = c2.querySelector(".free-text");
   expect(fieldAbove && fieldAbove.querySelector("textarea") && !fieldAbove.querySelector("textarea").disabled
@@ -409,7 +409,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     ansCalls.length = 0;
     freeText.value = "Ask @age"; freeText.dispatch("input"); await tick(); await tick();
     const talkBefore = btn(hashEntry, "Talk").disabled;
-    expect(!btn(hashEntry, "Send").disabled, "a decision with replies: Send takes the words alone");
+    expect(!btn(hashEntry, "Send").disabled && btn(hashEntry, "Send").getAttribute("aria-keyshortcuts") === "Control+Enter Meta+Enter",
+      "a decision with replies: Send takes the words alone, Ctrl+Enter announced");
     freeText.dispatch("keydown", { key: "Enter", ctrlKey: true }); await tick(); await tick();
     const openList = hashEntry.querySelector(".mention-list");
     expect(freeText.value === "Ask @age" && openList.hidden && JSON.stringify(ansCalls.map((c) => c[1])) === JSON.stringify([{ text: "Ask @age" }]),

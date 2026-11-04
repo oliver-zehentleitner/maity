@@ -755,7 +755,8 @@ with options too: it sends the text alone (`{text}`), Ctrl+Enter the
 same, and is disabled while the field is empty. It stays disabled, with
 its reason below the buttons (`.reply-hint`, its `aria-describedby`),
 on every `consent`, every request with `action` or `placement`, and a
-takeover's (`takeover_id`). **Talk** stands on every request one can
+takeover's (`takeover_id`), and there Ctrl+Enter is not offered: a
+shortcut that never sends is not announced. **Talk** stands on every request one can
 answer, disabled with its reason where `talk` is not accepted: for
 another owner's agent, a human asker and a request the hub filed itself
 (above), and on a takeover's, which needs one of its replies as the

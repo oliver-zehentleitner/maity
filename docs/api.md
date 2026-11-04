@@ -9666,8 +9666,11 @@ the text alone is refused or read as No — a `consent` (its proposal or
 placement, §15.6), a request with `action`, a takeover's — it stays
 disabled and the reason stands below the buttons. The `talk` button is
 labelled "Talk" in every language; it is on every request that can be
-answered and enabled only where `talk` is accepted (above), elsewhere
-disabled with the reason below the buttons.
+answered and enabled only where `talk` is accepted (above): not for
+another owner's agent, a human asker or a request the hub filed itself,
+nor on a takeover's, which needs one of its replies (§6.19). There it is
+disabled with the reason below the buttons. Ctrl+Enter is offered only
+where the send button can send at all.
 
 **Personal requests.** Some requests concern one human as the owner
 of an agent profile, not the project: the notice of a soul change

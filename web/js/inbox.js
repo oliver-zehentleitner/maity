@@ -410,7 +410,8 @@ window.Maity = window.Maity || {};
     if (sendText) {
       empty();
       text.addEventListener("input", empty);
-      M.dom.sendOnCtrlEnter(text, sendWords, sendText);
+      // Ctrl+Enter only where Send can ever send: a Send disabled for good announces no shortcut.
+      if (wordsAlone) M.dom.sendOnCtrlEnter(text, sendWords, sendText);
     }
     const talk = h("button", { type: "button", class: "reply talk", "aria-describedby": talkWhy ? hintId : null,
       onclick: () => { if (talkable) send(withText({ talk: true })); } }, M.t("inbox.talk"));
