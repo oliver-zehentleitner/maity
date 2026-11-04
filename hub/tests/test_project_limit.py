@@ -1,5 +1,6 @@
 """docs/api.md §16.5: at most so many projects in one namespace, a human's or an
-organisation's, and an archived project leaves the jour-fixe and availability sweeps (§6.1)."""
+organisation's, and an archived project leaves the availability sweep (§6.1); the jour fixe
+still reaches it (§20.1, §20.6, tests in test_jour_fixe*.py)."""
 
 from __future__ import annotations
 
@@ -144,10 +145,10 @@ def test_a_move_into_a_full_organisation_is_refused(admin: flow.Human) -> None:
     assert admin.get("/projects/maintainer/shop").json()["full_name"] == "maintainer/shop"
 
 
-# --- an archived project leaves the periodic runs -------------------------------------------
+# --- an archived project leaves the availability sweep ---------------------------------------
 
 
-def test_the_sweeps_skip_an_archived_project_and_take_it_back_when_unarchived(
+def test_the_availability_sweep_skips_an_archived_project_the_jour_fixe_does_not(
     admin: flow.Human, migrated: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     live = flow.project(admin, "live")["id"]
@@ -168,7 +169,7 @@ def test_the_sweeps_skip_an_archived_project_and_take_it_back_when_unarchived(
         return sorted(seen)
 
     state("archived")
-    assert sweep() == [f"av:{live}", f"jf:{live}"]
+    assert sweep() == sorted([f"av:{live}", f"jf:{live}", f"jf:{old}"])
     state("build")
     assert sweep() == sorted([f"av:{live}", f"jf:{live}", f"av:{old}", f"jf:{old}"])
 

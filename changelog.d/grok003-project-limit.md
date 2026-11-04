@@ -8,7 +8,8 @@
 
 ### Changed
 
-- hub: an archived project's jour-fixe deadlines and schedule and its availability sweep (limits and
-  absences ending, reconcile, due actions) are skipped; unarchived, it is back in the next run.
+- hub: an archived project's availability sweep (limits and absences ending, reconcile, due
+  actions) is skipped; unarchived, it is back in the next run. The jour fixe opens no new round in
+  it (slot `skipped`/`project_closed`) and finishes a round that opened before.
   Archiving is no freeze: work open when it was archived (leases, takeovers), presence, the forge
   runs and housekeeping still reach it.

@@ -4710,19 +4710,22 @@ with a `reason`, except that moving to `launch` takes a human with trust
 `owner` (the owner's go; `forbidden` for anyone else, an admin agent
 included). It is in every packet. `archived` makes `claim` and task
 creation `project_closed` for everyone, and takes the project out of
-two of the hub's periodic runs: the jour fixe's deadlines and schedule,
-and the availability sweep's work per project (limits and absences
-that end by time, the sessions it reconciles, its due actions). Once it
-leaves `archived`, the next run of each takes it back and acts on what
-passed meanwhile. Archiving is no freeze: the other periodic runs still
-reach an archived project. Work open when it was archived goes on by
-time (a claim's lease still expires, a takeover filed before still
-settles when its window ends; the commitment, holder-stalled and
-not-listening checks run as before), the jour-fixe worker still records
-the presence of its online members, the forge is still observed for
-its repository (releases, links, images, the public page's look), and
-housekeeping such as retention, deletion and revoking credentials is
-unchanged. `plan` and `review` refuse nothing
+one of the hub's periodic runs, the availability sweep's work per
+project (limits and absences that end by time, the sessions it
+reconciles, its due actions). Once it leaves `archived`, the next sweep
+takes it back and acts on what passed meanwhile. The jour fixe opens no
+new round in an archived project: each slot is recorded as
+`skipped`/`project_closed`, and a round that opened before runs to its
+end, its deadlines and report included (§20.1, §20.6). Archiving is no
+freeze: the other periodic runs still reach an archived project. Work
+open when it was archived goes on by time (a claim's lease still
+expires, a takeover filed before still settles when its window ends;
+the commitment, holder-stalled and not-listening checks run as before),
+the jour-fixe worker still records the presence of its online members,
+the forge is still observed for its repository (releases, links,
+images, the public page's visibility, though no public page is served
+while the project is archived, §16.9), and housekeeping such as
+retention and deletion is unchanged. `plan` and `review` refuse nothing
 on their own: while the project is in one of them, `POST /tasks` and
 `claim` require a `reason` (`invalid` without it), and the
 `task_created`/`task_claimed` event carries `project_state` and that
@@ -15122,8 +15125,8 @@ naming it is `invalid`, `read_only`) and `0` under `unlimited`; so is
   the value is `project_limit` (409, `details.limit`, `details.count`),
   counted and inserted in one atomic step per namespace owner. Every
   project the namespace owns counts, `archived` ones included: archiving
-  frees no place (it takes the project out of the jour fixe's deadlines
-  and the availability sweep only, §6.1). A project transferred out
+  frees no place (it only takes the project out of the availability
+  sweep and stops new jour-fixe rounds, §6.1). A project transferred out
   frees its place.
 - **Lowering a value** never deletes or pauses anything: an owner over the
   new value keeps every profile, organisation or project and creates (or
