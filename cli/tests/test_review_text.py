@@ -396,3 +396,15 @@ def test_a_place_in_brackets_on_the_next_line_ties_the_quote() -> None:
     files = ["docs/how/connected.md"]
     wrapped = 'The page reads "four entirely fabricated words"\n(docs/how/connected.md:3).'
     assert [q.files for q in textcheck.quotations(wrapped, files)] == [["docs/how/connected.md"]]
+
+
+def test_the_brackets_of_one_quote_are_no_place_before_the_next() -> None:
+    files = ["docs/how/connected.md", "web/js/wake.js"]
+    two = (
+        'It reads "four entirely fabricated words" (docs/how/connected.md:3) and'
+        ' "four more fabricated words here" (web/js/wake.js:1).'
+    )
+    assert [q.files for q in textcheck.quotations(two, files)] == [
+        ["docs/how/connected.md"],
+        ["web/js/wake.js"],
+    ]

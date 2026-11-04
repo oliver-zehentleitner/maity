@@ -10323,7 +10323,8 @@ is not there is not sent:
    in 24 characters (`docs/how/connected.md:3 says "…"`), or right after
    it in brackets, on its line or the paragraph's next one
    (`"…" (docs/how/connected.md:3)`); when the places before it and in
-   those brackets name more than one file, it is tied to none. With no
+   those brackets name more than one file, it is tied to none, and a
+   place in the brackets of one quote is no place before the next. With no
    file and line next to it, the section it sits in ties it when it is
    about one file: the nearest heading above it that names a file at
    `head` names exactly that one, and a heading that names two or more

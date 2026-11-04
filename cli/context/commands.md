@@ -889,6 +889,11 @@ span. Neither sample holds a misquote, so the check rests on the incident (a quo
 head never held) and the maintainer's decision, not on misquotes found in old reviews, and its
 cost is that rule for reviewers.
 
+When the places next to a quote name two files, it is tied to none: either file could be the
+wrong source. Brackets may stand on the paragraph's next line, as a wrapped review sets them, and
+the brackets one quote took are no place before the next, so that `"x" (a:1) and "y" (b:2)` ties
+each quote to its own file.
+
 A quote tied by a file and line has to stand at the head, as the line refers to the head
 (form 1). A quote tied only by its section may also stand on the default branch, so that a
 review can quote what the change removed.
@@ -896,6 +901,11 @@ review can quote what the change removed.
 **Rejected alternatives:**
 - Tying a quote to every file and line in its paragraph: the measured 60 of 194 false alarms;
   a single-line review paragraph names many files.
+- Tying a quote whose places name two files to each of them: one of them is always the wrong
+  source, so a correct quote of one file is refused against the other.
+- `)` as a stop between a place and the next quote: reviews also write `(path:n) says "…"`,
+  and a reviewer's run over 175 of its texts lost four such ties that way; skipping the
+  brackets a quote took changed no other tie there.
 - `"…": path:n` as a tie: in the reviews it is a claim followed by the line that backs it, and
   the claim is the reviewer's summary, not a quote from that line.
 - Checking every quote of four words or more against the whole head: proposals and outputs

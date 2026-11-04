@@ -291,6 +291,7 @@ def quotations(text: str, files: list[str]) -> list[Quotation]:
         lines = [m for m in _FILE_LINE.finditer(para) if m.group(1) in files]
         nearest = next((named for _, named in reversed(section) if named), [])
         here = nearest[0] if len(nearest) == 1 else None
+        used = -1  # the end of the brackets the last quote took: no place before the next one
         for match in _QUOTE.finditer(blanked):
             quote = para[match.start() + 1 : match.end() - 1]
             if len(quote.split()) < _QUOTE_WORDS:
@@ -298,11 +299,16 @@ def quotations(text: str, files: list[str]) -> list[Quotation]:
             before = [m for m in lines if m.end() <= match.start()]
             after = [m for m in lines if m.start() >= match.end()]
             named = []
-            if before and _next_to(para[before[-1].end() : match.start()], 2):
+            if (
+                before
+                and before[-1].start() > used
+                and _next_to(para[before[-1].end() : match.start()], 2)
+            ):
                 named.append(before[-1].group(1))
             if after and _AFTER_GAP.fullmatch(para[match.end() : after[0].start()]):
                 close = para.find(")", after[0].end())
-                inside = para[after[0].start() : close if close != -1 else len(para)]
+                used = close if close != -1 else len(para)
+                inside = para[after[0].start() : used]
                 named.extend(m.group(1) for m in _FILE_LINE.finditer(inside))
             if named:
                 # Places of two files next to one quote name no one source: it is tied to none.
