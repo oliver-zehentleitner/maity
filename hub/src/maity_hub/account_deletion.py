@@ -586,6 +586,7 @@ def _remove_person(conn: Connection, human_id: str, secret_key: bytes | None) ->
         t.notification_read,
         t.notification_position,
         t.account_record,  # sign-ins with their addresses and browsers, address changes
+        t.not_listening_seen,  # what the human answered `seen` to in the digest (§5.3)
     ):
         conn.execute(delete(table).where(table.c.human_id == human_id))
     conn.execute(delete(t.avatar_image).where(t.avatar_image.c.owner_id == human_id))

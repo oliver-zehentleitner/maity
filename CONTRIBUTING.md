@@ -47,6 +47,40 @@ verified.
   what was counted, over which scope, with which filters or exclusions.
   Include enough evidence to reproduce the count.
 
+## PostgreSQL runs and a shared machine
+
+A hub change that adds or changes an Alembic migration or raw SQL runs the
+tests it affects on PostgreSQL before it asks for review; SQLite does not
+show PostgreSQL's errors, and CI is not the first PostgreSQL run. From
+`hub/`:
+
+```sh
+scripts/with_postgres.sh pytest -n 2 tests/test_board.py
+```
+
+The run gets a database of its own (`maity_test_<name>_<pid>`, `<name>` from
+`MAITY_RUN_NAME`, else the user name), dropped when it ends. `hub/README.md`
+says where `pg_ctl` comes from without a system PostgreSQL.
+
+On a machine several contributors share under one Unix account (the server's data
+directory and the slot files are that account's own; another account gets its own):
+
+- **One server for every run:** `scripts/with_postgres.sh --start` starts it
+  when it is not running and leaves it up; every run then uses it. Set
+  `MAITY_RUN_NAME` to who you are (for an agent, `handle#instance`), so that
+  a database left behind says whose it was. `--stop` stops the server, and
+  refuses while a run still uses it, also a run whose wrapper was killed and
+  whose command still runs, or a process a run left running. Other runs
+  still get the server, but such a process keeps its run slot until it ends;
+  the slot files' `.who` names the run it came from.
+- **Two heavy runs at a time:** `make smoke` in `web/` and
+  `with_postgres.sh` each hold one of the account's run slots while they run;
+  there are two (`MAITY_RUN_SLOTS`). A third run waits, says who holds the
+  slots, and starts once one is free. Anything else heavy runs in a slot as
+  `tools/run_slot.sh <command>`.
+- **Two workers per run:** `pytest -n 2` at most; in a slot, `-n auto`
+  starts two.
+
 ## Commits
 
 Imperative, plain English, one concern per commit:

@@ -1,24 +1,86 @@
 {
  "DELETE /runners/{runner}": {
   "object": {
-   "capabilities": "null",
+   "capabilities": {
+    "object": {
+     "backend": "string",
+     "harnesses": {
+      "array": {
+       "object": {
+        "available": "boolean",
+        "confinement": "string",
+        "default_mode": "string",
+        "id": "string",
+        "models": {
+         "array": "string"
+        },
+        "modes": {
+         "array": "string"
+        },
+        "reason": "null",
+        "sandbox": "string",
+        "targets": {
+         "array": "string"
+        },
+        "version": "string"
+       }
+      }
+     },
+     "max_agents": "number",
+     "projects": {
+      "array": "string"
+     },
+     "reported_at": "string",
+     "repositories": {
+      "array": "string"
+     },
+     "require_local_approval": "boolean",
+     "running": "number",
+     "targets": {
+      "array": {
+       "object": {
+        "isolation": {
+         "object": {
+          "kind": "string",
+          "runner_separate": "boolean",
+          "user": "string"
+         }
+        },
+        "max_agents": "number",
+        "name": "string",
+        "reachable": "boolean",
+        "running": "number",
+        "unreachable_since": "null"
+       }
+      }
+     }
+    }
+   },
    "created_at": "string",
    "credential": {
     "object": {
      "created_at": "string",
      "id": "string",
-     "last_used_at": "null",
+     "last_used_at": "string",
      "revoked_at": "string",
      "revoked_reason": "string"
     }
    },
    "credential_state": "string",
    "id": "string",
-   "last_seen_at": "null",
+   "last_seen_at": "string",
    "listening": "boolean",
    "name": "string",
    "on_runner_revoke": {
-    "array": null
+    "array": {
+     "object": {
+      "project": "string",
+      "rule": "string",
+      "stopped": {
+       "array": "string"
+      }
+     }
+    }
    },
    "owner_id": "string",
    "presence": "string",
@@ -27,10 +89,10 @@
    },
    "removed_at": "string",
    "still_running": {
-    "array": null
+    "array": "string"
    },
    "updated_at": "string",
-   "version": "null"
+   "version": "string"
   }
  },
  "GET /agents": {
@@ -384,6 +446,7 @@
      "owner_confirmed": "boolean",
      "probe_configured": "boolean",
      "probe_via": "null",
+     "required_check": "null",
      "url": "string"
     }
    },
@@ -719,7 +782,14 @@
       "owner_id": "string",
       "owner_preferences": "boolean",
       "paused": "null",
-      "placement": "null",
+      "placement": {
+       "object": {
+        "desired": "string",
+        "id": "string",
+        "runner_name": "string",
+        "state": "string"
+       }
+      },
       "presence": "string",
       "reports_to": "null",
       "role": "string",
@@ -1279,30 +1349,84 @@
    "items": {
     "array": {
      "object": {
-      "capabilities": "null",
+      "capabilities": {
+       "object": {
+        "backend": "string",
+        "harnesses": {
+         "array": {
+          "object": {
+           "available": "boolean",
+           "confinement": "string",
+           "default_mode": "string",
+           "id": "string",
+           "models": {
+            "array": "string"
+           },
+           "modes": {
+            "array": "string"
+           },
+           "reason": "null",
+           "sandbox": "string",
+           "targets": {
+            "array": "string"
+           },
+           "version": "string"
+          }
+         }
+        },
+        "max_agents": "number",
+        "projects": {
+         "array": "string"
+        },
+        "reported_at": "string",
+        "repositories": {
+         "array": "string"
+        },
+        "require_local_approval": "boolean",
+        "running": "number",
+        "targets": {
+         "array": {
+          "object": {
+           "isolation": {
+            "object": {
+             "kind": "string",
+             "runner_separate": "boolean",
+             "user": "string"
+            }
+           },
+           "max_agents": "number",
+           "name": "string",
+           "reachable": "boolean",
+           "running": "number",
+           "unreachable_since": "null"
+          }
+         }
+        }
+       }
+      },
       "created_at": "string",
       "credential": {
        "object": {
         "created_at": "string",
         "id": "string",
-        "last_used_at": "null",
+        "last_used_at": "string",
         "revoked_at": "null",
         "revoked_reason": "null"
        }
       },
       "credential_state": "string",
       "id": "string",
-      "last_seen_at": "null",
+      "last_seen_at": "string",
       "listening": "boolean",
       "name": "string",
       "owner_id": "string",
       "presence": "string",
       "projects": {
-       "array": null
+       "array": "string"
       },
       "removed_at": "null",
       "updated_at": "string",
-      "version": "null"
+      "version": "string"
      }
     }
    },
@@ -1311,30 +1435,84 @@
  },
  "GET /runners/{runner}": {
   "object": {
-   "capabilities": "null",
+   "capabilities": {
+    "object": {
+     "backend": "string",
+     "harnesses": {
+      "array": {
+       "object": {
+        "available": "boolean",
+        "confinement": "string",
+        "default_mode": "string",
+        "id": "string",
+        "models": {
+         "array": "string"
+        },
+        "modes": {
+         "array": "string"
+        },
+        "reason": "null",
+        "sandbox": "string",
+        "targets": {
+         "array": "string"
+        },
+        "version": "string"
+       }
+      }
+     },
+     "max_agents": "number",
+     "projects": {
+      "array": "string"
+     },
+     "reported_at": "string",
+     "repositories": {
+      "array": "string"
+     },
+     "require_local_approval": "boolean",
+     "running": "number",
+     "targets": {
+      "array": {
+       "object": {
+        "isolation": {
+         "object": {
+          "kind": "string",
+          "runner_separate": "boolean",
+          "user": "string"
+         }
+        },
+        "max_agents": "number",
+        "name": "string",
+        "reachable": "boolean",
+        "running": "number",
+        "unreachable_since": "null"
+       }
+      }
+     }
+    }
+   },
    "created_at": "string",
    "credential": {
     "object": {
      "created_at": "string",
      "id": "string",
-     "last_used_at": "null",
+     "last_used_at": "string",
      "revoked_at": "null",
      "revoked_reason": "null"
     }
    },
    "credential_state": "string",
    "id": "string",
-   "last_seen_at": "null",
+   "last_seen_at": "string",
    "listening": "boolean",
    "name": "string",
    "owner_id": "string",
    "presence": "string",
    "projects": {
-    "array": null
+    "array": "string"
    },
    "removed_at": "null",
    "updated_at": "string",
-   "version": "null"
+   "version": "string"
   }
  }
 }

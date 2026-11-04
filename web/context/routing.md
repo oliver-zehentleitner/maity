@@ -157,3 +157,34 @@ jump in the table of contents would be a new address the view draws
 again, re-reading a file of up to 4 MiB. Letting `isRoute` take a
 fragment: it is also the boundary for a sign-in's `next`, which the
 hub's own check refuses with a `#`.
+
+## A public project's Overview addresses show its public overview to anyone; its swarm tab stays the members'
+
+**Id:** 66f1d8b8-8308-4dd7-ae48-803a99d8d2bf
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-01 (a public project looks to a visitor as to a member, read-only); the lead's approval on the card tsk-n2ymkzczcya5; docs/api.md §16.9, §16.11, §6.20; web/js/visitor.js `canBePublic`, `storedPath`; the visitor cases in web/tools/smoke.js
+**Revisit when:** the swarm tab gets a public page of its own, or the badge links elsewhere than `/overview`
+
+`/<owner>/<slug>/overview` and `…/overview/project` are public addresses:
+`M.visitor.page` reads the project's own stored page (`kind` `project`)
+for them and draws it read-only, for a visitor and for a signed-in
+non-member alike, at the address they opened. `…/overview/swarm` has no
+stored page: a visitor keeps the login, which goes on there after the
+sign-in, and a signed-in non-member is taken to `…/overview` with the
+address replaced, so that Back does not return to a dead end. That
+happens only once the hub answers the project's page: an earlier
+address of a project (a rename, a transfer) has none, so a member who
+follows an old swarm link is led on to the current one, the tab kept.
+
+**Reason:** the badge (§6.20) links to `/overview`, and before this the
+link ended on the login for a visitor and on `not_member` for a
+signed-in non-member, while the project's own address showed the same
+overview. The Overview is the member view of exactly that page.
+
+**Rejected alternative:** keeping `/overview` a members' address like
+the other dashboard views: the badge link, the one place a stranger is
+sent into a project, would end on the login. Mapping the swarm tab to
+the overview for a visitor too: the login there is what lets a member
+who follows a mail link go on to the swarm after signing in.

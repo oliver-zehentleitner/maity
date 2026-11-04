@@ -67,21 +67,25 @@ window.Maity = window.Maity || {};
   // Below the password form. `every` runs on the login page's timers;
   // `signedIn` draws the dashboard once a session exists.
   function loginOptions(every, signedIn) {
-    const box = h("div", { class: "sign-in-options" });
+    // The other ways in under a rule of their own (public-pages.css `.or`), only where there are
+    // any; the way to register below them.
+    const ways = h("div", { class: "sign-in-ways" });
+    const box = h("div", { class: "sign-in-options" }, ways);
+    const offer = (...parts) => { ways.classList.toggle("or", true); append(ways, ...parts); };
     M.api.get("/auth/methods")
       .then((methods) => {
         const prefilled = codeFromAddress();
         const next = M.signInNext ? M.signInNext() : null;
-        append(box,
-          methods.device_code ? codeEntry(every, signedIn, prefilled) : null,
-          methods.email_link ? mailLink(signedIn) : null,
-          // §2.7: offered only where the instance registers.
-          methods.registration ? h("p", { class: "register-link" }, M.tn("device.register", {
-            link: h("a", { href: "/register" + (next ? "?next=" + encodeURIComponent(next) : "") }, M.t("device.register.link")) })) : null);
+        if (methods.device_code || methods.email_link) {
+          offer(methods.device_code ? codeEntry(every, signedIn, prefilled) : null, methods.email_link ? mailLink(signedIn) : null);
+        }
+        // §2.7: offered only where the instance registers.
+        if (methods.registration) append(box, h("p", { class: "register-link alt" }, M.tn("device.register", {
+          link: h("a", { href: "/register" + (next ? "?next=" + encodeURIComponent(next) : "") }, M.t("device.register.link")) })));
       }, (err) => {
         // §16.12: a hub that refuses this read during a maintenance window still takes the
         // mailed sign-in, so the instance admin can sign in and end the window.
-        if (err && err.code === "maintenance") append(box, mailLink(signedIn));
+        if (err && err.code === "maintenance") offer(mailLink(signedIn));
       });
     return box;
   }
@@ -106,7 +110,7 @@ window.Maity = window.Maity || {};
     const status = M.statusLine();
     const input = h("input", { id: "device-code", autocomplete: "off", autocapitalize: "characters", spellcheck: "false",
       placeholder: "XXXX-XXXX-XXXX", "aria-describedby": "device-code-hint" });
-    const submit = h("button", { type: "submit", class: "primary" }, M.t("device.code.continue"));
+    const submit = h("button", { type: "submit", class: "btn btn-primary" }, M.t("device.code.continue"));
     const form = h("form", {
       class: "sign-in-form",
       onsubmit: (e) => {
@@ -145,7 +149,7 @@ window.Maity = window.Maity || {};
       const countdown = h("span", { class: "countdown" }, left(answer.expires_at));
       const note = M.statusLine();
       let expiresAt = answer.expires_at;
-      const again = h("button", { type: "button", onclick: () => { stop(); input.value = ""; submit.disabled = false; status.done(); showForm(); input.focus(); } }, M.t("device.wait.another"));
+      const again = h("button", { type: "button", class: "btn btn-secondary", onclick: () => { stop(); input.value = ""; submit.disabled = false; status.done(); showForm(); input.focus(); } }, M.t("device.wait.another"));
       const view = h("div", { class: "device-waiting", role: "status" },
         h("h3", { id: "sign-in-code-title" }, M.t("device.wait.title")),
         h("p", null, M.t("device.wait.pick")),
@@ -214,7 +218,7 @@ window.Maity = window.Maity || {};
     },
     h("h3", { id: "sign-in-mail-title" }, M.t("device.mail.title")),
     h("label", { for: "sign-in-address" }, M.t("device.mail.address")), address,
-    h("button", { type: "submit" }, M.t("device.mail.send")), status.el);
+    h("button", { type: "submit", class: "btn btn-secondary" }, M.t("device.mail.send")), status.el);
     function codeForm() {
       const code = h("input", { id: "sign-in-mail-code", inputmode: "numeric", autocomplete: "one-time-code", "aria-describedby": "sign-in-mail-sent" });
       const status2 = M.statusLine();
@@ -237,7 +241,7 @@ window.Maity = window.Maity || {};
       h("h3", { id: "sign-in-mail-title" }, M.t("device.mail.check")),
       h("p", { id: "sign-in-mail-sent", role: "status" }, M.t("device.mail.sent")),
       h("label", { for: "sign-in-mail-code" }, M.t("device.mail.code", { count: MAIL_DIGITS })), code,
-      h("button", { type: "submit", class: "primary" }, M.t("device.mail.sign_in")), status2.el));
+      h("button", { type: "submit", class: "btn btn-primary" }, M.t("device.mail.sign_in")), status2.el));
       code.focus();
     }
     const open = h("button", { type: "button", class: "link-button", "aria-expanded": "false",

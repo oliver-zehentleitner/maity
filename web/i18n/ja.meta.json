@@ -8607,9 +8607,21 @@
     "en": "6668e63fcd9baf7c",
     "text": "5850d13df883af06"
   },
+  "members.consent.boss_owner": {
+    "en": "67bcb9642a4bf5da",
+    "text": "9c5d37f7dbe7776b"
+  },
   "members.consent.owner": {
     "en": "047bc6695c7c32bb",
     "text": "a070979a57072794"
+  },
+  "members.consent.partly": {
+    "en": "8eb3165c4a21b419",
+    "text": "01baf8448f30c84c"
+  },
+  "members.consent.partly_titled": {
+    "en": "c29dc307ee6a7253",
+    "text": "7c056cd0fc0a4e42"
   },
   "members.consent.waiting": {
     "en": "f6922d1c4d43b714",

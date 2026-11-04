@@ -9271,9 +9271,21 @@
     "en": "6668e63fcd9baf7c",
     "text": "dac19f37c2562cf5"
   },
+  "members.consent.boss_owner": {
+    "en": "67bcb9642a4bf5da",
+    "text": "e12a78643eb16647"
+  },
   "members.consent.owner": {
     "en": "047bc6695c7c32bb",
     "text": "47bd7680349c3ef2"
+  },
+  "members.consent.partly": {
+    "en": "8eb3165c4a21b419",
+    "text": "16241343c2f63e15"
+  },
+  "members.consent.partly_titled": {
+    "en": "c29dc307ee6a7253",
+    "text": "2212d20665957e51"
   },
   "members.consent.waiting": {
     "en": "f6922d1c4d43b714",

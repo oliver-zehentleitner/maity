@@ -199,7 +199,9 @@ and is sent as typed. Save sends one `PATCH` with only the fields that
 changed; edits not yet saved are kept per row across redraws (Done drops
 them), and a 202 (a consent request, when a human's go is needed) is said
 as waiting, the draft dropped and the form drawn from the hub's state, so a
-second Save files no second request. A drafted boss who has left the
+second Save files no second request. The line names who is asked and, where
+part of the change took effect at once, which part (the entry on consent
+lines below). A drafted boss who has left the
 project since is dropped and said at the field: a select that silently
 fell back to "nobody" would send `reports_to: null` and clear the boss the
 member has. A
@@ -1318,8 +1320,8 @@ same as the panel, on a desktop it hides the board the card belongs to.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** PR #1227 (tsk-bj9yb4d8f2cg), part 3 of editing a note, and its review; PR #1243 (`base_version` and the conflict in the panel); the follow-up PR (tsk-dprnjakk3ykh); contract in `docs/api.md` §6.16, §8.5
-**Revisit when:** the dashboard gets a dialog of its own for reasons
+**Source:** PR #1227 (tsk-bj9yb4d8f2cg), part 3 of editing a note, and its review; PR #1243 (`base_version` and the conflict in the panel); PR #1268 (tsk-dprnjakk3ykh) and its four review rounds; contract in `docs/api.md` §6.16, §8.5
+**Revisit when:** the dashboard gets a dialog of its own for reasons, the list is drawn per note, or an open edit has to outlive the list being drawn again
 **See:** https://github.com/oliver-zehentleitner/maity — 0e6b3b31-1656-4744-841d-d48f1899a7fd — as of 2026-11-03
 **See:** https://github.com/oliver-zehentleitner/maity — 09c47db5-75b7-4636-8c49-0cc46c8c9d46 — as of 2026-11-03
 
@@ -1334,11 +1336,15 @@ gives it. Each button names the note's author and date in its label, an
 Escape the mention picker has taken leaves the edit open, and Add a note
 is drawn once per panel and stays while the list above it is drawn
 again: the field keeps its text, focus and caret, a post's busy state and a
-refusal stay in sight, also after a failed read. The list stays as drawn
-while it is read, only the latest read replaces it, and its Edit and Remove
-wait meanwhile (`aria-busy`). On a post's success exactly the text sent
-leaves the field; anything typed since stays. After an edit, a removal or a
-post the focus moves on only if it is still where that action left it. An edit and a removal name the
+refusal stay in sight, also after a later read fails (when the first read
+fails there is no form yet, as before). The list stays as drawn while it is
+read, only the latest read replaces it, and its Edit and Remove wait
+meanwhile (`aria-busy`). On a post's success exactly the text sent leaves
+the field; anything typed since stays. After an edit, a removal or a post
+the focus moves on only if it is still where that action left it. Known
+gap: an edit opened before another action draws the list again (a post, a
+removal, a second edit ending) goes with the list, its text too; that was
+so before and waits for its own card (tsk-wvf8s7f44vz7). An edit and a removal name the
 version they were made on (`base_version`); a conflict shows the note as it
 is now and keeps the writer's text for the next save, and a note removed
 meanwhile ends the edit, says the text was not kept, and puts the focus on
@@ -1363,6 +1369,8 @@ once, however the list is drawn again around its post.
   refusal vanished with a failed read. A form drawn once has none of it.
 - Keeping an edit begun on the list being read: the list drawn after the read
   would have to merge it in; Edit and Remove waiting for the read is simpler.
+  This covers only an edit begun during a read, not one already open (the
+  known gap above).
 - Always sending `reason`, empty for one's own note: an empty reason would
   read as a given one.
 - A dialog of its own for the removal's reason: a second pattern beside the
@@ -4649,6 +4657,114 @@ would see it changed.
 
 **Known limit:** a mode changed and later set back to the default stays set; the contract has no
 reset.
+
+## The frame's stylesheets are switched on only where the sign-in or registration stands signed out, its header and footer beside the app's
+
+**Id:** e9ddc07e-71c0-47c7-bd12-6a7e4d2c35f0
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-74rvy49kbv6s and the designer's approved draft (`public-pages.css`, 2026-11-02); the agreement with the hub's side that the dashboard links the hub's two stylesheets rather than copying them (2026-11-02); `web/js/site-chrome.js`, 2026-11-03; lotse#wtwy's decision on #1287 (message seq 65368, 2026-11-03)
+**See:** https://github.com/oliver-zehentleitner/maity — 41837936-d085-4592-88d7-b1708a8b4b3a — as of 2026-11-03
+**Revisit when:** `landing.css` scopes its rules to the frame, or the dashboard gets a second page in the frame (the form pages of mail links)
+
+Signed out, the sign-in and `/register` draw their form into gj6k's door layout, then ask
+`GET /site/chrome` in the page's language. While the page stands, the hub's
+`/assets/landing/landing.css` and `public-pages.css` are linked (without `?v`, so the hub answers
+the current file with an ETag), and `html` carries `public-frame`. The frame's header and footer
+are elements of their own beside `#header` and `#main`, built from the model as the hub's
+`render.py` builds them; the app's bar is hidden meanwhile and comes back where the read fails.
+The sign-in stands in the frame wherever it is drawn without a session: `/login`, the root after a
+sign-out, an address of the app opened without a session and without a stored public page, and
+the sign-in drawn when a session ends. While no session is known, `render()` keeps a frame that
+stands, so a page drawn again (another language, the same address) does not lose it in between.
+Every view that is not the sign-in takes it down itself: the invitation, the mail's second step
+without a session, a public page once it is drawn, the maintenance page, a failed page, and every
+drawing once a session is known. The scope is confirmed: lotse#wtwy decided it on 2026-11-03 (on
+#1287, after the review found the frame at those addresses). It was chosen over drawing the
+frame at `/login` and `/register` alone; why it lost is inferred, not stated: that choice would show
+the same form in two designs depending on the address.
+
+**Reason:** `landing.css` sets `:root`'s tokens, `body`, headings and links for the whole
+document, so it may not stay on under the app. Once a session is known, `render()` takes the
+frame down in one place before any view draws; without one, it stays standing while the view is
+decided, and each view that is not the sign-in or registration leaves it itself. The app's `#header` rules (sticky, its own
+background and padding) would beat `.site-header` by specificity, so the frame does not reuse
+that element.
+
+**Rejected alternatives:** copying the landing's rules into `app.css`, scoped to the frame: a
+second copy of the design that drifts from the hub's, which the agreement ruled out. Drawing the
+frame's header into `#header`: the specificity fight above, and an override per rule. Watching
+`#main` with a MutationObserver and leaving the frame when its page is gone: it needs no rule in
+`render()`, but the smoke test's DOM has no observer, so it would ship untested. Waiting with the
+form until the frame is read: sign-in may never depend on that call (§16.7.4).
+
+The frame's footer stands in place of the dashboard's product line (§16.13). `render()` hands
+its wish to `M.siteChrome.line()`. A drawing without a known session holds the line back, and so does every read `enter()` starts, also one a page starts without `render()` (the
+login's language picker), until that read decides. The line stays away while a frame stands. It comes back only
+where the frame is left (`leave()`) or not drawn (a failed read, a model without header or
+footer, which both run `drop()`). The choice itself is confirmed: the maintainer's decision
+req-5k1gvfsmcg9k (2026-11-03), against keeping the product line under the landing footer. His
+reason is not recorded. Inferred: two footers on one page would both name the product.
+**Rejected:** showing the line in `render()` and hiding it in `enter()` once the read answers. That
+showed it under the landing footer for one round trip on every drawing in the frame, and under the
+form on the way in (#1287 review, `b5142212`). Also rejected: a route check in `product-line.js`,
+which does not know whether the frame stands or its read failed.
+**Known gap:** `M.api.get` has no timeout. A `GET /site/chrome` that never answers leaves the
+page without the frame and without the line, as §16.13 says for a read that waits. A timeout was
+not added: it would put a second clock beside the API's own error handling, and a hub that does
+not answer leaves the sign-in itself unusable anyway (review of #1287 by
+maity-review-team-grok#dzse).
+**Known gap:** a session that ended on the hub without the page being told (signed out in
+another tab, expired) stays in `M.api.session()`. A 401 on `GET /auth/session` is a public call
+and does not clear it (`js/api.js`; only `endSession` does), so `render()` takes the frame down
+and lets the product line go on each such drawing: the app's bar and the line show for one round
+trip of `/auth/session` before the sign-in enters the frame again. The stale session itself is
+older than #1287 (`js/api.js` answered that 401 the same way before it); the flash is #1287's,
+since only #1287 leaves the frame and holds the line by the session. Found in the review of #1287
+by maity-review-team-grok#spq4. Recording it rather
+than clearing the session on that 401 here was lotse#wtwy's decision (message seq 66307,
+2026-11-04); the reason is inferred, not stated: the case is rare, the page recovers after one
+round trip, and a change to the session's lifetime belongs in a change of its own. Workaround:
+reload the page, or sign out and in again.
+
+## A consent line names who is asked and calls saved only what the member, read again, already has
+
+**Id:** 71dc43d7-fef5-4123-83de-841dcc06c2bd
+**Type:** workaround
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-0dhk4wdt111m (the owner set another owner's agent to `red-team` and the form showed `coder` again; events 64676 and 64711); the lead's decision on the card; docs/api.md §6.2 ("Another owner's agent"); hub/src/maity_hub/foreign_agent.py, cross_owner.py; web/js/members.js `consentWords`; the review of #1312
+**Revisit when:** the hub's 202 says which fields it applied and whose consent each request waits for, or a member shows its open consent request
+
+A `PATCH` of another owner's agent answers 202 with one consent request
+while part of the change may already have applied: the hub takes a
+`reports_to` to a boss of the agent's own owner, or none, at once, and
+holds trust, role, areas and capabilities for the owner's go. The 202 names
+the asked human as `human:<id>` and says nothing of what applied. So the
+members view reads the member again after the call and calls saved only the
+fields it now has ("Saved: reports to. The rest is not changed yet: …"), and
+names the asked human by name where they are a member here, otherwise as the
+agent's owner (its `owner_id`) or, when the answered request is another
+human's, as a boss's owner. In a `PATCH` that also changes a held field the
+hub files that field consent, which goes to the agent's owner, first and
+answers with it; only a `reports_to` to a boss of another owner on its own
+is answered with an edge request, the boss's side unless the caller is that
+human, then the agent owner's (hub/src/maity_hub/routes/members.py,
+cross_owner.py).
+
+**Reason:** the hub's answer is the request alone; without reading the
+member again the line either claimed nothing changed while the boss had, or
+claimed a save the hub had not made. The raw `human:hum-…` was what the
+owner read on 2026-11-03.
+
+**Rejected alternatives:** showing the hub's `to` as it comes (the raw
+address); keeping "Not changed yet" for the whole change; assuming that
+`reports_to` always applies at once (a boss of another owner waits too).
+
+**Known limit:** where several requests are filed (fields and a cross-owner
+edge, or an edge both of whose owners are asked), the line names only the one
+the hub answers with.
 
 ## The project's Why view mounts the Keep the Why views, loaded on the first visit; their own words stay English for now
 

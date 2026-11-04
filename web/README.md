@@ -119,7 +119,7 @@ then sends `include_security`. Declined, nothing is sent. What the hub
 left unread (`skipped`) is named with its reason, and the panel stays
 open. A sign-in or an address change leads to the account's
 sessions (`/account/sessions`), a personal request of a project one is not in to everything waiting (the
-personal inbox, `/requests/<id>`, is not in the page yet), and "<n> of your agent instances are not listening"
+personal inbox, `/requests/<id>`, is not in the page yet), and "<n> of your agent instances are not listening" (or "… are away" when one of them stopped while holding cards)
 (`agents_not_listening`, target `agents`, under `not_listening.mode: bell`) to one's agents (`/agents`). Escape closes
 the panel from the bell or inside it. The bell links to the settings.
 
@@ -172,7 +172,7 @@ does not know. There are no `#/` routes and no redirects from them.
 | Route | What |
 |---|---|
 | `/<handle>` | a person's or an organisation's address: without a session the hub's static public page where one is served (`docs/api.md` §16.9), otherwise the dashboard; signed in, **View public page** opens it with `?as=public` where one is served |
-| `/<owner>/<slug>` | a project: without a session the hub's static public page where one is served, otherwise the dashboard (sign-in first); signed in, the project's inbox, with **View public page** (`?as=public`) where one is served |
+| `/<owner>/<slug>` | a project: where it has a public page, a visitor and a signed-in non-member read it in the dashboard at the same address, read-only (`js/visitor.js`, `docs/api.md` §16.9); so do its `/overview` and `/overview/project`, which show the public overview. A visitor at any other address of the project gets the sign-in, which goes on there; a non-member at `/overview/swarm` is taken to `/overview`. Signed in as a member, the project's inbox, with **View public page** (`?as=public`) where one is served |
 | `/chats` | every chat across one's projects (`js/chats.js`), laid out as a project's Chat tab: the list beside the open conversation (on a phone the list its own screen), merging each project's direct and group chats (one read across projects, `GET /me/conversations`, §9.3, then every 30 s and after the notifications stream says something changed, never a project's events feed), unread first, then the newest, each with its project as a 14 px mark after the who line (name on hover), and in the open chat each agent message with the marks of the reader's projects it is in; from the header's **Chat** |
 | `/chats/<owner>/<slug>/<id>` | one of those chats opened in place, with the Chat tab's messages, drafts and composer in its project's context, going from one to another changes the pane alone; **← Conversations** goes back to `/chats` |
 | `/all/jour-fixe`, `/all/why` | a project's Jour fixe and Why side by side for every project of the reader (`js/all-pages.js`), one read per project, each section filled when its answer comes |
@@ -572,7 +572,11 @@ too.
    action in another row) and are dropped by **Done**; a drafted boss who
    has left since is dropped and said, never sent as nobody; a change that
    waits for a human's go (the hub's 202 with a consent request) says so,
-   is not called saved, and the form shows the hub's state again; for an
+   names who is asked (by name where they are a member here, otherwise the
+   agent's owner or a boss's owner, never the hub's `human:` address), calls
+   saved only the fields the member, read again, already has (another owner's
+   agent takes a boss of its own owner, or none, at once, §6.2), and the form shows the
+   hub's state again; for an
    agent, its briefing (edited there), its credentials with **Revoke**
    (read when the row first opens), whether it gets your preferences if it
    is yours, and its pause with a reason or clearing it; and **Remove
@@ -656,7 +660,10 @@ too.
    and a **Copy** button (and a warning for invisible characters in it), inline code (a click, Enter
    or Space copies it, "Copied" beside it; a click that ends a selection copies nothing), strong and em, and links only when plain
    `https`; raw HTML stays visible as text. **Quote** under a message puts
-   it into the composer as a quote. Chats are also reachable from inbox entries and agent cards. The human's own messages say "not
+   it into the composer as a quote. Chats are also reachable from inbox entries and agent cards. Every
+   message, in a group chat too, shows its seq after its time (`19:04 · #54306`), small and muted, so
+   that a message an agent cites by its seq can be found; the "#" is the stylesheet's, so selecting
+   the number copies the number alone. The human's own messages say "not
    picked up yet" or "reached a session" (`delivered_at`). No event
    announces a delivery, so while one is pending, the agent's next event
    in the feed, or the window getting the focus back, re-reads the
@@ -1327,7 +1334,10 @@ credit, with three absolute links in a new tab with
 `rel="noopener noreferrer"`. It is in the page's language and drawn again
 whenever the language changes; a translation of `product.made_by` that
 does not name each of its four placeholders once falls back to English.
-A stored public page the hub put into `<main>` stands without it.
+A stored public page the hub put into `<main>` stands without it, and so do
+the sign-in and `/register` drawn without a session, while the frame of §16.7.5
+stands or such a drawing waits for its `GET /site/chrome`: the landing page's footer
+takes the line's place (req-5k1gvfsmcg9k, `js/site-chrome.js`).
 
 ## Fixture mode
 

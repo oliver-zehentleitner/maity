@@ -808,6 +808,11 @@ def scenario(run: Run, page: Page) -> None:
     run.step("sign in as the owner created with maity-hub owner create")
     page.goto(run.base + "/")
     expect(page.get_by_role("button", name="Sign in", exact=True)).to_be_visible()
+    # The landing page's header and footer around it (§16.7.5), laid out by the hub's two stylesheets.
+    expect(page.locator("header.site-header .signin")).to_have_text("Sign in")
+    expect(page.locator("footer.site-footer nav.foot-col").first).to_be_visible()
+    expect(page.locator("#header")).to_be_hidden()
+    assert page.locator(".door-page").evaluate("e => getComputedStyle(e).display") == "grid"
     run.shot(page, "sign-in")
     run.a11y(page, "sign-in")
     page.locator("#login-handle").fill(OWNER)
@@ -815,6 +820,10 @@ def scenario(run: Run, page: Page) -> None:
     page.get_by_role("button", name="Sign in", exact=True).click()
     expect(page.get_by_role("heading", name="No projects yet", exact=True)).to_be_visible()
     expect(page.locator("header .me")).to_contain_text("Owner")
+    # Signed in, the frame is gone and its stylesheets off: landing.css would restyle the whole app.
+    expect(page.locator("header.site-header, footer.site-footer")).to_have_count(0)
+    on = "() => [...document.styleSheets].filter((s) => s.href && s.href.includes('/assets/landing/') && !s.disabled).length"
+    assert page.evaluate(on) == 0
     run.shot(page, "empty-state")
     run.a11y(page, "empty state (/all, no projects)")
     no_problems(run, "sign-in")
@@ -3581,8 +3590,8 @@ def auth_pages_step(run: Run, page: Page) -> None:
     visitor = page.context.browser.new_context(viewport={"width": 1280, "height": 800}, locale="en-US")
     seen = visitor.new_page()
     seen.goto(f"{run.base}/login")
-    expect(seen.locator("form.login h2")).to_have_text("Welcome to the E2E hub")
-    expect(seen.locator(".door-points li")).to_have_text(["A first point"])
+    expect(seen.locator(".door-form h1")).to_have_text("Welcome to the E2E hub")
+    expect(seen.locator(".door-panel li")).to_have_text(["A first point"])
     run.a11y(seen, "sign-in with the instance's pitch")
     run.shot(seen, "login-pitch")
     visitor.close()
