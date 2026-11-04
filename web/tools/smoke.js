@@ -1892,7 +1892,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
         remoteEntry: (box, canonical, uuid) => { ktwCalls.push(["ref", canonical, uuid]);
           if (ktwPublic[canonical + "|"]) o.nav.go({ view: "entry", uuid, centre: { mode: "public", canonical, root: "" } }); } }) },
       graph: { create: () => ({ assemble: () => ({}), run: () => { ktwCalls.push(["graph"]); }, lightThought: () => {} }) },
-      timeline: { create: () => ({ view: (box) => box.appendChild(document.createTextNode("timeline view")) }) },
+      timeline: { create: () => ({ view: (box) => { box.appendChild(document.createTextNode("timeline view"));
+        const speed = document.createElement("select"); speed.setAttribute("class", "ktw-play-speed"); speed.setAttribute("title", "how fast the days pass"); box.appendChild(speed); } }) },
     },
   };
   const headAppend = head.appendChild.bind(head);
@@ -1997,6 +1998,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(ktwEvil.getAttribute("href") === undefined && ktwUserinfo.getAttribute("href") === undefined
     && ktwOut.getAttribute("href") === "https://github.com/acme/widget" && ktwOwn.getAttribute("href") === win.Maity.route.href("/maintainer/maity/why/graph"),
     "why: a link the library writes that is neither a path of the dashboard nor plain https loses its target");
+  // A control the library names by its title alone gets that title as its accessible name.
+  const ktwRange = document.createElement("input"); ktwRange.setAttribute("type", "range"); ktwRange.setAttribute("title", "the day the page shows");
+  const ktwSpeed = document.createElement("select"); ktwSpeed.setAttribute("title", "how fast the days pass");
+  const ktwNamed = document.createElement("select"); ktwNamed.setAttribute("title", "a title"); ktwNamed.setAttribute("aria-label", "its own name");
+  const ktwControls = document.createElement("div"); ktwControls.appendChild(ktwRange); ktwControls.appendChild(ktwSpeed); ktwControls.appendChild(ktwNamed);
+  kh.sweep(ktwControls);
+  expect(ktwRange.getAttribute("aria-label") === "the day the page shows" && ktwSpeed.getAttribute("aria-label") === "how fast the days pass"
+    && ktwNamed.getAttribute("aria-label") === "its own name",
+    "why: a form control named by its title alone is named by it for assistive technology; one with a name keeps it");
+  await go("#/maintainer/maity/why/timeline"); for (let k = 0; k < 6; k++) await tick();
+  const ktwPlaySpeed = main.querySelector('[class="ktw-play-speed"]');
+  expect(ktwPlaySpeed && ktwPlaySpeed.getAttribute("aria-label") === "how fast the days pass",
+    "why: the timeline's speed, named by its title alone in the library, has that name in the mount");
   // The routes: a ref's repository from the address, a centre, a topic's file.
   const whyAt = kh.below(win.KeepTheWhy, { view: "entry", uuid: U, centre: { mode: "public", canonical: "https://github.com/acme/other", root: "" } });
   const whyAtRoot = kh.below(win.KeepTheWhy, { view: "entry", uuid: U, centre: { mode: "public", canonical: "https://github.com/acme/other", root: "packages/a" } });

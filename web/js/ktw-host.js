@@ -118,14 +118,26 @@ window.Maity = window.Maity || {};
     const path = M.route.fixture ? value.slice(1) : value; // fixture mode writes a route after "#"
     return M.route.isRoute(path) && M.route.href(path) === value;
   }
+  // A form control the library names only by its `title` (the timeline's playhead and speed)
+  // is named by it for assistive technology too: a title alone is no label (WCAG 4.1.2).
+  const CONTROLS = { INPUT: true, SELECT: true, TEXTAREA: true };
+  function name(node) {
+    if (!CONTROLS[String(node.tagName || "").toUpperCase()]) return;
+    const title = node.getAttribute("title");
+    if (!title || node.getAttribute("aria-label") || node.getAttribute("aria-labelledby")) return;
+    if (node.getAttribute("id") && node.ownerDocument && node.ownerDocument.querySelector
+      && node.ownerDocument.querySelector('label[for="' + node.getAttribute("id") + '"]')) return;
+    node.setAttribute("aria-label", title);
+  }
   function sweep(node) {
     const href = node.getAttribute ? node.getAttribute("href") : null;
     if (href != null && !linkOk(href)) node.removeAttribute("href");
+    if (node.getAttribute) name(node);
     for (const child of node.childNodes || []) sweep(child);
   }
   function guard(mount) {
     if (typeof MutationObserver === "function") {
-      new MutationObserver(() => sweep(mount)).observe(mount, { subtree: true, childList: true, attributes: true, attributeFilter: ["href"] });
+      new MutationObserver(() => sweep(mount)).observe(mount, { subtree: true, childList: true, attributes: true, attributeFilter: ["href", "title"] });
     }
     return mount;
   }
