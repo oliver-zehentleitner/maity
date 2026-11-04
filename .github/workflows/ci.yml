@@ -358,6 +358,11 @@ jobs:
           --health-timeout 5s --health-retries 30
     env:
       MAITY_TEST_DATABASE_URL: postgresql://maity:ci-only@127.0.0.1:5432/maity
+      # A test (setup and teardown included) still running after 300 s prints every thread's stack into the log
+      # and runs on: a hang shows the frame it waits on (the test's or a fixture's) within 5 minutes, not as a
+      # cancel after 90; the dump names the test only when its call hangs (context/process.md, the entry on the
+      # stack after 300 s).
+      PYTEST_ADDOPTS: -o faulthandler_timeout=300
     steps:
       - run: echo "runner $RUNNER_NAME ($RUNNER_ENVIRONMENT, $RUNNER_OS $RUNNER_ARCH), $(nproc) cpus"  # hosted or the maintainer's machine (HUB_RUNNER_LABEL)
         working-directory: .  # before the checkout, `hub` does not exist yet

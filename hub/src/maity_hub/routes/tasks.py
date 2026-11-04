@@ -1007,11 +1007,15 @@ def patch_task(
         drops = "status" in given and body.status in ("cancelled", "open")
         if assigns_away or (drops and body.status != card.status):
             _refuse_against_a_human(conn, mine, card)
-        # A status-only move out of review is done authority's, whoever holds it (§6.4).
-        review_move = (
-            given - {"approve"} == {"status"}
-            and card.status == "review"
-            and body.status in ("done", "in_progress")
+        # A status-only move out of review is done authority's, whoever holds it (§6.4),
+        # and so is closing a merged report that waits behind a request (§6.6).
+        review_move = given - {"approve"} == {"status"} and (
+            (card.status == "review" and body.status in ("done", "in_progress"))
+            or (
+                card.status == "blocked"
+                and body.status == "done"
+                and cards.merged_in_review(mine.project, card)
+            )
         )
         # So is a state-only move of a contract card the arbiter's (§6.8).
         arbiter_move = (

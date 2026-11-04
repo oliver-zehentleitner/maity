@@ -233,6 +233,40 @@ project lock and file or withdraw requests on the long-poll's hot path;
 the worker keeps the read path cheap. A table of episodes of its own:
 more than one row per session is never needed.
 
+## A supervised session is left out of not listening only while an active placement names its credential
+
+**Id:** cb4184b4-d420-4205-b0d9-d8338e92ec65
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §5.3 "Not listening", §15.11 and §15.13 (the runner local-mode contract, #1294); the card tsk-mcd2xwwa2fzv from the coordinator
+**Revisit when:** something other than a placement's runner reports a supervised agent's stopped runs, local mode gets a placement of its own, or §5.3 says what happens to a placed session after its runner is revoked under `keep`
+
+`not_listening._excluded` leaves out a session opened with `supervisor` only while a
+placement with `active` true has the session's credential as its `credential_id`. A
+supervised session no placement names, local mode's (§15.13) or one whose placement was
+closed, is checked like any other session; a placement that starts to name the credential
+during an episode ends it as an exclusion that begins. The lookup runs in the minute worker
+only for a session with `supervisor` (the condition short-circuits before it), under the
+project's lock it already holds. A credential whose revocation after a runner's stop is due
+but not yet written (`runner_revoke.due`) counts as revoked: the hub cannot end the process
+(§15.3), so the agent may never call again to have it written, and if it still runs and calls,
+the revocation is written then and the session stays left out; the views already show it as revoked.
+
+**Reason:** a placed agent does not wait by design, and until its runner is revoked that runner
+reports each stopped run (§15.7), so an episode would only repeat what the runner says. After a
+runner revoke under the default `keep` the placement stays active, no runner can report, and the
+session stays left out; that gap is in §5.3, not new here (Revisit when). Local mode has no
+placement and its stop sends nothing to the hub (§15.13): without this check its lead sees only
+the presence go `away` and `offline`, and an event nobody reads waits silently.
+
+**Rejected alternative:** leaving out every supervised session, as the hub did until this
+card: a stopped local mode was then never reported. Matching the placement by membership
+rather than by credential: a member can have several instances (§6.17), and a placement names
+only one of them, so local mode beside a placement of the same member, or any instance while a
+placement waits for its first pickup, would be left out although no runner reports on it;
+§5.3 names the credential.
+
 ## The conversation list is built for all chats at once, not one chat at a time
 
 **Id:** 0b23275f-9dc4-44fe-8258-bd41cd8408e0
