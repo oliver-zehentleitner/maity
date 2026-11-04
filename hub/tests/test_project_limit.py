@@ -1,5 +1,5 @@
 """docs/api.md §16.5: at most so many projects in one namespace, a human's or an
-organisation's, and an archived project leaves the periodic runs (§6.1)."""
+organisation's, and an archived project leaves the jour-fixe and availability sweeps (§6.1)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import availability
+from maity_hub import availability, clock, limits
 from maity_hub import tables as t
 from maity_hub.jourfixe import rounds
 from maity_hub.jourfixe import worker as jourfixe_worker
@@ -171,3 +171,43 @@ def test_the_sweeps_skip_an_archived_project_and_take_it_back_when_unarchived(
     assert sweep() == [f"av:{live}", f"jf:{live}"]
     state("build")
     assert sweep() == sorted([f"av:{live}", f"jf:{live}", f"av:{old}", f"jf:{old}"])
+
+
+# --- the owner's row is the lock, and the admin count ---------------------------------------
+
+
+def test_two_creations_at_nine_give_one_project_and_one_project_limit(
+    admin: flow.Human, migrated: Engine
+) -> None:
+    """The count runs under the namespace owner's row lock (`limits.refuse_project_over`): a
+    creation that counts while another one at nine has not committed waits for it and is then
+    refused (PostgreSQL, MariaDB)."""
+    from tests.concurrency import finished, race, waiting
+
+    for n in range(9):
+        assert create(admin, f"p{n}").status_code == 201
+    with race(migrated) as r:
+        first, second = r.first, r.second
+        limits.refuse_project_over(first, admin.id, 10)  # the first creation counts nine
+        factory.project(migrated, "tenth", conn=first, owner_id=admin.id)
+        step = r.run(second, lambda: create(admin, "eleventh"))
+        assert waiting(step)  # on the owner's row, which the first creation holds
+        first.commit()
+        assert error(finished(step)) == (409, "project_limit", {"limit": 10, "count": 10})
+        second.rollback()
+    with migrated.connect() as conn:
+        owned = select(t.project.c.id).where(t.project.c.owner_id == admin.id)
+        assert len(conn.execute(owned).all()) == 10
+
+
+def test_a_deleted_owner_is_not_counted_at_the_limit(
+    admin: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    assert admin.patch(PATH, {"max_projects_per_owner": 1}).status_code == 200
+    gone = flow.human(make_client, migrated, "gone")
+    flow.project(gone, "left")
+    assert admin.get(PATH).json()["owners_at_project_limit"] == 1
+    with migrated.begin() as conn:
+        conn.execute(update(t.project).values(state="archived"))
+        conn.execute(update(t.human).where(t.human.c.id == gone.id).values(deleted_at=clock.now()))
+    assert admin.get(PATH).json()["owners_at_project_limit"] == 0

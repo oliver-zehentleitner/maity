@@ -277,7 +277,7 @@ human's owner membership ends or drops in two places, the demotion by
 deletes a human account, or ends a membership any other way, has to call it
 too. Otherwise a project keeps a namespace owner who is no longer in it.
 
-## A namespace holds at most `max_projects_per_owner` projects, archived ones counted, and an archived project leaves the periodic runs
+## A namespace holds at most `max_projects_per_owner` projects, archived ones counted, and an archived project leaves the jour-fixe and availability sweeps
 
 **Id:** d4151a3a-29ff-48fd-8901-2389727444c7
 **Type:** decision
@@ -294,13 +294,19 @@ the namespace owner's row (`human` or `org`) and counts every project with that 
 a refusal becomes `proposals.Stale`: the request is withdrawn and nothing moves. `settle` reads the
 cap from `Settlement.hub`, which the two answer routes of `routes/requests.py` pass; `close_request`
 passes none, and no transfer is settled there. The jour-fixe worker and the availability sweep select
-only projects that are not `archived`; the other periodic runs start from open work, which an
-archived project does not create.
+only projects that are not `archived` for their work per project; the jour-fixe worker's
+`rounds.record_presence` runs before that selection and still counts presence in an archived
+project. The other periodic runs are unchanged and still reach an archived project: work open when
+it was archived goes on by time (a lease's `claim_expired`, a takeover filed before archiving that
+settles with `window_elapsed`; `commitment.py`, `holder_stalled.py`, `not_listening.py`), the forge
+runs (`probe.py`, `images.py`) select projects by their repository, not their state, and
+housekeeping (retention, deletion, revoking credentials) must run whatever the state.
 
 **Reason:** plain hardening of the hosted instance against runaway creation, and the maintainer's
 decision of the cap; counting archived projects keeps the cap a cap (archiving and creating would
-otherwise lift it), and leaving archived projects out of the sweeps keeps the cost of a full
-namespace bounded by its live projects. The owner row is the lock because the organisation's row is
+otherwise lift it), and leaving archived projects out of the jour-fixe and availability sweeps
+spares them the two runs that go over every project each round; an archived project has no jour
+fixe to hold. The owner row is the lock because the organisation's row is
 already taken before any project row (`lock_project`), and creation takes no project row at all.
 
 **Rejected alternatives:**
@@ -309,5 +315,7 @@ already taken before any project row (`lock_project`), and creation takes no pro
   organisation's projects are not one member's.
 - Checking the transfer only when it is filed: a namespace that filled up before the `go` would be
   taken over the cap by the move.
-- Removing archived projects from every periodic run: the work-driven runs never reach them anyway,
-  and a filter there would be a second place to keep in step.
+- Removing archived projects from every periodic run (a freeze): work open at archiving would stop
+  midway (a lease that never expires, a takeover never settled), housekeeping must run anyway, and
+  each run would need its own rule for what passed meanwhile. Such a freeze would be a change of
+  its own, specified first; the card asked for the cap.

@@ -178,7 +178,7 @@ def authority(conn: Connection, mine: Membership) -> None:
 
 
 def transfer(
-    conn: Connection, mine: Membership, caller: Caller, to: str, limit: int | None = None
+    conn: Connection, mine: Membership, caller: Caller, to: str, limit: int | None
 ) -> str | None:
     """File the transfer to `to`, a human (`hum-…`) or an organisation (`org-…`); returns
     the request's id, or None when the move happened in the call itself (an owner of the
@@ -186,7 +186,8 @@ def transfer(
     to themselves needs no request). §2.8.4 lists this call for the step-up; a hub without the
     second factor asks for none, as for every human not enrolled. A receiver that holds
     `limit` projects (`max_projects_per_owner`, §16.5) refuses it with `project_limit`, now
-    and again on the `go`."""
+    and again on the `go`. `limit` has no default: None is `unlimited`, which a caller says
+    by reading the setting (`limits.of`), never by leaving it out."""
     project = mine.project
     authority(conn, mine)
     if project.owner_org_id is not None:  # §16.8: a suspended organisation's project stays in it

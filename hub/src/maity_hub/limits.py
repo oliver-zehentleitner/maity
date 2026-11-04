@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import Connection, func, select
+from sqlalchemy import Connection, func, or_, select
 
 from maity_hub import instance_settings as store
 from maity_hub import tables as t
@@ -100,6 +100,14 @@ def view(conn: Connection, hub: Settings) -> dict[str, Any]:
         .join(t.org, t.org.c.id == t.org_member.c.org_id)
         .where(t.org_member.c.role == "owner", t.org.c.deleted_at.is_(None))
     )
+    # A namespace owner whose account or organisation is deleted keeps its archived projects
+    # (account_deletion.py), but creates nothing more: it is not counted at the limit.
+    namespaces = select(t.project.c.owner_id).where(
+        or_(
+            t.project.c.owner_id.in_(select(t.human.c.id).where(t.human.c.deleted_at.is_(None))),
+            t.project.c.owner_id.in_(select(t.org.c.id).where(t.org.c.deleted_at.is_(None))),
+        )
+    )
     return {
         "max_agents_per_human": _answer(values["max_agents_per_human"]),
         "humans_at_limit": _humans_at(conn, agents, of(conn, hub, "max_agents_per_human")),
@@ -107,7 +115,7 @@ def view(conn: Connection, hub: Settings) -> dict[str, Any]:
         "humans_at_org_limit": _humans_at(conn, owners, of(conn, hub, "max_orgs_per_human")),
         "max_projects_per_owner": _answer(values["max_projects_per_owner"]),
         "owners_at_project_limit": _humans_at(
-            conn, select(t.project.c.owner_id), of(conn, hub, "max_projects_per_owner")
+            conn, namespaces, of(conn, hub, "max_projects_per_owner")
         ),
     }
 
