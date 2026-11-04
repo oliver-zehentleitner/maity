@@ -175,7 +175,9 @@ remote's name or a forge-shaped URL (`https`, `http`, `ssh`, `git`,
 `file`, a path, or `user@host:`). Anything else is refused with the hint
 to set the upstream with `git push -u`. `ls-remote` gets `--` before
 them. Every git maity starts runs with `GIT_ALLOW_PROTOCOL` set to those
-five transports. git and gh are started by an absolute path found on an
+five transports; the runner's clone of a workspace passes its own
+`https:ssh`, because the variable replaces its `-c protocol.*` settings
+as well. git and gh are started by an absolute path found on an
 absolute PATH entry, never the current directory, and on Windows with
 `NoDefaultCurrentDirectoryInExePath` set for what they start in turn.
 `gh pr view` is asked only about an `https` URL on github.com or

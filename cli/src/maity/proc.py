@@ -61,8 +61,12 @@ def program(name: str) -> str | None:
     return None
 
 
-def run(cmd: list[str], cwd: Path, timeout: float = TIMEOUT) -> subprocess.CompletedProcess[str]:
-    env = {**os.environ, **NO_PROMPT, "GIT_ALLOW_PROTOCOL": TRANSPORTS}
+def run(
+    cmd: list[str], cwd: Path, timeout: float = TIMEOUT, transports: str = TRANSPORTS
+) -> subprocess.CompletedProcess[str]:
+    """`transports`: what git may use, colon-separated; it replaces every protocol setting,
+    a caller's narrower `-c protocol.*` included, so such a caller passes its own list."""
+    env = {**os.environ, **NO_PROMPT, "GIT_ALLOW_PROTOCOL": transports}
     if os.name == "nt":
         # git and gh start programs of their own (ssh, credential helpers): not from cwd either.
         env["NoDefaultCurrentDirectoryInExePath"] = "1"
