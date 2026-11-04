@@ -783,8 +783,17 @@ SUPERVISED_ALL_WAKES = frozenset({"state_changed", "policy_changed", "rules_chan
 ADDRESSING_CHANGES = frozenset({"reports_to", "owner_id"})
 
 
+# Readable by everyone through `all`, but woken only through their other tokens: a linked
+# issue's new title or a commit's checks are something the board shows; the holder is woken
+# by `member:` when the state changed or `ahead` turned `true` (§8.2, §6.13).
+ALL_READS_ONLY = frozenset({"link_observed"})
+
+
 def _wakes_everyone(row: Any) -> bool:
-    """`all` in the audience wakes, except on a `member_updated` that moves no address."""
+    """`all` in the audience wakes, except on a kind in ALL_READS_ONLY and on a
+    `member_updated` that moves no address."""
+    if row.kind in ALL_READS_ONLY:
+        return False
     if row.kind != "member_updated":
         return True
     payload = row.payload or {}
@@ -827,6 +836,20 @@ def wakes(
         return False
     if row.kind == "member_updated" and (row.payload or {}).get("changed") == ["language"]:
         return False  # read at the next wake-up, never a reason for one (§6.2)
+    if row.kind in ("holder_stalled", "claim_expired"):
+        # A holder that stops (§6.5): the member the agent reports to re-routes; the admins,
+        # the owner and the holding instance itself only read, so its `instance:` token never
+        # makes such an event wait for it (§8.2).
+        # Before the dormant rule: that one wakes by the instance token, which here is the
+        # holder's, never a reason to wake (a dormant boss is woken by its own token only).
+        if (
+            dormant
+            or membership.agent_id is None
+            or f"member:{principal}" not in (row.audience or [])
+        ):
+            return False
+        chosen = (row.wakes or {}).get(principal)
+        return chosen is None or instance is None or instance in chosen
     if dormant:
         # A dormant instance (§6.17) is woken by its own token alone: not by `all`, the team's
         # tokens, a group chat's messages, nor under a runner by the supervised set. The

@@ -4,10 +4,11 @@
 
 **Id:** 901a3806-5444-47a1-bb5b-961de130a604
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's decisions, 2026-10-22; contract change in `docs/api.md` §6.10
-**Revisit when:** the accounts design brings forge linking or instance-admin moderation
+**Verification:** corroborated — re-checked 2026-11-04 after forge links and the instance's moderation arrived: `hub/src/maity_hub/avatars.py` still draws nothing for a generated avatar, takes an upload over a `forge` image, and nothing writes a `forge` row yet, although a human can link a GitHub App installation (`routes/forge_links.py`). A project's `members:admin` still cannot touch an avatar; an upheld abuse report (§16.8) resets one through the instance's moderation (`moderation.py`), which is that section's decision, not a project's
+**Revisit when:** a forge account's picture is written as a `forge` avatar, or the moderation of §16.8 changes what it does to an avatar
 
 Every member has a generated avatar, drawn by the client from the member
 id; the hub stores nothing for it. A human can upload a picture, or later
@@ -26,7 +27,8 @@ the project logo is stored as uploaded is not stated beyond the
 contract's decode budget and fail-closed rule. `member_updated`
 would wake every agent for a picture. A project admin has no say over an
 avatar that spans projects they are not part of; removing the membership
-or the owner deleting the picture is the remedy.
+or the owner deleting the picture is the remedy within a project, and
+beyond it an abuse report (§16.8).
 
 **Rejected alternatives:**
 - PNG and WebP only, refusing JPEG — the contract's first version, with
@@ -125,10 +127,11 @@ stays, and needs no role.
 
 **Id:** 5fc7eb2e-cc21-46ab-be5c-f5d0963297b1
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** inferred
 **Source:** the maintainer's request, 2026-10-22; contract-owner ruling on the review, 2026-10-22; contract change in `docs/api.md` §6.3
-**Revisit when:** profiles gain an export or a hard purge (data protection), or the event log stops carrying member views
+**Verification:** corroborated — re-checked 2026-11-04 after an export and the account's deletion arrived: `DELETE /agents/{id}` (`hub/src/maity_hub/routes/agents.py`) is the owner's, answers `profile_in_use` without `cascade` and keeps a tombstone. `GET /me/export` (§2.9) lists the profiles; the account's deletion (`account_deletion.py`) deletes them as this call does with `cascade` and clears their git identity and soul, the tombstone row itself stays
+**Revisit when:** a profile's tombstone row is purged (data protection), or the event log stops carrying member views
 
 The owning human can delete an agent profile again (`DELETE
 /agents/{id}`); no agent can, and `members:admin` in a project gives no

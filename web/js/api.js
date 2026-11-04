@@ -701,6 +701,46 @@ window.Maity = window.Maity || {};
   }
   let fixtureAuthPages = { default_language: "en", pages: { sign_in: {}, sign_up: {} }, updated_at: null, updated_by: null };
   // §16.7.4: the refusals the admin's editor shows.
+  // GET /site/chrome (§16.7.5) from the fixture's landing and legal settings, as the hub builds
+  // it (hub/src/maity_hub/render.py _frame), in its English words only: the fixture answers
+  // `language` "en" whatever is asked, so a page in another language marks the frame's words.
+  // Left out against the hub: a section's link only where it draws (the fixture draws none), and
+  // the language a /login or /register address of the operator's gets added.
+  const FRAME_WORDS = { sign_in: "Sign in", register: "Create your account", platform: "Platform", open_source: "Open source",
+    legal: "Legal", follow: "Follow", imprint: "Imprint", privacy: "Privacy", terms: "Terms" };
+  const FRAME_LEGAL = [["imprint", "impressum"], ["privacy", "privacy"], ["terms", "terms"]];
+  const FRAME_NAMES = { en: "English", de: "Deutsch", fr: "Français", es: "Español", pt: "Português", it: "Italiano", nl: "Nederlands", ja: "日本語", ko: "한국어", "zh-Hans": "简体中文" };
+  function fixtureChrome() {
+    const setting = fixtures()["landing.json"];
+    const legal = fixtures()["legal.json"];
+    const lang = "en";
+    const q = "?lang=" + lang;
+    const W = FRAME_WORDS;
+    const signIn = { label: W.sign_in, href: "/login" + q };
+    const register = { label: W.register, href: "/register" + q };
+    const legalLinks = FRAME_LEGAL.filter(([key]) => legal.pages[key]).map(([key, address]) => ({ label: W[key], href: "/" + address + q, rel: null }));
+    const on = !!setting.enabled;
+    const page = on ? setting.pages[setting.default_language] || {} : { sections: [] };
+    const shownSections = (page.sections || []).map((section, i) => [section, i]).filter(([section]) => section.enabled !== false);
+    const nav = on ? shownSections.filter(([section]) => section.nav_label).map(([section, i]) => ({ label: section.nav_label, href: "/" + q + "#s" + i })) : [];
+    const hero = on ? shownSections.map(([section]) => section).find((section) => section.type === "hero") : null;
+    const cta = hero && hero.cta_primary ? { label: hero.cta_primary.label, href: hero.cta_primary.href } : null;
+    const openSource = on ? shownSections.filter(([section]) => section.type === "opensource").flatMap(([section]) => (section.links || []).map((l) => ({ label: l.label, href: l.href, rel: null }))) : [];
+    const shown = on || legalLinks.length > 0;
+    const footer = setting.footer || {};
+    const github = (href) => /^https:\/\/(www\.)?github\.com(\/|$)/i.test(href);
+    const hasGithub = openSource.some((l) => github(l.href));
+    const follow = shown ? (footer.social || []).filter((item) => !(hasGithub && github(item.href))).map((item) => ({ label: item.label, href: item.href,
+      rel: /mastodon/i.test(item.label) || item.href.replace(/^https:\/\/[^/]*/, "").split(/[?#]/)[0].includes("/@") ? "me" : null })) : [];
+    const platform = nav.map((item) => Object.assign({}, item, { rel: null })).concat([Object.assign({}, signIn, { rel: null }), Object.assign({}, register, { rel: null })]);
+    const columns = [["platform", platform], ["open_source", openSource], ["legal", legalLinks], ["follow", follow]]
+      .filter(([, links]) => links.length).map(([key, links]) => ({ key, title: W[key], links }));
+    const tags = on ? Object.keys(setting.pages) : [];
+    return { language: lang, landing: on, header: { nav, sign_in: signIn, cta },
+      footer: { columns, operator: shown ? footer.operator || null : null,
+        languages: tags.length > 1 ? [setting.default_language].concat(tags.filter((t) => t !== setting.default_language).sort()).map((tag) => ({ tag, name: FRAME_NAMES[tag] || tag })) : [] } };
+  }
+
   function authPagesCheck(body, path) {
     const errors = {};
     Object.entries(body.pages || {}).forEach(([page, langs]) => Object.entries(langs).forEach(([lang, texts]) => Object.entries(texts).forEach(([key, text]) => {
@@ -2737,8 +2777,8 @@ window.Maity = window.Maity || {};
         aliases: [],
         name: body.name, state: "build", state_note: null, state_changed_at: nowIso(),
         repository: url === null ? null : {
-          url, default_branch: body.repository.default_branch || "main", forge: "github", probe_configured: false,
-          probe_via: null, owner_confirmed: false, confirmed_by: null,
+          url, default_branch: body.repository.default_branch || "main", required_check: body.repository.required_check ?? null,
+          forge: "github", probe_configured: false, probe_via: null, owner_confirmed: false, confirmed_by: null,
         },
         memory: { provider }, setup,
         policy: Object.assign({}, PRESETS[preset], {
@@ -2892,6 +2932,15 @@ window.Maity = window.Maity || {};
           // A changed URL is unconfirmed again and read with the instance token alone (§11.4).
           : url ? (same ? Object.assign({}, p.repository)
             : { url, default_branch: "main", forge: "github", probe_configured: false, probe_via: null, owner_confirmed: false, confirmed_by: null }) : null;
+        if (p.repository) {
+          // §6.1: left out on the same URL it stays; another URL starts without one.
+          const named = body.repository && "required_check" in body.repository;
+          const check = named ? body.repository.required_check : same ? (p.repository.required_check ?? null) : null;
+          if (check !== null && (typeof check !== "string" || !check.length || check.length > 200)) {
+            fail(400, "invalid", "the request does not validate", path, { fields: { "repository.required_check": check === "" ? "string_too_short" : "string_too_long" } });
+          }
+          p.repository.required_check = check;
+        }
         if (!same && "keep_the_why_export" in p) p.keep_the_why_export = back ? back.export : null;
         // The repository first set: the setup cards chosen at creation (§6.21).
         if (url && p.setup.cards === null && p.state !== "archived") makeSetupCards(m[1], p.setup, me().member.id, url);
@@ -3340,6 +3389,7 @@ window.Maity = window.Maity || {};
       fixtures()["landing.json"] = JSON.parse(JSON.stringify(v));
       return v;
     }],
+    ["GET", /^\/site\/chrome(?:\?|$)/, () => fixtureChrome()],
     ["GET", /^\/auth\/pages\/([^/?]+)/, (m, body, path) => {
       const langs = fixtureAuthPages.pages[m[1]];
       if (!langs) fail(404, "not_found", "no such page", path);
@@ -4789,7 +4839,8 @@ window.Maity = window.Maity || {};
       // The hub serves its machine form and the landing page without a session.
       // Signed out, the fixture hub still answers what a visitor calls, and the
       // device codes, whose other side this one tab plays too.
-      if (!fixtureSignedIn && !/^\/auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|device-codes(\/.*)?)$/.test(path) && path !== "/legal" && path !== "/openapi.json" && path !== "/maintenance" && !path.startsWith("/invitations/")) {
+      if (!fixtureSignedIn && !/^\/auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|device-codes(\/.*)?)$/.test(path) && path !== "/legal" && path !== "/openapi.json" && path !== "/maintenance" && !path.startsWith("/invitations/")
+        && path !== "/site/chrome" && !/^\/auth\/pages\/[^/]+$/.test(path)) {
         fail(401, "unauthenticated", "Not signed in", fullPath);
       }
       // The fixture hub holds this session in enrolment (§2.8.5): outside /auth/* it refuses.
@@ -4931,7 +4982,7 @@ window.Maity = window.Maity || {};
   // visitor by design; every other /auth/* call is the session's own.
   // The path carries its query (the device-login wait, ?wait=0): a public
   // route ends at the path, whatever query follows.
-  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code)|auth\/pages\/[^/?]+|public\/pages\/[^?]+|legal|maintenance|openapi\.json|invitations\/[^/?]+)(\?|$)/;
+  const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code)|auth\/pages\/[^/?]+|site\/chrome|public\/pages\/[^?]+|legal|maintenance|openapi\.json|invitations\/[^/?]+)(\?|$)/;
 
   // Every page of a list, following next_cursor (docs/api.md §1.4).
   async function getAll(path) {

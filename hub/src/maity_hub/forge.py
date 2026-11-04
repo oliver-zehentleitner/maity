@@ -273,6 +273,11 @@ def retry_at(token: str | None) -> datetime | None:
 
 # --- how check runs and commit statuses count ------------------------------------------------
 
+# A project's required check (§6.6): how each result counts, and the worst of several.
+REQUIRED_SUCCESS = {"success"}
+REQUIRED_PENDING = {"pending", "stale", "queued", "in_progress"}
+REQUIRED_ORDER = ("failure", "pending", "cancelled", "success")  # worst first
+
 FAILED = {"failure", "timed_out", "cancelled", "action_required", "startup_failure", "error"}
 PENDING = {"pending", "stale"}  # stale: GitHub marked it outdated; it decides nothing yet
 PAGE = 100
@@ -637,6 +642,22 @@ class Forge:
         if states & PENDING:
             return "pending", detail
         return "success", detail
+
+    def commit(self, repository: str, sha: str) -> dict[str, Any]:
+        """One commit by its full sha and the checks on it (§6.13, §11 `?commit=`):
+        `{sha, found, checks, checks_detail}`, `{sha, found: false}` when the forge does not
+        have it. The git object read is small; the checks are those of `checks()`."""
+        try:
+            found = self._get(f"/repos/{repository}/git/commits/{_quote(sha)}")
+        except ForgeUnavailableError as error:
+            if error.status != 422 or error.rate_limited:
+                raise
+            found = None  # GitHub's "No commit found for SHA"
+        if found is None:
+            self._missing(repository)
+            return {"sha": sha, "found": False}
+        summary, detail = self.checks(repository, sha)
+        return {"sha": sha, "found": True, "checks": summary, "checks_detail": detail}
 
     def pull_request(self, repository: str, number: int) -> dict[str, Any]:
         pr = self._get(f"/repos/{repository}/pulls/{number}")
@@ -1004,3 +1025,30 @@ def _decoded(found: Any, cap: int) -> bytes | None:
     if len(data) > cap:
         raise ValueError("too large")
     return data
+
+
+def _required_status(status: str) -> str:
+    """One check result as §6.6 counts it for `required_check`: `cancelled` stays apart,
+    and whatever did not pass (`neutral` and `skipped` too) is `failure`."""
+    if status in REQUIRED_SUCCESS or status == "cancelled":
+        return status
+    if status in REQUIRED_PENDING:
+        return "pending"
+    return "failure"
+
+
+def required_check(
+    name: str | None, checks: str | None, detail: list[dict[str, str]] | None
+) -> dict[str, str] | None:
+    """The project's required check on a commit (§6.6), from the checks already read:
+    `{name, status}`, or None when the project names none. `unknown` when the checks could
+    not all be read (never `missing` from a partial read, §11.4); `missing` when they were
+    and none carries the name; else the worst current result that carries it."""
+    if name is None:
+        return None
+    if checks is None or checks == "unknown":
+        return {"name": name, "status": "unknown"}
+    found = {_required_status(item["status"]) for item in detail or [] if item["name"] == name}
+    if not found:
+        return {"name": name, "status": "missing"}
+    return {"name": name, "status": next(s for s in REQUIRED_ORDER if s in found)}

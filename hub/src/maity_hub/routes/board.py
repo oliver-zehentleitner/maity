@@ -685,6 +685,7 @@ def import_issue(slug: str, body: ImportIn, request: Request, caller: AnyCaller)
         raise probe_not_configured((fg.refused or "no_grant") if admin else None)
     at = clock.rfc3339(clock.now())
     try:
+        assert ref.number is not None  # an issue's URL names its number
         issue = fg.issue(ref.repository, ref.number)
     except forge.NotCoveredError as error:
         raise probe_not_configured(error.reason if admin else None) from None

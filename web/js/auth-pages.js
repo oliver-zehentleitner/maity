@@ -124,24 +124,31 @@ window.Maity = window.Maity || {};
     return { section };
   }
 
-  // The head of /login or /register: the heading at once in the catalogue's words, the pitch
-  // when the hub has answered. The sign-in never waits for it, and a failed read leaves the heading.
+  // The pitch of /login or /register (gj6k's design, tsk-c3h8w6k625qh): the title is the form's
+  // heading, at once in the catalogue's words; subline, points and note fill the dark panel beside
+  // the form when the hub has answered. The sign-in never waits for it, and a failed read leaves
+  // the heading and a panel with the art alone (public-pages.css draws it large without a subline).
   function pitch(page, fallback) {
-    const title = h("h2", { class: "door-title" }, fallback);
-    const rest = h("div", { class: "door-pitch" });
-    const el = h("div", { class: "door-head" }, title, rest);
+    const title = h("h1", { class: "door-title" }, fallback);
+    const panel = h("aside", { class: "door-panel", "aria-label": M.t("frame.panel") }, h("span", { class: "seat", "aria-hidden": "true" }));
     M.api.get("/auth/pages/" + page + "?lang=" + encodeURIComponent(M.i18n.language)).then((answer) => {
       const t = answer.texts || {};
       // The form stays in the language it is drawn in; these words say their own.
-      if (answer.language !== M.i18n.language) el.setAttribute("lang", answer.language);
+      if (answer.language !== M.i18n.language) { title.setAttribute("lang", answer.language); panel.setAttribute("lang", answer.language); }
       if (t.title) title.textContent = t.title;
       const points = ["point_1", "point_2", "point_3"].filter((k) => t[k]);
-      append(clear(rest), t.subline ? h("p", { class: "door-subline" }, t.subline) : null,
-        points.length ? h("ul", { class: "door-points" }, points.map((k) => h("li", null, t[k]))) : null,
-        t.note ? h("div", { class: "md door-note" }, M.markdown(t.note)) : null);
+      append(panel, t.subline ? h("p", { class: "subline" }, t.subline) : null,
+        points.length ? h("ul", null, points.map((k) => h("li", null, t[k]))) : null,
+        t.note ? h("div", { class: "md note" }, M.markdown(t.note)) : null);
     }).catch(() => {});
-    return el;
+    return { title, panel };
   }
 
-  M.authPages = { editor, pitch, PAGES, LANGUAGES, shapeOk };
+  // A page of the frame (§16.7.5): the panel, and beside it the form's column with its content.
+  function door(panel, content) {
+    return h("div", { class: "door-page" }, panel || h("aside", { class: "door-panel", "aria-hidden": "true" }),
+      h("section", { class: "door-form" }, h("div", null, content)));
+  }
+
+  M.authPages = { editor, pitch, door, PAGES, LANGUAGES, shapeOk };
 })(window.Maity);

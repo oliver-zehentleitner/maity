@@ -1271,9 +1271,17 @@
     "en": "9c34e46f7a5ed2b4",
     "text": "9ddf1ef208ecdff5"
   },
+  "board.checks.cancelled": {
+    "en": "06234c1cf33df853",
+    "text": "6ad195ae02a84ab8"
+  },
   "board.checks.failure": {
     "en": "3045b5c998d76c75",
     "text": "a4a7b5ed500c518f"
+  },
+  "board.checks.missing": {
+    "en": "4b62d186290abd56",
+    "text": "d1a75a3dada2e189"
   },
   "board.checks.none": {
     "en": "30a0924a3360be68",
@@ -1731,6 +1739,10 @@
     "en": "1ef2b3023d273f55",
     "text": "c5efd34da5a6dd99"
   },
+  "board.report.required_check": {
+    "en": "c6cdf3c6e440100d",
+    "text": "c6cdf3c6e440100d"
+  },
   "board.rows.add": {
     "en": "b071c943d8da1500",
     "text": "b1cfa667b351bc10"
@@ -2175,6 +2187,22 @@
     "en": "8d9f1b5654e83a85",
     "text": "55af7e27f1b929df"
   },
+  "cardpanel.link.ahead": {
+    "en": "5af8d4cee1fc4a00",
+    "text": "7404871c0a73ae00"
+  },
+  "cardpanel.link.commit": {
+    "en": "c25cccf4e6ca0941",
+    "text": "c25cccf4e6ca0941"
+  },
+  "cardpanel.link.commit_checks": {
+    "en": "d4c44b77f27d9016",
+    "text": "e1bc2762a39421ee"
+  },
+  "cardpanel.link.commit_missing": {
+    "en": "4a3f8be8f764b0b5",
+    "text": "9ee514469875e7ed"
+  },
   "cardpanel.link.issue": {
     "en": "d620fa7b20d38386",
     "text": "d620fa7b20d38386"
@@ -2182,6 +2210,10 @@
   "cardpanel.link.pr": {
     "en": "522156e07caeca3e",
     "text": "0f724ce409768dae"
+  },
+  "cardpanel.link.required_check": {
+    "en": "6d22529d2f23e009",
+    "text": "6d22529d2f23e009"
   },
   "cardpanel.link.state": {
     "en": "b80ccc418c7313d2",
@@ -4166,6 +4198,14 @@
   "forge.via.owner_token": {
     "en": "3f7cfca281e0d495",
     "text": "d36df83f48bc8232"
+  },
+  "frame.panel": {
+    "en": "d24826949805b3d9",
+    "text": "d23c07c151b9a690"
+  },
+  "frame.theme": {
+    "en": "1a11962c1e6eeee3",
+    "text": "125919e9e575f7e7"
   },
   "group.back": {
     "en": "2ad14b4e6a2718ba",
@@ -9015,9 +9055,21 @@
     "en": "6668e63fcd9baf7c",
     "text": "1d840e417c7170b4"
   },
+  "members.consent.boss_owner": {
+    "en": "67bcb9642a4bf5da",
+    "text": "fb07936c0236fd0e"
+  },
   "members.consent.owner": {
     "en": "047bc6695c7c32bb",
     "text": "df4f4b9525b50289"
+  },
+  "members.consent.partly": {
+    "en": "8eb3165c4a21b419",
+    "text": "9b2a1ac0550f70af"
+  },
+  "members.consent.partly_titled": {
+    "en": "c29dc307ee6a7253",
+    "text": "e4620e381e2626b8"
   },
   "members.consent.waiting": {
     "en": "f6922d1c4d43b714",

@@ -69,6 +69,8 @@ ABSENCE_AHEAD = timedelta(days=90)  # an absence cannot hold the owner's cover o
 class RepositoryIn(Strict):
     url: str = Field(min_length=1, max_length=255)
     default_branch: str = Field(default="main", min_length=1, max_length=255)
+    # §6.1: left out, it keeps the current value on the same `url` (`_repository_columns`).
+    required_check: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class RepositoryConfirmIn(Strict):
@@ -327,16 +329,35 @@ def archive_by_moderation(conn: Connection, project_id: str, reason: str, actor:
     public_pages.touch(conn, public_projects.KIND, project_id)  # an archived project has no page
 
 
-def _repository_columns(repository: RepositoryIn | None) -> dict[str, Any]:
+def _repository_columns(repository: RepositoryIn | None, current: Any = None) -> dict[str, Any]:
+    """The project's repository columns from a request's `repository`; `current` is the
+    project a `PATCH` changes. Unlike `default_branch`, a `required_check` left out keeps the
+    current name while the `url` stays the project's: a client that predates the field must
+    not erase it. Another `url`, or no repository, has none (§6.1)."""
     if repository is None:
-        return {"repository_url": None, "repository_default_branch": None}
+        return {
+            "repository_url": None,
+            "repository_default_branch": None,
+            "repository_required_check": None,
+        }
     url = repository.url.rstrip("/")
     if not url.startswith("https://") or forge_of(url) is None or url.count("/") != 4:
         raise invalid(
             {"repository.url": "not_a_configured_forge"},
             "the repository must be https://<forge host>/<owner>/<name> on a configured forge",
         )
-    return {"repository_url": url, "repository_default_branch": repository.default_branch}
+    required = repository.required_check
+    if (
+        "required_check" not in repository.model_fields_set
+        and current is not None
+        and url == current.repository_url
+    ):
+        required = current.repository_required_check
+    return {
+        "repository_url": url,
+        "repository_default_branch": repository.default_branch,
+        "repository_required_check": required,
+    }
 
 
 def _looks_public(request: Request, repository: RepositoryIn | None, served: bool) -> bool | None:
@@ -868,7 +889,7 @@ def patch_project(
                 values["public_about"] = about
                 settings_changed["public_about"] = about is not None  # the text is not an event
         if "repository" in given:
-            columns = _repository_columns(body.repository)
+            columns = _repository_columns(body.repository, project)
             values.update(columns)
             if columns["repository_url"] != project.repository_url:
                 # The owner confirmed the old URL, not this one, whoever changes it (§11.4).

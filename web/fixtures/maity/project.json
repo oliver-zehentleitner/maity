@@ -15,6 +15,7 @@
   "repository": {
     "url": "https://github.com/oliver-zehentleitner/maity",
     "default_branch": "main",
+    "required_check": "ci-ok",
     "forge": "github",
     "probe_configured": true,
     "probe_via": "instance",
