@@ -372,7 +372,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: make install
-      - run: make test
+      - run: make test PYTEST_ARGS="-n auto --durations=30"  # DEMO ONLY (tsk-80xk3tbhe2hc): the slowest tests, for the value
 
   # The agent-side command: lint, types and tests on the oldest and the newest
   # Python it supports. Standard library only, so nothing else is installed.
