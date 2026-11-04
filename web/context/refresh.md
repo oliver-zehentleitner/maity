@@ -131,7 +131,7 @@ the sign-in.
 
 **Id:** 643600cd-dd61-4291-85d7-025e322f4c81
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** docs/api.md §2.6.5 ("This was me" its own call), §18.2 (`pinned`), §18.3 (`include_security`, `skipped`) and §18.8 (the dashboard's part), contract PR #1230; the bell card tsk-0kz8v1ff5sgf, 2026-11-03
 **Revisit when:** the hub confirms a sign-in by anything but its own call, or `pinned` changes what it holds
@@ -151,6 +151,13 @@ and the panel stays open. A filter button reads the unread ones alone (`unread=t
 session good standing, so the bell may clear security alerts. A sign-in alert is still
 the one item that must not be missed, so it stands on top whatever the page, and
 clearing it in bulk is a choice the human makes knowingly.
+
+**Revisit triggered (2026-11-04):** contract PR #1331 takes `session_created` out of the bell, so
+`pinned` no longer holds sign-ins and the pinned block has no This was me; a sign-in shows in the
+"Current sessions" box of the Notifications page instead (docs/api.md §18.8, root
+`context/notifications.md`, entry feb34f93-e450-4c29-abc2-b525f20e7bb7). The Mark read and
+Mark all read part for `email_address_changed` stays. The dashboard PR of card tsk-0baaez2895sb
+resolves this entry.
 
 **Rejected alternatives:** keeping security alerts out of Mark all read, as before: they
 could only be cleared one by one, and the bell stayed lit. Marking them without asking:

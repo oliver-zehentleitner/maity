@@ -1896,7 +1896,7 @@ learns of a sign-in by password or device code only from the last two.
   is not in good standing and it, or a session it approved, is still
   active; nothing in the bell removes it, and a dashboard opened later
   shows it too. The dashboard reads the sessions again whenever
-  `sessions_at` of `GET /me/notifications` moves (§18.2), so a new mail
+  `sessions_rev` of `GET /me/notifications` moves (§18.2), so a new mail
   sign-in, or an end elsewhere, shows at once. The session it reports
   on shows no banner. So a mail sign-in that an agent with
   mailbox access made cannot be hidden by deleting a mail, from the
@@ -17783,7 +17783,7 @@ no membership.
 | `unread` | `true`: unread items only |
 | `kind`, `project` | filters; comma lists. `kind` takes `inbox`, `chat`, `mention`, `security`; any other value is `invalid` with `details.fields.kind: "unknown"` |
 | `after` | an opaque position (below), the `next_after` of an earlier answer passed back unchanged: only items past it, oldest first — for the browser notifications (§18.8) |
-| `wait` | 0–55 with `after`: hold the request until an item past `after` exists, or a session record (`sessions_at`, below), as §8.3. A cookie session holds one such long-poll beside its one events long-poll; a second one supersedes the first (`superseded: true`) |
+| `wait` | 0–55 with `after`: hold the request until an item past `after` exists, or a session record (`sessions_rev`, below), as §8.3. A cookie session holds one such long-poll beside its one events long-poll; a second one supersedes the first (`superseded: true`) |
 
 ```json
 {
@@ -17809,7 +17809,7 @@ no membership.
       "read": true, "redacted": false }
   ],
   "pinned": [],
-  "sessions_at": "2026-10-22T09:02:11Z",
+  "sessions_rev": "<opaque revision>",
   "next_cursor": null,
   "next_after": "<opaque position>",
   "server_time": "2026-10-22T13:10:05Z"
@@ -17831,14 +17831,19 @@ human are not pinned: they have their own inbox and count in
 `counts.inbox` (§18.1). The maintainer's decision of 2026-11-02
 (`context/notifications.md`).
 
-**Sessions.** `sessions_at` is the `at` of the human's newest
-`session_created` or `session_ended` record (§2.6.5), `null` when there
-is none in the 90 days records are kept. It is in every answer, with
+**Sessions.** `sessions_rev` is an opaque string that changes with
+every `session_created` or `session_ended` record of the human
+(§2.6.5), `null` when there is none in the 90 days records are kept.
+The hub derives it from the newest such record's number, not from its
+`at`: two records may share an `at`, as `at` is only raised to the
+previous record's when the clock steps back (below), while their
+numbers always differ. Clients only compare it with the last one they
+saw; like a position, it is never built or parsed. It is in every answer, with
 `after` too, and no item stands for those records. A long-poll with
 `after` and `wait` also returns when such a record past `after` is
 written: it then lists no item for it, and its `next_after` and
-`sessions_at` have moved. The dashboard reads the sessions again when
-`sessions_at` moves, for the banner of a mail sign-in and the "Current
+`sessions_rev` have moved. The dashboard reads the sessions again when
+`sessions_rev` moves, for the banner of a mail sign-in and the "Current
 sessions" box (§18.8). A session that only expires writes no record and
 moves nothing; the next read of the sessions shows it ended.
 
@@ -18500,7 +18505,7 @@ mail.
   "not confirmed" for one not in good standing, newest first, at most
   five with "and N more". The box links to Profile → Sessions, where
   sessions are ended and confirmed; the box itself has no buttons. It
-  is read when the page opens and again whenever `sessions_at` moves
+  is read when the page opens and again whenever `sessions_rev` moves
   (§18.2). It counts in no badge and has no unread state.
 - **Stage 2 — browser notifications.** While a dashboard tab is open,
   also in the background, it long-polls `GET /me/notifications?after=<position>&wait=55`,

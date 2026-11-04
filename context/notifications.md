@@ -484,7 +484,7 @@ refiling is at most one item per human and hour.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer in chat, 2026-11-04 ("not too complicated … a small field with the current sessions … not as an unread notification"), card tsk-0baaez2895sb; the lead's plan answers of 2026-11-04 (`sessions_at`, the address change left as it is); contract `docs/api.md` §2.6.5 ("A sign-in is no notification"), §18.1–§18.4, §18.8
+**Source:** the maintainer in chat, 2026-11-04 ("not too complicated … a small field with the current sessions … not as an unread notification"), card tsk-0baaez2895sb; the lead's plan answers of 2026-11-04 (`sessions_rev`, the address change left as it is); contract `docs/api.md` §2.6.5 ("A sign-in is no notification"), §18.1–§18.4, §18.8
 **Revisit when:** an address-change alert is reported as stuck, or a sign-in by password or device code is missed because no bell item showed it
 **See:** notifications.md#reading-a-security-alert-never-confirms-it-mark-all-read-may-include-them-after-a-confirm-and-the-protection-lives-in-the-sessions-confirmation — d01ba62b-7acc-471c-b8d0-65c6d60209cc — as of 2026-11-04
 **See:** sign-in.md#a-sign-in-link-is-only-as-strong-as-the-mailbox--the-hub-says-so-and-makes-a-mail-sign-in-visible-instead-of-claiming-to-stop-it — 7865693c-fe02-4df8-ac9e-ebb1bbf8cf20 — as of 2026-11-04
@@ -492,12 +492,12 @@ refiling is at most one item per human and hour.
 
 A new sign-in (`session_created`) is no bell item: it is not listed, not counted, not pinned,
 gives no browser notification and has nothing to mark read. The account record stays, for
-Profile → Sessions, `sessions_at` and the wake of a held long-poll (§18.2), and the mail. The Notifications page shows a small "Current
+Profile → Sessions, `sessions_rev` and the wake of a held long-poll (§18.2), and the mail. The Notifications page shows a small "Current
 sessions" box: the active sessions, compact, linking to Profile → Sessions, with no buttons and
 no unread state. Kept as they were: the sign-in mail by the `security` mode, the banner of a mail
 sign-in in every other session with "End this session" and "This was me", "This was me" in the
 session list, and the rule that only an older session in good standing confirms. The long-poll
-returns on a session record too, and `sessions_at` in every answer tells the dashboard to read
+returns on a session record too, and `sessions_rev` in every answer tells the dashboard to read
 the sessions again for the banner and the box. The read rule of the remaining guarded kind,
 `email_address_changed`, is unchanged, and so is its dead end: once every session older than the
 change has ended, its alert stays unread until its record expires after 90 days.
@@ -511,7 +511,8 @@ guards against a session obtained through the mailbox never was the unread count
 banner, which that session cannot remove, the confirm only from an older session, and the
 rules on ending sessions (7865693c, d01ba62b). They all stay. The banner used to be rebuilt when
 `counts.security` moved; without the item that no longer moves on a sign-in, hence
-`sessions_at`. The address change keeps its rule because it is rare and the maintainer spoke
+`sessions_rev`, an opaque revision from the newest session record's number: its `at` would
+not do, as two records may share one. The address change keeps its rule because it is rare and the maintainer spoke
 only of sign-ins.
 
 **Rejected alternatives:**
