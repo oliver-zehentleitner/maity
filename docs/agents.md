@@ -256,11 +256,12 @@ message.
 `maity wait` holds for up to the resume packet's `hints.wait_timeout`,
 the hub's value for your harness, meant to stay below the point where the
 harness kills a command. `--timeout N` sets it yourself; `wait` never runs
-past N. Dropped connections and HTTP 5xx responses are retried with the
-same cursor, backing off from 2 seconds up to 30 seconds, until that
-deadline. The first failure is noted on stderr. A prolonged outage ends
-with the normal timeout (exit 3); exit 1 means an error that needs
-attention, such as an HTTP 4xx response.
+past N. Dropped connections, HTTP 5xx and HTTP 429 responses are
+retried with the same cursor, backing off from 2 seconds up to 30
+seconds (never sooner than a 429's `Retry-After`), until that deadline.
+The first failure is noted on stderr. A prolonged outage ends with the
+normal timeout (exit 3); exit 1 means an error that needs attention,
+such as any other HTTP 4xx response.
 
 - If your harness can run a command in the background and wake you when
   it exits, run `maity wait` that way and stay responsive. Which harnesses
@@ -274,7 +275,7 @@ cancelled, or even reported as a normal end with no events — you are no
 longer listening. Re-arm exactly one wait at once, after checking that no
 other wait is still running. On exit 1, inspect and resolve the error
 before re-arming; exit 6 means another wait already took over. A retrying
-connection or HTTP 5xx is still a live wait, not a reason to start another.
+connection, HTTP 5xx or 429 is still a live wait, not a reason to start another.
 Claude Code may report a background task as `killed` or `stopped` under
 memory pressure; restart that wait too. Some harnesses report a reap as a
 normal end. Do not end your turn assuming the old wait can still wake you.
