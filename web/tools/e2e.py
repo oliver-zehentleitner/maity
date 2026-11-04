@@ -3767,7 +3767,8 @@ def legal_json_step(run: Run, page: Page) -> None:
 
 def reports_admin_step(run: Run, page: Page, alpha: Path) -> None:
     """Instance administration → Reports (docs/api.md §16.8): an agent reports a card; the admin
-    reads the report and its snapshot as text, and resolves it with hide and a note."""
+    opens it from the request in the all-projects inbox, reads the report and its snapshot as
+    text, and resolves it with hide and a note, which withdraws the request."""
     me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
     if not me.get("instance_admin"):
         return
@@ -3780,11 +3781,20 @@ def reports_admin_step(run: Run, page: Page, alpha: Path) -> None:
         {"target": {"type": "card", "id": card["id"], "project": "owner/e2e-alpha"}, "reason": "spam", "text": "<i>e2e</i> report"},
     )
     assert filed.get("id"), filed
-    # The admin is told (§16.8), and the item names the report the bell links to (§18.2).
-    told = page.request.get(f"{run.base}/api/v1/me/notifications?limit=20").json()["items"]
-    assert any((i.get("target") or {}) == {"type": "report", "id": filed["id"]} for i in told), told
-    # Where the report_open notification leads (§18.2): the section, that report opened.
-    page.goto(f"{run.base}/admin/reports/{filed['id']}")
+    # The admin is told by a personal request without a project (§16.8, §7), in the
+    # all-projects inbox: no answer, no withdrawal, only Open report.
+    mine = page.request.get(f"{run.base}/api/v1/requests").json()["items"]
+    [asked] = [r for r in mine if (r.get("report") or {}).get("id") == filed["id"]]
+    assert (asked["personal"], asked["project"], asked["replies"]) == (True, None, []), asked
+    page.goto(f"{run.base}/all")
+    expect(page.locator("header .project")).to_have_text("Everything waiting for you")
+    entry = page.locator("li.entry", has_text="Report: spam — card")
+    entry.locator("button.entry-head").click()
+    expect(entry.locator("textarea")).to_have_count(0)
+    expect(entry.get_by_role("button", name="Withdraw", exact=True)).to_have_count(0)
+    entry.get_by_role("link", name="Open report", exact=True).click()
+    # Where it leads: the section, that report opened.
+    expect(page).to_have_url(re.compile(r"/admin/reports/" + re.escape(filed["id"]) + "$"))
     section = page.locator("section.admin-section[aria-label='Reports']")
     expect(section).to_be_visible()
     expect(section.locator(f"li.report-item[data-report='{filed['id']}']")).to_be_visible()
@@ -3798,6 +3808,9 @@ def reports_admin_step(run: Run, page: Page, alpha: Path) -> None:
     opened.get_by_role("button", name="Resolve", exact=True).click()
     expect(section).to_contain_text("Resolved: Hide.")
     expect(section.locator(f"li.report-item[data-report='{filed['id']}']")).to_have_count(0)
+    # Resolving withdrew the request (§16.8).
+    shown = page.request.get(f"{run.base}/api/v1/requests/{asked['id']}").json()
+    assert shown["status"] == "withdrawn", shown
     run.shot(page, "reports-admin")
     run.a11y(page, "reports admin")
     no_problems(run, "reports admin")

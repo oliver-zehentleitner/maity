@@ -48,7 +48,8 @@ window.Maity = window.Maity || {};
   const byHub = (req) => !req.asked_by && req.filed_by === "hub";
   // The not-listening digest (§5.3): the hub's, personal, about no project
   // and no organisation; it leads to one's agents.
-  const digest = (req) => byHub(req) && req.personal && !req.project && !req.org;
+  // A report's request (§16.8) is the hub's too, without project or organisation, but no digest.
+  const digest = (req) => byHub(req) && req.personal && !req.project && !req.org && !req.report;
 
   function asker(req) {
     const by = req.asked_by ? req.asked_by.display_name : byHub(req) ? "Maity" : "—";
@@ -112,6 +113,8 @@ window.Maity = window.Maity || {};
   function hiddenLabel(req, names) {
     const name = names.project(req) || (req.org ? "@" + req.org.handle : "");
     if (!req.personal) return M.t("inbox.label.project", { name });
+    // Neither project nor organisation (a report's request, §16.8): Personal alone.
+    if (!name) return M.t("inbox.label.personal_alone");
     return req.project && req.org ? M.t("inbox.label.personal_into", { name, org: req.org.handle }) : M.t("inbox.label.personal", { name });
   }
 
@@ -373,7 +376,10 @@ window.Maity = window.Maity || {};
     // Inside a project the trust is known: only the owner answers an action (§2.3).
     const notOwner = !!req.action && ctx.scope === "project" && !ctx.isOwner;
     if (notOwner) append(body, h("p", { class: "muted" }, M.t("inbox.action.owner_only")));
-    const noField = preference || unread || notOwner;
+    // The instance admin's request about a new abuse report (§16.8) has no answer: it closes
+    // when the report is resolved, under Admin → Reports, after its snapshot was read.
+    const reportReq = !!req.report;
+    const noField = preference || unread || notOwner || reportReq;
     const replies = noField ? [] : req.replies || [];
     const withText = (payload) => {
       const value = text.value.trim();
@@ -402,8 +408,13 @@ window.Maity = window.Maity || {};
           onclick: () => onLater(req),
         }, M.t("inbox.later")),
         canTalk(ctx, req) && !notOwner ? h("button", { type: "button", class: "reply talk", onclick: () => send(withText({ talk: true })) }, M.t("inbox.talk")) : null,
-        // Its human may withdraw a personal request, as nobody else can (§7).
-        req.personal ? h("button", {
+        // Its human may withdraw a personal request, as nobody else can (§7); a report
+        // request only closes with its report (§16.8).
+        reportReq ? h("a", {
+          class: "reply primary open-report",
+          href: "/admin/reports/" + encodeURIComponent(req.report.id),
+        }, M.t("inbox.open_report")) : null,
+        req.personal && !reportReq ? h("button", {
           type: "button",
           class: "reply withdraw",
           onclick: () => {

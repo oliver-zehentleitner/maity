@@ -3687,6 +3687,10 @@
     "en": "573787aef85bae91",
     "text": "7091cc0a35af1f8f"
   },
+  "error.resolve_the_report": {
+    "en": "801abed453bd5d19",
+    "text": "7a06c495cb1010ea"
+  },
   "error.role_unknown": {
     "en": "93981d3d18c2300e",
     "text": "48a70d76a87f5499"
@@ -4747,6 +4751,10 @@
     "en": "09ce28c5fbadb304",
     "text": "1a8713449fa76aa1"
   },
+  "inbox.label.personal_alone": {
+    "en": "f872d2297c5f8e77",
+    "text": "3163031097da4941"
+  },
   "inbox.label.personal_into": {
     "en": "1ecc511a1fbfc2fb",
     "text": "62f5e3d19ed56cd4"
@@ -4782,6 +4790,10 @@
   "inbox.note_label": {
     "en": "5aac3b2989bdadeb",
     "text": "7335590aa4e36f07"
+  },
+  "inbox.open_report": {
+    "en": "074964d062492852",
+    "text": "a30edcb4849686f3"
   },
   "inbox.options": {
     "en": "9c5eb75321da7d07",
