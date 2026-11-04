@@ -15125,8 +15125,8 @@ naming it is `invalid`, `read_only`) and `0` under `unlimited`; so is
   the value is `project_limit` (409, `details.limit`, `details.count`),
   counted and inserted in one atomic step per namespace owner. Every
   project the namespace owns counts, `archived` ones included: archiving
-  frees no place (it only takes the project out of the availability
-  sweep and stops new jour-fixe rounds, §6.1). A project transferred out
+  frees no place (of the periodic runs, it only takes the project out
+  of the availability sweep and stops new jour-fixe rounds, §6.1). A project transferred out
   frees its place.
 - **Lowering a value** never deletes or pauses anything: an owner over the
   new value keeps every profile, organisation or project and creates (or

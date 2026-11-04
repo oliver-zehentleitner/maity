@@ -301,9 +301,11 @@ the archiving (§20.6). The other periodic runs are unchanged and still reach an
 work open when it was archived goes on by time (a lease's `claim_expired`, a takeover filed before
 archiving that settles with `window_elapsed`; `commitment.py`, `holder_stalled.py`,
 `not_listening.py`), the forge runs (`probe.py`, `images.py`) select projects by their repository,
-not their state, and housekeeping (retention, deletion) must run whatever the state; revoking a
-runner's credentials is no periodic run, it is written when the credential is next used
-(`runner_revoke.py`).
+not their state, and housekeeping (retention, deletion) must run whatever the state. Revoking a
+runner is no periodic run either: the request revokes the runner's credential at once
+(`routes/runners.py`), and under the owner's `agents: "stop"` override its agents' credentials too
+(`runner_revoke.py`); only an agent credential revoked after `stop_grace_seconds` is written when it
+is next used.
 
 **Reason:** plain hardening of the hosted instance against runaway creation, and the maintainer's
 decision of the cap; counting archived projects keeps the cap a cap (archiving and creating would
@@ -326,3 +328,6 @@ project row at all.
   midway (a lease that never expires, a takeover never settled), housekeeping must run anyway, and
   each run would need its own rule for what passed meanwhile. Such a freeze would be a change of
   its own, specified first; the card asked for the cap.
+- A jour-fixe filter of its own for archived projects: it broke §20.1 and §20.6, a round open at
+  archiving stayed in `reporting` and the slots turned into `missed`/`hub_down` after unarchiving
+  (review round 2 of the card).
