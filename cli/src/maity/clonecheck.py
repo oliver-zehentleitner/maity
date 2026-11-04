@@ -26,7 +26,7 @@ PLACEMENT_ENV = "MAITY_PLACEMENT"
 GIT_ALLOWED = {
     (None, "core"): frozenset({
         "repositoryformatversion", "filemode", "bare", "logallrefupdates", "ignorecase",
-        "precomposeunicode",
+        "precomposeunicode", "symlinks",  # git for Windows writes `symlinks` on every clone
     }),
     (None, "user"): frozenset({"name", "email"}),
     ("named", "remote"): frozenset({"url", "fetch"}),
