@@ -82,6 +82,34 @@ class Pins(unittest.TestCase):
         self.assertEqual(len(problems), 2)
         self.assertIn("not a commit SHA", problems[0])
 
+    def test_the_short_forms_are_checked_too(self) -> None:
+        root = self.tree(
+            **{
+                "hub/README.md": "the skill's `v1.2.2` release tree\n",
+                "docs/api.md": "names as its `context-schema` (`tree/v1.2.2`), and\n"
+                "the skills installer at a fixed version (`skills@9.9.8`); an\n",
+            }
+        )
+        self.assertEqual(
+            ktw_pin.check(root),
+            [
+                "docs/api.md:1: the skill's tree is 'v1.2.2', context-schema is 1.2.3",
+                "docs/api.md:2: `skills@9.9.8`, hub/src/maity_hub/ktw_skill.py pins skills@9.9.9",
+                "hub/README.md:1: the skill's tree is 'v1.2.2', context-schema is 1.2.3",
+            ],
+        )
+
+    def test_a_package_on_another_schema_fails(self) -> None:
+        root = self.tree(
+            **{
+                "hub/.keep-the-why": "- context-schema: 1.2.3\n",
+                "web/.keep-the-why": "- context-schema: 1.2.2\n",
+            }
+        )
+        self.assertEqual(
+            ktw_pin.check(root), ["web/.keep-the-why: context-schema 1.2.2, the root's is 1.2.3"]
+        )
+
     def test_a_missing_file_is_named(self) -> None:
         root = self.tree()
         (root / "hub/README.md").unlink()

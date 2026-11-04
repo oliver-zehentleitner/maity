@@ -1415,7 +1415,13 @@ installer is named as `npx skills@<version>`, the version kept once in
 SHA, its tag in a comment. `-g -y` stays: where the skill lands is
 unchanged. `tools/ktw_pin.py`, run in the changelog job of ci.yml, fails
 when any copy names another release than `.keep-the-why`'s
-`context-schema`, another installer version, or the action by tag.
+`context-schema`, another installer version, or the action by tag. It
+reads every form a copy is written in: the full tree URL, a bare
+`tree/vX`, the hub README's "`vX` release tree", and `skills@V` with or
+without `npx`. The `.keep-the-why` files of `hub/`, `cli/` and `web/`
+must name the root's `context-schema`. That the action's SHA is the
+commit of the tag in its comment it cannot check offline: on a bump the
+author and the reviewers check it (`git ls-remote` on the tag).
 
 **Reason:** what these lines install is an instruction set every agent in
 the project follows, and the installer runs code on the agent's machine.
