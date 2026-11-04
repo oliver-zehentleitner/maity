@@ -1103,8 +1103,8 @@ reproduced; the same line there is open for a later card. `hub-sqlite` has no se
 
 Which reasons are confirmed and which inferred: that the setting prints the stack under `pytest-xdist` and the test still
 passes is confirmed (proof run on #1316, and a local counter-check without the setting printing nothing); that a setup
-hang's dump names no test without `-v` is confirmed by a local reproduction in the review of #1319 and by the #1255 log;
-the value is the author's weighing, not measured against a real hang beyond #1255.
+hang's dump itself names no test is confirmed by the #1255 log and by a local reproduction in the review of #1319; that
+without `-v` nothing else in the log names it is confirmed by that reproduction only, since #1255 ran with `-v`; the value is the author's weighing, not measured against a real hang beyond #1255.
 
 ## MariaDB checks main after every ci run and every hour, not every pull request; PostgreSQL and SQLite stay in the gate
 
