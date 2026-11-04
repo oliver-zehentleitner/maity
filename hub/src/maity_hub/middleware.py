@@ -179,13 +179,15 @@ class HubMiddleware:
         in_query = credentials.find_all(raw_query) + credentials.find_all(
             unquote_to_bytes(raw_query)
         )
-        if not on_join_host and _is_attachment_upload(scope):
+        if not on_join_host and cap > BODY_CAP:
+            # A body above the default cap (an attachment, an image, the landing, legal and
+            # sign-in pages' settings and their previews) is read only for a caller the
+            # headers may authenticate (§1.7, §8.7). Every one of these routes takes a caller.
             if in_query:
                 # The filter answers before the pre-check, so a credential leaked in the
                 # query is revoked whoever sends it (§2.2); the body is not read.
                 await self._leaked(in_query, scope, receive, send)
                 return
-            # Up to 10 MiB is read only for a caller the headers may authenticate (§8.7).
             refusal = await self._precheck(scope)
             if refusal is not None:
                 await refusal(scope, receive, send)

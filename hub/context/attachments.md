@@ -360,12 +360,15 @@ operator wrote down.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the plan for card tsk-eejgfehwg4k0, approved by the team lead on 2026-11-04; `docs/api.md` §8.7 and §2; implementation session, 2026-11-04
-**Revisit when:** another call takes a body larger than the 64 KiB cap without a pre-check, the signed scheme gains a part that covers no body, or uploads are streamed to the store instead of read whole
+**Source:** the plan for card tsk-eejgfehwg4k0, approved by the team lead on 2026-11-04; its extension to every large body on card tsk-vc82k2khj74a, asked for by the team lead the same day; `docs/api.md` §1.7, §8.7 and §2; implementation sessions, 2026-11-04
+**Revisit when:** a call that takes no caller is given a body larger than the 64 KiB cap, the signed scheme gains a part that covers no body, or uploads are streamed to the store instead of read whole
 
 The middleware reads a body whole before any route runs, because the
-credential filter of §2.2 scans it. For `POST …/attachments`, whose body may be
-10 MiB, it first scans the query with that filter, so that a credential leaked
+credential filter of §2.2 scans it. For every call whose body may be larger
+than the 64 KiB default (`_body_cap` above `BODY_CAP`: `POST …/attachments` up to
+10 MiB, a logo, banner or avatar up to 1 MiB, the landing, legal and sign-in
+pages' settings and their previews up to 512 KiB), it first scans the query
+with that filter, so that a credential leaked
 there is refused with `credential_in_payload` and revoked whoever sends it.
 Then it runs `caller.precheck`: these checks of `authenticate`, in the same
 order and with the same refusals. That is a credential or
@@ -381,8 +384,11 @@ later check keep their order and their answers; the pre-check renews nothing
 and spends no nonce. When the database cannot answer the pre-check, the call
 goes on and fails at its route as any call does.
 
-**Reason:** the hub reads up to 10 MiB only for a caller who can authenticate,
-and each refusal is the one the full check gives. One answer is new, and
+**Reason:** the hub reads a large body only for a caller who can authenticate,
+and each refusal is the one the full check gives. Every one of these calls
+takes a caller, so the pre-check refuses no one the route would accept. The
+rule follows the cap, not a list of routes, so a call later given a larger cap
+gets the pre-check with it. One answer is new, and
 better: a `maity_session` cookie that is not ASCII gets `401 unauthenticated`
 from the pre-check, where the full check fails with `500 internal`, because
 it hashes the value as ASCII.
@@ -394,6 +400,12 @@ it hashes the value as ASCII.
 - **Writing the body to disk while it is read:** it moves the bytes from memory
   to disk but still reads them for every caller, and it is more code than this
   change needs.
+- **A list of the routes to pre-check, apart from the caps:** a call given a
+  larger cap would have to be named in two places, and one forgotten would read
+  its large body for anyone.
+- **Every call pre-checked, the 64 KiB ones too:** a small body costs little to
+  read, and its scan is what finds a credential leaked in it (§2.2) before
+  anything else answers.
 - **The pre-check before the whole credential filter:** its 401 would hide a
   credential leaked in the query, which the contract says is revoked at once,
   from every caller (§2.2).
