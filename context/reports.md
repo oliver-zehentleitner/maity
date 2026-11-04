@@ -95,3 +95,35 @@ the merge through the probe; it only has to say so.
   members and a button do the same.
 - Leaving it to discipline: it had been left to discipline the whole
   time.
+
+## A merge also closes a card blocked while its report waits
+
+**Id:** fdb2cb96-df80-4ea7-be15-fe7468c30ed7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** jour fixe jfx-1fze3cfeq55h, item t2.i3 and proposal t2.s2 (request req-k1xwkk57y3fn), assigned as card tsk-aq4fjk5tby1b; contract `docs/api.md` §6.6 "A merge closes the loop", §6.4 transitions
+**Revisit when:** a request can block a card without the block meaning "the report waits", or `done` is redefined to mean merged
+
+A card `blocked` from `review` counts as in review for the merge: the
+probe's merge is told at once, `merged_closes: auto` (holder or admin)
+closes it, and the done authority may move it `blocked→done` once the
+merge is observed. Closing ends the block; the request stays open and
+its answer restores nothing. A card blocked from `in_progress` (rework,
+then a question) still only remembers the merge. Under
+`reviewer_and_tester` the move stays `review→done`, after the answer.
+
+**Reason:** cards waited on `blocked` with a merged pull request and
+the lead could not close them (tsk-9tdn7zxwyad2): `blocked→done` was an
+invalid transition and the merge was told only on the return to review,
+which needs the request's answer first. The report is what the block
+waits behind; the merge is the result review asked for.
+
+**Rejected alternatives:**
+- Only telling the merge at once, without the `blocked→done` move: the
+  Maity project runs `reviewer` with `notify`, so its lead still could
+  not close the card.
+- Closing the waiting request with the card: a request is its asker's
+  and its answerer's; the hub does not withdraw it for them.
+- Counting cards blocked from `in_progress`: their report was sent back
+  for rework, so the merge is not what review approved.
