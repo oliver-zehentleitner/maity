@@ -7,8 +7,8 @@
 **Status:** active
 **Evidence:** inferred
 **Source:** contract owner, 2026-10-22; the maintainer approved the overview page the same day; contract in `docs/api.md` §6.11
-**Verification:** corroborated — re-checked 2026-11-04: `GET …/overview` (`hub/src/maity_hub/routes/overview.py`) returns only the board counts, the open requests and the cards' latest reports, and reads neither the project nor the members; §6.11 says the same. The hub serves the ticker's merge items since §17 (`routes/ticker.py`), and `reports` does not include them yet: adding them is still open, no decision either way is recorded
-**Revisit when:** the ticker's merge items are added to `reports` (de-duplicated by pull request number, not a replacement for the card reports) or decided against; or the overview needs data no existing read has
+**Verification:** corroborated — re-checked 2026-11-04: `GET …/overview` (`hub/src/maity_hub/routes/overview.py`) returns only the board counts, the open requests and the cards' latest reports, and its answer repeats neither the project view nor the member view; §6.11 says the same. The hub serves the ticker's merge items since §17 (`routes/ticker.py`), and `reports` does not include them yet; the direction recorded for that moment is to add them to `reports`, de-duplicated by pull request number, not as a replacement for the card reports, and that addition is not built
+**Revisit when:** the ticker's merge items are added to `reports`, or the overview needs data no existing read has
 
 The overview page reads the project (`GET /projects/{slug}`: name,
 state, repository URL, the Keep the Why export with its dashboard links,
