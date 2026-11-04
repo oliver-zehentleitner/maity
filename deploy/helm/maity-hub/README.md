@@ -61,8 +61,19 @@ example; any cluster with the same pieces works.
    tagged with the version and the full commit SHA and never `latest`. The
    workflow `publish-image` builds them; until its first release you build
    the image yourself. Pin it by digest (`image.digest`) when you can; the
-   workflow's run summary prints it. To build your own from the repository
-   root:
+   workflow's run summary prints it. Each published digest is signed with
+   cosign, keyless, by that workflow on a `v*` tag or on `main`; check the
+   signature before you pin a digest:
+
+   ```sh
+   cosign verify ghcr.io/oliver-zehentleitner/maity-hub@sha256:<digest> \
+     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+     --certificate-identity-regexp '^https://github\.com/oliver-zehentleitner/maity/\.github/workflows/publish-image\.yml@refs/(tags/v[^/]+|heads/main)$'
+   ```
+
+   An image whose signature names another workflow or another ref did not
+   come from a release or from `main`; don't run it. To build your own from
+   the repository root:
 
    ```sh
    docker build -f deploy/Dockerfile -t registry.example.org/maity-hub:<commit> .

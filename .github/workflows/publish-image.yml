@@ -1,11 +1,14 @@
 name: publish-image
 
 # The hub image, built from deploy/Dockerfile and pushed to
-# ghcr.io/oliver-zehentleitner/maity-hub: on a v* tag, or by hand from any ref
-# (workflow_dispatch). Nothing else triggers it, so merging this file pushes
-# nothing. Before the push, the same build is loaded and checked: it starts,
+# ghcr.io/oliver-zehentleitner/maity-hub: on a v* tag, or by hand from main
+# (workflow_dispatch). A run from any other ref stops before it builds, and the
+# job's environment `ghcr` is open only to main and v* tags (the repository's
+# environment settings), so merging this file pushes nothing. Before the push, the same build is loaded and checked: it starts,
 # migrates an empty SQLite database, and on a tag it reports the tag's version.
-# The push carries an SBOM and SLSA provenance as attestations.
+# The push carries an SBOM and SLSA provenance as attestations, and the pushed
+# digest is signed with cosign, keyless: the certificate names this workflow and
+# the ref it ran on, which is what an operator checks (deploy/helm/maity-hub/README.md).
 on:
   push:
     tags: ["v*"]
@@ -20,10 +23,14 @@ concurrency:
 
 jobs:
   image:
+    # Only a v* tag or main; a dispatch from another branch does nothing.
+    if: (github.ref_type == 'tag' && startsWith(github.ref_name, 'v')) || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    environment: ghcr
     permissions:
       contents: read
       packages: write # the push to ghcr.io; no other job in this repository has it
+      id-token: write # the keyless signature: the OIDC identity cosign's certificate names
     env:
       IMAGE: ghcr.io/oliver-zehentleitner/maity-hub
     steps:
@@ -92,6 +99,16 @@ jobs:
           sbom: true
           provenance: mode=max
 
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+
+      # The digest, never a tag: a tag can be moved, the signature is for these bytes.
+      - name: Sign
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: cosign sign --yes "${IMAGE}@${DIGEST}"
+
       - name: Digest
         env:
           DIGEST: ${{ steps.push.outputs.digest }}
@@ -105,4 +122,5 @@ jobs:
             echo "$TAGS"
             echo '```'
             echo "For the chart: \`image.repository: ${IMAGE}\`, \`image.digest: ${DIGEST}\`."
+            echo "Signed by \`${GITHUB_WORKFLOW_REF}\`."
           } >> "$GITHUB_STEP_SUMMARY"
