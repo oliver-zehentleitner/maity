@@ -3750,9 +3750,9 @@ good, leaving the CSS fallback `calc(100dvh - 140px)`.
   inside the open pane (the composer folded or shown, its 1×/2×/3×, a group's "Manage or leave",
   another chat on Chats) does not resize the body. The floor stayed the one measured first, and on
   a phone a group composer shown again ran under the product line with no history in sight.
-- Watching every pane the layout ever held: on Chats each switch added the old pane's parts, and
-  after twenty switches the observer watched over a hundred elements no longer in the page. Only
-  the current pane's parts are watched; the ones that leave are let go.
+- Watching the parts of every pane the layout ever held: on Chats each switch left the old pane's
+  parts watched, and after twenty switches the observer watched over a hundred elements no longer
+  in the page. Only the current pane's parts are watched; the ones that leave are let go.
 
 ## Forge access is a section of the account, also at /settings/forge; a project's settings say which grant reads its repository
 
