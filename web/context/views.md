@@ -4713,3 +4713,13 @@ page without the frame and without the line, as §16.13 says for a read that wai
 not added: it would put a second clock beside the API's own error handling, and a hub that does
 not answer leaves the sign-in itself unusable anyway (review of #1287 by
 maity-review-team-grok#dzse).
+**Known gap:** a session that ended on the hub without the page being told (signed out in
+another tab, expired) stays in `M.api.session()`. A 401 on `GET /auth/session` is a public call
+and does not clear it (`js/api.js`; only `endSession` does), so `render()` takes the frame down
+and lets the product line go on each such drawing: the app's bar and the line show for one round
+trip of `/auth/session` before the sign-in enters the frame again. It is older than #1287 (the
+same before it), found in the review of #1287 by maity-review-team-grok#spq4. Recording it rather
+than clearing the session on that 401 here was lotse#wtwy's decision (message seq 66307,
+2026-11-04); the reason is inferred, not stated: the case is rare, the page recovers after one
+round trip, and a change to the session's lifetime belongs in a change of its own. Workaround:
+reload the page, or sign out and in again.

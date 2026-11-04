@@ -6325,6 +6325,36 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!frHead() && !frFoot() && !frOn() && frSheets().length === 2 && frSheets().every((l) => l.disabled === true) && header.hidden === false
     && productLine.querySelectorAll("a").length === 3,
     "frame: an invitation's page has none, its stylesheets off, the product line back");
+  // Without a session render() leaves the frame standing until the view decides, so every view that is not the
+  // sign-in takes it down itself (lotse#wtwy on #1287). Each from the framed sign-in: the frame gone, the line back
+  // (review of #1287 by maity-review-team-grok#spq4).
+  const frLeft = () => !frHead() && !frFoot() && !frOn() && frSheets().every((l) => l.disabled === true) && header.hidden === false
+    && productLine.querySelectorAll("a").length === 3;
+  const frFromDoor = async (where) => {
+    await go("#/login"); for (let k = 0; k < 6; k++) await tick();
+    const stood = !!frFoot();
+    await go(where); for (let k = 0; k < 8; k++) await tick();
+    return stood;
+  };
+  // The mail's second step in a browser without the session it was sent for (§2.8.8).
+  const frStepStood = await frFromDoor("#/sign-in/second-factor/email?token=elsewhere");
+  expect(frStepStood && frLeft() && !byId("login-handle"), "frame: the mail's second step without a session leaves it, the product line back");
+  // A running maintenance window: the full page instead of the sign-in, outside the frame (§16.12).
+  await go("#/login"); for (let k = 0; k < 6; k++) await tick();
+  const frMtStood = !!frFoot();
+  win.Maity.maintenance.know({ from: new Date(Date.now() - 60000).toISOString(), until: new Date(Date.now() + 600000).toISOString(), text: "Frame test" }, true);
+  await go("#/all"); for (let k = 0; k < 8; k++) await tick();
+  const frMtPage = !!main.querySelector(".maintenance-page") && frLeft();
+  win.Maity.maintenance.know(null, true);
+  expect(frMtStood && frMtPage, "frame: the maintenance page for a visitor leaves it, the product line back");
+  // A page that cannot load (GET /auth/session answering 500): the failure outside the frame.
+  await go("#/login"); for (let k = 0; k < 6; k++) await tick();
+  const frFailStood = !!frFoot();
+  win.Maity.api.get = (p) => (p === "/auth/session" ? Promise.reject(Object.assign(new Error("boom"), { status: 500 })) : frGet(p));
+  await go("#/all"); for (let k = 0; k < 8; k++) await tick();
+  const frFailed = frLeft() && !byId("login-handle") && text(main).includes(win.Maity.t("page.failed.fixtures"));
+  win.Maity.api.get = frGet;
+  expect(frFailStood && frFailed, "frame: a page that fails to load leaves it, the product line back");
   win.Maity.api.get = lpGet;
   // That invitation set the page's no-referrer policy (js/invite.js); the invitation's own cases below start without it.
   head.querySelectorAll("meta").filter((m) => m.getAttribute("name") === "referrer").forEach((m) => m.remove());
