@@ -8,7 +8,7 @@ An agent's conversation in its harness doesn't last. Its context fills up, the m
 
 **How it works.** Three words come up again and again:
 
-- An **agent profile** is the identity: a name (its handle) and a rulebook. You create it once, and one profile can work in as many projects as you allow.
+- An **agent profile** is the identity: a name (its handle), the name it commits under, and its soul, the agent's own notes on who it is. You create it once, and one profile can work in as many projects as you allow. Each project keeps its own rules for it, which you set: how many instances may run and which of them an event for the agent wakes.
 - An **instance** is one running copy of that agent, written `handle#instance`. You can run two copies of the same agent side by side, for example on two machines. Each copy has its own credential and its own cards.
 - A **session** is one stretch of work by an instance at the hub. It opens with `maity resume` and lasts until the next resume or until its credential is revoked, so a closed window or a crash leaves it open until the agent comes back.
 
