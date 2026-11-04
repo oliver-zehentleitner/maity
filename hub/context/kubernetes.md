@@ -326,6 +326,10 @@ The restore extracts with `--strip-components=1`: the tar's first entry, `./`, i
 and not to the restoring user, so tar's attempt to set its time and mode failed with exit 2 after the files were back. A cut-off tar is found by
 listing it before the volume is emptied.
 
+Changed on 2026-11-04: the files are now encrypted, `maity-<time stamp>.dump.gpg` and `.attachments.tar.gpg`, and the restore streams the tar,
+decrypted and listed off the instance, into a Job that waits for it ("The k3s backups are encrypted with gpg", below). The `dump ok:` line keeps
+its shape, with the encrypted sizes first, so `helm-upgrade.sh` reads it as before.
+
 Changed on 2026-11-01: the migrate Job used to mount the claim too, only because it shares the hub's environment and `MAITY_ATTACHMENT_DIR` must name a
 writable directory. No migration reads the store. On a two-node cluster the Job landed on the other node than the running hub, the `ReadWriteOnce` claim
 gave a Multi-Attach error and the upgrade ran into its deadline, so the Job now has neither the variable nor the mount. A wrong directory is now found
@@ -345,6 +349,52 @@ when the hub starts, after the migration, not before it, and the hub is down unt
 - Making the backup claim bigger: local-path cannot expand a bound claim (the apply of the manifest would fail) and does not enforce the 5 GiB anyway;
   the node's disk is the limit, so the init container checks the room before it writes.
 - Backing up only when the volume changed: a cheap saving on a small volume, and a night without a tar breaks the "same time stamp" rule.
+
+## The k3s backups are encrypted with gpg to a public key in a Secret, and the Job fails without it
+
+**Id:** f6cd5dc1-f718-4490-92fc-285f88085514
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** hardening card tsk-ngx42j6r0jke (the maintainer, 2026-11-04); the tool and the failure rule chosen by the team lead on the plan, 2026-11-04; `deploy/k3s-single/backup.yaml`, `deploy/k3s-single/restore-attachments.yaml`, docs/install/README.md
+**See:** kubernetes.md#attachments-on-the-k3s-setup-a-volume-the-chart-mounts-and-a-tar-in-the-same-backup-run — 9111cb2f-89b0-4088-8c92-2fa5c1348ec7 — as of 2026-11-04
+**Revisit when:** the postgres image stops shipping gnupg, the backups move to an object store with its own encryption, or `age` ships in an image the setup already trusts
+
+Both containers of the backup Job pipe their output (`pg_dump -Fc`, the
+tar of the attachment volume) through `gpg --encrypt --recipient-file`
+under `umask 077`, so the night's files are `maity-<ts>.dump.gpg` and
+`maity-<ts>.attachments.tar.gpg`, mode 0600, and nothing unencrypted
+reaches the disk. The public key comes from the Secret
+`maity-backup-key` (`backup.pub`), mounted as optional. The init
+container checks it first: missing, a private key, or no public key
+ends the Job as failed with a `backup failed:` line, before anything
+is written. A restore decrypts where the private key is: the dump is
+piped into `pg_restore` over `kubectl exec`, and the tar is streamed
+into a restore Job that waits for it. Backups written before encryption
+are left alone and counted in every night's log.
+
+**Reason:** a backup holds the verifiers of every agent credential, and
+it sits on the node next to the database and is copied elsewhere. With
+the private key off the cluster, neither the node's disk nor a copy
+can be read. gpg is already in the pinned `postgres:17.10` image, so no
+other image enters the backup path. A backup must never stop silently:
+a volume for a missing Secret would leave the pod waiting with no
+failed Job, so the volume is optional and the script refuses instead.
+`dd` counts the bytes before encryption, since an encrypted empty
+stream is not empty. The shell has no `pipefail`, so a failure before
+gpg leaves a mark the script checks.
+
+**Rejected alternatives:**
+- `age`: not in the postgres image, and there is no official image of
+  it. A second step would bring in a third-party image or an install
+  at run time.
+- A symmetric key or passphrase in a Secret: the key to read the
+  backups would then be on the node they protect against.
+- Deleting the old unencrypted backups automatically: it removes what
+  might be the only copy of a night. The operator deletes them after
+  copying them off.
+- A restore Job that reads the private key from a temporary Secret:
+  simpler to run, but it puts the private key on the cluster.
 
 ## The ingress lets a 10 MiB upload through: 11m for ingress-nginx, a buffered route of its own on Traefik
 

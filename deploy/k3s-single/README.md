@@ -18,8 +18,8 @@ The walkthrough, with the secrets and the order, is in
 | `postgres.yaml` | PostgreSQL 17 Service and StatefulSet, password from the Secret `maity-postgres` |
 | `postgres-netpol.yaml` | NetworkPolicy: only the hub, its migrate Job and the backup Job reach PostgreSQL |
 | `attachments.yaml` | the volume of the hub's attachment store (10 GiB), mounted by the chart's `attachments.existingClaim` |
-| `backup.yaml` | daily `pg_dump` CronJob and a tar of the attachment volume, into the backup volume, the newest 14 kept |
-| `restore-attachments.yaml` | the Job that puts one night's attachment files back (not applied as it stands) |
+| `backup.yaml` | daily `pg_dump` CronJob and a tar of the attachment volume, encrypted to the public key in the Secret `maity-backup-key`, into the backup volume, the newest 14 kept |
+| `restore-attachments.yaml` | the Job that puts one night's attachment files back, streamed in after they're decrypted off the instance (not applied as it stands) |
 | `cert.yaml` | the Certificate for the apex, `www` and the join host, and the `www` → apex redirect |
 | `uploads.yaml` | the attachment upload's own route through Traefik's buffering middleware: the whole body, at most 11 MiB, is taken before the hub sees it |
 | `hub-values.yaml` | values for [`deploy/helm/maity-hub`](../helm/maity-hub/README.md) |
