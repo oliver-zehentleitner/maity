@@ -11,7 +11,8 @@ name: release-cli
 # The checks run in a job of their own with the dev tools; the sdist and wheel
 # come from a separate job that installs only cli/requirements/release.txt,
 # pinned with hashes, and builds without isolation, so nothing the checks
-# installed and nothing unpinned reaches what is uploaded.
+# installed and no unpinned package reaches what is uploaded. The interpreter
+# setup-python provides, with the pip it bundles, is the trusted base.
 on:
   push:
     tags: ["cli-v*"]

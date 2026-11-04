@@ -317,13 +317,19 @@ the `build` job's artifact. `[build-system]` names the same exact
 the release was made with. The `cli` job of ci.yml runs `make
 lock-check` (lock recompiled without its hashes, both pins compared)
 and `make release-build` on Python 3.11, and the audit workflow checks
-the lock against the known advisories with the hub's locks.
+the lock against the known advisories with the hub's locks. The lock
+installs as wheels only (`--only-binary :all:`). The interpreter that
+setup-python provides, with the pip it bundles (which checks the
+hashes), is the trusted base and is not in the lock. The dev extra pins
+the same `setuptools`, since the tests build without isolation in the
+dev environment, where Python 3.11 bundles an older one; `lock-check`
+compares all three pins.
 
 **Reason:** the uploaded files are what every agent installs. Built
 with whatever `build`, `twine` and `setuptools` PyPI served on the day
 of the tag, a changed or replaced tool could change them unseen. A
 hashed lock makes the build tools the reviewed ones. Without isolation,
-the build would otherwise fetch its backend again, unpinned. Keeping
+the build would otherwise fetch its backend again, without hashes. Keeping
 the checks in their own job means nothing their dev tools install
 shares the environment the files are built in. The hub already locks
 its dependencies the same way (`hub/Makefile`), so the CLI reuses its

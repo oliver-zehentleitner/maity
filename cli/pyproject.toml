@@ -22,7 +22,8 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-dev = ["ruff", "black", "mypy", "pytest", "build", "setuptools>=77", "wheel"]
+# setuptools as [build-system] pins it: tests build with --no-isolation against this environment.
+dev = ["ruff", "black", "mypy", "pytest", "build", "setuptools==84.2.1", "wheel"]
 
 [project.scripts]
 maity = "maity.cli:main"
