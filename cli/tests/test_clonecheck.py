@@ -48,6 +48,11 @@ def _marking(marker: Path) -> str:
     return f"\"{sys.executable}\" -c \"open(r'{marker}', 'w')\""
 
 
+def _quoted(value: str) -> str:
+    """`value` as a configuration file holds it: git drops unescaped double quotes."""
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
 @pytest.mark.parametrize(
     "key",
     ["remote.origin.uploadpack", "core.sshCommand", "core.gitProxy", "credential.helper"],
@@ -67,7 +72,7 @@ def test_a_key_naming_a_program_for_a_remote_is_refused_before_git_runs(
 def test_a_header_sharing_a_line_with_a_key_is_read_as_git_reads_it(placed: Path) -> None:
     marker = placed.parent / "ran"
     with (placed / ".git" / "config").open("a") as config:
-        config.write(f'[remote]\n[x "a.url = "] [core] sshCommand = {_marking(marker)}\n')
+        config.write(f'[remote]\n[x "a.url = "] [core] sshCommand = {_quoted(_marking(marker))}\n')
     with pytest.raises(gitfacts.FactsError, match=r"(?i)not a plain clone: .*core\.sshcommand"):
         gitfacts.collect(placed)
     assert not marker.exists()
