@@ -1001,7 +1001,8 @@ variables for its own commands, but those stay in its sandbox. In a
 session, maity's own git runs only once the clone passes the plain-clone
 check `gc` uses, and on a repository maity writes for that run under
 `.git/maity`, so what git reads as configuration is maity's, not the
-clone's; git gets a fixed environment, not maity's own. A clone the
+clone's, with no system or global configuration; git gets a fixed
+environment, not maity's own. A clone the
 runner set up holds a marker in `.git/maity`; there maity runs no git
 without the session's variables. Submodules, Git LFS, worktrees and
 sparse checkout are not supported under the runner yet. The git of the

@@ -1397,7 +1397,10 @@ rights, so nothing is gained by racing it. The clone's entries the check accepte
 are copied as regular files only. Objects, the index and the work tree
 are the clone's (`GIT_OBJECT_DIRECTORY`, `GIT_INDEX_FILE`,
 `GIT_WORK_TREE`, `GIT_CEILING_DIRECTORIES`), and `GIT_OPTIONAL_LOCKS=0`
-keeps `status` from writing into the clone. git gets a fixed
+keeps `status` from writing into the clone. git reads no system or
+global configuration (`GIT_CONFIG_NOSYSTEM`, `GIT_CONFIG_GLOBAL` at a
+missing file), so HOME reaches git without its `.gitconfig`; maity's own
+git under the runner only reads and needs none. git gets a fixed
 environment: PATH, HOME, LANG, TMPDIR (on Windows what a program needs
 to start), the prompt switches and the `GIT_*` values maity sets itself;
 nothing else from maity's own environment, which the command line that
@@ -1410,7 +1413,8 @@ says so instead of offering a way back. The runner writes a marker,
 `.git/maity/placement`, into each clone it starts an agent in; a marked
 clone without `MAITY_PLACEMENT` runs no maity git, since the variables
 were removed, not never set. A `.git` of more than 20 000 entries is
-refused before it is all listed. The state directory under the runner is the
+refused before it is all listed, inside one wide directory too: the
+listing stops one entry past the cap. The state directory under the runner is the
 clone's `.git/maity`, taken from `GIT_COMMON_DIR`, not from git, so a
 refused clone still reaches its credential. The check lists `.git` on
 every run (about a quarter of a second at 10 000 entries); it is not

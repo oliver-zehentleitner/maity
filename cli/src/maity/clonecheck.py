@@ -85,6 +85,32 @@ class Files(Protocol):
     def read(self, path: Path, offset: int = 0) -> bytes: ...
 
 
+def bounded_tree(path: Path, limit: int) -> list[tuple[str, str, int]]:
+    """Everything under a directory: (path inside it, `f`/`d`/`l`/`?`, size). Links are
+    listed, never followed; a directory that cannot be read is skipped, as `os.walk` does.
+    Stops after `limit` + 1 entries, inside a directory too: one entry more is enough to
+    refuse, and the rest is never listed or looked at."""
+    found: list[tuple[str, str, int]] = []
+    pending = [path]
+    while pending:
+        here = pending.pop()
+        try:
+            listing = os.scandir(here)
+        except OSError:
+            continue
+        with listing:
+            for entry in listing:
+                mode = entry.stat(follow_symlinks=False)
+                kind = ("l" if stat.S_ISLNK(mode.st_mode) else "d" if stat.S_ISDIR(mode.st_mode)
+                        else "f" if stat.S_ISREG(mode.st_mode) else "?")  # fmt: skip
+                found.append((Path(entry.path).relative_to(path).as_posix(), kind, mode.st_size))
+                if len(found) > limit:
+                    return found
+                if kind == "d":
+                    pending.append(Path(entry.path))
+    return found
+
+
 class Local:
     """This process's own user, plain files."""
 
@@ -94,17 +120,7 @@ class Local:
         return checks[kind]()
 
     def tree(self, path: Path) -> list[tuple[str, str, int]]:
-        found: list[tuple[str, str, int]] = []
-        for root, dirs, files in os.walk(path):  # does not descend into links
-            if len(found) > TREE_MAX:  # enough to refuse; the rest is not listed
-                break
-            for name in dirs + files:
-                full = Path(root) / name
-                mode = full.lstat()
-                kind = ("l" if stat.S_ISLNK(mode.st_mode) else "d" if stat.S_ISDIR(mode.st_mode)
-                        else "f" if stat.S_ISREG(mode.st_mode) else "?")  # fmt: skip
-                found.append((Path(full.relative_to(path)).as_posix(), kind, mode.st_size))
-        return found
+        return bounded_tree(path, TREE_MAX)
 
     def read(self, path: Path, offset: int = 0) -> bytes:
         with path.open("rb") as fh:
@@ -313,8 +329,8 @@ def placement_git(cwd: Path) -> Iterator[dict[str, str] | None]:
     git does not read the clone's `.git` for its configuration, HEAD or refs: it reads a
     repository maity writes for this run under `.git/maity`: for Claude Code a directory
     its sandbox keeps the agent from writing; Codex runs maity inside its sandbox, with the
-    agent's own rights. Its configuration is maity's own, with the
-    clone's entries maity checked passed on through the environment, so a configuration
+    agent's own rights. Its configuration is maity's own, with no system or global one and
+    the clone's entries maity checked passed on through the environment, so a configuration
     changed after the check is never read. Objects, the index and the work tree are the
     clone's: data git reads, nothing it runs. The directory is removed after the run."""
     root = placement_root(cwd)
@@ -346,6 +362,10 @@ def placement_git(cwd: Path) -> Iterator[dict[str, str] | None]:
             "GIT_WORK_TREE": str(root),
             "GIT_CEILING_DIRECTORIES": str(root.parent),
             "GIT_OPTIONAL_LOCKS": "0",  # `status` writes no refreshed index into the clone
+            # No configuration but maity's own and the checked entries: not the system's,
+            # not HOME's (a missing file reads as empty).
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_GLOBAL": str(private / "global"),
             **_passed_on(entries),
         }
     finally:

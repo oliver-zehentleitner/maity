@@ -313,6 +313,27 @@ def test_git_under_the_runner_gets_none_of_maitys_own_git_variables(
     assert "refs/heads/work" in listed.stdout
 
 
+def test_git_under_the_runner_reads_no_configuration_of_homes(
+    placed: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """HOME reaches git, its configuration does not: maity's own and the checked entries
+    are all git reads."""
+    from maity import proc
+
+    marker = placed.parent / "ran"
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".gitconfig").write_text(
+        f'[remote "origin"]\n\tuploadpack = {_quoted(_marking(marker))}\n'
+    )
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))  # git for Windows' HOME fallback
+    listed = proc.run([*proc.GIT, "ls-remote", "--heads", "--", "origin", "work"], placed)
+    assert not marker.exists()
+    assert listed.returncode == 0, listed.stderr
+    assert "refs/heads/work" in listed.stdout
+
+
 def test_a_clone_the_runner_marked_runs_no_git_without_the_session(
     placed: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -335,6 +356,19 @@ def test_a_git_dir_with_too_many_entries_is_refused_without_listing_them_all(
     listed = clonecheck.Local().tree(placed / ".git")
     total = sum(len(d) + len(f) for _, d, f in os.walk(placed / ".git"))
     assert 20 < len(listed) < total
+    with pytest.raises(gitfacts.FactsError, match="more than 20 entries"):
+        gitfacts.collect(placed)
+
+
+def test_one_wide_directory_is_not_listed_past_the_cap(
+    placed: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(clonecheck, "TREE_MAX", 20, raising=False)
+    wide = placed / ".git" / "objects" / "aa"
+    wide.mkdir(exist_ok=True)
+    for i in range(60):
+        (wide / f"{i:038x}").write_bytes(b"")
+    assert len(clonecheck.Local().tree(wide)) == 21  # one more than the cap, to refuse
     with pytest.raises(gitfacts.FactsError, match="more than 20 entries"):
         gitfacts.collect(placed)
 
