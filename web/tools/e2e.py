@@ -1065,6 +1065,7 @@ def scenario(run: Run, page: Page) -> None:
     no_problems(run, "all projects")
 
     id_links_step(run, page, alpha, task["id"])
+    asker_links_step(run, page, alpha)
     chat_pause_state(run, page, alpha, agent_id)
     group_chat_form_step(run, page)
     direct_removal_step(run, page, agent_id)
@@ -1158,6 +1159,46 @@ def scenario(run: Run, page: Page) -> None:
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
+
+
+def asker_links_step(run: Run, page: Page, alpha: Path) -> None:
+    """Who asked, as links (tsk-3re8qp89hc18, docs/api.md §7): in the inbox of all projects too, the
+    asker's handle leads to the member's page in the request's project, the #instance beside it to
+    that instance on it, chosen."""
+    run.step("inbox: Asked by links to the member and the instance, across projects too")
+    out = run.maity(alpha, "ask", "Who asked this?\nThe asker's links are the point.", "--to", "human", "--class", "info")
+    request_id = re.search(r"req-[0-9a-z]+", out).group(0)
+    asked = run.api(alpha, "GET", f"/projects/owner/e2e-alpha/requests/{request_id}")["asked_by"]
+    member_id, instance = asked["member_id"], asked.get("instance")
+    assert instance, f"the request names no instance: {asked}"
+    for inbox in ("/all", "/owner/e2e-alpha/inbox"):
+        page.goto(f"{run.base}{inbox}")
+        entry = page.locator(f"li.entry[data-request='{request_id}']")
+        if entry.locator(".entry-body").count() == 0:
+            entry.locator(".entry-head").first.click()
+        facts = entry.locator(".entry-body dd").filter(has=page.locator(f"a.member-ref[data-member='{member_id}']")).first
+        handle = facts.locator(f"a.member-ref[data-member='{member_id}']")
+        expect(handle).to_have_attribute("href", f"/owner/e2e-alpha/members/{member_id}")
+        mark = facts.locator("a.member-instance")
+        expect(mark).to_have_text(f"#{instance}")
+        if inbox == "/all":
+            run.shot(page, "inbox-asker-links")
+        handle.click()
+        expect(page).to_have_url(re.compile(rf"/owner/e2e-alpha/members/{member_id}$"))
+        expect(page.locator(".member-head")).to_contain_text("E2E Agent")
+        page.go_back()
+        entry = page.locator(f"li.entry[data-request='{request_id}']")
+        if entry.locator(".entry-body").count() == 0:
+            entry.locator(".entry-head").first.click()
+        entry.locator(".entry-body a.member-instance").first.click()
+        expect(page).to_have_url(re.compile(rf"/owner/e2e-alpha/members/{member_id}/sessions/{instance}$"))
+        expect(page.locator(f"#member-instance-{instance}")).to_have_attribute("aria-current", "true")
+    page.goto(f"{run.base}/owner/e2e-alpha/inbox/{request_id}")
+    current = page.locator("li.entry.current")
+    current.locator("textarea").fill("Seen.")
+    current.get_by_role("button", name="Send", exact=True).click()
+    expect(page.locator(f"li.entry[data-request='{request_id}']")).to_have_count(0)
+    no_problems(run, "asker links")
 
 
 def id_links_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:

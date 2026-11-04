@@ -320,6 +320,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(maityOpenNow > 0 && main.querySelectorAll("li.entry").length === maityOpenNow, "inbox: a project's inbox ignores the cross-project filter, and holds its personal requests too");
   await go("#/all");
   expect(byId("inbox-project").value === "maintainer/sample" && main.querySelectorAll("li.entry").length === 1, "inbox: back in all projects, the filter is still set");
+  // Who asked, across projects too: a link into the request's project (tsk-3re8qp89hc18).
+  const allAsker = main.querySelector(".current .entry-body a.member-ref");
+  expect(allAsker && allAsker.getAttribute("href") === "#/maintainer/sample/members/agt-s1" && text(allAsker) === "Shop Dev",
+    "inbox of all projects: Asked by links to the member in the request's project " + (allAsker ? allAsker.getAttribute("href") : "none"));
   // A filter outlives a reload: what it hides is said, and one click lifts it (the owner's "only F5 brings it").
   const filterNote = () => main.querySelector(".inbox-filter-hidden");
   expect(filterNote() && /hides \d+ open request/.test(text(filterNote())), "inbox: the filter says what it hides " + (filterNote() ? text(filterNote()) : "none"));
@@ -10180,10 +10184,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
   const mrAsker = main.querySelector(".current .facts a.member-ref");
   expect(mrAsker && mrAsker.getAttribute("href") === "#/maintainer/maity/members/" + mrAsker.getAttribute("data-member"), "member links: the inbox names its asker as a link");
-  // Across projects the page has no member list of the request's project: names stay text, never a guessed link.
+  // Across projects the page has no member list, but the request names its asker: a link into the request's own project.
   await go("#/all"); for (let k = 0; k < 4; k++) await tick();
-  expect(main.querySelector(".current") && !main.querySelectorAll(".entries a.member-ref").length,
-    "member links: in all projects no member is linked, since no member list of their project was read");
+  const allRefs = main.querySelectorAll(".entries li.entry a.member-ref");
+  expect(main.querySelector(".current") && allRefs.length && allRefs.every((a) => {
+    let li = a.parentNode; while (li && li.tagName !== "LI") li = li.parentNode;
+    const label = li && li.querySelector("a.project-label");
+    return label && a.getAttribute("href").startsWith(label.getAttribute("href").replace(/inbox$/, "members/"));
+  }), "member links: in all projects the asker links into the request's own project");
   // The direct chat's heading names its agent as a link; a needs-in-session note names its member.
   await go("#/maintainer/maity/chat/agt-a"); for (let k = 0; k < 4; k++) await tick();
   const mrHead = main.querySelector(".chat-pane") && main.querySelector(".chat-pane").querySelector("a.member-ref");

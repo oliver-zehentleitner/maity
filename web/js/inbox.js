@@ -140,16 +140,22 @@ window.Maity = window.Maity || {};
     return computedGo ? "reply primary" : "reply";
   }
 
-  // A member named in an entry, as a link to them in the request's own
-  // project; a personal request's project may be one the human is not in,
-  // so there they stay text.
-  // A link only to someone this page knows is a member of the request's
-  // project: its own project's member list. Across projects that list is
-  // not read, so there, and for a personal request, they stay text.
+  // A member named in an entry (who asked, on whose behalf), as a link to
+  // them and their instance in the request's own project (§7): their page
+  // there, Sessions with the instance chosen. Inside a project from its
+  // member list; across projects, and for a personal request, from the
+  // request itself, where the request's project is one of the reader's
+  // (`ctx.projects`); otherwise, a personal request from a project the
+  // human is not in, it stays text: its pages would not open. In a
+  // project, one no longer in its list too.
   function ref(ctx, req, person) {
     const id = person && (person.member_id || person.id);
-    const known = ctx.scope === "project" && !req.personal && id && (ctx.memberById || {})[id];
-    const view = { memberById: known ? { [id]: known } : {}, link: ctx.link, nameOf: ctx.nameOf };
+    const known = ctx.scope === "project" && !req.personal && id ? (ctx.memberById || {})[id] : null;
+    const reachable = !!id && !!req.slug && (ctx.scope !== "project" || req.personal)
+      && ctx.projects.some((x) => x.full_name === req.slug);
+    const m = known || (reachable ? { id, display_name: person.display_name, handle: person.handle, kind: person.kind } : null);
+    const link = (view, ...rest) => ctx.projectLink(req.slug, view, ...rest);
+    const view = { memberById: m ? { [id]: m } : {}, link, nameOf: ctx.nameOf };
     return M.dom.memberRef(view, person, { instance: person && person.instance });
   }
 
