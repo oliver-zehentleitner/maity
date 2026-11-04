@@ -2349,6 +2349,7 @@ window.MAITY_I18N["de"] = {
   "member.silent_unknown": "still · letzter Aufruf unbekannt",
   "memberpage.actions": "Aktionen",
   "memberpage.actions.label": "Aktionen für {name}",
+  "memberpage.activity.cursor_stuck": "der Ereigniszeiger des Hubs ist nicht über {after} hinausgekommen",
   "memberpage.activity.failed": "Die Aktivität konnte nicht gelesen werden: {reason}",
   "memberpage.activity.hint": "Was sie in diesem Projekt getan haben, das Neueste zuerst.",
   "memberpage.activity.hint_cut": {
@@ -2662,8 +2663,6 @@ window.MAITY_I18N["de"] = {
   "menu.sign_in_device": "Auf einem anderen Gerät anmelden",
   "menu.sign_out": "Abmelden",
   "menu.theme": "Theme",
-  "messages.cursor_stuck": "der Ereigniszeiger des Hubs ist nicht über {after} hinausgekommen",
-  "messages.cut": "Es werden nur Nachrichten aus den letzten {window} Ereignissen des Hubs (alle Projekte mitgezählt) angezeigt; ältere werden hier nicht gelesen.",
   "messages.filter.every_type": "jede Art",
   "messages.filter.type": "Art",
   "messages.from_to": "{from} an {to}",
@@ -2672,14 +2671,18 @@ window.MAITY_I18N["de"] = {
     "one": "{count} neue Nachricht.",
     "other": "{count} neue Nachrichten."
   },
+  "messages.new_failed": "Die neuen Nachrichten konnten nicht gelesen werden: ",
   "messages.none": "Noch keine Projektnachrichten.",
   "messages.none_of_type": "Keine Nachricht dieser Art.",
+  "messages.older": "Ältere Nachrichten",
+  "messages.read_failed": "Die Nachrichten konnten nicht gelesen werden: ",
   "messages.remove": "Entfernen",
   "messages.remove.ask": "Diese Nachricht für alle entfernen, die sie lesen können? Ihr Text und ihre Dateien werden durch einen Hinweis ersetzt. Nenne den Grund:",
   "messages.remove.busy": "Wird entfernt …",
   "messages.remove.done": "Entfernt.",
   "messages.remove.failed": "Nicht entfernt: ",
   "messages.remove.label": "Diese Nachricht für alle entfernen",
+  "messages.removed": "Diese Nachricht wurde entfernt.",
   "messages.review.more": {
     "one": "{count} weitere Stelle",
     "other": "{count} weitere Stellen"

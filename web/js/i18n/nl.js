@@ -2218,6 +2218,7 @@ window.MAITY_I18N["nl"] = {
   "member.silent_unknown": "stil · laatste aanroep onbekend",
   "memberpage.actions": "Acties",
   "memberpage.actions.label": "Acties voor {name}",
+  "memberpage.activity.cursor_stuck": "de gebeurteniscursor van de hub is niet voorbij {after} gekomen",
   "memberpage.activity.failed": "De activiteit kon niet worden gelezen: {reason}",
   "memberpage.activity.hint": "Wat ze in dit project deden, nieuwste eerst.",
   "memberpage.activity.hint_cut": {
@@ -2531,8 +2532,6 @@ window.MAITY_I18N["nl"] = {
   "menu.sign_in_device": "Op een ander apparaat inloggen",
   "menu.sign_out": "Uitloggen",
   "menu.theme": "Thema",
-  "messages.cursor_stuck": "de gebeurteniscursor van de hub is niet voorbij {after} gekomen",
-  "messages.cut": "Alleen berichten binnen de laatste {window} gebeurtenissen van de hub (alle projecten meegeteld) worden getoond; oudere worden hier niet gelezen.",
   "messages.filter.every_type": "elk type",
   "messages.filter.type": "Type",
   "messages.from_to": "{from} tot {to}",
@@ -2541,14 +2540,18 @@ window.MAITY_I18N["nl"] = {
     "one": "{count} nieuw bericht.",
     "other": "{count} nieuwe berichten."
   },
+  "messages.new_failed": "De nieuwe berichten konden niet worden gelezen: ",
   "messages.none": "Nog geen projectberichten.",
   "messages.none_of_type": "Geen bericht van dit type.",
+  "messages.older": "Oudere berichten",
+  "messages.read_failed": "De berichten konden niet worden gelezen: ",
   "messages.remove": "Verwijderen",
   "messages.remove.ask": "Dit bericht weghalen voor iedereen die het kan lezen? De tekst en bestanden worden vervangen door een notitie. Geef de reden:",
   "messages.remove.busy": "Verwijderen…",
   "messages.remove.done": "Verwijderd.",
   "messages.remove.failed": "Niet weggehaald: ",
   "messages.remove.label": "Dit bericht voor iedereen weghalen",
+  "messages.removed": "Dit bericht is verwijderd.",
   "messages.review.more": {
     "one": "nog {count} plek",
     "other": "nog {count} plekken"

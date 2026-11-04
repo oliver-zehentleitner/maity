@@ -2218,6 +2218,7 @@ window.MAITY_I18N["it"] = {
   "member.silent_unknown": "in silenzio · ultima chiamata sconosciuta",
   "memberpage.actions": "Azioni",
   "memberpage.actions.label": "Azioni per {name}",
+  "memberpage.activity.cursor_stuck": "il cursore degli eventi dell'hub non è andato oltre {after}",
   "memberpage.activity.failed": "Impossibile leggere l'attività: {reason}",
   "memberpage.activity.hint": "Cosa ha fatto in questo progetto, dal più recente.",
   "memberpage.activity.hint_cut": {
@@ -2531,8 +2532,6 @@ window.MAITY_I18N["it"] = {
   "menu.sign_in_device": "Accedi da un altro dispositivo",
   "menu.sign_out": "Esci",
   "menu.theme": "Tema",
-  "messages.cursor_stuck": "il cursore degli eventi dell'hub non è andato oltre {after}",
-  "messages.cut": "Sono mostrati solo i messaggi degli ultimi {window} eventi dell'hub (tutti i progetti compresi); quelli più vecchi non vengono letti qui.",
   "messages.filter.every_type": "ogni tipo",
   "messages.filter.type": "Tipo",
   "messages.from_to": "da {from} a {to}",
@@ -2541,14 +2540,18 @@ window.MAITY_I18N["it"] = {
     "one": "{count} nuovo messaggio.",
     "other": "{count} nuovi messaggi."
   },
+  "messages.new_failed": "Impossibile leggere i nuovi messaggi: ",
   "messages.none": "Ancora nessun messaggio del progetto.",
   "messages.none_of_type": "Nessun messaggio di questo tipo.",
+  "messages.older": "Messaggi precedenti",
+  "messages.read_failed": "Impossibile leggere i messaggi: ",
   "messages.remove": "Rimuovi",
   "messages.remove.ask": "Rimuovere questo messaggio per tutti quelli che possono leggerlo? Il testo e i file vengono sostituiti da una nota. Dì perché:",
   "messages.remove.busy": "Rimozione in corso…",
   "messages.remove.done": "Rimosso.",
   "messages.remove.failed": "Non rimosso: ",
   "messages.remove.label": "Rimuovi questo messaggio per tutti",
+  "messages.removed": "Questo messaggio è stato rimosso.",
   "messages.review.more": {
     "one": "ancora {count} punto",
     "other": "ancora {count} punti"

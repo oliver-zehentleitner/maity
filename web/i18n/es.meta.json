@@ -8315,6 +8315,10 @@
     "en": "e06a7f4657ebee9b",
     "text": "ac545c7264c052e2"
   },
+  "memberpage.activity.cursor_stuck": {
+    "en": "a7e1f024331f6c1d",
+    "text": "a534dfe938a78b16"
+  },
   "memberpage.activity.failed": {
     "en": "129ded00b9230026",
     "text": "98a28acc14193009"
@@ -9471,14 +9475,6 @@
     "en": "888560be416ca928",
     "text": "4ecb66f56c0084a5"
   },
-  "messages.cursor_stuck": {
-    "en": "a7e1f024331f6c1d",
-    "text": "a534dfe938a78b16"
-  },
-  "messages.cut": {
-    "en": "8ab4866b3f0358bf",
-    "text": "1e4527535bb6b494"
-  },
   "messages.filter.every_type": {
     "en": "e07a1390aa248806",
     "text": "b37b3a7b4f4f93f1"
@@ -9499,6 +9495,10 @@
     "en": "c67dde4187c1b692",
     "text": "fb2f3bb087cc71e5"
   },
+  "messages.new_failed": {
+    "en": "e4d19a856d0d36dc",
+    "text": "678eb99cbb345eb3"
+  },
   "messages.none": {
     "en": "1e7936a3a804e102",
     "text": "55dc66505c1d5c76"
@@ -9506,6 +9506,14 @@
   "messages.none_of_type": {
     "en": "6c5ee8a820df13be",
     "text": "c635eca0d772dbff"
+  },
+  "messages.older": {
+    "en": "9d767fc1f68dfc65",
+    "text": "00c6cb4ffed95aa8"
+  },
+  "messages.read_failed": {
+    "en": "3a29780ed7868ab6",
+    "text": "0d76c45d73ac05b0"
   },
   "messages.remove": {
     "en": "9469a102f04ea196",
@@ -9530,6 +9538,10 @@
   "messages.remove.label": {
     "en": "4ffa3b8abbf19914",
     "text": "81570c20f2baf6d0"
+  },
+  "messages.removed": {
+    "en": "a1b61b3fcf61b9da",
+    "text": "1a8eaff80537cb71"
   },
   "messages.review.more": {
     "en": "4533d2647946c19c",

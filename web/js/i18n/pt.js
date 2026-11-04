@@ -2218,6 +2218,7 @@ window.MAITY_I18N["pt"] = {
   "member.silent_unknown": "em silêncio · última chamada desconhecida",
   "memberpage.actions": "Ações",
   "memberpage.actions.label": "Ações para {name}",
+  "memberpage.activity.cursor_stuck": "o cursor de eventos do hub não passou de {after}",
   "memberpage.activity.failed": "Não foi possível ler a atividade: {reason}",
   "memberpage.activity.hint": "O que o membro fez neste projeto, do mais recente ao mais antigo.",
   "memberpage.activity.hint_cut": {
@@ -2531,8 +2532,6 @@ window.MAITY_I18N["pt"] = {
   "menu.sign_in_device": "Entrar em outro dispositivo",
   "menu.sign_out": "Sair",
   "menu.theme": "Tema",
-  "messages.cursor_stuck": "o cursor de eventos do hub não passou de {after}",
-  "messages.cut": "Somente as mensagens dentro dos últimos {window} eventos do hub (contando todos os projetos) são exibidas; as mais antigas não são lidas aqui.",
   "messages.filter.every_type": "todos os tipos",
   "messages.filter.type": "Tipo",
   "messages.from_to": "{from} a {to}",
@@ -2541,14 +2540,18 @@ window.MAITY_I18N["pt"] = {
     "one": "{count} nova mensagem.",
     "other": "{count} novas mensagens."
   },
+  "messages.new_failed": "Não foi possível ler as mensagens novas: ",
   "messages.none": "Ainda não há mensagens do projeto.",
   "messages.none_of_type": "Nenhuma mensagem deste tipo.",
+  "messages.older": "Mensagens mais antigas",
+  "messages.read_failed": "Não foi possível ler as mensagens: ",
   "messages.remove": "Remover",
   "messages.remove.ask": "Remover esta mensagem para todos que podem lê-la? O texto e os arquivos dela são substituídos por um aviso. Diga por quê:",
   "messages.remove.busy": "Removendo…",
   "messages.remove.done": "Removida.",
   "messages.remove.failed": "Não removida: ",
   "messages.remove.label": "Remover esta mensagem para todos",
+  "messages.removed": "Esta mensagem foi removida.",
   "messages.review.more": {
     "one": "mais {count} lugar",
     "other": "mais {count} lugares"
