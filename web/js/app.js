@@ -458,9 +458,10 @@ window.Maity = window.Maity || {};
       M.notify.stopBrowser();
       M.notify.state.settings = null;
       // The start page is the hub's to answer (§16.7): signed out, `/` may be the landing page, so
-      // it is a page load. A dashboard path is a route change; at the same address, draw it.
-      if (!after || M.route.startPage(after)) M.route.load(after || "/");
-      else if (!M.route.go(after, { replace: true })) render();
+      // it is a page load. A dashboard path is a route change. At the same address (fixture mode,
+      // where the start page is a route too), nothing changes there, so draw it.
+      const left = !after || M.route.startPage(after) ? M.route.load(after || "/") : M.route.go(after, { replace: true });
+      if (!left) render();
     }
   }
 
