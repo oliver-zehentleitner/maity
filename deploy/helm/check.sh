@@ -83,10 +83,11 @@ size="$(sed -n 's/^ *nginx.ingress.kubernetes.io\/proxy-body-size: "\{0,1\}\([0-
 cap="$(sed -n 's/^ATTACHMENT_CAP = \([0-9]*\) \* 1024 \* 1024$/\1/p' "$chart/../../../hub/src/maity_hub/middleware.py")"
 bytes=""
 case "$size" in
-    *[kK]) bytes=$(( ${size%?} * 1024 )) ;;
-    *[mM]) bytes=$(( ${size%?} * 1024 * 1024 )) ;;
-    *[gG]) bytes=$(( ${size%?} * 1024 * 1024 * 1024 )) ;;
-    [0-9]*) bytes="$size" ;;
+    [kKmMgG] | "") ;;
+    *[kK]) bytes=$(( 10#${size%?} * 1024 )) ;;
+    *[mM]) bytes=$(( 10#${size%?} * 1024 * 1024 )) ;;
+    *[gG]) bytes=$(( 10#${size%?} * 1024 * 1024 * 1024 )) ;;
+    [0-9]*) bytes=$(( 10#$size )) ;;
 esac
 if [ -n "$bytes" ] && [ -n "$cap" ] && { [ "$bytes" -eq 0 ] || [ "$bytes" -gt $(( cap * 1024 * 1024 )) ]; }; then
     ok "ingress: proxy-body-size $size above the hub's attachment cap of ${cap} MiB"

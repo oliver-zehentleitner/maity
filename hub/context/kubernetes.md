@@ -368,8 +368,8 @@ refuses a body over 1 MiB by default, so an upload between the two caps
 fails at the ingress. 11 MiB leaves room above the hub's cap: a file just
 over it, up to 11 MiB, gets the hub's own `payload_too_large`, and a larger
 one the ingress's own 413. The hub caps every other body itself, at 1 MiB at
-most: 64 KiB by default, 512 KiB for the landing, legal and sign-in pages'
-settings and their previews, 1 MiB for an image upload (logo, banner,
+most: 64 KiB by default, 512 KiB for the landing, legal, sign-in and sign-up
+pages' settings and their previews, 1 MiB for an image upload (logo, banner,
 avatar) and for a forge webhook delivery. A host-wide limit therefore needs
 no finer split. Traefik has no body limit by default, so on k3s an upload
 would pass without the route too. The route is there to bound the upload at
