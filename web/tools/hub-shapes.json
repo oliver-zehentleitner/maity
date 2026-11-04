@@ -1514,5 +1514,240 @@
    "updated_at": "string",
    "version": "string"
   }
+ },
+ "PATCH /projects/{project}/members/{agent}": {
+  "object": {
+   "aliases": {
+    "array": null
+   },
+   "areas": {
+    "array": null
+   },
+   "availability": {
+    "object": {
+     "since": "string",
+     "state": "string"
+    }
+   },
+   "availability_policy": {
+    "object": {
+     "grace_minutes": "number",
+     "on_unavailable": "string",
+     "substitutes": {
+      "array": null
+     }
+    }
+   },
+   "avatar_url": "null",
+   "bridges": {
+    "array": null
+   },
+   "bridging_for": {
+    "array": null
+   },
+   "briefing": "string",
+   "briefing_by": {
+    "object": {
+     "handle": "string",
+     "id": "string",
+     "kind": "string"
+    }
+   },
+   "briefing_updated_at": "string",
+   "briefing_version": "number",
+   "capabilities": {
+    "array": null
+   },
+   "covered_by": "null",
+   "covering": {
+    "array": null
+   },
+   "cross_owner": "boolean",
+   "display_name": "string",
+   "handle": "string",
+   "handover": "null",
+   "harness": "null",
+   "id": "string",
+   "instances": {
+    "array": {
+     "object": {
+      "address": "string",
+      "claims": "number",
+      "created_at": "string",
+      "dormant": "null",
+      "harness": "null",
+      "id": "string",
+      "keep_the_why_acknowledge_by": "null",
+      "keep_the_why_acknowledged_at": "null",
+      "label": "string",
+      "last_seen_at": "string",
+      "lead": "boolean",
+      "model": "null",
+      "name": "string",
+      "paused": "null",
+      "presence": "string",
+      "replaces": "null",
+      "revoked_at": "null",
+      "session": "null"
+     }
+    }
+   },
+   "isolated": "null",
+   "isolation_windows": {
+    "array": null
+   },
+   "joined_at": "string",
+   "keep_the_why_unconfirmed": "boolean",
+   "kind": "string",
+   "last_seen_at": "string",
+   "line_consent": "boolean",
+   "model": "null",
+   "name": "string",
+   "owner_id": "string",
+   "paused": "null",
+   "placement": "null",
+   "presence": "string",
+   "reports_to": "null",
+   "role": "string",
+   "role_base": "string",
+   "session": "null",
+   "takes_over": "null",
+   "team": {
+    "object": {
+     "distribution": "string",
+     "lead_instance": "null",
+     "max_instances": "number",
+     "review_within_team": "boolean",
+     "updated_at": "null",
+     "updated_by": "null",
+     "wake": "string"
+    }
+   },
+   "trust": "string"
+  }
+ },
+ "POST /projects/{project}/conversations/{agent}/messages": {
+  "object": {
+   "attachments": {
+    "array": null
+   },
+   "body": "string",
+   "conversation_id": "string",
+   "delivered_at": "null",
+   "from": "string",
+   "from_instance": "null",
+   "id": "string",
+   "mentions": {
+    "array": null
+   },
+   "redacted": "boolean",
+   "redaction": "null",
+   "sent_at": "string",
+   "seq": "number",
+   "to": "string",
+   "to_instance": "null"
+  }
+ },
+ "POST /projects/{project}/conversations/{group}/messages": {
+  "object": {
+   "attachments": {
+    "array": null
+   },
+   "body": "string",
+   "conversation_id": "string",
+   "from": "string",
+   "from_instance": "null",
+   "id": "string",
+   "mentions": {
+    "array": null
+   },
+   "redacted": "boolean",
+   "redaction": "null",
+   "sent_at": "string",
+   "seq": "number",
+   "to": "string",
+   "to_instance": "null"
+  }
+ },
+ "POST /projects/{project}/tasks": {
+  "object": {
+   "approvals": "null",
+   "area": "null",
+   "assigned_instance": "null",
+   "assigned_to": "null",
+   "blocked_by_request": "null",
+   "body": "null",
+   "checkpoint": "null",
+   "children": {
+    "object": {
+     "open": "number",
+     "total": "number"
+    }
+   },
+   "claim": "null",
+   "closed_at": "null",
+   "contract": "null",
+   "cover": "null",
+   "created_at": "string",
+   "created_by": "string",
+   "depends_on": {
+    "array": null
+   },
+   "id": "string",
+   "imported_from": "null",
+   "jour_fixe": "null",
+   "kind": "string",
+   "ktw_ref": "null",
+   "label": "null",
+   "links": {
+    "array": null
+   },
+   "mentions": {
+    "array": null
+   },
+   "needs": "null",
+   "notes": {
+    "object": {
+     "open": "number",
+     "total": "number"
+    }
+   },
+   "parent": "null",
+   "rank": "null",
+   "related": {
+    "array": null
+   },
+   "release": "null",
+   "report": "null",
+   "ships_with": {
+    "array": null
+   },
+   "status": "string",
+   "title": "string",
+   "updated_at": "string",
+   "watching": "boolean"
+  }
+ },
+ "POST /projects/{project}/tasks/{task}/notes": {
+  "object": {
+   "author": {
+    "object": {
+     "handle": "string",
+     "kind": "string",
+     "member_id": "string"
+    }
+   },
+   "body": "string",
+   "created_at": "string",
+   "edited": "null",
+   "id": "string",
+   "mentions": {
+    "array": null
+   },
+   "resolution": "null",
+   "state": "string",
+   "task_id": "string",
+   "version": "number"
+  }
  }
 }

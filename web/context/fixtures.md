@@ -86,8 +86,12 @@ again. `tools/check.py` sends the same requests to the fixture hub
 reports every difference that is not in
 `tools/fixture-shapes-baseline.json`: a key the fixture has and the hub
 does not, a key the hub has and the fixture lacks, another type. The
-baseline holds today's differences and only shrinks (`make fixtures`
-drops what no longer differs). It started with about ten routes; more
+baseline holds today's differences; for a request already listed it only
+shrinks (`make fixtures` drops what no longer differs), and a request
+added to the list brings its differences in. Writes (`POST`, `PATCH`,
+`DELETE`, with the request's `body`) come after every read in the list:
+both sides send the requests in order to one seed, so a read sees the
+seed before any write changed it. It started with about ten routes; more
 come one at a time, and a test keeps the two copies of the form functions
 (the hub test's and `check.py`'s, which uses the standard library only)
 equal.

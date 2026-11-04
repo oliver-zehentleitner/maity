@@ -200,6 +200,18 @@ def _seed(make_client: ClientFactory, migrated: Any) -> tuple[flow.Human, dict[s
     return owner, ids
 
 
+def _send(owner: flow.Human, method: str, path: str, body: Any) -> Any:
+    """One request of the list, a write with its `body` as it stands."""
+    if method == "GET":
+        return owner.get(path)
+    if method == "DELETE":
+        return owner.delete(path)
+    if method == "POST":
+        return owner.post(path, body)
+    assert method == "PATCH", method
+    return owner.patch(path, body)
+
+
 def test_the_recorded_shapes_are_the_hubs(make_client: ClientFactory, migrated: Any) -> None:
     spec = json.loads((WEB_TOOLS / "shape-requests.json").read_text())
     owner, ids = _seed(make_client, migrated)
@@ -207,8 +219,7 @@ def test_the_recorded_shapes_are_the_hubs(make_client: ClientFactory, migrated: 
     recorded = {}
     for request in spec["requests"]:
         path = request["path"].format(**ids)
-        call = owner.delete if request["method"] == "DELETE" else owner.get
-        answer = call(path)
+        answer = _send(owner, request["method"], path, request.get("body"))
         assert answer.status_code < 300, (path, answer.status_code, answer.text)
         recorded[f'{request["method"]} {request["path"]}'] = shape(answer.json(), maps)
     text = json.dumps(recorded, indent=1, sort_keys=True) + "\n"
