@@ -437,7 +437,7 @@ window.Maity = window.Maity || {};
   // The lines of history an open chat keeps in view however small the screen.
   const HISTORY_LEAST = 60;
   function fitToScreen(layout) {
-    let watcher = null, swaps = null;
+    let watcher = null, swaps = null, frame = 0;
     // Chats fits its layout while the view is still being drawn, before the
     // router puts it into the page: measured once it is there, a few tries
     // at most. Only a layout that was in the page and left it stops.
@@ -447,6 +447,8 @@ window.Maity = window.Maity || {};
       if (window.visualViewport) window.visualViewport.removeEventListener("resize", fit);
       if (watcher) watcher.disconnect();
       if (swaps) swaps.disconnect();
+      if (frame && window.cancelAnimationFrame) window.cancelAnimationFrame(frame);
+      frame = 0;
     };
     const fit = () => {
       if (layout.isConnected === false && !seen) {
@@ -490,7 +492,6 @@ window.Maity = window.Maity || {};
       // Measured in the next frame, not inside the observer's own round: a
       // height set there resizes the body again and the browser reports a
       // ResizeObserver loop.
-      let frame = 0;
       const later = window.requestAnimationFrame ? (f) => window.requestAnimationFrame(f) : (f) => window.setTimeout(f, 0);
       const soon = () => { if (!frame) frame = later(() => { frame = 0; fit(); }); };
       watcher = new window.ResizeObserver(soon);

@@ -2260,6 +2260,29 @@ def chat_height_views(run: Run, browser) -> None:
                         assert folded["overflow"] <= max(1, m["overflow"] - 100), (
                             f"{where}, composer folded: the page scrolls {folded['overflow']} px past the window"
                         )
+                        unfolded = page.evaluate(CHAT_MEASURE)
+                        assert unfolded["history"]["height"] >= 56 and unfolded["compose"]["bottom"] <= unfolded["footer"]["top"] + 0.5, (
+                            f"{where}, composer folded and shown again: {unfolded}"
+                        )
+                    # What grows inside the pane after it was fitted: the composer three times its
+                    # rows (a wide screen), a group's "Manage or leave" opened.
+                    grown = []
+                    three = page.locator(".chat-layout.open .chat-pane .compose-size button[data-size='3']")
+                    if three.is_visible():
+                        three.click()
+                        grown.append(("composer 3x", lambda: page.locator(".chat-layout.open .chat-pane .compose-size button[data-size='1']").click()))
+                    manage = page.locator(".chat-layout.open .chat-pane details.group-manage > summary")
+                    if manage.count() and manage.first.is_visible():
+                        manage.first.click()
+                        grown.append(("Manage or leave opened", lambda: manage.first.click()))
+                    if grown:
+                        page.wait_for_timeout(300)
+                        g = page.evaluate(CHAT_MEASURE)
+                        for _, undo in grown:
+                            undo()
+                        page.wait_for_timeout(300)
+                        what = ", ".join(n for n, _ in grown)
+                        assert g["history"]["height"] >= 56 and g["compose"]["bottom"] <= g["footer"]["top"] + 0.5, f"{where}, {what}: {g}"
             # On Chats a group chat takes the place of a direct one in the same layout.
             page.goto("about:blank")
             page.goto(f"{index}?lang=en#/chats/maintainer/maity/agt-a")
