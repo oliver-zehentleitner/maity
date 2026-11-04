@@ -156,10 +156,11 @@ def authenticate(conn: Connection, facts: RequestFacts, *, renew_leases: bool = 
 
 
 def precheck(conn: Connection, facts: RequestFacts) -> None:
-    """Refuse, from the headers alone, a caller whom no body could authenticate, with the
-    refusal `authenticate` would give it, so that a large body is not read for it (§8.7).
-    A signature covers the body, so a signed call passes once the checks before the signature
-    pass. It renews nothing and spends no nonce."""
+    """Refuse, from the headers alone, a caller whom no body could authenticate, so that a
+    large body is not read for it (§8.7). It runs the first checks of `authenticate`, in
+    the same order and with the same refusals; the rest (the signature, which covers the
+    body, a revoked credential, the CSRF token) wait for the full check after the body. It
+    renews nothing and spends no nonce."""
     authorization = facts.headers.get("authorization")
     if authorization:
         scheme, _, value = authorization.partition(" ")

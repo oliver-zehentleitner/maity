@@ -274,6 +274,37 @@ def test_an_upload_no_body_could_authenticate_is_refused_before_it_is_read(
         assert _unread_upload(owner.client, headers) == {"status": 401, "code": code}, headers
 
 
+def test_a_credential_leaked_in_the_query_is_revoked_before_the_pre_check(
+    owner: flow.Human, stored: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(stored, owner)
+    query = f"name={agent.credential}".encode()
+
+    async def never_read() -> dict[str, object]:
+        raise AssertionError("the body was read")
+
+    sent: list[dict[str, Any]] = []
+
+    async def send(message: dict[str, Any]) -> None:
+        sent.append(message)
+
+    path = "/api/v1/projects/maintainer/maity/attachments"
+    scope = {
+        "type": "http", "http_version": "1.1", "method": "POST", "scheme": "https",
+        "path": path, "raw_path": path.encode(), "root_path": "", "query_string": query,
+        "server": ("hub.example", 443), "client": ("203.0.113.7", 1),
+        "headers": [(b"host", b"hub.example"), (b"content-length", b"9")],
+    }  # fmt: skip
+    asyncio.run(owner.client.app(scope, never_read, send))  # type: ignore[arg-type]
+    error = dict(sent[0]["headers"])[b"maity-error"]
+    assert (sent[0]["status"], error) == (400, b"credential_in_payload")
+    with migrated.connect() as conn:
+        reason = conn.execute(
+            select(t.credential.c.revoked_reason).where(t.credential.c.id == agent.credential_id)
+        ).scalar()
+    assert reason == "leaked_in_payload"
+
+
 def test_a_signed_upload_is_read_and_its_signature_checked_after(
     owner: flow.Human, stored: ClientFactory
 ) -> None:

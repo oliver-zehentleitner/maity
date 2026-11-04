@@ -174,7 +174,17 @@ class HubMiddleware:
         if declared is not None and declared > cap:
             await refuse(scope, receive, send)
             return
+        raw_query: bytes = scope.get("query_string", b"")
+        # The query is matched raw and percent-decoded (§2.2): `mty1%2E…` too.
+        in_query = credentials.find_all(raw_query) + credentials.find_all(
+            unquote_to_bytes(raw_query)
+        )
         if not on_join_host and _is_attachment_upload(scope):
+            if in_query:
+                # The filter answers before the pre-check, so a credential leaked in the
+                # query is revoked whoever sends it (§2.2); the body is not read.
+                await self._leaked(in_query, scope, receive, send)
+                return
             # Up to 10 MiB is read only for a caller the headers may authenticate (§8.7).
             refusal = await self._precheck(scope)
             if refusal is not None:
@@ -191,25 +201,9 @@ class HubMiddleware:
             return  # or the client went away
         body = read
 
-        raw_query: bytes = scope.get("query_string", b"")
-        # The query is matched raw and percent-decoded (§2.2): `mty1%2E…` too.
-        found = (
-            credentials.find_all(body)
-            + credentials.find_all(raw_query)
-            + credentials.find_all(unquote_to_bytes(raw_query))
-        )
+        found = credentials.find_all(body) + in_query
         if found:
-            # Refused all the same when the database is down; a verified leak is
-            # revoked on its next sighting.
-            with contextlib.suppress(OperationalError, InterfaceError):
-                await run_in_threadpool(self._revoke, found)
-            response = error_response(
-                400,
-                "credential_in_payload",
-                "the request contains a string in the hub's credential format",
-            )
-            await response(scope, receive, send)
-            _access(scope, 400)
+            await self._leaked(found, scope, receive, send)
             return
 
         scope["state"]["body"] = body
@@ -320,6 +314,21 @@ class HubMiddleware:
         await response(scope, receive, send)
         _access(scope, 503)
         return True
+
+    async def _leaked(
+        self, found: list[credentials.Presented], scope: Scope, receive: Receive, send: Send
+    ) -> None:
+        # Refused all the same when the database is down; a verified leak is
+        # revoked on its next sighting.
+        with contextlib.suppress(OperationalError, InterfaceError):
+            await run_in_threadpool(self._revoke, found)
+        response = error_response(
+            400,
+            "credential_in_payload",
+            "the request contains a string in the hub's credential format",
+        )
+        await response(scope, receive, send)
+        _access(scope, 400)
 
     def _revoke(self, found: list[credentials.Presented]) -> None:
         with events.transaction(self.engine) as conn:

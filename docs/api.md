@@ -10929,15 +10929,17 @@ callers with `project:admin`; for others it is `null`.
 **Limits.** At most 10 MiB per file, before re-encoding — the body cap
 of §1.7 does not apply to this call, the file cap does
 (`payload_too_large`, checked against `Content-Length` before the body
-is read, and against the bytes read when no length is given). Before the
-body is read, the hub runs the checks of §2 that need no body, and a call
-that fails one gets that refusal with its body unread: that there is a
-credential or a session cookie; for a bearer credential the transport,
-the credential and its secret; for a session cookie the transport,
-`Sec-Fetch-Site` and that the session is alive; for a signed call the
-headers' shape, the time window and that the credential exists. The
-signature covers the body, so it, and every later check of §2, runs
-after the body is read. At most 30
+is read, and against the bytes read when no length is given). The
+credential filter of §2.2 checks the query first. Then, before the body
+is read, the hub runs these checks of §2, and a call that fails one gets
+that refusal with its body unread, so its body is not scanned either:
+that there is a credential or a session cookie; for a bearer credential
+the transport, the credential and its secret; for a session cookie the
+transport, `Sec-Fetch-Site` and that the session is alive; for a signed
+call the headers' shape, the time window and that the credential exists.
+The signature, which covers the body, and every later check (a revoked
+credential, `X-CSRF-Token`, the caller's project among them) run after
+the body is read. At most 30
 uploads and 100 MiB per membership in 10 minutes; beyond either the call
 is `rate_limited` with `Retry-After` and stores nothing. A call that
 finds every decode slot taken is `rate_limited` as for an avatar. A

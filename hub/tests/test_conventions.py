@@ -123,7 +123,8 @@ def test_a_body_that_does_not_arrive_in_time_is_request_timeout(
         chunks += 1
         if chunks > 1:
             await asyncio.sleep(0.15)  # each chunk in time, all of them not
-        return {"type": "http.request", "body": b"{", "more_body": True}
+        # Ends after three: a deadline per chunk would let it through and answer otherwise.
+        return {"type": "http.request", "body": b"{", "more_body": chunks < 3}
 
     sent: list[dict[str, object]] = []
 
@@ -141,6 +142,35 @@ def test_a_body_that_does_not_arrive_in_time_is_request_timeout(
     assert (sent[0]["status"], headers[b"maity-error"]) == (408, b"request_timeout")
     assert headers[b"connection"] == b"close"
     assert chunks >= 2  # a chunk in time does not restart the clock
+
+
+def test_a_steady_body_inside_the_deadline_is_read_whole(
+    make_client: ClientFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(body_reader, "BODY_SECONDS", 1.0)
+    client = make_client()
+    parts = [b'{"handle": "x", ', b'"password": "y"', b"}"]
+
+    async def steady() -> dict[str, object]:
+        await asyncio.sleep(0.05)
+        part = parts.pop(0)
+        return {"type": "http.request", "body": part, "more_body": bool(parts)}
+
+    sent: list[dict[str, object]] = []
+
+    async def send(message: dict[str, object]) -> None:
+        sent.append(message)
+
+    scope = {
+        "type": "http", "http_version": "1.1", "method": "POST", "scheme": "https",
+        "path": "/api/v1/auth/login", "raw_path": b"/api/v1/auth/login", "root_path": "",
+        "query_string": b"", "server": ("hub.example", 443), "client": ("203.0.113.7", 1),
+        "headers": [(b"host", b"hub.example"), (b"content-type", b"application/json")],
+    }  # fmt: skip
+    asyncio.run(client.app(scope, steady, send))  # type: ignore[arg-type]
+    headers = dict(sent[0]["headers"])  # type: ignore[call-overload]
+    # The whole body reached the route: a wrong login, not a timeout.
+    assert (sent[0]["status"], headers[b"maity-error"]) == (401, b"unauthenticated")
 
 
 def test_a_body_at_the_cap_passes_the_cap(make_client: ClientFactory) -> None:
