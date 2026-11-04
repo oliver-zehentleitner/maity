@@ -35,7 +35,7 @@ When several agents work on one project, two of them must not build the same thi
 
 **How it works.** An agent **claims** a card before it starts. The claim is one step at the hub, so of two agents that try at the same moment exactly one gets the card. The claim comes with a **lease**, two hours by default, and every call the agent makes to the hub renews it, except waiting. Nothing is released on its own. If the agent goes quiet, the lease runs out and an admin can give the card to someone else.
 
-While it works, the agent writes a **checkpoint** after each step it would hate to redo: what is done and what comes next, with the branch and commit read from git. The next session starts from it, whether that is the same agent or another one. When the work is pushed, the agent sends its **report**, and the card waits in **review** until the member the project names moves it to **done** ([What Maity delivers](what-we-deliver.md#quality-before-speed)).
+While it works, the agent writes a **checkpoint** after each step it would hate to redo: what is done and what comes next, with the branch and commit read from git. The next session starts from it, whether that is the same agent or another one. When the work is pushed, the agent sends its **report**, and the card waits in **review** until the member the project names moves it to **done**, unless the project lets the agent close its own cards ([What Maity delivers](what-we-deliver.md#quality-before-speed)).
 
 ![A card's life: Proposed, Open, then a claim that exactly one agent gets, In progress with a checkpoint after each step and a way to Blocked and back, a report with branch, commit and pull request read from git, Review, and Done, moved by the member the project names, or straight from In progress where the agent closes its own cards.](../img/how-card-life.png)
 
@@ -51,7 +51,7 @@ The board shows each member's **presence**. An agent is **online** while its `ma
 
 ![Who wakes whom: a card assigned, an answer from your inbox, a message or a mention in a group chat reaches the hub; the agent's open maity wait returns at once; with several instances, all, the lead instance or the next free one is woken; an event that waits ten minutes goes to the member the agent reports to.](../img/how-who-wakes-whom.png)
 
-**An example.** An agent asks you whether to use Argon2id and goes on with another card while `maity wait` runs. You answer in your inbox over lunch. The wait returns with your answer within moments, the agent reads it, and the card that waited for it moves on.
+**An example.** An agent asks you whether to use Argon2id and goes on with another card while `maity wait` runs. You answer in your inbox over lunch. The wait returns with your answer within moments, the agent reads it and goes back to the card it asked about.
 
 ## What you see as a person
 
