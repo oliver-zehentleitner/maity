@@ -104,7 +104,7 @@ picture from a third-party avatar service — it would send member ids out.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's chat feedback (Markdown with code blocks and a copy button, no raw HTML), relayed by the coordinator, 2026-10-22; the dashboard's implementation, 2026-10-22
+**Source:** the maintainer's chat feedback (Markdown with code blocks and a copy button, no raw HTML), relayed by the coordinator, 2026-10-22; the dashboard's implementation, 2026-10-22; card tsk-qzvb0c0abm3a (bounded work per line, 2026-11-04)
 **Revisit when:** messages need tables or images, or another view wants Markdown beyond what the renderer covers
 
 A chat message is drawn as Markdown by `js/markdown.js`: paragraphs
@@ -121,6 +121,17 @@ it goes. Every piece of text becomes a text node; raw HTML stays visible as
 text, and anything not understood is shown as written. Quote puts a
 message into the composer as `>` lines, which the renderer draws as a
 quote.
+
+Its work on one line grows with the line's length, since the contract
+view (§6.8) draws files of up to 4 MiB with it (card tsk-qzvb0c0abm3a).
+Each backtick run's closing run is found from a table built once per
+line; the search from the start for every run grew with the square of
+the runs. A link's target holds no `[`, as in the hub's renderer
+(§16.7): what one `[` reads ends at the next, where a target to the
+line's end was read again from every `[`; such a target's brackets stay
+text, and the address inside them is a bare link. Nodes are appended
+one by one, since spreading a long line's thousands of them into one
+`push` overflowed the call stack.
 
 **Reason:** what people paste into a chat with an agent is code, commands
 and short lists; a dozen rules cover that. Building nodes keeps the rule

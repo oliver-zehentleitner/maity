@@ -207,6 +207,11 @@ with the text's length and never with the ways of splitting it:
 - A heading's marks are a pattern; its text, without the closing `#` run and the spaces around
   it, is cut by string operations. The output is the old pattern's, checked against it as an
   oracle on short lines.
+- Two patterns outside the renderer were replaced the same way, with the old patterns as the
+  tests' oracle: `mailer.defang`'s schemes (`_schemes`), where each `://` looks back over its own
+  run instead of every word start trying the run to its end, and `sessions.describe`'s Safari
+  (`_safari`), two searches per line instead of a pattern that tried every split between its
+  `[\d.]+` and `.*`.
 - Quotes nest at most 8 deep, as in the dashboard (`web/js/markdown.js`), which renders the same
   cards and notes: the lines of a ninth quote are a paragraph in the eighth, without their own
   `>`, and any deeper `>` stays text. The recursion is bounded with it.
