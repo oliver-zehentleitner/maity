@@ -492,7 +492,7 @@ refiling is at most one item per human and hour.
 
 A new sign-in (`session_created`) is no bell item: it is not listed, not counted, not pinned,
 gives no browser notification and has nothing to mark read. The account record stays, for
-Profile → Sessions, the export and the mail. The Notifications page shows a small "Current
+Profile → Sessions, `sessions_at` and the wake of a held long-poll (§18.2), and the mail. The Notifications page shows a small "Current
 sessions" box: the active sessions, compact, linking to Profile → Sessions, with no buttons and
 no unread state. Kept as they were: the sign-in mail by the `security` mode, the banner of a mail
 sign-in in every other session with "End this session" and "This was me", "This was me" in the

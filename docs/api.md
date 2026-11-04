@@ -1193,9 +1193,9 @@ limit the hub states, not one it closes. What it does instead:
   other session of the human shows it in the dashboard at once, with
   the session and a one-click "End this session" (§2.6.5) — not only by
   a mail the agent could delete. Only a session that existed before
-  that sign-in can confirm it or mark it read; the obtained session and
-  every session created after it can do neither, and the banner stays
-  until the sign-in is confirmed, read or not.
+  that sign-in can confirm it; the obtained session and every session
+  created after it cannot, and the banner stays until the sign-in is
+  confirmed.
 - **A session the human has not confirmed cannot lock the human
   out.** A session in good standing — signed in by password or with
   the second factor, or its sign-in confirmed by the human with "This
@@ -1222,7 +1222,7 @@ limit the hub states, not one it closes. What it does instead:
   least 24 hours old approves it, and only one in good standing — whose
   own sign-in the human confirmed from an earlier session (§2.6.5). A
   session obtained a moment ago cannot do it, and one that waits a day
-  still cannot while its sign-in is not confirmed, read or not; nor can it reject or replace
+  still cannot while its sign-in is not confirmed; nor can it reject or replace
   a change the human filed.
 
 Additional rules that are not scopes:
@@ -1764,13 +1764,13 @@ and is never affected by mail limits; the password is not either.
 signed in by password or with the second factor (§2.8.2), or when its
 sign-in has been **confirmed** —
 `POST /auth/sessions/{id}/confirm` from an allowed session (below).
-Reading its alert never confirms it, however it is read: by `ids`, by
-`up_to`, by age or by the record's expiry (§18.3). The session list
+Nothing else confirms it: a sign-in has no bell item to read (§18.1),
+and neither age nor the record's expiry confirms it. The session list
 shows it (`good_standing`, and `confirmed_at` and `confirmed_by`, the
 confirming session's id, on a confirmed one; both `null` otherwise).
 Good standing is what lets a session end others, confirm sign-ins,
-mark sign-in and address-change alerts read and act on a held address
-change (§2.6.3).
+mark address-change alerts read and act on a held address change
+(§2.6.3).
 The maintainer's decision of 2026-11-02 (`context/notifications.md`)
 separated confirming from reading, so that the bell can be tidied
 without the protection going with it. A session whose alert an allowed
@@ -1880,8 +1880,8 @@ learns of a sign-in by password or device code only from the last two.
   session list. So a session obtained through a mailbox can confirm
   neither itself nor a second session it obtains next (by another mail
   sign-in, or by a device code it approves). Only confirming grants
-  good standing; reading, age, expiry or any other automatic reading
-  never does — a session whose record expired unconfirmed stays out of
+  good standing; age, expiry or any other automatic step never
+  does — a session whose record expired unconfirmed stays out of
   good standing.
 - **Every mail sign-in is an alert** — method `email_link` or
   `email_code`, whatever device cookie the browser presented. It is
@@ -1980,8 +1980,7 @@ event; the accounts design's instance audit log records it (pending).
   "End all other sessions", and the ended sessions of the last 30 days;
   a session not in good standing (§2.6.5: neither signed in by password
   or with the second factor nor confirmed) is marked "not confirmed",
-  with "This was me" where the current session may confirm it, whether
-  its alert was read or not.
+  with "This was me" where the current session may confirm it.
 - **The mail sign-in banner** of §2.6.5 in every other open session,
   with "This was me" only where that session may confirm it.
 - **Notification settings** (#160, §18.8) gain the `security` mail switch
@@ -2492,7 +2491,7 @@ is what neither a mailbox nor an unlocked dashboard provides, which is
 the reason good standing exists. The mail factor (§2.8.8) is the
 mailbox and gives no standing of its own; such a session is in good
 standing by §2.6.5's own rules (a password sign-in, or its sign-in
-confirmed — never its alert read). The session list carries `second_factor: true | false` per
+confirmed). The session list carries `second_factor: true | false` per
 session, `true` for the mail factor too.
 
 #### 2.8.3 Recovery
@@ -18023,7 +18022,7 @@ rules that make a position safe to resume from:
   `registration_pending`, `report_open`, `mail_disabled` and `agents_not_listening`
   items, which stay listed while their matter is open (§18.1), however old, and are read once it
   is closed. No
-  reading — by age or by a marking — grants a session good standing;
+  item read — by age or by a marking — grants a session good standing;
   only confirming its sign-in does (§2.6.5). `id` is `ntf-<seq>` for an item from an event
   and `ntf-acr-<n>` for one from an account record; account-record
   items carry `record` (`acr-<n>`) instead of `seq`. A personal request's
@@ -18046,7 +18045,7 @@ rules that make a position safe to resume from:
   `report_open` record: the report's id, linking to Admin → Reports),
   `moderation` (a `moderation_applied` record: the report's id, which
   the account cannot open, linking to the account page), and for
-  the other account records `session` or `settings` (`mail_disabled`
+  the other account records `settings` (`mail_disabled`
   included), `project` `null`
   on those (a personal request's record targets its `request`, above)
   — and
@@ -18266,7 +18265,7 @@ device; the browser's own permission is per browser and is not stored.
   plus good standing: only a session in good standing and at least 24
   hours old approves the change, so a session obtained a moment ago
   cannot, and one that waits a day still cannot while its sign-in is
-  not confirmed, read or not (#169 §2.6.5); nor can it reject or replace a change
+  not confirmed (#169 §2.6.5); nor can it reject or replace a change
   the human filed. `address_status`:
   `none`, `pending` (an address, never verified), `verified`,
   `disabled` (§18.7). Setting the address again, also the same one,
