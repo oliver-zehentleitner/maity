@@ -194,7 +194,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `alias_limit` | a rename that would give a human or an agent profile a ninth alias (§6.24), or a project rename or transfer that would give the project a ninth (§6.25); `details.limit`, `details.aliases`. Taking an own alias back is never refused with it |
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
-| 409 | `resolve_the_report` | an answer to the instance admin's request about a new abuse report: it closes when the report is resolved under `/admin/reports/{id}` (§16.8, §7); `details.report` |
+| 409 | `resolve_the_report` | an answer to, or a withdrawal of, the instance admin's request about a new abuse report (`POST /requests/{id}/answer`, `POST /requests/{id}/withdraw`): it closes when the report is resolved under `/admin/reports/{id}` (§16.8, §7); `details.report` |
 | 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4) |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
@@ -9617,7 +9617,7 @@ the public reads the texts as they reach each agent, on its page.
 
 | Field | Values / meaning |
 |---|---|
-| `class` | `decision` (pick one, or say), `consent` (may I), `contract` (an interface changes; routed to the arbiter), `info` (a fact someone has; answered in free text or with an option). Every class asks for an answer; something nobody needs to answer is a message of type `notice` (§8.4), not an inbox entry |
+| `class` | `decision` (pick one, or say), `consent` (may I), `contract` (an interface changes; routed to the arbiter), `info` (a fact someone has; answered in free text or with an option). Every class asks for an answer, except the instance admin's request about a new abuse report (`report`, below), which leads to the report instead; something nobody needs to answer is a message of type `notice` (§8.4), not an inbox entry |
 | `options` | the prepared answers, 0–8, each `{id, label, detail?}`; `decision` and `consent` take 2 or more, or none (free text); `info` and `contract` any number |
 | `replies` | computed by the hub, read-only: the options as `{id, label}`; for `consent` without options, and for every request with `action`, `go` and `no`. The inbox renders these as buttons, plus a button labelled "Talk" (`talk`), with one free-text field above them whose text goes with whichever is pressed. `reply_id` must name one of them |
 | `priority` | `low`, `normal`, `high`, `urgent`; `urgent` only with `requests:answer` — the cap for workers |
@@ -9625,7 +9625,7 @@ the public reads the texts as they reach each agent, on its page.
 | `asked_by` | `{member_id, instance, display_name, avatar_url, trust, role, session_id}`, filled by the hub (trust, role, name and avatar at read time); `instance` is `null` for a human, and for a request the hub files on an agent's behalf (`filed_by`) |
 | `filed_by` | set by the hub only: `"hub"` on a request the hub files itself — the notice of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and of an isolation (§6.2), of a soul change by the agent (§19.1) and of a change of another owner's project texts, or the consent to it (§6.28), whose `asked_by` is that agent's member with `instance: null`, and the owner's digest of agent instances that are away (§5.3) and the instance admin's request about a new abuse report (§16.8), whose `asked_by` is `null`; absent (`null`) on every other request |
 | `takeover_id`, `memory_proposal` | set by the hub only, on the request an escalated takeover files and on a cross-owner takeover's notice (§6.19), and on a community-memory or preferences proposal (§19); `null` otherwise |
-| `report` | set by the hub only, on the instance admin's request about a new abuse report: `{id, reason, type}`, the report's id, reason and target type, never its content (§16.8); `null` otherwise. Such a request has no `replies` and is never answered: `POST /requests/{id}/answer` is `resolve_the_report` (409), and the hub withdraws it when the report is resolved or expires |
+| `report` | set by the hub only, on the instance admin's request about a new abuse report: `{id, reason, type}`, the report's id, reason and target type, never its content (§16.8); `null` otherwise. Such a request has no `replies` and is never answered or withdrawn by its human: `POST /requests/{id}/answer` and `POST /requests/{id}/withdraw` are `resolve_the_report` (409), and the hub withdraws it when the report is resolved or expires |
 | `takeover_outcome` | set by the hub only, on a cross-owner takeover's notice when the takeover closes: `{status, how, task_id, decided_at}` (§6.19); `null` otherwise |
 | `personal` | set by the hub only: `true` on a personal request (below), else `false` |
 | `holder`, `forwarding` | who holds a `decision` request now, and how it got there (forwarding, below); `holder` is `to` until the request is first forwarded |
@@ -9690,7 +9690,8 @@ the field's text along when it holds any (`{reply_id, text}`,
 `{talk: true, text}`). A request without `replies` offers the field
 with a send button (`{text}`) beside `talk`. The `talk` button is
 labelled "Talk" in every language; it is offered only where `talk` is
-accepted (above).
+accepted (above). A request with `report` (§16.8) shows neither field
+nor buttons but a link to the report under `/admin/reports/{id}`.
 
 **Personal requests.** Some requests concern one human as the owner
 of an agent profile, not the project: the notice of a soul change
@@ -9733,7 +9734,8 @@ project's request list:
 - The owner reads it in `GET /requests` (the cross-project inbox, with
   `personal: true`) and by `GET /requests/{id}`, and answers it with
   `POST /requests/{id}/answer` (the body of the project route) —
-  membership in the project not required. Nobody else answers it.
+  membership in the project not required, and never for a request with
+  `report` (§16.8), which closes with its report. Nobody else answers it.
 - **Withdrawing.** Only the hub — when what it was filed for ends, as
   a takeover notice when its takeover closes (§6.19); the owner's digest
   when what it shows changes, a new one following, or none is away any
@@ -9744,11 +9746,12 @@ project's request list:
   the membership ends, the agent profile is deleted,
   `policy.keep_the_why` becomes `optional`, `memory.provider` becomes
   `none`, or the profile's owner changes (§6.23); a report request when
-  its report is resolved or expires (`withdraw_reason` `resolved` or
-  `expired`, §16.8); after an owner change
+  its report is resolved or expires, with the reason `resolved` or
+  `expired` (§16.8); after an owner change
   of an open outage or a still outstanding commitment the hub files a
   new notice to the new owner — and the human it
-  is addressed to (`POST /requests/{id}/withdraw` `{"reason"?}`)
+  is addressed to (`POST /requests/{id}/withdraw` `{"reason"?}`), except
+  a report request, which is `resolve_the_report` for them (§16.8),
   withdraw a personal request. Nobody else does: the asking agent, any
   other agent, a holder of `requests:answer` and the project owner get
   `not_found` on `POST /projects/{owner}/{slug}/requests/{id}/withdraw`, as on
@@ -16043,10 +16046,10 @@ linking to the request, mailed by the admin's `inbox` mail mode (§18.4,
 §18.5); it wakes no agent. It carries the report's id, reason and
 target type, never its content. It is no question with an answer: the
 admin resolves the report under `/admin/reports/{id}`, after reading
-its snapshot, and an answer to the request is `resolve_the_report`
-(409). The hub withdraws it in the transaction that resolves the report
-(`withdraw_reason` `resolved`) or closes it as `expired`
-(`expired`). Without an instance admin nothing is filed. The reporter is never named to the reported member, and the
+its snapshot, and an answer to the request, or its withdrawal by the
+admin, is `resolve_the_report` (409). The hub withdraws it in the
+transaction that resolves the report (with the reason `resolved`) or
+closes it as `expired` (with the reason `expired`). Without an instance admin nothing is filed. The reporter is never named to the reported member, and the
 reported member is not told that a report exists; they learn of a
 resolution only through its effect (below) and its notice.
 
@@ -17810,7 +17813,7 @@ stopped while holding cards), with `project: null`, or, under `not_listening.mod
 
 | `kind` | From | Who gets it | Title (the hub composes it; no body) |
 |---|---|---|---|
-| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and the hourly digest of agent instances that are away (§5.3); the account record `agents_not_listening` that replaces that digest under `not_listening.mode: bell` (§18.4); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `moderation_applied` `{report, action, type, note}` (§16.8), written for the account a resolved report's action concerns; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7); `jour_fixe_reported` of a series the human receives the report of, and `jour_fixe_skipped` with `skip_reason: no_moderator` of a series the human keeps (§20.2, §20.9) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `moderation_applied` the account the action concerns, never the reporter; for `mail_disabled` and `agents_not_listening` the human; for `jour_fixe_reported` each human report recipient of the series (§20.2) who may read the round (§20.7), for the `no_moderator` skip each human keeper of the series | `<asker> asks: <request title>`, or the request title alone for one the hub files with `asked_by: null` (the digest, §5.3); `<n> of your agent instances are not listening`, or `<n> of your agent instances are away` when a stalled holder is among them (§5.3), linking to `/agents`, for `agents_not_listening`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Report: <reason> — <type>`, linking to the report in Admin → Reports; `Moderation: <action> — <type>`, then `: <note>` when there is one, linking to the account page; `Mail to <address> disabled after 3 failures`, linking to the notification settings; `Jour fixe report: <topic>`, linking to the round; `Jour fixe skipped, nobody to moderate: <topic>`, linking to the series' moderators |
+| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and the hourly digest of agent instances that are away (§5.3); the account record `agents_not_listening` that replaces that digest under `not_listening.mode: bell` (§18.4); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `moderation_applied` `{report, action, type, note}` (§16.8), written for the account a resolved report's action concerns; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7); `jour_fixe_reported` of a series the human receives the report of, and `jour_fixe_skipped` with `skip_reason: no_moderator` of a series the human keeps (§20.2, §20.9) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `moderation_applied` the account the action concerns, never the reporter; for `mail_disabled` and `agents_not_listening` the human; for `jour_fixe_reported` each human report recipient of the series (§20.2) who may read the round (§20.7), for the `no_moderator` skip each human keeper of the series | `<asker> asks: <request title>`, or the request title alone for one the hub files with `asked_by: null` (the digest, §5.3; the request about a new abuse report, §16.8, titled `Report: <reason> — <type>`); `<n> of your agent instances are not listening`, or `<n> of your agent instances are away` when a stalled holder is among them (§5.3), linking to `/agents`, for `agents_not_listening`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Moderation: <action> — <type>`, then `: <note>` when there is one, linking to the account page; `Mail to <address> disabled after 3 failures`, linking to the notification settings; `Jour fixe report: <topic>`, linking to the round; `Jour fixe skipped, nobody to moderate: <topic>`, linking to the series' moderators |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or from another participant of a group chat (§9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; a mention in a group chat (§9.2) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
 | `security` | the account record `email_address_changed` (§18.4); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `Sign-in address changed`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>`; `Forge access added: <account login> (<source>)` |
