@@ -201,8 +201,9 @@ with the text's length and never with the ways of splitting it:
 - A heading's marks are a pattern; its text, without the closing `#` run and the spaces around
   it, is cut by string operations. The output is the old pattern's, checked against it as an
   oracle on short lines.
-- Quotes nest at most 8 deep, as in the dashboard (`web/js/markdown.js`); the lines of a deeper
-  one are a paragraph with their `>` as written. The recursion is bounded with it.
+- Quotes nest at most 8 deep, as in the dashboard (`web/js/markdown.js`), which renders the same
+  cards and notes: the lines of a ninth quote are a paragraph in the eighth, without their own
+  `>`, and any deeper `>` stays text. The recursion is bounded with it.
 - `accept_parts` reads the parts of `Accept-Language` wholly within its first 1024 characters,
   at most 20, for the public pages and the registration mail alike; a tag longer than the 35
   characters BCP 47 asks every implementation to support matches nothing. Nothing past the

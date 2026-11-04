@@ -138,8 +138,8 @@ def _heading(line: str) -> tuple[int, str] | None:
     return len(found.group(1)), text
 
 
-# Quotes nest at most this deep, as in the dashboard (web/js/markdown.js); the lines of a deeper
-# one are a paragraph, their `>` as written.
+# Quotes nest at most this deep, as in the dashboard (web/js/markdown.js): the lines of a ninth
+# quote are a paragraph in the eighth, without their own `>`; any deeper `>` stays text.
 QUOTE_DEPTH = 8
 
 
@@ -218,7 +218,6 @@ def markdown(source: str, *, ugc: bool = False, depth: int = 0) -> str:
             continue
         if _QUOTE.match(line):
             flush()
-            start = index
             quoted: list[str] = []
             while index < len(lines) and (quote := _QUOTE.match(lines[index])):
                 quoted.append(quote.group(1))
@@ -227,7 +226,7 @@ def markdown(source: str, *, ugc: bool = False, depth: int = 0) -> str:
                 inner = markdown("\n".join(quoted), ugc=ugc, depth=depth + 1)
                 out.append("<blockquote>" + inner + "</blockquote>")
             else:
-                written = "\n".join(part.strip() for part in lines[start:index])
+                written = "\n".join(part.strip() for part in quoted)
                 out.append("<p>" + inline(written, ugc=ugc).replace("\n", "<br>") + "</p>")
             continue
         for pattern, tag in ((_BULLET, "ul"), (_NUMBER, "ol")):

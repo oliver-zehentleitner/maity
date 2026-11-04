@@ -97,14 +97,16 @@ def test_a_link_renders_with_a_title_and_not_past_its_bounds() -> None:
     assert named not in render.inline('[a](https://e.org/x "[t]")')
 
 
-def test_quotes_nest_eight_deep_and_deeper_lines_are_a_paragraph_as_written() -> None:
+def test_quotes_nest_eight_deep_and_deeper_lines_are_a_paragraph_as_on_the_dashboard() -> None:
     eight = render.markdown(">" * 8 + " deep")
     assert eight.count("<blockquote>") == 8 and "<p>deep</p>" in eight
-    nine = render.markdown(">" * 9 + " deep")
-    assert nine.count("<blockquote>") == 8 and "<p>&gt; deep</p>" in nine
+    nine = render.markdown(">" * 9 + " deep\n" + ">" * 9 + " er")
+    assert nine.count("<blockquote>") == 8 and "<p>deep<br>er</p>" in nine
+    ten = render.markdown(">" * 10 + " deep")
+    assert ten.count("<blockquote>") == 8 and "<p>&gt; deep</p>" in ten
     many = render.markdown(">" * NOTE)
     assert many.count("<blockquote>") == render.QUOTE_DEPTH
-    assert "&gt;" * (NOTE - render.QUOTE_DEPTH) in many
+    assert "<p>" + "&gt;" * (NOTE - render.QUOTE_DEPTH - 1) + "</p>" in many
 
 
 # The heading pattern before its text was found by string operations: the oracle on short lines.
