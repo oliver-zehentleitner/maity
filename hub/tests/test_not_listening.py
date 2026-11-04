@@ -356,6 +356,34 @@ def test_a_placement_naming_the_credential_ends_the_episode(
     assert (started.payload["ended"], ended.payload["ended"]) == (False, True)
 
 
+def test_a_runner_revoke_under_stop_leaves_a_due_revocation_out(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    """Under `stop` the placement closes and the credential's revocation is only due; the
+    stopped agent never calls again to have it written (§15.3), so it counts as revoked."""
+    s = setup
+    placement_id = _place(s, make_client)
+    _supervise(s)
+    policy = {"policy": {"on_runner_revoke": "stop"}, "reason": "the runner's agents"}
+    assert s.owner.patch(BASE, policy).status_code == 200
+    with s.engine.connect() as conn:
+        runner_id = conn.execute(
+            select(t.placement.c.runner_id).where(t.placement.c.id == placement_id)
+        ).scalar_one()
+    revoked = s.owner.post(f"/runners/{runner_id}/revoke", {})
+    assert revoked.status_code == 200, revoked.text
+    assert revoked.json()["on_runner_revoke"][0]["stopped"] == [placement_id]
+    s.message()
+    s.at(11)
+    s.sweep()
+    assert s.session().not_listening_since is None and s.events() == []
+    with s.engine.connect() as conn:
+        credential = conn.execute(
+            select(t.credential).where(t.credential.c.id == s.agent.credential_id)
+        ).one()
+    assert credential.revoked_at is None and credential.revoke_due_at is not None
+
+
 def test_the_start_wakes_only_the_instances_the_bosss_team_rule_chose() -> None:
     """A reports-to agent whose team wakes its lead only: the start wakes the lead,
     not a sibling; the end wakes neither (§5.3, §8.2 "Team wake")."""

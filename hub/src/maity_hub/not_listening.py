@@ -26,7 +26,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, or_, select, update
 
-from maity_hub import clock, events, listening, maintenance, worker_runs
+from maity_hub import clock, events, listening, maintenance, runner_revoke, worker_runs
 from maity_hub import tables as t
 from maity_hub.events import emit, lock_project, transaction
 from maity_hub.views import routing_boss
@@ -129,7 +129,9 @@ def _excluded(conn: Connection, session: Any, member: Any, credential: Any) -> s
     # session has none, so it is checked like any other (§5.3, §15.13).
     if session.supervisor is not None and _placed(conn, credential):
         return "a runner supervises the session"
-    if credential.revoked_at is not None:
+    # A runner's stop leaves the revocation due and writes it on the next use, which a
+    # stopped agent never makes (§15.3): due counts as revoked, as in the views.
+    if credential.revoked_at is not None or runner_revoke.due(credential):
         return "the credential was revoked"
     if credential.paused_since is not None or member.paused_since is not None:
         return "the agent is paused"
