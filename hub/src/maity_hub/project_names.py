@@ -20,6 +20,7 @@ from maity_hub import (
     agent_owners,
     events,
     inbox,
+    limits,
     moderation,
     namespace,
     org_projects,
@@ -176,12 +177,17 @@ def authority(conn: Connection, mine: Membership) -> None:
         raise forbidden(message="only the project's namespace owner transfers it")
 
 
-def transfer(conn: Connection, mine: Membership, caller: Caller, to: str) -> str | None:
+def transfer(
+    conn: Connection, mine: Membership, caller: Caller, to: str, limit: int | None
+) -> str | None:
     """File the transfer to `to`, a human (`hum-…`) or an organisation (`org-…`); returns
     the request's id, or None when the move happened in the call itself (an owner of the
     receiving organisation speaks for it, an owner who hands a project of theirs organisation
     to themselves needs no request). §2.8.4 lists this call for the step-up; a hub without the
-    second factor asks for none, as for every human not enrolled."""
+    second factor asks for none, as for every human not enrolled. A receiver that holds
+    `limit` projects (`max_projects_per_owner`, §16.5) refuses it with `project_limit`, now
+    and again on the `go`. `limit` has no default: None is `unlimited`, which a caller says
+    by reading the setting (`limits.of`), never by leaving it out."""
     project = mine.project
     authority(conn, mine)
     if project.owner_org_id is not None:  # §16.8: a suspended organisation's project stays in it
@@ -189,11 +195,12 @@ def transfer(conn: Connection, mine: Membership, caller: Caller, to: str) -> str
     if to == project.owner_id:
         raise invalid({"to": "self"}, "the project is in this namespace already")
     if to.startswith("org-"):
-        return _transfer_to_org(conn, mine, caller, to)
+        return _transfer_to_org(conn, mine, caller, to, limit)
     receiver = _receiver(conn, project.id, to)
     if receiver is None:
         raise invalid({"to": "not_an_owner"}, "the receiver must be an owner of the project")
     namespace.check_change(conn, project, to, project.slug)
+    limits.refuse_project_over(conn, to, limit)
     actor = caller.actor(mine.id)
     if project.owner_org_id is not None and mine.row.human_id == to:
         # An owner of the organisation hands the project to themselves: their call is their word.
@@ -227,7 +234,9 @@ def transfer(conn: Connection, mine: Membership, caller: Caller, to: str) -> str
     )
 
 
-def _transfer_to_org(conn: Connection, mine: Membership, caller: Caller, org_id: str) -> str | None:
+def _transfer_to_org(
+    conn: Connection, mine: Membership, caller: Caller, org_id: str, limit: int | None
+) -> str | None:
     """A transfer into an organisation (§6.26): an `owner` of it speaks for it and the move
     happens now; an `admin` speaks only for themselves, and a consent request goes to each
     owner of the organisation, the first `go` moving the project."""
@@ -241,6 +250,7 @@ def _transfer_to_org(conn: Connection, mine: Membership, caller: Caller, org_id:
         raise orgs.org_role()
     moderation.refuse_held(conn, "org", org_id, "suspend")  # §16.8: nothing moves into it
     namespace.check_change(conn, project, org_id, project.slug)
+    limits.refuse_project_over(conn, org_id, limit)
     actor = caller.actor(mine.id)
     withdraw_open(conn, project.id, actor, "a new transfer was filed")
     if role == "owner":
@@ -361,6 +371,13 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
         taken = invalid({"slug": "taken"}, "the slug is taken in the receiver's namespace")
         raise proposals.Stale(taken, request.id, "the slug is taken in the receiver's namespace")
     namespace.check_change(conn, project, to, project.slug)
+    if s.hub is not None:  # the receiver filled up since the request was filed (§16.5)
+        try:
+            limits.refuse_project_over(conn, to, limits.of(conn, s.hub, "max_projects_per_owner"))
+        except ApiError as full:
+            raise proposals.Stale(
+                full, request.id, "the receiver holds as many projects as allowed"
+            ) from None
     move_to(conn, project, to, s.closer, s.approver)
     if to.startswith("org-"):  # the first owner's go moves it: the other requests are withdrawn
         withdraw_open(conn, project.id, s.closer, "another owner of the organisation said go")
