@@ -2354,6 +2354,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "member.silent_unknown": "无响应 · 上次调用未知",
   "memberpage.actions": "操作",
   "memberpage.actions.label": "{name} 的操作",
+  "memberpage.activity.cursor_stuck": "hub 的事件游标没有越过 {after}",
   "memberpage.activity.failed": "无法读取动态：{reason}",
   "memberpage.activity.hint": "对方在此项目中做过的事，最新的在前。",
   "memberpage.activity.hint_cut": {
@@ -2659,8 +2660,6 @@ window.MAITY_I18N["zh-Hans"] = {
   "menu.sign_in_device": "在另一台设备上登录",
   "menu.sign_out": "退出登录",
   "menu.theme": "主题",
-  "messages.cursor_stuck": "hub 的事件游标没有越过 {after}",
-  "messages.cut": "只显示 hub 最近 {window} 个事件（所有项目合计）之内的消息；更早的消息不在此读取。",
   "messages.filter.every_type": "所有类型",
   "messages.filter.type": "类型",
   "messages.from_to": "{from} 至 {to}",
@@ -2668,14 +2667,19 @@ window.MAITY_I18N["zh-Hans"] = {
   "messages.new": {
     "other": "{count} 条新消息。"
   },
+  "messages.new_failed": "无法读取新消息：",
   "messages.none": "暂无项目消息。",
   "messages.none_of_type": "没有此类型的消息。",
+  "messages.not_read_yet": "目前已读取的页面中没有；较早的消息尚未读取。",
+  "messages.older": "更早的消息",
+  "messages.read_failed": "无法读取消息：",
   "messages.remove": "移除",
   "messages.remove.ask": "对所有能阅读的人移除这条消息吗？其文字和文件会被一条说明取代。请说明原因：",
   "messages.remove.busy": "正在移除…",
   "messages.remove.done": "已移除。",
   "messages.remove.failed": "未移除：",
   "messages.remove.label": "对所有人移除这条消息",
+  "messages.removed": "此消息已被删除。",
   "messages.review.more": {
     "other": "另外 {count} 处"
   },

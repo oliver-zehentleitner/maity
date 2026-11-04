@@ -2218,6 +2218,7 @@ window.MAITY_I18N["fr"] = {
   "member.silent_unknown": "silencieux · dernier appel inconnu",
   "memberpage.actions": "Actions",
   "memberpage.actions.label": "Actions pour {name}",
+  "memberpage.activity.cursor_stuck": "le curseur d'événements du hub n'a pas dépassé {after}",
   "memberpage.activity.failed": "Impossible de lire l'activité : {reason}",
   "memberpage.activity.hint": "Ce qui a été fait dans ce projet, du plus récent au plus ancien.",
   "memberpage.activity.hint_cut": {
@@ -2531,8 +2532,6 @@ window.MAITY_I18N["fr"] = {
   "menu.sign_in_device": "Se connecter sur un autre appareil",
   "menu.sign_out": "Se déconnecter",
   "menu.theme": "Thème",
-  "messages.cursor_stuck": "le curseur d'événements du hub n'a pas dépassé {after}",
-  "messages.cut": "Seuls les messages parmi les {window} derniers événements du hub (tous projets confondus) sont affichés ; les plus anciens ne sont pas lus ici.",
   "messages.filter.every_type": "tous les types",
   "messages.filter.type": "Type",
   "messages.from_to": "{from} à {to}",
@@ -2541,14 +2540,19 @@ window.MAITY_I18N["fr"] = {
     "one": "{count} nouveau message.",
     "other": "{count} nouveaux messages."
   },
+  "messages.new_failed": "Impossible de lire les nouveaux messages : ",
   "messages.none": "Aucun message de projet pour l'instant.",
   "messages.none_of_type": "Aucun message de ce type.",
+  "messages.not_read_yet": "Aucun dans les pages lues jusqu'ici ; les messages plus anciens n'ont pas encore été lus.",
+  "messages.older": "Messages plus anciens",
+  "messages.read_failed": "Impossible de lire les messages : ",
   "messages.remove": "Retirer",
   "messages.remove.ask": "Retirer ce message pour tous ceux qui peuvent le lire ? Son texte et ses fichiers sont remplacés par une note. Indiquez pourquoi :",
   "messages.remove.busy": "Retrait…",
   "messages.remove.done": "Retiré.",
   "messages.remove.failed": "Non retiré : ",
   "messages.remove.label": "Retirer ce message pour tout le monde",
+  "messages.removed": "Ce message a été retiré.",
   "messages.review.more": {
     "one": "{count} autre endroit",
     "other": "{count} autres endroits"

@@ -7831,14 +7831,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.attachments.forget();
   await go("#/maintainer/maity/inbox");
 
-  // Messages (§8.4): the project's messages, newest first, by type, with mentions, files and removal.
+  // Messages (§8.4, §8.8): the project's messages from the hub's listing, newest first, by type, with mentions, files and removal.
   // A hub that keeps files again: the earlier 404 case left this page thinking it has none.
   if (win.Maity.attachments.forget) win.Maity.attachments.forget();
   await go("#/maintainer/maity/messages");
   const pmTab = header.querySelectorAll("nav.views a").find((a) => a.textContent === "Messages");
   const pmItems = () => main.querySelectorAll("ol.project-messages li.pmsg");
   const pmSeq = (seq) => pmItems().find((li) => li.attrs["data-seq"] === String(seq));
-  expect(pmTab && pmTab.getAttribute("aria-current") === "page" && pmItems().map((li) => li.attrs["data-seq"]).filter((x) => x < "9000").join() === "6013,6009,6005,6001"
+  expect(pmTab && pmTab.getAttribute("aria-current") === "page" && pmItems().map((li) => li.attrs["data-seq"]).filter((x) => x < "9000").join() === "6013,6012,6009,6005,6001"
     && Number(pmItems()[0].attrs["data-seq"]) > 9000, "messages: a tab with the project's messages, newest first");
   // A review result (§8.4): the verdict, the subject, the short head linked to the commit on GitHub, and the places read
   // with their quotes as text, a removed line said, folded after five.
@@ -7863,23 +7863,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       review: { head: rvGood.head, verdict: "approve", extra: 1, cites: [{ line: 3, quote: "a\u2028b", note: "x" }] } }))
       === JSON.stringify({ "review.extra": "format", "review.subject": "required", "review.cites.0.note": "format", "review.cites.0.path": "required", "review.cites.0.quote": "format" }),
     "messages: the fixture hub checks a review result's review as §8.4 says");
-  // While the view reads /events a removed message is never shown: a removed chat message looks the same there (§8.5, §8.8).
-  expect(!pmSeq(6003) && !pmSeq(6012) && !text(main).includes("a token"), "messages: no removed message, a chat's or a project's");
+  // A removed project message keeps its place as the listing's tombstone, without its reason; a removed chat's is never listed (§8.5, §8.8).
+  expect(!pmSeq(6003) && pmSeq(6012) && pmSeq(6012).classList.contains("removed") && text(pmSeq(6012)).includes("This message was removed.")
+    && !btn(pmSeq(6012), "Remove") && !text(main).includes("a token"), "messages: a removed message as its tombstone, a chat's not at all");
   const pmHand = pmSeq(6005);
   expect(text(pmHand).includes("Handover") && text(pmHand).includes("Agent B to Maintainer") && pmHand.querySelectorAll("a").find((a) => !a.classList.contains("member-ref")).getAttribute("href") === "#/maintainer/maity/tasks/tsk-0004"
     && pmHand.querySelector("li.attach-item") && text(pmHand.querySelector(".attach-meta")).includes("exchange.log · 4.1 KB · text/plain") && btn(pmHand, "Delete"),
     "messages: type, sender, addressee, card and its file; an admin deletes the file");
   win.Maity.i18n.locale = szLocale;
   expect(pmSeq(6001).querySelector("a.mention").getAttribute("href") === "#/maintainer/maity/members/hum-maintainer", "messages: the members it mentions, as links");
-  byId("messages-type").value = "blocker"; byId("messages-type").dispatch("change");
+  byId("messages-type").value = "blocker"; byId("messages-type").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
   expect(pmItems().length === 1 && text(pmItems()[0]).includes("waits for the PyPI token"), "messages: filtered by type");
-  byId("messages-type").value = ""; byId("messages-type").dispatch("change");
+  byId("messages-type").value = ""; byId("messages-type").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
   // A file deleted by someone else arrives with the feed and stays removed on a redraw.
   await win.Maity.api.del("/projects/maintainer/maity/attachments/att-0901");
   await fireIntervals(); await tick(); await tick();
   expect(text(pmSeq(6005)).includes("exchange.log: removed.") && !pmSeq(6005).querySelector(".attach-meta"), "messages: a file deleted elsewhere is said removed");
-  byId("messages-type").value = "handover"; byId("messages-type").dispatch("change");
-  byId("messages-type").value = ""; byId("messages-type").dispatch("change");
+  byId("messages-type").value = "handover"; byId("messages-type").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+  byId("messages-type").value = ""; byId("messages-type").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
   expect(text(pmSeq(6005)).includes("exchange.log: removed.") && !btn(pmSeq(6005), "Delete"), "messages: a deleted file does not come back on a redraw");
   // A new message arrives in place, at the top; the list is not rebuilt.
   const pmKeep = pmSeq(6001);
@@ -7887,38 +7888,88 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await fireIntervals(); await tick(); await tick();
   expect(text(pmItems()[0]).includes("new from the composer") && pmSeq(6001) === pmKeep && text(main.querySelector(".view-messages .send-status")).includes("1 new message."),
     "messages: a new message arrives with the feed, at the top, the rest kept in place");
-  // Removing one (§8.5, events:admin): it leaves the list.
+  // Removing one (§8.5, events:admin): its tombstone takes its place.
   const pmPrompt = win.prompt;
   win.prompt = () => "wrong project";
   btn(pmSeq(6009), "Remove").click(); for (let k = 0; k < 4; k++) await tick();
-  expect(!pmSeq(6009) && text(main.querySelector(".view-messages .send-status")).includes("Removed.") && pmSeq(6001) === pmKeep, "messages: an admin removes a message with a reason; it leaves the list");
+  expect(pmSeq(6009) && pmSeq(6009).classList.contains("removed") && !btn(pmSeq(6009), "Remove") && text(main.querySelector(".view-messages .send-status")).includes("Removed.")
+    && pmSeq(6001) === pmKeep, "messages: an admin removes a message with a reason; its tombstone takes its place");
   win.prompt = pmPrompt;
-  // A removal elsewhere arrives with the feed (event_redacted) and takes the message out.
+  // A removal elsewhere arrives with the feed (event_redacted) and leaves the tombstone; a list filtered by type drops it.
   await win.Maity.api.post("/projects/maintainer/maity/events/6001/redact", { reason: "outdated" });
   await fireIntervals(); await tick(); await tick();
-  expect(!pmSeq(6001) && pmSeq(6005), "messages: a removal elsewhere takes it out");
-  // The scan reads the latest window and says so; a cursor that does not move fails loud.
+  expect(pmSeq(6001) && pmSeq(6001).classList.contains("removed") && !pmSeq(6001).querySelector("a.mention") && pmSeq(6005), "messages: a removal elsewhere leaves its tombstone");
+  byId("messages-type").value = "notice"; byId("messages-type").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+  expect(!pmSeq(6001) && !pmSeq(6012) && pmItems().length > 0 && pmItems().every((li) => !li.classList.contains("removed")), "messages: a list filtered by type shows no tombstone");
+  byId("messages-type").value = ""; byId("messages-type").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
   const pmGet = win.Maity.api.get;
-  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/events?after=latest&wait=0" ? Promise.resolve({ items: [], cursor: 20000 }) : pmGet(p));
-  // The window is a number in the reader's locale: English here.
-  const pmLocale = win.Maity.i18n.locale;
-  win.Maity.i18n.locale = "en";
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/messages");
-  win.Maity.i18n.locale = pmLocale;
-  expect(text(main).includes("Only messages within the hub's latest 5,000 events (all projects counted) are shown") && text(main).includes("No project messages yet."),
-    "messages: a long log is read from its latest events, and that is said");
-  let pmCalls = 0;
-  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/events?after=latest&wait=0" ? Promise.resolve({ items: [], cursor: 20000 })
-    : /\/events\?after=\d+&wait=0&limit=200$/.test(p)
-    ? (pmCalls++, Promise.resolve({ items: Array.from({ length: 200 }, () => ({ seq: 15000, kind: "member_joined", payload: {} })), cursor: 15000 })) : pmGet(p));
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/messages"); for (let k = 0; k < 4; k++) await tick();
-  expect(pmCalls === 1 && text(main).includes("did not move past 15000"), "messages: a cursor that does not move stops the scan, said, its number as written");
-  // A member without events:admin: only what it may read, no Remove, Delete only on what it sent.
+  // A member without events:admin: what it reads is the hub's (§8.8 keeps to §8.2's audience), no Remove.
   win.Maity.api.get = (p) => (p === "/me" ? pmGet(p).then((x) => { x.projects.find((y) => y.slug === "maity").trust = "member"; return x; }) : pmGet(p));
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/messages");
-  expect(!pmSeq(6009) && pmSeq(6005) && !main.querySelectorAll("ol.project-messages button").some((b) => b.textContent === "Remove"),
-    "messages: a member reads only what is addressed to it, and removes nothing");
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/messages"); for (let k = 0; k < 4; k++) await tick();
+  expect(pmSeq(6005) && !main.querySelectorAll("ol.project-messages button").some((b) => b.textContent === "Remove"),
+    "messages: a member reads what the hub lists for it, and removes nothing");
+  // A long log (§8.8): the oldest message sits more than 5,000 events behind the hub's head, and
+  // paging back with the listing's cursor still reaches it; no window of /events cuts it off.
+  for (let k = 0; k < 55; k++) await win.Maity.api.post("/projects/maintainer/maity/events", { kind: "message", type: "notice", to: "all", body: "long log " + k });
+  let pmScans = 0;
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/events?after=latest&wait=0" ? Promise.resolve({ items: [], cursor: 20000 })
+    : /\/events\?after=\d+&wait=0&limit=200$/.test(p) ? (pmScans++, pmGet(p)) : pmGet(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/messages"); for (let k = 0; k < 4; k++) await tick();
+  const pmFirst = pmItems().length;
+  const pmOlder = () => btn(main, "Older messages");
+  // The button stays one element across clicks, so it keeps the focus; the last page takes it away and focuses its first message.
+  const pmProto = Object.getPrototypeOf(main);
+  const pmFocus = pmProto.focus;
+  pmProto.focus = function () { document.activeElement = this; };
+  const pmButton = pmOlder();
+  let pmSame = true;
+  for (let k = 0; k < 5 && !pmSeq(6001) && pmOlder(); k++) {
+    pmSame = pmSame && pmOlder() === pmButton;
+    document.activeElement = pmOlder(); pmOlder().click(); for (let j = 0; j < 4; j++) await tick();
+  }
+  const pmFocused = document.activeElement;
+  pmProto.focus = pmFocus; document.activeElement = undefined;
+  expect(pmFirst === 50 && pmSeq(6001) && 20000 - 6001 > 5000 && !pmOlder() && pmScans === 0 && pmItems()[0].attrs["data-seq"] > pmItems()[pmItems().length - 1].attrs["data-seq"],
+    "messages: the oldest message, more than 5,000 events behind the head, shows after paging back " + JSON.stringify([pmFirst, !!pmSeq(6001), pmScans]));
+  expect(pmSame && pmFocused && pmFocused.classList.contains("pmsg") && pmItems().includes(pmFocused),
+    "messages: Older messages is one button across clicks, and the last page moves the focus to its first message");
   win.Maity.api.get = pmGet;
+  // §8.8: a page examines at most the hub's scan budget, so it may be empty while next_cursor is set.
+  // The fixture filters the whole log first; a stand-in answers as a sparse hub does.
+  const pmSparse = [];
+  const pmMsgs = "/projects/maintainer/maity/messages?";
+  win.Maity.api.get = (p) => {
+    if (p === pmMsgs + "type=handover&limit=50") return Promise.resolve({ items: [], next_cursor: "first" });
+    if (p === pmMsgs + "type=handover&limit=50&cursor=first") return pmGet(pmMsgs + "type=handover&limit=50");
+    const m = /^\/projects\/maintainer\/maity\/messages\?type=blocker&limit=50&after=(\d+)(?:&cursor=s(\d+))?$/.exec(p || "");
+    if (!m) return pmGet(p);
+    pmSparse.push(p);
+    const n = m[2] ? Number(m[2]) : 0;
+    if (n < 21) return Promise.resolve({ items: [], next_cursor: "s" + (n + 1) });
+    return pmGet(pmMsgs + "type=blocker&limit=50&after=" + m[1]);
+  };
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/messages"); for (let k = 0; k < 4; k++) await tick();
+  byId("messages-type").value = "handover"; byId("messages-type").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+  const pmHint = text(main.querySelector("ol.project-messages li.empty") || main);
+  const pmHintOlder = !!pmOlder();
+  pmOlder() && pmOlder().click(); for (let k = 0; k < 4; k++) await tick();
+  expect(pmHint.includes("older messages have not been read yet") && !pmHint.includes("No message of this type.") && pmHintOlder
+    && pmItems().length > 0 && !main.querySelector("ol.project-messages li.empty"),
+    "messages: an empty page with a cursor says older messages are unread, not that there are none " + JSON.stringify([pmHint, pmHintOlder, pmItems().length]));
+  byId("messages-type").value = "blocker"; byId("messages-type").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+  const pmBlockers = pmItems().length;
+  await win.Maity.api.post("/projects/maintainer/maity/events", { kind: "message", type: "blocker", to: "all", body: "sparse blocker one" });
+  await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+  const pmRound = pmSparse.length;
+  const pmEarly = text(main).includes("sparse blocker one");
+  await win.Maity.api.post("/projects/maintainer/maity/events", { kind: "message", type: "notice", to: "all", body: "a signal" });
+  await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+  const pmAfter = new Set(pmSparse.map((p) => /after=(\d+)/.exec(p)[1]));
+  expect(pmRound === 20 && !pmEarly && text(pmItems()[0]).includes("sparse blocker one") && pmItems().length === pmBlockers + 1
+    && pmSparse.length === 22 && pmAfter.size === 1 && pmSparse[20].endsWith("&cursor=s20"),
+    "messages: a live read follows next_cursor over empty pages on the same after=, and carries it to the next round " + JSON.stringify([pmBlockers, pmRound, pmEarly, pmSparse.length, pmAfter.size]));
+  win.Maity.api.get = pmGet;
+  byId("messages-type").value = ""; byId("messages-type").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
   await go("#/maintainer/maity/inbox");
 
   // Ticker (docs/api.md §17): for me / everything, filters, why in words, follow and mute, a manual post.
@@ -10117,11 +10168,29 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(mpItems) === JSON.stringify([["Manage on Members", "#/maintainer/maity/members?manage=agt-b"], ["Manage on Agents", "#/maintainer/maity/agents/agt-b"]]),
     "member page: Actions only leads to where each action is done, Members for an admin, Agents for the owner " + JSON.stringify(mpItems));
   const mpTabs = main.querySelectorAll("nav.member-tabs a");
-  // Activity: their events in the window the project's messages read, newest first, the window said.
+  // Activity: their events in the hub's latest window, newest first, the window said.
   expect(text(main.querySelector(".member-section")).startsWith("What they did in this project, newest first"),
     "member page: Activity says what it lists, without a count of the project's events it cannot know");
   expect(mpTabs.map((a) => text(a)).join() === "Activity,Cards,Briefing,Sessions & credentials" && mpTabs[0].getAttribute("aria-current") === "page"
     && mpTabs[1].getAttribute("href") === "#/maintainer/maity/members/agt-b/cards", "member page: four tabs, Activity first and current");
+  // Activity keeps the window (§8.3 has no actor filter, §8.8 lists only messages): a long log is read
+  // from its latest events, and that is said; a cursor that does not move fails loud.
+  const mpwGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/events?after=latest&wait=0" ? Promise.resolve({ items: [], cursor: 20000 }) : mpwGet(p));
+  // The window is a number in the reader's locale: English here.
+  const mpwLocale = win.Maity.i18n.locale;
+  win.Maity.i18n.locale = "en";
+  await go("#/maintainer/maity/members/agt-b/cards"); await go("#/maintainer/maity/members/agt-b"); for (let k = 0; k < 6; k++) await tick();
+  win.Maity.i18n.locale = mpwLocale;
+  expect(text(main.querySelector(".member-section")).includes("within the hub's latest 5,000 events (all projects counted)"),
+    "member page: a long log is read from its latest events, and Activity says so");
+  let mpwCalls = 0;
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/events?after=latest&wait=0" ? Promise.resolve({ items: [], cursor: 20000 })
+    : /\/events\?after=\d+&wait=0&limit=200$/.test(p)
+    ? (mpwCalls++, Promise.resolve({ items: Array.from({ length: 200 }, () => ({ seq: 15000, kind: "member_joined", payload: {} })), cursor: 15000 })) : mpwGet(p));
+  await go("#/maintainer/maity/members/agt-b/cards"); await go("#/maintainer/maity/members/agt-b"); for (let k = 0; k < 6; k++) await tick();
+  expect(mpwCalls === 1 && text(main).includes("did not move past 15000"), "member page: a cursor that does not move stops the Activity's scan, said, its number as written");
+  win.Maity.api.get = mpwGet;
   await go("#/maintainer/maity/members/agt-b/cards"); for (let k = 0; k < 6; k++) await tick();
   expect(text(main.querySelector(".member-section")).includes("Holds (") && text(main.querySelector(".member-section")).includes("Assigned ("),
     "member page: Cards lists what they hold and what is assigned to them");

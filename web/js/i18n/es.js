@@ -2218,6 +2218,7 @@ window.MAITY_I18N["es"] = {
   "member.silent_unknown": "en silencio · última llamada desconocida",
   "memberpage.actions": "Acciones",
   "memberpage.actions.label": "Acciones para {name}",
+  "memberpage.activity.cursor_stuck": "el cursor de eventos del hub no avanzó más allá de {after}",
   "memberpage.activity.failed": "No se pudo leer la actividad: {reason}",
   "memberpage.activity.hint": "Lo que hicieron en este proyecto, lo más reciente primero.",
   "memberpage.activity.hint_cut": {
@@ -2531,8 +2532,6 @@ window.MAITY_I18N["es"] = {
   "menu.sign_in_device": "Iniciar sesión en otro dispositivo",
   "menu.sign_out": "Cerrar sesión",
   "menu.theme": "Tema",
-  "messages.cursor_stuck": "el cursor de eventos del hub no avanzó más allá de {after}",
-  "messages.cut": "Solo se muestran los mensajes dentro de los últimos {window} eventos del hub (contando todos los proyectos); los más antiguos no se leen aquí.",
   "messages.filter.every_type": "todos los tipos",
   "messages.filter.type": "Tipo",
   "messages.from_to": "{from} a {to}",
@@ -2541,14 +2540,19 @@ window.MAITY_I18N["es"] = {
     "one": "{count} mensaje nuevo.",
     "other": "{count} mensajes nuevos."
   },
+  "messages.new_failed": "No se pudieron leer los mensajes nuevos: ",
   "messages.none": "Aún no hay mensajes del proyecto.",
   "messages.none_of_type": "Ningún mensaje de este tipo.",
+  "messages.not_read_yet": "Ninguno en las páginas leídas hasta ahora; los mensajes más antiguos aún no se han leído.",
+  "messages.older": "Mensajes anteriores",
+  "messages.read_failed": "No se pudieron leer los mensajes: ",
   "messages.remove": "Quitar",
   "messages.remove.ask": "¿Quitar este mensaje para todos los que pueden leerlo? Su texto y sus archivos se sustituyen por una nota. Indica por qué:",
   "messages.remove.busy": "Quitando…",
   "messages.remove.done": "Quitado.",
   "messages.remove.failed": "No quitado: ",
   "messages.remove.label": "Quitar este mensaje para todos",
+  "messages.removed": "Este mensaje se eliminó.",
   "messages.review.more": {
     "one": "{count} lugar más",
     "other": "{count} lugares más"

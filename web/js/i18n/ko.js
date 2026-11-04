@@ -2354,6 +2354,7 @@ window.MAITY_I18N["ko"] = {
   "member.silent_unknown": "응답 없음 · 마지막 호출을 알 수 없음",
   "memberpage.actions": "작업",
   "memberpage.actions.label": "{name}에 대한 작업",
+  "memberpage.activity.cursor_stuck": "허브의 이벤트 커서가 {after}을(를) 넘어가지 않았어요",
   "memberpage.activity.failed": "활동을 읽지 못했어요: {reason}",
   "memberpage.activity.hint": "이 프로젝트에서 한 일, 최신순.",
   "memberpage.activity.hint_cut": {
@@ -2659,8 +2660,6 @@ window.MAITY_I18N["ko"] = {
   "menu.sign_in_device": "다른 기기에서 로그인",
   "menu.sign_out": "로그아웃",
   "menu.theme": "테마",
-  "messages.cursor_stuck": "허브의 이벤트 커서가 {after}을(를) 넘어가지 않았어요",
-  "messages.cut": "허브의 최근 이벤트 {window}개(모든 프로젝트 포함) 안에 있는 메시지만 표시돼요. 그보다 오래된 메시지는 여기서 읽지 않아요.",
   "messages.filter.every_type": "모든 유형",
   "messages.filter.type": "유형",
   "messages.from_to": "{from} → {to}",
@@ -2668,14 +2667,19 @@ window.MAITY_I18N["ko"] = {
   "messages.new": {
     "other": "새 메시지 {count}개."
   },
+  "messages.new_failed": "새 메시지를 읽지 못했어요: ",
   "messages.none": "아직 프로젝트 메시지가 없어요.",
   "messages.none_of_type": "이 유형의 메시지가 없어요.",
+  "messages.not_read_yet": "지금까지 읽은 페이지에는 없습니다. 이전 메시지는 아직 읽지 않았습니다.",
+  "messages.older": "이전 메시지",
+  "messages.read_failed": "메시지를 읽지 못했어요: ",
   "messages.remove": "제거",
   "messages.remove.ask": "이 메시지를 읽을 수 있는 모두에게서 제거할까요? 텍스트와 파일은 안내 문구로 바뀌어요. 이유를 입력하세요:",
   "messages.remove.busy": "제거하는 중…",
   "messages.remove.done": "제거했어요.",
   "messages.remove.failed": "제거하지 못했어요: ",
   "messages.remove.label": "모두에게서 이 메시지 제거",
+  "messages.removed": "이 메시지는 삭제되었어요.",
   "messages.review.more": {
     "other": "{count}곳 더"
   },
