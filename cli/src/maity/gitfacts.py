@@ -151,7 +151,8 @@ def _forge_unknown(cwd: Path, remote: str | None) -> str | None:
     url = _git(cwd, "config", "--get", f"remote.{remote}.url") or remote
     host = remote_host(url)
     if not host or host.lower() not in gh_hosts():
-        where = host or ("no host" if "://" in url else "a local path")
+        bare = "://" in url and not url.lower().startswith("file:")
+        where = host or ("no host" if bare else "a local path")
         return f"the remote {without_userinfo(remote)} is not on a GitHub host gh knows ({where})"
     return None
 

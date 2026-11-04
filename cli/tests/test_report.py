@@ -291,10 +291,13 @@ def test_every_configured_url_of_the_remote_is_checked(clone: Path) -> None:
     assert not marker.exists()
 
 
-def test_a_remote_url_without_a_host_is_named_so_and_gh_is_not_asked(
-    clone: Path, bin_dir: Path
+@pytest.mark.parametrize(
+    ("url", "named"), [("https:///a/b.git", "(no host)"), ("file:///srv/b.git", "(a local path)")]
+)
+def test_a_remote_url_without_a_host_is_named_so(
+    clone: Path, bin_dir: Path, url: str, named: str
 ) -> None:
-    fake_gh(bin_dir, "", exit_code=1, stderr="must not be called")
-    git(clone, "remote", "set-url", "origin", "https:///a/b.git")
+    fake_gh(bin_dir, "", exit_code=1, stderr="must not be called")  # found by proc.program
+    git(clone, "remote", "set-url", "origin", url)
     reason = gitfacts._forge_unknown(clone, "origin")
-    assert reason is not None and "(no host)" in reason
+    assert reason is not None and named in reason
