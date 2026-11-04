@@ -764,6 +764,13 @@ both, and takes the host as `run.js` does: a trailing dot is refused, since `mai
 production and would otherwise have passed as a test system's name (found in the review). Twice
 means the same host and port as reached (`https://a` and `https://a:443`); another port on one
 host stays another target, as a test system's pods may be port-forwards on one machine.
+
+Changed on 2026-11-04: the prefix is now reserved (tsk-ch8nt5dfgmp7). A person or an organisation
+may not take a handle of the form `lt-` followed by digits; an agent's handle is not held to it.
+The seed still creates `lt-<n>` by writing the rows itself, not through the check that refuses the
+handle. `purge` still requires the password marker, for accounts made before the reservation.
+Whoever already holds such a handle keeps it: nothing is migrated or renamed.
+
 The 60 000 held connections are spread over several generator pods with their own source
 addresses: one source address has about 64 000 ephemeral ports, and the run must measure the
 hub, not the generator's port exhaustion.

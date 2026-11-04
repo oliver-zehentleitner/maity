@@ -16712,7 +16712,9 @@ rename. The list:
 
 `components`, `health` and `imprint` name no route today and are
 reserved so that they stay free for one (a component gallery, a health
-page, an English imprint address).
+page, an English imprint address). A handle of the form `lt-` followed
+by digits is reserved too, for the load-test accounts (`maity-hub
+loadtest seed`).
 
 One-letter segments (`r`) and names with a dot (`robots.txt`,
 `sitemap.xml`) cannot be handles anyway (§6.24's syntax). A release that adds a first segment adds it to

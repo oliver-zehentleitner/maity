@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import io
+import sys
 from typing import Any
 
 import pytest
@@ -431,3 +433,62 @@ def test_a_handle_that_speaks_for_the_hub_is_refused_on_every_path(
 
 def test_an_agent_may_have_a_word_that_is_only_a_path() -> None:
     assert paths.handle_reserved("admin") and not paths.handle_reserved("admin", of_agent=True)
+
+
+def test_sign_up_refuses_a_load_test_handle(migrated: Engine) -> None:
+    with migrated.connect() as conn:
+        assert check_names(conn, "lt-7", "Someone") == {"handle": "reserved"}
+
+
+def test_a_rename_refuses_a_load_test_handle(make_client: ClientFactory, migrated: Engine) -> None:
+    owner = flow.human(make_client, migrated)
+    refused = owner.patch("/me", {"handle": "lt-7"})
+    assert refused.status_code == 400, refused.text
+    assert _fields(refused) == {"handle": "reserved"}
+
+
+def test_an_organisation_refuses_a_load_test_handle(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = flow.human(make_client, migrated)
+    org = owner.post("/orgs", {"handle": "lt-7", "display_name": "Load"})
+    assert org.status_code == 400, org.text
+    assert _fields(org) == {"handle": "reserved"}
+
+
+def test_owner_create_refuses_a_load_test_handle(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A password and a database are ready, so a handle that is not reserved fails later,
+    # on its own message, rather than on the prompt.
+    monkeypatch.setattr(sys, "stdin", io.StringIO("a long password\n"))
+    monkeypatch.setenv("MAITY_DATABASE_URL", "sqlite:////no/such/directory/maity.db")
+    assert main(["owner", "create", "--handle", "lt-7", "--display-name", "Load"]) == 2
+    assert "is reserved" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("handle", ["lt-x", "lt-", "lt7", "alt-7", "lt-7a"])
+def test_a_handle_near_the_load_test_pattern_may_still_be_taken(
+    migrated: Engine, handle: str
+) -> None:
+    assert not paths.handle_reserved(handle)
+    with migrated.connect() as conn:
+        assert check_names(conn, handle, "Someone") == {}
+
+
+def test_a_near_handle_is_accepted_on_rename_and_for_an_organisation(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = flow.human(make_client, migrated)
+    renamed = owner.patch("/me", {"handle": "lt-x"})
+    assert renamed.status_code == 200, renamed.text
+    made = owner.post("/orgs", {"handle": "alt-7", "display_name": "Alt"})
+    assert made.status_code == 201, made.text
+
+
+def test_an_agent_may_be_called_lt_7(make_client: ClientFactory, migrated: Engine) -> None:
+    owner = flow.human(make_client, migrated)
+    made = owner.post("/agents", {"handle": "lt-7", "display_name": "Load test agent"})
+    assert made.status_code == 201, made.text
+    assert paths.handle_reserved("lt-7")
+    assert not paths.handle_reserved("lt-7", of_agent=True)
