@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import subprocess
 import urllib.parse
 from dataclasses import dataclass
@@ -106,8 +105,17 @@ def _pull_request(cwd: Path, branch: str) -> PullRequest | None:
         raise FactsError(f"gh returned something unexpected: {exc}") from exc
 
 
+def gh_hosts() -> set[str]:
+    """The forge hosts gh is asked about: github.com and GH_HOST."""
+    return {"github.com", os.environ.get("GH_HOST", "github.com").lower()}
+
+
 def pull_request_state(cwd: Path, url: str) -> str | None:
-    """`open`, `closed` or `merged` as the forge has it now; None when it can't be asked."""
+    """`open`, `closed` or `merged` as the forge has it now; None when it can't be asked,
+    a URL on a host gh does not know included (gh is never sent elsewhere)."""
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme != "https" or (parts.hostname or "").lower() not in gh_hosts():
+        return None
     try:
         result = _run(["gh", "pr", "view", url, "--json", "state"], cwd)
         if result.returncode != 0:
@@ -128,15 +136,14 @@ def remote_host(url: str) -> str | None:
 
 def _forge_unknown(cwd: Path, remote: str | None) -> str | None:
     """Why gh cannot say anything about this branch, or None when it can be asked."""
-    if shutil.which("gh") is None:
+    if proc.program("gh") is None:
         return "gh is not installed"
     if remote is None:
         return None
     # As written, before insteadOf; a branch pushed with `-u <url>` has the URL as its remote.
     url = _git(cwd, "config", "--get", f"remote.{remote}.url") or remote
     host = remote_host(url)
-    known = {"github.com", os.environ.get("GH_HOST", "github.com")}
-    if host not in known:
+    if (host or "").lower() not in gh_hosts():
         where = host or "a local path"
         return f"the remote {without_userinfo(remote)} is not on a GitHub host gh knows ({where})"
     return None
@@ -155,6 +162,33 @@ def position(cwd: Path) -> tuple[str, str | None]:
     return head, _git(cwd, "symbolic-ref", "--quiet", "--short", "HEAD")
 
 
+# A remote as `git push -u` stores it: a remote's name, or the URL the branch was pushed to.
+_REMOTE_NAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._/-]*$")
+_REMOTE_URL = re.compile(r"^(?:(?:https?|ssh|git|file)://|/|[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:)")
+_HEAD_REF = re.compile(r"^refs/heads/[^\s~^:?*\[\\]+$")
+
+
+def _check_upstream(cwd: Path, branch: str, remote: str, merge_ref: str) -> None:
+    """Refuse an upstream maity would not hand to git as it stands: a value that reads as an
+    option or names a remote helper (`<transport>::<address>`), a remote that is neither a
+    configured remote nor a forge URL, or a merge ref outside refs/heads/."""
+    url = (
+        _git(cwd, "config", "--get", f"remote.{remote}.url") if _REMOTE_NAME.match(remote) else None
+    )
+    values = [remote, merge_ref] + ([url] if url else [])
+    if any(v.startswith("-") or "::" in v for v in values) or not _HEAD_REF.match(merge_ref):
+        raise FactsError(_unreadable(branch))
+    if url is None and not _REMOTE_URL.match(remote):
+        raise FactsError(_unreadable(branch))
+
+
+def _unreadable(branch: str) -> str:
+    return (
+        f"branch {branch}'s upstream (branch.{branch}.remote / .merge) is not a remote and a "
+        f"branch maity asks git about; set it with `git push -u origin {branch}`"
+    )
+
+
 def collect(cwd: Path) -> Facts:
     head = _git(cwd, "rev-parse", "--verify", "HEAD")
     if head is None:
@@ -170,8 +204,11 @@ def collect(cwd: Path) -> Facts:
             remote = None
         merge_ref = _git(cwd, "config", "--get", f"branch.{branch}.merge")
         if remote and merge_ref:
+            _check_upstream(cwd, branch, remote, merge_ref)
             remote_branch = merge_ref.removeprefix("refs/heads/")
-            listing = _git_required(cwd, "ls-remote", "--heads", remote, merge_ref).splitlines()
+            listing = _git_required(
+                cwd, "ls-remote", "--heads", "--", remote, merge_ref
+            ).splitlines()
             remote_head = listing[0].split()[0] if listing else None
 
     unknown = _forge_unknown(cwd, remote)

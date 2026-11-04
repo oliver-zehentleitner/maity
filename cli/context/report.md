@@ -155,3 +155,47 @@ as a link there does not: it says nothing about this checkout.
   card, and the report would file that checkout's head as the card's
   work unchecked. The refusal costs a reachable fix (the card's branch,
   or installing gh); a wrong report on the card costs a reviewer's time.
+
+## What maity hands to git and gh is checked first, and git's transports are fixed
+
+**Id:** 4f4e8ada-9e3b-47bc-8a9e-d44daf025512
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** CLI hardening task, plan approved by the coordinator, 2026-11-04; verified with git 2.43 (a clone's own `protocol.<name>.allow` outranks `-c protocol.allow` on the command line, `GIT_ALLOW_PROTOCOL` outranks both; `ls-remote --heads -- <remote> <ref>` keeps both as operands)
+**See:** report.md#maity-report-refuses-instead-of-reporting-a-partial-truth — 66da7721-2f51-4105-b82f-4c06cbb9e984 — as of 2026-11-04
+**See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-04
+**Revisit when:** git changes how `GIT_ALLOW_PROTOCOL` ranks against configuration, a forge reached over another transport is supported, or `report` learns a forge other than GitHub
+
+`maity report` reads a branch's upstream from the clone's configuration
+and passes it to `git ls-remote`. Before that, the remote and the merge
+ref are checked: neither may start with `-` or contain `::`, the merge
+ref must lie under `refs/heads/`, and the remote must be a configured
+remote's name or a forge-shaped URL (`https`, `http`, `ssh`, `git`,
+`file`, a path, or `user@host:`). Anything else is refused with the hint
+to set the upstream with `git push -u`. `ls-remote` gets `--` before
+them. Every git maity starts runs with `GIT_ALLOW_PROTOCOL` set to those
+five transports. git and gh are started by an absolute path found on an
+absolute PATH entry, never the current directory, and on Windows with
+`NoDefaultCurrentDirectoryInExePath` set for what they start in turn.
+`gh pr view` is asked only about an `https` URL on github.com or
+`GH_HOST`, the same hosts `report` already asks gh about.
+
+**Reason:** the clone's configuration is written by the agent working in
+it, so it is input, not maity's own setting. maity only reads a remote;
+a value git reads as an option, or a remote helper
+(`<transport>::<address>`), would change what git runs for that. The transports are fixed through the
+environment because a command-line `-c protocol.allow=never` loses to a
+`protocol.<name>.allow` in that same configuration. The value checks
+stay as a second line beside it, and they give a refusal that names the
+fix instead of git's error. Windows searches the current directory
+before PATH for a bare program name.
+
+**Rejected alternatives:**
+- `-c protocol.allow=never` plus one `always` per wanted transport on
+  git's command line: tried first; a clone's own
+  `protocol.ext.allow=always` still applies, since a protocol's own key
+  outranks the default.
+- Only `--` before the operands: covers a leading `-`, not a remote
+  helper in the remote's name or URL.
+- `shutil.which`: on Windows it searches the current directory first.

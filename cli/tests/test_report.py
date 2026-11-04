@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from pathlib import Path
 
 import pytest
 from conftest import fake_gh, git, posix
 
 from maity import cli, gitfacts
+
+# Absolute: the fixtures' PATH holds git alone.
+TOOLS = {"sh": shutil.which("sh") or "/bin/sh", "touch": shutil.which("touch") or "/usr/bin/touch"}
 
 
 def pr_json(head: str, number: int = 12, state: str = "OPEN") -> str:
@@ -180,3 +184,57 @@ def test_report_checks_the_join_before_asking_git_and_gh(
     assert cli.main(["report", "--task", "T", "--summary", "s"]) == cli.EXIT_ERROR
     err = capsys.readouterr().err
     assert "maity join" in err and "must not be called" not in err
+
+
+@posix
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("remote", "--upload-pack={touch} {marker}"),
+        ("remote", "ext::{sh} -c {touch}% {marker}"),
+        ("remote", "no-such-remote"),
+        ("merge", "--upload-pack={touch} {marker}"),
+        ("merge", "refs/tags/v1"),
+    ],
+)
+def test_an_upstream_git_would_read_as_more_is_refused(clone: Path, key: str, value: str) -> None:
+    marker = clone.parent / "ran"
+    git(clone, "config", f"branch.work.{key}", value.format(marker=marker, **TOOLS))
+    with pytest.raises(gitfacts.FactsError, match="upstream"):
+        gitfacts.collect(clone)
+    assert not marker.exists()
+
+
+@posix
+def test_a_remote_url_naming_a_helper_is_refused(clone: Path) -> None:
+    marker = clone.parent / "ran"
+    git(
+        clone,
+        "remote",
+        "set-url",
+        "origin",
+        "ext::{sh} -c {touch}% {marker}".format(marker=marker, **TOOLS),
+    )
+    git(clone, "config", "protocol.ext.allow", "always")
+    with pytest.raises(gitfacts.FactsError, match="upstream"):
+        gitfacts.collect(clone)
+    assert not marker.exists()
+
+
+def test_an_upstream_pushed_to_a_url_still_reads(clone: Path) -> None:
+    git(clone, "config", "branch.work.remote", str(clone.parent / "remote.git"))
+    facts = gitfacts.collect(clone)
+    assert facts.remote_head == facts.head
+
+
+def test_pull_request_state_asks_gh_only_about_known_hosts(
+    clone: Path, bin_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_gh(bin_dir, '{"state": "OPEN"}')
+    monkeypatch.delenv("GH_HOST", raising=False)
+    assert gitfacts.pull_request_state(clone, "https://github.com/a/b/pull/1") == "open"
+    assert gitfacts.pull_request_state(clone, "https://evil.example/a/b/pull/1") is None
+    assert gitfacts.pull_request_state(clone, "http://github.com/a/b/pull/1") is None
+    assert gitfacts.pull_request_state(clone, "--repo=x") is None
+    monkeypatch.setenv("GH_HOST", "git.corp.example")
+    assert gitfacts.pull_request_state(clone, "https://git.corp.example/a/b/pull/1") == "open"
