@@ -2734,7 +2734,7 @@ window.MAITY_I18N["de"] = {
   "names.refused.org_role": "nur ein Besitzer oder Admin dieser Organisation kann ein Projekt in sie verschieben",
   "names.refused.rate_limited": "höchstens 3 Umbenennungen und Übertragungen am Tag; versuche es morgen wieder",
   "names.refused.reserved": "dieses Wort ist Teil der Adressen des Dashboards; wähle einen anderen Slug",
-  "names.refused.step_up": "der Hub verlangt zuerst deinen zweiten Faktor; melde dich damit erneut an und versuche es noch einmal",
+  "names.refused.step_up": "der Hub verlangt weiter deinen zweiten Faktor; versuche es noch einmal",
   "names.refused.taken": "dieser Name ist in diesem Namensraum vergeben, jetzt oder als früherer Name",
   "names.refused.taken_receiver": "@{handle} hat bereits ein Projekt dieses Namens oder hatte eines",
   "names.refused.transfer_stale": "die Übertragung gilt nicht mehr; frage erneut an",

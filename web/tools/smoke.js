@@ -756,14 +756,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/members" ? nsGetT(p).then((r) => Object.assign({}, r, { items: r.items.concat([nsAnna]) }))
     : p === "/orgs" ? nsGetT(p).then((r) => ({ items: r.items.concat([nsAdminOrg, nsMemberOrg]) })) : nsGetT(p));
   const nsTransfers = [];
+  const nsVerified = [];
+  let nsStepped = false;
   win.Maity.api.post = (p, b) => {
     if (p.endsWith("/transfer")) {
       nsTransfers.push([p, b]);
       if (b.to === "org-oz00team0001") return Promise.resolve({ id: "prj-x", full_name: "oz-team/maity", slug: "maity" });
       if (b.to === "org-oz00guild001") return Promise.resolve({ id: "req-tr02", class: "consent", status: "open" });
-      return nsTransfers.length === 1 ? Promise.resolve({ id: "req-tr01", class: "consent", status: "open" })
+      // The first asks at once; later ones need the second factor until a code is given (§2.8.4).
+      return nsTransfers.length === 1 || nsStepped ? Promise.resolve({ id: "req-tr01", class: "consent", status: "open" })
         : Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: "step_up_required" }));
     }
+    if (p === "/auth/second-factor/verify") { nsVerified.push(b); nsStepped = true; return Promise.resolve({ valid_until: "2026-11-04T10:10:00Z" }); }
     if (/\/requests\/req-tr01\/withdraw$/.test(p)) { nsTransfers.push([p, b]); return Promise.resolve({ id: "req-tr01", status: "withdrawn" }); }
     return nsPostT(p, b);
   };
@@ -784,6 +788,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "namespace: a step-up the hub asks for is asked in place");
   btn(nsTr(), "Cancel").click(); await nsSettle();
   expect(!nsTr().querySelector("form.step-up") && !text(nsTr()).includes("Not transferred"), "namespace: Cancel ends the transfer quietly");
+  const nsBefore = nsTransfers.length;
+  nsTr().dispatch("submit"); await nsSettle();
+  expect(nsTr().querySelector("form.step-up") && nsTransfers.length === nsBefore + 1, "namespace: the transfer asks for the code again");
+  byId("step-up-step_up_required").value = "482 913"; nsTr().querySelector("form.step-up").dispatch("submit"); await nsSettle();
+  expect(JSON.stringify(nsVerified) === JSON.stringify([{ code: "482913" }]) && nsTransfers.length === nsBefore + 2
+    && JSON.stringify(nsTransfers[nsTransfers.length - 1]) === JSON.stringify(["/projects/maintainer/maity/transfer", { to: "hum-anna" }])
+    && !nsTr().querySelector("form.step-up") && text(nsTr()).includes("moves when they accept") && !text(nsTr()).includes("Not transferred"),
+  "namespace: after the code the transfer is sent again and goes through");
   byId("project-transfer-to").value = "org-oz00guild001"; nsTr().dispatch("submit"); await nsSettle();
   expect(JSON.stringify(nsTransfers[nsTransfers.length - 1]) === JSON.stringify(["/projects/maintainer/maity/transfer", { to: "org-oz00guild001" }])
     && text(nsTr()).includes("Asked the owners of @guild. The project moves when one of them accepts"), "namespace: into an organisation one administers, its owners are asked");

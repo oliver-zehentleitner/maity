@@ -2726,7 +2726,7 @@ window.MAITY_I18N["ko"] = {
   "names.refused.org_role": "해당 조직의 소유자나 관리자만 프로젝트를 그 조직으로 옮길 수 있어요",
   "names.refused.rate_limited": "이름 변경과 이전은 하루에 최대 3번이에요. 내일 다시 시도하세요",
   "names.refused.reserved": "그 단어는 대시보드 주소의 일부예요. 다른 슬러그를 고르세요",
-  "names.refused.step_up": "허브가 먼저 2단계 인증을 요구해요. 2단계 인증으로 다시 로그인한 뒤 한 번 더 시도하세요",
+  "names.refused.step_up": "허브가 아직 2단계 인증을 요구해요. 한 번 더 시도하세요",
   "names.refused.taken": "이 네임스페이스에서 그 이름은 현재 또는 이전 이름으로 이미 사용 중이에요",
   "names.refused.taken_receiver": "@{handle}에게 그 이름의 프로젝트가 이미 있거나 있었어요",
   "names.refused.transfer_stale": "이전 요청이 더 이상 유효하지 않아요. 다시 요청하세요",

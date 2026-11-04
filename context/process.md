@@ -1138,6 +1138,59 @@ hung MariaDB run ended without a word.
 - The timeout on the three database jobs only: a hang in any job `ci-ok` waits for holds main the same six hours, and
   GitHub has no timeout for a whole workflow.
 
+## hub-postgresql prints every thread's stack when a test runs longer than 300 seconds
+
+**Id:** 32d51f7e-a3dc-4027-9ceb-ce2a0ecdca69
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-80xk3tbhe2hc, from the jour fixe of 2026-11-03 (request req-tmx2jadxrqvt, adopted by the maintainer); the lead's message that a hang on #1225 ended as a silent 90-minute timeout (not checked here); the diagnosis run on #1255 (`-o faulthandler_timeout=300`, its stacks in `hub/context/testing.md`); the proof run on #1316, 2026-11-04
+**Revisit when:** a green `hub-postgresql` test runs longer than about 120 s, the stacks come from tests that do not hang, or `pytest-timeout` comes into the locks for another reason
+**See:** process.md#every-ci-job-has-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-04
+
+`hub-postgresql` (`ci.yml`) sets `PYTEST_ADDOPTS: -o faulthandler_timeout=300` in the job's environment. A test whose
+setup, call and teardown together run longer than 300 s makes its worker print the stack of every thread into the job log,
+once, and the test runs on: a slow test that ends still passes, and a hang still ends at the job's 90 minutes. The log then
+already holds the frame and the line the hang waits on, which the cancel alone never shows. The dump holds frames only:
+when the call hangs, the test function's frame names the test; when a fixture hangs in setup or teardown, it shows the
+fixture (as on #1255, the fixture `engine`, waiting in `_empty_the_tables` under `pytest_runtest_setup`), and without
+`-v` nothing else in the log under `pytest-xdist` names the test. The job does not add `-v`: with it the #1255 log grew to
+about 1.5 MB, and the fixture's frame is what the search for a hang starts from.
+
+300 s because: the setting only prints, so a value too low costs a block of log and nothing else, and a value too high
+costs waiting; the cleanup between tests waits up to 60 s for a lock before it ends a leaked connection
+(`TRUNCATE_LOCK_TIMEOUT`, `hub/context/testing.md`), so a limit needs room above that; the diagnosis run on #1255 used
+300 s and found the hang's stacks (that run also had `-v`, which named the test; this job does not, see above); 300 s is
+an eighteenth of the 90 minutes, so a hang shows where it waits early in the run.
+
+**Rejected alternatives:**
+- `pytest-timeout`: it would also fail the hanging test, but it is a new dependency in the locks; the entry above rejected
+  it for the queue, and the stack is what the search for a hang needs. `faulthandler_timeout` is part of pytest.
+- `faulthandler_exit_on_timeout` as well (built into the pinned pytest, no new dependency): the worker exits after the
+  dump, `pytest-xdist` reports "worker crashed while running <test>" as failed, which names the test even when a fixture
+  hangs; after 5 minutes the log shows an F and the worker going down; the summary at the end of the run names the test.
+  The job does not end sooner: `pytest-xdist` replaces the crashed worker and the run goes on, so the job goes red only
+  when the rest of the suite is done. Not
+  taken: a slow but finite test past 300 s would then fail, and the value was chosen as a print threshold, not as a
+  limit a green test must stay under. (The author's own reading, not the card's words: the card says only "Kostet
+  nichts, solange nichts hängt", and a setting that fails a slow green test costs something.)
+- In `[tool.pytest.ini_options]` of `hub/pyproject.toml`: every local and SQLite run would print stacks too, past the
+  scope the jour fixe decided; the job's environment keeps it to `hub-postgresql`.
+- On the `make test` line (`PYTEST_ARGS`): repeats the Makefile's `-n auto`, and a later change to that line drops the
+  limit unnoticed.
+
+`hub-mariadb` (`hub-mariadb.yml`) also runs `make test` under 90 minutes, and the cleanup's lock timeout is PostgreSQL
+only, so a leaked lock there is not bounded by the suite. It stays out here: the card and the jour fixe named
+`hub-postgresql`, the job where the hangs were seen; MariaDB runs on main outside `ci-ok`, and a timed-out run already
+counts as red and opens a ci-red issue (the entries on the timeouts and on MariaDB). No hang on MariaDB has been
+reproduced; the same line there is open for a later card. `hub-sqlite` has no server locks between sessions.
+
+Which reasons are confirmed and which inferred: that the setting prints the stack under `pytest-xdist` and the test still
+passes is confirmed (proof run on #1316, and a local counter-check without the setting printing nothing); that a setup
+hang's dump itself names no test is confirmed by the #1255 log and by a local reproduction in the review of #1319; that
+without `-v` nothing else in the log names it is confirmed by that reproduction only, since #1255 ran with `-v`; the
+value is the author's weighing, not measured against a real hang beyond #1255.
+
 ## MariaDB checks main after every ci run and every hour, not every pull request; PostgreSQL and SQLite stay in the gate
 
 **Id:** 75a2382c-6a3d-450d-873e-8aade80d6e3b
@@ -1238,6 +1291,59 @@ each command is checked only once.
   ten pages need.
 - Linking only to the Markdown on GitHub: no navigation of its own, and
   `docs/api.md` as one page of 17,000 lines.
+
+## Docs images live in `docs/img/`, are screenshots of fixture mode, and the site points a relative image at the deployed file
+
+**Id:** 7f3f6220-0bf0-4d81-8521-5761b877a1dd
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** pull request #1325 on the card tsk-92pgshcs2a8c, 2026-11-04: the designer's screenshots and `tools/site_docs.py` change, the designer's account of how they were made and what was weighed, and the three reviews (the size and this entry asked for there)
+**Revisit when:** `.github/workflows/pages.yml` stops copying `docs/` to the site's root, the docs site gets a build step that collects images itself, or the screenshots are made by a script
+**See:** process.md#the-docs-pages-on-maitydev-are-rendered-at-deploy-from-docs-and-docsnavyml-is-the-only-list-of-pages-and-the-navigation — 3b470500-85e0-4261-996e-425290e5d97b — as of 2026-11-04
+
+The images of the docs pages are files in `docs/img/`, linked from the
+Markdown with a relative path, so they show on GitHub as on the site.
+`tools/site_docs.py` rewrites a relative image the way it rewrites a link:
+one under `docs/` points at its path at the site's root, which exists only
+because `pages.yml` copies `docs/` there; any other at GitHub's raw file.
+Only the path is normalised; a query or fragment stays as written.
+
+The screenshots show the dashboard in fixture mode, never a hub with real
+accounts, so they carry no names, addresses or tokens: `web/index.html`
+opened as a file, at `#/new`, `#/all` and `#/maintainer/maity/board`, in
+Chromium (Playwright) at 1280 px with a device scale of 2, the light
+scheme and the clock in UTC (the inbox shows its times in the browser's
+zone). For all three, the sign-in notice is answered with **This was
+me** first and injected CSS hides the "Fixtures" badge (`.source`). For
+the inbox and the form it also hides any `.flag`; after the answer those
+two pages have none left. The inbox is cut 24 px below its first entry's
+button row, the form just below the Project memory hint. The board, from
+the pull request's first set, is the 1280 × 760 px viewport from the
+top, with no `.flag` hidden, so it shows a card's "Waits for an answer"
+box. Each is scaled to 1600 px
+wide and reduced to 256 colours (libimagequant, then oxipng level 4)
+before it is committed: about 290 KB for three instead of 734 KB, since
+every version stays in the history. The designer's script is not in
+the repository yet.
+
+**Reason:** a page and its pictures come from the same place, like the
+text (the entry linked above), and fixture data is the one dashboard
+state that holds nothing private.
+
+**Rejected:**
+
+- GitHub's raw file for the images under `docs/` too: the site would
+  depend on another host, and so would every fork or copy of it, while
+  `pages.yml` puts `docs/` at the root anyway.
+- A second copy in `docs/_assets/`: the same file twice, at a path other
+  than the `img/…` GitHub shows when it renders the Markdown.
+- Dark variants through `<picture>`: GitHub's Markdown needs raw HTML for
+  it, and the site is light unless the reader's system asks for dark
+  (`tools/site_docs/docs.css`), so the designer judged one light set
+  enough.
+- Screenshots of a real hub: real names and data in the repository; the
+  fixtures exist for this.
 
 ## On a shared development machine, PostgreSQL runs share one server, and at most two smoke or PostgreSQL runs go at a time
 

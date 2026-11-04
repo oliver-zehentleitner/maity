@@ -2603,7 +2603,7 @@ window.MAITY_I18N["fr"] = {
   "names.refused.org_role": "seul un propriétaire ou admin de cette organisation peut y déplacer un projet",
   "names.refused.rate_limited": "3 renommages et transferts par jour au plus ; réessayez demain",
   "names.refused.reserved": "ce mot fait partie des adresses du tableau de bord ; choisissez un autre slug",
-  "names.refused.step_up": "le hub demande d'abord votre second facteur ; connectez-vous de nouveau avec lui et réessayez",
+  "names.refused.step_up": "le hub demande toujours votre second facteur ; réessayez",
   "names.refused.taken": "ce nom est pris dans cet espace de noms, actuellement ou comme ancien nom",
   "names.refused.taken_receiver": "@{handle} a déjà un projet de ce nom, ou en a eu un",
   "names.refused.transfer_stale": "le transfert n'est plus valable ; refaites la demande",

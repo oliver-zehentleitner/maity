@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import events, forge, probe
+from maity_hub import events, forge, merged, probe
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from tests import flow
@@ -247,25 +247,141 @@ def test_a_mismatched_merge_triggers_nothing(
     assert _events(migrated, "task_merged") == []
 
 
-def test_a_merge_seen_elsewhere_is_told_when_the_card_returns_to_review(
-    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
-) -> None:
-    """Blocked while a request is open (§7): the merge is remembered and told when the
-    answer restores review."""
-    github.pull(7, merged=True)
-    agent, card_id = _reported(owner, make_client)
+def _blocked(agent: flow.Agent, owner: flow.Human, card_id: str) -> str:
+    """The holder waits on a request (§7): the card goes to `blocked`."""
     asked = agent.post(
         f"{BASE}/requests", {"class": "decision", "title": "Which?", "task_id": card_id}
     )
     assert asked.status_code == 201, asked.text
     assert _card(owner, card_id)["status"] == "blocked"
+    return str(asked.json()["id"])
+
+
+def test_a_merge_on_a_card_blocked_in_review_is_told_at_once(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """Blocked from review (§7): the report is what waits, so the merge is told now, and
+    the answer's return to review tells it no second time."""
+    github.pull(7, merged=True)
+    agent, card_id = _reported(owner, make_client)
+    asked = _blocked(agent, owner, card_id)
     probe.observe_report(migrated, READER, card_id)
-    assert _events(migrated, "task_merged") == []  # remembered, not told
-    answered = owner.post(f"{BASE}/requests/{asked.json()['id']}/answer", {"text": "go ahead"})
-    assert answered.status_code == 200, answered.text
-    assert _card(owner, card_id)["status"] == "review"
     [told] = _events(migrated, "task_merged")
     assert told.payload["task"] == card_id and told.payload["merge_sha"] == "f" * 40
+    assert told.payload["closed"] is False and "role:reviewer" in told.audience
+    assert _card(owner, card_id)["status"] == "blocked"  # notify: the hub moves nothing
+    answered = owner.post(f"{BASE}/requests/{asked}/answer", {"text": "go ahead"})
+    assert answered.status_code == 200, answered.text
+    assert _card(owner, card_id)["status"] == "review"
+    assert len(_events(migrated, "task_merged")) == 1
+
+
+def test_auto_closes_a_card_blocked_in_review_and_ends_the_block(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """§6.6: the hub closes it as from review; the request stays open, and its answer
+    later moves nothing (§7: only a blocked card has a status to restore)."""
+    _policy(owner, done_authority="holder", merged_closes="auto")
+    github.pull(7, merged=True)
+    agent, card_id = _reported(owner, make_client)
+    asked = _blocked(agent, owner, card_id)
+    probe.observe_report(migrated, READER, card_id)
+    [told] = _events(migrated, "task_merged")
+    assert told.payload["closed"] is True
+    card = _card(owner, card_id)
+    assert card["status"] == "done" and card["blocked_by_request"] is None
+    with migrated.connect() as conn:
+        row = conn.execute(select(t.card).where(t.card.c.id == card_id)).one()
+    assert row.status_before_block is None
+    moves = [e for e in _events(migrated, "task_updated") if e.payload.get("id") == card_id]
+    assert moves[-1].payload["fields"] == ["status"] and moves[-1].payload["status"] == "done"
+    assert owner.get(f"{BASE}/requests/{asked}").json()["status"] == "open"
+    answered = owner.post(f"{BASE}/requests/{asked}/answer", {"text": "go ahead"})
+    assert answered.status_code == 200, answered.text
+    assert _card(owner, card_id)["status"] == "done"
+    assert len(_events(migrated, "task_merged")) == 1
+
+
+def test_an_open_child_keeps_a_blocked_card_blocked_and_says_so(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    _policy(owner, done_authority="holder", merged_closes="auto")
+    github.pull(7, merged=True)
+    agent, card_id = _reported(owner, make_client)
+    child = owner.post(f"{BASE}/tasks", {"title": "Still open", "parent": card_id})
+    assert child.status_code == 201, child.text
+    _blocked(agent, owner, card_id)
+    probe.observe_report(migrated, READER, card_id)
+    [told] = _events(migrated, "task_merged")
+    assert (told.payload["closed"], told.payload["blocked_by"]) == (False, ["dependencies"])
+    assert _card(owner, card_id)["status"] == "blocked"
+
+
+def test_a_merge_seen_in_rework_is_remembered_not_told(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """Sent back to `in_progress` and blocked from there, the card's report no longer waits
+    for review: the merge is remembered, as for any card not in review (§6.6)."""
+    github.pull(7, merged=True)
+    agent, card_id = _reported(owner, make_client)
+    back = owner.patch(f"{BASE}/tasks/{card_id}", {"status": "in_progress"})
+    assert back.status_code == 200, back.text
+    _blocked(agent, owner, card_id)
+    probe.observe_report(migrated, READER, card_id)
+    assert _events(migrated, "task_merged") == []
+    refused = owner.patch(f"{BASE}/tasks/{card_id}", {"status": "done"})
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["error"]["code"] == "invalid_transition"
+
+
+def test_the_done_authority_closes_a_merged_card_blocked_in_review(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """Through the API a blocked card closes too: a `blocked→done` by the done authority
+    once the report's merge is observed (§6.4, §6.6). Before that an editor gets
+    `invalid_transition`, a done authority that is no editor `forbidden`."""
+    github.pull(7)
+    agent, card_id = _reported(owner, make_client)
+    _blocked(agent, owner, card_id)
+    probe.observe_report(migrated, READER, card_id)  # still open: nothing to close yet
+    early = owner.patch(f"{BASE}/tasks/{card_id}", {"status": "done"})
+    assert early.status_code == 409, early.text
+    assert early.json()["error"]["code"] == "invalid_transition"
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    unseen = reviewer.patch(f"{BASE}/tasks/{card_id}", {"status": "done"})
+    assert unseen.status_code == 403, unseen.text
+    assert unseen.json()["error"]["code"] == "forbidden"
+    github.pull(7, merged=True)
+    probe.observe_report(migrated, READER, card_id)
+    holder = agent.patch(f"{BASE}/tasks/{card_id}", {"status": "done"})
+    assert holder.status_code == 403, holder.text  # the holder is not the done authority
+    closed = reviewer.patch(f"{BASE}/tasks/{card_id}", {"status": "done"})
+    assert closed.status_code == 200, closed.text  # not an editor: the done authority
+    card = _card(owner, card_id)
+    assert card["status"] == "done" and card["blocked_by_request"] is None
+    assert card["closed_at"] is not None
+
+
+def test_two_signatures_still_need_review_for_a_blocked_card(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """Under `reviewer_and_tester` a close is two signatures on a card in review (§6.4);
+    a blocked card waits for the answer that restores review. Nobody can sign while it is
+    blocked, so the merge is remembered, not told, and told on the return to review."""
+    _policy(owner, done_authority="reviewer_and_tester")
+    github.pull(7, merged=True)
+    agent, card_id = _reported(owner, make_client)
+    asked = _blocked(agent, owner, card_id)
+    probe.observe_report(migrated, READER, card_id)
+    assert _events(migrated, "task_merged") == []
+    refused = owner.patch(f"{BASE}/tasks/{card_id}", {"status": "done"})
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["error"]["code"] == "invalid_transition"
+    assert _card(owner, card_id)["status"] == "blocked"
+    answered = owner.post(f"{BASE}/requests/{asked}/answer", {"text": "go ahead"})
+    assert answered.status_code == 200, answered.text
+    assert _card(owner, card_id)["status"] == "review"
+    assert len(_events(migrated, "task_merged")) == 1
 
 
 @pytest.mark.parametrize(
@@ -284,16 +400,14 @@ def test_the_end_of_a_request_comes_before_the_return_to_review_and_the_merge(
     body: dict[str, str],
     kind: str,
 ) -> None:
-    """What happened first, then what followed from it (§6.4, §6.6), one event at a time."""
+    """What happened first, then what followed from it (§6.4, §6.6), one event at a time.
+    A merge remembered before this hub told blocked cards (no `merge_told`) is told on the
+    return to review."""
     _policy(owner, done_authority="holder", merged_closes="auto")
-    github.pull(7, merged=True)
     agent, card_id = _reported(owner, make_client)
-    asked = agent.post(
-        f"{BASE}/requests", {"class": "decision", "title": "Which?", "task_id": card_id}
-    )
-    assert asked.status_code == 201, asked.text
-    probe.observe_report(migrated, READER, card_id)
-    ended = owner.post(f"{BASE}/requests/{asked.json()['id']}/{verb}", body)
+    asked = _blocked(agent, owner, card_id)
+    _remembered(migrated, card_id)
+    ended = owner.post(f"{BASE}/requests/{asked}/{verb}", body)
     assert ended.status_code == 200, ended.text
     [told] = _events(migrated, kind)
     moves = [e for e in _events(migrated, "task_updated") if e.seq > told.seq]
@@ -302,20 +416,30 @@ def test_the_end_of_a_request_comes_before_the_return_to_review_and_the_merge(
     assert told.seq < moves[0].seq < merge.seq < moves[1].seq
 
 
+def _remembered(engine: Engine, card_id: str) -> None:
+    """What a merge observed on a blocked card left before blocked cards were told: the
+    report observed merged, remembered with its key, not told."""
+    with engine.begin() as conn:
+        report = conn.execute(select(t.card.c.report).where(t.card.c.id == card_id)).scalar_one()
+        report = {**report, "observed": {"pr_state": "merged"}, "mismatch": False}
+        conn.execute(
+            update(t.card)
+            .where(t.card.c.id == card_id)
+            .values(report=report, merge_report=merged.report_key(report), merge_told=False)
+        )
+
+
 def test_a_new_report_in_between_starts_over(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
 ) -> None:
     github.pull(7, merged=True)
     agent, card_id = _reported(owner, make_client)
-    asked = agent.post(
-        f"{BASE}/requests", {"class": "decision", "title": "Which?", "task_id": card_id}
-    )
-    assert asked.status_code == 201, asked.text
-    probe.observe_report(migrated, READER, card_id)  # blocked: remembered
+    back = owner.patch(f"{BASE}/tasks/{card_id}", {"status": "in_progress"})
+    assert back.status_code == 200, back.text
+    probe.observe_report(migrated, READER, card_id)  # in rework: remembered
+    assert _events(migrated, "task_merged") == []
     again = agent.post(f"{BASE}/tasks/{card_id}/report", _report(summary="Reported again."))
     assert again.status_code == 200, again.text
-    answered = owner.post(f"{BASE}/requests/{asked.json()['id']}/answer", {"text": "go ahead"})
-    assert answered.status_code == 200, answered.text
     assert _card(owner, card_id)["status"] == "review"
     assert _events(migrated, "task_merged") == []  # the remembered merge was the old report's
     probe.observe_report(migrated, READER, card_id)
