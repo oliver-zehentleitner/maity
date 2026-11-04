@@ -64,13 +64,24 @@ def choose_language(
     return default if default in offered else (offered[0] if offered else default)
 
 
+# `Accept-Language` is read only this far: its first parts, each tag at most the 35 characters
+# BCP 47 asks every implementation to support. The work per request is then bounded, whatever
+# the header's size (§16.7).
+ACCEPT_PARTS = 20
+TAG_MAX = 35
+
+
 def best_language(offered: list[str], query: str | None, accept_language: str | None) -> str | None:
-    """`?lang=` if offered, else the best match of `Accept-Language`, else nothing."""
+    """`?lang=` if offered, else the best match of `Accept-Language`'s first `ACCEPT_PARTS`
+    parts, else nothing."""
     if query in offered:
         return str(query)
     ranked: list[tuple[float, int, str]] = []
-    for position, part in enumerate((accept_language or "").split(",")):
+    parts = (accept_language or "").split(",", ACCEPT_PARTS)[:ACCEPT_PARTS]
+    for position, part in enumerate(parts):
         tag, _, rest = part.strip().partition(";")
+        if len(tag.strip()) > TAG_MAX:
+            continue
         weight = 1.0
         if rest.strip().startswith("q="):
             try:
@@ -85,18 +96,39 @@ def best_language(offered: list[str], query: str | None, accept_language: str | 
 
 # --- Markdown ----------------------------------------------------------------------------------
 
+# Every run below stops where the next try would start or at a character the run after it needs,
+# so a text without the closing character costs one pass, not one per way of splitting it or
+# one per `[` in it. A link's target and title hold no `[`, stay on their line and are at most
+# LINK_MAX characters each (§16.7).
+LINK_MAX = 2048
 _INLINE = re.compile(
     r"`(?P<code>[^`\n]+)`"
-    r"|\[(?P<text>[^\[\]\n]*)\]\(\s*(?P<target>[^)\s]*)[^)]*\)"
+    rf"|\[(?P<text>[^\[\]\n]*)\]\([ \t]*(?P<target>[^)\[\s]{{0,{LINK_MAX}}})(?:[ \t][^)\[\n]{{0,{LINK_MAX}}})?\)"
     r"|(?P<bare>https://[^\s<>()]+)"
     r"|\*\*(?P<strong>[^*\n]+)\*\*"
     r"|\*(?P<em>[^*\n]+)\*"
     r"|(?<![A-Za-z0-9])_(?P<em2>[^_\n]+)_(?![A-Za-z0-9])"
 )
-_HEADING = re.compile(r"^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$")
+# A heading's marks; its text is found by string operations (`_heading`), not by a pattern.
+_HEADING = re.compile(r" {0,3}(#{1,6})\s")
 _QUOTE = re.compile(r"^ {0,3}>\s?(.*)$")
 _BULLET = re.compile(r"^ {0,3}[-*+]\s+(.*)$")
 _NUMBER = re.compile(r"^ {0,3}\d{1,9}[.)]\s+(.*)$")
+
+
+def _heading(line: str) -> tuple[int, str] | None:
+    """The level and text of an ATX heading line: the marks, at least one space, the text, and
+    any closing run of `#` and the spaces around it dropped."""
+    found = _HEADING.match(line)
+    if found is None:
+        return None
+    text = line[found.end(1) :].strip().rstrip("#").rstrip()
+    return len(found.group(1)), text
+
+
+# Quotes nest at most this deep, as in the dashboard (web/js/markdown.js); the lines of a deeper
+# one are a paragraph, their `>` as written.
+QUOTE_DEPTH = 8
 
 
 def _link(text: str, target: str, *, me: bool = False, ugc: bool = False) -> str:
@@ -132,9 +164,10 @@ def inline(text: str, *, ugc: bool = False) -> str:
     return "".join(out)
 
 
-def markdown(source: str, *, ugc: bool = False) -> str:
+def markdown(source: str, *, ugc: bool = False, depth: int = 0) -> str:
     """The HTML of a Markdown text; fenced code is text, a block is one element. With `ugc`
-    every link is `rel="nofollow ugc"`, as on the public pages (§16.9)."""
+    every link is `rel="nofollow ugc"`, as on the public pages (§16.9). `depth` is the number of
+    quotes around the text."""
     lines = source.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     out: list[str] = []
     paragraph: list[str] = []
@@ -164,20 +197,26 @@ def markdown(source: str, *, ugc: bool = False) -> str:
             flush()
             index += 1
             continue
-        heading = _HEADING.match(line)
+        heading = _heading(line)
         if heading:
             flush()
-            level = len(heading.group(1))
-            out.append(f"<h{level}>{inline(heading.group(2), ugc=ugc)}</h{level}>")
+            level, text = heading
+            out.append(f"<h{level}>{inline(text, ugc=ugc)}</h{level}>")
             index += 1
             continue
         if _QUOTE.match(line):
             flush()
+            start = index
             quoted: list[str] = []
             while index < len(lines) and (quote := _QUOTE.match(lines[index])):
                 quoted.append(quote.group(1))
                 index += 1
-            out.append("<blockquote>" + markdown("\n".join(quoted), ugc=ugc) + "</blockquote>")
+            if depth < QUOTE_DEPTH:
+                inner = markdown("\n".join(quoted), ugc=ugc, depth=depth + 1)
+                out.append("<blockquote>" + inner + "</blockquote>")
+            else:
+                written = "\n".join(part.strip() for part in lines[start:index])
+                out.append("<p>" + inline(written, ugc=ugc).replace("\n", "<br>") + "</p>")
             continue
         for pattern, tag in ((_BULLET, "ul"), (_NUMBER, "ol")):
             if pattern.match(line):
