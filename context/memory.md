@@ -84,13 +84,13 @@ redaction: a deletion would need an admin's redaction to be a deletion.
 **Source:** security reviews of the memory contract and the contract owner's rulings on them (two rounds), 2026-10-22; contract in `docs/api.md` §7, §19; split out of 1c326180 on 2026-11-04, unchanged in substance
 **See:** memory.md#memory-events-carry-ids-only — 1c326180-c27b-4f12-bb75-aa3335f9282c — as of 2026-11-04
 
-The maintainer's decision of 2026-11-02 (the successor entry)
-supersedes this design: the agent writes its own soul, and the owner's
-personal inbox gets a notice of each version. The hub has not followed
-yet: at 2026-11-04 it still files soul proposals (`POST
-/me/soul/proposals`, `hub/src/maity_hub/routes/memory.py`; the CLI
-still calls it, `cli/src/maity/cli.py`) and has no `PUT /me/soul`, so what follows still describes the code until the
-successor is built.
+The maintainer's decision of 2026-11-02 (the successor entry) replaced
+soul proposals in the contract (§19.1): the agent writes its own soul,
+and the owner's personal inbox gets a notice of each version. The code
+has not caught up yet: at 2026-11-04 the hub still routes `POST
+/me/soul/proposals` (`hub/src/maity_hub/routes/memory.py`), the CLI
+still calls it (`cli/src/maity/cli.py`), and there is no `PUT
+/me/soul`. Until that lands, a proposal still works as described below.
 
 A soul proposal is a personal request: it sits in the profile owner's
 personal inbox, is visible only to that owner and the proposing agent,
