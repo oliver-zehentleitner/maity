@@ -137,11 +137,13 @@ night's merges deployed before the maintainer is back was stated.
 **Id:** 8ba32bfa-41ff-4351-8884-4ac5ee08bae5
 **Type:** decision
 **Type:** incident
-**Status:** needs-review
+**Status:** superseded
+**Superseded by:** eb392e3b-50bb-4dc5-ad3b-3e4b2272dbc0
 **Evidence:** confirmed
-**Source:** the coordinator's rule, 2026-10-22, set when the reviewer came back from a usage limit
+**Source:** the coordinator's rule, 2026-10-22, set when the reviewer came back from a usage limit; superseded by the maintainer's decision of 2026-11-04 (req-whk2ez4r56f3): the review lead hands out every review and an absent reviewer gets no substitute, so there is no cover whose work a returning reviewer would split
 **Revisit when:** a second reviewer joins, or reviews are reassigned in a way the board can show without a list from the coordinator
 **See:** process.md#pull-requests-get-an-independent-first-review-on-a-different-vendors-model-the-coordinator-decides-disagreements-go-to-the-maintainer — 0b12c29d-1539-4737-9bc3-e5e5815238ec — as of 2026-10-22
+**See:** process.md#an-absent-reviewer-gets-no-substitute-the-maintainer-is-told-and-the-review-waits — d9edf24e-9c27-4a2e-8c14-f4076a864c6d — as of 2026-11-04
 
 While the reviewer was stopped by a usage limit, the coordinator covered
 its reviews. When the reviewer came back it asked for an exact split, so
@@ -230,10 +232,12 @@ one of them starts neither the hub jobs nor this one. Not solved here; its own t
 
 **Id:** e534e9f3-a419-4a09-8054-117150592490
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's rule and reason, 2026-10-25, relayed by the coordinator
-**Revisit when:** the hub enforces the why reference on code reports — then this team rule gives way to the hub's policy
+**Source:** the maintainer's rule and reason, 2026-10-25, relayed by the coordinator; the maintainer's decision of 2026-11-04 to keep it beside the hub's requirement (req-3vww792gvj9q)
+**Verification:** corroborated — re-checked 2026-11-04 after the hub began to require a why on code reports (§6.23): under `required` a code report without `why` is refused (`hub/src/maity_hub/routes/tasks.py`, `_check_why`), and the hub checks only the reference's shape, not that the entry exists or that `ktw-lint` is clean
+**See:** projects.md#keep-the-why-is-guaranteed-by-the-hub-a-commitment-at-resume-a-reminder-the-owners-notification-and-a-why-on-every-code-report — 7c1a4f0e-2b8d-4c6e-9a3f-5e2d8b7a1c90 — as of 2026-11-04
+**Revisit when:** the hub checks that a report's why names an entry that exists and that `ktw-lint` is clean
 
 Every agent building Maity works with Keep the Why. An implementer
 writes a `context/` entry for each decision a pull request makes, in
@@ -246,14 +250,17 @@ has its rulings recorded by the implementer of the change they decide,
 not in a pull request of its own.
 
 **Reason:** Keep the Why is part of the project, so every agent building
-it uses it. The team rule is the interim: it holds until the hub
-guarantees the same as a system.
+it uses it. The rule was first meant as the interim until the hub
+guaranteed the same. Both stay now: the hub refuses a code report
+without a why, but it checks only that a reference is given in the right
+shape; that the entry is there and the linter is clean is what the
+reviewer's gate checks.
 
 **Alternatives:**
 - The hub enforces it — a why reference required on code reports, set
-  by policy per project. Chosen as the follow-up, not instead: its
-  contract is still a proposal with the maintainer, and until it is
-  built the rule and the review gate carry it.
+  by policy per project. Chosen as the follow-up, not instead, and built
+  since (the entry linked above); it stands beside the team rule, not in
+  its place.
 
 ## The CLI is published to PyPI as `maity` from a `cli-v*` tag, through trusted publishing
 
@@ -971,7 +978,8 @@ in-tree source definitions prevents subtle discrepancies for newcomers reading t
 
 **Id:** 297a0ea7-ebd0-4007-8b12-f839d005d205
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** c73e26c4-60b2-49e7-9df8-278fca4fcb2e
 **Evidence:** confirmed
 **Source:** the maintainer's decision in the hub chat, 2026-10-29 ("then let's rather have everything checked twice, by one Grok and one Antigravity"); the coordinator's merge practice since then
 **Revisit when:** a reviewer family is unavailable for long, the ChatGPT-based reviewers return and could stand in for one side, or two approvals turn out to miss what one more careful review would catch
@@ -999,6 +1007,75 @@ second review alone.
 - Merging when no check is red — the hub and end-to-end jobs report only
   after the change detection, so a pull request can look clean with only
   the quick checks run.
+
+## Every pull request needs an approval from all three reviewer vendors, Antigravity, Grok and ChatGPT, on the exact head, and a green `ci-ok`
+
+**Id:** c73e26c4-60b2-49e7-9df8-278fca4fcb2e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision at the jour fixe of 2026-11-03, relayed by the lead on 2026-11-04; it follows the rule of the same morning, two of three vendors, set when every Antigravity instance ran out of quota at once
+**Revisit when:** a reviewer vendor is unavailable for long, or a fourth vendor joins
+**See:** process.md#every-pull-request-needs-two-approvals-one-from-a-grok-reviewer-and-one-from-an-antigravity-reviewer-and-a-green-ci-ok-on-the-exact-head — 297a0ea7-ebd0-4007-8b12-f839d005d205 — as of 2026-11-04
+
+Before a pull request is merged, one reviewer of each vendor, Antigravity,
+Grok and ChatGPT, has approved exactly the head that is merged, each in a
+fresh context of its own. After rework the three review the delta, and a
+fix is pushed once all three results for the current head are in, not
+after the first. The merge waits for `ci-ok` on that head, and a review's
+claims are still compared with the diff before it counts (the entry
+linked above).
+
+**Reason:** the maintainer's: quality before speed. Two of three was the
+interim of one morning, while one vendor was out of quota.
+
+**Rejected alternatives:**
+- Two of three vendors, the third awaited when it can be: the morning's
+  interim, replaced at the jour fixe the same day.
+- One Grok and one Antigravity reviewer (297a0ea7): the ChatGPT
+  reviewers are back, and a third vendor's view is wanted on every pull
+  request.
+
+## The review lead's team hands out every review
+
+**Id:** eb392e3b-50bb-4dc5-ad3b-3e4b2272dbc0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the rule of the previous lead, 2026-11-02 (the review lead coordinates every review, seq 36181), narrowed by the current lead on 2026-11-03 (review requests and head SHAs go to the review lead alone, no copy to the lead, seq 50518); confirmed by the lead on 2026-11-04
+**Revisit when:** reviews are to be requested from a vendor directly again, or the review lead's team is unavailable
+
+A coder sends a review request, with the base and head SHAs in full, to
+the review lead and to nobody else. The review lead's team picks the
+reviewer of each vendor, orders the reviews and delta reviews, checks
+the results, and collects the minor findings (P3) for the area's
+collection card. Merges, deploys and cards stay with the lead.
+
+**Reason:** unknown — not recorded with the rule.
+
+**Alternatives:** unknown.
+
+## An absent reviewer gets no substitute; the maintainer is told and the review waits
+
+**Id:** d9edf24e-9c27-4a2e-8c14-f4076a864c6d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer of 2026-11-03 (req-g5z43w1n2fkj) to the question whether a reviewer of another vendor may stand in while one is out
+**Revisit when:** the maintainer allows a substitute for a vendor that is out, or a vendor is out for longer than a release can wait
+**See:** process.md#every-pull-request-needs-an-approval-from-all-three-reviewer-vendors-antigravity-grok-and-chatgpt-on-the-exact-head-and-a-green-ci-ok — c73e26c4-60b2-49e7-9df8-278fca4fcb2e — as of 2026-11-04
+
+When a reviewer vendor is unavailable (out of quota, offline), its review
+is not handed to another vendor's reviewer. The maintainer is told at
+once, through his inbox, and the pull request waits until he restores the
+reviewer or reorganises the reviews.
+
+**Reason:** the maintainer's words: he wants to keep the quality, and
+building well and solidly matters more to him than building very fast.
+
+**Rejected alternative:** a substitute reviewer of another vendor while
+one is out: faster, but it lowers the three-vendor gate the entry above
+sets.
 
 ## The ci runs on main share one group: one runs, the newest waits, none is cancelled
 
