@@ -3617,6 +3617,23 @@ def start_page_step(run: Run, page: Page) -> None:
             expect(seen).to_have_url(f"{run.base}/")
             on_landing(seen, f"the app's logo at {width} px {scheme}")
             visitor.close()
+
+        # Signing out leaves for the start page too: a page load, so the landing page, not the
+        # dashboard's sign-in form under `/`. A second session of the owner's, this one stays.
+        leaving = page.context.browser.new_context(viewport={"width": 1280, "height": 800}, locale="en-US")
+        out = leaving.new_page()
+        out.goto(f"{run.base}/login")
+        out.locator("#login-handle").fill(OWNER)
+        out.locator("#login-password").fill(OWNER_PASSWORD)
+        out.get_by_role("button", name="Sign in", exact=True).click()
+        expect(out.locator("header .me")).to_contain_text("Owner")
+        out.goto(f"{run.base}/all")
+        out.locator("header").get_by_role("button", name=re.compile(r"^Your profile: ")).click()
+        out.get_by_role("menuitem", name="Sign out", exact=True).click()
+        expect(out).to_have_url(f"{run.base}/")
+        on_landing(out, "after signing out")
+        run.shot(out, "start-page-signed-out")
+        leaving.close()
     finally:
         # Off again: a landing page that is on would greet the signed-out steps after this one.
         page.goto(f"{run.base}/admin/pages/landing")
