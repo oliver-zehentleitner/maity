@@ -1070,9 +1070,9 @@ setup, call and teardown together run longer than 300 s makes its worker print t
 once, and the test runs on: a slow test that ends still passes, and a hang still ends at the job's 90 minutes. The log then
 already holds the frame and the line the hang waits on, which the cancel alone never shows. The dump holds frames only:
 when the call hangs, the test function's frame names the test; when a fixture hangs in setup or teardown, it shows the
-fixture (as on #1255, `_empty_the_tables` under `pytest_runtest_setup`), and without `-v` nothing else in the log under
-`pytest-xdist` names the test. The job does not add `-v`: with it the #1255 log grew to about 1.5 MB, and the fixture's
-frame is what the search for a hang starts from.
+fixture (as on #1255, the fixture `engine`, waiting in `_empty_the_tables` under `pytest_runtest_setup`), and without
+`-v` nothing else in the log under `pytest-xdist` names the test. The job does not add `-v`: with it the #1255 log grew to
+about 1.5 MB, and the fixture's frame is what the search for a hang starts from.
 
 300 s because: the setting only prints, so a value too low costs a block of log and nothing else, and a value too high
 costs waiting; the cleanup between tests waits up to 60 s for a lock before it ends a leaked connection
@@ -1085,9 +1085,11 @@ an eighteenth of the 90 minutes, so a hang shows where it waits early in the run
   it for the queue, and the stack is what the search for a hang needs. `faulthandler_timeout` is part of pytest.
 - `faulthandler_exit_on_timeout` as well (built into the pinned pytest, no new dependency): the worker exits after the
   dump, `pytest-xdist` reports "worker crashed while running <test>" as failed, which names the test even when a fixture
-  hangs, and the job goes red after 5 minutes instead of 90. Not taken: a slow but finite test past 300 s would then
-  fail, and its worker is gone for the rest of the run; the card asked for a stack that leaves the test running, and the
-  value was chosen as a print threshold, not as a limit a green test must stay under.
+  hangs, and the hung test shows as failed in the log after 5 minutes. The job does not end sooner: `pytest-xdist`
+  replaces the crashed worker and the run goes on, so the job goes red only when the rest of the suite is done. Not
+  taken: a slow but finite test past 300 s would then fail, and the value was chosen as a print threshold, not as a
+  limit a green test must stay under. (The author's own reading, not the card's words: the card says only "Kostet
+  nichts, solange nichts hängt", and a setting that fails a slow green test costs something.)
 - In `[tool.pytest.ini_options]` of `hub/pyproject.toml`: every local and SQLite run would print stacks too, past the
   scope the jour fixe decided; the job's environment keeps it to `hub-postgresql`.
 - On the `make test` line (`PYTEST_ARGS`): repeats the Makefile's `-n auto`, and a later change to that line drops the
