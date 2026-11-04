@@ -369,9 +369,11 @@ reaches the disk. The public key comes from the Secret
 container checks it first: missing, a private key, or no public key
 ends the Job as failed with a `backup failed:` line, before anything
 is written. A restore decrypts where the private key is: the dump is
-piped into `pg_restore` over `kubectl exec`, and the tar is streamed
-into a restore Job that waits for it. The commands run as one block that
-stops before the cluster when the decryption or the check of the tar
+decrypted to a file there and read whole with `pg_restore -f /dev/null`
+before it goes to `pg_restore --clean` over `kubectl exec` (a listing reads
+only the start and passes a cut-off dump), and the tar is streamed
+into a restore Job that waits for it. Both run as one block each that
+stops before the cluster when the decryption or the check of the file
 fails, and the Job reads the tar's first header before it empties the
 volume, so a wrong key or a corrupt backup leaves the files in place. Backups written before encryption
 are left alone and counted in every night's log.

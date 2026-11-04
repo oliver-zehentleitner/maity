@@ -338,8 +338,18 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
   most files are compressed already, so the tar is not compressed.
 - **To restore,** on the machine with the private key, which decrypts there. Nothing decrypted is written to the instance's disk:
   1. Scale the hub to 0 (`kubectl -n maity scale deploy/maity-maity-hub --replicas=0`).
-  2. Decrypt the dump and feed it to `pg_restore --clean --if-exists -d maity` inside the postgres pod:
-     `gpg -d maity-<UTC time>.dump.gpg | kubectl -n maity exec -i maity-postgres-0 -- pg_restore -U maity -d maity --clean --if-exists`.
+  2. Decrypt the dump to a file on this machine, read all of it with `pg_restore -f /dev/null` (which fails on a wrong key, a
+     cut-off file or anything that is not a dump; `pg_restore --list` reads only the start), and only then feed it to
+     `pg_restore --clean --if-exists` inside the postgres pod, which drops what it restores. Run it as one block, which stops
+     at the first failure and keeps the decrypted file for a second try; `pg_restore` here must be 17 or later:
+     ```sh
+     sh -eu -c '
+       gpg -d "$1" > maity.dump
+       pg_restore -f /dev/null maity.dump
+       kubectl -n maity exec -i maity-postgres-0 -- pg_restore -U maity -d maity --clean --if-exists < maity.dump
+       rm maity.dump
+     ' restore maity-<UTC time>.dump.gpg
+     ```
   3. Put the files of the same night back, replacing the volume's contents (the hub is still at 0 from step 1). The commands
      are at the top of `deploy/k3s-single/restore-attachments.yaml`, as one `sh -eu` block that stops at the first failure:
      decrypt and check the tar locally, apply the Job, then stream the tar into it with `kubectl exec -i`. Run it as that
