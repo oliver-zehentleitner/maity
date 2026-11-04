@@ -4671,8 +4671,8 @@ fields it now has ("Saved: reports to. The rest is not changed yet: …"), and
 names the asked human by name where they are a member here, otherwise as the
 agent's owner (its `owner_id`) or, when the answered request is another
 human's, as a boss's owner. In a `PATCH` that also changes a held field the
-hub answers with that field consent, which goes to the agent's owner, before
-any edge request; only a `reports_to` to a boss of another owner on its own
+hub files that field consent, which goes to the agent's owner, first and
+answers with it; only a `reports_to` to a boss of another owner on its own
 is answered with an edge request, the boss's side unless the caller is that
 human, then the agent owner's (hub/src/maity_hub/routes/members.py,
 cross_owner.py).

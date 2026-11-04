@@ -2592,23 +2592,25 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(consents.length === 1 && text(main).includes("Nothing changed."), "members: saving again after a consent request files no second one");
   // Another owner's agent (§6.2): the real hub names the owner as `human:<id>`, who need be no
   // member here. The sentence names them as the owner, never the raw address (tsk-0dhk4wdt111m).
+  // Reviewer is hum-elsewhere's here; Agent B is of the same owner, Agent C of a third.
   const ofGet = win.Maity.api.getAll;
   let ofBoss = null;
+  const ofOwner = { "agt-r": "hum-elsewhere", "agt-b": "hum-elsewhere", "agt-c": "hum-third" };
   win.Maity.api.getAll = (p) => ofGet(p).then((r) => (p !== "/projects/maintainer/maity/members" ? r
-    : { items: r.items.map((x) => (x.id === "agt-r" ? Object.assign({}, x, { owner_id: "hum-elsewhere" }, ofBoss ? { reports_to: ofBoss } : {}) : x)), next_cursor: null }));
+    : { items: r.items.map((x) => (ofOwner[x.id] ? Object.assign({}, x, { owner_id: ofOwner[x.id] }, x.id === "agt-r" && ofBoss ? { reports_to: ofBoss } : {}) : x)), next_cursor: null }));
   let ofTo = "human:hum-elsewhere";
   win.Maity.api.patch = (p, b) => { consents.push(b); return Promise.resolve({ id: "req-c010", class: "consent", status: "open", to: ofTo, title: "Change reviewer in Maity" }); };
   eSel("role").value = "coder"; eSel("role").dispatch("change");
   await submitEdit();
   expect(text(main).includes("Not changed yet: waiting for the owner's consent (req-c010, Change reviewer in Maity).") && !text(main).includes("human:"),
     "members: a consent of another owner's agent names its owner, not the raw human: address " + JSON.stringify(text(main).match(/Not changed yet[^.]*\./)));
-  // Its `reports_to` applies at once, the role waits: the line says which is which.
-  const mxBoss = eSel("reports").querySelectorAll("option").map((o) => o.getAttribute("value")).find((v) => v && v !== "agt-a" && v !== "agt-r");
+  // A boss of the agent's own owner applies at once, the role waits: the line says which is which.
+  const mxBoss = "agt-b";
   ofBoss = mxBoss;
   eSel("role").value = "coder"; eSel("role").dispatch("change");
   eSel("reports").value = mxBoss; eSel("reports").dispatch("change");
   await submitEdit();
-  expect(mxBoss && consents[consents.length - 1].reports_to === mxBoss && consents[consents.length - 1].role === "coder"
+  expect(consents[consents.length - 1].reports_to === mxBoss && consents[consents.length - 1].role === "coder"
     && text(main).includes("Saved: reports to. The rest is not changed yet: waiting for the owner's consent (req-c010, Change reviewer in Maity).")
     && !text(main).includes("Not changed yet"),
     "members: a boss taken at once and a role waiting say both " + JSON.stringify([mxBoss, text(main).match(/(Saved|Not changed)[^.]*\.[^.]*\./)]));
@@ -2621,13 +2623,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await submitEdit();
   expect(text(main).includes("Not changed yet: waiting for Maintainer's consent (req-c010, Change reviewer in Maity)."),
     "members: a consent of a human who is a member here names them " + JSON.stringify(text(main).match(/Not changed yet[^.]*\./)));
-  // A boss of another owner chosen alone: the hub answers with the boss side's edge request.
+  // An agent of a third owner chosen alone as the boss: the hub asks that owner first and
+  // answers with that edge request.
   ofTo = "human:hum-third";
-  win.Maity.api.patch = (p, b) => { consents.push(b); return Promise.resolve({ id: "req-c011", class: "consent", status: "open", to: ofTo, title: "Take reviewer as a report of Maintainer" }); };
-  eSel("reports").value = mxBoss; eSel("reports").dispatch("change");
+  win.Maity.api.patch = (p, b) => { consents.push(b); return Promise.resolve({ id: "req-c011", class: "consent", status: "open", to: ofTo, title: "Take reviewer as a report of Agent C" }); };
+  eSel("reports").value = "agt-c"; eSel("reports").dispatch("change");
   await submitEdit();
   expect(Object.keys(consents[consents.length - 1]).join() === "reports_to"
-    && text(main).includes("Not changed yet: waiting for the boss's owner's consent (req-c011, Take reviewer as a report of Maintainer)."),
+    && text(main).includes("Not changed yet: waiting for the boss's owner's consent (req-c011, Take reviewer as a report of Agent C)."),
     "members: a consent of an outside human who is not the agent's owner names the boss's owner " + JSON.stringify(text(main).match(/Not changed yet[^.]*\./)));
   win.Maity.api.getAll = ofGet;
   win.Maity.api.patch = mPatch;
