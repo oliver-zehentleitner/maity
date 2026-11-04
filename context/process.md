@@ -1055,6 +1055,38 @@ hung MariaDB run ended without a word.
 - The timeout on the three database jobs only: a hang in any job `ci-ok` waits for holds main the same six hours, and
   GitHub has no timeout for a whole workflow.
 
+## hub-postgresql prints every thread's stack when a test runs longer than 300 seconds
+
+**Id:** 32d51f7e-a3dc-4027-9ceb-ce2a0ecdca69
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-80xk3tbhe2hc, from the jour fixe of 2026-11-03 (request req-tmx2jadxrqvt, adopted by the maintainer); the lead's message that a hang on #1225 ended as a silent 90-minute timeout (not checked here); the diagnosis run on #1255 (`-o faulthandler_timeout=300`, its stacks in `hub/context/testing.md`); the proof run on #1316, 2026-11-04
+**Revisit when:** a green `hub-postgresql` test runs longer than about 120 s, the stacks come from tests that do not hang, or `pytest-timeout` comes into the locks for another reason
+**See:** process.md#every-ci-job-has-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-04
+
+`hub-postgresql` (`ci.yml`) sets `PYTEST_ADDOPTS: -o faulthandler_timeout=300` in the job's environment. A test whose
+setup, call and teardown together run longer than 300 s makes its worker print the stack of every thread into the job log,
+once, and the test runs on: a slow test that ends still passes, and a hang still ends at the job's 90 minutes. The log then
+already holds the hanging test's frame and the line it waits on, which the cancel alone never shows.
+
+300 s because: the setting only prints, so a value too low costs a block of log and nothing else, and a value too high
+costs waiting; the cleanup between tests waits up to 60 s for a lock before it ends a leaked connection
+(`TRUNCATE_LOCK_TIMEOUT`, `hub/context/testing.md`), so a limit needs room above that; the diagnosis run on #1255 used
+300 s and found the hang's stacks; 300 s is a sixth of the 90 minutes, so a hang shows where it waits early in the run.
+
+**Rejected alternatives:**
+- `pytest-timeout`: it would also fail the hanging test, but it is a new dependency in the locks; the entry above rejected
+  it for the queue, and the stack is what the search for a hang needs. `faulthandler_timeout` is part of pytest.
+- In `[tool.pytest.ini_options]` of `hub/pyproject.toml`: every local and SQLite run would print stacks too, past the
+  scope the jour fixe decided; the job's environment keeps it to `hub-postgresql`.
+- On the `make test` line (`PYTEST_ARGS`): repeats the Makefile's `-n auto`, and a later change to that line drops the
+  limit unnoticed.
+
+Which reasons are confirmed and which inferred: that the setting prints the stack under `pytest-xdist` and the test still
+passes is confirmed (proof run on #1316, and a local counter-check without the setting printing nothing); the value is the
+author's weighing, not measured against a real hang beyond #1255.
+
 ## MariaDB checks main after every ci run and every hour, not every pull request; PostgreSQL and SQLite stay in the gate
 
 **Id:** 75a2382c-6a3d-450d-873e-8aade80d6e3b
