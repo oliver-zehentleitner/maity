@@ -653,11 +653,11 @@ A repository's grant may only add plain commands, a grammar rather
 than a list of bad spellings: a program name or path, then arguments of
 plain characters (the CLI README names them), `*` only in an argument.
 The program is never `env` or `maity`, under any path, case or Windows
-extension, and no argument is `maity`. Assignments, quotes, variables,
-escapes, shell operators and a `:` in the program (Claude Code's
-`prog:*` form) are refused
-when the configuration is read, and an adapter skips such a rule as
-well.
+extension, and no part of an argument (between `/`, `:`, `=` and the
+other separators) is `maity`. Assignments, quotes, variables, escapes,
+shell operators and a `:` in the program (Claude Code's `prog:*` form)
+are refused when the configuration is read, and an adapter skips such a
+rule as well.
 `maity` stays the runner's own rule. Claude Code's `.git` write deny is
 one `Edit(…)` rule, which covers its file-editing tools; it does not
 check a `Write(…)` deny rule. That a call with something in front of

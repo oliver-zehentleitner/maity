@@ -875,8 +875,10 @@ by single spaces, with `*` allowed in an argument. Anything else is
 refused when the configuration is read: a variable assignment in front
 (`FOO=1 make`, `FOO+=1 make`), `env` under any path, quotes, `$`,
 backticks, backslashes and shell operators, a `:` in the program
-(Claude Code's `prog:*` form: write `prog *`), and `maity` as the program or an argument, whatever its path,
-case or Windows extension. `maity` is the runner's own rule.
+(Claude Code's `prog:*` form: write `prog *`), `maity` as the program,
+and `maity` as any part of an argument (between `/`, `:`, `=` and the
+other separators, so `C:/bin/maity.exe` and `--exec=maity` too), in any
+case or with a Windows extension. `maity` is the runner's own rule.
 
 `maity runner serve` is the service. It says `hello` to the hub (with what
 this runner advertises: harnesses and their versions, projects,

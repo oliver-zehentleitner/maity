@@ -211,7 +211,7 @@ def _positive(value: Any) -> str | None:
 # A command allowed by a repository's grant: a program, then plain arguments, nothing else.
 # The program is a name or a path, never an assignment (`NAME=…`, `NAME+=…`), quoted, `env`
 # or maity (which runs outside the harness's sandbox and is granted on its own), whatever
-# its path, case or Windows extension; no argument names maity either. No quotes,
+# its path, case or Windows extension; no part of an argument names maity either. No quotes,
 # variables, escapes or shell operators anywhere, and `*` only in an argument.
 _PROGRAM = re.compile(r"[A-Za-z0-9_./+-]+")
 _ARGUMENT = re.compile(r"[A-Za-z0-9_./=:@%+,*-]+")
@@ -237,9 +237,18 @@ def plain_command(rule: str) -> bool:
         return False
     if _program_name(words[0]) in _REFUSED_PROGRAMS:
         return False
-    return all(
-        _ARGUMENT.fullmatch(w) and _program_name(w.split(":", 1)[0]) != "maity" for w in words[1:]
-    )
+    return all(_ARGUMENT.fullmatch(w) and not _names_maity(w) for w in words[1:])
+
+
+# What can stand between the parts of an argument: path separators, a drive's or a rule's
+# colon, an option's `=`, list separators.
+_ARGUMENT_PARTS = re.compile(r"[/:=@%+,]")
+
+
+def _names_maity(argument: str) -> bool:
+    """Whether any part of `argument` is maity: `/tmp/a:b/maity`, `C:/bin/MAITY.EXE`,
+    `C:maity`, `--exec=maity`."""
+    return any(_program_name(part) == "maity" for part in _ARGUMENT_PARTS.split(argument))
 
 
 def _commands(values: Any) -> str | None:

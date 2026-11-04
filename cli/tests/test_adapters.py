@@ -53,7 +53,8 @@ def test_no_harness_gets_a_granted_rule_with_something_in_front(tmp_path: Path) 
     only the plain command reaches either harness's settings."""
     refused = ("FOO=1 make test", "FOO+=1 make test", "env make test",
                "/usr/bin/env FOO=1 make test", "make test; maity *", '"maity" *', "maity:*",
-               "maity.exe *")  # fmt: skip
+               "maity.exe *", "xargs /tmp/tools:local/maity",
+               "cmd /c C:/tools/maity.exe")  # fmt: skip
     plain = dataclasses.replace(context(tmp_path), grant=config.RepositoryGrant())
     ctx = dataclasses.replace(plain, grant=config.RepositoryGrant(allow=("make test", *refused)))
     claude = adapters.claude_settings(ctx)["permissions"]["allow"]
