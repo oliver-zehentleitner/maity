@@ -89,18 +89,19 @@ def run(
                 return _start(cmd, cwd, timeout, env)
             kept = {**clonecheck.kept_env(os.environ), **NO_PROMPT}
             return _start(cmd, cwd, timeout, {**kept, "GIT_ALLOW_PROTOCOL": allowed(transports),
-                                              **pinned})  # fmt: skip
+                                              **pinned.env}, pinned.git)  # fmt: skip
     except clonecheck.Refused as exc:
         raise ToolError(f"maity runs no git here: {exc}") from None
 
 
 def _start(
-    cmd: list[str], cwd: Path, timeout: float, env: dict[str, str]
+    cmd: list[str], cwd: Path, timeout: float, env: dict[str, str], path: str | None = None
 ) -> subprocess.CompletedProcess[str]:
+    """`path`: the program to start for `cmd[0]`, when the caller fixed it; else PATH's."""
     if os.name == "nt":
         # git and gh start programs of their own (ssh, credential helpers): not from cwd either.
         env["NoDefaultCurrentDirectoryInExePath"] = "1"
-    path = program(cmd[0])
+    path = path or program(cmd[0])
     if path is None:
         raise ToolError(f"{cmd[0]} is not installed")
     try:

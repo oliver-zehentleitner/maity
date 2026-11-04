@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -379,3 +381,5 @@ def test_launch_marks_the_clone_as_the_runners(tmp_path: Path, harness_id: str) 
     (ctx.clone / ".git").mkdir(parents=True)
     adapters.launch(ctx)
     assert (ctx.clone / ".git" / "maity" / "placement").read_text() == "plc-0003\n"
+    recorded = (ctx.clone / ".git" / "maity" / "git").read_text().strip()
+    assert recorded == shutil.which("git") and os.path.isabs(recorded)

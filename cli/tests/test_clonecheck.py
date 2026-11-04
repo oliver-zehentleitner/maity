@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,9 @@ import pytest
 from conftest import git
 
 from maity import clonecheck, gitfacts
+
+# Where the runner records its git (adapters.launch), spelled out: the tests say where.
+RECORDED_GIT = Path(".git", "maity", "git")
 
 
 @pytest.fixture
@@ -23,6 +27,7 @@ def placed(clone: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     git(clone, "config", "--remove-section", f"url.{remote}")
     git(clone, "remote", "set-url", "origin", str(remote))
     (clone / ".git" / "maity").mkdir(exist_ok=True)  # the runner makes it (adapters)
+    (clone / RECORDED_GIT).write_text(f"{shutil.which('git')}\n")  # and records git
     monkeypatch.setenv("MAITY_PLACEMENT", "plc-0003")
     monkeypatch.setenv("GIT_COMMON_DIR", str(clone / ".git"))
     return clone
@@ -199,9 +204,11 @@ def test_git_runs_on_a_repository_maity_writes_under_git_maity(
     seen: list[tuple[dict[str, str], str]] = []
     start = proc._start
 
-    def recording(cmd: list[str], cwd: Path, timeout: float, env: dict[str, str]) -> Any:
+    def recording(
+        cmd: list[str], cwd: Path, timeout: float, env: dict[str, str], path: str | None = None
+    ) -> Any:
         seen.append((env, (Path(env["GIT_DIR"]) / "config").read_text()))
-        return start(cmd, cwd, timeout, env)
+        return start(cmd, cwd, timeout, env, path)
 
     monkeypatch.setattr(proc, "_start", recording)
     git(placed, "config", "user.name", "Someone")
@@ -232,7 +239,7 @@ def test_status_writes_nothing_into_the_clone(placed: Path) -> None:
     assert gitfacts.collect(placed).dirty
     assert (index.read_bytes(), index.stat().st_mtime_ns) == before
     assert not (placed / ".git" / "index.lock").exists()
-    assert list((placed / ".git" / "maity").iterdir()) == []
+    assert list((placed / ".git" / "maity").iterdir()) == [placed / RECORDED_GIT]
 
 
 def test_the_state_directory_under_the_runner_is_the_clones(
@@ -334,6 +341,62 @@ def test_git_under_the_runner_reads_no_configuration_of_homes(
     assert "refs/heads/work" in listed.stdout
 
 
+def test_git_under_the_runner_is_the_one_it_recorded_not_paths(
+    placed: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A git first on the PATH of maity's command line is not the one maity starts."""
+    from maity import proc
+
+    marker = placed.parent / "ran"
+    bin_dir = tmp_path / "first-on-path"
+    bin_dir.mkdir()
+    wrapper = bin_dir / ("git.cmd" if sys.platform == "win32" else "git")
+    if sys.platform == "win32":
+        wrapper.write_text(f'@{_marking(marker)}\r\n@"{shutil.which("git")}" %*\r\n')
+    else:
+        wrapper.write_text(f'#!/bin/sh\n{_marking(marker)}\nexec "{shutil.which("git")}" "$@"\n')
+        wrapper.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    assert proc.program("git") == str(wrapper) or sys.platform == "win32"
+    assert proc.run([*proc.GIT, "rev-parse", "HEAD"], placed).returncode == 0
+    assert not marker.exists()
+
+
+def test_without_a_recorded_git_the_runners_clone_runs_none(placed: Path) -> None:
+    from maity import proc
+
+    (placed / RECORDED_GIT).unlink()
+    with pytest.raises(proc.ToolError, match="no git the runner recorded"):
+        proc.run([*proc.GIT, "rev-parse", "HEAD"], placed)
+
+
+@pytest.mark.parametrize("how", ["gitfile", "GIT_DIR", "GIT_COMMON_DIR"])
+def test_a_marked_clone_is_refused_from_outside_it_too(
+    placed: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, how: str
+) -> None:
+    """Without the session, a directory outside that leads git to the marked clone's .git
+    is refused like one inside it, the state lookup too."""
+    from maity import proc, state
+
+    ran = placed.parent / "ran"
+    (placed / ".git" / "maity" / "placement").write_text("plc-0003\n")  # as adapters.launch
+    git(placed, "config", "remote.origin.uploadpack", _marking(ran))  # the agent's own
+    monkeypatch.delenv("MAITY_PLACEMENT")
+    monkeypatch.delenv("GIT_COMMON_DIR")
+    monkeypatch.delenv("MAITY_STATE_DIR", raising=False)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    if how == "gitfile":
+        (outside / ".git").write_text(f"gitdir: {placed / '.git'}\n")
+    else:
+        monkeypatch.setenv(how, str(placed / ".git"))
+    with pytest.raises(proc.ToolError, match="the runner set up"):
+        proc.run([*proc.GIT, "ls-remote", "--heads", "--", "origin"], outside)
+    assert not ran.exists()
+    with pytest.raises(state.StateError, match="the runner set up"):
+        state.resolve_state_dir(outside)
+
+
 def test_a_clone_the_runner_marked_runs_no_git_without_the_session(
     placed: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -371,6 +434,47 @@ def test_one_wide_directory_is_not_listed_past_the_cap(
     assert len(clonecheck.Local().tree(wide)) == 21  # one more than the cap, to refuse
     with pytest.raises(gitfacts.FactsError, match="more than 20 entries"):
         gitfacts.collect(placed)
+
+
+@pytest.mark.parametrize("cone", ["--cone", "--no-cone"])
+def test_a_sparse_checkout_set_up_by_git_is_named_so(placed: Path, cone: str) -> None:
+    git(placed, "sparse-checkout", "set", cone, "x")
+    with pytest.raises(gitfacts.FactsError, match="Sparse checkout is not supported") as refused:
+        gitfacts.collect(placed)
+    assert "unset" not in str(refused.value)
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "feature"),
+    [
+        ("core.sparseCheckoutCone", "true", "Sparse checkout is"),
+        ("extensions.partialClone", "origin", "Partial clones are"),
+        ("extensions.objectFormat", "sha1", "Repository format extensions are"),
+        ("extensions.worktreeConfig", "true", "Worktrees are"),
+    ],
+)
+def test_each_unsupported_setting_is_named_for_its_feature(
+    placed: Path, key: str, value: str, feature: str
+) -> None:
+    git(placed, "config", key, value)
+    with pytest.raises(gitfacts.FactsError, match=f"{feature} not supported") as refused:
+        gitfacts.collect(placed)
+    assert "unset" not in str(refused.value)
+
+
+def test_the_copy_by_path_refuses_refs_that_are_a_link(placed: Path, tmp_path: Path) -> None:
+    elsewhere = tmp_path / "elsewhere"
+    shutil.copytree(placed / ".git" / "refs", elsewhere)
+    shutil.rmtree(placed / ".git" / "refs")
+    try:
+        (placed / ".git" / "refs").symlink_to(elsewhere, target_is_directory=True)
+    except OSError:
+        pytest.skip("no symlinks for this user")
+    copy = tmp_path / "copy"
+    copy.mkdir()
+    with pytest.raises(clonecheck.Refused, match="refs is not a directory"):
+        clonecheck._copy_refs_by_path(placed / ".git", copy)
+    assert not (copy / "refs").exists()
 
 
 @pytest.mark.parametrize(

@@ -1001,11 +1001,13 @@ variables for its own commands, but those stay in its sandbox. In a
 session, maity's own git runs only once the clone passes the plain-clone
 check `gc` uses, and on a repository maity writes for that run under
 `.git/maity`, so what git reads as configuration is maity's, not the
-clone's, with no system or global configuration; git gets a fixed
-environment, not maity's own. A clone the
+clone's, with no system or global configuration; git is the one the
+runner recorded, with a fixed environment, not maity's own. A clone the
 runner set up holds a marker in `.git/maity`; there maity runs no git
-without the session's variables. Submodules, Git LFS, worktrees and
-sparse checkout are not supported under the runner yet. The git of the
+without the session's variables, also from outside the clone when git
+would be led to it. Submodules, Git LFS, worktrees and
+sparse checkout, partial clones and other repository format extensions
+are not supported under the runner yet. The git of the
 harness, and of other programs run in the clone, is not protected by
 maity's checks. The cost:
 in a session, `git status` and `git diff` do not look into submodules,
@@ -1030,6 +1032,15 @@ needs it.
 | `single` | everything the runner's user can, minus the hidden paths above (Codex also every other clone); in Claude Code, every other clone but the credentials that existed at its start; the operator's forge login | run git as yourself in an agent's clone; put an unlisted secret in your home and expect it hidden |
 | `agent_user` | the agents' user's files: every agent of that user reads the others' clones, minus the same denies, which here are that user's home secrets, its `~/.maity-runner` (every agent's tmux socket, log and settings) and the other clones' credentials it can list; never the runner's state or your home | add `safe.directory = *` for the agents' clones to your git configuration |
 | `ssh` | the remote user's files on that host, minus that user's home secrets, its `~/.maity-runner` and the other clones' credentials listed on the host; never the runner host | run git as the remote user in an agent's clone |
+
+**Claude Code's sandbox and injected text.** maity runs outside Claude
+Code's sandbox, so under the runner that sandbox is no boundary against
+an agent acting on text written to mislead it: a command placed in front
+of a `maity` call can run outside the sandbox too. In the `single`
+layout it then runs as the operator's account, in `agent_user` as the
+agents' user's account. Run agents that read untrusted text (issues,
+pull requests, web pages) in the `agent_user` layout, which keeps your
+own account out of their reach.
 
 The runner itself runs git in a clone only to clone into a missing
 directory and in `gc`, with the pinned environment and the layout check
