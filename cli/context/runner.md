@@ -1372,7 +1372,7 @@ message says are no boundary.
 **Source:** CLI hardening task, the boundary and the clone root chosen by the coordinator, 2026-11-04
 **See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-04
 **See:** report.md#what-maity-hands-to-git-and-gh-is-checked-first-and-gits-transports-are-fixed — 4f4e8ada-9e3b-47bc-8a9e-d44daf025512 — as of 2026-11-04
-**Revisit when:** agents under the runner need a git configuration key a plain clone has not, the runner starts sessions without `GIT_COMMON_DIR` or `.git/maity`, someone needs submodules, Git LFS, worktrees or sparse checkout under the runner, a sandbox stops denying the agent `.git/maity`, maity's git under the runner needs to write, or clones under the runner get worktrees
+**Revisit when:** agents under the runner need a git configuration key a plain clone has not, the runner starts sessions without `GIT_COMMON_DIR` or `.git/maity`, someone needs submodules, Git LFS, worktrees or sparse checkout under the runner, or a maity command under the runner starts to show what git reads from the clone's objects to someone other than the agent, a sandbox stops denying the agent `.git/maity`, maity's git under the runner needs to write, or clones under the runner get worktrees
 
 In a session the runner started (`MAITY_PLACEMENT` set), every git
 maity itself starts first checks the clone the same way `gc` does
