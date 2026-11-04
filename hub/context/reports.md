@@ -30,7 +30,7 @@ and target type, never the content.
   because an anonymous registration must not trigger mail; a report is
   never anonymous.
 
-## The instance admin hears of a report through a personal request without a project, which only resolving closes
+## The instance admin hears of a report through a personal request without a project, which closes only when the report is resolved or expires
 
 **Id:** 2011e591-b7b0-4a95-8138-cffddd87155c
 **Type:** decision
