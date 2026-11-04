@@ -4318,6 +4318,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   feed = [chatEvent];
   await fireIntervals(); await tick();
   expect(main.querySelectorAll(".msg").length === 4 && text(main).includes("On it."), "a chat event in the feed shows the agent's reply");
+  // Each message says its seq after its time (tsk-0aadqqwe8jvt), the number alone as its text
+  // (the "#" is the stylesheet's, so a copy is the number), muted with the time in .meta.
+  const onIt = main.querySelectorAll(".msg").find((li) => li.attrs["data-seq"] === "9999");
+  const onItMeta = onIt && onIt.querySelector(".meta");
+  expect(onItMeta && onItMeta.querySelector(".msg-seq") && onItMeta.querySelector(".msg-seq").textContent === "9999"
+    && text(onItMeta).endsWith(text(onItMeta.querySelector(".when")) + " · 9999")
+    && /\.msg-seq::before \{ content: "#"; \}/.test(fs.readFileSync(path.join(WEB, "css/app.css"), "utf8")),
+    "chat: a message shows its seq after its time, the # drawn by the stylesheet " + (onItMeta && text(onItMeta)));
   expect(feedPaths[0] && /after=\d+&wait=0&limit=200$/.test(feedPaths[0]), "the feed reads from the head with wait=0");
   feed = [chatEvent];
   await fireIntervals(); await tick();
@@ -4346,6 +4354,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await fireIntervals(); await tick(); await tick();
   expect(msgReads.length === 1 && msgReads[0] === convPath + "?after=" + (thanks.seq - 1) + "&limit=200"
     && thanksLine().includes("reached a session"), "the agent's next event marks the message as picked up");
+  expect(thanksLine().includes(" · " + thanks.seq + " · reached a session"),
+    "chat: the delivery's update keeps the seq after the time, before the delivery " + thanksLine());
   feed = [{ seq: 10002, kind: "session_resumed", actor: { member_id: "agt-a" }, payload: {} }];
   await fireIntervals(); await tick(); await tick();
   expect(msgReads.length === 1, "nothing pending: no further re-read");
@@ -6781,6 +6791,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(gcNew > 0 && gcList().childNodes[gcNew + 1].attrs["data-seq"] === "5020" && !main.querySelector(".earlier button"),
     "group chat: the unread line before the first unread; no earlier part for someone there from the start");
   expect(text(gcList().querySelectorAll("li.msg")[1]).includes("Agent A") && !text(main).includes("not picked up yet"), "group chat: senders named, no delivery line (several recipients)");
+  expect(gcList().querySelectorAll("li.msg").every((li) => li.querySelector(".msg-seq") && li.querySelector(".msg-seq").textContent === li.attrs["data-seq"]),
+    "group chat: every message shows its seq after its time");
   // Writing, with mentions that reach only someone in the chat.
   byId("chat-text").value = "@agent-c look"; byId("chat-text").dispatch("input");
   expect(!main.querySelector(".group-chat .mention-hint").hidden && text(main.querySelector(".group-chat .mention-hint")) === "@agent-c is not in this chat: it reaches nobody.",
