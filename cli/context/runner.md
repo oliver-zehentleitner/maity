@@ -1362,3 +1362,44 @@ message says are no boundary.
 - Checking only that no other copy runs before removing a mark (as on
   `9ebbdcd1`): a copy that is not running now can be started later
   (review of #1294, dzse).
+
+## Under the runner, maity's own git runs only in the runner's clone, and only while it is plain
+
+**Id:** b4a8030d-3b24-4b76-81cc-a84b0ca84c11
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** CLI hardening task, the boundary and the clone root chosen by the coordinator, 2026-11-04
+**See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-04
+**See:** report.md#what-maity-hands-to-git-and-gh-is-checked-first-and-gits-transports-are-fixed — 4f4e8ada-9e3b-47bc-8a9e-d44daf025512 — as of 2026-11-04
+**Revisit when:** agents under the runner need a git configuration key a plain clone has not, the runner starts sessions without `GIT_COMMON_DIR`, or clones under the runner get worktrees
+
+In a session the runner started (`MAITY_PLACEMENT` set), every git
+maity starts first checks the clone the same way `gc` does
+(`clonecheck.not_inspectable`, moved out of `runner/operate.py` so both
+use one check): a `.git` made only of a plain clone's entries, a
+configuration made only of a plain clone's keys. The clone is the
+parent of `GIT_COMMON_DIR`, which the runner sets. Without it, or when
+it does not resolve, maity runs no git; it never falls back to the
+current directory. The current directory must lie inside that clone,
+and git is pinned to it (`GIT_DIR`, `GIT_WORK_TREE`,
+`GIT_CEILING_DIRECTORIES`), so a repository nested in the clone is not
+what git reads. Outside a placement nothing changes.
+
+**Reason:** under the runner, maity's git runs outside the agent's
+sandbox, in a clone whose configuration the agent writes. The pinned
+settings on maity's command line cover the settings known to matter;
+the plain-clone check covers what is not enumerated, as it already does
+for `gc`. Only the runner can say which clone is the agent's, and it
+says so through `GIT_COMMON_DIR`; the current directory could be any
+repository the agent made.
+
+**Rejected alternatives:**
+- The same check outside the runner: a person's own clone carries
+  aliases, `pull.rebase` and other keys a plain clone has not, and
+  `maity report` would refuse in ordinary use, where the person's own
+  git reads that configuration anyway.
+- The clone found from the current directory when `GIT_COMMON_DIR` is
+  missing: that is the directory the check cannot vouch for.
+- A copy of the check in the CLI beside the runner's: two lists of
+  allowed keys drift apart.

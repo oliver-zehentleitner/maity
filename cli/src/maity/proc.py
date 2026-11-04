@@ -79,6 +79,14 @@ def run(
     a caller's narrower `-c protocol.*` included, so such a caller passes its own list. A
     `GIT_ALLOW_PROTOCOL` the operator set narrows it further, never the other way round."""
     env = {**os.environ, **NO_PROMPT, "GIT_ALLOW_PROTOCOL": allowed(transports)}
+    if cmd[0] == "git":
+        from maity import clonecheck  # imports onboarding, which imports this module
+
+        try:
+            pinned = clonecheck.placement_git(cwd)
+        except clonecheck.Refused as exc:
+            raise ToolError(f"maity runs no git here: {exc}") from None
+        env.update(pinned or {})
     if os.name == "nt":
         # git and gh start programs of their own (ssh, credential helpers): not from cwd either.
         env["NoDefaultCurrentDirectoryInExePath"] = "1"
