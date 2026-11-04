@@ -997,7 +997,12 @@ real `.git` and do not run a program from a planted directory or
 submodule. `maity` runs its own git (`report`, `checkpoint`) with the
 same settings on the command line, whatever its environment, because
 for Claude Code it runs outside the sandbox. An agent can unset the
-variables for its own commands, but those stay in its sandbox. The cost:
+variables for its own commands, but those stay in its sandbox. In a
+session, maity's own git runs only once the clone passes the plain-clone
+check `gc` uses, and on a repository maity writes for that run under
+`.git/maity`, so what git reads as configuration is maity's, not the
+clone's. The git of the harness, and of other programs run in the clone,
+is not protected by maity's checks. The cost:
 in a session, `git status` and `git diff` do not look into submodules,
 and git in another repository needs `env -u GIT_COMMON_DIR git …`. A
 submodule moved to another commit does not show in `git status` or

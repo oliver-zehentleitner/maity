@@ -81,8 +81,8 @@ def resolve_state_dir(cwd: Path | None = None) -> Path:
         placed = clonecheck.placement_root()
     except clonecheck.Refused as exc:
         raise StateError(f"the runner's clone is unknown: {exc}") from None
-    if placed is not None:  # the runner's clone, without git: its check may refuse the clone
-        return placed / ".git" / "maity"
+    if placed is not None:  # without git: the check may refuse the clone, and git under the
+        return placed / ".git" / "maity"  # runner reads a repository of maity's own
     base = cwd or Path.cwd()
     try:
         result = proc.run([*proc.GIT, "rev-parse", "--git-common-dir"], base)

@@ -6,6 +6,7 @@ from __future__ import annotations
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 from conftest import git
@@ -20,6 +21,7 @@ def placed(clone: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     remote = clone.parent / "remote.git"
     git(clone, "config", "--remove-section", f"url.{remote}")
     git(clone, "remote", "set-url", "origin", str(remote))
+    (clone / ".git" / "maity").mkdir(exist_ok=True)  # the runner makes it (adapters)
     monkeypatch.setenv("MAITY_PLACEMENT", "plc-0003")
     monkeypatch.setenv("GIT_COMMON_DIR", str(clone / ".git"))
     return clone
@@ -33,7 +35,8 @@ def test_a_plain_clone_reads_as_before(placed: Path) -> None:
 
 def test_without_a_placement_nothing_is_checked(clone: Path) -> None:
     git(clone, "config", "core.pager", "cat")
-    assert clonecheck.placement_git(clone) is None
+    with clonecheck.placement_git(clone) as pinned:
+        assert pinned is None
     assert gitfacts.collect(clone).branch == "work"
 
 
@@ -157,3 +160,89 @@ def test_the_runner_and_maity_read_a_clone_the_same_way(placed: Path) -> None:
     git(placed, "config", "alias.st", "status")
     assert operate.not_inspectable(placed) == clonecheck.not_inspectable(placed)
     assert "alias.st" in (clonecheck.not_inspectable(placed) or "")
+
+
+def test_a_configuration_changed_after_the_check_is_not_what_git_reads(
+    placed: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The clone's configuration rewritten between maity's check and git's run, as an agent
+    working in parallel could: that run reads only what maity checked (the next is refused)."""
+    from maity import proc
+
+    marker = placed.parent / "ran"
+    read = clonecheck.Local.read
+    rewritten: list[bool] = []
+
+    def then_rewrite(self: clonecheck.Local, path: Path, offset: int = 0) -> bytes:
+        data = read(self, path, offset)
+        if path.name == "config" and not rewritten:  # once the check has its copy
+            rewritten.append(True)
+            with path.open("a") as config:
+                config.write(f'[remote "origin"]\n\tuploadpack = {_quoted(_marking(marker))}\n')
+        return data
+
+    monkeypatch.setattr(clonecheck.Local, "read", then_rewrite)
+    listed = proc.run([*proc.GIT, "ls-remote", "--heads", "--", "origin", "work"], placed)
+    assert not marker.exists()
+    assert listed.returncode == 0, listed.stderr
+    assert "refs/heads/work" in listed.stdout
+    with pytest.raises(proc.ToolError, match="uploadpack"):
+        proc.run([*proc.GIT, "rev-parse", "HEAD"], placed)
+
+
+def test_git_runs_on_a_repository_maity_writes_under_git_maity(
+    placed: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maity import proc
+
+    seen: list[tuple[dict[str, str], str]] = []
+    start = proc._start
+
+    def recording(cmd: list[str], cwd: Path, timeout: float, env: dict[str, str]) -> Any:
+        seen.append((env, (Path(env["GIT_DIR"]) / "config").read_text()))
+        return start(cmd, cwd, timeout, env)
+
+    monkeypatch.setattr(proc, "_start", recording)
+    git(placed, "config", "user.name", "Someone")
+    gitfacts.collect(placed)
+    assert seen
+    for env, config in seen:
+        private = Path(env["GIT_DIR"])
+        assert private.parent == placed / ".git" / "maity"  # where the sandbox denies writes
+        assert not private.exists()  # removed after the run
+        assert config == "[core]\n\trepositoryformatversion = 0\n\tbare = false\n"
+        keys = {env[k] for k in env if k.startswith("GIT_CONFIG_KEY_")}
+        assert {"remote.origin.url", "branch.work.merge", "user.name"} <= keys
+        assert env["GIT_OBJECT_DIRECTORY"] == str(placed / ".git" / "objects")
+
+
+def test_a_link_under_refs_is_refused_not_followed(placed: Path, tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.write_text("0" * 40 + "\n")
+    (placed / ".git" / "refs" / "heads" / "elsewhere").symlink_to(outside)
+    with pytest.raises(gitfacts.FactsError, match="symlink|cannot be copied"):
+        gitfacts.collect(placed)
+
+
+def test_status_writes_nothing_into_the_clone(placed: Path) -> None:
+    index = placed / ".git" / "index"
+    (placed / "a.txt").write_text("two\n")  # changed: a status with locks would refresh
+    before = (index.read_bytes(), index.stat().st_mtime_ns)
+    assert gitfacts.collect(placed).dirty
+    assert (index.read_bytes(), index.stat().st_mtime_ns) == before
+    assert not (placed / ".git" / "index.lock").exists()
+    assert list((placed / ".git" / "maity").iterdir()) == []
+
+
+def test_the_state_directory_under_the_runner_is_the_clones(
+    placed: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maity import proc, state
+
+    monkeypatch.delenv(state.STATE_DIR_ENV, raising=False)
+
+    def no_git(*_: Any, **__: Any) -> Any:
+        raise AssertionError("no git for the state directory under the runner")
+
+    monkeypatch.setattr(proc, "run", no_git)
+    assert state.resolve_state_dir(placed / "sub") == placed / ".git" / "maity"

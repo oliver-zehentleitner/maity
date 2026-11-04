@@ -1372,7 +1372,7 @@ message says are no boundary.
 **Source:** CLI hardening task, the boundary and the clone root chosen by the coordinator, 2026-11-04
 **See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-04
 **See:** report.md#what-maity-hands-to-git-and-gh-is-checked-first-and-gits-transports-are-fixed — 4f4e8ada-9e3b-47bc-8a9e-d44daf025512 — as of 2026-11-04
-**Revisit when:** agents under the runner need a git configuration key a plain clone has not, the runner starts sessions without `GIT_COMMON_DIR`, or clones under the runner get worktrees
+**Revisit when:** agents under the runner need a git configuration key a plain clone has not, the runner starts sessions without `GIT_COMMON_DIR` or `.git/maity`, a sandbox stops denying the agent `.git/maity`, maity's git under the runner needs to write, or clones under the runner get worktrees
 
 In a session the runner started (`MAITY_PLACEMENT` set), every git
 maity starts first checks the clone the same way `gc` does
@@ -1384,10 +1384,19 @@ no other configuration), checked by section, subsection and key, so a
 remote or branch name may hold a dot. The clone is the
 parent of `GIT_COMMON_DIR`, which the runner sets. Without it, or when
 it does not resolve, maity runs no git; it never falls back to the
-current directory. The current directory must lie inside that clone,
-and git is pinned to it (`GIT_DIR`, `GIT_WORK_TREE`,
-`GIT_CEILING_DIRECTORIES`), so a repository nested in the clone is not
-what git reads. Outside a placement nothing changes.
+current directory. The current directory must lie inside that clone.
+git then does not read the clone's `.git` for its configuration, HEAD or
+refs: each run gets a repository maity writes under `.git/maity` (the
+clone's directory the sandbox denies the agent), with a configuration of
+maity's own. The clone's entries the check accepted reach git through
+`GIT_CONFIG_*`, from the same reading the check made; HEAD and the refs
+are copied as regular files only. Objects, the index and the work tree
+are the clone's (`GIT_OBJECT_DIRECTORY`, `GIT_INDEX_FILE`,
+`GIT_WORK_TREE`, `GIT_CEILING_DIRECTORIES`), and `GIT_OPTIONAL_LOCKS=0`
+keeps `status` from writing into the clone. The directory is removed
+after the run. The state directory under the runner is the clone's
+`.git/maity`, taken from `GIT_COMMON_DIR`, not from git. Outside a
+placement nothing changes.
 
 **Reason:** under the runner, maity's git runs outside the agent's
 sandbox, in a clone whose configuration the agent writes. The pinned
@@ -1395,9 +1404,19 @@ settings on maity's command line cover the settings known to matter;
 the plain-clone check covers what is not enumerated, as it already does
 for `gc`. Only the runner can say which clone is the agent's, and it
 says so through `GIT_COMMON_DIR`; the current directory could be any
-repository the agent made.
+repository the agent made. The agent works in the clone while maity
+runs, so a check followed by git reading the clone's own configuration
+leaves a window in which that configuration changes; git reading only
+what maity wrote closes it. maity's own git under the runner only
+reads, so every call can run that way.
 
 **Rejected alternatives:**
+- Checking the clone, then pinning git to its own `.git`: the
+  configuration can change between the check and git's read of it.
+- The private repository in a temporary directory: the sandboxed agent
+  may be able to write there, and the window would move with it.
+- Copying the checked configuration file into the private repository:
+  the file maity copies is again one the agent wrote.
 - maity's own reading of the configuration's lines: git reads a header
   and a key on one line, where a line-by-line reading sees one key, so
   the check and git disagreed on what the file sets.

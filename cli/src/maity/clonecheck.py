@@ -10,10 +10,14 @@ the runner started (`MAITY_PLACEMENT`), where the clone is the one the runner ma
 
 from __future__ import annotations
 
+import contextlib
 import os
+import shutil
 import stat
 import subprocess
+import sys
 import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Protocol
 
@@ -90,33 +94,46 @@ LOCAL = Local()
 
 def not_inspectable(path: Path, files: Files = LOCAL) -> str | None:
     """Why git must not run in this clone, or None."""
+    return _inspect(path, files)[0]
+
+
+def _inspect(path: Path, files: Files) -> tuple[str | None, list[tuple[str, str | None]]]:
+    """Why git must not run in this clone (or None), and the configuration's entries as git
+    reads them: the ones that reason was decided on, read once."""
     dot_git = path / ".git"
     if files.exists(dot_git, "-L") or not files.exists(dot_git, "-d"):
-        return "its .git is not a plain directory"
+        return "its .git is not a plain directory", []
     try:
         reason = _not_a_plain_git_dir(files.tree(dot_git))
         if reason is not None:
-            return reason
+            return reason, []
         data = files.read(dot_git / "config")
     except OSError:
-        return "its .git/config cannot be read"
-    names = config_names(data)
-    if names is None:
-        return "its .git/config cannot be parsed"
-    for name in names:
+        return "its .git/config cannot be read", []
+    entries = config_entries(data)
+    if entries is None:
+        return "its .git/config cannot be parsed", []
+    for name, _ in entries:
         section, _, rest = name.partition(".")
         subsection, _, key = rest.rpartition(".")
         if key not in GIT_ALLOWED.get(("named" if subsection else None, section), ()):
             # A section may be named by a URL (`[url "https://tok@…"]`): shown without a token.
-            return f"its .git/config sets {onboarding.inline(without_userinfo(name))}"
-    return None
+            return f"its .git/config sets {onboarding.inline(without_userinfo(name))}", []
+    return None, entries
 
 
 def config_names(data: bytes) -> list[str] | None:
-    """The names of the entries in `data`, a git configuration, as git itself reads them, or
-    None when git cannot. Parsed by git, not by maity: git's own reading is the one that
-    counts (a header and a key can share a line). Read from stdin with includes off, outside
-    any repository, with no system or global configuration, so nothing but `data` is read."""
+    """The names of the entries in `data`, a git configuration, as git reads them, or None."""
+    entries = config_entries(data)
+    return None if entries is None else [name for name, _ in entries]
+
+
+def config_entries(data: bytes) -> list[tuple[str, str | None]] | None:
+    """The entries in `data`, a git configuration, as git itself reads them: (name, value),
+    the value None for a key without one; None when git cannot read it. Parsed by git, not
+    by maity: git's own reading is the one that counts (a header and a key can share a
+    line). Read from stdin with includes off, outside any repository, with no system or
+    global configuration, so nothing but `data` is read."""
     with tempfile.TemporaryDirectory() as empty:
         env = {
             "PATH": os.environ.get("PATH", ""),
@@ -147,8 +164,11 @@ def config_names(data: bytes) -> list[str] | None:
     if done.returncode != 0:
         return None
     # Each entry: the name, then a newline and the value unless it has none, then NUL.
-    entries = done.stdout.decode("utf-8", "replace").split("\0")[:-1]
-    return [entry.split("\n", 1)[0] for entry in entries]
+    found: list[tuple[str, str | None]] = []
+    for entry in done.stdout.decode("utf-8", "replace").split("\0")[:-1]:
+        name, newline, value = entry.partition("\n")
+        found.append((name, value if newline else None))
+    return found
 
 
 def _not_a_plain_git_dir(entries: list[tuple[str, str, int]]) -> str | None:
@@ -199,25 +219,123 @@ def _within(path: Path, directory: Path) -> bool:
     return path == directory or directory in path.parents
 
 
-def placement_git(cwd: Path) -> dict[str, str] | None:
-    """In a session the runner started: the environment that pins git to the runner's clone,
-    after checking that clone and that `cwd` lies in it. None outside such a session."""
+# The configuration keys maity passes on to git from the clone's own, under the runner: what
+# report and the checks read (remotes, upstreams, who commits) and how the work tree is read.
+# The repository's layout (`core.bare`, the format) is maity's, never the clone's.
+PASSED_ON = frozenset({"filemode", "ignorecase", "precomposeunicode", "logallrefupdates"})
+# A loose ref or HEAD is one line; more than this many refs is not a clone maity copies.
+REF_MAX = 4096
+REFS_MAX = 20_000
+PACKED_REFS_MAX = 32 * 1024 * 1024
+NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)  # POSIX; placements are POSIX only
+
+
+@contextlib.contextmanager
+def placement_git(cwd: Path) -> Iterator[dict[str, str] | None]:
+    """In a session the runner started: the environment for one git run on the runner's
+    clone, after checking that clone and that `cwd` lies in it; None outside such a session.
+
+    git does not read the clone's `.git` for its configuration, HEAD or refs: it reads a
+    repository maity writes for this run under `.git/maity`, the clone's directory the
+    sandbox keeps the agent from writing. Its configuration is maity's own, with the
+    clone's entries maity checked passed on through the environment, so a configuration
+    changed after the check is never read. Objects, the index and the work tree are the
+    clone's: data git reads, nothing it runs. The directory is removed after the run."""
     root = placement_root()
     if root is None:
-        return None
+        yield None
+        return
     try:
         here = cwd.resolve(strict=True)
     except (OSError, RuntimeError) as exc:
         raise Refused(f"the working directory cannot be resolved ({exc})") from None
     if not _within(here, root):
         raise Refused(f"{onboarding.inline(str(here))} is outside the clone {root}")
-    reason = not_inspectable(root)
+    reason, entries = _inspect(root, LOCAL)
     if reason is not None:
         raise Refused(f"the clone {root} is not a plain clone: {reason}")
-    dot_git = str(root / ".git")
-    return {
-        "GIT_DIR": dot_git,
-        "GIT_COMMON_DIR": dot_git,
-        "GIT_WORK_TREE": str(root),
-        "GIT_CEILING_DIRECTORIES": str(root.parent),
-    }
+    dot_git = root / ".git"
+    own = dot_git / "maity"
+    if own.is_symlink() or not own.is_dir():
+        raise Refused(f"the clone {root} has no .git/maity directory of maity's own")
+    private = Path(tempfile.mkdtemp(prefix="git-", dir=own))
+    try:
+        _copy_refs(dot_git, private)
+        (private / "config").write_text("[core]\n\trepositoryformatversion = 0\n\tbare = false\n")
+        yield {
+            "GIT_DIR": str(private),
+            "GIT_COMMON_DIR": str(private),
+            "GIT_OBJECT_DIRECTORY": str(dot_git / "objects"),
+            "GIT_INDEX_FILE": str(dot_git / "index"),
+            "GIT_WORK_TREE": str(root),
+            "GIT_CEILING_DIRECTORIES": str(root.parent),
+            "GIT_OPTIONAL_LOCKS": "0",  # `status` writes no refreshed index into the clone
+            **_passed_on(entries),
+        }
+    finally:
+        shutil.rmtree(private, ignore_errors=True)
+
+
+def _passed_on(entries: list[tuple[str, str | None]]) -> dict[str, str]:
+    """The checked entries git should see, as `GIT_CONFIG_*` after the ones the environment
+    already carries (the runner pins some there)."""
+    kept = [
+        (name, "true" if value is None else value)
+        for name, value in entries
+        if not name.startswith("core.") or name.removeprefix("core.") in PASSED_ON
+    ]
+    try:
+        start = int(os.environ.get("GIT_CONFIG_COUNT", "0"))
+    except ValueError:
+        raise Refused("GIT_CONFIG_COUNT in the environment is not a number") from None
+    env = {"GIT_CONFIG_COUNT": str(start + len(kept))}
+    for i, (name, value) in enumerate(kept, start):
+        env[f"GIT_CONFIG_KEY_{i}"] = name
+        env[f"GIT_CONFIG_VALUE_{i}"] = value
+    return env
+
+
+def _read_regular(name: str, dir_fd: int, limit: int) -> bytes:
+    """A regular file in the directory `dir_fd`, never a link, at most `limit` bytes."""
+    fd = os.open(name, os.O_RDONLY | NOFOLLOW, dir_fd=dir_fd)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise Refused(f".git/{onboarding.inline(name)} is not a regular file")
+        data = os.read(fd, limit + 1)
+    finally:
+        os.close(fd)
+    if len(data) > limit:
+        raise Refused(f".git/{onboarding.inline(name)} is larger than maity copies")
+    return data
+
+
+def _copy_refs(dot_git: Path, private: Path) -> None:
+    """HEAD, `packed-refs`, `shallow` and `refs/` of the clone into `private`, as regular
+    files only: a link, or anything else, is refused rather than followed. Read through
+    the directory `.git` was when opened, so a `.git` replaced meanwhile is not read."""
+    if sys.platform == "win32":  # the runner places agents on POSIX hosts only
+        raise Refused("maity's git under the runner needs a POSIX host")
+    try:
+        top = os.open(dot_git, os.O_RDONLY | os.O_NOFOLLOW | os.O_DIRECTORY)
+    except OSError as exc:
+        raise Refused(f"the clone's .git cannot be opened as a directory ({exc})") from None
+    try:
+        (private / "HEAD").write_bytes(_read_regular("HEAD", top, REF_MAX))
+        for name in ("packed-refs", "shallow"):
+            if name in os.listdir(top):
+                (private / name).write_bytes(_read_regular(name, top, PACKED_REFS_MAX))
+        if not stat.S_ISDIR(os.stat("refs", dir_fd=top, follow_symlinks=False).st_mode):
+            raise Refused("the clone's .git/refs is not a directory")
+        count = 0
+        for here, _, files, fd in os.fwalk("refs", dir_fd=top, follow_symlinks=False):
+            where = private / here
+            where.mkdir(exist_ok=True)
+            for name in files:  # a link, to a directory too, is listed here and refused
+                count += 1
+                if count > REFS_MAX:
+                    raise Refused(f"the clone has more than {REFS_MAX} loose refs")
+                (where / name).write_bytes(_read_regular(name, fd, REF_MAX))
+    except OSError as exc:
+        raise Refused(f"the clone's refs cannot be copied ({exc})") from None
+    finally:
+        os.close(top)
