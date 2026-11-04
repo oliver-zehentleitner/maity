@@ -1085,8 +1085,9 @@ an eighteenth of the 90 minutes, so a hang shows where it waits early in the run
   it for the queue, and the stack is what the search for a hang needs. `faulthandler_timeout` is part of pytest.
 - `faulthandler_exit_on_timeout` as well (built into the pinned pytest, no new dependency): the worker exits after the
   dump, `pytest-xdist` reports "worker crashed while running <test>" as failed, which names the test even when a fixture
-  hangs, and the hung test shows as failed in the log after 5 minutes. The job does not end sooner: `pytest-xdist`
-  replaces the crashed worker and the run goes on, so the job goes red only when the rest of the suite is done. Not
+  hangs; after 5 minutes the log shows an F and the worker going down; the summary at the end of the run names the test.
+  The job does not end sooner: `pytest-xdist` replaces the crashed worker and the run goes on, so the job goes red only
+  when the rest of the suite is done. Not
   taken: a slow but finite test past 300 s would then fail, and the value was chosen as a print threshold, not as a
   limit a green test must stay under. (The author's own reading, not the card's words: the card says only "Kostet
   nichts, solange nichts hängt", and a setting that fails a slow green test costs something.)
