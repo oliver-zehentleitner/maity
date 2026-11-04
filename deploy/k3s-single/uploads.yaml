@@ -3,7 +3,7 @@
 # and refuses a larger one itself. Past 1 MiB it keeps the body on disk, not in
 # memory. Only this route: buffering holds back the response too, and the
 # event long-poll's answer must reach the client unbuffered (docs/api.md §8).
-# Replace maity.example.org with your host name (both occurrences).
+# Replace maity.example.org with your host name (in the match rule).
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata: {name: upload-buffer, namespace: maity}

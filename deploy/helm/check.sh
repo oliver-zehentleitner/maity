@@ -77,12 +77,22 @@ expect "ingress: TLS host, defaults merged with the operator's annotation, diges
     "@sha256:0000000000000000000000000000000000000000000000000000000000000000" \
     "name: MAITY_FORGE_GITHUB_TOKEN" 'value: "10.244.0.0/16"' \
     "name: MAITY_FORGE_INSTANCE_NAMESPACES" 'value: "maity-org"'
-# The default body size for ingress-nginx lets the largest upload the hub takes through.
-size="$(sed -n 's/^ *nginx.ingress.kubernetes.io\/proxy-body-size: "\{0,1\}\([0-9]*\)m"\{0,1\}$/\1/p' <<<"$out")"
+# The default body size for ingress-nginx lets the largest upload the hub takes through. Its
+# value is bytes, or k, m or g (any case); 0 means no limit.
+size="$(sed -n 's/^ *nginx.ingress.kubernetes.io\/proxy-body-size: "\{0,1\}\([0-9]*[kKmMgG]\{0,1\}\)"\{0,1\}$/\1/p' <<<"$out")"
 cap="$(sed -n 's/^ATTACHMENT_CAP = \([0-9]*\) \* 1024 \* 1024$/\1/p' "$chart/../../../hub/src/maity_hub/middleware.py")"
-[ -n "$size" ] && [ -n "$cap" ] && [ "$size" -gt "$cap" ] \
-    && ok "ingress: proxy-body-size ${size}m above the hub's attachment cap of ${cap} MiB" \
-    || bad "ingress: proxy-body-size '${size}m' not above the hub's attachment cap '${cap}' MiB"
+bytes=""
+case "$size" in
+    *[kK]) bytes=$(( ${size%?} * 1024 )) ;;
+    *[mM]) bytes=$(( ${size%?} * 1024 * 1024 )) ;;
+    *[gG]) bytes=$(( ${size%?} * 1024 * 1024 * 1024 )) ;;
+    [0-9]*) bytes="$size" ;;
+esac
+if [ -n "$bytes" ] && [ -n "$cap" ] && { [ "$bytes" -eq 0 ] || [ "$bytes" -gt $(( cap * 1024 * 1024 )) ]; }; then
+    ok "ingress: proxy-body-size $size above the hub's attachment cap of ${cap} MiB"
+else
+    bad "ingress: proxy-body-size '$size' not above the hub's attachment cap '${cap}' MiB"
+fi
 grep -q "helm.sh/hook: pre-install" <<<"$out" && bad "ingress: migrate Job with migrate.enabled false" \
     || ok "ingress: no migrate Job when disabled"
 expect "ingress: the attachment volume, its mount, the directory and the quota" "$out" \

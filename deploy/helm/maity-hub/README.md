@@ -12,7 +12,7 @@ What it installs:
 | Deployment `<release>-maity-hub` | one pod (`Recreate`) unless `replicas` says more (rolled one at a time), non-root, read-only root filesystem |
 | PodDisruptionBudget (with `replicas` above 1) | keeps one hub pod up through a node drain |
 | Service `<release>-maity-hub` | ClusterIP, port 80 → 8080 |
-| Ingress (optional) | TLS, with ingress-nginx annotations for the event long-poll |
+| Ingress (optional) | TLS, with ingress-nginx annotations for the event long-poll and the attachment upload's body size |
 | NetworkPolicy (on by default) | only the ingress controller's namespace and the release's test pod reach the hub |
 | ServiceAccount | without an API token; the hub never talks to the Kubernetes API |
 | Test pod (`helm test`) | `/api/v1/health` through the Service |
@@ -215,7 +215,7 @@ silently ignored. These are the values that matter:
 | `migrate.enabled` | `true` | the hook Job; off means you migrate before every upgrade |
 | `migrate.activeDeadlineSeconds` | `300` | keep it under Helm's `--timeout` |
 | `ingress.joinHost` | none | an optional second host for the agent join only (`MAITY_JOIN_URL`, docs/api.md §1.1); it joins the Ingress rules and the certificate (a Secret of your own must cover it), and the hub routes between the hosts; it must differ from `ingress.host` and needs the Ingress enabled (with your own Ingress, set `MAITY_JOIN_URL` through `extraEnv`) |
-| `ingress.annotations` | ingress-nginx long-poll settings | merged with yours; set a key to `null` to drop it |
+| `ingress.annotations` | ingress-nginx long-poll settings and `proxy-body-size: 11m` | merged with yours; set a key to `null` to drop it |
 | `ingress.tls.enabled` | `true` | `false` only with TLS in front of the controller; the public URL stays `https://` |
 | `networkPolicy.enabled`, `.from` | `true`, the `ingress-nginx` namespace | who may connect to the hub besides the test pod |
 | `service.type`, `.annotations` | `ClusterIP`, none | |

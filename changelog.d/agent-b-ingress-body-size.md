@@ -2,7 +2,8 @@
 
 - deploy: the chart's default ingress-nginx annotations set `proxy-body-size`
   to `11m`, so attachment uploads up to the hub's 10 MiB pass the ingress;
-  `deploy/helm/check.sh` checks that the value stays above the hub's cap.
+  `deploy/helm/check.sh` checks that the value (bytes, or k, m or g; 0 for no
+  limit) stays above the hub's cap.
 
 ### Added
 

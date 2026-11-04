@@ -102,11 +102,12 @@ loop answers, which a TCP check would not.
 The chart's Ingress is a plain `networking.k8s.io/v1` object that any
 controller serves through `ingress.className`. Its default annotations
 carry the long-poll settings for ingress-nginx: 75 s read and send
-timeouts, buffering off. They merge with the operator's annotations and can
+timeouts, buffering off; and, since a later change (5eb8e035, this file),
+the body size an attachment upload needs. They merge with the operator's annotations and can
 each be set to null. The chart README says that upstream ingress-nginx has
 been retired since March 2026, with no further releases or security fixes,
 and that a new cluster should use a maintained controller with its own
-equivalents of the three settings.
+equivalents of these settings.
 
 **Reason:** the hub needs only what every Ingress controller offers, plus
 two properties of the long-poll: at least 55 s per request, and an
@@ -364,15 +365,17 @@ The chart's default annotations gain
 
 **Reason:** the hub takes a 10 MiB attachment (§8.7), but ingress-nginx
 refuses a body over 1 MiB by default, so an upload between the two caps
-fails at the ingress. 11 MiB leaves room above the hub's cap, so that the
-hub, not the ingress, refuses an oversize file with its own
-`payload_too_large`. The hub caps every other body itself, at 1 MiB at
+fails at the ingress. 11 MiB leaves room above the hub's cap: a file just
+over it, up to 11 MiB, gets the hub's own `payload_too_large`, and a larger
+one the ingress's own 413. The hub caps every other body itself, at 1 MiB at
 most: 64 KiB by default, 512 KiB for the landing, legal and sign-in pages'
 settings and their previews, 1 MiB for an image upload (logo, banner,
 avatar) and for a forge webhook delivery. A host-wide limit therefore needs
-no finer split. On Traefik the buffered
-route takes the whole body before the hub sees it, and keeps it on disk past
-1 MiB.
+no finer split. Traefik has no body limit by default, so on k3s an upload
+would pass without the route too. The route is there to bound the upload at
+the edge as ingress-nginx's value does, and to have Traefik take the whole
+body, on disk past 1 MiB, before it passes the request on: a slow upload
+then waits at Traefik, and reaches the hub whole and at once.
 
 **Rejected alternatives:**
 - **One buffering middleware for the whole host on Traefik:** Traefik's

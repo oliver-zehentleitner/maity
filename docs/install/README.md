@@ -318,7 +318,8 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
      `sed 's/@TS@/<the time stamp of the dump>/' deploy/k3s-single/restore-attachments.yaml | kubectl apply -f -`, wait for the Job, delete it.
   4. Scale the hub back to 1.
 - **Upgrades** are `helm upgrade` with the new digest. The chart's hook
-  migrates first ([Upgrades](#upgrades)).
+  migrates first ([Upgrades](#upgrades)). An installation set up before
+  `uploads.yaml` existed applies it once, with its host name, like step 5.
 - **PostgreSQL:** a new minor version of 17 is an image bump. A new
   major version needs a dump and a restore.
 
