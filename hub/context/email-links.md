@@ -80,8 +80,8 @@ The answers carry `default-src 'none'; style-src 'self' '<hash of the fallback s
 font-src 'self'; img-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`
 and `Referrer-Policy: no-referrer`. There is no script and no `'unsafe-inline'`. The header's
 mark is inlined without its `style` attributes, which the landing and legal pages allow with
-`'unsafe-inline'` (landing.md, 7c22ec9b); `public-pages.css` colours it, as on the dashboard's
-framed pages (`web/js/site-chrome.js`). So the only inline style is the legal pages' old
+`'unsafe-inline'` (landing.md, 7c22ec9b and dde46a41); `public-pages.css` colours it, as on
+the dashboard's framed pages (`web/js/site-chrome.js`). So the only inline style is the legal pages' old
 `STYLE`, drawn when the landing stylesheets are missing, and the policy allows exactly that
 block by its hash; a browser logs no violation.
 
