@@ -2303,6 +2303,8 @@ window.MAITY_I18N["es"] = {
   "members.col.presence": "Presencia",
   "members.col.role": "Nivel de confianza y rol",
   "members.consent.owner": "la persona propietaria",
+  "members.consent.partly": "Guardado: {fields}. El resto aún sin cambiar: a la espera del consentimiento de {who} ({id}).",
+  "members.consent.partly_titled": "Guardado: {fields}. El resto aún sin cambiar: a la espera del consentimiento de {who} ({id}, {title}).",
   "members.consent.waiting": "Aún sin cambiar: a la espera del consentimiento de {who} ({id}).",
   "members.consent.waiting_titled": "Aún sin cambiar: a la espera del consentimiento de {who} ({id}, {title}).",
   "members.credentials": "Credenciales",

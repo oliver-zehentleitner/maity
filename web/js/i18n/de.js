@@ -2424,6 +2424,8 @@ window.MAITY_I18N["de"] = {
   "members.col.presence": "Präsenz",
   "members.col.role": "Vertrauensstufe und Rolle",
   "members.consent.owner": "dem Besitzer",
+  "members.consent.partly": "Gespeichert: {fields}. Der Rest ist noch nicht geändert: wartet auf die Zustimmung von {who} ({id}).",
+  "members.consent.partly_titled": "Gespeichert: {fields}. Der Rest ist noch nicht geändert: wartet auf die Zustimmung von {who} ({id}, {title}).",
   "members.consent.waiting": "Noch nicht geändert: wartet auf die Zustimmung von {who} ({id}).",
   "members.consent.waiting_titled": "Noch nicht geändert: wartet auf die Zustimmung von {who} ({id}, {title}).",
   "members.credentials": "Zugangsdaten",

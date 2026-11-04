@@ -2433,6 +2433,8 @@ window.MAITY_I18N["ko"] = {
   "members.col.presence": "접속 상태",
   "members.col.role": "신뢰 수준과 역할",
   "members.consent.owner": "소유자",
+  "members.consent.partly": "저장됨: {fields}. 나머지는 아직 변경되지 않음: {who}의 동의를 기다리는 중 ({id}).",
+  "members.consent.partly_titled": "저장됨: {fields}. 나머지는 아직 변경되지 않음: {who}의 동의를 기다리는 중 ({id}, {title}).",
   "members.consent.waiting": "아직 변경되지 않음: {who}의 동의를 기다리는 중 ({id}).",
   "members.consent.waiting_titled": "아직 변경되지 않음: {who}의 동의를 기다리는 중 ({id}, {title}).",
   "members.credentials": "자격 증명",

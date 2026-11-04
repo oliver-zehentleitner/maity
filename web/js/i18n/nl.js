@@ -2303,6 +2303,8 @@ window.MAITY_I18N["nl"] = {
   "members.col.presence": "Aanwezigheid",
   "members.col.role": "Vertrouwensniveau en rol",
   "members.consent.owner": "de eigenaar",
+  "members.consent.partly": "Opgeslagen: {fields}. De rest is nog niet gewijzigd: wacht op de toestemming van {who} ({id}).",
+  "members.consent.partly_titled": "Opgeslagen: {fields}. De rest is nog niet gewijzigd: wacht op de toestemming van {who} ({id}, {title}).",
   "members.consent.waiting": "Nog niet gewijzigd: wacht op de toestemming van {who} ({id}).",
   "members.consent.waiting_titled": "Nog niet gewijzigd: wacht op de toestemming van {who} ({id}, {title}).",
   "members.credentials": "Toegangsgegevens",

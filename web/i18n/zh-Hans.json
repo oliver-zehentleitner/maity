@@ -2420,6 +2420,8 @@
   "members.col.presence": "在线状态",
   "members.col.role": "信任级别和角色",
   "members.consent.owner": "所有者",
+  "members.consent.partly": "已保存：{fields}。其余尚未更改：正在等待 {who} 的同意（{id}）。",
+  "members.consent.partly_titled": "已保存：{fields}。其余尚未更改：正在等待 {who} 的同意（{id}，{title}）。",
   "members.consent.waiting": "尚未更改：正在等待 {who} 的同意（{id}）。",
   "members.consent.waiting_titled": "尚未更改：正在等待 {who} 的同意（{id}，{title}）。",
   "members.credentials": "凭据",
