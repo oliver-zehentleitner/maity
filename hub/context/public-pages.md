@@ -51,11 +51,12 @@ Each kind of page (a person, a project and its views, an agent, an organisation)
 pages of one target and which targets exist (`public_pages.Kind`). The write paths that change an input call
 `public_pages.touch(conn, kind, target_id)` in their own transaction. `touch` renders the target again at once
 when the change takes anything off a page (`removal`, the default) under either mode, and under `on_change`
-every change does; under `interval` a new entry or a count (`removal=False`) waits for the next run. A
+every change does; under `interval` a new entry or a count (`removal=False`) waits for the next run. Where
+and when that render runs, and the time limits on it, are entry deafb243 below. A
 render that finds the inputs' digest unchanged leaves the row alone, so the ETag and the sitemap's `lastmod`
 move with the inputs and not with the safety net. A render that fails takes the target's pages off (in a
-savepoint, so the writer's own transaction goes on) instead of leaving a stale page. At start the hub clears
-every page and renders all again before it serves any; a worker repeats `render_all` every
+savepoint, so the writer's own transaction goes on) instead of leaving a stale page. At start the hub renders
+all again before it serves any (within a budget, deafb243); a worker repeats `render_all` every
 `MAITY_PUBLIC_PAGES_INTERVAL_HOURS`. The settings `touch` reads are set once at startup
 (`public_pages.configure`), because the write paths do not carry them. The sitemap lists the stored rows
 with their `lastmod` and becomes an index with `/sitemap-<n>.xml` parts above 50,000 URLs or 50 MB;
@@ -74,6 +75,44 @@ can give; a registry keeps each kind's rendering next to its inputs and gives th
   twenty places.
 - Touching with the settings passed through every call: the writers (a profile, a card, a membership) have
   no reason to know the hub's settings.
+
+## A touched page is taken off in the writer's transaction and rendered after its commit; one render and a start have time limits
+
+**Id:** deafb243-f385-4108-8de4-81fc8f9a7872
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-qzvb0c0abm3a (hardening asked for by the maintainer, 2026-11-04; the maintainer's yes to rendering outside the write transaction and to "page off" at a start the same day); the lead's answers on the card's plan (2026-11-04: dependents off with the target, 30 s and 2 s as settings, the contract sentence in the same change); `docs/api.md` §16.9; `public_pages.touch`, `_render_after_commit`, `refresh`, `render_all`, `startup`, `Worker._run`; `events.scratch`, `events.on_commit`
+**See:** public-pages.md#a-page-is-rendered-again-in-the-transaction-that-changed-its-input-by-a-registry-of-kinds — b7a13a49-7c56-49d6-bc18-4622b21d0077 — as of 2026-11-04
+**See:** public-pages.md#a-card-event-renders-only-the-projects-own-page-and-only-when-it-may-take-a-ticker-item-off — 721bcdfa-9464-4b57-b885-a1455f5adbb8 — as of 2026-11-04
+**Revisit when:** a writer needs its page rendered before its answer returns, a render needs the writer's uncommitted state, or one target's render legitimately takes longer than `MAITY_PUBLIC_PAGES_RENDER_SECONDS`
+
+Inside an `events.transaction`, `touch` no longer renders. A change that takes anything off a page deletes the
+pages of the target and of its dependents in the writer's transaction, so nothing removed is served for a
+moment, and every touched target is queued in the transaction's `events.scratch`, each once. After the commit,
+`events.on_commit` renders each in a transaction of its own, in the same request, so the page is back when the
+answer arrives. A write that rolls back renders nothing, and its deletions roll back with it. A `touch` from a
+plain `engine.begin()` (no `on_commit` there) renders in that transaction as before. `refresh` treats a render of
+one target that takes longer than `MAITY_PUBLIC_PAGES_RENDER_SECONDS` (default 2) as a failed one: logged, the
+pages deleted. A starting process renders for at most `MAITY_PUBLIC_PAGES_STARTUP_SECONDS` (default 30); the
+pages of the targets not reached by then are deleted, and its worker renders them first, before its prepared
+kinds.
+
+**Reason:** CPython holds the interpreter lock while a render runs, and a render inside the writer's transaction
+also held what that transaction holds: the project row, and on SQLite the database's one write lock, so every
+other write waited for it. A start that renders every page before it serves can outlast its startup probe, and
+a process killed there starts again in the same state. Deleting in the transaction keeps what §16.9 asks of a
+removal; only the render, which shows the state after the change, moves after the commit.
+
+**Rejected alternatives:**
+- A queue rendered by the worker thread: the answer would come before the page, and every test and client that
+  reads the page after a write would have to wait for it.
+- Rendering after the commit without deleting first (721bcdfa's rejected form): a removal would stay on the
+  page until the render, and a failed render would leave it there.
+- Deleting only the target's own pages on a removal, not its dependents: a removed name would stay on a card
+  page until that page is rendered again.
+- Stopping a render that runs too long: a running render cannot be interrupted from another thread; the limit
+  can only judge it once it ends.
 
 ## A person's page exists by their choice, and `touch` is called wherever that can change
 
@@ -738,7 +777,9 @@ write to the project waited behind it. Single-server setups are affected the sam
 - Dropping the at-once render and leaving every card change to the snapshot worker: a removal from a public page
   never waits for a timer (`docs/api.md` §16.9), and a hold or an imported `security` card still needs it.
 - Rendering after the commit, outside the lock: the removal belongs to the transaction that changed the input
-  (b7a13a49), and a second transaction after the commit could fail and leave the page stale.
+  (b7a13a49), and a second transaction after the commit could fail and leave the page stale. Taken up since in
+  a form that answers both (deafb243): the removal still deletes the pages in the writer's transaction, and
+  only the render follows the commit.
 
 The member events take the same path with one filter (tsk-2k10yf9w7kzw): a `member_updated` whose `changed`
 fields are all in `events.UNSHOWN_MEMBER_FIELDS` renders nothing. These are the language (one event per project of
