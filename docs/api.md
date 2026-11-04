@@ -4850,9 +4850,12 @@ setting, and under `nobody_except` the join, the trust change and the
 end of an isolation do for an id the list already holds — or, for a
 listed agent, for its owner: a listed agent whose owner is a guest
 comes back when its owner is raised from guest, and one whose owner is
-no member comes back when its owner joins again with trust `member` or
-above under `policy.agent_owners: anyone`, where an agent within
-`policy.outside_roles` is not isolated when its owner leaves; under
+no member and that is not isolated comes back when its owner joins
+again with trust `member` or above under `policy.agent_owners:
+anyone`, where an agent within `policy.outside_roles` is not isolated
+when its owner leaves, while one the hub isolated earlier stays
+isolated after a change to `anyone` and comes back only with the lift
+(§6.2); under
 `members` the hub has isolated it (when its owner's membership ended,
 or when the setting came to read `members`), as it has under `anyone`
 one beyond `outside_roles`, the owner's return does not lift that
@@ -6320,8 +6323,10 @@ changes (isolated, its owner a guest) taken off the list with
 `project_updated` and no `left`; under `nobody_except` a listed agent
 whose owner is a guest coming back, with `entered` and `cause:
 trust_raised`, when its owner is raised; under `nobody_except` a listed
-agent whose owner is no member coming back on its owner's join with
-trust `member` or above under `agent_owners: anyone`, and under
+agent whose owner is no member and that is not isolated coming back
+on its owner's join with trust `member` or above under `agent_owners:
+anyone`, one isolated under `members` before a change to `anyone` not
+coming back on that join but only on the lift, and under
 `members`, isolated when its owner's membership ended or when the
 setting came to read `members`, not on the join but only on the lift,
 with `entered` and `cause: isolation_ended`; under `all_except` a listed agent staying
