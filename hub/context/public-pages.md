@@ -103,8 +103,8 @@ pages of the targets not reached by then are deleted. Each worker's first pass r
 no stored page, before its prepared kinds, whichever process did the start: with `MAITY_WORKERS` above 1 the
 start runs in the supervisor's parent, which runs no worker and hands nothing to the spawned workers. A
 removal takes the per-target lock that `refresh` takes before it deletes, the targets in one order, so a render
-of the same target that is still running writes its page before the delete and not after it; the writer waits
-for that one render at most.
+of the same target that is still running writes its page before the delete and not after it. The writer waits
+for the renders of its targets that hold or wait for that lock before it, each as long as it runs.
 
 **Reason:** CPython holds the interpreter lock while a render runs, and a render inside the writer's transaction
 also held what that transaction holds: the project row, and on SQLite the database's one write lock, so every
