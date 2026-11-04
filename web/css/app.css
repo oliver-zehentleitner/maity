@@ -187,8 +187,8 @@ button {
   cursor: pointer;
 }
 
-button:hover:not(:disabled) { border-color: var(--accent); }
-button:disabled { opacity: 0.55; cursor: default; }
+button:hover:not(:disabled):not([aria-disabled="true"]) { border-color: var(--accent); }
+button:disabled, button[aria-disabled="true"] { opacity: 0.55; cursor: default; }
 button.danger { color: var(--bad); }
 
 select, textarea, input {

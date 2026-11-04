@@ -33,6 +33,8 @@ def test_the_defaults_and_where_they_come_from(admin: flow.Human) -> None:
         "humans_at_limit": 0,
         "max_orgs_per_human": {"value": 5, "source": "default"},
         "humans_at_org_limit": 0,
+        "max_projects_per_owner": {"value": 10, "source": "default"},
+        "owners_at_project_limit": 0,
     }
 
 

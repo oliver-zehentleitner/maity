@@ -1197,7 +1197,13 @@ def answer(
         outcome = "go" if body.reply_id == "go" else "no"
         placements.settle(conn, row, outcome, caller.actor(mine.id), mine.principal_id)
         proposals.settle(
-            conn, row, outcome, mine.principal_id, caller.actor(mine.id), reply_id=body.reply_id
+            conn,
+            row,
+            outcome,
+            mine.principal_id,
+            caller.actor(mine.id),
+            reply_id=body.reply_id,
+            hub=settings_of(request),
         )
         # An `adopt` of a jour fixe proposal opens its card (§20.6).
         jour_fixe_triage.settle(
@@ -2229,7 +2235,13 @@ def answer_personal(
         actor = caller.actor(member.id) if member is not None else None
         outcome = "go" if body.reply_id == "go" else "no"
         proposals.settle(
-            conn, _row(conn, row.id), outcome, caller.human_id, actor, reply_id=body.reply_id
+            conn,
+            _row(conn, row.id),
+            outcome,
+            caller.human_id,
+            actor,
+            reply_id=body.reply_id,
+            hub=settings_of(request),
         )
         closed = _row(conn, row.id)
         records.personal_request(conn, closed)

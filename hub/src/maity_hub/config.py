@@ -134,10 +134,12 @@ class Settings:
     # MAITY_SIGN_IN_SECOND_FACTOR: off, optional or required_admins (§2.8.5); None
     # leaves it to the instance admin.
     sign_in_second_factor: str | None = None
-    # MAITY_MAX_AGENTS_PER_HUMAN, MAITY_MAX_ORGS_PER_HUMAN (§16.5): a number from 1 to 10000 or
-    # `unlimited`; None where the environment leaves the value to the instance admin.
+    # MAITY_MAX_AGENTS_PER_HUMAN, MAITY_MAX_ORGS_PER_HUMAN, MAITY_MAX_PROJECTS_PER_OWNER (§16.5):
+    # a number from 1 to 10000 or `unlimited`; None where the environment leaves the value to
+    # the instance admin.
     max_agents_per_human: int | str | None = None
     max_orgs_per_human: int | str | None = None
+    max_projects_per_owner: int | str | None = None
     # MAITY_PUBLIC_PAGES (`on`/`off`, §16.9): whether the hub serves public pages at all;
     # MAITY_PUBLIC_PAGES_RENDER (`on_change`/`interval`) and MAITY_PUBLIC_PAGES_INTERVAL_HOURS
     # (1–24) say when a page is rendered again.
@@ -241,6 +243,7 @@ class Settings:
             ),
             max_agents_per_human=parse_limit(env, "MAITY_MAX_AGENTS_PER_HUMAN"),
             max_orgs_per_human=parse_limit(env, "MAITY_MAX_ORGS_PER_HUMAN"),
+            max_projects_per_owner=parse_limit(env, "MAITY_MAX_PROJECTS_PER_OWNER"),
         )
 
 
