@@ -355,7 +355,7 @@ CHANGED = "what the digest shows changed; a new one follows when something is ne
 
 def _digest_requests(owner_id: str) -> Any:
     """The owner's digest requests: personal, filed by the hub, with neither project nor
-    organisation, which no other request is."""
+    organisation nor report. A report's request (§16.8) has the same shape otherwise."""
     r = t.request.c
     return select(t.request).where(
         r.to_human == owner_id,
@@ -363,6 +363,7 @@ def _digest_requests(owner_id: str) -> Any:
         r.filed_by == "hub",
         r.project_id.is_(None),
         r.org_id.is_(None),
+        r.report_id.is_(None),
     )
 
 
@@ -577,6 +578,7 @@ def run(
                     r.filed_by == "hub",
                     r.project_id.is_(None),
                     r.org_id.is_(None),
+                    r.report_id.is_(None),
                 )
                 .distinct()
             ).scalars()
