@@ -902,7 +902,7 @@ SQLite, the later arrival still takes over.
 **Status:** active
 **Evidence:** inferred
 **Source:** card tsk-hnp19jx1ajvx; the maintainer's rule for the scaling cards (2026-11-03): the single-server hub (one process, SQLite, local attachments) stays the default and keeps working, every scaling path is opt-in; `serving.py`, `cli._serve_workers`, `tests/test_workers.py`; uvicorn 0.54 `supervisors.multiprocess`; for the minimum share, card tsk-zm2z04ep2cma: checkouts of the serving pool counted per HTTP request on PostgreSQL across ten test files (383 tests, 4605 checkouts inside requests), peak one per request; the one nested checkout was the deliberate second writer of `test_of_two_concurrent_redactions_the_first_stands`, which showed the count sees one
-**Revisit when:** uvicorn's `Multiprocess` changes how it builds a worker's `Server`, the load test shows that more workers per pod buy less than more pods, or a request path takes a second connection from the serving pool while it holds one (a pool share of one would then wait on itself until the pool's timeout)
+**Revisit when:** uvicorn's `Multiprocess` changes how it builds a worker's `Server`, the load test shows that more workers per pod buy less than more pods, or a request path takes a second connection from the serving pool while it holds one (a pool share of one would then wait on itself until the pool's timeout), or card tsk-p80cre8r9355 maps the pool timeout (the known consequence below then reads differently)
 
 `MAITY_WORKERS` (chart: `config.workers`) sets how many processes `maity-hub serve` runs on one
 socket. The default is 1, and 1 is the hub as it always was: one process, no supervisor, any
@@ -920,9 +920,14 @@ only about processes.
   while a shared count or the forge budget took a second connection from the same pool (entry
   2bd65fec), so that a process with one waited on itself until the pool's timeout. Since #1320
   they have their own engine, and a measurement on PostgreSQL (card tsk-zm2z04ep2cma) found no
-  request that holds two serving connections at once, so one is enough to be correct and more
-  is throughput, the operator's choice. The shared-counter connections (two per process), the
-  listener connections (one per process) and the readiness probe's come on top.
+  request in the request handlers of the measured test files that held two serving connections
+  at once, so one is enough to be correct and more is throughput, the operator's choice. The
+  shared-counter connections (two per process), the listener connections (one per process) and
+  the readiness probe's come on top. A known consequence of a share of one: the background
+  passes take from the same pool, so a request that finds the share in use waits SQLAlchemy's
+  pool timeout (30 s) and then answers 500 `internal`, since `sqlalchemy.exc.TimeoutError` is
+  not mapped to 503. The gap predates the minimum of one, which only makes it reachable with a
+  single held connection; mapping it is its own card (tsk-p80cre8r9355).
 - **The checks and the one-time work of a start run in the parent** before any worker is
   spawned: the startup checks (schema, secrets, mail, reserved holders, a required dashboard
   directory), then `app.start_once` (the generated text, the public pages, the sign-in

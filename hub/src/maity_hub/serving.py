@@ -54,10 +54,11 @@ def refusal(settings: Settings) -> str | None:
     return None
 
 
-# The minimum share of the pool per process: one connection. No request holds two of the
-# serving pool at once (measured on PostgreSQL, tsk-zm2z04ep2cma), so one is enough to be
-# correct; more is throughput, the operator's choice. It cannot be 0: SQLAlchemy reads
-# `pool_size=0` as no limit (hub/context/replicas.md, entry 4e24abd8).
+# The minimum share of the pool per process: one connection. In the request handlers of the
+# measured test files no request held two of the serving pool at once (PostgreSQL,
+# tsk-zm2z04ep2cma), so one is enough to be correct; more is throughput, the operator's choice.
+# Background passes take from the same pool, so with one they wait for it. It cannot be 0:
+# SQLAlchemy reads `pool_size=0` as no limit (hub/context/replicas.md, entry 4e24abd8).
 MIN_POOL_PER_WORKER = 1
 
 

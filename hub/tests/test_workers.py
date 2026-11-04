@@ -77,11 +77,14 @@ def test_each_worker_holds_its_share_of_the_pool() -> None:
 def test_workers_whose_share_of_the_pool_would_be_zero_are_refused(
     workers: int, pool: int, refused: bool
 ) -> None:
-    """The minimum share of one (tsk-zm2z04ep2cma): no request holds two serving connections at
-    once, and a share of 0 would be SQLAlchemy's `pool_size=0`, no limit at all."""
+    """The minimum share of one (tsk-zm2z04ep2cma): no measured request held two serving
+    connections at once, and a share of 0 would be SQLAlchemy's `pool_size=0`, no limit at all."""
     settings = replace(_settings(), workers=workers, db_pool_size=pool)
-    reason = serving.refusal(settings) or ""
-    assert (f"needs MAITY_DB_POOL_SIZE of at least {workers}" in reason) is refused
+    reason = serving.refusal(settings)
+    if refused:
+        assert reason is not None and f"needs MAITY_DB_POOL_SIZE of at least {workers}" in reason
+    else:
+        assert reason is None
 
 
 def test_a_worker_that_cannot_build_its_app_stops_the_supervisor(
