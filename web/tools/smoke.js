@@ -2037,6 +2037,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   ktwSpeed.removeAttribute("title"); kh.sweep(ktwControls);
   expect(ktwRange.getAttribute("aria-label") === "the page's later name" && ktwSpeed.getAttribute("aria-label") === undefined,
     "why: a name the page sets after the host's is kept on a later title; the host's name goes with its title");
+  const ktwCleared = document.createElement("select"); ktwCleared.setAttribute("title", "first");
+  const ktwClearBox = document.createElement("div"); ktwClearBox.appendChild(ktwCleared); kh.sweep(ktwClearBox);
+  ktwCleared.removeAttribute("aria-label"); kh.sweep(ktwClearBox);
+  ktwCleared.setAttribute("title", "second"); kh.sweep(ktwClearBox);
+  expect(ktwCleared.getAttribute("aria-label") === "second",
+    "why: a name the page removed is the host's again from the title, and a later title still refreshes it");
   await go("#/maintainer/maity/why/timeline"); for (let k = 0; k < 6; k++) await tick();
   const ktwPlaySpeed = main.querySelector('[class="ktw-play-speed"]');
   expect(ktwPlaySpeed && ktwPlaySpeed.getAttribute("aria-label") === "how fast the days pass",

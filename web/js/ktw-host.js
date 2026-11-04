@@ -122,7 +122,8 @@ window.Maity = window.Maity || {};
   // is named by it for assistive technology too: a title alone is no label (WCAG 4.1.2).
   // `labels` covers both a `for` and a wrapping label, with no selector built from an id.
   // A name the host set is marked with the title it copied, so a later title (observed below)
-  // refreshes it; once the name differs from that mark, the page has set its own and keeps it.
+  // refreshes it; once the name differs from that mark, the page has set its own and keeps it
+  // (a page's name equal to the host's cannot be told from it and is refreshed as the host's).
   const CONTROLS = { INPUT: true, SELECT: true, TEXTAREA: true };
   const OWN = "data-ktw-title-label";
   function name(node) {
@@ -138,7 +139,7 @@ window.Maity = window.Maity || {};
       return;
     }
     if (node.getAttribute("aria-label") !== title) node.setAttribute("aria-label", title);
-    if (mark !== title) node.setAttribute(OWN, title);
+    if (node.getAttribute(OWN) !== title) node.setAttribute(OWN, title);
   }
   function sweep(node) {
     const href = node.getAttribute ? node.getAttribute("href") : null;
