@@ -1,0 +1,3 @@
+### Changed
+
+- hub: a merge also closes cards on `blocked` (docs/api.md §6.6). A card blocked from `review` (a request open while its report waits) now counts as in review: when the probe sees the report's pull request merged, `task_merged` is emitted at once, and `merged_closes: auto` under `done_authority` `holder` or `admin` closes the card, which ends the block (the request stays open; its answer restores nothing). The done authority may close such a card with a status-only `PATCH {status: "done"}` (`blocked→done`) once the merge is observed; before that, and under `reviewer_and_tester`, it stays `invalid_transition`. A card blocked from `in_progress` still remembers the merge until it returns to `review`.

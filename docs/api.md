@@ -5615,7 +5615,10 @@ Each signature names the `report.revision` it signs (§6.6). `status`:
 Allowed transitions through `PATCH {status}`: `proposed→open`,
 `open→proposed`, `open→cancelled`, `in_progress→open` (only via
 `release`), `review→in_progress` (rework, by done authority),
-`review→done` (done authority), `in_progress→done` (holder when
+`review→done` (done authority), `blocked→done` (done authority, for a
+card blocked from `review` whose report's pull request the probe has
+observed merged, §6.6; not under `reviewer_and_tester`, whose two
+signatures need `review`), `in_progress→done` (holder when
 `done_authority: holder`), any non-closed → `cancelled` by `tasks:admin`.
 Under `done_authority: reviewer_and_tester`, `review→done` from a holder
 of `tasks:review` fills `approvals.review`, from a holder of
@@ -5647,7 +5650,7 @@ not `done` or `cancelled`, for every kind and every caller.
 | `GET /projects/{owner}/{slug}/tasks` | `project:read` | filters `status` (comma list, or `all`), `kind`, `label`, `needs`, `holder`, `assigned_to`, `area`, `parent` (a card id: that card's children), `q` (text search, below), `closed_after` (RFC 3339: closed cards are included only when `closed_at` is later; open cards always); ordered by status in the board's column order, then within a status by the card order below; closed cards by `closed_at` desc, then `id`; `order=updated` keeps the old `updated_at` desc order; paged. The board asks for `limit=200`, `closed_after` at its window and follows `next_cursor`; a `depends_on` or `parent` id outside the window is shown as an id |
 | `POST /projects/{owner}/{slug}/tasks` | `tasks:write` | `{title, body?, kind?, label?, needs?, area?, status?: proposed\|open, assigned_to?, depends_on?, ships_with?, parent?, related?, ktw_ref?, release?, contract?, links?, reason?}`; `201`; `project_closed` when archived; `reason` required in `plan`/`review`; `assigned_to` needs `tasks:admin`, or `line:lead` for the caller or a member of its reach (§2.3, "The manager") |
 | `GET /projects/{owner}/{slug}/tasks/{id}` | `project:read` | |
-| `PATCH /projects/{owner}/{slug}/tasks/{id}` | holder, creator or `tasks:admin`; `assigned_to` alone also `line:lead` within its reach (§2.3); a status-only change `review→done` or `review→in_progress` also by whoever holds done authority under the policy (`tasks:review` for `reviewer`, `tasks:test` for `tester`, either for `reviewer_and_tester`) | `title`, `body`, `label`, `needs`, `area`, `status`, `depends_on`, `ships_with`, `parent`, `related`, `ktw_ref`, `assigned_to` (admin; `line:lead` within its reach, §2.3), `release.pull_requests_typed`, `release.checklist` (§6.7), `contract` (§6.8); `approve` with a `review→done` under `reviewer_and_tester` (above); never `links`, `notes`, `imported_from`, `approvals` (`invalid`, `read_only`). Every change is recorded in the card's history (§6.15) |
+| `PATCH /projects/{owner}/{slug}/tasks/{id}` | holder, creator or `tasks:admin`; `assigned_to` alone also `line:lead` within its reach (§2.3); a status-only change `review→done`, `review→in_progress` or a merged `blocked→done` (§6.6) also by whoever holds done authority under the policy (`tasks:review` for `reviewer`, `tasks:test` for `tester`, either for `reviewer_and_tester`) | `title`, `body`, `label`, `needs`, `area`, `status`, `depends_on`, `ships_with`, `parent`, `related`, `ktw_ref`, `assigned_to` (admin; `line:lead` within its reach, §2.3), `release.pull_requests_typed`, `release.checklist` (§6.7), `contract` (§6.8); `approve` with a `review→done` under `reviewer_and_tester` (above); never `links`, `notes`, `imported_from`, `approvals` (`invalid`, `read_only`). Every change is recorded in the card's history (§6.15) |
 | `POST /projects/{owner}/{slug}/tasks/import` | `tasks:write` | `{issue_url, …}`: a new card from a forge issue (§6.14) |
 | `GET /projects/{owner}/{slug}/tasks/{id}/history` | `project:read` | who changed which field when, before and after (§6.15); `POST …/history/{history_id}/redact` with `events:admin` (humans) |
 | `POST`, `DELETE` `/projects/{owner}/{slug}/tasks/{id}/links…` | `tasks:write` / adder, holder, creator, `tasks:admin` | references to forge issues, pull requests and URLs (§6.13) |
@@ -6093,7 +6096,9 @@ the card's `approvals` stay. Every replacement clears `approvals`
   unverified.
 - **A merge closes the loop.** When the probe first observes the
   report's pull request `merged` (`observed.pr_state`) with `mismatch`
-  false, on a card in `review`, the hub emits `task_merged` (§8.2) once
+  false, on a card in `review` or `blocked` from `review` (a request
+  open while the report waits: the report is still what waits), the
+  hub emits `task_merged` (§8.2) once
   per report: `{task, pr, merge_sha, done_authority}`. It wakes the
   members who may move the card to `done` (§6.4, `done_authority`): the
   holder under `holder`, `role:reviewer` under `reviewer`,
@@ -6112,10 +6117,16 @@ the card's `approvals` stay. Every replacement clears `approvals`
   entry; its record is `task_merged` with `closed: true` and the
   `task_updated` event with `fields: ["status"]` that every status
   change emits (§6.15), so the dashboard and the statistics count it
-  like any other move to `done`. When a condition fails the card stays in
-  `review` and `task_merged` says `closed: false` with `blocked_by`
+  like any other move to `done`. Closing a `blocked` card ends the
+  block (`blocked_by_request` and the remembered status are cleared);
+  the request stays open, and its answer restores nothing, because the
+  card is no longer blocked (§7). Under `notify` the done authority
+  closes such a card with a status-only `PATCH {status: "done"}` — a
+  `blocked→done` allowed only once the merge is observed (`409`
+  `invalid_transition` before). When a condition fails the card stays
+  where it is and `task_merged` says `closed: false` with `blocked_by`
   (`dependencies`, `objection`). A merge first observed while the card
-  is not in `review` (`blocked` while a request is open, say) is
+  is neither (`in_progress` after a rework, or `blocked` from there) is
   remembered with the report it was observed on; when the card returns
   to `review` the hub emits `task_merged` then, once, and only if that
   report is still the card's current one with `mismatch` false — a new
