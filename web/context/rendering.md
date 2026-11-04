@@ -1133,16 +1133,19 @@ Each case is settled once:
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the card tsk-6bn80bppb5e5 (a request with a long code line and long card links pushed the inbox of all projects past the window, every collapsed row with it); web/css/app.css `.entries`, `.entries-box`, `.card-note-list`, `.md`; the e2e step `wide_lines_step`; the lead's approval of the plan, 2026-11-04
+**Source:** the card tsk-6bn80bppb5e5 (a request with a long code line and long card links pushed the inbox of all projects past the window, every collapsed row with it); web/css/app.css `.entries`, `.entries-box`, `.card-note-list`, `.card-family`, `.md`, `.card-links li`; the e2e step `wide_lines_step`; the lead's approval of the plan, 2026-11-04
 **Revisit when:** a list of written text is laid out as something other than a grid, or a Markdown code block wraps its lines instead of scrolling
 
 The inbox's lists (`.entries`, `.entries-box`) and the card panel's
-lists (`.card-note-list`, `.card-history-list`, `.card-links`) set
+lists and grids (`.card-note-list`, `.card-history-list`, `.card-links`,
+`.card-family`, `.card-family-form`) set
 `grid-template-columns: minmax(0, 1fr)`. A code block in a request or a
 note keeps its lines and scrolls inside itself (`.md-code`,
 `overflow-x: auto`), the text around it wraps, long links too
-(`overflow-wrap: anywhere` on every written text, `.md`; a code block
-is `pre` and keeps its lines), and the row is as wide as its list.
+(`overflow-wrap: anywhere` on every written text, `.md`, and on a
+card's links, `.card-links li`, where a link without a label shows its
+URL; a code block is `pre` and keeps its lines), and the row is as wide
+as its list.
 
 **Reason:** a grid without columns of its own gives its rows one implicit
 `auto` column, and a grid item's minimum width is its content's: the
@@ -1153,7 +1156,9 @@ card panel the same note made the whole panel scroll sideways, not its
 code block; the note's long links did too, since written text had no
 `overflow-wrap` of its own outside the inbox's rows. In the project's
 messages, with no panel around them, those links made the page 579 px
-wide in a 390 px window. A column of
+wide in a 390 px window. A card link of 300 characters made the card
+panel 2154 px wide inside its 510, and a long title in the family's
+select 394 inside 364 on a phone. A column of
 `minmax(0, 1fr)` gives the rows the list's width, whatever they hold. The
 chat was not affected: its messages already have `min-width: 0`.
 

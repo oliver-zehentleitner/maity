@@ -1164,8 +1164,9 @@ def scenario(run: Run, page: Page) -> None:
 def wide_lines_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
     """A long unbroken line keeps the page inside the window (tsk-6bn80bppb5e5): a request with a
     600-character code line and long card links, open in the inbox of all projects above a collapsed
-    one, a card note and a project message with the same text. The code scrolls in its own block, the
-    links wrap, every row keeps the page's width; desktop and phone, light and dark."""
+    one, a card note and a project message with the same text, and a card link of 300 characters. The
+    code scrolls in its own block, the links wrap, every row keeps the page's width; desktop and phone,
+    light and dark."""
     run.step("a long line in a request and in a card note stays inside the window")
     line = ("for f in $(git ls-files 'web/i18n/*.json'); do " + "python3 -m json.tool \"$f\" >/dev/null && " * 20)[:600]
     links = " ".join(f"{run.base}/owner/e2e-alpha/tasks/{card_id}?from={'x' * 60}{i}" for i in range(4))
@@ -1176,6 +1177,9 @@ def wide_lines_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
     ]
     run.maity(alpha, "note", "add", card_id, text)
     run.maity(alpha, "say", "all", text, "--type", "notice")
+    # A link without a label shows its URL: 300 characters with no place to break.
+    long_url = f"https://github.com/owner/e2e-alpha/blob/main/{'x' * 254}"
+    link = run.api(alpha, "POST", f"/projects/owner/e2e-alpha/tasks/{card_id}/links", {"kind": "url", "url": long_url})
 
     def inside(where: str) -> None:
         sw, iw = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
@@ -1208,6 +1212,7 @@ def wide_lines_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
             page.goto(f"{run.base}/owner/e2e-alpha/tasks/{card_id}")
             note = page.locator("aside.card-panel .card-note-list li").filter(has_text="Run this first").first
             expect(note.locator(".md-code")).to_be_visible()
+            expect(page.locator(f"aside.card-panel .card-links a[href='{long_url}']")).to_be_visible()
             inside(f"the card's notes at {where}")
             right = note.evaluate("(n) => n.querySelector('.md-code').getBoundingClientRect().right")
             assert right <= width, f"the card's notes at {where}: the code block ends at {right} px"
@@ -1229,6 +1234,7 @@ def wide_lines_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
     finally:
         page.set_viewport_size({"width": 1280, "height": 900})
         page.emulate_media(color_scheme="light")
+        run.api(alpha, "DELETE", f"/projects/owner/e2e-alpha/tasks/{card_id}/links/{link['id']}")
     for request_id in asked:
         page.goto(f"{run.base}/owner/e2e-alpha/inbox/{request_id}")
         current = page.locator("li.entry.current")
