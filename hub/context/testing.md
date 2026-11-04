@@ -170,3 +170,29 @@ Which reasons are confirmed and which inferred: the hang, its cause and the seco
 weakness are confirmed (reproduced in review, stacks from CI, counter-checks in
 `test_test_database.py`); the weighing of the first and third alternatives is the author's
 reasoning, not measured.
+
+## `NOT_ROUTED` lists one entry per line, sorted, its reason on the line
+
+**Id:** 3b8a32d7-5bde-4c3a-abcb-49bd22750c7f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-6jwjdwftq6cm (option 1, lotse's go, 2026-11-04); implementation session, 2026-11-04 (merge reproduction in scratch repositories)
+**Revisit when:** `NOT_ROUTED` moves out of `hub/tests/test_contract_routes.py`, or the contract index is checked another way
+
+`NOT_ROUTED` in `hub/tests/test_contract_routes.py` holds one `(method, path)` per line, sorted
+by method and then path, each with its reason as a comment on the same line (the card that brings
+the route, where there is one). An entry is added at its sorted place and removed with its line.
+The set is the same as before the change; the test's behaviour is unchanged.
+
+**Reason:** every card that adds a contract route without a route yet, or the route for one,
+changes this set, and several run at once. With entries grouped under shared comments and new
+ones added at the end, two such pull requests changed the same lines and conflicted: reproduced
+by two branches each adding one entry to the old form (conflict) and the same two entries to
+the new form (clean merge). Two pull requests still conflict when they change neighbouring
+lines (reproduced as well); sorting only makes that rare.
+
+**Rejected alternatives:**
+- Keep the grouped form — every parallel entry conflicts at the end of the set.
+- Move the entries to a data file next to the test — the same conflicts in another file, and the
+  reasons leave the code that checks them.

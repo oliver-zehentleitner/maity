@@ -25,6 +25,8 @@ from maity_hub.events import transaction
 from maity_hub.routes.requests import file_personal
 from tests import factory, flow
 from tests.conftest import ClientFactory
+from tests.test_placements import REPOSITORY, Setup, placed, report
+from tests.test_runner_stream import attach, hello
 from tests.test_runners import paired
 
 WEB_TOOLS = Path(__file__).resolve().parents[2] / "web" / "tools"
@@ -133,7 +135,8 @@ def _seed(make_client: ClientFactory, migrated: Any) -> tuple[flow.Human, dict[s
     """A project with something in every list the recorded answers carry, so a list's
     items are compared too: an empty list says nothing about their form."""
     owner = flow.human(make_client, migrated)
-    flow.project(owner, repository={"url": "https://github.com/maintainer/maity"})
+    # The repository the test runner offers, so an agent can be placed on it.
+    flow.project(owner, repository={"url": REPOSITORY})
     agent = flow.agent(make_client, owner, agent={"handle": "agent-a", "display_name": "Agent A"})
     other = flow.agent(make_client, owner)
     base = "/projects/maintainer/maity"
@@ -156,7 +159,7 @@ def _seed(make_client: ClientFactory, migrated: Any) -> tuple[flow.Human, dict[s
     _ok(
         owner.post(
             f"{base}/tasks/{first['id']}/links",
-            {"kind": "issue", "forge_url": "https://github.com/maintainer/maity/issues/1"},
+            {"kind": "issue", "forge_url": f"{REPOSITORY}/issues/1"},
         )
     )
     second = {"title": "Next", "depends_on": [first["id"]], "related": [first["id"]]}
@@ -164,7 +167,17 @@ def _seed(make_client: ClientFactory, migrated: Any) -> tuple[flow.Human, dict[s
     options = [{"id": "yes", "label": "Yes"}, {"id": "no", "label": "No"}]
     _ok(agent.post(f"{base}/requests", {"class": "decision", "title": "Ship?", "options": options}))
     _personal_from_elsewhere(make_client, migrated, owner)
+    # A runner that has said hello, is attached and runs an agent, so its answers and the
+    # DELETE's carry `capabilities`, `projects`, `on_runner_revoke` and `still_running`
+    # items, not empty lists or nulls (§15.3).
+    # `stop`, so the DELETE's `on_runner_revoke` names the placement it stopped.
+    _ok(owner.patch(base, {"policy": {"on_runner_revoke": "stop"}, "reason": "the seed"}))
     runner = paired(make_client, owner)
+    assert attach(owner, runner).status_code == 201
+    runner_client = make_client()
+    assert hello(runner_client, runner).status_code == 200
+    on_runner = Setup(owner, runner, runner_client, other, migrated)
+    assert report(on_runner, placed(on_runner), 1).status_code == 200
     # `maintenance` in `GET /me` is an object only while a window is announced (§16.12).
     starts = datetime.now(UTC).replace(microsecond=0) + timedelta(days=1)
     window = {
@@ -187,15 +200,29 @@ def _seed(make_client: ClientFactory, migrated: Any) -> tuple[flow.Human, dict[s
     return owner, ids
 
 
+def _send(owner: flow.Human, method: str, path: str, body: Any) -> Any:
+    """One request of the list, a write with its `body` as it stands."""
+    if method == "GET":
+        return owner.get(path)
+    if method == "DELETE":
+        return owner.delete(path)
+    if method == "POST":
+        return owner.post(path, body)
+    assert method == "PATCH", method
+    return owner.patch(path, body)
+
+
 def test_the_recorded_shapes_are_the_hubs(make_client: ClientFactory, migrated: Any) -> None:
     spec = json.loads((WEB_TOOLS / "shape-requests.json").read_text())
     owner, ids = _seed(make_client, migrated)
     maps = frozenset(spec["maps"])
     recorded = {}
+    methods = [request["method"] for request in spec["requests"]]
+    first_write = next((i for i, m in enumerate(methods) if m != "GET"), len(methods))
+    assert "GET" not in methods[first_write:], "a read after a write reads a changed seed"
     for request in spec["requests"]:
         path = request["path"].format(**ids)
-        call = owner.delete if request["method"] == "DELETE" else owner.get
-        answer = call(path)
+        answer = _send(owner, request["method"], path, request.get("body"))
         assert answer.status_code < 300, (path, answer.status_code, answer.text)
         recorded[f'{request["method"]} {request["path"]}'] = shape(answer.json(), maps)
     text = json.dumps(recorded, indent=1, sort_keys=True) + "\n"

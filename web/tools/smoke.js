@@ -1768,10 +1768,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(card("slow-box"), "runners: a slow periodic read still draws once it answers");
   win.Maity.api.getAll = rAll1;
   await fireIntervals(); await tick(); await tick();
+  const rDelNow = win.Maity.api.del;
+  let rFirst = null;
+  win.Maity.api.del = (p, b) => rDelNow(p, b).then((a) => { if (p === "/runners/rnr-0002") rFirst = a; return a; });
   btn(card("home-laptop"), "Remove").click(); await tick(); await tick(); await tick();
+  win.Maity.api.del = rDelNow;
   expect(!card("home-laptop") && text(main).includes("home-laptop was removed.") && text(main).includes("plc-0003")
     && text(main).includes("maity runner stop-all"), "runners: removed, with the agents still running that are now the operator's to end");
   win.Maity.api.post = rPost; win.Maity.api.patch = rPatch; win.Maity.api.del = rDel;
+  const rAgain = await win.Maity.api.del("/runners/rnr-0002");
+  const rApplied = rFirst && rFirst.on_runner_revoke;
+  expect(rApplied && rApplied.length === 1 && rApplied[0].project === "maintainer/maity" && rApplied[0].rule === "stop" && rApplied[0].stopped.length > 0
+    && JSON.stringify(rAgain.on_runner_revoke) === JSON.stringify(rApplied),
+    "runners: a second DELETE answers again what the removal applied (§15.3)");
   const realAll2 = win.Maity.api.getAll;
   win.Maity.api.getAll = (p) => (p === "/runners" || p === "/runners/enrollments" ? Promise.resolve({ items: [], next_cursor: null }) : realAll2(p));
   await go("#/all"); await go("#/runners"); await tick();
@@ -4155,6 +4164,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(histItems) === JSON.stringify(["day", "msg out", "new-line", "msg in"]) && /^(Yesterday|.*2026.*)$/.test(text(main.querySelector("li.day"))),
     "chat: a day separator, then 'New messages' before the agent's unread reply " + JSON.stringify(histItems));
   expect(main.querySelector("li.msg.in .msg-avatar svg") && !main.querySelector("li.msg.out .msg-avatar"), "chat: the agent's messages carry its picture, one's own none");
+  // "Sending…" in the row of Attach, the meat-proxy switch and Send, before Send: no line below the row that
+  // would push the composer up while a message is sent (tsk-j10w2hsm1h90, the owner).
+  {
+    const row = main.querySelector("form.compose .compose-actions");
+    const kids = row ? Array.from(row.childNodes) : [];
+    const at = kids.findIndex((n) => (n.className || "").split(" ").includes("send-status"));
+    const send = kids.findIndex((n) => (n.tagName === "BUTTON" ? [n] : n.querySelectorAll ? n.querySelectorAll("button") : []).some((x) => x.getAttribute("type") === "submit"));
+    expect(at > 0 && send > at && !Array.from(main.querySelector("form.compose").childNodes).some((n) => (n.className || "").split(" ").includes("send-status")),
+      "chat: the send status stands in the action row, before Send, not below it");
+  }
   // The meat-proxy switch of this chat (§9.3): between Attach and Send, from one's own entry; on and off here, then back to the profile.
   {
     const mpBtn = () => main.querySelector("form.compose .compose-actions button.meat-chat-toggle");
@@ -6994,6 +7013,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     return f;
   };
   await go("#/maintainer/maity/chat/cnv-0007");
+  {
+    // A group chat's "Sending…" stands in its row of buttons too, before Send (tsk-j10w2hsm1h90).
+    const row = main.querySelector("form.compose .compose-actions");
+    const kids = row ? Array.from(row.childNodes) : [];
+    const at = kids.findIndex((n) => (n.className || "").split(" ").includes("send-status"));
+    const send = kids.findIndex((n) => (n.tagName === "BUTTON" ? [n] : n.querySelectorAll ? n.querySelectorAll("button") : []).some((x) => x.getAttribute("type") === "submit"));
+    const pane = main.querySelector("section.chat-pane.group-chat");
+    expect(at >= 0 && send > at && pane && !Array.from(pane.childNodes).some((n) => (n.className || "").split(" ").includes("send-status") && n.getAttribute("role") === "status" && n !== kids[at] && n.getAttribute("tabindex") === "-1"),
+      "group chat: the send status stands in the action row, before Send, not below the composer");
+  }
   {
     // A group chat offers its participants alone: the hub resolves a mention against them only (§8.6).
     const gcView = await win.Maity.api.get("/projects/maintainer/maity/conversations/cnv-0007");

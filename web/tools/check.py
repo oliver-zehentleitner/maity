@@ -981,7 +981,8 @@ def check_whitespace():
 # What the fixture hub answers must have the shape of what the hub answers (context/
 # fixtures.md): hub/tests/test_web_shapes.py records the hub's shapes for the requests of
 # tools/shape-requests.json, tools/fixture_answers.js gives the fixture hub's answers, and
-# a difference not in the baseline is a finding. The baseline only shrinks.
+# a difference not in the baseline is a finding. For a listed request the baseline only
+# shrinks (--write drops what no longer differs); a new request's differences go in by hand.
 SHAPES = os.path.join(ROOT, "tools", "hub-shapes.json")
 SHAPES_BASELINE = os.path.join(ROOT, "tools", "fixture-shapes-baseline.json")
 

@@ -630,9 +630,12 @@ too.
    `<handle>#<id> · <presence>`, sent as `to_instance` (§9.1); the whole
    team still reads every message. The choice is kept per chat in this
    tab, a message sent to one instance says "to <handle>#<id>", and an
-   agent with one instance gets no choice. The open chat fills the screen below the header
-   (the visual viewport, so a phone's keyboard counts): its history
-   scrolls, the composer stays at the bottom, and a new message keeps the
+   agent with one instance gets no choice. The open chat fills the window from where it
+   starts down to its bottom edge, less what stands below it (the product line), on a
+   project's Chat tab and on Chats alike (the visual viewport, so a phone's keyboard
+   counts): the page does not scroll, its history and the chat list scroll on their own,
+   and on a screen too small for the heading, the composer and a few lines of history the
+   page scrolls instead of the composer running under the product line; the composer stays at the bottom with "Sending…" in its row of buttons, and a new message keeps the
    history at its end unless the human scrolled up. Whether the reader is
    at the end follows their own scrolling, so content that grows after it
    was drawn (an image loading, the pane resized) keeps them there too; a
@@ -1400,8 +1403,10 @@ fails while the bundle is stale.
 `make check` also compares the fixture hub's answers to the requests in
 `tools/shape-requests.json` with the hub's, recorded in
 `tools/hub-shapes.json`: a key or type the hub does not send is a
-finding, unless `tools/fixture-shapes-baseline.json` lists it, which only
-shrinks. After a change to the hub's answers, run `make shapes`
+finding, unless `tools/fixture-shapes-baseline.json` lists it. For a
+request already in the list the baseline only shrinks; a request added to
+the list has its differences written into the baseline by hand, since
+`python3 tools/check.py --write` only drops entries. After a change to the hub's answers, run `make shapes`
 (`HUB_PYTHON=` a Python with the hub's test requirements) and commit the
 file (`context/fixtures.md`).
 

@@ -3177,6 +3177,7 @@ window.MAITY_FIXTURES = {
       "lease_seconds": 7200,
       "member_agents": "on",
       "member_agents_max": 3,
+      "on_runner_revoke": "stop",
       "outside_roles": [
         "coder"
       ],
