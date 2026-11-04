@@ -10967,9 +10967,10 @@ instance's total is the operator's to see (§16.5), not the member's, so
 the refusal names no numbers. The project's quota and the pending cap are
 checked first. The check runs under the project's lock, as the project's
 quota does, not under one lock for the instance: concurrent uploads into
-different projects may together pass the limit by at most their own
-sizes. Lowering the limit deletes nothing; uploads are refused until
-deletions bring the total under it.
+different projects, at most one per project, may together pass the limit
+by at most their stored sizes, the largest of them excepted. Lowering the
+limit deletes nothing; uploads are refused until deletions bring the total
+under it.
 
 **Limits.** At most 10 MiB per file, before re-encoding — the body cap
 of §1.7 does not apply to this call, the file cap does
@@ -15099,8 +15100,9 @@ no notification.
 ### 16.5 Limits
 
 The admin area's section "Limits": the caps the operator puts on what
-one account may hold. Plans (§2.7, part two) will set these per plan;
-until then there is one value for every account.
+one account may hold, and one limit for the whole instance, its
+attachment storage. Plans (§2.7, part two) will set the caps per account
+per plan; until then there is one value for every account.
 
 ```
 GET, PATCH /admin/settings/limits
@@ -15130,9 +15132,9 @@ values with the source rules of §16.2, as in §16.4.
 value with `source: "admin"`. `humans_at_limit` is read-only (a `PATCH`
 naming it is `invalid`, `read_only`) and `0` under `unlimited`; so is
 `humans_at_org_limit` for `max_orgs_per_human`, which takes `null` and
-`unlimited` the same way, and `attachment_storage_used` for
-`max_attachment_storage`: the bytes counted as §8.7 counts them, under
-every value.
+`unlimited` the same way. `attachment_storage_used` is read-only too; it
+is the bytes §8.7 counts for `max_attachment_storage`, under every value,
+`unlimited` included.
 
 - **What it gates.** Two creations: `POST /agents`, and
   `POST /projects/{owner}/{slug}/joins` when it names a new handle and so
@@ -15161,7 +15163,9 @@ every value.
   message that names attachments already uploaded is not refused.
 - **Lowering any value** never deletes or pauses anything: an owner over the
   new value keeps every profile or organisation and creates no new one until they are
-  under it again (the tolerant rule of `context/scope.md`).
+  under it again (the tolerant rule of `context/scope.md`); over a lowered
+  `max_attachment_storage`, uploads are refused until deletions bring the total
+  under it (§8.7).
   `humans_at_limit` and `humans_at_org_limit` count the humans at or
   over each value, for the admin's eye.
 - **Why per human.** The hosted instance needs a ceiling against runaway

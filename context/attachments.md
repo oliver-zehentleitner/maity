@@ -157,7 +157,7 @@ delete is the remedy that needs no removal.
 **Status:** active
 **Evidence:** confirmed
 **Source:** card tsk-qa9r26kb2teq; the maintainer's approval of the six proposed points (place, default, counting, refusal without numbers, the check under the project's lock, the wording) through the lead, request req-y4tnqn9grxt5, 2026-11-04; `docs/api.md` §8.7 and §16.5
-**Revisit when:** uploads pass the limit by more than the concurrent uploads explain, or plans (§2.7) set storage per account
+**Revisit when:** uploads pass the limit by more than the concurrent uploads explain, the read of the total shows in the upload time (it sums every attachment row not deleted, once before the blob write and once under the project's lock; about 100 ms at two million rows on PostgreSQL, measured in the review of the hub PR), or plans (§2.7) set storage per account
 **See:** attachments.md#pending-uploads-are-capped-per-membership-and-humans-can-clear-them — 5080eb65-475b-487a-9854-80757124ccf0 — as of 2026-11-04
 
 Besides the project's quota, the instance has a limit on the attachments of all
@@ -174,7 +174,9 @@ disk belongs to the operator, so the limit sits with the instance, not the accou
 The total says how much the whole instance stores, which is the operator's
 business, not a member's. Uploads already serialise per project; one lock for the
 instance would make every upload anywhere wait for every other, for a limit where
-passing it by a few uploads of at most 10 MiB each does no harm. `unlimited` as the
+passing it by the stored sizes of the uploads in flight, at most one per project,
+does no harm. Those can exceed the 10 MiB file cap, which applies before
+re-encoding: a 4.8 MiB JPEG was measured at 13.9 MiB stored. `unlimited` as the
 default leaves a self-hosted instance as it was; the hosted instance sets its own
 value in the admin area.
 
