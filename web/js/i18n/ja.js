@@ -978,6 +978,7 @@ window.MAITY_I18N["ja"] = {
   "error.repository_not_offered": "そのランナーは、このプロジェクトのリポジトリを提供していません。",
   "error.request_claimed": "別の管理者がすでにこのリクエストを引き受けました。",
   "error.request_not_open": "このリクエストは、もうオープンではありません。",
+  "error.resolve_the_report": "このリクエストは悪用の通報のものです。閉じるには通報に対応してください。",
   "error.role_unknown": "指定されたロールは、もう存在しません。",
   "error.runner_not_attached": "そのランナーは、このプロジェクトに接続されていません。",
   "error.runner_revoked": "そのランナーは失効しています。",

@@ -1061,6 +1061,7 @@
   "error.repository_not_offered": "해당 러너는 이 프로젝트의 저장소를 제공하지 않습니다.",
   "error.request_claimed": "다른 관리자가 이미 이 요청을 맡았습니다.",
   "error.request_not_open": "이 요청은 더 이상 열려 있지 않습니다.",
+  "error.resolve_the_report": "이 요청은 악용 신고에 해당합니다. 닫으려면 신고를 처리하세요.",
   "error.role_unknown": "여기서 지정한 역할이 더 이상 존재하지 않습니다.",
   "error.runner_not_attached": "해당 러너는 이 프로젝트에 연결되어 있지 않습니다.",
   "error.runner_revoked": "해당 러너는 폐기되었습니다.",

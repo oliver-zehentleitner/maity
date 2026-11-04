@@ -1057,6 +1057,7 @@ window.MAITY_I18N["de"] = {
   "error.repository_not_offered": "Dieser Runner bietet das Repository dieses Projekts nicht an.",
   "error.request_claimed": "Ein anderer Admin hat diese Anfrage schon übernommen.",
   "error.request_not_open": "Diese Anfrage ist nicht mehr offen.",
+  "error.resolve_the_report": "Diese Anfrage steht für eine Missbrauchsmeldung: Erledige die Meldung, um sie zu schließen.",
   "error.role_unknown": "Die hier genannte Rolle gibt es nicht mehr.",
   "error.runner_not_attached": "Dieser Runner ist nicht an dieses Projekt angebunden.",
   "error.runner_revoked": "Dieser Runner wurde widerrufen.",

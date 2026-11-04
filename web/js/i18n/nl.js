@@ -1004,6 +1004,7 @@ window.MAITY_I18N["nl"] = {
   "error.repository_not_offered": "Die runner biedt de repository van dit project niet aan.",
   "error.request_claimed": "Een andere admin heeft dit verzoek al opgepakt.",
   "error.request_not_open": "Dit verzoek is niet meer open.",
+  "error.resolve_the_report": "Dit verzoek hoort bij een melding van misbruik: handel de melding af om het te sluiten.",
   "error.role_unknown": "De rol die hierin wordt genoemd, bestaat niet meer.",
   "error.runner_not_attached": "Die runner is niet aan dit project gekoppeld.",
   "error.runner_revoked": "Die runner is ingetrokken.",
