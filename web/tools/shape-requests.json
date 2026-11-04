@@ -1,5 +1,5 @@
 {
-  "about": "The requests whose answers the fixtures must shape like the hub's (tools/check.py, hub/tests/test_web_shapes.py). {placeholders} are filled by each side with its own ids.",
+  "about": "The requests whose answers the fixtures must shape like the hub's (tools/check.py, hub/tests/test_web_shapes.py), in this order: the writes come last, so the reads see the seed as it is. {placeholders} are filled by each side with its own ids; a body is sent as it stands.",
   "fixture_ids": {"project": "maintainer/maity", "agent": "agt-a", "group": "cnv-0007", "task": "tsk-0001", "runner": "rnr-0002"},
   "maps": [".settings.ticker.contract_implementers", ".by_project"],
   "requests": [
@@ -24,6 +24,11 @@
     {"method": "GET", "path": "/projects/{project}/tasks?status=all"},
     {"method": "GET", "path": "/projects/{project}/tasks/{task}/notes?state=all"},
     {"method": "GET", "path": "/projects/{project}/tasks/{task}/history"},
-    {"method": "DELETE", "path": "/runners/{runner}"}
+    {"method": "DELETE", "path": "/runners/{runner}"},
+    {"method": "POST", "path": "/projects/{project}/tasks", "body": {"title": "A shape card"}},
+    {"method": "POST", "path": "/projects/{project}/tasks/{task}/notes", "body": {"body": "A shape note."}},
+    {"method": "POST", "path": "/projects/{project}/conversations/{agent}/messages", "body": {"body": "A shape message."}},
+    {"method": "POST", "path": "/projects/{project}/conversations/{group}/messages", "body": {"body": "A shape message."}},
+    {"method": "PATCH", "path": "/projects/{project}/members/{agent}", "body": {"briefing": "Checks the shapes."}}
   ]
 }
