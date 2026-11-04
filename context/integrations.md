@@ -11,8 +11,8 @@
 **Revisit when:** a second forge (GitLab) is needed, or the hub is to write to a forge
 
 The hub reads the project's forge (GitHub first) read-only, with the
-grant the next entry chooses, and probes pull request state, head SHA, check results, merge time and
-tags. Release readiness is computed from observed state, not from what an
+grant the next entry chooses, and probes pull request state, head SHA,
+check results, merge time and tags. Release readiness is computed from observed state, not from what an
 agent reported; an agent-typed reference that does not match is shown as
 such. The hub never writes to the forge.
 
@@ -26,7 +26,7 @@ keeping the hub free of any forge dependency and one secret poorer — the
 handover concept's position. Rejected because a release gate that trusts
 descriptions repeats the incident it is meant to prevent.
 
-## The hub reads a repository with its owner's grant: a GitHub App installation first, the owner's token second, the instance token only for public repositories in the operator's own namespaces
+## The hub reads a repository with its owner's grant: a GitHub App installation first, the owner's token second, the instance token only for an operator's project with a public repository
 
 **Id:** 4e15dcbb-9bb4-4c14-9193-9aa2b2d3f0f3
 **Type:** decision
