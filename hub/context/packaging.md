@@ -238,23 +238,32 @@ This is not the explanation of the 32 MiB an hour seen in production: that is ab
 `publish-image.yml` runs on a `v*` tag and by hand. Its one job stops
 unless the ref is a `v*` tag or `main`, and it runs in the environment
 `ghcr`, which the repository's settings open to `main` and `v*` tags
-only; who may create or move those tags is a repository setting too.
-After the push the job signs the pushed digest with cosign, keyless:
-the certificate names `publish-image.yml` and the ref the run was on.
+only; who may create or move those tags is a repository rule. Both
+the `if` and the environment are in the workflow file, so they keep
+this file from running elsewhere, not a changed copy of it on a branch:
+the push uses the run's `GITHUB_TOKEN`, whose `packages: write` the file
+itself asks for. After the push a second job, the only one with
+`id-token: write`, signs the pushed digest with cosign, keyless: the
+certificate names `publish-image.yml` and the ref the run was on.
 The chart README tells operators to check that identity with
 `cosign verify` before they pin a digest.
 
 **Reason:** the image is what every installation runs, so only
-reviewed code, on `main` or a release tag, should become one. The
-`if` and the environment refuse a run from anywhere else; the
-signature lets an operator check where a digest came from without
-trusting the registry alone.
+reviewed code, on `main` or a release tag, should become one. What
+holds that is the signature with the tag rule: a run from a branch,
+even with an edited file, gets `refs/heads/<branch>` in its
+certificate, which the README's `cosign verify` refuses, and only
+those the rule allows create `v*` tags. The `if` and the environment
+keep the unchanged file from pushing from elsewhere. The signature
+lets an operator check where a digest came from without trusting the
+registry alone.
 
 **Rejected alternatives:**
-- The `if` alone, without the environment: a guard in the workflow
-  file lives in the file a branch can change; the environment is a
-  repository setting.
-- Pushing with a token that only the `ghcr` environment holds: needs a
+- The `if` alone, without the environment: the environment adds the
+  repository's own list of refs, which a later approval rule can
+  extend. Neither stops an edited copy of the file on a branch (above).
+- Pushing with a token that only the `ghcr` environment holds, which
+  would stop an edited file on a branch from pushing at all: needs a
   stored long-lived token; kept as a further step if needed.
 - A signing key stored as a secret: a long-lived key that can leak.
   Keyless needs none, and the identity is the workflow and ref.

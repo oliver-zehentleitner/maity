@@ -71,6 +71,9 @@ example; any cluster with the same pieces works.
      --certificate-identity-regexp '^https://github\.com/oliver-zehentleitner/maity/\.github/workflows/publish-image\.yml@refs/(tags/v[^/]+|heads/main)$'
    ```
 
+   This needs cosign v3 or later: the workflow stores the signature in the
+   newer bundle format, which cosign 2.x does not find.
+
    An image whose signature names another workflow or another ref did not
    come from a release or from `main`; don't run it. To build your own from
    the repository root:
