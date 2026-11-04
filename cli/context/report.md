@@ -165,7 +165,7 @@ as a link there does not: it says nothing about this checkout.
 **Source:** CLI hardening task, plan approved by the coordinator, 2026-11-04; verified with git 2.43 (a clone's own `protocol.<name>.allow` outranks `-c protocol.allow` on the command line, `GIT_ALLOW_PROTOCOL` outranks both; `ls-remote --heads -- <remote> <ref>` keeps both as operands)
 **See:** report.md#maity-report-refuses-instead-of-reporting-a-partial-truth — 66da7721-2f51-4105-b82f-4c06cbb9e984 — as of 2026-11-04
 **See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-04
-**Revisit when:** git changes how `GIT_ALLOW_PROTOCOL` ranks against configuration, a forge reached over another transport is supported, or `report` learns a forge other than GitHub
+**Revisit when:** maity checks a clone's configuration before its own git, git changes how `GIT_ALLOW_PROTOCOL` ranks against configuration, a forge reached over another transport is supported, or `report` learns a forge other than GitHub
 
 `maity report` reads a branch's upstream from the clone's configuration
 and passes it to `git ls-remote`. Before that, the remote, every URL it
@@ -188,11 +188,10 @@ turn. Two runner paths run git without `proc.run` and keep their own
 settings: `gc`'s read of a clone (`operate.unsaved_work`, pinned
 `protocol.allow=never` and a cleaned environment) and a workspace clone
 made as the agents' user (`as_user.run`, the `-c` list of `https` and
-`ssh`). Outside the runner, settings in the clone that name a program for
-a remote (`remote.<name>.uploadpack`, `core.sshCommand`) still apply to
-`ls-remote`, as they do to the person's own git in that clone; under the
-runner, maity's git runs only in a plain clone, whose configuration
-carries no such key.
+`ssh`). Settings in the clone's configuration that name a program for
+a remote, such as `remote.<name>.uploadpack`, `core.sshCommand`,
+`core.gitProxy` or `credential.helper`, still apply to `ls-remote`; this
+change does not limit them.
 `gh pr view` is asked only about an `https` URL on github.com or
 `GH_HOST`, the same hosts `report` already asks gh about.
 

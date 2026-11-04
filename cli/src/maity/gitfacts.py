@@ -131,11 +131,12 @@ def pull_request_state(cwd: Path, url: str) -> str | None:
 
 
 def remote_host(url: str) -> str | None:
-    """The host of a Git remote URL (https, ssh, or scp-like `git@host:path`); None for a path."""
+    """The host of a Git remote URL (https, ssh, or scp-like `git@host:path`); None for a path
+    or a URL without a host."""
     if "://" in url:
         return urllib.parse.urlsplit(url).hostname
-    if re.match(r"^[A-Za-z]:[\\/]", url):  # a Windows drive path, not host `C`
-        return None
+    if os.name == "nt" and re.match(r"^[A-Za-z]:[\\/]", url):
+        return None  # a drive path there; elsewhere git reads `C:/…` as host `C`, as here
     match = re.match(r"^(?:[^@/]+@)?([^:/]+):", url)
     return match.group(1) if match else None
 
@@ -150,7 +151,7 @@ def _forge_unknown(cwd: Path, remote: str | None) -> str | None:
     url = _git(cwd, "config", "--get", f"remote.{remote}.url") or remote
     host = remote_host(url)
     if not host or host.lower() not in gh_hosts():
-        where = host or "a local path"
+        where = host or ("no host" if "://" in url else "a local path")
         return f"the remote {without_userinfo(remote)} is not on a GitHub host gh knows ({where})"
     return None
 

@@ -141,8 +141,9 @@ def test_remote_off_github_is_unknown_without_asking_gh(clone: Path, bin_dir: Pa
         ("git@github.com:a/b.git", "github.com"),
         ("ssh://git@gitlab.example:2222/a/b", "gitlab.example"),
         ("/srv/git/b.git", None),
-        ("C:\\Users\\a\\b.git", None),
-        ("C:/Users/a/b.git", None),
+        ("C:\\Users\\a\\b.git", None if os.name == "nt" else "C"),
+        ("C:/Users/a/b.git", None if os.name == "nt" else "C"),
+        ("https:///a/b.git", None),
         ("host-alias:b.git", "host-alias"),
     ],
 )
@@ -288,3 +289,12 @@ def test_every_configured_url_of_the_remote_is_checked(clone: Path) -> None:
     with pytest.raises(gitfacts.FactsError, match="upstream"):
         gitfacts.collect(clone)
     assert not marker.exists()
+
+
+def test_a_remote_url_without_a_host_is_named_so_and_gh_is_not_asked(
+    clone: Path, bin_dir: Path
+) -> None:
+    fake_gh(bin_dir, "", exit_code=1, stderr="must not be called")
+    git(clone, "remote", "set-url", "origin", "https:///a/b.git")
+    reason = gitfacts._forge_unknown(clone, "origin")
+    assert reason is not None and "(no host)" in reason

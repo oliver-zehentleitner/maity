@@ -53,7 +53,8 @@ def program(name: str) -> str | None:
     """The absolute path of `name` on PATH, or None. Only absolute PATH entries count, and
     never the current directory: Windows would otherwise start a `git.exe` lying in the
     directory maity runs in before the installed one. A name with a directory in it is a
-    path the caller chose, used as given (relative to the command's cwd)."""
+    path the caller chose, used as given: on POSIX relative to the command's cwd, on Windows
+    to maity's own current directory (how the OS resolves it)."""
     if os.path.isabs(name) or os.path.dirname(name):
         return name
     suffixes = [""]
