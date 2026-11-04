@@ -10969,9 +10969,9 @@ checked first. The check runs under the project's lock, as the project's
 quota does, not under one lock for the instance: concurrent uploads into
 different projects (at most one per project between its check and its
 commit) may together pass the limit by at most the stored sizes of the
-other uploads in flight when the last of them was checked. Lowering the
-limit deletes nothing; uploads are refused until deletions bring the total
-under it.
+other uploads in flight when the last of them to be accepted was checked.
+Lowering the limit deletes nothing; uploads are refused until deletions
+bring the total under it.
 
 **Limits.** At most 10 MiB per file, before re-encoding — the body cap
 of §1.7 does not apply to this call, the file cap does
