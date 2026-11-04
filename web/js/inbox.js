@@ -411,7 +411,8 @@ window.Maity = window.Maity || {};
         // Its human may withdraw a personal request, as nobody else can (§7); a report
         // request only closes with its report (§16.8).
         reportReq ? h("a", {
-          class: "reply primary open-report",
+          // a.button: a link drawn as the buttons beside it are.
+          class: "button primary reply open-report",
           href: "/admin/reports/" + encodeURIComponent(req.report.id),
         }, M.t("inbox.open_report")) : null,
         req.personal && !reportReq ? h("button", {

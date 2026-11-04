@@ -2713,14 +2713,15 @@ A request with `asked_by: null` and `filed_by: "hub"` names its asker
 **Maity** (in the list) and **Maity, on its own** (in its facts), and
 says nothing about an agent waiting, since none does. The hourly digest
 of agent instances that are not listening — personal, about no project
-and no organisation, and no report's request (entry
-f50ed8ee-5948-43c8-817a-d1b008bf1f5a), which is all of these too — adds a link to one's agents (`/agents`); its
+and no organisation — adds a link to one's agents (`/agents`); its
 summary lists the instances. The bell's `agents_not_listening` item
 (target `agents`) leads to `/agents` too, and is not marked read when
 opened: like `registration_pending` and `mail_disabled` it asks for an
 action (resume or end the instances) and is read once the matter is
 closed, when no instance is away any more (§18.1–§18.3); `keepsUnread`
-names its target `agents`.
+names its target `agents`. A report's request (entry f50ed8ee-5948-43c8-817a-d1b008bf1f5a) has the
+digest's shape, filed by the hub, personal, without project or
+organisation, but is no digest and gets no such link.
 
 **Reason:** "—" as an asker reads as a missing name, not as the hub;
 and "the agent waits for the answer" would be false. The instances

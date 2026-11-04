@@ -11565,9 +11565,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !rqHead("Report: spam — profile").querySelector("textarea") && !btn(rqHead("Report: spam — profile"), "Withdraw")
     && !rqHead("Report: spam — profile").querySelector("a.digest-agents"),
     "reports: its request offers Open report to /admin/reports/<id>, no answer field, no withdrawal, no digest's agents");
-  const rqRefused = await win.Maity.api.post("/requests/req-r002/withdraw", {}).then(() => null, (e) => e);
-  expect(rqRefused && rqRefused.code === "resolve_the_report" && rqRefused.details.report === "rpt-0002",
-    "reports: the fixture hub refuses withdrawing a report's request as the hub does (resolve_the_report)");
+  for (const verb of ["withdraw", "answer"]) {
+    const rqRefused = await win.Maity.api.post("/requests/req-r002/" + verb, verb === "answer" ? { text: "done" } : {}).then(() => null, (e) => e);
+    expect(rqRefused && rqRefused.code === "resolve_the_report" && rqRefused.details.report === "rpt-0002",
+      "reports: the fixture hub refuses to " + verb + " a report's request as the hub does (resolve_the_report)");
+  }
   await go(rqOpen.getAttribute("href")); for (let k = 0; k < 10; k++) await tick();
   expect(rpSection() && !rpSection().hidden && rpOpen() && text(rpOpen()).includes("Spam"),
     "reports: Open report from the all-projects inbox opens that report in Admin → Reports");
