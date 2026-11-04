@@ -366,8 +366,11 @@ The chart's default annotations gain
 refuses a body over 1 MiB by default, so an upload between the two caps
 fails at the ingress. 11 MiB leaves room above the hub's cap, so that the
 hub, not the ingress, refuses an oversize file with its own
-`payload_too_large`. Every other body is capped by the hub at 64 KiB to
-512 KiB, so a host-wide limit needs no finer split. On Traefik the buffered
+`payload_too_large`. The hub caps every other body itself, at 1 MiB at
+most: 64 KiB by default, 512 KiB for the landing, legal and sign-in pages'
+settings and their previews, 1 MiB for an image upload (logo, banner,
+avatar) and for a forge webhook delivery. A host-wide limit therefore needs
+no finer split. On Traefik the buffered
 route takes the whole body before the hub sees it, and keeps it on disk past
 1 MiB.
 
