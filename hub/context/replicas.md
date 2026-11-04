@@ -902,7 +902,7 @@ SQLite, the later arrival still takes over.
 **Status:** active
 **Evidence:** inferred
 **Source:** card tsk-hnp19jx1ajvx; the maintainer's rule for the scaling cards (2026-11-03): the single-server hub (one process, SQLite, local attachments) stays the default and keeps working, every scaling path is opt-in; `serving.py`, `cli._serve_workers`, `tests/test_workers.py`; uvicorn 0.54 `supervisors.multiprocess`; for the minimum share, card tsk-zm2z04ep2cma: checkouts of the serving pool counted per HTTP request on PostgreSQL across ten test files (383 tests, 4605 checkouts inside requests), peak one per request; the one nested checkout was the deliberate second writer of `test_of_two_concurrent_redactions_the_first_stands`, which showed the count sees one
-**Revisit when:** uvicorn's `Multiprocess` changes how it builds a worker's `Server`, the load test shows that more workers per pod buy less than more pods, or a request path takes a second connection from the serving pool while it holds one (a pool share of one would then wait on itself until the pool's timeout), or card tsk-p80cre8r9355 maps the pool timeout (the known consequence below then reads differently)
+**Revisit when:** uvicorn's `Multiprocess` changes how it builds a worker's `Server`, the load test shows that more workers per pod buy less than more pods, or a request path takes a second connection from the serving pool while it holds one (a pool share of one would then wait on itself until the pool's timeout once the overflow share is in use, at once when it is 0), or card tsk-p80cre8r9355 maps the pool timeout (the known consequence below then reads differently)
 
 `MAITY_WORKERS` (chart: `config.workers`) sets how many processes `maity-hub serve` runs on one
 socket. The default is 1, and 1 is the hub as it always was: one process, no supervisor, any
@@ -918,7 +918,7 @@ only about processes.
   share of 0 pooled connections is refused at the start: SQLAlchemy reads `pool_size=0` as no
   limit, so the rounded-down share would lift the cap it is meant to keep. The minimum was two
   while a shared count or the forge budget took a second connection from the same pool (entry
-  2bd65fec), so that a process with one waited on itself until the pool's timeout. Since #1320
+  2bd65fec), so that a process with one waited on itself until the pool's timeout once its overflow share was in use. Since #1320
   they have their own engine, and a measurement on PostgreSQL (card tsk-zm2z04ep2cma) found no
   request in the request handlers of the measured test files that held two serving connections
   at once, so one is enough to be correct and more is throughput, the operator's choice. The
