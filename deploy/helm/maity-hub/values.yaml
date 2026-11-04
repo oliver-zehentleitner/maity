@@ -237,7 +237,8 @@ ingress:
   # (perSecond), `limit-burst-multiplier` (burst / perSecond, rounded up) and
   # `limit-connections` (inFlight). Another controller needs its own
   # equivalent (deploy/k3s-single/request-limit.yaml for Traefik). The values
-  # are per address, and every agent on one machine shares that machine's.
+  # are per address and per controller replica, and every agent on one machine
+  # shares that machine's address.
   requestLimit:
     enabled: false
     perSecond: 50

@@ -322,14 +322,16 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
   `uploads.yaml` existed applies it once, with its host name, like step 5.
 - **The request limit** (`request-limit.yaml`) is one limit per client
   address for every request, in Traefik: 50 a second, bursts of 200, 100
-  open at a time, and for uploads 4 at a time per address and 10 in all. It
+  open at a time, and for uploads 4 at a time per address and 10 in all on
+  their way to the hub. It
   is off until you switch it on. Switch it on only once every agent runs a
   `maity` whose `maity wait` retries a 429 (`maity --version`, and the
   changelog). An older one ends its wait on the first refusal. To switch it
   on:
   1. Check that Traefik is v3.2 or later. The IPv6 grouping needs it:
      `kubectl -n kube-system get deploy traefik -o jsonpath='{.spec.template.spec.containers[0].image}'`.
-  2. `kubectl apply -f deploy/k3s-single/request-limit.yaml`.
+  2. Replace `maity.example.org` in `request-limit.yaml` with your host
+     name, then `kubectl apply -f deploy/k3s-single/request-limit.yaml`.
   3. Uncomment the `router.middlewares` line in `hub-values.yaml`, then
      `helm upgrade` as above.
   4. Swap the `middlewares:` line in `uploads.yaml` for the commented one

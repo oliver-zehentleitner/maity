@@ -295,6 +295,8 @@ refusal. Some things to know:
   outage.
 - **IPv6:** ingress-nginx counts each IPv6 address on its own, not per
   network.
+- **Replicas:** ingress-nginx counts in each controller replica, so with
+  several a client gets the values once per replica.
 - **The upload route:** ingress-nginx cannot give the upload a limit of its
   own within this one Ingress, so uploads count against `inFlight` like any
   request.
