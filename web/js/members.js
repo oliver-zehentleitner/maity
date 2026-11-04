@@ -178,8 +178,9 @@ window.Maity = window.Maity || {};
 
     // Waiting for a human's go: whose, and the request it waits on, in one sentence.
     // Another owner's agent waits for a human (§6.2) the hub names `human:<id>`: by name where
-    // they are a member here, otherwise as the agent's owner or, for a boss of another owner whose
-    // owner is asked first, as the boss's owner; never as the raw address.
+    // they are a member here, otherwise as the agent's owner, or as a boss's owner where the
+    // request the hub answered with is another human's (a cross-owner `reports_to` on its own:
+    // with a held field the field consent, the owner's, is the answer); never as the raw address.
     function consentWords(answer, { applied = [], owner = null } = {}) {
       const to = answer.to || "";
       const human = to.startsWith("human:") ? to.slice("human:".length) : null;

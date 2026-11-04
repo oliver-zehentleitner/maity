@@ -4669,8 +4669,13 @@ the asked human as `human:<id>` and says nothing of what applied. So the
 members view reads the member again after the call and calls saved only the
 fields it now has ("Saved: reports to. The rest is not changed yet: …"), and
 names the asked human by name where they are a member here, otherwise as the
-agent's owner (its `owner_id`) or as a boss's owner, whose request the hub
-files first for a boss of another owner.
+agent's owner (its `owner_id`) or, when the answered request is another
+human's, as a boss's owner. In a `PATCH` that also changes a held field the
+hub answers with that field consent, which goes to the agent's owner, before
+any edge request; only a `reports_to` to a boss of another owner on its own
+is answered with an edge request, the boss's side unless the caller is that
+human, then the agent owner's (hub/src/maity_hub/routes/members.py,
+cross_owner.py).
 
 **Reason:** the hub's answer is the request alone; without reading the
 member again the line either claimed nothing changed while the boss had, or
@@ -4682,4 +4687,5 @@ address); keeping "Not changed yet" for the whole change; assuming that
 `reports_to` always applies at once (a boss of another owner waits too).
 
 **Known limit:** where several requests are filed (fields and a cross-owner
-edge), the line names only the one the hub answers with.
+edge, or an edge both of whose owners are asked), the line names only the one
+the hub answers with.

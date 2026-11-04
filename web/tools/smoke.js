@@ -2614,16 +2614,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "members: a boss taken at once and a role waiting say both " + JSON.stringify([mxBoss, text(main).match(/(Saved|Not changed)[^.]*\.[^.]*\./)]));
   ofBoss = null;
   // A human who is a member here is named; one outside who is not the agent's owner is the
-  // owner of a boss of another owner, asked first (hub/src/maity_hub/cross_owner.py).
+  // owner of a boss of another owner, whose edge request the hub answers with for a cross-owner
+  // `reports_to` on its own (hub/src/maity_hub/cross_owner.py).
   ofTo = "human:hum-maintainer";
   eSel("role").value = "coder"; eSel("role").dispatch("change");
   await submitEdit();
   expect(text(main).includes("Not changed yet: waiting for Maintainer's consent (req-c010, Change reviewer in Maity)."),
     "members: a consent of a human who is a member here names them " + JSON.stringify(text(main).match(/Not changed yet[^.]*\./)));
+  // A boss of another owner chosen alone: the hub answers with the boss side's edge request.
   ofTo = "human:hum-third";
-  eSel("role").value = "coder"; eSel("role").dispatch("change");
+  win.Maity.api.patch = (p, b) => { consents.push(b); return Promise.resolve({ id: "req-c011", class: "consent", status: "open", to: ofTo, title: "Take reviewer as a report of Maintainer" }); };
+  eSel("reports").value = mxBoss; eSel("reports").dispatch("change");
   await submitEdit();
-  expect(text(main).includes("Not changed yet: waiting for the boss's owner's consent (req-c010, Change reviewer in Maity)."),
+  expect(Object.keys(consents[consents.length - 1]).join() === "reports_to"
+    && text(main).includes("Not changed yet: waiting for the boss's owner's consent (req-c011, Take reviewer as a report of Maintainer)."),
     "members: a consent of an outside human who is not the agent's owner names the boss's owner " + JSON.stringify(text(main).match(/Not changed yet[^.]*\./)));
   win.Maity.api.getAll = ofGet;
   win.Maity.api.patch = mPatch;
