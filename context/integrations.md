@@ -4,10 +4,11 @@
 
 **Id:** 098ef90f-83b8-4b38-9c21-1e89c086b6db
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's decision on the design synthesis, 2026-10-21
-**Revisit when:** a second forge (GitLab) is needed, or the probe's token handling has to change
+**Verification:** corroborated — re-checked 2026-11-04 after the token handling changed (the next entry: an App installation first, the owner's token second): the probe still reads GitHub only, and its only POSTs are GraphQL queries (`hub/src/maity_hub/forge.py`) and the exchanges that mint a token (`github_app.py`: an installation token, the OAuth code); nothing writes a repository's state
+**Revisit when:** a second forge (GitLab) is needed, or the hub is to write to a forge
 
 The hub holds a read-only token for the project's forge (GitHub first)
 and probes pull request state, head SHA, check results, merge time and
@@ -29,10 +30,12 @@ descriptions repeats the incident it is meant to prevent.
 
 **Id:** 4e15dcbb-9bb4-4c14-9193-9aa2b2d3f0f3
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's decision in the project chat, 2026-10-28, on the coordinator's answer about the forge token; contract `docs/api.md` §11.4
-**Revisit when:** a second forge kind comes, organisations become namespace owners (§6.25), or the App's own webhook replaces the per-project one
+**Verification:** corroborated — re-checked 2026-11-04 after organisations became namespace owners: an organisation holds no grant of its own; its project reads with the grants of the organisation owner who confirmed the repository, and nobody's before one did (§11.4, `hub/src/maity_hub/forge_access.py`, the organisation entry linked below). An installation on an organisation account is still refused (`forge_links.py`, `organisation_installation`)
+**See:** projects.md#organisations-are-a-second-kind-of-namespace-owner-beside-humans-in-the-same-ownerslug-namespace-their-owners-own-every-project-admins-and-members-only-what-they-are-added-to — 33f520b9-5aaa-4aed-96f4-e90bf3749c56 — as of 2026-11-04
+**Revisit when:** a second forge kind comes, an installation on an organisation account is to be accepted, or the App's own webhook replaces the per-project one
 
 A project's forge reads use the first grant that covers its repository:
 the namespace owner's linked installation of the instance's GitHub App,
@@ -42,8 +45,9 @@ namespace owner's grants count for a project, and only for a
 repository URL the owner confirmed for it with an explicit call under
 step-up; every URL change and a transfer reset that. Linking an installation checks, with the
 installing user's one-time OAuth authorisation, that the installation's
-account is that user (organisation installations wait for organisation
-namespaces). The owner's token must be fine-grained. Data read through
+account is that user (an installation on an organisation account is
+refused; see the organisation entry for whose grants an organisation's
+project uses). The owner's token must be fine-grained. Data read through
 an owner's grant reaches project readers only, never a page without
 sign-in.
 
