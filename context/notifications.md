@@ -475,3 +475,46 @@ altogether. Refiling only when a listed last call changes, and rewriting a chang
 kind or `since` in place: fewer inbox items, but two kinds of change again, and a
 page opened before such a rewrite would differ from the one answered; the cost of
 refiling is at most one item per human and hour.
+
+
+## A sign-in alert whose session has ended may be marked read from any session in good standing; the address-change alert keeps the older-session rule
+
+**Id:** 8855862e-2145-460c-a849-299776a67b43
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's report in chat, 2026-11-04: three `security` alerts of 1 November could not be cleared; the lead's proposal on card tsk-0baaez2895sb; contract `docs/api.md` §2.6.5 ("Once the reported session has ended"), §18.3
+**Revisit when:** address-change alerts are reported as stuck too, or the hub starts recording which session asked for an address change
+**See:** notifications.md#reading-a-security-alert-never-confirms-it-mark-all-read-may-include-them-after-a-confirm-and-the-protection-lives-in-the-sessions-confirmation — d01ba62b-7acc-471c-b8d0-65c6d60209cc — as of 2026-11-04
+**See:** sign-in.md#a-sign-in-link-is-only-as-strong-as-the-mailbox--the-hub-says-so-and-makes-a-mail-sign-in-visible-instead-of-claiming-to-stop-it — 7865693c-fe02-4df8-ac9e-ebb1bbf8cf20 — as of 2026-11-04
+
+A `session_created` alert may be marked read, never confirmed, from any session of the
+human in good standing once the session it reports on has ended. Every session that session
+approved by device code, and those they approved in turn, must have ended as well. These are the
+sessions the banner waits for. Before that the older-session rule of d01ba62b holds unchanged.
+`skipped` keeps its two reasons; an ended sign-in can only be skipped with
+`not_in_good_standing`. The dashboard names the second way out for `not_earlier`: end that
+session under Sessions, then mark it read. `email_address_changed` keeps the older-session rule
+alone.
+
+**Reason:** the older-session rule exists so that a session obtained through the mailbox cannot
+hide its own alert. Once every session older than a sign-in has ended, nothing can clear that
+alert until its record expires after 90 days. The maintainer hit that within three days, and
+over time it is the normal case, since sessions end and alerts stay. After the reported session
+has ended, nothing is left that the alert protects against: no live session can hide behind the
+read mark. A session that the mailbox, or a device code it approved, obtained next carries an
+alert of its own, under the old rule while it lives. This is why the approved sessions must
+have ended too. The address change has no such session. The link to the new mailbox finishes
+it, often from no session, and the hub does not keep which session asked for it. Freeing that
+alert would need a new stored column for a rare kind; its record still expires.
+
+**Rejected alternatives:**
+- Letting any session in good standing mark every guarded alert read: a mailbox session that
+  later reaches good standing (by a password it also knows, or a confirm from a session it
+  fooled) could hide the alert of a sign-in it still holds. While that session lives, its alert
+  is the one thing that tells the human.
+- Letting the alert expire sooner than its record: the time a human needs to notice is not
+  shorter for alerts than for the session list, and the record also feeds Profile → Sessions.
+- Treating the address change by the same logic: the hub would first have to store, with the
+  held change, the session that asked for it, and a migration and a column were not worth it
+  for an alert that occurs rarely.

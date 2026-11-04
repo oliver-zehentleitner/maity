@@ -1867,14 +1867,31 @@ notification of the kind `security` (#160, §18.1), title `New sign-in:
   read without confirming — through `ids`, or through `up_to` with
   `include_security` (§18.3) — follows the same rule and confirms
   nothing: the session stays not in good standing, and the session list
-  shows it as not confirmed until "This was me". A `POST
-  /me/notifications/read` from a session that may not mark the item
-  skips it, names it in `skipped` (§18.3) and marks the rest. So a
+  shows it as not confirmed until "This was me".
+- **Once the reported session has ended.** When the session the item
+  reports on has ended (logout, revoked, ended by another session,
+  expired, or its row is gone), and so has every session it approved by
+  device code, and those approved by them in turn (as for the banner,
+  below), the item may be **marked read** (not confirmed) from any
+  session of the human that is in good standing, whenever that session
+  was created. It cannot be confirmed any more: "This was me" on an
+  ended session is `not_found` (above). Before that, the rule above
+  holds unchanged. Otherwise such an alert could never be cleared once
+  every session older than the sign-in had ended, which over time is
+  the normal case. Nothing is hidden by it: the reported session no
+  longer exists. A session that a mailbox, or a device code it
+  approved, obtained next has an alert of its own, which stays under
+  the rule above while that session lives. For the address change,
+  see §18.3.
+- A `POST /me/notifications/read` from a session that may not mark the
+  item skips it, names it in `skipped` (§18.3) and marks the rest. So a
   session obtained through a mailbox can hide neither its own alert nor
   that of a second session it obtains next (by another mail sign-in, or
   by a device code it approves). An item that no session may mark read
-  — the human had no session in good standing at the time — stays
-  listed and unread in the bell until its record expires (90 days).
+  — while its session lives, the human has no session in good standing
+  older than it; once it ended, none in good standing at all — stays
+  listed and unread in the bell. It stays until such a session marks it
+  or its record expires (90 days).
   Security items are exempt from the 30-day rule of #160 §18.2 that
   counts older items as read: they stay listed and unread until an
   allowed session marks them read or the record expires. Only
@@ -18076,10 +18093,18 @@ read through `ids`, or through `up_to` with `include_security: true`
 ("mark all read" after the dashboard's confirm, §18.8); `up_to` without
 it skips every `security` item, as before. An item about a new session
 (`session_created`, #169 §2.6.5) is marked read only from a session
-that existed before that sign-in and is itself in good standing (§2.6.5)
-— never from the session it reports on and never from a session created
-after it; `email_address_changed` follows the same rule, with the
-change in place of the sign-in. The other `security` kinds may be
+that existed before that sign-in and is itself in good standing (§2.6.5).
+It is never marked from the session it reports on, nor from a session
+created after it, while the reported session lives. Once that session
+has ended, and so has every session it approved by device code (in
+turn), any session of the human in good standing may mark it read
+(§2.6.5, "Once the reported session has ended").
+`email_address_changed` follows the first rule only, with the change
+in place of the sign-in. An address change is finished by the link to
+the new mailbox, often from no session at all, and the hub keeps no
+session as its author. So there is no session whose end could free the
+alert: it stays until an older session in good standing marks it, or
+until its record expires (90 days). The other `security` kinds may be
 marked read from any session of the human. An item the calling session
 may not mark is skipped, the rest of the call applies, and the answer
 names it:
@@ -18092,14 +18117,18 @@ names it:
 `skipped` lists every `security` item the call named or covered and
 did not mark, with one `reason`, checked in the order of `POST
 /auth/sessions/{id}/confirm` (§2.6.5): `not_earlier` (the calling
-session is the one the item reports on, or was created after it), else
+session is the one the item reports on, or was created after it, and
+for a sign-in that session, or one it approved, still lives), else
 `not_in_good_standing` (the calling session is not in good standing,
-§2.6.5); `[]` when none. The dashboard says which
-alerts are left and why — "confirm this sign-in from a session that is
-older than it" — so a count that does not go to zero is explained
-(the lead's addition of 2026-11-02). An `ids` entry for an item the
-human has no item for, or for an open matter (below), is not listed
-there: it is ignored, as before. Answers `200` with the counts of
+§2.6.5); `[]` when none. An ended sign-in is therefore only ever
+skipped with `not_in_good_standing`. The dashboard says which alerts
+are left and why, so a count that does not go to zero is explained
+(the lead's addition of 2026-11-02). For a sign-in skipped with
+`not_earlier` it names both ways out: "confirm it from a session that
+is older than it, or end that session under Sessions, then mark it
+read". For an address change it names the first only. An `ids` entry
+for an item the human has no item for, or for an open matter (below),
+is not listed there: it is ignored, as before. Answers `200` with the counts of
 §18.2 and `skipped`. No event: reading is not news to anyone.
 
 The `inbox` items of an open matter, `registration_pending`,
