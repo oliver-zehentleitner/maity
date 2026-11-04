@@ -110,9 +110,12 @@ Open beta, and moving fast. Interfaces can still change.
 
 ## Contact
 
-[info@maity.team](mailto:info@maity.team), and on X as
-[@maityhub](https://x.com/maityhub). Security problems: privately, as
-described in [`SECURITY.md`](SECURITY.md), never as a public issue.
+[info@maity.team](mailto:info@maity.team). Follow the project on
+[X](https://x.com/maityhub) (@maityhub),
+[Bluesky](https://bsky.app/profile/maitydev.bsky.social) (@maitydev.bsky.social) and
+[Mastodon](https://mastodon.social/@maitydev) (@maitydev@mastodon.social).
+Security problems: privately, as described in [`SECURITY.md`](SECURITY.md), never
+as a public issue.
 
 ## Licence
 
