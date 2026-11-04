@@ -328,8 +328,9 @@ compares all three pins.
 **Reason:** the uploaded files are what every agent installs. Built
 with whatever `build`, `twine` and `setuptools` PyPI served on the day
 of the tag, a changed or replaced tool could change them unseen. A
-hashed lock makes the build tools the reviewed ones. Without isolation,
-the build would otherwise fetch its backend again, without hashes. Keeping
+hashed lock makes the build tools the reviewed ones. The build runs
+without isolation: with it, `build` would set up its own environment and
+fetch the backend again, without hashes. Keeping
 the checks in their own job means nothing their dev tools install
 shares the environment the files are built in. The hub already locks
 its dependencies the same way (`hub/Makefile`), so the CLI reuses its
