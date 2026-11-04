@@ -397,8 +397,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e '.[dev]'
       - run: make check
-      # The release build's hashed lock follows release.in and the build backend's pin, and
-      # builds (release-cli.yml), so a tag never finds it broken; once, on the release's Python.
+      # The release build's hashed lock follows release.in, and the build backend's and the
+      # dev extra's setuptools pins match it; it builds (release-cli.yml), so a tag never finds it broken; once, on the release's Python.
       - if: matrix.python-version == '3.11'
         run: |
           pip install --require-hashes -r ../hub/requirements/tools.txt

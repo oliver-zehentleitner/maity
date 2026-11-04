@@ -315,7 +315,7 @@ job with the unpinned dev tools; `publish` needs both and uploads only
 the `build` job's artifact. `[build-system]` names the same exact
 `setuptools` as the lock, so a build from the sdist uses the backend
 the release was made with. The `cli` job of ci.yml runs `make
-lock-check` (lock recompiled without its hashes, both pins compared)
+lock-check` (lock recompiled without its hashes, all three pins compared)
 and `make release-build` on Python 3.11, and the audit workflow checks
 the lock against the known advisories with the hub's locks. The lock
 installs as wheels only (`--only-binary :all:`). The interpreter that
