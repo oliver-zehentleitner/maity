@@ -136,14 +136,13 @@ night's merges deployed before the maintainer is back was stated.
 
 **Id:** 8ba32bfa-41ff-4351-8884-4ac5ee08bae5
 **Type:** decision
-**Type:** incident
 **Status:** superseded
 **Superseded by:** eb392e3b-50bb-4dc5-ad3b-3e4b2272dbc0
 **Evidence:** confirmed
-**Source:** the coordinator's rule, 2026-10-22, set when the reviewer came back from a usage limit; superseded by the maintainer's decision of 2026-11-04 (req-whk2ez4r56f3): the review lead hands out every review and an absent reviewer gets no substitute, so there is no cover whose work a returning reviewer would split
+**Source:** the coordinator's rule, 2026-10-22, set when the reviewer came back from a usage limit; superseded on 2026-11-04: on req-whk2ez4r56f3 the maintainer first asked for a recommendation, then accepted the lead's recommendation "superseded", given because there are no substitute reviewers any more (seq 67806). Since then the review lead hands out every review, and no reviewer of another vendor stands in for an absent one (req-g5z43w1n2fkj)
 **Revisit when:** a second reviewer joins, or reviews are reassigned in a way the board can show without a list from the coordinator
 **See:** process.md#pull-requests-get-an-independent-first-review-on-a-different-vendors-model-the-coordinator-decides-disagreements-go-to-the-maintainer — 0b12c29d-1539-4737-9bc3-e5e5815238ec — as of 2026-10-22
-**See:** process.md#an-absent-reviewer-gets-no-substitute-the-maintainer-is-told-and-the-review-waits — d9edf24e-9c27-4a2e-8c14-f4076a864c6d — as of 2026-11-04
+**See:** process.md#an-absent-reviewer-vendor-gets-no-substitute-from-another-vendor-the-maintainer-is-told-and-the-review-waits — d9edf24e-9c27-4a2e-8c14-f4076a864c6d — as of 2026-11-04
 
 While the reviewer was stopped by a usage limit, the coordinator covered
 its reviews. When the reviewer came back it asked for an exact split, so
@@ -235,7 +234,7 @@ one of them starts neither the hub jobs nor this one. Not solved here; its own t
 **Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's rule and reason, 2026-10-25, relayed by the coordinator; the maintainer's decision of 2026-11-04 to keep it beside the hub's requirement (req-3vww792gvj9q)
-**Verification:** corroborated — re-checked 2026-11-04 after the hub began to require a why on code reports (§6.23): under `required` a code report without `why` is refused (`hub/src/maity_hub/routes/tasks.py`, `_check_why`), and the hub checks only the reference's shape, not that the entry exists or that `ktw-lint` is clean
+**Verification:** corroborated — re-checked 2026-11-04 after the hub began to require a why on code reports (§6.23): under `required` a code report without `why` is refused (`hub/src/maity_hub/routes/tasks.py`, `_check_why`), and a why is one of two forms: a reference to an entry, of which the hub checks only the shape, or `none` with a stated reason of at least ten characters; the hub never checks that the entry exists or that `ktw-lint` is clean
 **See:** projects.md#keep-the-why-is-guaranteed-by-the-hub-a-commitment-at-resume-a-reminder-the-owners-notification-and-a-why-on-every-code-report — 7c1a4f0e-2b8d-4c6e-9a3f-5e2d8b7a1c90 — as of 2026-11-04
 **Revisit when:** the hub checks that a report's why names an entry that exists and that `ktw-lint` is clean
 
@@ -252,9 +251,10 @@ not in a pull request of its own.
 **Reason:** Keep the Why is part of the project, so every agent building
 it uses it. The rule was first meant as the interim until the hub
 guaranteed the same. Both stay now: the hub refuses a code report
-without a why, but it checks only that a reference is given in the right
-shape; that the entry is there and the linter is clean is what the
-reviewer's gate checks.
+without a why, and a why is either a reference to an entry, of which the
+hub checks only the shape, or `none` with a stated reason (at least ten
+characters). That the entry is there and the linter is clean, or that
+the stated reason holds, is what the reviewer's gate checks.
 
 **Alternatives:**
 - The hub enforces it — a why reference required on code reports, set
@@ -1022,9 +1022,9 @@ Before a pull request is merged, one reviewer of each vendor, Antigravity,
 Grok and ChatGPT, has approved exactly the head that is merged, each in a
 fresh context of its own. After rework the three review the delta, and a
 fix is pushed once all three results for the current head are in, not
-after the first. The merge waits for `ci-ok` on that head, and a review's
-claims are still compared with the diff before it counts (the entry
-linked above).
+after the first. The merge waits for `ci-ok` on that head, and a sample
+of each review's claims is still compared with the diff before it counts
+(the entry linked above).
 
 **Reason:** the maintainer's: quality before speed. Two of three was the
 interim of one morning, while one vendor was out of quota.
@@ -1041,8 +1041,8 @@ interim of one morning, while one vendor was out of quota.
 **Id:** eb392e3b-50bb-4dc5-ad3b-3e4b2272dbc0
 **Type:** decision
 **Status:** active
-**Evidence:** confirmed
-**Source:** the rule of the previous lead, 2026-11-02 (the review lead coordinates every review, seq 36181), narrowed by the current lead on 2026-11-03 (review requests and head SHAs go to the review lead alone, no copy to the lead, seq 50518); confirmed by the lead on 2026-11-04
+**Evidence:** unknown
+**Source:** the rule of the previous lead, 2026-11-02 (the review lead coordinates every review, seq 36181), narrowed by the current lead on 2026-11-03 (review requests and head SHAs go to the review lead alone, no copy to the lead, seq 50518); the request's form, base and head SHAs in full, from the lead's assignment rule after the jour fixe of 2026-11-03 (seq 54855); confirmed by the lead on 2026-11-04
 **Revisit when:** reviews are to be requested from a vendor directly again, or the review lead's team is unavailable
 
 A coder sends a review request, with the base and head SHAs in full, to
@@ -1051,11 +1051,16 @@ reviewer of each vendor, orders the reviews and delta reviews, checks
 the results, and collects the minor findings (P3) for the area's
 collection card. Merges, deploys and cards stay with the lead.
 
+The rule itself is confirmed by these sources; its reason is not, so
+the entry's Evidence is the weaker grade.
+
 **Reason:** unknown — not recorded with the rule.
 
-**Alternatives:** unknown.
+**Alternatives:** none recorded. Before 2026-11-02 the coordinator
+gave the order of the reviews (8ba32bfa, for a returning reviewer); why
+that changed was not recorded.
 
-## An absent reviewer gets no substitute; the maintainer is told and the review waits
+## An absent reviewer vendor gets no substitute from another vendor; the maintainer is told and the review waits
 
 **Id:** d9edf24e-9c27-4a2e-8c14-f4076a864c6d
 **Type:** decision
