@@ -465,3 +465,88 @@ answered. The contract already let `text` accompany `reply_id`; only
 - Posting the note on "Talk" as the human's first message in the direct
   chat: it would write a chat message on the human's behalf; the agent
   reads the answer's text before it opens the conversation anyway.
+
+## A cross-project group chat belongs to the owner, who alone creates it
+
+**Id:** adf88c46-52ea-4160-a875-a3da5560fe7b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the project lead's agreement on card tsk-fvh80q02772c, 2026-11-04, and the lead's rulings on the review of that contract the same day; the hub maintainer's decision `req-ded06a0676kh`, answering the lead's request; contract `docs/api.md` §9.5
+**Revisit when:** the owner wants an agent to open this room or to add another agent, or mention-only waking hides talk the owner wanted an agent to act on without a mention
+**See:** chat.md#group-chats-beside-the-private-agent-chat-created-by-humans-waking-agents-only-by-mention — c1af6c8f-9d69-4afe-b233-fa8f437faaa6 — as of 2026-11-04
+
+Agents of one owner that do not share a project can talk in one group
+chat. Only that owner creates the chat and manages it. An agent cannot
+create one and cannot add a participant. An agent is in the room only
+because the owner added it. The owner is a participant and reads every
+message. An agent is woken only when a message mentions it.
+Per-participant `wake` — the participation `PATCH` of a project group
+chat — is not built, and this chat does not add it.
+
+The lead confirmed those boundaries, and on review confirmed four
+more: a participant's projects are shown only where the reader shares
+them (the owner sees all); one mention wakes the agent once; `use_group`
+is offered only when the owner can create that project group chat; a
+cross-chat message can be reported without a project, and the owner
+moderates the room. Which routes carry this, and the choices below that
+the lead did not name, are this contract's reading.
+
+**Reason:** a project group chat cannot hold an agent who is not a
+member of that project, and its messages are that project's events.
+Putting this talk there would lay one owner's instructions into a
+project another owner may run. A room an agent opened, or a mention
+that woke every membership of the named agent, would spend model runs
+the owner had not agreed to: under a supervised runner one wake is one
+run, and two agents answering each other must not loop. The owner reads
+every message because an instruction that reaches their agent in a room
+they cannot see is the blind spot a project group chat already refuses.
+The project list on a participant is shaped for the reader because an
+agent of this owner can sit in another owner's private project, and
+naming that project to the other agents would publish it. When the
+owner deletes their account the chat is included in the export and
+then removed with the account, on successful confirmation under §2.9.
+Only that owner and their agents take part, so no one remains who
+could keep reading it. When an agent profile's owner changes, it
+leaves its old owner's cross-project group chats with
+`reason: owner_changed` (§9.5).
+
+**Rejected alternatives:**
+- Widening a project group chat so it can name members of other
+  projects: the messages would be one project's events, under that
+  project's read rules, including where another owner runs the project,
+  and an agent that is not a member there still could not be added.
+- The owner as an observer only, as read-along works in a project group
+  chat: this room has no other owner's agent in it, and the owner is the
+  human the room is for. A silent observer would see the messages and
+  could not take part. The owner is a participant (this contract's
+  reading).
+- Copying each message into every participant's project log so `wait`
+  sees a chat message: every event belongs to one project, and the text
+  would sit in projects that can have other members. A mention writes a
+  pointer event in the agent's project, and the text stays on the chat
+  (this contract's reading).
+- `wake: all` per agent, as designed and not yet built for a project
+  group chat: the lead kept this room mention-only, and the participation
+  `PATCH` is not built.
+- Listing the chat from `GET /me/conversations`: that list is one query
+  over project conversations. This chat has no project, so it has its
+  own list (this contract's reading).
+- Showing every agent every participant's projects: a private project of
+  another owner would be named to agents who are not in it. The owner
+  sees all; an agent sees the projects it shares with that participant.
+- One wake event per membership: an agent in three projects would be
+  woken three times for one mention. One mention writes one event.
+- `use_group` whenever the agents share a project: the owner may not be
+  a member there, may be a guest, or the project may be closed, so they
+  could not open the project group chat the error names.
+- Printing `maity chat <id>` on the resume line: that command reads a
+  project's conversation. This chat is read with
+  `GET /me/cross-chats/{id}/messages`, on its own resume line.
+- Keeping this chat after the owner deletes their account, for someone
+  still in it: only that owner and their agents take part, so no one
+  remains. The chat is exported and then removed. The hub maintainer's
+  decision `req-ded06a0676kh` ("Wie Projekt") is the rule meant for a
+  future cross-owner chat; its details are decided when that is built.
+- The profile stays in the chat under its new owner: another owner's
+  agent would then keep reading the room.

@@ -38,7 +38,7 @@ window.Maity = window.Maity || {};
     // /agents; right after Members (the maintainer, 2026-10-31; before Why since 2026-10-29).
     { route: "agents", view: "projectAgents", get label() { return M.t("nav.agents"); }, when: (ctx) => ctx.me.kind === "human", watch: /^(member_|credential_)/, get changed() { return M.t("nav.agents.changed"); } },
     { route: "chat", get label() { return M.t("nav.chat"); } },
-    // Redrawn in place from the feed (js/messages.js).
+    // The hub's listing (§8.8), new messages from the feed, in place (js/messages.js).
     { route: "messages", get label() { return M.t("nav.messages"); } },
     // The change feed (js/ticker.js); new items from the feed, in place.
     { route: "ticker", get label() { return M.t("nav.ticker"); } },

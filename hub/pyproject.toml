@@ -81,6 +81,9 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 # The load tests (tests/test_load.py) run in CI's hub-load job: `pytest -m load`.
 addopts = "-m 'not load'"
+# A passing test's tmp_path is removed. The default "all" kept one copy of
+# the template database per test (hub/context/testing.md).
+tmp_path_retention_policy = "failed"
 markers = [
     "load: the notifications' cost does not grow with history or tabs (CI's hub-load job runs only these, on PostgreSQL)",
     "wheel: what the installed wheel has to prove (CI's hub-wheel job runs only these): the package data, the entry point and the migrations it carries",
