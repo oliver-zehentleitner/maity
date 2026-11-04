@@ -1195,7 +1195,7 @@ limit the hub states, not one it closes. What it does instead:
   a mail the agent could delete. Only a session that existed before
   that sign-in can confirm it; the obtained session and every session
   created after it cannot, and the banner stays until the sign-in is
-  confirmed.
+  confirmed or the session, and every session it approved, has ended.
 - **A session the human has not confirmed cannot lock the human
   out.** A session in good standing — signed in by password or with
   the second factor, or its sign-in confirmed by the human with "This
@@ -17836,9 +17836,9 @@ human are not pinned: they have their own inbox and count in
 every `session_created` or `session_ended` record of the human
 (§2.6.5), `null` when there is none in the 90 days records are kept.
 The hub derives it from the newest such record's number, not from its
-`at`: two records may share an `at`, as `at` is only raised to the
-previous record's when the clock steps back (below), while their
-numbers always differ. Clients only compare it with the last one they
+`at`: two records may share an `at`, which has second precision (§1)
+and is only kept from decreasing (below), while their numbers always
+differ. Clients only compare it with the last one they
 saw; like a position, it is never built or parsed. It is in every answer, with
 `after` too, and no item stands for those records. A long-poll with
 `after` and `wait` also returns when such a record past `after` is
