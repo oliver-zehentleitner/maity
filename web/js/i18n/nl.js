@@ -879,7 +879,7 @@ window.MAITY_I18N["nl"] = {
   "device.code.open": "Heb je een code?",
   "device.code.title": "Inloggen met een code",
   "device.expires": "Verloopt over {time}.",
-  "device.mail.address": "Je adres",
+  "device.mail.address": "E-mailadres",
   "device.mail.check": "Controleer je e-mail",
   "device.mail.code": {
     "one": "De code van {count} cijfer",
@@ -3435,7 +3435,7 @@ window.MAITY_I18N["nl"] = {
   "reg.terms.version": "Versie",
   "reg.title": "Registratie",
   "reg.unchanged": "Niets gewijzigd.",
-  "register.address": "Je adres",
+  "register.address": "E-mailadres",
   "register.check_mail": "Controleer je e-mail",
   "register.closed": "Deze hub maakt niet op verzoek nieuwe accounts aan.",
   "register.closed_sign_in": "Als je een account hebt, {link}.",

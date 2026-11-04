@@ -949,7 +949,7 @@ window.MAITY_I18N["ko"] = {
   "device.code.open": "코드가 있나요?",
   "device.code.title": "코드로 로그인",
   "device.expires": "{time} 후 만료됩니다.",
-  "device.mail.address": "내 주소",
+  "device.mail.address": "이메일 주소",
   "device.mail.check": "메일을 확인하세요",
   "device.mail.code": {
     "other": "{count}자리 코드"
@@ -3531,7 +3531,7 @@ window.MAITY_I18N["ko"] = {
   "reg.terms.version": "버전",
   "reg.title": "가입",
   "reg.unchanged": "변경된 내용이 없어요.",
-  "register.address": "내 주소",
+  "register.address": "이메일 주소",
   "register.check_mail": "메일을 확인하세요",
   "register.closed": "이 허브는 요청에 따른 새 계정을 만들지 않아요.",
   "register.closed_sign_in": "계정이 있다면 {link}하세요.",

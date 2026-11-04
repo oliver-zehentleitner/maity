@@ -930,7 +930,7 @@ window.MAITY_I18N["de"] = {
   "device.code.open": "Du hast einen Code?",
   "device.code.title": "Mit einem Code anmelden",
   "device.expires": "Läuft in {time} ab.",
-  "device.mail.address": "Deine Adresse",
+  "device.mail.address": "E-Mail-Adresse",
   "device.mail.check": "Prüfe deine Mail",
   "device.mail.code": {
     "one": "Der {count}-stellige Code",
@@ -3569,7 +3569,7 @@ window.MAITY_I18N["de"] = {
   "reg.terms.version": "Version",
   "reg.title": "Registrierung",
   "reg.unchanged": "Nichts geändert.",
-  "register.address": "Deine Adresse",
+  "register.address": "E-Mail-Adresse",
   "register.check_mail": "Prüfe deine Mails",
   "register.closed": "Dieser Hub legt auf Anfrage keine neuen Konten an.",
   "register.closed_sign_in": "Wenn du ein Konto hast, {link}.",
