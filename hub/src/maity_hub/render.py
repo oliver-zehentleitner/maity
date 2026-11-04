@@ -64,21 +64,32 @@ def choose_language(
     return default if default in offered else (offered[0] if offered else default)
 
 
-# `Accept-Language` is read only this far: its first parts, each tag at most the 35 characters
-# BCP 47 asks every implementation to support. The work per request is then bounded, whatever
-# the header's size (§16.7).
+# `Accept-Language` is read only this far: the parts wholly within its first characters, at most
+# so many, each tag at most the 35 characters BCP 47 asks every implementation to support. The
+# work per request then depends on these limits, not on the header's size (§16.7): nothing past
+# them is copied, split or converted.
+ACCEPT_CHARS = 1024
 ACCEPT_PARTS = 20
 TAG_MAX = 35
 
 
+def accept_parts(accept_language: str | None) -> list[str]:
+    """The parts of an `Accept-Language` the hub reads: those wholly within its first
+    `ACCEPT_CHARS` characters, at most `ACCEPT_PARTS`. A part the limit cuts is not read."""
+    header = accept_language or ""
+    if len(header) <= ACCEPT_CHARS:
+        return header.split(",", ACCEPT_PARTS)[:ACCEPT_PARTS]
+    # One character more: a comma there means the last part read ends at the limit.
+    return header[: ACCEPT_CHARS + 1].split(",")[:-1][:ACCEPT_PARTS]
+
+
 def best_language(offered: list[str], query: str | None, accept_language: str | None) -> str | None:
-    """`?lang=` if offered, else the best match of `Accept-Language`'s first `ACCEPT_PARTS`
-    parts, else nothing."""
+    """`?lang=` if offered, else the best match among the parts of `Accept-Language` the hub
+    reads (`accept_parts`), else nothing."""
     if query in offered:
         return str(query)
     ranked: list[tuple[float, int, str]] = []
-    parts = (accept_language or "").split(",", ACCEPT_PARTS)[:ACCEPT_PARTS]
-    for position, part in enumerate(parts):
+    for position, part in enumerate(accept_parts(accept_language)):
         tag, _, rest = part.strip().partition(";")
         if len(tag.strip()) > TAG_MAX:
             continue
@@ -96,14 +107,15 @@ def best_language(offered: list[str], query: str | None, accept_language: str | 
 
 # --- Markdown ----------------------------------------------------------------------------------
 
-# Every run below stops where the next try would start or at a character the run after it needs,
-# so a text without the closing character costs one pass, not one per way of splitting it or
-# one per `[` in it. A link's target and title hold no `[`, stay on their line and are at most
-# LINK_MAX characters each (§16.7).
+# No two adjacent runs below can share a character, so a failed try gives characters back only
+# to fail at the next one: the spaces before a link's target are taken whole (`*+`) and the
+# target holds none, the title starts at the first character the target cannot hold. A link's
+# target and title hold no `[`, stay on their line and are at most LINK_MAX characters each
+# (§16.7), so what one `[` reads ends at the next `[`, and the work grows with the text's length.
 LINK_MAX = 2048
 _INLINE = re.compile(
     r"`(?P<code>[^`\n]+)`"
-    rf"|\[(?P<text>[^\[\]\n]*)\]\([ \t]*(?P<target>[^)\[\s]{{0,{LINK_MAX}}})(?:[ \t][^)\[\n]{{0,{LINK_MAX}}})?\)"
+    rf"|\[(?P<text>[^\[\]\n]*)\]\([ \t]*+(?P<target>[^)\[\s]{{0,{LINK_MAX}}})(?:[ \t][^)\[\n]{{0,{LINK_MAX}}})?\)"
     r"|(?P<bare>https://[^\s<>()]+)"
     r"|\*\*(?P<strong>[^*\n]+)\*\*"
     r"|\*(?P<em>[^*\n]+)\*"

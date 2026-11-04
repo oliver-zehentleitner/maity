@@ -179,28 +179,35 @@ value, since a row written by an older version or by hand is still shown to the 
 - Giving the landing page the dashboard's `default-src 'self'` and its stylesheet: it would allow
   the page to load files and make the policy depend on what the dashboard ships.
 
-## The Markdown renderer and the language choice do bounded work per input: no pattern backtracks over a run, quotes nest 8 deep, `Accept-Language` is read for 20 parts
+## The Markdown renderer and the language choice do bounded work per input: no two adjacent runs of a pattern share a character, quotes nest 8 deep, `Accept-Language` is read for 1024 characters and 20 parts
 
 **Id:** 94d7a94f-40a8-46ea-b271-39e6d8f1ed9f
 **Type:** constraint
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-qzvb0c0abm3a (hardening asked for by the maintainer, 2026-11-04: every pattern and parser on member text has bounded work per input); the limits 8, 2048, 20 and 35 agreed by the lead on the card's plan (2026-11-04); `render.py` (`_INLINE`, `_heading`, `QUOTE_DEPTH`, `best_language`)
+**Source:** card tsk-qzvb0c0abm3a (hardening asked for by the maintainer, 2026-11-04: every pattern and parser on member text has bounded work per input); the limits 8, 2048, 20 and 35 agreed by the lead on the card's plan (2026-11-04), 1024 and the link's opening spaces from the card's first review (2026-11-04); `render.py` (`_INLINE`, `_heading`, `QUOTE_DEPTH`, `accept_parts`)
 **Revisit when:** the renderer gets a construct with a pattern of its own, a member text may grow beyond its current limit (a card's 16 KiB, a note's 4 KiB), or the hub gains a way to stop a render that runs too long
 
 The renderer above runs on members' words too: the text of a public project, a card's body and its
 notes (§16.9), rendered in the request that writes them and at start-up. So each step's work grows
 with the text's length and never with the ways of splitting it:
-- In `_INLINE` every run stops where the next run needs a character, or where the next try would
-  start: a link's target and title hold no `[`, stay on their line and are at most 2048
-  characters each. A text full of unclosed links costs one pass.
+- In `_INLINE` no two adjacent runs can share a character, so a failed try gives characters back only to
+  fail at the next one: the spaces before a link's target are taken whole (a possessive `*+`)
+  and the target holds none; the title starts with a character the target cannot hold. A link's
+  target and title hold no `[`, stay on their line and are at most 2048 characters each, so
+  what one `[` reads ends at the next. Before the spaces were taken whole, they could be split
+  between the opening and the title in every way, and a run of 64 KiB took seconds. The output
+  is the old pattern's, checked against it as an oracle on short lines.
 - A heading's marks are a pattern; its text, without the closing `#` run and the spaces around
   it, is cut by string operations. The output is the old pattern's, checked against it as an
   oracle on short lines.
 - Quotes nest at most 8 deep, as in the dashboard (`web/js/markdown.js`); the lines of a deeper
   one are a paragraph with their `>` as written. The recursion is bounded with it.
-- `best_language` reads the first 20 parts of `Accept-Language`, and a tag longer than the 35
-  characters BCP 47 asks every implementation to support matches nothing.
+- `accept_parts` reads the parts of `Accept-Language` wholly within its first 1024 characters,
+  at most 20, for the public pages and the registration mail alike; a tag longer than the 35
+  characters BCP 47 asks every implementation to support matches nothing. Nothing past the
+  limit is copied, split or converted: a split with a limit still copies the rest, and a q-value
+  of any length is converted.
 
 A test renders the longest stored text of each shape in under a second.
 

@@ -15351,9 +15351,10 @@ same header and footer (§16.7.5).
   language: `?lang=<tag>` if offered, else the best match of
   `Accept-Language`, else `default_language`; a missing field falls
   back to the default language's page. Wherever the hub chooses a
-  language from `Accept-Language`, it reads the header's first **20**
-  parts, and a tag longer than **35** characters matches nothing, so
-  the work per request is the same whatever the header's size. It loads only the first-party
+  language from `Accept-Language`, it reads the parts wholly within
+  the header's first **1024** characters, at most **20** of them, and
+  a tag longer than **35** characters matches nothing, so the work per
+  request depends on these limits, not on the header's size. It loads only the first-party
   files of **progressive enhancement** (below). With a
   valid session, or while the landing page is disabled, `GET /` is the
   app shell (§16.11): the dashboard's home with a session, the login
