@@ -126,11 +126,12 @@ def _excluded(session: Any, member: Any, credential: Any) -> str | None:
     return None
 
 
-def audience_of(conn: Connection, member: Any) -> list[str]:
+def audience_of(conn: Connection, member: Any, *, admins_always: bool = True) -> list[str]:
     """The member the agent reports to, the admins, and the profile's owner when a
-    member (§8.2)."""
-    audience = ["trust:admin"]
+    member (§8.2). Without `admins_always` the admins read only when there is no member to
+    report to (`holder_stalled`, `claim_expired`)."""
     boss = routing_boss(conn, member.reports_to)
+    audience = [] if boss is not None and not admins_always else ["trust:admin"]
     if boss is not None:
         audience.insert(0, f"member:{boss}")
     owner = conn.execute(
@@ -229,6 +230,10 @@ def check(engine: Engine, session_id: str) -> None:
             select(t.agent_session).where(t.agent_session.c.id == session_id)
         ).one()
         _announce(conn, member, credential, refreshed, since, ended=False)
+        # The same episode, to the same member: a holder that stops (§6.5).
+        from maity_hub import holder_stalled
+
+        holder_stalled.stalled(conn, member.id, credential.instance, "not_listening")
 
 
 def sweep(engine: Engine) -> None:
@@ -254,7 +259,7 @@ def sweep(engine: Engine) -> None:
 
 
 class Worker:
-    """Runs `sweep` every minute (§5.3)."""
+    """Runs `sweep` every minute (§5.3), then the lease expiry's `claim_expired` (§6.5)."""
 
     def __init__(self, engine: Engine, interval: float | None = None) -> None:
         self.engine = engine
@@ -279,5 +284,8 @@ class Worker:
                 with worker_runs.claim(self.engine, "not-listening", self.interval) as held:
                     if held is not None:
                         sweep(self.engine)
+                        from maity_hub import holder_stalled
+
+                        holder_stalled.expire(self.engine)  # `claim_expired`, every minute (§6.5)
             except Exception:
                 log.exception("the not-listening sweep failed")
