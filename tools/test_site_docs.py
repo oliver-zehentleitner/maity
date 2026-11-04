@@ -97,6 +97,22 @@ class SiteDocsTest(unittest.TestCase):
             self.assertIn('src="/img/x.png?redirect=/../../outside.png"', page)
             self.assertIn('src="/img/y.png"', page)
 
+    def test_a_src_inside_an_alt_text_is_not_the_images_src(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, site = Path(tmp) / "repo", Path(tmp) / "site"
+            (repo / "docs/install").mkdir(parents=True)
+            (repo / "docs/install/a.md").write_text(
+                "# A\n\n![a src='evil.png'](../img/real.png)\n\n"
+                "<img alt=\"see src='alt.png'\" src=\"../img/after.png\">\n"
+            )
+            (repo / "docs/nav.yml").write_text("- group: G\n  pages:\n    - {src: docs/install/a.md, title: A}\n")
+            self.assertEqual(site_docs.main([str(site), "--repo", str(repo)]), 0)
+            page = (site / "docs/install/a/index.html").read_text()
+            self.assertIn('src="/img/real.png"', page)
+            self.assertIn('src="/img/after.png"', page)
+            self.assertIn('alt="a src=\'evil.png\'" src="/img/real.png"', page)
+            self.assertIn('alt="see src=\'alt.png\'" src="/img/after.png"', page)
+
 
     def test_the_real_nav_builds_and_hides_section_14(self):
         repo = Path(__file__).resolve().parent.parent

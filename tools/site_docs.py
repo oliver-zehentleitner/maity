@@ -206,13 +206,23 @@ def rewrite_links(page: Page, by_src: dict[str, Page], anchors: dict[tuple[str, 
         return f"{GITHUB}/raw/main/{path}{rest}"
 
     body = re.sub(r'href="([^"]*)"', lambda m: f'href="{html.escape(target(m.group(1)))}"', page.body)
-    # Markdown writes src="…"; raw HTML in a page may quote it either way.
-    return re.sub(
-        r"""(<img\b[^>]*?\s)src=(["'])(.*?)\2""",
-        lambda m: f'{m.group(1)}src="{html.escape(image(m.group(3)))}"',
-        body,
-        flags=re.I | re.S,
-    )
+    # An <img> is read attribute by attribute, so a quote inside another value (an alt text
+    # that mentions src='…') is never taken for the src; Markdown quotes with ", raw HTML
+    # either way.
+    attr = re.compile(r"""(\s+)([^\s"'>/=]+)(?:(\s*=\s*)("[^"]*"|'[^']*'|[^\s"'>]+))?""")
+
+    def img(m: re.Match[str]) -> str:
+        def one(a: re.Match[str]) -> str:
+            if a.group(2).lower() != "src" or a.group(4) is None:
+                return a.group(0)
+            value = a.group(4)
+            if value[:1] in "\"'":
+                value = value[1:-1]
+            return f'{a.group(1)}src="{html.escape(image(value))}"'
+
+        return m.group(1) + attr.sub(one, m.group(2)) + m.group(3)
+
+    return re.sub(r"""(<img\b)((?:"[^"]*"|'[^']*'|[^'">])*?)(\s*/?>)""", img, body, flags=re.I)
 
 
 def nav_html(nav: list[dict], by_src: dict[str, Page], current: Page) -> str:
