@@ -68,6 +68,7 @@ from maity_hub.db import (
     head_revision,
     make_engine,
     make_health_engine,
+    make_shared_engine,
 )
 from maity_hub.errors import error_response
 from maity_hub.events import transaction
@@ -276,8 +277,14 @@ def create_app(
     engine = engine if engine is not None else serving_engine(settings)
     health_engine = make_health_engine(engine)  # the probe's own connection, outside the pool
     write_guard.install(engine)  # no write of a deleted account commits (§2.9)
-    shared_counts.configure(engine)  # the limits count across replicas on PostgreSQL
-    shared_budget.configure(engine)  # and so does the forge's budget
+    shared_engine = make_shared_engine(
+        engine,
+        statement_timeout=settings.db_statement_timeout,
+        idle_in_transaction_timeout=settings.db_idle_in_transaction_timeout,
+        pool_recycle=settings.db_pool_recycle,
+    )
+    shared_counts.configure(shared_engine)
+    shared_budget.configure(shared_engine)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -377,6 +384,8 @@ def create_app(
         image_worker.stop()
         if worker is not None:
             worker.stop()
+        if shared_engine is not None:
+            shared_engine.dispose()
         engine.dispose()
         if health_engine is not None:
             health_engine.dispose()
@@ -392,6 +401,7 @@ def create_app(
     )
     app.state.settings = settings
     app.state.engine = engine
+    app.state.shared_engine = shared_engine
     app.state.health_engine = health_engine or engine
     # Read once: it loads every migration file, and the files do not change under a running hub.
     app.state.schema_head = head_revision(engine)

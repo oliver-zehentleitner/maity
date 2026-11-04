@@ -951,10 +951,12 @@ def scenario(run: Run, page: Page) -> None:
         free.press("Escape")
         expect(picker).to_be_hidden()
         # The one field stands above the buttons; a reply takes its text along (§7).
-        # Talk is offered beside the replies (the owner's agent asked), Send is not.
+        # Talk beside the replies (the owner's agent asked), and Send for the words alone: disabled
+        # while the field is empty.
         current = page.locator("li.entry.current")
-        expect(current.get_by_role("button", name="Talk", exact=True)).to_be_visible()
-        expect(current.get_by_role("button", name="Send", exact=True)).to_have_count(0)
+        expect(current.get_by_role("button", name="Talk", exact=True)).to_be_enabled()
+        free.fill("")
+        expect(current.get_by_role("button", name="Send", exact=True)).to_be_disabled()
         free.fill("Ship it, with this note.")
         current.get_by_role("button", name="Ship it", exact=True).click()
         expect_inbox_empty(page)
@@ -1065,6 +1067,8 @@ def scenario(run: Run, page: Page) -> None:
     no_problems(run, "all projects")
 
     id_links_step(run, page, alpha, task["id"])
+    send_talk_step(run, page, alpha)
+    wide_lines_step(run, page, alpha, task["id"])
     chat_pause_state(run, page, alpha, agent_id)
     group_chat_form_step(run, page)
     direct_removal_step(run, page, agent_id)
@@ -1158,6 +1162,153 @@ def scenario(run: Run, page: Page) -> None:
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
+
+
+def send_talk_step(run: Run, page: Page, alpha: Path) -> None:
+    """Send and Talk on every request one can answer (docs/api.md §7, tsk-nx6hm8qjzm3z): on a decision
+    with options Send takes the words alone, Ctrl+Enter the same, and is disabled while the field is
+    empty; on a consent it stays disabled and says why, the words go only with a reply. Talk for the
+    owner's own agent. Wide and light, narrow and dark."""
+    run.step("inbox: Send beside the options takes the words alone; a consent's Send says why it cannot")
+    try:
+        for width, height, scheme in ((1280, 900, "light"), (390, 844, "dark")):
+            page.set_viewport_size({"width": width, "height": height})
+            page.emulate_media(color_scheme=scheme)
+            where = f"{width} px {scheme}"
+            out = run.maity(
+                alpha, "ask", f"Which name at {width} px?\nTwo to choose from, or your own.",
+                "--to", "human", "--class", "decision", "--option", "Maity", "--option", "Hub",
+            )
+            request_id = re.search(r"req-[0-9a-z]+", out).group(0)
+            page.goto(f"{run.base}/owner/e2e-alpha/inbox/{request_id}")
+            current = page.locator("li.entry.current")
+            expect(current).to_contain_text(f"Which name at {width} px?")
+            send = current.get_by_role("button", name="Send", exact=True)
+            expect(send).to_be_disabled()
+            expect(current.get_by_role("button", name="Talk", exact=True)).to_be_enabled()
+            expect(current.locator(".reply-hint")).to_have_count(0)
+            free = current.locator(".free-text textarea")
+            free.fill("Neither: maity-hub.")
+            expect(send).to_be_enabled()
+            run.shot(page, f"send-beside-options-{width}-{scheme}")
+            free.press("Control+Enter")
+            expect(page.locator(f"li.entry[data-request='{request_id}']")).to_have_count(0)
+            got = run.api(alpha, "GET", f"/projects/owner/e2e-alpha/requests/{request_id}")
+            answer = got.get("answer") or {}
+            assert answer.get("text") == "Neither: maity-hub." and not answer.get("reply_id") and not answer.get("talk"), (
+                f"{where}: Ctrl+Enter sends the words alone {answer}"
+            )
+
+        # A consent: the words alone would read as No (§15.6), so Send stays disabled and says why.
+        out = run.maity(alpha, "ask", "May the alpha agent tag 0.2.0?", "--to", "human", "--class", "consent")
+        request_id = re.search(r"req-[0-9a-z]+", out).group(0)
+        page.goto(f"{run.base}/owner/e2e-alpha/inbox/{request_id}")
+        current = page.locator("li.entry.current")
+        expect(current).to_contain_text("May the alpha agent tag 0.2.0?")
+        send = current.get_by_role("button", name="Send", exact=True)
+        hint = current.locator(".reply-hint")
+        expect(hint).to_contain_text("Choose one of the answers")
+        expect(send).to_have_attribute("aria-describedby", hint.get_attribute("id") or "")
+        free = current.locator(".free-text textarea")
+        free.fill("Tag it after the notes.")
+        expect(send).to_be_disabled()
+        free.press("Control+Enter")
+        expect(page.locator(f"li.entry[data-request='{request_id}']")).to_have_count(1)
+        run.shot(page, "send-consent-disabled")
+        run.a11y(page, "inbox, a consent with Send disabled and its reason")
+        page.locator("li.entry.current").get_by_role("button", name="go", exact=True).click()
+        expect_inbox_empty(page)
+        got = run.api(alpha, "GET", f"/projects/owner/e2e-alpha/requests/{request_id}")
+        answer = got.get("answer") or {}
+        assert answer.get("reply_id") == "go" and answer.get("text") == "Tag it after the notes.", answer
+    finally:
+        page.set_viewport_size({"width": 1280, "height": 900})
+        page.emulate_media(color_scheme="light")
+    no_problems(run, "send and talk")
+
+
+def wide_lines_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
+    """A long unbroken line keeps the page inside the window (tsk-6bn80bppb5e5): a request with a
+    600-character code line and long card links, open in the inbox of all projects above a collapsed
+    one, a card note and a project message with the same text, and a card link of 300 characters. The
+    code scrolls in its own block, the links wrap, every row keeps the page's width; desktop and phone,
+    light and dark."""
+    run.step("a long line in a request and in a card note stays inside the window")
+    line = ("for f in $(git ls-files 'web/i18n/*.json'); do " + "python3 -m json.tool \"$f\" >/dev/null && " * 20)[:600]
+    links = " ".join(f"{run.base}/owner/e2e-alpha/tasks/{card_id}?from={'x' * 60}{i}" for i in range(4))
+    text = f"Run this first:\n\n```sh\n{line}\n```\n\nThe cards: {links}"
+    asked = [
+        re.search(r"req-[0-9a-z]+", run.maity(alpha, "ask", title + "\n" + text, "--to", "human", "--class", "info")).group(0)
+        for title in ("A request with a long line", "A short one below it")
+    ]
+    run.maity(alpha, "note", "add", card_id, text)
+    run.maity(alpha, "say", "all", text, "--type", "notice")
+    # A link without a label shows its URL: 300 characters with no place to break.
+    long_url = f"https://github.com/owner/e2e-alpha/blob/main/{'x' * 255}"
+    link = run.api(alpha, "POST", f"/projects/owner/e2e-alpha/tasks/{card_id}/links", {"kind": "url", "url": long_url})
+
+    def inside(where: str) -> None:
+        sw, iw = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
+        assert sw <= iw, f"{where}: the page is {sw} px wide in a {iw} px window"
+
+    try:
+        for width, height, scheme in ((1280, 900, "light"), (2560, 1200, "dark"), (390, 844, "light"), (390, 844, "dark")):
+            page.set_viewport_size({"width": width, "height": height})
+            page.emulate_media(color_scheme=scheme)
+            where = f"{width} px {scheme}"
+            page.goto(f"{run.base}/all")
+            wide = page.locator(f"li.entry[data-request='{asked[0]}']")
+            expect(wide).to_be_visible()
+            wide.locator(".entry-head").first.click()
+            block = wide.locator(".entry-body .md-code")
+            expect(block).to_be_visible()
+            inside(f"the inbox at {where}")
+            rows = page.evaluate("Array.from(document.querySelectorAll('li.entry')).map((e) => e.getBoundingClientRect().right)")
+            assert rows and max(rows) <= width, f"the inbox at {where}: rows end at {max(rows)} px"
+            client, scroll = block.evaluate("(b) => [b.clientWidth, b.scrollWidth]")
+            assert scroll > client, f"the inbox at {where}: the code line does not scroll in its block ({client}/{scroll})"
+            wider = wide.evaluate(
+                "(r) => Array.from(r.querySelectorAll('.entry-body p')).filter((e) => !e.closest('.md-code'))"
+                ".filter((e) => e.scrollWidth > e.clientWidth).map((e) => [e.clientWidth, e.scrollWidth])"
+            )
+            assert not wider, f"the inbox at {where}: text wider than its box {wider}"
+            if width == 390:
+                run.shot(page, f"inbox-long-line-{scheme}")
+
+            page.goto(f"{run.base}/owner/e2e-alpha/tasks/{card_id}")
+            note = page.locator("aside.card-panel .card-note-list li").filter(has_text="Run this first").first
+            expect(note.locator(".md-code")).to_be_visible()
+            expect(page.locator(f"aside.card-panel .card-links a[href='{long_url}']")).to_be_visible()
+            inside(f"the card's notes at {where}")
+            right = note.evaluate("(n) => n.querySelector('.md-code').getBoundingClientRect().right")
+            assert right <= width, f"the card's notes at {where}: the code block ends at {right} px"
+            # The links wrap: no text of the note but its code block wider than its box, the panel unscrolled.
+            wider = note.evaluate(
+                "(n) => Array.from(n.querySelectorAll('p, li')).filter((e) => !e.closest('.md-code'))"
+                ".filter((e) => e.scrollWidth > e.clientWidth).map((e) => [e.tagName, e.clientWidth, e.scrollWidth])"
+            )
+            assert not wider, f"the card's notes at {where}: text wider than its box {wider}"
+            panel = page.evaluate("(() => { const p = document.querySelector('aside.card-panel'); return [p.clientWidth, p.scrollWidth]; })()")
+            assert panel[1] <= panel[0], f"the card panel at {where} scrolls sideways ({panel[0]}/{panel[1]})"
+
+            # The project's messages: the same text, no panel around it to hide a wide line.
+            page.goto(f"{run.base}/owner/e2e-alpha/messages")
+            said = page.locator("li.pmsg").filter(has_text="Run this first").first
+            expect(said.locator(".md-code")).to_be_visible()
+            inside(f"the project's messages at {where}")
+        run.a11y(page, "card notes, a long code line")
+    finally:
+        page.set_viewport_size({"width": 1280, "height": 900})
+        page.emulate_media(color_scheme="light")
+        run.api(alpha, "DELETE", f"/projects/owner/e2e-alpha/tasks/{card_id}/links/{link['id']}")
+    for request_id in asked:
+        page.goto(f"{run.base}/owner/e2e-alpha/inbox/{request_id}")
+        current = page.locator("li.entry.current")
+        current.locator("textarea").fill("Seen.")
+        current.get_by_role("button", name="Send", exact=True).click()
+        expect(page.locator(f"li.entry[data-request='{request_id}']")).to_have_count(0)
+    expect_inbox_empty(page)
+    no_problems(run, "long lines")
 
 
 def id_links_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:

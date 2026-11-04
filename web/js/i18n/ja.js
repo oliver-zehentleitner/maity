@@ -855,7 +855,7 @@ window.MAITY_I18N["ja"] = {
   "device.code.open": "コードをお持ちですか?",
   "device.code.title": "コードでサインイン",
   "device.expires": "あと {time} で期限切れになります。",
-  "device.mail.address": "あなたのアドレス",
+  "device.mail.address": "メールアドレス",
   "device.mail.check": "メールを確認してください",
   "device.mail.code": {
     "other": "{count} 桁のコード"
@@ -966,6 +966,7 @@ window.MAITY_I18N["ja"] = {
   "error.probe_unavailable": "フォージが応答しませんでした。",
   "error.profile_in_use": "このエージェントは、まだプロジェクトで稼働中です。",
   "error.project_closed": "このプロジェクトはアーカイブされています。",
+  "error.project_limit": "この名前空間には、このハブが許可する数のプロジェクトがすでにあります。",
   "error.rate_limited": "リクエストが多すぎます。しばらくしてからもう一度お試しください。",
   "error.reason.humans_only": "これができるのは人間だけです。",
   "error.reason.method_disabled": "このサインイン方法はオフになっています。",
@@ -2048,6 +2049,11 @@ window.MAITY_I18N["ja"] = {
   },
   "limits.orgs.hint": "1 人がオーナーを務める組織の数です。これ以上作ろうとすると拒否されます。",
   "limits.orgs.label": "1 人あたりが所有する組織数",
+  "limits.projects.at": {
+    "other": "{count} 件のオーナーがこの上限に達しているか、超えています。"
+  },
+  "limits.projects.hint": "1 人または 1 つの組織の名前空間にあるプロジェクトの数です（アーカイブ済みも含む）。これ以上作成または移管しようとすると拒否されます。",
+  "limits.projects.label": "オーナーあたりのプロジェクト数",
   "limits.save": "上限を保存",
   "limits.saved": "保存しました。",
   "limits.saving": "保存中…",
@@ -2184,6 +2190,7 @@ window.MAITY_I18N["ja"] = {
   "member.silent_unknown": "応答なし · 最終呼び出しは不明",
   "memberpage.actions": "操作",
   "memberpage.actions.label": "{name} の操作",
+  "memberpage.activity.cursor_stuck": "ハブのイベントカーソルが {after} を越えて進みませんでした",
   "memberpage.activity.failed": "アクティビティを読み込めませんでした: {reason}",
   "memberpage.activity.hint": "このプロジェクトでの活動を、新しい順に表示します。",
   "memberpage.activity.hint_cut": {
@@ -2489,8 +2496,6 @@ window.MAITY_I18N["ja"] = {
   "menu.sign_in_device": "別のデバイスにサインイン",
   "menu.sign_out": "サインアウト",
   "menu.theme": "テーマ",
-  "messages.cursor_stuck": "ハブのイベントカーソルが {after} を越えて進みませんでした",
-  "messages.cut": "ハブの直近 {window} 件のイベント (全プロジェクトを合わせた数) に含まれるメッセージだけを表示しています。それより古いものは、ここでは読み取られません。",
   "messages.filter.every_type": "すべての種類",
   "messages.filter.type": "種類",
   "messages.from_to": "{from} から {to}",
@@ -2498,14 +2503,19 @@ window.MAITY_I18N["ja"] = {
   "messages.new": {
     "other": "新しいメッセージが {count} 件あります。"
   },
+  "messages.new_failed": "新しいメッセージを読み取れませんでした: ",
   "messages.none": "プロジェクトのメッセージはまだありません。",
   "messages.none_of_type": "この種類のメッセージはありません。",
+  "messages.not_read_yet": "これまでに読んだページにはありません。古いメッセージはまだ読み込まれていません。",
+  "messages.older": "以前のメッセージ",
+  "messages.read_failed": "メッセージを読み取れませんでした: ",
   "messages.remove": "取り除く",
   "messages.remove.ask": "このメッセージを、読めるすべての人から取り除きますか? 本文とファイルは通知文に置き換えられます。理由を入力してください:",
   "messages.remove.busy": "取り除いています…",
   "messages.remove.done": "取り除きました。",
   "messages.remove.failed": "取り除けませんでした: ",
   "messages.remove.label": "このメッセージを全員から取り除く",
+  "messages.removed": "このメッセージは削除されました。",
   "messages.review.more": {
     "other": "ほか {count} 箇所"
   },
@@ -3361,7 +3371,7 @@ window.MAITY_I18N["ja"] = {
   "reg.terms.version": "バージョン",
   "reg.title": "登録",
   "reg.unchanged": "変更はありません。",
-  "register.address": "あなたのアドレス",
+  "register.address": "メールアドレス",
   "register.check_mail": "メールを確認してください",
   "register.closed": "このハブは、リクエストに応じた新しいアカウントを作成しません。",
   "register.closed_sign_in": "アカウントをお持ちの場合は、{link}してください。",

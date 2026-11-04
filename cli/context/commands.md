@@ -1000,7 +1000,7 @@ the same way. Inside the quote a `"` shows as `\"` and a backslash as
 `\\`, as in JSON: otherwise a reason could close the quote itself and
 the rest of it would stand outside, as if the command had said it.
 `maity wait` raises it at once like any other refusal; only dropped
-connections and `5xx` are retried. On `maity resume` the packet's
+connections, `5xx` and `429` are retried. On `maity resume` the packet's
 `membership.isolated` comes first, before a pause, and the next step is
 to stop; the empty-board check is skipped, since that read would be
 refused.
@@ -1375,6 +1375,40 @@ deadline is what the deadline promises, not an outage.
   more per agent and window than before, while prod was under database
   load, and the last ones were cut off anyway. An event that arrives
   while `wait` rests is returned by the next call.
+
+## `wait` retries a 429 like a 5xx, never sooner than its `Retry-After`
+
+**Id:** 6288d23f-c0fb-477d-a120-8e862ae10628
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-vwt1aqk8thaw (2026-11-04), agreed with the team lead before it was built
+**Revisit when:** the hub answers a 429 on `GET …/events` that `wait` must not retry, or a limit in front of the hub sends a `Retry-After` longer than a whole window as a rule
+
+A `429` on the events long-poll is retried with the same cursor, as a
+`5xx` or a dropped connection is: the first one prints `hub answered
+429, retrying until the timeout`, and the pause is the backoff (2 s up
+to 30 s) or the answer's `Retry-After`, whichever is longer, never past
+the deadline. A `429` without `Retry-After`, as a limit on open
+requests sends it, gets the backoff alone. A wait whose deadline comes
+first ends as any timeout does, with exit 3, so the loop around it
+re-arms. Every other `4xx` still ends `wait` with exit 1.
+
+**Reason:** a `429` says "not now", not "this request is wrong": a
+rate limit in front of the hub (an ingress or a proxy) or in it answers
+it to a client that is otherwise fine. Exit 1 tells an agent to
+inspect and resolve the error before re-arming, and there is nothing to
+resolve, so a busy moment would drop agents out of their wait loops.
+`runner serve` already backs off on a `429` the same way.
+
+**Rejected alternatives:**
+- Keep the `429` an error with exit 1, as it was grouped with the other
+  `4xx` when the retry was built: the agent would stop listening for
+  something that passes on its own.
+- Sleep exactly `Retry-After` and ignore the backoff: a limit that keeps
+  answering `Retry-After: 1` would be asked again every second.
+- Exit 3 at once on a `429`: the loop re-arms at once, the same pace as
+  retrying without any pause.
 
 ## `join` ends with how to put `maity` on PATH
 

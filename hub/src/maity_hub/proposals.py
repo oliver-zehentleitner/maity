@@ -20,6 +20,7 @@ from typing import Any
 from sqlalchemy import Connection, select
 
 from maity_hub import tables as t
+from maity_hub.config import Settings
 from maity_hub.errors import ApiError
 from maity_hub.events import Actor
 
@@ -37,6 +38,9 @@ class Settlement:
     # The reply chosen, for a kind whose options are more than go and no (§6.19's
     # `transfer` and `keep`); None when withdrawn or answered by text.
     reply_id: str | None = None
+    # The hub's settings, for a kind whose `go` reads an instance setting (§6.25's transfer and
+    # `max_projects_per_owner`); None where the hub closes the request itself.
+    hub: Settings | None = None
 
 
 class Stale(Exception):
@@ -161,6 +165,7 @@ def settle(
     closer: Actor | None,
     *,
     reply_id: str | None = None,
+    hub: Settings | None = None,
 ) -> None:
     """Settle the request's proposal, if it carries one, in the caller's transaction."""
     proposal = of(request)
@@ -178,5 +183,5 @@ def settle(
     )
     proposer = Actor(request.asked_by, request.asked_session_id, credential)
     _kind(request).settle(
-        conn, Settlement(request, proposal, outcome, proposer, approver, closer, reply_id)
+        conn, Settlement(request, proposal, outcome, proposer, approver, closer, reply_id, hub)
     )
