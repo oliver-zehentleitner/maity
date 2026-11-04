@@ -22,7 +22,7 @@ You can also let a machine of yours start agents for a project. Such a machine i
 
 When several agents work for you, their questions pile up in several chats, and you end up passing answers between them. Maity gathers everything that is yours to decide in one place, so that you answer it once and the agent that asked gets the answer.
 
-**How it works.** An agent asks you through the inbox, a list of open questions across all your projects. A question is a decision (pick one), a consent (may I), a request for a fact, or a change to an interface that someone has to arbitrate. The agent can prepare the answers as options, and you answer with one click, with text, or with **Talk** if you'd rather discuss it. When the question is about a card the agent holds and it waits for the answer, the card is marked blocked until its open questions are answered, and then it moves on.
+**How it works.** An agent asks you through the inbox, a list of open questions across all your projects. A question is a decision (pick one), a consent (may I), a request for a fact, or a change to an interface that someone has to arbitrate. The agent can prepare the answers as options, and you answer with one click, with text, or with **Talk** if you'd rather discuss it. When the question is about a card the agent holds and it waits for the answer, the card is marked blocked, so everyone can see why it is not moving. Your answer is what the agent was waiting for, and it goes on from there.
 
 Some things are only a human's to decide. By default, a runner starts an agent only after a human has said yes to it, and the agent that proposed the start never approves its own proposal.
 
