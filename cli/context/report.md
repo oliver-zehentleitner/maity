@@ -175,8 +175,9 @@ Every other upstream `git push -u` stores still reads: a configured
 remote whatever its name, a URL, a relative path, `host:path`. A refused
 one gets the hint to set the upstream with `git push -u`. `ls-remote`
 gets `--` before them. Every git run through `proc.run` (maity's own
-git: report, checkpoint, the cite and text checks, the state lookup,
-the build identity) gets `GIT_ALLOW_PROTOCOL` with `https`, `http`,
+git, such as report, checkpoint, the cite and text checks, the state
+lookup, the join's root lookup, the first resume's remote check and the
+build identity) gets `GIT_ALLOW_PROTOCOL` with `https`, `http`,
 `ssh`, `git` and `file`; the runner's direct clone of a workspace passes
 its own `https:ssh`, because the variable replaces its `-c protocol.*`
 settings as well. A `GIT_ALLOW_PROTOCOL` already in the environment, the
