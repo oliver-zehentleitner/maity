@@ -2787,7 +2787,7 @@
   "names.refused.org_role": "only an owner or admin of that organisation can move a project into it",
   "names.refused.rate_limited": "at most 3 renames and transfers a day; try again tomorrow",
   "names.refused.reserved": "that word is part of the dashboard's addresses; choose another slug",
-  "names.refused.step_up": "the hub asks for your second factor first; sign in again with it and try once more",
+  "names.refused.step_up": "the hub still asks for your second factor; try once more",
   "names.refused.taken": "that name is taken in this namespace, now or as an earlier name",
   "names.refused.taken_receiver": "@{handle} has a project of that name already, or had one",
   "names.refused.transfer_stale": "the transfer no longer holds; ask again",

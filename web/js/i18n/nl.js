@@ -2603,7 +2603,7 @@ window.MAITY_I18N["nl"] = {
   "names.refused.org_role": "alleen een eigenaar of admin van die organisatie kan een project erheen verplaatsen",
   "names.refused.rate_limited": "maximaal 3 hernoemingen en overzettingen per dag; probeer het morgen opnieuw",
   "names.refused.reserved": "dat woord maakt deel uit van de adressen van het dashboard; kies een andere slug",
-  "names.refused.step_up": "de hub vraagt eerst om je tweede factor; log opnieuw in met die factor en probeer het nog eens",
+  "names.refused.step_up": "de hub vraagt nog steeds om je tweede factor; probeer het nog eens",
   "names.refused.taken": "die naam is al in gebruik in deze namespace, nu of als eerdere naam",
   "names.refused.taken_receiver": "@{handle} heeft al een project met die naam, of had er een",
   "names.refused.transfer_stale": "de overzetting geldt niet meer; vraag het opnieuw",

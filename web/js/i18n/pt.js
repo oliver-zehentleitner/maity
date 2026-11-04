@@ -2603,7 +2603,7 @@ window.MAITY_I18N["pt"] = {
   "names.refused.org_role": "somente um proprietário ou admin dessa organização pode mover um projeto para ela",
   "names.refused.rate_limited": "no máximo 3 renomeações e transferências por dia; tente novamente amanhã",
   "names.refused.reserved": "essa palavra faz parte dos endereços do painel; escolha outro slug",
-  "names.refused.step_up": "o hub pede antes o seu segundo fator; entre novamente com ele e tente mais uma vez",
+  "names.refused.step_up": "o hub ainda pede o seu segundo fator; tente mais uma vez",
   "names.refused.taken": "esse nome está em uso neste namespace, agora ou como nome anterior",
   "names.refused.taken_receiver": "@{handle} já tem um projeto com esse nome, ou já teve",
   "names.refused.transfer_stale": "a transferência não vale mais; peça de novo",

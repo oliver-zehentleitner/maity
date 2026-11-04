@@ -2445,28 +2445,32 @@ would have two places. Alternatives to the row's placement: unknown.
 **Status:** active
 **Evidence:** confirmed
 **Source:** docs/api.md §6.25 (rename by a human owner, transfer by the namespace owner as a consent request, aliases, card references outside a project); the card tsk-cns4d1d7ht4j from the maintainer's chat; the hub's PR #487, 2026-10-28; the card tsk-9e5cd0b0hmzx, 2026-11-04 (the step-up entered in place)
-**Revisit when:** organisations become namespace owners, or another call of the section becomes sensitive (§2.8.4)
+**Revisit when:** another call of the section becomes sensitive (§2.8.4), or the transfer's targets change in §6.25/§6.26
 
-Project settings has a **Project name** section for a human owner,
-where the hub's view carries `aliases`: the full name, the earlier ones,
-a rename of the slug that follows the new address, and, for the
-namespace owner, a transfer to another human owner of the project, with
-the request withdrawable from the same place. A step-up the hub asks for
+Project settings has a **Project name** section for a human owner of
+the project: the full name, the earlier ones, a rename of the slug that
+follows the new address, and, for the namespace owner (for an
+organisation's project, each of its owners), a transfer to another
+human owner of the project or into an organisation the human owns or
+administers (KTW e47c8d0d says which of them moves at once), with the
+request withdrawable from the same place. A step-up the hub asks for
 is entered in place: the transfer goes through `M.stepUp.run`, which
 asks for the code in the form and sends the transfer again once it is
 given; Cancel ends it without a failure. A
 card's or a request's id reads `<owner>/<slug>/<id>` wherever it is shown
 outside its project (`M.ids.where` says so by the view's scope), written
-by one helper (`M.ids.ref`) and never parsed back.
+by one helper (`M.ids.ref`). The hub never parses the prefix (§6.25:
+the id stays the identifier); the dashboard reads `<owner>/<slug>/<id>`
+in written text as a link into that project (KTW 50234f88 in
+`rendering.md`, `js/ids.js`).
 
 **Reason:** the name belongs with the project's other settings and to
 the people the contract gives it to; one helper keeps the prefix in one
 place, as the card asked, so a later change of its form is one edit.
 
 **Rejected alternative:** a transfer that names anyone by handle: the
-contract takes only a current owner of the project, so the list offers
-exactly those. Parsing `owner/slug/tsk-…` back into a link: §6.25 makes
-the prefix display only.
+contract takes only a current owner of the project or an organisation
+(§6.25, §6.26), so the list offers exactly those.
 
 ## One's agents have a page of their own in the gear menu; adding one to a project is that project's join panel
 

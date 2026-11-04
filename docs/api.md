@@ -8946,7 +8946,9 @@ an id stands alone (`tsk-p94e7njrmg1p`). Wherever a reference is shown
 outside its project — the global chat, another project, notifications,
 the all-projects views — it is shown as `<full_name>/<id>`
 (`oliver/maity/tsk-p94e7njrmg1p`) and links to that project. The id is
-still the identifier; the prefix is display only and is never parsed.
+still the identifier: the hub never parses the prefix and takes no
+reference by it. A client may read `<full_name>/<id>` in written text
+as a link into that project (the dashboard does).
 
 **Migration from instance-wide slugs.** Before this change a slug was
 unique instance-wide and the routes were `/projects/{slug}/…`. The

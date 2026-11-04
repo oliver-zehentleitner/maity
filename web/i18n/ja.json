@@ -2543,7 +2543,7 @@
   "names.refused.org_role": "プロジェクトをその組織に移せるのは、その組織のオーナーまたは管理者だけです",
   "names.refused.rate_limited": "名前の変更と譲渡は、1日に最大3回です。明日もう一度お試しください",
   "names.refused.reserved": "その語はダッシュボードのアドレスの一部です。別のスラッグを選んでください",
-  "names.refused.step_up": "ハブが先に第2要素を求めます。第2要素を使ってサインインし直し、もう一度お試しください",
+  "names.refused.step_up": "ハブがまだ第2要素を求めています。もう一度お試しください",
   "names.refused.taken": "その名前は、この名前空間で現在使われているか、以前の名前として使われています",
   "names.refused.taken_receiver": "@{handle} には、その名前のプロジェクトがすでにあるか、以前ありました",
   "names.refused.transfer_stale": "譲渡はもう有効ではありません。もう一度依頼してください",

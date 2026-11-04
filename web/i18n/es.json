@@ -2590,7 +2590,7 @@
   "names.refused.org_role": "solo un propietario o un admin de esa organización puede mover un proyecto a ella",
   "names.refused.rate_limited": "como máximo 3 cambios de nombre y transferencias al día; inténtalo de nuevo mañana",
   "names.refused.reserved": "esa palabra forma parte de las direcciones del panel; elige otro slug",
-  "names.refused.step_up": "el hub pide antes tu segundo factor; inicia sesión de nuevo con él e inténtalo otra vez",
+  "names.refused.step_up": "el hub sigue pidiendo tu segundo factor; inténtalo otra vez",
   "names.refused.taken": "ese nombre ya está en uso en este espacio de nombres, ahora o como nombre anterior",
   "names.refused.taken_receiver": "@{handle} ya tiene un proyecto con ese nombre, o lo tuvo",
   "names.refused.transfer_stale": "la transferencia ya no es válida; solicítala de nuevo",
