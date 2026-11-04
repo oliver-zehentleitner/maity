@@ -12,7 +12,7 @@ from sqlalchemy import Engine, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
-from maity_hub.notifications import positions
+from maity_hub.notifications import positions, records
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_personal_requests import _file
@@ -49,9 +49,9 @@ def test_only_a_humans_session_reads_it(make_client: ClientFactory, owner: flow.
 def test_an_empty_bell(owner: flow.Human) -> None:
     got = bell(owner)
     assert got["counts"]["total"] == 0 and got["by_project"] == {}
-    # The owner's own sign-in is an account record of its own session: no alert to
-    # confirm from elsewhere, but it is listed.
-    assert [i["kind"] for i in got["items"]] == ["security"]
+    # The owner's own sign-in is no item (§2.6.5); its record moves `sessions_rev` alone.
+    assert got["items"] == [] and got["pinned"] == []
+    assert isinstance(got["sessions_rev"], str)
     assert isinstance(got["next_after"], str) and "." not in got["next_after"][:3]
     assert got["next_cursor"] is None
 
@@ -191,7 +191,7 @@ def test_a_claim_leaves_the_item_with_the_claiming_admin_only(
 def test_own_actions_never_notify(owner: flow.Human) -> None:
     card = owner.post("/projects/maintainer/maity/tasks", {"title": "Mine"}).json()
     owner.patch(f"/projects/maintainer/maity/tasks/{card['id']}", {"title": "Renamed"})
-    assert [i["kind"] for i in bell(owner)["items"]] == ["security"]
+    assert bell(owner)["items"] == []
 
 
 def test_positions_follow_new_items_and_never_skip(
@@ -246,35 +246,41 @@ def test_a_big_vector_becomes_a_handle(
     assert bell(owner, after=handle)["items"] == []
 
 
-def test_mark_all_read_skips_security_items(make_client: ClientFactory, owner: flow.Human) -> None:
+def test_mark_all_read_skips_security_items(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
     agent = flow.agent(make_client, owner)
-    second_session(make_client, owner)
+    with migrated.begin() as conn:
+        records.write(conn, owner.id, "second_factor_changed", {"change": "enabled"})
     said = agent.post(
         "/projects/maintainer/maity/events",
         {"kind": "message", "type": "notice", "to": "all", "body": "@maintainer look"},
     )
     assert said.status_code in (200, 201), said.text
     got = bell(owner)
-    assert got["counts"]["mention"] == 1 and got["counts"]["security"] >= 1
+    assert got["counts"]["mention"] == 1 and got["counts"]["security"] == 1
     after = owner.post(f"{N}/read", {"up_to": got["next_after"]}).json()
     assert after["counts"]["mention"] == 0
     assert after["counts"]["security"] == got["counts"]["security"]
 
 
-def test_who_may_confirm_a_sign_in(make_client: ClientFactory, owner: flow.Human) -> None:
+def test_a_sign_in_moves_sessions_rev_and_lists_nothing(
+    make_client: ClientFactory, owner: flow.Human
+) -> None:
+    """`sessions_rev` names the newest session record (§18.2), the one the session list gives
+    as `created.record`; a new sign-in and an end both move it, and neither is an item."""
+    before = bell(owner)
     newer = second_session(make_client, owner)
     newer_id = newer.get("/auth/session").json()["session_id"]
-    alert = next(
-        i for i in bell(owner)["items"] if i["target"] == {"type": "session", "id": newer_id}
-    )
-    # The session it reports on cannot confirm itself.
-    newer.post(f"{N}/read", {"ids": [alert["id"]]})
-    assert next(i for i in bell(owner)["items"] if i["id"] == alert["id"])["read"] is False
-    # An older session in good standing can; that confirms the newer one's standing.
-    owner.post(f"{N}/read", {"ids": [alert["id"]]})
-    assert next(i for i in bell(owner)["items"] if i["id"] == alert["id"])["read"] is True
+    signed_in = bell(owner)
     listed = {s["id"]: s for s in owner.get("/auth/sessions").json()["items"]}
-    assert listed[newer_id]["created"]["record"] == alert["record"]
+    assert signed_in["sessions_rev"] == listed[newer_id]["created"]["record"]
+    assert signed_in["sessions_rev"] != before["sessions_rev"]
+    assert signed_in["items"] == [] and signed_in["counts"]["security"] == 0
+    assert owner.delete(f"/auth/sessions/{newer_id}").status_code == 200
+    ended = bell(owner)
+    assert ended["sessions_rev"] not in (signed_in["sessions_rev"], None)
+    assert ended["items"] == []
 
 
 def test_a_personal_request_is_one_inbox_item_from_its_record(
@@ -301,6 +307,30 @@ def test_the_long_poll_returns_on_a_new_item(make_client: ClientFactory, owner: 
     waiter.join(timeout=15)
     assert answers and [i["kind"] for i in answers[0]["items"]] == ["chat"]
     assert time.monotonic() - begun < 8
+
+
+def test_the_long_poll_returns_on_a_session_record(
+    make_client: ClientFactory, owner: flow.Human
+) -> None:
+    """A new sign-in lists no item, yet a held long-poll answers at once, with `next_after`
+    past the record and `sessions_rev` moved (§18.2); the next one waits again."""
+    start = bell(owner, limit=0)
+    answers: list[dict[str, Any]] = []
+    waiter = threading.Thread(
+        target=lambda: answers.append(bell(owner, after=start["next_after"], wait=10))
+    )
+    begun = time.monotonic()
+    waiter.start()
+    time.sleep(0.6)
+    second_session(make_client, owner)
+    waiter.join(timeout=15)
+    assert answers and answers[0]["items"] == []
+    assert answers[0]["sessions_rev"] != start["sessions_rev"]
+    assert answers[0]["next_after"] != start["next_after"]
+    assert time.monotonic() - begun < 8
+    again = time.monotonic()
+    assert bell(owner, after=answers[0]["next_after"], wait=1)["items"] == []
+    assert time.monotonic() - again >= 0.9  # nothing new: it waited
 
 
 def test_the_long_poll_answers_when_the_hub_stops(owner: flow.Human) -> None:

@@ -22,7 +22,7 @@ from maity_hub.auth.caller import Caller, session_alive
 from maity_hub.deps import AnyCaller, engine_of, reader_of, settings_of, wait_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found, unauthenticated
 from maity_hub.namespace import ProjectRoute
-from maity_hub.notifications import items, listing, positions
+from maity_hub.notifications import items, listing, positions, records
 from maity_hub.notifications.items import KINDS, Item, Scope
 from maity_hub.notifications.positions import Position
 from maity_hub.views import task_view
@@ -169,6 +169,12 @@ async def list_notifications(
     first, seen = await _limited(request, answer)
     if not wait or first["items"]:
         return JSONResponse(first)
+
+    def moved(again: dict[str, Any]) -> bool:
+        """An answer a held long-poll returns: an item past `after`, or a session record,
+        which lists no item but moves `sessions_rev` (§18.2)."""
+        return bool(again["items"]) or again["sessions_rev"] != first["sessions_rev"]
+
     engine = engine_of(request)
     shared = engine.dialect.name == "postgresql"
     project_ids = await run_in_threadpool(projects) if shared else frozenset()
@@ -198,7 +204,7 @@ async def list_notifications(
             if await run_in_threadpool(unchanged, seen):
                 continue
             again, seen = await _limited(request, answer)
-            if again["items"]:
+            if moved(again):
                 return JSONResponse(again)
         last, _ = await _limited(request, answer)
         return JSONResponse(last)
@@ -266,6 +272,7 @@ def _answer(
         # Every unread security item, whatever the filters, the page and its age (§18.2).
         alerts = items.pinned(conn, where, PINNED_MAX)
         answer["pinned"] = [items.view(conn, where, item, shared) for item in alerts]
+    answer["sessions_rev"] = records.sessions_rev(conn, human_id)
     answer["next_cursor"] = next_cursor
     answer["next_after"] = positions.issue(conn, hub.secret_key, human_id, next_position)
     answer["server_time"] = clock.rfc3339(clock.now())

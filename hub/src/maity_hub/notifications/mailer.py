@@ -34,7 +34,7 @@ from maity_hub import tables as t
 from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail_settings
 from maity_hub.mail.environment import MailEnvironment
-from maity_hub.notifications import items, listing, preferences
+from maity_hub.notifications import items, listing, preferences, records
 from maity_hub.notifications.items import Item
 
 log = logging.getLogger(__name__)
@@ -50,7 +50,7 @@ MAILED_KINDS = ("inbox", "chat", "mention")
 NEVER_MAILED = ("registration_pending", "mail_disabled")
 # The alert of a new sign-in: a security mail of its own while `security` is immediate, an
 # item of the digest the human put security in, none when off (§18.4, §2.6.5).
-SIGN_IN_ALERT = "session_created"
+SIGN_IN_ALERT = records.SIGN_IN
 # A takeover under way: a security mail of its own at once, whatever the mode, never held
 # by quiet hours, with no unsubscribe link (§18.4 "At once, whatever the mode", §2.8).
 AT_ONCE = ("second_factor_changed", "second_factor_failed")
@@ -147,7 +147,7 @@ def for_human(
     since = row.verified_at
     pending = [
         i
-        for i in items.derive(conn, where)
+        for i in items.derive(conn, where, sign_ins=True)
         if not i.read
         and not i.redacted  # a redacted event reaches no mail at all (§18.5)
         and i.record_type not in NEVER_MAILED

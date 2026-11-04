@@ -329,8 +329,8 @@ def end_session(public_id: str, request: Request, caller: AnyCaller) -> JSONResp
 
 @router.post("/sessions/{public_id}/confirm")
 def confirm_session(public_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
-    """ "This was me" (§2.6.5): confirms the sign-in of one of the caller's own sessions and
-    marks its `session_created` item read."""
+    """ "This was me" (§2.6.5): confirms the sign-in of one of the caller's own sessions. It
+    marks nothing read: a new sign-in is no bell item."""
     current = _session_caller(caller)
     with engine_of(request).begin() as conn:
         row = confirm(conn, caller.principal_id, current, public_id)
@@ -346,7 +346,7 @@ def confirm(conn: Connection, human_id: str, current: str, public_id: str) -> An
     The target is then held: one not yet in good standing by the conditional update that
     confirms it, every target by a locking read after it. An end that committed first
     leaves the read to find the session ended, and the call is `not_found` with nothing
-    confirmed or marked; an end that comes later waits for this transaction and ends a
+    confirmed; an end that comes later waits for this transaction and ends a
     confirmed session. A target already in good standing keeps its standing as it is."""
     now = clock.now()
     mine = _session(conn, current)
@@ -373,7 +373,6 @@ def confirm(conn: Connection, human_id: str, current: str, public_id: str) -> An
     ).one()
     if sessions.ended(held, clock.now()) is not None:
         raise not_found()  # ended meanwhile
-    records.mark_sign_in_read(conn, human_id, public_id, mine.public_id)
     return held
 
 
