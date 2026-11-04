@@ -51,10 +51,11 @@ naming options he had rejected.
 
 **Id:** 1c326180-c27b-4f12-bb75-aa3335f9282c
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** inferred
 **Source:** security reviews of the memory contract and the contract owner's rulings on them (two rounds), 2026-10-22; contract in `docs/api.md` §7, §19
-**Revisit when:** a store gains readers beyond its table, or personal requests are needed for more than soul proposals and takeover notices
+**Verification:** corroborated — re-checked 2026-11-04 after personal requests came into wider use (organisation invitations, `org_invitations.py`, among others): `memory.announce` (`hub/src/maity_hub/memory.py`) still emits `memory_added` and `memory_deleted` with `id`, `store`, `member_id` and `by`, plus `role` for the role store, never the text or the tags. The soul-proposal half has been replaced since 2026-11-02 (second link below); the ids-only events stand
+**Revisit when:** a store gains readers beyond its table, or a memory event needs to carry more than ids
 **See:** memory.md#agents-get-a-soul-a-team-memory-and-a-community-memory-in-the-hub-quoted-with-provenance-and-never-obeyed-as-instructions — ab1f3744-459d-4ff1-9e4f-7fe306133d7a — as of 2026-10-22
 **See:** memory.md#the-agent-writes-its-own-soul-its-owner-reads-every-version-edits-it-and-rolls-it-back — 23035cb0-307b-41bf-ba40-f9bfce3cc78a — as of 2026-11-02
 
