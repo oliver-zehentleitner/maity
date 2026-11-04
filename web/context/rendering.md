@@ -1133,7 +1133,7 @@ Each case is settled once:
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the card tsk-6bn80bppb5e5 (a request with a long code line and long card links pushed the inbox of all projects past the window, every collapsed row with it); web/css/app.css `.entries`, `.entries-box`, `.card-note-list`, `.card-family`, `.md`, `.card-links li`; the e2e step `wide_lines_step`; the lead's approval of the plan, 2026-11-04
+**Source:** the card tsk-6bn80bppb5e5 (a request with a long code line and long card links pushed the inbox of all projects past the window, every collapsed row with it); web/css/app.css `.entries`, `.entries-box`, `.card-note-list`, `.card-family`, `.md`, `.about`, `.card-links li`; the e2e step `wide_lines_step`; the lead's approval of the plan, 2026-11-04
 **Revisit when:** a list of written text is laid out as something other than a grid, or a Markdown code block wraps its lines instead of scrolling
 
 The inbox's lists (`.entries`, `.entries-box`) and the card panel's
@@ -1142,8 +1142,9 @@ lists and grids (`.card-note-list`, `.card-history-list`, `.card-links`,
 `grid-template-columns: minmax(0, 1fr)`. A code block in a request or a
 note keeps its lines and scrolls inside itself (`.md-code`,
 `overflow-x: auto`), the text around it wraps, long links too
-(`overflow-wrap: anywhere` on every written text, `.md`, and on a
-card's links, `.card-links li`, where a link without a label shows its
+(`overflow-wrap: anywhere` on every text drawn as Markdown: `.md` in
+the dashboard's views, `.about` on a visitor's pages; and on a card's
+links, `.card-links li`, where a link without a label shows its
 URL; a code block is `pre` and keeps its lines), and the row is as wide
 as its list.
 
@@ -1153,8 +1154,10 @@ longest line of a code block that does not wrap. One open request with a
 600-character line in a code block made the page 4420 px wide in a
 1280 px window, and every other row of the list the same width. In the
 card panel the same note made the whole panel scroll sideways, not its
-code block; the note's long links did too, since written text had no
-`overflow-wrap` of its own outside the inbox's rows. In the project's
+code block; the note's long links did too, since `.md` had no
+`overflow-wrap` of its own, and only some rows gave it one
+(`.entry-body`, the chat's `.msg`). A visitor's card page with the same
+links was 539 px wide in a 390 px window (`.about`). In the project's
 messages, with no panel around them, those links made the page 579 px
 wide in a 390 px window. A card link of 300 characters made the card
 panel 2162 px wide inside its 510, and a long title in the family's
