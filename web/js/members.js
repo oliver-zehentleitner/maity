@@ -147,9 +147,11 @@ window.Maity = window.Maity || {};
     // request), before the list is read again and drawn. The outcome is said
     // once the list is drawn again, so "Saved" means the rows show it and
     // nothing is replaced under the next click.
-    // `applied`, where given, names the fields that took effect although the rest waits for a
-    // consent (another owner's agent, §6.2: its `reports_to` applies at once), read after the reload.
-    async function act(label, done, call, focusKey, settled, applied) {
+    // `consent`, where given, is read after the reload: `applied`, the fields that took effect
+    // although the rest waits for a consent, and `owner`, the agent's owner. For another owner's
+    // agent (§6.2) the hub applies a `reports_to` to a boss of the same owner, or none, at once,
+    // and lets one to another owner's member wait too, so only the reloaded state tells which.
+    async function act(label, done, call, focusKey, settled, consent) {
       status.busy(M.t("members.act.busy", { action: label }));
       let answer;
       try {
@@ -169,19 +171,21 @@ window.Maity = window.Maity || {};
       status.done();
       // Waiting for a human's go is no change yet: said as such.
       append(status.el, isConsent(answer)
-        ? h("span", { class: "flag" }, consentWords(answer, applied ? applied() : []))
+        ? h("span", { class: "flag" }, consentWords(answer, consent ? consent() : {}))
         : h("span", { class: "ok" }, done));
       return isConsent(answer) ? "consent" : true;
     }
 
     // Waiting for a human's go: whose, and the request it waits on, in one sentence.
-    // Another owner's agent waits for that owner (§6.2), whom the hub names `human:<id>`: by
-    // name where they are a member here, otherwise as the owner, never as the raw address.
-    function consentWords(answer, applied) {
+    // Another owner's agent waits for a human (§6.2) the hub names `human:<id>`: by name where
+    // they are a member here, otherwise as the agent's owner or, for a boss of another owner whose
+    // owner is asked first, as the boss's owner; never as the raw address.
+    function consentWords(answer, { applied = [], owner = null } = {}) {
       const to = answer.to || "";
       const human = to.startsWith("human:") ? to.slice("human:".length) : null;
       const known = human && (ctx.members || []).some((x) => x.id === human);
-      const who = to === "owner" || (human && !known) ? M.t("members.consent.owner") : ctx.nameOf(human || to);
+      const outside = human && !known ? (owner && human !== owner ? M.t("members.consent.boss_owner") : M.t("members.consent.owner")) : null;
+      const who = to === "owner" ? M.t("members.consent.owner") : outside || ctx.nameOf(human || to);
       const o = { who, id: answer.id, title: answer.title || "" };
       if (applied.length) {
         o.fields = M.fmt.list(applied);
@@ -770,10 +774,11 @@ window.Maity = window.Maity || {};
             () => M.api.patch(memberPath, body), "role:" + m.id, () => edits.delete(m.id), () => {
               // What the hub holds now: a field it took at once, the rest waiting.
               const now = items.find((x) => x.id === m.id) || {};
+              const owner = now.owner_id || null;
               const same = { trust: (v) => now.trust === v, role: (v) => now.role === v, reports_to: (v) => (now.reports_to || null) === v,
                 areas: (v) => (now.areas || []).join("\n") === v.join("\n"),
                 capabilities: (v) => [...(now.capabilities || [])].sort().join() === [...v].sort().join() };
-              return Object.keys(body).filter((k) => same[k](body[k])).map((k) => said[k]());
+              return { applied: Object.keys(body).filter((k) => same[k](body[k])).map((k) => said[k]()), owner };
             });
           save.disabled = false;
           // Demoting oneself changes what this page may offer: re-render it.

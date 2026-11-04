@@ -199,7 +199,9 @@ and is sent as typed. Save sends one `PATCH` with only the fields that
 changed; edits not yet saved are kept per row across redraws (Done drops
 them), and a 202 (a consent request, when a human's go is needed) is said
 as waiting, the draft dropped and the form drawn from the hub's state, so a
-second Save files no second request. A drafted boss who has left the
+second Save files no second request. The line names who is asked and, where
+part of the change took effect at once, which part (the entry on consent
+lines below). A drafted boss who has left the
 project since is dropped and said at the field: a select that silently
 fell back to "nobody" would send `reports_to: null` and clear the boss the
 member has. A
@@ -4649,3 +4651,35 @@ would see it changed.
 
 **Known limit:** a mode changed and later set back to the default stays set; the contract has no
 reset.
+
+## A consent line names who is asked and calls saved only what the member, read again, already has
+
+**Id:** 71dc43d7-fef5-4123-83de-841dcc06c2bd
+**Type:** workaround
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-0dhk4wdt111m (the owner set another owner's agent to `red-team` and the form showed `coder` again; events 64676 and 64711); the lead's decision on the card; docs/api.md §6.2 ("Another owner's agent"); hub/src/maity_hub/foreign_agent.py, cross_owner.py; web/js/members.js `consentWords`; the review of #1312
+**Revisit when:** the hub's 202 says which fields it applied and whose consent each request waits for, or a member shows its open consent request
+
+A `PATCH` of another owner's agent answers 202 with one consent request
+while part of the change may already have applied: the hub takes a
+`reports_to` to a boss of the agent's own owner, or none, at once, and
+holds trust, role, areas and capabilities for the owner's go. The 202 names
+the asked human as `human:<id>` and says nothing of what applied. So the
+members view reads the member again after the call and calls saved only the
+fields it now has ("Saved: reports to. The rest is not changed yet: …"), and
+names the asked human by name where they are a member here, otherwise as the
+agent's owner (its `owner_id`) or as a boss's owner, whose request the hub
+files first for a boss of another owner.
+
+**Reason:** the hub's answer is the request alone; without reading the
+member again the line either claimed nothing changed while the boss had, or
+claimed a save the hub had not made. The raw `human:hum-…` was what the
+owner read on 2026-11-03.
+
+**Rejected alternatives:** showing the hub's `to` as it comes (the raw
+address); keeping "Not changed yet" for the whole change; assuming that
+`reports_to` always applies at once (a boss of another owner waits too).
+
+**Known limit:** where several requests are filed (fields and a cross-owner
+edge), the line names only the one the hub answers with.

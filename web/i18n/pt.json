@@ -2289,6 +2289,7 @@
   "members.col.paused": "Pausado",
   "members.col.presence": "Presença",
   "members.col.role": "Nível de confiança e função",
+  "members.consent.boss_owner": "o proprietário do responsável",
   "members.consent.owner": "o proprietário",
   "members.consent.partly": "Salvo: {fields}. O restante ainda não foi alterado: aguardando o consentimento de {who} ({id}).",
   "members.consent.partly_titled": "Salvo: {fields}. O restante ainda não foi alterado: aguardando o consentimento de {who} ({id}, {title}).",

@@ -2262,6 +2262,7 @@ window.MAITY_I18N["ja"] = {
   "members.col.paused": "一時停止",
   "members.col.presence": "オンライン状況",
   "members.col.role": "信頼レベルとロール",
+  "members.consent.boss_owner": "上司のオーナー",
   "members.consent.owner": "オーナー",
   "members.consent.partly": "保存しました: {fields}。残りはまだ変更されていません。{who} の同意を待っています ({id})。",
   "members.consent.partly_titled": "保存しました: {fields}。残りはまだ変更されていません。{who} の同意を待っています ({id}、{title})。",

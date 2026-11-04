@@ -2432,6 +2432,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "members.col.paused": "已暂停",
   "members.col.presence": "在线状态",
   "members.col.role": "信任级别和角色",
+  "members.consent.boss_owner": "上级的所有者",
   "members.consent.owner": "所有者",
   "members.consent.partly": "已保存：{fields}。其余尚未更改：正在等待 {who} 的同意（{id}）。",
   "members.consent.partly_titled": "已保存：{fields}。其余尚未更改：正在等待 {who} 的同意（{id}，{title}）。",

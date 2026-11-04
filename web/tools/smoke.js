@@ -2592,16 +2592,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(consents.length === 1 && text(main).includes("Nothing changed."), "members: saving again after a consent request files no second one");
   // Another owner's agent (§6.2): the real hub names the owner as `human:<id>`, who need be no
   // member here. The sentence names them as the owner, never the raw address (tsk-0dhk4wdt111m).
-  win.Maity.api.patch = (p, b) => { consents.push(b); return Promise.resolve({ id: "req-c010", class: "consent", status: "open", to: "human:hum-elsewhere", title: "Change reviewer in Maity" }); };
+  const ofGet = win.Maity.api.getAll;
+  let ofBoss = null;
+  win.Maity.api.getAll = (p) => ofGet(p).then((r) => (p !== "/projects/maintainer/maity/members" ? r
+    : { items: r.items.map((x) => (x.id === "agt-r" ? Object.assign({}, x, { owner_id: "hum-elsewhere" }, ofBoss ? { reports_to: ofBoss } : {}) : x)), next_cursor: null }));
+  let ofTo = "human:hum-elsewhere";
+  win.Maity.api.patch = (p, b) => { consents.push(b); return Promise.resolve({ id: "req-c010", class: "consent", status: "open", to: ofTo, title: "Change reviewer in Maity" }); };
   eSel("role").value = "coder"; eSel("role").dispatch("change");
   await submitEdit();
   expect(text(main).includes("Not changed yet: waiting for the owner's consent (req-c010, Change reviewer in Maity).") && !text(main).includes("human:"),
     "members: a consent of another owner's agent names its owner, not the raw human: address " + JSON.stringify(text(main).match(/Not changed yet[^.]*\./)));
   // Its `reports_to` applies at once, the role waits: the line says which is which.
   const mxBoss = eSel("reports").querySelectorAll("option").map((o) => o.getAttribute("value")).find((v) => v && v !== "agt-a" && v !== "agt-r");
-  const mxGet = win.Maity.api.getAll;
-  win.Maity.api.getAll = (p) => mxGet(p).then((r) => (p !== "/projects/maintainer/maity/members" ? r
-    : { items: r.items.map((x) => (x.id === "agt-r" ? Object.assign({}, x, { reports_to: mxBoss }) : x)), next_cursor: null }));
+  ofBoss = mxBoss;
   eSel("role").value = "coder"; eSel("role").dispatch("change");
   eSel("reports").value = mxBoss; eSel("reports").dispatch("change");
   await submitEdit();
@@ -2609,7 +2612,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(main).includes("Saved: reports to. The rest is not changed yet: waiting for the owner's consent (req-c010, Change reviewer in Maity).")
     && !text(main).includes("Not changed yet"),
     "members: a boss taken at once and a role waiting say both " + JSON.stringify([mxBoss, text(main).match(/(Saved|Not changed)[^.]*\.[^.]*\./)]));
-  win.Maity.api.getAll = mxGet;
+  ofBoss = null;
+  // A human who is a member here is named; one outside who is not the agent's owner is the
+  // owner of a boss of another owner, asked first (hub/src/maity_hub/cross_owner.py).
+  ofTo = "human:hum-maintainer";
+  eSel("role").value = "coder"; eSel("role").dispatch("change");
+  await submitEdit();
+  expect(text(main).includes("Not changed yet: waiting for Maintainer's consent (req-c010, Change reviewer in Maity)."),
+    "members: a consent of a human who is a member here names them " + JSON.stringify(text(main).match(/Not changed yet[^.]*\./)));
+  ofTo = "human:hum-third";
+  eSel("role").value = "coder"; eSel("role").dispatch("change");
+  await submitEdit();
+  expect(text(main).includes("Not changed yet: waiting for the boss's owner's consent (req-c010, Change reviewer in Maity)."),
+    "members: a consent of an outside human who is not the agent's owner names the boss's owner " + JSON.stringify(text(main).match(/Not changed yet[^.]*\./)));
+  win.Maity.api.getAll = ofGet;
   win.Maity.api.patch = mPatch;
   btn(mRow("Reviewer"), "Done").click(); await tick();
   // Done drops a row's unsaved edits.

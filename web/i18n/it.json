@@ -2289,6 +2289,7 @@
   "members.col.paused": "In pausa",
   "members.col.presence": "Presenza",
   "members.col.role": "Livello di fiducia e ruolo",
+  "members.consent.boss_owner": "il proprietario del responsabile",
   "members.consent.owner": "il proprietario",
   "members.consent.partly": "Salvato: {fields}. Il resto non è ancora modificato: in attesa del consenso. Chi deve darlo: {who} ({id}).",
   "members.consent.partly_titled": "Salvato: {fields}. Il resto non è ancora modificato: in attesa del consenso. Chi deve darlo: {who} ({id}, {title}).",
