@@ -4717,8 +4717,10 @@ maity-review-team-grok#dzse).
 another tab, expired) stays in `M.api.session()`. A 401 on `GET /auth/session` is a public call
 and does not clear it (`js/api.js`; only `endSession` does), so `render()` takes the frame down
 and lets the product line go on each such drawing: the app's bar and the line show for one round
-trip of `/auth/session` before the sign-in enters the frame again. It is older than #1287 (the
-same before it), found in the review of #1287 by maity-review-team-grok#spq4. Recording it rather
+trip of `/auth/session` before the sign-in enters the frame again. The stale session itself is
+older than #1287 (`js/api.js` answered that 401 the same way before it); the flash is #1287's,
+since only #1287 leaves the frame and holds the line by the session. Found in the review of #1287
+by maity-review-team-grok#spq4. Recording it rather
 than clearing the session on that 401 here was lotse#wtwy's decision (message seq 66307,
 2026-11-04); the reason is inferred, not stated: the case is rare, the page recovers after one
 round trip, and a change to the session's lifetime belongs in a change of its own. Workaround:
