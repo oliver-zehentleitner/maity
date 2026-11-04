@@ -222,6 +222,7 @@ def test_git_runs_on_a_repository_maity_writes_under_git_maity(
         keys = {env[k] for k in env if k.startswith("GIT_CONFIG_KEY_")}
         assert {"remote.origin.url", "branch.work.merge", "user.name"} <= keys
         assert env["GIT_OBJECT_DIRECTORY"] == str(placed / ".git" / "objects")
+        assert env["GIT_CONFIG_NOSYSTEM"] == "1"  # no system configuration either
 
 
 def test_a_link_under_refs_is_refused_not_followed(placed: Path, tmp_path: Path) -> None:
@@ -362,6 +363,51 @@ def test_git_under_the_runner_is_the_one_it_recorded_not_paths(
     assert not marker.exists()
 
 
+def test_git_under_the_runner_reads_no_ignore_file_of_homes(
+    placed: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """HOME's own ignore file does not change what maity sees in the clone."""
+    from maity import proc
+
+    home = tmp_path / "home"
+    (home / ".config" / "git").mkdir(parents=True)
+    (home / ".config" / "git" / "ignore").write_text("*.secret\n")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    (placed / "a.secret").write_text("x\n")
+    status = proc.run([*proc.GIT, "status", "--porcelain"], placed)
+    assert "a.secret" in status.stdout, status.stderr
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows has no execute bit")
+def test_a_recorded_git_that_is_no_program_is_named_so(placed: Path, tmp_path: Path) -> None:
+    from maity import proc
+
+    plain = tmp_path / "git"
+    plain.write_text("not a program\n")
+    (placed / RECORDED_GIT).write_text(f"{plain}\n")
+    with pytest.raises(proc.ToolError, match="is not a program here"):
+        proc.run([*proc.GIT, "rev-parse", "HEAD"], placed)
+
+
+def test_a_partial_clone_is_named_so(
+    placed: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """What `git clone --filter` writes, with no `extensions.` line, is named a partial clone,
+    without the unset hint that would leave the clone without its missing objects."""
+    source = placed.parent / "remote.git"
+    git(source, "config", "uploadpack.allowFilter", "true")
+    partial = tmp_path / "partial"
+    monkeypatch.delenv("GIT_COMMON_DIR")  # the session's, which would point the clone there
+    git(tmp_path, "clone", "-q", "--filter=blob:none", f"file://{source.as_posix()}", str(partial))
+    (partial / ".git" / "maity").mkdir()
+    (partial / RECORDED_GIT).write_text(f"{shutil.which('git')}\n")
+    monkeypatch.setenv("GIT_COMMON_DIR", str(partial / ".git"))
+    with pytest.raises(gitfacts.FactsError, match="Partial clones are not supported") as refused:
+        gitfacts.collect(partial)
+    assert "unset" not in str(refused.value)
+
+
 def test_without_a_recorded_git_the_runners_clone_runs_none(placed: Path) -> None:
     from maity import proc
 
@@ -370,7 +416,7 @@ def test_without_a_recorded_git_the_runners_clone_runs_none(placed: Path) -> Non
         proc.run([*proc.GIT, "rev-parse", "HEAD"], placed)
 
 
-@pytest.mark.parametrize("how", ["gitfile", "GIT_DIR", "GIT_COMMON_DIR"])
+@pytest.mark.parametrize("how", ["gitfile", "GIT_DIR", "GIT_COMMON_DIR", "GIT_DIR=gitfile"])
 def test_a_marked_clone_is_refused_from_outside_it_too(
     placed: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, how: str
 ) -> None:
@@ -388,6 +434,9 @@ def test_a_marked_clone_is_refused_from_outside_it_too(
     outside.mkdir()
     if how == "gitfile":
         (outside / ".git").write_text(f"gitdir: {placed / '.git'}\n")
+    elif how == "GIT_DIR=gitfile":  # git follows a .git file GIT_DIR names
+        (tmp_path / "pointer").write_text(f"gitdir: {placed / '.git'}\n")
+        monkeypatch.setenv("GIT_DIR", str(tmp_path / "pointer"))
     else:
         monkeypatch.setenv(how, str(placed / ".git"))
     with pytest.raises(proc.ToolError, match="the runner set up"):

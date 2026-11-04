@@ -82,6 +82,14 @@ UNSUPPORTED = {
 }  # fmt: skip
 
 
+# Keys of a named section (`remote.<name>.<key>`) that stand for such a feature: what
+# `git clone --filter` writes, with no `extensions.` line.
+UNSUPPORTED_KEYS = {
+    ("remote", "promisor"): "Partial clones are",
+    ("remote", "partialclonefilter"): "Partial clones are",
+}  # fmt: skip
+
+
 class Files(Protocol):
     """How a clone's files are read: here as this user, or the runner's AsUser for another."""
 
@@ -184,6 +192,11 @@ def _inspect(
 def unsupported(finding: Finding) -> str | None:
     """The feature a finding stands for that the runner does not support yet ("Git LFS is"),
     or None."""
+    if finding.setting:
+        section, _, rest = finding.item.partition(".")
+        feature = UNSUPPORTED_KEYS.get((section, rest.rpartition(".")[2]))
+        if feature is not None:
+            return feature
     for prefix, feature in UNSUPPORTED.items():
         if finding.item == prefix or finding.item.startswith(
             prefix if prefix.endswith(".") else prefix + "/"
@@ -311,6 +324,8 @@ def _runner_marked(cwd: Path) -> Path | None:
         return None
     named = [here / value for key in ("GIT_DIR", "GIT_COMMON_DIR")
              if (value := os.environ.get(key))]  # fmt: skip
+    # git follows a `.git` file that GIT_DIR names, as one it finds in a directory.
+    named += [t for t in map(_gitfile_target, list(named)) if t is not None]
     for directory in (here, *here.parents):
         dot_git = directory / ".git"
         named.append(dot_git)
@@ -433,7 +448,7 @@ def placement_git(cwd: Path) -> Iterator[Pinned | None]:
                 # not HOME's (a missing file reads as empty).
                 "GIT_CONFIG_NOSYSTEM": "1",
                 "GIT_CONFIG_GLOBAL": str(private / "global"),
-                **_passed_on(entries),
+                **_passed_on(entries, private / "none"),
             },
         )
     finally:
@@ -456,14 +471,17 @@ def _refusal(root: Path, finding: Finding) -> str:
             " leaves it; undo that change and run the command again")  # fmt: skip
 
 
-def _passed_on(entries: list[tuple[str, str | None]]) -> dict[str, str]:
+def _passed_on(entries: list[tuple[str, str | None]], missing: Path) -> dict[str, str]:
     """The checked entries git should see, as `GIT_CONFIG_*`. The environment's own are not
-    kept (`kept_env`); the pins the runner sets there are on maity's command line too."""
+    kept (`kept_env`); the pins the runner sets there are on maity's command line too. The
+    ignore and attributes files git would read under HOME (`~/.config/git/`) are pointed at
+    `missing`, a file that does not exist."""
     kept = [
         (name, "true" if value is None else value)
         for name, value in entries
         if not name.startswith("core.") or name.removeprefix("core.") in PASSED_ON
     ]
+    kept += [("core.excludesfile", str(missing)), ("core.attributesfile", str(missing))]
     env = {"GIT_CONFIG_COUNT": str(len(kept))}
     for i, (name, value) in enumerate(kept):
         env[f"GIT_CONFIG_KEY_{i}"] = name
@@ -567,7 +585,7 @@ def _recorded_git(root: Path) -> str:
         program = where.read_bytes().decode("utf-8").strip()
     except (OSError, UnicodeDecodeError):
         raise Refused(f"the clone {root} has no git the runner recorded ({GIT_PATH})") from None
-    if not os.path.isabs(program) or not os.path.isfile(program):
+    if not (os.path.isabs(program) and os.path.isfile(program) and os.access(program, os.X_OK)):
         raise Refused(f"the git the runner recorded for {root} is not a program here")
     return program
 
@@ -577,11 +595,24 @@ def git_path_env(program: str) -> dict[str, str]:
     of maity's command line, so a program git starts by name is not one placed there."""
     parts = [os.path.dirname(program)]
     if os.name == "nt":
-        system = os.environ.get("SYSTEMROOT", r"C:\Windows")
+        system = _windows_directory()
         parts += [os.path.join(system, "System32"), system]
-    else:
-        parts += os.defpath.split(os.pathsep)
+        path = os.pathsep.join(dict.fromkeys(p for p in parts if p))
+        return {"PATH": path, "SYSTEMROOT": system}  # not maity's SYSTEMROOT either
+    parts += os.defpath.split(os.pathsep)
     return {"PATH": os.pathsep.join(dict.fromkeys(p for p in parts if p))}
+
+
+def _windows_directory() -> str:
+    """The Windows directory as the system reports it, not as `SYSTEMROOT` in maity's
+    environment says."""
+    if sys.platform == "win32":
+        import ctypes
+
+        buffer = ctypes.create_unicode_buffer(32768)
+        if ctypes.windll.kernel32.GetWindowsDirectoryW(buffer, len(buffer)):
+            return buffer.value
+    return r"C:\Windows"
 
 
 def kept_env(environ: Mapping[str, str]) -> dict[str, str]:

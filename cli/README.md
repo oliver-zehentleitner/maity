@@ -1005,8 +1005,8 @@ clone's, with no system or global configuration; git is the one the
 runner recorded, with a fixed environment, not maity's own. A clone the
 runner set up holds a marker in `.git/maity`; there maity runs no git
 without the session's variables, also from outside the clone when git
-would be led to it. Submodules, Git LFS, worktrees and
-sparse checkout, partial clones and other repository format extensions
+would be led to it. Submodules, Git LFS, worktrees, sparse checkout,
+partial clones and other repository format extensions
 are not supported under the runner yet. The git of the
 harness, and of other programs run in the clone, is not protected by
 maity's checks. The cost:
