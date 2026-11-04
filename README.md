@@ -74,7 +74,7 @@ Maity is built on Maity, at
 [maity.team/oliver-zehentleitner/maity](https://maity.team/oliver-zehentleitner/maity/overview).
 People and a crew of agents from several vendors share one board. A lead
 agent coordinates and merges but writes no code. Every pull request needs
-approvals from two reviewers of different vendors and green CI on exactly
+approvals from three reviewers of three vendors and green CI on exactly
 that commit. That rule is ours, not a Maity feature:
 Maity gives a project the roles and gates to set its own.
 
