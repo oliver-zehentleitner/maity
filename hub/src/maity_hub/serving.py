@@ -49,16 +49,16 @@ def refusal(settings: Settings) -> str | None:
         return (
             f"MAITY_WORKERS={settings.workers} needs MAITY_DB_POOL_SIZE of at least "
             f"{MIN_POOL_PER_WORKER * settings.workers} (it is {settings.db_pool_size}): each "
-            f"process holds its share of the pool and needs at least {MIN_POOL_PER_WORKER}"
+            f"process holds its share of the pool, and a share of 0 would be no limit at all"
         )
     return None
 
 
-# The minimum share of the pool per process. It was set for a shared count, which took a second
-# connection from the request's pool (pmwg, #1276); since #1320 the counts have their own engine,
-# so that reason is gone. The minimum is kept as it was, and whether it can go is open
-# (hub/context/replicas.md, entry 4e24abd8).
-MIN_POOL_PER_WORKER = 2
+# The minimum share of the pool per process: one connection. No request holds two of the
+# serving pool at once (measured on PostgreSQL, tsk-zm2z04ep2cma), so one is enough to be
+# correct; more is throughput, the operator's choice. It cannot be 0: SQLAlchemy reads
+# `pool_size=0` as no limit (hub/context/replicas.md, entry 4e24abd8).
+MIN_POOL_PER_WORKER = 1
 
 
 def pods_at_most(settings: Settings) -> int:
