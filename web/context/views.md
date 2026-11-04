@@ -2451,8 +2451,9 @@ Project settings has a **Project name** section for a human owner of
 the project: the full name, the earlier ones, a rename of the slug that
 follows the new address, and, for the namespace owner (for an
 organisation's project, each of its owners), a transfer to another
-human owner of the project or into an organisation the human owns or
-administers (KTW e47c8d0d says which of them moves at once), with the
+human owner of the project, into an organisation the human owns or
+administers, or, out of an organisation, into the human's own
+namespace (KTW e47c8d0d says which of them moves at once), with the
 request withdrawable from the same place. A step-up the hub asks for
 is entered in place: the transfer goes through `M.stepUp.run`, which
 asks for the code in the form and sends the transfer again once it is
@@ -2470,7 +2471,9 @@ place, as the card asked, so a later change of its form is one edit.
 
 **Rejected alternative:** a transfer that names anyone by handle: the
 contract takes only a current owner of the project or an organisation
-(§6.25, §6.26), so the list offers exactly those.
+(§6.25, §6.26), so the list offers those owners and, of the
+organisations, only the ones the human owns or administers, other than
+the project's own and none that is suspended.
 
 ## One's agents have a page of their own in the gear menu; adding one to a project is that project's join panel
 
