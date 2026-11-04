@@ -196,15 +196,23 @@ def rewrite_links(page: Page, by_src: dict[str, Page], anchors: dict[tuple[str, 
         """A relative image: one under docs/ is deployed beside the pages (pages.yml copies
         docs/ to the site's root), anything else is GitHub's raw file."""
         src = html.unescape(src)
-        if re.match(r"^[a-z][a-z0-9+.-]*:", src) or src.startswith("/"):
+        if re.match(r"^[a-z][a-z0-9+.-]*:", src, re.I) or src.startswith("/"):
             return src
-        path = posixpath.normpath(posixpath.join(posixpath.dirname(page.src), src))
+        # Only the path is normalised; a query or fragment stays as written.
+        rel, rest = re.match(r"([^?#]*)(.*)", src, re.S).groups()
+        path = posixpath.normpath(posixpath.join(posixpath.dirname(page.src), rel))
         if path.startswith("docs/"):
-            return "/" + path.removeprefix("docs/")
-        return f"{GITHUB}/raw/main/{path}"
+            return "/" + path.removeprefix("docs/") + rest
+        return f"{GITHUB}/raw/main/{path}{rest}"
 
     body = re.sub(r'href="([^"]*)"', lambda m: f'href="{html.escape(target(m.group(1)))}"', page.body)
-    return re.sub(r'(<img\b[^>]*?\s)src="([^"]*)"', lambda m: f'{m.group(1)}src="{html.escape(image(m.group(2)))}"', body)
+    # Markdown writes src="…"; raw HTML in a page may quote it either way.
+    return re.sub(
+        r"""(<img\b[^>]*?\s)src=(["'])(.*?)\2""",
+        lambda m: f'{m.group(1)}src="{html.escape(image(m.group(3)))}"',
+        body,
+        flags=re.I | re.S,
+    )
 
 
 def nav_html(nav: list[dict], by_src: dict[str, Page], current: Page) -> str:
