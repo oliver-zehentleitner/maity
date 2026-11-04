@@ -424,10 +424,13 @@ that finally runs reports its whole length in the next window. Without a tick in
 **Revisit when:** a client legitimately needs longer for a 10 MiB upload, or an ingress in front of the hub buffers whole bodies itself
 **See:** attachments.md#an-uploads-caller-is-checked-from-its-headers-before-its-body-is-read — ea27e3d7-14b1-40ab-8158-b86ab575583e — as of 2026-11-04
 
-The middleware reads every body against one deadline,
-`middleware.BODY_SECONDS` (120), counted from when it starts to read. When
-the deadline passes, the call is `408 request_timeout` with
-`Connection: close`, and what was read is dropped.
+Every body is read by `body.read` against one deadline, `body.BODY_SECONDS`
+(120), counted from when the read starts. Its two callers are the
+middleware, for every routed call, and the forge webhook (§17.4), which
+reads its own body before the middleware's read. When the deadline passes,
+the call is `408 request_timeout` with `Connection: close`, and what was read
+is dropped. The webhook answers it alike for every slug, as it does its
+other refusals.
 
 **Reason:** a body sent slowly holds its connection and the bytes read so far
 for as long as it lasts, and nothing else bounds that time: uvicorn's
@@ -440,4 +443,4 @@ still be on its way.
 - **A timeout per chunk:** a client that sends a little before each timeout
   ends never reaches it.
 - **The deadline on attachment uploads only:** every body is read by the same
-  loop, and a small body needs far less than 120 seconds.
+  function, and a small body needs far less than 120 seconds.

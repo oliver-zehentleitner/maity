@@ -17222,7 +17222,8 @@ POST /api/v1/projects/{owner}/{slug}/forge/webhook
   requests cannot use up a project's deliveries. Every request reads its
   declared body before it is answered, for a project that does not exist
   or has no webhook secret too, so a body held back hangs alike whatever
-  the slug.
+  the slug, until the deadline of §1.7 answers it `request_timeout`, for
+  every slug alike.
 - Every slug is treated the same until a signature verifies. Every
   request first takes a place in a bucket per source address (the
   client address of §2.5) and in a bucket per slug and source address,

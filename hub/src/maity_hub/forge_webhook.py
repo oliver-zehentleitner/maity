@@ -27,6 +27,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse
 from starlette.types import Receive, Scope, Send
 
+from maity_hub import body as body_reader
 from maity_hub import clock, events, namespace, secretbox, ticker
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, error_response
@@ -124,28 +125,6 @@ def _too_large() -> Any:
     )
 
 
-class _TooLarge:
-    """What `_read` answers for a body past BODY_CAP."""
-
-
-TOO_LARGE = _TooLarge()
-
-
-async def _read(receive: Receive) -> bytes | _TooLarge | None:
-    """The body, at most BODY_CAP bytes: TOO_LARGE past it, None when the client left."""
-    body = b""
-    more = True
-    while more:
-        message = await receive()
-        if message["type"] == "http.disconnect":
-            return None
-        body += message.get("body", b"")
-        more = message.get("more_body", False)
-        if len(body) > BODY_CAP:
-            return TOO_LARGE
-    return body
-
-
 async def _answer(response: Any, scope: Scope, receive: Receive, send: Send) -> int:
     await response(scope, receive, send)
     return int(response.status_code)
@@ -182,11 +161,13 @@ async def handle(
     if declared is None or declared > BODY_CAP:
         return await _answer(_too_large(), scope, receive, send)
     found = await run_in_threadpool(_lookup, engine, slug, key) if key is not None else None
-    read = await _read(receive)
-    if read is None:
-        return 499
-    if isinstance(read, _TooLarge):
+    read = await body_reader.read(receive, BODY_CAP)
+    if read is body_reader.TIMED_OUT:
+        return await _answer(body_reader.timed_out(), scope, receive, send)
+    if read is body_reader.TOO_LARGE:
         return await _answer(_too_large(), scope, receive, send)
+    if not isinstance(read, bytes):
+        return 499  # the client went away
     if found is None:
         # Nothing to check against: refused like a wrong signature, after the body.
         return await _answer(_refused(), scope, receive, send)

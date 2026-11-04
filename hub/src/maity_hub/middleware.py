@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import functools
 import logging
@@ -26,6 +25,7 @@ from starlette.responses import Response
 from starlette.routing import Match
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from maity_hub import body as body_reader
 from maity_hub import (
     clock,
     events,
@@ -61,10 +61,6 @@ LANDING_CAP = 512 * 1024
 # apply to it, the file cap does.
 ATTACHMENT_CAP = 10 * 1024 * 1024
 _ATTACHMENT_UPLOAD = re.compile(r"^/api/v1/projects/[^/]+/[^/]+/attachments$")
-# The whole body arrives within this many seconds, or the call is `request_timeout` (§1.7): a
-# body sent slowly holds its connection and the bytes read so far no longer than this. An
-# attachment of 10 MiB takes about 84 seconds at 1 Mbit/s.
-BODY_SECONDS = 120
 _AUTH_PAGES = "/api/v1/admin/settings/auth-pages"  # §16.7.4
 _LANDING_SETTINGS = ("/api/v1/admin/settings/landing", "/api/v1/admin/settings/legal", _AUTH_PAGES)
 # The drafts a preview takes are as large as the setting they preview (§16.7, §16.7.1).
@@ -185,25 +181,15 @@ class HubMiddleware:
                 await refusal(scope, receive, send)
                 _access(scope, refusal.status_code)
                 return
-        # Appended in place: `bytes +=` copies everything read so far on each chunk.
-        read = bytearray()
-        deadline = time.monotonic() + BODY_SECONDS
-        more = True
-        while more:
-            try:
-                message = await asyncio.wait_for(receive(), max(deadline - time.monotonic(), 0))
-            except TimeoutError:
-                await _timed_out(scope, receive, send)
-                return
-            if message["type"] == "http.disconnect":
-                return
-            read += message.get("body", b"")
-            more = message.get("more_body", False)
-            if len(read) > cap:
+        read = await body_reader.read(receive, cap)
+        if not isinstance(read, bytes):
+            if read is body_reader.TIMED_OUT:
+                await body_reader.timed_out()(scope, receive, send)
+                _access(scope, 408)
+            elif read is body_reader.TOO_LARGE:
                 await refuse(scope, receive, send)
-                return
-        body = bytes(read)
-        del read  # the frame lives as long as the call; the copy is all it needs
+            return  # or the client went away
+        body = read
 
         raw_query: bytes = scope.get("query_string", b"")
         # The query is matched raw and percent-decoded (§2.2): `mty1%2E…` too.
@@ -446,13 +432,6 @@ def _body_cap(scope: Scope) -> tuple[int, Callable[[Scope, Receive, Send], Await
     ):
         return LANDING_CAP, functools.partial(_too_large, cap=LANDING_CAP)
     return BODY_CAP, _too_large
-
-
-async def _timed_out(scope: Scope, receive: Receive, send: Send) -> None:
-    message = f"the body did not arrive within {BODY_SECONDS} seconds"
-    response = error_response(408, "request_timeout", message, headers={"Connection": "close"})
-    await response(scope, receive, send)
-    _access(scope, 408)
 
 
 async def _too_large(scope: Scope, receive: Receive, send: Send, cap: int = BODY_CAP) -> None:

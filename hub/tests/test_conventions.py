@@ -11,7 +11,7 @@ from fastapi import Request
 from sqlalchemy import Engine, select
 from starlette.routing import Mount
 
-from maity_hub import middleware
+from maity_hub import body as body_reader
 from maity_hub import tables as t
 from tests import factory
 from tests.conftest import ClientFactory
@@ -114,7 +114,7 @@ def test_a_body_to_an_api_path_nothing_serves_is_404_unread(make_client: ClientF
 def test_a_body_that_does_not_arrive_in_time_is_request_timeout(
     make_client: ClientFactory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(middleware, "BODY_SECONDS", 0.2)
+    monkeypatch.setattr(body_reader, "BODY_SECONDS", 0.2)
     client = make_client()
     chunks = 0
 
