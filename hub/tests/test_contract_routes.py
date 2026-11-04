@@ -32,6 +32,16 @@ NOT_ROUTED = {
     ("GET", "/me/soul/versions"),
     ("POST", "/agents/{}/soul/rollback"),
     ("PATCH", "/me/preferences"),
+    # Contract without a route yet: tsk-fvh80q02772c (cross-project group chats, §9.5).
+    ("GET", "/me/cross-chats"),
+    ("POST", "/me/cross-chats"),
+    ("GET", "/me/cross-chats/{}"),
+    ("PATCH", "/me/cross-chats/{}"),
+    ("POST", "/me/cross-chats/{}/participants"),
+    ("DELETE", "/me/cross-chats/{}/participants/{}"),
+    ("GET", "/me/cross-chats/{}/messages"),
+    ("POST", "/me/cross-chats/{}/messages"),
+    ("POST", "/me/cross-chats/{}/messages/{}/redact"),
 }
 
 # Routes the contract no longer names, removed with the hub change of the same card. Remove an
