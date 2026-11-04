@@ -33,7 +33,8 @@ _SKIP_CHARS = set("#@{}<>")
 # Form 4: a quotation, between "…" or “…”, of four words or more.
 _QUOTE = re.compile(r'"[^"]*"|“[^“”]*”|„[^„“”]*[“”]')
 _GAP_STOPS = set('.;!?|"“”„')  # `|`: a table's cell is no sentence of its own
-# `\\"` (an odd run of backslashes before `"`) masks the quote; `\\\\"` is a backslash, then `"`.
+# One backslash (or any odd number) before a quote mark masks it; two (or any even number) are
+# backslashes in the text, and the quote mark after them closes the quote.
 _ESCAPED_QUOTE = re.compile(r'(?<!\\)(?:\\\\)*\\"')
 # A comment marker at a line's start, so that a quote of a wrapped comment matches.
 _COMMENT = re.compile(r"^[ \t]*(?:#+|//+|/?\*+/?|--|;+)[ \t]?", re.MULTILINE)
@@ -275,7 +276,7 @@ def quotations(text: str, files: list[str]) -> list[Quotation]:
     tied to a file by a file and line (form 1) right before it (`path:n says "…"`) or right
     after it in brackets (`"…" (path:n)`), and failing that to the file of the section it sits
     in: the nearest heading above that names a file at the head, when it names exactly one.
-    A `\\"` closes no quote."""
+    A quote mark after an odd number of backslashes closes no quote."""
     quotes: list[Quotation] = []
     section: list[tuple[int, list[str]]] = []  # (level, files at the head) of the headings
     paragraph: list[str] = []

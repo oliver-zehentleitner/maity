@@ -10314,7 +10314,9 @@ is not there is not sent:
 4. **A quotation from a file**: what stands between `"` and the next
    `"`, `“` and the next `”`, or `„` and the next `“` or `”`, within one
    paragraph and outside code spans, with four words or more (a short
-   word or a term in quotes is prose); a `\"` closes no quote. It is a
+   word or a term in quotes is prose); a `\"` closes no quote, nor does
+   a `"` after any odd number of backslashes, while after an even number
+   (`\\"`) the backslashes are text and the `"` closes it. It is a
    quotation when the text ties it to one file at `head`: a file and
    line (form 1) stands right before it, with nothing between that ends
    a sentence, quotes or ends a table's cell (`|`) and at most two words

@@ -373,3 +373,8 @@ def test_an_escaped_backslash_before_a_quote_closes_it() -> None:
     assert [q.text for q in textcheck.quotations(masked, files)] == [
         'a \\"masked\\" word stays inside'
     ]
+    # Three backslashes mask the quote mark; blanking them keeps the quote's end in place.
+    three = 'docs/how/connected.md:3 says "a word \\\\\\" with three, then closed here".'
+    assert [q.text for q in textcheck.quotations(three, files)] == [
+        'a word \\\\\\" with three, then closed here'
+    ]
