@@ -88,7 +88,7 @@ if [ -n "${DUMP_CRONJOB:-}" ]; then
         echo "the dump's mark has no attachments part (the CronJob still has the script without the tar: create the Secret maity-backup-key, then apply deploy/k3s-single/attachments.yaml and backup.yaml), nothing was changed" >&2
         restored=1; exit 1
       fi;;
-    *) echo "the dump job's log has no 'dump ok' line (the log could not be read, or the CronJob still has the old script: apply deploy/k3s-single/backup.yaml first), nothing was changed" >&2
+    *) echo "the dump job's log has no 'dump ok' line (the log could not be read, or the CronJob still has the old script: create the Secret maity-backup-key, then apply deploy/k3s-single/backup.yaml), nothing was changed" >&2
        restored=1; exit 1;;
   esac
   echo "dump job: $job"

@@ -370,7 +370,10 @@ container checks it first: missing, a private key, or no public key
 ends the Job as failed with a `backup failed:` line, before anything
 is written. A restore decrypts where the private key is: the dump is
 piped into `pg_restore` over `kubectl exec`, and the tar is streamed
-into a restore Job that waits for it. Backups written before encryption
+into a restore Job that waits for it. The commands run as one block that
+stops before the cluster when the decryption or the check of the tar
+fails, and the Job reads the tar's first header before it empties the
+volume, so a wrong key or a corrupt backup leaves the files in place. Backups written before encryption
 are left alone and counted in every night's log.
 
 **Reason:** a backup holds the verifiers of every agent credential, and
