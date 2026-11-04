@@ -295,6 +295,49 @@ long-lived PyPI token out of the repository's secrets.
 - Publishing on the hub's `v*` tags: CLI and hub do not release
   together.
 
+## The CLI's sdist and wheel are built from hashed, pinned tools in a job apart from the checks
+
+**Id:** a8dd1473-5aff-4f32-a3fe-89c0498a208d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** hardening card tsk-ngx42j6r0jke (the maintainer, 2026-11-04; plan approved by the team lead); `.github/workflows/release-cli.yml`, `cli/requirements/release.in`, `cli/Makefile`
+**Revisit when:** the CLI gains runtime dependencies, the build backend changes, or PyPI's trusted publishing starts attesting how the files were built
+**See:** process.md#the-cli-is-published-to-pypi-as-maity-from-a-cli-v-tag-through-trusted-publishing — 227cd75c-bfc7-4cd8-9ba8-cf877cd3bf21 — as of 2026-11-04
+
+What goes to PyPI is built only with `cli/requirements/release.txt`:
+`build`, `twine` and the build backend `setuptools`, locked with hashes
+by the uv that `hub/requirements/tools.txt` pins (`make lock`). The
+release workflow's `build` job installs that lock alone, with
+`--require-hashes`, into a fresh environment and builds without
+isolation (`make release-build`). The checks run in a separate `check`
+job with the unpinned dev tools; `publish` needs both and uploads only
+the `build` job's artifact. `[build-system]` names the same exact
+`setuptools` as the lock, so a build from the sdist uses the backend
+the release was made with. The `cli` job of ci.yml runs `make
+lock-check` (lock recompiled without its hashes, both pins compared)
+and `make release-build` on Python 3.11, and the audit workflow checks
+the lock against the known advisories with the hub's locks.
+
+**Reason:** the uploaded files are what every agent installs. Built
+with whatever `build`, `twine` and `setuptools` PyPI served on the day
+of the tag, a changed or replaced tool could change them unseen. A
+hashed lock makes the build tools the reviewed ones. Without isolation,
+the build would otherwise fetch its backend again, unpinned. Keeping
+the checks in their own job means nothing their dev tools install
+shares the environment the files are built in. The hub already locks
+its dependencies the same way (`hub/Makefile`), so the CLI reuses its
+pinned uv instead of a second tool.
+
+**Rejected alternatives:**
+- Pinning only the build backend in `[build-system]`, building with
+  isolation: `build` and `twine` themselves stay unpinned, and the
+  isolated environment is resolved again on every run without hashes.
+- One job for checks and build, as before: the dev tools, unpinned,
+  run in the environment the files come from.
+- Locking the dev tools too: they do not touch what is uploaded once
+  the build is a job of its own; alternatives beyond that: unknown.
+
 ## The coordinating agent manages, merges and releases; it does not code, review or test, and it routes work by model
 
 **Id:** 11b7ed4d-100d-490f-ab34-c68ace8b5f80

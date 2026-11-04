@@ -395,6 +395,13 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e '.[dev]'
       - run: make check
+      # The release build's hashed lock follows release.in and the build backend's pin, and
+      # builds (release-cli.yml), so a tag never finds it broken; once, on the release's Python.
+      - if: matrix.python-version == '3.11'
+        run: |
+          pip install --require-hashes -r ../hub/requirements/tools.txt
+          make lock-check
+          make release-build
 
   # About 15 minutes, against about 7 on Linux; only when cli/ changes.
   cli-windows:

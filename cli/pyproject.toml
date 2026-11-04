@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=77"]  # PEP 639 licence string
+requires = ["setuptools==84.2.1"]  # PEP 639 licence string; the same pin as requirements/release.in
 build-backend = "setuptools.build_meta"
 
 [project]

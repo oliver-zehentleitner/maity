@@ -1,0 +1,6 @@
+# What the release job builds and checks the CLI's sdist and wheel with (release-cli.yml).
+# setuptools is the build backend: its pin here and in pyproject.toml's [build-system] must
+# agree (`make lock-check`), since the build runs without isolation on this set.
+build
+twine
+setuptools==84.2.1
