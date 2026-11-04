@@ -371,8 +371,8 @@ window.Maity = window.Maity || {};
     const text = h("textarea", { id: textId, rows: "3", placeholder: M.t("inbox.reply_placeholder") });
     // The one field above the buttons is always writable: a reply or Talk
     // takes its text along when it holds any (§7); Send is the answer in
-    // words alone, offered where there are no replies to press. A preference
-    // proposal's words go with its Decline, in the review.
+    // words alone, beside the replies too (below). A preference proposal's
+    // words go with its Decline, in the review.
     // Inside a project the trust is known: only the owner answers an action (§2.3).
     const notOwner = !!req.action && ctx.scope === "project" && !ctx.isOwner;
     if (notOwner) append(body, h("p", { class: "muted" }, M.t("inbox.action.owner_only")));
@@ -395,11 +395,14 @@ window.Maity = window.Maity || {};
       send({ text: value });
     };
     const hintId = textId + "-hint";
-    const talkable = canTalk(ctx, req) && !notOwner;
+    // A takeover's request needs one of its replies (§6.19): the hub refuses `talk` as it refuses the words alone.
+    const talkable = canTalk(ctx, req) && !notOwner && !req.takeover_id;
     // Not where no answer is possible yet: a call for the owner alone, a request not read in full.
     const showTalk = !notOwner && !unread;
-    const talkWhy = talkable || !showTalk ? null : req.filed_by === "hub" ? M.t("inbox.talk_hub") : M.t("inbox.talk_not_yours");
-    const sendWhy = wordsAlone ? null : M.t("inbox.send_needs_reply");
+    const talkWhy = talkable || !showTalk ? null : req.takeover_id ? M.t("inbox.talk_takeover")
+      : req.filed_by === "hub" ? M.t("inbox.talk_hub") : M.t("inbox.talk_not_yours");
+    // No reason for a Send that is not there (no field: a preference review, an unread or a call for the owner alone).
+    const sendWhy = wordsAlone || noField ? null : M.t("inbox.send_needs_reply");
     const why = [sendWhy, talkWhy].filter(Boolean);
     const sendText = noField ? null : h("button", { type: "button", class: "reply send", onclick: sendWords,
       "aria-describedby": sendWhy ? hintId : null }, M.t("inbox.send"));

@@ -4,4 +4,4 @@
   with options too, and Ctrl+Enter does the same; it is disabled while the field is empty, and on a
   consent, a call or a takeover, where the words alone would be refused or read as No, it stays disabled
   and says why. Talk stays disabled, with its reason, where only the agent's owner could use it
-  (tsk-nx6hm8qjzm3z).
+  and on a takeover, which needs one of its answers (tsk-nx6hm8qjzm3z).

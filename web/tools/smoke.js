@@ -633,6 +633,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await talkAnswer("req-0014", "Foreign agent", "another owner's agent", "only for the human who owns the agent that asked");
   await talkAnswer("req-0015", "Human asker", "a human asker", "only for the human who owns the agent that asked");
   await talkAnswer("req-0016", "Hub-filed", "filed by the hub", "Maity filed this request itself");
+  {
+    // A takeover's request needs one of its replies (§6.19): Talk disabled with its reason, for the agent's owner too.
+    const tkAll = win.Maity.api.getAll;
+    const tkReq = { id: "req-tk01", class: "decision", title: "Takeover: may it move?", summary: "", tried: "", priority: "normal", to: "hum-maintainer",
+      options: [{ id: "let_it_move", label: "Let it move" }, { id: "object", label: "Object" }], replies: [{ id: "let_it_move", label: "Let it move" }, { id: "object", label: "Object" }],
+      asked_by: { member_id: "agt-a", display_name: "Agent A", trust: "admin", role: "coder", session_id: null }, on_behalf_of: null, task_id: null, task: null,
+      while_open: "wait", needs_in_session: null, ktw_ref: null, personal: false, takeover_id: "tko-0001", status: "open", answer: null,
+      created_at: "2026-10-21T16:00:00Z", answered_at: null };
+    win.Maity.api.getAll = (p) => tkAll(p).then((r) => (/\/requests(\?|$)/.test(p) && r && Array.isArray(r.items) ? Object.assign({}, r, { items: [tkReq].concat(r.items) }) : r));
+    await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox/req-tk01"); for (let k = 0; k < 6; k++) await tick();
+    const tkCur = main.querySelector(".current");
+    const tkTalk = tkCur && btn(tkCur, "Talk"), tkHint = tkCur && tkCur.querySelector(".reply-hint");
+    expect(tkCur && text(tkCur).includes("Takeover: may it move?") && tkTalk && tkTalk.disabled && btn(tkCur, "Send").disabled
+      && tkHint && tkTalk.getAttribute("aria-describedby") === tkHint.id && text(tkHint).includes("A takeover needs one of its answers"),
+      "a takeover's request: Talk and Send disabled, the reason given " + (tkHint ? text(tkHint) : ""));
+    win.Maity.api.getAll = tkAll;
+    await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
+  }
   win.Maity.api.post = ansPost;
   expect(text(main).includes("No open requests."), "inbox empty");
   const show = byId("inbox-show"); show.value = "all"; show.dispatch("change"); await tick();
@@ -8557,7 +8575,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const owner = win.Maity.trust.owner;
     win.Maity.trust.owner = () => false;
     await go("#/maintainer/maity/settings"); await go("#/maintainer/maity/inbox/req-act"); for (let k = 0; k < 8; k++) await tick();
-    expect(call() && !buttons().includes("Go") && !buttons().includes("No") && !buttons().includes("Talk") && buttons().includes("Later") && /Only the project's owner/.test(text(main)), "action: one who is no owner sees the call and only Later " + JSON.stringify(buttons()));
+    expect(call() && !buttons().includes("Go") && !buttons().includes("No") && !buttons().includes("Talk") && buttons().includes("Later") && /Only the project's owner/.test(text(main))
+      && !main.querySelector(".entry-body .reply-hint"), "action: one who is no owner sees the call and only Later, no reason for a Send not there " + JSON.stringify(buttons()));
     win.Maity.trust.owner = owner;
     win.Maity.api.getAll = getAll; win.Maity.api.post = post;
   }

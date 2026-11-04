@@ -1426,6 +1426,7 @@ window.MAITY_I18N["en"] = {
   "inbox.talk": "Talk",
   "inbox.talk_hub": "Maity filed this request itself: there is no agent to talk with.",
   "inbox.talk_not_yours": "Talk is only for the human who owns the agent that asked.",
+  "inbox.talk_takeover": "A takeover needs one of its answers: Talk is not one.",
   "inbox.title": "Inbox",
   "inbox.title.all": "Waiting for you, all projects",
   "inbox.to.owner": "the project's owner",

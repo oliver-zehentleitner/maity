@@ -756,7 +756,10 @@ same, and is disabled while the field is empty. It stays disabled, with
 its reason below the buttons (`.reply-hint`, its `aria-describedby`),
 on every `consent`, every request with `action` or `placement`, and a
 takeover's (`takeover_id`). **Talk** stands on every request one can
-answer, disabled with its reason where `talk` is not accepted (above).
+answer, disabled with its reason where `talk` is not accepted: for
+another owner's agent, a human asker and a request the hub filed itself
+(above), and on a takeover's, which needs one of its replies as the
+words alone do. No reason is said for a Send that is not there.
 Neither stands where no answer is possible at all: a call that only the
 project's owner answers, seen by another member, and a personal request
 not read in full. A refused answer gives the controls back, and what was
