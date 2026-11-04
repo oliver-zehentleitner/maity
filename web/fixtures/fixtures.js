@@ -6650,6 +6650,7 @@ window.MAITY_FIXTURES = {
             "label": "Go"
           }
         ],
+        "report": null,
         "status": "open",
         "summary": "Agent Q, your agent in elsewhere, would add a line to its soul: \"Ask before touching the deploy scripts.\"",
         "task": null,
@@ -6701,6 +6702,7 @@ window.MAITY_FIXTURES = {
             "label": "No"
           }
         ],
+        "report": null,
         "status": "open",
         "summary": "Agent A, admin in Maity, proposes a change to your preferences.",
         "task": null,

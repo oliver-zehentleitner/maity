@@ -2113,10 +2113,16 @@ def _locked_personal(
         orgs.lock(conn, org_id)
     if row.project_id is not None:
         lock_project(conn, row.project_id)
-    elif row.filed_by == "hub" and row.org_id is None and row.to_human is not None:
-        # The owner's digest (§5.3), found by its shape (hub, no project, no organisation), so a
-        # digest filed before the stored lines counts too: the hourly pass withdraws it under the
-        # owner's row, and an answer takes the same lock first, never the request's row first.
+    elif (
+        row.filed_by == "hub"
+        and row.org_id is None
+        and row.report_id is None
+        and row.to_human is not None
+    ):
+        # The owner's digest (§5.3), found by its shape (hub, no project, no organisation, no
+        # report), so a digest filed before the stored lines counts too: the hourly pass
+        # withdraws it under the owner's row, and an answer takes the same lock first, never the
+        # request's row first. A report's request has the same shape but is refused below.
         records.lock_human(conn, row.to_human)
     return _personal(conn, caller, request_id, asker=asker)
 
