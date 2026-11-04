@@ -1098,6 +1098,7 @@ window.MAITY_I18N["en"] = {
   "error.probe_unavailable": "The forge did not answer.",
   "error.profile_in_use": "This agent is still active in a project.",
   "error.project_closed": "This project is archived.",
+  "error.project_limit": "This namespace already holds as many projects as this hub allows.",
   "error.rate_limited": "Too many requests just now. Try again later.",
   "error.reason.humans_only": "Only a person can do this.",
   "error.reason.method_disabled": "This way of signing in is turned off.",
@@ -2206,6 +2207,12 @@ window.MAITY_I18N["en"] = {
   },
   "limits.orgs.hint": "Organisations in which one person is an owner; creating one more is refused.",
   "limits.orgs.label": "Organisations owned per person",
+  "limits.projects.at": {
+    "one": "{count} owner is at or over this limit.",
+    "other": "{count} owners are at or over this limit."
+  },
+  "limits.projects.hint": "Projects in one person's or organisation's namespace, archived ones included; creating or moving in one more is refused.",
+  "limits.projects.label": "Projects per owner",
   "limits.save": "Save the limits",
   "limits.saved": "Saved.",
   "limits.saving": "Saving…",
@@ -2422,6 +2429,7 @@ window.MAITY_I18N["en"] = {
   "member.silent_unknown": "silent · last call unknown",
   "memberpage.actions": "Actions",
   "memberpage.actions.label": "Actions for {name}",
+  "memberpage.activity.cursor_stuck": "the hub's event cursor did not move past {after}",
   "memberpage.activity.failed": "Could not read the activity: {reason}",
   "memberpage.activity.hint": "What they did in this project, newest first.",
   "memberpage.activity.hint_cut": {
@@ -2735,8 +2743,6 @@ window.MAITY_I18N["en"] = {
   "menu.sign_in_device": "Sign in another device",
   "menu.sign_out": "Sign out",
   "menu.theme": "Theme",
-  "messages.cursor_stuck": "the hub's event cursor did not move past {after}",
-  "messages.cut": "Only messages within the hub's latest {window} events (all projects counted) are shown; older ones are not read here.",
   "messages.filter.every_type": "every type",
   "messages.filter.type": "Type",
   "messages.from_to": "{from} to {to}",
@@ -2745,14 +2751,19 @@ window.MAITY_I18N["en"] = {
     "one": "{count} new message.",
     "other": "{count} new messages."
   },
+  "messages.new_failed": "Could not read the new messages: ",
   "messages.none": "No project messages yet.",
   "messages.none_of_type": "No message of this type.",
+  "messages.not_read_yet": "None on the pages read so far; older messages have not been read yet.",
+  "messages.older": "Older messages",
+  "messages.read_failed": "Could not read the messages: ",
   "messages.remove": "Remove",
   "messages.remove.ask": "Remove this message for everyone who can read it? Its text and files are replaced by a note. Say why:",
   "messages.remove.busy": "Removing…",
   "messages.remove.done": "Removed.",
   "messages.remove.failed": "Not removed: ",
   "messages.remove.label": "Remove this message for everyone",
+  "messages.removed": "This message was removed.",
   "messages.review.more": {
     "one": "{count} more place",
     "other": "{count} more places"

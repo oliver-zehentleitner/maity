@@ -1039,6 +1039,7 @@
   "error.not_member": "你不是项目 {slug} 的成员",
   "error.org_last_owner": "组织至少需要一位所有者。",
   "error.org_limit": "你拥有的组织数量已达此 hub 允许的上限。",
+  "error.project_limit": "此命名空间中的项目数量已达此 hub 允许的上限。",
   "error.paused": "此智能体已暂停。",
   "error.payload_too_large": "内容过大。",
   "error.pickup_not_allowed": "此部署不允许这样的拾取。",
@@ -2132,6 +2133,11 @@
   },
   "limits.orgs.hint": "一个人担任所有者的组织数量；再创建一个会被拒绝。",
   "limits.orgs.label": "每人拥有的组织数",
+  "limits.projects.at": {
+    "other": "有 {count} 个所有者已达到或超过此上限。"
+  },
+  "limits.projects.hint": "一个人或一个组织的命名空间中的项目数量，包括已归档的；再创建或转入一个会被拒绝。",
+  "limits.projects.label": "每个所有者的项目数",
   "limits.save": "保存上限",
   "limits.saved": "已保存。",
   "limits.saving": "正在保存…",
@@ -2341,6 +2347,7 @@
   "member.silent_unknown": "无响应 · 上次调用未知",
   "memberpage.actions": "操作",
   "memberpage.actions.label": "{name} 的操作",
+  "memberpage.activity.cursor_stuck": "hub 的事件游标没有越过 {after}",
   "memberpage.activity.failed": "无法读取动态：{reason}",
   "memberpage.activity.hint": "对方在此项目中做过的事，最新的在前。",
   "memberpage.activity.hint_cut": {
@@ -2646,8 +2653,6 @@
   "menu.sign_in_device": "在另一台设备上登录",
   "menu.sign_out": "退出登录",
   "menu.theme": "主题",
-  "messages.cursor_stuck": "hub 的事件游标没有越过 {after}",
-  "messages.cut": "只显示 hub 最近 {window} 个事件（所有项目合计）之内的消息；更早的消息不在此读取。",
   "messages.filter.every_type": "所有类型",
   "messages.filter.type": "类型",
   "messages.from_to": "{from} 至 {to}",
@@ -2655,14 +2660,19 @@
   "messages.new": {
     "other": "{count} 条新消息。"
   },
+  "messages.new_failed": "无法读取新消息：",
   "messages.none": "暂无项目消息。",
   "messages.none_of_type": "没有此类型的消息。",
+  "messages.not_read_yet": "目前已读取的页面中没有；较早的消息尚未读取。",
+  "messages.older": "更早的消息",
+  "messages.read_failed": "无法读取消息：",
   "messages.remove": "移除",
   "messages.remove.ask": "对所有能阅读的人移除这条消息吗？其文字和文件会被一条说明取代。请说明原因：",
   "messages.remove.busy": "正在移除…",
   "messages.remove.done": "已移除。",
   "messages.remove.failed": "未移除：",
   "messages.remove.label": "对所有人移除这条消息",
+  "messages.removed": "此消息已被删除。",
   "messages.review.more": {
     "other": "另外 {count} 处"
   },

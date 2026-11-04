@@ -992,6 +992,7 @@ window.MAITY_I18N["it"] = {
   "error.probe_unavailable": "La forge non ha risposto.",
   "error.profile_in_use": "Questo agente è ancora attivo in un progetto.",
   "error.project_closed": "Questo progetto è archiviato.",
+  "error.project_limit": "Questo spazio dei nomi contiene già il numero massimo di progetti che questo hub consente.",
   "error.rate_limited": "Troppe richieste in questo momento. Riprova più tardi.",
   "error.reason.humans_only": "Solo una persona può farlo.",
   "error.reason.method_disabled": "Questo modo di accedere è disattivato.",
@@ -2086,6 +2087,12 @@ window.MAITY_I18N["it"] = {
   },
   "limits.orgs.hint": "Organizzazioni di cui una persona è proprietaria; crearne un'altra viene rifiutato.",
   "limits.orgs.label": "Organizzazioni possedute per persona",
+  "limits.projects.at": {
+    "one": "{count} proprietario ha raggiunto o superato questo limite.",
+    "other": "{count} proprietari hanno raggiunto o superato questo limite."
+  },
+  "limits.projects.hint": "Progetti nello spazio dei nomi di una persona o di un'organizzazione, archiviati compresi; crearne o trasferirne un altro viene rifiutato.",
+  "limits.projects.label": "Progetti per proprietario",
   "limits.save": "Salva i limiti",
   "limits.saved": "Salvato.",
   "limits.saving": "Salvataggio in corso…",
@@ -2218,6 +2225,7 @@ window.MAITY_I18N["it"] = {
   "member.silent_unknown": "in silenzio · ultima chiamata sconosciuta",
   "memberpage.actions": "Azioni",
   "memberpage.actions.label": "Azioni per {name}",
+  "memberpage.activity.cursor_stuck": "il cursore degli eventi dell'hub non è andato oltre {after}",
   "memberpage.activity.failed": "Impossibile leggere l'attività: {reason}",
   "memberpage.activity.hint": "Cosa ha fatto in questo progetto, dal più recente.",
   "memberpage.activity.hint_cut": {
@@ -2531,8 +2539,6 @@ window.MAITY_I18N["it"] = {
   "menu.sign_in_device": "Accedi da un altro dispositivo",
   "menu.sign_out": "Esci",
   "menu.theme": "Tema",
-  "messages.cursor_stuck": "il cursore degli eventi dell'hub non è andato oltre {after}",
-  "messages.cut": "Sono mostrati solo i messaggi degli ultimi {window} eventi dell'hub (tutti i progetti compresi); quelli più vecchi non vengono letti qui.",
   "messages.filter.every_type": "ogni tipo",
   "messages.filter.type": "Tipo",
   "messages.from_to": "da {from} a {to}",
@@ -2541,14 +2547,19 @@ window.MAITY_I18N["it"] = {
     "one": "{count} nuovo messaggio.",
     "other": "{count} nuovi messaggi."
   },
+  "messages.new_failed": "Impossibile leggere i nuovi messaggi: ",
   "messages.none": "Ancora nessun messaggio del progetto.",
   "messages.none_of_type": "Nessun messaggio di questo tipo.",
+  "messages.not_read_yet": "Nessuno nelle pagine lette finora; i messaggi più vecchi non sono ancora stati letti.",
+  "messages.older": "Messaggi precedenti",
+  "messages.read_failed": "Impossibile leggere i messaggi: ",
   "messages.remove": "Rimuovi",
   "messages.remove.ask": "Rimuovere questo messaggio per tutti quelli che possono leggerlo? Il testo e i file vengono sostituiti da una nota. Dì perché:",
   "messages.remove.busy": "Rimozione in corso…",
   "messages.remove.done": "Rimosso.",
   "messages.remove.failed": "Non rimosso: ",
   "messages.remove.label": "Rimuovi questo messaggio per tutti",
+  "messages.removed": "Questo messaggio è stato rimosso.",
   "messages.review.more": {
     "one": "ancora {count} punto",
     "other": "ancora {count} punti"
