@@ -375,7 +375,7 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 
 /* ---- inbox ---------------------------------------------------------- */
 
-.entries { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.entries { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 
 .entry {
   background: var(--surface);
@@ -413,7 +413,7 @@ main { padding: var(--gap); max-width: 1200px; margin: 0 auto; }
 .entry-row .project-label { flex: none; padding: 2px 8px 2px 4px; border: 1px solid var(--border); border-radius: 999px; color: var(--text); text-decoration: none; }
 .entry-row .project-label:hover, .entry-row .project-label:focus-visible { border-color: var(--accent); }
 .entry-row .entry-head { flex: 1 1 16rem; min-width: 0; position: relative; }
-.entries-box { display: grid; gap: 8px; }
+.entries-box { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .entry-group { margin: 6px 0 0; }
 .entry-group h3 { margin: 0 0 6px; font-size: 0.95rem; display: flex; align-items: center; gap: 8px; }
 .toolbar label.check { display: inline-flex; align-items: center; gap: 6px; }
@@ -822,6 +822,8 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 
 .msg p { margin: 0; }
 /* A message as Markdown (js/markdown.js). */
+/* A long link or word wraps anywhere; a code block keeps its lines (`pre`) and scrolls in itself. */
+.md, .about { overflow-wrap: anywhere; }
 .md > :first-child { margin-top: 0; }
 .md > :last-child { margin-bottom: 0; }
 .md p { margin: 0 0 6px; }
@@ -1514,9 +1516,10 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .card-panel .card > header .card-id, .card-panel .card > h3 { display: none; }
 /* One style for the panel's section headings. */
 .card-panel h3, .card-panel h4 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 16px 0 6px; font-weight: 600; }
-.card-note-list, .card-history-list, .card-links { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.card-note-list, .card-history-list, .card-links { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .card-note-list li p { margin: 0; }
 .card-history-list li { overflow-wrap: anywhere; font-size: 0.9rem; }
+.card-links li { overflow-wrap: anywhere; }
 .history-diff { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.82rem; }
 .card-note-form { display: grid; gap: 6px; margin-top: 8px; }
 .card-note-form button { justify-self: start; }
@@ -1543,8 +1546,8 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .subtask-list li.wanted { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .subtask-status { font-size: 0.8rem; color: var(--muted); display: inline-block; min-width: 4.5em; }
 .card-parent { margin: 4px 0; font-size: 0.85rem; }
-.card-family { display: grid; gap: 8px; margin-top: 8px; }
-.card-family-form { display: grid; gap: 6px; }
+.card-family { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin-top: 8px; }
+.card-family-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
 .card-family-form button[type="submit"] { justify-self: start; }
 
 /* Organisations (js/orgs.js). */
