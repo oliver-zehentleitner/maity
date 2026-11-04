@@ -8579,9 +8579,21 @@
     "en": "6668e63fcd9baf7c",
     "text": "c313cd1daa4186fe"
   },
+  "members.consent.boss_owner": {
+    "en": "67bcb9642a4bf5da",
+    "text": "6e891be437633ff7"
+  },
   "members.consent.owner": {
     "en": "047bc6695c7c32bb",
     "text": "0ddb24db96c8567c"
+  },
+  "members.consent.partly": {
+    "en": "8eb3165c4a21b419",
+    "text": "40ca0c67218e9832"
+  },
+  "members.consent.partly_titled": {
+    "en": "c29dc307ee6a7253",
+    "text": "c49df9dedd202bf9"
   },
   "members.consent.waiting": {
     "en": "f6922d1c4d43b714",
@@ -11874,6 +11886,18 @@
   "prefs.versions.title": {
     "en": "d946eb551f1d6a44",
     "text": "0fbfbfce52aac9c7"
+  },
+  "product.bug": {
+    "en": "191903c61492ea38",
+    "text": "77dc5e536511954b"
+  },
+  "product.love": {
+    "en": "96fa5228627bef6a",
+    "text": "d527c1e256b82674"
+  },
+  "product.made_by": {
+    "en": "3c4acf7ac90b37e1",
+    "text": "d33ea7f84b4bf7f9"
   },
   "profile_delete.busy": {
     "en": "c0ca40456b38f753",

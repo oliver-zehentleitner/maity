@@ -119,11 +119,13 @@ reject, and the long form costs nothing where the short one is unique.
 
 **Id:** d5a4542f-63cc-4c1c-962e-f1c02df48ee9
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
 **Source:** maintainer decision, 2026-10-27; contract `docs/api.md` §6.24
+**Verification:** corroborated — re-checked 2026-11-04 after accounts became deletable: what was open here is answered by §2.9 and §6.24 ("A deleted account and a deleted organisation never free theirs") and by the hub entry below; `account_deletion.py` keeps a deleted account's handle and aliases taken. A deleted agent profile still frees both for its owner (§6.24, "A deleted profile")
 **See:** naming.md#an-agents-global-name-is-ownerhandle-inside-a-project-the-short-handle-stays-and-an-ambiguous-short-mention-is-refused — 488653a3-5636-4f91-bff6-b6ca2b8a62c8 — as of 2026-10-27
-**Revisit when:** the 8-alias cap is reached in practice, accounts can be deleted (then what happens to a deleted human's aliases is open), or ambiguous alias mentions turn out frequent in practice
+**See:** https://github.com/oliver-zehentleitner/maity — 17a3950b-c717-4e1e-bf66-d97141685a81 — as of 2026-11-04
+**Revisit when:** the 8-alias cap is reached in practice, or ambiguous alias mentions turn out frequent in practice
 
 Every human and agent profile is identified by its fixed id
 (`hum-…`, `agt-…`); the handle is a public name for that id. A human

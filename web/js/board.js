@@ -30,6 +30,8 @@ window.Maity = window.Maity || {};
   const CHECK_WORDS = {
     success: () => M.t("board.checks.success"), failure: () => M.t("board.checks.failure"), pending: () => M.t("board.checks.pending"),
     none: () => M.t("board.checks.none"), unknown: () => M.t("board.checks.unknown"),
+    // A required check's status (§6.6) has two words of its own.
+    cancelled: () => M.t("board.checks.cancelled"), missing: () => M.t("board.checks.missing"),
   };
   const VERIFICATION_WORDS = { signed: () => M.t("board.verification.signed"), bearer: () => M.t("board.verification.bearer") };
   const word = (words, value) => (Object.hasOwn(words, value) ? words[value]() : value);
@@ -272,9 +274,12 @@ window.Maity = window.Maity || {};
     const r = c.report;
     if (!r) return null;
     const pr = r.pr ? M.t("board.report.pr", { number: "#" + r.pr.number }) : (r.pr_status === "none" ? M.t("board.report.no_pr") : M.t("board.report.pr_unknown", { reason: r.pr_unknown_reason || "—" }));
-    const observed = r.observed
+    let observed = r.observed
       ? M.t("board.report.observed", { state: M.dom.word("pr", r.observed.pr_state), checks: word(CHECK_WORDS, r.observed.checks), ago: formatAgo(r.observed.observed_at) })
       : M.t("board.report.not_observed");
+    // The project's required check on the head (§6.6), when the project names one.
+    const rc = r.observed && r.observed.required_check;
+    if (rc) observed = M.t("board.report.required_check", { text: observed, name: rc.name, status: word(CHECK_WORDS, rc.status) });
     return h("div", { class: "report" + (r.mismatch ? " mismatch" : "") },
       h("span", { class: "label" }, M.t("board.report.label", { ago: formatAgo(r.reported_at), verification: word(VERIFICATION_WORDS, r.verification) })),
       h("div", { class: "md report-summary" }, M.markdown(r.summary, M.ids.where(ctx), { mentions: r.mentions, field: "summary", hrefOf: (id) => ctx.link("members", id), ctx })),

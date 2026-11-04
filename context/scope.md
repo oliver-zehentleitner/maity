@@ -900,7 +900,7 @@ sections are worth a link.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-74rvy49kbv6s, the maintainer's go on the lead's four proposals and the designer's draft (2026-11-02); the lead's approval of the plan in three pull requests, with its rejected alternatives; contract `docs/api.md` §16.7.5
+**Source:** card tsk-74rvy49kbv6s, the maintainer's go on the lead's four proposals and the designer's draft (2026-11-02); the lead's approval of the plan in three pull requests, with its rejected alternatives; the lead's decision in the contract's review that a disabled landing page shows the operator line and the social links only while a legal page is set (2026-11-02); contract `docs/api.md` §16.7.5
 **See:** scope.md#the-landing-header-links-only-the-sections-that-carry-a-short-nav_label-at-most-four — 7817872f-1876-40b2-8ec8-7ee4e2802991 — as of 2026-11-02
 
 The landing page, the legal pages, `/login` and `/register` show one
@@ -932,10 +932,10 @@ the social links are in it only if a legal page is set, because only then
 does a page already show them; an operator preparing a landing page
 publishes nothing through the frame. Leaving them out always was
 rejected: the operator's line would then be missing beside the imprint,
-whose frame comes from the same model. A failed read of it draws the sign-in and sign-up pages
-without the frame, so signing in never depends on it. The pages that a
-mail's link opens (§2.7.1) keep their own small frame for now; they come
-later on their own card.
+whose frame comes from the same model. A failed read of it draws the
+sign-in and sign-up pages without the frame, so signing in never depends
+on it. The pages that a mail's link opens (§2.7.1) keep their own small
+frame for now; they come later on their own card.
 
 
 ## The landing's counters show the real numbers, small ones too; cards done count across every project
@@ -1038,3 +1038,10 @@ name another account.
   phone on every page.
 - The line on the landing and legal pages as well: they are the
   operator's site and already end with the operator's footer.
+- A stylesheet or an inline `<style>` for the icons' dark variant on the
+  join page: its policy is `default-src 'self'`, which blocks inline
+  styles, and the join host serves no files, so the join page shows the
+  light mark in either theme and the icons use presentation attributes
+  only (`fill`), never a `style` attribute.
+- Loading the icons as image files: the link pages allow no image source
+  at all, so the icons are inline SVG on every page.

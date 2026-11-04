@@ -379,7 +379,7 @@ window.MAITY_I18N["zh-Hans"] = {
     "other": "{count} 条提醒仍为未读： "
   },
   "bell.skipped.not_earlier": "只有早于这条提醒的会话才能标记它",
-  "bell.skipped.not_in_good_standing": "此会话自身的登录尚未确认",
+  "bell.skipped.not_in_good_standing": "此会话自己的登录尚未确认",
   "bell.title": "通知",
   "bell.unread": {
     "other": "{count} 条新通知"
@@ -2432,7 +2432,10 @@ window.MAITY_I18N["zh-Hans"] = {
   "members.col.paused": "已暂停",
   "members.col.presence": "在线状态",
   "members.col.role": "信任级别和角色",
+  "members.consent.boss_owner": "上级的所有者",
   "members.consent.owner": "所有者",
+  "members.consent.partly": "已保存：{fields}。其余尚未更改：正在等待 {who} 的同意（{id}）。",
+  "members.consent.partly_titled": "已保存：{fields}。其余尚未更改：正在等待 {who} 的同意（{id}，{title}）。",
   "members.consent.waiting": "尚未更改：正在等待 {who} 的同意（{id}）。",
   "members.consent.waiting_titled": "尚未更改：正在等待 {who} 的同意（{id}，{title}）。",
   "members.credentials": "凭据",
@@ -3316,6 +3319,9 @@ window.MAITY_I18N["zh-Hans"] = {
   "prefs.versions.older": "较早的版本",
   "prefs.versions.reading": "正在读取…",
   "prefs.versions.title": "较早的版本",
+  "product.bug": "发现了 bug？",
+  "product.love": "爱",
+  "product.made_by": "{name} 在 {github} & {maity} 上用 {heart} 制作",
   "profile_delete.busy": "正在删除…",
   "profile_delete.done": "个人资料 @{handle} 已删除。",
   "profile_delete.done_ended": "个人资料 @{handle} 已删除；其成员资格已终止。",

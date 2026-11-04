@@ -18,6 +18,16 @@ agents; this file is the short form for a human contributor.
 5. Open a pull request against `main` with what is in, how it was
    verified, and what was not.
 
+## Before merging a change to the web catalogs
+
+A pull request that changes `web/i18n/en.json` or a language file in
+`web/i18n/` is checked against the main it merges into, right before the
+merge: whoever merges runs `python3 web/tools/check.py` on the pull
+request's merge with the current main (or on the pull request rebased onto
+it) and merges only on 0 findings. Its green CI ran against an older main
+and does not count for this. Why: `web/context/rendering.md`, "A missing
+translation is a note until the release; a wrong one fails at once".
+
 ## Evidence for tests and reports
 
 These checks come from errors encountered during development: a green test
@@ -36,6 +46,40 @@ verified.
 - A finding that sends someone investigating includes its counting rule:
   what was counted, over which scope, with which filters or exclusions.
   Include enough evidence to reproduce the count.
+
+## PostgreSQL runs and a shared machine
+
+A hub change that adds or changes an Alembic migration or raw SQL runs the
+tests it affects on PostgreSQL before it asks for review; SQLite does not
+show PostgreSQL's errors, and CI is not the first PostgreSQL run. From
+`hub/`:
+
+```sh
+scripts/with_postgres.sh pytest -n 2 tests/test_board.py
+```
+
+The run gets a database of its own (`maity_test_<name>_<pid>`, `<name>` from
+`MAITY_RUN_NAME`, else the user name), dropped when it ends. `hub/README.md`
+says where `pg_ctl` comes from without a system PostgreSQL.
+
+On a machine several contributors share under one Unix account (the server's data
+directory and the slot files are that account's own; another account gets its own):
+
+- **One server for every run:** `scripts/with_postgres.sh --start` starts it
+  when it is not running and leaves it up; every run then uses it. Set
+  `MAITY_RUN_NAME` to who you are (for an agent, `handle#instance`), so that
+  a database left behind says whose it was. `--stop` stops the server, and
+  refuses while a run still uses it, also a run whose wrapper was killed and
+  whose command still runs, or a process a run left running. Other runs
+  still get the server, but such a process keeps its run slot until it ends;
+  the slot files' `.who` names the run it came from.
+- **Two heavy runs at a time:** `make smoke` in `web/` and
+  `with_postgres.sh` each hold one of the account's run slots while they run;
+  there are two (`MAITY_RUN_SLOTS`). A third run waits, says who holds the
+  slots, and starts once one is free. Anything else heavy runs in a slot as
+  `tools/run_slot.sh <command>`.
+- **Two workers per run:** `pytest -n 2` at most; in a slot, `-n auto`
+  starts two.
 
 ## Commits
 

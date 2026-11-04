@@ -484,3 +484,62 @@ round named owner and supervisor changes, and a removal ends an address too, and
 **Known limit:** `changed` is what decides; a writer that moves `reports_to` without naming it would
 wake too few. `reports_to` moves through `members.apply_patch` and a removal today, and tests hold
 both. Nothing changes an agent's owner yet, so `owner_id` holds the rule for when something does.
+
+## A holder that stops is reported from the three places that stop it and a minute pass, and nothing is released
+
+**Id:** 483be046-dbf5-4c2f-a9d4-cc18dfb09469
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.5 (contract #1292); card tsk-ehs8abh1arwg
+**Revisit when:** a fourth way for a holder to stop appears, the hub starts releasing claims itself,
+or a closed card can be reopened
+
+`holder_stalled` is emitted in `hub/src/maity_hub/holder_stalled.py` from three hooks:
+`auth.leaks.revoke`, the one function every revocation passes, when its update won and its
+caller does not say `holder_moves`: a replacement (the claims move to the new instance) and a
+member's removal (it releases them in the same transaction, so nobody is left to re-route) say
+so. The removal is the hub's reading of §6.5, which names only the replacement. The replacement
+moves the claims before it revokes (`_move_to_replacement` in
+`hub/src/maity_hub/routes/joins.py`), so the old instance holds no open card by then and its
+`holder_moves` guards against a reordering; this is why `hub/tests/test_holder_stalled.py` tests
+`leaks.revoke` with the flag directly. The reason text never decides: the revoke route passes
+the human's own words, which can be `replaced` too;
+`availability.set_agent_limit`, only when no limit ran before (a moved `until` is no start);
+and `not_listening.check`, in the transaction that starts the episode. `claim_expired` is a pass
+the not-listening worker runs after its sweep, under the same worker claim: one event per holder
+and instance for the leases that ran out, each lease once, held by `card.lease_expiry_reported`
+(the `lease_until` the last event named; a renewed lease that runs out again differs and counts
+again). Only open cards count, as for the lease renewal and the resume packet's `claims`: a
+`done` or `cancelled` card keeps `claim_holder`, `claim_instance` and `lease_until`. The
+migration marks the leases already expired as reported, so the first pass after a deploy does not
+report every old lease at once. It leaves closed cards alone on purpose: the pass never reads
+them, and the transition table of §6.4 (`cards.check_transition`) has no way out of `done` or
+`cancelled`. A reopening would bring the holder's columns back with a lease that ran out
+unreported, and the next pass would report it once; hence the Revisit line. The audience is
+the one in §8.2: the member the agent reports to, else `trust:admin`, the owner when a member,
+and the holding instance. `events.wakes` checks these two kinds before the dormant rule: only
+the agent the holder reports to wakes, a dormant boss not (as for `member_not_listening`), and
+the holding instance's `instance:` token never.
+The session's columns are read through an outer join: an instance can hold a claim before its
+first resume, and its revocation still decides `session_ended`.
+
+**Reason:** a hook at each stopping point says it in the transaction that stopped the holder, with
+nothing to poll; a lease runs out without any write, so only a pass can see it, and the minute
+worker already runs per project under a claim. A column on the card keeps "once per expiry" across
+restarts and replicas without a table.
+
+**Rejected alternatives:**
+- Hooking each revoke route: a new path to revoke would forget it; `leaks.revoke` is where all end.
+- Deciding the silence by the reason (`replaced`, `member_removed`): a human revoking by hand can
+  write either word, and the holder then stops unreported.
+- A table of reported expiries: more than one row per card is never needed.
+- Reporting every expired lease on the first pass after the deploy: a burst of old news.
+
+**Known limits:** the lease renewal (`hub/src/maity_hub/auth/caller.py`) takes no project lock,
+so a renewal can commit between the pass's read and its mark: the event then names a lease that
+was just renewed, the column keeps the old value and the next expiry counts again; never a double
+or a missed event. A lease renewed before the next pass is never reported (the minute is §6.5's
+grain). The pass filters closed cards in its query, but no index serves that filter, so the
+database scans every card with a holder, closed ones included, each minute; not measured, and no
+index added (a partial index on open cards is not portable to MariaDB).

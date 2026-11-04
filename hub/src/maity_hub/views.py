@@ -225,6 +225,7 @@ def repository(
     return {
         "url": project.repository_url,
         "default_branch": project.repository_default_branch,
+        "required_check": project.repository_required_check,
         "forge": forge_of(project.repository_url),
         "probe_configured": via is not None,
         "probe_via": via,

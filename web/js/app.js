@@ -166,10 +166,12 @@ window.Maity = window.Maity || {};
   // picked in the menu switches it too. It is the way home: signed in to
   // everything waiting (/all), without a session to the instance's start
   // page (/); the link carries the name, the pictures none of their own.
-  function brandTitle(signedIn) {
+  // A page of the frame (js/site-chrome.js) has its own h1, its form's heading: there the lockup
+  // is no heading (tag "div").
+  function brandTitle(signedIn, tag) {
     const home = signedIn === undefined ? !!M.api.session() : signedIn;
     const label = home ? M.t("header.brand.signed_in") : M.t("header.brand.signed_out");
-    return h("h1", { class: "brand" },
+    return h(tag || "h1", { class: "brand" },
       h("a", { class: "brand-home", href: home ? "/all" : "/", "aria-label": label, title: label },
         h("img", { class: "brand-lockup brand-light", src: "brand/maity-lockup.svg", alt: "", width: "94", height: "28" }),
         h("img", { class: "brand-lockup brand-dark", src: "brand/maity-lockup-dark.svg", alt: "", width: "94", height: "28" })));
@@ -340,8 +342,9 @@ window.Maity = window.Maity || {};
   let keptHandle = "";
   function renderLogin(main, note) {
     document.title = M.t("login.page_title");
+    // The app's bar stands where the frame cannot be read (§16.7.4); js/site-chrome.js hides it meanwhile.
     append(clear(document.getElementById("header")), h("div", { class: "bar" },
-      brandTitle(false),
+      brandTitle(false, "div"),
       M.api.source === "fixtures" ? h("span", { class: "source" }, M.t("login.fixtures")) : null,
       themeMenu()));
     const handle = h("input", { id: "login-handle", name: "handle", autocomplete: "username", required: true });
@@ -358,8 +361,9 @@ window.Maity = window.Maity || {};
     });
     const password = h("input", { id: "login-password", name: "password", type: "password", autocomplete: "current-password", required: true });
     const status = statusLine();
+    const pitch = M.authPages.pitch("sign_in", M.t("login.title"));
     const form = h("form", {
-      class: "login door",
+      class: "login",
       onsubmit: async (e) => {
         e.preventDefault();
         status.busy(M.t("login.busy"));
@@ -374,11 +378,10 @@ window.Maity = window.Maity || {};
         }
       },
     },
-    M.authPages.pitch("sign_in", M.t("login.title")),
     h("label", { for: "login-handle" }, M.t("login.handle")), handle,
     h("label", { for: "login-password" }, M.t("login.password")), password,
     site ? h("label", { for: "login-interface" }, M.t("language.interface.label")) : null, site,
-    h("button", { type: "submit" }, M.t("login.title")),
+    h("button", { type: "submit", class: "btn btn-primary" }, M.t("login.title")),
     status.el);
     // A code from another device or a link by mail, as the hub offers them
     // (js/device-sign-in.js), on this page's own timers.
@@ -393,9 +396,13 @@ window.Maity = window.Maity || {};
           if (r.ok && r.headers.get("etag")) { append(publicLink, h("a", { href: address }, M.t("login.public_page"))); publicLink.hidden = false; }
         }).catch(() => {});
     }
-    append(clear(main), note ? h("p", { class: "flag session-ended", role: "status" }, note) : null, form, publicLink,
+    // The legal pages that are set (§16.7.1), until the frame's footer names them.
+    const legal = M.legal ? M.legal.links() : null;
+    append(clear(main), M.authPages.door(pitch.panel, [
+      note ? h("p", { class: "flag session-ended", role: "status" }, note) : null, pitch.title, form, publicLink,
       M.deviceSignIn ? M.deviceSignIn.loginOptions((ms, fn) => { timers.push(window.setInterval(fn, ms)); }, () => render()) : null,
-      M.legal ? M.legal.links() : null);
+      legal]));
+    M.siteChrome.enter("/login", () => { if (legal) legal.remove(); });
   }
 
   // The second step of a sign-in (js/second-factor.js, §2.8.2): the session reaches
@@ -1322,6 +1329,20 @@ window.Maity = window.Maity || {};
     return n ? h("span", { class: "count", "aria-label": route === "inbox" ? M.t("header.count.open", { count: n }) : M.t("header.count.unread", { count: n }) }, String(n)) : null;
   }
 
+  // The project's mentions have no tab (the inbox is the requests alone),
+  // yet the pill counts them (§18.2): while some are unread, a link beside
+  // the tabs leads to them on /notifications, filtered to this project
+  // (tsk-xb7bf1x0h3cy). Filled again with every count read.
+  const mentionsHref = (fullName) => "/notifications?kind=mention&project=" + encodeURIComponent(fullName);
+  function fillMentionNote(ctx, box) {
+    clear(box);
+    const n = M.notify.state.counts
+      ? M.notify.projectCount(ctx.projects.find((p) => p.full_name === ctx.slug) || { full_name: ctx.slug }).mention : 0;
+    box.hidden = !n;
+    if (n) append(box, h("a", { href: mentionsHref(ctx.slug) }, M.t("header.mentions.unread", { count: n })));
+    return box;
+  }
+
   // All projects has two pages (the maintainer, tsk-gw59z3w3fenf): the
   // requests across projects and every chat across them, each with what
   // the hub counts for it (§18.2).
@@ -1354,6 +1375,8 @@ window.Maity = window.Maity || {};
       });
       return;
     }
+    const note = document.getElementById("header").querySelector(".mention-note");
+    if (note) fillMentionNote(ctx, note);
     nav.querySelectorAll("a").forEach((a) => {
       // dom.h writes a route through M.route.href (a fragment in the fixture), so compare with that.
       const route = NAV.find((n) => a.getAttribute("href") === M.route.href(projectLink(ctx.slug, n.route)));
@@ -1523,7 +1546,8 @@ window.Maity = window.Maity || {};
         : ALL_PAGES.some((page) => page.scope === ctx.scope)
           ? h("nav", { class: "views", "aria-label": M.t("all.pages") },
             ALL_PAGES.filter((page) => !page.when || page.when(ctx)).map((page) => h("a", { href: page.href, "aria-current": ctx.scope === page.scope ? "page" : null }, page.label(), allCount(page))))
-          : null);
+          : null,
+      ctx.scope === "project" ? fillMentionNote(ctx, h("p", { class: "mention-note" })) : null);
     header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
     const linkRow = header.querySelector(".project-links");
     if (linkRow) scrollCue(linkRow);
@@ -1876,9 +1900,27 @@ window.Maity = window.Maity || {};
     const hubPage = !!(main.hasAttribute && main.hasAttribute("data-public-page"));
     if (hubPage) main.removeAttribute("data-public-page");
     else Array.from(main.childNodes).forEach((n) => { if (n.setAttribute) n.setAttribute("inert", ""); });
+    // The frame of the pages without a session (js/site-chrome.js) stands wherever the sign-in
+    // or the registration is drawn signed out: /login, /register, the root after a sign-out, an
+    // address of the app without a session. Kept meanwhile while no session is known, so a page
+    // drawn again in it does not lose it in between; every view below that is not the sign-in
+    // leaves it itself (the invitation, the mail's second step, a public page, the maintenance
+    // page, a failed page, every signed-in drawing).
+    if (M.api.session()) M.siteChrome.leave();
     let where = { scope: "unknown" };
     let ctx;
+    // The invitation's token is in its path: no referrer before this drawing asks anything
+    // (GET /maintenance below), also when the tab came here from another view, whose shell had
+    // no header for it, and while a maintenance window stands (§16.13).
+    try { if (M.invite && parseRoute().scope === "invite") M.invite.noReferrer(); } catch { /* the drawing below says why */ }
     await M.i18n.ready;
+    // The product line after <main> (§16.13), in the language this view is drawn in; i18n
+    // draws it again when the session's language arrives. Not under a stored public page
+    // the hub put into <main> (§16.13, "Where it is"), which stands for this view.
+    // Through the frame: a drawing without a known session holds the line back until the view
+    // decides, the frame's footer standing in its place (req-5k1gvfsmcg9k), every other view
+    // letting it go when it leaves the frame.
+    M.siteChrome.line(!hubPage, !M.api.session());
     // §16.12: the window as the hub has it, read at most once a minute; while it runs, the
     // full page stands instead of the view (heldPage), the sign-in and its step excepted.
     M.maintenance.drawing();
@@ -1887,14 +1929,14 @@ window.Maity = window.Maity || {};
     try {
       where = parseRoute();
       const held = M.maintenance.running();
-      if (where.scope === "invite" && M.invite && !held) { await M.invite.page(main, document.getElementById("header"), where.token); return; }
+      if (where.scope === "invite" && M.invite && !held) { M.siteChrome.leave(); await M.invite.page(main, document.getElementById("header"), where.token); return; }
       if (where.scope === "register" && M.register && !held) { await M.register.page(main, document.getElementById("header"), routeNext()); return; }
       let session;
       try {
         session = await M.api.get("/auth/session");
       } catch (err) {
         // The mail's second-factor link in a browser without the session it was sent for (§2.8.8).
-        if (err.status === 401 && M.secondFactor && M.secondFactor.isMailLink()) { renderStepElsewhere(main, false); return; }
+        if (err.status === 401 && M.secondFactor && M.secondFactor.isMailLink()) { M.siteChrome.leave(); renderStepElsewhere(main, false); return; }
         // Without a session the login page; the landing page at the root
         // is the hub's own static page (§16.7), never drawn here.
         if (err.status === 401) {
@@ -1903,11 +1945,16 @@ window.Maity = window.Maity || {};
           if (M.maintenance.running()) {
             if (seq !== renderSeq) return;
             if (where.scope === "login") { M.maintenance.aware(); renderLogin(main); return; }
+            M.siteChrome.leave();
             M.maintenance.fullPage(main, document.getElementById("header"), { brand: brandTitle(false), tools: themeMenu(), signIn: true });
             return;
           }
           // A public page of this address, read-only (§16.9); otherwise the login.
-          if (M.visitor && await M.visitor.page(main, document.getElementById("header"), where, M.route.current().path, { signedIn: false, brand: brandTitle(false), tools: themeMenu(), live: () => seq === renderSeq })) return;
+          // A frame of the sign-in drawn before stays until the page is known, then goes.
+          if (M.visitor && await M.visitor.page(main, document.getElementById("header"), where, M.route.current().path, { signedIn: false, brand: brandTitle(false), tools: themeMenu(), live: () => seq === renderSeq })) {
+            if (seq === renderSeq) M.siteChrome.leave();
+            return;
+          }
           // The hub's own page in <main> stands when its data could not be read.
           if (seq === renderSeq && !hubPage) renderLogin(main);
           return;
@@ -1917,6 +1964,10 @@ window.Maity = window.Maity || {};
       // A new session after a sign-out or an ended one: what the old one still gets back (a late
       // 401) ends nothing, and one that ends now is told again — the second step included.
       if (sessionEnded) { sessionEnded = false; M.sessionEpoch = (M.sessionEpoch || 0) + 1; }
+      // Signed in, no page is in the frame: the second step, the setup and every view. A drawing
+      // overtaken while it read the session leaves nothing, or it would take the newer one's frame.
+      if (seq !== renderSeq) return;
+      M.siteChrome.leave();
       // A session that owes the second factor reaches nothing else (§2.8.2): its step.
       if (session && session.second_factor === "required" && M.secondFactor) { if (M.maintenance.running()) M.maintenance.aware(); renderStep(main, session); return; }
       // So does one that must set the factor up first (§2.8.5): the setup is its page.
@@ -1975,6 +2026,7 @@ window.Maity = window.Maity || {};
       if (seq !== renderSeq) return;
       // The page could not load: the header with the lockup stays, the
       // failure stands where the loader stood, with a way to try again.
+      M.siteChrome.leave();
       append(clear(document.getElementById("header")), h("div", { class: "bar" }, brandTitle()));
       append(clear(main), pageFailed(err));
       return;
@@ -2124,6 +2176,8 @@ window.Maity = window.Maity || {};
   }
 
   M.redraw = render;
+  // The path of a forge's 16 × 16 mark, for js/product-line.js (§16.13).
+  M.forgeMarkPath = (forge) => FORGE_MARKS[forge] || FORGE_MARKS.other;
   M.errorBox = errorBox;
   M.withMembers = withMembers;
   M.logout = logout;

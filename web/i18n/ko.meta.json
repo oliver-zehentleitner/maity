@@ -2437,7 +2437,7 @@
   },
   "cardpanel.notes.edit.hint": {
     "en": "e511e3013311068b",
-    "text": "7a7ef538553df907"
+    "text": "d3d4d6a2595a5d3d"
   },
   "cardpanel.notes.edit.label_of": {
     "en": "74df97e9f8116256",
@@ -9271,9 +9271,21 @@
     "en": "6668e63fcd9baf7c",
     "text": "250e29006c9c8674"
   },
+  "members.consent.boss_owner": {
+    "en": "67bcb9642a4bf5da",
+    "text": "a117062c9f0b0545"
+  },
   "members.consent.owner": {
     "en": "047bc6695c7c32bb",
     "text": "420e9201d14d5585"
+  },
+  "members.consent.partly": {
+    "en": "8eb3165c4a21b419",
+    "text": "0bc6ac2b8c981baa"
+  },
+  "members.consent.partly_titled": {
+    "en": "c29dc307ee6a7253",
+    "text": "3cc13fd35af9ba88"
   },
   "members.consent.waiting": {
     "en": "f6922d1c4d43b714",
@@ -12566,6 +12578,18 @@
   "prefs.versions.title": {
     "en": "d946eb551f1d6a44",
     "text": "f216dd09012b978c"
+  },
+  "product.bug": {
+    "en": "191903c61492ea38",
+    "text": "7e7a7b963fd7c444"
+  },
+  "product.love": {
+    "en": "96fa5228627bef6a",
+    "text": "c08bfff45504b443"
+  },
+  "product.made_by": {
+    "en": "3c4acf7ac90b37e1",
+    "text": "5208863f7cc47b36"
   },
   "profile_delete.busy": {
     "en": "c0ca40456b38f753",

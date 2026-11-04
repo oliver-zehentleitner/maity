@@ -784,7 +784,16 @@ def _record_items(conn: Connection, where: Scope, now: datetime, rows: Sequence[
                         kind="inbox",
                         at=row.at,
                         record=row.n,
-                        title=_cut(where.say("not_listening", n=len(away))),
+                        title=_cut(
+                            where.say(
+                                (
+                                    "not_listening"
+                                    if all(a.kind == not_listening_digest.EPISODE for a in away)
+                                    else "agents_away"
+                                ),
+                                n=len(away),
+                            )
+                        ),
                         target={"type": "agents"},
                         url=_url(where, "/agents"),
                         read=False,

@@ -68,6 +68,7 @@ def test_a_created_project_has_the_contract_shape(owner: flow.Human) -> None:
     assert body["repository"] == {
         "url": "https://github.com/oliver-zehentleitner/maity",
         "default_branch": "main",
+        "required_check": None,
         "forge": "github",
         "probe_configured": False,
         "probe_via": None,
@@ -364,3 +365,70 @@ def test_the_name_and_a_note_are_rules_inputs(owner: flow.Human, migrated: Engin
     assert both.json()["rules_version"] == 4  # the state change's own event marks it
     assert len(_events(migrated, "rules_changed")) == 2
     assert "Maity hub" in owner.get("/projects/maintainer/maity/rules").text
+
+
+# --- repository.required_check (§6.1) ----------------------------------------------------------
+
+REPO_URL = "https://github.com/oliver-zehentleitner/maity"
+
+
+def _required(owner: flow.Human) -> Any:
+    return owner.get("/projects/maintainer/maity").json()["repository"]["required_check"]
+
+
+def test_a_required_check_is_set_kept_and_cleared(owner: flow.Human) -> None:
+    """§6.1: left out on the same `url` the name stays; `null` clears it."""
+    flow.project(owner, "maity", repository={"url": REPO_URL, "required_check": "ci-ok"})
+    assert _required(owner) == "ci-ok"
+    kept = owner.patch(
+        "/projects/maintainer/maity", {"repository": {"url": REPO_URL, "default_branch": "dev"}}
+    )
+    assert kept.status_code == 200, kept.text
+    assert kept.json()["repository"]["required_check"] == "ci-ok"
+    assert kept.json()["repository"]["default_branch"] == "dev"
+    renamed = owner.patch(
+        "/projects/maintainer/maity", {"repository": {"url": REPO_URL, "required_check": "ci"}}
+    )
+    assert renamed.json()["repository"]["required_check"] == "ci"
+    cleared = owner.patch(
+        "/projects/maintainer/maity", {"repository": {"url": REPO_URL, "required_check": None}}
+    )
+    assert cleared.status_code == 200 and _required(owner) is None
+
+
+def test_another_url_or_no_repository_has_no_required_check(owner: flow.Human) -> None:
+    flow.project(owner, "maity", repository={"url": REPO_URL, "required_check": "ci-ok"})
+    moved = owner.patch("/projects/maintainer/maity", {"repository": {"url": REPO_URL + "-moved"}})
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["repository"]["required_check"] is None
+    owner.patch(
+        "/projects/maintainer/maity", {"repository": {"url": REPO_URL, "required_check": "ci"}}
+    )
+    gone = owner.patch("/projects/maintainer/maity", {"repository": None})
+    assert gone.status_code == 200, gone.text
+    again = owner.patch("/projects/maintainer/maity", {"repository": {"url": REPO_URL}})
+    assert again.json()["repository"]["required_check"] is None
+
+
+@pytest.mark.parametrize("name", ["", "x" * 201])
+def test_an_empty_or_long_required_check_is_invalid(owner: flow.Human, name: str) -> None:
+    flow.project(owner, "maity", repository={"url": REPO_URL})
+    response = owner.patch(
+        "/projects/maintainer/maity", {"repository": {"url": REPO_URL, "required_check": name}}
+    )
+    assert response.status_code == 400
+    error = response.json()["error"]
+    assert error["code"] == "invalid"
+    assert "repository.required_check" in error["details"]["fields"]
+    created = owner.post(
+        "/projects",
+        {
+            "slug": "other",
+            "name": "Other",
+            "public_page": "off",
+            "repository": {"url": REPO_URL, "required_check": name},
+        },
+    )
+    assert created.status_code == 400
+    assert "repository.required_check" in created.json()["error"]["details"]["fields"]
+    assert _required(owner) is None
