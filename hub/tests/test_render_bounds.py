@@ -151,3 +151,8 @@ def test_the_registration_mail_reads_the_same_parts() -> None:
     pad = "x" * (render.ACCEPT_CHARS - len("de"))
     assert registration_mail.language_of(pad[1:] + ",de") == "de"
     assert registration_mail.language_of(pad + ",de") == "en"  # cut by the limit
+    filler = ",".join(["xx"] * (render.ACCEPT_PARTS - 1))
+    assert registration_mail.language_of(filler + ",de") == "de"  # the 20th part
+    assert registration_mail.language_of(filler + ",xx,de") == "en"  # the 21st
+    assert registration_mail.language_of("de-" + "x" * (render.TAG_MAX - 3)) == "de"
+    assert registration_mail.language_of("de-" + "x" * 40) == "en"  # a 43-character tag
