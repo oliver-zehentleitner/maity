@@ -858,6 +858,44 @@ so that a route such as `/api/v1/events` is not refused.
 - Running the text check when the cites were not checked: without the commit there is nothing to
   read the names at.
 
+## A quote in a review's text is checked only where the text ties it to one file
+
+**Id:** ee1f9aff-4675-4821-a689-4630ea801826
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-6s087f17bvd7 (decided by the maintainer in req-02c4xjbn1sep); contract `docs/api.md` §8.4 ("A review's text names only what stands at its head", form 4)
+**Revisit when:** reviewers report a quote refused that was no quotation, or a misquote passes because its file and line stood a few words away
+
+A review had sent two quoted sentences that the reviewed head did not hold; the cites in its JSON
+were right, and the text check read only code spans. The maintainer decided that quotes are
+checked too, with few false alarms. Not every phrase in double quotes is a quotation: reviews
+quote their own proposals, a command's output, a mutation they applied, the text a page renders.
+So a quote is checked only where the text ties it to one file: a file and line right before it
+(`path:n says "…"`) or in brackets right after it (`"…" (path:n)`), or a section whose heading
+names one file. It must then stand in that file, compared with whitespace runs as one space and
+without backticks, since prose wraps and reviewers drop code marks.
+
+Run over 124 saved review results of this project against their heads, the first draft, which
+tied every quote in a paragraph to every file and line the paragraph named, refused 60 of 194
+quotes, nearly all of them proposals and claims followed by their evidence. With the tie
+right next to the quote, 5 of 120 were refused: one a real misquote ("every existing account
+was switched on" for "every account existing at the upgrade is switched on"), three a mutation,
+an output and a rendered text, each fixed by putting it in a code span, and one ambiguous.
+
+A quote tied by a file and line has to stand at the head, as the line refers to the head
+(form 1). A quote tied only by its section may also stand on the default branch, so that a
+review can quote what the change removed.
+
+**Rejected alternatives:**
+- Tying a quote to every file and line in its paragraph: the measured 60 of 194 false alarms;
+  a single-line review paragraph names many files.
+- `"…": path:n` as a tie: in the reviews it is a claim followed by the line that backs it, and
+  the claim is the reviewer's summary, not a quote from that line.
+- Checking every quote of four words or more against the whole head: proposals and outputs
+  would all be refused.
+- `„…“` left out: German reviews use it, and its closing `“` would otherwise open a quote.
+
 ## `proc.run` reads git and gh as UTF-8, whatever the machine's locale
 
 **Id:** 32eaf285-a878-4717-8fc1-34b73027d5c7

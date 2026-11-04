@@ -1886,7 +1886,8 @@ def cmd_say(args: argparse.Namespace) -> int:
             if names:
                 _err(
                     f"not sent: {len(names)} name(s) in the text are not there (§8.4); "
-                    "write a missing or proposed name without backticks, a command under `## Ran`"
+                    "write a missing or proposed name without backticks, a command under `## Ran`, "
+                    "and a proposed wording, an output or a mutation in backticks, not in quotes"
                 )
             for line in [*cites.bad, *names]:
                 _err(line)
