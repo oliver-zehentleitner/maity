@@ -2543,6 +2543,7 @@ window.MAITY_I18N["it"] = {
   "messages.new_failed": "Impossibile leggere i nuovi messaggi: ",
   "messages.none": "Ancora nessun messaggio del progetto.",
   "messages.none_of_type": "Nessun messaggio di questo tipo.",
+  "messages.not_read_yet": "Nessuno nelle pagine lette finora; i messaggi più vecchi non sono ancora stati letti.",
   "messages.older": "Messaggi precedenti",
   "messages.read_failed": "Impossibile leggere i messaggi: ",
   "messages.remove": "Rimuovi",

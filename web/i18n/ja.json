@@ -2487,6 +2487,7 @@
   "messages.new_failed": "新しいメッセージを読み取れませんでした: ",
   "messages.none": "プロジェクトのメッセージはまだありません。",
   "messages.none_of_type": "この種類のメッセージはありません。",
+  "messages.not_read_yet": "これまでに読んだページにはありません。古いメッセージはまだ読み込まれていません。",
   "messages.older": "以前のメッセージ",
   "messages.read_failed": "メッセージを読み取れませんでした: ",
   "messages.remove": "取り除く",

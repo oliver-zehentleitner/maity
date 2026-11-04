@@ -435,7 +435,7 @@ open that chat.
 **Type:** decision
 **Status:** needs-review
 **Evidence:** confirmed
-**Source:** docs/api.md §8.3 (events), §8.4 (message types), §8.5, §8.7 and §8.8 (the listing); the coordinator's card for the project messages view (tsk-3s4an5p22v4j), 2026-10-23; the card that moves the view to the listing (tsk-0m6qx612y5px), 2026-11-04, and the agreement with lotse that only the Messages view moves (project message seq 69405); measured in web/tools/smoke.js: a message more than 5000 `seq` behind the hub's head, unreachable for the old window, shows after paging back
+**Source:** docs/api.md §8.3 (events), §8.4 (message types), §8.5, §8.7 and §8.8 (the listing); the coordinator's card for the project messages view (tsk-3s4an5p22v4j), 2026-10-23; the card that moves the view to the listing (tsk-0m6qx612y5px), 2026-11-04, and the agreement with lotse that only the Messages view moves (project message seq 69405); measured in web/tools/smoke.js: a message more than 5000 `seq` behind the hub's head, unreachable for the old window, shows after paging back; and a live read over empty pages with a cursor reaches the new message (reviews of #1348, project message seq 69640 and 69731)
 **Revisit when:** §8.8 gains a `wait` of its own, or the listing's page or scan budget no longer fits one opening
 **See:** refresh.md#the-dashboard-reads-the-projects-events-with-wait0-on-an-interval-not-with-the-long-poll — 264c1452-2cc4-4518-b1fb-85e901a09aa2 — as of 2026-11-04
 
@@ -447,13 +447,26 @@ however far a message lies behind the hub's head, paging back reaches
 it, at one request per page. The project's feed is only the signal, as
 on the Ticker: a message event there reads the listing forward with
 `after=` from the newest message shown (or from just below the first
-that arrived, when none is shown), oldest first, at most 20 pages per
-round, and puts what is new at the top. Removals (`event_redacted`)
+that arrived, when none is shown), oldest first, following the
+listing's `next_cursor` on that same `after=` and type until it is
+`null`, at most 20 pages per round (a round out of pages leaves its
+cursor to the next signal's round), and puts what is new at the top. Removals (`event_redacted`)
 put the listing's tombstone in place of the message, or drop it from a
 list filtered by type, since §8.8 lists tombstones only unfiltered;
 deleted files are marked in place, and the listing says `deleted_at` on
 a later read. A removed project message shows as a tombstone without
 its reason; a removed chat message is never listed, as §8.8 says.
+
+A page of the listing examines at most the hub's scan budget (2000
+project messages, `hub/src/maity_hub/routes/project_messages.py`), so it
+may be short or empty while `next_cursor` is set. The live read follows
+`next_cursor` on the same `after=` until it is `null`, and an empty page
+with a cursor is not shown as no messages: the list says older messages
+have not been read yet. Reason: §8.8 makes `null` the only end of the
+history. On #1348's head, a live read that stopped on a short page left
+a new blocker unseen behind 2100 notices until reload (reviews seq
+69640 and 69731). Rejected alternative: stopping on a page shorter than
+`limit`, which misses what lies past the budget.
 
 **Reason:** the scan of `/events` within the hub's latest 5000 `seq`
 (4c3f8949) lost every message behind that window in a busy hub and read

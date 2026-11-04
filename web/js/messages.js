@@ -6,7 +6,7 @@
 // the hub's listing (§8.8): its newest page first, older ones by the
 // listing's cursor, the type filter the hub's. The project's feed is only
 // the signal, as on the Ticker: a new message there reads the listing
-// forward from the newest one shown; removals and deleted files change
+// forward from the newest one shown, following its cursor; removals and deleted files change
 // the list in place. A removed message stays as the listing's tombstone,
 // or leaves a list filtered by type, which shows what is still there.
 "use strict";
@@ -96,19 +96,26 @@ window.Maity = window.Maity || {};
     const more = h("div", { class: "actions" });
     const query = (extra) => ctx.base + "/messages?" + [filter ? "type=" + encodeURIComponent(filter) : null, "limit=" + PAGE, extra || null].filter(Boolean).join("&");
     const itemOf = (seq) => Array.from(list.querySelectorAll("li.pmsg")).find((li) => li.getAttribute("data-seq") === String(seq));
-    const empty = () => h("li", { class: "empty muted" }, filter ? M.t("messages.none_of_type") : M.t("messages.none"));
+    // Nothing shown: "none" only at the end of the history (next_cursor
+    // null, §8.8); a page the hub's scan budget cut short may be empty while
+    // older messages are still unread.
+    const empty = () => h("li", { class: "empty muted" },
+      cursor ? M.t("messages.not_read_yet") : filter ? M.t("messages.none_of_type") : M.t("messages.none"));
     const fillEmpty = () => {
       const blank = list.querySelector("li.empty");
-      const any = list.querySelector("li.pmsg");
-      if (any && blank) list.removeChild(blank);
-      if (!any && !blank) append(list, empty());
+      if (blank) list.removeChild(blank);
+      if (!list.querySelector("li.pmsg")) append(list, empty());
     };
     // Items of one answer not shown yet, each once, also within the answer.
     const fresh = (items) => items.filter((x, i) => !shown.has(x.seq) && items.findIndex((y) => y.seq === x.seq) === i);
     const mark = (x) => { shown.set(x.seq, x); if (x.seq > top) top = x.seq; };
+    // One button for older pages, kept while a cursor remains, so it keeps
+    // the focus across clicks; busy is aria-disabled, which keeps it too.
+    const older = h("button", { type: "button", class: "small", onclick: () => load(false) }, M.t("messages.older"));
     function drawMore() {
-      clear(more);
-      if (cursor) append(more, h("button", { type: "button", class: "small", disabled: busy ? true : null, onclick: () => load(false) }, M.t("messages.older")));
+      if (busy) older.setAttribute("aria-disabled", "true"); else older.removeAttribute("aria-disabled");
+      if (cursor && older.parentNode !== more) append(more, older);
+      if (!cursor && older.parentNode === more) more.removeChild(older);
     }
 
     // Removed, here or by someone else (§8.5): the tombstone in its place,
@@ -172,9 +179,10 @@ window.Maity = window.Maity || {};
     async function load(reset, given) {
       if (!reset && busy) return;
       const mine = reset ? ++gen : gen;
-      if (reset) { clear(list); clear(more); shown.clear(); top = 0; cursor = null; resetting = true; loaded = false; }
+      if (reset) { clear(list); shown.clear(); top = 0; cursor = null; liveFrom = null; liveCursor = null; resetting = true; loaded = false; }
       busy = true;
       drawMore();
+      const hadFocus = !reset && document.activeElement === older;
       let page = given;
       try {
         if (!page) page = await M.api.get(query(cursor ? "cursor=" + encodeURIComponent(cursor) : null));
@@ -188,10 +196,17 @@ window.Maity = window.Maity || {};
       }
       if (mine !== gen) return;
       busy = false;
-      fresh(page.items).forEach((x) => { mark(x); append(list, item(x)); });
+      const added = fresh(page.items);
+      added.forEach((x) => { mark(x); append(list, item(x)); });
       cursor = page.next_cursor;
       fillEmpty();
       drawMore();
+      // The last older page takes the button away: the focus goes to the
+      // first message it added, not to the page's body.
+      if (hadFocus && !cursor) {
+        const to = added.length ? itemOf(added[0].seq) : null;
+        if (to) { to.setAttribute("tabindex", "-1"); to.focus(); } else status.el.focus();
+      }
       if (reset) {
         resetting = false;
         loaded = true;
@@ -201,9 +216,14 @@ window.Maity = window.Maity || {};
     }
 
     // New messages with the feed: the listing forward from the newest one
-    // shown, oldest first, page by page with after= (§8.8), in this filter.
-    // A signal while a read runs is kept: the read runs once more afterwards.
+    // shown, oldest first (§8.8), in this filter. A round keeps its after=
+    // and follows next_cursor, empty pages too, until it is null: a page
+    // examines at most the hub's scan budget, so a short one is not the
+    // end. A round out of pages leaves its cursor to the next one. A signal
+    // while a read runs is kept: the read runs once more afterwards.
     let liveBusy = false;
+    let liveFrom = null;
+    let liveCursor = null;
     async function live() {
       if (liveBusy || resetting) { liveAgain = true; return; }
       if (!loaded) { load(true); return; }
@@ -211,13 +231,18 @@ window.Maity = window.Maity || {};
       liveAgain = false;
       const mine = gen;
       let added = 0;
+      const from = liveCursor ? liveFrom : top || floor;
+      let next = liveCursor;
       try {
         for (let n = 0; n < LIVE_PAGES; n++) {
-          const page = await M.api.get(query("after=" + (top || floor)));
+          const page = await M.api.get(query("after=" + from + (next ? "&cursor=" + encodeURIComponent(next) : "")));
           if (mine !== gen) return;
           fresh(page.items).forEach((x) => { mark(x); list.insertBefore(item(x), list.firstChild); added += 1; });
-          if (page.items.length < PAGE) break;
+          next = page.next_cursor;
+          if (!next) break;
         }
+        liveFrom = next ? from : null;
+        liveCursor = next;
       } catch (err) {
         if (mine === gen) status.fail(M.t("messages.new_failed"), err);
         return;

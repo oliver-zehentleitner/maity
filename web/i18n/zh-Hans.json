@@ -2657,6 +2657,7 @@
   "messages.new_failed": "无法读取新消息：",
   "messages.none": "暂无项目消息。",
   "messages.none_of_type": "没有此类型的消息。",
+  "messages.not_read_yet": "目前已读取的页面中没有；较早的消息尚未读取。",
   "messages.older": "更早的消息",
   "messages.read_failed": "无法读取消息：",
   "messages.remove": "移除",

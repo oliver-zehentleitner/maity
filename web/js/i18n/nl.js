@@ -2543,6 +2543,7 @@ window.MAITY_I18N["nl"] = {
   "messages.new_failed": "De nieuwe berichten konden niet worden gelezen: ",
   "messages.none": "Nog geen projectberichten.",
   "messages.none_of_type": "Geen bericht van dit type.",
+  "messages.not_read_yet": "Geen op de tot nu toe gelezen pagina's; oudere berichten zijn nog niet gelezen.",
   "messages.older": "Oudere berichten",
   "messages.read_failed": "De berichten konden niet worden gelezen: ",
   "messages.remove": "Verwijderen",

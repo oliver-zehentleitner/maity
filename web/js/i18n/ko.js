@@ -2670,6 +2670,7 @@ window.MAITY_I18N["ko"] = {
   "messages.new_failed": "새 메시지를 읽지 못했어요: ",
   "messages.none": "아직 프로젝트 메시지가 없어요.",
   "messages.none_of_type": "이 유형의 메시지가 없어요.",
+  "messages.not_read_yet": "지금까지 읽은 페이지에는 없습니다. 이전 메시지는 아직 읽지 않았습니다.",
   "messages.older": "이전 메시지",
   "messages.read_failed": "메시지를 읽지 못했어요: ",
   "messages.remove": "제거",

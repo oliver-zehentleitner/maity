@@ -7905,10 +7905,59 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/messages"); for (let k = 0; k < 4; k++) await tick();
   const pmFirst = pmItems().length;
   const pmOlder = () => btn(main, "Older messages");
-  for (let k = 0; k < 5 && !pmSeq(6001) && pmOlder(); k++) { pmOlder().click(); for (let j = 0; j < 4; j++) await tick(); }
+  // The button stays one element across clicks, so it keeps the focus; the last page takes it away and focuses its first message.
+  const pmProto = Object.getPrototypeOf(main);
+  const pmFocus = pmProto.focus;
+  pmProto.focus = function () { document.activeElement = this; };
+  const pmButton = pmOlder();
+  let pmSame = true;
+  for (let k = 0; k < 5 && !pmSeq(6001) && pmOlder(); k++) {
+    pmSame = pmSame && pmOlder() === pmButton;
+    document.activeElement = pmOlder(); pmOlder().click(); for (let j = 0; j < 4; j++) await tick();
+  }
+  const pmFocused = document.activeElement;
+  pmProto.focus = pmFocus; document.activeElement = undefined;
   expect(pmFirst === 50 && pmSeq(6001) && 20000 - 6001 > 5000 && !pmOlder() && pmScans === 0 && pmItems()[0].attrs["data-seq"] > pmItems()[pmItems().length - 1].attrs["data-seq"],
     "messages: the oldest message, more than 5,000 events behind the head, shows after paging back " + JSON.stringify([pmFirst, !!pmSeq(6001), pmScans]));
+  expect(pmSame && pmFocused && pmFocused.classList.contains("pmsg") && pmItems().includes(pmFocused),
+    "messages: Older messages is one button across clicks, and the last page moves the focus to its first message");
   win.Maity.api.get = pmGet;
+  // §8.8: a page examines at most the hub's scan budget, so it may be empty while next_cursor is set.
+  // The fixture filters the whole log first; a stand-in answers as a sparse hub does.
+  const pmSparse = [];
+  const pmMsgs = "/projects/maintainer/maity/messages?";
+  win.Maity.api.get = (p) => {
+    if (p === pmMsgs + "type=handover&limit=50") return Promise.resolve({ items: [], next_cursor: "first" });
+    if (p === pmMsgs + "type=handover&limit=50&cursor=first") return pmGet(pmMsgs + "type=handover&limit=50");
+    const m = /^\/projects\/maintainer\/maity\/messages\?type=blocker&limit=50&after=(\d+)(?:&cursor=s(\d+))?$/.exec(p || "");
+    if (!m) return pmGet(p);
+    pmSparse.push(p);
+    const n = m[2] ? Number(m[2]) : 0;
+    if (n < 21) return Promise.resolve({ items: [], next_cursor: "s" + (n + 1) });
+    return pmGet(pmMsgs + "type=blocker&limit=50&after=" + m[1]);
+  };
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/messages"); for (let k = 0; k < 4; k++) await tick();
+  byId("messages-type").value = "handover"; byId("messages-type").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+  const pmHint = text(main.querySelector("ol.project-messages li.empty") || main);
+  const pmHintOlder = !!pmOlder();
+  pmOlder() && pmOlder().click(); for (let k = 0; k < 4; k++) await tick();
+  expect(pmHint.includes("older messages have not been read yet") && !pmHint.includes("No message of this type.") && pmHintOlder
+    && pmItems().length > 0 && !main.querySelector("ol.project-messages li.empty"),
+    "messages: an empty page with a cursor says older messages are unread, not that there are none " + JSON.stringify([pmHint, pmHintOlder, pmItems().length]));
+  byId("messages-type").value = "blocker"; byId("messages-type").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
+  const pmBlockers = pmItems().length;
+  await win.Maity.api.post("/projects/maintainer/maity/events", { kind: "message", type: "blocker", to: "all", body: "sparse blocker one" });
+  await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+  const pmRound = pmSparse.length;
+  const pmEarly = text(main).includes("sparse blocker one");
+  await win.Maity.api.post("/projects/maintainer/maity/events", { kind: "message", type: "notice", to: "all", body: "a signal" });
+  await fireIntervals(); for (let k = 0; k < 4; k++) await tick();
+  const pmAfter = new Set(pmSparse.map((p) => /after=(\d+)/.exec(p)[1]));
+  expect(pmRound === 20 && !pmEarly && text(pmItems()[0]).includes("sparse blocker one") && pmItems().length === pmBlockers + 1
+    && pmSparse.length === 22 && pmAfter.size === 1 && pmSparse[20].endsWith("&cursor=s20"),
+    "messages: a live read follows next_cursor over empty pages on the same after=, and carries it to the next round " + JSON.stringify([pmBlockers, pmRound, pmEarly, pmSparse.length, pmAfter.size]));
+  win.Maity.api.get = pmGet;
+  byId("messages-type").value = ""; byId("messages-type").dispatch("change"); for (let k = 0; k < 4; k++) await tick();
   await go("#/maintainer/maity/inbox");
 
   // Ticker (docs/api.md §17): for me / everything, filters, why in words, follow and mute, a manual post.
