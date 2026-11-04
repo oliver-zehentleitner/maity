@@ -812,23 +812,21 @@ too.
    without a reload; for a minute after it expired it keeps **Revoke**,
    and the hub decides, then it moves to the record. A Revoke the hub refuses
    (`invalid_transition`) is said and the list re-read.
-8. **Why** (`/<owner>/<slug>/why`, `docs/api.md` §11.3): the project's published Keep the Why dashboard
-   state as the hub read it, read-only. A headline says how many entries
-   need attention (open, needs review, pending confirmation) out of how
-   many, in how many parts of the family (the repository's root and the
-   children its `.keep-the-why` names), with the linter's counts and when
-   the hub read it; **Read again** asks for a fresh read (`max_age=0`), in
-   every state, and is off while its read runs.
-   The entries that need attention follow, grouped by part, each linking
-   to its entry in the published dashboard (only a link under that part's
-   own dashboard is used); then one row per part with its
-   counts and a link to its dashboard. A part that could not be read is
-   named with the reason in words and its last good read. When the root
-   cannot be read, the last good answer is shown and said so; when the
-   project publishes none (`ktw_not_configured`), the view says what the
-   hub reads (the root `.keep-the-why`'s `dashboard-state` line). Every
-   string from an export is text; a link is used only when it is plain
-   `https`.
+8. **Why** (`/<owner>/<slug>/why` and paths below it, `docs/api.md` §11.5): Keep the Why's own
+   views — overview, graph, timeline, thoughts, family, topics, entries, search — mounted from
+   the vendored library (`vendor/keep-the-why/`, loaded on the first visit to Why and kept for
+   the page's life; `js/ktw-host.js`). A row of links leads to the main places; the library's own
+   links are the dashboard's paths (`/why/graph`, `/why/topic/<file>`, `/why/entry/<uuid>`, …).
+   It reads the project's export and its family's through the hub (`…/keep-the-why/export`,
+   `…/bodies`); a repository outside the family, a private one or a spent forge budget is said
+   where the library would show it. Its colours are Maity's (`--ktw-*` in `css/app.css`), its
+   settings kept in the browser (`maity-ktw-<key>`). The library's own words are English for now
+   and marked `translate="no"` (`context/views.md`); entry text is the repository's and shown
+   as text. When the hub cannot read the export, its last good read is shown with the reason;
+   **Read again** drops what the page holds and reads anew; a link from an export is used only
+   when plain https. When the project publishes no export (`ktw_not_configured`) the view says what the
+   hub reads (the root `.keep-the-why`'s `dashboard-state` line). The family's summary as the
+   hub reads it (§11.3) stays on **All projects → Why**.
 9. **Runners** (`/<owner>/<slug>/runners`, owner and admin, no tab of its
    own: linked from the project's Settings, whose tab stands for it; `docs/api.md`
    §15.4): the runners allowed to start agents for this project, by name,

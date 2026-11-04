@@ -939,6 +939,23 @@ def check_vendor():
         return
     for problem in vendor.problems(VENDOR):
         finding(os.path.join(VENDOR, "VENDOR.json"), 1, problem)
+    # js/ktw-host.js loads the files on the first visit to Why: in the manifest's order
+    host = os.path.join(ROOT, "js", "ktw-host.js")
+    manifest_path = os.path.join(VENDOR, "ktw-views.json")
+    if os.path.exists(host) and os.path.exists(manifest_path):
+        manifest = json.loads(read(manifest_path))
+        src = read(host)
+        for name, listed in (("SCRIPTS", manifest.get("scripts")), ("STYLES", manifest.get("styles"))):
+            found = re.search(r"const %s = \[([^\]]*)\]" % name, src)
+            loaded = re.findall(r'"([^"]+)"', found.group(1)) if found else None
+            if loaded != listed:
+                finding(host, 1, "%s is not the vendored manifest's %s in its order" % (name, name.lower()))
+        # loaded from the vendored copy alone, by the one loader
+        if 'const DIR = "vendor/keep-the-why/";' not in src:
+            finding(host, 1, 'DIR is not "vendor/keep-the-why/": the library loads from its vendored copy only')
+        for what in ('h("script"', 'h("link"'):
+            if src.count(what) != 1:
+                finding(host, 1, "%s appears %d times: only load() inserts the library's files" % (what, src.count(what)))
     for name in sorted(os.listdir(VENDOR)):
         if not name.endswith((".js", ".css")):
             continue

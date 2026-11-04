@@ -252,13 +252,14 @@ rm mail-signing-key smtp-password   # keep secret-key outside the cluster, then 
 A new `secret-key` leaves everything sealed with the old one unreadable, and a
 new `mail-signing-key` voids the links still out in mails.
 
-**5. The manifests.** Replace `maity.example.org` in `cert.yaml` and
-`hub-values.yaml` first (and drop the join host from both if you run
-without one):
+**5. The manifests.** Replace `maity.example.org` in `cert.yaml`,
+`uploads.yaml` and `hub-values.yaml` first (and drop the join host from
+`cert.yaml` and `hub-values.yaml` if you run without one):
 
 ```sh
 kubectl apply -f deploy/k3s-single/postgres.yaml -f deploy/k3s-single/postgres-netpol.yaml \
-  -f deploy/k3s-single/attachments.yaml -f deploy/k3s-single/backup.yaml -f deploy/k3s-single/issuer.yaml -f deploy/k3s-single/cert.yaml
+  -f deploy/k3s-single/attachments.yaml -f deploy/k3s-single/backup.yaml -f deploy/k3s-single/issuer.yaml -f deploy/k3s-single/cert.yaml \
+  -f deploy/k3s-single/uploads.yaml
 kubectl -n maity get certificate maity-tls   # READY True after the HTTP-01 challenge
 ```
 
@@ -317,7 +318,8 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
      `sed 's/@TS@/<the time stamp of the dump>/' deploy/k3s-single/restore-attachments.yaml | kubectl apply -f -`, wait for the Job, delete it.
   4. Scale the hub back to 1.
 - **Upgrades** are `helm upgrade` with the new digest. The chart's hook
-  migrates first ([Upgrades](#upgrades)).
+  migrates first ([Upgrades](#upgrades)). An installation set up before
+  `uploads.yaml` existed applies it once, with its host name, like step 5.
 - **PostgreSQL:** a new minor version of 17 is an image bump. A new
   major version needs a dump and a restore.
 

@@ -1292,6 +1292,59 @@ each command is checked only once.
 - Linking only to the Markdown on GitHub: no navigation of its own, and
   `docs/api.md` as one page of 17,000 lines.
 
+## Docs images live in `docs/img/`, are screenshots of fixture mode, and the site points a relative image at the deployed file
+
+**Id:** 7f3f6220-0bf0-4d81-8521-5761b877a1dd
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** pull request #1325 on the card tsk-92pgshcs2a8c, 2026-11-04: the designer's screenshots and `tools/site_docs.py` change, the designer's account of how they were made and what was weighed, and the three reviews (the size and this entry asked for there)
+**Revisit when:** `.github/workflows/pages.yml` stops copying `docs/` to the site's root, the docs site gets a build step that collects images itself, or the screenshots are made by a script
+**See:** process.md#the-docs-pages-on-maitydev-are-rendered-at-deploy-from-docs-and-docsnavyml-is-the-only-list-of-pages-and-the-navigation — 3b470500-85e0-4261-996e-425290e5d97b — as of 2026-11-04
+
+The images of the docs pages are files in `docs/img/`, linked from the
+Markdown with a relative path, so they show on GitHub as on the site.
+`tools/site_docs.py` rewrites a relative image the way it rewrites a link:
+one under `docs/` points at its path at the site's root, which exists only
+because `pages.yml` copies `docs/` there; any other at GitHub's raw file.
+Only the path is normalised; a query or fragment stays as written.
+
+The screenshots show the dashboard in fixture mode, never a hub with real
+accounts, so they carry no names, addresses or tokens: `web/index.html`
+opened as a file, at `#/new`, `#/all` and `#/maintainer/maity/board`, in
+Chromium (Playwright) at 1280 px with a device scale of 2, the light
+scheme and the clock in UTC (the inbox shows its times in the browser's
+zone). For all three, the sign-in notice is answered with **This was
+me** first and injected CSS hides the "Fixtures" badge (`.source`). For
+the inbox and the form it also hides any `.flag`; after the answer those
+two pages have none left. The inbox is cut 24 px below its first entry's
+button row, the form just below the Project memory hint. The board, from
+the pull request's first set, is the 1280 × 760 px viewport from the
+top, with no `.flag` hidden, so it shows a card's "Waits for an answer"
+box. Each is scaled to 1600 px
+wide and reduced to 256 colours (libimagequant, then oxipng level 4)
+before it is committed: about 290 KB for three instead of 734 KB, since
+every version stays in the history. The designer's script is not in
+the repository yet.
+
+**Reason:** a page and its pictures come from the same place, like the
+text (the entry linked above), and fixture data is the one dashboard
+state that holds nothing private.
+
+**Rejected:**
+
+- GitHub's raw file for the images under `docs/` too: the site would
+  depend on another host, and so would every fork or copy of it, while
+  `pages.yml` puts `docs/` at the root anyway.
+- A second copy in `docs/_assets/`: the same file twice, at a path other
+  than the `img/…` GitHub shows when it renders the Markdown.
+- Dark variants through `<picture>`: GitHub's Markdown needs raw HTML for
+  it, and the site is light unless the reader's system asks for dark
+  (`tools/site_docs/docs.css`), so the designer judged one light set
+  enough.
+- Screenshots of a real hub: real names and data in the repository; the
+  fixtures exist for this.
+
 ## On a shared development machine, PostgreSQL runs share one server, and at most two smoke or PostgreSQL runs go at a time
 
 **Id:** c9165811-5049-4d24-9564-49669ad385a1

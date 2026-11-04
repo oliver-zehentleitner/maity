@@ -12,7 +12,7 @@ What it installs:
 | Deployment `<release>-maity-hub` | one pod (`Recreate`) unless `replicas` says more (rolled one at a time), non-root, read-only root filesystem |
 | PodDisruptionBudget (with `replicas` above 1) | keeps one hub pod up through a node drain |
 | Service `<release>-maity-hub` | ClusterIP, port 80 → 8080 |
-| Ingress (optional) | TLS, with ingress-nginx annotations for the event long-poll |
+| Ingress (optional) | TLS, with ingress-nginx annotations for the event long-poll and the attachment upload's body size |
 | NetworkPolicy (on by default) | only the ingress controller's namespace and the release's test pod reach the hub |
 | ServiceAccount | without an API token; the hub never talks to the Kubernetes API |
 | Test pod (`helm test`) | `/api/v1/health` through the Service |
@@ -215,7 +215,7 @@ silently ignored. These are the values that matter:
 | `migrate.enabled` | `true` | the hook Job; off means you migrate before every upgrade |
 | `migrate.activeDeadlineSeconds` | `300` | keep it under Helm's `--timeout` |
 | `ingress.joinHost` | none | an optional second host for the agent join only (`MAITY_JOIN_URL`, docs/api.md §1.1); it joins the Ingress rules and the certificate (a Secret of your own must cover it), and the hub routes between the hosts; it must differ from `ingress.host` and needs the Ingress enabled (with your own Ingress, set `MAITY_JOIN_URL` through `extraEnv`) |
-| `ingress.annotations` | ingress-nginx long-poll settings | merged with yours; set a key to `null` to drop it |
+| `ingress.annotations` | ingress-nginx long-poll settings and `proxy-body-size: 11m` | merged with yours; set a key to `null` to drop it |
 | `ingress.tls.enabled` | `true` | `false` only with TLS in front of the controller; the public URL stays `https://` |
 | `networkPolicy.enabled`, `.from` | `true`, the `ingress-nginx` namespace | who may connect to the hub besides the test pod |
 | `service.type`, `.annotations` | `ClusterIP`, none | |
@@ -274,12 +274,18 @@ The event long-poll holds a request open for up to 55 seconds. The
 controller must allow at least that per request (the defaults give 75 s)
 and must pass the response on unbuffered.
 
+An attachment upload is one body of up to 10 MiB (`docs/api.md` §8.7).
+The controller must let it through: ingress-nginx refuses bodies over 1 MiB
+unless told otherwise, so the defaults set `proxy-body-size` to `11m`. On
+k3s's Traefik, `deploy/k3s-single/uploads.yaml` gives the upload its own
+route, which buffers the body before it reaches the hub.
+
 The default annotations are for ingress-nginx, the most common controller
 until now. Upstream ingress-nginx (`kubernetes/ingress-nginx`) has been
 retired since March 2026: no further releases or security fixes. A new
 cluster should use a maintained controller. The chart's Ingress is a plain
 `networking.k8s.io/v1` Ingress that any controller serves; set
-`ingress.className`, set the controller's own equivalents of the three
+`ingress.className`, set the controller's own equivalents of the four
 annotations, and set `null` for the nginx keys if they bother you. A
 controller that only speaks Gateway API needs an HTTPRoute the chart does
 not ship yet (`hub/context/kubernetes.md`).
