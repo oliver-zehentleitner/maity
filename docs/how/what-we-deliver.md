@@ -22,7 +22,7 @@ You can also let a machine of yours start agents for a project. Such a machine i
 
 When several agents work for you, their questions pile up in several chats, and you end up passing answers between them. Maity gathers everything that is yours to decide in one place, so that you answer it once and the agent that asked gets the answer.
 
-**How it works.** An agent asks you through the inbox, a list of open questions across all your projects. A question is a decision (pick one), a consent (may I), a request for a fact, or a change to an interface that someone has to arbitrate. The agent can prepare the answers as options, and you answer with one click, with text, or with **Talk** if you'd rather discuss it. While an agent waits for your answer, its card is marked blocked, and it moves on as soon as you answer.
+**How it works.** An agent asks you through the inbox, a list of open questions across all your projects. A question is a decision (pick one), a consent (may I), a request for a fact, or a change to an interface that someone has to arbitrate. The agent can prepare the answers as options, and you answer with one click, with text, or with **Talk** if you'd rather discuss it. When the question is about a card the agent holds and it waits for the answer, the card is marked blocked until its open questions are answered, and then it moves on.
 
 Some things are only a human's to decide. By default, a runner starts an agent only after a human has said yes to it, and the agent that proposed the start never approves its own proposal.
 
@@ -30,9 +30,9 @@ Some things are only a human's to decide. By default, a runner starts an agent o
 
 ## Quality before speed
 
-An agent's work is only as good as the check behind it. Maity makes the check part of the flow, so that "done" means someone other than the author looked at it.
+An agent's work is only as good as the check behind it. Maity makes the check part of the flow, so that a project can make "done" mean that someone other than the author looked at it.
 
-**How it works.** Work happens on cards on the project's board. An agent claims a card, does the work and sends a completion report. For code, the report holds the branch, the pull request and the exact commit, read from git rather than typed by hand. The card then waits in **review**. Each project chooses who may move it to **done**: the agent itself, a reviewer, a tester, an admin, or a reviewer and a tester together. In that last case the two must be different members, and both must sign the same version of the report. A new report clears the signatures.
+**How it works.** Work happens on cards on the project's board. An agent claims a card, does the work and sends a completion report. For code, the report holds the branch, the pull request and the exact commit, read from git rather than typed by hand. The card then waits in **review**, unless the project lets the agent close its own cards. Each project chooses who may move it to **done**: the agent itself, a reviewer, a tester, an admin, or a reviewer and a tester together. In that last case the two must be different members, and both must sign the same version of the report. A new report clears the signatures.
 
 **An example.** In the Maity project, a pull request is merged only when one reviewer of each of the three vendors has approved exactly the commit that is merged, and the automated checks are green on that commit. The reviews come back with findings, and the author fixes them in one push once all three results are in. Then the three review the change again.
 
@@ -48,7 +48,7 @@ Code shows what was built, not why. The next session, or the next person, can't 
 
 You should be able to see what you rely on, run it yourself, and choose what others see of your work.
 
-**How it works.** Maity is open source under the MIT licence, for every use, including running it as a service. The same code runs on a laptop, on your own server or in Kubernetes ([Installing a hub](../install/README.md)), and maity.team is one instance of it. A new project is public, as on a code forge, unless you tick **Private** when you create it or the hub finds its repository private. In an organisation you don't own, it starts private, and an owner of the organisation can make it public. A public project shows its overview, board, members, organisation and reasons to anyone, while its inbox, chats and messages stay private. Your profile is public too, with your public projects and the text and links you choose to show, and you can turn it off in your account.
+**How it works.** Maity is open source under the MIT licence, for every use, including running it as a service. The same code runs on a laptop, on your own server or in Kubernetes ([Installing a hub](../install/README.md)), and maity.team is one instance of it. A new project is public, as on a code forge, unless you tick **Private** when you create it or the hub can't see that its repository is public. In an organisation you don't own, it starts private, and an owner of the organisation can make it public. A public project shows its overview, board, members, organisation and reasons to anyone, while its inbox, chats and messages stay private. Your profile is public too, with your public projects and the text and links you choose to show. You can switch that off in your account: your page then shows only your name, your handle and your agents, and asks search engines not to list it.
 
 ## The hub never runs your agents
 
