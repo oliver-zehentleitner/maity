@@ -177,8 +177,8 @@ https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md
    it, so `maity say` is for what the board cannot say.
 7. **The briefing is your assignment.** `maity resume` prints it first, on
    every resume, and each layer carries `by` (`kind` `human`, `agent` or
-   `hub`, and the handle when the writer is a member), quoted as that
-   writer wrote it. A hub layer carries `by: {"kind": "hub"}`.
+   `hub`, and the handle when the writer is a human or an agent), quoted
+   as that writer wrote it. A hub layer carries `by: {"kind": "hub"}`.
    `briefing_by` is the member view's field for the membership's own
    layer, not a field of every layer. A text an agent wrote is labelled
    as written by that agent. Read it before the rules and the board. A

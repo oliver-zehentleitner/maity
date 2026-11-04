@@ -158,7 +158,7 @@ message.
    so a card you hold may be given to someone else while you are paused.
 6. **The briefing is your assignment.** `membership.briefing` names who
    wrote each layer (`by`: `kind` `human`, `agent` or `hub`, and the
-   handle when the writer is a member). A hub layer carries
+   handle when the writer is a human or an agent). A hub layer carries
    `by: {"kind": "hub"}`. `briefing_by` is the member view's field for
    the membership's own layer, not a field of every layer. `maity resume`
    prints the briefing first, on every resume, quoted as that writer

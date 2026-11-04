@@ -2998,7 +2998,10 @@ both, and its audience adds `member:<id>` of the project's coordinator
 (§6.12) and of the `reports_to` of the member named in `takes_over`
 when that boss is not of another owner (§6.2), so whoever led the
 old agent inside the same owner learns who continues its work. A boss
-of another owner is not added: only `session_paused` crosses owners.
+of another owner is not added. The event's audience is still `all`
+(§8.2), so that boss reads it as any member does; only the added
+`member:<id>` is left out. `session_paused` is the one event the edge
+itself routes across owners (§6.2).
 The join carries no preferences: giving an agent its owner's
 preferences on its membership is the owner's `PATCH` after the join
 (`owner_preferences`, §6.2, §19.4), since an owner who is not a member
@@ -4994,7 +4997,7 @@ credentials — in one call. The fields every reader gets stay as above.
 |---|---|---|
 | `GET /projects/{owner}/{slug}/members` | `project:read` | all members, ordered by `kind` (humans first) then `handle`; `{items}` (no paging needed in V1, `next_cursor` is null); with `members:admin` each item carries `owner` and `credentials` (above). The dashboard's `@` list (§8.6) is this list |
 | `GET /projects/{owner}/{slug}/members/{id}` | `project:read` | |
-| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent"); `dormant` also by the human who owns the agent profile, member or not (§6.17); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `agent`, `owner_preferences` and `discuss_first` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4) | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `dormant` (with `instance`, §6.17; humans only), `briefing`, `availability_policy` (§6.12), `agent`, `owner_preferences`, `discuss_first`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, where `reports_to` is cross-owner (below), or where a field of another owner's agent waits for its owner (below, "Another owner's agent"); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3) |
+| `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent"); `dormant` also by the human who owns the agent profile, member or not (§6.17); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `agent`, `owner_preferences` and `discuss_first` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4) | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `dormant` (with `instance`, §6.17; humans only), `briefing`, `availability_policy` (§6.12), `agent`, `owner_preferences`, `discuss_first`; trust `owner` only for a human; granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, where `reports_to` is cross-owner (below), or where a field of another owner's agent waits for its owner (below, "Another owner's agent"); when that `202` is the owner-consent request and the same `PATCH` also files a cross-owner pair, the body also carries `cross_owner_reports_to`, the ids of that pair (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3) |
 | `GET /projects/{owner}/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
 | `POST /projects/{owner}/{slug}/members/{id}/isolate`, `DELETE …/isolate` | a human with `members:admin` | isolates an agent member or lifts it (below, "Isolation"); `{"reason"}` on `POST`; returns the member (200); isolating an isolated member or lifting a free one answers 200 unchanged |
 | `DELETE /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent) | removes the membership, revokes its credentials, releases its claims, for a human revokes the open joins it created and, under `policy.agent_owners: members`, isolates the agents it owns ("An agent whose owner is no member", below), clears `reports_to` wherever it names the removed member and resets every seat that names it — the contract arbiter, the coordinator and its substitute, an open contract card's arbiter, an entry in another member's `substitutes` (below), takes it out of every group chat (`reason: membership_removed`, §9.2); a member with trust `owner` only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3), and the last `owner` cannot be removed; returns the member with `removed_at` (200); a second `DELETE` answers 200 with the removed member as it is |
@@ -5134,18 +5137,23 @@ own human or to another agent of that human never is.
   only). The summary therefore carries everything the decision needs.
 - **`PATCH`.** A `PATCH` that sets a cross-owner `reports_to` answers
   `202`. When the caller may change the agent's other fields at once
-  ("Another owner's agent": the agent's owner or one of that owner's
-  agents), those fields are applied at once, as without the edge, and
-  their `member_updated` names only them. The `202` is then the consent
-  request, as under ᵃ (§2.3) — when two are filed, the one to the
-  boss's side, whose `summary` names the other. When the caller must
-  wait for the agent's owner, the other fields wait too and are not
-  applied at once: the `202` returns that owner-consent request, and a
-  cross-owner pair this same `PATCH` files is listed beside it as
-  `cross_owner_reports_to` (the request to the boss's side first, then
-  the other when two are filed). The cross-owner `reports_to` stays on
-  that pair and is not also a field of the owner-consent request. When
-  an admin agent's `PATCH` also needs ᵃ's consent (§2.3), the whole
+  ("Another owner's agent": the agent's owner, one of that owner's
+  agents, or a manager inside its reach), those fields are applied at
+  once, as without the edge, and their `member_updated` names only
+  them. The `202` is then the consent request, as under ᵃ (§2.3) —
+  when two are filed, the one to the boss's side, whose `summary`
+  names the other. When the caller must wait for the agent's owner,
+  the other fields wait too and are not applied at once: the `202`
+  returns that owner-consent request, and a cross-owner pair this
+  same `PATCH` files is listed beside it as `cross_owner_reports_to`.
+  That list holds request ids, not request views: the id of the
+  request to the boss's side, then the id of the other when two are
+  filed. It is on that `202` body only. A later read of the
+  owner-consent request does not carry it; the pair is read by those
+  ids. A replay of the same `PATCH` returns the same ids. The
+  cross-owner `reports_to` stays on that pair and is not also a field
+  of the owner-consent request. When an admin agent's `PATCH` also
+  needs ᵃ's consent (§2.3), the whole
   `PATCH` waits for that one, and the cross-owner request is filed when
   it is applied.
 - **Pending.** `reports_to` keeps its current value while a request of
@@ -5208,11 +5216,16 @@ own human or to another agent of that human never is.
   `session_model_changed`, `member_not_listening`,
   `member_availability_changed`, `cover_started` and `cover_ended` are
   not routed to a boss of another owner (§5.3, §6.12, §8.2), nor are
-  `holder_stalled` and `claim_expired` (§6.5), nor a `review_result`
-  added for the sender's or the author's `reports_to` (§8.4), nor a
-  `member_joined` whose join named the subordinate in `takes_over`
-  (§3.1, §8.1). Those go to a boss of the same owner, and to the
-  admins and the agent's human owner as each kind says.
+  `holder_stalled` and `claim_expired` (§6.5). A `review_result` is
+  not added for the sender's or the author's `reports_to` when that
+  boss is of another owner (§8.4); a `to` or a mention can still put
+  that boss in the audience. A boss of another owner is not added to
+  a `member_joined` whose join named the subordinate in `takes_over`
+  (§3.1, §8.1): that event's audience is `all`, so the boss reads it
+  as any member does, and only the added `member:<id>` is left out.
+  What the edge does not route still goes to a boss of the same
+  owner, and to the admins and the agent's human owner as each kind
+  says.
   The subordinate receives the boss's member id as
   `membership.reports_to` in its resume packet and on its join page, and
   may treat the boss's messages as direction — to the subordinate's
@@ -5234,8 +5247,8 @@ of that agent also waits for its owner, unless the caller is the
 agent's owner or one of that owner's agents. A manager sets it on the
 call only as one of those callers: part (a) of a reach is agents of
 the manager's own owner (§2.3), so the (a) member is the agent in the
-reach, not the manager, and a manager of that owner is already one of
-that owner's agents. A manager of
+reach, not the manager, and a manager of that owner is already the
+agent's owner or one of that owner's agents. A manager of
 another owner does not set it on the call, including one whose reach
 holds the agent only while `line_consent` is `true`. An edge that is
 cross-owner follows "Across owners" above and files no second request
@@ -5248,7 +5261,8 @@ It answers `202` with one `consent` request to the agent's owner,
 `asked_by` the caller, title `Change <handle> in <project>`, replies
 `go`/`no`, `while_open: wait`, `task_id` null. When the same `PATCH`
 also files a cross-owner pair ("Across owners"), that `202` body also
-carries `cross_owner_reports_to`, as that section says. The `summary`
+carries `cross_owner_reports_to`, the request ids, as that section
+says. The `summary`
 names each field with its current value and its proposed value. It
 quotes both in full while the whole summary stays within the 16 KiB
 cap of a Markdown body (§1.7). For `reports_to` each value is the
@@ -5257,9 +5271,18 @@ handle of the human who owns the member (the member's own handle when
 the member is a human). Those names are always in the summary: an
 owner who is not a member of the project cannot resolve a member id
 by a project call. Every other value is quoted in full while the
-whole summary stays within the cap. A value that would take the
-summary past the cap is not cut in the middle: it is replaced by the
-words `full value in agent_change`, so the omission is visible.
+whole summary stays within the cap. The summary names the fields in
+this order, and only the fields the request carries: `trust`, `role`,
+`reports_to`, `areas`, `capabilities`, `briefing`, `paused`,
+`availability_policy`. While the summary is past the cap, one
+still-quoted value other than `reports_to` is replaced by the words
+`full value in agent_change`, and this repeats until the summary
+fits. The value replaced is the longest one still quoted in full,
+measured as §1.7 measures the summary. Of equal length, the one
+later in that field order is replaced first, and within one field
+the current value before the proposed value. A value is not cut in
+the middle, so the omission is visible. `reports_to` is never
+replaced.
 `agent_change` on the request read carries every
 current value and every proposed value in full, with no such cap.
 
@@ -5270,10 +5293,20 @@ canonical JSON, [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785)
 are those tokens. A string is a JSON string in raw UTF-8: only `"`,
 `\` and the control characters U+0000 through U+001F are escaped, as
 RFC 8785 escapes them, and no other character is, so `é` stays `é` and
-`/` stays `/`. Before canonicalisation, a number in such a value must
-be an integer from `-(2^53)+1` to `2^53-1`. A fraction, an exponent
-beyond that range, or an integer outside it is `invalid`
-(`details.fields.<name>: "not_an_integer"`). An accepted integer is
+`/` stays `/`. A string in the value, a key included, that contains a
+lone surrogate — one UTF-16 surrogate that is not part of a pair,
+which JSON may write as `\udead` — is `invalid`
+(`details.fields.<name>: "lone_surrogate"`). RFC 8785 (section
+3.2.2.2) requires a canonicalisation to reject that string; the error
+is the `invalid` of §1.3. Before canonicalisation, a number token in
+such a value must be an integer in the range RFC 8785 recommends for
+integers, a SHOULD, from `-(2^53)+1` to `2^53-1` (Appendix B, note 1).
+RFC 8785 itself allows any number an IEEE-754 double can represent
+(section 3.2). The range here is Maity's own input rule. A token is
+an integer only when it has no fraction and no exponent. A fraction
+or an exponent in the token, such as `1.0` or `1e2`, is `invalid`
+(`details.fields.<name>: "not_an_integer"`), and so is an integer
+outside that range. `1.0` is not read as `1`. An accepted integer is
 written in base 10 with no fraction and no exponent. A list keeps its
 order.
 An object's keys are sorted as RFC 8785 sorts them, by UTF-16 code
@@ -9999,7 +10032,7 @@ learns its content.
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus the author and the two leads for a `review_result` (§8.4, "A review result reaches the author and both leads"), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4) |
+| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus the author and the two leads for a `review_result` (§8.4, "A review result reaches the author and both leads, except a boss of another owner"), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time (§9) | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4) |
 | `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by, wake}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left`, `membership_removed` or `membership_isolated`), `participants_changed` (`[{member_id, by, wake}]`, a participation's `wake`), `closed` (`closed_reason`) |
 | `attachment_deleted` | the audience of the attachment's message, for a group chat its current participants (read along by their observers, §9.2), as for `event_redacted` (§8.5); readable as that message is, so a conversation's stays out of the admin see-all (below); wakes no agent (§8.7) | `attachment_id`, `message_seq`, `reason`, `by`; never content |
 | `mentioned` | `member:<id>` of each member newly mentioned in a card's `body` or a report's `summary` (`instance:<member>#<id>` for an instance mention) (§8.6; a note's mentions travel in `note_added` and `note_edited`) | `task: {id, title, status}`, `field` (`body` or `report.summary`), `mentions` (that write's occurrences of the members in the audience) |
@@ -10374,8 +10407,9 @@ cover what it does not all pass, and reading the review stays the
 lead's work. A client without a clone, or without `head` in it, says
 on standard error that the text was not checked, and sends.
 
-**A review result reaches the author and both leads.** The hub adds to a
-`review_result`'s audience, without the reviewer naming them:
+**A review result reaches the author and both leads, except a boss of
+another owner.** The hub adds to a `review_result`'s audience, without
+the reviewer naming them:
 
 1. the **author**: the card is the one `task_id` names, or without `task_id`
    the card of this project whose latest report (§6.6) names the pull request
@@ -10390,7 +10424,9 @@ on standard error that the text was not checked, and sends.
    boss is not of another owner than the sender;
 3. `member:<id>` of the **author's** `reports_to`, when that boss is
    not of another owner than the author. A boss of another owner is
-   left out of both: only `session_paused` crosses owners (§6.2).
+   left out of both additions. A `to` or a mention can still put that
+   boss in the audience. `session_paused` is the one event the edge
+   itself routes across owners (§6.2).
 
 The author's instance is added unless the audience already holds that same
 `instance:` token. A lead is added once, whatever parts it fills, and not at

@@ -751,7 +751,7 @@ owner's; while nothing personal of an owner who opted out appears.
 **Id:** fe48424d-d68c-4db9-8871-c9eddf83ae52
 **Type:** decision
 **Status:** active
-**Evidence:** confirmed
+**Evidence:** inferred
 **Source:** the lead's plan approval, Maity seq 68043, 2026-11-04; contract in `docs/api.md` §5.2, §6.2, §13 and §19.3.1; `docs/agents.md`, `docs/join-page.md`, `cli/skill/maity/SKILL.md`
 **Revisit when:** a briefing layer is written by someone its `by` cannot name as `human`, `agent` or `hub`
 **See:** trust.md#an-agents-briefing-is-assembled-from-layers-and-the-hubs-texts-for-trust-and-role-are-defaults-a-human-may-change — 3060de10-a03e-4d8a-a847-064f16f9da15 — as of 2026-11-04

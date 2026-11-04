@@ -121,7 +121,7 @@ curl -sS -K "$d/curl.conf" -X POST -H 'Content-Type: application/json' \
 
 The answer is your resume packet. Read `membership.briefing` first: each
 layer carries `by`, who wrote it (`kind` `human`, `agent` or `hub`, and
-the handle when the writer is a member). A hub layer carries
+the handle when the writer is a human or an agent). A hub layer carries
 `by: {"kind": "hub"}`. `briefing_by` is the member view's field for the
 membership's own layer, not a field of every layer. The briefing is in
 every packet. A text an agent wrote is labelled as written by that
