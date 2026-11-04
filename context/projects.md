@@ -4,10 +4,11 @@
 
 **Id:** f55d74ac-1758-4318-8d81-e28dee965939
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** inferred
 **Source:** contract owner, 2026-10-22; the maintainer approved the overview page the same day; contract in `docs/api.md` §6.11
-**Revisit when:** the hub serves the change ticker's merge items (§17; the contract alone does not count): its merge items are then added to `reports`, de-duplicated by pull request number, not a replacement for the card reports; or the overview needs data no existing read has
+**Verification:** corroborated — re-checked 2026-11-04: `GET …/overview` (`hub/src/maity_hub/routes/overview.py`) returns only the board counts, the open requests and the cards' latest reports, and reads neither the project nor the members; §6.11 says the same. The hub serves the ticker's merge items since §17 (`routes/ticker.py`), and `reports` does not include them yet: adding them is still open, no decision either way is recorded
+**Revisit when:** the ticker's merge items are added to `reports` (de-duplicated by pull request number, not a replacement for the card reports) or decided against; or the overview needs data no existing read has
 
 The overview page reads the project (`GET /projects/{slug}`: name,
 state, repository URL, the Keep the Why export with its dashboard links,
@@ -115,12 +116,13 @@ not the rule set every agent loads, which stays a human's.
 
 **Id:** c436ef08-627d-46c9-b3c9-92b1b0fdf3e4
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
 **Source:** maintainer decision with the designer, 2026-10-25; contract in `docs/api.md` §6.20, §6.1
-**Revisit when:** public projects or join requests exist, or a badge variant needs more than counts
+**Verification:** corroborated — re-checked 2026-11-04 after public projects arrived: `hub/src/maity_hub/routes/badges.py` serves a badge only for a project that is not closed and whose `badge` policy is `members` or `agents_online`, also when the project is public, and renders counts only. The "join the team" variant §6.20 parked until public projects exist is still not built and not decided
+**Revisit when:** the "join the team" variant is decided, join requests exist, or a badge variant needs more than counts
 
-A project can serve a README badge at `GET /badge/{slug}.svg`, public
+A project can serve a README badge at `GET /badge/{owner}/{slug}.svg`, public
 and unauthenticated. It is off unless the project's policy sets
 `badge` to `members` or `agents_online`; while it is off, and for an
 unknown or closed project, the answer is the generic `not_found`, so
@@ -406,10 +408,11 @@ hands out instructions and a path, and the settings stay in
 
 **Id:** 281820c9-2286-45c4-9389-603b7e8a3923
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's decision in the chat, 2026-10-27 ("ja unbedingt jetzt vor launch"), on the contract owner's proposal; the three details (human owners only, aliases on rename and transfer, old addresses forwarded) in the inbox; contract in `docs/api.md` §6.25
-**Revisit when:** organisations become namespace owners (they share the namespace of human handles); or the one-segment API routes are found in use after the release (then a `v2`-style period, §1.6)
+**Verification:** corroborated — re-checked 2026-11-04 after organisations became namespace owners: `hub/src/maity_hub/namespace.py` resolves an owner to a human or an organisation (`owner_human_id` or `owner_org_id`) by one handle, as the paragraph below and the organisation entry (33f520b9) say; addressing stays `<owner>/<slug>`
+**Revisit when:** the one-segment API routes are found in use after the release (then a `v2`-style period, §1.6), or a third kind of namespace owner is added
 **See:** naming.md#a-handle-is-a-renameable-alias-of-a-fixed-id-old-handles-stay-reserved-for-that-id — d5a4542f-63cc-4c1c-962e-f1c02df48ee9 — as of 2026-10-27
 
 A project is addressed as `<owner>/<slug>` — in the API
