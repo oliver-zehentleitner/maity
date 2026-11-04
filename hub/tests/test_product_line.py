@@ -192,6 +192,9 @@ def framed(response: Any) -> str:
     assert response.headers["Referrer-Policy"] == "no-referrer"
     assert page.count('<header class="site-header') + page.count("<header lang=") == 1
     assert page.count('class="site-footer"') == 1 and 'class="door-page"' in page
+    # The panel without a pitch, as the dashboard's door() draws it: empty, so public-pages.css
+    # shows the art large and hides the panel at phone width.
+    assert '<aside class="door-panel" aria-hidden="true"></aside>' in page
     for sheet in ("landing.css", "public-pages.css"):
         assert f'href="/assets/landing/{sheet}?v=' in page
     assert "<script" not in page and "<style" not in page

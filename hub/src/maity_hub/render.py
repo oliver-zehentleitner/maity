@@ -966,9 +966,12 @@ def door_document(
     if model["language"] != lang:  # the frame's words are in a language the landing page has
         header = header.replace("<header ", f'<header lang="{escape(model["language"])}" ', 1)
         footer = footer.replace("<footer ", f'<footer lang="{escape(model["language"])}" ', 1)
+    # The panel without a pitch, as the dashboard draws it for its own pages of this kind
+    # (web/js/auth-pages.js, door()): public-pages.css shows the art large, and hides the panel
+    # at phone width.
     body = (
         header + '<main><div class="door-page">'
-        '<aside class="door-panel" aria-hidden="true"><span class="seat"></span></aside>'
+        '<aside class="door-panel" aria-hidden="true"></aside>'
         f'<section class="door-form"><div>{content}</div></section></div></main>' + footer
     )
     sheets = [landing_files.url("landing.css"), landing_files.url("public-pages.css")]

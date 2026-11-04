@@ -1636,7 +1636,8 @@ link`. Body:
 public host only (a join host answers it with its `302`, §1.1), with the
 rules of §18.6: the request log masks the token as `…`, an invalid,
 expired or used token is the page that says the link no longer works
-(status `not_found`, never which reason).
+(status `not_found`, never which reason). Both pages stand in the frame
+of the pages without a session (§16.7.5).
 
 | Method | Effect |
 |---|---|
@@ -15813,11 +15814,13 @@ is. `registration`, the settings of §16.4, stays a part of its own.
 The maintainer's decision of 2026-11-02 (`context/scope.md`): every page
 a visitor sees without a session has one header and one footer, the
 landing page's, from one source. That is the landing page, the legal
-pages (§16.7.1) and the dashboard's `/login` and `/register` (§16.7.4).
+pages (§16.7.1), the sign-in link's page `/mail/sign-in/{token}` with the
+page for a link that no longer works (§2.6.3), and the dashboard's
+`/login` and `/register` (§16.7.4).
 The dashboard's sign-in stands in the frame wherever it is drawn without
 a session, not only at `/login`: at the root after a sign-out, and at an
 address of the app opened without a session that has no stored public
-page (§16.9). The hub renders the first two itself; the dashboard draws
+page (§16.9). The hub renders the first three itself; the dashboard draws
 the others in the app shell. So the hub computes the frame once, as a model: it
 renders its own pages from that model, and hands the same model to the
 dashboard. The rules stay in one place: which sections are a link, which
@@ -15903,6 +15906,18 @@ from the hub's catalogue in `language`.
   does not exist (`not_found`). During a maintenance window it answers
   `503 maintenance` like every call §16.12 does not name; the dashboard
   then draws the sign-in and sign-up pages without the frame (§16.7.4).
+- **The sign-in link's page.** `/mail/sign-in/{token}` (§2.6.3) stands in
+  the model's header and footer around the door of `public-pages.css`,
+  its panel empty, in the human's interface language (§6.2); the page
+  for a link that no longer works is in the best match of
+  `Accept-Language` among §16.7's languages, else `en`. Its footer has no
+  language switch (`languages` is `[]`): the page's language is the
+  person's, not the address's, and the address holds the token. The page
+  has no script; its policy is `default-src 'none'`, the hub's own
+  stylesheets, fonts and images, `form-action 'self'`, `base-uri 'none'`
+  and `frame-ancestors 'none'`, with `Referrer-Policy: no-referrer`.
+  Registration's link page (§2.7.1) and the other `/mail/…` pages
+  (§18.6) stay outside the frame, with the product line (§16.13).
 
 ### 16.8 Abuse reports
 
@@ -16962,19 +16977,21 @@ back to the English sentence.
 |---|---|
 | every page the dashboard draws (`web/`): the signed-in views, the sign-in and `/register` where the frame of §16.7.5 does not stand, the invitation and enrolment steps, the full maintenance page (§16.12); also `/explore` and a public address (§16.9) while the hub answers it with the app shell, as it does for one with no stored page | yes |
 | the hub's `503 maintenance` page (§16.12) | yes |
-| the pages behind the links in mails, `/mail/…` (§2.6.3, §2.7.1, §2.9, §18.6) | yes |
+| the pages behind the links in mails, `/mail/…` (§2.7.1, §2.9, §18.6), except the sign-in link's | yes |
+| the sign-in link's page `/mail/sign-in/{token}` and its page for a link that no longer works (§2.6.3), in the frame of §16.7.5 | no: the frame's footer |
 | the join page in a browser, `/join/{token}` as HTML on either host (§3.2), below its own note | yes |
 | the join page for an agent, the Markdown answer (§3.2) | no |
 | the landing page and its variants (§16.7, §16.7.2), the legal pages (§16.7.1), and their previews for an admin (§16.7, §16.7.1) | no: the operator's site, with the operator's footer |
 | `/explore` and the stored public pages (§16.9), as the hub answers them from what it stored | no |
 
-Where the dashboard draws the sign-in or `/register` without a session,
-the frame of §16.7.5 has the landing page's footer, and it stands in the
-line's place: while the frame stands, and while such a drawing waits for
-its `GET /site/chrome`, the page has no line (the maintainer's decision
-req-5k1gvfsmcg9k, 2026-11-03). A page drawn without the frame (a failed
-`GET /site/chrome`, a model without header or footer, a maintenance
-window) ends with the line.
+The sign-in link's page is the hub's own page in that frame, so it has
+no line either. Where the dashboard draws the sign-in or `/register`
+without a session, the frame of §16.7.5 has the landing page's footer,
+and it stands in the line's place: while the frame stands, and while
+such a drawing waits for its `GET /site/chrome`, the page has no line
+(the maintainer's decision req-5k1gvfsmcg9k, 2026-11-03). A page drawn
+without the frame (a failed `GET /site/chrome`, a model without header
+or footer, a maintenance window) ends with the line.
 
 **How it looks.** At the end of the page's content, never sticky or
 fixed, so it takes no room on a phone. Small and muted. At phone width it
