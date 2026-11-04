@@ -1156,6 +1156,41 @@ each command is checked only once.
 - Linking only to the Markdown on GitHub: no navigation of its own, and
   `docs/api.md` as one page of 17,000 lines.
 
+## Docs images live in `docs/img/`, are screenshots of fixture mode, and the site points a relative image at the deployed file
+
+**Id:** 7f3f6220-0bf0-4d81-8521-5761b877a1dd
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** pull request #1325 on the card tsk-92pgshcs2a8c, 2026-11-04: the designer's screenshots and `tools/site_docs.py` change, and its three reviews (the size and this entry asked for there)
+**Revisit when:** `.github/workflows/pages.yml` stops copying `docs/` to the site's root, the docs site gets a build step that collects images itself, or the screenshots are made by a script
+**See:** process.md#the-docs-pages-on-maitydev-are-rendered-at-deploy-from-docs-and-docsnavyml-is-the-only-list-of-pages-and-the-navigation — 3b470500-85e0-4261-996e-425290e5d97b — as of 2026-11-04
+
+The images of the docs pages are files in `docs/img/`, linked from the
+Markdown with a relative path, so they show on GitHub as on the site.
+`tools/site_docs.py` rewrites a relative image the way it rewrites a link:
+one under `docs/` points at its path at the site's root, which exists only
+because `pages.yml` copies `docs/` there; any other at GitHub's raw file.
+Only the path is normalised; a query or fragment stays as written.
+
+The screenshots show the dashboard in fixture mode (`web/index.html`
+opened as a file), never a hub with real accounts, so they carry no names,
+addresses or tokens. They are 1600 px wide, in the light theme, with the
+sign-in banner and the "Fixtures" badge hidden and nothing else changed,
+and are reduced to 256 colours (libimagequant, then oxipng) before they
+are committed: about 285 KB for three instead of 734 KB, since every
+version stays in the history. There is no script for them yet; a new one
+is made by hand the same way.
+
+**Reason:** a page and its pictures come from the same place, like the
+text (the entry linked above), and fixture data is the one dashboard
+state that holds nothing private.
+
+**Alternatives:** unknown. The designer was not reachable when this was
+written; the reviews named other ways (raw links for `docs/` too, copying
+the images into the site directory) as questions, not as options anyone
+weighed.
+
 ## On a shared development machine, PostgreSQL runs share one server, and at most two smoke or PostgreSQL runs go at a time
 
 **Id:** c9165811-5049-4d24-9564-49669ad385a1
