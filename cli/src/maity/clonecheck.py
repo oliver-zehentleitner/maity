@@ -11,21 +11,27 @@ the runner started (`MAITY_PLACEMENT`), where the clone is the one the runner ma
 from __future__ import annotations
 
 import os
-import re
 import stat
+import subprocess
+import tempfile
 from pathlib import Path
 from typing import Protocol
 
-from maity import onboarding
+from maity import onboarding, proc
 from maity.redact import without_userinfo
 
 PLACEMENT_ENV = "MAITY_PLACEMENT"
-GIT_SECTION = re.compile(r'^\[\s*([A-Za-z0-9.-]+)\s*(?:"([^"]*)")?\s*\]$')
-GIT_ALLOWED = re.compile(
-    r"^(core\.(repositoryformatversion|filemode|bare|logallrefupdates|ignorecase"
-    r"|precomposeunicode)|remote\.[^.]+\.(url|fetch)|branch\.[^.]+\.(remote|merge)"
-    r"|user\.(name|email))$"
-)
+# The keys a plain clone's configuration holds: (section, key) without a subsection, or with
+# one for `remote` and `branch`, whose subsection is any remote or branch name (`v1.0` too).
+GIT_ALLOWED = {
+    (None, "core"): frozenset({
+        "repositoryformatversion", "filemode", "bare", "logallrefupdates", "ignorecase",
+        "precomposeunicode",
+    }),
+    (None, "user"): frozenset({"name", "email"}),
+    ("named", "remote"): frozenset({"url", "fetch"}),
+    ("named", "branch"): frozenset({"remote", "merge"}),
+}  # fmt: skip
 # What a clone's `.git` holds at its top level, and of which type (a file, or a directory).
 # Anything else may change where git reads its configuration from (`commondir`,
 # `config.worktree`) and is refused rather than understood.
@@ -91,24 +97,58 @@ def not_inspectable(path: Path, files: Files = LOCAL) -> str | None:
         reason = _not_a_plain_git_dir(files.tree(dot_git))
         if reason is not None:
             return reason
-        text = files.read(dot_git / "config").decode("utf-8")
-    except (OSError, UnicodeDecodeError):
+        data = files.read(dot_git / "config")
+    except OSError:
         return "its .git/config cannot be read"
-    section = ""
-    for raw in text.splitlines():
-        line = raw.strip()
-        if not line or line.startswith(("#", ";")):
-            continue
-        header = GIT_SECTION.match(line)
-        if header:
-            section = header.group(1).lower() + (f".{header.group(2)}" if header.group(2) else "")
-            continue
-        key = line.split("=", 1)[0].strip().lower()
-        if not GIT_ALLOWED.match(f"{section}.{key}"):
+    names = config_names(data)
+    if names is None:
+        return "its .git/config cannot be parsed"
+    for name in names:
+        section, _, rest = name.partition(".")
+        subsection, _, key = rest.rpartition(".")
+        if key not in GIT_ALLOWED.get(("named" if subsection else None, section), ()):
             # A section may be named by a URL (`[url "https://tok@…"]`): shown without a token.
-            shown = onboarding.inline(without_userinfo(section))
-            return f"its .git/config sets {shown}.{onboarding.inline(key)}"
+            return f"its .git/config sets {onboarding.inline(without_userinfo(name))}"
     return None
+
+
+def config_names(data: bytes) -> list[str] | None:
+    """The names of the entries in `data`, a git configuration, as git itself reads them, or
+    None when git cannot. Parsed by git, not by maity: git's own reading is the one that
+    counts (a header and a key can share a line). Read from stdin with includes off, outside
+    any repository, with no system or global configuration, so nothing but `data` is read."""
+    with tempfile.TemporaryDirectory() as empty:
+        env = {
+            "PATH": os.environ.get("PATH", ""),
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_GLOBAL": os.path.join(empty, "none"),  # missing: no entries
+            "GIT_CEILING_DIRECTORIES": str(Path(empty).parent),
+            "HOME": empty,
+        }
+        if os.name == "nt":
+            env["SYSTEMROOT"] = os.environ.get("SYSTEMROOT", "")
+            env["NoDefaultCurrentDirectoryInExePath"] = "1"
+        git = proc.program(proc.GIT[0])
+        if git is None:
+            return None
+        cmd = [*proc.GIT, "config", "--no-includes", "--file", "-", "--list", "-z"]
+        try:
+            done = subprocess.run(
+                [git, *cmd[1:]],
+                cwd=empty,
+                env=env,
+                input=data,
+                capture_output=True,
+                timeout=proc.TIMEOUT,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+    if done.returncode != 0:
+        return None
+    # Each entry: the name, then a newline and the value unless it has none, then NUL.
+    entries = done.stdout.decode("utf-8", "replace").split("\0")[:-1]
+    return [entry.split("\n", 1)[0] for entry in entries]
 
 
 def _not_a_plain_git_dir(entries: list[tuple[str, str, int]]) -> str | None:
@@ -144,13 +184,15 @@ def placement_root() -> Path | None:
     common = os.environ.get("GIT_COMMON_DIR")
     if not common:
         raise Refused(f"{PLACEMENT_ENV} is set without GIT_COMMON_DIR, so the clone is unknown")
+    named = Path(common)
+    if named.name != ".git":
+        raise Refused("GIT_COMMON_DIR is not a clone's .git")
+    if named.is_symlink():  # what it points to is not the runner's clone; checked as named
+        raise Refused("the clone's .git is not a plain directory")
     try:
-        dot_git = Path(common).resolve(strict=True)
+        return named.parent.resolve(strict=True)
     except (OSError, RuntimeError) as exc:
         raise Refused(f"the clone named by GIT_COMMON_DIR cannot be resolved ({exc})") from None
-    if dot_git.name != ".git":
-        raise Refused("GIT_COMMON_DIR is not a clone's .git")
-    return dot_git.parent
 
 
 def _within(path: Path, directory: Path) -> bool:

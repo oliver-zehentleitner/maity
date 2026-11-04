@@ -1378,7 +1378,10 @@ In a session the runner started (`MAITY_PLACEMENT` set), every git
 maity starts first checks the clone the same way `gc` does
 (`clonecheck.not_inspectable`, moved out of `runner/operate.py` so both
 use one check): a `.git` made only of a plain clone's entries, a
-configuration made only of a plain clone's keys. The clone is the
+configuration made only of a plain clone's keys, as git itself reads
+that configuration (`git config --file -` on the bytes, includes off,
+no other configuration), checked by section, subsection and key, so a
+remote or branch name may hold a dot. The clone is the
 parent of `GIT_COMMON_DIR`, which the runner sets. Without it, or when
 it does not resolve, maity runs no git; it never falls back to the
 current directory. The current directory must lie inside that clone,
@@ -1395,6 +1398,9 @@ says so through `GIT_COMMON_DIR`; the current directory could be any
 repository the agent made.
 
 **Rejected alternatives:**
+- maity's own reading of the configuration's lines: git reads a header
+  and a key on one line, where a line-by-line reading sees one key, so
+  the check and git disagreed on what the file sets.
 - The same check outside the runner: a person's own clone carries
   aliases, `pull.rebase` and other keys a plain clone has not, and
   `maity report` would refuse in ordinary use, where the person's own
