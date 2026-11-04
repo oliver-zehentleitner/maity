@@ -16877,7 +16877,7 @@ it off, and it is no part of the landing setting or of the frame of
 §16.7.5.
 
 ```
-[Maity icon] Maity 2026 · Found a bug? · Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity icon]
+[Maity icon] Maity 2026 · Found a bug? · Found a vulnerability? · Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity icon]
 ```
 
 **The parts**, in this order, separated by ` · `:
@@ -16888,6 +16888,10 @@ it off, and it is no part of the landing setting or of the frame of
   dashboard from the browser's clock when it draws it;
 - **Found a bug?**, a link to
   `https://github.com/oliver-zehentleitner/maity/issues`;
+- **Found a vulnerability?**, a link to
+  `https://github.com/oliver-zehentleitner/maity/blob/main/SECURITY.md`,
+  which says how to report one privately, never as a public issue (the
+  maintainer's addition of 2026-11-04);
 - **Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity
   icon]**. The name is plain text, no link. The heart is a symbol with
   the accessible name "love" (`role="img"`, `aria-label`). Each of the
@@ -16938,13 +16942,14 @@ icon is GitHub's mark from Octicons (MIT), the same path the dashboard
 already draws for a GitHub repository, in `currentColor`, so it follows
 the line's text colour on every page.
 
-**Words.** "Found a bug?", the sentence "Made with ♥ by … on … & …" and
-"love" are translated as the rest of the page is, in every language each
-catalogue has, under the same keys in the dashboard's
-(`web/i18n/<lang>.json`, with its metadata) and the hub's
+**Words.** "Found a bug?", "Found a vulnerability?", the sentence "Made
+with ♥ by … on … & …" and "love" are translated as the rest of the page
+is, in every language each catalogue has, under the same keys in the
+dashboard's (`web/i18n/<lang>.json`, with its metadata) and the hub's
 (`hub/src/maity_hub/words/<lang>.json`): `product.bug` ("Found a bug?"),
-`product.made_by` ("Made with {heart} by {name} on {github} & {maity}")
-and `product.love` ("love"). The word `on` and the `&` are part of the
+`product.security` ("Found a vulnerability?"), `product.made_by`
+("Made with {heart} by {name} on {github} & {maity}") and `product.love`
+("love"). The word `on` and the `&` are part of the
 translated sentence, so a language uses its natural preposition and may
 put the placeholders in its own order. `Maity`, `GitHub` and the name are
 never translated. The line is in the language of the page it ends.

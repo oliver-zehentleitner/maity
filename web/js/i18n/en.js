@@ -3421,6 +3421,7 @@ window.MAITY_I18N["en"] = {
   "product.bug": "Found a bug?",
   "product.love": "love",
   "product.made_by": "Made with {heart} by {name} on {github} & {maity}",
+  "product.security": "Found a vulnerability?",
   "profile_delete.busy": "Deleting…",
   "profile_delete.done": "The profile @{handle} was deleted.",
   "profile_delete.done_ended": "The profile @{handle} was deleted; its memberships ended.",

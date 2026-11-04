@@ -3322,6 +3322,7 @@ window.MAITY_I18N["ko"] = {
   "product.bug": "버그를 발견하셨나요?",
   "product.love": "사랑",
   "product.made_by": "{name}이(가) {github} & {maity}에서 {heart}을 담아 만들었습니다",
+  "product.security": "보안 취약점을 발견하셨나요?",
   "profile_delete.busy": "삭제하는 중…",
   "profile_delete.done": "프로필 @{handle}을(를) 삭제했어요.",
   "profile_delete.done_ended": "프로필 @{handle}을(를) 삭제했어요. 멤버십이 종료되었어요.",
