@@ -76,8 +76,8 @@ def test_each_worker_holds_its_share_of_the_pool() -> None:
 def test_workers_whose_share_of_the_pool_is_too_small_are_refused(
     workers: int, pool: int, refused: bool
 ) -> None:
-    """A request may hold one connection while a shared count takes a second (pmwg, #1276): a
-    worker with one would wait on itself until the pool's timeout."""
+    """The minimum share of two (pmwg, #1276). It dates from when a shared count took a second
+    connection from the request's pool; the counts have their own engine since #1320."""
     settings = replace(_settings(), workers=workers, db_pool_size=pool)
     reason = serving.refusal(settings) or ""
     assert (f"needs MAITY_DB_POOL_SIZE of at least {2 * workers}" in reason) is refused
@@ -321,12 +321,15 @@ def test_the_connection_budget_counts_every_pod_and_process() -> None:
     settings = _settings(
         MAITY_REPLICAS="3", MAITY_WORKERS="2", MAITY_DB_POOL_SIZE="10", MAITY_DB_MAX_OVERFLOW="5"
     )
-    # 3 pods and the surge pod; per pod 2 × (5 + 2 + 1 listener) + 1 health.
-    assert serving.connections(settings) == 4 * (2 * (5 + 2 + 1) + 1)
+    # 3 pods and the surge pod; per pod 2 × (5 + 2 + 2 shared + 1 listener) + 1 health.
+    assert serving.connections(settings) == 4 * (2 * (5 + 2 + 2 + 1) + 1)
     assert serving.budget_warning(settings, 100, 3) is None
     warning = serving.budget_warning(settings, 50, 3) or ""
-    assert "68 database connections" in warning and "takes 47" in warning
-    assert serving.connections(_settings()) == 16 + 16 + 1 + 1  # the single-server hub, no surge
+    assert "84 database connections" in warning and "takes 47" in warning
+    assert "overflow 2 + 2 shared + 1 listener" in warning  # the text adds up to the number
+    assert (
+        serving.connections(_settings()) == 16 + 16 + 2 + 1 + 1
+    )  # the single-server hub, no surge
 
 
 @pytest.mark.parametrize(
@@ -342,7 +345,7 @@ def test_the_budget_is_what_the_workers_hold(
         _settings(), replicas=replicas, workers=workers, db_pool_size=pool, db_max_overflow=overflow
     )
     share = serving.per_worker(settings)
-    held = workers * (share.db_pool_size + share.db_max_overflow + 1) + 1
+    held = workers * (share.db_pool_size + share.db_max_overflow + 2 + 1) + 1
     assert serving.connections(settings) == serving.pods_at_most(settings) * held
     assert serving.pods_at_most(settings) == replicas + (replicas > 1)
 

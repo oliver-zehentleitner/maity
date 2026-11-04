@@ -155,6 +155,30 @@ def authenticate(conn: Connection, facts: RequestFacts, *, renew_leases: bool = 
     raise unauthenticated()
 
 
+def precheck(conn: Connection, facts: RequestFacts) -> None:
+    """Refuse, from the headers alone, a caller whom no body could authenticate, so that a
+    large body is not read for it (§8.7). It runs the first checks of `authenticate`, in
+    the same order and with the same refusals; the rest (the signature, which covers the
+    body, a revoked credential, the CSRF token among them) wait for the full check after
+    the body. It renews nothing and spends no nonce."""
+    authorization = facts.headers.get("authorization")
+    if authorization:
+        scheme, _, value = authorization.partition(" ")
+        if scheme.lower() == "bearer":
+            _possessed(conn, facts, value.strip())
+            return
+        if scheme == "Maity-HMAC":
+            _signed_headers(conn, facts)
+            _credential(conn, value.strip())
+            return
+        raise unauthenticated("unsupported authorization scheme")
+    if SESSION_COOKIE not in facts.cookies:
+        raise unauthenticated()
+    _cookie_headers(facts)
+    if not has_live_session(conn, facts.cookies):
+        raise unauthenticated("the session has ended or expired")
+
+
 # --- humans ----------------------------------------------------------------------
 
 
@@ -164,10 +188,14 @@ def require_secure_transport(origin: Origin, allow_plain_http: bool) -> None:
         raise ApiError(403, "insecure_transport", "credentials and cookies travel over TLS only")
 
 
-def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
+def _cookie_headers(facts: RequestFacts) -> None:
     require_secure_transport(facts.origin, facts.allow_plain_http)
     if facts.headers.get("sec-fetch-site") == "cross-site":
         raise ApiError(403, "csrf_mismatch", "cross-site request with a session cookie")
+
+
+def _cookie(conn: Connection, facts: RequestFacts, renew: bool) -> Caller:
+    _cookie_headers(facts)
     now = clock.now()
     id_hash = session_id_hash(facts.cookies[SESSION_COOKIE])
     row = conn.execute(select(t.human_session).where(t.human_session.c.id_hash == id_hash)).first()
@@ -255,7 +283,8 @@ def session_expires_at(row: Any) -> datetime:
 # --- agents ------------------------------------------------------------------------
 
 
-def _bearer(conn: Connection, facts: RequestFacts, value: str, renew: bool) -> Caller:
+def _possessed(conn: Connection, facts: RequestFacts, value: str) -> Any:
+    """The credential a bearer value names, once its secret matches."""
     require_secure_transport(facts.origin, facts.allow_plain_http)
     presented = credentials.parse(value)
     if presented is None:
@@ -263,6 +292,11 @@ def _bearer(conn: Connection, facts: RequestFacts, value: str, renew: bool) -> C
     row = _credential(conn, presented.credential_id)
     if not credentials.secret_matches(presented.secret, row.verifier):
         raise unauthenticated()
+    return row
+
+
+def _bearer(conn: Connection, facts: RequestFacts, value: str, renew: bool) -> Caller:
+    row = _possessed(conn, facts, value)
     _refuse_revoked(row)  # only now: the caller proved possession (§1.3)
     if is_runner_credential(row.id):
         # Whatever any project's policy says, before any side effect (§15.1).
@@ -270,7 +304,8 @@ def _bearer(conn: Connection, facts: RequestFacts, value: str, renew: bool) -> C
     return _agent(conn, row, "bearer", renew, facts)
 
 
-def _signed(conn: Connection, facts: RequestFacts, credential_id: str, renew: bool) -> Caller:
+def _signed_headers(conn: Connection, facts: RequestFacts) -> tuple[str, str, str]:
+    """A signed call's checks that need no body: the headers' shape and the time window."""
     timestamp = facts.headers.get("maity-timestamp", "")
     nonce = facts.headers.get("maity-nonce", "")
     signature = facts.headers.get("maity-signature", "")
@@ -289,6 +324,11 @@ def _signed(conn: Connection, facts: RequestFacts, credential_id: str, renew: bo
             "Maity-Timestamp is outside the window",
             {"server_time": clock.rfc3339(now)},
         )
+    return timestamp, nonce, signature
+
+
+def _signed(conn: Connection, facts: RequestFacts, credential_id: str, renew: bool) -> Caller:
+    timestamp, nonce, signature = _signed_headers(conn, facts)
     row = _credential(conn, credential_id)
     canonical = credentials.canonical_string(
         facts.method,
