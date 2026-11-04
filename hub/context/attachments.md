@@ -361,7 +361,7 @@ operator wrote down.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the plan for card tsk-eejgfehwg4k0, approved by the team lead on 2026-11-04; its extension to every large body on card tsk-vc82k2khj74a, asked for by the team lead the same day; `docs/api.md` §1.7, §8.7 and §2; implementation sessions, 2026-11-04
-**Revisit when:** a call that takes no caller is given a body larger than the 64 KiB cap, the signed scheme gains a part that covers no body, or uploads are streamed to the store instead of read whole
+**Revisit when:** a call that takes no caller, other than the forge webhook, is given a body larger than the 64 KiB cap, the signed scheme gains a part that covers no body, or uploads are streamed to the store instead of read whole
 
 The middleware reads a body whole before any route runs, because the
 credential filter of §2.2 scans it. For every call whose body may be larger
@@ -387,10 +387,13 @@ the join is served and nothing takes a caller, every body is held to the 64 KiB
 default instead: a larger one is refused with `payload_too_large` unread, and the
 rest is answered there as before.
 
-**Reason:** the hub reads a large body only for a caller who can authenticate
-(on the join host, never),
-and each refusal is the one the full check gives. Every one of these calls
-takes a caller, so the pre-check refuses no one the route would accept. The
+**Reason:** on the routes that take a caller, the hub reads a large body only
+for a caller who can authenticate (on the join host, never), and each refusal
+is the one the full check gives. Every one of these calls takes a caller, so
+the pre-check refuses no one the route would accept. The forge webhook is the
+one large body without a caller: the middleware hands it to its own handler
+before any of this, which holds it to its own limit and checks the signature
+(§17.4), so it is outside the cap table and the pre-check. The
 rule follows the cap, not a list of routes, so a call later given a larger cap
 gets the pre-check with it. One answer is new, and
 better: a `maity_session` cookie that is not ASCII gets `401 unauthenticated`

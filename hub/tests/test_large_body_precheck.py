@@ -1,6 +1,7 @@
-"""A body above the default cap is read only for a caller the headers may authenticate (§1.7):
-the attachment upload (test_attachments.py), and here the images and the landing, legal and
-sign-in pages' settings and their previews."""
+"""On a route that takes a caller, a body above the default cap is read only for a caller the
+headers may authenticate (§1.7): the attachment upload (test_attachments.py), and here the images
+and the landing, legal and sign-in pages' settings and their previews. The forge webhook takes no
+caller and is handled before the cap table, with its own limit (§17.4, test_forge_webhook.py)."""
 
 from __future__ import annotations
 
@@ -88,10 +89,11 @@ def test_every_large_body_route_is_one_the_pre_check_covers() -> None:
     assert middleware._body_cap({"method": "POST", "path": "/api/v1/me"})[0] == middleware.BODY_CAP
 
 
-def test_large_names_every_route_of_the_app_with_a_large_body(
+def test_large_names_every_route_of_the_cap_table_with_a_large_body(
     settings: Settings, migrated: Engine
 ) -> None:
-    # Walked from the router, each parameter filled with a name: the list above is complete.
+    # Walked from the router, each parameter filled with a name: the list above holds every route
+    # the cap table gives a large body. The forge webhook is not in that table (§17.4).
     large = set()
     for route in iter_route_contexts(list(create_app(settings, migrated).routes)):
         for method in route.methods or ():
