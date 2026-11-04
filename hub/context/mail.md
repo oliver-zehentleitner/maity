@@ -253,7 +253,7 @@ password sees an error that depends on an account (a taken handle).
 
 **Id:** f63430e9-d5ca-430e-afef-d44ec980bd35
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** the card tsk-7sw2a2bd5srp from the coordinator, 2026-10-31: the maintainer, testing the registration live, found the page bare HTML (no stylesheet) and asked for the legal pages' shell; docs/api.md §2.7.1 and §16.7.1. Why not the app and not the landing assets is this entry's reading
 **Revisit when:** the dashboard takes over the form, or the legal pages move to the landing page's stylesheet and fonts

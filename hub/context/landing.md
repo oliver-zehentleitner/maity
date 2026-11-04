@@ -179,6 +179,58 @@ value, since a row written by an older version or by hand is still shown to the 
 - Giving the landing page the dashboard's `default-src 'self'` and its stylesheet: it would allow
   the page to load files and make the policy depend on what the dashboard ships.
 
+## The Markdown renderer and the language choice do bounded work per input: a link's runs are capped and its opening spaces taken possessively, quotes nest 8 deep, `Accept-Language` is read for 1024 characters and 20 parts
+
+**Id:** 94d7a94f-40a8-46ea-b271-39e6d8f1ed9f
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-qzvb0c0abm3a (hardening asked for by the maintainer, 2026-11-04: every pattern and parser on member text has bounded work per input); the limits 8, 2048, 20 and 35 agreed by the lead on the card's plan (2026-11-04), 1024 and the link's opening spaces from the card's first review (2026-11-04); `render.py` (`_INLINE`, `_heading`, `QUOTE_DEPTH`, `accept_parts`)
+**Revisit when:** the renderer gets a construct with a pattern of its own, a member text may grow beyond its current limit (a card's 16 KiB, a note's 4 KiB), or the hub gains a way to stop a render that runs too long
+
+The renderer above runs on members' words too: the text of a public project, a card's body and its
+notes (§16.9), rendered in the request that writes them and at start-up. So each step's work grows
+with the text's length and never with the ways of splitting it:
+- In `_INLINE` a failed try gives characters back only to runs that cannot take them: the title
+  starts with a space or a tab, which the target cannot hold, and neither holds the closing `)`;
+  the spaces before the target, which the title's own leading space could also take, are taken
+  whole (a possessive `*+`). A link's target and title hold no `[`, stay on their line and are at
+  most 2048 characters each, so what one `[` reads ends at the next. Since the title stays on its
+  line, it follows a space or a tab, not any `\s`, which holds a newline: a title after a no-break
+  space or a form feed, a link before, is now brackets as text and a bare link, an intended
+  restriction (§16.7). Before the spaces were taken whole, they could be split between the opening
+  and the title in every way, and a run of 64 KiB took seconds. On lines whose white space inside
+  the parentheses is spaces and tabs, the output is the old pattern's, checked against it as an
+  oracle on short lines. With a no-break space, a form feed or a vertical tab after the opening
+  spaces, the old pattern gave a space back to the title, took an empty target and showed only the
+  link's text, so `[a]( x\u00a0y)` lost its words; now its brackets are text.
+- A heading's marks are a pattern; its text, without the closing `#` run and the spaces around
+  it, is cut by string operations. The output is the old pattern's, checked against it as an
+  oracle on short lines.
+- Quotes nest at most 8 deep, as in the dashboard (`web/js/markdown.js`), which renders the same
+  cards and notes: the lines of a ninth quote are a paragraph in the eighth, without their own
+  `>`, and any deeper `>` stays text. The recursion is bounded with it.
+- `accept_parts` reads the parts of `Accept-Language` wholly within its first 1024 characters,
+  at most 20, for the public pages and the registration mail alike; a tag longer than the 35
+  characters BCP 47 asks every implementation to support matches nothing. Nothing past the
+  limit is copied, split or converted: a split with a limit still copies the rest, and a q-value
+  of any length is converted.
+
+A test renders the longest stored text of each shape in under a second.
+
+**Reason:** CPython holds the interpreter lock while a pattern runs, so one slow render stops
+every request of the process, and a render in a writing transaction or at start-up holds the
+write or the start with it. Bounding the work where it is done is the only measure that covers all
+callers at once.
+
+**Rejected alternatives:**
+- A time limit on a render: a running pattern cannot be interrupted from another thread, and the
+  process has no per-request signal.
+- The `regex` package or RE2 with a deadline or linear matching: a new dependency for a handful
+  of patterns that can be written linearly.
+- Shortening members' texts: the limits on cards and notes are the contract's, and a shorter
+  text with the same patterns is only slower to reach.
+
 ## The landing page's look is the hub's own files, served from the package under their digest; the page reads without them
 
 **Id:** 7c22ec9b-0c71-4079-998e-a0900d395ac1

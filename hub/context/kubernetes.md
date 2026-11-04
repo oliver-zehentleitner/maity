@@ -102,11 +102,12 @@ loop answers, which a TCP check would not.
 The chart's Ingress is a plain `networking.k8s.io/v1` object that any
 controller serves through `ingress.className`. Its default annotations
 carry the long-poll settings for ingress-nginx: 75 s read and send
-timeouts, buffering off. They merge with the operator's annotations and can
+timeouts, buffering off; and, since a later change (5eb8e035, this file),
+the body size an attachment upload needs. They merge with the operator's annotations and can
 each be set to null. The chart README says that upstream ingress-nginx has
 been retired since March 2026, with no further releases or security fixes,
 and that a new cluster should use a maintained controller with its own
-equivalents of the three settings.
+equivalents of these settings.
 
 **Reason:** the hub needs only what every Ingress controller offers, plus
 two properties of the long-poll: at least 55 s per request, and an
@@ -345,3 +346,46 @@ when the hub starts, after the migration, not before it, and the hub is down unt
   the node's disk is the limit, so the init container checks the room before it writes.
 - Backing up only when the volume changed: a cheap saving on a small volume, and a night without a tar breaks the "same time stamp" rule.
 
+## The ingress lets a 10 MiB upload through: 11m for ingress-nginx, a buffered route of its own on Traefik
+
+**Id:** 5eb8e035-d2f3-4eed-872b-7e21bd473792
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the plan for card tsk-eejgfehwg4k0, approved by the team lead on 2026-11-04; ingress-nginx's documented default `proxy-body-size` of 1m and Traefik's documented buffering middleware (not reproduced on a cluster); `docs/api.md` §8.7; implementation session, 2026-11-04
+**Revisit when:** the hub's attachment cap changes, Traefik can buffer a request without its response (a `disableResponseBuffer` option in a release k3s ships), or the k3s setup moves off Traefik
+**See:** kubernetes.md#the-ingress-is-a-plain-networkingk8siov1-ingress-ingress-nginx-annotations-are-only-defaults — adc362f5-08ef-41e0-ab34-05f07cd5fa26 — as of 2026-11-04
+
+The chart's default annotations gain
+`nginx.ingress.kubernetes.io/proxy-body-size: "11m"` for the whole host, and
+`deploy/helm/check.sh` checks that the value stays above the hub's
+`ATTACHMENT_CAP`. The k3s setup sets that key to null and applies
+`deploy/k3s-single/uploads.yaml`: a Traefik `IngressRoute` that matches only
+`POST …/attachments`, with a `buffering` middleware of at most 11 MiB.
+
+**Reason:** the hub takes a 10 MiB attachment (§8.7), but ingress-nginx
+refuses a body over 1 MiB by default, so an upload between the two caps
+fails at the ingress. 11 MiB leaves room above the hub's cap: a file just
+over it, up to 11 MiB, gets the hub's own `payload_too_large`, and a larger
+one the ingress's own 413. The hub caps every other body itself, at 1 MiB at
+most: 64 KiB by default, 512 KiB for the landing, legal, sign-in and sign-up
+pages' settings and their previews, 1 MiB for an image upload (logo, banner,
+avatar) and for a forge webhook delivery. A host-wide limit therefore needs
+no finer split. Traefik has no body limit by default, so on k3s an upload
+would pass without the route too. The route is there to bound the upload at
+the edge as ingress-nginx's value does, and to have Traefik take the whole
+body, on disk past 1 MiB, before it passes the request on: a slow upload
+then waits at Traefik, and reaches the hub whole and at once.
+
+**Rejected alternatives:**
+- **One buffering middleware for the whole host on Traefik:** Traefik's
+  buffering holds back the response as well, and the event long-poll's answer
+  must reach the client unbuffered (§8); the option to buffer only the
+  request is not in a release k3s ships.
+- **A separate Ingress with its own `proxy-body-size` for the upload path in
+  the chart:** an Ingress path cannot match the method or the
+  `{owner}/{slug}` segments without regex annotations, and the hub already
+  caps the other bodies, so a second Ingress object adds nothing over one
+  host-wide value.
+- **A 2m host-wide limit plus 11m for the upload path:** the same second
+  object for limits the hub already enforces itself.

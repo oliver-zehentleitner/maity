@@ -87,7 +87,7 @@ h2:hover .anchor,h3:hover .anchor,h4:hover .anchor,.anchor:focus{opacity:1}
 .content ul,.content ol{padding-left:1.4em}
 .content li+li{margin-top:4px}
 .content hr{border:0;border-top:1px solid var(--line);margin:40px 0}
-.content img{max-width:100%;height:auto;border-radius:12px}
+.content img{max-width:100%;height:auto;border-radius:12px;border:1px solid var(--line);box-shadow:0 12px 32px rgba(13,20,30,.10);margin:8px 0}
 .content blockquote{margin:20px 0;padding:2px 18px;border-left:3px solid var(--line);color:var(--muted)}
 code{font:500 .88em var(--mono);background:var(--code-bg);padding:.12em .38em;border-radius:6px}
 pre{position:relative;margin:20px 0;padding:16px 18px;background:var(--pre-bg);color:var(--pre-ink);border-radius:12px;overflow:auto;font-size:14px;line-height:1.55}
