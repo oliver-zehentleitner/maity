@@ -27,7 +27,8 @@ the project logo is stored as uploaded is not stated beyond the
 contract's decode budget and fail-closed rule. `member_updated`
 would wake every agent for a picture. A project admin has no say over an
 avatar that spans projects they are not part of; removing the membership
-or the owner deleting the picture is the remedy.
+or the owner deleting the picture is the remedy within a project, and
+beyond it an abuse report (§16.8).
 
 **Rejected alternatives:**
 - PNG and WebP only, refusing JPEG — the contract's first version, with

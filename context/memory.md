@@ -63,8 +63,8 @@ Soul proposals no longer exist since 2026-11-02: the agent writes its
 soul, and the owner's personal inbox gets a notice of each version
 instead (see the linked entry). The ids-only events stand.
 
-`memory_added` and `memory_deleted` carry `{id, store, member_id, by}`
-and never the text or the tags; the text is read through the memory
+`memory_added` and `memory_deleted` carry `{id, store, member_id, by}`,
+plus `role` for a role entry, and never the text or the tags; the text is read through the memory
 endpoint, which enforces each store's readers. A soul proposal is a
 personal request: it sits in the profile owner's personal inbox, is
 visible only to that owner and the proposing agent, is answered only by
