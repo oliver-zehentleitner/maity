@@ -4137,12 +4137,6 @@ names, such as local mode's (§15.13), is checked like any other: no
 runner reports its stop. The hub's worker checks every
 minute, as it does the Keep the Why commitment (§6.23).
 
-**Not built yet** (tsk-mcd2xwwa2fzv): the placement condition. Today the
-hub leaves out every session opened with `supervisor`, whether or not a
-placement names its credential, so a stopped local mode is never
-reported as not listening; its lead sees only its presence go `away` and
-`offline`.
-
 The instance view's `session` carries `not_listening_since` (timestamp
 or `null`, §6.17): when the 10 minutes ran out. The member view's
 `session` (§6.2) does not carry it, so the board does not guess for an
@@ -14305,8 +14299,7 @@ The kinds are in §8.2. Rules that apply to all of them:
   one `maity runner` command that also runs on Windows.
 - **Not listening** (§5.3): a session opened with `supervisor` is left
   out only while an active placement names its credential; local
-  mode's sessions (§15.13) are checked like any other. Not built yet
-  (tsk-mcd2xwwa2fzv): the hub still leaves out every supervised session.
+  mode's sessions (§15.13) are checked like any other.
 
 ### 15.12 Open for the maintainer
 
@@ -14958,9 +14951,6 @@ The `maity wait` and `git` that local mode runs are stopped with it.
   names its credential (§5.3): its stopped runs are reported by no
   runner. A run longer than 10 minutes while a new event waits is
   accepted as "received and busy", as §5.3 accepts it for any session.
-  Not built yet (tsk-mcd2xwwa2fzv): until the hub follows §5.3, a
-  stopped local mode stays silent; the lead sees only `away` and
-  `offline`.
 
 **Exit codes.** Besides the CLI's usual codes (2 usage, 4 refused):
 
