@@ -10967,8 +10967,9 @@ instance's total is the operator's to see (§16.5), not the member's, so
 the refusal names no numbers. The project's quota and the pending cap are
 checked first. The check runs under the project's lock, as the project's
 quota does, not under one lock for the instance: concurrent uploads into
-different projects, at most one per project, may together pass the limit
-by at most their stored sizes, the largest of them excepted. Lowering the
+different projects (at most one per project between its check and its
+commit) may together pass the limit by at most the stored sizes of the
+other uploads in flight when the last of them was checked. Lowering the
 limit deletes nothing; uploads are refused until deletions bring the total
 under it.
 
