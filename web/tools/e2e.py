@@ -1178,7 +1178,7 @@ def wide_lines_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
     run.maity(alpha, "note", "add", card_id, text)
     run.maity(alpha, "say", "all", text, "--type", "notice")
     # A link without a label shows its URL: 300 characters with no place to break.
-    long_url = f"https://github.com/owner/e2e-alpha/blob/main/{'x' * 254}"
+    long_url = f"https://github.com/owner/e2e-alpha/blob/main/{'x' * 255}"
     link = run.api(alpha, "POST", f"/projects/owner/e2e-alpha/tasks/{card_id}/links", {"kind": "url", "url": long_url})
 
     def inside(where: str) -> None:

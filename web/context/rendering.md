@@ -1157,7 +1157,7 @@ code block; the note's long links did too, since written text had no
 `overflow-wrap` of its own outside the inbox's rows. In the project's
 messages, with no panel around them, those links made the page 579 px
 wide in a 390 px window. A card link of 300 characters made the card
-panel 2154 px wide inside its 510, and a long title in the family's
+panel 2162 px wide inside its 510, and a long title in the family's
 select 394 inside 364 on a phone. A column of
 `minmax(0, 1fr)` gives the rows the list's width, whatever they hold. The
 chat was not affected: its messages already have `min-width: 0`.
