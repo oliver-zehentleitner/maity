@@ -951,10 +951,12 @@ def scenario(run: Run, page: Page) -> None:
         free.press("Escape")
         expect(picker).to_be_hidden()
         # The one field stands above the buttons; a reply takes its text along (§7).
-        # Talk is offered beside the replies (the owner's agent asked), Send is not.
+        # Talk beside the replies (the owner's agent asked), and Send for the words alone: disabled
+        # while the field is empty.
         current = page.locator("li.entry.current")
-        expect(current.get_by_role("button", name="Talk", exact=True)).to_be_visible()
-        expect(current.get_by_role("button", name="Send", exact=True)).to_have_count(0)
+        expect(current.get_by_role("button", name="Talk", exact=True)).to_be_enabled()
+        free.fill("")
+        expect(current.get_by_role("button", name="Send", exact=True)).to_be_disabled()
         free.fill("Ship it, with this note.")
         current.get_by_role("button", name="Ship it", exact=True).click()
         expect_inbox_empty(page)
@@ -1065,6 +1067,7 @@ def scenario(run: Run, page: Page) -> None:
     no_problems(run, "all projects")
 
     id_links_step(run, page, alpha, task["id"])
+    send_talk_step(run, page, alpha)
     wide_lines_step(run, page, alpha, task["id"])
     chat_pause_state(run, page, alpha, agent_id)
     group_chat_form_step(run, page)
@@ -1159,6 +1162,69 @@ def scenario(run: Run, page: Page) -> None:
     join_expiry_step(run, page)
     change_password(run, page)
     picture_step(run, page)
+
+
+def send_talk_step(run: Run, page: Page, alpha: Path) -> None:
+    """Send and Talk on every request one can answer (docs/api.md §7, tsk-nx6hm8qjzm3z): on a decision
+    with options Send takes the words alone, Ctrl+Enter the same, and is disabled while the field is
+    empty; on a consent it stays disabled and says why, the words go only with a reply. Talk for the
+    owner's own agent. Wide and light, narrow and dark."""
+    run.step("inbox: Send beside the options takes the words alone; a consent's Send says why it cannot")
+    try:
+        for width, height, scheme in ((1280, 900, "light"), (390, 844, "dark")):
+            page.set_viewport_size({"width": width, "height": height})
+            page.emulate_media(color_scheme=scheme)
+            where = f"{width} px {scheme}"
+            out = run.maity(
+                alpha, "ask", f"Which name at {width} px?\nTwo to choose from, or your own.",
+                "--to", "human", "--class", "decision", "--option", "Maity", "--option", "Hub",
+            )
+            request_id = re.search(r"req-[0-9a-z]+", out).group(0)
+            page.goto(f"{run.base}/owner/e2e-alpha/inbox/{request_id}")
+            current = page.locator("li.entry.current")
+            expect(current).to_contain_text(f"Which name at {width} px?")
+            send = current.get_by_role("button", name="Send", exact=True)
+            expect(send).to_be_disabled()
+            expect(current.get_by_role("button", name="Talk", exact=True)).to_be_enabled()
+            expect(current.locator(".reply-hint")).to_have_count(0)
+            free = current.locator(".free-text textarea")
+            free.fill("Neither: maity-hub.")
+            expect(send).to_be_enabled()
+            run.shot(page, f"send-beside-options-{width}-{scheme}")
+            free.press("Control+Enter")
+            expect(page.locator(f"li.entry[data-request='{request_id}']")).to_have_count(0)
+            got = run.api(alpha, "GET", f"/projects/owner/e2e-alpha/requests/{request_id}")
+            answer = got.get("answer") or {}
+            assert answer.get("text") == "Neither: maity-hub." and not answer.get("reply_id") and not answer.get("talk"), (
+                f"{where}: Ctrl+Enter sends the words alone {answer}"
+            )
+
+        # A consent: the words alone would read as No (§15.6), so Send stays disabled and says why.
+        out = run.maity(alpha, "ask", "May the alpha agent tag 0.2.0?", "--to", "human", "--class", "consent")
+        request_id = re.search(r"req-[0-9a-z]+", out).group(0)
+        page.goto(f"{run.base}/owner/e2e-alpha/inbox/{request_id}")
+        current = page.locator("li.entry.current")
+        expect(current).to_contain_text("May the alpha agent tag 0.2.0?")
+        send = current.get_by_role("button", name="Send", exact=True)
+        hint = current.locator(".reply-hint")
+        expect(hint).to_contain_text("Choose one of the answers")
+        expect(send).to_have_attribute("aria-describedby", hint.get_attribute("id") or "")
+        free = current.locator(".free-text textarea")
+        free.fill("Tag it after the notes.")
+        expect(send).to_be_disabled()
+        free.press("Control+Enter")
+        expect(page.locator(f"li.entry[data-request='{request_id}']")).to_have_count(1)
+        run.shot(page, "send-consent-disabled")
+        run.a11y(page, "inbox, a consent with Send disabled and its reason")
+        page.locator("li.entry.current").get_by_role("button", name="go", exact=True).click()
+        expect_inbox_empty(page)
+        got = run.api(alpha, "GET", f"/projects/owner/e2e-alpha/requests/{request_id}")
+        answer = got.get("answer") or {}
+        assert answer.get("reply_id") == "go" and answer.get("text") == "Tag it after the notes.", answer
+    finally:
+        page.set_viewport_size({"width": 1280, "height": 900})
+        page.emulate_media(color_scheme="light")
+    no_problems(run, "send and talk")
 
 
 def wide_lines_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
