@@ -126,8 +126,8 @@ window.Maity = window.Maity || {};
 
   // A language of the footer: this page's own address with ?lang=<tag>, its query kept (a sign-in's
   // next). A path, never a bare query, which under the shell's <base href="/assets/"> would lead into
-  // /assets/ (routing.md). The dashboard reads ?lang= only when it loads, so a click chooses the
-  // language itself (as the page's own picker does) and draws the page again at that address.
+  // /assets/ (routing.md). A click chooses the language itself (as the page's own picker does, which
+  // writes it into an address's ?lang=, js/i18n.js) and draws the page again at that address.
   function language(one) {
     const at = M.route.current();
     const query = new URLSearchParams(at.query);

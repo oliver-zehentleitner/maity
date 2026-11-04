@@ -657,6 +657,8 @@ the session themselves. A catalog per language keeps nine languages off every pa
   the hub does not see it, so the dashboard chooses and passes `lang` to the page texts (§16.7.4).
 - Reading `?lang=` only once, when the dashboard loads: an address with `?lang=` would then say
   another language than the page, and a reload would still take the choice back.
+- Writing `?lang=` into every address on a choice, also one without it: the choice is already kept in
+  the browser, and an address copied from the page would then fix the language for whoever opens it.
 - `M.route.go` without `quiet`: it draws the view again while the picker's page draws itself,
   so what was typed into the form so far would be lost.
 
