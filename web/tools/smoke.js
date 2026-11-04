@@ -645,6 +645,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity-old" ? nsGet("/projects/maintainer/maity") : nsGet(p));
   await go("#/maintainer/maity-old/members"); await nsSettle();
   expect(win.location.hash === "#/maintainer/maity/members", "namespace: an alias leads to the current full name");
+  // The swarm tab too: an old address has no public page, so it is no non-member's overview.
+  await go("#/maintainer/maity-old/overview/swarm"); await nsSettle();
+  expect(win.location.hash === "#/maintainer/maity/overview/swarm", "namespace: an alias of the swarm tab leads to the current full name, the tab kept " + win.location.hash);
   win.Maity.api.get = nsGet;
   // A dashboard word is never a namespace.
   await go("#/runners/maity"); await nsSettle();
@@ -9800,6 +9803,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       notes: [{ id: "nte-1", author: "member", body: "A *note* <img src=y onerror=alert(2)>", state: "open", created_at: "2026-11-02T08:00:00Z", redacted: false,
           edited: { by: "agent", at: "2026-11-02T08:30:00Z", reason: "a <b>typo</b>" } },
         { id: "nte-2", author: "agent", body: null, state: "dismissed", created_at: "2026-11-02T09:00:00Z", redacted: true, edited: null }] } },
+    "/public/pages/stranger/agents/overview": { path: "/stranger/agents/overview", kind: "agent", data: { name: "Overview", handle: "overview", owner: { name: "Sam", handle: "sam", page: "/sam" }, projects: [{ name: "Tool", full_name: "stranger/tool" }], statistics: { totals: { cards_done: 1, prs_merged: null } } } },
     "/public/pages/stranger/tool/board": { path: "/stranger/tool/board", kind: "board", data: { columns: [{ status: "open", cards: [{ id: "tsk-1", title: "A <b>card</b>", label: "bug", holder: "member" }] }] } },
     "/public/pages/stranger/tool": { path: "/stranger/tool", kind: "project", data: { name: "Tool", full_name: "stranger/tool", about: null, state: "active", repository_url: "javascript:alert(1)", links: [], people: [{ name: "Sam", handle: "sam", page: "/sam" }], agents: [], statistics: { totals: { cards_done: 3, prs_merged: null } },
       ticker: [{ type: "merge", text: "#1 <b>merged</b>", url: "https://github.com/s/t/pull/1", at: "2026-11-02T08:00:00Z" }, { type: "decision", text: "Decided: tsk-1", url: null, at: "2026-11-02T07:00:00Z" }],
@@ -9856,6 +9860,38 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!viAll.some((p) => p.startsWith("/projects/stranger")), "visitor: a stranger's public project asks no member route");
   expect(text(header).length && !header.querySelector(".visitor-sign-in"), "visitor: signed in, the reader's own header stays, with no sign-in link");
   expect(win.Maity.api.isPublicPath("/public/pages/stranger/tool"), "visitor: the read works after the session ended here");
+  // The member Overview's own address (§6.20's badge links there) shows the public overview at that
+  // address, its Overview tab current (§16.9, the maintainer's decision of 2026-11-01); its swarm tab is
+  // the members' alone, a non-member is taken to the overview.
+  const viOverview = (label) => {
+    const tab = viView() && viView().querySelectorAll("a.view-tab").find((a) => a.getAttribute("aria-current") === "page");
+    expect(viView() && viView().getAttribute("data-kind") === "project" && viAsked[viAsked.length - 1] === "/public/pages/stranger/tool"
+      && tab && (tab.getAttribute("href") || "").replace(/^#/, "") === "/stranger/tool" && !text(main).includes("You are not a member"),
+      label + " " + JSON.stringify([viView() && viView().getAttribute("data-kind"), viAsked.slice(-2), tab && tab.getAttribute("href")]));
+  };
+  for (const at of ["overview", "overview/project"]) {
+    await go("#/stranger/tool/" + at); for (let k = 0; k < 4; k++) await tick();
+    viOverview("visitor: signed in, /" + at + " of a public project one is no member of is its public overview");
+    expect(win.Maity.route.current().path === "/stranger/tool/" + at, "visitor: signed in, /" + at + " keeps its address");
+  }
+  await go("#/stranger/tool/overview/swarm"); for (let k = 0; k < 4; k++) await tick();
+  viOverview("visitor: signed in, a non-member's /overview/swarm shows the public overview");
+  expect(win.Maity.route.current().path === "/stranger/tool/overview", "visitor: signed in, a non-member's /overview/swarm is replaced by /overview");
+  // An agent may be named `overview`: its page is its own, not a project's overview.
+  await go("#/stranger/agents/overview"); for (let k = 0; k < 4; k++) await tick();
+  expect(viView() && viView().getAttribute("data-kind") === "agent" && viAsked[viAsked.length - 1] === "/public/pages/stranger/agents/overview",
+    "visitor: /<owner>/agents/overview is the page of the agent named so " + JSON.stringify([viView() && viView().getAttribute("data-kind"), viAsked.slice(-1)]));
+  const viSoGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/auth/session" || p === "/me" ? Promise.reject(new win.Maity.api.ApiError("signed out", 401, p, "unauthenticated")) : viSoGet(p));
+  await go("#/stranger/tool/overview"); for (let k = 0; k < 4; k++) await tick();
+  viOverview("visitor: without a session, /overview of a public project is its public overview, not the login");
+  expect(header.querySelector(".visitor-sign-in") && !byId("login-handle"), "visitor: without a session, /overview has the way to the sign-in in its header");
+  await go("#/stranger/agents/overview"); for (let k = 0; k < 4; k++) await tick();
+  expect(viView() && viView().getAttribute("data-kind") === "agent" && viAsked[viAsked.length - 1] === "/public/pages/stranger/agents/overview",
+    "visitor: without a session, /<owner>/agents/overview is the page of the agent named so " + JSON.stringify([viView() && viView().getAttribute("data-kind"), viAsked.slice(-1)]));
+  await go("#/stranger/tool/overview/swarm"); for (let k = 0; k < 4; k++) await tick();
+  expect(!viView() && byId("login-handle"), "visitor: without a session, /overview/swarm stays the login (members only, it goes on there after the sign-in)");
+  win.Maity.api.get = viSoGet;
   await go("#/stranger/none"); for (let k = 0; k < 4; k++) await tick();
   expect(!viView() && text(main).includes("You are not a member"), "visitor: no public page: a non-member's error stays");
   win.Maity.api.get = viGet;

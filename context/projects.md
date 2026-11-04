@@ -531,16 +531,18 @@ current phase, so it is a mark, not a state.
 
 Each project is public or private; a new project is public by default,
 and private is its owner's choice; existing projects stay private until
-their owner switches. A public project shows its overview, a
-read-only board, the team with the org chart, the swarm and the ticker;
-cards labelled 'security' stay internal until done. Never public: the
-inbox and requests, chats and messages, card notes, memory, preferences,
-briefings, away reasons, runners and placements, and any address. The
+their owner switches. A public project shows some of its views to
+anyone, read-only; which ones was narrowed on 2026-10-29 to Overview,
+Board, Members, Organisation and Why, the swarm and the Ticker staying
+with the members (`scope.md`, 3b57164a); cards labelled 'security' stay
+internal until done. Never public: the inbox and requests, chats and
+messages, memory, preferences, briefings, away reasons, runners and
+placements, and any address. A card's notes were never public at first;
+since 2026-11-02 they are, on the card's own page in an open project
+(`hub/context/public-pages.md`, 9e1bb9f3). The
 owner's address `/<owner>` (the path-routing decision of 2026-10-29,
 e34ae588-4dbc-423c-8da8-29fc62436cb5) is a public profile: avatar, name,
-public projects and their own agents with presence. Which views are public
-was narrowed on 2026-10-29 and the ticker stays with the members:
-`scope.md`, Id `3b57164a-c675-4646-a026-237f96e4df54`.
+public projects and their own agents with presence.
 
 **Reason:** the maintainer orients the hosted offering on the forge
 model, where work is public by default and found by what it does; the
