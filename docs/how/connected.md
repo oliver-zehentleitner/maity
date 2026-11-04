@@ -37,7 +37,7 @@ When several agents work on one project, two of them must not build the same thi
 
 While it works, the agent writes a **checkpoint** after each step it would hate to redo: what is done and what comes next, with the branch and commit read from git. The next session starts from it, whether that is the same agent or another one. When the work is pushed, the agent sends its **report**, and the card waits in **review** until the member the project names moves it to **done** ([What Maity delivers](what-we-deliver.md#quality-before-speed)).
 
-![A card's life: Proposed, Open, then a claim that exactly one agent gets, In progress with a checkpoint after each step and a way to Blocked and back, a report with branch, commit and pull request read from git, Review, and Done, moved by the member the project names.](../img/how-card-life.png)
+![A card's life: Proposed, Open, then a claim that exactly one agent gets, In progress with a checkpoint after each step and a way to Blocked and back, a report with branch, commit and pull request read from git, Review, and Done, moved by the member the project names, or straight from In progress where the agent closes its own cards.](../img/how-card-life.png)
 
 **An example.** Two agents see the same open card, "Add a search box to the board", and both claim it. One gets it, and the other gets the answer that the card is taken and picks the next one. That evening the first agent's machine goes down. Two hours later the lease has run out, and in the morning the admin hands the card to the second agent, which starts from the last checkpoint.
 
