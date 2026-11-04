@@ -196,3 +196,49 @@ lines (reproduced as well); sorting only makes that rare.
 - Keep the grouped form — every parallel entry conflicts at the end of the set.
 - Move the entries to a data file next to the test — the same conflicts in another file, and the
   reasons leave the code that checks them.
+
+## Pytest keeps a test's temporary directory only when the test failed
+
+**Id:** a986378a-5387-4cc0-88ef-88e8b7cd1bb3
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-eyw44pwjx03d; CI run 41875042289, job hub-sqlite 126732121254, 2026-11-04
+**Verification:** corroborated — that job's log, the measurement step after `make check`
+**Revisit when:** the suite stops copying a database file into `tmp_path`, or pytest changes what `failed` retains
+**See:** testing.md#the-suite-runs-in-parallel-one-database-per-worker-and-the-wheel-job-runs-a-marked-subset — 081792e2-758e-4202-84f7-c2957459665e — as of 2026-11-04
+
+`hub/pyproject.toml` sets `tmp_path_retention_policy = "failed"` (pytest 9.1.1; the
+option exists since pytest 7.3, whose default is `all`). A passing test's
+`tmp_path` is removed, and a green session removes its basetemp. The directory
+stays only when the test itself fails. A failure in fixture setup or teardown,
+such as copying the template, loses it. `-o tmp_path_retention_policy=all`
+keeps everything for local debugging.
+
+A green `hub-sqlite` run on a GitHub-hosted runner left the copies in place.
+Counting rule, from that job's own log after `make check`: `du -sh` of
+`/tmp/pytest-of-runner`; `find` of `hub.db` under it, and the same find limited
+to a `template` path; `ls -lh` of one template file; `df -h /tmp`. Job
+126732121254 (run 41875042289, 4 xdist workers, 5732 passed and 107 skipped)
+reported the directory at 6.4G, 4642 `hub.db` files of which 4 are the workers'
+templates and the rest copies of that 1.4M file (`du -ch` of every `hub.db` was
+6.3G). The runner disk was 145G with 81G free afterwards. The `hub-sqlite` job
+still prints `du -sh /tmp/pytest-of-*` after the suite (the command tolerates
+no match) so that size stays visible.
+
+**Reason:** `failed` drops the passing tests' copies, about 6.4G on that run,
+and keeps the directory only when the test itself fails. A failure in fixture
+setup or teardown, such as copying the template, loses it. The earlier
+`OSError: [Errno 122] Disk quota exceeded` while copying the template, and the
+following `sqlite3.OperationalError: disk I/O error`, on pull requests #1324
+(run 41819769733 attempt 1, job hub-sqlite 126539773241) and #1320
+(run 41839052855 attempt 1, job hub-sqlite 126605831245) were not reproduced on this run.
+The measurement does not show that those failures were this retention, and this
+decision does not claim to fix them.
+
+**Rejected alternative:** `tmp_path_retention_policy = "none"`. A red run then has no
+directory left to debug from.
+
+**Rejected alternative:** leave the default `all` and delete `/tmp/pytest-of-*`
+from the workflow only. The copies still exist for the whole suite, which is
+the disk the measurement found, and a local run keeps them too.

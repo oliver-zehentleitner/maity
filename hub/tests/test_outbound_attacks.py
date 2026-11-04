@@ -444,11 +444,14 @@ def test_read_through_amplification(owner: flow.Human, monkeypatch: pytest.Monke
     print("CODES", codes, "FORGE READS", len(fake.reads), fake.reads)
 
 
-def test_concurrent_first_uploads(owner: flow.Human) -> None:
+def test_concurrent_first_uploads(make_client: ClientFactory, migrated: Engine) -> None:
     from tests.test_project_images import JPEG
 
+    # Fifteen projects in one namespace: the limit is raised to fit them (§16.5, default 10).
+    races = 15
+    owner = flow.human(lambda **kw: make_client(max_projects_per_owner=races, **kw), migrated)
     codes: list[int] = []
-    for i in range(15):
+    for i in range(races):
         slug = f"race{i}"
         flow.project(owner, slug)
         with ThreadPoolExecutor(max_workers=2) as pool:

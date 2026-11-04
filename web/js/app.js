@@ -38,7 +38,7 @@ window.Maity = window.Maity || {};
     // /agents; right after Members (the maintainer, 2026-10-31; before Why since 2026-10-29).
     { route: "agents", view: "projectAgents", get label() { return M.t("nav.agents"); }, when: (ctx) => ctx.me.kind === "human", watch: /^(member_|credential_)/, get changed() { return M.t("nav.agents.changed"); } },
     { route: "chat", get label() { return M.t("nav.chat"); } },
-    // Redrawn in place from the feed (js/messages.js).
+    // The hub's listing (§8.8), new messages from the feed, in place (js/messages.js).
     { route: "messages", get label() { return M.t("nav.messages"); } },
     // The change feed (js/ticker.js); new items from the feed, in place.
     { route: "ticker", get label() { return M.t("nav.ticker"); } },
@@ -457,8 +457,11 @@ window.Maity = window.Maity || {};
       if (M.clearChatDrafts) M.clearChatDrafts();
       M.notify.stopBrowser();
       M.notify.state.settings = null;
-      // Signed out at the same address: nothing changes there, so draw it.
-      if (!M.route.go(after || "/", { replace: true })) render();
+      // The start page is the hub's to answer (§16.7): signed out, `/` may be the landing page, so
+      // it is a page load. A dashboard path is a route change. At the same address (fixture mode,
+      // where the start page is a route too), nothing changes there, so draw it.
+      const left = !after || M.route.startPage(after) ? M.route.load(after || "/") : M.route.go(after, { replace: true });
+      if (!left) render();
     }
   }
 

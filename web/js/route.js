@@ -72,9 +72,16 @@ window.Maity = window.Maity || {};
   // The address one is at already changes nothing, as a link to the same
   // fragment did: no second entry, no view drawn again under a form.
   // True when the address changed (and the view follows), false otherwise.
+  // With quiet the current entry is changed and no view drawn again: a query the page already
+  // follows (the page's language, js/i18n.js). Over http(s) the place after `#` stays.
   function go(path, opts) {
+    const quiet = !!(opts && opts.quiet);
     const replace = !!(opts && opts.replace);
     if (path === here()) return false;
+    if (quiet) {
+      window.history.replaceState(window.history.state, "", fixture ? "#" + path : path + window.location.hash);
+      return true;
+    }
     if (fixture) {
       // hashchange draws the view.
       if (replace) window.location.replace("#" + path);
@@ -99,6 +106,11 @@ window.Maity = window.Maity || {};
       const a = e.target && e.target.closest ? e.target.closest("a[href]") : null;
       if (!a || (a.getAttribute("target") && a.getAttribute("target") !== "_self") || a.hasAttribute("download")) return;
       const to = a.getAttribute("href");
+      // The start page is the hub's (§16.7): whether `/` is the landing page or the shell, where the
+      // dashboard draws the sign-in for a visitor, the hub decides per request by the session and
+      // `?as=public`, so a link there is a page load, with or without a query or a place (the
+      // frame's mark and sections, the logo signed out).
+      if (startPage(to)) return;
       const anchored = splitAnchor(to);
       if (anchored) {
         e.preventDefault();
@@ -131,8 +143,21 @@ window.Maity = window.Maity || {};
     if (!fixture && window.location.hash) window.history.replaceState(null, "", window.location.pathname + window.location.search);
   }
 
+  // `/`, `/?…` or `/#…`: the instance's start page, which only the hub can answer (§16.7).
+  const startPage = (value) => typeof value === "string" && /^\/(?:[?#]|$)/.test(value);
+
+  // Leave for the start page: a page load the hub answers, with the current entry replaced, for
+  // the one who just signed out (the landing page while it is on). In fixture mode, with no hub,
+  // a route change as go's. True when the page is left (always over http, the same `/` reloaded
+  // too) or the address changed; false in fixture mode at the address one is at.
+  function load(path) {
+    if (fixture) return go(path, { replace: true });
+    window.location.replace(path);
+    return true;
+  }
+
   // An anchored route's href: the route as `href` writes it, the place after it.
   const anchoredHref = (value) => { const x = splitAnchor(value); return x ? href(x.path) + "#" + x.anchor : null; };
 
-  M.route = { fixture, isRoute, isAnchored, anchoredHref, isHubPage, current, href, go, listen, dropFragment, jump };
+  M.route = { fixture, isRoute, isAnchored, anchoredHref, isHubPage, current, href, go, load, startPage, listen, dropFragment, jump };
 })(window.Maity);
