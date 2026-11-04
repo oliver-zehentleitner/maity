@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 Please report security problems privately, by email to
-[info@maity.team](mailto:info@maity.team).
+[reporting-a-vulnerability@maity.team](mailto:reporting-a-vulnerability@maity.team).
 Do not open a public issue, pull request or discussion for a
 vulnerability.
 
