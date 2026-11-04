@@ -98,8 +98,12 @@ moment, and every touched target is queued in the transaction's `events.scratch`
 answer arrives. A write that rolls back renders nothing, and its deletions roll back with it. A `touch` from a
 plain `engine.begin()` (no `on_commit` there) renders in that transaction as before. `refresh` treats a render of
 one target that takes longer than `MAITY_PUBLIC_PAGES_RENDER_SECONDS` (default 2) as a failed one: logged, the
-pages deleted. A starting process renders for at most `MAITY_PUBLIC_PAGES_STARTUP_SECONDS` (default 30); the
-pages of the targets not reached by then are deleted. Each worker's first pass renders every target that has
+pages deleted. A starting process starts no render after `MAITY_PUBLIC_PAGES_STARTUP_SECONDS` (default 30), and
+the pages of the targets not reached by then are deleted. A render under way at that moment ends first, so a
+start lasts the budget plus that one render, and a render that hangs is not bounded at all: a running render
+cannot be interrupted from another thread, and the render limit judges it only once it ends. The Helm chart's
+startup probe waits up to 60 seconds (`deploy/helm/maity-hub/values.yaml`, `probes.startup`), which leaves 30
+seconds for that last render with the default budget. Each worker's first pass renders every target that has
 no stored page, before its prepared kinds, whichever process did the start: with `MAITY_WORKERS` above 1 the
 start runs in the supervisor's parent, which runs no worker and hands nothing to the spawned workers. A
 removal takes the per-target lock that `refresh` takes before it deletes, the targets in one order, so a render

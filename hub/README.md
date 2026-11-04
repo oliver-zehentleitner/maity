@@ -287,7 +287,7 @@ be set by the instance admin in the dashboard; the environment wins.
 | `MAITY_PUBLIC_PAGES` | `off` | Project and profile pages answer the app shell and the sitemap lists none, whatever owners chose. | §16.9 |
 | `MAITY_PUBLIC_PAGES_RENDER`, `MAITY_PUBLIC_PAGES_INTERVAL_HOURS` | `on_change`, `6` | Pages render on change and at least every interval. | §16.9 |
 | `MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES` | `5` | How often a project's page is rendered again for its ticker and online snapshot (1–60). | §16.9 |
-| `MAITY_PUBLIC_PAGES_STARTUP_SECONDS` | `30` | How long a starting process renders public pages before it serves (1–600); the rest are deleted and rendered right after the start. | §16.9 |
+| `MAITY_PUBLIC_PAGES_STARTUP_SECONDS` | `30` | After how long a starting process starts no new public page render before it serves (1–600); a render under way then ends first, and the rest are deleted and rendered right after the start. | §16.9 |
 | `MAITY_PUBLIC_PAGES_RENDER_SECONDS` | `2` | The longest render of one target's public pages (1–60); a longer one takes them off, as a failed render does. | §16.9 |
 
 The hub logs each request as method, path and status on the
