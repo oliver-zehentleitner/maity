@@ -249,8 +249,9 @@ closed, is checked like any other session; a placement that starts to name the c
 during an episode ends it as an exclusion that begins. The lookup runs in the minute worker
 only for a session with `supervisor` (the condition short-circuits before it), under the
 project's lock it already holds. A credential whose revocation after a runner's stop is due
-but not yet written (`runner_revoke.due`) counts as revoked: the stopped agent never calls
-again to have it written (§15.3), and the views already show it as revoked.
+but not yet written (`runner_revoke.due`) counts as revoked: the hub cannot end the process
+(§15.3), so the agent may never call again to have it written, and if it still runs and calls,
+the revocation is written then and the session stays left out; the views already show it as revoked.
 
 **Reason:** a placed agent does not wait by design, and until its runner is revoked that runner
 reports each stopped run (§15.7), so an episode would only repeat what the runner says. After a

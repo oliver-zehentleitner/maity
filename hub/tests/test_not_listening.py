@@ -360,7 +360,7 @@ def test_a_runner_revoke_under_stop_leaves_a_due_revocation_out(
     setup: Setup, make_client: ClientFactory
 ) -> None:
     """Under `stop` the placement closes and the credential's revocation is only due; the
-    stopped agent never calls again to have it written (§15.3), so it counts as revoked."""
+    agent may never call again to have it written (§15.3), so it counts as revoked."""
     s = setup
     placement_id = _place(s, make_client)
     _supervise(s)

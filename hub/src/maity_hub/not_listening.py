@@ -129,8 +129,9 @@ def _excluded(conn: Connection, session: Any, member: Any, credential: Any) -> s
     # session has none, so it is checked like any other (§5.3, §15.13).
     if session.supervisor is not None and _placed(conn, credential):
         return "a runner supervises the session"
-    # A runner's stop leaves the revocation due and writes it on the next use, which a
-    # stopped agent never makes (§15.3): due counts as revoked, as in the views.
+    # A runner's stop leaves the revocation due and writes it on the next use, which the
+    # agent may never make (§15.3); if it does, it is written then: due counts as revoked,
+    # as in the views.
     if credential.revoked_at is not None or runner_revoke.due(credential):
         return "the credential was revoked"
     if credential.paused_since is not None or member.paused_since is not None:
