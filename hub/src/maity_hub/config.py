@@ -20,7 +20,7 @@ from maity_hub.mail.environment import MailEnvironment
 DEFAULT_DATABASE_URL = "sqlite:///maity-hub.db"
 DEFAULT_BIND = "127.0.0.1:8080"
 KTW_SKILL_SOURCE = (
-    "https://github.com/oliver-zehentleitner/keep-the-why/tree/latest/skills/keep-the-why"
+    "https://github.com/oliver-zehentleitner/keep-the-why/tree/v0.20.3/skills/keep-the-why"
 )
 KTW_SKILL_GUIDE = "https://keepthewhy.com/installation/"
 

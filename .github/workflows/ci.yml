@@ -117,6 +117,9 @@ jobs:
       # A pull request is checked out as its merge with main: two Alembic heads mean main got
       # a migration meanwhile, and the step names the fix (`python tools/rechain.py`).
       - run: python tools/rechain.py --check
+      # The Keep the Why skill's pins (install source, Git fallback, installer, linter action) name
+      # the release .keep-the-why's context-schema is on.
+      - run: python tools/ktw_pin.py
       # tools/site_docs.py renders Markdown; its tests are skipped without these two.
       - run: pip install --quiet markdown==3.11.2 PyYAML==6.0.3
       - run: python -m unittest discover -s tools -p 'test_*.py' -v
