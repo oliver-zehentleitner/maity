@@ -13172,6 +13172,7 @@ and `resolveEntry`, and any write.
 | POST | `/projects/{owner}/{slug}/tasks/{id}/report` | holder | 6.6 |
 | POST | `/projects/{owner}/{slug}/tasks/{id}/checklist/{item_id}` | holder / `releases:write` | 6.7 |
 | PUT, DELETE | `/projects/{owner}/{slug}/tasks/{id}/watch` | `project:read` | 6.4 |
+| GET, PUT, DELETE | `/projects/{owner}/{slug}/tasks/{id}/restricted` | `project:read` and in the restricted-access set | 6.4 |
 | GET, POST | `/projects/{owner}/{slug}/requests` | `project:read` / `requests:ask` | 7 |
 | GET | `/projects/{owner}/{slug}/requests/{id}` | asker, addressee, `cover.by`, `requests:answer` | 7 |
 | POST | `/projects/{owner}/{slug}/requests/{id}/answer` | `requests:answer` / addressee / `cover.by` | 7 |
