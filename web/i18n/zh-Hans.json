@@ -2713,7 +2713,7 @@
   "names.refused.org_role": "只有该组织的所有者或管理员才能把项目移入其中",
   "names.refused.rate_limited": "每天最多 3 次重命名和转让；请明天再试",
   "names.refused.reserved": "该词是控制台地址的一部分；请选择另一个 slug",
-  "names.refused.step_up": "hub 会先要求你的第二因素；请用它重新登录后再试一次",
+  "names.refused.step_up": "hub 仍要求你的第二因素；请再试一次",
   "names.refused.taken": "该名称在此命名空间中已被占用，无论是现用名还是曾用名",
   "names.refused.taken_receiver": "@{handle} 已有同名项目，或曾有过",
   "names.refused.transfer_stale": "该转让已不再有效；请重新发起请求",
