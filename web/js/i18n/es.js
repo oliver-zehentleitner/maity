@@ -877,7 +877,7 @@ window.MAITY_I18N["es"] = {
   "device.code.open": "¿Tienes un código?",
   "device.code.title": "Iniciar sesión con un código",
   "device.expires": "Caduca en {time}.",
-  "device.mail.address": "Tu dirección",
+  "device.mail.address": "Correo electrónico",
   "device.mail.check": "Revisa tu correo",
   "device.mail.code": {
     "one": "El código de {count} dígito",
@@ -3446,7 +3446,7 @@ window.MAITY_I18N["es"] = {
   "reg.terms.version": "Versión",
   "reg.title": "Registro",
   "reg.unchanged": "No ha cambiado nada.",
-  "register.address": "Tu dirección",
+  "register.address": "Correo electrónico",
   "register.check_mail": "Revisa tu correo",
   "register.closed": "Este hub no crea cuentas nuevas a petición.",
   "register.closed_sign_in": "Si tienes una cuenta, {link}.",
