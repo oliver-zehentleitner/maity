@@ -433,12 +433,12 @@ def startup(engine: Engine, hub: Settings) -> None:
     """When the instance serves pages, every page is rendered again before this process serves
     any, so nothing made under an earlier state is (§16.9). Page by page, never cleared first:
     the other processes and pods serving meanwhile find the old page or the new one, never
-    none (hub/context/replicas.md, "Several workers per pod"). No render starts after
-    `public_pages_startup_seconds`: the pages of the targets not reached by then are deleted,
-    and a worker renders them first, so many renders do not hold the start past its probe. A
-    render under way then ends first; it cannot be stopped. The worker's first pass renders
-    every target without a stored page, so it does not matter which process did the start
-    (with `MAITY_WORKERS` above 1, the supervisor's parent, which runs no worker)."""
+    none (hub/context/replicas.md, "Several workers per pod"). No further target is taken up
+    after `public_pages_startup_seconds`: the pages of the targets not reached by then are
+    deleted, and a worker renders them first. A target taken up before still waits for its
+    lock and renders to the end, so this does not bound the start. The worker's first pass
+    renders every target without a stored page, so it does not matter which process did the
+    start (with `MAITY_WORKERS` above 1, the supervisor's parent, which runs no worker)."""
     configure(hub)
     if not hub.public_pages:
         return

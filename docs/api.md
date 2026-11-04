@@ -16495,7 +16495,7 @@ rendered, as the maintainer asked (2026-10-28):
 | `MAITY_PUBLIC_PAGES_RENDER` | `on_change` | `on_change`: a page is rendered again when one of its inputs changes, and at least every interval as a safety net; `interval`: new entries and counts appear with the next run, while anything taken off a page is taken off at once (below) |
 | `MAITY_PUBLIC_PAGES_INTERVAL_HOURS` | `6` | 1–24 |
 | `MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES` | `5` | 1–60: how often every project's page is rendered again for its snapshot (above), by one replica at a time |
-| `MAITY_PUBLIC_PAGES_STARTUP_SECONDS` | `30` | 1–600: after how long a starting process starts no new render before it serves; a render under way then ends first, and the rest are deleted and rendered right after the start (below) |
+| `MAITY_PUBLIC_PAGES_STARTUP_SECONDS` | `30` | 1–600: after how long a starting process takes up no further target before it serves; the targets it took up are rendered to the end, and the rest are deleted and rendered right after the start (below). It does not bound the whole start |
 | `MAITY_PUBLIC_PAGES_RENDER_SECONDS` | `2` | 1–60: the longest render of one target's pages; a longer one deletes them, as a failed render does (below) |
 
 Removing something is never left to the interval. Under either
@@ -16544,12 +16544,16 @@ that changed the input, so the hub serves the app shell at once; caches outside 
 may keep it for up to 60 seconds, as for the badge (§6.20).
 When `MAITY_PUBLIC_PAGES` is switched on, and whenever a process starts,
 the hub renders every page again before it serves any, so nothing
-rendered under an earlier state is served. It starts no render after
-`MAITY_PUBLIC_PAGES_STARTUP_SECONDS`, and a render already under way
-then ends first: a render cannot be stopped from outside, so one slow
-target can carry the start past that time. The pages it has not
+rendered under an earlier state is served. It takes up no further
+target after `MAITY_PUBLIC_PAGES_STARTUP_SECONDS`. The pages it has not
 reached are deleted and rendered right after the start, so a visitor
-gets the app shell for them meanwhile. The pages of one target whose render
+gets the app shell for them meanwhile. A target it took up before that
+is rendered to the end: the render may first wait for the target's
+lock while another process renders it, and a running render cannot be
+stopped (`MAITY_PUBLIC_PAGES_RENDER_SECONDS` judges it only once it
+ends). Neither setting bounds the whole start, and a render or lock
+wait that hangs holds it without limit. A deployment sizes its startup
+probe from the start it observes under load, with a margin. The pages of one target whose render
 fails, or takes longer than `MAITY_PUBLIC_PAGES_RENDER_SECONDS`, are
 deleted until a later render succeeds within that time. The rate limit is a bucket of its own, of the badge's size
 (§6.20), for the static page only. The join host never serves a public

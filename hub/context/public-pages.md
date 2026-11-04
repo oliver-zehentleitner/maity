@@ -98,12 +98,14 @@ moment, and every touched target is queued in the transaction's `events.scratch`
 answer arrives. A write that rolls back renders nothing, and its deletions roll back with it. A `touch` from a
 plain `engine.begin()` (no `on_commit` there) renders in that transaction as before. `refresh` treats a render of
 one target that takes longer than `MAITY_PUBLIC_PAGES_RENDER_SECONDS` (default 2) as a failed one: logged, the
-pages deleted. A starting process starts no render after `MAITY_PUBLIC_PAGES_STARTUP_SECONDS` (default 30), and
-the pages of the targets not reached by then are deleted. A render under way at that moment ends first, so a
-start lasts the budget plus that one render, and a render that hangs is not bounded at all: a running render
-cannot be interrupted from another thread, and the render limit judges it only once it ends. The Helm chart's
-startup probe waits up to 60 seconds (`deploy/helm/maity-hub/values.yaml`, `probes.startup`), which leaves 30
-seconds for that last render with the default budget. Each worker's first pass renders every target that has
+pages deleted. A starting process takes up no further target after `MAITY_PUBLIC_PAGES_STARTUP_SECONDS` (default
+30), and the pages of the targets not reached by then are deleted. The check comes before a target's transaction
+and lock, so a target taken up before the budget ends is rendered all the same: it may first wait for its lock
+while another process renders it, and a running render cannot be interrupted from another thread; the render
+limit judges a render only once it ends. The budget therefore does not bound the whole start: listing the
+targets, those waits, the last render and the deletions come on top, and a render or a lock wait that hangs has
+no bound at all. The Helm chart's startup probe waits up to 60 seconds (`deploy/helm/maity-hub/values.yaml`,
+`probes.startup`); an operator sizes it from the start observed under load, with a margin. Each worker's first pass renders every target that has
 no stored page, before its prepared kinds, whichever process did the start: with `MAITY_WORKERS` above 1 the
 start runs in the supervisor's parent, which runs no worker and hands nothing to the spawned workers. A
 removal takes the per-target lock that `refresh` takes before it deletes, the targets in one order, so a render
