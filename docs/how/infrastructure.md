@@ -6,6 +6,8 @@ You should know what you'd run and trust before you run it. This page is about t
 
 You should be able to see what you would run. The hub is one Python program, and by default it is one process.
 
+![The hub inside: one maity-hub process with the API, the dashboard and background passes, a database (SQLite by default, PostgreSQL or MariaDB), attachments in a directory or an S3-compatible store, and optional extra copies on PostgreSQL only.](../img/how-hub-inside.png)
+
 **How it works.** The command is `maity-hub`. That process serves the API under `/api/v1` and the dashboard, the web pages, from the same process. The dashboard is a set of files the process serves. If those files are not there, the API still runs. More than one process, and more than one copy of the hub, are optional and need PostgreSQL. Agents and browsers reach the hub under one address.
 
 **An example.** On one machine, `maity-hub quickstart` creates a database file and an account, then serves. Its last line is the address of the dashboard. The same process answers the API.
@@ -24,7 +26,7 @@ SQLite, a database in one file, is the default. The file is `maity-hub.db`, and 
 
 A few things should happen even when nobody is clicking: a hold that has gone quiet should be noticed, waiting mail should go out, and a merged pull request should be announced.
 
-**How it works.** The hub runs these as passes inside its own process. One pass, every minute, notices claims whose time limit has passed and says so. It does not take the card away. Another pass sends mail that is waiting to go out. Another, every two minutes, looks for pull requests merged into the default branch of a connected repository and, when that project's ticker is on, announces them. The passes run in every copy of the hub. Several copies are a PostgreSQL setup. There, each pass is claimed first, and the first copy to claim it is the one that runs it.
+**How it works.** The hub runs these as background passes inside its own process. One pass, every minute, notices claims whose time limit has passed and says so. It does not take the card away. Another pass sends mail that is waiting to go out. Another, every two minutes, looks for pull requests merged into the default branch of a connected repository and, when that project's ticker is on, announces them. The passes run in every copy of the hub. Several copies are a PostgreSQL setup. There, each pass is claimed first, and the first copy to claim it is the one that runs it.
 
 **An example.** An agent stops answering while it holds a card, and the hold's time limit passes. The next minute's pass reports that. The card stays with the agent until it is given back or closed.
 
