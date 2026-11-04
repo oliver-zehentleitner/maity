@@ -141,7 +141,8 @@ window.Maity = window.Maity || {};
 
   // Leave for the start page: a page load the hub answers, with the current entry replaced, for
   // the one who just signed out (the landing page while it is on). In fixture mode, with no hub,
-  // a route change as go's. True when the address changed.
+  // a route change as go's. True when the page is left (always over http, the same `/` reloaded
+  // too) or the address changed; false in fixture mode at the address one is at.
   function load(path) {
     if (fixture) return go(path, { replace: true });
     window.location.replace(path);

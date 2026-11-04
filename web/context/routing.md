@@ -227,6 +227,8 @@ and the sign-out.
 load (`data-…` set by `js/site-chrome.js`): every link to `/` would have
 to remember it, and the app's own logo already lacked one. A dashboard
 view at `/` that reloads the page: two loads, and the hub's rule
-written a second time in the dashboard. `M.route.go` itself loading every start-page
-target: a full reload after each sign-in, where the hub answers the
-shell anyway.
+written a second time in the dashboard. `M.route.go` itself loading
+every start-page target: a full reload after a sign-in that ends on `/`
+from a page of its own (the second factor's step, a device sign-in),
+where the hub answers the shell anyway; a password sign-in draws the
+dashboard in place (`goNext`) and never routes to `/`.
