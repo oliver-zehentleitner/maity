@@ -8712,7 +8712,8 @@ The check holds for every call that gives a handle — registration
 placement that creates a profile (§3.1, §15.5, `handle_taken` at the
 pickup, §15.9) — not only for a rename. The id's own current handle is
 a no-op: `200`, nothing changes, no event. One of the id's own aliases
-may be taken back.
+may be taken back, including a handle of the form `lt-` followed by
+digits (§16.11).
 
 **Aliases.** A rename appends the handle given up to the id's
 `aliases`; a handle taken back leaves the list. The list is in the
@@ -8988,7 +8989,11 @@ registration, `maity-hub owner create`, `POST /orgs` and a rename,
 `invite`; the list is §16.11's. `hub`, `human`, `maity` and `system` are
 `reserved` for every handle, an agent profile's too, since in a by-line
 they would speak for the hub or the reader's human; whoever holds one
-already keeps it.
+already keeps it. A handle of the form `lt-` followed by digits is
+reserved too, for the load-test accounts (`maity-hub loadtest seed`,
+§16.11). Whoever holds one already keeps it, and may take that alias
+back; `maity-hub migrate` does not name them, because the load-test seed
+accounts themselves hold such handles.
 
 **Why one release instead of `v2`.** §1.6 serves a breaking change as
 `v2` next to `v1`. This change is made before the launch, while every
@@ -16714,7 +16719,9 @@ rename. The list:
 reserved so that they stay free for one (a component gallery, a health
 page, an English imprint address). A handle of the form `lt-` followed
 by digits is reserved too, for the load-test accounts (`maity-hub
-loadtest seed`).
+loadtest seed`). Whoever holds one already keeps it, and may take that
+alias back (§6.24); `maity-hub migrate` does not name them, because the
+load-test seed accounts themselves hold such handles.
 
 One-letter segments (`r`) and names with a dot (`robots.txt`,
 `sitemap.xml`) cannot be handles anyway (§6.24's syntax). A release that adds a first segment adds it to
@@ -16728,7 +16735,9 @@ that `/<owner>/<word>` stays free for pages of an owner's own.
 **When the list grows.** A release that reserves a word a handle, an
 alias, a slug or a project alias already holds does not migrate:
 `maity-hub migrate` refuses and names each holder to the operator, who
-renames it first, as the namespace migration did (§6.25). A hub started
+renames it first, as the namespace migration did (§6.25). A handle of
+the form `lt-` followed by digits is not such a word: whoever holds one
+already keeps it, and migrate does not name them (above). A hub started
 past it logs the holders and runs.
 
 **Every address the hub writes** is a path of this section on

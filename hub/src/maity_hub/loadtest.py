@@ -4,9 +4,9 @@
 Every account is named `lt-<n>` and has `NO_PASSWORD` for a password hash. A person or an
 organisation may not take that handle (`paths.handle_reserved`); this seed writes the rows itself
 and does not ask that check. `purge` still asks for the name and the marker together: an account
-made before the reservation may be called `lt-7`, and its hash is always a scrypt one. Each account
-is a human with its own project `lt-<n>/load` and two agents in it, signed in: the output holds a
-session cookie per human and a signing key per agent, which is what `loadtest/run.js` reads.
+made before the reservation may be called `lt-7`, and its hash is never the seed's marker. Each
+account is a human with its own project `lt-<n>/load` and two agents in it, signed in: the output
+holds a session cookie per human and a signing key per agent, which is what `loadtest/run.js` reads.
 A human has no mail address, so nothing the run does can send a mail.
 
 Directly in the database, not through the API: the API's limits on logins and on agents per human

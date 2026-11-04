@@ -7,11 +7,12 @@ import sys
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, insert, select
 
-from maity_hub import clock, paths
+from maity_hub import clock, handle_register, paths
 from maity_hub import tables as t
 from maity_hub.cli import main
+from maity_hub.ids import new_id
 from maity_hub.registration_accounts import check_names
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -492,3 +493,67 @@ def test_an_agent_may_be_called_lt_7(make_client: ClientFactory, migrated: Engin
     assert made.status_code == 201, made.text
     assert paths.handle_reserved("lt-7")
     assert not paths.handle_reserved("lt-7", of_agent=True)
+
+
+def _organisation_holding(engine: Engine, owner_id: str, handle: str) -> str:
+    """An organisation that already holds `handle`, written as the rows. `POST /orgs` would
+    refuse a load-test handle; a holder from before the reservation is the case under test."""
+    org_id = new_id("org")
+    now = clock.now()
+    with engine.begin() as conn:
+        conn.execute(
+            insert(t.org).values(
+                id=org_id,
+                handle=handle,
+                display_name="Load",
+                created_at=now,
+                members_create_projects=False,
+                public_page="off",
+            )
+        )
+        conn.execute(
+            insert(t.org_member).values(
+                org_id=org_id, human_id=owner_id, role="owner", joined_at=now
+            )
+        )
+        assert handle_register.claim(conn, handle, handle_register.ORG, org_id)
+    return org_id
+
+
+def test_a_holder_of_a_load_test_handle_may_take_it_back(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """An account that already holds `lt-<digits>` keeps it, including taking that alias back
+    (§6.24). Someone else still cannot take it."""
+    owner = flow.human(make_client, migrated, "lt-7")
+    away = owner.patch("/me", {"handle": "lt-seven"})
+    assert away.status_code == 200, away.text
+    assert away.json()["member"]["aliases"] == ["lt-7"]
+    other = flow.human(make_client, migrated, "someone-else")
+    refused = other.patch("/me", {"handle": "lt-7"})
+    assert refused.status_code == 400, refused.text
+    assert _fields(refused) == {"handle": "reserved"}
+    back = owner.patch("/me", {"handle": "lt-7"})
+    assert back.status_code == 200, back.text
+    member = back.json()["member"]
+    assert (member["handle"], member["aliases"]) == ("lt-7", ["lt-seven"])
+
+
+def test_an_organisation_that_holds_a_load_test_handle_may_take_it_back(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """Organisations rename through the same path. A different organisation still cannot take it."""
+    owner = flow.human(make_client, migrated, "org-owner")
+    _organisation_holding(migrated, owner.id, "lt-7")
+    away = owner.patch("/orgs/lt-7", {"handle": "lt-seven"})
+    assert away.status_code == 200, away.text
+    assert away.json()["aliases"] == ["lt-7"]
+    other = flow.human(make_client, migrated, "other-owner")
+    made = other.post("/orgs", {"handle": "real-org", "display_name": "Real"})
+    assert made.status_code == 201, made.text
+    refused = other.patch("/orgs/real-org", {"handle": "lt-7"})
+    assert refused.status_code == 400, refused.text
+    assert _fields(refused) == {"handle": "reserved"}
+    back = owner.patch("/orgs/lt-seven", {"handle": "lt-7"})
+    assert back.status_code == 200, back.text
+    assert (back.json()["handle"], back.json()["aliases"]) == ("lt-7", ["lt-seven"])

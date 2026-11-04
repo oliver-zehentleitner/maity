@@ -30,7 +30,8 @@ MISLEADING_HANDLES = frozenset({"hub", "human", "maity", "system"})
 
 # The load-test seed names its accounts `lt-<n>` and purge deletes them (§16.11). Not a member of
 # `RESERVED_FIRST`: that set is path words, also read by the robots list, the join host and the
-# migration's holder check. An account that already holds one keeps it.
+# migration's holder check. An account that already holds one keeps it, and may take that
+# alias back: the reservation stops a new claimant, not the id's own old name.
 LOADTEST_HANDLE = re.compile(r"lt-[0-9]+")
 
 
