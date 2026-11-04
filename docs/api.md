@@ -16103,17 +16103,18 @@ its own.
 
 ### 16.9 Public pages
 
-The maintainer's decision of 2026-10-28: public projects and people get
-pages a search engine can read — plain HTML that needs
-no script and no session — so that an instance is found by what is on it.
-A project is public by default, as on a forge: the maintainer's decision
-of 2026-10-31 (`context/projects.md`). A new project's page is on
-unless its creator chooses private at creation, and a project whose
-repository the hub finds private (or cannot read) at creation starts
-private. Every active account has a page (below), and its profile is
+The maintainer's decision of 2026-10-28: public projects, and people
+whose profile is public, get pages a search engine can read — plain
+HTML that needs no script and no session — so that an instance is found
+by what is on it. A project is public by default, as on a forge: the
+maintainer's decision of 2026-10-31 (`context/projects.md`). A new
+project's page is on unless its creator chooses private at creation,
+and a project whose repository the hub finds private (or cannot read)
+at creation starts private. Every active account whose profile is under
+no moderation hold has a page (below), and the person's profile is
 public by default as well (§2.7; the maintainer's decision of
-2026-11-02): the person chooses how much it shows. An organisation's
-page (§6.26) exists only by its owners' choice.
+2026-11-02): they choose how much it shows. An organisation's page
+(§6.26) exists only by its owners' choice.
 
 **The addresses.** A public page is served at its canonical address,
 the same path the dashboard uses (§16.11): a project's at
