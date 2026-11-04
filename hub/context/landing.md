@@ -191,20 +191,19 @@ value, since a row written by an older version or by hand is still shown to the 
 The renderer above runs on members' words too: the text of a public project, a card's body and its
 notes (§16.9), rendered in the request that writes them and at start-up. So each step's work grows
 with the text's length and never with the ways of splitting it:
-- In `_INLINE` a failed try gives characters back only to runs that cannot take them: the
-  target, the title and the closing `)` hold different characters, and the spaces before the
-  target, which the title's own leading space could also take, are taken whole (a possessive
-  `*+`). A link's target and title hold no `[`, stay on their line and are at most 2048
-  characters each, so what one `[` reads ends at the next. Since the title stays on its line,
-  it follows a space or a tab, not any `\s`, which holds a newline: a title after a no-break
+- In `_INLINE` a failed try gives characters back only to runs that cannot take them: the title
+  starts with a space or a tab, which the target cannot hold, and neither holds the closing `)`;
+  the spaces before the target, which the title's own leading space could also take, are taken
+  whole (a possessive `*+`). A link's target and title hold no `[`, stay on their line and are at
+  most 2048 characters each, so what one `[` reads ends at the next. Since the title stays on its
+  line, it follows a space or a tab, not any `\s`, which holds a newline: a title after a no-break
   space or a form feed, a link before, is now brackets as text and a bare link, an intended
-  restriction (§16.7). Before the spaces were taken whole, they could be split between the
-  opening and the title in every way, and a run of 64 KiB took seconds. On lines whose white
-  space inside the parentheses is spaces and tabs, the output is the old pattern's, checked
-  against it as an oracle on short lines. With a no-break space, a form feed or a vertical tab
-  after the opening spaces, the old pattern gave a space back to the title, took an empty
-  target and showed only the link's text, so `[a]( x\u00a0y)` lost its words; now its brackets
-  are text.
+  restriction (§16.7). Before the spaces were taken whole, they could be split between the opening
+  and the title in every way, and a run of 64 KiB took seconds. On lines whose white space inside
+  the parentheses is spaces and tabs, the output is the old pattern's, checked against it as an
+  oracle on short lines. With a no-break space, a form feed or a vertical tab after the opening
+  spaces, the old pattern gave a space back to the title, took an empty target and showed only the
+  link's text, so `[a]( x\u00a0y)` lost its words; now its brackets are text.
 - A heading's marks are a pattern; its text, without the closing `#` run and the spaces around
   it, is cut by string operations. The output is the old pattern's, checked against it as an
   oracle on short lines.
