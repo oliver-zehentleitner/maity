@@ -759,8 +759,9 @@ takeover's (`takeover_id`), and there Ctrl+Enter is not offered: a
 shortcut that never sends is not announced. **Talk** stands on every request one can
 answer, disabled with its reason where `talk` is not accepted: for
 another owner's agent, a human asker and a request the hub filed itself
-(above), and on a takeover's, which needs one of its replies as the
-words alone do. No reason is said for a Send that is not there.
+(above), and on a takeover's: like the words alone, it is refused there,
+since one of its replies is required. No reason is said for a Send that
+is not there.
 Neither stands where no answer is possible at all: a call that only the
 project's owner answers, seen by another member, and a personal request
 not read in full. A refused answer gives the controls back, and what was
