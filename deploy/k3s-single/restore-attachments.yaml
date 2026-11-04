@@ -1,16 +1,22 @@
 # Puts the attachment files of one night back (docs/install/README.md, "Backups on this setup"). The backups are encrypted to a key that is
 # not on the cluster, so the tar is decrypted and checked where the private key is, and streamed into this Job's pod, which waits for it.
 # It REPLACES everything in the attachment volume with the contents of that tar, so that the files match the restored database. Scale the
-# hub to 0 first (the install guide's step 1), then:
-#   gpg -d maity-<time stamp>.attachments.tar.gpg > attachments.tar && tar -tf attachments.tar > /dev/null
-#   kubectl apply -f deploy/k3s-single/restore-attachments.yaml
-#   kubectl -n maity wait --for=create pod -l job-name=restore-attachments --timeout=60s   # kubectl 1.33+ (older returns at once with a selector); else wait a moment
-#   kubectl -n maity wait --for=condition=ready pod -l job-name=restore-attachments --timeout=120s
-#   kubectl -n maity exec -i job/restore-attachments -- sh /tmp/restore < attachments.tar
-#   kubectl -n maity wait --for=condition=complete job/restore-attachments --timeout=120s && kubectl -n maity delete job restore-attachments
-#   rm attachments.tar
-# A stream cut off midway fails the exec and leaves the volume partly restored: run the exec again, it empties the volume first. Nothing
-# streamed within an hour ends the Job as failed, with the volume unchanged.
+# hub to 0 first (the install guide's step 1), then run this as one block: `sh -eu` stops at the first command that fails, so a
+# decryption or a tar check that fails never reaches the cluster, and the volume is only emptied once the whole tar has been read here.
+#   sh -eu -c '
+#     gpg -d "$1" > attachments.tar
+#     tar -tf attachments.tar > /dev/null
+#     kubectl apply -f deploy/k3s-single/restore-attachments.yaml
+#     kubectl -n maity wait --for=create pod -l job-name=restore-attachments --timeout=60s || sleep 10   # 1.33+; older returns at once
+#     kubectl -n maity wait --for=condition=ready pod -l job-name=restore-attachments --timeout=120s
+#     kubectl -n maity exec -i job/restore-attachments -- sh /tmp/restore < attachments.tar
+#     kubectl -n maity wait --for=condition=complete job/restore-attachments --timeout=120s
+#     kubectl -n maity delete job restore-attachments
+#     rm attachments.tar
+#   ' restore maity-<time stamp>.attachments.tar.gpg
+# A failed step stops the block where it is and keeps attachments.tar. A stream cut off midway fails the exec and leaves the volume
+# partly restored: run the exec line again, it empties the volume first. Nothing streamed within an hour ends the Job as failed,
+# with the volume unchanged.
 apiVersion: batch/v1
 kind: Job
 metadata: {name: restore-attachments, namespace: maity}
