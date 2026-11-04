@@ -42,10 +42,14 @@ place where "page or shell" can be decided without a second catch-all.
 
 **Id:** b7a13a49-7c56-49d6-bc18-4622b21d0077
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** `docs/api.md` §16.9 ("How the pages are made", "Removing something is never left to the interval"); the plan of 2026-10-30 on the cards tsk-w89mspg3gwx1 and tsk-xr6fqx8e0vw5
 **Revisit when:** a page kind needs inputs no write path can name, or the renders of one transaction become too slow to run inside it
+
+Its Revisit-when condition fired (the renders became too slow to run inside the writer's transaction):
+narrowed by deafb243-f385-4108-8de4-81fc8f9a7872, only the removal stays in the writer's transaction and the
+render follows the commit.
 
 Each kind of page (a person, a project and its views, an agent, an organisation) registers how to render the
 pages of one target and which targets exist (`public_pages.Kind`). The write paths that change an input call
@@ -82,7 +86,7 @@ can give; a registry keeps each kind's rendering next to its inputs and gives th
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-qzvb0c0abm3a (hardening asked for by the maintainer, 2026-11-04; the maintainer's yes to rendering outside the write transaction and to "page off" at a start the same day); the lead's answers on the card's plan (2026-11-04: dependents off with the target, 30 s and 2 s as settings, the contract sentence in the same change); `docs/api.md` §16.9; `public_pages.touch`, `_render_after_commit`, `refresh`, `render_all`, `startup`, `Worker._run`; `events.scratch`, `events.on_commit`
+**Source:** card tsk-qzvb0c0abm3a (hardening asked for by the maintainer, 2026-11-04; the maintainer's yes to rendering outside the write transaction and to "page off" at a start the same day); the lead's answers on the card's plan (2026-11-04: dependents off with the target, 30 s and 2 s as settings, the contract sentence in the same change); `docs/api.md` §16.9; `public_pages.touch`, `_render_after_commit`, `refresh`, `render_all`, `startup`, `Worker._run`, `_unrendered`; `events.scratch`, `events.on_commit`; the review of #1364 (several workers per pod, a removal racing a render on PostgreSQL)
 **See:** public-pages.md#a-page-is-rendered-again-in-the-transaction-that-changed-its-input-by-a-registry-of-kinds — b7a13a49-7c56-49d6-bc18-4622b21d0077 — as of 2026-11-04
 **See:** public-pages.md#a-card-event-renders-only-the-projects-own-page-and-only-when-it-may-take-a-ticker-item-off — 721bcdfa-9464-4b57-b885-a1455f5adbb8 — as of 2026-11-04
 **Revisit when:** a writer needs its page rendered before its answer returns, a render needs the writer's uncommitted state, or one target's render legitimately takes longer than `MAITY_PUBLIC_PAGES_RENDER_SECONDS`
@@ -95,8 +99,12 @@ answer arrives. A write that rolls back renders nothing, and its deletions roll 
 plain `engine.begin()` (no `on_commit` there) renders in that transaction as before. `refresh` treats a render of
 one target that takes longer than `MAITY_PUBLIC_PAGES_RENDER_SECONDS` (default 2) as a failed one: logged, the
 pages deleted. A starting process renders for at most `MAITY_PUBLIC_PAGES_STARTUP_SECONDS` (default 30); the
-pages of the targets not reached by then are deleted, and its worker renders them first, before its prepared
-kinds.
+pages of the targets not reached by then are deleted. Each worker's first pass renders every target that has
+no stored page, before its prepared kinds, whichever process did the start: with `MAITY_WORKERS` above 1 the
+start runs in the supervisor's parent, which runs no worker and hands nothing to the spawned workers. A
+removal takes the per-target lock that `refresh` takes before it deletes, the targets in one order, so a render
+of the same target that is still running writes its page before the delete and not after it; the writer waits
+for that one render at most.
 
 **Reason:** CPython holds the interpreter lock while a render runs, and a render inside the writer's transaction
 also held what that transaction holds: the project row, and on SQLite the database's one write lock, so every
@@ -113,6 +121,13 @@ removal; only the render, which shows the state after the change, moves after th
   page until that page is rendered again.
 - Stopping a render that runs too long: a running render cannot be interrupted from another thread; the limit
   can only judge it once it ends.
+- Keeping the targets the start skipped in the starting process's memory for its worker: with several workers
+  per pod the start runs in the parent, and module state does not survive a spawn, so those pages stayed off
+  until the first interval pass. Handing the list on through the environment or a file was rejected too (a
+  worker the supervisor starts again would read a stale list), and so was a table (a second record of what
+  the missing rows already say).
+- Deleting without the per-target lock and accepting the window: on PostgreSQL a render already running when
+  a removal commits wrote the removed content back until the removal's own render ended.
 
 ## A person's page exists by their choice, and `touch` is called wherever that can change
 

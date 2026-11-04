@@ -237,10 +237,6 @@ class Kind:
 
 KINDS: dict[str, Kind] = {}
 _hub: Settings | None = None
-# The targets the start did not reach within its budget: their pages are off, and this
-# process's worker renders them first (`startup`, `Worker`).
-_unrendered: list[tuple[str, str]] = []
-_unrendered_lock = threading.Lock()
 _RENDERS = "public_pages.after_commit"
 
 
@@ -356,8 +352,11 @@ def touch(
     targets = [(kind, target_id), *(others(conn, target_id) if others else [])]
     if removal:
         # Off in the writer's transaction, so nothing removed is served for a moment; the
-        # render follows the commit.
-        for other, other_id in targets:
+        # render follows the commit. Under the target's lock, so a render of it that is still
+        # running writes its page before this delete, not after it; in one order, so two writers
+        # cannot each wait for the other.
+        for other, other_id in sorted(set(targets)):
+            xact_lock(conn, f"public_page:{other}:{other_id}")
             remove(conn, other, other_id)
     _render_after_commit(conn, hub, targets)
 
@@ -436,23 +435,27 @@ def startup(engine: Engine, hub: Settings) -> None:
     the other processes and pods serving meanwhile find the old page or the new one, never
     none (hub/context/replicas.md, "Several workers per pod"). Within
     `public_pages_startup_seconds`: the pages of the targets not reached by then are deleted,
-    and this process's worker renders them first, so a slow render never holds the start
-    past its probe."""
+    and a worker renders them first, so a slow render never holds the start
+    past its probe. The worker's first pass renders every target without a stored page, so
+    it does not matter which process did the start (with `MAITY_WORKERS` above 1, the
+    supervisor's parent, which runs no worker)."""
     configure(hub)
     if not hub.public_pages:
         return
     with engine.begin() as conn:  # a kind this version no longer renders
         conn.execute(delete(t.public_page).where(t.public_page.c.kind.not_in(list(KINDS))))
-    skipped = render_all(engine, hub, fresh=True, budget=hub.public_pages_startup_seconds)
-    with _unrendered_lock:
-        _unrendered[:] = skipped
+    render_all(engine, hub, fresh=True, budget=hub.public_pages_startup_seconds)
 
 
-def _take_unrendered() -> list[tuple[str, str]]:
-    with _unrendered_lock:
-        taken = list(_unrendered)
-        _unrendered.clear()
-    return taken
+def _unrendered(conn: Connection, kind: Kind) -> list[str]:
+    """The targets of `kind` without a stored page: the ones the start did not reach, in
+    whichever process it ran, and the ones that are not public."""
+    stored = set(
+        conn.execute(
+            select(t.public_page.c.target_id).where(t.public_page.c.kind == kind.name)
+        ).scalars()
+    )
+    return [target_id for target_id in kind.targets(conn) if target_id not in stored]
 
 
 class Worker:
@@ -488,11 +491,15 @@ class Worker:
         # What a kind prepares lives in this process's memory, and the start cleared its pages:
         # every process reads once, outside the pass that only one replica of them claims.
         try:
-            for kind_name, target_id in _take_unrendered():  # what the start did not reach
-                if self._stop.is_set():
-                    return
-                with self.engine.begin() as conn:
-                    refresh(conn, self.hub, kind_name, target_id, fresh=True)
+            # What the start did not reach; a kind that prepares renders every target below.
+            for kind in [kind for kind in KINDS.values() if kind.prepare is None]:
+                with self.engine.connect() as conn:
+                    missing = _unrendered(conn, kind)
+                for target_id in missing:
+                    if self._stop.is_set():
+                        return
+                    with self.engine.begin() as conn:
+                        refresh(conn, self.hub, kind.name, target_id, fresh=True)
             for kind in self._prepare():
                 with self.engine.connect() as conn:
                     ids = kind.targets(conn)
