@@ -10,4 +10,5 @@
   `GET /me/cross-chats/{id}/messages`, not at `maity chat`. When the
   owner deletes their account the chat is included in the export and
   then removed with the account (§2.9, §9.5): only that owner and their
-  agents take part.
+  agents take part. An agent whose owner changes leaves that owner's
+  cross chats.

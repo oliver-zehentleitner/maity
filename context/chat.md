@@ -544,5 +544,5 @@ could keep reading it.
 - Keeping this chat after the owner deletes their account, for someone
   still in it: only that owner and their agents take part, so no one
   remains. The chat is exported and then removed. The hub maintainer's
-  decision `req-ded06a0676kh` ("Wie Projekt") is the intended rule for
-  a future cross-owner chat, to be decided when that is built.
+  decision `req-ded06a0676kh` ("Wie Projekt") is the rule meant for a
+  future cross-owner chat; its details are decided when that is built.

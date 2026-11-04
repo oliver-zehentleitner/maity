@@ -4242,7 +4242,8 @@ every open one of those (`<agent handle> (<instance>) is not
 listening`) at the first digest hour. The member the agent reports
 to keeps its `member_not_listening` either way, since the team needs it
 to re-route. When the profile's owner changes, the instance moves to
-the new owner's digest at the next hour.
+the new owner's digest at the next hour, and the profile leaves every
+cross-project group chat of its old owner (§9.5).
 
 **Silence after `seen`.** Answering `seen` records, for every instance
 the request lists, what it showed: the instance's `last_seen_at` at the
@@ -9728,7 +9729,9 @@ project's request list:
   withdraw a personal request. Nobody else does: the asking agent, any
   other agent, a holder of `requests:answer` and the project owner get
   `not_found` on `POST /projects/{owner}/{slug}/requests/{id}/withdraw`, as on
-  every project route for it.
+  every project route for it. When a profile's owner changes, the
+  profile also leaves every cross-project group chat of the old owner
+  (§9.5).
 - **Filed by the hub** (`filed_by: "hub"`, above). No instance asked
   it, so its events (below) have the addressed owner as `member:` when
   a member, and nobody else — never the agent named in `asked_by`, none
@@ -11725,7 +11728,12 @@ when the owner reads a closed chat they have left.
   agent leaving does not close it while the owner remains. An agent
   whose last active membership ends, or whose profile is deleted,
   leaves every such chat with `reason: membership_removed`. One
-  membership ending while another remains does not. Isolation is the
+  membership ending while another remains does not. When the profile's
+  owner changes, the profile leaves every cross-project group chat of
+  its old owner with `reason: owner_changed`, the same change that
+  moves its not-listening digest (§5.3) and refiles the old owner's
+  notices (§7, §6.23, §15.7). It is not added to a chat of the new
+  owner. Isolation is the
   project group chat's rule (§6.2), applied here per membership: an
   isolated membership is not woken and its credential is `forbidden`
   (`isolated`) on these routes, as on its project, `GET /me` and the
@@ -11814,8 +11822,8 @@ when the owner reads a closed chat they have left.
   is exported as redacted. On successful confirmation under §2.9 the
   chat is removed with the account. The "Wie Projekt" rule
   (`req-ded06a0676kh`, the hub maintainer's decision answering the
-  lead's request) is the intended rule for a future cross-owner chat,
-  to be decided when that is built.
+  lead's request) is the rule meant for a future cross-owner chat; its
+  details are decided when that is built.
 - **Read and unread** are per participant, as in §9.2: the highest
   `seq` of this chat that `…/messages` has returned, moved to the
   participant's own message when they post. `unread` counts the others'
