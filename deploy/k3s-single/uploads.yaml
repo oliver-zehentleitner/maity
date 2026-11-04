@@ -22,6 +22,9 @@ spec:
       match: Host(`maity.example.org`) && Method(`POST`) && PathRegexp(`^/api/v1/projects/[^/]+/[^/]+/attachments$`)
       # Above the chart's Ingress for the same host, whatever the rule lengths.
       priority: 1000
+      # The limits run before the buffering, so a refused upload is not read.
+      # With request-limit.yaml applied, this line in place of the next one:
+      # middlewares: [{name: request-rate}, {name: request-inflight}, {name: upload-inflight}, {name: upload-inflight-all}, {name: upload-buffer}]
       middlewares: [{name: upload-buffer}]
       services: [{name: maity-maity-hub, port: 80}]
   tls: {secretName: maity-tls}

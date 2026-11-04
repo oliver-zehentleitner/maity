@@ -22,6 +22,7 @@ The walkthrough, with the secrets and the order, is in
 | `restore-attachments.yaml` | the Job that puts one night's attachment files back (not applied as it stands) |
 | `cert.yaml` | the Certificate for the apex, `www` and the join host, and the `www` → apex redirect |
 | `uploads.yaml` | the attachment upload's own route through Traefik's buffering middleware: the whole body, at most 11 MiB, is taken before the hub sees it |
+| `request-limit.yaml` | one limit per client address for every request (rate, open requests, uploads), as Traefik middlewares; off until switched on ([walkthrough](../../docs/install/README.md), "The request limit") |
 | `hub-values.yaml` | values for [`deploy/helm/maity-hub`](../helm/maity-hub/README.md) |
 
 Replace `maity.example.org`, the mail values and the image digest before
