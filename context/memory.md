@@ -63,8 +63,8 @@ naming options he had rejected.
 plus `role` for a role entry, and never the text or the tags; the text is read through the memory
 endpoint, which enforces each store's readers. Until 2026-11-04 this
 entry also held the soul proposal's routing, decided in the same
-reviews; that half is the entry linked above, superseded since
-2026-11-02.
+reviews; that half is the entry linked above, whose design the decision
+of 2026-11-02 supersedes.
 
 **Reason:** owners and admins read every event of a project, so an
 event that carried an entry's text gave team memory to readers the
@@ -84,15 +84,19 @@ redaction: a deletion would need an admin's redaction to be a deletion.
 **Source:** security reviews of the memory contract and the contract owner's rulings on them (two rounds), 2026-10-22; contract in `docs/api.md` §7, §19; split out of 1c326180 on 2026-11-04, unchanged in substance
 **See:** memory.md#memory-events-carry-ids-only — 1c326180-c27b-4f12-bb75-aa3335f9282c — as of 2026-11-04
 
-Soul proposals no longer exist since 2026-11-02: the agent writes its
-soul, and the owner's personal inbox gets a notice of each version
-instead (the successor entry). Until then:
+The maintainer's decision of 2026-11-02 (the successor entry)
+supersedes this design: the agent writes its own soul, and the owner's
+personal inbox gets a notice of each version. The hub has not followed
+yet: at 2026-11-04 it still files soul proposals (`POST
+/me/soul/proposals`, `hub/src/maity_hub/routes/memory.py`) and has no
+`PUT /me/soul`, so what follows still describes the code until the
+successor is built.
 
-A soul proposal was a personal request: it sat in the profile owner's
-personal inbox, was visible only to that owner and the proposing agent,
-was answered only by the owner, was withdrawn only by the owner or the
+A soul proposal is a personal request: it sits in the profile owner's
+personal inbox, is visible only to that owner and the proposing agent,
+is answered only by the owner, is withdrawn only by the owner or the
 hub — never by the proposing agent or any other agent — and its events,
-the withdrawal's included, carried ids and status only. §7 allows this
+the withdrawal's included, carry ids and status only. §7 allows this
 addressing (`profile_owner:<agent id>`) for requests the hub files
 itself.
 
