@@ -24,6 +24,7 @@ class Pins(unittest.TestCase):
     def tree(self, **override: str) -> Path:
         files = {
             ".keep-the-why": "<!-- keep-the-why:config -->\n- context-schema: 1.2.3\n",
+            **{name: "- context-schema: 1.2.3\n" for name in ktw_pin.SUB_CONFIGS},
             "AGENTS.md": f"`npx skills@9.9.9 add {SOURCE}`\nor read {SOURCE}.\n",
             "docs/api.md": (
                 f'"install": [ "npx skills@9.9.9 add {SOURCE} -g -y",\n'
@@ -97,6 +98,32 @@ class Pins(unittest.TestCase):
                 "docs/api.md:2: `skills@9.9.8`, hub/src/maity_hub/ktw_skill.py pins skills@9.9.9",
                 "hub/README.md:1: the skill's tree is 'v1.2.2', context-schema is 1.2.3",
             ],
+        )
+
+    def test_a_moving_ref_in_a_short_form_fails(self) -> None:
+        root = self.tree(
+            **{
+                "hub/README.md": "the skill's `latest` release tree\n",
+                "docs/api.md": "names as its `context-schema` (`tree/latest`), and\n"
+                "the skills installer at a fixed version (`skills@latest`); an\n"
+                "or the installer (`skills`) itself\n",
+            }
+        )
+        self.assertEqual(
+            ktw_pin.check(root),
+            [
+                "docs/api.md:1: the skill's tree is 'latest', context-schema is 1.2.3",
+                "docs/api.md:2: `skills@latest`, hub/src/maity_hub/ktw_skill.py pins skills@9.9.9",
+                "docs/api.md:3: `skills` without a version",
+                "hub/README.md:1: the skill's tree is 'latest', context-schema is 1.2.3",
+            ],
+        )
+
+    def test_a_missing_package_configuration_is_named(self) -> None:
+        root = self.tree()
+        (root / "cli/.keep-the-why").unlink()
+        self.assertEqual(
+            ktw_pin.check(root), ["cli/.keep-the-why: missing (named in tools/ktw_pin.py)"]
         )
 
     def test_a_package_on_another_schema_fails(self) -> None:

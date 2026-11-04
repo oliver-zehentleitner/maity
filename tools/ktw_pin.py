@@ -6,9 +6,11 @@ migrated to. The skill's install instructions (`keep-the-why/tree/vX/...`), the 
 (`--branch vX`) and the linter action (`# lint-vX.N`) must name that release, and every `npx
 skills@V` must name the installer version that `hub/src/maity_hub/ktw_skill.py` pins. Whoever
 migrates the context bumps every copy in the same pull request; a moving `latest` fails. A
-copy is found in any of its written forms: the full tree URL, a bare `tree/vX`, the README's
-`vX` release tree, and `skills@V` with or without `npx`. The sub-packages' `.keep-the-why`
-files must name the same `context-schema` as the root's.
+copy is found in any of its written forms: the full tree URL, a bare `tree/<ref>`, the README's
+`<ref>` release tree, and `skills@<version>` with or without `npx`; each form takes any ref, so
+`tree/latest` or `skills@latest` fails as much as another version, and a `skills` in backticks
+without a version fails too. The sub-packages' `.keep-the-why` files must exist and name the
+same `context-schema` as the root's: each package's linter reads its own.
 
 What it cannot check offline is that the linter action's commit SHA is the commit of the tag its
 comment names: on a bump, the author and the reviewers check it, for example with
@@ -41,12 +43,13 @@ SUB_CONFIGS = ("hub/.keep-the-why", "cli/.keep-the-why", "web/.keep-the-why")
 
 TREE = re.compile(r"keep-the-why/tree/([^/\s\"'`]+)/")
 # A release tree named without the repository: `tree/vX` (not after a path), or `vX` release tree.
-BARE_TREE = re.compile(r"(?<![\w/.-])tree/(v\d[\w.-]*?)(?=[)\s\"'`,;/]|\.?$)")
-README_TREE = re.compile(r"`(v\d[\w.-]*)` release tree")
+BARE_TREE = re.compile(r"(?<![\w/.-])tree/(\w[\w.-]*?)(?=[)\s\"'`,;/]|\.?$)")
+README_TREE = re.compile(r"`([^`\s]+)` release tree")
 BRANCH = re.compile(r"--branch (\S+) https://github\.com/oliver-zehentleitner/keep-the-why\b")
 NPX = re.compile(r"npx skills(@[^\s\"'`]*)?\s")
 # The installer's version wherever it is written without npx before it.
-BARE_INSTALLER = re.compile(r"(?<![\w@/.-])(?<!npx )skills@(\d[\w.-]*?)(?=[)\s\"'`,;]|\.?$)")
+BARE_INSTALLER = re.compile(r"(?<![\w@/.-])(?<!npx )skills@(\w[\w.-]*?)(?=[)\s\"'`,;]|\.?$)")
+UNVERSIONED = re.compile(r"`skills`")
 INSTALLER = re.compile(r'^SKILLS_INSTALLER = "skills@([^"]+)"$', re.MULTILINE)
 LINT_ACTION = re.compile(r"uses: oliver-zehentleitner/keep-the-why@(\S+)(?:\s*#\s*(\S+))?")
 SCHEMA = re.compile(r"^- context-schema:\s*(\S+)\s*$", re.MULTILINE)
@@ -69,11 +72,13 @@ def check(root: Path) -> list[str]:
     installer = pinned.group(1) if pinned else None
     for name in SUB_CONFIGS:
         path = root / name
-        if path.exists():
-            found = SCHEMA.search(path.read_text(encoding="utf-8"))
-            if not found or found.group(1) != version:
-                named = found.group(1) if found else "none"
-                problems.append(f"{name}: context-schema {named}, the root's is {version}")
+        if not path.exists():
+            problems.append(f"{name}: missing (named in tools/ktw_pin.py)")
+            continue
+        found = SCHEMA.search(path.read_text(encoding="utf-8"))
+        if not found or found.group(1) != version:
+            named = found.group(1) if found else "none"
+            problems.append(f"{name}: context-schema {named}, the root's is {version}")
     for name in FILES:
         path = root / name
         if not path.exists():
@@ -99,6 +104,8 @@ def check(root: Path) -> list[str]:
                     problems.append(
                         f"{where}: `npx skills{at}`, {INSTALLER_SOURCE} pins skills@{installer}"
                     )
+            if UNVERSIONED.search(line):
+                problems.append(f"{where}: `skills` without a version")
             for at in BARE_INSTALLER.findall(line):
                 if installer and at != installer:
                     problems.append(

@@ -1417,9 +1417,11 @@ unchanged. `tools/ktw_pin.py`, run in the changelog job of ci.yml, fails
 when any copy names another release than `.keep-the-why`'s
 `context-schema`, another installer version, or the action by tag. It
 reads every form a copy is written in: the full tree URL, a bare
-`tree/vX`, the hub README's "`vX` release tree", and `skills@V` with or
-without `npx`. The `.keep-the-why` files of `hub/`, `cli/` and `web/`
-must name the root's `context-schema`. That the action's SHA is the
+`tree/<ref>`, the hub README's "`<ref>` release tree", and
+`skills@<version>` with or without `npx`, each with any ref, so a short
+form naming `latest` fails too, as does a `skills` in backticks without a
+version. The `.keep-the-why` files of `hub/`, `cli/` and `web/` must exist
+and name the root's `context-schema`. That the action's SHA is the
 commit of the tag in its comment it cannot check offline: on a bump the
 author and the reviewers check it (`git ls-remote` on the tag).
 
