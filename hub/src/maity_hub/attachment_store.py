@@ -1,20 +1,91 @@
 """Where an attachment's bytes live (docs/api.md §8.7): a blob store behind the hub.
 
-The key is made from the project and the attachment id, never from the name. `local` is
-the one store built: a directory of the operator's volume. A blob is written whole to a
-file of its own and moved into place, so a reader never sees half of one, and a removal
-that finds nothing is a removal that is done.
+The key is made from the project and the attachment id, never from the name. Two stores
+are built, and the operator picks one:
+
+- `local` (the default): a directory of the operator's volume. A blob is written whole to
+  a file of its own and moved into place, so a reader never sees half of one. One hub
+  process, or replicas that all mount the same directory, see the same bytes.
+- `s3` (opt-in, hub/context/replicas.md a70d7269): an S3-compatible bucket, for replicas
+  that share nothing else. An object is written by one `PutObject`, so a reader sees
+  the old bytes or the new ones.
+
+In both, a removal that finds nothing is a removal that is done, and a read streams the
+bytes in pieces (`Blob`) instead of holding the whole file in memory. Nothing here logs
+or raises a credential: an error of the S3 client becomes a `StoreError` that names the
+operation and the error code only.
 """
 
 from __future__ import annotations
 
 import contextlib
+import datetime
+import email.utils
+import functools
+import hashlib
+import logging
 import os
 import secrets
+from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import Any, BinaryIO, Protocol
 
-from maity_hub.config import Settings
+from maity_hub.config import AttachmentS3, Settings
 from maity_hub.errors import ApiError
+
+CHUNK = 64 * 1024
+
+
+class StoreError(RuntimeError):
+    """The store could not do what was asked. The message names the operation and, for
+    `s3`, the error code; never a credential, never the endpoint's answer in full."""
+
+
+class Blob(Protocol):
+    """An open blob: its size as stored, its bytes in pieces, and `close`."""
+
+    size: int
+
+    def __iter__(self) -> Iterator[bytes]: ...
+
+    def close(self) -> None: ...
+
+
+class BlobStore(Protocol):
+    def put(self, key: str, data: bytes) -> None: ...
+
+    def open(self, key: str) -> Blob | None: ...
+
+    def get(self, key: str) -> bytes | None: ...
+
+    def delete(self, key: str) -> None: ...
+
+    def projects(self) -> list[str]: ...
+
+    def age(self, key: str, now: float) -> float | None: ...
+
+    def keys(self, project: str) -> list[str]: ...
+
+
+def split_key(key: str) -> tuple[str, str]:
+    """`<project>/<attachment>`, both plain names; anything else is not a blob key."""
+    project, _, name = key.partition("/")
+    if not project or not name or "/" in name or {".", ".."} & {project, name}:
+        raise ValueError("not a blob key")
+    return project, name
+
+
+class _FileBlob:
+    def __init__(self, handle: BinaryIO) -> None:
+        self._handle = handle
+        self.size = os.fstat(handle.fileno()).st_size
+
+    def __iter__(self) -> Iterator[bytes]:
+        while chunk := self._handle.read(CHUNK):
+            yield chunk
+
+    def close(self) -> None:
+        self._handle.close()
 
 
 class LocalStore:
@@ -22,9 +93,7 @@ class LocalStore:
         self.root = root
 
     def _path(self, key: str) -> Path:
-        project, _, name = key.partition("/")
-        if not project or not name or "/" in name or {".", ".."} & {project, name}:
-            raise ValueError("not a blob key")
+        project, name = split_key(key)
         return self.root / project / name
 
     def put(self, key: str, data: bytes) -> None:
@@ -41,6 +110,12 @@ class LocalStore:
             with contextlib.suppress(FileNotFoundError):
                 scratch.unlink()
             raise
+
+    def open(self, key: str) -> Blob | None:
+        try:
+            return _FileBlob(open(self._path(key), "rb"))
+        except FileNotFoundError:
+            return None
 
     def get(self, key: str) -> bytes | None:
         try:
@@ -71,23 +146,339 @@ class LocalStore:
         return [f"{project}/{p.name}" for p in folder.iterdir() if not p.name.startswith(".")]
 
 
+# The object metadata the hub writes with every blob (`x-amz-meta-sha256`): a copy compares it
+# instead of downloading the object again.
+SHA256 = "sha256"
+
+# The S3 client's own errors, by code, that mean "there is no such object".
+_MISSING = {"NoSuchKey", "404", "NotFound"}
+
+
+def _code(error: Exception) -> str:
+    response = getattr(error, "response", None)
+    if isinstance(response, dict):
+        return str(response.get("Error", {}).get("Code") or "unknown")
+    return type(error).__name__
+
+
+class _S3Blob:
+    def __init__(self, body: Any, size: int) -> None:
+        self._body = body
+        self.size = size
+
+    def __iter__(self) -> Iterator[bytes]:
+        try:
+            yield from self._body.iter_chunks(CHUNK)
+        except Exception as error:
+            raise StoreError(
+                f"the attachment store could not read a blob ({_code(error)})"
+            ) from None
+
+    def close(self) -> None:
+        self._body.close()
+
+
+class S3Store:
+    """A bucket of an S3-compatible service through boto3 (hub/context/replicas.md
+    a70d7269). One client per process; boto3's clients are safe to share between
+    threads."""
+
+    def __init__(self, config: AttachmentS3, client: Any = None) -> None:
+        self.bucket = config.bucket
+        self.base = f"{config.prefix}/" if config.prefix else ""
+        self.client = client if client is not None else _client(config)
+
+    def _object(self, key: str) -> str:
+        split_key(key)
+        return self.base + key
+
+    def _fail(self, what: str, error: Exception) -> StoreError:
+        return StoreError(f"the attachment store could not {what} ({_code(error)})")
+
+    def put(self, key: str, data: bytes) -> None:
+        name = self._object(key)
+        digest = hashlib.sha256(data).hexdigest()
+        try:
+            self.client.put_object(
+                Bucket=self.bucket, Key=name, Body=data, Metadata={SHA256: digest}
+            )
+        except Exception as error:
+            raise self._fail("store a blob", error) from None
+
+    def digest(self, key: str) -> str | None:
+        """The SHA-256 the hub wrote with the object, or None when it is gone or was written
+        without one (by another tool)."""
+        found = self.stat(key)
+        return found[1] if found else None
+
+    def stat(self, key: str) -> tuple[int, str | None] | None:
+        """The object's size and the SHA-256 the hub wrote with it (None when another tool wrote
+        it), or None when it is gone; one HEAD."""
+        name = self._object(key)
+        try:
+            answer = self.client.head_object(Bucket=self.bucket, Key=name)
+        except Exception as error:
+            if _code(error) in _MISSING:
+                return None
+            raise self._fail("look at a blob", error) from None
+        found = answer.get("Metadata", {}).get(SHA256)
+        return int(answer.get("ContentLength", -1)), (str(found) if found else None)
+
+    def open(self, key: str) -> Blob | None:
+        name = self._object(key)
+        try:
+            answer = self.client.get_object(Bucket=self.bucket, Key=name)
+        except Exception as error:
+            if _code(error) in _MISSING:
+                return None
+            raise self._fail("read a blob", error) from None
+        return _S3Blob(answer["Body"], int(answer["ContentLength"]))
+
+    def get(self, key: str) -> bytes | None:
+        blob = self.open(key)
+        if blob is None:
+            return None
+        try:
+            return b"".join(blob)
+        finally:
+            blob.close()
+
+    def delete(self, key: str) -> None:
+        name = self._object(key)
+        try:
+            self.client.delete_object(Bucket=self.bucket, Key=name)
+        except Exception as error:
+            if _code(error) in _MISSING:
+                return
+            raise self._fail("remove a blob", error) from None
+
+    def _list(self, prefix: str, **more: Any) -> Iterator[dict[str, Any]]:
+        try:
+            pages = self.client.get_paginator("list_objects_v2").paginate(
+                Bucket=self.bucket, Prefix=prefix, **more
+            )
+            yield from pages
+        except Exception as error:
+            raise self._fail("list blobs", error) from None
+
+    def projects(self) -> list[str]:
+        """The projects that have a blob, for the sweep."""
+        found = []
+        for page in self._list(self.base, Delimiter="/"):
+            for common in page.get("CommonPrefixes", []):
+                project = common["Prefix"][len(self.base) :].rstrip("/")
+                if project and "/" not in project and project not in (".", ".."):
+                    found.append(project)
+        return found
+
+    def age(self, key: str, now: float) -> float | None:
+        name = self._object(key)
+        try:
+            answer = self.client.head_object(Bucket=self.bucket, Key=name)
+        except Exception as error:
+            if _code(error) in _MISSING:
+                return None
+            raise self._fail("look at a blob", error) from None
+        written = float(answer["LastModified"].timestamp())
+        # Both times from the store's clock: the answer's `Date` against the object's
+        # LastModified, so the hub's clock may differ from the store's by any amount
+        # (hub/context/attachments.md 7dcd4850). Without a usable `Date`, the hub's `now`.
+        store_now = _date(answer)
+        age = (store_now if store_now is not None else now) - written
+        if age < -1:
+            logging.getLogger(__name__).warning("a blob's age is negative: the clocks disagree")
+        return age
+
+    def keys(self, project: str) -> list[str]:
+        """The blobs of one project, for the sweep; an object under the prefix that is
+        not a blob key (a folder marker, another tool's file) is not the hub's and is
+        left alone."""
+        found = []
+        for page in self._list(f"{self.base}{project}/"):
+            for item in page.get("Contents", []):
+                key = item["Key"][len(self.base) :]
+                try:
+                    split_key(key)
+                except ValueError:
+                    continue
+                found.append(key)
+        return found
+
+
+def _date(answer: dict[str, Any]) -> float | None:
+    """The `Date` header of a store's answer, in seconds since the epoch, or None."""
+    raw = answer.get("ResponseMetadata", {}).get("HTTPHeaders", {}).get("date")
+    if not raw:
+        return None
+    try:
+        when = email.utils.parsedate_to_datetime(str(raw))
+    except (TypeError, ValueError):
+        return None
+    if when.tzinfo is None:  # asctime or `-0000`: HTTP dates are UTC (RFC 9110)
+        when = when.replace(tzinfo=datetime.UTC)
+    return when.timestamp()
+
+
+def _client(config: AttachmentS3) -> Any:
+    import boto3
+    from botocore.config import Config
+
+    # botocore logs each request's headers at DEBUG, the access key id among them: its own
+    # loggers are set to INFO, so that a root logger at DEBUG (now or later) does not reach them.
+    for name in ("botocore", "boto3", "s3transfer", "urllib3"):
+        logger = logging.getLogger(name)
+        if logger.level == logging.NOTSET or logger.level < logging.INFO:
+            logger.setLevel(logging.INFO)
+    options: dict[str, Any] = {
+        "retries": {"mode": "standard", "max_attempts": 3},
+        "connect_timeout": 5,
+        "read_timeout": 60,
+    }
+    if config.endpoint is not None:
+        # An S3-compatible service (MinIO, Ceph, a hoster's): bucket in the path, and
+        # checksums only where the API requires them, which every such service accepts.
+        options["s3"] = {"addressing_style": "path"}
+        options["request_checksum_calculation"] = "when_required"
+        options["response_checksum_validation"] = "when_required"
+    return boto3.session.Session().client(
+        "s3",
+        endpoint_url=config.endpoint,
+        region_name=config.region,
+        aws_access_key_id=config.access_key_id,
+        aws_secret_access_key=config.secret_access_key,
+        config=Config(**options),
+    )
+
+
+@functools.lru_cache(maxsize=4)
+def _s3(config: AttachmentS3) -> S3Store:
+    return S3Store(config)
+
+
 def key_of(project_id: str, attachment_id: str) -> str:
     return f"{project_id}/{attachment_id}"
 
 
-def store_of(settings: Settings) -> LocalStore:
+def optional_store(settings: Settings) -> BlobStore | None:
+    """The configured store, or None where attachments are switched off: for the code
+    that removes bytes when it can and has nothing to remove when it cannot."""
+    if settings.attachment_s3 is not None:
+        return _s3(settings.attachment_s3)
+    return LocalStore(settings.attachment_dir) if settings.attachment_dir is not None else None
+
+
+def store_of(settings: Settings) -> BlobStore:
     """The configured store, or `attachments_not_configured` (409) when the operator has
-    set no `MAITY_ATTACHMENT_DIR`."""
-    if settings.attachment_dir is None:
+    set neither `MAITY_ATTACHMENT_STORE=s3` nor a `MAITY_ATTACHMENT_DIR`."""
+    store = optional_store(settings)
+    if store is None:
         raise ApiError(
             409,
             "attachments_not_configured",
             "this hub has no attachment store: the operator sets MAITY_ATTACHMENT_DIR",
         )
-    return LocalStore(settings.attachment_dir)
+    return store
 
 
-def optional_store(settings: Settings) -> LocalStore | None:
-    """The configured store, or None where attachments are switched off: for the code
-    that removes bytes when it can and has nothing to remove when it cannot."""
-    return LocalStore(settings.attachment_dir) if settings.attachment_dir is not None else None
+def configured(settings: Settings | None) -> bool:
+    """Whether the hub has an attachment store, without building one (no client, no network):
+    `s3`, or `local` with its directory."""
+    return settings is not None and (
+        settings.attachment_s3 is not None or settings.attachment_dir is not None
+    )
+
+
+def shared(settings: Settings) -> bool:
+    """Whether every replica sees the same bytes without a shared volume: true for `s3`.
+    `local` is one directory, shared only when the operator mounts the same one in
+    every replica, which the hub cannot see."""
+    return settings.attachment_s3 is not None
+
+
+def copy_local_to_s3(
+    source: LocalStore,
+    target: S3Store,
+    *,
+    apply: bool,
+    live: Callable[[str], set[str]] | None = None,
+    still: Callable[[str], bool] | None = None,
+) -> dict[str, int]:
+    """Copy every blob of the local store into the bucket, under the same key; the migration from
+    a volume to `s3` (hub/context/replicas.md 99360a7a). A blob the bucket already holds with the
+    same SHA-256 is skipped, so the copy can run again until it reports nothing to copy; the
+    local files are never changed. An object the hub wrote with another SHA-256 is never
+    overwritten: keys are immutable, so the file changed, and it is counted as `differs`. After
+    each put one HEAD checks the size and the SHA-256 the put wrote as metadata. A file is read
+    whole (at most `FILE_CAP`, like an upload). A folder or file the hub cannot read counts as
+    failed, the rest goes on. Without `apply` it only counts.
+
+    `live(project)` names the attachments of a project that have a row and are not deleted. A
+    file without one is skipped (`skipped_deleted`): under `s3` the hub deletes only in the
+    bucket, so a redacted or expired attachment's file stays on the volume and must not go back
+    (a file whose upload has not committed its row yet is skipped too; the next run takes it).
+    `still(key)` asks again right before and right after each put. Before, it saves the write
+    in the usual case; after, it closes the race with a hub that serves from the bucket: the
+    hub commits a deletion first and removes the bytes after, so an attachment deleted during
+    the put is removed from the bucket again here and counted as skipped (in a versioned bucket
+    one noncurrent version remains, which its lifecycle rule expires). A deletion by a hub that
+    still serves from the volume removes only the file there: the command's clean-up after the
+    copy (`cli._clean_bucket`) removes its object from the bucket. A pending upload past its 24
+    hours that the sweep has not removed yet still has its row and is copied."""
+    log = logging.getLogger(__name__)
+    done = {"copied": 0, "present": 0, "differs": 0, "skipped_deleted": 0, "failed": 0}
+    try:
+        projects = sorted(source.projects())
+    except OSError as error:
+        log.error("the volume: %s", error.strerror or type(error).__name__)
+        done["failed"] += 1
+        return done
+    for project in projects:
+        try:
+            keys = sorted(source.keys(project))
+        except OSError as error:  # lost+found on an ext4 volume, owned by root
+            log.error("%s: %s", project, error.strerror or type(error).__name__)
+            done["failed"] += 1
+            continue
+        alive = live(project) if live is not None else None
+        for key in keys:
+            if alive is not None and key.partition("/")[2] not in alive:
+                done["skipped_deleted"] += 1
+                continue
+            try:
+                data = source.get(key)
+            except OSError as error:
+                log.error("%s: %s", key, error.strerror or type(error).__name__)
+                done["failed"] += 1
+                continue
+            if data is None:  # removed since it was listed
+                continue
+            digest = hashlib.sha256(data).hexdigest()
+            try:
+                found = target.stat(key)
+                if found is not None and found[1] == digest:
+                    done["present"] += 1
+                    continue
+                if found is not None and found[1] is not None:
+                    log.error("%s: the bucket holds other bytes; not overwritten", key)
+                    done["differs"] += 1
+                    continue
+                if apply:
+                    if still is not None and not still(key):  # deleted since the live ids
+                        done["skipped_deleted"] += 1
+                        continue
+                    target.put(key, data)
+                    kept = target.stat(key)
+                    # Deleted while this ran: asked before the check, since the hub's own
+                    # removal may already have taken the object (no object is no failure then).
+                    if still is not None and not still(key):
+                        if kept is not None:
+                            target.delete(key)
+                        done["skipped_deleted"] += 1
+                        continue
+                    if kept != (len(data), digest):
+                        raise StoreError("the attachment store did not keep a blob whole")
+                done["copied"] += 1
+            except StoreError as error:
+                log.error("%s: %s", key, error)
+                done["failed"] += 1
+    return done

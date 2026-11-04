@@ -1400,6 +1400,75 @@ window.MAITY_FIXTURES = {
       }
     ]
   },
+  "maity/contract.json": {
+    "docs/api.md": {
+      "ref": "0e5f7a1c3b9d2e4f6a8b0c1d3e5f7a9b1c3d5e7f",
+      "size": 697,
+      "text": "# The Maity API contract\n\nThe REST contract hub, CLI and dashboard build against. Read with care.\n\n## 6 Cards and their states\n\nCards are the board's unit of work. Each card has a status and a holder.\n\n### 6.4 Creating a card\n\n`POST /projects/{owner}/{slug}/tasks` creates a card.\n\n```\n## 9 Not a heading: inside a fence\n```\n\n#### 6.4.1 Labels\n\n- `fix`\n- `feature`\n- `chore`\n\n### 6.8 Contracts\n\nThe contract text stays in the repository; the hub reads it on request.\n\n## 8. Events\n\nEvery change is an event, read with `GET …/events`.\n\n## Notes on reading this file\n\nA heading without a number anchors by its position.\n\n## 8 Events again\n\nA number two headings share anchors neither by number.\n",
+      "toc": [
+        {
+          "anchor": "s-6",
+          "level": 2,
+          "line": 5,
+          "number": "6",
+          "title": "Cards and their states"
+        },
+        {
+          "anchor": "s-6.4",
+          "level": 3,
+          "line": 10,
+          "number": "6.4",
+          "title": "Creating a card"
+        },
+        {
+          "anchor": "s-6.4.1",
+          "level": 4,
+          "line": 18,
+          "number": "6.4.1",
+          "title": "Labels"
+        },
+        {
+          "anchor": "s-6.8",
+          "level": 3,
+          "line": 24,
+          "number": "6.8",
+          "title": "Contracts"
+        },
+        {
+          "anchor": "h-4",
+          "level": 2,
+          "line": 28,
+          "number": "8",
+          "title": "Events"
+        },
+        {
+          "anchor": "h-5",
+          "level": 2,
+          "line": 32,
+          "number": null,
+          "title": "Notes on reading this file"
+        },
+        {
+          "anchor": "h-6",
+          "level": 2,
+          "line": 36,
+          "number": "8",
+          "title": "Events again"
+        }
+      ],
+      "url": "https://github.com/oliver-zehentleitner/maity/blob/0e5f7a1c3b9d2e4f6a8b0c1d3e5f7a9b1c3d5e7f/docs/api.md"
+    },
+    "docs/missing.md": {
+      "error": {
+        "code": "not_found",
+        "fields": {
+          "settings.contract_path": "not_found_on_forge"
+        },
+        "message": "the contract file is not there",
+        "status": 404
+      }
+    }
+  },
   "maity/contracts.json": {
     "docs/api.md#4.1": {
       "error": {
@@ -4150,12 +4219,21 @@ window.MAITY_FIXTURES = {
         },
         "body": "The CLI needs `--no-code` here too.",
         "created_at": "2026-10-21T10:30:00Z",
-        "edited": null,
+        "edited": {
+          "at": "2026-10-21T10:35:00Z",
+          "by": {
+            "handle": "agent-c",
+            "kind": "agent",
+            "member_id": "agt-c"
+          },
+          "reason": "Fixed a typo in the flag."
+        },
         "id": "nte-0031",
         "mentions": [],
         "resolution": null,
         "state": "open",
-        "task_id": "tsk-0001"
+        "task_id": "tsk-0001",
+        "version": 2
       },
       {
         "author": {
@@ -4174,7 +4252,8 @@ window.MAITY_FIXTURES = {
           "reason": "covered"
         },
         "state": "dismissed",
-        "task_id": "tsk-0001"
+        "task_id": "tsk-0001",
+        "version": 1
       },
       {
         "author": {
@@ -4194,7 +4273,8 @@ window.MAITY_FIXTURES = {
         "mentions": [],
         "resolution": null,
         "state": "open",
-        "task_id": "tsk-0001"
+        "task_id": "tsk-0001",
+        "version": 2
       }
     ]
   },
@@ -5310,7 +5390,8 @@ window.MAITY_FIXTURES = {
       "meat_proxy": false,
       "meat_proxy_hands": false,
       "meat_proxy_lead": false,
-      "meat_proxy_note": "This person says: I am a meat proxy. Lead me step by step rather than expecting me to explain. When you need a human's hands, come to me first."
+      "meat_proxy_note": "This person says: I am a meat proxy. Lead me step by step rather than expecting me to explain. When you need a human's hands, come to me first.",
+      "public_presence": true
     },
     "projects": [
       {
@@ -5486,9 +5567,32 @@ window.MAITY_FIXTURES = {
           "session_id": "hss-41d2"
         },
         "address_status": "verified",
+        "daily_at": "08:00",
+        "disabled_at": null,
+        "hard_failures": 0,
+        "kinds": {
+          "chat": {
+            "content": false,
+            "mode": "daily"
+          },
+          "inbox": {
+            "mode": "immediate"
+          },
+          "mention": {
+            "content": false,
+            "mode": "daily"
+          },
+          "security": {
+            "mode": "immediate"
+          }
+        },
         "language": "en",
         "pending_address": null,
-        "verified_at": "2026-10-01T09:12:00Z"
+        "quiet_hours": null,
+        "sign_in_link": true,
+        "timezone": "Europe/Vienna",
+        "verified_at": "2026-10-01T09:12:00Z",
+        "weekly_on": "mon"
       },
       "kinds": [
         "inbox",

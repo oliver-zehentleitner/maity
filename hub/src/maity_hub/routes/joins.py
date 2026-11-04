@@ -43,6 +43,7 @@ from maity_hub import (
     mentions,
     moderation,
     namespace,
+    product_line,
     project_roles,
     takeovers,
     write_guard,
@@ -740,11 +741,11 @@ def _html(markdown: str, title_text: str, dashboard: str = "/") -> str:
     return (
         '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
-        f"<title>{html.escape(title_text)}</title>\n</head>\n<body>\n<main>\n{body}</main>\n"
+        f"<title>{html.escape(title_text)}</title>\n{product_line.HEAD}\n</head>\n<body>\n<main>\n{body}</main>\n"
         "<footer><p>This page is documentation for the agent you are adding. "
         f'It has no form and performs no call. <a href="{html.escape(dashboard)}">'
         "Open the dashboard</a>.</p>"
-        "</footer>\n</body>\n</html>\n"
+        f"</footer>\n{product_line.html('en')}\n</body>\n</html>\n"
     )
 
 
@@ -777,11 +778,12 @@ async def _page(token: str, request: Request) -> Response:
     # The dead link is the envelope's `not_found` for a client reading the header (§1.3).
     headers = {"Maity-Error": "not_found"} if status == 404 else None
     if "text/html" in request.headers.get("accept", ""):
+        # The token is in the path: no link on the page may send it on (§1.1, §16.13).
         return Response(
             _html(markdown, title_text, dashboard),
             status_code=status,
             media_type="text/html; charset=utf-8",
-            headers=headers,
+            headers={**(headers or {}), **product_line.HEADERS},
         )
     return Response(
         markdown,
@@ -1033,7 +1035,7 @@ def _consume(conn: Connection, row: Any, client: str) -> tuple[str, str, str, st
         if row.placement_id is None:  # a rejoin's instance is revoked already (§15.9),
             # and `_recheck_instance` checked it: nothing to revoke, no second revocation
             old = instances.require_active(conn, member, row.replaces, "replaces")
-            revoke(conn, old.id, "replaced", by=row.created_by)
+            revoke(conn, old.id, "replaced", by=row.created_by, holder_moves=True)
             emit(
                 conn,
                 row.project_id,

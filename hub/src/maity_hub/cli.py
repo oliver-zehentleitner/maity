@@ -1,5 +1,5 @@
-"""`maity-hub serve` and `maity-hub migrate`, the operator's account commands, and the load test's
-seed."""
+"""`maity-hub serve` and `maity-hub migrate`, the operator's account commands, the copy of the
+attachments into a bucket, and the load test's seed."""
 
 from __future__ import annotations
 
@@ -17,9 +17,13 @@ from typing import Any
 import uvicorn
 from sqlalchemy import exists, insert, inspect, literal, select
 from sqlalchemy.exc import SQLAlchemyError
+from uvicorn.config import STARTUP_FAILURE
+from uvicorn.supervisors import multiprocess
 
 from maity_hub import (
     __version__,
+    attachment_store,
+    attachments,
     clock,
     handle_register,
     handles,
@@ -29,9 +33,19 @@ from maity_hub import (
     namespace,
     paths,
     public_pages,
+    serving,
 )
 from maity_hub import tables as t
-from maity_hub.app import SchemaNotCurrentError, create_app, require_current_schema, serving_engine
+from maity_hub.app import (
+    SchemaNotCurrentError,
+    check_startup,
+    check_web_dir,
+    create_app,
+    require_current_schema,
+    serving_engine,
+    start_once,
+    warn_on_connection_budget,
+)
 from maity_hub.auth import second_factor_reset
 from maity_hub.auth.passwords import MIN_LENGTH, hash_password
 from maity_hub.config import ConfigError, Settings, redact_database_url
@@ -81,6 +95,18 @@ def main(argv: list[str] | None = None) -> int:
         "purge", help="delete every row of the lt-<n> accounts; without --apply only count"
     )
     purge.add_argument("--apply", action="store_true")
+    files = commands.add_parser("attachments", help="the attachment store (docs/api.md §8.7)")
+    files_commands = files.add_subparsers(dest="attachments_command", required=True)
+    copy = files_commands.add_parser(
+        "copy-to-s3",
+        help="copy the files under MAITY_ATTACHMENT_DIR into the bucket of the s3 store",
+    )
+    copy.add_argument(
+        "--apply",
+        action="store_true",
+        help="copy, and remove from the bucket what was deleted since an earlier run; without it "
+        "only count",
+    )
     quick = commands.add_parser(
         "quickstart",
         help="a personal hub on SQLite: set up a new database, the first account, then serve",
@@ -89,10 +115,10 @@ def main(argv: list[str] | None = None) -> int:
     quick.add_argument("--display-name", help="its display name (default: the handle)")
     args = parser.parse_args(argv)
 
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     if args.command in ("serve", "quickstart"):
-        # Alembic logs its context on every revision lookup, i.e. on every health call.
-        logging.getLogger("alembic").setLevel(logging.WARNING)
+        serving.configure_logging()
+    else:
+        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     try:
         settings = Settings.from_env()
     except ConfigError as error:
@@ -108,11 +134,94 @@ def main(argv: list[str] | None = None) -> int:
         return _unsuspend(settings, args.handle)
     if args.command == "quickstart":
         return _quickstart(settings, args.handle, args.display_name)
+    if args.command == "attachments":
+        return _copy_to_s3(settings, apply=args.apply)
     if args.command == "loadtest" and args.load_command == "purge":
         return _loadtest_purge(settings, apply=args.apply)
     if args.command == "loadtest":
         return _loadtest_seed(settings, args.humans, Path(args.out))
     return _serve(settings)
+
+
+def _copy_to_s3(settings: Settings, *, apply: bool) -> int:
+    """From the volume to the bucket, before the hub runs on `s3` alone; idempotent, so it runs
+    once while the hub still serves from the volume and once more after it stopped."""
+    if settings.attachment_dir is None:
+        return _fail("MAITY_ATTACHMENT_DIR is not set: the files to copy are there", EXIT_CONFIG)
+    if settings.attachment_s3 is None:
+        return _fail(
+            "MAITY_ATTACHMENT_STORE is not s3: set it and MAITY_ATTACHMENT_S3_BUCKET", EXIT_CONFIG
+        )
+    source = attachment_store.LocalStore(settings.attachment_dir)
+    target = attachment_store.S3Store(settings.attachment_s3)
+    try:
+        engine = make_engine(settings.database_url)
+        require_current_schema(engine)
+        done = attachment_store.copy_local_to_s3(
+            source,
+            target,
+            apply=apply,
+            live=lambda project: _live_attachments(engine, project),
+            still=lambda key: _still_live(engine, key),
+        )
+        # The bucket's objects whose attachment was deleted since an earlier run (the hub
+        # still on the volume deletes only there), as the hub's sweep under `s3` removes them;
+        # without `--apply` only counted.
+        cleaned = _clean_bucket(engine, target, apply=apply)
+    except SchemaNotCurrentError as error:
+        return _fail(str(error), EXIT_FAILURE)
+    except (SQLAlchemyError, ImportError) as error:
+        return _database_error(settings, error)
+    verb, removed = ("copied", "removed from") if apply else ("to copy", "to remove from")
+    print(
+        f"{verb}: {done['copied']}, already there: {done['present']}, "
+        f"different in the bucket: {done['differs']}, "
+        f"deleted, not copied: {done['skipped_deleted']}, "
+        f"deleted, {removed} the bucket: {cleaned['tombstoned'] + cleaned['orphans']}, "
+        f"failed: {done['failed'] + cleaned['failed']}"
+    )
+    return EXIT_FAILURE if done["failed"] or cleaned["failed"] or done["differs"] else 0
+
+
+def _clean_bucket(engine: Any, target: attachment_store.S3Store, *, apply: bool) -> dict[str, int]:
+    """The sweep's removals against the bucket, without expiring rows: a tombstone's object,
+    and an object no row names once it is older than `BLOB_GRACE` (an upload in flight under
+    `s3` is younger). Without `apply` only counted. A failure of the store or the database is
+    logged and counted; the copy itself stands, and its counts are printed."""
+    try:
+        done = attachments.sweep(engine, target, expiring=False, apply=apply)
+    except (attachment_store.StoreError, SQLAlchemyError) as error:
+        # The driver's first line only, as in `_database_error`: no SQL, no parameters.
+        original = getattr(error, "orig", None) or error
+        reason = (str(original).strip().splitlines() or [type(original).__name__])[0]
+        logging.getLogger(__name__).error("cleaning the bucket: %s", reason)
+        return {"tombstoned": 0, "orphans": 0, "failed": 1}
+    return {"tombstoned": done["tombstoned"], "orphans": done["orphans"], "failed": 0}
+
+
+def _live_attachments(engine: Any, project: str) -> set[str]:
+    """The attachments of a project that have a row and are not deleted, for the copy."""
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(t.attachment.c.id).where(
+                t.attachment.c.project_id == project, t.attachment.c.deleted_at.is_(None)
+            )
+        )
+        return {str(row.id) for row in rows}
+
+
+def _still_live(engine: Any, key: str) -> bool:
+    """Whether the attachment of a blob key still has a row that is not deleted."""
+    project, _, attachment_id = key.partition("/")
+    with engine.connect() as conn:
+        found = conn.execute(
+            select(t.attachment.c.id).where(
+                t.attachment.c.id == attachment_id,
+                t.attachment.c.project_id == project,
+                t.attachment.c.deleted_at.is_(None),
+            )
+        ).first()
+    return found is not None
 
 
 def _loadtest_refusal(settings: Settings) -> str | None:
@@ -414,9 +523,15 @@ def _quickstart(settings: Settings, handle: str | None, display_name: str | None
 
 
 def _serve(settings: Settings, banner: list[str] | None = None) -> int:
+    refused = serving.refusal(settings)
+    if refused is not None:
+        return _fail(refused, EXIT_CONFIG)
+    if settings.workers > 1:
+        return _serve_workers(settings, banner)
     try:
         engine = serving_engine(settings)
         require_current_schema(engine)
+        warn_on_connection_budget(engine, settings)
         app = create_app(settings, engine)
     except SchemaNotCurrentError as error:
         return _fail(str(error), EXIT_FAILURE)
@@ -424,7 +539,12 @@ def _serve(settings: Settings, banner: list[str] | None = None) -> int:
         return _fail(str(error), EXIT_CONFIG)
     except (SQLAlchemyError, ImportError) as error:
         return _database_error(settings, error)
-    config = uvicorn.Config(
+    _Server(_config(settings, app), banner=[*(banner or []), _where(settings)]).run()
+    return 0
+
+
+def _config(settings: Settings, app: Any, workers: int = 1) -> uvicorn.Config:
+    return uvicorn.Config(
         app,
         host=settings.host,
         port=settings.port,
@@ -432,9 +552,43 @@ def _serve(settings: Settings, banner: list[str] | None = None) -> int:
         access_log=False,
         timeout_graceful_shutdown=GRACEFUL_SECONDS,
         timeout_keep_alive=KEEP_ALIVE_SECONDS,
+        factory=workers > 1,
+        workers=workers,
     )
-    _Server(config, banner=[*(banner or []), _where(settings)]).run()
-    return 0
+
+
+def _serve_workers(settings: Settings, banner: list[str] | None) -> int:
+    """`MAITY_WORKERS` processes on one socket under uvicorn's supervisor, which starts a worker
+    again when one dies and passes the stop signal on; each worker releases its long-polls on it,
+    as one process does (`_Server`). The parent checks the database and the schema once, so a hub
+    that cannot start says so once, not once per worker, and holds no connection itself."""
+    try:
+        check_web_dir(settings)
+        engine = serving_engine(serving.per_worker(settings))
+        try:
+            check_startup(engine, settings)
+            warn_on_connection_budget(engine, settings)
+            start_once(engine, settings)
+        finally:
+            engine.dispose()
+    except SchemaNotCurrentError as error:
+        return _fail(str(error), EXIT_FAILURE)
+    except ConfigError as error:
+        return _fail(str(error), EXIT_CONFIG)
+    except (SQLAlchemyError, ImportError) as error:
+        return _database_error(settings, error)
+    config = _config(settings, "maity_hub.serving:app", settings.workers)
+    socket = config.bind_socket()
+    # Printed once, by the parent: each worker would print it again.
+    for line in [*(banner or []), _where(settings), f"maity-hub: {settings.workers} workers"]:
+        print(line, flush=True)
+    # Every worker uvicorn starts, also one started again, is a `_WorkerProcess`.
+    multiprocess.Process = _WorkerProcess  # type: ignore[misc]
+    supervisor = multiprocess.Multiprocess(config, sockets=[socket])
+    supervisor.run()
+    # uvicorn stops every worker when one fails before it serves; the hub then fails too.
+    failed = any(p.process.exitcode == STARTUP_FAILURE for p in supervisor.processes)
+    return EXIT_FAILURE if failed else 0
 
 
 def _where(settings: Settings) -> str:
@@ -479,6 +633,17 @@ class _Server(uvicorn.Server):
         if self._loop is not None:
             self._loop.call_soon_threadsafe(longpoll.begin_shutdown)
         super().handle_exit(sig, frame)
+
+
+class _WorkerProcess(multiprocess.Process):
+    """One of the `MAITY_WORKERS` processes: uvicorn's worker, serving with `_Server`, so that
+    the stop signal releases its long-polls first, as a hub of one process does."""
+
+    @property
+    def server(self) -> uvicorn.Server:
+        if self._server is None:
+            self._server = _Server(config=self.config)
+        return self._server
 
 
 if __name__ == "__main__":

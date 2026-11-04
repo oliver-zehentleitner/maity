@@ -1,9 +1,9 @@
 """A human's sessions as the session list shows them, and who may end which
 (docs/api.md §2.6.5).
 
-A session is in good standing when it was signed in by password, or when its own
-`session_created` item was marked read by an allowed session (§18.3); `confirmed` below
-is the set of public ids whose sign-in record was so marked.
+A session is in good standing when it was signed in by password or with the second factor,
+or when its sign-in was confirmed ("This was me", `confirmed_at`); reading its alert never
+confirms it (§2.6.5, §18.3).
 """
 
 from __future__ import annotations
@@ -63,25 +63,16 @@ def describe(user_agent: str | None) -> tuple[str | None, str | None]:
     return browser, system
 
 
-def good_standing(row: Any, confirmed: frozenset[str] = frozenset()) -> bool:
+def good_standing(row: Any) -> bool:
     """§2.6.5: signed in by password, or its sign-in confirmed from another session; and
     since §2.8.2 a sign-in that included the second factor, whatever its first."""
     return bool(
         row.method in ("password", "register")  # a registration gave its password too
-        or row.public_id in confirmed
+        or row.confirmed_at is not None
         # TOTP and a recovery code give standing whatever the first factor was; the mail does
         # not (§2.8.2, §2.8.8): it proved the mailbox, which neither stands for the account's
         # own key nor is the thing standing guards against.
         or row.second_factor in ("totp", "recovery_code")
-    )
-
-
-def confirmed_sessions(conn: Connection, human_id: str) -> frozenset[str]:
-    """The public ids whose `session_created` record an allowed session marked read."""
-    return frozenset(
-        public_id
-        for public_id, record in records.sign_in_records(conn, human_id).items()
-        if record.read_at is not None
     )
 
 
@@ -100,7 +91,6 @@ def view(
     current: str | None,
     now: datetime,
     sign_ins: dict[str, Any] | None = None,
-    confirmed: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     finished = ended(row, now)
     record = (sign_ins or {}).get(row.public_id)
@@ -115,7 +105,9 @@ def view(
         "os": row.os,
         "ip": None if finished else row.ip,
         "approved_by": row.approved_by,
-        "good_standing": good_standing(row, confirmed),
+        "good_standing": good_standing(row),
+        "confirmed_at": ts(row.confirmed_at) if row.confirmed_at else None,
+        "confirmed_by": row.confirmed_by,
         "second_factor": row.second_factor is not None,
         "created": (
             {
@@ -154,13 +146,11 @@ def listing(conn: Connection, human_id: str, current: str, *, with_ended: bool) 
     return shown
 
 
-def refusal(
-    actor: Any, target: Any, now: datetime, confirmed: frozenset[str] = frozenset()
-) -> str | None:
+def refusal(actor: Any, target: Any, now: datetime) -> str | None:
     """Why `actor` may not end `target`, or None (§2.6.5 "Who may end which session")."""
-    if actor.id_hash == target.id_hash or good_standing(actor, confirmed):
+    if actor.id_hash == target.id_hash or good_standing(actor):
         return None
-    if good_standing(target, confirmed):
+    if good_standing(target):
         return "not_in_good_standing"
     if now - actor.created_at < YOUNG and target.created_at < actor.created_at:
         return "session_too_new"
@@ -169,6 +159,10 @@ def refusal(
 
 def forbidden_to_end(reason: str) -> ApiError:
     return ApiError(403, "forbidden", "this session may not end that one", {"reason": reason})
+
+
+def forbidden_to_confirm(reason: str) -> ApiError:
+    return ApiError(403, "forbidden", "this session may not confirm that one", {"reason": reason})
 
 
 def end(conn: Connection, rows: Iterable[Any], by: str) -> None:

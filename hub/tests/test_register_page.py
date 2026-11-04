@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, select
 
-from maity_hub import clock
+from maity_hub import clock, product_line
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from maity_hub.notifications import tokens
@@ -100,6 +100,10 @@ def test_the_page_shows_the_form_and_changes_nothing(
     for name in ("password", "handle", "display_name"):
         assert f'name="{name}"' in page.text
     assert "terms_accepted" not in page.text  # the instance has no terms
+    # §2.7.1: the form says, before the account exists, what of it is public
+    assert "Your name and handle are publicly visible." in page.text
+    assert "Your profile is public by default" in page.text
+    assert "the public pages of your projects show when you are online" in page.text
     assert page.headers["referrer-policy"] == "no-referrer"
     cookie = page.headers["set-cookie"]
     assert cookie.startswith("maity_form=") and "Path=/mail/register" in cookie
@@ -527,7 +531,11 @@ def test_the_page_wears_the_legal_pages_shell_and_loads_nothing_from_elsewhere(
         assert "prefers-color-scheme:dark" in page.text  # light and dark
         assert 'name="viewport" content="width=device-width, initial-scale=1"' in page.text
         assert "<script" not in page.text and "<link" not in page.text
+        # Nothing loads from elsewhere; the product line's three links are links (§16.13).
+        external = {product_line.ISSUES, product_line.GITHUB, product_line.PROFILE}
         for address in re.findall(r'(?:src|href|action)="([^"]*)"', page.text):
+            if address in external:
+                continue
             assert address.startswith("/") and not address.startswith("//"), address
         policy = page.headers["content-security-policy"]
         assert "default-src 'none'" in policy and "form-action 'self'" in policy

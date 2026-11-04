@@ -34,11 +34,14 @@
   <script src="js/mentions.js" defer></script>
   <script src="js/notify.js" defer></script>
   <script src="js/lead-chat.js" defer></script>
+  <script src="js/maintenance.js" defer></script>
   <script src="js/app.js" defer></script>
+  <script src="js/product-line.js" defer></script>
   <script src="js/waiting.js" defer></script>
   <script src="js/inbox.js" defer></script>
   <script src="js/board-edit.js" defer></script>
   <script src="js/contract-panel.js" defer></script>
+  <script src="js/contract.js" defer></script>
   <script src="js/card-panel.js" defer></script>
   <script src="js/board.js" defer></script>
   <script src="js/placements.js" defer></script>
@@ -78,6 +81,8 @@
   <script src="js/memory.js" defer></script>
   <script src="js/step-up.js" defer></script>
   <script src="js/second-factor.js" defer></script>
+  <script src="js/admin-maintenance.js" defer></script>
+  <script src="js/broadcasts.js" defer></script>
   <script src="js/security.js" defer></script>
   <script src="js/your-data.js" defer></script>
   <script src="js/forge.js" defer></script>
@@ -109,5 +114,7 @@
     <!-- Until the first view replaces it (web/brand/loader.html; its timing lives in brand/loader.css). -->
     <p class="page-loading" role="status"><svg class="maity-loader" viewBox="0 0 64 64" role="img" aria-label="Loading"><circle cx="32" cy="10" r="6"></circle><circle cx="51" cy="21" r="6"></circle><circle cx="51" cy="43" r="6"></circle><circle cx="32" cy="54" r="6"></circle><circle cx="13" cy="43" r="6"></circle><circle cx="13" cy="21" r="6"></circle><rect class="maity-loader-t" x="26" y="4" width="12" height="12" rx="3"></rect><rect class="maity-loader-t" x="45" y="15" width="12" height="12" rx="3"></rect><rect class="maity-loader-t" x="45" y="37" width="12" height="12" rx="3"></rect><rect class="maity-loader-t" x="26" y="48" width="12" height="12" rx="3"></rect><rect class="maity-loader-t" x="7" y="37" width="12" height="12" rx="3"></rect><rect class="maity-loader-t" x="7" y="15" width="12" height="12" rx="3"></rect></svg> Loading Maity…</p>
   </main>
+  <!-- The product line (docs/api.md §16.13), drawn by js/product-line.js with each view. -->
+  <footer id="product-line" class="product-line"></footer>
 </body>
 </html>

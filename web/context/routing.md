@@ -124,3 +124,67 @@ closed and unknown matches its uniform `not_found`.
 (the earlier `#/s/<slug>`, shown to everyone there, members included):
 §16.11 removes it, and `?as=public` gives members the same view at the
 one address.
+
+## A place on a page is a route and one checked anchor, written by `M.route` alone; in fixture mode it follows the route after a second `#`
+
+**Id:** e5a0c394-947a-4c7c-b830-09c655befa44
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §6.8 ("The whole contract": `/<owner>/<slug>/contract#s-6.8` opens a section, a contract card's section links there), §16.11; web/js/route.js `isAnchored`, `anchoredHref`, `jump`; the card tsk-6jz07t0080rk
+**Revisit when:** a second view needs places on its page, or fixture mode stops carrying the route in the fragment
+
+`M.route.isAnchored` accepts a route followed by one `#` and an anchor
+of a letter and then letters, digits, `.`, `_` or `-`, at most 100
+characters; `h()` writes it through `M.route.anchoredHref`, so in
+fixture mode it becomes `#/<owner>/<slug>/contract#s-6.8` and
+`M.route.current()` gives back the path and that `fragment`. `isRoute`
+itself still refuses every `#`, so a sign-in's `next` never carries one.
+A click on such a link to the page one is on only scrolls (`jump`) and,
+over http(s), names the place in the address with `replaceState`;
+nothing is drawn or read again. To another page it is a new history
+entry, and that view jumps once its text is drawn.
+
+**Reason:** §6.8 links sections by a fragment, and under the shell's
+`<base href="/assets/">` a bare `#anchor` leads into `/assets/` (the
+`index.html` entry above), so a place has to be written as its route
+plus the anchor. The anchor's characters are the hub's (`s-<number>`,
+`h-<n>`), so the check stays narrow.
+
+**Rejected alternative:** a query (`contract?section=6.8`): the
+contract names the fragment, and a query is part of the route, so each
+jump in the table of contents would be a new address the view draws
+again, re-reading a file of up to 4 MiB. Letting `isRoute` take a
+fragment: it is also the boundary for a sign-in's `next`, which the
+hub's own check refuses with a `#`.
+
+## A public project's Overview addresses show its public overview to anyone; its swarm tab stays the members'
+
+**Id:** 66f1d8b8-8308-4dd7-ae48-803a99d8d2bf
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-01 (a public project looks to a visitor as to a member, read-only); the lead's approval on the card tsk-n2ymkzczcya5; docs/api.md §16.9, §16.11, §6.20; web/js/visitor.js `canBePublic`, `storedPath`; the visitor cases in web/tools/smoke.js
+**Revisit when:** the swarm tab gets a public page of its own, or the badge links elsewhere than `/overview`
+
+`/<owner>/<slug>/overview` and `…/overview/project` are public addresses:
+`M.visitor.page` reads the project's own stored page (`kind` `project`)
+for them and draws it read-only, for a visitor and for a signed-in
+non-member alike, at the address they opened. `…/overview/swarm` has no
+stored page: a visitor keeps the login, which goes on there after the
+sign-in, and a signed-in non-member is taken to `…/overview` with the
+address replaced, so that Back does not return to a dead end. That
+happens only once the hub answers the project's page: an earlier
+address of a project (a rename, a transfer) has none, so a member who
+follows an old swarm link is led on to the current one, the tab kept.
+
+**Reason:** the badge (§6.20) links to `/overview`, and before this the
+link ended on the login for a visitor and on `not_member` for a
+signed-in non-member, while the project's own address showed the same
+overview. The Overview is the member view of exactly that page.
+
+**Rejected alternative:** keeping `/overview` a members' address like
+the other dashboard views: the badge link, the one place a stranger is
+sent into a project, would end on the login. Mapping the swarm tab to
+the overview for a visitor too: the login there is what lets a member
+who follows a mail link go on to the swarm after signing in.

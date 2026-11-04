@@ -283,6 +283,10 @@
     "en": "bc06da1f171d41d6",
     "text": "9090673e9e6f2887"
   },
+  "notify.agents_away": {
+    "en": "8de1b568190cc750",
+    "text": "994d639d7929e020"
+  },
   "notify.an_account": {
     "en": "82662c3439d58e67",
     "text": "4ae84cb5731a4971"
@@ -382,6 +386,18 @@
   "notify.withdrew": {
     "en": "5479a39e9f32ab9d",
     "text": "feb32ecbec80e4f0"
+  },
+  "product.bug": {
+    "en": "191903c61492ea38",
+    "text": "77dc5e536511954b"
+  },
+  "product.love": {
+    "en": "96fa5228627bef6a",
+    "text": "d527c1e256b82674"
+  },
+  "product.made_by": {
+    "en": "3c4acf7ac90b37e1",
+    "text": "d33ea7f84b4bf7f9"
   },
   "register_page.button": {
     "en": "e63588a861737d67",

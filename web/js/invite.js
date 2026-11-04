@@ -33,7 +33,20 @@ window.Maity = window.Maity || {};
 
   // ---- the invitation page ------------------------------------------------
 
+  // The token is in this page's path: no link or request on it may send that path on in a
+  // Referer (docs/api.md §16.13). The app shell has no header for it, so the page sets
+  // the policy itself, once; it stays for the tab, where it costs nothing.
+  function noReferrer() {
+    if (!document.head || !document.head.querySelectorAll) return;
+    if (Array.from(document.head.querySelectorAll("meta")).some((m) => m.getAttribute("name") === "referrer")) return;
+    const meta = document.createElement("meta");
+    meta.setAttribute("name", "referrer");
+    meta.setAttribute("content", "no-referrer");
+    document.head.appendChild(meta);
+  }
+
   async function page(main, header, token) {
+    noReferrer();
     bar(header);
     document.title = M.t("invite.page_title") + " · Maity";
     // One centred card, as sign-in and register (the designer's pass part 2):
@@ -275,5 +288,5 @@ window.Maity = window.Maity || {};
     return box;
   }
 
-  M.invite = { page, membersPanel, stateOf };
+  M.invite = { page, membersPanel, stateOf, noReferrer };
 })(window.Maity);

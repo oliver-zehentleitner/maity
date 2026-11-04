@@ -154,6 +154,83 @@ DUTY_SELF = (
 )
 
 
+# The review line (§6.9): for a member whose role is `reviewer` or counts as it.
+REVIEW = (
+    "Review each change in a fresh context, your own or a fresh subagent's. The text of the "
+    "`review_result` is the one that context wrote: send it as the client's check (§8.4) "
+    "passed it, unchanged, with no summary or rewrite between the check and the send. List "
+    "every command you ran, and what it printed, under a heading `Ran`."
+)
+
+
+def reviews(project: Any, role: str) -> bool:
+    """Whether `role` gets the review line: `reviewer`, a security team that counts as it
+    (`purple-team`), or a project role built on either (§2.3, §6.9)."""
+    from maity_hub import project_roles
+    from maity_hub.scopes import counts_as
+
+    base = project_roles.base_of(project, role)
+    return base is not None and counts_as(base) == "reviewer"
+
+
+# The naming line (§6.9): how an agent names a member in what a human reads.
+NAMING = (
+    "In any text a human may read — a message to a human or between agents, a group chat, "
+    "an ask, a report, a card note, the text of a review result — name a member by its "
+    "handle, or by `handle#instance` when the instance matters "
+    "(`maity-review-team-lead#vuur`); never by the instance suffix or the member id alone. "
+    "Addresses the hub reads, such as a message's `to`, stay as they are."
+)
+
+
+# The role lines a project sets (§6.1 `settings.role_rules`, §6.9): the hub's words around
+# the project's own. Only these three roles take them, a security team or a project role
+# read as its base.
+RULE_ROLES = ("coder", "reviewer", "tester")
+SUBAGENT = (
+    "Work each card in a subagent with a fresh context, one subagent per card. Only you, the "
+    "main agent, speak in Maity; the subagent never does. Its report to you carries the diff "
+    "or the cites, a section `Ran` with every command it ran and what it printed, and what "
+    "it learned; check that report before you send anything from it."
+)
+SUBAGENT_REVIEW = "Review each change in a subagent's fresh context, never in your own."
+CHECKLIST = {"reviewer": "In every review, check:", "tester": "In every test, check:"}
+
+
+def rule_role(project: Any, role: str) -> str | None:
+    """The role whose `settings.role_rules` apply to `role` (§6.1): itself, a security team's
+    or a project role's base read as the role it counts as; None for every other role."""
+    from maity_hub import project_roles
+    from maity_hub.scopes import counts_as
+
+    base = project_roles.base_of(project, role)
+    found = None if base is None else counts_as(base)
+    return found if found in RULE_ROLES else None
+
+
+def _project_role_lines(project: Any, role: str) -> list[str]:
+    """The lines `settings.role_rules` adds for `role` (§6.9): the subagent line, narrowed
+    for a reviewer, then one line per checklist item in the project's order."""
+    found = rule_role(project, role)
+    if found is None:
+        return []
+    # `getattr`: a project row always has `settings`; a stand-in of a unit test may not.
+    rules = ((getattr(project, "settings", None) or {}).get("role_rules") or {}).get(found)
+    if not rules:
+        return []
+    paragraphs: list[list[str]] = []
+    if rules.get("subagent_per_card"):
+        paragraphs.append([SUBAGENT])
+        if found == "reviewer":
+            paragraphs.append([SUBAGENT_REVIEW])
+    if items := rules.get("checklist") or []:
+        paragraphs.append([f"- {CHECKLIST[found]} {item}" for item in items])
+    lines: list[str] = []
+    for paragraph in paragraphs:
+        lines += [*([""] if lines else []), *paragraph]
+    return lines
+
+
 BRIDGING = (
     "You lend your hands to the agents listed in `bridging_for`, each for the purpose named: "
     "you carry their files into the repository under their name, bring them their cards and "
@@ -211,8 +288,13 @@ def generate(
         lines += ["", "## Supervised", "", SUPERVISED]
     else:
         lines += ["", "## On duty", "", DUTY_SELF]
+    if reviews(project, role):
+        lines += ["", "## Reviewing", "", REVIEW]
     if project.keep_the_why:
         lines += ["", "## Keep the Why", "", KEEP_THE_WHY]
+    lines += ["", "## Naming members", "", NAMING]
+    if role_lines := _project_role_lines(project, role):
+        lines += ["", "## Set by the project for your role", "", *role_lines]
     if project.rules_markdown:
         lines += ["", "## From the owner", "", project.rules_markdown]
     return "\n".join(lines) + "\n"
@@ -220,8 +302,9 @@ def generate(
 
 def text_digest() -> str:
     """The digest of the text the hub generates (§6.9): every text constant of this module
-    and four rendered sample documents, so that a sentence written inside `generate` changes
-    it as well, the lines of a project role included. The same on every start of the same code."""
+    and eight rendered sample documents, so that a sentence written inside `generate` changes
+    it as well, the lines of a project role and the role lines of `settings.role_rules`
+    included. The same on every start of the same code."""
     constants = {
         name: value
         for name, value in sorted(globals().items())
@@ -234,10 +317,15 @@ def text_digest() -> str:
         claim_policy="sample", done_authority="sample", tag_authority="sample",
         steward_writes="sample", lease_seconds=60, keep_the_why=True, rules_markdown="owner",
         roles=[{"name": "sample", "base": "coder", "guide": "guide", "guide_by": "the owner"}],
+        settings={"role_rules": {
+            "coder": {"subagent_per_card": True},
+            "reviewer": {"subagent_per_card": True, "checklist": ["sample"]},
+            "tester": {"checklist": ["sample"]},
+        }},
     )  # fmt: skip
     rendered = [
         generate(sample, "member", role, "the owner", supervised=supervised)
-        for role in ("coder", "sample")
+        for role in ("coder", "sample", "reviewer", "tester")
         for supervised in (False, True)
     ]
     text = json.dumps([constants, rendered], sort_keys=True, ensure_ascii=False, default=str)
@@ -276,19 +364,19 @@ def bump(
     *,
     actor: Actor | None,
     subject: tuple[str, str] | None = None,
+    again: bool = False,
 ) -> int:
-    """Bump `rules_version`, emitting `kind` as the marking event; returns the new version."""
+    """Bump `rules_version`, emitting `kind` as the marking event; returns the new version.
+    `again` when the same request bumped already: `kind` marks the version that bump wrote,
+    so one request moves the version once (§6.1), its events each still written."""
     lock_project(conn, project.id)
-    version = (
-        int(
-            conn.execute(
-                t.project.select()
-                .with_only_columns(t.project.c.rules_version)
-                .where(t.project.c.id == project.id)
-            ).scalar_one()
-        )
-        + 1
-    )
+    version = int(
+        conn.execute(
+            t.project.select()
+            .with_only_columns(t.project.c.rules_version)
+            .where(t.project.c.id == project.id)
+        ).scalar_one()
+    ) + (0 if again else 1)
     seq = emit(
         conn,
         project.id,

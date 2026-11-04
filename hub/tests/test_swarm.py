@@ -550,7 +550,10 @@ def test_awake_counts_the_last_24_full_hours_with_an_agent_online(
 def test_a_public_page_gets_none_of_the_swarm_as_a_whole(
     owner: flow.Human, migrated: Engine, project_id: str
 ) -> None:
-    found = swarm.CACHE.get(migrated.connect(), project_id)
+    # Closed with the block: left open, its read would hold locks the next test's TRUNCATE waits
+    # for without end on PostgreSQL (tsk-xz3bxa5cwv4v).
+    with migrated.connect() as conn:
+        found = swarm.CACHE.get(conn, project_id)
     folded = swarm.fold(found, {}, days=30, include=lambda _m: True, public_only=True)
     assert not {"cards_created", "messages", "prs_merged_per_day"} & set(folded["totals"])
     assert {"team", "board", "awake"}.isdisjoint(folded)

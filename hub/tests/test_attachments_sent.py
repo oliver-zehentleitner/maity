@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, delete, select, update
+from sqlalchemy import Engine, delete, select, text, update
 
 from maity_hub import attachment_store, attachments, clock, events
 from maity_hub import tables as t
@@ -278,6 +278,103 @@ def test_the_sweep_removes_expired_uploads_stale_bytes_and_stray_blobs_only(
     assert attachments.sweep(migrated, store) == {"expired": 0, "tombstoned": 0, "orphans": 0}
 
 
+def test_each_sweep_pass_logs_what_it_removed_also_when_nothing_went(
+    migrated: Engine, blobs: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The sweep's only evidence besides a failure: one INFO line per pass, with its counts."""
+    worker = attachments.Worker(migrated, attachment_store.LocalStore(blobs))
+    passes = [
+        {"expired": 2, "tombstoned": 1, "orphans": 0},
+        {"expired": 0, "tombstoned": 0, "orphans": 0},
+    ]
+
+    def one_pass(engine: Any, store: Any, stop: Any = None) -> dict[str, int]:
+        done = passes.pop(0)
+        if not passes:
+            worker.stop()  # the loop ends after the second pass
+        return done
+
+    monkeypatch.setattr(attachments, "SWEEP_EVERY", 0.001)
+    monkeypatch.setattr(attachments, "sweep", one_pass)
+    with caplog.at_level("INFO", logger="maity_hub.attachments"):
+        worker._run()
+    lines = [r.getMessage() for r in caplog.records if r.name == "maity_hub.attachments"]
+    assert lines == [
+        "the attachment sweep removed 2 expired, 1 tombstoned, 0 orphans",
+        "the attachment sweep removed 0 expired, 0 tombstoned, 0 orphans",
+    ]
+
+
+def test_a_sweep_without_expiring_leaves_an_old_pending_upload_and_its_bytes(
+    stored: ClientFactory, owner: flow.Human, blobs: Path, migrated: Engine
+) -> None:
+    """`copy-to-s3` cleans the bucket with the sweep while the hub serves from the volume: the
+    rows stay the hub's own sweep's to expire."""
+    agent = flow.agent(stored, owner)
+    old = upload(agent, "old.txt")
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.attachment)
+            .where(t.attachment.c.id == old)
+            .values(uploaded_at=clock.now() - timedelta(hours=25))
+        )
+    store = attachment_store.LocalStore(blobs)
+    assert attachments.sweep(migrated, store, expiring=False)["expired"] == 0
+    with migrated.connect() as conn:
+        assert old in set(conn.execute(select(t.attachment.c.id)).scalars())
+    assert [p.name for p in blobs.glob("*/*")] == [old]
+    assert attachments.sweep(migrated, store)["expired"] == 1
+
+
+def test_a_sweep_leaves_a_folder_no_project_has_and_goes_on(
+    stored: ClientFactory,
+    owner: flow.Human,
+    blobs: Path,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A folder the hub did not write (other data, `lost+found` it cannot read) is skipped,
+    named once in the log, and the strays of the projects listed after it still go."""
+    agent = flow.agent(stored, owner)
+    kept = upload(agent, "kept.txt")
+    (project,) = [p.name for p in blobs.iterdir()]
+    stray = blobs / project / "att-stray"
+    stray.write_bytes(b"no row")
+    foreign = blobs / "aaa-foreign"
+    foreign.mkdir()
+    (foreign / "att-x").write_bytes(b"not the hub's")
+    unreadable = blobs / "lost+found"
+    unreadable.mkdir()
+
+    class Sorted(attachment_store.LocalStore):
+        def projects(self) -> list[str]:
+            return sorted(super().projects())  # as S3 lists: both foreign folders come first
+
+    store = Sorted(blobs)
+    monkeypatch.setattr(attachments, "BLOB_GRACE", -60)  # every blob as if old
+    monkeypatch.setattr(attachments, "_UNKNOWN_PROJECTS", set())
+    with pytest.raises(ValueError):  # expiring rows is no count
+        attachments.sweep(migrated, store, apply=False)
+    unreadable.chmod(0)
+    try:
+        with caplog.at_level("WARNING", logger="maity_hub.attachments"):
+            assert attachments.sweep(migrated, store, expiring=False, apply=False)["orphans"] == 1
+            assert stray.exists()  # counted, not removed
+            assert attachments.sweep(migrated, store)["orphans"] == 1
+    finally:
+        unreadable.chmod(0o700)
+    assert not stray.exists()
+    assert (blobs / project / kept).exists() and (foreign / "att-x").exists()
+    warned = [
+        r.getMessage()
+        for r in caplog.records
+        if r.name == "maity_hub.attachments" and r.levelname == "WARNING"
+    ]
+    assert len(warned) == 2, warned  # once per folder, not per pass
+    assert "'aaa-foreign'" in warned[0] and "'lost+found'" in warned[1]
+
+
 def test_removing_a_member_drops_its_pending_uploads_and_keeps_what_it_sent(
     stored: ClientFactory, owner: flow.Human, blobs: Path, migrated: Engine
 ) -> None:
@@ -303,9 +400,9 @@ def test_a_download_that_loses_the_race_with_a_redaction_is_not_found_not_a_fail
     agent = flow.agent(stored, owner)
     named = upload(agent, "race.txt", b"bytes")
     sent = send(agent, owner.id, [named])
-    real = attachment_store.LocalStore.get
+    real = attachment_store.LocalStore.open
 
-    def redacted_meanwhile(self: Any, key: str) -> bytes | None:
+    def redacted_meanwhile(self: Any, key: str) -> attachment_store.Blob | None:
         # The redaction commits between the read of the row and the read of the bytes.
         done = owner.post(
             f"/projects/maintainer/maity/events/{sent['seq']}/redact", {"reason": "x"}
@@ -313,7 +410,7 @@ def test_a_download_that_loses_the_race_with_a_redaction_is_not_found_not_a_fail
         assert done.status_code == 200, done.text
         return real(self, key)
 
-    monkeypatch.setattr(attachment_store.LocalStore, "get", redacted_meanwhile)
+    monkeypatch.setattr(attachment_store.LocalStore, "open", redacted_meanwhile)
     answer = owner.get(f"/projects/maintainer/maity/attachments/{named}/content")
     assert answer.status_code == 404, answer.text
     assert answer.json()["error"]["code"] == "not_found"
@@ -422,13 +519,15 @@ def test_an_upload_past_its_24_hours_cannot_be_named_any_more(
         assert conn.execute(select(t.attachment.c.message_seq)).scalar() is None
 
 
-def test_a_stray_is_removed_under_the_project_lock_from_the_look_at_the_row_to_the_unlink(
+def test_a_stray_asks_the_store_outside_the_project_lock_and_looks_at_the_row_under_it(
     stored: ClientFactory,
     owner: flow.Human,
     blobs: Path,
     migrated: Engine,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """For `s3` the store's answers are network calls: none may wait under the project's lock
+    (hub/context/attachments.md 7dcd4850). Only the look at the row is under it."""
     store = attachment_store.LocalStore(blobs)
     with migrated.connect() as conn:
         project = conn.execute(select(t.project.c.id)).scalar_one()
@@ -439,15 +538,25 @@ def test_a_stray_is_removed_under_the_project_lock_from_the_look_at_the_row_to_t
     seen: list[str] = []
     real_lock, real_age, real_delete = events.lock_project, store.age, store.delete
 
+    def lock_is_free() -> None:
+        # Another transaction takes the project's lock: it would wait (and fail on the
+        # timeout) if the sweep held the lock or, on SQLite, the write lock.
+        with migrated.begin() as conn:
+            if migrated.dialect.name == "postgresql":
+                conn.execute(text("SET LOCAL lock_timeout = '2s'"))
+            real_lock(conn, project)
+
     def lock(conn: Any, project_id: str) -> Any:
         seen.append(f"lock {project_id}")
         return real_lock(conn, project_id)
 
     def age(key_: str, now: float) -> float | None:
+        lock_is_free()
         seen.append("age")
         return real_age(key_, now)
 
     def delete_(key_: str) -> None:
+        lock_is_free()
         seen.append("delete")
         real_delete(key_)
 
@@ -455,4 +564,4 @@ def test_a_stray_is_removed_under_the_project_lock_from_the_look_at_the_row_to_t
     monkeypatch.setattr(store, "age", age)
     monkeypatch.setattr(store, "delete", delete_)
     assert attachments.remove_stray(migrated, store, key) is True
-    assert seen == [f"lock {project}", "age", "delete"]  # the lock first, the unlink inside it
+    assert seen == ["age", f"lock {project}", "delete"]  # the row under the lock, the store not

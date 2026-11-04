@@ -37,6 +37,12 @@ expect("empty" in problems("de", {"a.plain": "  "}, EN)[0], "an empty text")
 expect("empty" in problems("de", {"a.files": {"one": "{count} Datei", "other": "   "}}, EN)[0], "an empty plural form")
 expect(any("`other`" in p for p in problems("de", {"a.files": {"one": "{count} Datei", "other": "Dateien"}}, EN)), "`other` without its placeholder")
 expect(problems("de", {"a.files": {"one": "eine Datei", "other": "{count} Dateien"}}, EN) == [], "`one` may say the number in words")
+PRODUCT = {"product.made_by": "Made with {heart} by {name} on {github} & {maity}"}
+expect(problems("de", {"product.made_by": "Mit {heart} von {name} auf {github} & {maity}"}, PRODUCT) == [],
+       "the product line's sentence with each placeholder once (docs/api.md §16.13)")
+expect(any("placeholders" in p for p in problems("de", {"product.made_by": "Mit {heart} von {name} auf {github} & {github} {maity}"}, PRODUCT)),
+       "the product line's sentence with a placeholder twice")
+expect(problems("de", {"a.greeting": "Hallo {name}, {name}"}, EN) == [], "a text placeholder may stand twice elsewhere")
 expect("forms" in problems("de", {"a.files": {"other": "{count} Dateien"}}, EN)[0], "German needs `one`")
 expect("forms" in problems("ja", {"a.files": {"one": "{count}", "other": "{count}"}}, EN)[0], "Japanese has only `other`")
 expect(problems("ja", {"a.files": {"other": "{count} 件"}}, EN) == [], "Japanese with `other`")

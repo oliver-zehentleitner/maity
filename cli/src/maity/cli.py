@@ -35,6 +35,7 @@ from maity import (
     proc,
     sign,
     state,
+    textcheck,
     versioninfo,
 )
 from maity.runner import commands as runner_commands
@@ -404,8 +405,7 @@ def _join_line(args: argparse.Namespace) -> tuple[str, str]:
             if args.join_file == "-"
             else _read_text_file(args.join_file, "--join-file")
         )
-        # PowerShell and Notepad may start a file with a byte order mark, which `strip` keeps.
-        lines = [line.strip() for line in text.removeprefix("\ufeff").splitlines() if line.strip()]
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
         if len(lines) != 2:
             raise UsageError("--join-file holds two lines: the join URL, then the code")
         return lines[0], lines[1]
@@ -543,7 +543,10 @@ def _chat_note(packet: dict[str, Any]) -> None:
         print(f"Talk to me in Maity: {onboarding.inline(url)}", file=sys.stderr)
 
 
-PATH_SENTENCE = "If `maity` is not found later, run `pipx ensurepath` once and open a new shell."
+PATH_SENTENCE = (
+    "If `maity` is not found later, run `pipx ensurepath` once (`python -m pipx ensurepath` "
+    "where `pipx` itself is not found) and open a new shell."
+)
 
 
 def _path_note() -> None:
@@ -556,7 +559,8 @@ def _path_note() -> None:
     where = f" (this run is {ran.parent})" if ran is not None and ran.name == "maity" else ""
     _err(
         f"`maity` is not on PATH{where}, so later commands will not find it: run "
-        "`pipx ensurepath` and open a new shell, or put its directory on PATH"
+        "`pipx ensurepath` (or `python -m pipx ensurepath`) and open a new shell, or put its "
+        "directory on PATH"
     )
 
 
@@ -1873,12 +1877,23 @@ def cmd_say(args: argparse.Namespace) -> int:
         body["task_id"] = args.task
     if review is not None:
         cites = citecheck.check(Path.cwd(), review)
-        if cites.bad:
-            _err(f"not sent: {len(cites.bad)} cite(s) do not stand at the review's head (§8.4)")
-            for line in cites.bad:
+        names = (
+            textcheck.check(cites.top, review["head"], text).bad if cites.top is not None else []
+        )
+        if cites.bad or names:
+            if cites.bad:
+                _err(f"not sent: {len(cites.bad)} cite(s) do not stand at the review's head (§8.4)")
+            if names:
+                _err(
+                    f"not sent: {len(names)} name(s) in the text are not there (§8.4); "
+                    "write a missing or proposed name without backticks, a command under `## Ran`"
+                )
+            for line in [*cites.bad, *names]:
                 _err(line)
             return EXIT_ERROR
-        if cites.unchecked:
+        if cites.unchecked and cites.top is None:
+            _err(f"cites and text not checked: {cites.unchecked}")
+        elif cites.unchecked:
             _err(f"cites not checked: {cites.unchecked}")
         body["review"] = review  # as given: the hub checks it and names each bad path
     return _say_event(args, session, body, attach, f"sent {args.type} to {to}")
@@ -2100,10 +2115,7 @@ def cmd_memory_add(args: argparse.Namespace) -> int:
             raise UsageError("--soul FILE takes only --reason")
         if not args.reason:
             raise UsageError("--soul needs --reason: the owner reads why before saying go")
-        try:
-            markdown = Path(args.soul).read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError) as exc:
-            raise UsageError(f"cannot read {args.soul}: {exc}") from None
+        markdown = _read_text_file(args.soul, "--soul")
         if len(markdown.encode("utf-8")) > SOUL_MAX:
             raise UsageError("a soul is at most 8 KiB")
         proposal = {
@@ -4155,7 +4167,9 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="with --type review_result, required: the review object (subject, head, verdict, "
         "cites) as JSON from PATH, - for stdin; sent as given once its cites stand at the head "
-        "in this clone",
+        "in this clone and every file:line, name in backticks and hash in the message is there "
+        "(commands and their output go under a heading `## Ran`, which is not checked); each "
+        "cite quote is limited to 300 characters by the hub",
     )
     _json_flag(p)
     p.set_defaults(handler=cmd_say)
@@ -4944,9 +4958,15 @@ def _texts(args: argparse.Namespace) -> tuple[tuple[str, str, str, bool], ...]:
     return TEXT_ARGS.get(handler, ()) if handler is not None else ()
 
 
+# PowerShell (`Out-File -Encoding utf8BOM`, a UTF-8 `$OutputEncoding`) and Notepad may start
+# a text with a byte order mark. It marks the encoding, it is not part of the text, and
+# `strip` keeps it, so every text read from a file or stdin loses it here.
+_BOM = "\ufeff"
+
+
 def _read_text_file(path: str, flag: str) -> str:
     try:
-        return Path(path).read_text(encoding="utf-8")
+        return Path(path).read_text(encoding="utf-8").removeprefix(_BOM)
     except UnicodeDecodeError:  # PowerShell 5.1 writes UTF-16 with `>`
         raise UsageError(f"{flag}: {path} is not UTF-8; save it as UTF-8") from None
     except OSError as exc:
@@ -4954,9 +4974,10 @@ def _read_text_file(path: str, flag: str) -> str:
 
 
 def _stdin_text() -> str:
-    """Stdin, or a refusal: a text in another encoding never reaches the hub altered."""
+    """Stdin without a leading byte order mark, or a refusal: a text in another encoding
+    never reaches the hub altered."""
     try:
-        return sys.stdin.read()
+        return sys.stdin.read().removeprefix(_BOM)
     except UnicodeDecodeError:
         raise UsageError("stdin is not UTF-8; send UTF-8, or use a file saved as UTF-8") from None
 

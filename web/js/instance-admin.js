@@ -124,16 +124,19 @@ window.Maity = window.Maity || {};
       clear(test);
       const outcome = h("div", null, resultLine(current.last_test));
       const sending = M.statusLine();
-      const to = h("input", { id: "mail-test-to", type: "email", required: true, autocomplete: "email" });
+      // The recipient is optional: without one the hub sends to the admin's own
+      // verified address (§16.3) and refuses with no_verified_address when there is none.
+      const to = h("input", { id: "mail-test-to", type: "email", autocomplete: "email", "aria-describedby": "mail-test-to-hint" });
       const button = h("button", { type: "submit", disabled: !current.complete }, M.t("mail.test.send"));
       append(test, h("h3", null, M.t("mail.test.title")), h("p", { class: "hint" }, M.t("mail.test.hint")),
         h("form", { class: "inline-form admin-mail-test", onsubmit: async (e) => {
-          e.preventDefault(); if (button.disabled || !to.value.trim()) return;
+          e.preventDefault(); if (button.disabled) return;
           button.disabled = true; sending.busy(M.t("mail.test.sending"));
-          try { const result = await M.api.post(MAIL + "/test", { to: to.value.trim() }); current.last_test = result; append(clear(outcome), resultLine(result)); sending.done(); }
+          try { const result = await M.api.post(MAIL + "/test", to.value.trim() ? { to: to.value.trim() } : {}); current.last_test = result; append(clear(outcome), resultLine(result)); sending.done(); }
           catch (err) { sending.fail(M.t("mail.test.send_failed"), mailError(err)); }
           finally { button.disabled = !current.complete; }
-        } }, h("label", { for: to.id }, M.t("mail.test.recipient")), to, button, sending.el), outcome);
+        } }, h("label", { for: to.id }, M.t("mail.test.recipient")), to,
+          h("span", { class: "hint", id: "mail-test-to-hint" }, M.t("mail.test.recipient_hint")), button, sending.el), outcome);
     }
     draw();
   }
@@ -206,6 +209,8 @@ window.Maity = window.Maity || {};
       ["/admin/settings/sign-in", "sign-in", M.t("admin.section.sign_in"), (s) => M.adminSignIn.section(ctx, s)],
       // Landing and legal pages under one tab, the whole site's file above them (tsk-fct4awzw3k30).
       ["/admin/pages", "pages", M.t("admin.section.pages"), (s) => pagesSection(ctx, s, into === "pages" ? where.args[0] || null : null)],
+      // §16.12: the window, its changes; a running one also reached alone (js/app.js heldPage).
+      ["/admin/maintenance", "maintenance", M.t("admin.maintenance.title"), (s) => M.adminMaintenance.section(ctx, s)],
       ["/health", "instance-information", M.t("admin.section.info"), infoSection],
     ];
     // One section at a time, picked in a row of buttons at the top (the

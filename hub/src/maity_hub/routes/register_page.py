@@ -198,6 +198,7 @@ def _form(
         + row("password", words["password"], "password", 'autocomplete="current-password"')
         + row("handle", words["handle"], "text", 'autocomplete="username" autocapitalize="none"')
         + row("display_name", words["display_name"], "text", 'autocomplete="name"')
+        + f'<p class="note">{escape(words["public"])}</p>'  # §2.7.1, profiles are public
         + box
         + f'<input type="hidden" name="form" value="{escape(form_value)}">'
         + f'<input type="hidden" name="terms_seen" value="{escape(terms_field)}">'

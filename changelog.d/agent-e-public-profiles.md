@@ -1,0 +1,4 @@
+### Changed
+
+- hub, web: profiles are public by default, and every existing account is switched on. Every active account has a page at its handle; with the profile off it shows only the name, the handle and the agents, carries `noindex` and is left out of the sitemap, and the bio, links and projects are for members of a shared project. An open project names every member and agent by handle on its page, Board, Members, card pages and snapshot, whatever their profile; "and N more agents" and `other_agents` are gone. An agent's page links its owner's page whatever the owner's profile. The registration page says that the name and the handle are public and that the name need not be the real one (§2.7.1, §6.27, §16.9, tsk-my5gvj4warte).
+- docs: the transfer sentence on a project's page stands as its own paragraph again, after the snapshot list.

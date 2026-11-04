@@ -68,7 +68,8 @@ sets only the read-only flag. So the state directory gets a protected access
 list of its own: full access for this user, `SYSTEM` and `Administrators`,
 passed on to what is created in it. `check_private` reads the owner and the
 real list and refuses anyone else, as it refuses mode bits on POSIX, and
-names an `icacls` command as the way out. `SYSTEM` and `Administrators` are
+names an `icacls` command as the way out (for a file another user owns, the
+message names no command; see 0109805c-bb4d-4e2b-8c74-5e391ad1a4c7). `SYSTEM` and `Administrators` are
 allowed because they are the counterpart of root: they can take any file, so
 naming them changes nothing. An entry the code cannot read, and a file with no
 list at all (exFAT), count as someone else.
@@ -89,18 +90,25 @@ it inherits, which is why the list lives on the directory.
 - `pywin32`: the CLI has no dependencies, on purpose.
 - Skipping the check on Windows: the silent gap `check_private` exists to close.
 
-## On Windows maity speaks UTF-8 on its own streams, and refuses other input
+## On Windows maity speaks UTF-8 on its own streams, and refuses other input; a leading byte order mark is dropped everywhere
 
 **Id:** 7e9214f8-e8f1-4e6e-91a4-52260895c81e
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-dv24gngs9qaa, PRs #1089 and #1097, their reviews and the lead's ruling on stdin; `cli/src/maity/cli.py` `_utf8_streams`, `_stdin_text`
+**Source:** card tsk-dv24gngs9qaa, PRs #1089 and #1097, their reviews and the lead's ruling on stdin; the Windows 11 machine test (tsk-mfsxyznpfzrj), fixed on card tsk-yetyn5sctbdc; `cli/src/maity/cli.py` `_utf8_streams`, `_stdin_text`, `_read_text_file`
 **Revisit when:** the oldest supported Python has UTF-8 mode on by default (PEP 686, 3.15)
 
 On Windows `main` sets stdin, stdout and stderr to UTF-8 before anything is read
 or printed. Output uses `backslashreplace`, so a character can't stop a print.
 Stdin is strict: a text in another encoding is refused with a message.
+A leading byte order mark is dropped from stdin and from every text file, on
+every platform: it marks the encoding and is no part of the text, and
+PowerShell (`utf8BOM`, a UTF-8 `$OutputEncoding` with a mark) and Notepad write
+one. Refusing it would turn away text that is valid UTF-8; a mark inside the
+text stays. `--json` and `--action-body` keep it: they are read as bytes
+(`_read_bytes`), because the owner's approval names the SHA-256 of exactly
+those bytes (`docs/api.md` §2.3).
 
 Three smaller Windows choices belong with it. The home's `env-secret` lies under
 `%LOCALAPPDATA%\maity`. `core.hooksPath` is `os.devnull`, because `/dev/null`
@@ -121,6 +129,36 @@ is worse than a refusal, because nobody sees it until a human reads the message.
 - Leaving it to the harness (`chcp 65001`, `$OutputEncoding`): every harness
   would have to know.
 - `backslashreplace` on stdin: never stops, but sends `Gr\xfc\xdfe` to the hub.
+- Reading files as `utf-8-sig`: drops the mark from files only. Stdin would
+  need the stream reconfigured, which `_utf8_streams` does on Windows alone,
+  so one `removeprefix` in both readers is the one rule for every platform.
+
+## Another user's file is refused without a fix command, with the way out and who else reaches it
+
+**Id:** 0109805c-bb4d-4e2b-8c74-5e391ad1a4c7
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** P3 from the review of PR #1097, confirmed by the Windows 11 machine test (tsk-mfsxyznpfzrj) and fixed on card tsk-yetyn5sctbdc; `cli/src/maity/state.py` `check_private`, `_foreign`
+**See:** credentials.md#on-windows-an-access-list-set-through-ctypes-takes-the-place-of-the-mode-bits — 60793da2-e21a-48af-9aef-9e7963d60384 — as of 2026-11-02
+
+When `check_private` finds a file or directory owned by another user, on
+Windows or POSIX, the message names the owner (SID or uid), whoever else the
+access list or the mode lets in, and the caller's way out. It names no
+`icacls` or `chmod` line. With the default way out (a session's state
+directory, typically left by `sudo maity join`), the message also says to
+give the agent a directory of its own with `MAITY_STATE_DIR` and join again.
+
+**Reason:** only the owner or an administrator can change another user's
+file, so a fix command would fail for the person reading it. Revoking alone
+does not get the agent going again, because the directory still belongs to
+someone else.
+
+**Alternatives:**
+- The bare refusal of before ("belongs to another user; refusing to use
+  it"): it gave no way on, which was the finding.
+- A fix command, as for a file that is too open: it fails for anyone but
+  the owner or an administrator.
 
 ## The runner does not run on Windows, by decision
 
@@ -130,6 +168,7 @@ is worse than a refusal, because nobody sees it until a human reads the message.
 **Evidence:** confirmed
 **Source:** card tsk-dv24gngs9qaa, the lead's decision of 2026-11-01
 **Revisit when:** someone needs a native runner on Windows
+**See:** credentials.md — 116c5330-8dab-42ed-af06-74b6f02cee89 — as of 2026-11-03
 
 `maity runner` refuses on Windows and points to WSL. Every other command works
 there. `pwd` is imported inside the two functions that use it, because
@@ -142,6 +181,40 @@ WSL has all of them, so a port would build for a case nobody has asked for.
 **Rejected alternatives:**
 - Porting it as a second stage: replacing `tmux` and the user separation is a
   second implementation, not a port.
+
+## The full runner stays off Windows; local mode runs there natively
+
+**Id:** 116c5330-8dab-42ed-af06-74b6f02cee89
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-qe0ka9e341gh, the lead's assignment of 2026-11-03; the review of #1294 by dzse; `docs/api.md` §15.13
+**See:** credentials.md — c7109a1d-4f47-40e2-9165-ec01f5f94277 — as of 2026-11-03
+**See:** runner.md — dd77eab8-46a3-45dd-9f08-bde11f926942 — as of 2026-11-03
+**Supersedes:** c7109a1d-4f47-40e2-9165-ec01f5f94277 in part (`maity runner <harness>` in local mode is no longer refused on Windows)
+**Revisit when:** the deny rules or a harness's sandbox are verified on Windows, or someone needs the full runner there
+
+The full runner's actions (`pair`, `serve`, `check`, …) keep refusing on
+Windows and point to WSL. `maity runner <harness> --join <url>`, local
+mode, is the exception and runs natively: one agent in the foreground,
+its credential in the workspace's `.git/maity` under the same protected
+access list as every other credential on Windows. Until a run on Windows
+has shown that a harness keeps `.git/maity` out of its file tools, local
+mode claims there only the access list against other users, and says so
+at start.
+
+**Reason:** what kept the runner off Windows (tmux, systemd, OS users)
+belongs to `serve`; a foreground loop needs a process group and a way to
+take the harness with it, which Windows has as a console group and a Job
+Object. The credential's protection reuses the access list the CLI
+already sets.
+
+**Rejected alternatives:**
+- Changing c7109a1d in place: its decision still holds for the full
+  runner, and a reader of the old text would miss that local mode is the
+  exception.
+- Local mode through WSL as well: it would refuse the people on Windows
+  who asked for one agent on their own machine without a runner.
 
 ## Another instance of an agent joined outside a clone gets `<handle>#<instance>` beside the first
 

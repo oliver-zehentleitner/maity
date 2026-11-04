@@ -45,14 +45,32 @@ window.Maity = window.Maity || {};
     ? M.dom.memberRef(ctx, who, { text: "handle", instance: who.instance }) : "@?");
 
   // A redacted note keeps its place; its body is §8.5's tombstone, {redacted, reason,
-  // by, at}, never Markdown (§6.16).
+  // by, at}, never Markdown (§6.16). The reason reaches the owners and admins and
+  // the redactor; every other reader gets reason null and reads the removal alone.
   const removedNote = (n) => !!n.body && typeof n.body === "object";
   function noteTombstone(ctx, t) {
     const reason = t.reason || "";
-    const said = t.by
-      ? M.tn("cardpanel.notes.removed_by", { who: M.dom.memberRef(ctx, t.by), reason })
-      : M.t("cardpanel.notes.removed", { reason });
-    return h("p", { class: "muted msg-redacted card-note-removed" }, said, t.at ? " · " + formatTime(t.at) : "");
+    const who = t.by ? M.dom.memberRef(ctx, t.by) : null;
+    const said = who
+      ? (reason ? M.tn("cardpanel.notes.removed_by", { who, reason }) : M.tn("cardpanel.notes.removed_by.unsaid", { who }))
+      : (reason ? M.t("cardpanel.notes.removed", { reason }) : M.t("cardpanel.notes.removed.unsaid"));
+    return h("p", { class: "muted msg-redacted card-note-removed", tabindex: "-1" }, said, t.at ? " · " + formatTime(t.at) : "");
+  }
+
+  // An edited note says who edited it last and when, with the reason when one
+  // was given (§6.16): never the earlier text, which the hub no longer keeps.
+  function noteEdited(ctx, e) {
+    const o = { who: byline(ctx, e.by), at: formatTime(e.at) };
+    return h("p", { class: "muted card-note-edited" }, e.reason
+      ? M.tn("cardpanel.notes.edited_reason", Object.assign(o, { reason: e.reason })) : M.tn("cardpanel.notes.edited", o));
+  }
+
+  // The hub asks for a reason to remove a note (§8.5): asked again until one is
+  // given; null when cancelled.
+  function askRemoveReason() {
+    let reason = window.prompt(M.t("cardpanel.notes.remove.ask"), "");
+    while (reason !== null && !reason.trim()) reason = window.prompt(M.t("cardpanel.notes.remove.reason_needed"), "");
+    return reason === null ? null : reason.trim();
   }
 
   function historyLine(ctx, e) {
@@ -109,8 +127,15 @@ window.Maity = window.Maity || {};
       append(clear(watchButton), watching ? M.t("cardpanel.watch.on") : M.t("cardpanel.watch.off"));
     };
     drawWatch();
-    // The note field as last drawn: it gets the focus back after a post.
-    let noteField = null;
+    // Add a note is drawn once per panel, below the list, and stays while the list
+    // is drawn again: whoever types in it keeps the field, its focus, caret and text.
+    // `posting` is the text of a post on its way (null when none).
+    let noteField = null, noteFormEl = null, posting = null;
+    // Each read of the list counts; only the latest draws it, so an older read that
+    // ends later draws nothing and says so to its caller (false).
+    let notesRead = 0;
+    const notesList = h("div", { class: "card-note-items" });
+    append(notesBox, notesList);
     const box = h("aside", { class: "card-panel", "aria-labelledby": "card-panel-title" },
       h("div", { class: "card-panel-head" }, h("span", { class: "card-id" }, c.id),
         h("span", { class: "card-panel-actions" }, watchButton,
@@ -127,53 +152,235 @@ window.Maity = window.Maity || {};
       h("h3", null, M.t("cardpanel.history")), historyBox);
     box.addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.defaultPrevented) close(); });
 
+    // Who may do what to a note (§6.16): its author edits it, a human holding
+    // events:admin (owner, admin) edits any note and removes it. A removed note
+    // is the end of it; a closed project takes no edit, a removal still.
+    const closed = () => !!(ctx.project && ctx.project.state === "archived");
+    const mine = (n) => !!(ctx.me && n.author && n.author.member_id === ctx.me.id);
+    const mayEdit = (n) => !removedNote(n) && !closed() && (mine(n) || !!ctx.canAdmin);
+    const mayRemove = (n) => !removedNote(n) && !!ctx.canAdmin;
+    const reading = () => notesList.getAttribute("aria-busy") === "true";
+    const noteItem = (id) => Array.from(notesBox.querySelectorAll("li.card-note")).find((li) => li.getAttribute("data-note") === id);
+    // After an edit, removal or post, the focus moves on only when it is still where
+    // that action left it: inside `from` (the edit form, the note's line, the Add a note
+    // form, kept even once the list is drawn again), on nothing, or on an element gone
+    // from the page. Someone who moved on, say into Add a note, keeps it.
+    const focusFree = (from) => {
+      const a = document.activeElement;
+      return !a || a === document.body || a.isConnected === false || from.contains(a);
+    };
+    // What a removal says, below the list.
+    const removeStatus = M.statusLine();
+
+    function noteBody(n) {
+      return removedNote(n) ? noteTombstone(ctx, n.body)
+        : h("div", { class: "md" }, M.markdown(n.body, where, { mentions: n.mentions, hrefOf: (id) => ctx.link("members", id), ctx }));
+    }
+
+    // A note's author as the byline says it (@handle), as plain text for a button's label,
+    // so a screen reader's list of buttons tells one note's Edit from the next.
+    const whoOf = (n) => { const b = byline(ctx, n.author); return typeof b === "string" ? b : b.textContent; };
+
+    function noteLine(n) {
+      const actions = mayEdit(n) || mayRemove(n) ? h("span", { class: "card-note-actions" },
+        mayEdit(n) ? h("button", { type: "button", class: "small card-note-edit", "aria-label": M.t("cardpanel.notes.edit.label_of", { who: whoOf(n), when: formatTime(n.created_at) }), onclick: () => editNote(n) }, M.t("cardpanel.notes.edit")) : null,
+        mayRemove(n) ? h("button", { type: "button", class: "small card-note-remove", "aria-label": M.t("cardpanel.notes.remove.label_of", { who: whoOf(n), when: formatTime(n.created_at) }), onclick: () => removeNote(n) }, M.t("cardpanel.notes.remove")) : null) : null;
+      return h("li", { class: "card-note", "data-note": n.id },
+        h("p", { class: "muted" }, byline(ctx, n.author), " · " + formatTime(n.created_at)),
+        !removedNote(n) && n.edited ? noteEdited(ctx, n.edited) : null,
+        noteBody(n), actions);
+    }
+
+    // Edit in place: the text and, for someone else's note, the reason the hub
+    // asks for (§6.16); Cancel or Escape leaves the note as it was.
+    function editNote(n) {
+      if (reading()) return;
+      const li = noteItem(n.id);
+      // The note as the edit was made on: its version is the edit's base_version
+      // (§6.16); a conflict replaces it with the note as it is now.
+      let read = n;
+      if (!li || li.querySelector("form.card-note-edit-form")) return;
+      const own = mine(n);
+      const fieldId = "card-note-edit-" + n.id, reasonId = "card-note-reason-" + n.id;
+      const text = M.dom.sendOnCtrlEnter(h("textarea", { id: fieldId, rows: "4", maxlength: "4096" }));
+      text.value = n.body;
+      const reasonError = h("p", { class: "field-error", id: reasonId + "-error", hidden: "" });
+      const reason = h("input", { type: "text", id: reasonId, maxlength: "500", required: own ? null : "required", "aria-describedby": reasonId + "-error" });
+      const save = h("button", { type: "submit" }, M.t("cardpanel.notes.edit.save"));
+      const editStatus = M.statusLine();
+      let saving = false;
+      const back = () => {
+        notes().then((drawn) => {
+          const b = drawn && noteItem(n.id) && noteItem(n.id).querySelector("button.card-note-edit");
+          if (b && focusFree(form)) b.focus();
+        });
+      };
+      const form = h("form", {
+        class: "card-note-edit-form",
+        onkeydown: (e) => { if (e.key === "Escape" && !e.defaultPrevented) { e.preventDefault(); back(); } },
+        onsubmit: async (e) => {
+          e.preventDefault();
+          if (saving) return;
+          if (!text.value.trim()) { text.focus(); return; }
+          if (!own && !reason.value.trim()) {
+            reasonError.textContent = M.t("cardpanel.notes.edit.reason_needed");
+            reasonError.hidden = false;
+            reason.setAttribute("aria-invalid", "true");
+            reason.focus();
+            return;
+          }
+          reasonError.hidden = true;
+          reason.removeAttribute("aria-invalid");
+          saving = true;
+          save.disabled = true;
+          editStatus.busy(M.t("cardpanel.notes.edit.saving"));
+          const body = { body: text.value, base_version: read.version };
+          if (reason.value.trim()) body.reason = reason.value.trim();
+          try {
+            await M.api.patch(base + "/notes/" + encodeURIComponent(n.id), body);
+          } catch (err) {
+            saving = false;
+            save.disabled = false;
+            const now = err && err.code === "conflict" && err.details ? err.details.note : null;
+            // The hub checks a removal before the version (§6.16): a note removed meanwhile
+            // answers `invalid` with `reason: "redacted"`, whatever version the edit names.
+            const gone = !!(err && err.code === "invalid" && err.details && err.details.reason === "redacted");
+            if (gone || (now && removedNote(now))) {
+              // Removed meanwhile: nothing left to edit; the list shows the tombstone,
+              // the line says the writer's text is gone with the form, and the focus
+              // goes to the tombstone, as after a removal of one's own.
+              await notes();
+              removeStatus.fail("", { message: M.t("cardpanel.notes.edit.conflict_removed") });
+              focusStone(n.id, form);
+              return;
+            }
+            if (now) {
+              // Changed meanwhile: show the text as it is now, keep the writer's own,
+              // and the next save is made on the version just read.
+              read = now;
+              const shown = form.querySelector(".card-note-now");
+              if (shown) shown.remove();
+              form.insertBefore(h("div", { class: "card-note-now" },
+                h("p", { class: "muted" }, M.t("cardpanel.notes.edit.now")), noteBody(now)), form.firstChild);
+              editStatus.fail("", { message: M.t("cardpanel.notes.edit.conflict") });
+              return;
+            }
+            editStatus.fail(M.t("cardpanel.notes.edit.not_saved"), M.boardEdit ? M.boardEdit.said(err) : err);
+            return;
+          }
+          back();
+        },
+      },
+      h("label", { for: fieldId }, M.t("cardpanel.notes.edit.field")), text, M.projectMentionPicker(ctx, text),
+      h("label", { for: reasonId }, own ? M.t("cardpanel.notes.edit.reason") : M.t("cardpanel.notes.edit.reason_required")), reason, reasonError,
+      h("p", { class: "hint" }, M.t("cardpanel.notes.edit.hint")),
+      h("span", { class: "card-note-edit-actions" }, save,
+        h("button", { type: "button", class: "secondary", onclick: () => back() }, M.t("cardpanel.notes.edit.cancel"))),
+      editStatus.el);
+      Array.from(li.querySelectorAll(".md, .card-note-actions")).forEach((x) => x.remove());
+      append(li, form);
+      text.focus();
+    }
+
+    // Remove for everyone (§8.5): the text becomes the tombstone, the note keeps its place.
+    async function removeNote(n) {
+      if (reading()) return;
+      // The note's line as it is now: Remove, which had the focus, is in it.
+      const line = noteItem(n.id);
+      const reason = askRemoveReason();
+      if (reason === null) return;
+      removeStatus.busy(M.t("cardpanel.notes.remove.busy"));
+      try {
+        await M.api.post(base + "/notes/" + encodeURIComponent(n.id) + "/redact", { reason, base_version: n.version });
+      } catch (err) {
+        if (err && err.code === "conflict") {
+          // Changed meanwhile: the list shows the text as it is now, nothing was removed;
+          // or someone removed it first, and the list shows its tombstone.
+          await notes();
+          const now = err.details && err.details.note;
+          if (now && removedNote(now)) removeStatus.busy(M.t("cardpanel.notes.remove.already"));  // a plain line, no failure
+          else removeStatus.fail("", { message: M.t("cardpanel.notes.remove.conflict") });
+          return;
+        }
+        removeStatus.fail(M.t("cardpanel.notes.remove.failed"), err);
+        return;
+      }
+      await notes();
+      removeStatus.done();
+      // The button that had the focus is gone with the text.
+      focusStone(n.id, line);
+    }
+
+    function focusStone(id, from) {
+      const stone = noteItem(id) && noteItem(id).querySelector(".card-note-removed");
+      if (stone && focusFree(from)) stone.focus();
+    }
+
     async function notes() {
-      clear(notesBox);
+      // The list stays as drawn while it is read; the latest read alone replaces it.
+      // Meanwhile its Edit and Remove wait: an edit begun on it would go with it.
+      const read = ++notesRead;
+      notesList.setAttribute("aria-busy", "true");
+      notesList.querySelectorAll("button.card-note-edit, button.card-note-remove").forEach((b) => { b.disabled = true; });
       let list;
       try {
         list = (await M.api.getAll(base + "/notes?state=open")).items;
       } catch (err) {
-        append(notesBox, h("p", { class: "send-status failed" }, M.t("cardpanel.notes.read_failed", { reason: err.message })));
-        return;
+        if (read !== notesRead) return false;
+        notesList.removeAttribute("aria-busy");
+        append(clear(notesList), h("p", { class: "send-status failed" }, M.t("cardpanel.notes.read_failed", { reason: err.message })));
+        return true;
       }
-      append(notesBox, list.length
-        ? h("ul", { class: "card-note-list" }, list.map((n) => h("li", null,
-          h("p", { class: "muted" }, byline(ctx, n.author), " · " + formatTime(n.created_at)),
-          removedNote(n) ? noteTombstone(ctx, n.body)
-            : h("div", { class: "md" }, M.markdown(n.body, where, { mentions: n.mentions, hrefOf: (id) => ctx.link("members", id), ctx })))))
-        : h("p", { class: "muted" }, M.t("cardpanel.notes.none")));
-      const closed = ctx.project && ctx.project.state === "archived";
-      if (closed) return;
+      if (read !== notesRead) return false;
+      notesList.removeAttribute("aria-busy");
+      append(clear(notesList), list.length
+        ? h("ul", { class: "card-note-list" }, list.map(noteLine))
+        : h("p", { class: "muted" }, M.t("cardpanel.notes.none")), removeStatus.el);
+      if (closed()) {
+        if (noteFormEl) noteFormEl.remove();
+        noteFormEl = noteField = null;
+      } else if (!noteFormEl) {
+        append(notesBox, noteFormEl = noteForm());
+      }
+      return true;
+    }
+
+    // One post at a time: a second tap or Ctrl+Enter while the first is on its way
+    // sends nothing; a refusal makes the button usable again. On success exactly the
+    // text sent leaves the field; anything typed since stays.
+    function noteForm() {
       const text = noteField = M.dom.sendOnCtrlEnter(h("textarea", { id: "card-note-body", rows: "3", maxlength: "4096", placeholder: M.t("cardpanel.notes.placeholder") }));
       const status = M.statusLine();
       const submit = h("button", { type: "submit" }, M.t("cardpanel.notes.post"));
-      // One post at a time: a second tap or Ctrl+Enter while the first is
-      // on its way sends nothing; a refusal makes the button usable again.
-      let posting = false;
-      append(notesBox, h("form", {
+      const form = h("form", {
         class: "card-note-form",
         onsubmit: async (e) => {
           e.preventDefault();
-          if (posting) return;
+          if (posting !== null) return;
           if (!text.value.trim()) { text.focus(); return; }
-          posting = true;
+          const sent = posting = text.value;
           submit.disabled = true;
           status.busy(M.t("cardpanel.notes.posting"));
           try {
-            await M.api.post(base + "/notes", { body: text.value });
+            await M.api.post(base + "/notes", { body: sent });
           } catch (err) {
-            posting = false;
+            posting = null;
             submit.disabled = false;
             status.fail(M.t("cardpanel.notes.not_posted"), M.boardEdit ? M.boardEdit.said(err) : err);
             return;
           }
+          posting = null;
+          submit.disabled = false;
+          status.done();
+          if (text.value === sent) text.value = "";
           await notes();
-          if (noteField) noteField.focus();
+          if (focusFree(form)) text.focus();
         },
       },
       h("label", { for: "card-note-body" }, M.t("cardpanel.notes.add")), text, M.projectMentionPicker(ctx, text),
       h("p", { class: "hint" }, M.t("cardpanel.notes.hint")),
-      submit, status.el));
+      submit, status.el);
+      return form;
     }
 
     async function toggleWatch() {

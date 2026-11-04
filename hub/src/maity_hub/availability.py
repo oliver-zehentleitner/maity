@@ -21,7 +21,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, case, literal, or_, select, update
 
-from maity_hub import clock, worker_runs
+from maity_hub import clock, maintenance, worker_runs
 from maity_hub import tables as t
 from maity_hub.events import Actor, emit, lock_project, transaction
 
@@ -668,6 +668,10 @@ def set_agent_limit(
     changes and, when stored, hold its leases."""
     now = clock.now()
     lock_project(conn, row.project_id)  # the lock the expiry reads under
+    running = conn.execute(
+        select(t.membership.c.limit_until).where(t.membership.c.id == row.id)
+    ).scalar()
+    starts = until is not None and until > now and not _live(running, now)
     values: dict[str, Any] = (
         {
             "limit_until": until,
@@ -684,6 +688,10 @@ def set_agent_limit(
     reconcile_ids(conn, [row.id], actor)
     if until is not None:
         hold_leases(conn, [row.id], until)
+    if starts:  # only the start counts, not a moved `until` (§6.5)
+        from maity_hub import holder_stalled
+
+        holder_stalled.limit_started(conn, row.id)
 
 
 NO_LIMIT: dict[str, Any] = {
@@ -937,6 +945,8 @@ class Worker:
     def _run(self) -> None:
         while not self._stop.wait(self.interval):
             try:
+                if maintenance.running_now(self.engine):
+                    continue  # nobody can answer during a window; it decides after (§16.12)
                 with worker_runs.claim(self.engine, "availability", self.interval) as held:
                     if held is not None:
                         sweep(self.engine)

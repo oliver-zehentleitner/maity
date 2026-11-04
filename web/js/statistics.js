@@ -82,6 +82,9 @@ window.Maity = window.Maity || {};
     return { value: how === "peak" ? Math.max(...known) : known.reduce((a, b) => a + b, 0), partial: known.length < days.length };
   }
 
+  // A table cell's count, formatted for the locale as the tiles are.
+  const count = (n) => (n == null ? "–" : M.fmt.number(n));
+
   // The window's figure in words: a sum or "up to … a day", and, when some
   // days are unknown, since when or over how many days it counts.
   function figureText(f, how, since, knownDays) {
@@ -195,8 +198,8 @@ window.Maity = window.Maity || {};
             h("th", { scope: "col", class: "stat-number" }, M.t("campaigns.registrations")), h("th", { scope: "col", class: "stat-number" }, M.t("campaigns.activations")))),
           h("tbody", null, c.rows.map((r) => h("tr", null, h("th", { scope: "row" }, r.date),
             h("td", null, r.variant === "default" ? M.t("campaigns.main_page") : "/for/" + r.variant), h("td", null, campaignText(r.campaign)),
-            h("td", { class: "stat-number" }, String(r.views)), h("td", { class: "stat-number" }, String(r.registrations)),
-            h("td", { class: "stat-number" }, String(r.activations))))))) : h("p", { class: "muted" }, M.t("campaigns.empty")),
+            h("td", { class: "stat-number" }, count(r.views)), h("td", { class: "stat-number" }, count(r.registrations)),
+            h("td", { class: "stat-number" }, count(r.activations))))))) : h("p", { class: "muted" }, M.t("campaigns.empty")),
         c.views_approximate ? h("p", { class: "hint" }, M.t("campaigns.approx_hint")) : null,
         csv ? h("p", null, h("a", { href: csv, download: "", class: "button-link" }, M.t("campaigns.csv"))) : null);
     }

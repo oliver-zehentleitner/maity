@@ -283,6 +283,10 @@
     "en": "bc06da1f171d41d6",
     "text": "40f976da6a8b9e5a"
   },
+  "notify.agents_away": {
+    "en": "8de1b568190cc750",
+    "text": "a2984e84e3379879"
+  },
   "notify.an_account": {
     "en": "82662c3439d58e67",
     "text": "00d96fb239f1cecd"
@@ -383,6 +387,18 @@
     "en": "5479a39e9f32ab9d",
     "text": "d18cd3800212a34f"
   },
+  "product.bug": {
+    "en": "191903c61492ea38",
+    "text": "4df1fe591967b36c"
+  },
+  "product.love": {
+    "en": "96fa5228627bef6a",
+    "text": "69b11ed1f5503b0d"
+  },
+  "product.made_by": {
+    "en": "3c4acf7ac90b37e1",
+    "text": "2a2af83801a0d470"
+  },
   "register_page.button": {
     "en": "e63588a861737d67",
     "text": "9ff60aa2ff1a1fd9"
@@ -450,6 +466,10 @@
   "register_page.password": {
     "en": "8adcb6a3d0c1f216",
     "text": "c2c44e8c729c2af7"
+  },
+  "register_page.public": {
+    "en": "cadac7d45f2c3f4f",
+    "text": "49eda121283714bc"
   },
   "register_page.terms": {
     "en": "738f3cd4cd578c5c",

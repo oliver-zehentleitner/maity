@@ -1,6 +1,6 @@
-"""An agent's public page (docs/api.md §16.9): `GET /{owner}/agents/{handle}` while the owner's
-`public_profile` is on and the agent is an active member of at least one project with a public
-page.
+"""An agent's public page (docs/api.md §16.9): `GET /{owner}/agents/{handle}` while the agent is
+an active member of at least one project with a public page and its owner has a page, whatever
+the owner's `public_profile` (the owner's page exists for every active account since 2026-11-02).
 
 It shows the agent's `display_name` and `handle`, its owner with a link to their page, the public
 projects it is a member of, each with a link, and its statistics over those projects for the last
@@ -170,8 +170,8 @@ def targets(conn: Connection) -> list[str]:
 
 
 def pages_of_owner(conn: Connection, human_id: str) -> list[tuple[str, str]]:
-    """The agent pages that follow a person: their agents' (the page's address and whether it
-    exists change with the owner's profile and handle)."""
+    """The agent pages that follow a person: their agents' (the page's address changes with the
+    owner's handle, and whether it exists with the owner's account and holds)."""
     ids = conn.execute(
         select(t.agent_profile.c.id)
         .where(t.agent_profile.c.owner_id == human_id)

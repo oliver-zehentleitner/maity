@@ -202,13 +202,24 @@ def _replace(tmp: Path, path: Path) -> None:
             time.sleep(REPLACE_PAUSE)
 
 
-def check_private(path: Path, revoke: str = "revoke the session in the dashboard") -> None:
+REVOKE_SESSION = "revoke the session in the dashboard"
+# The state directory of another user (after a `sudo maity join`, say) is no way on even once
+# the session is revoked: this user needs a directory of its own and a new join.
+REVOKE_SESSION_FOREIGN = (
+    "revoke the session in the dashboard if others could read it, and give this agent a "
+    "directory of its own (MAITY_STATE_DIR) with a new join"
+)
+
+
+def check_private(path: Path, revoke: str = REVOKE_SESSION) -> None:
     """Refuse a file or directory others could reach, the way ssh refuses a loose private key.
-    `revoke` is the way out when the file is not yours."""
+    `revoke` is the way out when the file is not yours; for the default, another user's file
+    also needs a directory of this user's own (`REVOKE_SESSION_FOREIGN`)."""
+    foreign = REVOKE_SESSION_FOREIGN if revoke == REVOKE_SESSION else revoke
     if sys.platform == "win32":
         reach = winacl.reach(path)
         if reach.foreign_owner:
-            raise StateError(f"{path} belongs to another user; refusing to use it")
+            raise StateError(_foreign(path, reach.foreign_owner, reach.others, foreign))
         if reach.others:
             raise StateError(
                 f"{path} is accessible by others ({', '.join(reach.others)}); run "
@@ -217,15 +228,24 @@ def check_private(path: Path, revoke: str = "revoke the session in the dashboard
             )
         return
     st = path.stat()
+    mode = stat.S_IMODE(st.st_mode)
+    loose = st.st_mode & (stat.S_IRWXG | stat.S_IRWXO)
     if st.st_uid != os.getuid():
-        raise StateError(f"{path} belongs to another user; refusing to use it")
-    if st.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
-        mode = stat.S_IMODE(st.st_mode)
+        others = (f"group or others (mode {mode:04o})",) if loose else ()
+        raise StateError(_foreign(path, f"uid {st.st_uid}", others, foreign))
+    if loose:
         fix = "700" if path.is_dir() else "600"
         raise StateError(
             f"{path} is accessible by group or others (mode {mode:04o}); "
             f"run `chmod {fix} {path}` if it is yours, or {revoke}"
         )
+
+
+def _foreign(path: Path, owner: str, others: tuple[str, ...], revoke: str) -> str:
+    """Another user's file: no fix command, since only its owner or an administrator can
+    change it, but the way out and whoever else the file lets in."""
+    also = f" and is accessible by {', '.join(others)}" if others else ""
+    return f"{path} belongs to another user ({owner}){also}; refusing to use it; {revoke}"
 
 
 def prepare_for_join(path: Path) -> str | None:

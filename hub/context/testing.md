@@ -119,3 +119,54 @@ once per engine.
 - A template database per engine (`CREATE DATABASE … TEMPLATE` on PostgreSQL)
   to skip migrating on the servers too — not tried: it differs per engine and
   could only be checked in CI; the parallel workers come first.
+
+## A cleanup held by a leaked connection fails one test and ends the holder, instead of hanging
+
+**Id:** 210f3def-e846-4f72-ad22-2ad911ec3bf2
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-xz3bxa5cwv4v; hub-postgresql run 41477804762 cancelled after hours at 99 %; review on #1256 (reproduction with `pg_stat_activity` and `pg_blocking_pids`); faulthandler stacks of the diagnosis run on #1255 (job 125615090292), 2026-11-03; `hub/tests/test_test_database.py`; review on #1264 (the first holder lookup ended any session with a table lock in the database), 2026-11-03; review on #1289 (a lock on an owned sequence alone was no longer found; the tables were looked up only in `current_schema()`), 2026-11-03
+**Revisit when:** the test database stops being the suite's alone (hub/README.md), the per-worker databases go, or the cleanup stops using `TRUNCATE`
+**See:** testing.md#the-suite-runs-in-parallel-one-database-per-worker-and-the-wheel-job-runs-a-marked-subset — 081792e2-758e-4202-84f7-c2957459665e — as of 2026-11-03
+
+A test connection is closed by its test (`with engine.connect() as conn:`, or `close()` in a
+`finally`). On PostgreSQL a connection left open stays *idle in transaction* and keeps its locks,
+and the `TRUNCATE` that empties a worker's database before the next test waited for them without
+end: the hub-postgresql job hung at 99 % until GitHub cancelled it (a test in `test_swarm.py`
+passed `migrated.connect()` as an argument). `_empty_the_tables` therefore sets `lock_timeout`
+(`TRUNCATE_LOCK_TIMEOUT`, 60 s) for the `TRUNCATE`; when it runs out, it names the sessions that
+hold a lock on one of the tables it empties or on a sequence those tables own (`serial` or
+identity, through `pg_depend`: `RESTART IDENTITY` locks them too, and a session that only drew a
+number holds the `TRUNCATE` up; the tables resolved as the unqualified `TRUNCATE` resolves them,
+quoted and through `search_path`, not only in `current_schema()`), with state and last statement from `pg_stat_activity`, ends them
+with `pg_terminate_backend` and fails that one test with `LeakedConnection`. When it finds none,
+the message says so instead of claiming an end, since the next cleanup will wait again. Only client
+sessions of the suite's own role in this database count; one that cannot be ended is named with
+the reason, and the others are still ended. The next
+test's cleanup goes through.
+
+**Reason:** a hang shows nothing: no failing test, no message, only a cancelled job hours later.
+Failing one test with the leaked statement in the message points at the test that leaked it.
+Ending a holder is safe because the test database is the suite's alone (hub/README.md) and only
+the sessions that hold the `TRUNCATE` up are ended: a lock on another table, a session of another
+database or role, and the server's own background processes are left alone. A per-worker
+database alone did not make it safe: without `-n` the configured database is used directly, and
+the first lookup (any session with any table lock there) would have ended whatever else ran in it.
+
+**Rejected alternatives:**
+- Only a time limit on the CI job (`timeout-minutes`): a hang still costs the whole limit and
+  ends without a stack or a failing test.
+- `lock_timeout` alone, as first built on #1256: the cleanup no longer hangs, but the leaked
+  connection stays, so every later test of that worker fails again after 60 s, and a worker with
+  many tests left runs into the job's limit anyway; the error names neither the lock nor its
+  holder.
+- `idle_in_transaction_session_timeout` on the test engine: it would end a leaked connection
+  without naming the test or failing it; whether a shorter timeout would also cut legitimate
+  long transactions in tests was not examined.
+
+Which reasons are confirmed and which inferred: the hang, its cause and the second alternative's
+weakness are confirmed (reproduced in review, stacks from CI, counter-checks in
+`test_test_database.py`); the weighing of the first and third alternatives is the author's
+reasoning, not measured.

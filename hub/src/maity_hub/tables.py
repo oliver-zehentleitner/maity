@@ -113,15 +113,21 @@ human = Table(
     # The switch `meat_proxy` is derived: on while a part is.
     Column("meat_proxy_lead", Boolean, nullable=False, server_default=false()),
     Column("meat_proxy_hands", Boolean, nullable=False, server_default=false()),
-    # Whether the person has a public page, and the plain text on it (§16.9); a person is
-    # private until they choose.
-    Column("public_profile", Boolean, nullable=False, server_default=false()),
+    # What the person's page shows beyond name, handle and agents, and the plain text on it
+    # (§16.9); every active account has a page, and the profile is public until they choose.
+    Column("public_profile", Boolean, nullable=False, server_default=true()),
+    # Whether the public pages of the person's projects name them as online (§16.9); off,
+    # they are neither named nor counted.
+    Column("public_presence", Boolean, nullable=False, server_default=true()),
     Column("public_bio", String(280)),
     # The person's website and their names on the networks of §16.9 (never URLs), and who
     # sees them; the links are built from the names when shown.
     Column("website", String(200)),
     Column("social", JSON_VALUE),
     Column("links_visible", String(24), nullable=False, server_default="private"),
+    # Which of its agents receive the hub's broadcasts (§16.12): `{mode, agents}`, NULL is
+    # `accept_all`.
+    Column("broadcasts", JSON_VALUE),
     # The portal's language and that of the hub's own texts (§6.2); null until chosen.
     Column("interface_language", String(35)),
     # `active`, or `pending` while a registration waits for the operator (§2.7.5).
@@ -385,6 +391,10 @@ human_session = Table(
     Column("ip", String(64)),
     Column("approved_by", String(ID)),
     Column("ended_by", String(32)),
+    # "This was me" (§2.6.5): when and from which session (its public id) the sign-in was
+    # confirmed; null while it is not. Reading its alert never sets them.
+    Column("confirmed_at", UtcDateTime),
+    Column("confirmed_by", String(ID)),
     # Two-factor sign-in (docs/api.md §2.8): `full`, `second_factor` (the first factor is
     # done, the code is not) or `enrolment` (the policy wants a factor first);
     # `sign_in_complete` is false until the second step makes the sign-in count;
@@ -1105,6 +1115,8 @@ agent_session = Table(
     Column("not_listening_seq", BIG_ID),
     Column("not_listening_request_id", String(ID)),
     UniqueConstraint("credential_id", "live", name="uq_agent_session_one_live"),
+    # Each credential's latest session, read on every bell read and digest hour (§5.3).
+    Index("ix_agent_session_credential_started", "credential_id", "started_at"),
     CheckConstraint("live IS NOT FALSE", name="live_true_or_null"),
     **MYSQL_TABLE,
 )
@@ -1391,6 +1403,9 @@ card = Table(
     Column("claim_session_id", String(ID)),
     Column("claim_since", UtcDateTime),
     Column("lease_until", UtcDateTime),
+    # The `lease_until` the last `claim_expired` named (§6.5): a claim counts once per expiry,
+    # and a renewed lease, a new value, counts again.
+    Column("lease_expiry_reported", UtcDateTime),
     Column("checkpoint", JSON_VALUE),
     # No foreign key: request.task_id points back here.
     Column("blocked_by_request", String(ID)),
@@ -1502,6 +1517,8 @@ card_note = Table(
     Column("redacted", Boolean, nullable=False),
     Column("redaction", JSON_VALUE),
     Column("edited", JSON_VALUE),  # {by, at, reason} of the latest edit; no earlier text is kept
+    # 1 when posted, +1 per edit and per redaction: the `base_version` a write names (§6.16).
+    Column("version", Integer, nullable=False, server_default="1"),
     Index("ix_card_note_card_created", "card_id", "created_at", "id"),
     Index("ix_card_note_author_created", "author", "created_at"),
     **MYSQL_TABLE,
@@ -1563,6 +1580,10 @@ request = Table(
     Column("needs_in_session", JSON_VALUE),
     Column("cover", JSON_VALUE),  # `{for, by, since}` while a substitute covers it (§6.12)
     Column("ktw_ref", String(255)),
+    # The owner's digest (§5.3): what the request shows, one entry per listed instance
+    # (`{membership_id, instance, kind, since, last_seen_at, cards, reason}`), compared on the
+    # hour and recorded when the owner answers `seen`; null for every other request.
+    Column("not_listening", JSON_VALUE),
     Column("status", String(16), nullable=False),
     Column("answer", JSON_VALUE),
     _membership_ref("answered_by"),
@@ -1896,6 +1917,24 @@ conversation_participant = Table(
     **MYSQL_TABLE,
 )
 
+# What an owner answered `seen` to in the digest (docs/api.md §5.3, "Silence after `seen`"):
+# per human and instance, the latest `last_seen_at` and the latest episode `since` a request
+# they answered showed. An older call or episode can never come back (`last_seen_at` only
+# grows, a later episode starts later), so one row per instance holds every record that still
+# matters. Deleted with the account; not in the export (the hub's bookkeeping).
+not_listening_seen = Table(
+    "not_listening_seen",
+    metadata,
+    _ref("human_id", "human.id", nullable=False),
+    _membership_ref("membership_id", nullable=False),
+    Column("instance", String(INSTANCE), nullable=False),
+    Column("last_seen_at", UtcDateTime, nullable=False),
+    Column("since", UtcDateTime),
+    PrimaryKeyConstraint("human_id", "membership_id", "instance"),
+    Index("ix_not_listening_seen_membership", "membership_id"),
+    **MYSQL_TABLE,
+)
+
 # A human's pinned conversations (docs/api.md §9.3 "Pinned"): its own, across projects,
 # at most 20 (`pins.LIMIT`). A direct conversation's id is its agent's member id, so the
 # project is part of the key. A row lives while its human reads the chat (`pins.prune`).
@@ -2207,6 +2246,41 @@ instance_setting = Table(
     **MYSQL_TABLE,
 )
 
+# A maintenance window (§16.12): at most one active or upcoming. A cancelled one keeps its row;
+# `settled_at` is when the deadlines that fell into it were moved, once, after its end.
+maintenance_window = Table(
+    "maintenance_window",
+    metadata,
+    Column("id", String(ID), primary_key=True),
+    Column("starts_at", UtcDateTime, nullable=False),
+    Column("ends_at", UtcDateTime, nullable=False),
+    Column("text", Text, nullable=False),
+    _ref("created_by", "human.id", nullable=False),
+    Column("created_at", UtcDateTime, nullable=False),
+    _ref("updated_by", "human.id", nullable=False),
+    Column("updated_at", UtcDateTime, nullable=False),
+    Column("cancelled_at", UtcDateTime),
+    Column("settled_at", UtcDateTime),
+    Index("ix_maintenance_window_ends_at", "ends_at"),
+    **MYSQL_TABLE,
+)
+
+# Every change of a window, kept for good: the trail until the instance audit log exists.
+maintenance_change = Table(
+    "maintenance_change",
+    metadata,
+    Column("id", String(ID), primary_key=True),
+    _ref("window_id", "maintenance_window.id", nullable=False),
+    Column("action", String(16), nullable=False),  # created, changed, cancelled, ended
+    Column("starts_at", UtcDateTime, nullable=False),
+    Column("ends_at", UtcDateTime, nullable=False),
+    Column("text", Text, nullable=False),
+    _ref("by", "human.id", nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    Index("ix_maintenance_change_at", "at"),
+    **MYSQL_TABLE,
+)
+
 instance_secret = Table(
     "instance_secret",
     metadata,
@@ -2504,6 +2578,7 @@ public_page = Table(
     Column("rendered_at", UtcDateTime, nullable=False),
     Column("view", String(20)),  # the `kind` of `GET /public/pages/{path}` (§16.9)
     Column("data", JSON_VALUE),  # its `data`, from the render that made `body`
+    Column("indexed", Boolean, nullable=False, server_default=true()),  # false: `noindex`
     Index("ix_public_page_target", "kind", "target_id"),
     **MYSQL_TABLE,
 )

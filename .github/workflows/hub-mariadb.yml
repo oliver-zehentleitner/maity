@@ -1,31 +1,47 @@
 name: hub-mariadb
 
-# The hub's test suite against MariaDB, outside the pull request gate: at most once an hour on main,
-# and only when hub code changed since the last green run (a quiet hour skips). PostgreSQL (what
+# The hub's test suite against MariaDB, outside the pull request gate: after every push to main (the last job of ci.yml starts
+# it) and at the latest once an hour, and only when hub code changed since the last green run (a quiet hour skips). PostgreSQL (what
 # production runs) and SQLite stay per pull request in ci.yml; MariaDB is the self-hoster's
 # database and the slowest suite, so it checks main on a clock instead of holding every merge.
 # A red run opens (or comments on) one issue labelled ci-red that names the commit range, so the
-# change that broke it is found within the hour; a green scheduled run closes it.
+# change that broke it is found within the hour; a green automatic run (the clock or a start from ci) closes it.
 # Before a deploy or release, run it by hand for that commit: Actions, hub-mariadb, Run workflow, sha.
 # Runner: the same variables as ci.yml (HUB_RUNNER_LABEL, HUB_RUNNER_TYPES) put it on the maria machines.
 on:
   schedule:
     - cron: "23 * * * *"
+  # GitHub starts scheduled runs on a best-effort basis and has skipped hours here (one run in nine hours), so the
+  # clock alone is not a promise. The last job of ci.yml, on a push to main, also starts this one with trigger=ci;
+  # its own checks (one running, one waiting, skip when nothing relevant changed) keep that from piling up. That is
+  # no workflow_run trigger on purpose: deploy/runner/README.md keeps that trigger out of this repository.
   workflow_dispatch:
     inputs:
       sha:
         description: "Commit to test (empty: the head of main), for example a deploy candidate"
         required: false
         type: string
+      trigger:
+        description: "hand (the default) or ci; ci is for the call from ci.yml and counts only on main (the head of main, an automatic run); on another ref it is a hand start"
+        required: false
+        default: hand
+        type: choice
+        options: [hand, ci]
+
+# What the run list shows, and what decide reads to tell a start from ci (automatic) from a hand start: both are a
+# workflow_dispatch event, the title is the only difference the run list carries.
+run-name: hub-mariadb ${{ github.event_name == 'workflow_dispatch' && ((inputs.trigger == 'ci' && github.ref == 'refs/heads/main') && 'ci' || 'hand') || github.event_name }}
 
 permissions:
   contents: read
 
-# One at a time per kind, none cancelled. GitHub keeps one running and one waiting run per group
-# and replaces a waiting run by a newer one, so a hand start for a deploy candidate has its own
-# group: the next hourly run would otherwise displace it while it waits behind a running one.
+# One at a time per kind, none cancelled. The two automatic triggers (the clock and a start from ci) share one
+# group, so they queue behind each other instead of both deciding at once against the same last green run and starting
+# the suite twice for one commit. GitHub keeps one running and one waiting run per group and replaces a waiting run
+# by a newer one, so a hand start for a deploy candidate has its own group: the next automatic run would otherwise
+# displace it while it waits behind a running one.
 concurrency:
-  group: hub-mariadb-${{ github.event_name }}
+  group: hub-mariadb-${{ github.event_name == 'workflow_dispatch' && !(inputs.trigger == 'ci' && github.ref == 'refs/heads/main') && 'hand' || 'automatic' }}
   cancel-in-progress: false
 
 defaults:
@@ -34,9 +50,9 @@ defaults:
 
 jobs:
   # Decides whether there is anything to test: by hand always (a commit of main); on the clock when
-  # the last finished scheduled run was not green, when a ci-red issue is open, when no earlier green
+  # the last finished automatic run (clock or ci) was not green, when a ci-red issue is open, when no earlier green
   # run exists, or when files the suite reads (hub/, docs/join-page.md, docs/api.md, the Dockerfile,
-  # this workflow) changed since the head of the last green scheduled run. So a red state is never
+  # this workflow) changed since the head of the last green automatic run. So a red state is never
   # skipped over: a revert runs and closes the issue, and a failure for a reason outside the watched
   # files runs again the next hour. A skipped hour counts as green for the comparison, which is right
   # because it only skips after a green run with nothing relevant changed since.
@@ -56,18 +72,18 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.sha || github.sha }}
+          ref: ${{ (!(inputs.trigger == 'ci' && github.ref == 'refs/heads/main') && inputs.sha) || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - id: d
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          EVENT: ${{ github.event_name }}
+          HAND: ${{ github.event_name == 'workflow_dispatch' && !(inputs.trigger == 'ci' && github.ref == 'refs/heads/main') }}
         run: |
           sha="$(git rev-parse HEAD)"
-          base="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow hub-mariadb.yml --branch main --event schedule --status success --json headSha --jq '.[0].headSha // ""')"
-          if [ "$EVENT" = workflow_dispatch ]; then
+          base="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow hub-mariadb.yml --branch main --status success --json headSha,event,displayTitle --jq '[.[]|select(.event!="workflow_dispatch" or .displayTitle=="hub-mariadb ci")][0].headSha // ""')"
+          if [ "$HAND" = true ]; then
             # sha is free text, and a commit of a fork's pull request can be checked out by its sha: the
             # self-hosted runner only runs what is on main, which is what the approval of outside
             # collaborators protects (context/process.md, the runner entry).
@@ -78,11 +94,11 @@ jobs:
           fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "base=${base:-none}" >> "$GITHUB_OUTPUT"
-          if [ "$EVENT" = workflow_dispatch ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
-          last="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow hub-mariadb.yml --branch main --event schedule --status completed --limit 1 --json conclusion --jq '.[0].conclusion // "none"')"
+          if [ "$HAND" = true ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          last="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow hub-mariadb.yml --branch main --status completed --limit 20 --json conclusion,event,displayTitle --jq '[.[]|select((.event!="workflow_dispatch" or .displayTitle=="hub-mariadb ci") and .conclusion!="cancelled")][0].conclusion // "none"')"
           open_issues="$(gh issue list --repo "$GITHUB_REPOSITORY" --label ci-red --state open --json number --jq 'length')"
           if [ "$last" != success ] && [ "$last" != none ]; then
-            echo "the last scheduled run ended $last: running again"; echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
+            echo "the last automatic run ended $last: running again"; echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           if [ "$open_issues" != 0 ]; then
             echo "a ci-red issue is open: running to see whether main is green again"; echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
@@ -101,6 +117,8 @@ jobs:
     needs: decide
     if: needs.decide.outputs.run == 'true'
     runs-on: ${{ (vars.HUB_RUNNER_LABEL != '' && contains(format(' {0} ', vars.HUB_RUNNER_TYPES || 'sqlite pg maria'), ' maria ')) && fromJSON(format('["self-hosted","{0}-maria"]', vars.HUB_RUNNER_LABEL)) || 'ubuntu-latest' }}
+    # A hang fails after 90 minutes instead of GitHub's 6 hours (context/process.md, the entry on job timeouts).
+    timeout-minutes: 90
     services:
       mariadb:
         image: mariadb:11.4@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620 # pinned: a local tag cannot replace it
@@ -129,8 +147,8 @@ jobs:
       - run: make install
       - run: make test
 
-  # Red: one issue labelled ci-red names the range; more red runs comment on it. Green on the
-  # clock closes it. A hand run for a deploy candidate never closes the issue of main.
+  # Red: one issue labelled ci-red names the range; more red runs comment on it. A green
+  # automatic run closes it. A hand run for a deploy candidate never closes the issue of main.
   report:
     needs: [decide, hub-mariadb]
     if: always() && needs.decide.outputs.run == 'true' && needs.hub-mariadb.result != 'skipped'
@@ -142,26 +160,47 @@ jobs:
       run:
         working-directory: .
     steps:
+      # the history of main, to tell whether the green commit contains the commit that was red
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.decide.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
       - shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           RESULT: ${{ needs.hub-mariadb.result }}
-          EVENT: ${{ github.event_name }}
+          HAND: ${{ github.event_name == 'workflow_dispatch' && !(inputs.trigger == 'ci' && github.ref == 'refs/heads/main') }}
           SHA: ${{ needs.decide.outputs.sha }}
           BASE: ${{ needs.decide.outputs.base }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           num="$(gh issue list --repo "$GITHUB_REPOSITORY" --label ci-red --state open --json number --jq '.[0].number // ""')"
           if [ "$RESULT" = success ]; then
-            if [ "$EVENT" = schedule ] && [ -n "$num" ]; then
-              gh issue close "$num" --repo "$GITHUB_REPOSITORY" --comment "Green again at $SHA ($RUN_URL)."
+            if [ "$HAND" = false ] && [ -n "$num" ]; then
+              # Close only when this green commit contains every commit the issue names as red: a hand run on a newer
+              # commit may have opened it, and an older green commit says nothing about that one.
+              txt="$(gh issue view "$num" --repo "$GITHUB_REPOSITORY" --json body,comments --jq '[.body, (.comments[].body)] | join("\n")')"
+              reds="$(printf '%s' "$txt" | grep -o 'red at [0-9a-f]\{40\}' | cut -d' ' -f3 | sort -u || true)"
+              notin=""
+              for r in $reds; do
+                git cat-file -e "$r^{commit}" 2>/dev/null && git merge-base --is-ancestor "$r" "$SHA" || notin="$notin $r"
+              done
+              if [ -z "$notin" ]; then
+                gh issue close "$num" --repo "$GITHUB_REPOSITORY" --comment "Green again at $SHA ($RUN_URL)."
+              else
+                echo "not closing issue $num: green at $SHA does not contain the red commit(s):$notin"
+              fi
             fi
-          elif [ "$RESULT" = failure ]; then
-            text="hub-mariadb is red at $SHA ($RUN_URL). Last green run was at $BASE; the change is in $BASE..$SHA."
+          # cancelled is red too: nothing here cancels a running job (cancel-in-progress is false), so it is the
+          # job's timeout or a cancel by hand, and either must not end silently.
+          elif [ "$RESULT" = failure ] || [ "$RESULT" = cancelled ]; then
+            how=""; [ "$RESULT" = cancelled ] && how=" (cancelled: the job's timeout of 90 minutes or a cancel by hand)"
+            text="hub-mariadb is red at $SHA$how ($RUN_URL). Last green run was at $BASE; the change is in $BASE..$SHA."
             if [ -n "$num" ]; then
               gh issue comment "$num" --repo "$GITHUB_REPOSITORY" --body "$text"
             else
-              gh label create ci-red --repo "$GITHUB_REPOSITORY" --color B60205 --description "the hourly MariaDB run on main is red" 2>/dev/null || true
+              gh label create ci-red --repo "$GITHUB_REPOSITORY" --color B60205 --description "the MariaDB run on main is red" 2>/dev/null || true
               gh issue create --repo "$GITHUB_REPOSITORY" --label ci-red --title "hub-mariadb is red on main" --body "$text"
             fi
           fi

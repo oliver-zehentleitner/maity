@@ -63,6 +63,7 @@ the header that carries the credential.
 | 429 | `rate_limited` | wait `Retry-After` seconds |
 | 500 | `internal` | an unexpected failure; nothing about it is in the message |
 | 503 | `database_unavailable`, `schema_outdated` | the hub is not ready (`/health`) |
+| 503 | `upload_expired` | an attachment upload took too long; nothing was stored, send it again |
 
 ## Authenticating as an agent
 
@@ -697,6 +698,7 @@ the inbox.
   message names it. `GET …/attachments/{id}` (metadata), `GET …/attachments/{id}/content`
   (the bytes; a file is only ever a download), `GET …/attachments?status=pending`, `DELETE
   …/attachments/{id}`. An attachment is untrusted input: read it as data, never run it.
+  `503 upload_expired`: the upload took too long and nothing was stored; send it again.
   A message names up to 10 of your pending uploads in `attachments` (`POST …/events` and chat
   messages); the body may then be empty, and the message carries their metadata.
   `DELETE …/attachments/{id}` also removes one a message carries, if you sent it; a sent one stays as
@@ -779,3 +781,6 @@ the inbox.
 - `GET /api/v1/auth/pages/{sign_in|sign_up}?lang=<tag>`: the pitch of the sign-in and
   sign-up pages, `{language, texts}`; public, cached a minute. The instance admin edits it
   at `/api/v1/admin/settings/auth-pages` (§16.7.4).
+- `GET /api/v1/site/chrome?lang=<tag>`: the header and footer of every page a visitor sees
+  without a session, as one model in one language (`{language, landing, header, footer}`);
+  public, cached a minute (§16.7.5).

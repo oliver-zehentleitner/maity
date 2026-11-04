@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, insert, select, update
 
-from maity_hub import clock
+from maity_hub import catalog, clock
 from maity_hub import tables as t
 from maity_hub.notifications import mailer
 from tests import factory, flow
@@ -21,8 +21,14 @@ PUBLIC = "https://hub.example"
 
 @pytest.fixture
 def at() -> Any:
-    """Move the hub's clock: `at(minutes=3)` is three minutes after the test began."""
-    start = clock.now().replace(minute=10, second=0, microsecond=0)
+    """Move the hub's clock: `at(minutes=3)` is three minutes after the test began.
+
+    The test begins at 12:10 UTC of today, whenever it runs: the digests go out at a time of day
+    (`daily_at`, by default 08:00), so a start at the real hour let a test that moves the clock
+    by an hour cross 08:00 when CI ran shortly before it, and its "nothing yet" failed
+    (tsk-vhzhg5zpvxxf). 12:10 is far from the default; a test that needs another time of day
+    sets `daily_at` from `clock.now()`."""
+    start = clock.now().replace(hour=12, minute=10, second=0, microsecond=0)
     clock.set_source(lambda: start)
 
     def move(**delta: float) -> datetime:
@@ -92,8 +98,10 @@ def test_a_language_the_hub_has_no_words_in_gets_the_english_mail(
     make_client: ClientFactory, migrated: Engine, at: Any
 ) -> None:
     owner, agent = setup(make_client, migrated)
+    # A listed language outside the ten the portal is translated into: the hub has no words in it.
+    assert not catalog.speaks("mail", "fi")
     assert (
-        owner.patch("/me/notification-settings", {"email": {"language": "ja"}}).status_code == 200
+        owner.patch("/me/notification-settings", {"email": {"language": "fi"}}).status_code == 200
     )
     ask(agent)
     at(minutes=3)

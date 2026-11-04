@@ -84,6 +84,14 @@ def test_the_shell_is_served_at_the_root_and_at_every_dashboard_path(
     assert client.head("/login").status_code == 200
 
 
+def test_the_invitation_page_sends_no_referrer_and_the_others_keep_theirs(
+    client: TestClient, web_dir: Path
+) -> None:
+    # Its token is in the path: a link it opens must not carry it along (docs/api.md §16.13).
+    assert client.get("/invite/some-token").headers["referrer-policy"] == "no-referrer"
+    assert "referrer-policy" not in client.get("/maintainer/maity/board").headers
+
+
 def test_the_shell_carries_a_base_so_its_relative_files_load_from_assets_at_any_depth(
     client: TestClient, web_dir: Path
 ) -> None:
@@ -125,6 +133,9 @@ def test_built_files_are_served_under_assets(client: TestClient, web_dir: Path) 
     (web_dir / "brand" / "logo.svg").write_text("<svg/>")
     assert client.get("/assets/js/app.js").text == "// dashboard"
     assert client.get("/assets/brand/logo.svg").status_code == 200
+    (web_dir / "vendor" / "keep-the-why").mkdir(parents=True)
+    (web_dir / "vendor" / "keep-the-why" / "ktw-core.js").write_text("// library")
+    assert client.get("/assets/vendor/keep-the-why/ktw-core.js").text == "// library"
     # The old place of a file is not a file any more: it is a dashboard path, the shell.
     old = client.get("/js/app.js")
     assert old.status_code == 200 and "<title>dashboard</title>" in old.text

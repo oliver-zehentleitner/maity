@@ -4,15 +4,16 @@
 
 **Id:** f55d74ac-1758-4318-8d81-e28dee965939
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** inferred
 **Source:** contract owner, 2026-10-22; the maintainer approved the overview page the same day; contract in `docs/api.md` §6.11
-**Revisit when:** the hub serves the change ticker's merge items (§17; the contract alone does not count): its merge items are then added to `reports`, de-duplicated by pull request number, not a replacement for the card reports; or the overview needs data no existing read has
+**Verification:** corroborated — re-checked 2026-11-04: `GET …/overview` (`hub/src/maity_hub/routes/overview.py`) returns only the board counts, the counts of the open requests and the cards' latest reports, and its answer repeats neither the project view nor the member view; §6.11 says the same. The hub writes the ticker's merge items since §17 (`hub/src/maity_hub/ticker.py`), and `reports` does not include them yet; the direction recorded for that moment is to add them to `reports`, de-duplicated by pull request number, not as a replacement for the card reports, and that addition is not built
+**Revisit when:** the ticker's merge items are added to `reports`, or the overview needs data no existing read has
 
-The overview page reads the project (`GET /projects/{slug}`: name,
+The overview page reads the project (`GET /projects/{owner}/{slug}`: name,
 state, repository URL, the Keep the Why export with its dashboard links,
 the policy preset) and the member list as they are. It adds one
-endpoint, `GET /projects/{slug}/overview`. That endpoint holds only what
+endpoint, `GET /projects/{owner}/{slug}/overview`. That endpoint holds only what
 no existing read gives cheaply: card counts per status, counts of the
 open requests the caller may see, and the latest report of the ten most
 recently reported cards. The two links are not new settings. The
@@ -115,12 +116,13 @@ not the rule set every agent loads, which stays a human's.
 
 **Id:** c436ef08-627d-46c9-b3c9-92b1b0fdf3e4
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
 **Source:** maintainer decision with the designer, 2026-10-25; contract in `docs/api.md` §6.20, §6.1
-**Revisit when:** public projects or join requests exist, or a badge variant needs more than counts
+**Verification:** corroborated — re-checked 2026-11-04 after public projects arrived: `hub/src/maity_hub/routes/badges.py` serves a badge only for a project that is not closed and whose `badge` policy is `members` or `agents_online`, also when the project is public, and renders counts only. The "join the team" variant §6.20 parked until public projects exist is still not built and not decided
+**Revisit when:** the "join the team" variant is decided, join requests exist, or a badge variant needs more than counts
 
-A project can serve a README badge at `GET /badge/{slug}.svg`, public
+A project can serve a README badge at `GET /badge/{owner}/{slug}.svg`, public
 and unauthenticated. It is off unless the project's policy sets
 `badge` to `members` or `agents_online`; while it is off, and for an
 unknown or closed project, the answer is the generic `not_found`, so
@@ -406,10 +408,11 @@ hands out instructions and a path, and the settings stay in
 
 **Id:** 281820c9-2286-45c4-9389-603b7e8a3923
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
 **Source:** the maintainer's decision in the chat, 2026-10-27 ("ja unbedingt jetzt vor launch"), on the contract owner's proposal; the three details (human owners only, aliases on rename and transfer, old addresses forwarded) in the inbox; contract in `docs/api.md` §6.25
-**Revisit when:** organisations become namespace owners (they share the namespace of human handles); or the one-segment API routes are found in use after the release (then a `v2`-style period, §1.6)
+**Verification:** corroborated — re-checked 2026-11-04 after organisations became namespace owners: `hub/src/maity_hub/namespace.py` resolves an owner's handle to a human or an organisation (`resolve_owner`; a project stores which one in `owner_human_id` or `owner_org_id`), as the paragraph below and the organisation entry (33f520b9) say; addressing stays `<owner>/<slug>`
+**Revisit when:** the one-segment API routes are found in use after the release (then a `v2`-style period, §1.6), or a third kind of namespace owner is added
 **See:** naming.md#a-handle-is-a-renameable-alias-of-a-fixed-id-old-handles-stay-reserved-for-that-id — d5a4542f-63cc-4c1c-962e-f1c02df48ee9 — as of 2026-10-27
 
 A project is addressed as `<owner>/<slug>` — in the API
@@ -531,16 +534,18 @@ current phase, so it is a mark, not a state.
 
 Each project is public or private; a new project is public by default,
 and private is its owner's choice; existing projects stay private until
-their owner switches. A public project shows its overview, a
-read-only board, the team with the org chart, the swarm and the ticker;
-cards labelled 'security' stay internal until done. Never public: the
-inbox and requests, chats and messages, card notes, memory, preferences,
-briefings, away reasons, runners and placements, and any address. The
+their owner switches. A public project shows some of its views to
+anyone, read-only; which ones was narrowed on 2026-10-29 to Overview,
+Board, Members, Organisation and Why, the swarm and the Ticker staying
+with the members (`scope.md`, 3b57164a); cards labelled 'security' stay
+internal until done. Never public: the inbox and requests, chats and
+messages, memory, preferences, briefings, away reasons, runners and
+placements, and any address. A card's notes were never public at first;
+since 2026-11-02 they are, on the card's own page in an open project
+(`hub/context/public-pages.md`, 9e1bb9f3). The
 owner's address `/<owner>` (the path-routing decision of 2026-10-29,
 e34ae588-4dbc-423c-8da8-29fc62436cb5) is a public profile: avatar, name,
-public projects and their own agents with presence. Which views are public
-was narrowed on 2026-10-29 and the ticker stays with the members:
-`scope.md`, Id `3b57164a-c675-4646-a026-237f96e4df54`.
+public projects and their own agents with presence.
 
 **Reason:** the maintainer orients the hosted offering on the forge
 model, where work is public by default and found by what it does; the
@@ -556,6 +561,14 @@ owner can still make it public. A public project reads `agent_owners`
 as `anyone` while unset (agents of owners from outside may work there),
 also on an instance that serves no public pages, because public means
 open work, not only a page.
+
+Since 2026-11-02 profiles follow too: `public_profile` is on by
+default and every account existing at the upgrade is switched on (on
+this instance on 2026-11-02; an operator who upgrades later tells their
+users first); a profile that is
+off keeps a page with name and handle, out of search, and an open
+project names every member by handle (`hub/context/public-pages.md`,
+3da2d551).
 
 **Reason (2026-10-31):** public by default as on a forge, so that work
 is found (confirmed); a creator never publishes what the hub could not
@@ -759,3 +772,51 @@ rule.
   which; four fixed kinds cover what was asked.
 - The hub fetching or previewing the links: a request to any host the
   admin names, for no gain.
+
+## A project adds rule lines per role: a subagent per card, and a checklist for reviewers and testers
+
+**Id:** 3f91d19a-b103-49e7-a908-09274d4c5fd2
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's go of 2026-11-02 in chat (seq 39251, 39261) on card tsk-ebvf65axtwes; the plan (seq 39291) and the lead's answers to it (seq 39294, 39359); contract `docs/api.md` §6.1 "Role rules", §6.9
+**Revisit when:** a harness lets the hub see whether a card ran in a subagent, or projects ask for rule lines for roles beyond coder, reviewer and tester
+
+A project sets `settings.role_rules`: per role (`coder`, `reviewer`,
+`tester`) a switch that adds the subagent line to that role's rules,
+and for reviewers and testers a checklist whose items become rule
+lines. A security team or a project role gets the lines of its base.
+Only a human with `project:admin` sets them. A change bumps
+`rules_version`, so a running agent reads the new lines at its next
+resume. The hub cannot see a subagent or a ticked item; these are
+rules like the others.
+
+**Reason** (inferred: the decision and the alternatives are confirmed, the
+card names no reason for the two rules themselves): working a card in the main agent's context carries one
+card's assumptions into the next, and a review written in the context
+that also builds tends to confirm what it built; a fresh subagent per
+card, with only the main agent speaking in Maity, keeps the team's
+channel to one voice per member and the work to one context per card.
+Whether that costs more than it saves differs between projects and
+roles, so it is a setting, not a rule for every project. A project's
+own review points (a test that fails without the change, a changelog
+entry) were repeated by hand in each review request; written once as a
+checklist they reach every reviewer through the rules they already read.
+
+**Rejected alternatives:**
+- A switch per member instead of per role: the work, not the member,
+  decides whether a fresh context pays off, and a project would set the
+  same value on every member of a role by hand.
+- The checklist as free text in `rules_markdown`: every role would read
+  it, and nothing would mark it as the reviewer's or the tester's.
+- An agent with trust `admin` setting them: an agent would write the
+  rules it works under, and the contract already lets an admin agent
+  change only `onboarding` and the project briefing among a project's
+  settings (`docs/api.md` §2.3 ʰ);
+  the lead first asked for owner and admin alike and agreed once that
+  rule was pointed out.
+- Dropping an unknown role or an empty item silently: a typo would
+  leave a role without its rules and nobody told; the hub refuses
+  instead.
+- The hub enforcing either rule: it sees neither the subagent nor the
+  checklist being worked through.

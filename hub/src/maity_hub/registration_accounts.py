@@ -29,6 +29,7 @@ from maity_hub import (
     handle_register,
     handles,
     invitations,
+    maintenance,
     paths,
     public_pages,
     registration,
@@ -113,7 +114,9 @@ def check_names(conn: Connection, handle: str, display_name: str) -> dict[str, s
     errors: dict[str, str] = {}
     if not _HANDLE.fullmatch(handle):
         errors["handle"] = "invalid"
-    elif paths.handle_reserved(handle):  # a first segment of the hub or the dashboard (§16.11)
+    elif paths.handle_reserved(handle) or handles.held_for_instance(conn, handle):
+        # a first segment of the hub or the dashboard (§16.11), or held for the operator's
+        # token (§11.4)
         errors["handle"] = "reserved"
     elif handles.holder(conn, handles.HUMANS, handle) is not None:
         # a human's or an organisation's handle, or a human's alias (§6.24, §6.26)
@@ -502,6 +505,8 @@ class Worker:
     def _run(self) -> None:
         while not self._stop.wait(self.interval):
             try:
+                if maintenance.running_now(self.engine):
+                    continue  # nobody can answer during a window; it decides after (§16.12)
                 with worker_runs.claim(self.engine, "registrations", self.interval) as held:
                     if held is None:
                         continue

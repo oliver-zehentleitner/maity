@@ -181,7 +181,9 @@ runs the hub against an existing PostgreSQL:
 
 - **Migration:** a hook Job runs `maity-hub migrate` before every install
   and upgrade.
-- **Pods:** exactly one pod, replaced with `Recreate`.
+- **Pods:** one pod by default, replaced with `Recreate`. With PostgreSQL and
+  attachments off the pod's volume, `replicas` runs more, rolled one at a time
+  (the chart's README, "Several pods").
 - **Secrets:** the database URL and the forge token come from Secrets you
   create; the chart only names them.
 - **Ingress:** optional, with TLS.
@@ -219,12 +221,20 @@ All settings come from the environment.
 | `MAITY_AVATAR_DECODE_SECONDS` | `5` | Time budget of one avatar decode (`docs/api.md` §6.10), 0.5–120; past it the upload is refused (`undecodable`) and the kill logged. |
 | `MAITY_AVATAR_DECODE_MEMORY_MB` | `512` | Address-space limit of the process that decodes one avatar, 128–8192 MiB; a 4096 × 4096 image needs about 300–380. Past it the upload is refused (`undecodable`) and the kill logged. |
 | `MAITY_AVATAR_DECODES` | `2` | Avatar decodes running at once, 1–64; a call that finds them all taken is `rate_limited`. |
-| `MAITY_ATTACHMENT_STORE` | `local` | Where an attachment's bytes live (`docs/api.md` §8.7): `local` is built; `s3` is documented and stops the hub with a plain message; anything else stops it. |
+| `MAITY_ATTACHMENT_STORE` | `local` | Where an attachment's bytes live (`docs/api.md` §8.7): `local`, a directory (`MAITY_ATTACHMENT_DIR`), for one hub; `s3`, opt-in, an S3-compatible bucket that several replicas share (`MAITY_ATTACHMENT_S3_*`); anything else stops the hub. A hub that already has `local` attachments copies them before it switches (`maity-hub attachments copy-to-s3 --apply`, below); the keys are the same in both stores, so the rows need no change. |
 | `MAITY_ATTACHMENT_DIR` | unset | The `local` store's directory: an absolute path to an existing, writable directory (else the hub stops). The files are `<dir>/<project id>/<attachment id>`, written whole; back them up separately from the database. Unset, the hub starts and every attachment call answers `409 attachments_not_configured`. |
+| `MAITY_ATTACHMENT_S3_BUCKET` | unset | `s3`: the bucket; required, else the hub stops. Read only when the store is `s3`. |
+| `MAITY_ATTACHMENT_S3_ENDPOINT` | unset | `s3`: the endpoint of an S3-compatible service (MinIO, Ceph, a hoster's), an `https` URL without a path; unset is AWS for the region. Plain `http` only with `MAITY_ATTACHMENT_S3_ALLOW_HTTP=1` and to a loopback, private-range or cluster-internal host (`localhost`, a one-label name, `*.svc`, `*.cluster.local`). |
+| `MAITY_ATTACHMENT_S3_ALLOW_HTTP` | unset | `s3`: `1` allows a plain-`http` endpoint inside the cluster (above). Separate from `MAITY_ALLOW_PLAIN_HTTP`, which is about inbound traffic. |
+| `MAITY_ATTACHMENT_S3_REGION` | unset | `s3`: the region; unset leaves it to the client's own configuration. |
+| `MAITY_ATTACHMENT_S3_PREFIX` | unset | `s3`: a key prefix such as `maity/attachments`; objects are `<prefix>/<project id>/<attachment id>`. |
+| `MAITY_ATTACHMENT_S3_ACCESS_KEY_ID`, `MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY` | unset | `s3`: the credentials, both or neither; neither uses the client's default chain (an instance role, a mounted profile). Never logged. |
 | `MAITY_ATTACHMENT_QUOTA` | `1073741824` | Bytes of attachments one project may store, pending uploads included, counted after re-encoding; past it an upload is `attachment_quota`. |
 | (the attachment sweep) | every 5 minutes | Not a setting. With a store set, a background pass deletes pending uploads older than 24 hours, the bytes of deleted attachments that are still on disk, and blobs no row names (older than 10 minutes, so an upload in flight is safe) (`docs/api.md` §8.7). |
 | `MAITY_DB_POOL_SIZE` | `16` | Pooled connections to a server database (PostgreSQL, MariaDB), 1–500. They are reused, the most recently used first. |
 | `MAITY_DB_MAX_OVERFLOW` | `16` | Connections beyond the pool when it is busy, 0–500. |
+| `MAITY_WORKERS` | `1` | Serving processes of `maity-hub serve`, 1–64. More than one only with PostgreSQL and with `MAITY_DB_POOL_SIZE` at least twice the workers (refused otherwise). The pool and the overflow above are the hub's total: each process holds its share, rounded down. Each process takes about 130 MB of memory. |
+| `MAITY_REPLICAS` | `1` | How many hubs the deployment runs on this database, 1–100, as the deployment states it (the chart sets it from `replicas`). More than one only with PostgreSQL and without a local attachment directory (refused otherwise). At the start the hub warns when the connections it may ask (per worker its pool and overflow share plus a listener, per pod one for the probe, for replicas + 1 pods during a rolling update) exceed what PostgreSQL gives ordinary roles. |
 | `MAITY_DB_POOL_RECYCLE` | `1800` | Seconds after which a pooled connection is replaced when it is next taken, 0–86400; 0 never replaces. A connect that fails because the database host name does not resolve is tried once more after a short pause. |
 | `MAITY_DB_STATEMENT_TIMEOUT` | `30` | Seconds a statement may run on a PostgreSQL connection of the hub before the server cancels it (`statement_timeout`), 0–3600; 0 turns it off. Not set on `maity-hub migrate` and the other commands, nor on MariaDB or SQLite. |
 | `MAITY_DB_IDLE_IN_TRANSACTION_TIMEOUT` | `60` | Seconds a PostgreSQL connection of the hub may sit in an open transaction without a statement before the server ends it (`idle_in_transaction_session_timeout`), 0–3600; 0 turns it off. Same scope as above. |
@@ -233,7 +243,8 @@ All settings come from the environment.
 | `MAITY_SECRET_KEY` | unset | The instance key for secrets stored at rest (`docs/api.md` §16.2, §17.4): 32 random bytes, base64 (`head -c 32 /dev/urandom \| base64`). AES-256-GCM, a random nonce per value and the field's name as associated data. Never in the database, never logged or returned; a value that is not 32 base64 bytes stops the hub. Without it a forge webhook secret cannot be created (`secret_key_missing`). A key that changes makes every stored secret unusable until it is set again.
 | `MAITY_TRUSTED_PROXIES` | empty | Comma-separated addresses or CIDRs of reverse proxies whose `X-Forwarded-Proto` and `X-Forwarded-For` the hub believes. Empty: forwarded headers change nothing. |
 | `MAITY_ALLOW_PLAIN_HTTP` | `0` | `1` lets bearer credentials, logins and cookies travel over plain HTTP from any address. Only for a hub reachable on one machine or a private network; logged as a warning. Without it, plain HTTP is accepted from loopback only. The cookies' `Secure` flag follows the scheme a request arrived with, whatever this says. |
-| `MAITY_FORGE_GITHUB_TOKEN` | unset | The read-only GitHub token of the forge probe: fine-grained, with read access to Contents, Pull requests, Checks and Commit statuses of the repositories the hub probes (without Checks or Commit statuses, `checks` reads `unknown`; a repository the token cannot see is `probe_unavailable`, never a missing pull request). It is sent only to `api.github.com`, never logged or returned. Without it no release is ever ready. |
+| `MAITY_FORGE_GITHUB_TOKEN` | unset | The read-only GitHub token of the forge probe: fine-grained, with read access to Contents, Pull requests, Checks and Commit statuses of the repositories the hub probes (without Checks or Commit statuses, `checks` reads `unknown`; a repository the token cannot see is `probe_unavailable`, never a missing pull request). It is sent only to `api.github.com`, never logged or returned. Without it no release is ever ready. It reads only for projects in `MAITY_FORGE_INSTANCE_NAMESPACES`. |
+| `MAITY_FORGE_INSTANCE_NAMESPACES` | empty | The operator's own namespaces, comma separated (a human's handle or an organisation's, compared in lower case): the only projects the token above reads for, and there only public repositories (`docs/api.md` §11.4). Empty: it serves no project; every other project is read through its namespace owner's GitHub App installation or token. A listed name nobody has is held for the operator (registration, `POST /orgs` and renames answer `reserved`; `maity-hub owner create` may take it), and the hub warns at start about such a name and about a listed former name. |
 | `MAITY_SMTP_HOST`, `MAITY_SMTP_PORT` | unset; port 587, 465 or 25 by `MAITY_SMTP_TLS` | The one SMTP server the hub sends through (`docs/api.md` §16.2). Every mail setting may instead be set by the instance admin in the dashboard; a value set here wins and cannot be changed there. |
 | `MAITY_SMTP_TLS` | `starttls` | `starttls`, `implicit` or `none`. Under `starttls` a server without STARTTLS fails the send; nothing goes out in clear. `none` only for `localhost` or a loopback address; any other host stops the hub at startup. |
 | `MAITY_SMTP_CA_FILE` | unset | A PEM file the server's certificate is verified against instead of the system store. Certificates are always verified. |
@@ -244,6 +255,8 @@ All settings come from the environment.
 | `MAITY_SMTP_ALLOW_PLAINTEXT` | `0` | **Insecure**, for a test bench only: `1` sends in clear to a server that offers no STARTTLS (still never `AUTH`). Logged as a warning at startup and at every such send. |
 | `MAITY_SIGN_IN_DEVICE_CODE`, `MAITY_SIGN_IN_EMAIL_LINK` | unset | `1` or `0`: switch a sign-in method on or off for good (`docs/api.md` §2.6.6); unset leaves it to the instance admin (default on). The password cannot be switched off. |
 | `MAITY_WEB_DIR` | `web/` beside `hub/` in a checkout; the dashboard the package carries (`maity_hub/web`) when installed | The static dashboard. When set explicitly it must exist; otherwise a missing directory means the API is served alone. Dotfiles, paths under `/api`, and web/'s `fixtures/` and `tools/` are never served from it. |
+
+Moving a volume's files into the bucket: `maity-hub attachments copy-to-s3` copies every file under `MAITY_ATTACHMENT_DIR` into the bucket of the `s3` settings, under the same key, and skips an object the bucket already holds with the same SHA-256; an object the hub wrote with other bytes is reported, not overwritten (exit 1), and a file whose attachment is deleted or has no row is not copied. With `--apply` it then removes from the bucket what was deleted since an earlier run (a deleted attachment's object at once, an object no row names once it is 30 minutes old), and leaves alone the objects of a project the database does not know. Without `--apply` it only counts, the removals too, and it never changes the files. There is no copy back: after the switch, new uploads are only in the bucket. Run it with `MAITY_ATTACHMENT_STORE=s3` before switching the store, and once more after (`deploy/helm/maity-hub/README.md`, *Moving attachments to S3*). With the bucket's versioning on, a deletion is final only once a lifecycle rule expires the noncurrent versions.
 
 ### Settings for a public instance
 
@@ -302,7 +315,9 @@ The tests run on a fresh SQLite file per test, a copy of a schema migrated
 once. `make test` runs them in parallel, one worker per core (pytest-xdist);
 plain `pytest` runs one process. To run them against a server database, point
 `MAITY_TEST_DATABASE_URL` at an empty database the suite may create and drop
-tables in:
+tables in. It is the suite's alone and disposable: the suite empties it before
+every test, and on PostgreSQL a session of the same role that still holds a lock
+on its tables when that cleanup times out is ended (hub/context/testing.md):
 
 ```sh
 MAITY_TEST_DATABASE_URL=postgresql://maity:<password>@127.0.0.1/maity_test pytest
@@ -326,10 +341,14 @@ is what CI's hub-wheel job runs against the built wheel.
 it runs a command with `MAITY_TEST_DATABASE_URL` set to a database of its own, on
 a server in `MAITY_PG_DIR` (default `~/.local/state/maity/test-postgres`), which it
 creates when missing. Runs can share the server. The last one to end stops it, and
-only if this script started it; a server that was already up keeps running. It needs
-`pg_ctl`, `initdb` and `psql`, on the path or in `MAITY_PG_BIN`. Without a system
-PostgreSQL, the PyPI package `pgserver` brings them, in a venv of its own (its
-wheels stop at Python 3.12):
+only if this script started it; a server that was already up keeps running.
+`--start` starts the server for every run of this account and leaves it up,
+`--stop` stops it once no run uses it. A run holds one of the account's run slots
+(`../tools/run_slot.sh`, two by default), and its database is
+`maity_test_<name>_<pid>` with `<name>` from `MAITY_RUN_NAME`; `CONTRIBUTING.md` has
+the rules for a shared machine. It needs `pg_ctl`, `initdb` and `psql`, on the path
+or in `MAITY_PG_BIN`. Without a system PostgreSQL, the PyPI package `pgserver`
+brings them, in a venv of its own (its wheels stop at Python 3.12):
 
 ```sh
 python3.12 -m venv ~/.pg-venv && ~/.pg-venv/bin/pip install pgserver

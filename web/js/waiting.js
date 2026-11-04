@@ -10,14 +10,15 @@ window.Maity = window.Maity || {};
 
   // One item: its link, and Mark read where a read mark can be set from
   // here (§18.3): not on an open matter, which reads as read once it is
-  // closed, and on a sign-in or address alert only where this session may
-  // confirm it (§2.6.5, M.sessions.mayConfirm), else the hub would skip it.
+  // closed, and on a security alert only where this session may mark it
+  // (M.sessions.mayMark, as the bell does): a sign-in or address alert from
+  // a confirmed session older than it, every other kind from any session.
   function row(ctx, x, mark, sessions) {
     let li = null;
     const title = x.redacted ? M.t("waiting.removed") : x.title || M.notify.KIND_WORDS[x.kind] || M.t("waiting.untitled");
     const security = x.kind === "security";
     const reported = security && sessions && (x.target || {}).type === "session" ? sessions.list.find((s) => s.id === x.target.id) || null : null;
-    const markable = !x.read && (security ? !!(sessions && M.sessions && M.sessions.mayConfirm(sessions.current, x, reported)) : !M.notify.keepsUnread(x));
+    const markable = !x.read && (security ? !!(sessions && M.sessions && M.sessions.mayMark(sessions.current, x, reported)) : !M.notify.keepsUnread(x));
     const link = h("a", { href: M.notify.linkOf(x), onclick: () => {
       if (x.read || M.notify.keepsUnread(x)) return; // Read with This was me, or once the matter is closed.
       mark({ ids: [x.id] });
@@ -51,6 +52,18 @@ window.Maity = window.Maity || {};
     // bell does); a sign-in or address alert stays unread (§2.6.5). Always
     // there, off while nothing it would mark is unread.
     const markAll = h("button", { type: "button", class: "small" }, M.t("waiting.mark_all"));
+    // A filter from the address (?kind=mention&project=<owner>/<slug>, the
+    // project's mention link beside its tabs, tsk-xb7bf1x0h3cy): one kind of
+    // §18.2 and one project of the human's, sent to the hub as they are, and
+    // Mark all read marks that kind and project only (§18.3). Anything else
+    // is no filter.
+    const asked = M.route.current().query;
+    const kind = Object.hasOwn(M.notify.KIND_WORDS, asked.get("kind") || "") ? asked.get("kind") : null;
+    const project = ctx.projects.find((p) => p.full_name === asked.get("project")) || null;
+    const filter = (kind ? "&kind=" + kind : "") + (project ? "&project=" + encodeURIComponent(project.full_name) : "");
+    const scoped = Object.assign({}, kind ? { kind } : null, project ? { project: project.full_name } : null);
+    const heading = kind && project ? M.t("waiting.title.kind_in", { kind: M.notify.KIND_WORDS[kind], project: project.name })
+      : kind ? M.notify.KIND_WORDS[kind] : project ? M.t("waiting.title.in", { project: project.name }) : M.t("waiting.title");
     let cursor = null, top = null, disposed = false, items = [];
     // The sessions, read only when the page shows an unread security item.
     let sessions = null;
@@ -59,10 +72,18 @@ window.Maity = window.Maity || {};
     // True once the hub took it; the counts follow. Mark all read reads
     // the list again, since it reaches items on pages not shown.
     async function mark(body) {
+      let answer;
       try {
-        await M.api.post("/me/notifications/read", body);
+        answer = await M.api.post("/me/notifications/read", body);
       } catch (err) {
         status.fail(M.t("waiting.not_marked"), err);
+        return false;
+      }
+      // An id the hub left unread (§18.3 `skipped`, e.g. an address change made
+      // from this session, which the page cannot see) is said, not shown read.
+      const left = body.ids ? ((answer && answer.skipped) || []).find((y) => body.ids.includes(y.id)) : null;
+      if (left) {
+        status.fail(M.t("waiting.not_marked"), Object.assign(new Error(M.notify.skippedWhy(left.reason)), { details: {} }));
         return false;
       }
       M.notify.changed();
@@ -73,7 +94,7 @@ window.Maity = window.Maity || {};
     async function load() {
       older.disabled = true;
       try {
-        const answer = await M.api.get("/me/notifications?limit=50" + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""));
+        const answer = await M.api.get("/me/notifications?limit=50" + filter + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""));
         if (disposed) return;
         if (cursor === null) top = answer.next_after || null;
         const page = (answer.items || []).filter(M.notify.known);
@@ -94,11 +115,12 @@ window.Maity = window.Maity || {};
     markAll.addEventListener("click", async () => {
       markAll.disabled = true;
       status.busy(M.t("waiting.marking"));
-      await mark({ up_to: top });
+      await mark(Object.assign({ up_to: top }, scoped));
       markAllOff();
     });
     older.addEventListener("click", load);
-    append(root, h("div", { class: "toolbar" }, h("h2", null, M.t("waiting.title")), markAll),
+    append(root, h("div", { class: "toolbar" }, h("h2", null, heading), markAll),
+      filter ? h("p", { class: "hint" }, h("a", { href: "/notifications" }, M.t("bell.all"))) : null,
       h("p", { class: "hint" }, M.t("waiting.mark_all.hint")),
       list, older, status.el);
     markAllOff();

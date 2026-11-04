@@ -117,6 +117,12 @@ def named(setting: dict[str, Any]) -> set[str]:
     return found
 
 
+def for_frame(conn: Connection, setting: dict[str, Any]) -> dict[str, Any] | None:
+    """The counters the frame of the public pages needs to know which sections draw something
+    (§16.7.5): the landing page's, while it is enabled and a section names one; else none."""
+    return current(conn) if setting["enabled"] and named(setting) else None
+
+
 def published(conn: Connection, setting: dict[str, Any]) -> dict[str, Any] | None:
     """`stats` of `GET /landing`: only the counters that are named, `None` when none is."""
     names = named(setting)

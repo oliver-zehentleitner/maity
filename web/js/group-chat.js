@@ -306,8 +306,11 @@ window.Maity = window.Maity || {};
             const served = (bridge.bridging_for || []).filter((c) => inChat(c.member_id));
             return M.tn("group.people.bridge", { name: M.dom.memberRef(ctx, o), served: listed(served.map((c) => M.dom.memberRef(ctx, c.member_id))) });
           }
-          return M.tn("group.people.observer", { name: observerName(o),
-            agents: listed(view.participants.filter((p) => p.owner_id === o).map((p) => M.dom.memberRef(ctx, p.member_id))) });
+          // Owning no agent in it: named alone, never "owner of" nothing. An agent's id the
+          // reader's member list lacks (a bridge, to an owner outside the project) gets a neutral line.
+          const owned = view.participants.filter((p) => p.owner_id === o);
+          if (!owned.length) return /^agt-/.test(o) && !(ctx.memberById || {})[o] ? M.t("group.observer.agent_unlisted") : observerName(o);
+          return M.tn("group.people.observer", { name: observerName(o), agents: listed(owned.map((p) => M.dom.memberRef(ctx, p.member_id))) });
         })) }))
       : null);
 

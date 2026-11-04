@@ -43,6 +43,19 @@ expect "minimal: hub pods selected by component, version label from the tag" "$o
     "app.kubernetes.io/component: hub" 'app.kubernetes.io/version: "ci"'
 selector="$(sed -n '/^kind: Service$/,/^---/p' <<<"$out" | sed -n '/selector:/,$p')"
 expect "minimal: the Service selects only the hub" "$selector" "app.kubernetes.io/component: hub"
+expect "minimal: one serving process unless set" "$out" "name: MAITY_WORKERS" 'value: "1"'
+expect "workers: the setting reaches the hub" "$(render -f "$minimal" --set config.workers=4)" 'value: "4"'
+render -f "$minimal" --set config.workers=0 >/dev/null 2>&1 && bad "config.workers=0 accepted" \
+    || ok "config.workers below 1 refused"
+grep -q "kind: PodDisruptionBudget\|topologySpreadConstraints\|MAITY_DB_POOL_SIZE" <<<"$out" \
+    && bad "minimal: a budget, spread or pool setting for one pod" || ok "minimal: no budget, spread or pool"
+out_many="$(render -f "$minimal" --set replicas=3 --set database.poolSize=8 --set database.maxOverflow=0)"
+expect "replicas: rolled one at a time, a budget, spread, the pool" "$out_many" \
+    "replicas: 3" "type: RollingUpdate" "maxUnavailable: 0" "kind: PodDisruptionBudget" \
+    "minAvailable: 1" "topologyKey: kubernetes.io/hostname" "name: MAITY_REPLICAS" \
+    "name: MAITY_DB_POOL_SIZE" 'value: "8"' "name: MAITY_DB_MAX_OVERFLOW" 'value: "0"'
+render -f "$ingress" --set replicas=2 >/dev/null 2>&1 && bad "replicas=2 with an attachment claim accepted" \
+    || ok "replicas above 1 with an attachment claim refused"
 expect "minimal: every probe field rendered" "$out" "timeoutSeconds: 5" "failureThreshold: 30"
 expect "minimal: a NetworkPolicy by default, open to ingress-nginx and the test pod" "$out" \
     "kind: NetworkPolicy" "kubernetes.io/metadata.name: ingress-nginx" "app.kubernetes.io/component: test"
@@ -51,6 +64,7 @@ grep -q "kind: NetworkPolicy" <<<"$out_np" && bad "networkPolicy.enabled=false s
     || ok "no NetworkPolicy when disabled"
 grep -q "kind: Ingress" <<<"$out" && bad "minimal: an Ingress without ingress.enabled" || ok "minimal: no Ingress"
 grep -q "MAITY_FORGE_GITHUB_TOKEN" <<<"$out" && bad "minimal: a token without a Secret" || ok "minimal: no forge token"
+grep -q "MAITY_FORGE_INSTANCE_NAMESPACES" <<<"$out" && bad "minimal: namespaces without a list" || ok "minimal: no instance namespaces"
 grep -q "MAITY_ATTACHMENT\|name: attachments" <<<"$out" && bad "minimal: attachment settings without a claim" || ok "minimal: no attachment settings"
 grep -q "MAITY_SECRET_KEY" <<<"$out" && bad "minimal: an instance key without a Secret" || ok "minimal: no instance key"
 grep -q "MAITY_SMTP\|MAITY_MAIL_SIGNING_KEY" <<<"$out" && bad "minimal: mail env without mail values" || ok "minimal: no mail env"
@@ -61,7 +75,8 @@ expect "ingress: TLS host, defaults merged with the operator's annotation, diges
     "ingressClassName: nginx" "secretName: t-maity-hub-tls" 'value: "https://maity.example.org"' \
     'nginx.ingress.kubernetes.io/proxy-buffering: "off"' "cert-manager.io/cluster-issuer: letsencrypt" \
     "@sha256:0000000000000000000000000000000000000000000000000000000000000000" \
-    "name: MAITY_FORGE_GITHUB_TOKEN" 'value: "10.244.0.0/16"'
+    "name: MAITY_FORGE_GITHUB_TOKEN" 'value: "10.244.0.0/16"' \
+    "name: MAITY_FORGE_INSTANCE_NAMESPACES" 'value: "maity-org"'
 grep -q "helm.sh/hook: pre-install" <<<"$out" && bad "ingress: migrate Job with migrate.enabled false" \
     || ok "ingress: no migrate Job when disabled"
 expect "ingress: the attachment volume, its mount, the directory and the quota" "$out" \
@@ -91,6 +106,24 @@ out_ee="$(render -f "$minimal" --set attachments.existingClaim=c --set attachmen
 grep -q "MAITY_ATTACHMENT\|claimName\|name: attachments" <<<"$(render -f "$minimal" --set attachments.existingClaim=c --show-only templates/migrate-job.yaml)" \
     && bad "the migrate Job has the attachment volume or its settings" || ok "the migrate Job has no attachment volume or settings"
 grep -q "MAITY_ATTACHMENT_QUOTA" <<<"$out_att" && bad "no quota set but MAITY_ATTACHMENT_QUOTA rendered" || ok "no quota unless set"
+out_s3="$(render -f "$minimal" --set attachments.store=s3 --set attachments.s3.bucket=b --set attachments.s3.endpoint=https://s3.example \
+    --set attachments.s3.region=r --set attachments.s3.existingSecret=maity-s3 --show-only templates/deployment.yaml)"
+expect "s3: the store, the bucket, the endpoint and the credentials by reference" "$out_s3" \
+    'value: "s3"' 'value: "b"' 'value: "https://s3.example"' 'value: "r"' 'name: "maity-s3"' \
+    'key: "MAITY_ATTACHMENT_S3_ACCESS_KEY_ID"' 'key: "MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY"'
+grep -q "MAITY_ATTACHMENT_DIR\|claimName\|MAITY_ATTACHMENT_S3_ALLOW_HTTP\|MAITY_ATTACHMENT_S3_PREFIX" <<<"$out_s3" \
+    && bad "s3 without a claim still renders the volume, the directory or unset options" || ok "s3 without a claim: no volume, no directory"
+out_s3c="$(render -f "$minimal" --set attachments.store=s3 --set attachments.s3.bucket=b --set attachments.existingClaim=c --show-only templates/deployment.yaml)"
+expect "s3 with the claim kept for the copy: both" "$out_s3c" 'value: "s3"' "name: MAITY_ATTACHMENT_DIR" 'claimName: "c"'
+grep -q "MAITY_ATTACHMENT_S3_ACCESS_KEY_ID\|MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY" <<<"$out_s3c" && bad "s3 without existingSecret renders a secret reference" || ok "s3 without existingSecret: the client's own credentials"
+render -f "$minimal" --set attachments.s3=null >/dev/null 2>&1 && ok "attachments.s3: null renders" || bad "attachments.s3: null breaks the template"
+render -f "$minimal" --set attachments.store=s3 >/dev/null 2>&1 && bad "s3 without a bucket is accepted" || ok "s3 without a bucket is refused"
+out_pre="$(render -f "$minimal" --set attachments.s3.bucket=b --set attachments.existingClaim=c --show-only templates/deployment.yaml)"
+expect "local with a bucket set, for the copy: its settings, not the store" "$out_pre" 'value: "b"' "name: MAITY_ATTACHMENT_DIR"
+grep -q "name: MAITY_ATTACHMENT_STORE" <<<"$out_pre" && bad "a bucket alone switches the store" || ok "a bucket alone does not switch the store"
+render -f "$minimal" --set attachments.store=tape >/dev/null 2>&1 && bad "an unknown attachments.store is accepted" || ok "an unknown attachments.store is refused by the schema"
+grep -q "MAITY_ATTACHMENT" <<<"$(render -f "$minimal" --set attachments.store=s3 --set attachments.s3.bucket=b --show-only templates/migrate-job.yaml)" \
+    && bad "the migrate Job has the s3 settings" || ok "the migrate Job has no s3 settings"
 render -f "$minimal" --set attachments.mountPath=relative >/dev/null 2>&1 && bad "a relative attachments.mountPath is accepted" || ok "a relative attachments.mountPath is refused by the schema"
 render -f "$minimal" --set attachments.quotaBytes=10 >/dev/null 2>&1 && bad "a quota below 1024 bytes is accepted" || ok "a quota below 1024 bytes is refused by the schema"
 out_nopw="$(render -f "$ingress" --set mail.passwordSecret.existingSecret=)"

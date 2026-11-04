@@ -23,7 +23,16 @@ from starlette.concurrency import run_in_threadpool
 from starlette.routing import Match
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from maity_hub import clock, events, forge_webhook, join_host, net, paths, request_stats
+from maity_hub import (
+    clock,
+    events,
+    forge_webhook,
+    join_host,
+    maintenance,
+    net,
+    paths,
+    request_stats,
+)
 from maity_hub.auth import credentials
 from maity_hub.auth.leaks import revoke_leaked
 from maity_hub.config import Settings
@@ -73,6 +82,7 @@ ROUTE_CACHE = frozenset(
 # (§16.7), the sign-in pages and what a visitor's dashboard reads of a public page (§16.9).
 PUBLIC_PATHS = re.compile(
     r"/badge/(?:[^/]+/)?[^/]+\.svg|/api/v1/landing|/api/v1/legal|/api/v1/auth/pages/[^/]+"
+    r"|/api/v1/site/chrome"
     r"|/api/v1/public/pages/.+"
     r"|/|/(?:impressum|privacy|terms)(?:/[^/]+)?"
 )
@@ -82,6 +92,24 @@ SEO_PATHS = re.compile(r"/robots\.txt|/sitemap\.xml|/sitemap-\d+\.xml")
 # one asked for under another answers `no-cache` (in ROUTE_CACHE), so a stale link repairs itself.
 LANDING_FILES = re.compile(r"/assets/landing/.+")
 LANDING_FILES_CACHE = b"public, max-age=31536000, immutable"
+
+
+# Not refused during a maintenance window (§16.12): health, the window's own routes, and the
+# sign-in a signed-out admin needs to end it early. Registration is refused like the rest.
+MAINTENANCE_OPEN = re.compile(
+    r"/api/v1/(health|maintenance|admin/maintenance(/end|/changes)?"
+    r"|auth/(login|logout|session|methods|pages/sign_in|email-link|email-code|second-factor/(verify|email)))"
+    r"|/mail/sign-in/[^/]+"
+)
+# Read only: the web learns from `GET /me` who signed in, so the instance admin finds the
+# full page's End button (§16.12).
+MAINTENANCE_READ = re.compile(r"/api/v1/me")
+# The hub's own server-rendered pages that every caller gets, which answer a small 503 page
+# during a window. `/` and a stored public page are the landing or public page for a visitor
+# only and the app shell for a signed-in reader, so their routes decide (`refusal_page`);
+# every other address outside the API is the app shell or a static file, and the app shows the
+# full page itself.
+MAINTENANCE_PAGES = re.compile(r"/explore|/for/[^/]+|/join/[^/]+|/r/[^/]+|/mail/.+")
 
 
 class HubMiddleware:
@@ -114,6 +142,9 @@ class HubMiddleware:
                 # app shell of the same address stays `no-cache` (§16.9).
                 public = b"public, max-age=60"
         send = _with_headers(send, public=public)
+
+        if await self._maintenance_refused(scope, receive, send, path):
+            return
 
         if not on_join_host and forge_webhook.matches(scope):
             # Signed, not authenticated, and limited before its body is read (§17.4).
@@ -216,6 +247,40 @@ class HubMiddleware:
             await response(scope, receive, send)
         finally:
             _access(scope, status)
+
+    async def _maintenance_refused(
+        self, scope: Scope, receive: Receive, send: Send, path: str
+    ) -> bool:
+        """`503 maintenance` with `Retry-After` while a window runs (§16.12); True when sent."""
+        if MAINTENANCE_OPEN.fullmatch(path):
+            return False
+        if scope.get("method") in ("GET", "HEAD") and MAINTENANCE_READ.fullmatch(path):
+            return False
+        api = path.startswith("/api/")
+        badge = path.startswith("/badge/")
+        if not (api or badge or MAINTENANCE_PAGES.fullmatch(path)):
+            return False  # the app shell and its files: the app shows the full page
+        try:
+            found = await run_in_threadpool(maintenance.window_now, self.engine)
+        except (OperationalError, InterfaceError):
+            return False  # the database's own answer follows on the route
+        if found is None or found["state"] != "running":
+            return False
+        headers = {"Retry-After": str(maintenance.retry_after(found))}
+        if api:
+            details = {k: found[k] for k in ("from", "until", "text")}
+            response: Any = error_response(
+                503, "maintenance", "the hub is in a maintenance window", details, headers
+            )
+        elif badge:
+            from starlette.responses import Response
+
+            response = Response(status_code=503, headers=headers)
+        else:
+            response = maintenance.refusal_page(found)
+        await response(scope, receive, send)
+        _access(scope, 503)
+        return True
 
     def _revoke(self, found: list[credentials.Presented]) -> None:
         with events.transaction(self.engine) as conn:

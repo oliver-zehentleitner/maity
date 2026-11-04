@@ -80,7 +80,9 @@ def settings(settings: Settings, request: pytest.FixtureRequest) -> Settings:
     """The operator's forge token, as the environment sets it, for the tests that
     ask for the probe; the others run without one."""
     if {"probe", "github"} & set(request.fixturenames):
-        return replace(settings, forge_github_token=TOKEN)
+        return replace(
+            settings, forge_github_token=TOKEN, forge_instance_namespaces=frozenset({"maintainer"})
+        )
     return settings
 
 
@@ -522,7 +524,11 @@ def test_the_worker_probes_right_after_a_report(
     fake.branch("agent-b/probe")
 
     def with_token(**overrides: Any) -> Any:  # every app starts its worker
-        return make_client(forge_github_token=TOKEN, **overrides)
+        return make_client(
+            forge_instance_namespaces=frozenset({"maintainer"}),
+            forge_github_token=TOKEN,
+            **overrides,
+        )
 
     human = flow.human(with_token, migrated)
     flow.project(human, "maity", repository=REPO)
@@ -674,6 +680,189 @@ def test_only_a_changed_verdict_is_announced_again(
     probe.observe_report(migrated, READER, card_id, max_age=0)
     reported = [e for e in _events(migrated, "probe_observed") if e.payload.get("task") == card_id]
     assert len(reported) == 1
+
+
+def _reported_events(engine: Engine, card_id: str) -> list[Any]:
+    return [e for e in _events(engine, "probe_observed") if e.payload.get("task") == card_id]
+
+
+def _report_again(agent: flow.Human, card_id: str) -> None:
+    again = agent.post(f"/projects/maintainer/maity/tasks/{card_id}/report", _report())
+    assert again.status_code == 200, again.text
+    assert again.json()["report"]["observed"] is None
+
+
+def test_a_new_report_on_an_unchanged_pull_request_wakes_nobody(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """The agent reports again; the forge says what it said for the last report: stored on
+    the new report and emitted to nobody, so the views that read every event show it filled
+    (req-658tp9mj77ny)."""
+    github.pull(7)
+    github.branch("agent-b/probe")
+    agent, card_id = _reported_card(owner, make_client)
+    assert probe.observe_report(migrated, READER, card_id) is True
+    _report_again(agent, card_id)
+    assert probe.observe_report(migrated, READER, card_id, max_age=0) is True
+    report = owner.get(f"/projects/maintainer/maity/tasks/{card_id}").json()["report"]
+    assert report["observed"]["pr_head_sha"] == SHA and report["mismatch"] is False
+    told, quiet = _reported_events(migrated, card_id)
+    assert told.audience and quiet.audience == []
+    assert quiet.payload == {"task": card_id, "observed": report["observed"], "mismatch": False}
+    read = owner.get("/projects/maintainer/maity/events").json()["items"]
+    assert [e["seq"] for e in read if e["kind"] == "probe_observed"][-1] == quiet.seq
+
+
+def test_a_new_report_the_forge_contradicts_again_wakes(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """A second wrong head is news to the holder, though the forge says what it said."""
+    github.pull(7, head=OTHER)
+    github.branch("agent-b/probe", head=OTHER)
+    agent, card_id = _reported_card(owner, make_client)
+    assert probe.observe_report(migrated, READER, card_id) is True
+    third = "c" * 40
+    pr = {**_report()["pr"], "head": third}
+    again = agent.post(
+        f"/projects/maintainer/maity/tasks/{card_id}/report",
+        _report(head=third, remote_head=third, pr=pr),
+    )
+    assert again.status_code == 200, again.text
+    assert probe.observe_report(migrated, READER, card_id, max_age=0) is True
+    first, second = _reported_events(migrated, card_id)
+    assert first.payload["mismatch"] is second.payload["mismatch"] is True
+    assert second.audience == first.audience != []
+
+
+def test_a_new_holder_is_told_what_the_last_one_was(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """The last observation told the earlier holder: the one now holding the card is told it."""
+    github.pull(7)
+    github.branch("agent-b/probe")
+    agent, card_id = _reported_card(owner, make_client)
+    assert probe.observe_report(migrated, READER, card_id) is True
+    _report_again(agent, card_id)
+    with migrated.begin() as conn:
+        conn.execute(update(t.card).where(t.card.c.id == card_id).values(claim_instance="zz99"))
+    assert probe.observe_report(migrated, READER, card_id, max_age=0) is True
+    _, second = _reported_events(migrated, card_id)
+    assert second.audience == [f"instance:{agent.id}#zz99"]
+
+
+def test_an_observation_that_woke_nobody_told_nobody(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """Observed on a closed card (to nobody), then reopened: the holder's next report is told."""
+    github.pull(7)
+    github.branch("agent-b/probe")
+    agent, card_id = _reported_card(owner, make_client)
+    with migrated.begin() as conn:
+        conn.execute(update(t.card).where(t.card.c.id == card_id).values(status="done"))
+    assert probe.observe_report(migrated, READER, card_id) is True
+    with migrated.begin() as conn:
+        conn.execute(update(t.card).where(t.card.c.id == card_id).values(status="in_progress"))
+    _report_again(agent, card_id)
+    assert probe.observe_report(migrated, READER, card_id, max_age=0) is True
+    quiet, told = _reported_events(migrated, card_id)
+    assert quiet.audience == [] and told.audience == [f"instance:{agent.id}#{agent.instance}"]
+
+
+@pytest.mark.parametrize(
+    "change",
+    ["checks", "pr_state", "pr_head_sha", "branch_head_sha"],
+)
+def test_a_new_report_wakes_when_the_pull_request_changed(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    github: FakeGitHub,
+    change: str,
+) -> None:
+    """Each part of the observation, changed since the last report's, is announced."""
+    github.pull(7)
+    github.branch("agent-b/probe")
+    agent, card_id = _reported_card(owner, make_client)
+    assert probe.observe_report(migrated, READER, card_id) is True
+    _report_again(agent, card_id)
+    if change == "checks":
+        github.runs(SHA, [("ci / sqlite", "failure")])
+    elif change == "pr_state":
+        github.pull(7, merged=True)
+    elif change == "pr_head_sha":
+        github.pull(7, head=OTHER)
+    else:
+        github.branch("agent-b/probe", head=OTHER)
+    assert probe.observe_report(migrated, READER, card_id, max_age=0) is True
+    first, second = _reported_events(migrated, card_id)
+    assert first.payload["observed"][change] != second.payload["observed"][change]
+
+
+def test_a_report_after_its_announced_one_was_redacted_is_announced(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """A redacted event says nothing: the next report's observation is told again."""
+    github.pull(7)
+    github.branch("agent-b/probe")
+    agent, card_id = _reported_card(owner, make_client)
+    assert probe.observe_report(migrated, READER, card_id) is True
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.event).where(t.event.c.kind == "probe_observed").values(redacted=True)
+        )
+    _report_again(agent, card_id)
+    assert probe.observe_report(migrated, READER, card_id, max_age=0) is True
+    _, again = _reported_events(migrated, card_id)
+    assert again.audience != []
+
+
+def _release_with_pull(owner: flow.Human, migrated: Engine, github: FakeGitHub) -> str:
+    release = owner.post(
+        "/projects/maintainer/maity/tasks",
+        {"title": "0.1.0", "kind": "release", "release": {"version": "0.1.0"}},
+    ).json()
+    owner.patch(
+        f"/projects/maintainer/maity/tasks/{release['id']}",
+        {"release": {"pull_requests_typed": [{"number": 1}]}},
+    )
+    github.pull(1)
+    github.tag("v0.1.0")
+    project_id = str(_project(migrated).id)
+    assert probe.observe_release(migrated, READER, project_id) is True
+    return project_id
+
+
+def test_a_mergeable_state_settling_wakes_nobody(
+    owner: flow.Human, migrated: Engine, github: FakeGitHub
+) -> None:
+    """The forge computes `mergeable` lazily: `unknown` and `mergeable` take turns on an
+    unchanged pull request. Stored, but not announced."""
+    project_id = _release_with_pull(owner, migrated, github)
+    before = len(_events(migrated, "probe_observed"))
+    for mergeable in (None, True, None):
+        github.pull(
+            1, mergeable=mergeable, mergeable_state="unknown" if mergeable is None else "clean"
+        )
+        assert probe.observe_release(migrated, READER, project_id, max_age=0) is True
+    stored = probe.last(migrated, project_id, "pr", "1")
+    assert stored is not None and stored.data["mergeable"] == "unknown"
+    assert len(_events(migrated, "probe_observed")) == before
+
+
+def test_a_pull_request_that_starts_or_stops_conflicting_wakes(
+    owner: flow.Human, migrated: Engine, github: FakeGitHub
+) -> None:
+    project_id = _release_with_pull(owner, migrated, github)
+    before = len(_events(migrated, "probe_observed"))
+    github.pull(1, mergeable=False, mergeable_state="dirty")
+    assert probe.observe_release(migrated, READER, project_id, max_age=0) is True
+    github.pull(1, mergeable=None, mergeable_state="unknown")  # out of the conflict
+    assert probe.observe_release(migrated, READER, project_id, max_age=0) is True
+    events = _events(migrated, "probe_observed")[before:]
+    assert [e.payload["observations"]["pr:1"]["mergeable"] for e in events] == [
+        "conflicting",
+        "unknown",
+    ]
 
 
 def test_a_round_ends_at_the_first_read_the_forge_does_not_answer(
