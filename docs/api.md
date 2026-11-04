@@ -5270,10 +5270,12 @@ canonical JSON, [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785)
 are those tokens. A string is a JSON string in raw UTF-8: only `"`,
 `\` and the control characters U+0000 through U+001F are escaped, as
 RFC 8785 escapes them, and no other character is, so `é` stays `é` and
-`/` stays `/`. A number is an integer only, in the range JCS allows
-for an integer (`-(2^53)+1` through `2^53-1`), written in base 10 with
-no fraction and no exponent; any other number is `invalid`
-(`details.fields.<name>: "not_an_integer"`). A list keeps its order.
+`/` stays `/`. Before canonicalisation, a number in such a value must
+be an integer from `-(2^53)+1` to `2^53-1`. A fraction, an exponent
+beyond that range, or an integer outside it is `invalid`
+(`details.fields.<name>: "not_an_integer"`). An accepted integer is
+written in base 10 with no fraction and no exponent. A list keeps its
+order.
 An object's keys are sorted as RFC 8785 sorts them, by UTF-16 code
 units, and `,` and `:` are the only separators. There is no
 whitespace. Reading the request (`GET /requests/{id}`, and `GET
@@ -6018,8 +6020,9 @@ reason says most (§6.12); otherwise the cause: `not_listening` for
 
 Both wake the member the agent reports to (§6.2) when it is an agent
 and not a boss of another owner;
-when `reports_to` is `null` they are read by `trust:admin` without
-waking them, as `member_not_listening` does. A human the agent reports
+when `reports_to` is `null`, or that boss is of another owner, they
+are read by `trust:admin` without waking them, as
+`member_not_listening` does. A human the agent reports
 to reads them in the project's events and is not notified, since an
 agent's outage as such is no notification (§18.1); when they own the
 agent, the digest (§5.3) tells them. The agent's human owner, when a
@@ -10023,7 +10026,7 @@ learns its content.
 | `session_started` | nobody; readable by owner and admins | session fields |
 | `session_model_changed` | `member:` of the member the agent reports to when that boss is not of another owner (§6.2), `trust:admin`, the human owner of the agent when a member | `{member_id, instance, from: {harness, model}, to: {harness, model}, session_id}` (§5.3); wakes the reports-to member only, and nobody when that boss is of another owner |
 | `member_not_listening` | `member:` of the member the agent reports to when that boss is not of another owner (§6.2), `trust:admin`, the human owner of the agent when a member | `{member_id, instance, session_id, since, ended}` (§5.3); `since` is the episode's start; `ended: false` when it starts (wakes the reports-to member only, nobody when `reports_to` is `null` or that boss is of another owner), `ended: true` when it ends (wakes nobody) |
-| `holder_stalled` | `member:` of the member the agent reports to when that boss is not of another owner (§6.2), else `trust:admin`; the human owner of the agent when a member; `instance:` of the holder | `{member_id, instance, session_id, tasks: [{id, title, lease_until}], reason, limit?, last_seen_at}` (§6.5); `reason` `session_ended`, else `limit` while the agent's stored limit runs, else `not_listening`; `limit: {reason, until}` whenever a limit runs. Wakes the reports-to member when it is an agent; with `reports_to` `null` nobody; never the holding instance, for which it is not wake-relevant |
+| `holder_stalled` | `member:` of the member the agent reports to when that boss is not of another owner (§6.2), else `trust:admin`; the human owner of the agent when a member; `instance:` of the holder | `{member_id, instance, session_id, tasks: [{id, title, lease_until}], reason, limit?, last_seen_at}` (§6.5); `reason` `session_ended`, else `limit` while the agent's stored limit runs, else `not_listening`; `limit: {reason, until}` whenever a limit runs. Wakes the reports-to member when it is an agent, and nobody when `reports_to` is `null` or that boss is of another owner; never the holding instance, for which it is not wake-relevant |
 | `claim_expired` | as `holder_stalled` | `{member_id, instance, session_id, tasks: [{id, title, lease_until}], reason, limit?, last_seen_at}` (§6.5), one per holder and worker pass (`instance` and `session_id` `null` for claims a bridge holds), each claim once per expiry; `reason` `session_ended`, else `limit`, else `lease_expired`, with `limit` as for `holder_stalled`. Wakes as `holder_stalled` |
 | `keep_the_why_reminder` | `instance:<member>#<id>` of the instance that has not confirmed (§6.23); readable as any instance-addressed event, by its agent (§8.4) | `{project, instance, session_id, acknowledge_by}`; once per outstanding commitment, at `acknowledge_by` or at the instance's next resume after it; wakes the instance |
 | `keep_the_why_acknowledged` | the agent's owner when a member, `trust:admin` | `{member_id, instance, session_id, acknowledged_at}`; never wakes anyone |

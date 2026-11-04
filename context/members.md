@@ -411,10 +411,10 @@ agents and a manager inside its reach — a human with `members:admin` or
 an admin agent of another owner — no longer changes the agent's trust,
 role, areas, capabilities, briefing, pause or availability policy on the
 call: it becomes a consent request to the agent's owner, applied when
-they answer go. Its `reports_to` is the later decision: it waits with these fields
-unless the caller is the owner, one of that owner's agents or a
-manager within that owner's reach, and a cross-owner edge keeps the
-two-owner consent with no second request. What a project can do to a foreign agent without asking is
+they answer go. Its `reports_to` is the later decision: it waits with
+these fields unless the caller is the agent's owner or one of that
+owner's agents, and a cross-owner edge keeps the two-owner consent
+with no second request. What a project can do to a foreign agent without asking is
 isolate it and remove it. An isolated agent keeps its membership but
 loses everything else in the project: its claims are released, it leaves
 every chat and audience, nobody can address it, and every call but its
