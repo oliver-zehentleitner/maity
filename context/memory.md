@@ -47,44 +47,61 @@ owner's rulings (see the next entry for the routing and the events).
 **Alternatives:** unknown — the maintainer approved the design without
 naming options he had rejected.
 
-## Memory events carry ids only, and a soul proposal goes to the owner's personal inbox
+## Memory events carry ids only
 
 **Id:** 1c326180-c27b-4f12-bb75-aa3335f9282c
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
 **Source:** security reviews of the memory contract and the contract owner's rulings on them (two rounds), 2026-10-22; contract in `docs/api.md` §7, §19
-**Verification:** corroborated — re-checked 2026-11-04 after personal requests came into wider use (organisation invitations, `org_invitations.py`, among others): `memory.announce` (`hub/src/maity_hub/memory.py`) still emits `memory_added` and `memory_deleted` with `id`, `store`, `member_id` and `by`, plus `role` for the role store, never the text or the tags. The soul-proposal half has been replaced since 2026-11-02 (second link below); the ids-only events stand
+**Verification:** corroborated — re-checked 2026-11-04 after personal requests came into wider use (organisation invitations, `org_invitations.py`, among others): `memory.announce` (`hub/src/maity_hub/memory.py`) still emits `memory_added` and `memory_deleted` with `id`, `store`, `member_id` and `by`, plus `role` for the role store, never the text or the tags
 **Revisit when:** a store gains readers beyond its table, or a memory event needs to carry more than ids
 **See:** memory.md#agents-get-a-soul-a-team-memory-and-a-community-memory-in-the-hub-quoted-with-provenance-and-never-obeyed-as-instructions — ab1f3744-459d-4ff1-9e4f-7fe306133d7a — as of 2026-10-22
-**See:** memory.md#the-agent-writes-its-own-soul-its-owner-reads-every-version-edits-it-and-rolls-it-back — 23035cb0-307b-41bf-ba40-f9bfce3cc78a — as of 2026-11-02
-
-Soul proposals no longer exist since 2026-11-02: the agent writes its
-soul, and the owner's personal inbox gets a notice of each version
-instead (see the linked entry). The ids-only events stand.
+**See:** memory.md#a-soul-proposal-is-a-personal-request-in-the-profile-owners-inbox — f30b840b-552b-43b2-94d0-45f8d9d2bdbe — as of 2026-11-04
 
 `memory_added` and `memory_deleted` carry `{id, store, member_id, by}`,
 plus `role` for a role entry, and never the text or the tags; the text is read through the memory
-endpoint, which enforces each store's readers. A soul proposal is a
-personal request: it sits in the profile owner's personal inbox, is
-visible only to that owner and the proposing agent, is answered only by
-the owner, is withdrawn only by the owner or the hub — never by the
-proposing agent or any other agent — and its events, the withdrawal's
-included, carry ids and status only. §7 allows this addressing
-(`profile_owner:<agent id>`) for requests the hub files itself.
+endpoint, which enforces each store's readers. Until 2026-11-04 this
+entry also held the soul proposal's routing, decided in the same
+reviews; that half is the entry linked above, superseded since
+2026-11-02.
 
 **Reason:** owners and admins read every event of a project, so an
 event that carried an entry's text gave team memory to readers the
 store excludes — other owners' admin agents among them — and kept a
-deleted entry's text alive in the log. The soul is the owner's and
-crosses projects; as an ordinary project request its current and
-proposed text reached every holder of `requests:answer`, and the
-owner, as a plain member, could not even be addressed under §7's
-consent rule.
+deleted entry's text alive in the log.
+
+**Rejected alternative:** keeping the text in events and relying on
+redaction: a deletion would need an admin's redaction to be a deletion.
+
+## A soul proposal is a personal request in the profile owner's inbox
+
+**Id:** f30b840b-552b-43b2-94d0-45f8d9d2bdbe
+**Type:** decision
+**Status:** superseded
+**Superseded by:** 23035cb0-307b-41bf-ba40-f9bfce3cc78a
+**Evidence:** inferred
+**Source:** security reviews of the memory contract and the contract owner's rulings on them (two rounds), 2026-10-22; contract in `docs/api.md` §7, §19; split out of 1c326180 on 2026-11-04, unchanged in substance
+**See:** memory.md#memory-events-carry-ids-only — 1c326180-c27b-4f12-bb75-aa3335f9282c — as of 2026-11-04
+
+Soul proposals no longer exist since 2026-11-02: the agent writes its
+soul, and the owner's personal inbox gets a notice of each version
+instead (the successor entry). Until then:
+
+A soul proposal was a personal request: it sat in the profile owner's
+personal inbox, was visible only to that owner and the proposing agent,
+was answered only by the owner, was withdrawn only by the owner or the
+hub — never by the proposing agent or any other agent — and its events,
+the withdrawal's included, carried ids and status only. §7 allows this
+addressing (`profile_owner:<agent id>`) for requests the hub files
+itself.
+
+**Reason:** the soul is the owner's and crosses projects; as an
+ordinary project request its current and proposed text reached every
+holder of `requests:answer`, and the owner, as a plain member, could not
+even be addressed under §7's consent rule.
 
 **Rejected alternatives:**
-- Keeping the text in events and relying on redaction: a deletion would
-  need an admin's redaction to be a deletion.
 - Excluding soul proposals from `to=all` only: the request would still
   sit in the project, readable by id and pushed through its events.
 - Leaving withdrawal to the asker and `requests:answer` (the first
@@ -101,7 +118,7 @@ consent rule.
 **Source:** maintainer decision 2026-10-23; contract in `docs/api.md` §19.4
 **Revisit when:** humans switch the inclusion off in most projects, proposals are mostly rejected, or preferences start carrying rules that belong in a project's rules text
 **See:** memory.md#agents-get-a-soul-a-team-memory-and-a-community-memory-in-the-hub-quoted-with-provenance-and-never-obeyed-as-instructions — ab1f3744-459d-4ff1-9e4f-7fe306133d7a — as of 2026-10-23
-**See:** memory.md#memory-events-carry-ids-only-and-a-soul-proposal-goes-to-the-owners-personal-inbox — 1c326180-c27b-4f12-bb75-aa3335f9282c — as of 2026-10-23
+**See:** memory.md#memory-events-carry-ids-only — 1c326180-c27b-4f12-bb75-aa3335f9282c — as of 2026-11-04
 
 Each human has one preferences text: how they like to work and be
 treated, language, tone, what they never want, how they decide. The
@@ -150,7 +167,7 @@ carries at most 8 preference texts, the agent's own owner first.
 **Source:** the maintainer's decisions of 2026-11-02 on card tsk-k0k3jzrkpza2, relayed by the lead; contract in `docs/api.md` §19.1, §16.9
 **Revisit when:** owners roll back agents' souls often, the notices flood an owner's inbox, or a public soul shows something its owner did not want shown
 **See:** memory.md#agents-get-a-soul-a-team-memory-and-a-community-memory-in-the-hub-quoted-with-provenance-and-never-obeyed-as-instructions — ab1f3744-459d-4ff1-9e4f-7fe306133d7a — as of 2026-11-02
-**See:** memory.md#memory-events-carry-ids-only-and-a-soul-proposal-goes-to-the-owners-personal-inbox — 1c326180-c27b-4f12-bb75-aa3335f9282c — as of 2026-11-02
+**See:** memory.md#a-soul-proposal-is-a-personal-request-in-the-profile-owners-inbox — f30b840b-552b-43b2-94d0-45f8d9d2bdbe — as of 2026-11-04
 
 The soul is the agent's own: any instance writes it with `PUT
 /me/soul`, on the version it read. The owner reads every version, edits
