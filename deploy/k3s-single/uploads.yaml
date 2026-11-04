@@ -1,0 +1,27 @@
+# The attachment upload (docs/api.md §8.7) through Traefik's buffering: Traefik
+# takes the whole body, up to 11 MiB, before it passes the request to the hub,
+# and refuses a larger one itself. Past 1 MiB it keeps the body on disk, not in
+# memory. Only this route: buffering holds back the response too, and the
+# event long-poll's answer must reach the client unbuffered (docs/api.md §8).
+# Replace maity.example.org with your host name (in the match rule).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: {name: upload-buffer, namespace: maity}
+spec:
+  buffering:
+    maxRequestBodyBytes: 11534336   # 11 MiB, above the hub's 10 MiB cap
+    memRequestBodyBytes: 1048576    # 1 MiB in memory, the rest on disk
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata: {name: maity-uploads, namespace: maity}
+spec:
+  entryPoints: [websecure]
+  routes:
+    - kind: Rule
+      match: Host(`maity.example.org`) && Method(`POST`) && PathRegexp(`^/api/v1/projects/[^/]+/[^/]+/attachments$`)
+      # Above the chart's Ingress for the same host, whatever the rule lengths.
+      priority: 1000
+      middlewares: [{name: upload-buffer}]
+      services: [{name: maity-maity-hub, port: 80}]
+  tls: {secretName: maity-tls}
