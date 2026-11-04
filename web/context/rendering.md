@@ -1133,27 +1133,34 @@ Each case is settled once:
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the card tsk-6bn80bppb5e5 (a request with a long code line and long card links pushed the inbox of all projects past the window, every collapsed row with it); web/css/app.css `.entries`, `.entries-box`, `.card-note-list`; the e2e step `wide_lines_step`; the lead's approval of the plan, 2026-11-04
+**Source:** the card tsk-6bn80bppb5e5 (a request with a long code line and long card links pushed the inbox of all projects past the window, every collapsed row with it); web/css/app.css `.entries`, `.entries-box`, `.card-note-list`, `.md`; the e2e step `wide_lines_step`; the lead's approval of the plan, 2026-11-04
 **Revisit when:** a list of written text is laid out as something other than a grid, or a Markdown code block wraps its lines instead of scrolling
 
 The inbox's lists (`.entries`, `.entries-box`) and the card panel's
 lists (`.card-note-list`, `.card-history-list`, `.card-links`) set
 `grid-template-columns: minmax(0, 1fr)`. A code block in a request or a
 note keeps its lines and scrolls inside itself (`.md-code`,
-`overflow-x: auto`), links and text wrap (`overflow-wrap: anywhere`), and
-the row is as wide as its list.
+`overflow-x: auto`), the text around it wraps, long links too
+(`overflow-wrap: anywhere` on every written text, `.md`; a code block
+is `pre` and keeps its lines), and the row is as wide as its list.
 
 **Reason:** a grid without columns of its own gives its rows one implicit
 `auto` column, and a grid item's minimum width is its content's: the
 longest line of a code block that does not wrap. One open request with a
-600-character line made that column 4420 px wide in a 1280 px window,
-and every other row of the list the same width. In the card panel the same
-note was cut off by the panel instead of scrolling. A column of
+600-character line in a code block made the page 4420 px wide in a
+1280 px window, and every other row of the list the same width. In the
+card panel the same note made the whole panel scroll sideways, not its
+code block; the note's long links did too, since written text had no
+`overflow-wrap` of its own outside the inbox's rows. In the project's
+messages, with no panel around them, those links made the page 579 px
+wide in a 390 px window. A column of
 `minmax(0, 1fr)` gives the rows the list's width, whatever they hold. The
 chat was not affected: its messages already have `min-width: 0`.
 
 **Rejected alternative:** `min-width: 0` on every row (`.entry`, each
 note): it works only where it is set, and the next list of written text
-would have to remember it. Wrapping code lines (`white-space: pre-wrap`
-in `.md-code`): a shell line or a path broken across lines reads as
-several, and the block's scrolling stays as it was.
+would have to remember it. `overflow-wrap` on each list's rows instead
+of on `.md`: the same, for every view that shows written text.
+Wrapping code lines (`white-space: pre-wrap` in `.md-code`): a shell
+line or a path broken across lines reads as several, and the block's
+scrolling stays as it was.

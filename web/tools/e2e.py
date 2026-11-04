@@ -1164,8 +1164,8 @@ def scenario(run: Run, page: Page) -> None:
 def wide_lines_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
     """A long unbroken line keeps the page inside the window (tsk-6bn80bppb5e5): a request with a
     600-character code line and long card links, open in the inbox of all projects above a collapsed
-    one, and a card note with the same text. The code scrolls in its own block, the links wrap, every
-    row keeps the page's width; desktop and phone, light and dark."""
+    one, a card note and a project message with the same text. The code scrolls in its own block, the
+    links wrap, every row keeps the page's width; desktop and phone, light and dark."""
     run.step("a long line in a request and in a card note stays inside the window")
     line = ("for f in $(git ls-files 'web/i18n/*.json'); do " + "python3 -m json.tool \"$f\" >/dev/null && " * 20)[:600]
     links = " ".join(f"{run.base}/owner/e2e-alpha/tasks/{card_id}?from={'x' * 60}{i}" for i in range(4))
@@ -1175,6 +1175,7 @@ def wide_lines_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
         for title in ("A request with a long line", "A short one below it")
     ]
     run.maity(alpha, "note", "add", card_id, text)
+    run.maity(alpha, "say", "all", text, "--type", "notice")
 
     def inside(where: str) -> None:
         sw, iw = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
@@ -1196,6 +1197,11 @@ def wide_lines_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
             assert rows and max(rows) <= width, f"the inbox at {where}: rows end at {max(rows)} px"
             client, scroll = block.evaluate("(b) => [b.clientWidth, b.scrollWidth]")
             assert scroll > client, f"the inbox at {where}: the code line does not scroll in its block ({client}/{scroll})"
+            wider = wide.evaluate(
+                "(r) => Array.from(r.querySelectorAll('.entry-body p')).filter((e) => !e.closest('.md-code'))"
+                ".filter((e) => e.scrollWidth > e.clientWidth).map((e) => [e.clientWidth, e.scrollWidth])"
+            )
+            assert not wider, f"the inbox at {where}: text wider than its box {wider}"
             if width == 390:
                 run.shot(page, f"inbox-long-line-{scheme}")
 
@@ -1205,6 +1211,20 @@ def wide_lines_step(run: Run, page: Page, alpha: Path, card_id: str) -> None:
             inside(f"the card's notes at {where}")
             right = note.evaluate("(n) => n.querySelector('.md-code').getBoundingClientRect().right")
             assert right <= width, f"the card's notes at {where}: the code block ends at {right} px"
+            # The links wrap: no text of the note but its code block wider than its box, the panel unscrolled.
+            wider = note.evaluate(
+                "(n) => Array.from(n.querySelectorAll('p, li')).filter((e) => !e.closest('.md-code'))"
+                ".filter((e) => e.scrollWidth > e.clientWidth).map((e) => [e.tagName, e.clientWidth, e.scrollWidth])"
+            )
+            assert not wider, f"the card's notes at {where}: text wider than its box {wider}"
+            panel = page.evaluate("(() => { const p = document.querySelector('aside.card-panel'); return [p.clientWidth, p.scrollWidth]; })()")
+            assert panel[1] <= panel[0], f"the card panel at {where} scrolls sideways ({panel[0]}/{panel[1]})"
+
+            # The project's messages: the same text, no panel around it to hide a wide line.
+            page.goto(f"{run.base}/owner/e2e-alpha/messages")
+            said = page.locator("li.pmsg").filter(has_text="Run this first").first
+            expect(said.locator(".md-code")).to_be_visible()
+            inside(f"the project's messages at {where}")
         run.a11y(page, "card notes, a long code line")
     finally:
         page.set_viewport_size({"width": 1280, "height": 900})

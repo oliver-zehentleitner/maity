@@ -1,6 +1,7 @@
 ### Fixed
 
-- web: a long unbroken line in a request (a code line of 600 characters, long links) no longer widens the
-  inbox past the window, nor every collapsed row below it; in a card note the same line scrolls in its block
-  instead of being cut off. The lists drawn as grids hold their rows in one column of `minmax(0, 1fr)`
-  (#1347, tsk-6bn80bppb5e5).
+- web: a long line in a request's code block (600 characters) no longer widens the inbox past the window,
+  nor every collapsed row below it; in a card note the same line scrolls in its block instead of making the
+  whole card panel scroll sideways. Long links in written text wrap everywhere, so a note's no longer
+  scrolls the card panel, nor a project message's the page on a phone. The lists drawn as grids hold their
+  rows in one column of `minmax(0, 1fr)` (#1347, tsk-6bn80bppb5e5).

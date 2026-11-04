@@ -771,6 +771,8 @@ pre.paste-line { white-space: pre-wrap; margin: 4px 0; }
 
 .msg p { margin: 0; }
 /* A message as Markdown (js/markdown.js). */
+/* A long link or word wraps anywhere; a code block keeps its lines (`pre`) and scrolls in itself. */
+.md { overflow-wrap: anywhere; }
 .md > :first-child { margin-top: 0; }
 .md > :last-child { margin-bottom: 0; }
 .md p { margin: 0 0 6px; }
