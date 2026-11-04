@@ -46,13 +46,14 @@ project, no asker), carrying `report: {id, reason, type}` and no
 replies. Its record `personal_request_created` makes the `inbox` item,
 mailed by the admin's `inbox` mode, and it is listed in the personal
 inbox (`GET /requests`) beside the other requests the admin has to
-answer. An answer is refused (`resolve_the_report`, 409); the hub
-withdraws the request when the report is resolved or expires. The
+answer. An answer or a withdrawal by the admin is refused
+(`resolve_the_report`, 409); the hub withdraws the request when the
+report is resolved or expires. The
 account record `report_open` is gone.
 
 **Reason:** a report is work the admin has to do, and the maintainer
 wants it where the other open work is, not only among notifications.
-Requests without a project exist since the owner's digest (§5.3), so
+Requests without a project exist since an organisation's invitations (§6.26), and the owner's digest (§5.3) is one too, so
 the old reason against a request (it would need a project) no longer
 holds. The admin resolves after reading the snapshot, under
 `/admin/reports/{id}`, the one path into moderation, so the request

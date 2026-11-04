@@ -1,9 +1,11 @@
 """The instance admin hears of a new abuse report through a personal request (docs/api.md §16.8,
 §7): `request.report_id` names the report a request stands for, and every report still open gets
 its request now, so that nothing open is only an account record `report_open`, which the hub no
-longer shows. The downgrade deletes those requests (their account records stay, as every record
-does, and name a request that is gone, which the notifications skip) and drops the column, its
-foreign key before its index: MariaDB uses that index for the key.
+longer shows; its title is in the admin's language, as for a new report. The downgrade deletes
+those requests (their account records stay, as every record does, and name a request that is
+gone, which the notifications skip) and drops the column, its foreign key before its index:
+MariaDB uses that index for the key. It writes no `report_open` back: an older hub shows no item
+for a report filed after the upgrade and still open, which Admin → Reports still lists.
 
 Revision ID: 20261104150000_report_request
 Revises: 20261104000000_required_check
@@ -24,8 +26,29 @@ depends_on: str | Sequence[str] | None = None
 
 CROCKFORD = "0123456789abcdefghjkmnpqrstvwxyz"  # maity_hub.ids, frozen here
 TITLE = 200
+# words/<lang>.json `notify.reported` and maity_hub.languages.INTERFACE, frozen here.
+REPORTED = {
+    "de": "Meldung: {reason} — {type}",
+    "en": "Report: {reason} — {type}",
+    "es": "Denuncia: {reason} — {type}",
+    "fr": "Signalement : {reason} — {type}",
+    "it": "Segnalazione: {reason} — {type}",
+    "ja": "通報: {reason} — {type}",
+    "ko": "신고: {reason} — {type}",
+    "nl": "Melding: {reason} — {type}",
+    "pt": "Denúncia: {reason} — {type}",
+    "zh-Hans": "举报：{reason} — {type}",
+}
 
-human = sa.table("human", sa.column("id", sa.String), sa.column("created_at", sa.DateTime))
+human = sa.table(
+    "human",
+    sa.column("id", sa.String),
+    sa.column("created_at", sa.DateTime),
+    sa.column("interface_language", sa.String),
+)
+notification_settings = sa.table(
+    "notification_settings", sa.column("human_id", sa.String), sa.column("preferences", sa.JSON)
+)
 abuse_report = sa.table(
     "abuse_report",
     sa.column("id", sa.String),
@@ -76,6 +99,7 @@ def upgrade() -> None:
     ).scalar()
     if admin is None:
         return
+    title = REPORTED[_language(conn, admin)]
     open_reports = conn.execute(
         sa.select(abuse_report.c.id, abuse_report.c.reason, abuse_report.c.target_type)
         .where(abuse_report.c.status == "open")
@@ -90,7 +114,7 @@ def upgrade() -> None:
                 project_id=None,
                 org_id=None,
                 **{"class": "info"},
-                title=f"Report: {report.reason} — {report.target_type}"[:TITLE],
+                title=title.format(reason=report.reason, type=report.target_type)[:TITLE],
                 options=[],
                 priority="normal",
                 to_kind="human",
@@ -117,6 +141,22 @@ def upgrade() -> None:
                 at=now,
             )
         )
+
+
+def _language(conn: sa.Connection, admin: str) -> str:
+    """As maity_hub.notifications.preferences.text_language: the interface language chosen, else
+    what agents write in, else English."""
+    chosen = conn.execute(sa.select(human.c.interface_language).where(human.c.id == admin)).scalar()
+    stored = conn.execute(
+        sa.select(notification_settings.c.preferences).where(
+            notification_settings.c.human_id == admin
+        )
+    ).scalar()
+    email = (stored or {}).get("email") if isinstance(stored, dict) else None
+    for tag in (chosen, (email or {}).get("language") if isinstance(email, dict) else None):
+        if tag in REPORTED:
+            return str(tag)
+    return "en"
 
 
 def downgrade() -> None:

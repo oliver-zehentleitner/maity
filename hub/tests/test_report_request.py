@@ -124,3 +124,26 @@ def test_the_migration_files_a_request_for_each_open_report_and_takes_them_back(
     downgrade(engine, _before(engine, REVISION))
     with engine.connect() as conn:
         assert conn.exec_driver_sql("SELECT count(*) FROM request").scalar() == 0
+
+
+def test_the_migration_titles_the_request_in_the_admins_language(engine: Engine) -> None:
+    from datetime import UTC, datetime
+
+    from sqlalchemy import update
+
+    migrate(engine, _before(engine, REVISION))
+    admin = factory.human(engine, "admin")
+    reporter = factory.human(engine, "pat")
+    with engine.begin() as conn:
+        conn.execute(update(t.human).where(t.human.c.id == admin).values(interface_language="de"))
+        conn.execute(
+            insert(t.abuse_report).values(
+                id="rpt-open", reporter=reporter, account_id=reporter, target_type="project",
+                target_id="prj-x", reason="abuse", status="open",
+                created_at=datetime(2026, 11, 1, tzinfo=UTC),
+            )
+        )  # fmt: skip
+    migrate(engine)
+    with engine.connect() as conn:
+        title = conn.execute(select(t.request.c.title)).scalar_one()
+    assert title == "Meldung: abuse — project"
