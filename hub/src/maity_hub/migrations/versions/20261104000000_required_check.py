@@ -4,7 +4,7 @@ this change. The downgrade drops the column; the name is a setting, nothing deri
 stored elsewhere.
 
 Revision ID: 20261104000000_required_check
-Revises: 20261103210000_digest_seen
+Revises: 20261103220000_lease_expiry
 Create Date: 2026-11-04
 """
 
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "20261104000000_required_check"
-down_revision: str | None = "20261103210000_digest_seen"
+down_revision: str | None = "20261103220000_lease_expiry"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
