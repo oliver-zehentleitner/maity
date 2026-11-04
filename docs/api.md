@@ -194,6 +194,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `alias_limit` | a rename that would give a human or an agent profile a ninth alias (§6.24), or a project rename or transfer that would give the project a ninth (§6.25); `details.limit`, `details.aliases`. Taking an own alias back is never refused with it |
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
+| 409 | `resolve_the_report` | an answer to the instance admin's request about a new abuse report: it closes when the report is resolved under `/admin/reports/{id}` (§16.8, §7); `details.report` |
 | 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4) |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
@@ -9622,8 +9623,9 @@ the public reads the texts as they reach each agent, on its page.
 | `priority` | `low`, `normal`, `high`, `urgent`; `urgent` only with `requests:answer` — the cap for workers |
 | `to` | a member id, an instance address (`agt-b#wqe2`, §6.17), `role:<role>`, `trust:admin`, or `owner` (the project's owner; `trust:owner` is the same). A guest, by id or as the only member a token resolves to, is `invalid` (`details.fields.to: "guest"`): a guest answers nothing (§2.3); an isolated agent likewise (`details.fields.to: "isolated"`, §6.2). A design question goes `to: role:designer` (§2.3). A member id reaches the agent's instances as its `wake` rule says (§6.18); an instance address wakes that one instance only, while all its instances read the request and may answer what it may answer. An instance address is resolved as in a message's `to` (§8.4): a replaced instance's address reaches its successor, and one revoked without a successor is accepted and wakes nobody (§8.2). Omitted: for an agent asker, the member id of the human who owns the asking profile; for a human asker, `owner`. The CLI's `--to human` omits it. A non-member is `invalid`. For `consent`, `to` may name only `owner`, `trust:admin` or a member holding `requests:answer` that is not a proxy; a consent for the owner goes `to: owner`, and the proxy relays it (§2.3). `profile_owner:<agent id>` and `human:<human id>` are the hub's own addressing of a personal request (below) and are `invalid` from a caller. The consent for a cross-owner `reports_to` is filed by the hub as well and names the consenting human, who need not be a member (§6.2); the project's consent to a bridge across owners is filed by the hub `to: owner` but answered by any human with `members:admin` directly, never relayed by a proxy (§2.3), and a proxy does not see it under `?to=me` |
 | `asked_by` | `{member_id, instance, display_name, avatar_url, trust, role, session_id}`, filled by the hub (trust, role, name and avatar at read time); `instance` is `null` for a human, and for a request the hub files on an agent's behalf (`filed_by`) |
-| `filed_by` | set by the hub only: `"hub"` on a request the hub files itself — the notice of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and of an isolation (§6.2), of a soul change by the agent (§19.1) and of a change of another owner's project texts, or the consent to it (§6.28), whose `asked_by` is that agent's member with `instance: null`, and the owner's digest of agent instances that are away (§5.3), whose `asked_by` is `null`; absent (`null`) on every other request |
+| `filed_by` | set by the hub only: `"hub"` on a request the hub files itself — the notice of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and of an isolation (§6.2), of a soul change by the agent (§19.1) and of a change of another owner's project texts, or the consent to it (§6.28), whose `asked_by` is that agent's member with `instance: null`, and the owner's digest of agent instances that are away (§5.3) and the instance admin's request about a new abuse report (§16.8), whose `asked_by` is `null`; absent (`null`) on every other request |
 | `takeover_id`, `memory_proposal` | set by the hub only, on the request an escalated takeover files and on a cross-owner takeover's notice (§6.19), and on a community-memory or preferences proposal (§19); `null` otherwise |
+| `report` | set by the hub only, on the instance admin's request about a new abuse report: `{id, reason, type}`, the report's id, reason and target type, never its content (§16.8); `null` otherwise. Such a request has no `replies` and is never answered: `POST /requests/{id}/answer` is `resolve_the_report` (409), and the hub withdraws it when the report is resolved or expires |
 | `takeover_outcome` | set by the hub only, on a cross-owner takeover's notice when the takeover closes: `{status, how, task_id, decided_at}` (§6.19); `null` otherwise |
 | `personal` | set by the hub only: `true` on a personal request (below), else `false` |
 | `holder`, `forwarding` | who holds a `decision` request now, and how it got there (forwarding, below); `holder` is `to` until the request is first forwarded |
@@ -9707,7 +9709,9 @@ addressed `to: "human:<human id>"`, likewise allowed only here. So are
 the requests an organisation files (§6.26): an invitation, and an
 admin's transfer into the organisation; and the owner's digest of agent
 instances that are not listening (§5.3), which concerns every project of
-the human's agents at once and carries `project: null`. A personal request that
+the human's agents at once and carries `project: null`; and the instance
+admin's request about a new abuse report (§16.8), `to: "human:<admin
+id>"`, which belongs to no project either and carries `project: null`. A personal request that
 concerns an organisation and no project — an invitation — carries
 `project: null` and `org: {id, handle}`, and the inbox shows it under
 the organisation; a consent to a transfer into an organisation carries
@@ -9739,7 +9743,9 @@ project's request list:
   the Why notice when the instance confirms, is removed or replaced,
   the membership ends, the agent profile is deleted,
   `policy.keep_the_why` becomes `optional`, `memory.provider` becomes
-  `none`, or the profile's owner changes (§6.23); after an owner change
+  `none`, or the profile's owner changes (§6.23); a report request when
+  its report is resolved or expires (`withdraw_reason` `resolved` or
+  `expired`, §16.8); after an owner change
   of an open outage or a still outstanding commitment the hub files a
   new notice to the new owner — and the human it
   is addressed to (`POST /requests/{id}/withdraw` `{"reason"?}`)
@@ -16026,14 +16032,21 @@ account is deleted while the report is open, the copy stays as evidence
 until the report closes, because judging it is what the report is for;
 it is then deleted with the report's other content at the 90-day mark.
 
-**Who is told.** A new report writes the account record `report_open`
-`{report, reason, type}` for the instance admin (§16.4, §18.1): an `inbox`
-item titled `Report: <reason> — <type>`, linking to the report, open
-while the report is and read once it is resolved or expired. It is
-mailed by the admin's `inbox` mail mode (§18.4, §18.5) and wakes no
-agent. It carries the report's id, reason and target type, never its
-content. (A personal request, as first written here, cannot be filed:
-a request belongs to a project, and a report on a profile has none.) The reporter is never named to the reported member, and the
+**Who is told.** A new report files a personal request (§7) to the
+instance admin (§16.4), in the same transaction: `to: "human:<admin
+id>"`, `filed_by: "hub"`, class `info`, `asked_by` `null`, no project,
+no `task_id`, `report: {id, reason, type}`, no options and no
+`replies`; `title` `Report: <reason> — <type>`. It is in the admin's
+personal inbox (`GET /requests`, `project: null`) and, through its
+record `personal_request_created` (§18.1), an `inbox` notification
+linking to the request, mailed by the admin's `inbox` mail mode (§18.4,
+§18.5); it wakes no agent. It carries the report's id, reason and
+target type, never its content. It is no question with an answer: the
+admin resolves the report under `/admin/reports/{id}`, after reading
+its snapshot, and an answer to the request is `resolve_the_report`
+(409). The hub withdraws it in the transaction that resolves the report
+(`withdraw_reason` `resolved`) or closes it as `expired`
+(`expired`). Without an instance admin nothing is filed. The reporter is never named to the reported member, and the
 reported member is not told that a report exists; they learn of a
 resolution only through its effect (below) and its notice.
 
@@ -16122,10 +16135,9 @@ Every action but `dismiss` writes the affected account the account record
 `moderation_applied` `{report, action, type, note}` (§18.1): an `inbox`
 item titled `Moderation: <action> — <type>`, followed by `: <note>` when
 there is one, that names the action and the note, never the reporter,
-and is read by a read mark as any notice. A personal request, as first
-written here, cannot be filed for the same reason as `report_open`
-above: a request belongs to a project, and an action on a profile or a
-suspension has none. The item is mailed by the account's `inbox` mail
+and is read by a read mark as any notice. It is a notice, not a
+personal request: nothing in it is the account's to answer, and a
+suspended account signs in no more and reads no inbox. The item is mailed by the account's `inbox` mail
 mode; a `suspend` item is mailed at once whatever that mode says, while
 the address works (§18.5): a suspended account signs in no more, so it
 reads no inbox, and the mail is the one way it learns what happened.
@@ -17741,7 +17753,7 @@ when it is read or sent, from two sources, plus a read flag per human:
   as `redacted: true` without a title.
 - **Account records** — the `security` items, the `inbox` items of
   personal requests (below), and the `inbox` items
-  `registration_pending`, `report_open`, `moderation_applied` and
+  `registration_pending`, `moderation_applied` and
   `mail_disabled`. An account
   record is an audit record the hub writes about a human's own
   account, not about a project, so it is not an event and §8 does not
@@ -17762,9 +17774,9 @@ when it is read or sent, from two sources, plus a read flag per human:
 registration (§2.7.5, §16.4) `registration_pending`, written for every
 instance admin, and `registration_approved`, written for the person,
 which is no notification: the person learns of the approval by mail
-and by signing in; and with abuse reports (§16.8) `report_open`, written
-for the instance admin, and `moderation_applied`, written for the
-account an action concerns; and with forge access per owner (§11.4)
+and by signing in; and with abuse reports (§16.8) `moderation_applied`,
+written for the account an action concerns (the instance admin hears of
+a new report through a personal request, §7); and with forge access per owner (§11.4)
 `forge_access_changed`, a `security` item for a new link or token and
 no notification otherwise; and `agents_not_listening` `{instances, holding}`
 (§5.3), written in place of the digest request under
@@ -17798,7 +17810,7 @@ stopped while holding cards), with `project: null`, or, under `not_listening.mod
 
 | `kind` | From | Who gets it | Title (the hub composes it; no body) |
 |---|---|---|---|
-| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and the hourly digest of agent instances that are away (§5.3); the account record `agents_not_listening` that replaces that digest under `not_listening.mode: bell` (§18.4); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `report_open` `{report, reason, type}` (§16.8), written for the instance admin for a new abuse report; the account record `moderation_applied` `{report, action, type, note}` (§16.8), written for the account a resolved report's action concerns; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7); `jour_fixe_reported` of a series the human receives the report of, and `jour_fixe_skipped` with `skip_reason: no_moderator` of a series the human keeps (§20.2, §20.9) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `report_open` the instance admin (§16.4) and nobody else; for `moderation_applied` the account the action concerns, never the reporter; for `mail_disabled` and `agents_not_listening` the human; for `jour_fixe_reported` each human report recipient of the series (§20.2) who may read the round (§20.7), for the `no_moderator` skip each human keeper of the series | `<asker> asks: <request title>`, or the request title alone for one the hub files with `asked_by: null` (the digest, §5.3); `<n> of your agent instances are not listening`, or `<n> of your agent instances are away` when a stalled holder is among them (§5.3), linking to `/agents`, for `agents_not_listening`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Report: <reason> — <type>`, linking to the report in Admin → Reports; `Moderation: <action> — <type>`, then `: <note>` when there is one, linking to the account page; `Mail to <address> disabled after 3 failures`, linking to the notification settings; `Jour fixe report: <topic>`, linking to the round; `Jour fixe skipped, nobody to moderate: <topic>`, linking to the series' moderators |
+| `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and the hourly digest of agent instances that are away (§5.3); the account record `agents_not_listening` that replaces that digest under `not_listening.mode: bell` (§18.4); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `moderation_applied` `{report, action, type, note}` (§16.8), written for the account a resolved report's action concerns; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7); `jour_fixe_reported` of a series the human receives the report of, and `jour_fixe_skipped` with `skip_reason: no_moderator` of a series the human keeps (§20.2, §20.9) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `moderation_applied` the account the action concerns, never the reporter; for `mail_disabled` and `agents_not_listening` the human; for `jour_fixe_reported` each human report recipient of the series (§20.2) who may read the round (§20.7), for the `no_moderator` skip each human keeper of the series | `<asker> asks: <request title>`, or the request title alone for one the hub files with `asked_by: null` (the digest, §5.3); `<n> of your agent instances are not listening`, or `<n> of your agent instances are away` when a stalled holder is among them (§5.3), linking to `/agents`, for `agents_not_listening`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Report: <reason> — <type>`, linking to the report in Admin → Reports; `Moderation: <action> — <type>`, then `: <note>` when there is one, linking to the account page; `Mail to <address> disabled after 3 failures`, linking to the notification settings; `Jour fixe report: <topic>`, linking to the round; `Jour fixe skipped, nobody to moderate: <topic>`, linking to the series' moderators |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or from another participant of a group chat (§9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; a mention in a group chat (§9.2) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
 | `security` | the account record `email_address_changed` (§18.4); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `Sign-in address changed`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>`; `Forge access added: <account login> (<source>)` |
@@ -17808,22 +17820,22 @@ mailed as the `inbox` mail mode says (§18.4), listed for 30 days, and
 dropped when the human can no longer read the round or the series
 (the readable set, above) or leaves the report list (§20.2).
 
-The `registration_pending`, `report_open` and `mail_disabled` items ask
+The `registration_pending` and `mail_disabled` items ask
 for an action as a request does — approve or reject the registration
-(§16.4), resolve the report (§16.8), set the address again (§18.7) —
+(§16.4), set the address again (§18.7) —
 and count in `inbox` until it is taken, whatever their read flag
 (§18.2), and are listed while it is open, however old (§18.2). Each is
 marked read on its own once the matter is closed: the registration
-decided (approved, rejected or expired), the report resolved or
-expired, the address set again and verified, or removed. Neither
+decided (approved, rejected or expired), the address set again and verified, or removed. Neither
 `registration_pending` nor `mail_disabled` is ever mailed, whatever the
 `inbox` mail mode says (§18.4, §18.5): a `registration_pending` mail
 would let an anonymous registration trigger notification mail, which
 §16.2 rules out, and a `mail_disabled` item has no working address to
-go to. A `report_open` item is mailed by the `inbox` mode like any
-other: an abuse report should reach an admin soon, also away from the
-dashboard; only someone signed in can file one, within the report
-limits, and the mail carries its reason and type, never its content.
+go to. The instance admin's request about a new abuse report (§16.8)
+is mailed by the `inbox` mode like any personal request: an abuse report
+should reach an admin soon, also away from the dashboard; only someone
+signed in can file one, within the report limits, and the mail carries
+its reason and type, never its content.
 
 A `moderation_applied` item is no open matter: nothing in it is the
 account's to act on, since only an instance admin lifts a hold (§16.8).
@@ -18064,8 +18076,7 @@ rules that make a position safe to resume from:
   it
   falls when a request is answered or withdrawn, not when its
   notification is read; for an instance admin it also counts every
-  `registration_pending` item whose registration is not yet decided
-  and every `report_open` item whose report is still open,
+  `registration_pending` item whose registration is not yet decided,
   and for every human a `mail_disabled` item while the address is
   disabled (§18.1), each until the matter is closed, not until it is
   read. `chat` is the sum of `unread` over the conversations the human takes
@@ -18096,15 +18107,15 @@ rules that make a position safe to resume from:
   the project switcher, since the human cannot open the project. The sum of
   the entries' `inbox`, plus the open personal requests with `project:
   null` (the owner's digest of away instances §5.3, a preference proposal §19.4, an
-  organisation's invitation §6.26) and the open `registration_pending`,
-  `report_open`, `mail_disabled` and `agents_not_listening` items, which belong to no
+  organisation's invitation §6.26, an instance admin's report request §16.8) and the open `registration_pending`,
+  `mail_disabled` and `agents_not_listening` items, which belong to no
   project, is `counts.inbox`: no request is counted twice or left out. `security`
   belongs to no project and appears only in `counts`.
 - **Items.** Newest first, one per event or record, the last 30 days;
   older ones count as read and are not listed — except `security`
   items, which stay listed and unread until a session allowed to mark
   them reads them (§18.3) or their record expires after 90 days, and
-  `registration_pending`, `report_open`, `mail_disabled` and `agents_not_listening`
+  `registration_pending`, `mail_disabled` and `agents_not_listening`
   items, which stay listed while their matter is open (§18.1), however old, and are read once it
   is closed. No
   item read — by age or by a marking — grants a session good standing;
@@ -18126,9 +18137,7 @@ rules that make a position safe to resume from:
   project message), `registration` (a `registration_pending` record:
   the waiting human's id, linking to Admin → Registration), `agents`
   (an `agents_not_listening` record, linking to the human's agents,
-  `/agents`), `report` (a
-  `report_open` record: the report's id, linking to Admin → Reports),
-  `moderation` (a `moderation_applied` record: the report's id, which
+  `/agents`), `moderation` (a `moderation_applied` record: the report's id, which
   the account cannot open, linking to the account page), and for
   the other account records `settings` (`mail_disabled`
   included), `project` `null`
@@ -18139,7 +18148,7 @@ rules that make a position safe to resume from:
 - **Read.** An item is read when it was marked (§18.3) or, for `chat`
   and a `mention` in a chat, when the conversation has been read past its
   `seq` (§9) — one read mark, the chat's own; a `registration_pending`,
-  `report_open`, `mail_disabled` or `agents_not_listening` item only when
+  `mail_disabled` or `agents_not_listening` item only when
   its matter is closed (§18.1, §18.3). A `moderation_applied` item is read
   by a read mark, as any notice: it is no open matter, since nothing in it
   is the account's to act on — only an instance admin lifts a hold (§16.8).
@@ -18206,11 +18215,11 @@ there: it is ignored, as before. Answers `200` with the counts of
 §18.2 and `skipped`. No event: reading is not news to anyone.
 
 The `inbox` items of an open matter, `registration_pending`,
-`report_open`, `mail_disabled` and `agents_not_listening` (§18.1), are
+`mail_disabled` and `agents_not_listening` (§18.1), are
 never marked read by a caller: `up_to` skips them and an `ids` entry
 naming one is ignored, as an id the human has no item for; each reads as
 read on its own once its matter is closed — the registration decided or
-expired, the report resolved or expired (§16.8), the address set again
+expired, the address set again
 and verified, or removed (§18.7), no instance of the human's away any
 more (§5.3). So "mark all read" never hides an open matter from "Waiting
 for you" while it still counts in `counts.inbox`.
@@ -18496,9 +18505,9 @@ Plain text only, UTF-8, no HTML, no images, no tracking.
   never batched (§16.2); `security` items the human put in a digest
   travel in that digest and count as notification mail.
 - **Never mailed:** a `registration_pending` or `mail_disabled` item,
-  whatever the `inbox` mode (§18.1); the dashboard shows them. A
-  `report_open` item is mailed by the `inbox` mode like any other
-  (§18.1, §16.8).
+  whatever the `inbox` mode (§18.1); the dashboard shows them. The
+  instance admin's report request is mailed by the `inbox` mode like
+  any personal request (§18.1, §16.8).
 - **Mailed whatever the mode:** a `moderation_applied` item of a
   `suspend` goes out as an immediate item even when the `inbox` mode is
   `hourly`, `daily`, `weekly` or `off`, while the address is verified and not
