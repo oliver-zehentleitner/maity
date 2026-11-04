@@ -717,14 +717,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/members" ? nsGetT(p).then((r) => Object.assign({}, r, { items: r.items.concat([nsAnna]) }))
     : p === "/orgs" ? nsGetT(p).then((r) => ({ items: r.items.concat([nsAdminOrg, nsMemberOrg]) })) : nsGetT(p));
   const nsTransfers = [];
+  const nsVerified = [];
+  let nsStepped = false;
   win.Maity.api.post = (p, b) => {
     if (p.endsWith("/transfer")) {
       nsTransfers.push([p, b]);
       if (b.to === "org-oz00team0001") return Promise.resolve({ id: "prj-x", full_name: "oz-team/maity", slug: "maity" });
       if (b.to === "org-oz00guild001") return Promise.resolve({ id: "req-tr02", class: "consent", status: "open" });
-      return nsTransfers.length === 1 ? Promise.resolve({ id: "req-tr01", class: "consent", status: "open" })
+      // The first asks at once; later ones need the second factor until a code is given (§2.8.4).
+      return nsTransfers.length === 1 || nsStepped ? Promise.resolve({ id: "req-tr01", class: "consent", status: "open" })
         : Promise.reject(new win.Maity.api.ApiError("x", 403, p, "forbidden", { reason: "step_up_required" }));
     }
+    if (p === "/auth/second-factor/verify") { nsVerified.push(b); nsStepped = true; return Promise.resolve({ valid_until: "2026-11-04T10:10:00Z" }); }
     if (/\/requests\/req-tr01\/withdraw$/.test(p)) { nsTransfers.push([p, b]); return Promise.resolve({ id: "req-tr01", status: "withdrawn" }); }
     return nsPostT(p, b);
   };
@@ -745,6 +749,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "namespace: a step-up the hub asks for is asked in place");
   btn(nsTr(), "Cancel").click(); await nsSettle();
   expect(!nsTr().querySelector("form.step-up") && !text(nsTr()).includes("Not transferred"), "namespace: Cancel ends the transfer quietly");
+  const nsBefore = nsTransfers.length;
+  nsTr().dispatch("submit"); await nsSettle();
+  expect(nsTr().querySelector("form.step-up") && nsTransfers.length === nsBefore + 1, "namespace: the transfer asks for the code again");
+  byId("step-up-step_up_required").value = "482 913"; nsTr().querySelector("form.step-up").dispatch("submit"); await nsSettle();
+  expect(JSON.stringify(nsVerified) === JSON.stringify([{ code: "482913" }]) && nsTransfers.length === nsBefore + 2
+    && JSON.stringify(nsTransfers[nsTransfers.length - 1]) === JSON.stringify(["/projects/maintainer/maity/transfer", { to: "hum-anna" }])
+    && !nsTr().querySelector("form.step-up") && text(nsTr()).includes("moves when they accept") && !text(nsTr()).includes("Not transferred"),
+  "namespace: after the code the transfer is sent again and goes through");
   byId("project-transfer-to").value = "org-oz00guild001"; nsTr().dispatch("submit"); await nsSettle();
   expect(JSON.stringify(nsTransfers[nsTransfers.length - 1]) === JSON.stringify(["/projects/maintainer/maity/transfer", { to: "org-oz00guild001" }])
     && text(nsTr()).includes("Asked the owners of @guild. The project moves when one of them accepts"), "namespace: into an organisation one administers, its owners are asked");
@@ -1872,74 +1884,237 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = trGet; win.Maity.api.patch = trPatch;
   await go("#/maintainer/maity/inbox");
 
-  // Why: the Keep the Why export (docs/api.md §11.3), from the published maity.dev family.
+  // Why: the project's Why view mounts the Keep the Why views (js/ktw-host.js), loaded on the first
+  // visit. The library itself stands in as a small fake here (the real one runs in the browser tests):
+  // its files are counted as the host appends them, and the last one defines it.
   const whyTab = () => header.querySelectorAll("nav.views a").find((a) => a.textContent === "Why");
   expect(whyTab() && whyTab().getAttribute("href") === "#/maintainer/maity/why", "why: a tab where the hub has the export");
+  const ktwLoaded = [];
+  let ktwGraphFailed = false;
+  const ktwCalls = [];
+  let ktwNav = null;
+  const ktwPublic = {}; // `${canonical}|${root}` -> what the family's publicState answers
+  const fakeKtw = {
+    core: {
+      normalizeState: (s) => s,
+      routes: {
+        format: (r) => "#" + [r.view, r.file, r.uuid].filter((x) => x != null).map(encodeURIComponent).join("/"),
+        parse: (h) => { const [view, a, b] = h.slice(1).split("/").map(decodeURIComponent);
+          return view === "topic" ? { view, file: a } : view === "entry" ? { view, uuid: a }
+            : view === "ref" ? { view, canonical: a, uuid: b } : { view: view || "overview" }; },
+      },
+    },
+    markdown: { render: () => [], renderInline: () => [] },
+    scene: { create: (o) => o },
+    views: {
+      family: { create: (o) => { ktwNav = o.nav; return { view: (box) => box.appendChild(document.createTextNode("family view")), bodies: (s) => Promise.resolve(s),
+        publicState: (canonical, root) => { ktwCalls.push(["public", canonical, root]); return Promise.resolve(ktwPublic[canonical + "|" + root] || { error: "no export there" }); } }; } },
+      search: { create: () => ({ view: (box, scope, q) => box.appendChild(document.createTextNode("search " + q)) }) },
+      thoughts: { create: () => ({ page: (box) => box.appendChild(document.createTextNode("thoughts page")), reader: () => {} }) },
+      pages: { create: (o) => ({
+        overview: (box, H) => { ktwCalls.push(["overview", H.provider()]); box.appendChild(document.createTextNode("overview page")); },
+        topic: (box, file) => { ktwCalls.push(["topic", file]); box.appendChild(document.createTextNode("topic " + file)); },
+        entry: (box, uuid) => { const id = o.scene.state && o.scene.state.project && o.scene.state.project.id;
+          ktwCalls.push(["entry", uuid, id]); box.appendChild(document.createTextNode("entry " + uuid + (id ? " of " + id : ""))); },
+        entryRow: () => null, queuesPage: () => {}, findings: () => {}, authors: () => {},
+        // as the library: what resolves goes to the entry at that repository's centre
+        remoteEntry: (box, canonical, uuid) => { ktwCalls.push(["ref", canonical, uuid]);
+          if (ktwPublic[canonical + "|"]) o.nav.go({ view: "entry", uuid, centre: { mode: "public", canonical, root: "" } }); } }) },
+      graph: { create: () => ({ assemble: () => ({}), run: () => { ktwCalls.push(["graph"]); }, lightThought: () => {} }) },
+      timeline: { create: () => ({ view: (box) => { box.appendChild(document.createTextNode("timeline view"));
+        const speed = document.createElement("select"); speed.setAttribute("class", "ktw-play-speed"); speed.setAttribute("title", "how fast the days pass"); box.appendChild(speed); } }) },
+    },
+  };
+  const headAppend = head.appendChild.bind(head);
+  head.appendChild = (el) => {
+    headAppend(el);
+    const src = el.getAttribute && (el.getAttribute("src") || el.getAttribute("href"));
+    if (src && src.startsWith("vendor/keep-the-why/")) {
+      ktwLoaded.push(src.slice("vendor/keep-the-why/".length));
+      if (src.endsWith("ktw-pages.js")) win.KeepTheWhy = fakeKtw;
+      // the first try of ktw-graph.js fails: the next visit loads only what is missing
+      const failNow = src.endsWith("ktw-graph.js") && !ktwGraphFailed;
+      if (failNow) ktwGraphFailed = true;
+      if (el.tagName === "SCRIPT") Promise.resolve().then(() => el.dispatch(failNow ? "error" : "load"));
+    }
+    return el;
+  };
   const whyGets = [];
   const realGet6 = win.Maity.api.get;
   win.Maity.api.get = (p) => { whyGets.push(p); return realGet6(p); };
-  await go("#/maintainer/maity/why");
-  expect(plainTitle() === "Why · Maity · Maity" && text(main).includes("1 entry needs attention · 71 entries in 4 parts of the project")
-    && text(main).includes("Linter: 0 errors, 0 warnings."), "why: the family's summary");
-  const rows = main.querySelectorAll(".why-members tbody tr");
-  expect(rows.length === 4 && rows[0].textContent.startsWith("the project root") && rows[1].textContent.startsWith("hub · hub/")
-    && rows[1].querySelector("a").getAttribute("href") === "https://maity.dev/keep-the-why-dashboard/hub/", "why: one row per part, linking to its dashboard");
-  const entryLink = main.querySelectorAll(".why-entries a").find((a) => a.textContent === "Platforms changed underneath the build");
-  expect(entryLink && entryLink.getAttribute("href") === "https://maity.dev/keep-the-why-dashboard/#entry/f3bec014-28b7-4bfe-9ca8-304f1481fceb"
-    && text(main.querySelector(".why-group")).includes("open") && text(main).includes("Incidents of the build · incident"),
-    "why: the entry that needs attention, grouped by part, linking into the published dashboard");
-  btn(main, "Read again").click(); await tick(); await tick();
-  expect(whyGets.includes("/projects/maintainer/maity/keep-the-why?max_age=0"), "why: Read again asks for a fresh read");
-  // A member that fails, a root that cannot be read, strings and links from the export.
-  const baseAnswer = await realGet6("/projects/maintainer/maity/keep-the-why");
-  const withFailed = JSON.parse(JSON.stringify(baseAnswer));
-  withFailed.members[3].error = { code: "ktw_unavailable", reason: "timeout" };
-  withFailed.summary.failed = 1;
-  withFailed.attention.push({ member: "web", id: "x", uuid: null, title: "<b>not markup</b>", type: ["question"], status: "needs-review",
-    file: "views.md", topic: null, link: "javascript:alert(1)" });
-  win.Maity.api.get = (p) => (p.startsWith("/projects/maintainer/maity/keep-the-why") ? Promise.resolve(withFailed) : realGet6(p));
-  await go("#/maintainer/maity/board"); await go("#/maintainer/maity/why");
-  const webRow = main.querySelectorAll(".why-members tbody tr")[3];
-  expect(webRow.className === "failed" && text(webRow).includes("Could not be read: its state.json did not answer in time. Shown is its last good read.")
-    && text(main).includes("· 1 could not be read"), "why: a part that fails is named with its reason and its last good read");
-  const odd = main.querySelectorAll(".why-entries li").find((li) => li.textContent.includes("<b>not markup</b>"));
-  expect(odd && !odd.querySelector("a") && !odd.querySelector("b"), "why: an export's strings are text, a link that is not https is none");
-  win.Maity.api.get = (p) => (p.startsWith("/projects/maintainer/maity/keep-the-why")
-    ? Promise.reject(new win.Maity.api.ApiError("root unreadable", 503, p, "ktw_unavailable", { reason: "forge_unavailable", last: Object.assign({}, baseAnswer, { fresh: false }) }))
-    : realGet6(p));
-  await go("#/maintainer/maity/board"); await go("#/maintainer/maity/why");
-  expect(text(main).includes("The hub could not read the project's root .keep-the-why just now (the forge did not give the hub the repository's root .keep-the-why). Shown is its last good read")
-    && main.querySelectorAll(".why-members tbody tr").length === 4, "why: the root unreadable, the last good read is shown and said so");
-  win.Maity.api.get = (p) => (p.startsWith("/projects/maintainer/maity/keep-the-why")
-    ? Promise.reject(new win.Maity.api.ApiError("root unreadable", 503, p, "ktw_unavailable", { reason: "forge_unavailable" })) : realGet6(p));
-  await go("#/maintainer/maity/board"); await go("#/maintainer/maity/why");
-  expect(text(main).includes("could not read the project's root .keep-the-why") && !main.querySelector(".why-members") && btn(main, "Read again"),
-    "why: no last read, only the note, and Read again");
-  win.Maity.api.get = (p) => (p.startsWith("/projects/maintainer/maity/keep-the-why") ? Promise.reject(new win.Maity.api.ApiError("boom", 500, p, "internal")) : realGet6(p));
-  await go("#/maintainer/maity/board"); await go("#/maintainer/maity/why");
-  expect(main.querySelector(".error") && btn(main, "Read again"), "why: any other error, with Read again");
-  // Read again is off while its read runs.
-  let release;
-  win.Maity.api.get = (p) => (p.startsWith("/projects/maintainer/maity/keep-the-why?max_age=0") ? new Promise((r) => { release = () => r(baseAnswer); }) : realGet6(p));
-  const again = btn(main, "Read again"); again.click(); await tick();
-  expect(again.disabled === true, "why: Read again is disabled while a read runs");
-  release(); await tick(); await tick();
-  expect(btn(main, "Read again") && !btn(main, "Read again").disabled, "why: and on again after it");
-  // Linter counts per field; an entry link outside its part's dashboard is no link.
-  const odd2 = JSON.parse(JSON.stringify(baseAnswer));
-  odd2.members[1].summary.findings = { errors: 2, warnings: null };
-  odd2.members[2].summary.findings = { errors: 1, warnings: 1 };
-  odd2.attention.push({ member: "hub", id: "y", uuid: "u", title: "Elsewhere", type: [], status: "open", file: "a.md", topic: null,
-    link: "https://maity.dev/keep-the-why-dashboard/#entry/u" });
-  win.Maity.api.get = (p) => (p.startsWith("/projects/maintainer/maity/keep-the-why") ? Promise.resolve(odd2) : realGet6(p));
-  await go("#/maintainer/maity/board"); await go("#/maintainer/maity/why");
-  expect(text(main.querySelectorAll(".why-members tbody tr")[1]).includes("2 errors, — warnings"), "why: a missing linter count is shown as such, per field");
-  expect(text(main.querySelectorAll(".why-members tbody tr")[2]).includes("1 error, 1 warning"), "why: a linter count of one reads in the singular");
-  const elsewhere = main.querySelectorAll(".why-entries li").find((li) => li.textContent.includes("Elsewhere"));
-  expect(elsewhere && !elsewhere.querySelector("a"), "why: an entry link that leaves its part's dashboard is no link");
+  expect(!win.KeepTheWhy, "why: the library is not loaded before the first visit to Why");
+  await go("#/maintainer/maity/why"); for (let k = 0; k < 15; k++) await tick();
+  const manifest = JSON.parse(fs.readFileSync(path.join(WEB, "vendor/keep-the-why/ktw-views.json"), "utf8"));
+  expect(main.querySelector(".error") && btn(main, "Read again") && !text(main).includes("overview page"),
+    "why: a file of the library that fails to load is said, with Read again");
+  btn(main, "Read again").click(); for (let k = 0; k < 20; k++) await tick();
+  const ktwOnce = [...new Set(ktwLoaded)];
+  expect(JSON.stringify(ktwOnce) === JSON.stringify(manifest.styles.concat(manifest.scripts))
+    && ktwLoaded.length === ktwOnce.length + 1 && ktwLoaded.filter((f) => f === "ktw-graph.js").length === 2,
+    "why: the files load in the manifest's order, the stylesheet once; after a failure only what is missing loads again");
+  expect(text(main).includes("overview page") && whyGets.includes("/projects/maintainer/maity/keep-the-why/export"),
+    "why: the overview, from the hub's export (§11.5)");
+  const ktwMain = main.querySelector(".why-main");
+  expect(ktwMain && ktwMain.className.includes("ktw-root") && ktwMain.getAttribute("translate") === "no"
+    && main.querySelector(".why-aside").className.includes("ktw-aside"), "why: the mounts carry ktw-root, ktw-aside and translate=\"no\"");
+  const places = main.querySelectorAll("nav.why-places a");
+  expect(places.length === 5 && places[1].getAttribute("href") === "#/maintainer/maity/why/graph"
+    && places[0].getAttribute("aria-current") === "page", "why: the places as paths below Why, the current one marked");
+  await go("#/maintainer/maity/board"); await go("#/maintainer/maity/why/topic/api.md"); for (let k = 0; k < 6; k++) await tick();
+  expect(ktwLoaded.length === 12 && whyGets.filter((p) => p.includes("/keep-the-why/export")).length === 1,
+    "why: a second visit loads nothing again and reads no export again");
+  expect(text(main).includes("topic api.md") && ktwCalls.some((c) => c[0] === "topic" && c[1] === "api.md"),
+    "why: a path below Why is the library's place (topic/api.md)");
+  expect(ktwNav.href({ view: "entry", uuid: "u 1" }) === "#/maintainer/maity/why/entry/u%201",
+    "why: the library's links are the dashboard's paths");
+  ktwNav.go({ view: "entry", uuid: "u1" }); if (win.onhashchange) win.onhashchange(); for (let k = 0; k < 6; k++) await tick();
+  expect(win.location.hash === "#/maintainer/maity/why/entry/u1" && text(main).includes("entry u1"), "why: the library moves by the dashboard's paths");
+  const P = ktwCalls.find((c) => c[0] === "overview")[1];
+  const ktwForeign = await P.exportState("https://github.com/acme/elsewhere", "");
+  expect(ktwForeign.error === "Not a repository of this project's family." && !ktwForeign.state,
+    "why: a repository outside the family is the library's error, in Maity's words");
+  const inline = await P.bodies({ entries: [] });
+  expect(inline.state && !inline.error, "why: an export with its bodies inline asks for nothing");
+  // The export unreadable: the hub's last good read with the reason, or the reason and Read again.
+  const ktwExport = await realGet6("/projects/maintainer/maity/keep-the-why/export");
+  const ktwRefuse = (code, details) => { win.Maity.api.get = (p) => (p.includes("/keep-the-why/export")
+    ? Promise.reject(new win.Maity.api.ApiError("refused", 503, p, code, details)) : realGet6(p)); };
+  ktwRefuse("ktw_unavailable", { reason: "timeout", last: Object.assign({}, ktwExport, { fresh: false }) });
+  btn(main, "Read again").click(); for (let k = 0; k < 10; k++) await tick();
+  expect(text(main).includes("shown is its last good read") && main.querySelector(".why-main"),
+    "why: the export unreadable, its last good read is shown and said so");
+  ktwRefuse("ktw_unavailable", { reason: "timeout" });
+  btn(main, "Read again").click(); for (let k = 0; k < 10; k++) await tick();
+  expect(!main.querySelector(".why-main") && main.querySelector(".flag") && btn(main, "Read again"),
+    "why: no last read, the reason and Read again");
+  ktwRefuse("probe_unavailable", { retry_at: "2026-11-03T12:00:00Z" });
+  btn(main, "Read again").click(); for (let k = 0; k < 10; k++) await tick();
+  expect(text(main).includes("rate limit is spent until"), "why: a spent forge budget says until when");
+  const ktwLinked = JSON.parse(JSON.stringify(ktwExport));
+  ktwLinked.state.entries[0].see = [{ remote: "http://plain.example/x" }, { remote: "https://ok.example/y" }];
+  win.Maity.api.get = (p) => (p.includes("/keep-the-why/export") ? Promise.resolve(ktwLinked) : realGet6(p));
+  const ktwSeen = await P.exportState("", "");
+  expect(!("remote" in ktwSeen.state.entries[0].see[0]) && ktwSeen.state.entries[0].see[1].remote === "https://ok.example/y",
+    "why: a link from an export that is not plain https is dropped before the library sees it");
+  // Every link field of an export, each with one link that is not plain https and one that is.
+  const kh = win.Maity.ktwHost;
+  const U = "00000000-0000-4000-8000-000000000001";
+  for (const [field, set, kept, bad, good] of [
+    ["project.canonical", (r, v) => { r.project = { canonical: v }; }, (r) => r.project.canonical, "javascript:alert(1);//", "https://github.com/acme/widget"],
+    ["project.config.canonical", (r, v) => { r.project = { config: { canonical: v } }; }, (r) => r.project.config.canonical, "http://github.com/acme/widget", "https://github.com/acme/widget"],
+    ["project.config.dashboard-state", (r, v) => { r.project = { config: { "dashboard-state": v } }; }, (r) => r.project.config["dashboard-state"], "https://user:pw@pages.example/state.json", "https://pages.example/state.json"],
+    ["project.git.remote", (r, v) => { r.project = { git: { remote: v } }; }, (r) => r.project.git.remote, "evil.example/x y", "github.com/acme/widget"],
+    ["project.git.fork.of", (r, v) => { r.project = { git: { fork: { of: v } } }; }, (r) => r.project.git.fork.of, "@evil.example/x", "github.com/acme/upstream"],
+    ["entries.see.remote", (r, v) => { r.entries = [{ see: [{ remote: v }] }]; }, (r) => r.entries[0].see[0].remote, "javascript:alert(1)", "https://github.com/acme/other"],
+  ]) {
+    const a = {}; set(a, bad); kh.httpsOnly(a);
+    const b = {}; set(b, good); kh.httpsOnly(b);
+    expect(kept(a) === undefined && kept(b) === good, "why: " + field + " that is not plain https is dropped, plain https kept");
+  }
+  const sup = { entries: [{ superseded_by: `javascript:alert(1) — ${U} — as of 2026-11-03` }, { superseded_by: `https://github.com/acme/other — ${U} — as of 2026-11-03` }, { superseded_by: U }] };
+  kh.httpsOnly(sup);
+  expect(sup.entries[0].superseded_by === U && sup.entries[1].superseded_by.startsWith("https://github.com/acme/other")
+    && sup.entries[2].superseded_by === U, "why: a superseded_by elsewhere that is not plain https keeps only its entry's id");
+  // What the library writes into the view, entry text included, keeps only a path or plain https.
+  const ktwBox = document.createElement("div");
+  const ktwEvil = document.createElement("a"); ktwEvil.setAttribute("href", "javascript:alert(1)");
+  const ktwUserinfo = document.createElement("a"); ktwUserinfo.setAttribute("href", "https://bank.example@ktwEvil.example/");
+  const ktwOut = document.createElement("a"); ktwOut.setAttribute("href", "https://github.com/acme/widget");
+  const ktwOwn = document.createElement("a"); ktwOwn.setAttribute("href", win.Maity.route.href("/maintainer/maity/why/graph"));
+  const ktwInner = document.createElement("p"); ktwInner.appendChild(ktwEvil);
+  ktwBox.appendChild(ktwInner); ktwBox.appendChild(ktwUserinfo); ktwBox.appendChild(ktwOut); ktwBox.appendChild(ktwOwn);
+  kh.sweep(ktwBox);
+  expect(ktwEvil.getAttribute("href") === undefined && ktwUserinfo.getAttribute("href") === undefined
+    && ktwOut.getAttribute("href") === "https://github.com/acme/widget" && ktwOwn.getAttribute("href") === win.Maity.route.href("/maintainer/maity/why/graph"),
+    "why: a link the library writes that is neither a path of the dashboard nor plain https loses its target");
+  // A control the library names by its title alone gets that title as its accessible name.
+  const ktwRange = document.createElement("input"); ktwRange.setAttribute("type", "range"); ktwRange.setAttribute("title", "the day the page shows");
+  const ktwSpeed = document.createElement("select"); ktwSpeed.setAttribute("title", "how fast the days pass");
+  const ktwNamed = document.createElement("select"); ktwNamed.setAttribute("title", "a title"); ktwNamed.setAttribute("aria-label", "its own name");
+  const ktwControls = document.createElement("div"); ktwControls.appendChild(ktwRange); ktwControls.appendChild(ktwSpeed); ktwControls.appendChild(ktwNamed);
+  kh.sweep(ktwControls);
+  expect(ktwRange.getAttribute("aria-label") === "the day the page shows" && ktwSpeed.getAttribute("aria-label") === "how fast the days pass"
+    && ktwNamed.getAttribute("aria-label") === "its own name",
+    "why: a form control named by its title alone is named by it for assistive technology; one with a name keeps it");
+  ktwSpeed.setAttribute("title", "the pace of the days"); kh.sweep(ktwControls);
+  const ktwLabelled = document.createElement("input"); ktwLabelled.setAttribute("title", "a title"); ktwLabelled.setAttribute("id", 'a"b\\c');
+  ktwLabelled.labels = [document.createElement("label")];
+  const ktwAfter = document.createElement("a"); ktwAfter.setAttribute("href", "javascript:alert(1)");
+  const ktwLabelBox = document.createElement("div"); ktwLabelBox.appendChild(ktwLabelled); ktwLabelBox.appendChild(ktwAfter);
+  kh.sweep(ktwLabelBox);
+  expect(ktwSpeed.getAttribute("aria-label") === "the pace of the days" && ktwNamed.getAttribute("aria-label") === "its own name"
+    && ktwLabelled.getAttribute("aria-label") === undefined && ktwAfter.getAttribute("href") === undefined,
+    "why: a later title refreshes the name the host set, not one of the page's own; a labelled control stays as it is, and an id with a quote stops no sweep");
+  ktwRange.setAttribute("aria-label", "the page's later name"); ktwRange.setAttribute("title", "another title"); kh.sweep(ktwControls);
+  ktwSpeed.removeAttribute("title"); kh.sweep(ktwControls);
+  expect(ktwRange.getAttribute("aria-label") === "the page's later name" && ktwSpeed.getAttribute("aria-label") === undefined,
+    "why: a name the page sets after the host's is kept on a later title; the host's name goes with its title");
+  const ktwCleared = document.createElement("select"); ktwCleared.setAttribute("title", "first");
+  const ktwClearBox = document.createElement("div"); ktwClearBox.appendChild(ktwCleared); kh.sweep(ktwClearBox);
+  ktwCleared.removeAttribute("aria-label"); kh.sweep(ktwClearBox);
+  ktwCleared.setAttribute("title", "second"); kh.sweep(ktwClearBox);
+  expect(ktwCleared.getAttribute("aria-label") === "second",
+    "why: a name the page removed is the host's again from the title, and a later title still refreshes it");
+  await go("#/maintainer/maity/why/timeline"); for (let k = 0; k < 6; k++) await tick();
+  const ktwPlaySpeed = main.querySelector('[class="ktw-play-speed"]');
+  expect(ktwPlaySpeed && ktwPlaySpeed.getAttribute("aria-label") === "how fast the days pass",
+    "why: the timeline's speed, named by its title alone in the library, has that name in the mount");
+  // The routes: a ref's repository from the address, a centre, a topic's file.
+  const whyAt = kh.below(win.KeepTheWhy, { view: "entry", uuid: U, centre: { mode: "public", canonical: "https://github.com/acme/other", root: "" } });
+  const whyAtRoot = kh.below(win.KeepTheWhy, { view: "entry", uuid: U, centre: { mode: "public", canonical: "https://github.com/acme/other", root: "packages/a" } });
+  const whyBack = kh.routeOf(whyAtRoot.split("/").map(decodeURIComponent));
+  expect(whyAt === "at/" + U + "/" + encodeURIComponent("https://github.com/acme/other")
+    && whyBack.view === "entry" && whyBack.uuid === U && whyBack.centre.canonical === "https://github.com/acme/other" && whyBack.centre.root === "packages/a",
+    "why: an entry in another repository of the family is its own place there, the child root kept");
+  expect(kh.below(win.KeepTheWhy, { view: "overview", centre: { mode: "public", canonical: "https://github.com/acme/other" } }) === "family",
+    "why: another place in another repository is the family page");
+  expect(kh.below(win.KeepTheWhy, { view: "topic", file: "a b/c.md" }) === "topic/a%20b/c.md"
+    && kh.routeOf(["topic", "a b", "c.md"]).file === "a b/c.md", "why: a topic's file is written encoded and read back as it stands");
+  await go("#/maintainer/maity/why/ref/" + encodeURIComponent("javascript:alert(1)") + "/" + U); for (let k = 0; k < 6; k++) await tick();
+  expect(!ktwCalls.some((c) => c[0] === "ref") && text(main).includes("Not a repository of this project's family."),
+    "why: a ref whose repository in the address is not plain https reads nothing");
+  await go("#/maintainer/maity/why/ref/" + encodeURIComponent("https://github.com/acme/other") + "/" + U); for (let k = 0; k < 6; k++) await tick();
+  expect(ktwCalls.some((c) => c[0] === "ref" && c[1] === "https://github.com/acme/other" && c[2] === U),
+    "why: a ref in plain https is the library's place");
+  // A ref that resolves: the library goes to the entry at that centre, drawn from that export.
+  ktwPublic["https://github.com/acme/other|"] = { state: { project: { id: "acme-other" }, entries: [], topics: [] } };
+  ktwPublic["https://github.com/acme/other|packages/a"] = { state: { project: { id: "acme-other-a" }, entries: [], topics: [] } };
+  const whyRefPath = "/maintainer/maity/why/ref/" + encodeURIComponent("https://github.com/acme/other") + "/" + U;
+  await go("#" + whyRefPath); for (let k = 0; k < 10; k++) await tick();
+  expect(win.Maity.route.current().path === "/maintainer/maity/why/" + whyAt && text(main).includes("entry " + U + " of acme-other"),
+    "why: a ref that resolves opens the entry in that repository's export, not the same ref again");
+  await go("#/maintainer/maity/why/" + whyAtRoot); for (let k = 0; k < 10; k++) await tick();
+  expect(ktwCalls.some((c) => c[0] === "public" && c[2] === "packages/a") && text(main).includes("entry " + U + " of acme-other-a"),
+    "why: an entry at a child root reads that root's export");
+  ktwCalls.length = 0;
+  await go("#/maintainer/maity/why/at/" + U + "/" + encodeURIComponent("https://github.com/acme/other") + "/" + encodeURIComponent("../x")); for (let k = 0; k < 6; k++) await tick();
+  await go("#/maintainer/maity/why/at/" + U + "/" + encodeURIComponent("javascript:alert(1)")); for (let k = 0; k < 6; k++) await tick();
+  expect(!ktwCalls.some((c) => c[0] === "public") && text(main).includes("Not a repository of this project's family."),
+    "why: an entry place whose repository is not plain https, or whose root leaves the repository, reads nothing");
+  ktwPublic["https://github.com/acme/other|"] = null;
   win.Maity.api.get = realGet6;
-  await go("#/maintainer/sample/why");
-  expect(text(main).includes("This project publishes no Keep the Why dashboard yet.") && text(main).includes("dashboard-state line") && btn(main, "Read again"),
+  btn(main, "Read again").click(); for (let k = 0; k < 10; k++) await tick();
+  // Another person signed in in this tab reads the export anew; the same one does not.
+  const exportReads = () => whyGets.filter((p) => p.includes("/keep-the-why/export")).length;
+  win.Maity.api.get = (p) => { whyGets.push(p); return realGet6(p); };
+  const readsBefore = exportReads();
+  await go("#/maintainer/maity/board"); await go("#/maintainer/maity/why"); for (let k = 0; k < 8; k++) await tick();
+  expect(exportReads() === readsBefore, "why: the same reader in the same project reads no export again");
+  const meReal = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/me" ? meReal(p).then((m) => Object.assign({}, m, { member: Object.assign({}, m.member, { id: "hum-other" }) })) : meReal(p));
+  await go("#/maintainer/maity/board"); await go("#/maintainer/maity/why"); for (let k = 0; k < 8; k++) await tick();
+  expect(exportReads() === readsBefore + 1, "why: another signed-in reader reads the export anew");
+  win.Maity.api.get = realGet6;
+  // The prefix is the project's address, whatever its owner or slug begins with.
+  for (const [at, want] of [["#/why-co/whyproj/why/graph", "/why-co/whyproj/why"], ["#/whyorg/why/why/topic/why.md", "/whyorg/why/why"]]) {
+    const keep = win.location.hash; win.location.hash = at;
+    expect(win.Maity.ktwHost.whyPath() === want, "why: the prefix of " + at + " is " + want);
+    win.location.hash = keep;
+  }
+  win.Maity.api.get = realGet6;
+  head.appendChild = headAppend;
+  await go("#/maintainer/sample/why"); for (let k = 0; k < 6; k++) await tick();
+  expect(text(main).includes("This project publishes no Keep the Why dashboard yet.") && text(main).includes("dashboard-state line"),
     "why: not configured, said so with what the hub reads");
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/organisation"); for (let k = 0; k < 4; k++) await tick();
   const tree = main.querySelector(".org-tree");
@@ -4164,6 +4339,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(histItems) === JSON.stringify(["day", "msg out", "new-line", "msg in"]) && /^(Yesterday|.*2026.*)$/.test(text(main.querySelector("li.day"))),
     "chat: a day separator, then 'New messages' before the agent's unread reply " + JSON.stringify(histItems));
   expect(main.querySelector("li.msg.in .msg-avatar svg") && !main.querySelector("li.msg.out .msg-avatar"), "chat: the agent's messages carry its picture, one's own none");
+  // "Sending…" in the row of Attach, the meat-proxy switch and Send, before Send: no line below the row that
+  // would push the composer up while a message is sent (tsk-j10w2hsm1h90, the owner).
+  {
+    const row = main.querySelector("form.compose .compose-actions");
+    const kids = row ? Array.from(row.childNodes) : [];
+    const at = kids.findIndex((n) => (n.className || "").split(" ").includes("send-status"));
+    const send = kids.findIndex((n) => (n.tagName === "BUTTON" ? [n] : n.querySelectorAll ? n.querySelectorAll("button") : []).some((x) => x.getAttribute("type") === "submit"));
+    expect(at > 0 && send > at && !Array.from(main.querySelector("form.compose").childNodes).some((n) => (n.className || "").split(" ").includes("send-status")),
+      "chat: the send status stands in the action row, before Send, not below it");
+  }
   // The meat-proxy switch of this chat (§9.3): between Attach and Send, from one's own entry; on and off here, then back to the profile.
   {
     const mpBtn = () => main.querySelector("form.compose .compose-actions button.meat-chat-toggle");
@@ -7003,6 +7188,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     return f;
   };
   await go("#/maintainer/maity/chat/cnv-0007");
+  {
+    // A group chat's "Sending…" stands in its row of buttons too, before Send (tsk-j10w2hsm1h90).
+    const row = main.querySelector("form.compose .compose-actions");
+    const kids = row ? Array.from(row.childNodes) : [];
+    const at = kids.findIndex((n) => (n.className || "").split(" ").includes("send-status"));
+    const send = kids.findIndex((n) => (n.tagName === "BUTTON" ? [n] : n.querySelectorAll ? n.querySelectorAll("button") : []).some((x) => x.getAttribute("type") === "submit"));
+    const pane = main.querySelector("section.chat-pane.group-chat");
+    expect(at >= 0 && send > at && pane && !Array.from(pane.childNodes).some((n) => (n.className || "").split(" ").includes("send-status") && n.getAttribute("role") === "status" && n !== kids[at] && n.getAttribute("tabindex") === "-1"),
+      "group chat: the send status stands in the action row, before Send, not below the composer");
+  }
   {
     // A group chat offers its participants alone: the hub resolves a mention against them only (§8.6).
     const gcView = await win.Maity.api.get("/projects/maintainer/maity/conversations/cnv-0007");
@@ -11913,7 +12108,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   let noContent = "unset";
   try { noContent = await win.Maity.api.del("/orgs/oz-team/members/invitations/oinv-1"); } catch (err) { noContent = err; }
   expect(noContent === null, "API mode: a 204 answer is a success without a body, not a failure");
-  expect(!head.querySelector("script"), "API mode never loads the fixture bundle");
+  expect(!head.querySelectorAll("script").find((s) => /fixtures/.test(s.getAttribute("src") || "")), "API mode never loads the fixture bundle");
   expect(calls.filter((c) => c.method === "GET").every((c) => !("X-CSRF-Token" in c.headers)), "no CSRF header on GET");
   const ps = byId("inbox-sort"); ps.value = "priority"; ps.dispatch("change"); await tick();
   btn(main.querySelector(".current"), "SHA-256 + pepper").click(); await tick();

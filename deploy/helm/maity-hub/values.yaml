@@ -15,8 +15,8 @@
 # roll one at a time (RollingUpdate, maxUnavailable 0), a PodDisruptionBudget keeps one up and
 # they spread over nodes. A release with a migration still stops the hub
 # (deploy/scripts/helm-upgrade.sh). Database connections: pods × (config.workers × (pool share +
-# overflow share + 1) + 1), pods being replicas + 1 during a rolling update, must fit the
-# database's max_connections (README.md, "Several pods").
+# overflow share + 2 shared + 1 listener) + 1), pods being replicas + 1 during a rolling
+# update, must fit the database's max_connections (README.md, "Several pods").
 replicas: 1
 
 image:
@@ -217,7 +217,9 @@ ingress:
   # routes between the two hosts, so the Ingress sends the whole host to it.
   joinHost: ""
   # The defaults are for ingress-nginx: an event long-poll holds its request
-  # for up to 55 seconds and must reach the client unbuffered (docs/api.md §8).
+  # for up to 55 seconds and must reach the client unbuffered (docs/api.md §8),
+  # and an attachment upload is up to 10 MiB (docs/api.md §8.7), past
+  # ingress-nginx's own 1m; the hub caps every other body itself.
   # Another controller needs its own equivalents (README.md, "Ingress
   # controllers"). They merge with yours; set a key to null to drop it. Add
   # e.g. `cert-manager.io/cluster-issuer: <issuer>` to have cert-manager fill
@@ -226,6 +228,7 @@ ingress:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "75"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "75"
     nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-body-size: "11m"
   tls:
     enabled: true
     # Empty: <release fullname>-tls.

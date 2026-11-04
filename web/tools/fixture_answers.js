@@ -12,7 +12,8 @@ const win = {
   location: { protocol: "file:", search: "", hash: "" },
   addEventListener() {}, removeEventListener() {},
   setTimeout, clearTimeout, setInterval: () => 0, clearInterval() {},
-  Maity: { i18n: { follow: () => Promise.resolve() } },
+  // errorWords without js/errors.js and its catalog: the message as the fixture hub gives it, so a refusal names its error.
+  Maity: { i18n: { follow: () => Promise.resolve() }, errorWords: (code, details, message) => message },
 };
 win.window = win;
 const ctx = { window: win, document: { cookie: "", addEventListener() {} }, URL, URLSearchParams, console, Promise, JSON, Date, Set, Map, Object, Array, Number, String, Error };
@@ -26,7 +27,7 @@ const fill = (p) => p.replace(/\{(\w+)\}/g, (_, k) => spec.fixture_ids[k]);
   const out = [];
   for (const r of spec.requests) {
     const at = fill(r.path);
-    const call = { GET: () => api.get(at), DELETE: () => api.del(at) }[r.method];
+    const call = { GET: () => api.get(at), DELETE: () => api.del(at), POST: () => api.post(at, r.body), PATCH: () => api.patch(at, r.body) }[r.method];
     try {
       out.push({ method: r.method, path: r.path, answer: await call() });
     } catch (err) {

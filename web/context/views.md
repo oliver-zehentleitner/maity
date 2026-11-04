@@ -2442,29 +2442,38 @@ would have two places. Alternatives to the row's placement: unknown.
 
 **Id:** 9cf859f1-d5e0-420c-9ea3-d633cea94e33
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** confirmed
-**Source:** docs/api.md §6.25 (rename by a human owner, transfer by the namespace owner as a consent request, aliases, card references outside a project); the card tsk-cns4d1d7ht4j from the maintainer's chat; the hub's PR #487, 2026-10-28
-**Revisit when:** the dashboard gets a second-factor prompt (the transfer's step-up), or organisations become namespace owners
+**Source:** docs/api.md §6.25 (rename by a human owner, transfer by the namespace owner as a consent request, aliases, card references outside a project); the card tsk-cns4d1d7ht4j from the maintainer's chat; the hub's PR #487, 2026-10-28; the card tsk-9e5cd0b0hmzx, 2026-11-04 (the step-up entered in place)
+**Revisit when:** another call of the section becomes sensitive (§2.8.4), or the transfer's targets change in §6.25/§6.26
 
-Project settings has a **Project name** section for a human owner,
-where the hub's view carries `aliases`: the full name, the earlier ones,
-a rename of the slug that follows the new address, and, for the
-namespace owner, a transfer to another human owner of the project, with
-the request withdrawable from the same place. A step-up the hub asks for
-is said, not entered: the dashboard has no second-factor prompt yet. A
+Project settings has a **Project name** section for a human owner of
+the project: the full name, the earlier ones, a rename of the slug that
+follows the new address, and, for the namespace owner (for an
+organisation's project, each of its owners), a transfer to another
+human owner of the project, into an organisation the human owns or
+administers, or, out of an organisation, into the human's own
+namespace (KTW e47c8d0d says which of them moves at once), with the
+request withdrawable from the same place. A step-up the hub asks for
+is entered in place: the transfer goes through `M.stepUp.run`, which
+asks for the code in the form and sends the transfer again once it is
+given; Cancel ends it without a failure. A
 card's or a request's id reads `<owner>/<slug>/<id>` wherever it is shown
 outside its project (`M.ids.where` says so by the view's scope), written
-by one helper (`M.ids.ref`) and never parsed back.
+by one helper (`M.ids.ref`). The hub never parses the prefix (§6.25:
+the id stays the identifier); the dashboard reads `<owner>/<slug>/<id>`
+in written text as a link into that project (KTW 50234f88 in
+`rendering.md`, `js/ids.js`).
 
 **Reason:** the name belongs with the project's other settings and to
 the people the contract gives it to; one helper keeps the prefix in one
 place, as the card asked, so a later change of its form is one edit.
 
 **Rejected alternative:** a transfer that names anyone by handle: the
-contract takes only a current owner of the project, so the list offers
-exactly those. Parsing `owner/slug/tsk-…` back into a link: §6.25 makes
-the prefix display only.
+contract takes only a current owner of the project or an organisation
+(§6.25, §6.26), so the list offers those owners and, of the
+organisations, only the ones the human owns or administers, other than
+the project's own and none that is suspended.
 
 ## One's agents have a page of their own in the gear menu; adding one to a project is that project's join panel
 
@@ -3701,6 +3710,59 @@ for it per browser, and a reader would set it again in every chat. A
 field that grows with its text by itself: it moves the history while one
 types and still does not give a phone its screen.
 
+## A chat fills the window from where it starts, less what stands below it; "Sending…" stands in the composer's row
+
+**Id:** 21fd7884-0462-49dc-8e47-da59f57ef557
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-j10w2hsm1h90 (the owner, 2026-11-03: the chat no longer ended at the window's bottom edge after the product line of #1290; the Chats list column too; "Sending…" to move beside the meat-proxy switch); browser measurements at 1280 × 800 and 390 × 844 in the PR
+**Revisit when:** the chat stops sizing itself with `--chat-h`, or the product line moves out of the page's flow
+**See:** views.md#a-chats-composer-hides-for-reading-on-a-phone-and-grows-on-a-wide-screen-both-are-the-browsers-choice — 5af3970c-0f6a-42e7-a211-13ba27fbae5d — as of 2026-11-03
+
+The open chat's height (`--chat-h`, `fitToScreen` in `js/chat.js`) is the window's height less where
+the chat layout starts on the page and less what stands below it down to the end of the page
+(main's padding, the product line of §16.13). The page then ends at the window's bottom edge, the
+product line under the composer is in sight, and only the history and the chat list scroll. It is
+measured again on a resize and whenever the page around it changes size (a `ResizeObserver` on the
+body: a banner above, the product line below). It is never less than what the open chat cannot
+shrink (its heading, the composer) plus 60 px of history, about three lines: on a screen too small
+for that, the page scrolls and the product line stays below the composer, never over it. The
+observer measures in the next frame, not in its own round, where a new height would resize the
+body again and the browser would report a ResizeObserver loop. Besides the body it watches the
+pane's fixed parts and the panes the layout holds: folding the composer or making it taller, and on
+Chats a group chat taking a direct chat's place, change the floor without resizing the body; only the
+current pane's parts are watched. A layout not yet in the page,
+as Chats builds it while its view is still drawn, is measured once it is there, a few tries at
+most, and then lets go of its listeners; the holder a pane is drawn into on Chats is not measured
+at all, Chats measures the layout the pane moves into. While a
+message is sent, "Sending…" and a failure stand in the composer's row, after the meat-proxy switch
+and before Send, so no line appears below the row and nothing moves.
+
+**Reason:** the earlier measure took the header's bottom and 16 px. It left out what stands between
+the header and the chat and everything below it, so the product line pushed the composer past the
+window's edge. On Chats the first measure came before the layout was in the page and stopped for
+good, leaving the CSS fallback `calc(100dvh - 140px)`.
+
+**Rejected alternatives:**
+- No product line on chat views: §16.13 puts it at the end of every page the dashboard draws.
+- The product line inside the history's scroll area: it would only show at the end of the history
+  and would scroll with the messages.
+- A sticky or fixed product line: §16.13 says it is never sticky.
+- The header's bottom plus a fixed allowance for the product line: its height changes with the
+  width (it wraps on a phone) and a banner above the chat moves the layout too.
+- Only a fixed floor (240 px) on a small screen: the heading and the composer of a group chat take
+  more than that, so the composer ran past the pane and under the product line.
+- A floor of 120 px of history: a group chat on a 390 × 844 phone no longer fitted the window
+  even without a banner above it.
+- A `ResizeObserver` on the body alone: the layout's height is fixed by `--chat-h`, so a change
+  inside the open pane (the composer folded or shown, its 1×/2×/3×, a group's "Manage or leave",
+  another chat on Chats) does not resize the body. The floor stayed the one measured first, and on
+  a phone a group composer shown again ran under the product line with no history in sight.
+- Watching the parts of every pane the layout ever held: on Chats each switch left the old pane's
+  parts watched, and after twenty switches the observer watched over a hundred elements no longer
+  in the page. Only the current pane's parts are watched; the ones that leave are let go.
+
 ## Forge access is a section of the account, also at /settings/forge; a project's settings say which grant reads its repository
 
 **Id:** 861705c6-539c-4d4c-9532-658311c463b7
@@ -4765,3 +4827,23 @@ address); keeping "Not changed yet" for the whole change; assuming that
 **Known limit:** where several requests are filed (fields and a cross-owner
 edge, or an edge both of whose owners are asked), the line names only the one
 the hub answers with.
+
+## The project's Why view mounts the Keep the Why views, loaded on the first visit; their own words stay English for now
+
+**Id:** 9e70b2ab-5fbf-44ad-9d4e-7e1b54319519
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** tsk-9kns2as984et (KTW M3), 2026-11-03: the proposal on the card and the lead's ruling on its two open points (the library's language, loading)
+**See:** stack.md#the-keep-the-why-views-are-vendored-from-the-pinned-pypi-wheel-by-their-manifest-and-hashes-not-taken-as-a-package-dependency — f3b6fe34-f86e-490c-afe6-f03ee3263ab3 — as of 2026-11-03
+**Revisit when:** the Keep the Why library takes its UI words from its host (a words hook), or a second view needs the library
+
+The project's Why tab is Keep the Why's own dashboard views, mounted by `js/ktw-host.js` from the vendored library: the overview, graph, timeline, thoughts, family, topics, entries and search, at paths below `/<owner>/<slug>/why`. The library reads through a provider over the hub's §11.5 reads, moves through the dashboard's paths (`js/route.js`), keeps its settings in the browser and takes Maity's colours through its `--ktw-*` tokens. Its scripts and stylesheet are loaded on the first visit to Why, in the manifest's order (checked by `make check`), and stay for the page's life. Its own UI words are English and the mounts carry `translate="no"`: an interim step until the library takes words from its host; entry text is the repository's data either way. The digest view the tab showed before (the hub's §11.3 summary per member) remains on All projects → Why. What the old view did for a failed read stays: when the hub cannot read the export, its last good read is shown with the reason, and Read again drops what the page holds and reads anew. A link from data is used only when plain https, as for every link from data (rendering.md), in two places: the export's link fields (the project's and the config's canonical, dashboard-state, a git remote and the repository it forks, a See or superseded_by into another repository) are checked before the library sees them, and every `href` the library writes into the mounts, entry text included, is checked again as `dom.h` checks Maity's own (a path of the dashboard or plain https); a `ref` place reads nothing for a repository in the address that is not plain https. The library's routes have no place for another repository of the family (a route's `centre`): an entry there is the host's own place `at/<uuid>/<canonical>[/<root>]`, which reads that repository's export (at that root) through the family and draws the entry with the library's pages over a scene of that export, and any other place there is the family page. A `ref` place the library resolves goes on to that place, replacing the ref in the history. The repository in the address must be plain https and the root a relative directory, or nothing is read.
+
+Eight rules of `ktw-views.css` write `#fff` on the library's accent (selected controls, the thought reader's ticks, a held card on hover; four of them match nothing the mounts draw today: three whose classes no vendored script writes, and the thought minimum inside the aside, which only the thought list beside a graph (`list`, into `listBox`) puts there and nothing in the mounts calls); Maity's dark `--accent` is too light for white text at AA (3.2 to 1), so `css/app.css` overrides every one of them with `--accent-text` (6.0 to 1 dark, 5.32 to 1 light), and e2e runs axe on the timeline, where the stage's switches show; the other overrides are not under axe. The tokens set the colours the library asks for, but a literal `#fff` is not a token, and the vendored copy must stay what `VENDOR.json` records: a darker `--ktw-accent` for the library alone was rejected (it would no longer be Maity's accent), and so was patching the vendored stylesheet or scripts (the next vendor update would undo it). Until the library takes a text-on-accent token, this is a workaround: one override per rule, found by searching `ktw-views.css` for `#fff`. Likewise, controls the library labels only by `title` (the timeline's playhead and speed) get an `aria-label` from that title in the host, where `sweep` holds its links, and a later title refreshes the name the host set, while a name the page sets afterwards is kept when it differs from the host's (one equal to it cannot be told from the host's and follows the title); dropping axe's `label-title-only` rule for the mounts was rejected, as it would hide the next unlabelled control too.
+
+**Known limits:** what the page has read of a project stays for the page's life, per project and per signed-in reader; a newer export shows after Read again or a reload. The library's own words are English until it takes them from its host.
+
+**Reason:** one update of Keep the Why reaches Maity unchanged, so the project's decision record looks and behaves as in its own dashboard; Maity adds only the host (provider, paths, settings, colours). Loading on the first visit keeps about 350 KB of scripts off every other page. Marking the library's words `translate="no"` keeps the pseudo-locale check strict for Maity's own words without pretending Maity translates text it does not hold.
+
+**Rejected alternatives:** the library in `index.html` for every page: its weight on pages that never show it. Its ~200 words copied into Maity's catalog: a second copy that drifts from the library's on every release; the words hook in Keep the Why is the lasting answer. Keeping the digest view and the library side by side in the tab: two answers to one question, the digest the poorer one. Checking only the export's fields, or only what the library writes: the fields keep a bad link from shaping what the library builds from it, the check of the mounts covers links in entry text and any field a later library adds. An elsewhere view of Maity's own for a `centre`: a second rendering of an entry the library's pages already draw. A centred entry as its `ref` place: the library's `ref` resolves the entry and goes to it at that centre, which was the same address again, so the page never left "Looking for …"; and a child root had no place in it.

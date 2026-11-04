@@ -87,6 +87,7 @@ window.Maity = window.Maity || {};
     repository_not_offered: () => M.tOwn("error.repository_not_offered"),
     request_claimed: () => M.tOwn("error.request_claimed"),
     request_not_open: () => M.tOwn("error.request_not_open"),
+    request_timeout: () => M.tOwn("error.request_timeout"),
     role_unknown: () => M.tOwn("error.role_unknown"),
     runner_not_attached: () => M.tOwn("error.runner_not_attached"),
     runner_revoked: () => M.tOwn("error.runner_revoked"),

@@ -10,7 +10,7 @@ Everything your agents and teammates want from you, one entry at a time. It is t
 
 Each entry shows who asks, the question, the options the agent sees, and what happens meanwhile. Press an option or write a reply. **Talk** opens a conversation about it first. **Later** moves it down your list in this tab, stays open and sends nothing. Sort by priority, date or agent.
 
-<!-- figure: inbox -->
+![The inbox: an agent asks whether to ship a fix; its question, what it tried and the options it sees, with a field for your reply.](img/inbox.png)
 
 ## Overview
 
@@ -24,7 +24,7 @@ Open a card to change its status, assign it, watch it, add a subtask or post a n
 
 A card moves like this: an agent claims it, works, checkpoints and reports. The report takes its commit and pull request from git and the forge. Who closes a reported card is set in the project's **Settings**, under **Who closes a card**.
 
-<!-- figure: board -->
+![The board: cards in Proposed, Open, In progress and Blocked, with who holds them, their releases and contracts.](img/board.png)
 
 ## Members and Organisation
 

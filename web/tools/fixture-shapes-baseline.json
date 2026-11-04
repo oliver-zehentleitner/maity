@@ -157,5 +157,49 @@
   ".items[].org: the fixture leaves it out",
   ".items[].placement: the fixture leaves it out",
   ".items[].takeover_id: the fixture leaves it out"
+ ],
+ "PATCH /projects/{project}/members/{agent}": [
+  ".aliases: the fixture leaves it out",
+  ".availability: the fixture leaves it out",
+  ".availability_policy: the fixture leaves it out",
+  ".avatar_url: the fixture leaves it out",
+  ".briefing_updated_at: the fixture leaves it out",
+  ".covered_by: the fixture leaves it out",
+  ".covering: the fixture leaves it out",
+  ".cross_owner: the fixture leaves it out",
+  ".handover: the fixture leaves it out",
+  ".instances: the fixture leaves it out",
+  ".isolated: the fixture leaves it out",
+  ".isolation_windows: the fixture leaves it out",
+  ".keep_the_why_unconfirmed: the fixture leaves it out",
+  ".line_consent: the fixture leaves it out",
+  ".owner_preferences: the hub sends no such key",
+  ".placement: the fixture leaves it out",
+  ".role_base: the fixture leaves it out",
+  ".takes_over: the fixture leaves it out",
+  ".team: the fixture leaves it out"
+ ],
+ "POST /projects/{project}/conversations/{agent}/messages": [
+  ".from_instance: the fixture leaves it out",
+  ".mentions: the fixture leaves it out",
+  ".redacted: the fixture leaves it out",
+  ".redaction: the fixture leaves it out"
+ ],
+ "POST /projects/{project}/conversations/{group}/messages": [
+  ".from_instance: the fixture leaves it out",
+  ".redacted: the fixture leaves it out",
+  ".redaction: the fixture leaves it out",
+  ".to_instance: the fixture leaves it out"
+ ],
+ "POST /projects/{project}/tasks": [
+  ".approvals: the fixture leaves it out",
+  ".assigned_instance: the fixture leaves it out",
+  ".cover: the fixture leaves it out",
+  ".imported_from: the fixture leaves it out",
+  ".jour_fixe: the fixture leaves it out",
+  ".links: the fixture leaves it out",
+  ".notes: the fixture leaves it out",
+  ".rank: the fixture leaves it out",
+  ".watching: the fixture leaves it out"
  ]
 }

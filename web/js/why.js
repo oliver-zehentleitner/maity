@@ -1,7 +1,7 @@
-// (7) Why: the project's published Keep the Why dashboard state as the hub
-// read it (docs/api.md §11.3) — the family's summary, one row per member,
-// and the entries that need attention, grouped by member, each linking to
-// its entry in the published dashboard. Read-only: the hub never reads or
+// Why's words and pieces from the hub's summary of the Keep the Why family (docs/api.md
+// §11.3): the summary box and the attention list (All projects' Why, js/all-pages.js), a
+// member's failure in words, and the empty state. The project's Why view itself mounts the
+// Keep the Why views (js/ktw-host.js). Read-only: the hub never reads or
 // writes context/, and neither does this view. Every string from an export
 // is data and rendered as text; links are used only when plain https.
 "use strict";
@@ -101,22 +101,6 @@ window.Maity = window.Maity || {};
       answer.skipped ? h("p", { class: "muted" }, M.t("why.summary.skipped", { count: answer.skipped })) : null);
   }
 
-  function membersTable(answer) {
-    return h("table", { class: "why-members", tabindex: "0", "aria-label": M.t("why.parts.label") },
-      h("thead", null, h("tr", null,
-        h("th", { scope: "col" }, M.t("why.parts.part")), h("th", { scope: "col" }, M.t("why.parts.entries")),
-        h("th", { scope: "col" }, M.t("why.parts.attention")), h("th", { scope: "col" }, M.t("why.parts.linter")),
-        h("th", { scope: "col" }, M.t("why.parts.exported")))),
-      h("tbody", null, answer.members.map((m) => h("tr", { class: m.error ? "failed" : "" },
-        h("td", null, link(m.dashboard_url, memberName(m)), m.path ? h("span", { class: "muted" }, " · " + m.path + "/") : null,
-          m.error ? h("p", { class: "flag" }, (m.summary
-            ? M.t("why.parts.failed_last", { reason: reasonText(m.error) }) : M.t("why.parts.failed", { reason: reasonText(m.error) }))) : null),
-        h("td", null, counts(m.summary)),
-        h("td", null, m.summary ? M.fmt.number(m.summary.attention) : "—"),
-        h("td", null, findings(m.summary)),
-        h("td", null, m.summary && m.summary.generated ? h("span", { title: formatTime(m.summary.generated) }, formatAgo(m.summary.generated)) : "—")))));
-  }
-
   function attentionList(answer) {
     const byMember = {};
     answer.attention.forEach((a) => { (byMember[a.member] = byMember[a.member] || []).push(a); });
@@ -133,25 +117,6 @@ window.Maity = window.Maity || {};
     answer.truncated ? h("p", { class: "muted" }, M.t("why.attention.truncated", { count: 200 })) : null];
   }
 
-  // The view's title row: Read again is there in every state, and off while a read runs.
-  function toolbar(root, ctx) {
-    const again = h("button", { type: "button", class: "small", onclick: () => { again.disabled = true; load(root, ctx, true); } }, M.t("why.read_again"));
-    return h("div", { class: "toolbar" }, h("h2", null, M.t("why.title")), again);
-  }
-
-  function render(root, answer, ctx, note) {
-    clear(root);
-    append(root,
-      toolbar(root, ctx),
-      h("p", { class: "muted" }, M.t("why.intro")),
-      note || null,
-      summaryBox(answer),
-      h("h3", null, M.t("why.attention.title")),
-      attentionList(answer),
-      h("h3", null, M.t("why.parts.title")),
-      membersTable(answer));
-  }
-
   // What a read of the root said: the last good answer if any, and the note saying so.
   function unavailable(err) {
     const last = err.details && err.details.last;
@@ -163,31 +128,13 @@ window.Maity = window.Maity || {};
     return { last, note };
   }
 
-  async function load(root, ctx, fresh) {
-    try {
-      const answer = await M.api.get(ctx.base + "/keep-the-why" + (fresh ? "?max_age=0" : ""));
-      render(root, answer, ctx);
-    } catch (err) {
-      clear(root);
-      if (err.code === "ktw_not_configured") {
-        append(root, toolbar(root, ctx), h("div", { class: "empty-state why-empty" },
-          h("p", null, M.t("why.empty")),
-          h("p", { class: "muted" }, ctx.project.repository ? M.t("why.empty.no_line") : M.t("why.empty.no_repository"))));
-        return;
-      }
-      if (err.code === "ktw_unavailable") {
-        const { last, note } = unavailable(err);
-        if (last) { render(root, last, ctx, note); return; }
-        append(root, toolbar(root, ctx), note);
-        return;
-      }
-      append(root, toolbar(root, ctx), M.errorBox(err));
-    }
+  // The project names no export (ktw_not_configured): said in the Why view (js/ktw-host.js).
+  function emptyState(ctx) {
+    return [h("h2", null, M.t("why.title")), h("div", { class: "empty-state why-empty" },
+      h("p", null, M.t("why.empty")),
+      h("p", { class: "muted" }, ctx.project && ctx.project.repository ? M.t("why.empty.no_line") : M.t("why.empty.no_repository")))];
   }
 
-  M.why = { statusWord, summaryBox, attentionList, unavailable };
+  M.why = { statusWord, summaryBox, attentionList, unavailable, reasonText, emptyState };
 
-  M.views.why = async function (ctx, root) {
-    await load(root, ctx, false);
-  };
 })(window.Maity);

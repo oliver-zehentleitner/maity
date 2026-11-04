@@ -1,11 +1,12 @@
 """The load test's accounts (hub/context/replicas.md cac80c88): `maity-hub loadtest seed` and
 `maity-hub loadtest purge`, run where the hub runs, against the hub's own database.
 
-Every account is named `lt-<n>` and has `NO_PASSWORD` for a password hash. The name alone does not
-tell the seed's accounts: `lt-<n>` is not reserved, and a real account may be called `lt-7`, but its
-hash is always a scrypt one, so `purge` asks for both. Each is a human with its own project
-`lt-<n>/load` and two agents in it, signed in: the output holds a session cookie per human and a
-signing key per agent, which is what `loadtest/run.js` reads.
+Every account is named `lt-<n>` and has `NO_PASSWORD` for a password hash. A person or an
+organisation may not take that handle (`paths.handle_reserved`); this seed writes the rows itself
+and does not ask that check. `purge` still asks for the name and the marker together: an account
+made before the reservation may be called `lt-7`, and its hash is never the seed's marker. Each
+account is a human with its own project `lt-<n>/load` and two agents in it, signed in: the output
+holds a session cookie per human and a signing key per agent, which is what `loadtest/run.js` reads.
 A human has no mail address, so nothing the run does can send a mail.
 
 Directly in the database, not through the API: the API's limits on logins and on agents per human
@@ -261,8 +262,8 @@ def _select_in(conn: Connection, table: Table, column: Column[Any], values: set[
 
 def find(conn: Connection) -> Doomed:
     """Every row that belongs to the `lt-<n>` accounts: the humans the seed made (the handle and
-    `NO_PASSWORD`, since anyone may sign up as `lt-7` and a real account always has a hash), their
-    projects and agents,
+    `NO_PASSWORD`; an account made before the reservation may be called `lt-7`, and a real account
+    always has a hash), their projects and agents,
     the memberships in those projects, and, following every foreign key, each row that refers to
     one of them, until nothing new turns up. Refused when an account is not the seed's alone: a
     membership across the line in either direction, an organisation, or a row that refers to an
