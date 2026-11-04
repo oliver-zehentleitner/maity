@@ -91,6 +91,23 @@ def test_an_expired_report_withdraws_its_request(
     assert (row.status, row.withdraw_reason) == ("withdrawn", "expired")
 
 
+def test_the_not_listening_digest_leaves_a_report_request_alone(
+    team: dict[str, Any], migrated: Engine
+) -> None:
+    """A report's request has the digest's shape (personal, filed by the hub, neither project
+    nor organisation, §5.3): neither the hourly pass nor leaving `inbox` takes it for one."""
+    from maity_hub import not_listening_digest
+
+    made = report(team["pat"], {"type": "project", "id": PROJECT}).json()
+    admin = team["owner"].get("/me").json()["member"]["id"]
+    not_listening_digest.run(migrated)
+    with migrated.begin() as conn:
+        not_listening_digest.mode_changed(conn, admin, "inbox", "bell")
+    with migrated.connect() as conn:
+        row = conn.execute(select(t.request).where(t.request.c.report_id == made["id"])).one()
+    assert (row.status, row.withdraw_reason) == ("open", None)
+
+
 def test_the_migration_files_a_request_for_each_open_report_and_takes_them_back(
     engine: Engine,
 ) -> None:
