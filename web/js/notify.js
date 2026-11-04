@@ -41,14 +41,14 @@ window.Maity = window.Maity || {};
   const state = { counts: null, byProject: {}, settings: null, sessionsRev: null };
 
   // The page's address for an item, from its target. Account records lead
-  // to the account: a sign-in to its sessions, the settings to the
+  // to the account: a security alert to the sessions, the settings to the
   // notification settings; a personal request of a project one is no
   // member of, to everything waiting, until the page has the personal
   // inbox (§18.2 names /requests/<id>). A security item of another target
   // goes to the sessions too, where it is confirmed.
   // The kinds of §18.1: an item of any other kind is no notification here.
   const known = (x) => Object.prototype.hasOwnProperty.call(KIND_WORDS, x.kind);
-  // Read only on purpose: a sign-in alert by This was me (§2.6.5), and an
+  // Read only on purpose: a security alert by Mark read (§18.3), and an
   // item that asks for an action (a registration to decide, an address to
   // set again) closes with the matter, not by opening it (§18.1).
   // The four open matters of §18.3 (registration_pending, mail_disabled,
@@ -118,14 +118,9 @@ window.Maity = window.Maity || {};
   const skippedWhy = (reason) => (Object.hasOwn(SKIPPED, reason) ? SKIPPED[reason]() : reason);
 
   // The question before "mark all read" takes security alerts along (§18.8):
-  // each one with its time, place and browser; reading them confirms nothing.
-  function askMarkAll(pinned, sessions) {
-    const lines = pinned.map((x) => {
-      const t0 = x.target || {};
-      const s = t0.type === "session" && sessions.find((y) => y.id === t0.id);
-      const place = s && (s.created ? s.created.ip : s.ip);
-      return "– " + M.dom.formatTime(x.at) + " · " + x.title + (place ? " · " + place : "");
-    });
+  // each one with its time and what it is; a sign-in is none of them (§2.6.5).
+  function askMarkAll(pinned) {
+    const lines = pinned.map((x) => "– " + M.dom.formatTime(x.at) + " · " + x.title);
     return window.confirm(M.t("bell.mark_all.ask", { count: pinned.length }) + "\n\n" + lines.join("\n"));
   }
 
@@ -183,7 +178,7 @@ window.Maity = window.Maity || {};
     async function markAll() {
       // Security alerts are among what it covers: asked first, declined, nothing.
       const withSecurity = pinned.length > 0;
-      if (withSecurity && !askMarkAll(pinned, sessions)) return;
+      if (withSecurity && !askMarkAll(pinned)) return;
       status.busy(M.t("bell.marking"));
       let answer;
       try {
@@ -210,14 +205,12 @@ window.Maity = window.Maity || {};
       const again = document.getElementById("header").querySelector("button.bell");
       if (again) again.focus();
     }
-    // One pinned alert: This was me for a sign-in this session may confirm,
-    // Mark read for the rest where this session may mark it (§18.8).
+    // One pinned alert, with Mark read where this session may mark it (§18.8);
+    // a sign-in is no alert, its "This was me" is on the banner and in
+    // Profile → Sessions (§2.6.5).
     function pinnedRow(x) {
-      const t0 = x.target || {};
-      const s = t0.type === "session" ? sessions.find((y) => y.id === t0.id) : null;
       const cur = sessions.find((y) => y.current) || null;
-      const may = M.sessions && M.sessions.mayConfirmSession(cur, s);
-      const mark = !may && M.sessions && M.sessions.mayMark(cur, x, s);
+      const mark = M.sessions && M.sessions.mayMark(cur, x, null);
       const run = (busy, fn, words) => async () => {
         status.busy(busy);
         try {
@@ -231,9 +224,7 @@ window.Maity = window.Maity || {};
       return h("li", { class: "unread", "data-alert": x.id },
         h("a", { href: linkOf(x), onclick: () => close(false) }, x.title),
         h("span", { class: "muted" }, " · " + formatAgo(x.at)), " ",
-        may ? h("button", { type: "button", class: "small", "aria-label": M.t("sessions.this_was_me.label", { what: x.title }),
-          onclick: run(M.t("sessions.confirming"), () => M.sessions.confirm(s), M.t("sessions.confirmed", { what: M.sessions.device(s) })) }, M.t("sessions.this_was_me"))
-          : mark ? h("button", { type: "button", class: "small", "aria-label": M.t("bell.mark_read.label", { what: x.title }),
+        mark ? h("button", { type: "button", class: "small", "aria-label": M.t("bell.mark_read.label", { what: x.title }),
             onclick: run(M.t("bell.marking"), async () => {
               const answer = await M.api.post("/me/notifications/read", { ids: [x.id] });
               const left = (answer.skipped || []).find((y) => y.id === x.id);
@@ -281,16 +272,15 @@ window.Maity = window.Maity || {};
     }
     // The latest 20 are read when the bell opens, the unread ones only with
     // the filter; "mark all read" marks up to that answer's position. The
-    // sessions are read only when a sign-in alert is pinned, to know where
-    // This was me is offered (§18.8).
+    // sessions are read only when an alert is pinned, to know where Mark
+    // read is offered (§18.8).
     async function load() {
       try {
         const answer = await M.api.get("/me/notifications?limit=20" + (unreadOnly ? "&unread=true" : ""));
         items = (answer.items || []).filter(known);
         pinned = (answer.pinned || []).filter(known);
         top = answer.next_after || null;
-        // Every pinned alert is judged against the current session (§18.3), and a sign-in
-        // alert may report a session ended since: the sessions, ended ones too.
+        // Every pinned alert is judged against the current session (§18.3).
         sessions = pinned.length
           ? (await M.api.get("/auth/sessions?ended=true").catch(() => ({ items: [] }))).items || [] : [];
       } catch (err) {

@@ -3916,7 +3916,6 @@ window.MAITY_I18N["en"] = {
   "sessions.address.remove": "Remove the sign-in address",
   "sessions.address.title": "An address change waits for you",
   "sessions.address.too_new": "Approving needs a session at least a day old; this one can reject it.",
-  "sessions.alert_unread": "Its sign-in alert is unread.",
   "sessions.banner.approved": "It approved: {devices}.",
   "sessions.banner.end": "End this session",
   "sessions.banner.ended_but": "It has ended, but a session it approved is still active: {devices}.",
@@ -4775,6 +4774,15 @@ window.MAITY_I18N["en"] = {
   "waiting.older": "Older",
   "waiting.read_failed": "Could not read notifications: ",
   "waiting.removed": "Removed",
+  "waiting.sessions.manage": "Manage them in Profile → Sessions",
+  "waiting.sessions.more": {
+    "one": "and {count} more",
+    "other": "and {count} more"
+  },
+  "waiting.sessions.read_failed": "Could not read your sessions: ",
+  "waiting.sessions.signed_in": "signed in {when}",
+  "waiting.sessions.this_session": "this session",
+  "waiting.sessions.title": "Current sessions",
   "waiting.title": "Notifications",
   "waiting.title.in": "Notifications in {project}",
   "waiting.title.kind_in": "{kind} in {project}",

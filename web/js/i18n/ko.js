@@ -3807,7 +3807,6 @@ window.MAITY_I18N["ko"] = {
   "sessions.address.remove": "로그인 주소 제거",
   "sessions.address.title": "주소 변경이 결정을 기다리고 있습니다",
   "sessions.address.too_new": "승인하려면 만든 지 하루 이상 지난 세션이 필요합니다. 이 세션은 거부만 할 수 있습니다.",
-  "sessions.alert_unread": "이 세션의 로그인 알림을 아직 읽지 않았습니다.",
   "sessions.banner.approved": "이 세션이 승인한 세션: {devices}.",
   "sessions.banner.end": "이 세션 종료",
   "sessions.banner.ended_but": "이 세션은 종료되었지만, 이 세션이 승인한 세션이 아직 활성 상태입니다: {devices}.",

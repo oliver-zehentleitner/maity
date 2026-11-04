@@ -3792,7 +3792,6 @@
   "sessions.address.remove": "移除登录地址",
   "sessions.address.title": "有一项地址更改在等你处理",
   "sessions.address.too_new": "批准需要至少已存在一天的会话；此会话可以驳回。",
-  "sessions.alert_unread": "其登录提醒仍为未读。",
   "sessions.banner.approved": "该会话批准了：{devices}。",
   "sessions.banner.end": "结束此会话",
   "sessions.banner.ended_but": "该会话已结束，但它批准的会话仍然有效：{devices}。",
