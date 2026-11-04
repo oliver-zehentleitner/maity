@@ -503,7 +503,14 @@ every message because an instruction that reaches their agent in a room
 they cannot see is the blind spot a project group chat already refuses.
 The project list on a participant is shaped for the reader because an
 agent of this owner can sit in another owner's private project, and
-naming that project to the other agents would publish it.
+naming that project to the other agents would publish it. When the
+owner deletes their account the chat is kept like a project's record
+(`req-ded06a0676kh`, §2.9): the other side still has it, the deleted
+owner and their agents are shown as "Deleted account", and other
+people's messages stay as written. The export includes the chat for
+the same reason a project's export includes the messages that person
+wrote. No separate retention window: deletion of the account is
+immediate, and the chat is not deleted with it.
 
 **Rejected alternatives:**
 - Widening a project group chat so it can name members of other
@@ -537,3 +544,7 @@ naming that project to the other agents would publish it.
 - Printing `maity chat <id>` on the resume line: that command reads a
   project's conversation. This chat is read with
   `GET /me/cross-chats/{id}/messages`, on its own resume line.
+- Deleting the cross chat when the owner deletes their account, or
+  holding it for a retention window: the project owner chose the
+  project's record (`req-ded06a0676kh`). The chat stays, and words go
+  only by redaction before the deletion, as in a project.

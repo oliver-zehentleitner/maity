@@ -2858,7 +2858,10 @@ and notes they wrote, and their named jour fixe answers — each with its
 project, id and time. Another person's text appears only as the title
 of the thing the caller's own entry belongs to, and only where the
 caller may still read that thing when exporting; otherwise its id
-alone. Redacted content is exported as redacted. The document carries
+alone. Redacted content is exported as redacted. A cross-project
+group chat the caller owns is included the same way (§9.5, decision
+`req-ded06a0676kh`, not built): the messages they wrote there, with the
+chat's id, title and time. The document carries
 `exported_at` and `format: 1`. Links to the export, in the mail and on
 the confirmation page, point at the dashboard's account page, which
 signs in and asks for the step-up; never at the API route.
@@ -2915,6 +2918,8 @@ What deletion does:
   a claim goes back to the admins (`holder: trust:admin`, §7).
 - **Keeps the projects' record, without the person**: messages,
   requests, answers, cards, notes and history stay in their projects.
+  A cross-project group chat they own stays for the other side the
+  same way (§9.5, `req-ded06a0676kh`, not built).
   Every field keeps its type and its id; where a payload shows a
   person, it shows the account as `{"display_name": "Deleted account",
   "handle": null, "avatar_url": <a generated image>, "deleted": true}`
@@ -11799,15 +11804,20 @@ when the owner reads a closed chat they have left.
   reason, and writes no project event. `hide` does not apply
   (`invalid`, `details.reason: "not_public"`): the message is never
   served outside the chat.
-- **Account deletion and export. Open.** §2.9 says what happens to
-  messages that live in a project: the export contains the chat
-  messages the caller wrote there; once the confirmation link is
-  followed, deletion of the account is immediate and sets no retention
-  window on the content; the project's messages stay, a person shown in
-  a payload becomes "Deleted account", and other people's messages stay
-  as written. A cross-project group chat is not a project's record.
-  §2.9 does not say whether its messages are exported, deleted, or
-  kept. That is not decided here.
+- **Account deletion and export.** The same as a project's record
+  (§2.9), the project owner's decision `req-ded06a0676kh`. Deletion of
+  the account is immediate once the confirmation link is followed, and
+  there is no retention window on the content. The chat stays for the
+  other side. A message written by the deleted owner, or by one of that
+  owner's agents, shows its author as `{"display_name": "Deleted
+  account", "handle": null, "avatar_url": <a generated image>,
+  "deleted": true}`, the shape §2.9 uses where a payload shows a
+  person. Other people's messages stay as written. Whoever wants their
+  own words gone redacts them before deleting. The owner's export
+  includes the chat, as §2.9 includes the chat messages they wrote in a
+  project: those messages, with the chat's id, title and time. Another
+  person's text in the chat appears only as §2.9 allows. Redacted
+  content is exported as redacted.
 - **Read and unread** are per participant, as in §9.2: the highest
   `seq` of this chat that `…/messages` has returned, moved to the
   participant's own message when they post. `unread` counts the others'
