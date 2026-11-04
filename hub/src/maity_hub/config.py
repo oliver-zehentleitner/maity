@@ -138,6 +138,9 @@ class Settings:
     # `unlimited`; None where the environment leaves the value to the instance admin.
     max_agents_per_human: int | str | None = None
     max_orgs_per_human: int | str | None = None
+    # MAITY_MAX_ATTACHMENT_STORAGE (§16.5, §8.7): bytes of attachments the whole instance may
+    # store, from 1 GiB to 1 PiB, or `unlimited`; None leaves it to the instance admin.
+    max_attachment_storage: int | str | None = None
     # MAITY_PUBLIC_PAGES (`on`/`off`, §16.9): whether the hub serves public pages at all;
     # MAITY_PUBLIC_PAGES_RENDER (`on_change`/`interval`) and MAITY_PUBLIC_PAGES_INTERVAL_HOURS
     # (1–24) say when a page is rendered again.
@@ -241,6 +244,9 @@ class Settings:
             ),
             max_agents_per_human=parse_limit(env, "MAITY_MAX_AGENTS_PER_HUMAN"),
             max_orgs_per_human=parse_limit(env, "MAITY_MAX_ORGS_PER_HUMAN"),
+            max_attachment_storage=parse_limit(
+                env, "MAITY_MAX_ATTACHMENT_STORAGE", 1024**3, 1024**5
+            ),
         )
 
 
@@ -453,16 +459,18 @@ def parse_whole(env: dict[str, str], name: str, default: int, minimum: int, maxi
     return int(value)
 
 
-def parse_limit(env: dict[str, str], name: str) -> int | str | None:
-    """A cap (§16.5): a whole number from 1 to 10000, or `unlimited`; an unset or empty
+def parse_limit(
+    env: dict[str, str], name: str, low: int = 1, high: int = 10000
+) -> int | str | None:
+    """A cap (§16.5): a whole number from `low` to `high`, or `unlimited`; an unset or empty
     variable is None, the instance admin's to decide, anything else stops the hub."""
     value = env.get(name, "").strip()
     if not value:
         return None
     if value == "unlimited":
         return value
-    if not value.isdigit() or not 1 <= int(value) <= 10000:
-        raise ConfigError(f"{name} must be a number from 1 to 10000, or unlimited")
+    if not value.isdigit() or not low <= int(value) <= high:
+        raise ConfigError(f"{name} must be a number from {low} to {high}, or unlimited")
     return int(value)
 
 
