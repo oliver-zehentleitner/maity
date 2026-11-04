@@ -155,9 +155,9 @@ delete is the remedy that needs no removal.
 **Id:** 67adfb38-efa6-4636-986c-33fad578a128
 **Type:** decision
 **Status:** active
-**Evidence:** inferred
-**Source:** card tsk-qa9r26kb2teq (the maintainer approved an instance-wide storage cap, 2026-11-04); the proposed defaults and wording sent to the lead for the maintainer's answer, 2026-11-04; `docs/api.md` §8.7 and §16.5
-**Revisit when:** the maintainer answers the proposed default otherwise, uploads pass the limit by more than the concurrent uploads explain, or plans (§2.7) set storage per account
+**Evidence:** confirmed
+**Source:** card tsk-qa9r26kb2teq; the maintainer's approval of the six proposed points (place, default, counting, refusal without numbers, the check under the project's lock, the wording) through the lead, request req-y4tnqn9grxt5, 2026-11-04; `docs/api.md` §8.7 and §16.5
+**Revisit when:** uploads pass the limit by more than the concurrent uploads explain, or plans (§2.7) set storage per account
 **See:** attachments.md#pending-uploads-are-capped-per-membership-and-humans-can-clear-them — 5080eb65-475b-487a-9854-80757124ccf0 — as of 2026-11-04
 
 Besides the project's quota, the instance has a limit on the attachments of all
@@ -176,7 +176,7 @@ business, not a member's. Uploads already serialise per project; one lock for th
 instance would make every upload anywhere wait for every other, for a limit where
 passing it by a few uploads of at most 10 MiB each does no harm. `unlimited` as the
 default leaves a self-hosted instance as it was; the hosted instance sets its own
-value.
+value in the admin area.
 
 **Rejected alternatives:**
 - One instance-wide lock for an exact cap: serialises all uploads on the instance.
@@ -184,8 +184,9 @@ value.
   how much the instance holds.
 - An environment variable alone, like `MAITY_ATTACHMENT_QUOTA`: the card asks for
   an admin setting, and the Limits section already has the source rules for both.
-- A fixed default such as 50 GiB: offered to the maintainer as the alternative;
-  it would refuse uploads on self-hosted instances that never chose a limit.
+- A fixed default such as 50 GiB: offered to the maintainer as the alternative and
+  not chosen; it would refuse uploads on self-hosted instances that never chose a
+  limit.
 
 ## While attachments are off, delete is refused too, and the upload keeps its own checks first
 
