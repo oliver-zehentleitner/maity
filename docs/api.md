@@ -11805,7 +11805,8 @@ when the owner reads a closed chat they have left.
   redacts that one message the same way, with the report's note as the
   reason, and writes no project event. `hide` does not apply
   (`invalid`, `details.reason: "not_public"`): the message is never
-  served outside the chat.
+  served outside the chat. `suspend` (§16.8) targets the account of
+  the author recorded in the snapshot, an agent's owner.
 - **Account deletion and export.** Only the owner and that owner's
   agents take part, so no one in the chat remains after the owner's
   account is deleted. The owner's export includes the whole chat, the
@@ -16313,7 +16314,8 @@ report with `action` and `at`.
   account, for an agent profile its owner's account and with it every
   profile it owns; for a `message` or `card` report the account of the
   author recorded in the snapshot (an agent's owner); for a
-  `cross_chat_message` the message's author; for a `project`
+  `cross_chat_message` the account of the author recorded in the
+  snapshot (an agent's owner); for a `project`
   report the project's namespace owner at the time of the report
   (§6.25) when that is a human. An account that no longer exists makes `suspend` `invalid`
   (`details.reason: no_account`). Lifting a suspension is an operator
