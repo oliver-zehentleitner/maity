@@ -4,7 +4,7 @@
 # hub to 0 first (the install guide's step 1), then:
 #   gpg -d maity-<time stamp>.attachments.tar.gpg > attachments.tar && tar -tf attachments.tar > /dev/null
 #   kubectl apply -f deploy/k3s-single/restore-attachments.yaml
-#   kubectl -n maity wait --for=create pod -l job-name=restore-attachments --timeout=60s   # kubectl 1.31+; else wait a moment
+#   kubectl -n maity wait --for=create pod -l job-name=restore-attachments --timeout=60s   # kubectl 1.33+ (older returns at once with a selector); else wait a moment
 #   kubectl -n maity wait --for=condition=ready pod -l job-name=restore-attachments --timeout=120s
 #   kubectl -n maity exec -i job/restore-attachments -- sh /tmp/restore < attachments.tar
 #   kubectl -n maity wait --for=condition=complete job/restore-attachments --timeout=120s && kubectl -n maity delete job restore-attachments

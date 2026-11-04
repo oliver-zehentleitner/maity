@@ -346,7 +346,7 @@ kubectl -n maity exec -i deploy/maity-maity-hub -- maity-hub owner create --hand
   4. Scale the hub back to 1.
 - **Test a restore** once after setting up the key, and after every new key: decrypt the newest dump and read all of it,
   `set -o pipefail; gpg -d maity-<UTC time>.dump.gpg | pg_restore -f /dev/null && echo restorable` in bash, and the
-  attachments the same way with `gpg -d maity-<UTC time>.attachments.tar.gpg | tar -tf - > /dev/null`. That proves the
+  attachments with `set -o pipefail; gpg -d maity-<UTC time>.attachments.tar.gpg | tar -tf - > /dev/null && echo readable`. That proves the
   key and the whole file together; a listing alone (`pg_restore --list`) reads only the start and passes a cut-off file.
 - **Upgrades** are `helm upgrade` with the new digest. The chart's hook
   migrates first ([Upgrades](#upgrades)). An installation set up before
@@ -434,7 +434,8 @@ Back up before every upgrade.
 1. Read the `CHANGELOG.md` section of the new version.
 2. **Back up.** When the release has `attachments.existingClaim`, apply `deploy/k3s-single/attachments.yaml` and `backup.yaml` first (without the claim
    a hub pod stays Pending, and the old backup script has no tar) and run the upgrade script with `DUMP_REQUIRES_ATTACHMENTS=1`: it then stops
-   unless the dump's mark carries the tar.
+   unless the dump's mark carries the tar. The backups are encrypted, so create the Secret `maity-backup-key` first
+   (step 4 of the k3s setup), or the backup job fails.
 3. **Migrate, then serve.** `serve` refuses a database that is not at its
    own schema version, and migrations never run on their own.
    - Plain Python: stop the hub, update the checkout, reinstall from the
