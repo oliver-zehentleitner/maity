@@ -301,6 +301,7 @@ window.Maity = window.Maity || {};
   // The address a forge would deliver to: this page's origin, or a placeholder on file://.
   const hubOrigin = () => (window.location && window.location.origin && window.location.origin !== "null" ? window.location.origin : "https://<hub>");
   const avatarChanges = {};  // member id -> times of its last PUT or DELETE (§6.10: 10 per hour)
+  const revokeApplied = new Map();  // runner id -> what its removal applied per project (§15.3)
 
   function runnersFile() {
     return fixtures()["runners.json"];
@@ -2589,20 +2590,24 @@ window.Maity = window.Maity || {};
     }],
     ["DELETE", /^\/runners\/([^/]+)$/, (m, body, path) => {
       const r = runnerOf(m[1], path);
-      // §15.3: the rule applied in each attached project the caller is a member of;
-      // `inherit` takes the instance setting, `keep` by default. A second DELETE finds
-      // nothing attached and answers an empty list.
+      // §15.3: the rule applied in each attached project, kept with the revocation as the
+      // hub keeps it with the revoked key, so a second DELETE answers it again; the answer
+      // names the projects the caller is a member of. `inherit` takes the instance setting,
+      // `keep` by default.
+      if (!r.removed_at) {
+        revokeApplied.set(r.id, runnersFile().attachments
+          .filter((a) => a.runner_id === r.id && !a.detached_at)
+          .map((a) => {
+            const policy = ((fixtures()[fixtureSlug(a.project) + "/project.json"] || {}).policy || {}).on_runner_revoke;
+            const rule = (body && body.agents) === "stop" || policy === "stop" ? "stop" : "keep";
+            const stopped = rule === "stop"
+              ? placementsOf(fixtureSlug(a.project)).filter((p) => p.active && p.runner.id === r.id).map((p) => p.id)
+              : [];
+            return { project: a.project, rule, stopped };
+          }));
+      }
       const mine = me().projects.map((p) => p.full_name);
-      const onRevoke = runnersFile().attachments
-        .filter((a) => a.runner_id === r.id && !a.detached_at && mine.includes(a.project))
-        .map((a) => {
-          const policy = ((fixtures()[fixtureSlug(a.project) + "/project.json"] || {}).policy || {}).on_runner_revoke;
-          const rule = (body && body.agents) === "stop" || policy === "stop" ? "stop" : "keep";
-          const stopped = rule === "stop"
-            ? placementsOf(fixtureSlug(a.project)).filter((p) => p.active && p.runner.id === r.id).map((p) => p.id)
-            : [];
-          return { project: a.project, rule, stopped };
-        });
+      const onRevoke = (revokeApplied.get(r.id) || []).filter((x) => mine.includes(x.project));
       if (!r.removed_at) {
         if (r.credential && !r.credential.revoked_at) { r.credential.revoked_at = nowIso(); r.credential.revoked_reason = "runner_removed"; }
         r.credential_state = "revoked";
