@@ -378,3 +378,21 @@ def test_an_escaped_backslash_before_a_quote_closes_it() -> None:
     assert [q.text for q in textcheck.quotations(three, files)] == [
         'a word \\\\\\" with three, then closed here'
     ]
+
+
+def test_places_of_two_files_next_to_a_quote_tie_it_to_none() -> None:
+    files = ["docs/how/connected.md", "web/js/wake.js"]
+    both_after = (
+        'It reads "four entirely fabricated words" (docs/how/connected.md:3 and web/js/wake.js:1).'
+    )
+    assert textcheck.quotations(both_after, files) == []
+    around = 'docs/how/connected.md:3 says "four entirely fabricated words" (web/js/wake.js:1).'
+    assert textcheck.quotations(around, files) == []
+    one = 'docs/how/connected.md:3 says "four entirely fabricated words" (docs/how/connected.md:4).'
+    assert [q.files for q in textcheck.quotations(one, files)] == [["docs/how/connected.md"]]
+
+
+def test_a_place_in_brackets_on_the_next_line_ties_the_quote() -> None:
+    files = ["docs/how/connected.md"]
+    wrapped = 'The page reads "four entirely fabricated words"\n(docs/how/connected.md:3).'
+    assert [q.files for q in textcheck.quotations(wrapped, files)] == [["docs/how/connected.md"]]

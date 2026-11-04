@@ -10321,10 +10321,13 @@ is not there is not sent:
    line (form 1) stands right before it, with nothing between that ends
    a sentence, quotes or ends a table's cell (`|`) and at most two words
    in 24 characters (`docs/how/connected.md:3 says "…"`), or right after
-   it in brackets (`"…" (docs/how/connected.md:3)`); failing that, the
-   section it sits in is about one file: the nearest heading above it
-   that names a file at `head` names exactly that one, and a heading
-   that names two or more ties nothing. A quotation stands verbatim in
+   it in brackets, on its line or the paragraph's next one
+   (`"…" (docs/how/connected.md:3)`); when the places before it and in
+   those brackets name more than one file, it is tied to none. With no
+   file and line next to it, the section it sits in ties it when it is
+   about one file: the nearest heading above it that names a file at
+   `head` names exactly that one, and a heading that names two or more
+   ties nothing. A quotation stands verbatim in
    that file, compared with each run of whitespace as one space and
    without backticks, so that wrapped prose and dropped code marks
    match; a quote of a comment wrapped over lines matches the file

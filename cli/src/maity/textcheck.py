@@ -38,7 +38,8 @@ _GAP_STOPS = set('.;!?|"“”„')  # `|`: a table's cell is no sentence of its
 _ESCAPED_QUOTE = re.compile(r'(?<!\\)(?:\\\\)*\\"')
 # A comment marker at a line's start, so that a quote of a wrapped comment matches.
 _COMMENT = re.compile(r"^[ \t]*(?:#+|//+|/?\*+/?|--|;+)[ \t]?", re.MULTILINE)
-_AFTER_GAP = re.compile(r"[ \t]*\([ \t]*`?")  # "…" (path:n): the place in brackets
+# "…" (path:n): the place in brackets, on the same line or the paragraph's next one.
+_AFTER_GAP = re.compile(r"[ \t]*\n?[ \t]*\([ \t]*`?")
 _QUOTE_WORDS = 4
 _CUT = re.compile(r"…|\.\.\.")
 _HEADING_TEXT = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.*?)[ \t]*(?:#+[ \t]*)?$")
@@ -274,7 +275,8 @@ def quotations(text: str, files: list[str]) -> list[Quotation]:
     A quote lies between `"` and the next `"`, `“` and the next `”`, or `„` and the next `“`
     or `”`, within one paragraph and outside code spans, and has four words or more. It is
     tied to a file by a file and line (form 1) right before it (`path:n says "…"`) or right
-    after it in brackets (`"…" (path:n)`), and failing that to the file of the section it sits
+    after it in brackets (`"…" (path:n)`), also on the paragraph's next line, when those places
+    name one file between them; with no file and line next to it, to the file of the section it sits
     in: the nearest heading above that names a file at the head, when it names exactly one.
     A quote mark after an odd number of backslashes closes no quote."""
     quotes: list[Quotation] = []
@@ -299,9 +301,13 @@ def quotations(text: str, files: list[str]) -> list[Quotation]:
             if before and _next_to(para[before[-1].end() : match.start()], 2):
                 named.append(before[-1].group(1))
             if after and _AFTER_GAP.fullmatch(para[match.end() : after[0].start()]):
-                named.append(after[0].group(1))
+                close = para.find(")", after[0].end())
+                inside = para[after[0].start() : close if close != -1 else len(para)]
+                named.extend(m.group(1) for m in _FILE_LINE.finditer(inside))
             if named:
-                quotes.append(Quotation(_flat(quote), list(dict.fromkeys(named)), True))
+                # Places of two files next to one quote name no one source: it is tied to none.
+                if len(set(named)) == 1:
+                    quotes.append(Quotation(_flat(quote), named[:1], True))
             elif here is not None:
                 quotes.append(Quotation(_flat(quote), [here], False))
         paragraph.clear()
