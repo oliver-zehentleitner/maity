@@ -3714,7 +3714,8 @@ for that, the page scrolls and the product line stays below the composer, never 
 observer measures in the next frame, not in its own round, where a new height would resize the
 body again and the browser would report a ResizeObserver loop. Besides the body it watches the
 pane's fixed parts and the panes the layout holds: folding the composer or making it taller, and on
-Chats a group chat taking a direct chat's place, change the floor without resizing the body. A layout not yet in the page,
+Chats a group chat taking a direct chat's place, change the floor without resizing the body; only the
+current pane's parts are watched. A layout not yet in the page,
 as Chats builds it while its view is still drawn, is measured once it is there, a few tries at
 most, and then lets go of its listeners; the holder a pane is drawn into on Chats is not measured
 at all, Chats measures the layout the pane moves into. While a
@@ -3740,8 +3741,10 @@ good, leaving the CSS fallback `calc(100dvh - 140px)`.
 - A `ResizeObserver` on the body alone: the layout's height is fixed by `--chat-h`, so a change
   inside the open pane (the composer folded or shown, its 1×/2×/3×, a group's "Manage or leave",
   another chat on Chats) does not resize the body. The floor stayed the one measured first, and on
-  a 375 × 667 phone a group composer shown again ran 76 px under the product line with no history
-  in sight.
+  a phone a group composer shown again ran under the product line with no history in sight.
+- Watching every pane the layout ever held: on Chats each switch added the old pane's parts, and
+  after twenty switches the observer watched over a hundred elements no longer in the page. Only
+  the current pane's parts are watched; the ones that leave are let go.
 
 ## Forge access is a section of the account, also at /settings/forge; a project's settings say which grant reads its repository
 

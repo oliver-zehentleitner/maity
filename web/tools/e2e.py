@@ -2223,6 +2223,15 @@ def chat_height_views(run: Run, browser) -> None:
         context.add_init_script(
             "window.__errors = []; window.addEventListener('error', (e) => window.__errors.push(String(e.message)));"
         )
+        # The elements the chat's fitting observer (the one on the body) watches, connected or not.
+        context.add_init_script("""(() => { const R = window.ResizeObserver; if (!R) return; const all = [];
+          window.ResizeObserver = class extends R {
+            constructor(cb) { super(cb); this.__t = new Set(); all.push(this); }
+            observe(t, o) { this.__t.add(t); super.observe(t, o); }
+            unobserve(t) { this.__t.delete(t); super.unobserve(t); }
+            disconnect() { this.__t.clear(); super.disconnect(); } };
+          window.__fitTargets = () => all.filter((o) => o.__t.has(document.body))
+            .map((o) => ({ all: o.__t.size, gone: Array.from(o.__t).filter((t) => !t.isConnected).length })); })();""")
         page = context.new_page()
         errors: list[str] = []
         # Page errors only: on file:// Chromium refuses the pictures the page loads (CORS) and says so on the console.
@@ -2309,6 +2318,13 @@ def chat_height_views(run: Run, browser) -> None:
             page.wait_for_timeout(300)
             fresh = page.evaluate(CHAT_MEASURE)
             assert abs(m["overflow"] - fresh["overflow"]) <= 1, f"{where}: the page scrolls {m['overflow']} px, a fresh fit {fresh['overflow']}"
+            # Switching back and forth: the observer watches the current pane's parts, not every pane's.
+            for chat in ("agt-a", "cnv-0007") * 5:
+                page.evaluate(f"() => {{ location.hash = '#/chats/maintainer/maity/{chat}'; }}")
+                page.wait_for_timeout(250)
+            page.wait_for_timeout(500)
+            targets = page.evaluate("() => window.__fitTargets()")
+            assert len(targets) == 1 and targets[0]["gone"] == 0 and targets[0]["all"] <= 16, f"{where}, ten switches: {targets}"
             run.shot(page, f"fixtures-chat-{width}")
         finally:
             context.close()

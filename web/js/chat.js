@@ -438,6 +438,9 @@ window.Maity = window.Maity || {};
   const HISTORY_LEAST = 60;
   function fitToScreen(layout) {
     let watcher = null, swaps = null, frame = 0;
+    // The pane's parts now watched: only the current pane's, so a pane Chats
+    // replaced is let go of rather than watched until the layout leaves.
+    let watched = [];
     // Chats fits its layout while the view is still being drawn, before the
     // router puts it into the page: measured once it is there, a few tries
     // at most. Only a layout that was in the page and left it stops.
@@ -447,6 +450,7 @@ window.Maity = window.Maity || {};
       if (window.visualViewport) window.visualViewport.removeEventListener("resize", fit);
       if (watcher) watcher.disconnect();
       if (swaps) swaps.disconnect();
+      watched = [];
       if (frame && window.cancelAnimationFrame) window.cancelAnimationFrame(frame);
       frame = 0;
     };
@@ -476,8 +480,13 @@ window.Maity = window.Maity || {};
       const history = pane ? pane.querySelector(".messages") : null;
       // What the pane cannot shrink changes inside it, not the body: the
       // composer folded or made taller, an attachment, a hint. Watched part
-      // by part (observing one twice is a no-op), the history aside.
-      if (watcher && pane) Array.from(pane.children || []).forEach((el) => { if (el !== history) watcher.observe(el); });
+      // by part, the history aside; parts that left the pane are let go.
+      if (watcher) {
+        const parts = pane ? Array.from(pane.children || []).filter((el) => el !== history) : [];
+        watched.forEach((el) => { if (!parts.includes(el)) watcher.unobserve(el); });
+        parts.forEach((el) => { if (!watched.includes(el)) watcher.observe(el); });
+        watched = parts;
+      }
       const fixed = pane && history ? pane.scrollHeight - history.offsetHeight : 0;
       const least = Math.max(240, Number.isFinite(fixed) ? fixed + HISTORY_LEAST : 0);
       const value = Math.max(least, Math.floor(height - (box.top + scrolled) - below)) + "px";
