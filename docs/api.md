@@ -1194,9 +1194,9 @@ limit the hub states, not one it closes. What it does instead:
   other session of the human shows it in the dashboard at once, with
   the session and a one-click "End this session" (§2.6.5) — not only by
   a mail the agent could delete. Only a session that existed before
-  that sign-in can confirm it or mark it read; the obtained session and
-  every session created after it can do neither, and the banner stays
-  until the sign-in is confirmed, read or not.
+  that sign-in can confirm it; the obtained session and every session
+  created after it cannot, and the banner stays until the sign-in is
+  confirmed or the session, and every session it approved, has ended.
 - **A session the human has not confirmed cannot lock the human
   out.** A session in good standing — signed in by password or with
   the second factor, or its sign-in confirmed by the human with "This
@@ -1223,7 +1223,7 @@ limit the hub states, not one it closes. What it does instead:
   least 24 hours old approves it, and only one in good standing — whose
   own sign-in the human confirmed from an earlier session (§2.6.5). A
   session obtained a moment ago cannot do it, and one that waits a day
-  still cannot while its sign-in is not confirmed, read or not; nor can it reject or replace
+  still cannot while its sign-in is not confirmed; nor can it reject or replace
   a change the human filed.
 
 Additional rules that are not scopes:
@@ -1760,19 +1760,19 @@ and is never affected by mail limits; the password is not either.
 | `GET /auth/sessions` `?ended=true` | human | the caller's own sessions, newest first; with `ended=true` also the ones ended in the last 30 days |
 | `DELETE /auth/sessions/{id}` | human | ends one of the caller's own sessions, and every session it approved by device code that the caller may end (below); the current one is a logout; idempotent; answers the session as it is now, with `skipped` naming the approved sessions it did not end |
 | `POST /auth/sessions/end-others` | human | ends every session of the caller but the current one; answers the list of live sessions |
-| `POST /auth/sessions/{id}/confirm` | human | "This was me": confirms the sign-in of one of the caller's own sessions (below) and marks its `session_created` item read; answers the session as it is now. The checks run in this order: an ended session, or one of another human, is `not_found`; then a caller that is the session itself or was created after it is `forbidden` with `details.reason: not_earlier`; then a caller not in good standing is `forbidden` with `details.reason: not_in_good_standing`. Only a caller past all three gets `200`; the target is confirmed only while it is still active, in one transaction with the checks, so that a concurrent `DELETE` of it either ends a confirmed session or leaves the confirm `not_found`. A session already in good standing (confirmed, or signed in by password or with the second factor, §2.8.2) stays as it is and only its item is marked read, so a repeated call changes nothing |
+| `POST /auth/sessions/{id}/confirm` | human | "This was me": confirms the sign-in of one of the caller's own sessions (below); answers the session as it is now. The checks run in this order: an ended session, or one of another human, is `not_found`; then a caller that is the session itself or was created after it is `forbidden` with `details.reason: not_earlier`; then a caller not in good standing is `forbidden` with `details.reason: not_in_good_standing`. Only a caller past all three gets `200`; the target is confirmed only while it is still active, in one transaction with the checks, so that a concurrent `DELETE` of it either ends a confirmed session or leaves the confirm `not_found`. A session already in good standing (confirmed, or signed in by password or with the second factor, §2.8.2) stays as it is, so a repeated call changes nothing |
 
 **Good standing.** A session is **in good standing** when it was
 signed in by password or with the second factor (§2.8.2), or when its
 sign-in has been **confirmed** —
 `POST /auth/sessions/{id}/confirm` from an allowed session (below).
-Reading its alert never confirms it, however it is read: by `ids`, by
-`up_to`, by age or by the record's expiry (§18.3). The session list
+Nothing else confirms it: a sign-in has no bell item to read (§18.1),
+and neither age nor the record's expiry confirms it. The session list
 shows it (`good_standing`, and `confirmed_at` and `confirmed_by`, the
 confirming session's id, on a confirmed one; both `null` otherwise).
 Good standing is what lets a session end others, confirm sign-ins,
-mark sign-in and address-change alerts read and act on a held address
-change (§2.6.3).
+mark address-change alerts read and act on a held address change
+(§2.6.3).
 The maintainer's decision of 2026-11-02 (`context/notifications.md`)
 separated confirming from reading, so that the bell can be tidied
 without the protection going with it. A session whose alert an allowed
@@ -1851,38 +1851,41 @@ event sequence, so they leave no gap in any project's `/events` from
 which the sign-ins of humans could be timed; kept 90 days, readable by
 the human alone. The record is shown with its session in Profile →
 Sessions (`created` above), and ending a session writes
-`session_ended` there in the same way. `session_created` becomes a
-notification of the kind `security` (#160, §18.1), title `New sign-in:
-<browser> on <os> (<method>)`, linking to Profile → Sessions.
+`session_ended` there in the same way.
 
-- **In the dashboard** the `security` notification is always there: it
-  has no browser or mail switch that hides it from the bell, and it
-  counts in `counts.security` (not in `total`).
-- **Who may confirm it, and who may mark it read.** A sign-in is
-  confirmed, and its `session_created` item marked read, only from a
-  session that **existed before** the sign-in it reports — never from
-  the session it reports on, and never from any session created after
-  it — and only when that earlier session is itself in good standing
+**A sign-in is no notification.** `session_created` is not listed in
+the bell, counts in no `counts` and has nothing to mark read; nor does
+it give a browser notification (§18.8). This is the maintainer's
+decision of 2026-11-04, which replaced the `security` item of a new
+sign-in: an alert that only a session older than the sign-in could mark
+read stayed unread for 90 days once those sessions had ended. What
+tells the human of a new sign-in instead, each kept as before unless
+said here:
+
+- the **mail** (below), by `email.kinds.security.mode`;
+- the **banner** of a mail sign-in in every other session (below);
+- **Profile → Sessions**, which lists every session with how it was
+  made and offers "This was me", "End" and "End all other sessions"
+  (§2.6.7);
+- the **"Current sessions" box** on the Notifications page, a compact
+  list of the active sessions with a link to Profile → Sessions
+  (§18.8).
+
+A human without a verified address, or on an instance without mail,
+learns of a sign-in by password or device code only from the last two.
+
+- **Who may confirm it.** A sign-in is confirmed only from a session
+  that **existed before** the sign-in it reports — never from the
+  session it reports on, and never from any session created after it —
+  and only when that earlier session is itself in good standing
   (above). Confirming is the explicit "This was me" (`POST
-  /auth/sessions/{id}/confirm`), on the item, the banner or the session
-  in the session list; it marks the item read as well. Marking the item
-  read without confirming — through `ids`, or through `up_to` with
-  `include_security` (§18.3) — follows the same rule and confirms
-  nothing: the session stays not in good standing, and the session list
-  shows it as not confirmed until "This was me". A `POST
-  /me/notifications/read` from a session that may not mark the item
-  skips it, names it in `skipped` (§18.3) and marks the rest. So a
-  session obtained through a mailbox can hide neither its own alert nor
-  that of a second session it obtains next (by another mail sign-in, or
-  by a device code it approves). An item that no session may mark read
-  — the human had no session in good standing at the time — stays
-  listed and unread in the bell until its record expires (90 days).
-  Security items are exempt from the 30-day rule of #160 §18.2 that
-  counts older items as read: they stay listed and unread until an
-  allowed session marks them read or the record expires. Only
-  confirming grants good standing; reading, age, expiry or any other
-  automatic reading never does — a session whose own item expired
-  unconfirmed stays out of good standing.
+  /auth/sessions/{id}/confirm`), on the banner or on the session in the
+  session list. So a session obtained through a mailbox can confirm
+  neither itself nor a second session it obtains next (by another mail
+  sign-in, or by a device code it approves). Only confirming grants
+  good standing; age, expiry or any other automatic step never
+  does — a session whose record expired unconfirmed stays out of
+  good standing.
 - **Every mail sign-in is an alert** — method `email_link` or
   `email_code`, whatever device cookie the browser presented. It is
   shown in **every other session** of the human at once, not only in
@@ -1893,11 +1896,12 @@ notification of the kind `security` (#160, §18.1), title `New sign-in:
   every session the reported one approved by device code, and those
   approved by them in turn) and, in a session that may confirm it
   (above), **This was me**. The banner stays while the reported session
-  is not in good standing and it, or a session it approved, is still active —
-  whether its item is read or not, so that tidying the bell never
-  removes it; a dashboard opened later shows it too. The item carries the
-  new session's id (`target: {type: "session", id}`); the session it
-  reports on shows no banner. So a mail sign-in that an agent with
+  is not in good standing and it, or a session it approved, is still
+  active; nothing in the bell removes it, and a dashboard opened later
+  shows it too. The dashboard reads the sessions again whenever
+  `sessions_rev` of `GET /me/notifications` moves (§18.2), so a new mail
+  sign-in, or an end elsewhere, shows at once. The session it reports
+  on shows no banner. So a mail sign-in that an agent with
   mailbox access made cannot be hidden by deleting a mail, from the
   session it obtained, or from a session it obtains next (§2.3); and
   that session, not being in good standing, cannot end the human's
@@ -1909,9 +1913,9 @@ notification of the kind `security` (#160, §18.1), title `New sign-in:
   operating system and IP address of the new session and the link to
   Profile → Sessions, with the unsubscribe line for its kind (§18.5);
   never a session id, a code or a link that signs anyone in. A human
-  without a verified address, or an instance without mail, gets the
-  dashboard notification only. The mail counts against the security
-  budget (`security_max_per_hour`, #160 §16.2), not against the
+  without a verified address, or an instance without mail, gets no
+  mail; the dashboard shows the sign-in as above. The mail counts
+  against the security budget (`security_max_per_hour`, #160 §16.2), not against the
   notification budget or the sign-in mail cap; over the budget it is
   queued for the next hour, never dropped.
 
@@ -1979,8 +1983,7 @@ event; the accounts design's instance audit log records it (pending).
   "End all other sessions", and the ended sessions of the last 30 days;
   a session not in good standing (§2.6.5: neither signed in by password
   or with the second factor nor confirmed) is marked "not confirmed",
-  with "This was me" where the current session may confirm it, whether
-  its alert was read or not.
+  with "This was me" where the current session may confirm it.
 - **The mail sign-in banner** of §2.6.5 in every other open session,
   with "This was me" only where that session may confirm it.
 - **Notification settings** (#160, §18.8) gain the `security` mail switch
@@ -2491,7 +2494,7 @@ is what neither a mailbox nor an unlocked dashboard provides, which is
 the reason good standing exists. The mail factor (§2.8.8) is the
 mailbox and gives no standing of its own; such a session is in good
 standing by §2.6.5's own rules (a password sign-in, or its sign-in
-confirmed — never its alert read). The session list carries `second_factor: true | false` per
+confirmed). The session list carries `second_factor: true | false` per
 session, `true` for the mail factor too.
 
 #### 2.8.3 Recovery
@@ -2623,7 +2626,7 @@ environment winning as there:
   (how such an account first gains good standing is pending, §2.8.1).
   A session in good standing that is moved into the enrolment state
   keeps that standing for the decisions §2.6.5 ties to it, "This was
-  me" on a sign-in alert among them: beyond the calls above it reaches
+  me" among them: beyond the calls above it reaches
   `GET /me/notifications`, `POST /me/notifications/read` and
   `POST /auth/sessions/{id}/confirm`. A human with a password
   re-authenticates with it first when the session was signed in
@@ -17739,7 +17742,8 @@ when it is read or sent, from two sources, plus a read flag per human:
   runner — and kept 90 days. The types: `mail_disabled` (§18.7) and
   `email_address_changed` (§18.4); with the sign-in contract (#169,
   §2.6.5) also `session_created` and `session_ended`, shown in the
-  account's session list; `session_ended` is no notification; and with
+  account's session list; neither is a notification (§2.6.5, "A sign-in
+  is no notification"); and with
   the instances contract (#162, §7) `personal_request_created`,
   `personal_request_answered` and `personal_request_withdrawn`; and with
 registration (§2.7.5, §16.4) `registration_pending`, written for every
@@ -17784,7 +17788,7 @@ stopped while holding cards), with `project: null`, or, under `not_listening.mod
 | `inbox` | `request_created` addressed to the human (`to` resolves to them, as `to=me` in §7); `request_forwarded` that makes them the holder, or opens the request to `trust:admin` while they hold `admin` (§7, forwarding); `request_answered` and `request_withdrawn` of a request they asked; the account record `personal_request_created` of a personal request addressed to them (#162, §7), member of its project or not — among them the hub's own notices of an agent's outage (§15.7), of an unconfirmed Keep the Why commitment (§6.23) and the hourly digest of agent instances that are away (§5.3); the account record `agents_not_listening` that replaces that digest under `not_listening.mode: bell` (§18.4); the account record `registration_pending` `{human, handle}` (§16.4), written once per instance admin when a registration waits for approval; the account record `report_open` `{report, reason, type}` (§16.8), written for the instance admin for a new abuse report; the account record `moderation_applied` `{report, action, type, note}` (§16.8), written for the account a resolved report's action concerns; the account record `mail_disabled`, which the hub writes when it disables the human's address after hard failures (§18.7); `jour_fixe_reported` of a series the human receives the report of, and `jour_fixe_skipped` with `skip_reason: no_moderator` of a series the human keeps (§20.2, §20.9) | the addressee; the asker; for `registration_pending` every instance admin and nobody else; for `report_open` the instance admin (§16.4) and nobody else; for `moderation_applied` the account the action concerns, never the reporter; for `mail_disabled` and `agents_not_listening` the human; for `jour_fixe_reported` each human report recipient of the series (§20.2) who may read the round (§20.7), for the `no_moderator` skip each human keeper of the series | `<asker> asks: <request title>`, or the request title alone for one the hub files with `asked_by: null` (the digest, §5.3); `<n> of your agent instances are not listening`, or `<n> of your agent instances are away` when a stalled holder is among them (§5.3), linking to `/agents`, for `agents_not_listening`; `<who> answered: <request title>`; `<who> withdrew: <request title>`; `<handle> waits for approval`, linking to Admin → Registration; `Report: <reason> — <type>`, linking to the report in Admin → Reports; `Moderation: <action> — <type>`, then `: <note>` when there is one, linking to the account page; `Mail to <address> disabled after 3 failures`, linking to the notification settings; `Jour fixe report: <topic>`, linking to the round; `Jour fixe skipped, nobody to moderate: <topic>`, linking to the series' moderators |
 | `chat` | `message` of type `chat` from the other party of a direct conversation (§9), or from another participant of a group chat (§9.2) | the human party or participant; never an observer, never the writer | `<writer> in <conversation title or agent handle>` |
 | `mention` | a `message` (types other than `chat`) whose audience names the human by mention; a `mentioned` event; a mention in a group chat (§9.2) | the mentioned human, never for a self-mention | `<writer> mentioned you in <card title / conversation>` |
-| `security` | the account records `session_created` (#169, §2.6.5) and `email_address_changed` (§18.4); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `New sign-in: <browser> on <os> (<method>)`; `Sign-in address changed`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>`; `Forge access added: <account login> (<source>)` |
+| `security` | the account record `email_address_changed` (§18.4); `second_factor_changed` and `second_factor_failed` (§2.8); `forge_access_changed` with `change` `linked` or `token_set` (§11.4) | the human | `Sign-in address changed`; `Two-factor sign-in turned on` / `turned off` / `New recovery codes` / `Recovery code used` / `Two-factor sign-in reset by <admin>` / `Two-factor sign-in turned off for this instance`; `Wrong second-factor codes after a sign-in: <browser> on <os>, <ip>`; `Forge access added: <account login> (<source>)` |
 
 The two jour fixe items are ordinary items: read by their read flag,
 mailed as the `inbox` mail mode says (§18.4), listed for 30 days, and
@@ -17846,7 +17850,7 @@ no membership.
 | `unread` | `true`: unread items only |
 | `kind`, `project` | filters; comma lists. `kind` takes `inbox`, `chat`, `mention`, `security`; any other value is `invalid` with `details.fields.kind: "unknown"` |
 | `after` | an opaque position (below), the `next_after` of an earlier answer passed back unchanged: only items past it, oldest first — for the browser notifications (§18.8) |
-| `wait` | 0–55 with `after`: hold the request until an item past `after` exists, as §8.3. A cookie session holds one such long-poll beside its one events long-poll; a second one supersedes the first (`superseded: true`) |
+| `wait` | 0–55 with `after`: hold the request until an item past `after` exists, or a session record (`sessions_rev`, below), as §8.3. A cookie session holds one such long-poll beside its one events long-poll; a second one supersedes the first (`superseded: true`) |
 
 ```json
 {
@@ -17872,6 +17876,7 @@ no membership.
       "read": true, "redacted": false }
   ],
   "pinned": [],
+  "sessions_rev": "<opaque revision>",
   "next_cursor": null,
   "next_after": "<opaque position>",
   "server_time": "2026-10-22T13:10:05Z"
@@ -17892,6 +17897,22 @@ human with more than 50 unread security items sees the newest 50, and
 human are not pinned: they have their own inbox and count in
 `counts.inbox` (§18.1). The maintainer's decision of 2026-11-02
 (`context/notifications.md`).
+
+**Sessions.** `sessions_rev` is an opaque string that changes with
+every `session_created` or `session_ended` record of the human
+(§2.6.5), `null` when there is none in the 90 days records are kept.
+The hub derives it from the newest such record's number, not from its
+`at`: two records may share an `at`, which has second precision (§1)
+and is only kept from decreasing (below), while their numbers always
+differ. Clients only compare it with the last one they
+saw; like a position, it is never built or parsed. It is in every answer, with
+`after` too, and no item stands for those records. A long-poll with
+`after` and `wait` also returns when such a record past `after` is
+written: it then lists no item for it, and its `next_after` and
+`sessions_rev` have moved. The dashboard reads the sessions again when
+`sessions_rev` moves, for the banner of a mail sign-in and the "Current
+sessions" box (§18.8). A session that only expires writes no record and
+moves nothing; the next read of the sessions shows it ended.
 
 **Positions.** A place in the list is a **position**: an opaque
 string the hub hands out as `next_after` and takes back as `after` and
@@ -18073,7 +18094,7 @@ rules that make a position safe to resume from:
   `registration_pending`, `report_open`, `mail_disabled` and `agents_not_listening`
   items, which stay listed while their matter is open (§18.1), however old, and are read once it
   is closed. No
-  reading — by age or by a marking — grants a session good standing;
+  item read — by age or by a marking — grants a session good standing;
   only confirming its sign-in does (§2.6.5). `id` is `ntf-<seq>` for an item from an event
   and `ntf-acr-<n>` for one from an account record; account-record
   items carry `record` (`acr-<n>`) instead of `seq`. A personal request's
@@ -18096,7 +18117,7 @@ rules that make a position safe to resume from:
   `report_open` record: the report's id, linking to Admin → Reports),
   `moderation` (a `moderation_applied` record: the report's id, which
   the account cannot open, linking to the account page), and for
-  the other account records `session` or `settings` (`mail_disabled`
+  the other account records `settings` (`mail_disabled`
   included), `project` `null`
   on those (a personal request's record targets its `request`, above)
   — and
@@ -18135,19 +18156,21 @@ requests stay open (§18.2). A `kind`
 that is not one of them is `invalid` as in §18.2.
 
 **Security items.** Reading a `security` item never confirms anything:
-a sign-in is confirmed only by "This was me" (`POST
-/auth/sessions/{id}/confirm`, §2.6.5), and good standing follows from
-that confirmation, never from a read flag. A `security` item is marked
+a sign-in, which is no item (§2.6.5), is confirmed only by "This was
+me" (`POST /auth/sessions/{id}/confirm`), and good standing follows
+from that confirmation, never from a read flag. A `security` item is marked
 read through `ids`, or through `up_to` with `include_security: true`
 ("mark all read" after the dashboard's confirm, §18.8); `up_to` without
-it skips every `security` item, as before. An item about a new session
-(`session_created`, #169 §2.6.5) is marked read only from a session
-that existed before that sign-in and is itself in good standing (§2.6.5)
-— never from the session it reports on and never from a session created
-after it; `email_address_changed` follows the same rule, with the
-change in place of the sign-in. The other `security` kinds may be
-marked read from any session of the human. An item the calling session
-may not mark is skipped, the rest of the call applies, and the answer
+it skips every `security` item, as before. An item about an address
+change (`email_address_changed`, §18.4) is marked read only from a
+session that existed before the change and is itself in good standing
+(§2.6.5), never from a session created after it. Once every session
+older than the change has ended, it stays unread until its record
+expires (90 days). That is the dead end the sign-in alert had before
+2026-11-04, kept here on purpose because address changes are rare (the
+lead's decision of 2026-11-04, `context/notifications.md`). The other
+`security` kinds may be marked read from any session of the human. An
+item the calling session may not mark is skipped, the rest of the call applies, and the answer
 names it:
 
 ```json
@@ -18158,12 +18181,13 @@ names it:
 `skipped` lists every `security` item the call named or covered and
 did not mark, with one `reason`, checked in the order of `POST
 /auth/sessions/{id}/confirm` (§2.6.5): `not_earlier` (the calling
-session is the one the item reports on, or was created after it), else
+session was created after the address change), else
 `not_in_good_standing` (the calling session is not in good standing,
-§2.6.5); `[]` when none. The dashboard says which
-alerts are left and why — "confirm this sign-in from a session that is
-older than it" — so a count that does not go to zero is explained
-(the lead's addition of 2026-11-02). An `ids` entry for an item the
+§2.6.5); `[]` when none. Both reasons now concern only
+`email_address_changed`. The dashboard says which alerts are left and
+why ("only a session older than the change may mark it"), so a count
+that does not go to zero is explained (the lead's addition of
+2026-11-02). An `ids` entry for an item the
 human has no item for, or for an open matter (below), is not listed
 there: it is ignored, as before. Answers `200` with the counts of
 §18.2 and `skipped`. No event: reading is not news to anyone.
@@ -18313,7 +18337,7 @@ device; the browser's own permission is per browser and is not stored.
   plus good standing: only a session in good standing and at least 24
   hours old approves the change, so a session obtained a moment ago
   cannot, and one that waits a day still cannot while its sign-in is
-  not confirmed, read or not (#169 §2.6.5); nor can it reject or replace a change
+  not confirmed (#169 §2.6.5); nor can it reject or replace a change
   the human filed. `address_status`:
   `none`, `pending` (an address, never verified), `verified`,
   `disabled` (§18.7). Setting the address again, also the same one,
@@ -18340,10 +18364,10 @@ device; the browser's own permission is per browser and is not stored.
   `immediate`; `mention`, `chat` and every kind added later `daily`.
   The `inbox` mode never covers a `registration_pending` or
   `mail_disabled` item: neither is mailed (§18.1). What the `security`
-  mode governs is the alert of a new sign-in (`session_created`,
-  §2.6.5): an `immediate` one is not held by quiet hours, one the human
-  put in a digest goes out with that digest, `off` sends none. The
-  other `security` items are dashboard-only (`forge_access_changed`,
+  mode governs is the mail of a new sign-in (`session_created`, §2.6.5,
+  which since 2026-11-04 is no item in the dashboard): an `immediate`
+  one is not held by quiet hours, one the human put in a digest goes
+  out with that digest, `off` sends none. The other `security` items are dashboard-only (`forge_access_changed`,
   `email_address_changed`) or go out at once (below).
 - **At once, whatever the mode.** These mails warn of a takeover under
   way or answer something the human did, so no mode, digest, quiet
@@ -18533,19 +18557,23 @@ mail.
   title is `(<total>) maity`. The bell opens the latest items (`limit=20`),
   each linking to its `url`, unread ones marked, with "mark all read"
   and a filter "unread only" (`unread=true`, §18.2). Above the list
-  stands the block of `pinned` security items, whatever their age: a
-  sign-in alert with "This was me" while its session is active and not
-  in good standing and the current session may confirm it (§2.6.5);
-  every other one — a sign-in already in good standing or ended, and
-  every other kind — with "Mark read", which the sessions of §18.3 may
-  use. When unread security
+  stands the block of `pinned` security items, whatever their age, each
+  with "Mark read", which the sessions of §18.3 may use. A sign-in is
+  none of them (§2.6.5). When unread security
   items are among what "mark all read" covers, the dashboard first asks,
-  listing each (time, place, browser): "2 sign-in alerts are included.
-  Marking them read does not confirm them. Mark all read anyway?";
-  confirmed, it sends `up_to` with `include_security: true`, declined,
-  nothing. It then shows what `skipped` names, with the reason
-  (§18.3). A sign-in read but not confirmed stays "not confirmed" in
-  Profile → Sessions until "This was me".
+  listing each (time, what): "2 security alerts are included. Mark all
+  read anyway?"; confirmed, it sends `up_to` with `include_security:
+  true`, declined, nothing. It then shows what `skipped` names, with the
+  reason (§18.3).
+- **"Current sessions".** The Notifications page shows, above the list,
+  a small box of the human's active sessions, read from `GET
+  /auth/sessions`: per session the browser and operating system, the
+  method, when it signed in, "this session" for the current one and
+  "not confirmed" for one not in good standing, newest first, at most
+  five with "and N more". The box links to Profile → Sessions, where
+  sessions are ended and confirmed; the box itself has no buttons. It
+  is read when the page opens and again whenever `sessions_rev` moves
+  (§18.2). It counts in no badge and has no unread state.
 - **Stage 2 — browser notifications.** While a dashboard tab is open,
   also in the background, it long-polls `GET /me/notifications?after=<position>&wait=55`,
   `<position>` being the `next_after` of the previous answer as an
