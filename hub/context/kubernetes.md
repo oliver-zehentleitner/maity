@@ -372,8 +372,10 @@ is written. A restore decrypts where the private key is: the dump is
 decrypted to a file there and read whole with `pg_restore -f /dev/null`
 before it goes to `pg_restore --clean` over `kubectl exec` (a listing reads
 only the start and passes a cut-off dump), and the tar is checked to
-reach its end-of-archive block (`tar -tR` with GNU tar; a plain listing
-passes a tar cut off between two files) and streamed with its SHA-256
+read without an error and to reach its end-of-archive block (`tar -tR`
+with GNU tar, its listing written to a file since `sh` has no
+`pipefail`; a plain listing passes a tar cut off between two files)
+and streamed with its SHA-256
 into a restore Job that waits for it. Both run as one block each that
 stops before the cluster when the decryption or the check of the file
 fails. The Job keeps the stream in a scratch volume and empties the
