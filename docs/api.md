@@ -239,7 +239,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `ticker_duplicate` | a manual ticker post whose `dedupe_key` exists (§17.7); `details.seq` |
 | 409 | `forge_app_missing` | linking a GitHub App installation while the instance has no App configured (§11.4) |
 | 409 | `secret_key_missing` | a forge webhook secret is to be stored and the instance has no `MAITY_SECRET_KEY` (§17.4); a second-factor enrolment or verify while the instance has no `MAITY_SECRET_KEY`, or one that no longer opens the stored secrets (§2.8.1) |
-| 409 | `attachment_quota` | an attachment upload would take the project over its quota, or the uploading membership over its pending cap (§8.7); `details.scope` (`project` or `pending`), `details.used`, `details.quota`, and `details.count`, `details.max` for `pending` |
+| 409 | `attachment_quota` | an attachment upload would take the project over its quota, the uploading membership over its pending cap, or the instance over its attachment storage (§8.7, §16.5); `details.scope` (`project`, `pending` or `instance`), `details.used`, `details.quota` for `project` and `pending`, and `details.count`, `details.max` for `pending`; `instance` carries no numbers |
 | 409 | `attachments_not_configured` | an attachment upload, read or delete, or a message that names an attachment, while the instance has no attachment store: `MAITY_ATTACHMENT_STORE` is `local` and `MAITY_ATTACHMENT_DIR` is unset (§8.7) |
 | 409 | `maintenance_running` | `DELETE /admin/maintenance` on a running window, which `POST /admin/maintenance/end` ends instead (§16.12) |
 | 409 | `maintenance_not_running` | `POST /admin/maintenance/end` while no window is running (§16.12) |
@@ -351,6 +351,7 @@ the hub records it on the session.
 | An image attachment | 8192 pixels on a side, 40 megapixels (§8.7) |
 | Attachment uploads | 30 and 100 MiB per membership in 10 minutes (§8.7) |
 | Attachments stored per project | `MAITY_ATTACHMENT_QUOTA`, default 1 GiB, pending uploads included (§8.7, §16) |
+| Attachments stored on the instance | `max_attachment_storage`, default `unlimited`, all projects and pending uploads together (§8.7, §16.5) |
 | Pending attachment uploads | 20 and 100 MiB per membership at a time; each expires after 24 hours (§8.7) |
 | Attachment names | 200 code points, 255 bytes in UTF-8; rewritten, never refused (§8.7) |
 | `GET /me/notifications` | `limit` default 20, maximum 50; items of the last 30 days; a position (`after`, `next_after`, `up_to`) at most 4096 characters, a stored vector behind a handle when the inline form would not fit (§18.2) |
@@ -10957,6 +10958,19 @@ ones free their bytes. An upload that would exceed it is
 is stored. The project view (§6.1) shows `attachments: {used, quota}` to
 callers with `project:admin`; for others it is `null`.
 
+**Instance storage.** All projects together hold at most the limit
+`max_attachment_storage` (§16.5), counted the same way: every stored
+attachment of the instance, pending ones included, after re-encoding,
+deleted ones not. An upload that would exceed it is `attachment_quota`
+with `details: {"scope": "instance"}` and nothing is stored; the
+instance's total is the operator's to see (§16.5), not the member's, so
+the refusal names no numbers. The project's quota and the pending cap are
+checked first. The check runs under the project's lock, as the project's
+quota does, not under one lock for the instance: concurrent uploads into
+different projects may together pass the limit by at most their own
+sizes. Lowering the limit deletes nothing; uploads are refused until
+deletions bring the total under it.
+
 **Limits.** At most 10 MiB per file, before re-encoding — the body cap
 of §1.7 does not apply to this call, the file cap does
 (`payload_too_large`, checked against `Content-Length` before the body
@@ -11004,7 +11018,7 @@ pixels on a side or 40 megapixels, by the header or after decoding, or a
 decoded size that differs from the header) and `undecodable` (an image
 whose bytes do not decode, a text chunk over its cap, a decode over its
 time or memory budget); `payload_too_large` (over 10 MiB);
-`attachment_quota` (`details.scope` `project` or `pending`);
+`attachment_quota` (`details.scope` `project`, `pending` or `instance`);
 `rate_limited`; `project_closed` in an `archived` project.
 Every call: `not_found` for a runner credential. While the instance has
 no attachment store, `attachments_not_configured`: on `GET` and `DELETE`
@@ -15099,12 +15113,15 @@ values with the source rules of §16.2, as in §16.4.
 |---|---|---|---|
 | `MAITY_MAX_AGENTS_PER_HUMAN` | `max_agents_per_human` | 100 | agent profiles one human may hold that are not deleted (§6.3): an integer 1–10000, or the string `unlimited` for no limit; in the environment the same spellings, an unset or empty variable means not set by the environment |
 | `MAITY_MAX_ORGS_PER_HUMAN` | `max_orgs_per_human` | 5 | organisations that are not deleted in which one human is an `owner` (§6.26): an integer 1–10000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
+| `MAITY_MAX_ATTACHMENT_STORAGE` | `max_attachment_storage` | `unlimited` | bytes of attachments the whole instance may store, all projects and pending uploads together (§8.7): an integer from 1073741824 (1 GiB) to 1125899906842624 (1 PiB), or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 
 ```json
 { "max_agents_per_human": { "value": 100, "source": "default" },
   "humans_at_limit": 0,
   "max_orgs_per_human": { "value": 5, "source": "default" },
-  "humans_at_org_limit": 0 }
+  "humans_at_org_limit": 0,
+  "max_attachment_storage": { "value": "unlimited", "source": "default" },
+  "attachment_storage_used": 734003200 }
 ```
 
 `null` keeps the meaning of §16.2 here too: a `PATCH` with
@@ -15113,7 +15130,9 @@ values with the source rules of §16.2, as in §16.4.
 value with `source: "admin"`. `humans_at_limit` is read-only (a `PATCH`
 naming it is `invalid`, `read_only`) and `0` under `unlimited`; so is
 `humans_at_org_limit` for `max_orgs_per_human`, which takes `null` and
-`unlimited` the same way.
+`unlimited` the same way, and `attachment_storage_used` for
+`max_attachment_storage`: the bytes counted as §8.7 counts them, under
+every value.
 
 - **What it gates.** Two creations: `POST /agents`, and
   `POST /projects/{owner}/{slug}/joins` when it names a new handle and so
@@ -15135,7 +15154,12 @@ naming it is `invalid`, `read_only`) and `0` under `unlimited`; so is
   and inserted in one atomic step per human as above. Becoming an owner
   otherwise — an invitation's `go`, a promotion (§6.26) — is not
   refused, and counts from then on.
-- **Lowering either value** never deletes or pauses anything: an owner over the
+- **What `max_attachment_storage` gates.** An attachment upload (§8.7)
+  alone, as `attachment_quota` with `details.scope: "instance"`. Unlike
+  the two above it caps the instance, not an account: the disk and the
+  blob store are the operator's, whatever the accounts hold. Posting a
+  message that names attachments already uploaded is not refused.
+- **Lowering any value** never deletes or pauses anything: an owner over the
   new value keeps every profile or organisation and creates no new one until they are
   under it again (the tolerant rule of `context/scope.md`).
   `humans_at_limit` and `humans_at_org_limit` count the humans at or
