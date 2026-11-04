@@ -4684,8 +4684,9 @@ frame at `/login` and `/register` alone; why it lost is inferred, not stated: th
 the same form in two designs depending on the address.
 
 **Reason:** `landing.css` sets `:root`'s tokens, `body`, headings and links for the whole
-document, so it may not stay on under the app. Turning it off by route in one place catches every
-view without each one knowing about the frame. The app's `#header` rules (sticky, its own
+document, so it may not stay on under the app. Once a session is known, `render()` takes the
+frame down in one place before any view draws; without one, it stays standing while the view is
+decided, and each view that is not the sign-in or registration leaves it itself. The app's `#header` rules (sticky, its own
 background and padding) would beat `.site-header` by specificity, so the frame does not reuse
 that element.
 
@@ -4697,8 +4698,7 @@ frame's header into `#header`: the specificity fight above, and an override per 
 form until the frame is read: sign-in may never depend on that call (§16.7.4).
 
 The frame's footer stands in place of the dashboard's product line (§16.13). `render()` hands
-its wish to `M.siteChrome.line()`. A signed-out drawing of /login or /register holds the line
-back, and so does every read `enter()` starts, also one a page starts without `render()` (the
+its wish to `M.siteChrome.line()`. A drawing without a known session holds the line back, and so does every read `enter()` starts, also one a page starts without `render()` (the
 login's language picker), until that read decides. The line stays away while a frame stands. It comes back only
 where the frame is left (`leave()`) or not drawn (a failed read, a model without header or
 footer, which both run `drop()`). The choice itself is confirmed: the maintainer's decision

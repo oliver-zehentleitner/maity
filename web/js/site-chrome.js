@@ -1,10 +1,10 @@
 // The frame of the pages without a session (docs/api.md §16.7.5): the landing page's header and
-// full footer around /login and /register, from GET /site/chrome in the page's language, with
+// full footer around the sign-in and registration wherever they are drawn without a session, from GET /site/chrome in the page's language, with
 // the landing page's two stylesheets under /assets/landing/. The hub draws the same frame around
 // its landing and legal pages from the same model (hub/src/maity_hub/render.py), so the markup
 // here is that file's. The stylesheets are on only while such a page stands: landing.css sets
-// :root, body, headings and links for the whole document, so every other view turns them off
-// (app.js render). A failed read draws the page without header and footer, as sign-in never
+// :root, body, headings and links for the whole document, so every other view leaves the frame
+// (app.js render: in one place once a session is known, else in each view that is not the door). A failed read draws the page without header and footer, as sign-in never
 // depends on this call (§16.7.4); the door's own layout still comes from public-pages.css.
 "use strict";
 
@@ -49,7 +49,7 @@ window.Maity = window.Maity || {};
   }
 
   // The product line (§16.13) stands where render() wants it (not under a stored hub page), and
-  // neither a frame footer stands nor a drawing of /login or /register waits to learn whether
+  // neither a frame footer stands nor a drawing without a known session waits to learn whether
   // it gets one: the landing page's footer takes its place (req-5k1gvfsmcg9k). So it shows
   // neither while a read is pending, on the way in or between the frame's pages, nor once the
   // frame stands, and comes back where the frame is left or not drawn (a failed read, a model
