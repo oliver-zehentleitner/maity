@@ -8579,9 +8579,21 @@
     "en": "6668e63fcd9baf7c",
     "text": "808c4b71eb0fe152"
   },
+  "members.consent.boss_owner": {
+    "en": "67bcb9642a4bf5da",
+    "text": "1ae41430f286d7f3"
+  },
   "members.consent.owner": {
     "en": "047bc6695c7c32bb",
     "text": "7ae142887e069e43"
+  },
+  "members.consent.partly": {
+    "en": "8eb3165c4a21b419",
+    "text": "e123fdef7fdd3097"
+  },
+  "members.consent.partly_titled": {
+    "en": "c29dc307ee6a7253",
+    "text": "6d1af6cf6b110248"
   },
   "members.consent.waiting": {
     "en": "f6922d1c4d43b714",

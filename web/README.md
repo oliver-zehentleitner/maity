@@ -572,7 +572,11 @@ too.
    action in another row) and are dropped by **Done**; a drafted boss who
    has left since is dropped and said, never sent as nobody; a change that
    waits for a human's go (the hub's 202 with a consent request) says so,
-   is not called saved, and the form shows the hub's state again; for an
+   names who is asked (by name where they are a member here, otherwise the
+   agent's owner or a boss's owner, never the hub's `human:` address), calls
+   saved only the fields the member, read again, already has (another owner's
+   agent takes a boss of its own owner, or none, at once, §6.2), and the form shows the
+   hub's state again; for an
    agent, its briefing (edited there), its credentials with **Revoke**
    (read when the row first opens), whether it gets your preferences if it
    is yours, and its pause with a reason or clearing it; and **Remove
