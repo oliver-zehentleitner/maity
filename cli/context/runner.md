@@ -1419,7 +1419,8 @@ it bounded. git that gh starts
 is not maity's and is not checked. Outside a placement nothing changes.
 
 **Reason:** under the runner, maity's git runs outside the agent's
-sandbox, in a clone whose configuration the agent writes. The pinned
+sandbox for Claude Code (inside it for Codex), in a clone whose
+configuration the agent writes. The pinned
 settings on maity's command line cover the settings known to matter;
 the plain-clone check covers what is not enumerated, as it already does
 for `gc`. Only the runner can say which clone is the agent's, and it
@@ -1427,8 +1428,11 @@ says so through `GIT_COMMON_DIR`; the current directory could be any
 repository the agent made. The agent works in the clone while maity
 runs, so a check followed by git reading the clone's own configuration
 leaves a window in which that configuration changes; git reading only
-what maity wrote closes it. maity's own git under the runner only
-reads, so every call can run that way.
+what maity wrote closes it for what git runs. Objects stay the clone's,
+read where the agent can write: a redirect to another object store
+placed there after the check is followed, which is data git reads, not
+a program it starts. maity's own git under the runner only reads, so
+every call can run that way.
 
 **Rejected alternatives:**
 - Passing maity's own environment on to git: a variable set on the

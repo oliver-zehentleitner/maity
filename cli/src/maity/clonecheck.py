@@ -449,6 +449,9 @@ def _copy_refs_by_path(dot_git: Path, private: Path) -> None:
         for name in ("packed-refs", "shallow"):
             if (dot_git / name).exists():
                 (private / name).write_bytes(_plain_file(dot_git / name, PACKED_REFS_MAX))
+        refs = (dot_git / "refs").lstat()
+        if not stat.S_ISDIR(refs.st_mode) or getattr(refs, "st_file_attributes", 0) & 0x400:
+            raise Refused("the clone's .git/refs is not a directory")
         count = 0
         for here, dirs, files in os.walk(dot_git / "refs"):  # does not descend into links
             where = private / Path(here).relative_to(dot_git)
