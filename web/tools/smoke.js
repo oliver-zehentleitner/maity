@@ -11665,6 +11665,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "limits: the storage is sent in bytes and shown in GiB " + JSON.stringify(lmPatches));
   await lmSubmit();
   expect(lmPatches.length === 4 && text(lmSection()).includes("Nothing changed."), "limits: a number left as it was is not sent again");
+  // A stored storage value that is no whole GiB (set in bytes) is shown rounded and kept: the form still saves another field.
+  await lmPatch("/admin/settings/limits", { max_attachment_storage: 1.5 * 1024 ** 3 });
+  byId("limits-max_agents_per_human-mode").value = "number"; byId("limits-max_agents_per_human-mode").dispatch("change");
+  byId("limits-max_agents_per_human").value = "300";
+  await lmSubmit(); // the redraw reads the 1.5 GiB from the hub's answer
+  expect(lmPatches.length === 5 && byId("limits-max_attachment_storage").value === "1.5", "limits: a storage value of 1.5 GiB is shown rounded " + JSON.stringify(lmPatches));
+  byId("limits-max_agents_per_human").value = "301";
+  await lmSubmit();
+  expect(JSON.stringify(lmPatches[5]) === JSON.stringify({ max_agents_per_human: 301 }) && text(lmSection()).includes("Saved."),
+    "limits: with 1.5 GiB stored, another field saves and the storage is not sent " + JSON.stringify(lmPatches));
   // A refusal naming only a field this form does not show is said in the status line, not swallowed.
   win.Maity.api.patch = () => Promise.reject(new win.Maity.api.ApiError("the request does not validate", 400, "/admin/settings/limits", "invalid", { fields: { max_bots: "extra_forbidden" } }));
   byId("limits-max_agents_per_human-mode").value = "unlimited"; byId("limits-max_agents_per_human-mode").dispatch("change");
