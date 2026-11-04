@@ -72,9 +72,16 @@ window.Maity = window.Maity || {};
   // The address one is at already changes nothing, as a link to the same
   // fragment did: no second entry, no view drawn again under a form.
   // True when the address changed (and the view follows), false otherwise.
+  // With quiet the current entry is changed and no view drawn again: a query the page already
+  // follows (the page's language, js/i18n.js). Over http(s) the place after `#` stays.
   function go(path, opts) {
+    const quiet = !!(opts && opts.quiet);
     const replace = !!(opts && opts.replace);
     if (path === here()) return false;
+    if (quiet) {
+      window.history.replaceState(window.history.state, "", fixture ? "#" + path : path + window.location.hash);
+      return true;
+    }
     if (fixture) {
       // hashchange draws the view.
       if (replace) window.location.replace("#" + path);
