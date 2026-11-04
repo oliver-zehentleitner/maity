@@ -1034,13 +1034,15 @@ needs it.
 | `ssh` | the remote user's files on that host, minus that user's home secrets, its `~/.maity-runner` and the other clones' credentials listed on the host; never the runner host | run git as the remote user in an agent's clone |
 
 **Claude Code's sandbox and injected text.** maity runs outside Claude
-Code's sandbox, so under the runner that sandbox is no boundary against
-an agent acting on text written to mislead it: a command placed in front
-of a `maity` call can run outside the sandbox too. In the `single`
-layout it then runs as the operator's account, in `agent_user` as the
-agents' user's account. Run agents that read untrusted text (issues,
-pull requests, web pages) in the `agent_user` layout, which keeps your
-own account out of their reach.
+Code's sandbox, as a plain `maity …` call. A command, a variable or a
+PATH placed in front of that call is refused by the runner's permission
+rules and, past them, runs inside the sandbox: checked with Claude Code
+2.1.318. That does not hold if a harness version ever starts such a
+prefixed call outside its sandbox; it would then run as the operator's
+account in the `single` layout, as the agents' user's account in
+`agent_user`. Run agents that read untrusted text (issues, pull
+requests, web pages) in the `agent_user` layout, which keeps your own
+account out of their reach either way.
 
 The runner itself runs git in a clone only to clone into a missing
 directory and in `gc`, with the pinned environment and the layout check
