@@ -36,8 +36,9 @@ window.Maity = window.Maity || {};
   const QUICK_MS = 1000;
   const PAUSE_MS = 30 * 1000;
 
-  // counts: null until read.
-  const state = { counts: null, byProject: {}, settings: null };
+  // counts: null until read. sessionsRev: the hub's `sessions_rev` (§18.2), which moves
+  // with every sign-in and end; the banner and the "Current sessions" box follow it.
+  const state = { counts: null, byProject: {}, settings: null, sessionsRev: null };
 
   // The page's address for an item, from its target. Account records lead
   // to the account: a sign-in to its sessions, the settings to the
@@ -82,6 +83,7 @@ window.Maity = window.Maity || {};
     const answer = await M.api.get("/me/notifications?limit=0");
     state.counts = answer.counts;
     state.byProject = answer.by_project || {};
+    if ("sessions_rev" in answer) state.sessionsRev = answer.sessions_rev;
     changed();
     return state;
   }
@@ -354,6 +356,7 @@ window.Maity = window.Maity || {};
             after = head.next_after;
             state.counts = head.counts || state.counts;
             state.byProject = head.by_project || state.byProject;
+            if ("sessions_rev" in head) state.sessionsRev = head.sessions_rev;
           }
           if (!wanted() || halted) break;
           const cancel = typeof AbortController === "function" ? new AbortController() : null;
@@ -382,6 +385,7 @@ window.Maity = window.Maity || {};
         if (answer.next_after) after = answer.next_after;
         state.counts = answer.counts || state.counts;
         state.byProject = answer.by_project || state.byProject;
+        if ("sessions_rev" in answer) state.sessionsRev = answer.sessions_rev;
         // Refresh the snapshot, including removals/read flags; never insert a
         // long-poll item into a request form or assume its count is complete.
         changed();

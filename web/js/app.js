@@ -1657,10 +1657,10 @@ window.Maity = window.Maity || {};
         renderBell(ctx);
         renderTabCounts(ctx);
         document.title = M.notify.title(baseTitle);
-        // While the banner stands, or when the security count moved (a
-        // sign-in, a confirm elsewhere): the banner is built again, so an
-        // approved session ending elsewhere shows at once (§2.6.5).
-        if (bannerShown || securityCount() !== bannerFor) renderBanner(ctx);
+        // While the banner stands, or when `sessions_rev` moved (a sign-in,
+        // an end elsewhere): the banner is built again, so an approved
+        // session ending elsewhere shows at once (§2.6.5).
+        if (bannerShown || sessionsRev() !== bannerFor) renderBanner(ctx);
       },
     };
     if (where.scope !== "project") return ctx;
@@ -1850,17 +1850,17 @@ window.Maity = window.Maity || {};
 
   let renderSeq = 0;
   // The mail sign-in banner (§2.6.5) at the top of the page: built when the
-  // page renders, and again while it stands or when the count of unread
-  // security alerts changes. It follows the sessions, read or not.
-  let bannerFor = 0;
+  // page renders, and again while it stands or when `sessions_rev` moves (a
+  // sign-in or an end, §18.2); a sign-in is no bell item to count.
+  let bannerFor = null;
   let bannerShown = false;
   let bannerSeq = 0;
-  const securityCount = () => (M.notify.state.counts ? M.notify.state.counts.security || 0 : 0);
+  const sessionsRev = () => M.notify.state.sessionsRev;
   function renderBanner(ctx) {
     if (!M.sessions || !ctx.me || ctx.me.kind !== "human") return; // a human's sessions only
     const main = document.getElementById("main");
     const seq = ++bannerSeq;
-    bannerFor = securityCount();
+    bannerFor = sessionsRev();
     const drop = () => { const old = main.querySelector(".signin-banner"); if (old) main.removeChild(old); };
     M.sessions.banner(ctx, () => render()).then((b) => {
       if (seq !== bannerSeq) return;
