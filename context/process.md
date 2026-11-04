@@ -1261,13 +1261,14 @@ accounts, so they carry no names, addresses or tokens: `web/index.html`
 opened as a file, at `#/new`, `#/all` and `#/maintainer/maity/board`, in
 Chromium (Playwright) at 1280 px with a device scale of 2, the light
 scheme and the clock in UTC (the inbox shows its times in the browser's
-zone). For the inbox and the form, the sign-in notice is answered with
-**This was me** first, and injected CSS hides the "Fixtures" badge
-(`.source`) and any `.flag`; after the answer the two pages have no
-`.flag` left. The inbox is cut 24 px below its first entry's button row,
-the form just below the Project memory hint. The board is from the
-pull request's first set, cut at 760 px and taken without hiding `.flag`:
-it shows a card's "Waits for an answer" box. Each is scaled to 1600 px
+zone). For all three, the sign-in notice is answered with **This was
+me** first and injected CSS hides the "Fixtures" badge (`.source`). For
+the inbox and the form it also hides any `.flag`; after the answer those
+two pages have none left. The inbox is cut 24 px below its first entry's
+button row, the form just below the Project memory hint. The board, from
+the pull request's first set, is the 1280 × 760 px viewport from the
+top, with no `.flag` hidden, so it shows a card's "Waits for an answer"
+box. Each is scaled to 1600 px
 wide and reduced to 256 colours (libimagequant, then oxipng level 4)
 before it is committed: about 290 KB for three instead of 734 KB, since
 every version stays in the history. The designer's script is not in
