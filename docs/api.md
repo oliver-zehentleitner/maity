@@ -15308,7 +15308,15 @@ same header and footer (§16.7.5).
   `details.fields` naming it, while HTML inside fenced code is text and
   stays inert. A link follows the `href` rule above; anything else
   (`http`, `javascript`, `data`, a protocol-relative `//`, credentials
-  in the URL, a lookalike prefix) is `invalid` the same way. The text
+  in the URL, a lookalike prefix) is `invalid` the same way. The hub
+  renders every Markdown text it shows, the operator's and a member's
+  (§16.9), in time bounded by the text's length: a link is
+  `[text](target)` or `[text](target title)` on one line, the title
+  after a space or a tab, its target and title each at most **2048**
+  characters and without `[`, else its brackets are text; quotes nest
+  at most **8** deep, as on the dashboard: the lines of a ninth quote
+  are a paragraph in the eighth, without their own `>`, and any deeper
+  `>` stays text. The text
   is the operator's and is shown as written; it is not a mention and
   not an instruction to anyone (§8.6, `docs/agents.md`).
 - **Control characters.** No text field holds a C0 control character
@@ -15354,7 +15362,11 @@ same header and footer (§16.7.5).
   max-age=60`, `Vary: Cookie, Accept-Language`), in the visitor's
   language: `?lang=<tag>` if offered, else the best match of
   `Accept-Language`, else `default_language`; a missing field falls
-  back to the default language's page. It loads only the first-party
+  back to the default language's page. Wherever the hub chooses a
+  language from `Accept-Language`, it reads the parts wholly within
+  the header's first **1024** characters, at most **20** of them, and
+  a tag longer than **35** characters matches nothing, so the work per
+  request depends on these limits, not on the header's size. It loads only the first-party
   files of **progressive enhancement** (below). With a
   valid session, or while the landing page is disabled, `GET /` is the
   app shell (§16.11): the dashboard's home with a session, the login
