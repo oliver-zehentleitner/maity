@@ -258,3 +258,19 @@ def test_every_upstream_git_push_u_stores_still_reads(clone: Path, form: str) ->
 def test_a_malformed_pull_request_url_is_not_asked_about(clone: Path, bin_dir: Path) -> None:
     fake_gh(bin_dir, '{"state": "OPEN"}')
     assert gitfacts.pull_request_state(clone, "https://[invalid/a/b/pull/1") is None
+
+
+def test_an_empty_gh_host_names_no_host(
+    clone: Path, bin_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_gh(bin_dir, '{"state": "OPEN"}')
+    monkeypatch.setenv("GH_HOST", "")
+    assert gitfacts.gh_hosts() == {"github.com"}
+    assert gitfacts.pull_request_state(clone, "https:///a/b/pull/1") is None
+    git(clone, "remote", "set-url", "origin", str(clone.parent / "remote.git"))
+    assert gitfacts.collect(clone).pr_unknown_reason is not None  # a path: gh is not asked
+
+
+def test_a_windows_drive_path_upstream_passes_the_check(clone: Path) -> None:
+    gitfacts._check_upstream(clone, "work", "C:\\Users\\a\\remote.git", "refs/heads/work")
+    gitfacts._check_upstream(clone, "work", "C:/Users/a/remote.git", "refs/heads/work")

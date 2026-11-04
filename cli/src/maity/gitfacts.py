@@ -106,8 +106,8 @@ def _pull_request(cwd: Path, branch: str) -> PullRequest | None:
 
 
 def gh_hosts() -> set[str]:
-    """The forge hosts gh is asked about: github.com and GH_HOST."""
-    return {"github.com", os.environ.get("GH_HOST", "github.com").lower()}
+    """The forge hosts gh is asked about: github.com and GH_HOST (an empty one is unset)."""
+    return {"github.com", (os.environ.get("GH_HOST") or "github.com").lower()}
 
 
 def pull_request_state(cwd: Path, url: str) -> str | None:
@@ -115,7 +115,11 @@ def pull_request_state(cwd: Path, url: str) -> str | None:
     a URL on a host gh does not know included (gh is never sent elsewhere)."""
     try:
         parts = urllib.parse.urlsplit(url)
-        if parts.scheme != "https" or (parts.hostname or "").lower() not in gh_hosts():
+        if (
+            parts.scheme != "https"
+            or not parts.hostname
+            or parts.hostname.lower() not in gh_hosts()
+        ):
             return None
         result = _run(["gh", "pr", "view", url, "--json", "state"], cwd)
         if result.returncode != 0:
@@ -143,7 +147,7 @@ def _forge_unknown(cwd: Path, remote: str | None) -> str | None:
     # As written, before insteadOf; a branch pushed with `-u <url>` has the URL as its remote.
     url = _git(cwd, "config", "--get", f"remote.{remote}.url") or remote
     host = remote_host(url)
-    if (host or "").lower() not in gh_hosts():
+    if not host or host.lower() not in gh_hosts():
         where = host or "a local path"
         return f"the remote {without_userinfo(remote)} is not on a GitHub host gh knows ({where})"
     return None
