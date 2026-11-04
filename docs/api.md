@@ -16110,8 +16110,10 @@ A project is public by default, as on a forge: the maintainer's decision
 of 2026-10-31 (`context/projects.md`). A new project's page is on
 unless its creator chooses private at creation, and a project whose
 repository the hub finds private (or cannot read) at creation starts
-private. A person's page and an organisation's (§6.26) exist only by
-their own choice.
+private. A person has a page from the start, and their profile is
+public by default as well (§2.7; the maintainer's decision of
+2026-11-02): the person chooses how much it shows. An organisation's
+page (§6.26) exists only by its owners' choice.
 
 **The addresses.** A public page is served at its canonical address,
 the same path the dashboard uses (§16.11): a project's at
