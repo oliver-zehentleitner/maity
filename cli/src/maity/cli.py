@@ -793,9 +793,7 @@ def cmd_wait(args: argparse.Namespace) -> int:
                 continue
             # A 429 is a limit in front of the hub or in it, not an error of this wait: it is
             # retried like a 5xx, but never sooner than its `Retry-After`.
-            server_error = exc.status is not None and (
-                500 <= exc.status < 600 or exc.status == 429
-            )
+            server_error = exc.status is not None and (500 <= exc.status < 600 or exc.status == 429)
             disconnected = exc.status is None and exc.code is None
             if disconnected and time.monotonic() >= deadline:
                 continue  # the window's last read ran out: a timeout like any other
