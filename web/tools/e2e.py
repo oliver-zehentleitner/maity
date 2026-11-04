@@ -1153,6 +1153,7 @@ def scenario(run: Run, page: Page) -> None:
     reports_admin_step(run, page, alpha)
     forge_access_step(run, page)
     landing_json_step(run, page)
+    start_page_step(run, page)
     legal_json_step(run, page)
     auth_pages_step(run, page)
     site_json_step(run, page)
@@ -3845,6 +3846,103 @@ def landing_variants_step(run: Run, page: Page) -> None:
     saved = save()
     assert saved["variants"] == {} and saved["campaigns"] == [], (saved["variants"], saved["campaigns"])
     no_problems(run, "landing variants")
+
+
+def start_page_step(run: Run, page: Page) -> None:
+    """The way to `/` from the sign-in page leaves the dashboard (docs/api.md §16.7, tsk-fmdn6vb2zs19):
+    the hub, not the dashboard, decides per request what `/` shows, so the frame's logo, a section link
+    and the app's own logo are page loads. Only a served page shows it: fixture mode has no click
+    handler. Wide and light, narrow and dark."""
+    me = page.request.get(f"{run.base}/api/v1/me").json()["member"]
+    if not me.get("instance_admin"):
+        return
+    run.step("start page: from the sign-in page the logo and a section link open the landing page")
+    page.goto(f"{run.base}/admin/pages/landing")
+    io = page.locator("details.lp-json")
+    io.locator("summary").click()
+    landing = json.loads((WEB / "tools" / "site-fixture.json").read_text(encoding="utf-8"))["landing"]
+    body = {**landing, "enabled": True, "footer": {**landing["footer"], "operator": "Example operator"}}
+    page.locator("#lp-json").fill(json.dumps(body))
+    page.once("dialog", lambda d: d.accept())
+    io.get_by_role("button", name="Load into the editor", exact=True).click()
+    section = page.locator("#admin-landing-page")
+    expect(section.locator(".send-status").first).to_contain_text("checked by the hub")
+    form = page.locator("form.lp-form")
+    form.get_by_role("button", name="Save the landing page", exact=True).click()
+    expect(section.locator(".send-status").first).to_contain_text("Saved. Visitors see it within a minute.")
+    assert page.request.get(f"{run.base}/api/v1/admin/settings/landing").json()["enabled"] is True
+
+    def on_landing(seen: Page, where: str) -> None:
+        # The hub's landing page: its own HTML, no dashboard and no sign-in form in it.
+        expect(seen.locator("main#main")).to_have_count(0)
+        expect(seen.locator("#login-handle")).to_have_count(0)
+        expect(seen.locator("main .hero, main section").first).to_be_visible()
+        assert not seen.evaluate("!!(window.Maity && window.Maity.route)"), f"{where}: the dashboard is still loaded"
+
+    try:
+        for width, height, scheme in ((1280, 800, "light"), (390, 844, "dark")):
+            visitor = page.context.browser.new_context(
+                viewport={"width": width, "height": height}, locale="en-US", color_scheme=scheme
+            )
+            seen = visitor.new_page()
+            seen.goto(f"{run.base}/login")
+            frame = seen.locator("header.site-header")
+            expect(frame).to_be_visible()
+            frame.locator("a.brand").click()
+            expect(seen).to_have_url(f"{run.base}/")
+            on_landing(seen, f"the frame's logo at {width} px {scheme}")
+            run.shot(seen, f"start-page-{width}-{scheme}")
+
+            # A section link (`/?lang=en#sN`): the header's where it shows, else the footer's platform column.
+            seen.goto(f"{run.base}/login")
+            expect(seen.locator("header.site-header")).to_be_visible()
+            links = seen.locator("header.site-header a[href*='#s'], footer.site-footer a[href*='#s']")
+            shown = links.evaluate_all("(all) => all.findIndex((a) => a.offsetParent !== null)")
+            assert shown >= 0, f"no section link shows at {width} px"
+            nav = links.nth(shown)
+            href = nav.get_attribute("href")
+            assert href and href.startswith("/?lang=") and "#s" in href, href
+            nav.click()
+            expect(seen).to_have_url(f"{run.base}{href}")
+            on_landing(seen, f"a section link at {width} px {scheme}")
+            expect(seen.locator(f"#{href.split('#', 1)[1]}")).to_be_attached()
+
+            # Without the frame (its read failed), the app's own logo leads to the same start page.
+            seen.route("**/api/v1/site/chrome**", lambda r: r.abort())
+            seen.goto(f"{run.base}/login")
+            expect(seen.locator("#login-handle")).to_be_visible()
+            expect(seen.locator("header.site-header")).to_have_count(0)
+            seen.locator("#header a.brand-home").click()
+            expect(seen).to_have_url(f"{run.base}/")
+            on_landing(seen, f"the app's logo at {width} px {scheme}")
+            visitor.close()
+
+        # Signing out leaves for the start page too: a page load, so the landing page, not the
+        # dashboard's sign-in form under `/`. A second session of the owner's, this one stays.
+        leaving = page.context.browser.new_context(viewport={"width": 1280, "height": 800}, locale="en-US")
+        out = leaving.new_page()
+        out.goto(f"{run.base}/login")
+        out.locator("#login-handle").fill(OWNER)
+        out.locator("#login-password").fill(OWNER_PASSWORD)
+        out.get_by_role("button", name="Sign in", exact=True).click()
+        expect(out.locator("header .me")).to_contain_text("Owner")
+        out.goto(f"{run.base}/all")
+        out.locator("header").get_by_role("button", name=re.compile(r"^Your profile: ")).click()
+        out.get_by_role("menuitem", name="Sign out", exact=True).click()
+        expect(out).to_have_url(f"{run.base}/")
+        on_landing(out, "after signing out")
+        run.shot(out, "start-page-signed-out")
+        leaving.close()
+    finally:
+        # Off again: a landing page that is on would greet the signed-out steps after this one.
+        page.goto(f"{run.base}/admin/pages/landing")
+        enabled = page.locator("#lp-enabled")
+        if enabled.is_checked():
+            enabled.uncheck()
+        form.get_by_role("button", name="Save the landing page", exact=True).click()
+        expect(section.locator(".send-status").first).to_contain_text("Saved.")
+        assert page.request.get(f"{run.base}/api/v1/admin/settings/landing").json()["enabled"] is False
+    no_problems(run, "start page")
 
 
 def auth_pages_step(run: Run, page: Page) -> None:

@@ -93,7 +93,8 @@ window.Maity = window.Maity || {};
     [[51, 21], [51, 43], [32, 54], [13, 43], [13, 21]].forEach(([cx, cy]) => part("circle", { cx: String(cx), cy: String(cy), r: "6" }));
     part("path", { d: "M23.5 38V31a4.25 4.25 0 0 1 8.5 0v7M32 31a4.25 4.25 0 0 1 8.5 0v7", fill: "none", "stroke-width": "3.5" });
     const a = h("a", { class: "brand" }, svg, "maity");
-    // The instance's start page, the hub's own (§16.7): a page load, in fixture mode too.
+    // The instance's start page, the hub's own (§16.7): a page load, in fixture mode too; M.route
+    // leaves every click on `/` to the browser (web/context/routing.md).
     a.setAttribute("href", "/");
     return a;
   }
