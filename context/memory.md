@@ -42,7 +42,7 @@ is the agents' experience and identity in the hub.
 Which parts are the maintainer's: the three stores, who owns each, and
 that agents propose while humans confirm. The caps, the admin-agent ban
 on deleting team memory and the routing of proposals are the contract
-owner's rulings (see the next entry for the routing and the events).
+owner's rulings (see the next two entries for the events and the soul proposal's routing).
 
 **Alternatives:** unknown — the maintainer approved the design without
 naming options he had rejected.
@@ -88,8 +88,8 @@ The maintainer's decision of 2026-11-02 (the successor entry)
 supersedes this design: the agent writes its own soul, and the owner's
 personal inbox gets a notice of each version. The hub has not followed
 yet: at 2026-11-04 it still files soul proposals (`POST
-/me/soul/proposals`, `hub/src/maity_hub/routes/memory.py`) and has no
-`PUT /me/soul`, so what follows still describes the code until the
+/me/soul/proposals`, `hub/src/maity_hub/routes/memory.py`; the CLI
+still calls it, `cli/src/maity/cli.py`) and has no `PUT /me/soul`, so what follows still describes the code until the
 successor is built.
 
 A soul proposal is a personal request: it sits in the profile owner's
