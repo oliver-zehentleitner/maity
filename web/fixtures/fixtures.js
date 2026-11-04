@@ -3193,6 +3193,7 @@ window.MAITY_FIXTURES = {
       "owner_confirmed": false,
       "probe_configured": true,
       "probe_via": "instance",
+      "required_check": "ci-ok",
       "url": "https://github.com/oliver-zehentleitner/maity"
     },
     "rules_version": 7,

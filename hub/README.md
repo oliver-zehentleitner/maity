@@ -341,10 +341,14 @@ is what CI's hub-wheel job runs against the built wheel.
 it runs a command with `MAITY_TEST_DATABASE_URL` set to a database of its own, on
 a server in `MAITY_PG_DIR` (default `~/.local/state/maity/test-postgres`), which it
 creates when missing. Runs can share the server. The last one to end stops it, and
-only if this script started it; a server that was already up keeps running. It needs
-`pg_ctl`, `initdb` and `psql`, on the path or in `MAITY_PG_BIN`. Without a system
-PostgreSQL, the PyPI package `pgserver` brings them, in a venv of its own (its
-wheels stop at Python 3.12):
+only if this script started it; a server that was already up keeps running.
+`--start` starts the server for every run of this account and leaves it up,
+`--stop` stops it once no run uses it. A run holds one of the account's run slots
+(`../tools/run_slot.sh`, two by default), and its database is
+`maity_test_<name>_<pid>` with `<name>` from `MAITY_RUN_NAME`; `CONTRIBUTING.md` has
+the rules for a shared machine. It needs `pg_ctl`, `initdb` and `psql`, on the path
+or in `MAITY_PG_BIN`. Without a system PostgreSQL, the PyPI package `pgserver`
+brings them, in a venv of its own (its wheels stop at Python 3.12):
 
 ```sh
 python3.12 -m venv ~/.pg-venv && ~/.pg-venv/bin/pip install pgserver

@@ -147,7 +147,11 @@ window.Maity = window.Maity || {};
     // request), before the list is read again and drawn. The outcome is said
     // once the list is drawn again, so "Saved" means the rows show it and
     // nothing is replaced under the next click.
-    async function act(label, done, call, focusKey, settled) {
+    // `consent`, where given, is read after the reload: `applied`, the fields that took effect
+    // although the rest waits for a consent, and `owner`, the agent's owner. For another owner's
+    // agent (§6.2) the hub applies a `reports_to` to a boss of the same owner, or none, at once,
+    // and lets one to another owner's member wait too, so only the reloaded state tells which.
+    async function act(label, done, call, focusKey, settled, consent) {
       status.busy(M.t("members.act.busy", { action: label }));
       let answer;
       try {
@@ -167,14 +171,27 @@ window.Maity = window.Maity || {};
       status.done();
       // Waiting for a human's go is no change yet: said as such.
       append(status.el, isConsent(answer)
-        ? h("span", { class: "flag" }, consentWords(answer))
+        ? h("span", { class: "flag" }, consentWords(answer, consent ? consent() : {}))
         : h("span", { class: "ok" }, done));
       return isConsent(answer) ? "consent" : true;
     }
 
     // Waiting for a human's go: whose, and the request it waits on, in one sentence.
-    function consentWords(answer) {
-      const o = { who: answer.to === "owner" ? M.t("members.consent.owner") : ctx.nameOf(answer.to), id: answer.id, title: answer.title || "" };
+    // Another owner's agent waits for a human (§6.2) the hub names `human:<id>`: by name where
+    // they are a member here, otherwise as the agent's owner, or as a boss's owner where the
+    // request the hub answered with is another human's (a cross-owner `reports_to` on its own:
+    // with a held field the field consent, the owner's, is the answer); never as the raw address.
+    function consentWords(answer, { applied = [], owner = null } = {}) {
+      const to = answer.to || "";
+      const human = to.startsWith("human:") ? to.slice("human:".length) : null;
+      const known = human && (ctx.members || []).some((x) => x.id === human);
+      const outside = human && !known ? (owner && human !== owner ? M.t("members.consent.boss_owner") : M.t("members.consent.owner")) : null;
+      const who = to === "owner" ? M.t("members.consent.owner") : outside || ctx.nameOf(human || to);
+      const o = { who, id: answer.id, title: answer.title || "" };
+      if (applied.length) {
+        o.fields = M.fmt.list(applied);
+        return answer.title ? M.t("members.consent.partly_titled", o) : M.t("members.consent.partly", o);
+      }
       return answer.title ? M.t("members.consent.waiting_titled", o) : M.t("members.consent.waiting", o);
     }
 
@@ -755,7 +772,15 @@ window.Maity = window.Maity || {};
             areas: () => M.t("members.edit.said.areas"), capabilities: () => M.t("members.edit.said.capabilities") };
           save.disabled = true;
           const saved = await act(M.t("members.edit.saving"), M.t("members.edit.saved", { name: m.display_name, fields: M.fmt.list(Object.keys(body).map((k) => said[k]())) }),
-            () => M.api.patch(memberPath, body), "role:" + m.id, () => edits.delete(m.id));
+            () => M.api.patch(memberPath, body), "role:" + m.id, () => edits.delete(m.id), () => {
+              // What the hub holds now: a field it took at once, the rest waiting.
+              const now = items.find((x) => x.id === m.id) || {};
+              const owner = now.owner_id || null;
+              const same = { trust: (v) => now.trust === v, role: (v) => now.role === v, reports_to: (v) => (now.reports_to || null) === v,
+                areas: (v) => (now.areas || []).join("\n") === v.join("\n"),
+                capabilities: (v) => [...(now.capabilities || [])].sort().join() === [...v].sort().join() };
+              return { applied: Object.keys(body).filter((k) => same[k](body[k])).map((k) => said[k]()), owner };
+            });
           save.disabled = false;
           // Demoting oneself changes what this page may offer: re-render it.
           if (saved === true && self && (body.trust || body.role)) ctx.refresh();

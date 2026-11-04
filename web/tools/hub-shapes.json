@@ -384,6 +384,7 @@
      "owner_confirmed": "boolean",
      "probe_configured": "boolean",
      "probe_via": "null",
+     "required_check": "null",
      "url": "string"
     }
    },

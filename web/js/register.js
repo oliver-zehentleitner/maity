@@ -13,9 +13,10 @@ window.Maity = window.Maity || {};
   // What was entered so far: choosing the page's language draws the form again in it.
   // The passwords are not kept: the person types them again, nothing holds them outside the fields.
   let kept = { address: "", language: null };
-  // The bar of a page without a project: the lockup and the theme.
+  // The bar of a page without a project: the lockup and the theme. It stands where the frame
+  // (js/site-chrome.js) cannot be read; the page's h1 is its form's heading.
   function bar(header) {
-    append(clear(header), h("div", { class: "bar" }, M.brandTitle ? M.brandTitle() : null,
+    append(clear(header), h("div", { class: "bar" }, M.brandTitle ? M.brandTitle(undefined, "div") : null,
       M.api.source === "fixtures" ? h("span", { class: "source" }, M.t("header.fixtures")) : null, M.themeMenu ? M.themeMenu() : null));
   }
 
@@ -25,9 +26,14 @@ window.Maity = window.Maity || {};
     if (session) { M.route.go(next || "/all", { replace: true }); return; }
     bar(header);
     document.title = M.t("register.title") + " · Maity";
-    const box = h("article", { class: "register door" });
-    // The legal pages that are set, under the form (§16.7.1).
-    append(clear(main), box, M.legal ? M.legal.links() : null);
+    const box = h("article", { class: "register" });
+    // The legal pages that are set, under the form (§16.7.1), until the frame's footer names them.
+    const legal = M.legal ? M.legal.links() : null;
+    // The panel beside the form: the art alone until the pitch is asked for (below).
+    const page = M.authPages.door(null, [box, legal]);
+    const panel = (next) => { page.replaceChild(next, page.firstChild); };
+    append(clear(main), page);
+    M.siteChrome.enter("/register", () => { if (legal) legal.remove(); });
     const signIn = next ? "/login?next=" + encodeURIComponent(next) : "/login";
     // Where the visitor came from (§16.7.2): the landing page's link carries
     // ?v=<variant>&c=<code>; sent as origin, the hub keeps only what it knows.
@@ -51,7 +57,11 @@ window.Maity = window.Maity || {};
     }
     const allowed = (methods && methods.registration) || (invitation && invitation.registration === "sign_in_or_register");
     const heading = M.t("register.title");
-    append(box, allowed ? M.authPages.pitch("sign_up", heading) : h("h2", null, heading));
+    if (allowed) {
+      const pitch = M.authPages.pitch("sign_up", heading);
+      panel(pitch.panel);
+      append(box, pitch.title);
+    } else append(box, h("h1", null, heading));
     if (!allowed) {
       append(box, h("p", null, M.t("register.closed")),
         h("p", null, M.tn("register.closed_sign_in", { link: h("a", { href: signIn }, M.t("register.closed_sign_in.link")) })));
@@ -81,7 +91,7 @@ window.Maity = window.Maity || {};
     const password = h("input", { id: "register-password", type: "password", autocomplete: "new-password", required: true, minlength: String(PASSWORD_MIN) });
     const repeat = h("input", { id: "register-repeat", type: "password", autocomplete: "new-password", required: true });
     const status = M.statusLine();
-    const submit = h("button", { type: "submit", class: "primary" }, M.t("register.submit"));
+    const submit = h("button", { type: "submit", class: "btn btn-primary" }, M.t("register.submit"));
     const form = h("form", {
       class: "register-form",
       novalidate: true,
@@ -106,8 +116,10 @@ window.Maity = window.Maity || {};
         // The same answer for every address (§2.7.1): what comes next is in the mail.
         const hours = Math.round(((answer && answer.expires_in) || 86400) / 3600);
         clear(box);
+        // The pitch is said; the panel shows the art alone, and the mail's icon heads the answer.
+        panel(M.authPages.door(null, []).firstChild);
         const done = h("h2", { tabindex: "-1" }, M.t("register.check_mail"));
-        append(box, done,
+        append(box, h("span", { class: "sent-icon", "aria-hidden": "true" }), done,
           h("p", null, M.t("register.link_sent", { address: address.value.trim(), count: hours })),
           h("p", null, next ? M.t("register.follow_back") : M.t("register.follow")),
           h("p", { class: "muted" }, M.t("register.no_mail")));
@@ -122,7 +134,7 @@ window.Maity = window.Maity || {};
     h("label", { for: "register-language" }, M.t("register.language.label")), picker.search, picker.select,
     h("p", { class: "hint" }, M.t("register.language.hint")),
     submit, status.el,
-    h("p", { class: "muted" }, M.tn("register.have_account", { link: h("a", { href: signIn }, M.t("register.have_account.link")) })));
+    h("p", { class: "muted alt" }, M.tn("register.have_account", { link: h("a", { href: signIn }, M.t("register.have_account.link")) })));
     // The instance's terms (§2.7.2, from GET /auth/methods): accepted on the
     // link's page, where their version is signed; named here so nobody is
     // surprised there. A link only when it is plain https.

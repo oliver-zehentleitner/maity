@@ -668,6 +668,10 @@ def set_agent_limit(
     changes and, when stored, hold its leases."""
     now = clock.now()
     lock_project(conn, row.project_id)  # the lock the expiry reads under
+    running = conn.execute(
+        select(t.membership.c.limit_until).where(t.membership.c.id == row.id)
+    ).scalar()
+    starts = until is not None and until > now and not _live(running, now)
     values: dict[str, Any] = (
         {
             "limit_until": until,
@@ -684,6 +688,10 @@ def set_agent_limit(
     reconcile_ids(conn, [row.id], actor)
     if until is not None:
         hold_leases(conn, [row.id], until)
+    if starts:  # only the start counts, not a moved `until` (§6.5)
+        from maity_hub import holder_stalled
+
+        holder_stalled.limit_started(conn, row.id)
 
 
 NO_LIMIT: dict[str, Any] = {

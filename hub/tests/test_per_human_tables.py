@@ -172,6 +172,7 @@ EXPORT_LEAVES_OUT = {
     "handle_register": f"the handle is in the account; {_UNLISTED}",
     "human_device": _SECRET,
     "idempotency_key": _BOOKKEEPING,
+    "not_listening_seen": f"what the digest's `seen` silences (§5.3): {_BOOKKEEPING}",
     "instance_landing": _INSTANCE,
     "instance_legal": _INSTANCE,
     "legal_version": _INSTANCE,

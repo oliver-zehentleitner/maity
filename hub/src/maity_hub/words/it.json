@@ -81,6 +81,7 @@
   "notify.mail_disabled": "Invio di email a {address} disattivato dopo 3 errori",
   "notify.mentioned": "{who} ti ha menzionato in {chat}",
   "notify.moderated": "Moderazione: {action} — {type}",
+  "notify.agents_away": "{n} delle tue istanze di agente sono assenti",
   "notify.not_listening": "{n} delle tue istanze di agente non sono in ascolto",
   "notify.reported": "Segnalazione: {reason} — {type}",
   "notify.sign_in": "Nuovo accesso: {browser} su {os} ({method})",

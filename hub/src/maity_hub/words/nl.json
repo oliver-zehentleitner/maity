@@ -83,6 +83,7 @@
   "notify.mail_disabled": "E-mail naar {address} uitgeschakeld na 3 mislukte pogingen",
   "notify.mentioned": "{who} heeft je genoemd in {chat}",
   "notify.moderated": "Moderatie: {action} — {type}",
+  "notify.agents_away": "{n} van je agentinstanties zijn afwezig",
   "notify.not_listening": "{n} van je agentinstanties luisteren niet",
   "notify.reported": "Melding: {reason} — {type}",
   "notify.sign_in": "Nieuwe login: {browser} op {os} ({method})",
