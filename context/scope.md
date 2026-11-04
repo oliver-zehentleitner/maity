@@ -618,7 +618,8 @@ moderation hold get a page, at first under `/p/<owner>/<slug>` or
 `/u/<handle>` (since the path-routing decision of 2026-10-29,
 e34ae588-4dbc-423c-8da8-29fc62436cb5, at `/<owner>/<slug>` and
 `/<handle>`, the dashboard's own addresses): plain HTML rendered by the hub, no script, listed in the
-sitemap. Since 2026-11-02 a visitor gets that page inside the app shell, and
+sitemap; a person's page with `public_profile` off carries `noindex` and stays out of it
+(`hub/context/public-pages.md` 3da2d551). Since 2026-11-02 a visitor gets that page inside the app shell, and
 `?as=public` the bare page (`hub/context/public-pages.md` 70c80e4f). The operator chooses whether pages are rendered on every change
 (default) or only on an interval of 1–24 hours (default 6); either way
 anything taken off a page, any edit of a shown text included, is taken
@@ -632,8 +633,10 @@ private, and a person's `public_profile` decides how much their page
 shows, not whether it exists. The operator switches
 the feature on for the instance (`MAITY_PUBLIC_PAGES`); it is off by
 default. This brings part of the later stage "public projects and
-discovery" forward: the pages, not yet a discovery page or join
-requests.
+discovery" forward: at first the pages, without a discovery page;
+since 2026-11-02 `/explore` lists the public projects by name for every
+visitor (`hub/context/public-pages.md` 439a36e9). Join requests are not
+there yet.
 
 **Reason:** the hosted instance should be found by the projects and
 people on it, and the dashboard could not be indexed: it was drawn by

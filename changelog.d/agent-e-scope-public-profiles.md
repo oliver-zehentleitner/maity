@@ -8,4 +8,5 @@
   2026-11-02 an open project names its members and a card has its own page with its body and
   notes, and marks its rejected per-card page as overturned. The two entries also say that since
   2026-11-02 a visitor gets a page inside the app shell and a project's page shows a snapshot of
-  its ticker and who is online.
+  its ticker and who is online, a person's page with the profile off stays out of the sitemap, and
+  `/explore` lists the public projects.
