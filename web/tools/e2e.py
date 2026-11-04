@@ -1920,10 +1920,38 @@ def second_hub_round(run: Run, browser, work: Path, artifacts: Path) -> None:
         context, page = sign_in_with_totp(run, browser, secret, used)
         reset_by_mail(run, browser, catcher, page)
         context.close()
+        language_choice_step(run, browser)
     finally:
         stop_hub(hub)
         catcher.close()
         run.base = first_base
+
+
+def language_choice_step(run: Run, browser) -> None:
+    """The page's language chosen on /login and /register before sign-in (§6.2) stays the
+    choice, also where the address came with another ?lang=, and across a reload."""
+    run.step("signed out: the language chosen on login and register stays, also after a reload")
+    for path, picker, field in (
+        ("/login", "#login-interface", "#login-handle"),
+        ("/register", "#register-interface", "#register-address"),
+    ):
+        context = browser.new_context(viewport={"width": 1280, "height": 900}, locale="de-DE")
+        context.set_default_timeout(TIMEOUT_MS)
+        page = context.new_page()
+        watch_page(run, page)
+        page.goto(f"{run.base}{path}?lang=de")
+        expect(page.locator("html")).to_have_attribute("lang", "de")
+        page.locator(field).fill("kim@e2e.example")
+        page.locator(picker).select_option("fr")
+        expect(page.locator("html")).to_have_attribute("lang", "fr")
+        expect(page.locator(picker)).to_have_value("fr")
+        expect(page.locator(field)).to_have_value("kim@e2e.example")
+        assert page.url.endswith(f"{path}?lang=fr"), page.url
+        page.reload()
+        expect(page.locator("html")).to_have_attribute("lang", "fr")
+        expect(page.locator(picker)).to_have_value("fr")
+        no_problems(run, f"the language on {path}")
+        context.close()
 
 
 def mail_reaches_the_catcher(run: Run, browser, catcher: MailCatcher) -> None:
