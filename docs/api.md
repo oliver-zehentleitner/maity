@@ -16501,15 +16501,18 @@ its own.
 
 ### 16.9 Public pages
 
-The maintainer's decision of 2026-10-28: projects and people that choose
-to be public get pages a search engine can read — plain HTML that needs
-no script and no session — so that an instance is found by what is on it.
-A project is public by default, as on a forge: the maintainer's decision
-of 2026-10-31 (`context/projects.md`). A new project's page is on
-unless its creator chooses private at creation, and a project whose
-repository the hub finds private (or cannot read) at creation starts
-private. A person's page and an organisation's (§6.26) exist only by
-their own choice.
+The maintainer's decision of 2026-10-28: public projects, and people
+whose profile is public, get pages a search engine can read — plain
+HTML that needs no script and no session — so that an instance is found
+by what is on it. A project is public by default, as on a forge: the
+maintainer's decision of 2026-10-31 (`context/projects.md`). A new
+project's page is on unless its creator chooses private at creation,
+and a project whose repository the hub finds private (or cannot read)
+at creation starts private. Every active account whose profile is under
+no moderation hold has a page (below), and the person's profile is
+public by default as well (§2.7; the maintainer's decision of
+2026-11-02): they choose how much it shows. An organisation's page
+(§6.26) exists only by its owners' choice.
 
 **The addresses.** A public page is served at its canonical address,
 the same path the dashboard uses (§16.11): a project's at
@@ -16816,8 +16819,8 @@ shows the `display_name`, the `handle` and the organisation's projects
 whose own `public_page` is `on`, each with a link to its page. The
 avatar is not on it, since a page carries no image (below). The
 organisation's members are never shown: who belongs to it is not
-public, whatever its page says; a project's page still shows its own
-members by their own choice (above). Without `public_page: on` the address
+public, whatever its page says; a project's page still names its own
+members (above). Without `public_page: on` the address
 answers as for an unknown handle (below).
 
 **What is never served.** A page answers the app shell (§16.11), the
