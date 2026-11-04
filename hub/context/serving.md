@@ -413,3 +413,31 @@ that finally runs reports its whole length in the next window. Without a tick in
 - The process's thread count: it holds the hub's background workers too and never shrinks with
   the load, so it does not say how many requests hold a thread.
 - A `/metrics` endpoint: the reasons of the first entry above still hold.
+
+## A request body has 120 seconds in all to arrive
+
+**Id:** 35eb5c15-c1a3-4b16-88a5-c71aa305450f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the plan for card tsk-eejgfehwg4k0, approved by the team lead on 2026-11-04 (a total read deadline); the value is the implementer's; `docs/api.md` §1.3 and §1.7; implementation session, 2026-11-04
+**Revisit when:** a client legitimately needs longer for a 10 MiB upload, or an ingress in front of the hub buffers whole bodies itself
+**See:** attachments.md#an-uploads-caller-is-checked-from-its-headers-before-its-body-is-read — ea27e3d7-14b1-40ab-8158-b86ab575583e — as of 2026-11-04
+
+The middleware reads every body against one deadline,
+`middleware.BODY_SECONDS` (120), counted from when it starts to read. When
+the deadline passes, the call is `408 request_timeout` with
+`Connection: close`, and what was read is dropped.
+
+**Reason:** a body sent slowly holds its connection and the bytes read so far
+for as long as it lasts, and nothing else bounds that time: uvicorn's
+keep-alive timeout applies between requests, not inside one. 120 seconds
+leaves room for the largest body, a 10 MiB attachment, at about 1 Mbit/s
+(about 84 seconds). The connection is closed because the rest of the body may
+still be on its way.
+
+**Rejected alternatives:**
+- **A timeout per chunk:** a client that sends a little before each timeout
+  ends never reaches it.
+- **The deadline on attachment uploads only:** every body is read by the same
+  loop, and a small body needs far less than 120 seconds.

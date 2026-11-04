@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import functools
 import logging
@@ -20,6 +21,8 @@ from urllib.parse import unquote_to_bytes
 from sqlalchemy import Engine
 from sqlalchemy.exc import InterfaceError, OperationalError
 from starlette.concurrency import run_in_threadpool
+from starlette.requests import Request
+from starlette.responses import Response
 from starlette.routing import Match
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -33,10 +36,11 @@ from maity_hub import (
     paths,
     request_stats,
 )
-from maity_hub.auth import credentials
+from maity_hub.auth import caller, credentials
 from maity_hub.auth.leaks import revoke_leaked
 from maity_hub.config import Settings
-from maity_hub.errors import error_response
+from maity_hub.db import retrying
+from maity_hub.errors import ApiError, error_response
 
 log = logging.getLogger(__name__)
 # The hub's own request log; the server's access log is off (§1.1).
@@ -57,6 +61,10 @@ LANDING_CAP = 512 * 1024
 # apply to it, the file cap does.
 ATTACHMENT_CAP = 10 * 1024 * 1024
 _ATTACHMENT_UPLOAD = re.compile(r"^/api/v1/projects/[^/]+/[^/]+/attachments$")
+# The whole body arrives within this many seconds, or the call is `request_timeout` (§1.7): a
+# body sent slowly holds its connection and the bytes read so far no longer than this. An
+# attachment of 10 MiB takes about 84 seconds at 1 Mbit/s.
+BODY_SECONDS = 120
 _AUTH_PAGES = "/api/v1/admin/settings/auth-pages"  # §16.7.4
 _LANDING_SETTINGS = ("/api/v1/admin/settings/landing", "/api/v1/admin/settings/legal", _AUTH_PAGES)
 # The drafts a preview takes are as large as the setting they preview (§16.7, §16.7.1).
@@ -170,17 +178,32 @@ class HubMiddleware:
         if declared is not None and declared > cap:
             await refuse(scope, receive, send)
             return
-        body = b""
+        if not on_join_host and _is_attachment_upload(scope):
+            # Up to 10 MiB is read only for a caller the headers may authenticate (§8.7).
+            refusal = await self._precheck(scope)
+            if refusal is not None:
+                await refusal(scope, receive, send)
+                _access(scope, refusal.status_code)
+                return
+        # Appended in place: `bytes +=` copies everything read so far on each chunk.
+        read = bytearray()
+        deadline = time.monotonic() + BODY_SECONDS
         more = True
         while more:
-            message = await receive()
+            try:
+                message = await asyncio.wait_for(receive(), max(deadline - time.monotonic(), 0))
+            except TimeoutError:
+                await _timed_out(scope, receive, send)
+                return
             if message["type"] == "http.disconnect":
                 return
-            body += message.get("body", b"")
+            read += message.get("body", b"")
             more = message.get("more_body", False)
-            if len(body) > cap:
+            if len(read) > cap:
                 await refuse(scope, receive, send)
                 return
+        body = bytes(read)
+        del read  # the frame lives as long as the call; the copy is all it needs
 
         raw_query: bytes = scope.get("query_string", b"")
         # The query is matched raw and percent-decoded (§2.2): `mty1%2E…` too.
@@ -247,6 +270,36 @@ class HubMiddleware:
             await response(scope, receive, send)
         finally:
             _access(scope, status)
+
+    async def _precheck(self, scope: Scope) -> Response | None:
+        """The refusal for a caller whom no body could authenticate (`caller.precheck`), or
+        None. When the database cannot answer, None: the call fails as any other does."""
+        request = Request(scope)
+        facts = caller.RequestFacts(
+            method=scope.get("method", ""),
+            raw_path=scope.get("raw_path") or scope.get("path", "").encode(),
+            raw_query=scope.get("query_string", b""),
+            headers={k.lower(): v for k, v in request.headers.items()},
+            cookies=dict(request.cookies),
+            body=b"",
+            origin=scope["state"]["origin"],
+            allow_plain_http=self.settings.allow_plain_http,
+            cli_install=self.settings.cli_install,
+        )
+
+        def run() -> None:
+            with self.engine.begin() as conn:
+                caller.precheck(conn, facts)
+
+        try:
+            await run_in_threadpool(retrying, run)
+        except ApiError as error:
+            return error_response(
+                error.status, error.code, error.message, error.details, error.headers
+            )
+        except (OperationalError, InterfaceError):
+            return None
+        return None
 
     async def _maintenance_refused(
         self, scope: Scope, receive: Receive, send: Send, path: str
@@ -377,18 +430,29 @@ async def _not_found(scope: Scope, receive: Receive, send: Send) -> None:
     _access(scope, 404)
 
 
+def _is_attachment_upload(scope: Scope) -> bool:
+    return scope.get("method") == "POST" and bool(_ATTACHMENT_UPLOAD.match(scope.get("path", "")))
+
+
 def _body_cap(scope: Scope) -> tuple[int, Callable[[Scope, Receive, Send], Awaitable[None]]]:
     """The largest body this request may send, and how a larger one is refused."""
     method, path = scope.get("method"), scope.get("path", "")
     if method == "PUT" and _IMAGE_UPLOAD.match(path):
         return IMAGE_CAP, _image_too_large
-    if method == "POST" and _ATTACHMENT_UPLOAD.match(path):
+    if _is_attachment_upload(scope):
         return ATTACHMENT_CAP, functools.partial(_too_large, cap=ATTACHMENT_CAP)
     if (method == "PATCH" and path in _LANDING_SETTINGS) or (
         method == "POST" and path in _LANDING_PREVIEWS
     ):
         return LANDING_CAP, functools.partial(_too_large, cap=LANDING_CAP)
     return BODY_CAP, _too_large
+
+
+async def _timed_out(scope: Scope, receive: Receive, send: Send) -> None:
+    message = f"the body did not arrive within {BODY_SECONDS} seconds"
+    response = error_response(408, "request_timeout", message, headers={"Connection": "close"})
+    await response(scope, receive, send)
+    _access(scope, 408)
 
 
 async def _too_large(scope: Scope, receive: Receive, send: Send, cap: int = BODY_CAP) -> None:

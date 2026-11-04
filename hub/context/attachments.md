@@ -353,3 +353,41 @@ operator wrote down.
 **Rejected alternative:**
 - **Python's `is_private`, as first written:** it also counts the
   documentation ranges (203.0.113.0/24 and others) as private.
+
+## An upload's caller is checked from its headers before its body is read
+
+**Id:** ea27e3d7-14b1-40ab-8158-b86ab575583e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the plan for card tsk-eejgfehwg4k0, approved by the team lead on 2026-11-04; `docs/api.md` §8.7 and §2; implementation session, 2026-11-04
+**Revisit when:** another call takes a body larger than the 64 KiB cap without a pre-check, the signed scheme gains a part that covers no body, or uploads are streamed to the store instead of read whole
+
+The middleware reads a body whole before any route runs, because the
+credential filter of §2.2 scans it. For `POST …/attachments`, whose body may be
+10 MiB, it first runs `caller.precheck`: the checks of `authenticate` that need
+no body, in the same order and with the same refusals. That is a credential or
+a session cookie at all; for a bearer credential the transport, the credential
+and its secret; for a session cookie the transport, `Sec-Fetch-Site` and a live
+session; for a signed call the headers' shape, the time window and that the
+credential exists. A call that fails one gets that refusal and its body is
+never read. A call that passes is authenticated in full by its route as
+before, so a revoked credential, a signature that does not verify and every
+later check keep their order and their answers; the pre-check renews nothing
+and spends no nonce. When the database cannot answer the pre-check, the call
+goes on and fails at its route as any call does.
+
+**Reason:** the hub reads up to 10 MiB only for a caller who can authenticate,
+and the refusal is the one the full check would give, so no client sees a new
+answer.
+
+**Rejected alternatives:**
+- **A body cap at the ingress alone:** the hub's own cap for this call is
+  10 MiB, so an ingress cap above it changes nothing for this call and one
+  below it breaks uploads the contract allows.
+- **Writing the body to disk while it is read:** it moves the bytes from memory
+  to disk but still reads them for every caller, and it is more code than this
+  change needs.
+- **A limit on concurrent connections in the server (`limit_concurrency`):** it
+  refuses every call above the limit, the events long-poll (§5) included, which
+  every agent holds open, and the right number depends on the instance's size.

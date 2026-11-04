@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
+import time
 from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -17,6 +20,7 @@ from maity_hub.config import ConfigError, Settings
 from maity_hub.ratelimit import Limiter
 from tests import flow
 from tests.conftest import ClientFactory
+from tests.test_auth_agent import signed
 
 
 @pytest.fixture(autouse=True)
@@ -204,6 +208,93 @@ def test_a_file_over_the_cap_is_payload_too_large_before_it_is_read(
     assert refused.status_code == 413
     assert refused.json()["error"]["code"] == "payload_too_large"
     assert put(owner, "ok.bin", b"x" * 1024, "application/octet-stream").status_code == 201
+
+
+def _unread_upload(client: Any, headers: list[tuple[bytes, bytes]]) -> dict[str, Any]:
+    """An upload of 9 MiB driven at the hub itself: its body is never handed over."""
+
+    async def never_read() -> dict[str, object]:
+        raise AssertionError("the body was read before the caller was known")
+
+    sent: list[dict[str, Any]] = []
+
+    async def send(message: dict[str, Any]) -> None:
+        sent.append(message)
+
+    path = "/api/v1/projects/maintainer/maity/attachments"
+    scope = {
+        "type": "http", "http_version": "1.1", "method": "POST", "scheme": "https",
+        "path": path, "raw_path": path.encode(), "root_path": "",
+        "query_string": b"name=big.bin", "server": ("hub.example", 443),
+        "client": ("203.0.113.7", 1),
+        "headers": [
+            (b"host", b"hub.example"),
+            (b"content-type", b"application/octet-stream"),
+            (b"content-length", str(9 * 1024 * 1024).encode()),
+            *headers,
+        ],
+    }  # fmt: skip
+    asyncio.run(client.app(scope, never_read, send))
+    start = sent[0]
+    error = dict(start["headers"])[b"maity-error"].decode()
+    return {"status": start["status"], "code": error}
+
+
+def test_an_upload_no_body_could_authenticate_is_refused_before_it_is_read(
+    owner: flow.Human, stored: ClientFactory
+) -> None:
+    agent = flow.agent(stored, owner)
+    stale = int(time.time()) - 3600
+    for headers, code in [
+        ([], "unauthenticated"),
+        ([(b"authorization", b"Bearer mty1.crd-nobody.AAAA")], "unauthenticated"),
+        ([(b"authorization", f"Bearer {agent.credential}x".encode())], "unauthenticated"),
+        ([(b"authorization", b"Basic eDp5")], "unauthenticated"),
+        ([(b"cookie", b"maity_session=ended")], "unauthenticated"),
+        ([(b"authorization", f"Maity-HMAC {agent.credential_id}".encode())], "signature_invalid"),
+        (
+            [
+                (b"authorization", b"Maity-HMAC crd-nobody"),
+                (b"maity-timestamp", str(int(time.time())).encode()),
+                (b"maity-nonce", b"n" * 22),
+                (b"maity-signature", b"0" * 64),
+            ],
+            "unauthenticated",
+        ),
+        (
+            [
+                (b"authorization", f"Maity-HMAC {agent.credential_id}".encode()),
+                (b"maity-timestamp", str(stale).encode()),
+                (b"maity-nonce", b"n" * 22),
+                (b"maity-signature", b"0" * 64),
+            ],
+            "timestamp_skew",
+        ),
+    ]:
+        assert _unread_upload(owner.client, headers) == {"status": 401, "code": code}, headers
+
+
+def test_a_signed_upload_is_read_and_its_signature_checked_after(
+    owner: flow.Human, stored: ClientFactory
+) -> None:
+    agent = flow.agent(stored, owner)
+    holder = SimpleNamespace(value=agent.credential, credential_id=agent.credential_id)
+    path = "/api/v1/projects/maintainer/maity/attachments"
+
+    def upload(data: bytes, signed_over: bytes) -> Any:
+        return agent.client.post(
+            f"{path}?name=s.bin",
+            content=data,
+            headers={
+                "Content-Type": "application/octet-stream",
+                **signed(holder, "POST", path, "name=s.bin", signed_over),
+                **agent.key(),
+            },
+        )
+
+    assert upload(b"x" * 2048, b"x" * 2048).status_code == 201
+    forged = upload(b"x" * 2048, b"y" * 2048)  # the headers pass; the body does not verify
+    assert (forged.status_code, forged.json()["error"]["code"]) == (401, "signature_invalid")
 
 
 def test_the_project_quota_counts_pending_uploads_and_deleting_frees_it(
