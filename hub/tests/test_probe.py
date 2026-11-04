@@ -1365,3 +1365,52 @@ def test_review_last_preserves_complete_refused_branch(
     assert {k: v for k, v in last.items() if k != "observed_at"} == {
         k: v for k, v in second.items() if k != "observed_at"
     }
+
+
+def test_review_last_keeps_the_not_found_answer(
+    owner: flow.Human, github: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """dzse's nit on #1306: a commit the forge does not know is a complete answer too, so a
+    later read dropped for a spent budget shows it as `details.last`, not nothing."""
+    monkeypatch.setattr(probe, "FORCED_FLOOR", 0)
+    github.answers[f"/repos/acme/maity/git/commits/{OTHER}"] = None
+    first = owner.get(f"/projects/maintainer/maity/probe?commit={OTHER}").json()["commit"]
+    assert first == {"sha": OTHER, "found": False}
+    commit = f"/repos/acme/maity/git/commits/{OTHER}"
+    github.answers[commit] = forge.ForgeUnavailableError("later", status=403, rate_limited=True)
+    dropped = owner.get(f"/projects/maintainer/maity/probe?commit={OTHER}&max_age=0")
+    assert dropped.status_code == 503
+    last = dropped.json()["error"]["details"]["last"]
+    assert last is not None
+    assert {k: v for k, v in last.items() if k != "observed_at"} == first
+
+
+def test_a_slower_commit_answer_never_replaces_a_newer_kept_one(
+    owner: flow.Human, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """dzse's nit on #1306: an answer read earlier but kept last stays out once a newer
+    answer was kept in between (the check under the project lock in `_kept`, as in `_put`)."""
+    project = _project(migrated)
+    now = clock.now()
+    older = probe.CommitObservation({"sha": SHA, "found": False}, now, True)
+    newer_data = {"sha": SHA, "found": True, "checks": "success", "checks_detail": []}
+    newer = probe.CommitObservation(
+        {**newer_data, "required_check": None, "branch_head_sha": SHA, "ahead": False},
+        now + timedelta(seconds=5),
+        True,
+    )
+    real_transaction = probe.transaction
+    raced = [False]
+
+    def newer_kept_first(engine: Engine) -> Any:
+        if not raced[0]:  # the older answer passed the first look; the newer one wins the lock
+            raced[0] = True
+            probe._kept(engine, project, SHA, newer)
+        return real_transaction(engine)
+
+    monkeypatch.setattr(probe, "transaction", newer_kept_first)
+    probe._kept(migrated, project, SHA, older)
+    assert raced[0]
+    last = probe.last_commit(migrated, project, SHA)
+    assert last is not None and last.data["found"] is True
+    assert last.observed_at == newer.observed_at

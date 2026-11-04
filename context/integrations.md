@@ -193,7 +193,9 @@ The complete answer is kept as it was given (kind `commit_answer` beside
 the commit row), refused-branch nulls included, and `details.last` is
 that answer, not the commit row joined with the branch row: a branch the
 forge refuses leaves the older branch row in place, and the join would
-turn the refusal's `ahead: null` into a definite `ahead`. A commit
+turn the refusal's `ahead: null` into a definite `ahead`. There is one
+answer row per project and sha, replaced in place, and it goes with the
+project's other observations when the repository changes. A commit
 link's `ahead` that goes to `null` keeps the last known value under
 `_ahead_known`, never shown, so `true`, `null`, `true` wakes once.
 
