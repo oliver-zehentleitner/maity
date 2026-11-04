@@ -618,7 +618,8 @@ moderation hold get a page, at first under `/p/<owner>/<slug>` or
 `/u/<handle>` (since the path-routing decision of 2026-10-29,
 e34ae588-4dbc-423c-8da8-29fc62436cb5, at `/<owner>/<slug>` and
 `/<handle>`, the dashboard's own addresses): plain HTML rendered by the hub, no script, listed in the
-sitemap. The operator chooses whether pages are rendered on every change
+sitemap. Since 2026-11-02 a visitor gets that page inside the app shell, and
+`?as=public` the bare page (`hub/context/public-pages.md` 70c80e4f). The operator chooses whether pages are rendered on every change
 (default) or only on an interval of 1–24 hours (default 6); either way
 anything taken off a page, any edit of a shown text included, is taken
 off at once, and only new entries and counts wait for the interval. As decided on 2026-10-28,
@@ -635,8 +636,8 @@ discovery" forward: the pages, not yet a discovery page or join
 requests.
 
 **Reason:** the hosted instance should be found by the projects and
-people on it, and the dashboard cannot be indexed: it is drawn by
-scripts under fragment routes. A static page per public project and
+people on it, and the dashboard could not be indexed: it was drawn by
+scripts under fragment routes (paths since 2026-10-29, e34ae588). A static page per public project and
 person is what a crawler reads best and costs the hub one render per
 change. The original reason for opt-in, that being public is a choice
 about one's own data and so off until chosen, no longer decides the
@@ -648,7 +649,7 @@ operator switches it on.
 
 **Rejected alternatives:**
 - Public by default with an opt-out: publishes people and projects who
-  never decided to be public. (Overturned by the maintainer: projects are
+  never decided to be public. (Overturned by the maintainer: new projects are
   public by default since 2026-10-31 and profiles since 2026-11-02,
   projects.md 038e685e.)
 - Rendering on every request: the same output at the cost of a render
@@ -690,8 +691,10 @@ operator switches it on.
 
 A public project shows five of its views to anyone, each a stored
 page at the view's own address: Overview, Board, Members, Organisation
-and Why. Inbox, Chat, Messages and Ticker stay with the members, Runners
-and Settings with the owners. The Board shows each card's id, title,
+and Why. Inbox, Chat and Messages stay with the members, Runners
+and Settings with the owners. The Ticker did too until 2026-11-02; since
+then the project's page shows a snapshot of it and who is online, never
+live (`hub/context/public-pages.md` 65c0167c). The Board shows each card's id, title,
 status and label, never its body, notes or history; at first there was
 no page per card either. People and agents appeared by name only where the person (or the
 agent's owner) had a public profile, otherwise as "a member"/"an agent"
@@ -711,7 +714,7 @@ them: private, friends, colleagues, friends and colleagues, or everyone.
 
 **Reason:** the maintainer wants a public project to show how it is
 being built, not only that it exists; the board and the team are that.
-What people discuss stays with the team. What a card says inside did
+What people discuss in messages and chat stays with the team. What a card says inside did
 too at first; since 2026-11-02 an open project's card is public, like an
 issue on a forge (`hub/context/public-pages.md` e3bcdf82). At first names followed each person's own choice, so publishing a
 project did not publish its people; since 2026-11-02 an open project
