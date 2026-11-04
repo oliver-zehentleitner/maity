@@ -223,7 +223,57 @@ jobs:
         with:
           python-version: "3.12"
       - run: make install
+      # Temporary measurement for card tsk-eyw44pwjx03d: free space on /tmp
+      # before the suite. Removed once those numbers are in.
+      - run: df -h /tmp
       - run: make check
+      # Temporary measurement for card tsk-eyw44pwjx03d: /tmp after the suite,
+      # including when the suite stops on a disk quota error. Removed once the numbers are in.
+      - if: always()
+        shell: bash
+        run: |
+          set +e
+          shopt -s nullglob
+          echo "=== df -h /tmp ==="
+          df -h /tmp
+          echo "=== df -i /tmp ==="
+          df -i /tmp
+          echo "=== df -h / ==="
+          df -h /
+          bases=(/tmp/pytest-of-*)
+          if [ "${#bases[@]}" -eq 0 ]; then
+            echo "=== no /tmp/pytest-of-* directory ==="
+            exit 0
+          fi
+          echo "=== du -sh /tmp/pytest-of-* ==="
+          du -sh "${bases[@]}"
+          echo "=== per-basetemp directory ==="
+          for base in "${bases[@]}"; do
+            echo "-- ${base} --"
+            du -sh "${base}"
+            children=("${base}"/*/)
+            if [ "${#children[@]}" -gt 0 ]; then
+              du -sh "${children[@]}"
+            fi
+          done
+          echo "=== one template hub.db ==="
+          template="$(find "${bases[@]}" -type f -name hub.db -path '*template*' -print -quit)"
+          if [ -n "${template}" ]; then
+            ls -lh "${template}"
+            du -h "${template}"
+          else
+            echo "no hub.db under a template directory"
+          fi
+          echo "=== template hub.db count ==="
+          find "${bases[@]}" -type f -name hub.db -path '*template*' | wc -l
+          echo "=== hub.db count ==="
+          find "${bases[@]}" -type f -name hub.db | wc -l
+          echo "=== hub.db total size (du -ch) ==="
+          find "${bases[@]}" -type f -name hub.db -print0 | du -ch --files0-from=- | tail -n 1
+          echo "=== top 10 by size under the pytest basetemp ==="
+          du -a "${bases[@]}" | sort -h | tail -n 10
+          echo "=== measurement done ==="
+          exit 0
 
   # The contract tests: the test files that read docs/api.md (the endpoint index against the
   # routes, the reserved paths, the guide texts), on SQLite. A change of the contract alone does not start the
