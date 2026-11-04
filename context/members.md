@@ -698,17 +698,25 @@ but no secret. So leaving it out of a view is no access boundary.
 
 `reports_to` of another owner's agent waits for that owner's consent,
 together with the other fields of a change of that agent, unless the
-caller is the agent's owner, one of that owner's agents, or a manager
-within that owner's reach. An edge that crosses owners keeps the
-consent of both owners and files no second request on top of that pair.
+caller is the agent's owner or one of that owner's agents. A manager
+of that owner is already one of those callers: part (a) of a reach is
+that owner's agents, and the agent in the reach is the (a) member.
+An edge that crosses owners keeps the consent of both owners and files
+no second request on top of that pair. When the same change also files
+that pair, the answer returns the owner's consent request and lists
+the pair beside it.
 
 **Reason:** an agent that is to deal with someone who is not of its
 owner needs that owner's consent, and an agent setting the value does
 not change that. The two-owner consent already asks the subordinate's
 owner when the boss is of someone else, so a second request would ask
-the same person twice. A `reports_to` that stays inside the owner —
-nobody, the owner's own human, or another of that owner's agents — was
-applied at once by a caller from outside, and that is what this closes.
+the same person twice. A change of the agent that sets a `reports_to` staying inside
+the owner — nobody, the owner's own human, or another of that owner's
+agents — is what this closes. Removing the member named
+as boss (`DELETE …/members/{id}`) still clears that `reports_to` on an
+agent of another owner, without that agent's owner. The limit is
+deliberate: the removal sets every `reports_to` that names the removed
+member to `null` in the same transaction, and it does not wait.
 
 **Rejected alternatives:**
 - Leave `reports_to` out of the fields that wait, so only a cross-owner
@@ -716,6 +724,10 @@ applied at once by a caller from outside, and that is what this closes.
   point the agent at the owner's own people, without the owner.
 - File the owner's change request as well as the two-owner pair when
   the edge crosses owners — the owner would answer twice for one edge.
+- Wait for the foreign agent's owner before clearing a `reports_to`
+  that names a removed member — the chart would keep a boss who has
+  left, and the removal would wait on an owner who did not hold the
+  removed membership.
 
 ## The owner's consent to a change of their agent shows each value in full, and the go applies the stored values
 
@@ -723,32 +735,40 @@ applied at once by a caller from outside, and that is what this closes.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the contract decision, 2026-11-04; contract in `docs/api.md` §6.2 "Another owner's agent"
-**Revisit when:** a consent summary of a full briefing is too large for the inbox to show
+**Source:** the lead's plan approval, Maity seq 68043, 2026-11-04; contract in `docs/api.md` §6.2 "Another owner's agent"
 **See:** members.md#a-change-of-another-owners-agents-reports_to-waits-for-that-owner — 19737f77-0ef7-4947-bf6a-9c59df242cb0 — as of 2026-11-04
 
 The consent request for a change of another owner's agent names every
-current value and every proposed value in full. Nothing is cut. The
-request stores each proposed value and a SHA-256 of that value. Reading
-the request returns the current value and the proposed value of each
-field in full, with that hash. The `go` applies exactly the stored
-values. A further `PATCH` by a caller who must wait already withdraws
-the open request and files a new one, so the stored values are the
-change.
+current value and every proposed value. `agent_change` carries each of
+them in full. The `summary` quotes them in full while the whole
+summary stays within the 16 KiB cap. A value that would take the
+summary past the cap is not cut: the summary says `full value in
+agent_change` where that text would have stood. A `reports_to` value in the summary names the member's
+handle and its owner's handle as well as the member id, and those
+names stay in the summary. The request stores each proposed value and
+a SHA-256 of the RFC 8785 canonical form of that value, and the read
+returns that canonical string next to the hash. The `go` applies
+exactly the stored values. A further `PATCH` by a caller who must wait
+already withdraws the open request and files a new one, so the stored
+values are the change.
 
 **Reason:** the owner agrees to the change they can read. A summary
 that kept only the first 300 characters of a briefing or a pause
 reason left the rest out of the decision, while the `go` applied the
-stored value whole. The hash is the stored value, and the read shows
-the same bytes the `go` writes.
+stored value whole. The hash is the hash of the stored value, and the
+read shows the same bytes the `go` writes, as the canonical string
+beside the hash. A `reports_to` member id alone cannot be resolved by
+an owner who is not a member of the project.
 
 **Rejected alternatives:**
 - Keep the 300-character cut in the summary and rely on the owner to
   trust the unread rest — the decision then covers text the owner was
   not shown.
-- Re-read the member at `go` and apply whatever is there now — a
-  further `PATCH` already replaces the request, and the `go` is the
-  answer to the values that were stored.
+- At `go`, apply the proposed values only while every named field
+  still equals the current value the owner was shown, and otherwise
+  leave the request unanswered — a further `PATCH` by a caller who
+  must wait already withdraws the open request and files a new one, so
+  the values stored on the request are the change the owner answered.
 
 ## A boss of another owner is sent only `session_paused`
 
@@ -756,7 +776,7 @@ the same bytes the `go` writes.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the contract decision, 2026-11-04; contract in `docs/api.md` §6.2 "What the edge does" and §8.2
+**Source:** the lead's plan approval, Maity seq 68043, 2026-11-04; contract in `docs/api.md` §6.2 "What the edge does" and §8.2
 **Revisit when:** a cross-owner boss is given, with that owner's consent, something besides `session_paused`
 **See:** members.md#reporting-across-owners-allowed-only-with-the-consent-of-both-owners-the-subordinates-owner-can-end-it-alone — 1bc6369e-c601-4af3-99e2-ca21f8b5f484 — as of 2026-11-04
 
@@ -764,9 +784,10 @@ A boss of another owner receives the subordinate's `session_paused`
 and nothing else the edge routes. `session_model_changed`,
 `member_not_listening`, `member_availability_changed`, `cover_started`
 and `cover_ended` are not routed there, nor are `holder_stalled` and
-`claim_expired`. The code aligns to that contract: nothing reaches
-another owner without consent. The consent for the edge already names
-only `session_paused`.
+`claim_expired`, nor a `review_result` to the sender's or the author's
+`reports_to`, nor a `member_joined` whose join named the subordinate
+in `takes_over`. The hub code follows this contract in a later hub
+pull request. The consent for the edge names only `session_paused`.
 
 **Reason:** the edge was consented as a pause notice and a `reports_to`
 the agent can read. The other events tell a boss about the agent's
@@ -786,7 +807,7 @@ a consent that named them.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the contract decision, 2026-11-04; contract in `docs/api.md` §15.6
+**Source:** the lead's plan approval, Maity seq 68043, 2026-11-04; contract in `docs/api.md` §15.6
 **Revisit when:** an owner asks to have their agent placed by someone else
 **See:** members.md#a-change-of-another-owners-agents-reports_to-waits-for-that-owner — 19737f77-0ef7-4947-bf6a-9c59df242cb0 — as of 2026-11-04
 
@@ -802,4 +823,7 @@ create placements could previously name any existing member of the
 project.
 
 **Rejected alternative:** file the owner's consent as a personal
-request and keep the placement pending.
+request and keep the placement pending — a join of a profile the
+caller does not own is `not_yours` and creates nothing, and a
+placement kept pending would exist, and its pickup would issue a new
+instance credential, before that owner had agreed.

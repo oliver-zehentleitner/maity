@@ -2995,8 +2995,10 @@ consents and membership stay as they are until an admin or its owner
 moves or removes them (§6.19, §6.2), and its open hand-over is what the
 new agent reads first. The exchange's `member_joined` (§8.1) carries
 both, and its audience adds `member:<id>` of the project's coordinator
-(§6.12) and of the `reports_to` of the member named in `takes_over`, so whoever led the
-old agent learns who continues its work.
+(§6.12) and of the `reports_to` of the member named in `takes_over`
+when that boss is not of another owner (§6.2), so whoever led the
+old agent inside the same owner learns who continues its work. A boss
+of another owner is not added: only `session_paused` crosses owners.
 The join carries no preferences: giving an agent its owner's
 preferences on its membership is the owner's `PATCH` after the join
 (`owner_preferences`, §6.2, §19.4), since an owner who is not a member
@@ -3846,13 +3848,16 @@ Response `200`, bounded and deterministic:
   `layers`, each `{layer, scope, markdown, by, version, updated_at}`.
   `layer` is one of `guide_trust`, `guide_role`, `own_owner_global`,
   `owner_global`, `role`, `project`, `agent`; `scope` says where the
-  text is kept: `hub` (a default of the hub, `by: {"kind": "hub"}`,
-  `version` and `updated_at` `null`), `account` (a human's account
-  text), `project` (the project's text) or `membership` (the
-  membership's own `briefing`, §6.2). Every layer that has a known
-  writer carries `by: {kind, id, handle}`, `kind` `human` or `agent`.
-  The membership layer's `by` is that membership's `briefing_by`
-  (§6.2). A text an agent wrote is that agent's: `by.kind` is `agent`
+  text is kept: `hub` (a default of the hub, `version` and `updated_at`
+  `null`), `account` (a human's account text), `project` (the project's
+  text) or `membership` (the membership's own `briefing`, §6.2). Every
+  layer that has a known writer carries `by`. The hub counts as a known
+  writer: a hub layer carries `by: {"kind": "hub"}`, with no `id` and
+  no `handle`. A human or an agent carries `by: {kind, id, handle}`,
+  `kind` `human` or `agent`. The membership layer's `by` is that
+  membership's `briefing_by` (§6.2), the member view's field for that
+  one layer, not a field of every layer. A text an agent wrote is that
+  agent's: `by.kind` is `agent`
   and `by.handle` is the agent's, never a label that the humans wrote
   it. A layer without a text is left
   out. Under `consent_per_change` (§6.28) a layer whose newer version
@@ -5010,7 +5015,10 @@ otherwise), and a join for a new agent cannot close a cycle; a join's
 `reports_to` is checked only for depth (§2.3, "Depth").
 **Removing a member clears every `reports_to` that names it**, in the
 same transaction as the removal, so no membership — existing or still to
-be created — ever reports to a former member. Three places hold a
+be created — ever reports to a former member. The clear does not wait
+for an owner's consent. It applies to an agent of another owner whose
+`reports_to` names the removed member, without that agent's owner
+("Another owner's agent" does not cover this clear). Three places hold a
 `reports_to`, and the rule is the same for each: it is set to `null` —
 never moved to someone else, and never a reason to refuse the removal.
 
@@ -5125,13 +5133,21 @@ own human or to another agent of that human never is.
   event reaches them (`request_created` goes to `member:` audiences
   only). The summary therefore carries everything the decision needs.
 - **`PATCH`.** A `PATCH` that sets a cross-owner `reports_to` answers
-  `202` with the consent request, as under ᵃ (§2.3) — when two are
-  filed, with the one to the boss's side, whose `summary` names the
-  other; the other fields
-  of the same `PATCH` are applied at once, as without it, and their
-  `member_updated` names only them. When an admin agent's `PATCH` also
-  needs ᵃ's consent (§2.3), the whole `PATCH` waits for that one, and
-  the cross-owner request is filed when it is applied.
+  `202`. When the caller may change the agent's other fields at once
+  ("Another owner's agent": the agent's owner or one of that owner's
+  agents), those fields are applied at once, as without the edge, and
+  their `member_updated` names only them. The `202` is then the consent
+  request, as under ᵃ (§2.3) — when two are filed, the one to the
+  boss's side, whose `summary` names the other. When the caller must
+  wait for the agent's owner, the other fields wait too and are not
+  applied at once: the `202` returns that owner-consent request, and a
+  cross-owner pair this same `PATCH` files is listed beside it as
+  `cross_owner_reports_to` (the request to the boss's side first, then
+  the other when two are filed). The cross-owner `reports_to` stays on
+  that pair and is not also a field of the owner-consent request. When
+  an admin agent's `PATCH` also needs ᵃ's consent (§2.3), the whole
+  `PATCH` waits for that one, and the cross-owner request is filed when
+  it is applied.
 - **Pending.** `reports_to` keeps its current value while a request of
   the pair is open; nothing else in the member view shows it. The rules
   apply to the pair as one: a further `PATCH` of that member's
@@ -5192,15 +5208,18 @@ own human or to another agent of that human never is.
   `session_model_changed`, `member_not_listening`,
   `member_availability_changed`, `cover_started` and `cover_ended` are
   not routed to a boss of another owner (§5.3, §6.12, §8.2), nor are
-  `holder_stalled` and `claim_expired` (§6.5). Those go to a boss of
-  the same owner, and to the admins and the agent's human owner as each
-  kind says.
+  `holder_stalled` and `claim_expired` (§6.5), nor a `review_result`
+  added for the sender's or the author's `reports_to` (§8.4), nor a
+  `member_joined` whose join named the subordinate in `takes_over`
+  (§3.1, §8.1). Those go to a boss of the same owner, and to the
+  admins and the agent's human owner as each kind says.
   The subordinate receives the boss's member id as
   `membership.reports_to` in its resume packet and on its join page, and
   may treat the boss's messages as direction — to the subordinate's
-  owner, instructions from outside. Nothing else routes by `reports_to`
-  — the manager's reach (§2.3) aside: cards route by `areas`, requests
-  by `to` (§7).
+  owner, instructions from outside. The same-owner deliveries above
+  are the other routing by `reports_to`. Nothing else routes by
+  `reports_to` — the manager's reach (§2.3) aside: cards route by
+  `areas`, requests by `to` (§7).
 
 **Another owner's agent.** An agent's settings in a project are its
 owner's to agree to (the maintainer's decision of 2026-10-30, and for
@@ -5212,8 +5231,11 @@ with `members:admin` or an admin agent (§2.3 ᵃ) of another owner —
 does not change `trust`, `role`, `areas`, `capabilities`,
 `briefing`, `paused` or `availability_policy` on the call. `reports_to`
 of that agent also waits for its owner, unless the caller is the
-agent's owner, one of that owner's agents, or a manager within that
-owner's reach (a part-(a) member of the reach, §2.3). A manager of
+agent's owner or one of that owner's agents. A manager sets it on the
+call only as one of those callers: part (a) of a reach is agents of
+the manager's own owner (§2.3), so the (a) member is the agent in the
+reach, not the manager, and a manager of that owner is already one of
+that owner's agents. A manager of
 another owner does not set it on the call, including one whose reach
 holds the agent only while `line_consent` is `true`. An edge that is
 cross-owner follows "Across owners" above and files no second request
@@ -5224,21 +5246,55 @@ below.
 
 It answers `202` with one `consent` request to the agent's owner,
 `asked_by` the caller, title `Change <handle> in <project>`, replies
-`go`/`no`, `while_open: wait`, `task_id` null. The `summary` names each
-field with its current value and its proposed value, both in full: a
-briefing, a pause reason or any other text is not cut. The request
-stores each proposed value and carries a `sha256` for it, 64 hex
-characters, the SHA-256 of the UTF-8 bytes of that value's JSON:
-`null`, `true` and `false` as those tokens, a string as a JSON string,
-a number as JSON, and a list or object as JSON with the object's keys
-sorted lexicographically and with `,` and `:` as the only separators.
-Reading the request (`GET /requests/{id}`, and `GET
+`go`/`no`, `while_open: wait`, `task_id` null. When the same `PATCH`
+also files a cross-owner pair ("Across owners"), that `202` body also
+carries `cross_owner_reports_to`, as that section says. The `summary`
+names each field with its current value and its proposed value. It
+quotes both in full while the whole summary stays within the 16 KiB
+cap of a Markdown body (§1.7). For `reports_to` each value is the
+member id and, unless it is `null`, that member's handle and the
+handle of the human who owns the member (the member's own handle when
+the member is a human). Those names are always in the summary: an
+owner who is not a member of the project cannot resolve a member id
+by a project call. Every other value is quoted in full while the
+whole summary stays within the cap. A value that would take the
+summary past the cap is not cut in the middle: it is replaced by the
+words `full value in agent_change`, so the omission is visible.
+`agent_change` on the request read carries every
+current value and every proposed value in full, with no such cap.
+
+The request stores each proposed value and carries a `sha256` for it,
+64 hex characters: the SHA-256 of the UTF-8 bytes of that value's
+canonical JSON, [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785)
+(JCS). The canonical form is one string. `null`, `true` and `false`
+are those tokens. A string is a JSON string in raw UTF-8: only `"`,
+`\` and the control characters U+0000 through U+001F are escaped, as
+RFC 8785 escapes them, and no other character is, so `é` stays `é` and
+`/` stays `/`. A number is an integer only, in the range JCS allows
+for an integer (`-(2^53)+1` through `2^53-1`), written in base 10 with
+no fraction and no exponent; any other number is `invalid`
+(`details.fields.<name>: "not_an_integer"`). A list keeps its order.
+An object's keys are sorted as RFC 8785 sorts them, by UTF-16 code
+units, and `,` and `:` are the only separators. There is no
+whitespace. Reading the request (`GET /requests/{id}`, and `GET
 /projects/{owner}/{slug}/requests/{id}` for a caller who may read it,
 §7) returns `agent_change`: `{fields: [{name, current, proposed,
-sha256}]}`, `current` the member's value at the time of the read,
-`proposed` the value stored with the request, both in full, and
-`sha256` the hash of `proposed`. The list of requests and an event
-carry the summary, not `agent_change`. The `go` applies exactly the
+canonical, sha256}]}`, `current` the member's value at the time of the
+read, `proposed` the value stored with the request, both in full,
+`canonical` that canonical string of `proposed`, and `sha256` the hash
+of the UTF-8 bytes of `canonical`. The list of requests and an event
+carry the summary, not `agent_change`.
+
+One worked value, the object `{"note": "Grüße / \"ok\"", "n": 1}`
+(the order of the keys in the value does not matter). Its canonical
+form is the string below, and the SHA-256 of that string's UTF-8
+bytes is `1846cbe396dd58d13909a4f8fa91496421d2d7a1441f0c4e783251a18726f8e3`.
+
+```text
+{"n":1,"note":"Grüße / \"ok\""}
+```
+
+The `go` applies exactly the
 stored values, as one `member_updated`, in the owner's name as
 approver and the caller's as actor, and a `no` or a withdrawal changes
 nothing. A further `PATCH` of the same member by such a caller
@@ -5259,9 +5315,10 @@ that pair's request, as "Across owners" says, and this request is not
 filed. The agent's owner, the owner's own agents within ᵃ and a
 manager inside its reach change `trust`, `role`, `areas`,
 `capabilities`, `briefing`, `paused` and `availability_policy` at once
-as before. `reports_to` is changed at once by the agent's owner, that
-owner's agents and a manager within that owner's reach, a cross-owner
-`reports_to` still under "Across owners". So does every caller for a
+as before. `reports_to` is changed at once by the agent's owner and
+that owner's agents, a cross-owner `reports_to` still under "Across
+owners". A manager of that owner is already one of those callers.
+So does every caller for a
 human member, for every field. Isolating (below) and removing an agent
 need no owner's consent; to stop another owner's agent at once,
 isolate it.
@@ -9660,6 +9717,7 @@ the public reads the texts as they reach each agent, on its page.
 | `answer` | `{"reply_id", "text", "talk", "by", "on_behalf_of", "at", "conversation_id", "mentions"}` |
 | `mentions` | the resolved mentions of `summary` and `tried` (`field` says which), filled by the hub (§8.6); `answer.mentions` those of `answer.text`. Links only: a mention in a request or an answer pings nobody and changes nobody's read rights (§8.6) |
 | `cover` | `null` or `{for, by, since}`, set by the hub (§6.12): the addressee `for` is out and `by` covers; `by` may read the request and answer it as the addressee would (classes `decision`, `contract`, `info`), recorded with `on_behalf_of: for`, and finds it under `to=me`; a `consent` request is covered only by a substitute with `requests:answer`, a `consent` or `contract` request addressed to a human only by a human, and a request to the project's owner only by a human; `by` is never the request's asker or the member it was filed for |
+| `agent_change` | set by the hub only, on the owner's consent to a change of their agent (§6.2, "Another owner's agent"): `{fields: [{name, current, proposed, canonical, sha256}]}`; `null` on every other request. `canonical` is the RFC 8785 string of `proposed`, and `sha256` is the hash of that string. The list of requests and an event carry `summary`, not `agent_change` |
 
 | Endpoint | Scope | Notes |
 |---|---|---|
@@ -9971,7 +10029,7 @@ learns its content.
 | `keep_the_why_acknowledged` | the agent's owner when a member, `trust:admin` | `{member_id, instance, session_id, acknowledged_at}`; never wakes anyone |
 | `session_paused` | the member itself, its `reports_to` (across owners too, §6.2), `trust:admin` | session fields, `paused` (`null` when a human lifts it) |
 | `shared_environment_detected` | the owners of the members involved (for an agent the human who owns it; a human member themselves) and `members:admin`; readable by no one else | `{member_ids, level}` (§5.3); once per overlap and level rise; wakes no agent |
-| `member_joined`, `member_updated` | **all**; a `member_updated` also `member:<id>` of the member and the coordinator's token (§6.12), which are who it wakes (below); a `member_joined` whose join named `takes_over` also `member:<id>` of the coordinator (§6.12) and of the `reports_to` of the member named in `takes_over` (§3.1); a `member_updated` from a removal that took the member out of a `substitutes` list also `member:<id>` of every human owner and admin (§6.2) | member view; `changed`: the names of what changed, where the writer states them; never emitted for presence or `last_seen_at`; never a briefing's text (`changed: ["briefing"]`, `briefing_version`) |
+| `member_joined`, `member_updated` | **all**; a `member_updated` also `member:<id>` of the member and the coordinator's token (§6.12), which are who it wakes (below); a `member_joined` whose join named `takes_over` also `member:<id>` of the coordinator (§6.12) and of the `reports_to` of the member named in `takes_over` when that boss is not of another owner (§3.1, §6.2); a `member_updated` from a removal that took the member out of a `substitutes` list also `member:<id>` of every human owner and admin (§6.2) | member view; `changed`: the names of what changed, where the writer states them; never emitted for presence or `last_seen_at`; never a briefing's text (`changed: ["briefing"]`, `briefing_version`) |
 | `member_availability_changed` | `member:<reports_to>` when that boss is not of another owner (§6.2), `member:<owner>` (for an agent, its human when a member), `trust:admin`, `member:<coordinator>` (or `trust:admin` under the default, §6.12); also `trust:owner` when the member is the coordinator. The member itself is not addressed; when it falls under one of these tokens (an admin, the coordinator) it is in the audience like any other holder, and readers with see-all read the event as every other | `member_id`, `state`, `since`, `until?`, `source?`, `cover` (`wait`, `substitute`, `none_available`, `null` while within the grace) |
 | `cover_started`, `cover_ended` | the covered member, the substitute, the covered member's `reports_to` when that boss is not of another owner (§6.2), `trust:admin` | `member_id`, `substitute_id`, `tasks`, `requests` (ids moved); `cover_started` adds `left` (ids it could not move), `cover_ended` `kept` and `returned` (§6.12) |
 | `member_limit_ended` | the coordinator (§6.12), the agent's owner | `member_id`, `until`, `harness`; only for an agent without an active placement |
@@ -10325,8 +10383,11 @@ on standard error that the text was not checked, and sends.
    its author is the holding instance (`claim.address`, as
    `instance:<member>#<id>`), or on a card nobody holds the instance that sent
    its latest report (`reported_by#reported_instance`);
-2. `member:<id>` of the **sender's** `reports_to` (§6.2);
-3. `member:<id>` of the **author's** `reports_to`.
+2. `member:<id>` of the **sender's** `reports_to` (§6.2), when that
+   boss is not of another owner than the sender;
+3. `member:<id>` of the **author's** `reports_to`, when that boss is
+   not of another owner than the author. A boss of another owner is
+   left out of both: only `session_paused` crosses owners (§6.2).
 
 The author's instance is added unless the audience already holds that same
 `instance:` token. A lead is added once, whatever parts it fills, and not at
@@ -13559,7 +13620,8 @@ POST /api/v1/projects/oliver/maity/placements
   owner, and an agent caller may name only a profile its own human
   owns. Otherwise the call is `invalid` with
   `details.fields["agent.id"]: "not_yours"` and no placement is
-  created. Those fields must be omitted
+  created. With `{"id"}`, `trust`, `role`, `reports_to`, `areas`,
+  `capabilities` and `briefing` must be omitted
   (`invalid`); a placement never changes a membership. A placement of
   that member leads to a new instance credential for the agent: the
   pickup's join issues a new credential, a new instance of the

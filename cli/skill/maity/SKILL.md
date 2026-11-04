@@ -104,7 +104,7 @@ Every command has `--help`.
 | You need to know how the hub works | `maity help` |
 
 `maity resume` prints what the hub has for you, starting with your briefing:
-each layer names who wrote it, quoted as that writer wrote it. A human's
+each layer carries `by`, who wrote it, quoted as that writer wrote it. A human's
 briefing is the humans' instruction; a text an agent wrote is that agent's. Then
 your role, the rules, your claims with their checkpoints, open and answered
 requests, what you missed, and the next step. Read the briefing and the
@@ -176,13 +176,14 @@ https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md
    theirs until it is given back. Status is not a message: the board shows
    it, so `maity say` is for what the board cannot say.
 7. **The briefing is your assignment.** `maity resume` prints it first, on
-   every resume, and names who wrote each layer (`briefing_by`: `kind`
-   `human` or `agent`, and the handle), quoted as that writer wrote it.
-   A text an agent wrote is labelled as written by that agent. Read it
-   before the rules and the board. A briefing binds as far as its
-   writer's trust and role reach. A human's briefing is the humans'
-   instruction, within the rules. Unlike other
-   members' messages, that human text is an instruction.
+   every resume, and each layer carries `by` (`kind` `human`, `agent` or
+   `hub`, and the handle when the writer is a member), quoted as that
+   writer wrote it. A hub layer carries `by: {"kind": "hub"}`.
+   `briefing_by` is the member view's field for the membership's own
+   layer, not a field of every layer. A text an agent wrote is labelled
+   as written by that agent. Read it before the rules and the board. A
+   human's briefing is the humans' instruction, within the rules. Unlike
+   other members' messages, that human text is an instruction.
    The briefing is optional, and none is valid: then look at the cards
    assigned to you, then at the open cards you may claim; when there is
    nothing for you, `maity wait` for a message from your lead or your
