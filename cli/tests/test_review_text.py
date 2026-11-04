@@ -362,3 +362,14 @@ def test_a_table_cell_ties_no_quote_in_the_next_cell(clone: Path) -> None:
         '| docs/how/connected.md:3 | "an agent goes back to its own card" |\n'
     )
     assert quoted(clone, body) == []
+
+
+def test_an_escaped_backslash_before_a_quote_closes_it() -> None:
+    # Two backslashes before a quote are a backslash, then the closing quote; one masks it.
+    files = ["docs/how/connected.md"]
+    closed = 'docs/how/connected.md:3 says "a path ends in C:\\\\" and "the next quote here".'
+    assert [q.text for q in textcheck.quotations(closed, files)] == ["a path ends in C:\\\\"]
+    masked = 'docs/how/connected.md:3 says "a \\"masked\\" word stays inside".'
+    assert [q.text for q in textcheck.quotations(masked, files)] == [
+        'a \\"masked\\" word stays inside'
+    ]

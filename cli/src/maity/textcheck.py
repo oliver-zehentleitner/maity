@@ -33,7 +33,8 @@ _SKIP_CHARS = set("#@{}<>")
 # Form 4: a quotation, between "…" or “…”, of four words or more.
 _QUOTE = re.compile(r'"[^"]*"|“[^“”]*”|„[^„“”]*[“”]')
 _GAP_STOPS = set('.;!?|"“”„')  # `|`: a table's cell is no sentence of its own
-_ESCAPED_QUOTE = re.compile(r'\\"')
+# `\\"` (an odd run of backslashes before `"`) masks the quote; `\\\\"` is a backslash, then `"`.
+_ESCAPED_QUOTE = re.compile(r'(?<!\\)(?:\\\\)*\\"')
 # A comment marker at a line's start, so that a quote of a wrapped comment matches.
 _COMMENT = re.compile(r"^[ \t]*(?:#+|//+|/?\*+/?|--|;+)[ \t]?", re.MULTILINE)
 _AFTER_GAP = re.compile(r"[ \t]*\([ \t]*`?")  # "…" (path:n): the place in brackets
@@ -283,7 +284,7 @@ def quotations(text: str, files: list[str]) -> list[Quotation]:
         if not paragraph:
             return
         para = "\n".join(paragraph)
-        blanked = _ESCAPED_QUOTE.sub("  ", _blank_spans(para))
+        blanked = _ESCAPED_QUOTE.sub(lambda m: " " * len(m.group()), _blank_spans(para))
         lines = [m for m in _FILE_LINE.finditer(para) if m.group(1) in files]
         nearest = next((named for _, named in reversed(section) if named), [])
         here = nearest[0] if len(nearest) == 1 else None

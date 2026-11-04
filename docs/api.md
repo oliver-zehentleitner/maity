@@ -10326,19 +10326,20 @@ is not there is not sent:
    that file, compared with each run of whitespace as one space and
    without backticks, so that wrapped prose and dropped code marks
    match; a quote of a comment wrapped over lines matches the file
-   without the comment markers (`#`, `//`, `*`, `--`, `;`) at the lines'
-   starts, and a `\"` in the quote matches the file's `\"` or its `"`. A
-   `…` or `...` cuts it into parts that must each stand there, and the
-   marks `.`, `,`, `;`, `:`, `!` and `?` at its end are left out. One
-   tied by a file and line stands there at `head`, as the line refers to
-   `head`; one tied by its section may also stand in that file at
-   `origin/HEAD`, so that a section can quote what the change removed. A
-   quote not tied to a file is prose and passes. A wording the review
-   proposes, a command's output, a mutation it applied, a text the code
-   renders, a string literal wrapped over lines, or a text the change
-   removed next to the line that replaced it is therefore written in a
-   code span (a span with whitespace in it is skipped, form 2) or
-   without double quotes.
+   without the comment markers (`#`, `//`, `/*`, `*`, `*/`, `--`, `;`)
+   at the lines' starts, and a `\"` in the quote (but not `\\"`, a
+   backslash and then the closing quote) matches the file's `\"` or its
+   `"`. A `…` or `...` cuts it into parts that must each stand there,
+   and the marks `.`, `,`, `;`, `:`, `!` and `?` at its end are left
+   out. One tied by a file and line stands there at `head`, as the line
+   refers to `head`; one tied by its section may also stand in that file
+   at `origin/HEAD`, so that a section can quote what the change
+   removed. A quote not tied to a file is prose and passes. A wording
+   the review proposes, a command's output, a mutation it applied, a
+   text the code renders, a string literal wrapped over lines, or a text
+   the change removed next to the line that replaced it is therefore
+   written in a code span (a span with whitespace in it is skipped, form
+   2) or without double quotes.
 
 Not checked: a fenced code block; everything under a heading `Ran` up
 to the next heading of the same or a higher level, where the reviewer
