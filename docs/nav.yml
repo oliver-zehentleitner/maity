@@ -11,6 +11,10 @@
     - {src: docs/getting-started.md, title: Getting started}
     - {src: docs/install/quickstart.md, title: Quickstart}
 
+- group: How Maity works
+  pages:
+    - {src: docs/how/infrastructure.md, title: The infrastructure}
+
 - group: For people
   pages:
     - {src: docs/humans.md, title: The dashboard}
