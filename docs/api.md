@@ -6132,13 +6132,13 @@ the card's `approvals` stay. Every replacement clears `approvals`
   like the case below and told when the answer returns it to `review`.
   When a condition fails the card stays where it is and `task_merged`
   says `closed: false` with `blocked_by` (`dependencies`,
-  `objection`). A merge first observed while the card
-  is neither (`in_progress` after a rework, or `blocked` from there, or
-  `blocked` from `review` under `reviewer_and_tester`) is
-  remembered with the report it was observed on; when the card returns
-  to `review` the hub emits `task_merged` then, once, and only if that
-  report is still the card's current one with `mismatch` false — a new
-  report in between starts over with its own observation. A merge
+  `objection`). A merge first observed while the card is neither
+  (`in_progress` after a rework, or `blocked` from there, or `blocked`
+  from `review` under `reviewer_and_tester`) is remembered with the
+  report it was observed on; when the card returns to `review` the hub
+  emits `task_merged` then, once, and only if that report is still
+  the card's current one with `mismatch` false — a new report in
+  between starts over with its own observation. A merge
   whose head differs from the report's (`mismatch` true) triggers
   nothing: what was merged is not what was reported.
 - A card may be reported more than once; the latest report is on the
